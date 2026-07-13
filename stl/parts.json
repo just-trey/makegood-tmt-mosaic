@@ -1,0 +1,4 @@
+[
+  { "id": "top", "name": "Wheel half (top)", "file": "stl/top.3mf" },
+  { "id": "cap", "name": "Hub cap", "file": "stl/cap.3mf" }
+]

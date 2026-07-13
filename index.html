@@ -1,0 +1,2493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mosaic for TMT — SVG Color Inlay Generator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg: #14171a;
+    --panel: #1b1f23;
+    --panel-2: #22272c;
+    --line: #2c3238;
+    --text: #dde3e8;
+    --text-dim: #8a939c;
+    --accent: #4fb0ae;
+    --accent-2: #e8a13a;
+    --danger: #d9634f;
+    --mono: 'SF Mono', 'Consolas', 'Menlo', monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;}
+  #app{display:grid;grid-template-columns:340px 1fr;grid-template-rows:48px 1fr;height:100%;}
+  header{grid-column:1/3;display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line);}
+  header .logo{width:20px;height:20px;border-radius:4px;background:conic-gradient(from 45deg, var(--accent), var(--accent-2), #b063d9, var(--accent));}
+  header h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.2px;}
+  header .sub{color:var(--text-dim);font-size:11px;margin-left:2px;}
+  header .spacer{flex:1;}
+  header .stat{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-left:14px;}
+
+  #left{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:14px;}
+  #right{position:relative;background:#0d0f11;overflow:hidden;}
+  #canvas-host{position:absolute;inset:0;}
+  #viewport-hud{position:absolute;top:12px;left:12px;font-family:var(--mono);font-size:11px;color:var(--text-dim);
+    background:rgba(20,23,26,.6);padding:6px 10px;border-radius:6px;border:1px solid var(--line);pointer-events:none;line-height:1.5}
+  #warnings{position:absolute;bottom:12px;left:12px;right:12px;max-height:140px;overflow-y:auto;
+    display:flex;flex-direction:column;gap:4px;pointer-events:none;}
+  .warn-pill{pointer-events:auto;background:rgba(217,99,79,.12);border:1px solid rgba(217,99,79,.4);color:#f0a897;
+    padding:6px 10px;border-radius:6px;font-size:11.5px;max-width:520px;}
+
+  section{margin-bottom:18px;}
+  section > h2{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);
+    margin:0 0 8px 0;font-weight:700;display:flex;align-items:center;gap:6px;}
+  section > h2::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  .row{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+  .row label{flex:0 0 auto;color:var(--text-dim);font-size:12px;min-width:82px;}
+  .row .field{flex:1;}
+  input[type=number], input[type=text], select{
+    width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);
+    padding:5px 7px;border-radius:5px;font-family:var(--mono);font-size:12px;outline:none;
+  }
+  input[type=number]:focus, input[type=text]:focus, select:focus{border-color:var(--accent);}
+  input[type=range]{width:100%;accent-color:var(--accent);}
+  input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;}
+
+  .btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:7px 10px;
+    border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--sans);transition:border-color .12s;}
+  .btn:hover{border-color:var(--accent);}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#0d1a1a;font-weight:600;}
+  .btn.primary:hover{filter:brightness(1.08);}
+  .btn.small{padding:3px 8px;font-size:11px;}
+  .btn.full{width:100%;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .btn-row{display:flex;gap:6px;}
+
+  #dropzone{border:1.5px dashed var(--line);border-radius:8px;padding:18px 10px;text-align:center;
+    color:var(--text-dim);cursor:pointer;font-size:12px;transition:.12s;}
+  #dropzone:hover, #dropzone.drag{border-color:var(--accent);color:var(--accent);background:rgba(79,176,174,.05);}
+  #dropzone .fname{color:var(--text);font-family:var(--mono);font-size:11px;margin-top:4px;word-break:break-all;}
+
+  .shape-picker{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .shape-picker select{flex:1;padding:8px 8px;font-size:12.5px;font-family:var(--sans);}
+  .shape-thumb{width:44px;height:44px;flex:0 0 auto;border:1px solid var(--line);border-radius:7px;
+    background:var(--panel-2);display:flex;align-items:center;justify-content:center;}
+  .shape-thumb svg{width:30px;height:30px;display:block;}
+  .shape-thumb svg .fill{fill:rgba(79,176,174,.16);stroke:var(--accent);stroke-width:1.6;}
+  .shape-thumb svg .line{fill:none;stroke:var(--accent);stroke-width:1.6;}
+
+  .color-list{display:flex;flex-direction:column;gap:6px;}
+  .color-row{background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:7px 8px;transition:border-color .1s,opacity .1s;}
+  .color-row.dragging{opacity:.45;}
+  .color-row.drop-target{border-color:var(--accent);background:rgba(79,176,174,.1);}
+  .color-row .top{border-radius:4px;}
+  .color-row .top{display:flex;align-items:center;gap:7px;}
+  .swatch{width:16px;height:16px;border-radius:4px;border:1px solid rgba(255,255,255,.15);flex:0 0 auto;}
+  .color-row .hex{font-family:var(--mono);font-size:11px;color:var(--text-dim);}
+  .color-row .area{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--text-dim);}
+  .color-row .depth-row{display:flex;align-items:center;gap:6px;margin-top:6px;}
+  .color-row .depth-row input{width:64px;flex:none;}
+  .color-row .depth-row label{color:var(--text-dim);font-size:11px;}
+  .color-row .preset{font-size:10.5px;color:var(--text-dim);margin-left:auto;}
+  .empty-hint{color:var(--text-dim);font-size:12px;padding:10px 2px;line-height:1.5;}
+
+  .slot-count{font-family:var(--mono);font-size:11px;color:var(--accent-2);margin-top:6px;}
+
+  #loading-overlay{position:absolute;inset:0;background:rgba(13,15,17,.85);display:none;align-items:center;
+    justify-content:center;flex-direction:column;gap:10px;font-size:12px;color:var(--text-dim);z-index:5;}
+  .spinner{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);
+    animation:spin 0.8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  .hint{color:var(--text-dim);font-size:11px;line-height:1.5;margin-top:4px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo"></div>
+    <h1>Mosaic</h1>
+    <span class="sub">for MakeGood TMT · SVG → multicolor recess geometry</span>
+    <div class="spacer"></div>
+    <span class="stat" id="stat-tris">0 tris</span>
+    <span class="stat" id="stat-colors">0 colors</span>
+  </header>
+
+  <div id="left">
+
+    <section>
+      <h2>Part</h2>
+      <div class="shape-picker">
+        <div class="shape-thumb" id="shape-thumb" aria-hidden="true"></div>
+        <select id="shape-kind" aria-label="Part shape">
+          <option value="disc">Disc</option>
+          <option value="rect">Rectangle</option>
+          <option value="round">Rounded rectangle</option>
+          <option value="assembly">Wheel assembly</option>
+          <option value="stl">STL reference</option>
+        </select>
+      </div>
+
+      <div id="shape-params-disc">
+        <div class="row"><label>Diameter</label><div class="field"><input type="number" id="p-diameter" value="80" min="1" step="1"></div><span class="hint">mm</span></div>
+        <div class="row"><label>Thickness</label><div class="field"><input type="number" id="p-thickness" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
+      </div>
+      <div id="shape-params-rect" style="display:none">
+        <div class="row"><label>Width</label><div class="field"><input type="number" id="p-width" value="80" min="1" step="1"></div><span class="hint">mm</span></div>
+        <div class="row"><label>Height</label><div class="field"><input type="number" id="p-height" value="60" min="1" step="1"></div><span class="hint">mm</span></div>
+        <div class="row"><label>Thickness</label><div class="field"><input type="number" id="p-thickness-r" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
+      </div>
+      <div id="shape-params-round" style="display:none">
+        <div class="row"><label>Width</label><div class="field"><input type="number" id="p-width-rr" value="80" min="1" step="1"></div><span class="hint">mm</span></div>
+        <div class="row"><label>Height</label><div class="field"><input type="number" id="p-height-rr" value="60" min="1" step="1"></div><span class="hint">mm</span></div>
+        <div class="row"><label>Corner r</label><div class="field"><input type="number" id="p-corner" value="8" min="0" step="0.5"></div><span class="hint">mm</span></div>
+        <div class="row"><label>Thickness</label><div class="field"><input type="number" id="p-thickness-rr" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
+      </div>
+      <div id="shape-params-stl" style="display:none">
+        <div id="stl-dropzone" style="border:1.5px dashed var(--line);border-radius:8px;padding:14px 8px;text-align:center;color:var(--text-dim);cursor:pointer;font-size:12px;">
+          Drop base STL for reference<br><span class="fname" id="stl-fname"></span>
+          <input type="file" id="stl-input" accept=".stl" style="display:none">
+        </div>
+        <div class="row" style="margin-top:8px;"><label>Face Z</label><div class="field"><input type="number" id="p-facez" value="0" step="0.1"></div>
+          <button class="btn small" id="btn-autoz">Auto (top)</button></div>
+        <div class="row"><label>Footprint</label><div class="field"><input type="number" id="p-width-stl" value="80" step="1"></div>
+          <div class="field"><input type="number" id="p-height-stl" value="60" step="1"></div></div>
+        <div class="row"><label>Insert thick.</label><div class="field"><input type="number" id="p-thickness-stl" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
+        <div class="hint">v1 STL support is <b>reference mode</b>: the uploaded mesh is shown for alignment/sizing only. Mosaic's own boolean engine only cuts pockets into its own flat parametric plate (disc / rect / round rect) — it does not cut into arbitrary mesh geometry yet. Export produces a plate insert sized to the face above, for you to seat into the real part.</div>
+      </div>
+
+      <div id="shape-params-assembly" style="display:none">
+        <div class="hint" style="margin-bottom:8px;">Real multi-part cutting: an assembly is a fixed set of part roles (e.g. a wheel is Top + Cap). Add each role below — Mosaic auto-detects its dominant flat face and cuts pockets directly into that part's own mesh, all sharing one design in real assembled coordinates.</div>
+        <div class="row"><label>Assembly</label><div class="field"><select id="p-asm-kind"></select></div></div>
+        <div id="assembly-role-controls" style="margin-bottom:8px;"></div>
+        <div class="hint" style="margin-bottom:8px;">Roles with a library-linked file auto-load when added, if served over a local http server (see README) — otherwise drag-and-drop the file into the row below.</div>
+        <div id="assembly-part-list"></div>
+        <div class="hint" style="margin-top:8px;">Outer design radius (mm), used to fit the SVG across the whole assembly:</div>
+        <div class="row"><label>Design radius</label><div class="field"><input type="number" id="p-asm-radius" value="138" step="0.5"></div><span class="hint">mm</span></div>
+        <div class="hint">Pockets are cut into each part's real mesh as true boolean solids straight from the SVG's vector paths — edges follow the artwork's actual curves (no grid/voxel stair-stepping), and export is the whole modified part, not a bare insert plate.</div>
+      </div>
+
+    </section>
+
+    <section>
+      <h2>Artwork</h2>
+      <div id="dropzone">
+        Drop an SVG here, or click to browse<br>
+        <span class="fname" id="svg-fname"></span>
+        <input type="file" id="svg-input" accept=".svg,image/svg+xml" style="display:none">
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn small" id="btn-sample" style="flex:1;">Load sample artwork</button>
+      </div>
+      <div class="hint">Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.</div>
+    </section>
+
+    <section>
+      <h2>Artwork fit</h2>
+      <div class="row"><label>Margin</label><div class="field"><input type="range" id="p-margin" min="0" max="30" value="5"></div><span class="hint" id="p-margin-val">5%</span></div>
+      <div class="row"><label>Scale</label><div class="field"><input type="range" id="p-scale" min="25" max="400" value="100"></div><span class="hint" id="p-scale-val">100%</span></div>
+      <div class="row"><label>Offset X</label><div class="field"><input type="number" id="p-offset-x" value="0" step="0.5"></div><span class="hint">mm</span></div>
+      <div class="row"><label>Offset Y</label><div class="field"><input type="number" id="p-offset-y" value="0" step="0.5"></div><span class="hint">mm</span></div>
+      <button class="btn small full" id="btn-reset-fit">Reset to auto-fit</button>
+      <div class="hint">Margin sets the auto-fit size (biggest the artwork can be with that border). Scale multiplies on top of that — over 100% will overhang the base footprint, useful if you want the design to bleed to the edge or you're intentionally cropping.</div>
+    </section>
+
+    <section>
+      <h2>Depth</h2>
+      <div class="row"><label>Default depth</label><div class="field"><input type="number" id="p-depth" value="1.0" min="0.05" step="0.05"></div><span class="hint">mm</span></div>
+      <div class="row"><label>Recess bg too</label><div class="field" style="flex:0;"><input type="checkbox" id="p-recess-bg"></div>
+        <span class="hint" id="bg-depth-hint" style="display:none">uses default depth, override below</span></div>
+      <div class="hint">Depth is measured down from the top face. Shallow colors (fine detail) can be overridden per-color below.</div>
+    </section>
+
+    <section>
+      <h2>Colors detected</h2>
+      <button class="btn small full" id="btn-merge" style="display:none;margin-bottom:8px;">Merge selected into one recess</button>
+      <div class="color-list" id="color-list">
+        <div class="empty-hint">Load an SVG to detect color regions. Each flat fill color becomes its own recess, filled by a separate AMS filament.</div>
+      </div>
+      <div class="slot-count" id="slot-count"></div>
+      <div class="hint"><b>Drag one color onto another</b> to merge them into a single filament / AMS slot — or check two+ and use the button. Drop a color onto an existing merged group to add it. Merged groups share one depth; use "unmerge" to split them back.</div>
+    </section>
+
+    <section>
+      <h2>Export</h2>
+      <button class="btn primary full" id="btn-export" disabled>Export STL set (.zip)</button>
+      <div class="hint">One STL per color, plus <code>base.stl</code> for the uncut plate. Import all as separate objects in Bambu Studio, group them, then assign a filament per part for AMS mapping.</div>
+    </section>
+
+  </div>
+
+  <div id="right">
+    <div id="canvas-host"></div>
+    <div id="viewport-hud">drag to orbit · scroll to zoom · shift-drag to pan</div>
+    <div id="warnings"></div>
+    <div id="loading-overlay"><div class="spinner"></div><div id="loading-text">Rebuilding geometry…</div></div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "manifold-3d": "https://unpkg.com/manifold-3d@3.5.1/manifold.js"
+  }
+}
+</script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import ManifoldModule from 'manifold-3d';
+
+// Lazy-init the Manifold WASM boolean engine (same CDN-on-first-use pattern as three/turf/jszip).
+// Assembly mode cuts pockets into real part meshes via true 3D booleans, so this is only pulled
+// in when Assembly geometry is actually built — flat-plate mode never touches it.
+let _manifoldWasm = null;
+async function getManifold(){
+  if(_manifoldWasm) return _manifoldWasm;
+  const wasm = await ManifoldModule();
+  wasm.setup();
+  _manifoldWasm = wasm;
+  return wasm;
+}
+
+/* ============================================================================
+   PART 1 — SVG PARSING
+   Converts SVG markup into flat lists of {fillHex, loops:[[{x,y}...], ...]}
+   in SVG user-space units, with all transforms (incl. viewBox) baked in.
+   ============================================================================ */
+
+const Mat = {
+  identity(){ return [1,0,0,1,0,0]; }, // a,b,c,d,e,f  (x'=a*x+c*y+e, y'=b*x+d*y+f)
+  multiply(A,B){ // A*B, apply B first then A
+    const [a1,b1,c1,d1,e1,f1]=A, [a2,b2,c2,d2,e2,f2]=B;
+    return [
+      a1*a2+c1*b2, b1*a2+d1*b2,
+      a1*c2+c1*d2, b1*c2+d1*d2,
+      a1*e2+c1*f2+e1, b1*e2+d1*f2+f1
+    ];
+  },
+  apply(M,x,y){
+    return { x: M[0]*x+M[2]*y+M[4], y: M[1]*x+M[3]*y+M[5] };
+  },
+  translate(tx,ty){ return [1,0,0,1,tx,ty||0]; },
+  scale(sx,sy){ return [sx, 0,0, (sy===undefined?sx:sy), 0,0]; },
+  rotate(deg,cx,cy){
+    const r = deg*Math.PI/180, c=Math.cos(r), s=Math.sin(r);
+    let m = [c,s,-s,c,0,0];
+    if(cx!==undefined){
+      m = Mat.multiply(Mat.translate(cx,cy), Mat.multiply(m, Mat.translate(-cx,-cy)));
+    }
+    return m;
+  },
+  skewX(deg){ return [1,0,Math.tan(deg*Math.PI/180),1,0,0]; },
+  skewY(deg){ return [1,Math.tan(deg*Math.PI/180),0,1,0,0]; }
+};
+
+function parseTransformAttr(str){
+  let m = Mat.identity();
+  if(!str) return m;
+  const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g;
+  let match;
+  while((match = re.exec(str))){
+    const fn = match[1];
+    const args = match[2].trim().split(/[\s,]+/).filter(s=>s.length).map(Number);
+    let fm;
+    if(fn==='matrix') fm = args;
+    else if(fn==='translate') fm = Mat.translate(args[0], args[1]);
+    else if(fn==='scale') fm = Mat.scale(args[0], args[1]);
+    else if(fn==='rotate') fm = Mat.rotate(args[0], args[1], args[2]);
+    else if(fn==='skewX') fm = Mat.skewX(args[0]);
+    else if(fn==='skewY') fm = Mat.skewY(args[0]);
+    m = Mat.multiply(m, fm);
+  }
+  return m;
+}
+
+// normalize any CSS color string to "#rrggbb" using a canvas as an oracle.
+let __colorCanvas = null;
+function normalizeColor(str){
+  if(!str) return null;
+  str = str.trim();
+  if(str==='none' || str==='transparent') return null;
+  if(str==='currentColor') str = '#000000';
+  if(!__colorCanvas){ __colorCanvas = document.createElement('canvas').getContext('2d'); }
+  __colorCanvas.fillStyle = '#000';
+  try{ __colorCanvas.fillStyle = str; }catch(e){ return null; }
+  const out = __colorCanvas.fillStyle;
+  if(/^#([0-9a-f]{6})$/i.test(out)) return out.toLowerCase();
+  const m = out.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if(m){
+    return '#' + [1,2,3].map(i=>(+m[i]).toString(16).padStart(2,'0')).join('');
+  }
+  return '#000000';
+}
+
+function getStyleProp(el, prop){
+  const style = el.getAttribute('style');
+  if(style){
+    const m = style.match(new RegExp('(?:^|;)\\s*'+prop+'\\s*:\\s*([^;]+)'));
+    if(m) return m[1].trim();
+  }
+  return el.getAttribute(prop);
+}
+
+// ---- path 'd' tokenizer / flattener ----
+function flattenCubic(p0,p1,p2,p3,segs,out){
+  for(let i=1;i<=segs;i++){
+    const t=i/segs, mt=1-t;
+    const x = mt*mt*mt*p0.x + 3*mt*mt*t*p1.x + 3*mt*t*t*p2.x + t*t*t*p3.x;
+    const y = mt*mt*mt*p0.y + 3*mt*mt*t*p1.y + 3*mt*t*t*p2.y + t*t*t*p3.y;
+    out.push({x,y});
+  }
+}
+function flattenQuad(p0,p1,p2,segs,out){
+  for(let i=1;i<=segs;i++){
+    const t=i/segs, mt=1-t;
+    const x = mt*mt*p0.x + 2*mt*t*p1.x + t*t*p2.x;
+    const y = mt*mt*p0.y + 2*mt*t*p1.y + t*t*p2.y;
+    out.push({x,y});
+  }
+}
+// SVG elliptical arc -> polyline, via center parameterization (SVG spec F.6.5)
+function flattenArc(p0, rx, ry, xRotDeg, largeArc, sweep, p1, out){
+  if(rx===0||ry===0){ out.push(p1); return; }
+  rx=Math.abs(rx); ry=Math.abs(ry);
+  const phi = xRotDeg*Math.PI/180, cosPhi=Math.cos(phi), sinPhi=Math.sin(phi);
+  const dx2 = (p0.x-p1.x)/2, dy2=(p0.y-p1.y)/2;
+  const x1p = cosPhi*dx2 + sinPhi*dy2;
+  const y1p = -sinPhi*dx2 + cosPhi*dy2;
+  let lambda = (x1p*x1p)/(rx*rx) + (y1p*y1p)/(ry*ry);
+  if(lambda>1){ const s=Math.sqrt(lambda); rx*=s; ry*=s; }
+  const sign = (largeArc!==sweep)?1:-1;
+  const num = rx*rx*ry*ry - rx*rx*y1p*y1p - ry*ry*x1p*x1p;
+  const den = rx*rx*y1p*y1p + ry*ry*x1p*x1p;
+  const co = sign*Math.sqrt(Math.max(0,num/den)||0);
+  const cxp = co*(rx*y1p/ry);
+  const cyp = co*(-ry*x1p/rx);
+  const cx = cosPhi*cxp - sinPhi*cyp + (p0.x+p1.x)/2;
+  const cy = sinPhi*cxp + cosPhi*cyp + (p0.y+p1.y)/2;
+  function angle(ux,uy,vx,vy){
+    const dot=ux*vx+uy*vy, len=Math.sqrt(ux*ux+uy*uy)*Math.sqrt(vx*vx+vy*vy);
+    let a = Math.acos(Math.min(1,Math.max(-1,dot/len)));
+    if(ux*vy-uy*vx<0) a=-a;
+    return a;
+  }
+  const theta1 = angle(1,0,(x1p-cxp)/rx,(y1p-cyp)/ry);
+  let dTheta = angle((x1p-cxp)/rx,(y1p-cyp)/ry,(-x1p-cxp)/rx,(-y1p-cyp)/ry);
+  if(!sweep && dTheta>0) dTheta -= 2*Math.PI;
+  if(sweep && dTheta<0) dTheta += 2*Math.PI;
+  const segs = Math.max(4, Math.ceil(Math.abs(dTheta)/(Math.PI/24)));
+  for(let i=1;i<=segs;i++){
+    const t = theta1 + dTheta*(i/segs);
+    const ex = cx + rx*Math.cos(t)*cosPhi - ry*Math.sin(t)*sinPhi;
+    const ey = cy + rx*Math.cos(t)*sinPhi + ry*Math.sin(t)*cosPhi;
+    out.push({x:ex,y:ey});
+  }
+}
+
+function parsePathD(d){
+  const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g) || [];
+  let i=0;
+  function nums(n){ const r=[]; for(let k=0;k<n;k++) r.push(parseFloat(tokens[i++])); return r; }
+  const loops = [];
+  let cur = [];
+  let cx=0, cy=0, startX=0, startY=0, prevCmd=null, prevCtrl=null;
+  const BEZ_SEGS = 18;
+  while(i<tokens.length){
+    let cmd = tokens[i];
+    if(/^[a-zA-Z]$/.test(cmd)) i++; else cmd = prevCmd; // implicit repeat
+    if(!cmd) break;
+    const rel = cmd === cmd.toLowerCase();
+    const C = cmd.toUpperCase();
+    if(C==='M'){
+      const [x,y]=nums(2);
+      const nx = rel?cx+x:x, ny = rel?cy+y:y;
+      if(cur.length) loops.push(cur);
+      cur=[{x:nx,y:ny}];
+      cx=nx; cy=ny; startX=nx; startY=ny; prevCmd = rel?'l':'L';
+    } else if(C==='L'){
+      const [x,y]=nums(2);
+      const nx=rel?cx+x:x, ny=rel?cy+y:y;
+      cur.push({x:nx,y:ny}); cx=nx; cy=ny; prevCmd=cmd;
+    } else if(C==='H'){
+      const [x]=nums(1); const nx=rel?cx+x:x;
+      cur.push({x:nx,y:cy}); cx=nx; prevCmd=cmd;
+    } else if(C==='V'){
+      const [y]=nums(1); const ny=rel?cy+y:y;
+      cur.push({x:cx,y:ny}); cy=ny; prevCmd=cmd;
+    } else if(C==='C'){
+      const [x1,y1,x2,y2,x,y]=nums(6);
+      const p1={x:rel?cx+x1:x1,y:rel?cy+y1:y1}, p2={x:rel?cx+x2:x2,y:rel?cy+y2:y2}, p3={x:rel?cx+x:x,y:rel?cy+y:y};
+      flattenCubic({x:cx,y:cy},p1,p2,p3,BEZ_SEGS,cur);
+      cx=p3.x; cy=p3.y; prevCtrl=p2; prevCmd=cmd;
+    } else if(C==='S'){
+      const [x2,y2,x,y]=nums(4);
+      const p1 = (prevCtrl)?{x:2*cx-prevCtrl.x,y:2*cy-prevCtrl.y}:{x:cx,y:cy};
+      const p2={x:rel?cx+x2:x2,y:rel?cy+y2:y2}, p3={x:rel?cx+x:x,y:rel?cy+y:y};
+      flattenCubic({x:cx,y:cy},p1,p2,p3,BEZ_SEGS,cur);
+      cx=p3.x; cy=p3.y; prevCtrl=p2; prevCmd=cmd;
+    } else if(C==='Q'){
+      const [x1,y1,x,y]=nums(4);
+      const p1={x:rel?cx+x1:x1,y:rel?cy+y1:y1}, p2={x:rel?cx+x:x,y:rel?cy+y:y};
+      flattenQuad({x:cx,y:cy},p1,p2,BEZ_SEGS,cur);
+      cx=p2.x; cy=p2.y; prevCtrl=p1; prevCmd=cmd;
+    } else if(C==='T'){
+      const [x,y]=nums(2);
+      const p1 = (prevCtrl)?{x:2*cx-prevCtrl.x,y:2*cy-prevCtrl.y}:{x:cx,y:cy};
+      const p2={x:rel?cx+x:x,y:rel?cy+y:y};
+      flattenQuad({x:cx,y:cy},p1,p2,BEZ_SEGS,cur);
+      cx=p2.x; cy=p2.y; prevCtrl=p1; prevCmd=cmd;
+    } else if(C==='A'){
+      const [rx,ry,rot,laf,sf,x,y]=nums(7);
+      const p1={x:rel?cx+x:x,y:rel?cy+y:y};
+      flattenArc({x:cx,y:cy},rx,ry,rot,!!laf,!!sf,p1,cur);
+      cx=p1.x; cy=p1.y; prevCmd=cmd;
+    } else if(C==='Z'){
+      cur.push({x:startX,y:startY});
+      cx=startX; cy=startY; prevCmd=cmd;
+    } else { i++; continue; }
+    if(C!=='C'&&C!=='S'&&C!=='Q'&&C!=='T'&&C!=='A') prevCtrl=null;
+  }
+  if(cur.length) loops.push(cur);
+  return loops;
+}
+
+function signedArea(loop){
+  let a=0;
+  for(let i=0;i<loop.length;i++){
+    const p=loop[i], q=loop[(i+1)%loop.length];
+    a += p.x*q.y - q.x*p.y;
+  }
+  return a/2;
+}
+
+const WARNINGS = [];
+function warn(msg){ if(!WARNINGS.includes(msg)) WARNINGS.push(msg); }
+
+function ellipsePoints(cx,cy,rx,ry,segs=64){
+  const pts=[];
+  for(let i=0;i<segs;i++){ const t=i/segs*Math.PI*2; pts.push({x:cx+rx*Math.cos(t), y:cy+ry*Math.sin(t)}); }
+  pts.push(pts[0]);
+  return pts;
+}
+
+function parseSVGDocument(svgText){
+  WARNINGS.length = 0;
+  const doc = new DOMParser().parseFromString(svgText,'image/svg+xml');
+  const perr = doc.querySelector('parsererror');
+  if(perr) throw new Error('SVG could not be parsed — check the file is valid XML.');
+  const svgEl = doc.documentElement;
+
+  // establish root transform from viewBox vs width/height (map viewBox space -> "user units")
+  let rootM = Mat.identity();
+  const vb = svgEl.getAttribute('viewBox');
+  let vbX=0, vbY=0, vbW=null, vbH=null;
+  if(vb){
+    const [vx,vy,vw,vh] = vb.trim().split(/[\s,]+/).map(Number);
+    rootM = Mat.multiply(Mat.translate(-vx,-vy), Mat.identity());
+    vbX=vx; vbY=vy; vbW=vw; vbH=vh;
+    // (we treat viewBox coordinate space directly as our working units; width/height attrs are ignored
+    //  for scale purposes since we re-fit to the physical footprint later anyway)
+  }
+
+  const shapes = []; // {fill, loops:[...], order}
+  let order = 0;
+
+  function walk(el, parentM){
+    const tag = el.tagName ? el.tagName.toLowerCase() : '';
+    if(!tag) return;
+    if(['defs','symbol','clippath','mask','pattern','title','desc','style','metadata'].includes(tag)) return;
+
+    const localM = parseTransformAttr(el.getAttribute('transform'));
+    const M = Mat.multiply(parentM, localM);
+
+    const fillRaw = getStyleProp(el,'fill');
+    const fillUrl = fillRaw && /url\(/.test(fillRaw);
+    const opacity = parseFloat(getStyleProp(el,'fill-opacity'));
+    const displayNone = getStyleProp(el,'display')==='none';
+
+    if(tag==='path' || tag==='rect' || tag==='circle' || tag==='ellipse' || tag==='polygon' || tag==='polyline'){
+      if(!displayNone){
+        if(fillUrl){
+          warn('Skipped a <'+tag+'> with a gradient/pattern fill (not a flat color) — element ignored.');
+        } else if(fillRaw==='none'){
+          // no fill, e.g. stroke-only outline — ignored for inlay purposes
+        } else if(opacity===0){
+          // invisible, ignore
+        } else {
+          const hex = normalizeColor(fillRaw || getAncestorFill(el) || '#000000');
+          let loops = [];
+          if(tag==='path'){
+            const d = el.getAttribute('d');
+            if(d) loops = parsePathD(d);
+          } else if(tag==='rect'){
+            const x=+(el.getAttribute('x')||0), y=+(el.getAttribute('y')||0);
+            const w=+el.getAttribute('width'), h=+el.getAttribute('height');
+            let rx = el.getAttribute('rx'), ry = el.getAttribute('ry');
+            rx = rx? +rx : (ry? +ry:0); ry = ry? +ry : rx;
+            if(w>0 && h>0){
+              if(rx>0 && ry>0){
+                rx=Math.min(rx,w/2); ry=Math.min(ry,h/2);
+                const seg=12, pts=[];
+                const corners=[[x+w-rx,y+ry,-90,0],[x+w-rx,y+h-ry,0,90],[x+rx,y+h-ry,90,180],[x+rx,y+ry,180,270]];
+                corners.forEach(([ccx,ccy,a0,a1])=>{
+                  for(let k=0;k<=seg;k++){ const t=(a0+(a1-a0)*k/seg)*Math.PI/180; pts.push({x:ccx+rx*Math.cos(t), y:ccy+ry*Math.sin(t)}); }
+                });
+                pts.push(pts[0]);
+                loops=[pts];
+              } else {
+                loops = [[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h},{x,y}]];
+              }
+            }
+          } else if(tag==='circle'){
+            const cxA=+(el.getAttribute('cx')||0), cyA=+(el.getAttribute('cy')||0), r=+el.getAttribute('r');
+            if(r>0) loops=[ellipsePoints(cxA,cyA,r,r)];
+          } else if(tag==='ellipse'){
+            const cxA=+(el.getAttribute('cx')||0), cyA=+(el.getAttribute('cy')||0), rx=+el.getAttribute('rx'), ry=+el.getAttribute('ry');
+            if(rx>0&&ry>0) loops=[ellipsePoints(cxA,cyA,rx,ry)];
+          } else if(tag==='polygon' || tag==='polyline'){
+            const pts = (el.getAttribute('points')||'').trim().split(/[\s,]+/).map(Number);
+            const loop=[];
+            for(let k=0;k<pts.length-1;k+=2) loop.push({x:pts[k],y:pts[k+1]});
+            if(tag==='polygon' && loop.length) loop.push(loop[0]);
+            loops=[loop];
+          }
+          loops = loops.filter(l=>l.length>=3).map(l=>l.map(p=>Mat.apply(M,p.x,p.y)));
+          if(loops.length){
+            shapes.push({ fill: hex || '#000000', loops, order: order++ });
+          }
+        }
+      }
+    }
+    for(const child of el.children) walk(child, M);
+  }
+  function getAncestorFill(el){
+    let p = el.parentElement;
+    while(p){
+      const f = getStyleProp(p,'fill');
+      if(f && !/url\(/.test(f)) return f;
+      p=p.parentElement;
+    }
+    return null;
+  }
+
+  for(const child of svgEl.children) walk(child, rootM);
+
+  if(!shapes.length) throw new Error('No flat-filled shapes were found in this SVG.');
+
+  // bbox across everything
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  shapes.forEach(s=>s.loops.forEach(l=>l.forEach(p=>{
+    if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x; if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
+  })));
+
+  // For assembly mode: find the largest <circle> (typically the design's outer/background
+  // boundary) so real-mesh parts can be mapped hub-centered without re-deriving a bbox fit.
+  let rawSVGCircle = null;
+  let bestR = -1;
+  doc.querySelectorAll('circle').forEach(c=>{
+    const r = parseFloat(c.getAttribute('r'));
+    if(r > bestR){ bestR = r; rawSVGCircle = { cx: parseFloat(c.getAttribute('cx')||0), cy: parseFloat(c.getAttribute('cy')||0), r }; }
+  });
+
+  // For assembly mode's raster color sampling: the actual viewBox rect the SVG was rasterized
+  // against (rasterizeSVG stretches this exact rect to fill the raster canvas). Falls back to the
+  // SVG's width/height attributes, then the shape bbox, for files with no viewBox attribute.
+  const rawSVGViewBox = {
+    x: vbX, y: vbY,
+    w: vbW || parseFloat(svgEl.getAttribute('width')) || (maxX-minX) || 1,
+    h: vbH || parseFloat(svgEl.getAttribute('height')) || (maxY-minY) || 1,
+  };
+
+  return { shapes, bbox:{minX,minY,maxX,maxY}, rawSVGText: svgText, rawSVGCircle, rawSVGViewBox };
+}
+
+/* ============================================================================
+   PART 2 — GEOMETRY / TOPOLOGY (turf-based net region computation)
+   ============================================================================ */
+
+function loopToRing(loop, forceCCW){
+  let pts = loop.slice();
+  if(pts.length<3) return null;
+  const first=pts[0], last=pts[pts.length-1];
+  if(Math.abs(first.x-last.x)>1e-9 || Math.abs(first.y-last.y)>1e-9) pts.push({x:first.x,y:first.y});
+  pts = dedupeRing(pts);
+  if(pts.length<4) return null; // degenerated to nothing after cleanup
+  const area = signedArea(pts); // >0 = CCW in standard math orientation
+  let ring = pts.map(p=>[p.x,p.y]);
+  const isCCW = area>0;
+  if(forceCCW !== undefined && isCCW !== forceCCW) ring = ring.reverse();
+  return ring;
+}
+
+// Build a turf (Multi)Polygon feature for one SVG shape (one <path> etc., possibly multiple subpaths).
+//
+// Hole-vs-solid is resolved by geometric nesting depth (containment), not by winding-direction
+// sign. This matters because SVG supports two different fill rules: "nonzero" (where authoring
+// tools conventionally wind holes opposite to their exterior) and "evenodd" (where a hole can
+// legally share the same winding direction as its exterior — common from tools like Affinity
+// Designer/Illustrator). A winding-sign heuristic silently produces wrong geometry on evenodd
+// files with same-wound holes; a containment-depth heuristic (odd nesting depth = hole, even =
+// solid island) gives the same, correct answer for both fill rules on any well-formed path.
+function shapeToFeature(shape){
+  const rings = shape.loops
+    .map(l=>({ raw:l, areaAbs: Math.abs(signedArea(l)) }))
+    .filter(r=>r.areaAbs>1e-7);
+  if(!rings.length) return null;
+  const n = rings.length;
+
+  function pointInRaw(raw, pt){
+    let inside=false;
+    for(let i=0,j=raw.length-1;i<raw.length;j=i++){
+      const xi=raw[i].x, yi=raw[i].y, xj=raw[j].x, yj=raw[j].y;
+      const hit = ((yi>pt.y)!==(yj>pt.y)) && (pt.x < (xj-xi)*(pt.y-yi)/(yj-yi)+xi);
+      if(hit) inside=!inside;
+    }
+    return inside;
+  }
+
+  // immediate parent = smallest-area ring that contains this ring (excluding itself)
+  const parent = new Array(n).fill(-1);
+  for(let i=0;i<n;i++){
+    let bestArea = Infinity, bestIdx = -1;
+    const testPt = rings[i].raw[0];
+    for(let j=0;j<n;j++){
+      if(i===j || rings[j].areaAbs <= rings[i].areaAbs) continue;
+      if(rings[j].areaAbs < bestArea && pointInRaw(rings[j].raw, testPt)){
+        bestArea = rings[j].areaAbs; bestIdx = j;
+      }
+    }
+    parent[i] = bestIdx;
+  }
+  const depth = new Array(n).fill(-1);
+  function getDepth(i){
+    if(depth[i]!==-1) return depth[i];
+    return depth[i] = (parent[i]===-1) ? 0 : 1+getDepth(parent[i]);
+  }
+  for(let i=0;i<n;i++) getDepth(i);
+
+  const children = Array.from({length:n},()=>[]);
+  for(let i=0;i<n;i++) if(parent[i]!==-1) children[parent[i]].push(i);
+
+  const polys = [];
+  function emitPoly(i){
+    const extRing = loopToRing(rings[i].raw, true);
+    if(!extRing) return;
+    const holeRings = [];
+    children[i].forEach(c=>{
+      const hr = loopToRing(rings[c].raw, false);
+      if(hr) holeRings.push(hr);
+      children[c].forEach(gc=>emitPoly(gc)); // depth+2 descendants are separate solid islands
+    });
+    polys.push([extRing, ...holeRings]);
+  }
+  for(let i=0;i<n;i++) if(depth[i]===0) emitPoly(i);
+  if(!polys.length) return null;
+
+  try{
+    const geom = polys.length===1
+      ? { type:'Polygon', coordinates: polys[0] }
+      : { type:'MultiPolygon', coordinates: polys };
+    return { type:'Feature', properties:{}, geometry: geom };
+  }catch(e){ return null; }
+}
+
+// The most common real cause of "self-intersecting path" boolean failures isn't an actually
+// self-intersecting design — it's floating-point noise: two flattened curve segments (from
+// bezier/arc subdivision) meeting at a seam that's off by ~1e-10 instead of being bit-identical.
+// Strict polygon-clipping libraries treat that as a non-simple polygon and throw. Fix it at the
+// source, in plain coordinate math (no dependency on any geo library's internals): collapse
+// consecutive points that are closer together than a tiny fixed epsilon.
+function dedupeRing(ring, eps=1e-6){
+  if(ring.length<4) return ring;
+  const out = [ring[0]];
+  for(let i=1;i<ring.length;i++){
+    const p=ring[i], prev=out[out.length-1];
+    if(Math.hypot(p.x-prev.x, p.y-prev.y) > eps) out.push(p);
+  }
+  if(out.length>1 && Math.hypot(out[0].x-out[out.length-1].x, out[0].y-out[out.length-1].y) <= eps){
+    out.pop(); // drop redundant closing point, we re-close below
+  }
+  if(out.length<3) return ring;
+  out.push(out[0]);
+  return out;
+}
+
+function safeUnion(a,b,label){
+  if(!a) return b; if(!b) return a;
+  try{ return turf.union(a,b); }
+  catch(e){
+    warn(`Boolean union failed${label?` for ${label}`:''} (likely a self-intersecting path in the source SVG) — using the unmerged shape as a fallback, so this region may be missing part of its area.`);
+    return a;
+  }
+}
+function safeDiff(a,b,label){
+  if(!a) return null; if(!b) return a;
+  try{ return turf.difference(a,b); }
+  catch(e){
+    warn(`Boolean subtraction failed${label?` for ${label}`:''} (likely a self-intersecting path in the source SVG) — that region may overlap its neighbor instead of having the overlap cut out.`);
+    return a;
+  }
+}
+
+// Compute, per color, the net *visible* region accounting for paint order (later elements occlude earlier ones).
+function computeNetRegionsByColor(shapes){
+  const features = shapes.map(shapeToFeature).map((f,idx)=>({f, color:shapes[idx].fill}));
+  const byColor = {};
+  let covered = null;
+  for(let i=features.length-1;i>=0;i--){
+    const {f,color} = features[i];
+    if(!f) continue;
+    const visible = covered ? safeDiff(f, covered, `color ${color}`) : f;
+    if(visible){
+      byColor[color] = byColor[color] ? safeUnion(byColor[color], visible, `color ${color}`) : visible;
+    }
+    covered = covered ? safeUnion(covered, f, `an element under color ${color}`) : f;
+  }
+  return { byColor, allCovered: covered };
+}
+
+/* ============================================================================
+   PART 3 — THREE.js GEOMETRY BUILD (slab-stack pocket model)
+   ============================================================================ */
+
+function ringToShapePoints(ring){
+  // drop duplicate closing point; three.Shape doesn't want it repeated
+  const pts = ring.map(c=>new THREE.Vector2(c[0],c[1]));
+  if(pts.length>1 && pts[0].distanceTo(pts[pts.length-1])<1e-6) pts.pop();
+  return pts;
+}
+
+function featureToShapes(feature){
+  if(!feature) return [];
+  const polys = feature.geometry.type==='Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+  const shapes = [];
+  polys.forEach(poly=>{
+    if(!poly.length) return;
+    const outer = poly[0];
+    const shape = new THREE.Shape(ringToShapePoints(outer));
+    for(let i=1;i<poly.length;i++){
+      shape.holes.push(new THREE.Path(ringToShapePoints(poly[i])));
+    }
+    shapes.push(shape);
+  });
+  return shapes;
+}
+
+function footprintFeature(kind, params){
+  let ring;
+  if(kind==='disc'){
+    const r = params.diameter/2, segs=128, pts=[];
+    for(let i=0;i<segs;i++){ const t=i/segs*Math.PI*2; pts.push([r*Math.cos(t), r*Math.sin(t)]); }
+    pts.push(pts[0]); ring = pts;
+  } else if(kind==='rect'){
+    const w=params.width/2, h=params.height/2;
+    ring = [[-w,-h],[w,-h],[w,h],[-w,h],[-w,-h]];
+  } else if(kind==='round'){
+    const w=params.width/2, h=params.height/2, r=Math.min(params.corner, w, h), seg=12, pts=[];
+    const corners=[[w-r,-h+r,-90,0],[w-r,h-r,0,90],[-w+r,h-r,90,180],[-w+r,-h+r,180,270]];
+    corners.forEach(([ccx,ccy,a0,a1])=>{
+      for(let k=0;k<=seg;k++){ const t=(a0+(a1-a0)*k/seg)*Math.PI/180; pts.push([ccx+r*Math.cos(t), ccy+r*Math.sin(t)]); }
+    });
+    pts.push(pts[0]); ring = pts;
+  } else if(kind==='stl'){
+    const w=params.width/2, h=params.height/2;
+    ring = [[-w,-h],[w,-h],[w,h],[-w,h],[-w,-h]];
+  }
+  return { type:'Feature', properties:{}, geometry:{ type:'Polygon', coordinates:[ring] } };
+}
+
+// Fit SVG bbox into the footprint bbox (uniform scale, centered), return an affine [a,b,c,d,e,f]
+function fitTransform(svgBBox, targetW, targetH, marginPct, scaleMult, offsetX, offsetY){
+  const svgW = svgBBox.maxX-svgBBox.minX, svgH = svgBBox.maxY-svgBBox.minY;
+  const mW = targetW*(1-marginPct/50), mH = targetH*(1-marginPct/50); // margin applied on both sides -> /50 not /100*2... marginPct is per-side percent of footprint
+  const autoScale = Math.min(mW/svgW, mH/svgH);
+  const scale = autoScale * (scaleMult||1);
+  const cx = (svgBBox.minX+svgBBox.maxX)/2, cy=(svgBBox.minY+svgBBox.maxY)/2;
+  // SVG y grows downward; our physical plate has +Y "up" on the printed face — flip Y.
+  return { scale, cx, cy, flipY:true, offsetX: offsetX||0, offsetY: offsetY||0 };
+}
+
+function transformFeature(feature, fit){
+  function tp(pt){
+    const x = (pt[0]-fit.cx)*fit.scale + fit.offsetX;
+    const y = (pt[1]-fit.cy)*fit.scale*(fit.flipY?-1:1) + fit.offsetY;
+    return [x,y];
+  }
+  // A pure mirror (flipY) reverses every ring's winding order. That's fine topologically
+  // (exterior/hole relationships are unaffected by a uniform mirror) but it would flip the
+  // extruded mesh's face normals inward. Re-reverse each ring post-mirror to restore the
+  // original winding sense so extrusion produces outward-facing normals.
+  function fixRing(ring){ const m = ring.map(tp); return fit.flipY ? m.slice().reverse() : m; }
+  function walkGeom(geom){
+    if(geom.type==='Polygon'){
+      return { type:'Polygon', coordinates: geom.coordinates.map(fixRing) };
+    } else {
+      return { type:'MultiPolygon', coordinates: geom.coordinates.map(poly=>poly.map(fixRing)) };
+    }
+  }
+  return { type:'Feature', properties:feature.properties, geometry: walkGeom(feature.geometry) };
+}
+
+// Resolve raw per-color regions into the final list of "regions to cut", collapsing
+// any user-defined merge groups (2+ raw colors sharing one recess/one filament) into
+// a single region each. Everything downstream (depth, geometry, export) treats a
+// merged group exactly like a normal color, keyed by a stable group id instead of a hex.
+function applyColorMerges(byColor, mergeGroups){
+  const used = new Set();
+  const out = [];
+  (mergeGroups||[]).forEach(group=>{
+    const members = group.filter(h=>byColor[h]);
+    if(members.length<2) return;
+    let feat=null;
+    members.forEach(h=>{ feat = feat?safeUnion(feat,byColor[h]):byColor[h]; used.add(h); });
+    if(!feat) return;
+    const key = 'merge:'+members.slice().sort().join(',');
+    out.push({ key, members, feature:feat, isMerge:true, previewColor: blendHexes(members) });
+  });
+  Object.keys(byColor).forEach(h=>{
+    if(used.has(h)) return;
+    out.push({ key:h, members:[h], feature:byColor[h], isMerge:false, previewColor:h });
+  });
+  return out;
+}
+function blendHexes(hexes){
+  const rgbs = hexes.map(hexToRgb);
+  const r = Math.round(rgbs.reduce((s,c)=>s+c.r,0)/rgbs.length);
+  const g = Math.round(rgbs.reduce((s,c)=>s+c.g,0)/rgbs.length);
+  const b = Math.round(rgbs.reduce((s,c)=>s+c.b,0)/rgbs.length);
+  return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
+// Build the full mesh set: { baseGroup, colorMeshes:[{color,mesh,depth}] }
+function buildGeometry(state){
+  const { parsed, colorSettings, baseParams, shapeKind, globalDepth, recessBg, bgDepth, mergeGroups } = state;
+  if(!parsed) return null;
+
+  const { byColor, allCovered } = computeNetRegionsByColor(parsed.shapes);
+
+  let footW, footH;
+  if(shapeKind==='disc'){ footW = baseParams.diameter; footH = baseParams.diameter; }
+  else if(shapeKind==='rect'){ footW = baseParams.width; footH = baseParams.height; }
+  else if(shapeKind==='round'){ footW = baseParams.width; footH = baseParams.height; }
+  else { footW = baseParams.width; footH = baseParams.height; }
+
+  const fit = fitTransform(parsed.bbox, footW, footH, baseParams.marginPct, baseParams.scaleMult, baseParams.offsetX, baseParams.offsetY);
+  const footprint = footprintFeature(shapeKind, baseParams);
+  const thickness = baseParams.thickness;
+
+  // transform + collect active color/merged-group regions with their depth
+  const resolvedRegions = applyColorMerges(byColor, mergeGroups);
+  const colorEntries = [];
+  resolvedRegions.forEach(r=>{
+    const feat = transformFeature(r.feature, fit);
+    const depth = Math.min(Math.max((colorSettings[r.key]&&colorSettings[r.key].depth)||globalDepth, 0.02), thickness-0.05);
+    colorEntries.push({ color: r.previewColor, key:r.key, members:r.members, isMerge:r.isMerge, feature: feat, depth });
+  });
+
+  // leftover background region
+  let unionAll = null;
+  colorEntries.forEach(c=>{ unionAll = safeUnion(unionAll, c.feature); });
+  let leftover = unionAll ? safeDiff(footprint, unionAll) : footprint;
+
+  if(recessBg && leftover){
+    colorEntries.push({ color:'#cfd6dc', key:'__background__', members:['__background__'], isMerge:false, feature: leftover, depth: Math.min(Math.max(bgDepth||globalDepth,0.02), thickness-0.05), isBackground:true });
+    leftover = null;
+  }
+
+  // ---- base/plinth: stacked slabs between distinct depth boundaries ----
+  const boundarySet = new Set([0, thickness]);
+  colorEntries.forEach(c=>boundarySet.add(c.depth));
+  const boundaries = Array.from(boundarySet).sort((a,b)=>a-b);
+
+  const baseGroup = new THREE.Group();
+  baseGroup.name = 'base';
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0xb9c0c6, roughness:0.75, metalness:0.05, side: THREE.DoubleSide });
+
+  // precompute cumulative unions from deepest boundary outward (regions with depth > u_a)
+  for(let i=0;i<boundaries.length-1;i++){
+    const uA = boundaries[i], uB = boundaries[i+1];
+    if(uB-uA < 1e-6) continue;
+    const openRegions = colorEntries.filter(c=>c.depth > uA + 1e-6);
+    let removed = null;
+    openRegions.forEach(c=>{ removed = safeUnion(removed, c.feature); });
+    const layerPoly = removed ? safeDiff(footprint, removed) : footprint;
+    if(!layerPoly) continue;
+    const shapes = featureToShapes(layerPoly);
+    if(!shapes.length) continue;
+    const geo = new THREE.ExtrudeGeometry(shapes, { depth: uB-uA, bevelEnabled:false, curveSegments: 1 });
+    const mesh = new THREE.Mesh(geo, baseMat);
+    mesh.position.z = thickness - uB;
+    baseGroup.add(mesh);
+  }
+
+  // ---- per-color plugs ----
+  const colorMeshes = colorEntries.map(c=>{
+    const shapes = featureToShapes(c.feature);
+    if(!shapes.length) return null;
+    const geo = new THREE.ExtrudeGeometry(shapes, { depth: c.depth, bevelEnabled:false, curveSegments:1 });
+    const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(c.color), roughness:0.55, metalness:0.05, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.z = thickness - c.depth;
+    mesh.name = c.key;
+    return { color:c.color, key:c.key, members:c.members, isMergeGroup:c.isMerge, depth:c.depth, mesh, area: turf.area(c.feature), isBackground: !!c.isBackground };
+  }).filter(Boolean);
+
+  const totalArea = colorMeshes.reduce((s,c)=>s+c.area,0) || 1;
+  colorMeshes.forEach(c=>c.areaPct = 100*c.area/totalArea);
+
+  return { baseGroup, colorMeshes, thickness, footW, footH };
+}
+
+/* ============================================================================
+   PART 3.5 — RASTER PIPELINE (assembly mode)
+   Renders the SVG through the browser's own engine (correct paint-order and
+   fill-rule handling by construction — no vector-boolean library needed) and
+   works from the resulting pixel grid. Used for Assembly mode, where the
+   target isn't a simple parametric plate but one or more real mesh faces.
+   ============================================================================ */
+
+// Cluster near-duplicate colors (common in real-world exports: antialiasing/
+// recompression can split what should be one flat color into several hex
+// values a few RGB units apart). Without this, "black" can silently become
+// 4-5 redundant AMS slots.
+function clusterPaletteColors(hexList, threshold=20){
+  function toRgb(h){ const n=parseInt(h.slice(1),16); return [ (n>>16)&255, (n>>8)&255, n&255 ]; }
+  const rgbs = hexList.map(toRgb);
+  const clusters = []; // each: {members:[idx...], sum:[r,g,b]}
+  hexList.forEach((h,i)=>{
+    const rgb = rgbs[i];
+    let placed = null;
+    for(const c of clusters){
+      const avg = c.sum.map(v=>v/c.members.length);
+      const d = Math.hypot(rgb[0]-avg[0], rgb[1]-avg[1], rgb[2]-avg[2]);
+      if(d < threshold){ placed = c; break; }
+    }
+    if(placed){ placed.members.push(h); placed.sum = placed.sum.map((v,k)=>v+rgb[k]); }
+    else clusters.push({ members:[h], sum: rgb.slice() });
+  });
+  return clusters.map(c=>{
+    const avg = c.sum.map(v=>Math.round(v/c.members.length));
+    return { hex: '#'+avg.map(v=>v.toString(16).padStart(2,'0')).join(''), members: c.members };
+  });
+}
+
+function extractRawFillColors(svgText){
+  const hexes = new Set();
+  const re1 = /fill:\s*(#[0-9a-fA-F]{6})/g;
+  const re2 = /fill="(#[0-9a-fA-F]{6})"/g;
+  let m;
+  while((m = re1.exec(svgText))) hexes.add(m[1].toLowerCase());
+  while((m = re2.exec(svgText))) hexes.add(m[1].toLowerCase());
+  return Array.from(hexes);
+}
+
+// Rasterize an SVG string to an ImageData at the given pixel size (square).
+async function rasterizeSVG(svgText, pxSize){
+  const blob = new Blob([svgText], { type:'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  try{
+    const img = await new Promise((resolve,reject)=>{
+      const im = new Image();
+      im.onload = ()=>resolve(im);
+      im.onerror = reject;
+      im.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = pxSize; canvas.height = pxSize;
+    const ctx = canvas.getContext('2d', { willReadFrequently:true });
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, 0, 0, pxSize, pxSize);
+    return ctx.getImageData(0, 0, pxSize, pxSize);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+// Classify every pixel to the nearest palette color. Returns Int8Array (class index per pixel, row-major).
+function classifyRaster(imageData, paletteHexes){
+  const { width:w, height:h, data } = imageData;
+  const pal = paletteHexes.map(hex=>{
+    const n = parseInt(hex.slice(1),16);
+    return [(n>>16)&255, (n>>8)&255, n&255];
+  });
+  const classes = new Int8Array(w*h);
+  const bestDist = new Float32Array(w*h).fill(Infinity);
+  classes.fill(-1);
+  for(let ci=0; ci<pal.length; ci++){
+    const [pr,pg,pb] = pal[ci];
+    for(let p=0, di=0; p<w*h; p++, di+=4){
+      const a = data[di+3];
+      if(a < 8) continue; // transparent -> leave unclassified (-1)
+      const dr=data[di]-pr, dg=data[di+1]-pg, db=data[di+2]-pb;
+      const d = dr*dr+dg*dg+db*db;
+      if(d < bestDist[p]){ bestDist[p]=d; classes[p]=ci; }
+    }
+  }
+  return classes;
+}
+
+/* ============================================================================
+   PART 3.6 — MESH PART LOADING (STL/3MF, flat-face auto-detection)
+   ============================================================================ */
+
+// Minimal 3MF reader: it's a zip containing 3D/3dmodel.model (XML). Returns
+// {positions: Float32Array(N*9), triCount} — a flat triangle soup, matching
+// what we get from STLLoader, so downstream code doesn't care which format.
+async function load3MF(arrayBuffer){
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const modelFile = zip.file('3D/3dmodel.model');
+  if(!modelFile) throw new Error('Not a valid 3MF: missing 3D/3dmodel.model');
+  const xmlText = await modelFile.async('string');
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  const objects = doc.getElementsByTagName('object');
+  const allVerts = [];
+  const allTris = [];
+  for(const obj of objects){
+    const mesh = obj.getElementsByTagName('mesh')[0];
+    if(!mesh) continue;
+    const base = allVerts.length;
+    const vElems = mesh.getElementsByTagName('vertex');
+    for(const v of vElems) allVerts.push([+v.getAttribute('x'), +v.getAttribute('y'), +v.getAttribute('z')]);
+    const tElems = mesh.getElementsByTagName('triangle');
+    for(const t of tElems) allTris.push([base+ +t.getAttribute('v1'), base+ +t.getAttribute('v2'), base+ +t.getAttribute('v3')]);
+  }
+  const positions = new Float32Array(allTris.length*9);
+  allTris.forEach((tri,i)=>{
+    tri.forEach((vi,k)=>{
+      positions[i*9+k*3] = allVerts[vi][0];
+      positions[i*9+k*3+1] = allVerts[vi][1];
+      positions[i*9+k*3+2] = allVerts[vi][2];
+    });
+  });
+  return { positions, triCount: allTris.length };
+}
+
+// Detect the dominant flat coplanar patch (by normal+offset clustering), matching the
+// heuristic proven out against the real wheel files: group triangles by rounded
+// (normal, offset), the largest-area group not at the model's obvious "busy" side wins by
+// default, but the caller can pick a specific one from the returned ranked list.
+function detectFlatPatches(positions){
+  const triCount = positions.length/9;
+  const buckets = new Map(); // key "nx,ny,nz,off" -> {area, normal, offset, triIndices:[]}
+  for(let i=0;i<triCount;i++){
+    const o = i*9;
+    const p0=[positions[o],positions[o+1],positions[o+2]];
+    const p1=[positions[o+3],positions[o+4],positions[o+5]];
+    const p2=[positions[o+6],positions[o+7],positions[o+8]];
+    const e1=[p1[0]-p0[0],p1[1]-p0[1],p1[2]-p0[2]];
+    const e2=[p2[0]-p0[0],p2[1]-p0[1],p2[2]-p0[2]];
+    const n=[e1[1]*e2[2]-e1[2]*e2[1], e1[2]*e2[0]-e1[0]*e2[2], e1[0]*e2[1]-e1[1]*e2[0]];
+    const len = Math.hypot(n[0],n[1],n[2]);
+    if(len < 1e-9) continue;
+    const nu = [n[0]/len, n[1]/len, n[2]/len];
+    const area = len/2;
+    const offset = nu[0]*p0[0]+nu[1]*p0[1]+nu[2]*p0[2];
+    const key = [nu[0].toFixed(2), nu[1].toFixed(2), nu[2].toFixed(2), offset.toFixed(2)].join(',');
+    if(!buckets.has(key)) buckets.set(key, { area:0, normal:nu, offset, triIndices:[] });
+    const b = buckets.get(key);
+    b.area += area; b.triIndices.push(i);
+  }
+  return Array.from(buckets.values()).sort((a,b)=>b.area-a.area);
+}
+
+// Chain the boundary edges of a triangle patch into closed loops (an edge used by exactly
+// one triangle, with no matching reverse edge in the patch, is a boundary edge).
+function extractPatchBoundary(positions, triIndices){
+  const edgeMap = new Map(); // "a" vertex-key -> next vertex-key (for boundary chain)
+  const posOf = new Map();
+  function vkey(x,y,z){ return [x,y,z].map(v=>v.toFixed(4)).join(','); }
+  function addVert(x,y,z){ const k=vkey(x,y,z); posOf.set(k,[x,y,z]); return k; }
+  const seen = new Map(); // edge "a|b" -> count
+  triIndices.forEach(i=>{
+    const o=i*9;
+    const pts = [0,1,2].map(k=>addVert(positions[o+k*3],positions[o+k*3+1],positions[o+k*3+2]));
+    for(let k=0;k<3;k++){
+      const a=pts[k], b=pts[(k+1)%3];
+      seen.set(a+'|'+b, (seen.get(a+'|'+b)||0)+1);
+    }
+  });
+  seen.forEach((cnt,key)=>{
+    const [a,b] = key.split('|');
+    const rev = b+'|'+a;
+    if(!seen.has(rev)) edgeMap.set(a,b);
+  });
+  const loops = [];
+  const used = new Set();
+  for(const start of edgeMap.keys()){
+    if(used.has(start)) continue;
+    const loop=[start]; used.add(start);
+    let cur = edgeMap.get(start);
+    let guard=0;
+    while(cur !== start && edgeMap.has(cur) && !used.has(cur) && guard++<100000){
+      loop.push(cur); used.add(cur); cur = edgeMap.get(cur);
+    }
+    loops.push(loop.map(k=>posOf.get(k)));
+  }
+  return loops; // array of loops, each an array of [x,y,z]
+}
+
+// The rest of a part's real geometry, minus the flat face being replaced — a preview-only
+// context mesh so Assembly mode shows what the insert actually sits inside, instead of just
+// the insert floating on its own. Excluding the replaced face avoids z-fighting against the
+// insert's own top surface in unrecessed areas.
+function excludeTriangles(positions, excludeIndices){
+  const exclude = new Set(excludeIndices);
+  const triCount = positions.length/9;
+  const out = new Float32Array((triCount - exclude.size) * 9);
+  let w = 0;
+  for(let i=0;i<triCount;i++){
+    if(exclude.has(i)) continue;
+    const o = i*9;
+    for(let k=0;k<9;k++) out[w++] = positions[o+k];
+  }
+  return out;
+}
+
+/* ============================================================================
+   PART 3.7 — HEIGHTFIELD MESH BUILD (assembly mode geometry)
+   Grid/voxel-style solid construction: no polygon triangulation library needed,
+   each occupied cell emits its own top+bottom+wall triangles directly. Proven
+   against the real wheel geometry (see project notes) — every group is an
+   independently closed, watertight, printable solid.
+   ============================================================================ */
+
+// bottomOf/topOf: Float32Array(H*W); included: Uint8Array(H*W) (1/0)
+// Returns Float32Array of interleaved triangle vertices (N*9), ready for a BufferGeometry.
+function buildHeightfieldSolid(H, W, included, bottomOf, topOf, cellSize, originX, originZ){
+  const tris = [];
+  function idx(i,j){ return i*W+j; }
+  for(let i=0;i<H;i++){
+    for(let j=0;j<W;j++){
+      const id = idx(i,j);
+      if(!included[id]) continue;
+      const top = topOf[id], bot = bottomOf[id];
+      const xa = originX+j*cellSize, xb = originX+(j+1)*cellSize;
+      const za = originZ+i*cellSize, zb = originZ+(i+1)*cellSize;
+      const t00=[xa,top,za], t10=[xb,top,za], t01=[xa,top,zb], t11=[xb,top,zb];
+      const b00=[xa,bot,za], b10=[xb,bot,za], b01=[xa,bot,zb], b11=[xb,bot,zb];
+      pushTri(tris,t00,t10,t11); pushTri(tris,t00,t11,t01);
+      pushTri(tris,b00,b11,b10); pushTri(tris,b00,b01,b11);
+      const neighbors = [
+        [i,j-1,t00,t01], [i,j+1,t10,t11], [i-1,j,t00,t10], [i+1,j,t01,t11],
+      ];
+      for(const [ni,nj,p0,p1] of neighbors){
+        const nInBounds = ni>=0&&ni<H&&nj>=0&&nj<W;
+        const nId = nInBounds ? idx(ni,nj) : -1;
+        const nIncluded = nInBounds && included[nId];
+        const nTop = nIncluded ? topOf[nId] : bot;
+        const lo = nIncluded ? Math.max(nTop, bot) : bot;
+        if(top - lo > 1e-6){
+          const q0=[p0[0],top,p0[2]], q1=[p1[0],top,p1[2]], q2=[p1[0],lo,p1[2]], q3=[p0[0],lo,p0[2]];
+          pushTri(tris,q0,q1,q2); pushTri(tris,q0,q2,q3);
+        }
+      }
+    }
+  }
+  return new Float32Array(tris);
+}
+function pushTri(arr, a,b,c){ arr.push(a[0],a[1],a[2], b[0],b[1],b[2], c[0],c[1],c[2]); }
+
+function bufferGeometryFromTris(float32arr){
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(float32arr, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* ============================================================================
+   PART 3.8 — VECTOR PRISM + MESH-BOOLEAN PIPELINE (assembly mode)
+   Replaces the raster heightfield: color regions come from the SVG's real
+   vector geometry (computeNetRegionsByColor), get extruded into crisp prisms,
+   and are booleaned against the part's actual mesh via Manifold. This is what
+   makes assembly output (a) crisp instead of voxel-stair-stepped, and (b) a
+   full modified part instead of a bare insert plate.
+   ============================================================================ */
+
+// Triangle soup (Float32Array, N*9 interleaved xyz) -> Manifold, welding coincident
+// vertices first (STL/3MF/ExtrudeGeometry are all unindexed soups, so their shared
+// edges are split — merge() re-stitches them so the result reads as a closed solid).
+function soupToManifold(wasm, soup){
+  const { Manifold, Mesh } = wasm;
+  const triCount = soup.length/9;
+  const triVerts = new Uint32Array(triCount*3);
+  for(let i=0;i<triCount*3;i++) triVerts[i]=i;
+  // clone positions: Manifold copies into WASM heap, but never share a buffer we reuse elsewhere
+  const mesh = new Mesh({ numProp:3, vertProperties: Float32Array.from(soup), triVerts });
+  if(typeof mesh.merge === 'function') mesh.merge();
+  return new Manifold(mesh);
+}
+// Manifold returns an empty solid when given input it can't make watertight/manifold
+// (open edges, flipped/duplicated faces, etc.), so a non-empty result is the reliable
+// "this mesh is usable" signal — more version-robust than comparing the status() enum.
+function manifoldIsValid(man){
+  try{ return man.numTri() > 0; }catch(e){ return false; }
+}
+function manifoldToSoup(man){
+  const mesh = man.getMesh();
+  const { numProp, vertProperties, triVerts } = mesh;
+  const out = new Float32Array(triVerts.length*3);
+  for(let t=0;t<triVerts.length;t++){
+    const vi = triVerts[t]*numProp;
+    out[t*3]=vertProperties[vi]; out[t*3+1]=vertProperties[vi+1]; out[t*3+2]=vertProperties[vi+2];
+  }
+  return out;
+}
+function manifoldDelete(m){ if(m && typeof m.delete==='function'){ try{ m.delete(); }catch(e){} } }
+
+// Deep-map every coordinate pair of a turf Polygon/MultiPolygon feature.
+function mapFeatureCoords(feature, fn){
+  const g = feature.geometry;
+  const ring = r => r.map(fn);
+  const poly = p => p.map(ring);
+  const coords = g.type==='Polygon' ? poly(g.coordinates) : g.coordinates.map(poly);
+  return { type:'Feature', properties:{}, geometry:{ type:g.type, coordinates:coords } };
+}
+function safeIntersect(a,b,label){
+  if(!a||!b) return null;
+  try{ return turf.intersect(a,b); }
+  catch(e){ warn(`Clipping color region to the part face failed${label?` for ${label}`:''} — region left unclipped, may extend past the face edge.`); return a; }
+}
+
+// Signed area of a [[x,y],...] ring (>0 = CCW in standard math orientation).
+function ringSignedArea2(ring){
+  let a=0;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){ a += ring[j][0]*ring[i][1] - ring[i][0]*ring[j][1]; }
+  return a/2;
+}
+// Force each polygon's outer ring CCW and holes CW. Turf boolean ops (e.g. the clip to the
+// face boundary) don't guarantee GeoJSON winding, and THREE.ExtrudeGeometry builds an
+// inside-out solid from a CW outer contour — which would make Manifold subtract the region's
+// COMPLEMENT. Normalizing here keeps every prism a proper outward solid.
+function normalizeFeatureWinding(feature){
+  const g = feature.geometry;
+  const fixPoly = poly => poly.map((ring,ri)=>{
+    const wantCCW = ri===0;
+    const isCCW = ringSignedArea2(ring) > 0;
+    return (isCCW!==wantCCW) ? ring.slice().reverse() : ring;
+  });
+  const coords = g.type==='Polygon' ? fixPoly(g.coordinates) : g.coordinates.map(fixPoly);
+  return { type:'Feature', properties:{}, geometry:{ type:g.type, coordinates:coords } };
+}
+
+// Extrude a turf feature (coordinates already in the part's native X/Z mm frame) into a solid
+// prism triangle soup. `sign` is the face's outward direction along Y (+1 = face points +Y,
+// -1 = points -Y). The prism spans from `overshoot` mm OUTSIDE the face plane (faceY) to depth
+// mm INTO the material — the overshoot guarantees the pocket opens cleanly at the surface (a
+// coplanar cut can leave a zero-thickness skin); the part mesh caps the overshoot back to the
+// surface when we intersect for the flush inlay.
+function extrudeRegionToSoup(feature, faceY, depth, overshoot, sign){
+  sign = sign < 0 ? -1 : 1;
+  const shapes = featureToShapes(normalizeFeatureWinding(feature)); // THREE.Shape in (x = worldX, y = worldZ)
+  if(!shapes.length) return null;
+  const total = depth + overshoot;
+  const geo = new THREE.ExtrudeGeometry(shapes, { depth: total, bevelEnabled:false, curveSegments:1 });
+  // local (x, y, z∈[0,total]) -> world (x, faceY + sign*(overshoot - z), y).
+  // z=0 -> faceY + sign*overshoot (just outside the surface); z=total -> faceY - sign*depth (into material).
+  const m = new THREE.Matrix4().set(
+    1, 0, 0,     0,
+    0, 0, -sign, faceY + sign*overshoot,
+    0, 1, 0,     0,
+    0, 0, 0,     1
+  );
+  geo.applyMatrix4(m);
+  const soup = Float32Array.from(geo.attributes.position.array);
+  geo.dispose();
+  // The transform's determinant equals `sign`; when sign<0 it's a reflection that flips every
+  // normal inward, which would make Manifold subtract the region's complement. Swap two corners
+  // of each triangle to restore outward (CCW-from-outside) winding.
+  if(sign < 0){
+    for(let i=0; i<soup.length; i+=9){
+      for(let k=0;k<3;k++){ const t = soup[i+3+k]; soup[i+3+k] = soup[i+6+k]; soup[i+6+k] = t; }
+    }
+  }
+  return soup;
+}
+
+// Triangle soup -> indexed {verts:[x,y,z,...], tris:[i,i,i,...]} for compact 3MF output.
+function soupToIndexed(soup){
+  const map = new Map();
+  const verts = [];
+  const tris = [];
+  for(let i=0;i<soup.length;i+=3){
+    const x=soup[i], y=soup[i+1], z=soup[i+2];
+    const k = x.toFixed(4)+','+y.toFixed(4)+','+z.toFixed(4);
+    let idx = map.get(k);
+    if(idx===undefined){ idx = verts.length/3; verts.push(x,y,z); map.set(k, idx); }
+    tris.push(idx);
+  }
+  return { verts, tris };
+}
+function xmlEscape(s){ return String(s).replace(/[<>&"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+function fmtCoord(v){ return Number.isFinite(v) ? v.toFixed(5) : '0'; }
+
+// Build one .3mf (OPC zip) carrying several objects — the modified part body plus one
+// solid per color — each tagged to a <base> material so Bambu Studio maps it to its own
+// filament automatically. Returns a Promise<Blob>. objects: [{name, colorHex, soup}].
+async function build3MF(objects){
+  const z = new JSZip();
+  z.file('[Content_Types].xml',
+`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>`);
+  z.file('_rels/.rels',
+`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>`);
+
+  const bases = objects.map(o=>`   <base name="${xmlEscape(o.name)}" displaycolor="${(o.colorHex||'#CCCCCC').replace('#','#').toUpperCase()}FF"/>`).join('\n');
+  let objXml = '';
+  const items = [];
+  objects.forEach((o,i)=>{
+    const { verts, tris } = soupToIndexed(o.soup);
+    const oid = i+2; // resource id 1 is the basematerials group
+    const vlines = [];
+    for(let v=0; v<verts.length; v+=3) vlines.push(`<vertex x="${fmtCoord(verts[v])}" y="${fmtCoord(verts[v+1])}" z="${fmtCoord(verts[v+2])}"/>`);
+    const tlines = [];
+    for(let t=0; t<tris.length; t+=3) tlines.push(`<triangle v1="${tris[t]}" v2="${tris[t+1]}" v3="${tris[t+2]}"/>`);
+    objXml +=
+`  <object id="${oid}" type="model" pid="1" pindex="${i}">
+   <mesh>
+    <vertices>
+${vlines.join('\n')}
+    </vertices>
+    <triangles>
+${tlines.join('\n')}
+    </triangles>
+   </mesh>
+  </object>
+`;
+    items.push(`  <item objectid="${oid}"/>`);
+  });
+  const model =
+`<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+ <resources>
+  <basematerials id="1">
+${bases}
+  </basematerials>
+${objXml} </resources>
+ <build>
+${items.join('\n')}
+ </build>
+</model>`;
+  z.file('3D/3dmodel.model', model);
+  return z.generateAsync({ type:'blob' });
+}
+
+
+/* ============================================================================
+   PART 4 — UI STATE + WIRING
+   ============================================================================ */
+
+const state = {
+  parsed: null,
+  shapeKind: 'disc',
+  colorSettings: {}, // key (hex, or "merge:a,b,c") -> {depth}
+  stlRefMesh: null,
+  mergeGroups: [], // array of arrays of raw hex codes; each inner array = one merged AMS slot
+  selectedForMerge: new Set(), // raw hex codes currently checked in the color list
+  assembly: {
+    kindId: null,    // currently selected ASSEMBLY_KINDS id, e.g. 'wheel'
+    parts: [],       // {id, name, roleId, positions, restPositions, patches, patchIdx, boundaryLoop, topZ, baseDepth, isDuplicateOf, pivotX, pivotZ, angleDeg, loaded}
+    palette: null,   // array of {hex, members}
+    classified: null,// Int8Array, per-pixel class index
+    rasterSize: 0,
+    nextPartId: 1,
+    library: [],     // array of {id, name, file, baseDepth?} loaded from stl/parts.json
+  },
+};
+
+/* ============================================================================
+   PART 4.5 — ASSEMBLY MODE (multi-part, real-mesh face cutting)
+
+   An assembly is a fixed, small set of part *roles* (e.g. a wheel is exactly
+   Top + Cap, where Top additionally allows rotated-copy instances — the same
+   physical STL reused at a different position, not a separate upload). This
+   is deliberately inline data, not a fetched manifest like stl/parts.json:
+   it defines what UI even renders, so a fetch dependency here would break
+   Assembly mode's whole UI over file:// instead of just losing an auto-load
+   convenience. Adding a future assembly (other TMT parts) is one array
+   entry, no new logic.
+   ============================================================================ */
+
+const ASSEMBLY_KINDS = [
+  {
+    id: 'wheel',
+    name: 'Wheel (Top ×2 + Cap)',
+    // `copies` = how many rotated copies "Load full assembly" auto-adds beyond the primary
+    // (so top = 1 primary + 1 rotated copy = 2 physical tops); copyDefaults seed each copy's
+    // pivot/angle (same values the manual "+ Add rotated copy" button uses — tweak in the row).
+    roles: [
+      { id: 'top', name: 'Top', libraryPartId: 'top', allowRotatedCopies: true, copies: 1, copyDefaults: { pivotX:0, pivotZ:0, angleDeg:180 } },
+      { id: 'cap', name: 'Cap', libraryPartId: 'cap', allowRotatedCopies: false },
+    ],
+  },
+];
+
+function asmCreateRolePart(role){
+  const id = state.assembly.nextPartId++;
+  const part = {
+    id, name: role.name, roleId: role.id, positions:null, patches:null, patchIdx:0, boundaryLoop:null,
+    topZ:0, baseDepth:3.0, isDuplicateOf:null, pivotX:0, pivotZ:0, angleDeg:180, loaded:false,
+  };
+  state.assembly.parts.push(part);
+  return part;
+}
+function asmAddRolePart(role){
+  const part = asmCreateRolePart(role);
+  renderAssemblyRoleControls();
+  renderAssemblyPartList();
+  const entry = role.libraryPartId && state.assembly.library.find(e=>e.id===role.libraryPartId);
+  if(entry) asmLoadLibraryEntryIntoPart(part, entry);
+}
+
+// True when every library-linked role for this assembly has a manifest entry available
+// (i.e. stl/parts.json loaded — only happens when served over HTTP, not file://).
+function asmKindCanAutoLoad(kind){
+  return !!kind && kind.roles.every(r => !r.libraryPartId || state.assembly.library.find(e=>e.id===r.libraryPartId));
+}
+// One-click "load the whole assembly": fetch + face-detect every role's primary, then add its
+// default rotated copies — no manual per-part drag/click. Awaits each primary's load before
+// duplicating it, since a rotated copy clones the source's (by-then loaded) geometry.
+async function asmLoadFullAssembly(){
+  const kind = currentAssemblyKind();
+  if(!kind) return;
+  if(!asmKindCanAutoLoad(kind)){
+    alert(`Can't auto-load ${kind.name}: the parts library (stl/parts.json) isn't reachable. Serve the folder over HTTP (see README) or drag the parts in manually.`);
+    return;
+  }
+  if(state.assembly.parts.length && !confirm(`Load the full ${kind.name}? This clears any parts you've already added.`)) return;
+  state.assembly.parts = [];
+  $('#loading-text').textContent = `Loading ${kind.name}…`;
+  $('#loading-overlay').style.display = 'flex';
+  try{
+    for(const role of kind.roles){
+      const entry = role.libraryPartId && state.assembly.library.find(e=>e.id===role.libraryPartId);
+      const primary = asmCreateRolePart(role);
+      if(entry) await asmLoadLibraryEntryIntoPart(primary, entry);
+      if(role.allowRotatedCopies){
+        for(let i=0; i<(role.copies||0); i++){
+          const dup = asmAddDuplicate(primary.id);
+          if(dup && role.copyDefaults) Object.assign(dup, role.copyDefaults);
+        }
+      }
+    }
+  }catch(e){ console.error(e); alert('Failed to load the assembly: '+e.message); }
+  renderAssemblyRoleControls();
+  renderAssemblyPartList();
+  $('#loading-overlay').style.display = 'none';
+  scheduleRebuild();
+}
+async function asmLoadLibraryEntryIntoPart(part, entry){
+  if(entry.baseDepth) part.baseDepth = entry.baseDepth;
+  try{
+    const res = await fetch(entry.file);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const buf = await res.arrayBuffer();
+    await asmLoadPartBuffer(part, buf, entry.file);
+  }catch(e){
+    alert(`Could not load library part "${entry.name}" from ${entry.file}: ${e.message}`);
+  }
+}
+function asmAddRoleDuplicate(role){
+  const src = state.assembly.parts.find(p=>p.roleId===role.id && !p.isDuplicateOf);
+  if(!src) return;
+  asmAddDuplicate(src.id);
+}
+function renderAssemblyKindSelect(){
+  const sel = $('#p-asm-kind');
+  if(!sel) return;
+  sel.innerHTML = ASSEMBLY_KINDS.map(k=>
+    `<option value="${k.id}" ${k.id===state.assembly.kindId?'selected':''}>${k.name}</option>`
+  ).join('');
+}
+function currentAssemblyKind(){
+  return ASSEMBLY_KINDS.find(k=>k.id===state.assembly.kindId) || null;
+}
+function renderAssemblyRoleControls(){
+  const box = $('#assembly-role-controls');
+  if(!box) return;
+  const kind = currentAssemblyKind();
+  if(!kind){ box.innerHTML=''; return; }
+  const buttons = [];
+  kind.roles.forEach(role=>{
+    const primary = state.assembly.parts.find(p=>p.roleId===role.id && !p.isDuplicateOf);
+    if(!primary) buttons.push(`<button class="btn small" data-role-add="${role.id}">+ Add ${role.name}</button>`);
+    else if(role.allowRotatedCopies) buttons.push(`<button class="btn small" data-role-dup="${role.id}">+ Add rotated copy of ${role.name}</button>`);
+  });
+  const canAutoLoad = asmKindCanAutoLoad(kind);
+  let html = '';
+  if(canAutoLoad){
+    html += `<div class="btn-row" style="margin-bottom:6px;"><button class="btn small full" data-load-full>Load full ${kind.name.replace(/\s*\(.*\)\s*$/,'')} (all parts)</button></div>`;
+  }
+  html += buttons.length
+    ? `<div class="btn-row" style="flex-wrap:wrap;margin-bottom:8px;">${buttons.join('')}</div>`
+    : `<div class="hint" style="margin-bottom:8px;">All roles for this assembly are filled.</div>`;
+  if(canAutoLoad && buttons.length){
+    html += `<div class="hint" style="margin-bottom:8px;">Or add parts one at a time with the buttons above.</div>`;
+  }
+  box.innerHTML = html;
+  const fullBtn = box.querySelector('[data-load-full]');
+  if(fullBtn) fullBtn.addEventListener('click', asmLoadFullAssembly);
+  box.querySelectorAll('[data-role-add]').forEach(btn=>btn.addEventListener('click', ()=>{
+    const role = kind.roles.find(r=>r.id===btn.dataset.roleAdd); if(role) asmAddRolePart(role);
+  }));
+  box.querySelectorAll('[data-role-dup]').forEach(btn=>btn.addEventListener('click', ()=>{
+    const role = kind.roles.find(r=>r.id===btn.dataset.roleDup); if(role) asmAddRoleDuplicate(role);
+  }));
+}
+
+function asmAddDuplicate(sourceId){
+  const src = state.assembly.parts.find(p=>p.id===sourceId);
+  if(!src) return null;
+  const id = state.assembly.nextPartId++;
+  const dup = {
+    id, name: `${src.name} (rotated copy)`, roleId: src.roleId, positions: src.positions, patches: src.patches,
+    patchIdx: src.patchIdx, boundaryLoop: src.boundaryLoop, restPositions: src.restPositions, topZ: src.topZ, baseDepth: src.baseDepth,
+    patchNormal: src.patchNormal, isDuplicateOf: sourceId, pivotX:0, pivotZ:0, angleDeg:180, loaded: src.loaded,
+  };
+  state.assembly.parts.push(dup);
+  renderAssemblyRoleControls();
+  renderAssemblyPartList();
+  return dup;
+}
+function asmRemovePart(id){
+  state.assembly.parts = state.assembly.parts.filter(p=>p.id!==id && p.isDuplicateOf!==id);
+  renderAssemblyRoleControls();
+  renderAssemblyPartList();
+  requestFrame();
+  scheduleRebuild();
+}
+
+// Core mesh-buffer loader, shared by drag-and-drop upload and the parts library (fetch()).
+async function asmLoadPartBuffer(part, buf, filename){
+  const lower = filename.toLowerCase();
+  let positions;
+  if(lower.endsWith('.3mf')){
+    const r = await load3MF(buf);
+    positions = r.positions;
+  } else if(lower.endsWith('.stl')){
+    const geo = new STLLoader().parse(buf);
+    positions = geo.attributes.position.array;
+  } else {
+    throw new Error('Unsupported file type — use .stl or .3mf');
+  }
+  const patches = detectFlatPatches(positions);
+  part.positions = positions;
+  part.patches = patches;
+  requestFrame(); // new part geometry — re-fit the view
+  part.patchIdx = 0; // default: largest-area patch (proven correct on the reference wheel; override via dropdown if wrong)
+  applyAsmPatchChoice(part);
+  part.loaded = true;
+  renderAssemblyPartList();
+  scheduleRebuild();
+}
+async function asmLoadPartFile(part, file){
+  const buf = await file.arrayBuffer();
+  try{ await asmLoadPartBuffer(part, buf, file.name); }
+  catch(e){ alert(e.message); }
+}
+
+// ---- Parts library: project-specific STL/3MF files served from stl/parts.json, so a role with
+// a matching libraryPartId (see ASSEMBLY_KINDS) auto-loads instead of requiring drag-and-drop.
+// Purely additive — a missing/unreachable manifest just leaves state.assembly.library empty, and
+// roles fall back to plain drag-and-drop, same as a role with no libraryPartId at all. Adding a
+// new part later is "drop the file in stl/ + add one manifest entry", no code changes.
+async function loadPartsLibrary(){
+  if(location.protocol === 'file:') return; // fetch() can't read local files from a double-clicked index.html
+  try{
+    const res = await fetch('stl/parts.json');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    state.assembly.library = await res.json();
+    // the manifest may land after the user already opened Assembly mode — re-render so the
+    // "Load full assembly" button (which depends on the library being present) shows up.
+    if(state.shapeKind==='assembly') renderAssemblyRoleControls();
+  }catch(e){
+    // no manifest present — silently do nothing, this is optional
+  }
+}
+function applyAsmPatchChoice(part){
+  if(!part.patches || !part.patches.length) return;
+  const patch = part.patches[part.patchIdx];
+  part.topZ = patch.offset;
+  part.patchNormal = patch.normal;
+  const loops = extractPatchBoundary(part.positions, patch.triIndices);
+  loops.sort((a,b)=>b.length-a.length);
+  part.boundaryLoop = loops[0] || null;
+  part.restPositions = excludeTriangles(part.positions, patch.triIndices);
+}
+
+function renderAssemblyPartList(){
+  const box = $('#assembly-part-list');
+  if(!box) return;
+  box.innerHTML = '';
+  state.assembly.parts.forEach(part=>{
+    const row = document.createElement('div');
+    row.className = 'color-row';
+    row.style.marginBottom = '8px';
+    if(part.isDuplicateOf){
+      const src = state.assembly.parts.find(p=>p.id===part.isDuplicateOf);
+      row.innerHTML = `
+        <div class="top"><div class="hex">${part.name}</div></div>
+        <div class="hint">Reuses ${src?src.name:'?'}'s geometry, rotated into position for design-fitting purposes. Exported cut is re-oriented back to this part's native (unrotated) print orientation.</div>
+        <div class="depth-row"><label>pivot X</label><input type="number" step="0.1" value="${part.pivotX}" data-asm="pivotX" style="width:56px;"></div>
+        <div class="depth-row"><label>pivot Z</label><input type="number" step="0.1" value="${part.pivotZ}" data-asm="pivotZ" style="width:56px;"></div>
+        <div class="depth-row"><label>angle°</label><input type="number" step="1" value="${part.angleDeg}" data-asm="angleDeg" style="width:56px;"></div>
+        <button class="btn small" data-asm-remove style="margin-top:6px;">Remove</button>
+      `;
+    } else {
+      const statusText = part.loaded
+        ? `face detected: normal (${part.patchNormal.map(v=>v.toFixed(2)).join(', ')}), plane offset ${part.topZ.toFixed(2)}mm, ${part.boundaryLoop?part.boundaryLoop.length:0}-pt boundary`
+        : 'no file loaded yet';
+      const patchOptions = (part.patches||[]).slice(0,6).map((p,i)=>
+        `<option value="${i}" ${i===part.patchIdx?'selected':''}>#${i+1}: area ${p.area.toFixed(0)}mm² (normal ${p.normal.map(v=>v.toFixed(2)).join(',')})</option>`
+      ).join('');
+      row.innerHTML = `
+        <div class="top"><div class="hex">${part.name}</div></div>
+        <div style="border:1.5px dashed var(--line);border-radius:6px;padding:8px;text-align:center;font-size:11px;color:var(--text-dim);cursor:pointer;" data-asm-drop>
+          Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file>
+        </div>
+        <div class="hint" style="margin-top:4px;">${statusText}</div>
+        ${part.patches ? `<div class="depth-row"><label>face</label><select data-asm="patchIdx" style="flex:1;">${patchOptions}</select></div>` : ''}
+        <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;"><span class="hint">mm of material behind the face this replaces</span></div>
+        <div class="btn-row" style="margin-top:6px;">
+          <button class="btn small" data-asm-remove>Remove</button>
+        </div>
+      `;
+    }
+    box.appendChild(row);
+
+    const drop = row.querySelector('[data-asm-drop]');
+    const fileInput = row.querySelector('[data-asm-file]');
+    if(drop && fileInput){
+      drop.addEventListener('click', ()=>fileInput.click());
+      fileInput.addEventListener('change', e=>{ if(e.target.files[0]) asmLoadPartFile(part, e.target.files[0]); });
+      ['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev, e=>e.preventDefault()));
+      drop.addEventListener('drop', e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) asmLoadPartFile(part, f); });
+    }
+    row.querySelectorAll('[data-asm]').forEach(inp=>{
+      inp.addEventListener('change', e=>{
+        const field = e.target.dataset.asm;
+        const val = (field==='patchIdx') ? parseInt(e.target.value) : parseFloat(e.target.value);
+        part[field] = val;
+        if(field==='patchIdx') applyAsmPatchChoice(part);
+        scheduleRebuild();
+      });
+    });
+    const rmBtn = row.querySelector('[data-asm-remove]');
+    if(rmBtn) rmBtn.addEventListener('click', ()=>asmRemovePart(part.id));
+  });
+}
+
+function pointInLoopXZ(loop, x, z){
+  let inside=false;
+  for(let i=0,j=loop.length-1;i<loop.length;j=i++){
+    const xi=loop[i][0], zi=loop[i][2], xj=loop[j][0], zj=loop[j][2];
+    const hit = ((zi>z)!==(zj>z)) && (x < (xj-xi)*(z-zi)/(zj-zi)+xi);
+    if(hit) inside=!inside;
+  }
+  return inside;
+}
+function rotatePointY(x, z, pivotX, pivotZ, angleDeg){
+  const r = angleDeg*Math.PI/180, c=Math.cos(r), s=Math.sin(r);
+  const dx=x-pivotX, dz=z-pivotZ;
+  return [pivotX + dx*c - dz*s, pivotZ + dx*s + dz*c];
+}
+
+// Visual counterpart to rotatePointY: a duplicate part's rendered meshes need an actual 3D
+// transform (rotatePointY only remaps *which color* lands where, never moves geometry), so a
+// rotated copy renders at its own real position instead of exactly overlapping its source part.
+// Three.js's rotation.y sign convention is opposite rotatePointY's, hence the negation — verified
+// numerically against rotatePointY's own formula, not assumed from algebra alone.
+function asmPartTransformGroup(part){
+  if(!part.isDuplicateOf) return { outer: new THREE.Group(), add(mesh){ this.outer.add(mesh); } };
+  const outer = new THREE.Group();
+  outer.position.set(part.pivotX, 0, part.pivotZ);
+  outer.rotation.y = -part.angleDeg * Math.PI/180;
+  const inner = new THREE.Group();
+  inner.position.set(-part.pivotX, 0, -part.pivotZ);
+  outer.add(inner);
+  return { outer, add(mesh){ inner.add(mesh); } };
+}
+
+// Ensure the SVG has been rasterized + classified once (cached on state.assembly).
+async function asmEnsureRaster(){
+  if(!state.parsed || !state.parsed.rawSVGText) return false;
+  const svgText = state.parsed.rawSVGText;
+  const raw = extractRawFillColors(svgText);
+  if(!raw.length) return false;
+  const clusters = clusterPaletteColors(raw, 20);
+  const size = 2048;
+  const imgData = await rasterizeSVG(svgText, size);
+  const classified = classifyRaster(imgData, clusters.map(c=>c.hex));
+  state.assembly.palette = clusters;
+  state.assembly.classified = classified;
+  state.assembly.rasterSize = size;
+  return true;
+}
+
+// Map a physical mm point (assembly frame, hub-centered) to a palette class index, or -1.
+function asmSampleColor(x_mm, z_mm){
+  const R = +$('#p-asm-radius').value || 138;
+  const scaleMult = (+$('#p-scale').value||100)/100;
+  const offX = +$('#p-offset-x').value||0, offZ = +$('#p-offset-y').value||0;
+  // svg circle geometry is baked into rawSVGCircle at parse time
+  const svgC = state.parsed.rawSVGCircle;
+  if(!svgC) return -1;
+  const mmPerUnit = (R/svgC.r) * scaleMult;
+  const svgX = (x_mm-offX)/mmPerUnit + svgC.cx;
+  const svgY = (z_mm-offZ)/mmPerUnit + svgC.cy;
+  const size = state.assembly.rasterSize;
+  const vb = state.parsed.rawSVGViewBox;
+  const px = Math.round((svgX-vb.x)/vb.w*size), py = Math.round((svgY-vb.y)/vb.h*size);
+  if(px<0||py<0||px>=size||py>=size) return -1;
+  return state.assembly.classified[py*size+px];
+}
+
+// Vector + mesh-boolean assembly build. For each part: take the SVG's real per-color net
+// regions (crisp vectors, not a pixel raster), place them onto the part's flat face in the
+// part's own native coordinates, extrude each to a prism, then use Manifold to (a) subtract
+// all prisms from the real part mesh -> the FULL modified body, and (b) intersect each prism
+// with the part -> a flush inlay solid per color. Output is per-part {bodySoup, inlaySoups}.
+const OVERSHOOT_MM = 0.5; // how far each cutter pokes above the face so the pocket opens cleanly
+
+function asmPartFaceNormal(part){
+  if(part.patchNormal) return part.patchNormal;
+  if(part.isDuplicateOf){ const src = state.assembly.parts.find(p=>p.id===part.isDuplicateOf); if(src && src.patchNormal) return src.patchNormal; }
+  return null;
+}
+
+async function buildAssemblyGeometry(){
+  if(!state.parsed) return null;
+  const svgC = state.parsed.rawSVGCircle;
+  if(!svgC){ warn('Assembly mode needs the design SVG to contain a <circle> defining the outer design boundary — it sets how the artwork scales onto the parts.'); return null; }
+
+  const { byColor } = computeNetRegionsByColor(state.parsed.shapes);
+  // Honor "merge colors" here too (flat mode already did via applyColorMerges) — merged colors
+  // become one region / one AMS slot / one depth. `key` doubles as the per-region depth key.
+  const resolved = applyColorMerges(byColor, state.mergeGroups); // [{key, members, feature, isMerge, previewColor}]
+  const palette = resolved.map(r=>({ hex: r.previewColor, key: 'asm:'+r.key, members: r.members, isMerge: r.isMerge, feature: r.feature }));
+  if(!palette.length) return null;
+
+  const globalDepth = +$('#p-depth').value || 1.0;
+  const R = +$('#p-asm-radius').value || 138;
+  const scaleMult = (+$('#p-scale').value||100)/100;
+  const offX = +$('#p-offset-x').value||0, offZ = +$('#p-offset-y').value||0;
+  const mmPerUnit = (R/svgC.r) * scaleMult;
+
+  let wasm;
+  try{ wasm = await getManifold(); }
+  catch(e){ warn('Could not load the Manifold boolean engine (needs internet on first use) — assembly cutting is unavailable. '+e.message); return null; }
+  const { Manifold } = wasm;
+
+  // Place an SVG-space point onto a part's native face frame (mm). Rotated copies get the
+  // inverse of their assembly rotation, so the design slice that lands on the copy is baked
+  // into the part's native (unrotated) print orientation — same remap the raster path did.
+  const placeOnPart = (part) => (pt) => {
+    let x = (pt[0]-svgC.cx)*mmPerUnit + offX;
+    // SVG Y runs top-down; the viewport is Z-up, so negate to keep the artwork right-side up
+    // on the face (otherwise the whole design reads upside down).
+    let z = -(pt[1]-svgC.cy)*mmPerUnit + offZ;
+    if(part.isDuplicateOf){ const r = rotatePointY(x, z, part.pivotX, part.pivotZ, -part.angleDeg); x=r[0]; z=r[1]; }
+    return [x, z];
+  };
+
+  const partOutputs = [];
+  let viewSign = 1, viewSignSet = false; // Y direction of the first real part's design face — the camera opens from this side
+  for(const part of state.assembly.parts){
+    if(!part.loaded || !part.boundaryLoop || !part.positions) continue;
+
+    const nrm = asmPartFaceNormal(part);
+    if(nrm && Math.abs(nrm[1]) < 0.9){
+      warn(`Part "${part.name}": detected face normal (${nrm.map(v=>v.toFixed(2)).join(', ')}) isn't vertical. Assembly cutting assumes a horizontal face — pick a different face or the cut may be wrong.`);
+    }
+    // Which way the face points along Y, and the actual Y of the face plane. topZ is the plane
+    // offset (= nrm.y * faceY), so a face pointing -Y (e.g. the BACK of the wheel) needs the
+    // pocket cut in the opposite direction — otherwise the inlay lands on the wrong side.
+    const nsign = (nrm && nrm[1] < 0) ? -1 : 1;
+    const faceY = (nrm && Math.abs(nrm[1]) > 0.1) ? part.topZ / nrm[1] : part.topZ;
+    if(!part.isDuplicateOf && !viewSignSet){ viewSign = nsign; viewSignSet = true; }
+
+    // face boundary as a turf polygon in native X/Z, to clip regions to the actual face
+    let boundaryPoly = null;
+    const bRing = part.boundaryLoop.map(p=>[p[0], p[2]]);
+    if(bRing.length>=3){
+      if(bRing[0][0]!==bRing[bRing.length-1][0] || bRing[0][1]!==bRing[bRing.length-1][1]) bRing.push(bRing[0]);
+      try{ boundaryPoly = turf.polygon([bRing]); }catch(e){ boundaryPoly = null; }
+    }
+
+    const place = placeOnPart(part);
+    const colorPrisms = {}; // ci -> Manifold (also serves as the raw inlay fallback source)
+    palette.forEach((c,ci)=>{
+      if(!c.feature) return;
+      let feat = mapFeatureCoords(c.feature, place);
+      if(boundaryPoly){ feat = safeIntersect(feat, boundaryPoly, `color ${c.hex} on ${part.name}`); if(!feat) return; }
+      const depth = (state.colorSettings[c.key] && state.colorSettings[c.key].depth) || globalDepth;
+      if(depth<=0) return;
+      const soup = extrudeRegionToSoup(feat, faceY, depth, OVERSHOOT_MM, nsign);
+      if(!soup || !soup.length) return;
+      try{ colorPrisms[ci] = soupToManifold(wasm, soup); }
+      catch(e){ warn(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`); }
+    });
+
+    const prismEntries = Object.entries(colorPrisms);
+    if(!prismEntries.length){
+      // no cuts land on this part — emit the untouched body so the assembly still exports whole
+      partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups:{} });
+      continue;
+    }
+
+    let partMan;
+    try{ partMan = soupToManifold(wasm, part.positions); }
+    catch(e){ warn(`Part "${part.name}" mesh couldn't be read by the boolean engine.`); prismEntries.forEach(([,p])=>manifoldDelete(p)); continue; }
+    if(!manifoldIsValid(partMan)){
+      warn(`Part "${part.name}" isn't a watertight/manifold mesh, so it can't be cut cleanly — repair it (close holes, fix flipped faces) and retry. Exporting it uncut for now.`);
+      partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups:{} });
+      manifoldDelete(partMan); prismEntries.forEach(([,p])=>manifoldDelete(p));
+      continue;
+    }
+
+    // full modified body = part - union(all color pockets)
+    const prismList = prismEntries.map(([,p])=>p);
+    const cutter = prismList.length===1 ? prismList[0] : Manifold.union(prismList);
+    let bodySoup;
+    try{ const body = Manifold.difference(partMan, cutter); bodySoup = manifoldToSoup(body); manifoldDelete(body); }
+    catch(e){ warn(`Boolean cut failed on part "${part.name}".`); bodySoup = Float32Array.from(part.positions); }
+
+    // per-color inlay = part ∩ prism (the part caps the overshoot, so the inlay top is flush)
+    const inlaySoups = {};
+    prismEntries.forEach(([ci,prism])=>{
+      try{
+        const inl = Manifold.intersection(partMan, prism);
+        const s = manifoldToSoup(inl);
+        if(s.length) inlaySoups[ci] = s;
+        manifoldDelete(inl);
+      }catch(e){ warn(`Couldn't fit the inlay for a color on "${part.name}".`); }
+    });
+
+    if(cutter!==prismList[0]) manifoldDelete(cutter);
+    prismList.forEach(p=>manifoldDelete(p));
+    manifoldDelete(partMan);
+
+    partOutputs.push({ part, bodySoup, inlaySoups });
+  }
+  return { partOutputs, palette, viewSign };
+}
+
+
+function groupContaining(hex){
+  return state.mergeGroups.find(g=>g.includes(hex)) || null;
+}
+// Merge an explicit set of raw hexes into one group, folding in any existing groups they touch.
+function mergeHexes(hexes){
+  const merged = new Set(hexes.filter(Boolean));
+  if(merged.size < 2) return;
+  state.mergeGroups = state.mergeGroups.filter(g=>{
+    if(g.some(h=>merged.has(h))){ g.forEach(h=>merged.add(h)); return false; }
+    return true;
+  });
+  state.mergeGroups.push(Array.from(merged));
+  state.selectedForMerge.clear();
+  scheduleRebuild();
+}
+function mergeSelected(){
+  mergeHexes(Array.from(state.selectedForMerge));
+}
+function unmergeGroup(members){
+  state.mergeGroups = state.mergeGroups.filter(g=>g.join(',')!==members.join(','));
+  scheduleRebuild();
+}
+function updateMergeButton(){
+  const btn = $('#btn-merge');
+  const n = state.selectedForMerge.size;
+  if(n>=2){ btn.style.display='block'; btn.textContent = `Merge ${n} selected into one recess`; }
+  else btn.style.display='none';
+}
+
+function currentBaseParams(){
+  const fitExtra = { scaleMult: (+$('#p-scale').value||100)/100, offsetX: +$('#p-offset-x').value||0, offsetY: +$('#p-offset-y').value||0 };
+  if(state.shapeKind==='disc') return { diameter:+$('#p-diameter').value, thickness:+$('#p-thickness').value, marginPct:+$('#p-margin').value, ...fitExtra };
+  if(state.shapeKind==='rect') return { width:+$('#p-width').value, height:+$('#p-height').value, thickness:+$('#p-thickness-r').value, marginPct:+$('#p-margin').value, ...fitExtra };
+  if(state.shapeKind==='round') return { width:+$('#p-width-rr').value, height:+$('#p-height-rr').value, corner:+$('#p-corner').value, thickness:+$('#p-thickness-rr').value, marginPct:+$('#p-margin').value, ...fitExtra };
+  if(state.shapeKind==='stl') return { width:+$('#p-width-stl').value, height:+$('#p-height-stl').value, thickness:+$('#p-thickness-stl').value, marginPct:+$('#p-margin').value, ...fitExtra };
+}
+
+function $(sel){ return document.querySelector(sel); }
+function $all(sel){ return Array.from(document.querySelectorAll(sel)); }
+
+const FILAMENT_PRESETS = [
+  ['Black','#0a0a0a'],['White','#f4f4f2'],['Red','#c1272d'],['Orange','#f07f1a'],
+  ['Yellow','#f5d020'],['Green','#2e8b3d'],['Blue','#1e5fa8'],['Purple','#7a3fa0'],
+  ['Pink','#e8639e'],['Brown','#6b4a2f'],['Grey','#8a8f94'],['Gold','#cfa03a'],['Silver','#c6cdd1']
+];
+function nearestPreset(hex){
+  const c = hexToRgb(hex);
+  let best=null, bestD=Infinity;
+  FILAMENT_PRESETS.forEach(([name,ph])=>{
+    const p = hexToRgb(ph);
+    const d = (c.r-p.r)**2+(c.g-p.g)**2+(c.b-p.b)**2;
+    if(d<bestD){ bestD=d; best=name; }
+  });
+  return best;
+}
+function hexToRgb(hex){ const n=parseInt(hex.slice(1),16); return {r:(n>>16)&255,g:(n>>8)&255,b:n&255}; }
+
+function renderWarnings(){
+  const box = $('#warnings');
+  box.innerHTML='';
+  WARNINGS.slice(0,6).forEach(w=>{
+    const d=document.createElement('div'); d.className='warn-pill'; d.textContent='⚠ '+w; box.appendChild(d);
+  });
+  if(WARNINGS.length>6){
+    const d=document.createElement('div'); d.className='warn-pill';
+    d.textContent = `+ ${WARNINGS.length-6} more warning${WARNINGS.length-6===1?'':'s'}`;
+    box.appendChild(d);
+  }
+}
+
+function renderColorList(colorMeshes){
+  const list = $('#color-list');
+  if(!colorMeshes || !colorMeshes.length){
+    list.innerHTML = '<div class="empty-hint">No colors detected yet.</div>';
+    $('#slot-count').textContent='';
+    $('#stat-colors').textContent='0 colors';
+    $('#btn-merge').style.display='none';
+    return;
+  }
+  list.innerHTML='';
+  colorMeshes.sort((a,b)=>b.areaPct-a.areaPct);
+  colorMeshes.forEach(c=>{
+    if(!state.colorSettings[c.key]) state.colorSettings[c.key] = { depth: c.depth };
+    const row = document.createElement('div'); row.className='color-row';
+
+    let swatchHtml, labelHtml, rightControlHtml;
+    if(c.isBackground){
+      swatchHtml = `<div class="swatch" style="background:${c.color}"></div>`;
+      labelHtml = `Background`;
+      rightControlHtml = '';
+    } else if(c.isMergeGroup){
+      swatchHtml = `<div style="display:flex;gap:2px;">${c.members.map(h=>`<div class="swatch" style="background:${h};width:10px;"></div>`).join('')}</div>`;
+      labelHtml = `Merged (${c.members.length})`;
+      rightControlHtml = `<button class="btn small" data-unmerge="${c.members.join(',')}" title="Split back into separate colors">unmerge</button>`;
+    } else {
+      const checked = state.selectedForMerge.has(c.color) ? 'checked' : '';
+      swatchHtml = `<div class="swatch" style="background:${c.color}"></div>`;
+      labelHtml = c.color;
+      rightControlHtml = `<input type="checkbox" data-select-hex="${c.color}" ${checked} title="Select to merge with another color into one recess">`;
+    }
+
+    row.innerHTML = `
+      <div class="top">
+        ${swatchHtml}
+        <div class="hex">${labelHtml}</div>
+        <div class="area">${c.areaPct.toFixed(1)}%</div>
+        ${rightControlHtml}
+      </div>
+      <div class="depth-row">
+        <label>depth</label>
+        <input type="number" class="depth-input" step="0.05" min="0.05" value="${state.colorSettings[c.key].depth.toFixed(2)}">
+        <span class="hint">mm</span>
+        <span class="preset">${c.isBackground?'—':'≈ '+nearestPreset(c.color)}</span>
+      </div>`;
+    row.querySelector('.depth-input').addEventListener('change', e=>{
+      state.colorSettings[c.key] = { depth: parseFloat(e.target.value)||0.1 };
+      scheduleRebuild();
+    });
+    const sel = row.querySelector('[data-select-hex]');
+    if(sel) sel.addEventListener('change', e=>{
+      const hex = e.target.dataset.selectHex;
+      if(e.target.checked) state.selectedForMerge.add(hex); else state.selectedForMerge.delete(hex);
+      updateMergeButton();
+    });
+    const unmerge = row.querySelector('[data-unmerge]');
+    if(unmerge) unmerge.addEventListener('click', ()=>unmergeGroup(unmerge.dataset.unmerge.split(',')));
+
+    // Drag-and-drop merge: drag one color onto another (or onto a merged group) to fuse them.
+    // The draggable handle is the row's top strip so the depth field stays freely editable.
+    if(!c.isBackground){
+      row.dataset.hexes = c.members.join(',');
+      const handle = row.querySelector('.top');
+      handle.setAttribute('draggable','true');
+      handle.style.cursor = 'grab';
+      handle.addEventListener('dragstart', e=>{
+        e.dataTransfer.setData('text/plain', row.dataset.hexes);
+        e.dataTransfer.effectAllowed = 'move';
+        row.classList.add('dragging');
+      });
+      handle.addEventListener('dragend', ()=>{
+        row.classList.remove('dragging');
+        $all('.color-row.drop-target').forEach(r=>r.classList.remove('drop-target'));
+      });
+      row.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; row.classList.add('drop-target'); });
+      row.addEventListener('dragleave', e=>{ if(!row.contains(e.relatedTarget)) row.classList.remove('drop-target'); });
+      row.addEventListener('drop', e=>{
+        e.preventDefault();
+        row.classList.remove('drop-target');
+        const src = (e.dataTransfer.getData('text/plain')||'').split(',').filter(Boolean);
+        const tgt = row.dataset.hexes.split(',').filter(Boolean);
+        if(src.join(',') === tgt.join(',')) return; // dropped onto itself
+        mergeHexes([...src, ...tgt]);
+      });
+    }
+
+    list.appendChild(row);
+  });
+  updateMergeButton();
+  $('#slot-count').textContent = colorMeshes.length + ' AMS slot' + (colorMeshes.length===1?'':'s') + ' needed';
+  $('#stat-colors').textContent = colorMeshes.length + ' colors';
+}
+
+/* ---------------- three.js scene ---------------- */
+const host = $('#canvas-host');
+const renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+host.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0f11);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 5000);
+camera.position.set(90,-140,110);
+camera.up.set(0,0,1);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0,0,2);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x33383d, 1.1));
+const dl = new THREE.DirectionalLight(0xffffff, 1.4);
+dl.position.set(80,-60,120);
+scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0xffffff, 0.4);
+dl2.position.set(-60,80,40);
+scene.add(dl2);
+const grid = new THREE.GridHelper(600,30,0x2c3238,0x1c2024); // 600mm span / 20mm cells — fits the wheel assembly
+grid.rotation.x = Math.PI/2;
+scene.add(grid);
+
+let modelGroup = new THREE.Group();
+scene.add(modelGroup);
+
+// Re-frame the camera to fit the current model. We only do this when content actually changes
+// (new SVG, parts added, shape switched) — set pendingFrame so tweaking a depth slider doesn't
+// yank the user's orbit/zoom around on every rebuild. `preferredViewDir`, when set, forces the
+// starting view direction (assembly mode points it at the design face so the wheel doesn't open
+// showing its blank back); otherwise we keep whatever direction the user is currently looking.
+let pendingFrame = true;
+let preferredViewDir = null;
+function requestFrame(){ pendingFrame = true; }
+function frameModelIfPending(){
+  if(!pendingFrame) return;
+  const box = new THREE.Box3().setFromObject(modelGroup);
+  if(box.isEmpty()) return; // nothing built yet — try again next rebuild
+  pendingFrame = false;
+  const size = new THREE.Vector3(); box.getSize(size);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  const radius = Math.max(size.x, size.y, size.z, 20) * 0.5;
+  const dist = radius / Math.sin((camera.fov*Math.PI/180)/2) * 1.25;
+  let dir = preferredViewDir ? preferredViewDir.clone() : new THREE.Vector3().subVectors(camera.position, controls.target);
+  if(dir.lengthSq() < 1e-6) dir.set(0.5,-0.85,0.6);
+  dir.normalize();
+  controls.target.copy(center);
+  camera.position.copy(center).addScaledVector(dir, dist);
+  camera.near = Math.max(0.1, dist/500);
+  camera.far = dist*50;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+function resize(){
+  const w = host.clientWidth, h = host.clientHeight;
+  renderer.setSize(w,h);
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(host);
+resize();
+
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+let lastBuild = null;
+
+function rebuildScene(){
+  preferredViewDir = null; // flat mode: keep the user's current view direction when re-framing
+  scene.remove(modelGroup);
+  modelGroup = new THREE.Group();
+  if(!state.parsed){ scene.add(modelGroup); renderColorList(null); renderWarnings(); $('#stat-tris').textContent='0 tris'; return; }
+
+  const built = buildGeometry({
+    parsed: state.parsed,
+    colorSettings: state.colorSettings,
+    baseParams: currentBaseParams(),
+    shapeKind: state.shapeKind,
+    globalDepth: +$('#p-depth').value,
+    recessBg: $('#p-recess-bg').checked,
+    bgDepth: +$('#p-depth').value,
+    mergeGroups: state.mergeGroups,
+  });
+  lastBuild = built;
+  if(!built){ scene.add(modelGroup); return; }
+
+  modelGroup.add(built.baseGroup);
+  built.colorMeshes.forEach(c=>modelGroup.add(c.mesh));
+
+  if(state.stlRefMesh && state.shapeKind==='stl'){
+    modelGroup.add(state.stlRefMesh);
+  }
+
+  scene.add(modelGroup);
+
+  let tris=0;
+  modelGroup.traverse(o=>{ if(o.isMesh) tris += o.geometry.attributes.position.count/3; });
+  $('#stat-tris').textContent = Math.round(tris)+' tris';
+
+  renderColorList(built.colorMeshes.map(c=>({color:c.color, key:c.key, members:c.members, isMergeGroup:c.isMergeGroup, depth:c.depth, areaPct:c.areaPct, isBackground:c.isBackground})));
+  renderWarnings();
+  $('#btn-export').disabled = false;
+  frameModelIfPending();
+}
+
+let rebuildTimer=null;
+function scheduleRebuild(){
+  clearTimeout(rebuildTimer);
+  $('#loading-text').textContent = 'Rebuilding geometry…';
+  $('#loading-overlay').style.display='flex';
+  rebuildTimer = setTimeout(async ()=>{
+    try{
+      if(state.shapeKind==='assembly') await rebuildAssemblyScene();
+      else rebuildScene();
+    }
+    catch(e){ console.error(e); warn('Rebuild failed: '+e.message); renderWarnings(); }
+    $('#loading-overlay').style.display='none';
+  }, 30);
+}
+
+let lastAssemblyBuild = null;
+async function rebuildAssemblyScene(){
+  scene.remove(modelGroup);
+  modelGroup = new THREE.Group();
+  if(!state.parsed){ scene.add(modelGroup); renderColorList(null); renderWarnings(); $('#stat-tris').textContent='0 tris'; $('#btn-export').disabled=true; return; }
+
+  const built = await buildAssemblyGeometry();
+  lastAssemblyBuild = built;
+  scene.add(modelGroup);
+  if(!built){ renderColorList(null); return; }
+
+  // Open the view looking at the design face (the +normal side), not the blank back of the wheel.
+  const vs = built.viewSign || 1;
+  preferredViewDir = new THREE.Vector3(0.35, 0.9*vs, 0.4);
+
+  const baseMat = new THREE.MeshStandardMaterial({ color:0xb9c0c6, roughness:0.75, metalness:0.05, side:THREE.DoubleSide });
+  const colorListEntries = [];
+  let tris = 0;
+
+  built.partOutputs.forEach(({part, bodySoup, inlaySoups})=>{
+    const xf = asmPartTransformGroup(part); // identity for primaries; pivot-rotates duplicates to their real position
+    modelGroup.add(xf.outer);
+    // the modified body IS the whole real part now (pockets cut in) — no separate context mesh
+    xf.add(new THREE.Mesh(bufferGeometryFromTris(bodySoup), baseMat));
+    tris += bodySoup.length/9;
+    Object.entries(inlaySoups).forEach(([ci,soup])=>{
+      const hex = built.palette[ci].hex;
+      const mat = new THREE.MeshStandardMaterial({ color:new THREE.Color(hex), roughness:0.55, metalness:0.05, side:THREE.DoubleSide });
+      xf.add(new THREE.Mesh(bufferGeometryFromTris(soup), mat));
+      tris += soup.length/9;
+    });
+  });
+
+  // aggregate color list across the whole assembly (one shared design/palette)
+  built.palette.forEach((c,ci)=>{
+    let area = 0;
+    built.partOutputs.forEach(({inlaySoups})=>{ if(inlaySoups[ci]) area += inlaySoups[ci].length/9; });
+    if(area>0) colorListEntries.push({ color:c.hex, key:c.key, members:c.members, isMergeGroup:c.isMerge, depth:(state.colorSettings[c.key]&&state.colorSettings[c.key].depth)||(+$('#p-depth').value||1), areaPct: area, isBackground:false });
+  });
+  const totalArea = colorListEntries.reduce((s,c)=>s+c.areaPct,0)||1;
+  colorListEntries.forEach(c=>c.areaPct = 100*c.areaPct/totalArea);
+
+  $('#stat-tris').textContent = Math.round(tris)+' tris';
+  renderColorList(colorListEntries);
+  renderWarnings();
+  $('#btn-export').disabled = built.partOutputs.length===0;
+  frameModelIfPending();
+}
+
+/* ---------------- UI wiring ---------------- */
+
+// shape selector
+// Tiny SVG thumbnails shown next to the shape dropdown.
+const SHAPE_THUMBS = {
+  disc:  '<svg viewBox="0 0 32 32"><circle class="fill" cx="16" cy="16" r="12"/></svg>',
+  rect:  '<svg viewBox="0 0 32 32"><rect class="fill" x="4" y="8" width="24" height="16" rx="1"/></svg>',
+  round: '<svg viewBox="0 0 32 32"><rect class="fill" x="4" y="8" width="24" height="16" rx="5"/></svg>',
+  assembly: '<svg viewBox="0 0 32 32"><circle class="fill" cx="16" cy="16" r="12"/><circle class="line" cx="16" cy="16" r="4.5"/><line class="line" x1="16" y1="4" x2="16" y2="9"/><line class="line" x1="16" y1="23" x2="16" y2="28"/><line class="line" x1="4" y1="16" x2="9" y2="16"/><line class="line" x1="23" y1="16" x2="28" y2="16"/></svg>',
+  stl:   '<svg viewBox="0 0 32 32"><path class="line" d="M16 4 L28 11 L28 21 L16 28 L4 21 L4 11 Z"/><path class="line" d="M4 11 L16 18 L28 11 M16 18 L16 28"/></svg>',
+};
+function setShapeThumb(kind){ const el=$('#shape-thumb'); if(el) el.innerHTML = SHAPE_THUMBS[kind] || ''; }
+function setShapeKind(kind){
+  state.shapeKind = kind;
+  ['disc','rect','round','stl','assembly'].forEach(k=>{ const el=$('#shape-params-'+k); if(el) el.style.display = (k===kind)?'block':'none'; });
+  if(kind==='assembly'){
+    if(!state.assembly.kindId) state.assembly.kindId = ASSEMBLY_KINDS[0].id;
+    renderAssemblyKindSelect();
+    renderAssemblyRoleControls();
+    renderAssemblyPartList();
+  }
+  $('#btn-export').textContent = (kind==='assembly') ? 'Export multi-color 3MF (.zip)' : 'Export STL set (.zip)';
+  setShapeThumb(kind);
+  requestFrame();
+  scheduleRebuild();
+}
+$('#shape-kind').addEventListener('change', e=>setShapeKind(e.target.value));
+setShapeThumb(state.shapeKind); // reflect the initial selection
+$('#p-asm-kind').addEventListener('change', e=>{
+  const newKindId = e.target.value;
+  if(state.assembly.parts.length>0 && !confirm('Switching assembly type will clear all current parts. Continue?')){
+    e.target.value = state.assembly.kindId;
+    return;
+  }
+  state.assembly.kindId = newKindId;
+  state.assembly.parts = [];
+  renderAssemblyRoleControls();
+  renderAssemblyPartList();
+  scheduleRebuild();
+});
+$('#p-asm-radius').addEventListener('input', scheduleRebuild);
+
+$all('#shape-params-disc input, #shape-params-rect input, #shape-params-round input, #shape-params-stl input, #p-depth, #p-margin, #p-scale, #p-offset-x, #p-offset-y')
+  .forEach(inp=> inp && inp.addEventListener('input', scheduleRebuild));
+
+$('#p-margin').addEventListener('input', ()=>{ $('#p-margin-val').textContent = $('#p-margin').value+'%'; });
+$('#p-scale').addEventListener('input', ()=>{ $('#p-scale-val').textContent = $('#p-scale').value+'%'; });
+$('#btn-reset-fit').addEventListener('click', ()=>{
+  $('#p-scale').value = 100; $('#p-scale-val').textContent = '100%';
+  $('#p-offset-x').value = 0; $('#p-offset-y').value = 0;
+  scheduleRebuild();
+});
+$('#btn-merge').addEventListener('click', mergeSelected);
+$('#p-recess-bg').addEventListener('change', ()=>{
+  $('#bg-depth-hint').style.display = $('#p-recess-bg').checked ? 'inline' : 'none';
+  scheduleRebuild();
+});
+
+// SVG loading
+function loadSVGFile(file){
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      state.parsed = parseSVGDocument(reader.result);
+      state.colorSettings = {};
+      state.mergeGroups = [];
+      state.selectedForMerge.clear();
+      $('#svg-fname').textContent = file.name;
+      requestFrame();
+      scheduleRebuild();
+    }catch(e){
+      WARNINGS.length=0; warn(e.message); renderWarnings();
+      alert('Could not load SVG: '+e.message);
+    }
+  };
+  reader.readAsText(file);
+}
+$('#dropzone').addEventListener('click', ()=>$('#svg-input').click());
+$('#svg-input').addEventListener('change', e=>{ if(e.target.files[0]) loadSVGFile(e.target.files[0]); });
+['dragover','dragenter'].forEach(ev=>$('#dropzone').addEventListener(ev, e=>{ e.preventDefault(); $('#dropzone').classList.add('drag'); }));
+['dragleave','drop'].forEach(ev=>$('#dropzone').addEventListener(ev, e=>{ e.preventDefault(); $('#dropzone').classList.remove('drag'); }));
+$('#dropzone').addEventListener('drop', e=>{ const f=e.dataTransfer.files[0]; if(f) loadSVGFile(f); });
+
+const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="95" fill="#1e5fa8"/>
+  <path d="M100 20 L118 72 L174 72 L128 104 L146 158 L100 124 L54 158 L72 104 L26 72 L82 72 Z" fill="#f5d020"/>
+  <circle cx="100" cy="100" r="34" fill="#f4f4f2"/>
+  <circle cx="100" cy="100" r="34" fill="none" stroke="#0a0a0a" stroke-width="4"/>
+  <circle cx="100" cy="100" r="12" fill="#c1272d"/>
+</svg>`;
+$('#btn-sample').addEventListener('click', ()=>{
+  state.parsed = parseSVGDocument(SAMPLE_SVG);
+  state.colorSettings = {};
+  state.mergeGroups = [];
+  state.selectedForMerge.clear();
+  $('#svg-fname').textContent = 'sample-badge.svg';
+  scheduleRebuild();
+});
+
+// STL reference loading
+const stlLoader = new STLLoader();
+function loadSTLFile(file){
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    const geo = stlLoader.parse(reader.result);
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    const mat = new THREE.MeshStandardMaterial({ color:0x3a4650, transparent:true, opacity:0.35, roughness:0.9 });
+    const mesh = new THREE.Mesh(geo, mat);
+    state.stlRefMesh = mesh;
+    $('#stl-fname').textContent = file.name;
+    $('#p-facez').value = bb.max.z.toFixed(2);
+    $('#p-width-stl').value = (bb.max.x-bb.min.x).toFixed(1);
+    $('#p-height-stl').value = (bb.max.y-bb.min.y).toFixed(1);
+    scheduleRebuild();
+  };
+  reader.readAsArrayBuffer(file);
+}
+$('#stl-dropzone').addEventListener('click', ()=>$('#stl-input').click());
+$('#stl-input').addEventListener('change', e=>{ if(e.target.files[0]) loadSTLFile(e.target.files[0]); });
+$('#btn-autoz').addEventListener('click', ()=>{
+  if(state.stlRefMesh){
+    state.stlRefMesh.geometry.computeBoundingBox();
+    $('#p-facez').value = state.stlRefMesh.geometry.boundingBox.max.z.toFixed(2);
+    scheduleRebuild();
+  }
+});
+
+// Export
+const exporter = new STLExporter();
+function meshToSTLBlob(obj){
+  const result = exporter.parse(obj, { binary:true });
+  return new Blob([result], { type:'application/octet-stream' });
+}
+function trisToSTLBlob(float32arr){
+  const triCount = float32arr.length/9;
+  const buf = new ArrayBuffer(84 + triCount*50);
+  const dv = new DataView(buf);
+  dv.setUint32(80, triCount, true);
+  let o = 84;
+  for(let t=0;t<triCount;t++){
+    const b = t*9;
+    const ax=float32arr[b],ay=float32arr[b+1],az=float32arr[b+2];
+    const bx=float32arr[b+3],by=float32arr[b+4],bz=float32arr[b+5];
+    const cx=float32arr[b+6],cy=float32arr[b+7],cz=float32arr[b+8];
+    const e1x=bx-ax,e1y=by-ay,e1z=bz-az, e2x=cx-ax,e2y=cy-ay,e2z=cz-az;
+    let nx=e1y*e2z-e1z*e2y, ny=e1z*e2x-e1x*e2z, nz=e1x*e2y-e1y*e2x;
+    const len=Math.hypot(nx,ny,nz)||1; nx/=len; ny/=len; nz/=len;
+    dv.setFloat32(o,nx,true); dv.setFloat32(o+4,ny,true); dv.setFloat32(o+8,nz,true);
+    dv.setFloat32(o+12,ax,true); dv.setFloat32(o+16,ay,true); dv.setFloat32(o+20,az,true);
+    dv.setFloat32(o+24,bx,true); dv.setFloat32(o+28,by,true); dv.setFloat32(o+32,bz,true);
+    dv.setFloat32(o+36,cx,true); dv.setFloat32(o+40,cy,true); dv.setFloat32(o+44,cz,true);
+    dv.setUint16(o+48,0,true);
+    o += 50;
+  }
+  return new Blob([buf], { type:'application/octet-stream' });
+}
+
+$('#btn-export').addEventListener('click', async ()=>{
+  if(state.shapeKind==='assembly'){
+    if(!lastAssemblyBuild || !lastAssemblyBuild.partOutputs.length) return;
+    $('#loading-text').textContent = 'Exporting combined multi-color 3MF per part…';
+    $('#loading-overlay').style.display='flex';
+    await new Promise(r=>setTimeout(r,10));
+    try{
+      const palette = lastAssemblyBuild.palette;
+      const zip = new JSZip();
+      for(const { part, bodySoup, inlaySoups } of lastAssemblyBuild.partOutputs){
+        const objects = [{ name: `${part.name} body`, colorHex: '#B9C0C6', soup: bodySoup }];
+        Object.entries(inlaySoups).forEach(([ci,soup])=>{
+          const p = palette[ci];
+          objects.push({ name: p.isMerge ? ('merged '+p.members.join('+')) : p.hex, colorHex: p.hex, soup });
+        });
+        const fname = part.name.replace(/[^a-z0-9_-]+/gi,'_');
+        zip.file(`${fname}.3mf`, await build3MF(objects));
+      }
+      const readme = `Mosaic for TMT — Assembly export (multi-color 3MF)
+==================================================
+One .3mf per physical part. Each file is the FULL modified part — the whole
+real body with the color pockets cut into its detected flat face — carried
+as separate objects: "<part> body" plus one object per detected color, each
+tagged to its own base material.
+
+Bambu Studio workflow:
+1. File > Import > import the part's .3mf. It comes in as one object made of
+   several parts (body + each color), already seated together.
+2. In the object/parts list, assign a filament / AMS slot to each colored
+   part (they're pre-named by hex). The body is your base filament.
+3. Slice as normal — Bambu generates the per-color toolpaths and AMS changes.
+
+Because this is the full part, there's nothing to re-stitch in CAD anymore —
+unlike earlier versions, the body geometry is included and the pockets are
+real boolean cuts, so edges follow the artwork's true curves (no voxel
+stair-stepping).
+
+"Rotated copy" parts are already re-oriented to that part's native
+(unrotated) print orientation — just print/install it flipped per your
+assembly's design intent.
+
+Generated by Mosaic v1, a MakeGood tool for the Toddler Mobility Trainer
+(TMT) — makegood.design / 3d-mobility.org. A browser-based tool, not
+affiliated with Bambu Lab.
+`;
+      zip.file('README.txt', readme);
+      const blob = await zip.generateAsync({type:'blob'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'mosaic-assembly-export.zip';
+      a.click();
+    }catch(e){
+      console.error(e);
+      alert('Export failed: '+e.message);
+    }
+    $('#loading-overlay').style.display='none';
+    return;
+  }
+
+  if(!lastBuild) return;
+  $('#loading-text').textContent = 'Exporting STL set…';
+  $('#loading-overlay').style.display='flex';
+  await new Promise(r=>setTimeout(r,10));
+  try{
+    const zip = new JSZip();
+    zip.file('base.stl', meshToSTLBlob(lastBuild.baseGroup));
+    lastBuild.colorMeshes.forEach((c,idx)=>{
+      let label;
+      if(c.isBackground) label = 'background';
+      else if(c.isMergeGroup) label = 'merged_' + c.members.map(h=>h.replace('#','')).join('+');
+      else label = c.color.replace('#','');
+      zip.file(`color_${String(idx+1).padStart(2,'0')}_${label}.stl`, meshToSTLBlob(c.mesh));
+    });
+    const readme = `Mosaic for TMT export
+======================
+${lastBuild.colorMeshes.length} color STL(s) + base.stl (uncut plate body).
+
+Bambu Studio workflow:
+1. File > Import > import all STLs from this folder as separate objects.
+2. Select all imported objects, right-click > "Assemble" (or drag them onto one another) so they share one build plate position and register as one multi-part object.
+3. In the object list, click each part and assign it a filament / AMS slot from the color swatch.
+4. Slice as normal — Bambu Studio will generate the per-color toolpaths and AMS color changes automatically.
+
+Generated by Mosaic v1, a MakeGood tool for the Toddler Mobility Trainer
+(TMT) — makegood.design / 3d-mobility.org. A browser-based tool, not
+affiliated with Bambu Lab.
+`;
+    zip.file('README.txt', readme);
+    const blob = await zip.generateAsync({type:'blob'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'mosaic-export.zip';
+    a.click();
+  }catch(e){
+    console.error(e);
+    alert('Export failed: '+e.message);
+  }
+  $('#loading-overlay').style.display='none';
+});
+
+// initial state
+renderColorList(null);
+loadPartsLibrary();
+</script>
+</body>
+</html>

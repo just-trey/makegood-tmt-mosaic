@@ -1,0 +1,30 @@
+# Node
+node_modules/
+
+# Editor directories and system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Exported STL/3MF outputs (large binary files, regenerate from the app instead of tracking)
+*.stl
+*.zip
+inlay-export.zip
+inlay-assembly-export.zip
+
+# Local test artifacts (only relevant if you keep the stub-based test harness alongside the app)
+stubs/
+index.test*.html
+extracted.mjs
+test_*.mjs
+test_*.html
