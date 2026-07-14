@@ -1,0 +1,40 @@
+:root{
+  /* v3 palette — MakeGood brand colors (deep navy + blue/cyan), re-tuned for WCAG AA
+     contrast, replacing the v2 industrial orange scheme. See tokens/colors-makegood-dark.css
+     for the source ratios. */
+  --color-bg: #0c1220;
+  --color-surface-1: #141b30;
+  --color-surface-2: #1c2440;
+  --color-border: #2b3457;
+  --color-text: #f5f7fb;
+  --color-text-dim: #aab3cf;
+  --color-accent-blue: #6d93ff;
+  --color-accent-cyan: #5eead4;
+  --color-danger: #f9438a;
+
+  --color-accent-blue-wash: rgba(109,147,255,.10);
+  --color-accent-blue-glow: rgba(109,147,255,.06);
+  --color-danger-wash: rgba(249,67,138,.12);
+  --color-danger-border: rgba(249,67,138,.4);
+  --color-danger-text: #ffb3d1;
+
+  /* semantic aliases — use these in components, not the raw palette above */
+  --surface-canvas: var(--color-bg);
+  --surface-panel: var(--color-surface-1);
+  --surface-panel-2: var(--color-surface-2);
+  --surface-viewport: #070a13;
+  --border-default: var(--color-border);
+  --text-primary: var(--color-text);
+  --text-secondary: var(--color-text-dim);
+  --accent-primary: var(--color-accent-blue);
+  --accent-secondary: var(--color-accent-cyan);
+  --state-danger: var(--color-danger);
+  --state-danger-wash: var(--color-danger-wash);
+  --state-danger-border: var(--color-danger-border);
+  --state-danger-text: var(--color-danger-text);
+  --focus-ring: var(--color-accent-blue);
+  --on-accent: #071022;
+  /* backward-compat aliases for older references */
+  --color-accent-teal-wash: var(--color-accent-blue-wash);
+  --color-accent-teal-glow: var(--color-accent-blue-glow);
+}

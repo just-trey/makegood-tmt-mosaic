@@ -1,9 +1,11 @@
-# Mosaic — SVG Color-Inlay Generator (v1)
+# TMT Mosaic — SVG Color-Inlay Generator (v1)
 
 A single self-contained web app (`index.html`) that turns a flat-color SVG into
-per-color recess geometry for multicolor/AMS 3D printing, and exports one STL
-per color plus a `base.stl` for the uncut plate — ready to import into Bambu
-Studio and assign filaments to.
+per-color recess geometry for multicolor/AMS 3D printing, and exports a
+print-ready Bambu Studio project 3MF — parts placed on build plates, every
+recess pre-named and pre-assigned to its own filament slot with the detected
+colors, so it opens in Bambu Studio ready to slice. (A per-color STL set is
+still available as a fallback for other slicers.)
 
 Built for [MakeGood](https://makegood.design)'s Toddler Mobility Trainer
 (TMT) — a free, open-source 3D-printable mobility device for children ages
@@ -66,9 +68,15 @@ then open the printed `http://localhost:...` URL. Drag-and-drop upload
    AMS slot — e.g. if your SVG has 6 colors but you only want to use 4
    filaments, merge the ones you're fine printing as one. Merged groups show
    as a stacked swatch in the list and can be split back apart any time.
-7. **Export** bundles a binary STL per color region plus `base.stl` into a
-   zip, with a short README describing the Bambu Studio import steps
-   (import all as separate objects → group → assign filament per part).
+7. **Export** produces a print-ready **Bambu Studio project 3MF** in both
+   flat-plate and Assembly mode: the file carries Bambu's own metadata
+   (`model_settings.config` / `project_settings.config`), so it opens with no
+   "not from Bambu Lab" warning, parts named after their colors in the object
+   list, each recess pre-assigned to its own filament slot with the detected
+   color, and objects placed on real build plates (plate size selectable in
+   the Export section: X1C/P1S/A1, H2D, or A1 mini). Flat-plate mode also
+   keeps a secondary export: a zip with one binary STL per color plus
+   `base.stl`, for non-Bambu slicers or manual workflows.
 8. **Assembly mode** (new): for real multi-part assemblies where the design
    spans more than one physical part — upload each part's STL/3MF, Mosaic
    auto-detects its dominant flat face (by coplanar-triangle-patch area) and
@@ -81,11 +89,15 @@ then open the printed `http://localhost:...` URL. Drag-and-drop upload
    **same vector front end as flat mode** (the SVG's real per-color net
    regions) extruded into 3D prisms and **booleaned against the part's actual
    mesh** via [Manifold](https://github.com/elalish/manifold) (a WASM CSG
-   engine, loaded from CDN on first use). Output is the **whole modified part**
-   — the real body with crisp, curve-accurate pockets cut in — exported as one
-   combined multi-color **3MF per part** (body + one object per color, tagged
-   to base materials so Bambu Studio maps each to a filament). No pixel raster,
-   no voxel stair-stepping, and no manual re-stitching in CAD.
+   engine, loaded from CDN on first use). Output is the **whole modified
+   assembly** — every real part body with crisp, curve-accurate pockets cut in
+   — exported as **one combined Bambu Studio project 3MF**: each physical part
+   laid mosaic-face-down on its own build plate (small parts like the hub cap
+   share a plate when they fit), with per-part filament assignments and the
+   detected colors baked in. No pixel raster, no voxel stair-stepping, and no
+   manual re-stitching in CAD. Assembly mode (the wheel) is also what the app
+   opens in by default — served over HTTP it auto-loads the wheel parts on
+   startup.
 
 ## Troubleshooting: "Boolean subtraction/union failed" warnings
 
@@ -147,8 +159,7 @@ tests:
   part). Verified numerically, not just visually: a live-scene vertex
   transform was checked against the app's own rotation math at a
   non-trivial angle/pivot (180°/origin is a degenerate case that can't
-  distinguish a correct transform from a sign error). This is preview-only —
-  export is still the insert-only STLs described above, unchanged.
+  distinguish a correct transform from a sign error).
 
 What it does **not** do yet:
 
@@ -264,15 +275,56 @@ Turf boolean step on a very complex path (there's a fallback + on-screen
 warning if a union/difference throws), or a color that should visually merge
 but doesn't due to sub-pixel gaps between adjacent regions in the source file.
 
+## Design system
+
+The app's visual language is the **TMT Mosaic design system (v3)** — a dark
+navy/blue, sharp-cornered "blueprint" theme tuned for WCAG AA contrast. The
+canonical source of truth lives in [`design-system/`](design-system/):
+
+- [`design-system/tokens/`](design-system/tokens/) — the design tokens as plain
+  CSS custom properties (`colors.css`, `typography.css`, `spacing.css`). These
+  are authoritative; everything else in the folder is reference.
+- [`design-system/guidelines/`](design-system/guidelines/) — foundation
+  specimen pages (color, type, spacing/radius, brand mark). Open any of them
+  directly in a browser.
+- [`design-system/components/`](design-system/components/) and
+  [`design-system/ui_kits/`](design-system/ui_kits/) — reference component
+  implementations and a full screen recreation. **Reference only** — they're
+  React, whereas the shipping app is a single vanilla `index.html`.
+- [`design-system/README.md`](design-system/README.md) — the full handoff doc.
+
+Because `index.html` is a single self-contained file, the tokens are **inlined**
+into its `<style>` block (`:root`) rather than imported from `design-system/`.
+When the tokens change, update both — the `design-system/tokens/*.css` files are
+the spec, the `:root` block in `index.html` is the shipped copy. Key values:
+
+- **Palette** — canvas `#0c1220`, panels `#141b30` / `#1c2440`, 3D viewport
+  `#070a13`, hairline border `#2b3457`, text `#f5f7fb` / `#aab3cf`, accent blue
+  `#6d93ff`, accent cyan `#5eead4`, danger pink `#f9438a`.
+- **Type** — Outfit (wordmark + section labels), Inter (UI/body), IBM Plex Mono
+  (every numeric/technical value: mm, hex, triangle counts), loaded from Google
+  Fonts with system fallbacks.
+- **Shape** — 1px hairline borders, no shadows, near-square corners (0–3px), one
+  conic-gradient app mark in the header and no other gradients.
+
+> Note: the reference bundle was extracted from a `.zip` (which `.gitignore`
+> excludes, so it was never committed). It now lives unzipped under
+> `design-system/` so it's browsable and diffs in version control. Two *other*
+> visual languages are referenced in `design-system/tokens/` (a blue
+> `3d-mobility.org` forum theme, a rainbow `makegood.design` marketing theme) —
+> those are **not** used by this tool; only the tokens above apply here.
+
 ## Roadmap ideas (not built yet)
 
-- **Done (Assembly mode):** ~~Real 3MF export with per-region color/extruder
-  metadata~~ and ~~arbitrary-mesh pocket cutting via a proper 3D boolean
-  library~~ now ship in Assembly mode (Manifold CSG + combined multi-color
-  3MF). Bringing the same 3MF/boolean output to flat-plate mode is the next
-  easy win.
-- Apply the vector-boolean + 3MF pipeline to flat-plate mode too (currently
-  flat mode still exports the slab-stack as a per-color STL set).
+- **Done:** ~~Real 3MF export with per-region color/extruder metadata~~ and
+  ~~arbitrary-mesh pocket cutting via a proper 3D boolean library~~ ship in
+  Assembly mode (Manifold CSG). ~~Bringing the same 3MF output to flat-plate
+  mode~~ is done too: both modes now export a **Bambu Studio project 3MF**
+  (`BambuStudio:3mfVersion` marker + `model_settings.config` +
+  `project_settings.config`) — no import warning, parts named by color,
+  per-part filament slots with the detected colors, and real multi-plate
+  placement with a selectable plate size. The STL-set zip remains as a
+  flat-mode fallback for other slicers.
 - Curved-surface wrapping (conform artwork to a cylindrical/curved face).
 - Adaptive Bezier flattening tolerance instead of a fixed segment count, for
   very large or very tiny artwork.

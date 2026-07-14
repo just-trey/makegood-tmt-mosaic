@@ -1,0 +1,38 @@
+<!-- @dsCard group="Brand" viewport="760x420" subtitle="Reworked from the uploaded screenshot for WCAG AA contrast" name="MakeGood — dark mode (AA)" -->
+<!DOCTYPE html><html><head>
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../tokens/colors-makegood-dark.css">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--mgd-bg);font-family:'Inter',sans-serif;padding:0}
+  nav{display:flex;align-items:center;gap:16px;padding:12px 20px;background:var(--mgd-surface);border-bottom:1px solid var(--mgd-border)}
+  nav a{color:var(--mgd-text-secondary);text-decoration:none;font-size:13px;font-weight:500}
+  .navpill{background:var(--mgd-button-bg);color:var(--mgd-button-text);padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600}
+  main{padding:28px 24px}
+  h1{font-family:'Outfit',sans-serif;font-weight:700;font-size:34px;line-height:1.15;color:var(--mgd-text-primary);margin:0 0 14px 0}
+  h1 span{color:var(--mgd-accent-cyan)}
+  p{color:var(--mgd-text-secondary);font-size:15px;line-height:1.6;max-width:480px;margin:0 0 18px 0}
+  .cards{display:flex;gap:12px;margin-bottom:16px}
+  .card{flex:1;background:var(--mgd-surface);border:1px solid var(--mgd-border);border-radius:8px;padding:14px}
+  .card h3{color:var(--mgd-text-primary);font-size:14px;margin:0 0 4px 0}
+  .card p{color:var(--mgd-text-secondary);font-size:12.5px;margin:0 0 10px 0}
+  .card a{color:var(--mgd-accent-blue);font-size:13px;font-weight:600;text-decoration:none}
+  .btn{display:inline-block;background:var(--mgd-button-bg);color:var(--mgd-button-text);padding:10px 18px;border-radius:8px;font-weight:600;font-size:14px;margin-right:8px}
+  .banner{background:var(--mgd-pink-button-bg);color:var(--mgd-pink-button-text);padding:12px 18px;border-radius:8px;font-weight:700;font-size:14px;margin-top:14px}
+  .note{color:var(--mgd-text-secondary);font-size:11px;margin-top:16px;font-family:monospace}
+</style>
+</head><body>
+<nav><img src="../assets/makegood-logo.png" alt="MakeGood" style="height:24px;width:auto"/><a href="#">TMT</a><a href="#">Community Map</a><a href="#">Gallery</a><a href="#">Forum</a><div style="flex:1"></div><span class="navpill">Request a Device</span></nav>
+<main>
+  <h1>3D-Printed <span>Mobility Trainers</span><br/>for Kids Who Need Them</h1>
+  <p>We connect families of children with mobility challenges to vetted volunteer makers who 3D print custom Toddler Mobility Trainers — completely free for the requesting family.</p>
+  <div class="cards">
+    <div class="card"><h3>For Families</h3><p>Need a mobility device for your child? Request one for free.</p><a href="#">Request a Device →</a></div>
+    <div class="card"><h3>For Makers</h3><p>Have a 3D printer? Use your skills to help a child.</p><a href="#">Become a Maker →</a></div>
+  </div>
+  <a class="btn">Request a Device</a>
+  <div class="banner">Sponsor a Build Kit for a Family in Need</div>
+  <div class="note">All pairings above verified ≥ 4.5:1 (body text) / ≥ 3:1 (large/bold display text) against their background — see tokens/colors-makegood-dark.css for ratios.</div>
+</main>
+</body></html>

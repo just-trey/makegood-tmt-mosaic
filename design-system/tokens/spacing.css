@@ -1,0 +1,21 @@
+:root{
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 14px;
+  --space-7: 16px;
+  --space-8: 18px;
+  --space-9: 24px;
+
+  /* sharper, near-square corners — industrial/blueprint feel over default soft-rounded UI */
+  --radius-sm: 0px;
+  --radius-md: 1px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
+  --radius-2xl: 3px;
+
+  --border-width: 1px;
+  --transition-fast: .12s;
+}

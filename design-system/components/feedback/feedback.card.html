@@ -1,0 +1,26 @@
+<!-- @dsCard group="Components" viewport="700x320" name="Feedback" -->
+<!DOCTYPE html><html><head><link rel="stylesheet" href="../../styles.css">
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;background:var(--surface-canvas);font-family:var(--font-sans);padding:20px;box-sizing:border-box}</style>
+</head><body>
+<div id="root"></div>
+<script type="text/babel">
+const { WarningPill, Badge, LoadingOverlay } = window.DS;
+function Demo(){
+  const [busy, setBusy] = React.useState(true);
+  return (
+    <div style={{display:'flex', flexDirection:'column', gap:16, maxWidth:420}}>
+      <div style={{display:'flex', gap:14}}>
+        <Badge>1,204 tris</Badge>
+        <Badge tone="accent">4 colors</Badge>
+      </div>
+      <WarningPill>Boolean subtraction failed for color #e8a13a — that region may overlap its neighbor.</WarningPill>
+      <div style={{position:'relative', height:140, background:'var(--surface-viewport)', borderRadius:'var(--radius-2xl)', border:'1px solid var(--border-default)'}} onClick={()=>setBusy(b=>!b)}>
+        <LoadingOverlay visible={busy} label="Rebuilding geometry…" />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body></html>

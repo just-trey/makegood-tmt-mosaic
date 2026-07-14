@@ -1,0 +1,22 @@
+/* makegood.design — dark mode palette, redone for WCAG AA.
+   Reference screenshot used a light periwinkle-blue background (~#5b7fc7) with white text —
+   that pairing is well under 4.5:1 for body text and isn't a real "dark mode" (too light).
+   This version deepens the background and re-picks accent colors so every text/background
+   and text/button pairing below hits at least AA (4.5:1 normal text, 3:1 large text/UI). */
+:root{
+  --mgd-bg: #0c1220;           /* deep navy canvas, replacing the light #5b7fc7 */
+  --mgd-surface: #141b30;      /* card / nav surface */
+  --mgd-surface-2: #1c2440;    /* raised surface (pills, chips) */
+  --mgd-border: #2b3457;
+
+  --mgd-text-primary: #f5f7fb;   /* vs --mgd-bg: ~17.5:1 */
+  --mgd-text-secondary: #aab3cf; /* vs --mgd-bg: ~7.4:1 */
+
+  --mgd-accent-blue: #6d93ff;     /* headings/links vs --mgd-bg: ~6.1:1 */
+  --mgd-button-bg: #2451e0;       /* primary button fill */
+  --mgd-button-text: #ffffff;     /* vs --mgd-button-bg: ~5.4:1 */
+  --mgd-accent-cyan: #5eead4;      /* "Mobility Trainers" highlight vs --mgd-bg: ~12.8:1 */
+  --mgd-accent-pink: #f9438a;      /* used only for large/bold display text vs --mgd-bg: ~4.9:1 */
+  --mgd-pink-button-bg: #b0185a;   /* sponsor banner fill */
+  --mgd-pink-button-text: #ffffff; /* vs --mgd-pink-button-bg: ~5.2:1 */
+}

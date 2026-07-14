@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TMT Mosaic — mockup preview (standalone, no build step)</title>
+<link rel="stylesheet" href="../../styles.css">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Inter:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--surface-canvas);color:var(--text-primary);font-family:var(--font-sans);font-size:var(--text-base)}
+  #app{display:grid;grid-template-columns:340px 1fr;grid-template-rows:64px 1fr;height:100%}
+  header{grid-column:1/3;display:flex;align-items:center;gap:10px;padding:0 20px;background:var(--surface-panel);border-bottom:1px solid var(--border-default)}
+  #left{background:var(--surface-panel);border-right:1px solid var(--border-default);overflow-y:auto;padding:14px}
+  #right{position:relative;background:var(--surface-viewport);overflow:hidden;background-image:linear-gradient(rgba(109,147,255,.05) 1px, transparent 1px),linear-gradient(90deg, rgba(109,147,255,.05) 1px, transparent 1px);background-size:24px 24px}
+  #hud{position:absolute;top:12px;left:12px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);background:rgba(20,23,26,.6);padding:6px 10px;border-radius:6px;border:1px solid var(--border-default);line-height:1.5}
+  #warn{position:absolute;bottom:12px;left:12px;right:12px}
+  .hint{color:var(--text-secondary);font-size:11px;line-height:1.5;margin-top:4px}
+  a{color:var(--accent-primary)}
+  a:hover{color:var(--accent-secondary)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const e = React.createElement;
+const F = React.Fragment;
+
+function thumb(color, label){
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><defs><pattern id="s" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="' + color + '" opacity="0.25"/><rect width="4" height="8" fill="' + color + '" opacity="0.4"/></pattern></defs><rect width="56" height="56" fill="#14171a"/><rect width="56" height="56" fill="url(#s)"/><text x="28" y="31" font-family="monospace" font-size="9" fill="#dde3e8" text-anchor="middle">' + label + '</text></svg>';
+  return 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+function Button({ children, variant, size, disabled, fullWidth, onClick }){
+  const isPrimary = variant === 'primary';
+  const style = {
+    display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6,
+    fontFamily:'var(--font-sans)', fontSize: size==='small' ? 'var(--text-sm)' : 'var(--text-md)',
+    fontWeight: isPrimary ? 'var(--weight-semibold)' : 'var(--weight-regular)',
+    padding: size==='small' ? '3px 8px' : '7px 10px', borderRadius:'var(--radius-lg)',
+    border:'1px solid ' + (isPrimary ? 'var(--accent-primary)' : 'var(--border-default)'),
+    background: isPrimary ? 'var(--accent-primary)' : 'var(--surface-panel-2)',
+    color: isPrimary ? 'var(--on-accent)' : 'var(--text-primary)',
+    cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1,
+    width: fullWidth ? '100%' : 'auto', transition:'border-color var(--transition-fast), filter var(--transition-fast)',
+  };
+  return e('button', {
+    style, disabled, onClick,
+    onMouseEnter: (ev) => { if (disabled) return; if (isPrimary) ev.currentTarget.style.filter='brightness(1.08)'; else ev.currentTarget.style.borderColor='var(--accent-primary)'; },
+    onMouseLeave: (ev) => { ev.currentTarget.style.filter='none'; ev.currentTarget.style.borderColor = isPrimary ? 'var(--accent-primary)' : 'var(--border-default)'; },
+  }, children);
+}
+function TextInput({ type, value, onChange, min, max, step, disabled }){
+  const style = { width:'100%', boxSizing:'border-box', background:'var(--surface-panel-2)', border:'1px solid var(--border-default)', color:'var(--text-primary)', padding:'5px 7px', borderRadius:'var(--radius-md)', fontFamily:'var(--font-mono)', fontSize:'var(--text-md)', outline:'none', opacity: disabled?0.4:1 };
+  return e('input', { type: type||'text', value, min, max, step, disabled, style,
+    onChange: (ev)=> onChange && onChange(ev.target.value),
+    onFocus: (ev)=> ev.currentTarget.style.borderColor='var(--accent-primary)',
+    onBlur: (ev)=> ev.currentTarget.style.borderColor='var(--border-default)' });
+}
+function Checkbox({ checked, onChange, label, disabled }){
+  return e('label', { style:{ display:'inline-flex', alignItems:'center', gap:6, fontFamily:'var(--font-sans)', fontSize:'var(--text-md)', color:'var(--text-primary)', cursor: disabled?'not-allowed':'pointer', opacity: disabled?0.4:1 } },
+    e('input', { type:'checkbox', checked, disabled, onChange:(ev)=>onChange && onChange(ev.target.checked), style:{ accentColor:'var(--accent-primary)', width:14, height:14 } }),
+    label);
+}
+function Slider({ value, min, max, step, onChange, valueLabel }){
+  return e('div', { style:{ display:'flex', alignItems:'center', gap:8 } },
+    e('input', { type:'range', value, min, max, step, onChange:(ev)=>onChange && onChange(Number(ev.target.value)), style:{ flex:1, accentColor:'var(--accent-primary)' } }),
+    valueLabel !== undefined && e('span', { style:{ fontFamily:'var(--font-mono)', fontSize:'var(--text-sm)', color:'var(--text-secondary)', minWidth:32, textAlign:'right' } }, valueLabel));
+}
+function SegmentedControl({ options, value, onChange }){
+  return e('div', { style:{ display:'flex', gap:5 } }, options.map((opt) => {
+    const active = opt.value === value;
+    return e('button', { key: opt.value, onClick: ()=>onChange && onChange(opt.value), style:{
+      flex:1, padding:'7px 4px', fontSize:'var(--text-sm)', borderRadius:'var(--radius-lg)',
+      border:'1px solid ' + (active ? 'var(--accent-primary)' : 'var(--border-default)'),
+      background: active ? 'var(--color-accent-teal-wash)' : 'var(--surface-panel-2)',
+      color: active ? 'var(--accent-primary)' : 'var(--text-secondary)', cursor:'pointer', fontFamily:'var(--font-sans)',
+    } }, opt.label);
+  }));
+}
+function Panel({ title, children }){
+  return e('section', { style:{ marginBottom:'var(--space-8)' } },
+    title && e('h2', { style:{ fontSize:'var(--text-xs)', textTransform:'uppercase', letterSpacing:'var(--tracking-label)', color:'var(--text-secondary)', margin:'0 0 var(--space-3) 0', fontWeight:'var(--weight-bold)', fontFamily:'var(--font-heading)', display:'flex', alignItems:'center', gap:6 } },
+      title, e('span', { style:{ flex:1, height:1, background:'var(--border-default)' } })),
+    children);
+}
+function WarningPill({ children }){
+  return e('div', { style:{ background:'var(--state-danger-wash)', border:'1px solid var(--state-danger-border)', color:'var(--state-danger-text)', padding:'6px 10px', borderRadius:'var(--radius-lg)', fontSize:'var(--text-sm-plus)', fontFamily:'var(--font-sans)', maxWidth:520 } }, children);
+}
+function Badge({ children, tone }){
+  return e('span', { style:{ fontFamily:'var(--font-mono)', fontSize:'var(--text-sm)', color: tone==='accent' ? 'var(--accent-secondary)' : 'var(--text-secondary)' } }, children);
+}
+function LoadingOverlay({ visible, label }){
+  if (!visible) return null;
+  return e('div', { style:{ position:'absolute', inset:0, background:'rgba(13,15,17,.85)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10, fontSize:'var(--text-md)', color:'var(--text-secondary)', fontFamily:'var(--font-sans)', zIndex:5 } },
+    e('div', { style:{ width:26, height:26, borderRadius:'50%', border:'2px solid var(--border-default)', borderTopColor:'var(--accent-primary)', animation:'ds-spin 0.8s linear infinite' } }),
+    e('div', null, label || 'Working…'),
+    e('style', null, '@keyframes ds-spin{to{transform:rotate(360deg)}}'));
+}
+function Dropzone({ label, onFiles }){
+  const [drag, setDrag] = React.useState(false);
+  return e('div', {
+    onDragOver: (ev)=>{ ev.preventDefault(); setDrag(true); },
+    onDragLeave: ()=>setDrag(false),
+    onDrop: (ev)=>{ ev.preventDefault(); setDrag(false); onFiles && onFiles(ev.dataTransfer.files); },
+    style:{ border:'1.5px dashed ' + (drag ? 'var(--accent-primary)' : 'var(--border-default)'), borderRadius:'var(--radius-2xl)', padding:'18px 10px', textAlign:'center', color: drag ? 'var(--accent-primary)' : 'var(--text-secondary)', background: drag ? 'var(--color-accent-teal-glow)' : 'transparent', cursor:'pointer', fontSize:'var(--text-md)', fontFamily:'var(--font-sans)', transition:'var(--transition-fast)' },
+  }, label);
+}
+function ColorRow({ hex, areaPct, depth, onDepthChange, selected, onSelectedChange }){
+  return e('div', { style:{ background:'var(--surface-panel-2)', border:'1px solid var(--border-default)', borderRadius:'var(--radius-xl)', padding:'7px 8px' } },
+    e('div', { style:{ display:'flex', alignItems:'center', gap:7 } },
+      onSelectedChange && e('input', { type:'checkbox', checked: !!selected, onChange:(ev)=>onSelectedChange(ev.target.checked), style:{ accentColor:'var(--accent-primary)', width:14, height:14 } }),
+      e('div', { style:{ width:16, height:16, borderRadius:'var(--radius-sm)', border:'1px solid rgba(255,255,255,.15)', background:hex, flex:'0 0 auto' } }),
+      e('span', { style:{ fontFamily:'var(--font-mono)', fontSize:'var(--text-sm)', color:'var(--text-secondary)' } }, hex),
+      areaPct !== undefined && e('span', { style:{ marginLeft:'auto', fontFamily:'var(--font-mono)', fontSize:'var(--text-xs)', color:'var(--text-secondary)' } }, areaPct + '%')),
+    onDepthChange && e('div', { style:{ display:'flex', alignItems:'center', gap:6, marginTop:6 } },
+      e('label', { style:{ color:'var(--text-secondary)', fontSize:'var(--text-sm)' } }, 'depth'),
+      e('input', { type:'number', value:depth, step:0.05, onChange:(ev)=>onDepthChange(Number(ev.target.value)), style:{ width:64, flex:'none', background:'var(--surface-panel)', border:'1px solid var(--border-default)', color:'var(--text-primary)', padding:'5px 7px', borderRadius:'var(--radius-md)', fontFamily:'var(--font-mono)', fontSize:'var(--text-md)', outline:'none' } })));
+}
+function ThumbnailSelect({ options, value, onChange, placeholder }){
+  const [open, setOpen] = React.useState(false);
+  const current = options.find(o => o.value === value);
+  return e('div', { style:{ position:'relative', fontFamily:'var(--font-sans)' } },
+    e('button', { onClick: ()=>setOpen(o=>!o), style:{ width:'100%', display:'flex', alignItems:'center', gap:8, textAlign:'left', background:'var(--surface-panel-2)', border:'1px solid ' + (open ? 'var(--accent-primary)' : 'var(--border-default)'), color:'var(--text-primary)', padding:'5px 7px', borderRadius:'var(--radius-md)', cursor:'pointer' } },
+      current ? e(F, null,
+        e('div', { style:{ width:22, height:22, borderRadius:'var(--radius-sm)', overflow:'hidden', flex:'0 0 auto', background:'var(--surface-panel)', border:'1px solid var(--border-default)' } },
+          current.thumbnail && e('img', { src: current.thumbnail, alt:'', style:{ width:'100%', height:'100%', objectFit:'cover' } })),
+        e('span', { style:{ fontFamily:'var(--font-mono)', fontSize:'var(--text-md)' } }, current.label))
+        : e('span', { style:{ fontFamily:'var(--font-mono)', fontSize:'var(--text-md)', color:'var(--text-secondary)' } }, placeholder || 'Select a part…'),
+      e('span', { style:{ marginLeft:'auto', color:'var(--text-secondary)', fontSize:'var(--text-sm)' } }, '▾')),
+    open && e('div', { style:{ position:'absolute', top:'calc(100% + 4px)', left:0, right:0, zIndex:20, background:'var(--surface-panel-2)', border:'1px solid var(--border-default)', borderRadius:'var(--radius-lg)', maxHeight:220, overflowY:'auto', boxShadow:'0 4px 16px rgba(0,0,0,.4)' } },
+      options.map(opt => e('div', {
+        key: opt.value, onClick: ()=>{ onChange && onChange(opt.value); setOpen(false); },
+        onMouseEnter: (ev)=> ev.currentTarget.style.background='var(--color-accent-teal-wash)',
+        onMouseLeave: (ev)=> ev.currentTarget.style.background='transparent',
+        style:{ display:'flex', alignItems:'center', gap:8, padding:'6px 7px', cursor:'pointer' },
+      },
+        e('div', { style:{ width:28, height:28, borderRadius:'var(--radius-sm)', overflow:'hidden', flex:'0 0 auto', background:'var(--surface-panel)', border:'1px solid var(--border-default)' } },
+          opt.thumbnail && e('img', { src: opt.thumbnail, alt:'', style:{ width:'100%', height:'100%', objectFit:'cover' } })),
+        e('div', { style:{ display:'flex', flexDirection:'column' } },
+          e('span', { style:{ fontFamily:'var(--font-mono)', fontSize:'var(--text-md)', color:'var(--text-primary)' } }, opt.label),
+          opt.meta && e('span', { style:{ fontFamily:'var(--font-mono)', fontSize:'var(--text-xs)', color:'var(--text-secondary)' } }, opt.meta))))));
+}
+
+function Mosaic(){
+  const [shape, setShape] = React.useState('assembly');
+  const [diameter, setDiameter] = React.useState(80);
+  const [thickness, setThickness] = React.useState(4);
+  const [margin, setMargin] = React.useState(5);
+  const [scale, setScale] = React.useState(100);
+  const [depth, setDepth] = React.useState(1.0);
+  const [recessBg, setRecessBg] = React.useState(false);
+  const [topPart, setTopPart] = React.useState('wheel-top');
+  const [capPart, setCapPart] = React.useState('wheel-cap');
+  const [colors, setColors] = React.useState([
+    { hex:'#e8a13a', areaPct:34, depth:1.0, selected:false },
+    { hex:'#4fb0ae', areaPct:41, depth:1.0, selected:false },
+    { hex:'#1b1f23', areaPct:25, depth:0.6, selected:false },
+  ]);
+  const [busy, setBusy] = React.useState(false);
+  const anySelected = colors.some(c => c.selected);
+  function setColorDepth(i, d){ setColors(cs => cs.map((c, idx)=> idx===i ? {...c, depth:d} : c)); }
+  function toggleSelect(i, v){ setColors(cs => cs.map((c, idx)=> idx===i ? {...c, selected:v} : c)); }
+
+  return e('div', { id:'app' },
+    e('header', null,
+      e('img', { src:'../../assets/makegood-logo.png', alt:'MakeGood', style:{ height:34, width:'auto' } }),
+      e('div', { style:{ width:1, height:26, background:'var(--border-default)' } }),
+      e('h1', { style:{ fontSize:18, fontWeight:600, margin:0, letterSpacing:0.2, fontFamily:'var(--font-heading)' } }, 'TMT Mosaic'),
+      e('span', { style:{ color:'var(--text-secondary)', fontSize:11, marginLeft:2 } }, 'for MakeGood TMT · SVG → multicolor recess geometry'),
+      e('div', { style:{ flex:1 } }),
+      e(Badge, null, '1,204 tris'),
+      e(Badge, { tone:'accent' }, colors.length + ' colors')),
+    e('div', { id:'left' },
+      e(Panel, { title:'Artwork' },
+        e(Dropzone, { label:'Drop an SVG here, or click to browse', onFiles: ()=>setBusy(true) }),
+        e('div', { style:{ marginTop:8 } }, e(Button, { size:'small', fullWidth:true, onClick: ()=>setBusy(true) }, 'Load sample artwork')),
+        e('div', { className:'hint' }, 'Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.')),
+      e(Panel, { title:'Base part' },
+        e('div', { style:{ marginBottom:8 } }, e(SegmentedControl, { value:shape, onChange:setShape, options:[
+          {value:'disc',label:'Disc'},{value:'rect',label:'Rect'},{value:'round',label:'Round rect'},{value:'stl',label:'STL ref'},{value:'assembly',label:'Assembly'},
+        ] })),
+        shape === 'disc' && e('div', { style:{ display:'flex', flexDirection:'column', gap:7 } },
+          e('div', { style:{ display:'flex', alignItems:'center', gap:8 } },
+            e('label', { style:{ color:'var(--text-secondary)', fontSize:12, minWidth:82 } }, 'Diameter'),
+            e('div', { style:{ flex:1 } }, e(TextInput, { type:'number', value:diameter, onChange:v=>setDiameter(Number(v)), min:1, step:1 })),
+            e('span', { className:'hint' }, 'mm')),
+          e('div', { style:{ display:'flex', alignItems:'center', gap:8 } },
+            e('label', { style:{ color:'var(--text-secondary)', fontSize:12, minWidth:82 } }, 'Thickness'),
+            e('div', { style:{ flex:1 } }, e(TextInput, { type:'number', value:thickness, onChange:v=>setThickness(Number(v)), min:0.4, step:0.1 })),
+            e('span', { className:'hint' }, 'mm'))),
+        shape === 'assembly' && e('div', { style:{ display:'flex', flexDirection:'column', gap:10 } },
+          e('div', { className:'hint' }, 'Assembly: Wheel — add each role below, Mosaic auto-detects its dominant flat face.'),
+          e('div', null,
+            e('label', { style:{ color:'var(--text-secondary)', fontSize:11, display:'block', marginBottom:4 } }, 'Top (allows rotated copies)'),
+            e(ThumbnailSelect, { value:topPart, onChange:setTopPart, options:[
+              {value:'wheel-top', label:'Wheel — Top', meta:'stl/wheel-top.stl', thumbnail:thumb('#4fb0ae','TOP')},
+              {value:'wheel-top-alt', label:'Wheel — Top (alt tread)', meta:'stl/wheel-top-alt.stl', thumbnail:thumb('#3d8f8d','ALT')},
+            ] })),
+          e('div', null,
+            e('label', { style:{ color:'var(--text-secondary)', fontSize:11, display:'block', marginBottom:4 } }, 'Cap (exactly one)'),
+            e(ThumbnailSelect, { value:capPart, onChange:setCapPart, options:[
+              {value:'wheel-cap', label:'Wheel — Cap', meta:'stl/wheel-cap.stl', thumbnail:thumb('#e8a13a','CAP')},
+            ] })),
+          e(Button, { size:'small', fullWidth:true }, '+ Add rotated copy of Top'))),
+      e(Panel, { title:'Artwork fit' },
+        e('div', { style:{ display:'flex', alignItems:'center', gap:8, marginBottom:7 } },
+          e('label', { style:{ color:'var(--text-secondary)', fontSize:12, minWidth:82 } }, 'Margin'),
+          e('div', { style:{ flex:1 } }, e(Slider, { value:margin, min:0, max:30, onChange:setMargin, valueLabel: margin+'%' }))),
+        e('div', { style:{ display:'flex', alignItems:'center', gap:8, marginBottom:7 } },
+          e('label', { style:{ color:'var(--text-secondary)', fontSize:12, minWidth:82 } }, 'Scale'),
+          e('div', { style:{ flex:1 } }, e(Slider, { value:scale, min:25, max:400, onChange:setScale, valueLabel: scale+'%' }))),
+        e(Button, { size:'small', fullWidth:true }, 'Reset to auto-fit')),
+      e(Panel, { title:'Depth' },
+        e('div', { style:{ display:'flex', alignItems:'center', gap:8, marginBottom:7 } },
+          e('label', { style:{ color:'var(--text-secondary)', fontSize:12, minWidth:110 } }, 'Default depth'),
+          e('div', { style:{ flex:1 } }, e(TextInput, { type:'number', value:depth, onChange:v=>setDepth(Number(v)), min:0.05, step:0.05 })),
+          e('span', { className:'hint' }, 'mm')),
+        e(Checkbox, { checked:recessBg, onChange:setRecessBg, label:'Recess bg too' })),
+      e(Panel, { title:'Colors detected' },
+        anySelected && e('div', { style:{ marginBottom:8 } }, e(Button, { size:'small', fullWidth:true }, 'Merge selected into one recess')),
+        e('div', { style:{ display:'flex', flexDirection:'column', gap:6 } },
+          colors.map((c,i) => e(ColorRow, { key:i, hex:c.hex, areaPct:c.areaPct, depth:c.depth, onDepthChange:(d)=>setColorDepth(i,d), selected:c.selected, onSelectedChange:(v)=>toggleSelect(i,v) }))),
+        e('div', { className:'hint', style:{ marginTop:8 } }, 'Check two or more colors above, then merge them into a single filament/AMS slot.')),
+      e(Panel, { title:'Export' },
+        e(Button, { variant:'primary', fullWidth:true, onClick: ()=>{ setBusy(true); setTimeout(()=>setBusy(false), 900); } }, 'Export STL set (.zip)'),
+        e('div', { className:'hint' }, 'One STL per color, plus base.stl for the uncut plate.'))),
+    e('div', { id:'right' },
+      e('div', { id:'hud' }, 'drag to orbit · scroll to zoom · shift-drag to pan'),
+      e('div', { id:'warn' }, e(WarningPill, null, 'Skipped a <path> with a gradient fill (not a flat color) — element ignored.')),
+      e(LoadingOverlay, { visible:busy, label:'Rebuilding geometry…' })));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(e(Mosaic));
+</script>
+</body>
+</html>

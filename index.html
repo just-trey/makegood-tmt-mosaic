@@ -2,88 +2,121 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mosaic for TMT — SVG Color Inlay Generator</title>
+<title>TMT Mosaic — SVG Color Inlay Generator</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg: #14171a;
-    --panel: #1b1f23;
-    --panel-2: #22272c;
-    --line: #2c3238;
-    --text: #dde3e8;
-    --text-dim: #8a939c;
-    --accent: #4fb0ae;
-    --accent-2: #e8a13a;
-    --danger: #d9634f;
-    --mono: 'SF Mono', 'Consolas', 'Menlo', monospace;
-    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+    /* Mosaic v3 design tokens — MakeGood navy/blue palette (WCAG AA), sharp corners.
+       Ported from design_handoff_mosaic_design_system/tokens/*.css */
+    --bg: #0c1220;
+    --panel: #141b30;
+    --panel-2: #1c2440;
+    --line: #2b3457;
+    --text: #f5f7fb;
+    --text-dim: #aab3cf;
+    --accent: #6d93ff;
+    --accent-2: #5eead4;
+    --danger: #f9438a;
+    --on-accent: #071022;
+    --viewport: #070a13;
+    --accent-wash: rgba(109,147,255,.10);
+    --accent-glow: rgba(109,147,255,.06);
+    --danger-wash: rgba(249,67,138,.12);
+    --danger-border: rgba(249,67,138,.4);
+    --danger-text: #ffb3d1;
+    --mono: 'IBM Plex Mono', 'SF Mono', 'Consolas', 'Menlo', monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --heading: 'Outfit', -apple-system, 'Segoe UI', sans-serif;
+    --radius-sm: 0px;
+    --radius-md: 1px;
+    --radius-lg: 2px;
+    --radius-2xl: 3px;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;}
-  #app{display:grid;grid-template-columns:340px 1fr;grid-template-rows:48px 1fr;height:100%;}
-  header{grid-column:1/3;display:flex;align-items:center;gap:10px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line);}
-  header .logo{width:20px;height:20px;border-radius:4px;background:conic-gradient(from 45deg, var(--accent), var(--accent-2), #b063d9, var(--accent));}
-  header h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.2px;}
+  #app{display:grid;grid-template-columns:340px 1fr;grid-template-rows:8px 64px 1fr 8px;height:100%;}
+  .accent-stripe{grid-column:1/3;background:linear-gradient(90deg,#7c3aed,#4c5fd7,#0d9488);}
+  header{grid-column:1/3;display:flex;align-items:center;gap:10px;padding:0 20px;background:var(--panel);border-bottom:1px solid var(--line);}
+  header h1{font-family:var(--heading);font-size:18px;font-weight:600;margin:0;letter-spacing:.2px;}
   header .sub{color:var(--text-dim);font-size:11px;margin-left:2px;}
   header .spacer{flex:1;}
   header .stat{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-left:14px;}
 
   #left{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:14px;}
-  #right{position:relative;background:#0d0f11;overflow:hidden;}
+  #right{position:relative;background:var(--viewport);overflow:hidden;
+    background-image:linear-gradient(var(--accent-glow) 1px, transparent 1px),linear-gradient(90deg, var(--accent-glow) 1px, transparent 1px);
+    background-size:24px 24px;}
   #canvas-host{position:absolute;inset:0;}
   #viewport-hud{position:absolute;top:12px;left:12px;font-family:var(--mono);font-size:11px;color:var(--text-dim);
-    background:rgba(20,23,26,.6);padding:6px 10px;border-radius:6px;border:1px solid var(--line);pointer-events:none;line-height:1.5}
+    background:rgba(12,18,32,.72);padding:6px 10px;border-radius:var(--radius-lg);border:1px solid var(--line);pointer-events:none;line-height:1.5}
   #warnings{position:absolute;bottom:12px;left:12px;right:12px;max-height:140px;overflow-y:auto;
     display:flex;flex-direction:column;gap:4px;pointer-events:none;}
-  .warn-pill{pointer-events:auto;background:rgba(217,99,79,.12);border:1px solid rgba(217,99,79,.4);color:#f0a897;
-    padding:6px 10px;border-radius:6px;font-size:11.5px;max-width:520px;}
+  .warn-pill{pointer-events:auto;background:var(--danger-wash);border:1px solid var(--danger-border);color:var(--danger-text);
+    padding:6px 10px;border-radius:var(--radius-lg);font-size:11.5px;max-width:520px;}
 
-  section{margin-bottom:18px;}
-  section > h2{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);
-    margin:0 0 8px 0;font-weight:700;display:flex;align-items:center;gap:6px;}
-  section > h2::after{content:"";flex:1;height:1px;background:var(--line);}
+  details.sec{margin-bottom:18px;}
+  details.sec > summary{font-family:var(--heading);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);
+    margin:0 0 8px 0;font-weight:700;display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none;user-select:none;}
+  details.sec > summary::-webkit-details-marker{display:none;}
+  details.sec > summary::before{content:"▸";font-size:9px;transition:transform .15s ease;}
+  details.sec[open] > summary::before{transform:rotate(90deg);}
+  details.sec > summary::after{content:"";flex:1;height:1px;background:var(--line);}
 
   .row{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
   .row label{flex:0 0 auto;color:var(--text-dim);font-size:12px;min-width:82px;}
   .row .field{flex:1;}
   input[type=number], input[type=text], select{
     width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);
-    padding:5px 7px;border-radius:5px;font-family:var(--mono);font-size:12px;outline:none;
+    padding:5px 7px;border-radius:var(--radius-md);font-family:var(--mono);font-size:12px;outline:none;
   }
   input[type=number]:focus, input[type=text]:focus, select:focus{border-color:var(--accent);}
   input[type=range]{width:100%;accent-color:var(--accent);}
+  .field.pair{display:flex;align-items:center;gap:8px;}
+  .field.pair input[type=range]{flex:1;width:auto;}
+  .field.pair input[type=number]{width:64px;flex:0 0 auto;}
   input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;}
 
   .btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:7px 10px;
-    border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--sans);transition:border-color .12s;}
+    border-radius:var(--radius-lg);font-size:12px;cursor:pointer;font-family:var(--sans);transition:border-color .12s;}
   .btn:hover{border-color:var(--accent);}
-  .btn.primary{background:var(--accent);border-color:var(--accent);color:#0d1a1a;font-weight:600;}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600;}
   .btn.primary:hover{filter:brightness(1.08);}
   .btn.small{padding:3px 8px;font-size:11px;}
   .btn.full{width:100%;}
   .btn:disabled{opacity:.4;cursor:not-allowed;}
   .btn-row{display:flex;gap:6px;}
 
-  #dropzone{border:1.5px dashed var(--line);border-radius:8px;padding:18px 10px;text-align:center;
+  #dropzone{border:1.5px dashed var(--line);border-radius:var(--radius-2xl);padding:18px 10px;text-align:center;
     color:var(--text-dim);cursor:pointer;font-size:12px;transition:.12s;}
-  #dropzone:hover, #dropzone.drag{border-color:var(--accent);color:var(--accent);background:rgba(79,176,174,.05);}
+  #dropzone:hover, #dropzone.drag{border-color:var(--accent);color:var(--accent);background:var(--accent-glow);}
   #dropzone .fname{color:var(--text);font-family:var(--mono);font-size:11px;margin-top:4px;word-break:break-all;}
 
   .shape-picker{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
   .shape-picker select{flex:1;padding:8px 8px;font-size:12.5px;font-family:var(--sans);}
-  .shape-thumb{width:44px;height:44px;flex:0 0 auto;border:1px solid var(--line);border-radius:7px;
+  .shape-thumb{width:44px;height:44px;flex:0 0 auto;border:1px solid var(--line);border-radius:var(--radius-lg);
     background:var(--panel-2);display:flex;align-items:center;justify-content:center;}
   .shape-thumb svg{width:30px;height:30px;display:block;}
-  .shape-thumb svg .fill{fill:rgba(79,176,174,.16);stroke:var(--accent);stroke-width:1.6;}
+  .shape-thumb svg .fill{fill:var(--accent-wash);stroke:var(--accent);stroke-width:1.6;}
   .shape-thumb svg .line{fill:none;stroke:var(--accent);stroke-width:1.6;}
 
   .color-list{display:flex;flex-direction:column;gap:6px;}
-  .color-row{background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:7px 8px;transition:border-color .1s,opacity .1s;}
+  .color-row{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:7px 8px;transition:border-color .1s,opacity .1s;}
   .color-row.dragging{opacity:.45;}
-  .color-row.drop-target{border-color:var(--accent);background:rgba(79,176,174,.1);}
-  .color-row .top{border-radius:4px;}
+  .color-row.drop-target{border-color:var(--accent);background:var(--accent-wash);}
+  .color-row .top{border-radius:var(--radius-md);}
+
+  .asm-summary{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:8px 10px;margin-bottom:8px;}
+  .asm-sum-row{display:flex;align-items:center;gap:8px;font-size:12px;padding:2px 0;color:var(--text);}
+  .asm-sum-row .ok{color:var(--accent);font-weight:700;width:12px;text-align:center;}
+  .asm-adv{margin-bottom:8px;}
+  .asm-adv > summary{cursor:pointer;color:var(--text-dim);font-size:11px;list-style:none;user-select:none;padding:2px 0;}
+  .asm-adv > summary::before{content:"▸ ";}
+  .asm-adv[open] > summary::before{content:"▾ ";}
   .color-row .top{display:flex;align-items:center;gap:7px;}
-  .swatch{width:16px;height:16px;border-radius:4px;border:1px solid rgba(255,255,255,.15);flex:0 0 auto;}
+  .swatch{width:16px;height:16px;border-radius:var(--radius-sm);border:1px solid rgba(255,255,255,.15);flex:0 0 auto;}
   .color-row .hex{font-family:var(--mono);font-size:11px;color:var(--text-dim);}
   .color-row .area{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--text-dim);}
   .color-row .depth-row{display:flex;align-items:center;gap:6px;margin-top:6px;}
@@ -94,7 +127,7 @@
 
   .slot-count{font-family:var(--mono);font-size:11px;color:var(--accent-2);margin-top:6px;}
 
-  #loading-overlay{position:absolute;inset:0;background:rgba(13,15,17,.85);display:none;align-items:center;
+  #loading-overlay{position:absolute;inset:0;background:rgba(7,10,19,.85);display:none;align-items:center;
     justify-content:center;flex-direction:column;gap:10px;font-size:12px;color:var(--text-dim);z-index:5;}
   .spinner{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);
     animation:spin 0.8s linear infinite;}
@@ -110,26 +143,27 @@
 </head>
 <body>
 <div id="app">
+  <div class="accent-stripe"></div>
   <header>
-    <div class="logo"></div>
-    <h1>Mosaic</h1>
-    <span class="sub">for MakeGood TMT · SVG → multicolor recess geometry</span>
+    <img src="assets/makegood-logo.png" alt="MakeGood" style="height:34px;width:auto">
+    <h1>TMT Mosaic</h1>
+    <span class="sub">for the MakeGood TMT · SVG → multicolor recess geometry</span>
     <div class="spacer"></div>
     <span class="stat" id="stat-tris">0 tris</span>
-    <span class="stat" id="stat-colors">0 colors</span>
+    <span class="stat" id="stat-colors" style="display:none">0 colors</span>
   </header>
 
   <div id="left">
 
-    <section>
-      <h2>Part</h2>
+    <details class="sec" open>
+      <summary>Part</summary>
       <div class="shape-picker">
         <div class="shape-thumb" id="shape-thumb" aria-hidden="true"></div>
         <select id="shape-kind" aria-label="Part shape">
+          <option value="assembly" selected>Wheel assembly</option>
           <option value="disc">Disc</option>
           <option value="rect">Rectangle</option>
           <option value="round">Rounded rectangle</option>
-          <option value="assembly">Wheel assembly</option>
           <option value="stl">STL reference</option>
         </select>
       </div>
@@ -150,7 +184,7 @@
         <div class="row"><label>Thickness</label><div class="field"><input type="number" id="p-thickness-rr" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
       </div>
       <div id="shape-params-stl" style="display:none">
-        <div id="stl-dropzone" style="border:1.5px dashed var(--line);border-radius:8px;padding:14px 8px;text-align:center;color:var(--text-dim);cursor:pointer;font-size:12px;">
+        <div id="stl-dropzone" style="border:1.5px dashed var(--line);border-radius:var(--radius-2xl);padding:14px 8px;text-align:center;color:var(--text-dim);cursor:pointer;font-size:12px;">
           Drop base STL for reference<br><span class="fname" id="stl-fname"></span>
           <input type="file" id="stl-input" accept=".stl" style="display:none">
         </div>
@@ -159,24 +193,21 @@
         <div class="row"><label>Footprint</label><div class="field"><input type="number" id="p-width-stl" value="80" step="1"></div>
           <div class="field"><input type="number" id="p-height-stl" value="60" step="1"></div></div>
         <div class="row"><label>Insert thick.</label><div class="field"><input type="number" id="p-thickness-stl" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
-        <div class="hint">v1 STL support is <b>reference mode</b>: the uploaded mesh is shown for alignment/sizing only. Mosaic's own boolean engine only cuts pockets into its own flat parametric plate (disc / rect / round rect) — it does not cut into arbitrary mesh geometry yet. Export produces a plate insert sized to the face above, for you to seat into the real part.</div>
+        <div class="hint">STL is <b>reference-only</b> in v1: the mesh guides sizing/alignment, and export produces a flat plate insert sized to the face above.</div>
       </div>
 
       <div id="shape-params-assembly" style="display:none">
-        <div class="hint" style="margin-bottom:8px;">Real multi-part cutting: an assembly is a fixed set of part roles (e.g. a wheel is Top + Cap). Add each role below — Mosaic auto-detects its dominant flat face and cuts pockets directly into that part's own mesh, all sharing one design in real assembled coordinates.</div>
-        <div class="row"><label>Assembly</label><div class="field"><select id="p-asm-kind"></select></div></div>
+        <select id="p-asm-kind" style="display:none"></select>
         <div id="assembly-role-controls" style="margin-bottom:8px;"></div>
-        <div class="hint" style="margin-bottom:8px;">Roles with a library-linked file auto-load when added, if served over a local http server (see README) — otherwise drag-and-drop the file into the row below.</div>
         <div id="assembly-part-list"></div>
-        <div class="hint" style="margin-top:8px;">Outer design radius (mm), used to fit the SVG across the whole assembly:</div>
-        <div class="row"><label>Design radius</label><div class="field"><input type="number" id="p-asm-radius" value="138" step="0.5"></div><span class="hint">mm</span></div>
-        <div class="hint">Pockets are cut into each part's real mesh as true boolean solids straight from the SVG's vector paths — edges follow the artwork's actual curves (no grid/voxel stair-stepping), and export is the whole modified part, not a bare insert plate.</div>
+        <div class="row" style="margin-top:8px;"><label>Design radius</label><div class="field"><input type="number" id="p-asm-radius" value="138" step="0.5"></div><span class="hint">mm</span></div>
+        <div class="hint">Pockets are cut into each part's real mesh — load an SVG below to see it on the wheel.</div>
       </div>
 
-    </section>
+    </details>
 
-    <section>
-      <h2>Artwork</h2>
+    <details class="sec" open>
+      <summary>Artwork</summary>
       <div id="dropzone">
         Drop an SVG here, or click to browse<br>
         <span class="fname" id="svg-fname"></span>
@@ -186,41 +217,49 @@
         <button class="btn small" id="btn-sample" style="flex:1;">Load sample artwork</button>
       </div>
       <div class="hint">Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.</div>
-    </section>
+    </details>
 
-    <section>
-      <h2>Artwork fit</h2>
-      <div class="row"><label>Margin</label><div class="field"><input type="range" id="p-margin" min="0" max="30" value="5"></div><span class="hint" id="p-margin-val">5%</span></div>
-      <div class="row"><label>Scale</label><div class="field"><input type="range" id="p-scale" min="25" max="400" value="100"></div><span class="hint" id="p-scale-val">100%</span></div>
-      <div class="row"><label>Offset X</label><div class="field"><input type="number" id="p-offset-x" value="0" step="0.5"></div><span class="hint">mm</span></div>
-      <div class="row"><label>Offset Y</label><div class="field"><input type="number" id="p-offset-y" value="0" step="0.5"></div><span class="hint">mm</span></div>
+    <details class="sec" open>
+      <summary>Artwork fit</summary>
+      <div class="row"><label>Margin</label><div class="field pair"><input type="range" id="p-margin" min="0" max="30" step="1" value="5"><input type="number" id="p-margin-num" min="0" max="30" step="1" value="5"></div><span class="hint">%</span></div>
+      <div class="row"><label>Scale</label><div class="field pair"><input type="range" id="p-scale" min="25" max="400" step="1" value="100"><input type="number" id="p-scale-num" min="25" max="400" step="1" value="100"></div><span class="hint">%</span></div>
+      <div class="row"><label>Offset X</label><div class="field pair"><input type="range" id="p-offset-x-slider" min="-40" max="40" step="0.5" value="0"><input type="number" id="p-offset-x" value="0" step="0.5"></div><span class="hint">mm</span></div>
+      <div class="row"><label>Offset Y</label><div class="field pair"><input type="range" id="p-offset-y-slider" min="-40" max="40" step="0.5" value="0"><input type="number" id="p-offset-y" value="0" step="0.5"></div><span class="hint">mm</span></div>
       <button class="btn small full" id="btn-reset-fit">Reset to auto-fit</button>
-      <div class="hint">Margin sets the auto-fit size (biggest the artwork can be with that border). Scale multiplies on top of that — over 100% will overhang the base footprint, useful if you want the design to bleed to the edge or you're intentionally cropping.</div>
-    </section>
+      <div class="hint">Margin sets the auto-fit border; Scale multiplies on top (over 100% bleeds past the edge).</div>
+    </details>
 
-    <section>
-      <h2>Depth</h2>
+    <details class="sec" open>
+      <summary>Depth</summary>
       <div class="row"><label>Default depth</label><div class="field"><input type="number" id="p-depth" value="1.0" min="0.05" step="0.05"></div><span class="hint">mm</span></div>
       <div class="row"><label>Recess bg too</label><div class="field" style="flex:0;"><input type="checkbox" id="p-recess-bg"></div>
         <span class="hint" id="bg-depth-hint" style="display:none">uses default depth, override below</span></div>
-      <div class="hint">Depth is measured down from the top face. Shallow colors (fine detail) can be overridden per-color below.</div>
-    </section>
+      <div class="hint">Measured down from the top face; override per-color below for fine detail.</div>
+    </details>
 
-    <section>
-      <h2>Colors detected</h2>
+    <details class="sec" open>
+      <summary>Colors detected</summary>
       <button class="btn small full" id="btn-merge" style="display:none;margin-bottom:8px;">Merge selected into one recess</button>
       <div class="color-list" id="color-list">
         <div class="empty-hint">Load an SVG to detect color regions. Each flat fill color becomes its own recess, filled by a separate AMS filament.</div>
       </div>
       <div class="slot-count" id="slot-count"></div>
-      <div class="hint"><b>Drag one color onto another</b> to merge them into a single filament / AMS slot — or check two+ and use the button. Drop a color onto an existing merged group to add it. Merged groups share one depth; use "unmerge" to split them back.</div>
-    </section>
+      <div class="hint"><b>Drag one color onto another</b> (or check several) to merge into one AMS slot; merged groups share a depth — "unmerge" splits them back.</div>
+    </details>
 
-    <section>
-      <h2>Export</h2>
-      <button class="btn primary full" id="btn-export" disabled>Export STL set (.zip)</button>
-      <div class="hint">One STL per color, plus <code>base.stl</code> for the uncut plate. Import all as separate objects in Bambu Studio, group them, then assign a filament per part for AMS mapping.</div>
-    </section>
+    <details class="sec" open>
+      <summary>Export</summary>
+      <div class="row" id="plate-size-row"><label>Build plate</label><div class="field">
+        <select id="p-plate-size">
+          <option value="256x256" selected>256 × 256 (X1C / P1S / A1)</option>
+          <option value="350x320">350 × 320 (H2D)</option>
+          <option value="180x180">180 × 180 (A1 mini)</option>
+        </select>
+      </div></div>
+      <button class="btn primary full" id="btn-export" disabled>Export print-ready 3MF</button>
+      <button class="btn small full" id="btn-export-stl" disabled style="margin-top:6px;">Export STL set (.zip)</button>
+      <div class="hint" id="export-hint">3MF is print-ready for Bambu Studio with colors pre-assigned to filament slots; the STL set is the fallback for other slicers.</div>
+    </details>
 
   </div>
 
@@ -230,6 +269,7 @@
     <div id="warnings"></div>
     <div id="loading-overlay"><div class="spinner"></div><div id="loading-text">Rebuilding geometry…</div></div>
   </div>
+  <div class="accent-stripe"></div>
 </div>
 
 <script type="importmap">
@@ -247,6 +287,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import ManifoldModule from 'manifold-3d';
@@ -726,21 +767,74 @@ function dedupeRing(ring, eps=1e-6){
   return out;
 }
 
-function safeUnion(a,b,label){
-  if(!a) return b; if(!b) return a;
-  try{ return turf.union(a,b); }
+// Boolean ops can EMIT degenerate rings even from clean input: a difference whose edges run
+// along each other leaves a zero-area sliver "hole" (an out-and-back point sequence). Feeding
+// that sliver into a later union sends turf 6.5's sweep-line into unbounded recursion
+// ("Maximum call stack size exceeded"). So every feature is scrubbed both entering and leaving
+// safeUnion/safeDiff: drop near-duplicate consecutive vertices and any ring with ~zero area.
+function cleanFeature(f){
+  if(!f || !f.geometry) return f;
+  const EPS = 1e-9;
+  function ringArea(r){ let s=0; for(let i=0;i<r.length-1;i++) s += r[i][0]*r[i+1][1]-r[i+1][0]*r[i][1]; return s/2; }
+  function cleanRing(coords){
+    const out = [];
+    coords.forEach(p=>{
+      const prev = out[out.length-1];
+      if(!prev || Math.hypot(p[0]-prev[0], p[1]-prev[1]) > EPS) out.push(p);
+    });
+    while(out.length>1 && Math.hypot(out[0][0]-out[out.length-1][0], out[0][1]-out[out.length-1][1]) <= EPS) out.pop();
+    if(out.length<3) return null;
+    out.push([out[0][0], out[0][1]]);
+    return Math.abs(ringArea(out)) > EPS ? out : null;
+  }
+  function cleanPoly(rings){
+    const ext = cleanRing(rings[0]);
+    if(!ext) return null; // exterior degenerated -> whole polygon (and its holes) goes
+    const holes = rings.slice(1).map(cleanRing).filter(Boolean);
+    return [ext, ...holes];
+  }
+  const g = f.geometry;
+  let polys = (g.type==='Polygon' ? [g.coordinates] : g.coordinates).map(cleanPoly).filter(Boolean);
+  if(!polys.length) return null;
+  const geom = polys.length===1
+    ? { type:'Polygon', coordinates: polys[0] }
+    : { type:'MultiPolygon', coordinates: polys };
+  return { type:'Feature', properties: f.properties||{}, geometry: geom };
+}
+
+// The CDN turf.min.js bundles a 2021 polygon-clipping whose sweep line recurses without bound
+// when two inputs share edges whose coordinates differ only at ~1e-14 (exactly what our circle
+// arc vs. star-boundary regions produce). Quantizing the coordinates collapses those phantom
+// distinctions, so on failure retry at decreasing precision — 1e-10 mm is far below anything a
+// printer can express, and 1e-6 still is, so the retries are geometrically free.
+function boolOpWithRetry(fn, a, b){
+  try{ return { ok:true, val: cleanFeature(fn(a,b)) }; }
   catch(e){
-    warn(`Boolean union failed${label?` for ${label}`:''} (likely a self-intersecting path in the source SVG) — using the unmerged shape as a fallback, so this region may be missing part of its area.`);
-    return a;
+    for(const p of [10,8,6]){
+      try{
+        const ta = turf.truncate(a,{precision:p,mutate:false}), tb = turf.truncate(b,{precision:p,mutate:false});
+        return { ok:true, val: cleanFeature(fn(ta,tb)) };
+      }catch(e2){}
+    }
+    return { ok:false };
   }
 }
+
+function safeUnion(a,b,label){
+  a = cleanFeature(a); b = cleanFeature(b);
+  if(!a) return b; if(!b) return a;
+  const r = boolOpWithRetry((x,y)=>turf.union(x,y), a, b);
+  if(r.ok) return r.val;
+  warn(`Boolean union failed${label?` for ${label}`:''} (likely a self-intersecting path in the source SVG) — using the unmerged shape as a fallback, so this region may be missing part of its area.`);
+  return a;
+}
 function safeDiff(a,b,label){
+  a = cleanFeature(a); b = cleanFeature(b);
   if(!a) return null; if(!b) return a;
-  try{ return turf.difference(a,b); }
-  catch(e){
-    warn(`Boolean subtraction failed${label?` for ${label}`:''} (likely a self-intersecting path in the source SVG) — that region may overlap its neighbor instead of having the overlap cut out.`);
-    return a;
-  }
+  const r = boolOpWithRetry((x,y)=>turf.difference(x,y), a, b);
+  if(r.ok) return r.val;
+  warn(`Boolean subtraction failed${label?` for ${label}`:''} (likely a self-intersecting path in the source SVG) — that region may overlap its neighbor instead of having the overlap cut out.`);
+  return a;
 }
 
 // Compute, per color, the net *visible* region accounting for paint order (later elements occlude earlier ones).
@@ -1360,7 +1454,7 @@ async function build3MF(objects){
     const tlines = [];
     for(let t=0; t<tris.length; t+=3) tlines.push(`<triangle v1="${tris[t]}" v2="${tris[t+1]}" v3="${tris[t+2]}"/>`);
     objXml +=
-`  <object id="${oid}" type="model" pid="1" pindex="${i}">
+`  <object id="${oid}" type="model" name="${xmlEscape(o.name)}" pid="1" pindex="${i}">
    <mesh>
     <vertices>
 ${vlines.join('\n')}
@@ -1386,6 +1480,213 @@ ${items.join('\n')}
  </build>
 </model>`;
   z.file('3D/3dmodel.model', model);
+  return z.generateAsync({ type:'blob' });
+}
+
+// Row-vector rotation R = Rx(theta) * Rz(phi) (apply face-down tilt first, then spin about the
+// vertical axis). Returned as a 3x3 where a point transforms as p' = p * R.
+function rotXthenZ(thetaDeg, phiDeg){
+  const t=thetaDeg*Math.PI/180, p=phiDeg*Math.PI/180;
+  const ct=Math.cos(t), st=Math.sin(t), cp=Math.cos(p), sp=Math.sin(p);
+  return [
+    [cp,       sp,      0 ],
+    [-ct*sp,   ct*cp,   st],
+    [ st*sp,  -st*cp,   ct],
+  ];
+}
+
+// Minimal Bambu Studio project settings (Metadata/project_settings.config). This is what makes
+// the palette show up as actual filament colors on import — Bambu ignores core-spec 3MF
+// basematerials entirely. Only the keys we care about are written; Bambu fills everything else
+// from the named system presets / the user's current profile. Kept as its own function so it's
+// easy to swap for a fuller preset dump if a future Bambu Studio gets stricter about it.
+function bambuProjectSettings(materials, plateW, plateD){
+  const presets = {
+    '256x256': { printer:'Bambu Lab X1 Carbon 0.4 nozzle', print:'0.20mm Standard @BBL X1C', filament:'Bambu PLA Basic @BBL X1C', height:250 },
+    '350x320': { printer:'Bambu Lab H2D 0.4 nozzle',       print:'0.20mm Standard @BBL H2D', filament:'Bambu PLA Basic @BBL H2D', height:325 },
+    '180x180': { printer:'Bambu Lab A1 mini 0.4 nozzle',   print:'0.20mm Standard @BBL A1M', filament:'Bambu PLA Basic @BBL A1M', height:180 },
+  };
+  const p = presets[plateW+'x'+plateD] || presets['256x256'];
+  const rep = v => materials.map(()=>v);
+  return JSON.stringify({
+    from: 'project',
+    name: 'project_settings',
+    version: '02.00.03.54',
+    printer_settings_id: p.printer,
+    print_settings_id: p.print,
+    filament_settings_id: rep(p.filament),
+    filament_colour: materials.map(m=>(m.color||'#CCCCCC').toUpperCase()),
+    filament_type: rep('PLA'),
+    filament_diameter: rep('1.75'),
+    nozzle_diameter: ['0.4'],
+    printable_area: ['0x0', plateW+'x0', plateW+'x'+plateD, '0x'+plateD],
+    printable_height: String(p.height),
+    curr_bed_type: 'Textured PEI Plate',
+  }, null, 1);
+}
+
+// One combined print-ready .3mf for the whole assembly, written as a Bambu Studio *project*
+// (Bambu Studio / Orca compatible). A generic core-spec 3MF makes Bambu Studio pop the
+// "not from Bambu Lab" dialog, drop material colors, auto-rename parts, and pile everything
+// onto one plate — so we write the vendor format it actually honors:
+//   - 3D/3dmodel.model carrying the BambuStudio:3mfVersion marker (suppresses the dialog),
+//     with mesh sub-objects + one component object per physical part
+//   - Metadata/model_settings.config: part names, per-part filament (extruder) assignment,
+//     and one <plate> block per build plate
+//   - Metadata/project_settings.config: filament colors (see bambuProjectSettings above)
+// Parts are laid MOSAIC-FACE-DOWN, spun `rotZdeg` about vertical, then packed onto
+// `opts.plate`-sized build plates: largest footprint first, each part joining an existing
+// plate's row only if it fits, otherwise opening a new plate. A part bigger than the plate
+// still gets its own plate, centered — the overhang is visible and the user's call.
+//   materials: [{name,color}]  (index 0 = body/base, then one per palette color)
+//   parts: [{ name, nsign, bodySoup, subs:[{name, matIndex, soup}] }]
+async function build3MFCombined(materials, parts, opts){
+  opts = opts || {};
+  const rotZ = opts.rotZdeg || 0, gap = 8;
+  const plateW = (opts.plate && opts.plate.w) || 256;
+  const plateD = (opts.plate && opts.plate.d) || 256;
+  const z = new JSZip();
+  z.file('[Content_Types].xml',
+`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>`);
+  z.file('_rels/.rels',
+`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>`);
+
+  // per-part rotation + transformed footprint (from the body bbox corners)
+  const placed = parts.map(part=>{
+    const R = rotXthenZ(-90*part.nsign, rotZ);
+    const s = part.bodySoup;
+    let mn=[Infinity,Infinity,Infinity], mx=[-Infinity,-Infinity,-Infinity];
+    for(let i=0;i<s.length;i+=3) for(let k=0;k<3;k++){ const v=s[i+k]; if(v<mn[k])mn[k]=v; if(v>mx[k])mx[k]=v; }
+    const tr=(x,y,zz)=>[ x*R[0][0]+y*R[1][0]+zz*R[2][0], x*R[0][1]+y*R[1][1]+zz*R[2][1], x*R[0][2]+y*R[1][2]+zz*R[2][2] ];
+    let tmn=[Infinity,Infinity,Infinity], tmx=[-Infinity,-Infinity,-Infinity];
+    for(const cx of [mn[0],mx[0]]) for(const cy of [mn[1],mx[1]]) for(const cz of [mn[2],mx[2]]){
+      const p=tr(cx,cy,cz); for(let k=0;k<3;k++){ if(p[k]<tmn[k])tmn[k]=p[k]; if(p[k]>tmx[k])tmx[k]=p[k]; }
+    }
+    return { part, R, w:tmx[0]-tmn[0], d:tmx[1]-tmn[1], cx:(tmn[0]+tmx[0])/2, cy:(tmn[1]+tmx[1])/2, minZ:tmn[2] };
+  });
+
+  // greedy plate packing: biggest footprints claim plates first, small parts (the cap)
+  // slot into an existing plate's row when there's room
+  const plates = []; // each: { row: [placed...] }
+  placed.slice().sort((a,b)=>(b.w*b.d)-(a.w*a.d)).forEach(pl=>{
+    let plate = plates.find(p=>
+      pl.d <= plateD &&
+      p.row.reduce((s,q)=>s+q.w,0) + p.row.length*gap + pl.w <= plateW);
+    if(!plate){ plate = { row: [] }; plates.push(plate); }
+    plate.row.push(pl);
+  });
+  // Bambu lays logical plates out along world X with a gap of 1/5 plate width
+  // (LOGICAL_PART_PLATE_GAP); build item transforms are world coordinates.
+  const stride = plateW * 1.2;
+  plates.forEach((plate,pi)=>{
+    const totalW = plate.row.reduce((s,q)=>s+q.w,0) + gap*(plate.row.length-1);
+    let x = pi*stride + plateW/2 - totalW/2;
+    plate.row.forEach(pl=>{
+      pl.tx = (x + pl.w/2) - pl.cx;  // row across the plate, centered
+      pl.ty = plateD/2 - pl.cy;      // centered front-to-back
+      pl.tz = -pl.minZ;              // rest the face flat on the plate (Z=0)
+      x += pl.w + gap;
+    });
+  });
+
+  let nextId = 1;
+  let objXml = '';
+  const items = [];
+  for(const pl of placed){
+    const subs = [];
+    for(const sub of pl.part.subs){
+      const { verts, tris } = soupToIndexed(sub.soup);
+      const oid = nextId++;
+      subs.push({ id: oid, name: sub.name, matIndex: sub.matIndex });
+      const vlines=[]; for(let v=0;v<verts.length;v+=3) vlines.push(`<vertex x="${fmtCoord(verts[v])}" y="${fmtCoord(verts[v+1])}" z="${fmtCoord(verts[v+2])}"/>`);
+      const tlines=[]; for(let t=0;t<tris.length;t+=3) tlines.push(`<triangle v1="${tris[t]}" v2="${tris[t+1]}" v3="${tris[t+2]}"/>`);
+      objXml +=
+`  <object id="${oid}" name="${xmlEscape(sub.name)}" type="model">
+   <mesh>
+    <vertices>
+${vlines.join('\n')}
+    </vertices>
+    <triangles>
+${tlines.join('\n')}
+    </triangles>
+   </mesh>
+  </object>
+`;
+    }
+    const cid = nextId++;
+    objXml +=
+`  <object id="${cid}" name="${xmlEscape(pl.part.name)}" type="model">
+   <components>
+${subs.map(s=>`    <component objectid="${s.id}"/>`).join('\n')}
+   </components>
+  </object>
+`;
+    const R = pl.R;
+    pl.cid = cid;
+    pl.subs = subs;
+    pl.xf = [R[0][0],R[0][1],R[0][2], R[1][0],R[1][1],R[1][2], R[2][0],R[2][1],R[2][2], pl.tx,pl.ty,pl.tz]
+      .map(v=>+v.toFixed(6)).join(' ');
+    items.push(`  <item objectid="${cid}" transform="${pl.xf}" printable="1"/>`);
+  }
+
+  const model =
+`<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">
+ <metadata name="Application">BambuStudio-02.00.03.54</metadata>
+ <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <resources>
+${objXml} </resources>
+ <build>
+${items.join('\n')}
+ </build>
+</model>`;
+  z.file('3D/3dmodel.model', model);
+
+  // model_settings.config: this is where Bambu Studio actually reads object/part names,
+  // per-part filament (extruder) assignment, and plate membership from.
+  const cfg = ['<?xml version="1.0" encoding="UTF-8"?>', '<config>'];
+  for(const pl of placed){
+    cfg.push(`  <object id="${pl.cid}">`);
+    cfg.push(`    <metadata key="name" value="${xmlEscape(pl.part.name)}"/>`);
+    cfg.push(`    <metadata key="extruder" value="1"/>`);
+    for(const s of pl.subs){
+      cfg.push(`    <part id="${s.id}" subtype="normal_part">`);
+      cfg.push(`      <metadata key="name" value="${xmlEscape(s.name)}"/>`);
+      cfg.push(`      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>`);
+      cfg.push(`      <metadata key="extruder" value="${s.matIndex+1}"/>`);
+      cfg.push(`    </part>`);
+    }
+    cfg.push(`  </object>`);
+  }
+  let identifyId = 100;
+  plates.forEach((plate,pi)=>{
+    cfg.push('  <plate>');
+    cfg.push(`    <metadata key="plater_id" value="${pi+1}"/>`);
+    cfg.push(`    <metadata key="plater_name" value=""/>`);
+    cfg.push(`    <metadata key="locked" value="false"/>`);
+    plate.row.forEach(pl=>{
+      cfg.push('    <model_instance>');
+      cfg.push(`      <metadata key="object_id" value="${pl.cid}"/>`);
+      cfg.push(`      <metadata key="instance_id" value="0"/>`);
+      cfg.push(`      <metadata key="identify_id" value="${identifyId++}"/>`);
+      cfg.push('    </model_instance>');
+    });
+    cfg.push('  </plate>');
+  });
+  cfg.push('  <assemble>');
+  for(const pl of placed) cfg.push(`   <assemble_item object_id="${pl.cid}" instance_id="0" transform="${pl.xf}" offset="0 0 0"/>`);
+  cfg.push('  </assemble>');
+  cfg.push('</config>');
+  z.file('Metadata/model_settings.config', cfg.join('\n'));
+
+  z.file('Metadata/project_settings.config', bambuProjectSettings(materials, plateW, plateD));
   return z.generateAsync({ type:'blob' });
 }
 
@@ -1524,32 +1825,42 @@ function renderAssemblyRoleControls(){
   if(!box) return;
   const kind = currentAssemblyKind();
   if(!kind){ box.innerHTML=''; return; }
+
+  // Served over http: the assembly auto-loads on select, so all we need here is a reload.
+  if(asmKindCanAutoLoad(kind)){
+    box.innerHTML = `<div class="btn-row" style="margin-bottom:8px;"><button class="btn small" data-load-full>↻ Reload assembly</button></div>`;
+    const b = box.querySelector('[data-load-full]');
+    if(b) b.addEventListener('click', asmLoadFullAssembly);
+    return;
+  }
+
+  // file:// fallback: no library fetch, so offer manual per-role add buttons.
   const buttons = [];
   kind.roles.forEach(role=>{
     const primary = state.assembly.parts.find(p=>p.roleId===role.id && !p.isDuplicateOf);
     if(!primary) buttons.push(`<button class="btn small" data-role-add="${role.id}">+ Add ${role.name}</button>`);
     else if(role.allowRotatedCopies) buttons.push(`<button class="btn small" data-role-dup="${role.id}">+ Add rotated copy of ${role.name}</button>`);
   });
-  const canAutoLoad = asmKindCanAutoLoad(kind);
-  let html = '';
-  if(canAutoLoad){
-    html += `<div class="btn-row" style="margin-bottom:6px;"><button class="btn small full" data-load-full>Load full ${kind.name.replace(/\s*\(.*\)\s*$/,'')} (all parts)</button></div>`;
-  }
-  html += buttons.length
-    ? `<div class="btn-row" style="flex-wrap:wrap;margin-bottom:8px;">${buttons.join('')}</div>`
+  box.innerHTML = buttons.length
+    ? `<div class="hint" style="margin-bottom:6px;">Serve the folder over http to auto-load the whole assembly. Otherwise add parts manually:</div><div class="btn-row" style="flex-wrap:wrap;margin-bottom:8px;">${buttons.join('')}</div>`
     : `<div class="hint" style="margin-bottom:8px;">All roles for this assembly are filled.</div>`;
-  if(canAutoLoad && buttons.length){
-    html += `<div class="hint" style="margin-bottom:8px;">Or add parts one at a time with the buttons above.</div>`;
-  }
-  box.innerHTML = html;
-  const fullBtn = box.querySelector('[data-load-full]');
-  if(fullBtn) fullBtn.addEventListener('click', asmLoadFullAssembly);
   box.querySelectorAll('[data-role-add]').forEach(btn=>btn.addEventListener('click', ()=>{
     const role = kind.roles.find(r=>r.id===btn.dataset.roleAdd); if(role) asmAddRolePart(role);
   }));
   box.querySelectorAll('[data-role-dup]').forEach(btn=>btn.addEventListener('click', ()=>{
     const role = kind.roles.find(r=>r.id===btn.dataset.roleDup); if(role) asmAddRoleDuplicate(role);
   }));
+}
+
+// Auto-load the whole assembly the moment Assembly mode is active and the library is reachable,
+// so the user never has to click "Load full …". No-op if parts are already present or the
+// library isn't available (file://), where manual add buttons are shown instead.
+function maybeAutoLoadAssembly(){
+  if(state.shapeKind !== 'assembly') return;
+  const kind = currentAssemblyKind();
+  if(kind && asmKindCanAutoLoad(kind) && state.assembly.parts.length === 0){
+    asmLoadFullAssembly();
+  }
 }
 
 function asmAddDuplicate(sourceId){
@@ -1614,9 +1925,9 @@ async function loadPartsLibrary(){
     const res = await fetch('stl/parts.json');
     if(!res.ok) throw new Error('HTTP '+res.status);
     state.assembly.library = await res.json();
-    // the manifest may land after the user already opened Assembly mode — re-render so the
-    // "Load full assembly" button (which depends on the library being present) shows up.
-    if(state.shapeKind==='assembly') renderAssemblyRoleControls();
+    // the manifest may land after the user already opened Assembly mode — re-render and
+    // auto-load now that the library (which auto-load depends on) is available.
+    if(state.shapeKind==='assembly'){ renderAssemblyRoleControls(); renderAssemblyPartList(); maybeAutoLoadAssembly(); }
   }catch(e){
     // no manifest present — silently do nothing, this is optional
   }
@@ -1632,66 +1943,97 @@ function applyAsmPatchChoice(part){
   part.restPositions = excludeTriangles(part.positions, patch.triIndices);
 }
 
+// Full editable controls for one part (drop zone, face pick, base thickness / pivot+angle,
+// remove). Kept behind an "Advanced" disclosure in the common auto-load case, but still the
+// manual-upload UI when the library isn't reachable (file://).
+function buildAsmPartRow(part){
+  const row = document.createElement('div');
+  row.className = 'color-row';
+  row.style.marginBottom = '8px';
+  if(part.isDuplicateOf){
+    const src = state.assembly.parts.find(p=>p.id===part.isDuplicateOf);
+    row.innerHTML = `
+      <div class="top"><div class="hex">${part.name}</div></div>
+      <div class="hint">Reuses ${src?src.name:'?'}'s geometry, rotated into position for design-fitting purposes. Exported cut is re-oriented back to this part's native (unrotated) print orientation.</div>
+      <div class="depth-row"><label>pivot X</label><input type="number" step="0.1" value="${part.pivotX}" data-asm="pivotX" style="width:56px;"></div>
+      <div class="depth-row"><label>pivot Z</label><input type="number" step="0.1" value="${part.pivotZ}" data-asm="pivotZ" style="width:56px;"></div>
+      <div class="depth-row"><label>angle°</label><input type="number" step="1" value="${part.angleDeg}" data-asm="angleDeg" style="width:56px;"></div>
+      <button class="btn small" data-asm-remove style="margin-top:6px;">Remove</button>
+    `;
+  } else {
+    const statusText = part.loaded
+      ? `face detected: normal (${part.patchNormal.map(v=>v.toFixed(2)).join(', ')}), plane offset ${part.topZ.toFixed(2)}mm, ${part.boundaryLoop?part.boundaryLoop.length:0}-pt boundary`
+      : 'no file loaded yet';
+    const patchOptions = (part.patches||[]).slice(0,6).map((p,i)=>
+      `<option value="${i}" ${i===part.patchIdx?'selected':''}>#${i+1}: area ${p.area.toFixed(0)}mm² (normal ${p.normal.map(v=>v.toFixed(2)).join(',')})</option>`
+    ).join('');
+    row.innerHTML = `
+      <div class="top"><div class="hex">${part.name}</div></div>
+      <div style="border:1.5px dashed var(--line);border-radius:6px;padding:8px;text-align:center;font-size:11px;color:var(--text-dim);cursor:pointer;" data-asm-drop>
+        Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file>
+      </div>
+      <div class="hint" style="margin-top:4px;">${statusText}</div>
+      ${part.patches ? `<div class="depth-row"><label>face</label><select data-asm="patchIdx" style="flex:1;">${patchOptions}</select></div>` : ''}
+      <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;"><span class="hint">mm of material behind the face this replaces</span></div>
+      <div class="btn-row" style="margin-top:6px;">
+        <button class="btn small" data-asm-remove>Remove</button>
+      </div>
+    `;
+  }
+  const drop = row.querySelector('[data-asm-drop]');
+  const fileInput = row.querySelector('[data-asm-file]');
+  if(drop && fileInput){
+    drop.addEventListener('click', ()=>fileInput.click());
+    fileInput.addEventListener('change', e=>{ if(e.target.files[0]) asmLoadPartFile(part, e.target.files[0]); });
+    ['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev, e=>e.preventDefault()));
+    drop.addEventListener('drop', e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) asmLoadPartFile(part, f); });
+  }
+  row.querySelectorAll('[data-asm]').forEach(inp=>{
+    inp.addEventListener('change', e=>{
+      const field = e.target.dataset.asm;
+      const val = (field==='patchIdx') ? parseInt(e.target.value) : parseFloat(e.target.value);
+      part[field] = val;
+      if(field==='patchIdx') applyAsmPatchChoice(part);
+      scheduleRebuild();
+    });
+  });
+  const rmBtn = row.querySelector('[data-asm-remove]');
+  if(rmBtn) rmBtn.addEventListener('click', ()=>asmRemovePart(part.id));
+  return row;
+}
+
 function renderAssemblyPartList(){
   const box = $('#assembly-part-list');
   if(!box) return;
   box.innerHTML = '';
-  state.assembly.parts.forEach(part=>{
-    const row = document.createElement('div');
-    row.className = 'color-row';
-    row.style.marginBottom = '8px';
-    if(part.isDuplicateOf){
-      const src = state.assembly.parts.find(p=>p.id===part.isDuplicateOf);
-      row.innerHTML = `
-        <div class="top"><div class="hex">${part.name}</div></div>
-        <div class="hint">Reuses ${src?src.name:'?'}'s geometry, rotated into position for design-fitting purposes. Exported cut is re-oriented back to this part's native (unrotated) print orientation.</div>
-        <div class="depth-row"><label>pivot X</label><input type="number" step="0.1" value="${part.pivotX}" data-asm="pivotX" style="width:56px;"></div>
-        <div class="depth-row"><label>pivot Z</label><input type="number" step="0.1" value="${part.pivotZ}" data-asm="pivotZ" style="width:56px;"></div>
-        <div class="depth-row"><label>angle°</label><input type="number" step="1" value="${part.angleDeg}" data-asm="angleDeg" style="width:56px;"></div>
-        <button class="btn small" data-asm-remove style="margin-top:6px;">Remove</button>
-      `;
-    } else {
-      const statusText = part.loaded
-        ? `face detected: normal (${part.patchNormal.map(v=>v.toFixed(2)).join(', ')}), plane offset ${part.topZ.toFixed(2)}mm, ${part.boundaryLoop?part.boundaryLoop.length:0}-pt boundary`
-        : 'no file loaded yet';
-      const patchOptions = (part.patches||[]).slice(0,6).map((p,i)=>
-        `<option value="${i}" ${i===part.patchIdx?'selected':''}>#${i+1}: area ${p.area.toFixed(0)}mm² (normal ${p.normal.map(v=>v.toFixed(2)).join(',')})</option>`
-      ).join('');
-      row.innerHTML = `
-        <div class="top"><div class="hex">${part.name}</div></div>
-        <div style="border:1.5px dashed var(--line);border-radius:6px;padding:8px;text-align:center;font-size:11px;color:var(--text-dim);cursor:pointer;" data-asm-drop>
-          Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file>
-        </div>
-        <div class="hint" style="margin-top:4px;">${statusText}</div>
-        ${part.patches ? `<div class="depth-row"><label>face</label><select data-asm="patchIdx" style="flex:1;">${patchOptions}</select></div>` : ''}
-        <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;"><span class="hint">mm of material behind the face this replaces</span></div>
-        <div class="btn-row" style="margin-top:6px;">
-          <button class="btn small" data-asm-remove>Remove</button>
-        </div>
-      `;
-    }
-    box.appendChild(row);
+  const kind = currentAssemblyKind();
+  const parts = state.assembly.parts;
 
-    const drop = row.querySelector('[data-asm-drop]');
-    const fileInput = row.querySelector('[data-asm-file]');
-    if(drop && fileInput){
-      drop.addEventListener('click', ()=>fileInput.click());
-      fileInput.addEventListener('change', e=>{ if(e.target.files[0]) asmLoadPartFile(part, e.target.files[0]); });
-      ['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev, e=>e.preventDefault()));
-      drop.addEventListener('drop', e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) asmLoadPartFile(part, f); });
-    }
-    row.querySelectorAll('[data-asm]').forEach(inp=>{
-      inp.addEventListener('change', e=>{
-        const field = e.target.dataset.asm;
-        const val = (field==='patchIdx') ? parseInt(e.target.value) : parseFloat(e.target.value);
-        part[field] = val;
-        if(field==='patchIdx') applyAsmPatchChoice(part);
-        scheduleRebuild();
-      });
-    });
-    const rmBtn = row.querySelector('[data-asm-remove]');
-    if(rmBtn) rmBtn.addEventListener('click', ()=>asmRemovePart(part.id));
-  });
+  // Auto-load case (served over http): show a clean one-line-per-part summary and tuck the
+  // detailed face/alignment/remove controls behind an "Advanced" disclosure, so the default
+  // view is just "the wheel loaded" instead of a wall of options.
+  if(kind && asmKindCanAutoLoad(kind)){
+    if(!parts.length){ box.innerHTML = '<div class="hint">Loading assembly…</div>'; return; }
+    const summary = document.createElement('div');
+    summary.className = 'asm-summary';
+    summary.innerHTML = parts.map(p=>
+      `<div class="asm-sum-row"><span class="ok">${p.loaded?'✓':'…'}</span>${p.name}</div>`
+    ).join('');
+    box.appendChild(summary);
+
+    const det = document.createElement('details');
+    det.className = 'asm-adv';
+    det.appendChild(Object.assign(document.createElement('summary'), { textContent: 'Advanced: per-part face & alignment' }));
+    const inner = document.createElement('div');
+    inner.style.marginTop = '8px';
+    parts.forEach(p=>inner.appendChild(buildAsmPartRow(p)));
+    det.appendChild(inner);
+    box.appendChild(det);
+    return;
+  }
+
+  // Manual case (file://): the full editable rows, since parts must be dragged in by hand.
+  parts.forEach(p=>box.appendChild(buildAsmPartRow(p)));
 }
 
 function pointInLoopXZ(loop, x, z){
@@ -1774,8 +2116,16 @@ function asmPartFaceNormal(part){
 
 async function buildAssemblyGeometry(){
   if(!state.parsed) return null;
-  const svgC = state.parsed.rawSVGCircle;
-  if(!svgC){ warn('Assembly mode needs the design SVG to contain a <circle> defining the outer design boundary — it sets how the artwork scales onto the parts.'); return null; }
+  // Design anchor: the SVG's largest <circle> when there is one (the design's intended outer
+  // boundary), otherwise fall back to a pseudo-circle around the artwork's bounding box —
+  // centered on the artwork, radius = half its larger dimension — so circle-less SVGs still
+  // auto-center on the hub and span the design diameter instead of refusing to build.
+  let svgC = state.parsed.rawSVGCircle;
+  if(!svgC){
+    const b = state.parsed.bbox;
+    svgC = { cx:(b.minX+b.maxX)/2, cy:(b.minY+b.maxY)/2, r: Math.max(b.maxX-b.minX, b.maxY-b.minY)/2 || 1 };
+    warn('This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.');
+  }
 
   const { byColor } = computeNetRegionsByColor(state.parsed.shapes);
   // Honor "merge colors" here too (flat mode already did via applyColorMerges) — merged colors
@@ -1966,6 +2316,7 @@ function renderColorList(colorMeshes){
     list.innerHTML = '<div class="empty-hint">No colors detected yet.</div>';
     $('#slot-count').textContent='';
     $('#stat-colors').textContent='0 colors';
+    $('#stat-colors').style.display='none';
     $('#btn-merge').style.display='none';
     return;
   }
@@ -2050,15 +2401,19 @@ function renderColorList(colorMeshes){
   updateMergeButton();
   $('#slot-count').textContent = colorMeshes.length + ' AMS slot' + (colorMeshes.length===1?'':'s') + ' needed';
   $('#stat-colors').textContent = colorMeshes.length + ' colors';
+  $('#stat-colors').style.display='';
 }
 
 /* ---------------- three.js scene ---------------- */
 const host = $('#canvas-host');
 const renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 host.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0d0f11);
+scene.background = new THREE.Color(0x070a13);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 5000);
 camera.position.set(90,-140,110);
 camera.up.set(0,0,1);
@@ -2066,16 +2421,26 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0,0,2);
 controls.enableDamping = true;
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x33383d, 1.1));
-const dl = new THREE.DirectionalLight(0xffffff, 1.4);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x33383d, 0.4)); // envmap supplies most ambient now
+const dl = new THREE.DirectionalLight(0xffffff, 1.0);
 dl.position.set(80,-60,120);
+dl.castShadow = true;
+dl.shadow.mapSize.set(2048,2048);
+dl.shadow.camera.left = -200; dl.shadow.camera.right = 200;
+dl.shadow.camera.top = 200; dl.shadow.camera.bottom = -200;
+dl.shadow.camera.near = 1; dl.shadow.camera.far = 600;
+dl.shadow.normalBias = 0.5; // scene units are mm; avoids acne on large flat faces
 scene.add(dl);
 const dl2 = new THREE.DirectionalLight(0xffffff, 0.4);
 dl2.position.set(-60,80,40);
 scene.add(dl2);
-const grid = new THREE.GridHelper(600,30,0x2c3238,0x1c2024); // 600mm span / 20mm cells — fits the wheel assembly
+const grid = new THREE.GridHelper(600,30,0x2b3457,0x1c2440); // 600mm span / 20mm cells — fits the wheel assembly
 grid.rotation.x = Math.PI/2;
 scene.add(grid);
+const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(600,600), new THREE.ShadowMaterial({ opacity:0.3 }));
+shadowCatcher.position.z = -0.05; // just under the grid plane so coplanar model bottoms don't z-fight
+shadowCatcher.receiveShadow = true;
+scene.add(shadowCatcher);
 
 let modelGroup = new THREE.Group();
 scene.add(modelGroup);
@@ -2118,6 +2483,9 @@ resize();
 
 function animate(){
   requestAnimationFrame(animate);
+  // modelGroup is rebuilt from six different code paths — flagging every frame catches them
+  // all (object count is small; the cost is negligible). Transparent ghosts don't cast.
+  modelGroup.traverse(o=>{ if(o.isMesh){ o.castShadow = !o.material.transparent; o.receiveShadow = true; } });
   controls.update();
   renderer.render(scene, camera);
 }
@@ -2129,7 +2497,27 @@ function rebuildScene(){
   preferredViewDir = null; // flat mode: keep the user's current view direction when re-framing
   scene.remove(modelGroup);
   modelGroup = new THREE.Group();
-  if(!state.parsed){ scene.add(modelGroup); renderColorList(null); renderWarnings(); $('#stat-tris').textContent='0 tris'; return; }
+  if(!state.parsed){
+    // No artwork yet: still show the bare plate (and STL reference) so picking a shape gives
+    // instant feedback instead of an empty viewport — same idea as renderRawAssemblyParts().
+    const baseParams = currentBaseParams();
+    const shapes = featureToShapes(footprintFeature(state.shapeKind, baseParams));
+    if(shapes.length){
+      const geo = new THREE.ExtrudeGeometry(shapes, { depth: baseParams.thickness, bevelEnabled:false, curveSegments:1 });
+      const mat = new THREE.MeshStandardMaterial({ color:0xb9c0c6, roughness:0.75, metalness:0.05, side:THREE.DoubleSide });
+      modelGroup.add(new THREE.Mesh(geo, mat));
+    }
+    if(state.stlRefMesh && state.shapeKind==='stl') modelGroup.add(state.stlRefMesh);
+    scene.add(modelGroup);
+    renderColorList(null); renderWarnings();
+    let tris=0;
+    modelGroup.traverse(o=>{ if(o.isMesh) tris += o.geometry.attributes.position.count/3; });
+    $('#stat-tris').textContent = Math.round(tris)+' tris';
+    $('#btn-export').disabled = true;
+    $('#btn-export-stl').disabled = true;
+    frameModelIfPending();
+    return;
+  }
 
   const built = buildGeometry({
     parsed: state.parsed,
@@ -2160,6 +2548,7 @@ function rebuildScene(){
   renderColorList(built.colorMeshes.map(c=>({color:c.color, key:c.key, members:c.members, isMergeGroup:c.isMergeGroup, depth:c.depth, areaPct:c.areaPct, isBackground:c.isBackground})));
   renderWarnings();
   $('#btn-export').disabled = false;
+  $('#btn-export-stl').disabled = false;
   frameModelIfPending();
 }
 
@@ -2178,16 +2567,62 @@ function scheduleRebuild(){
   }, 30);
 }
 
+// Show the bare loaded parts (no cuts) so the wheel is visible as soon as it loads, before any
+// artwork is applied — otherwise selecting the assembly leaves the viewport empty until an SVG
+// is dropped in.
+function renderRawAssemblyParts(){
+  const rawMat = new THREE.MeshStandardMaterial({ color:0xb9c0c6, roughness:0.8, metalness:0.05, side:THREE.DoubleSide });
+  let tris = 0;
+  state.assembly.parts.forEach(part=>{
+    if(!part.loaded || !part.positions) return;
+    const xf = asmPartTransformGroup(part);
+    modelGroup.add(xf.outer);
+    xf.add(new THREE.Mesh(bufferGeometryFromTris(Float32Array.from(part.positions)), rawMat));
+    tris += part.positions.length/9;
+  });
+  $('#stat-tris').textContent = Math.round(tris)+' tris';
+}
+
+// The wheel parts live in their native (hub-centered) coordinates, which straddle the z=0 grid
+// plane — lift the whole group so the assembly rests on the grid like the flat plates do.
+function restAssemblyOnGrid(){
+  const box = new THREE.Box3().setFromObject(modelGroup);
+  if(!box.isEmpty()) modelGroup.position.z = -box.min.z;
+}
+
 let lastAssemblyBuild = null;
 async function rebuildAssemblyScene(){
   scene.remove(modelGroup);
   modelGroup = new THREE.Group();
-  if(!state.parsed){ scene.add(modelGroup); renderColorList(null); renderWarnings(); $('#stat-tris').textContent='0 tris'; $('#btn-export').disabled=true; return; }
+  // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
+  if(!state.parsed){
+    renderRawAssemblyParts();
+    restAssemblyOnGrid();
+    scene.add(modelGroup);
+    renderColorList(null); renderWarnings();
+    $('#btn-export').disabled = true;
+    if(!state.assembly.parts.some(p=>p.loaded)) $('#stat-tris').textContent='0 tris';
+    const primary = state.assembly.parts.find(p=>p.loaded && !p.isDuplicateOf);
+    const nrm = primary && asmPartFaceNormal(primary);
+    preferredViewDir = new THREE.Vector3(0.35, 0.9*((nrm && nrm[1]<0)?-1:1), 0.4);
+    frameModelIfPending();
+    return;
+  }
 
   const built = await buildAssemblyGeometry();
   lastAssemblyBuild = built;
   scene.add(modelGroup);
-  if(!built){ renderColorList(null); return; }
+  if(!built){
+    // Build failed/refused: keep the bare wheel on screen and surface whatever warn()s the
+    // build pushed — a silently emptied viewport reads as a crash.
+    renderRawAssemblyParts();
+    restAssemblyOnGrid();
+    renderColorList(null);
+    renderWarnings();
+    $('#btn-export').disabled = true;
+    frameModelIfPending();
+    return;
+  }
 
   // Open the view looking at the design face (the +normal side), not the blank back of the wheel.
   const vs = built.viewSign || 1;
@@ -2220,6 +2655,7 @@ async function rebuildAssemblyScene(){
   const totalArea = colorListEntries.reduce((s,c)=>s+c.areaPct,0)||1;
   colorListEntries.forEach(c=>c.areaPct = 100*c.areaPct/totalArea);
 
+  restAssemblyOnGrid();
   $('#stat-tris').textContent = Math.round(tris)+' tris';
   renderColorList(colorListEntries);
   renderWarnings();
@@ -2247,9 +2683,14 @@ function setShapeKind(kind){
     renderAssemblyKindSelect();
     renderAssemblyRoleControls();
     renderAssemblyPartList();
+    maybeAutoLoadAssembly(); // just load the wheel — no separate "Load full …" click needed
   }
-  $('#btn-export').textContent = (kind==='assembly') ? 'Export multi-color 3MF (.zip)' : 'Export STL set (.zip)';
+  $('#btn-export-stl').style.display = (kind==='assembly') ? 'none' : 'block';
+  $('#export-hint').innerHTML = (kind==='assembly')
+    ? 'Exports a Bambu Studio project 3MF: parts spread across build plates, recesses pre-assigned to filament slots.'
+    : '3MF is print-ready for Bambu Studio with colors pre-assigned to filament slots; the STL set is the fallback for other slicers.';
   setShapeThumb(kind);
+  updateOffsetSliderRanges();
   requestFrame();
   scheduleRebuild();
 }
@@ -2267,16 +2708,58 @@ $('#p-asm-kind').addEventListener('change', e=>{
   renderAssemblyPartList();
   scheduleRebuild();
 });
-$('#p-asm-radius').addEventListener('input', scheduleRebuild);
+$('#p-asm-radius').addEventListener('input', ()=>{ updateOffsetSliderRanges(); scheduleRebuild(); });
 
-$all('#shape-params-disc input, #shape-params-rect input, #shape-params-round input, #shape-params-stl input, #p-depth, #p-margin, #p-scale, #p-offset-x, #p-offset-y')
+$all('#shape-params-disc input, #shape-params-rect input, #shape-params-round input, #shape-params-stl input, #p-depth, #p-margin, #p-scale, #p-margin-num, #p-scale-num, #p-offset-x, #p-offset-y, #p-offset-x-slider, #p-offset-y-slider')
   .forEach(inp=> inp && inp.addEventListener('input', scheduleRebuild));
 
-$('#p-margin').addEventListener('input', ()=>{ $('#p-margin-val').textContent = $('#p-margin').value+'%'; });
-$('#p-scale').addEventListener('input', ()=>{ $('#p-scale-val').textContent = $('#p-scale').value+'%'; });
+// Keep each slider/number pair in sync. Margin/scale rebuilds read the slider, so the
+// number snaps back into the slider's range on blur; the offset numbers are the source
+// of truth and may exceed the slider range (the slider just pegs at its end).
+function bindPair(sliderSel, numSel, clampNum){
+  const slider = $(sliderSel), num = $(numSel);
+  slider.addEventListener('input', ()=>{ num.value = slider.value; });
+  num.addEventListener('input', ()=>{ slider.value = num.value; });
+  if(clampNum) num.addEventListener('change', ()=>{ num.value = slider.value; });
+}
+bindPair('#p-margin', '#p-margin-num', true);
+bindPair('#p-scale', '#p-scale-num', true);
+bindPair('#p-offset-x-slider', '#p-offset-x', false);
+bindPair('#p-offset-y-slider', '#p-offset-y', false);
+
+// Offset slider travel is ±half the base footprint: full deflection puts the artwork's
+// center on the base edge. Recomputed whenever the base dimensions or shape change.
+function updateOffsetSliderRanges(){
+  let w, h;
+  if(state.shapeKind==='assembly'){
+    // assembly artwork maps onto the wheel face: ±radius puts the design center at the rim
+    w = h = 2*(+$('#p-asm-radius').value||138);
+  } else {
+    const bp = currentBaseParams();
+    if(!bp) return;
+    w = state.shapeKind==='disc' ? bp.diameter : bp.width;
+    h = state.shapeKind==='disc' ? bp.diameter : bp.height;
+  }
+  const setRange = (sel, half)=>{
+    if(!(half>0)) return;
+    const el = $(sel);
+    const lim = Math.max(0.5, Math.round(half*2)/2);
+    el.min = -lim; el.max = lim;
+  };
+  setRange('#p-offset-x-slider', w/2);
+  setRange('#p-offset-y-slider', h/2);
+  // re-sync thumbs after the range change (pegs if the typed value is out of range)
+  $('#p-offset-x-slider').value = +$('#p-offset-x').value||0;
+  $('#p-offset-y-slider').value = +$('#p-offset-y').value||0;
+}
+$all('#shape-params-disc input, #shape-params-rect input, #shape-params-round input, #shape-params-stl input')
+  .forEach(inp=> inp && inp.addEventListener('input', updateOffsetSliderRanges));
+updateOffsetSliderRanges();
+
 $('#btn-reset-fit').addEventListener('click', ()=>{
-  $('#p-scale').value = 100; $('#p-scale-val').textContent = '100%';
+  $('#p-scale').value = 100; $('#p-scale-num').value = 100;
   $('#p-offset-x').value = 0; $('#p-offset-y').value = 0;
+  $('#p-offset-x-slider').value = 0; $('#p-offset-y-slider').value = 0;
   scheduleRebuild();
 });
 $('#btn-merge').addEventListener('click', mergeSelected);
@@ -2385,65 +2868,74 @@ function trisToSTLBlob(float32arr){
   return new Blob([buf], { type:'application/octet-stream' });
 }
 
+// Flatten a THREE mesh/group into a world-space triangle soup, so flat-plate mode's built
+// meshes (slab-stack body + per-color plugs, each with a position.z offset) can feed the
+// same build3MFCombined pipeline assembly mode uses.
+function soupFromObject(root){
+  const out = [];
+  root.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  root.traverse(o=>{
+    if(!o.isMesh) return;
+    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+    const pos = geo.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      v.fromBufferAttribute(pos,i).applyMatrix4(o.matrixWorld);
+      out.push(v.x, v.y, v.z);
+    }
+  });
+  return Float32Array.from(out);
+}
+
 $('#btn-export').addEventListener('click', async ()=>{
+  // shared materials: index 0 = body/base, then one per detected color (named like the app)
+  let materials, parts, fname;
   if(state.shapeKind==='assembly'){
     if(!lastAssemblyBuild || !lastAssemblyBuild.partOutputs.length) return;
-    $('#loading-text').textContent = 'Exporting combined multi-color 3MF per part…';
-    $('#loading-overlay').style.display='flex';
-    await new Promise(r=>setTimeout(r,10));
-    try{
-      const palette = lastAssemblyBuild.palette;
-      const zip = new JSZip();
-      for(const { part, bodySoup, inlaySoups } of lastAssemblyBuild.partOutputs){
-        const objects = [{ name: `${part.name} body`, colorHex: '#B9C0C6', soup: bodySoup }];
-        Object.entries(inlaySoups).forEach(([ci,soup])=>{
-          const p = palette[ci];
-          objects.push({ name: p.isMerge ? ('merged '+p.members.join('+')) : p.hex, colorHex: p.hex, soup });
-        });
-        const fname = part.name.replace(/[^a-z0-9_-]+/gi,'_');
-        zip.file(`${fname}.3mf`, await build3MF(objects));
-      }
-      const readme = `Mosaic for TMT — Assembly export (multi-color 3MF)
-==================================================
-One .3mf per physical part. Each file is the FULL modified part — the whole
-real body with the color pockets cut into its detected flat face — carried
-as separate objects: "<part> body" plus one object per detected color, each
-tagged to its own base material.
-
-Bambu Studio workflow:
-1. File > Import > import the part's .3mf. It comes in as one object made of
-   several parts (body + each color), already seated together.
-2. In the object/parts list, assign a filament / AMS slot to each colored
-   part (they're pre-named by hex). The body is your base filament.
-3. Slice as normal — Bambu generates the per-color toolpaths and AMS changes.
-
-Because this is the full part, there's nothing to re-stitch in CAD anymore —
-unlike earlier versions, the body geometry is included and the pockets are
-real boolean cuts, so edges follow the artwork's true curves (no voxel
-stair-stepping).
-
-"Rotated copy" parts are already re-oriented to that part's native
-(unrotated) print orientation — just print/install it flipped per your
-assembly's design intent.
-
-Generated by Mosaic v1, a MakeGood tool for the Toddler Mobility Trainer
-(TMT) — makegood.design / 3d-mobility.org. A browser-based tool, not
-affiliated with Bambu Lab.
-`;
-      zip.file('README.txt', readme);
-      const blob = await zip.generateAsync({type:'blob'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'mosaic-assembly-export.zip';
-      a.click();
-    }catch(e){
-      console.error(e);
-      alert('Export failed: '+e.message);
-    }
-    $('#loading-overlay').style.display='none';
-    return;
+    const palette = lastAssemblyBuild.palette;
+    materials = [{ name:'Body', color:'#B9C0C6' }]
+      .concat(palette.map(p=>({ name: nearestPreset(p.hex), color: p.hex })));
+    parts = lastAssemblyBuild.partOutputs.filter(o=>o.bodySoup && o.bodySoup.length).map(({ part, bodySoup, inlaySoups })=>{
+      const nrm = asmPartFaceNormal(part);
+      const nsign = (nrm && nrm[1] < 0) ? -1 : 1;
+      const subs = [{ name:'Body', matIndex:0, soup: bodySoup }];
+      Object.entries(inlaySoups).forEach(([ci,soup])=>{ subs.push({ name: nearestPreset(palette[ci].hex), matIndex:(+ci)+1, soup }); });
+      return { name: part.name, nsign, bodySoup, subs };
+    });
+    fname = 'mosaic-wheel.3mf';
+  } else {
+    if(!lastBuild) return;
+    // flat-plate mode: the already-built slab-stack body + per-color plugs become one
+    // multi-part object. nsign 0 = exported upright, no face-down tilt — the design face
+    // is already +Z and the underside already sits at Z=0.
+    materials = [{ name:'Body', color:'#B9C0C6' }]
+      .concat(lastBuild.colorMeshes.map(c=>({ name: c.isBackground ? 'Background' : nearestPreset(c.color), color: c.color })));
+    const bodySoup = soupFromObject(lastBuild.baseGroup);
+    const subs = [{ name:'Body', matIndex:0, soup: bodySoup }]
+      .concat(lastBuild.colorMeshes.map((c,i)=>({ name: materials[i+1].name, matIndex: i+1, soup: soupFromObject(c.mesh) })));
+    parts = [{ name:'Mosaic plate', nsign:0, bodySoup, subs }];
+    fname = 'mosaic-plate.3mf';
   }
+  $('#loading-text').textContent = 'Exporting print-ready 3MF…';
+  $('#loading-overlay').style.display='flex';
+  await new Promise(r=>setTimeout(r,10));
+  try{
+    // packed onto build plates. No Z spin: the unrotated footprint is the smallest bbox for
+    // the half-disc tops, which is what lets the cap share a plate when the plate is wide enough.
+    const [pw, pd] = ($('#p-plate-size').value || '256x256').split('x').map(Number);
+    const blob = await build3MFCombined(materials, parts, { rotZdeg: 0, plate: { w: pw, d: pd } });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fname;
+    a.click();
+  }catch(e){
+    console.error(e);
+    alert('Export failed: '+e.message);
+  }
+  $('#loading-overlay').style.display='none';
+});
 
+$('#btn-export-stl').addEventListener('click', async ()=>{
   if(!lastBuild) return;
   $('#loading-text').textContent = 'Exporting STL set…';
   $('#loading-overlay').style.display='flex';
@@ -2485,8 +2977,11 @@ affiliated with Bambu Lab.
   $('#loading-overlay').style.display='none';
 });
 
-// initial state
+// initial state: open in Assembly mode so the wheel is on screen from the first frame —
+// setShapeKind arms the auto-load, and loadPartsLibrary() triggers it once the manifest arrives.
 renderColorList(null);
+$('#shape-kind').value = 'assembly';
+setShapeKind('assembly');
 loadPartsLibrary();
 </script>
 </body>
