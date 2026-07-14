@@ -1,11 +1,10 @@
-# TMT Mosaic — SVG Color-Inlay Generator (v1)
+# TMT Mosaic — SVG Color-Inlay Generator
 
-A single self-contained web app (`index.html`) that turns a flat-color SVG into
-per-color recess geometry for multicolor/AMS 3D printing, and exports a
-print-ready Bambu Studio project 3MF — parts placed on build plates, every
-recess pre-named and pre-assigned to its own filament slot with the detected
-colors, so it opens in Bambu Studio ready to slice. (A per-color STL set is
-still available as a fallback for other slicers.)
+A browser app that turns a flat-color SVG into per-color recess geometry for
+multicolor/AMS 3D printing, and exports a print-ready Bambu Studio project 3MF
+— parts placed on build plates, every recess pre-named and pre-assigned to its
+own filament slot with the detected colors, so it opens in Bambu Studio ready
+to slice. A per-color STL set is available as a fallback for other slicers.
 
 Built for [MakeGood](https://makegood.design)'s Toddler Mobility Trainer
 (TMT) — a free, open-source 3D-printable mobility device for children ages
@@ -13,318 +12,153 @@ Built for [MakeGood](https://makegood.design)'s Toddler Mobility Trainer
 
 ## Running it
 
-Just open `index.html` in Chrome or Edge (double-click it, or drag it into a
-browser window). No install, no server, no build step.
-
-It loads three.js, Turf.js, JSZip, and (in Assembly mode) the Manifold WASM
-boolean engine from public CDNs the first time it opens, so you need an
-internet connection for that — everything after that runs entirely in your
-browser, no data leaves your machine.
-
-This is deliberately **not** a packaged Electron app for v1 — it's a local
-web app, which is a lot faster to iterate on and just as "double-click and
-it opens" in practice. If you want an actual installed app icon later, this
-is a good candidate to wrap in Electron or Tauri as a fast-follow.
-
-Double-clicking `index.html` works for everything **except** the parts
-library (see below), which needs a local HTTP server because browsers block
-`fetch()` of local files opened via `file://`. To use the library, serve the
-folder instead of double-clicking it:
+Development:
 
 ```bash
-npx serve .
-# or: python -m http.server 8000
+npm install
+npm run dev      # dev server with hot reload
 ```
 
-then open the printed `http://localhost:...` URL. Drag-and-drop upload
-(SVG, and STL/3MF in Assembly mode) works either way.
+Other scripts:
 
-## What v1 actually does
-
-1. **Parse the SVG as vectors, not pixels.** Rather than rasterizing and
-   contour-tracing, it reads the SVG's own `<path>`/`<rect>`/`<circle>`/etc.
-   geometry directly and groups it by fill color. This is more exact than a
-   raster approach and handles curves natively.
-2. **Compute each color's *net visible* region**, accounting for paint order
-   — if a black outline shape sits on top of a fill shape (your outline-color
-   case), the fill's net region has the outline's footprint subtracted out
-   automatically, the same way it would look if you rasterized the final
-   image. This uses 2D polygon boolean ops (union/difference) via Turf.js.
-3. **Builds the recess geometry as a stack of flat slabs**, not a general 3D
-   boolean/CSG operation. Because v1 only targets flat faces with straight
-   vertical pockets, subtracting a pocket from a flat plate is mathematically
-   just a 2D operation repeated at each distinct depth level — no CSG library
-   needed, which also means no CSG robustness issues (self-intersecting
-   result meshes, etc.) to fight.
-4. **Live 3D preview** via three.js, one mesh per color plus a base/plinth
-   mesh, colored approximately to the source SVG.
-5. **Manual fit control.** Auto-fit centers and scales the artwork to the
-   margin you set, but you can override it: a Scale slider (25%–400%) sits on
-   top of the auto-fit size, plus X/Y offset in mm to reposition off-center,
-   with a one-click "reset to auto-fit." Useful for intentional bleed-to-edge
-   designs or off-center placement.
-6. **Merge colors into one recess.** Check two or more detected colors and
-   hit "merge selected" to fuse them into a single region/single depth/single
-   AMS slot — e.g. if your SVG has 6 colors but you only want to use 4
-   filaments, merge the ones you're fine printing as one. Merged groups show
-   as a stacked swatch in the list and can be split back apart any time.
-7. **Export** produces a print-ready **Bambu Studio project 3MF** in both
-   flat-plate and Assembly mode: the file carries Bambu's own metadata
-   (`model_settings.config` / `project_settings.config`), so it opens with no
-   "not from Bambu Lab" warning, parts named after their colors in the object
-   list, each recess pre-assigned to its own filament slot with the detected
-   color, and objects placed on real build plates (plate size selectable in
-   the Export section: X1C/P1S/A1, H2D, or A1 mini). Flat-plate mode also
-   keeps a secondary export: a zip with one binary STL per color plus
-   `base.stl`, for non-Bambu slicers or manual workflows.
-8. **Assembly mode** (new): for real multi-part assemblies where the design
-   spans more than one physical part — upload each part's STL/3MF, Mosaic
-   auto-detects its dominant flat face (by coplanar-triangle-patch area) and
-   cuts pockets directly into that part's own geometry, in its own real
-   coordinates. Supports "rotated copy" parts (the same physical part
-   reused elsewhere in the assembly, e.g. a wheel's two identical mirrored
-   halves) — define a pivot + rotation angle once, and Mosaic figures out
-   which slice of the shared design lands on that copy, then re-orients the
-   cut back into the part's native print orientation automatically. Uses the
-   **same vector front end as flat mode** (the SVG's real per-color net
-   regions) extruded into 3D prisms and **booleaned against the part's actual
-   mesh** via [Manifold](https://github.com/elalish/manifold) (a WASM CSG
-   engine, loaded from CDN on first use). Output is the **whole modified
-   assembly** — every real part body with crisp, curve-accurate pockets cut in
-   — exported as **one combined Bambu Studio project 3MF**: each physical part
-   laid mosaic-face-down on its own build plate (small parts like the hub cap
-   share a plate when they fit), with per-part filament assignments and the
-   detected colors baked in. No pixel raster, no voxel stair-stepping, and no
-   manual re-stitching in CAD. Assembly mode (the wheel) is also what the app
-   opens in by default — served over HTTP it auto-loads the wheel parts on
-   startup.
-
-## Troubleshooting: "Boolean subtraction/union failed" warnings
-
-This means Turf's polygon boolean ops threw on a specific color's geometry —
-almost always because that color's path is (or contains) a self-intersecting
-shape. The warning now names the exact color hex involved, so you know which
-one to look at.
-
-What Mosaic does automatically: every loop is deduplicated of near-identical
-floating-point vertices before it ever reaches Turf, since the single most
-common cause of this error is two flattened curve segments meeting at a seam
-that differs by a fraction of a unit instead of matching exactly — that alone
-fixes most cases silently, with no warning shown at all.
-
-If you still see the warning for a specific color:
-- **That region falls back to its pre-boolean shape** rather than the app
-  giving up — geometry still exports, but that one region may overlap its
-  neighbor slightly instead of having the overlap cleanly cut out. Usually
-  a small, fixable cosmetic issue rather than a broken export.
-- The real fix is cleaning that path at the source. In Illustrator or
-  Inkscape: select the offending color's path, run **Path → Union** on it
-  (even against itself/a duplicate) — this is the standard way to force a
-  self-intersecting path back into a simple one. Inkscape's
-  **Path → Break Apart** then **Path → Union** on a copy also works well for
-  paths with stray overlapping sub-shapes.
-- Common sources of self-intersecting paths: strokes converted to fill
-  outlines (especially with sharp miter joins), paths built by boolean
-  operations in the original design tool that weren't cleaned up afterward,
-  and hand-edited paths with accidentally crossed segments.
-
-## Assembly mode: what it does and doesn't do yet
-
-Assembly mode was built and validated against a real multi-part wheel
-project (a 3-part wheel: two identical halves + a hub cap, design spanning
-all three). What's genuinely proven, against real files, not synthetic
-tests:
-
-- 3MF/STL loading, flat-face auto-detection, and boundary extraction —
-  cross-checked triangle-for-triangle against an independent Python
-  analysis of the same files; numbers matched to 3+ decimal places.
-- (Superseded) The old raster color pipeline (SVG → per-pixel classification)
-  has been replaced by the vector-prism + Manifold-boolean pipeline; assembly
-  cutting now shares flat mode's exact vector net-region front end, so the
-  crisp-edge behavior is the same code that was already validated there.
-- Color clustering — a real file in testing had 12 raw hex values that were
-  really just 4 colors plus antialiasing noise; clustering collapsed them
-  correctly without being told which ones belonged together.
-- The heightfield mesh builder — every exported group (base + each color)
-  is independently watertight and printable on its own, verified via
-  degenerate-triangle and bounding-box checks, not just a visual once-over.
-- Rotated-copy parts (the "same physical part, installed twice" case) —
-  verified the design correctly splits across both copies with no gap or
-  overlap, and that each copy's cut is re-oriented back to its own native
-  print orientation.
-- The 3D preview shows each part's **whole real uploaded geometry** (minus
-  the flat face being replaced), not just the small insert patch — a
-  rotated-copy part is now actually rotated in the viewport to its real
-  assembled position (previously it silently rendered on top of its source
-  part). Verified numerically, not just visually: a live-scene vertex
-  transform was checked against the app's own rotation math at a
-  non-trivial angle/pivot (180°/origin is a degenerate case that can't
-  distinguish a correct transform from a sign error).
-
-What it does **not** do yet:
-
-- **Input parts must be watertight/manifold.** The boolean cut needs a closed,
-  manifold mesh; CAD-exported STL/3MF normally are. If a part isn't, Mosaic
-  names it in an on-screen warning and exports it **uncut** rather than
-  producing garbage — repair it (close holes, fix flipped faces) and retry.
-- **Horizontal (Y-normal) faces only, still.** The assembly frame treats the
-  design plane as horizontal with depth along the vertical axis. If the
-  face you pick isn't roughly horizontal in the part's own coordinates,
-  Mosaic warns and the cut may be wrong — pick a different detected face.
-- **"Largest flat patch" is a heuristic, not a guarantee.** It happened to
-  be correct for both real parts tested (by a wide area margin in both
-  cases), but a part with an equally-large *decorative* flat face could
-  fool it. The dropdown lets you pick a different detected patch if the
-  auto-pick is wrong — check the reported normal/offset against what you
-  expect before trusting it blindly on a new part.
-- **No wall-thickness safety check.** Pocket depth (per color) is a number you
-  supply, not something verified against the part's actual interior geometry —
-  set a depth deeper than the wall behind the face and the boolean will just
-  cut clean through into open air. Sanity-check depths against your own model.
-
-### Assembly kinds and roles (skip the re-upload)
-
-An assembly isn't an open-ended bag of parts — it's a fixed, small set of
-**part roles** that together make one physical object. The built-in example
-is a wheel: role "Top" (allows rotated copies — the same physical STL reused
-at a second position via a pivot + angle, not a second upload) and role
-"Cap" (exactly one). Switching to Assembly mode shows an "Assembly" dropdown
-(currently just "Wheel") and, below it, "+ Add {role}" buttons for whichever
-roles aren't filled yet, plus "+ Add rotated copy of {role}" once a
-copy-allowed role has its first instance.
-
-Roles are defined inline in `index.html` as `ASSEMBLY_KINDS` (search for
-that constant) — adding a new assembly (e.g. a different TMT part with its
-own set of roles) is one array entry:
-
-```js
-{ id: 'my-part', name: 'My Part', roles: [
-  { id: 'body', name: 'Body', libraryPartId: 'my-body', allowRotatedCopies: false },
-] }
+```bash
+npm test             # unit tests (Vitest)
+npm run typecheck    # TypeScript, no emit
+npm run build        # typecheck + production build to dist/
+npm run preview      # serve the production build locally
 ```
 
-A role's optional `libraryPartId` links it to an entry in
-[`stl/parts.json`](stl/parts.json) — drop the file in `stl/` and add:
+Everything runs client-side — no backend, no data leaves the browser. All
+dependencies (three.js, Turf, JSZip, the Manifold WASM engine) are bundled at
+build time, so the deployed app has no runtime CDN dependencies. The Google
+Fonts stylesheet is the only external request.
 
-```json
-{ "id": "my-body", "name": "My Part Body", "file": "stl/my-body.stl" }
-```
+## Deployment
 
-and clicking "+ Add Body" auto-fetches and face-detects it instead of
-requiring drag-and-drop. A role with no `libraryPartId` (or when the
-manifest fetch fails, e.g. no local server) just starts empty — drag-and-drop
-the file into that role's row, same as before. This requires serving the
-folder over HTTP for the auto-load part specifically (see "Running it"
-above); `ASSEMBLY_KINDS` and role buttons themselves work fine over
-`file://` too, only the auto-fetch-on-add convenience needs a server.
+Pushing to `main` builds and deploys `dist/` to **GitHub Pages** via
+[.github/workflows/deploy.yml](.github/workflows/deploy.yml). One-time setup:
+repo **Settings → Pages → Source → GitHub Actions**.
 
-## Known v1 limitations (by design, not oversights)
+## How it works
 
-- **Flat faces only.** Base part is a parametric disc / rectangle / rounded
-  rectangle. Uploading an STL is supported in **reference mode only** — it's
-  shown semi-transparent for visual alignment and to read off face size, but
-  Mosaic does not cut pockets into arbitrary mesh geometry yet. You get a
-  correctly-sized flat insert plate back, not a modified version of your STL.
-  Doing real arbitrary-mesh pocket cutting is a solvable fast-follow (either
-  a proper 3D boolean library, or restricting to "flat face detected via
-  planar slicing + swap that face's region"), just scoped out of v1.
-- **Nonzero winding heuristic for holes.** Multi-loop paths (e.g. a letter
-  "O") are assigned hole-vs-solid by loop area/winding sign, which matches
-  how Illustrator/Inkscape/Figma export almost all the time. Pathological
-  hand-authored SVGs with inconsistent winding could get this wrong — if a
-  hole doesn't punch through, that's the likely cause.
-- **Gradients/patterns are detected and skipped**, with a warning shown in
-  the viewport, rather than silently producing wrong geometry.
-- **No true concave-STL support, no curved-surface wrapping** — both
-  explicitly out of scope per the brief.
+1. **The SVG is parsed as vectors, not pixels** ([src/svg/](src/svg/)) — the
+   `<path>`/`<rect>`/`<circle>`/etc. geometry is read directly, transforms
+   composed, curves flattened, and shapes grouped by fill color.
+2. **Each color's *net visible* region** is computed with paint order taken
+   into account — an outline drawn on top of a fill has its footprint
+   subtracted from the fill's region, matching what the rasterized image would
+   show. 2D polygon booleans via Turf.js ([src/geometry/regions.ts](src/geometry/regions.ts)).
+   Holes are resolved by **containment depth** (odd nesting depth = hole),
+   which is correct for both the `nonzero` and `evenodd` SVG fill rules.
+3. **Flat-plate mode** builds the plate as a stack of flat slabs between depth
+   boundaries — pure 2D math, no CSG ([src/geometry/flat.ts](src/geometry/flat.ts)).
+4. **Assembly mode** cuts pockets into real part meshes: each color region is
+   extruded into a prism in the part's own coordinates and booleaned against
+   the mesh with [Manifold](https://github.com/elalish/manifold) (WASM CSG,
+   lazy-loaded) ([src/geometry/assembly.ts](src/geometry/assembly.ts)).
+   Supports rotated-copy parts (the same physical part installed twice, e.g.
+   a wheel's two halves): the design slice that lands on the copy is remapped
+   back into the part's native print orientation.
+5. **Export** writes a Bambu Studio *project* 3MF (vendor metadata included,
+   so it imports without warnings, with named parts, per-part filament slots,
+   and multi-plate placement) ([src/export/threemf.ts](src/export/threemf.ts)).
 
-## Testing notes
+### Code layout
 
-My sandbox's network egress is locked to an allowlist that blocks every CDN
-(unpkg, cdnjs, jsdelivr, npm — all return `403 host_not_allowed`), so I can't
-fetch the real three.js/Turf.js/JSZip libraries to render this exact file
-end-to-end. What I could and did do instead:
+- [src/state/store.ts](src/state/store.ts) — the single app-state object all
+  geometry reads; UI panels write to it and schedule a rebuild
+- [src/state/filaments.ts](src/state/filaments.ts) — the owned-filament
+  palette, loaded from [public/filaments.json](public/filaments.json). Edit
+  that file to change the colors offered by the base-color picker and used
+  for "nearest filament" labels — no code changes needed.
+- [src/app/rebuild.ts](src/app/rebuild.ts) — orchestrates state → geometry →
+  scene → side panels
+- [src/scene/viewport.ts](src/scene/viewport.ts) — three.js renderer/camera
+- [src/ui/](src/ui/) — one module per left-panel section
+- [src/assembly/](src/assembly/) — assembly kinds (roles) and part loading
 
-- The full file parses as valid JS (`node --check`).
-- Unit tests (in plain Node, no browser needed) for the transform-matrix math
-  (translate/scale/rotate composition, nested parent/child transforms), and
-  for the SVG path-data flattener (`M/L/H/V/C/S/Q/A/Z`, relative commands,
-  implicit command repetition, multi-subpath paths, elliptical-arc endpoint
-  math) — these are the two riskiest hand-written algorithms in here.
-- A real integration pass in an actual headless Chromium (Playwright), with
-  three.js/Turf/JSZip swapped for small local stand-ins that implement just
-  enough of their API surface to execute — this doesn't validate the real
-  libraries' geometry math (I trust that to Turf/three.js themselves), but it
-  did exercise every piece of *my* glue code end-to-end and caught two real
-  bugs I then fixed: a Vector3-style `.position.set()` call path, and
-  confirmed the Y-axis mirror needed a winding-order fix (which I'd already
-  added defensively, and this validated it doesn't crash). Covered: SVG
-  upload → parsing → color detection, nested `<g transform>` composition
-  including `rotate()`, rounded rects, gradient detection/skip warnings,
-  holes via the nonzero-winding heuristic (tested against a synthetic
-  letter-O shape, computed areas matched hand-calculated expected values),
-  shape switching, depth edits, background-recess toggle, scale/offset/
-  reset-to-autofit, merging 2+ colors into one recess, unmerging, and
-  zip export — all run with zero console errors or exceptions.
+### Adding an assembly or library part
 
-I'd treat this as a well-exercised first pass, but I still want you to run it
-against your real Smurfette SVG and tell me what breaks — a real browser with
-the real CDN libraries and your real artwork will always catch things a stub
-harness can't. Most likely remaining issues, if any: something in the actual
-Turf boolean step on a very complex path (there's a fallback + on-screen
-warning if a union/difference throws), or a color that should visually merge
-but doesn't due to sub-pixel gaps between adjacent regions in the source file.
+Assemblies are defined in [src/assembly/kinds.ts](src/assembly/kinds.ts) —
+one entry per assembly, listing its part roles. A role's `libraryPartId`
+links to [public/stl/parts.json](public/stl/parts.json); drop the STL/3MF in
+`public/stl/`, add a manifest entry, and the role auto-loads. Roles without a
+library entry fall back to drag-and-drop.
+
+## Known limitations
+
+- **Flat, roughly horizontal faces only.** Assembly cutting assumes the design
+  face is horizontal in the part's own coordinates (the app warns otherwise).
+  No curved-surface wrapping.
+- **"Largest flat patch" is a heuristic.** The auto-picked design face is the
+  largest coplanar patch by area; a part with an equally large decorative flat
+  face could fool it. The Advanced per-part controls let you pick a different
+  detected face — check the reported normal/offset on a new part.
+- **Input parts must be watertight/manifold** for assembly cutting. If a part
+  isn't, it's named in an on-screen warning and exported uncut.
+- **No wall-thickness safety check.** Pocket depth is user-supplied and not
+  validated against the part's interior — a depth deeper than the material
+  behind the face will cut through. Sanity-check depths against your model.
+- **Gradients/patterns are detected and skipped** with a warning, rather than
+  silently producing wrong geometry.
+- In flat-plate STL-reference mode, the uploaded STL is **reference-only**:
+  it guides sizing/alignment and the export is a flat insert plate, not a
+  modified copy of the STL. (Assembly mode is the path that modifies real
+  meshes.)
+
+## Troubleshooting: "Boolean union/subtraction failed" warnings
+
+Turf's polygon booleans can throw on a specific color's geometry — almost
+always a self-intersecting path in the source SVG. The warning names the hex
+color involved.
+
+What the app already does automatically: every loop is deduplicated of
+near-identical floating-point vertices before it reaches Turf (the most common
+cause is two flattened curve segments meeting at a seam that differs by a
+fraction of a unit), degenerate slivers are scrubbed from boolean outputs, and
+failed operations retry at reduced coordinate precision. If a warning still
+appears:
+
+- **That region falls back to its pre-boolean shape** — geometry still
+  exports, but the region may overlap its neighbor slightly instead of having
+  the overlap cut out.
+- The real fix is cleaning the path at the source. In Illustrator or
+  Inkscape: select the offending color's path and run **Path → Union** on it —
+  the standard way to force a self-intersecting path back into a simple one.
+- Common sources: strokes converted to fill outlines (sharp miter joins),
+  leftover boolean results from the design tool, hand-edited paths with
+  crossed segments.
 
 ## Design system
 
-The app's visual language is the **TMT Mosaic design system (v3)** — a dark
-navy/blue, sharp-cornered "blueprint" theme tuned for WCAG AA contrast. The
-canonical source of truth lives in [`design-system/`](design-system/):
+The visual language is the TMT Mosaic design system — dark navy/blue,
+sharp-cornered, WCAG AA contrast. Tokens live in
+[design-system/tokens/](design-system/tokens/) (the spec) and are mirrored in
+[src/styles.css](src/styles.css) (the shipped copy) — update both when tokens
+change. Everything else under [design-system/](design-system/) is
+**reference only** (specimen pages and React component examples); none of it
+is imported by the app. Two other brand themes in the tokens folder
+(3d-mobility.org, makegood.design marketing) are not used by this tool.
 
-- [`design-system/tokens/`](design-system/tokens/) — the design tokens as plain
-  CSS custom properties (`colors.css`, `typography.css`, `spacing.css`). These
-  are authoritative; everything else in the folder is reference.
-- [`design-system/guidelines/`](design-system/guidelines/) — foundation
-  specimen pages (color, type, spacing/radius, brand mark). Open any of them
-  directly in a browser.
-- [`design-system/components/`](design-system/components/) and
-  [`design-system/ui_kits/`](design-system/ui_kits/) — reference component
-  implementations and a full screen recreation. **Reference only** — they're
-  React, whereas the shipping app is a single vanilla `index.html`.
-- [`design-system/README.md`](design-system/README.md) — the full handoff doc.
+## Roadmap ideas (not built)
 
-Because `index.html` is a single self-contained file, the tokens are **inlined**
-into its `<style>` block (`:root`) rather than imported from `design-system/`.
-When the tokens change, update both — the `design-system/tokens/*.css` files are
-the spec, the `:root` block in `index.html` is the shipped copy. Key values:
+- Pick a face directly in the 3D view (raycast → detected patch) to apply
+  artwork to any part.
+- Raster image (PNG/JPG) input: quantize to flat color regions, then reuse the
+  existing region pipeline.
+- Full assembled-chair view with drag-and-drop filament colors per part.
+- Curved-surface wrapping.
+- Adaptive Bezier flattening tolerance instead of a fixed segment count.
 
-- **Palette** — canvas `#0c1220`, panels `#141b30` / `#1c2440`, 3D viewport
-  `#070a13`, hairline border `#2b3457`, text `#f5f7fb` / `#aab3cf`, accent blue
-  `#6d93ff`, accent cyan `#5eead4`, danger pink `#f9438a`.
-- **Type** — Outfit (wordmark + section labels), Inter (UI/body), IBM Plex Mono
-  (every numeric/technical value: mm, hex, triangle counts), loaded from Google
-  Fonts with system fallbacks.
-- **Shape** — 1px hairline borders, no shadows, near-square corners (0–3px), one
-  conic-gradient app mark in the header and no other gradients.
+## TODO / tech debt
 
-> Note: the reference bundle was extracted from a `.zip` (which `.gitignore`
-> excludes, so it was never committed). It now lives unzipped under
-> `design-system/` so it's browsable and diffs in version control. Two *other*
-> visual languages are referenced in `design-system/tokens/` (a blue
-> `3d-mobility.org` forum theme, a rainbow `makegood.design` marketing theme) —
-> those are **not** used by this tool; only the tokens above apply here.
-
-## Roadmap ideas (not built yet)
-
-- **Done:** ~~Real 3MF export with per-region color/extruder metadata~~ and
-  ~~arbitrary-mesh pocket cutting via a proper 3D boolean library~~ ship in
-  Assembly mode (Manifold CSG). ~~Bringing the same 3MF output to flat-plate
-  mode~~ is done too: both modes now export a **Bambu Studio project 3MF**
-  (`BambuStudio:3mfVersion` marker + `model_settings.config` +
-  `project_settings.config`) — no import warning, parts named by color,
-  per-part filament slots with the detected colors, and real multi-plate
-  placement with a selectable plate size. The STL-set zip remains as a
-  flat-mode fallback for other slicers.
-- Curved-surface wrapping (conform artwork to a cylindrical/curved face).
-- Adaptive Bezier flattening tolerance instead of a fixed segment count, for
-  very large or very tiny artwork.
+- **Upgrade `@turf/turf` from the pinned 6.5.0.** It's pinned deliberately:
+  the boolean-failure workarounds in
+  [src/geometry/regions.ts](src/geometry/regions.ts) (degenerate-ring
+  scrubbing, precision-truncation retries) target 6.5's exact
+  polygon-clipping bugs, and 6.5's package typings don't resolve under modern
+  TypeScript, hence the shim in [src/turf.d.ts](src/turf.d.ts). Upgrading to
+  Turf 7+ means: bump the dependency, delete `src/turf.d.ts`, re-test the
+  boolean-heavy paths (`npm test` + `npm run smoke` + a complex real SVG),
+  and only then consider simplifying the retry workarounds if the new
+  clipping engine no longer needs them.

@@ -1,5 +1,7 @@
 # Node
 node_modules/
+dist/
+.smoke-out/
 
 # Editor directories and system files
 .vscode/
