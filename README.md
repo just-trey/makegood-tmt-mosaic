@@ -57,7 +57,7 @@ repo **Settings → Pages → Source → GitHub Actions**.
 1. **The SVG is parsed as vectors, not pixels** ([src/svg/](src/svg/)) — the
    `<path>`/`<rect>`/`<circle>`/etc. geometry is read directly, transforms
    composed, curves flattened, and shapes grouped by fill color.
-2. **Each color's *net visible* region** is computed with paint order taken
+2. **Each color's _net visible_ region** is computed with paint order taken
    into account — an outline drawn on top of a fill has its footprint
    subtracted from the fill's region, matching what the rasterized image would
    show. 2D polygon booleans via Turf.js ([src/geometry/regions.ts](src/geometry/regions.ts)).
@@ -72,7 +72,7 @@ repo **Settings → Pages → Source → GitHub Actions**.
    Supports rotated-copy parts (the same physical part installed twice, e.g.
    a wheel's two halves): the design slice that lands on the copy is remapped
    back into the part's native print orientation.
-5. **Export** writes a Bambu Studio *project* 3MF (vendor metadata included,
+5. **Export** writes a Bambu Studio _project_ 3MF (vendor metadata included,
    so it imports without warnings, with named parts, per-part filament slots,
    and multi-plate placement) ([src/export/threemf.ts](src/export/threemf.ts)).
 

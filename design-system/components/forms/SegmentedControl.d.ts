@@ -1,4 +1,7 @@
-export interface SegmentedOption { value: string; label: string; }
+export interface SegmentedOption {
+  value: string;
+  label: string;
+}
 export interface SegmentedControlProps {
   options: SegmentedOption[];
   value: string;

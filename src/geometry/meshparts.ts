@@ -5,7 +5,9 @@ import type { FlatPatch } from '../types';
  * Minimal 3MF reader: it's a zip containing 3D/3dmodel.model (XML). Returns a flat triangle
  * soup matching what STLLoader gives, so downstream code doesn't care which format.
  */
-export async function load3MF(arrayBuffer: ArrayBuffer): Promise<{ positions: Float32Array; triCount: number }> {
+export async function load3MF(
+  arrayBuffer: ArrayBuffer,
+): Promise<{ positions: Float32Array; triCount: number }> {
   const zip = await JSZip.loadAsync(arrayBuffer);
   const modelFile = zip.file('3D/3dmodel.model');
   if (!modelFile) throw new Error('Not a valid 3MF: missing 3D/3dmodel.model');
@@ -19,9 +21,19 @@ export async function load3MF(arrayBuffer: ArrayBuffer): Promise<{ positions: Fl
     if (!mesh) continue;
     const base = allVerts.length;
     const vElems = mesh.getElementsByTagName('vertex');
-    for (const v of vElems) allVerts.push([+(v.getAttribute('x') || 0), +(v.getAttribute('y') || 0), +(v.getAttribute('z') || 0)]);
+    for (const v of vElems)
+      allVerts.push([
+        +(v.getAttribute('x') || 0),
+        +(v.getAttribute('y') || 0),
+        +(v.getAttribute('z') || 0),
+      ]);
     const tElems = mesh.getElementsByTagName('triangle');
-    for (const t of tElems) allTris.push([base + +(t.getAttribute('v1') || 0), base + +(t.getAttribute('v2') || 0), base + +(t.getAttribute('v3') || 0)]);
+    for (const t of tElems)
+      allTris.push([
+        base + +(t.getAttribute('v1') || 0),
+        base + +(t.getAttribute('v2') || 0),
+        base + +(t.getAttribute('v3') || 0),
+      ]);
   }
   const positions = new Float32Array(allTris.length * 9);
   allTris.forEach((tri, i) => {
@@ -49,7 +61,11 @@ export function detectFlatPatches(positions: Float32Array): FlatPatch[] {
     const p2 = [positions[o + 6], positions[o + 7], positions[o + 8]];
     const e1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
     const e2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
-    const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    const n = [
+      e1[1] * e2[2] - e1[2] * e2[1],
+      e1[2] * e2[0] - e1[0] * e2[2],
+      e1[0] * e2[1] - e1[1] * e2[0],
+    ];
     const len = Math.hypot(n[0], n[1], n[2]);
     if (len < 1e-9) continue;
     const nu = [n[0] / len, n[1] / len, n[2] / len];
@@ -57,8 +73,12 @@ export function detectFlatPatches(positions: Float32Array): FlatPatch[] {
     const offset = nu[0] * p0[0] + nu[1] * p0[1] + nu[2] * p0[2];
     const key = [nu[0].toFixed(2), nu[1].toFixed(2), nu[2].toFixed(2), offset.toFixed(2)].join(',');
     let b = buckets.get(key);
-    if (!b) { b = { area: 0, normal: nu, offset, triIndices: [] }; buckets.set(key, b); }
-    b.area += area; b.triIndices.push(i);
+    if (!b) {
+      b = { area: 0, normal: nu, offset, triIndices: [] };
+      buckets.set(key, b);
+    }
+    b.area += area;
+    b.triIndices.push(i);
   }
   return Array.from(buckets.values()).sort((a, b) => b.area - a.area);
 }
@@ -71,16 +91,19 @@ export function extractPatchBoundary(positions: Float32Array, triIndices: number
   const edgeMap = new Map<string, string>(); // vertex-key -> next vertex-key along the boundary
   const posOf = new Map<string, number[]>();
   function addVert(x: number, y: number, z: number): string {
-    const k = [x, y, z].map(v => v.toFixed(4)).join(',');
+    const k = [x, y, z].map((v) => v.toFixed(4)).join(',');
     posOf.set(k, [x, y, z]);
     return k;
   }
   const seen = new Map<string, number>(); // edge "a|b" -> count
-  triIndices.forEach(i => {
+  triIndices.forEach((i) => {
     const o = i * 9;
-    const pts = [0, 1, 2].map(k => addVert(positions[o + k * 3], positions[o + k * 3 + 1], positions[o + k * 3 + 2]));
+    const pts = [0, 1, 2].map((k) =>
+      addVert(positions[o + k * 3], positions[o + k * 3 + 1], positions[o + k * 3 + 2]),
+    );
     for (let k = 0; k < 3; k++) {
-      const a = pts[k], b = pts[(k + 1) % 3];
+      const a = pts[k],
+        b = pts[(k + 1) % 3];
       seen.set(a + '|' + b, (seen.get(a + '|' + b) || 0) + 1);
     }
   });
@@ -93,13 +116,16 @@ export function extractPatchBoundary(positions: Float32Array, triIndices: number
   const used = new Set<string>();
   for (const start of edgeMap.keys()) {
     if (used.has(start)) continue;
-    const loop = [start]; used.add(start);
+    const loop = [start];
+    used.add(start);
     let cur = edgeMap.get(start)!;
     let guard = 0;
     while (cur !== start && edgeMap.has(cur) && !used.has(cur) && guard++ < 100000) {
-      loop.push(cur); used.add(cur); cur = edgeMap.get(cur)!;
+      loop.push(cur);
+      used.add(cur);
+      cur = edgeMap.get(cur)!;
     }
-    loops.push(loop.map(k => posOf.get(k)!));
+    loops.push(loop.map((k) => posOf.get(k)!));
   }
   return loops;
 }

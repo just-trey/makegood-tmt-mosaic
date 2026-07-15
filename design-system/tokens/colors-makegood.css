@@ -1,6 +1,6 @@
 /* Reference palette extracted from makegood.design (the nonprofit marketing site).
    Distinct from both Mosaic and 3D Mobility — bright, multi-hue, celebratory. */
-:root{
+:root {
   --mg-rainbow-1: #ff6b6b;
   --mg-rainbow-2: #ff8e53;
   --mg-rainbow-3: #feca57;
@@ -9,6 +9,6 @@
   --mg-rainbow-6: #667eea;
   --mg-rainbow-7: #9f7aea;
   --mg-banner-from: #7e22ce; /* purple-700 */
-  --mg-banner-via: #4338ca;  /* indigo-700 */
-  --mg-banner-to: #0f766e;   /* teal-700 */
+  --mg-banner-via: #4338ca; /* indigo-700 */
+  --mg-banner-to: #0f766e; /* teal-700 */
 }

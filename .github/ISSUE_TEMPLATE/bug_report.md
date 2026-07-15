@@ -21,6 +21,7 @@ What you expected to happen instead.
 If applicable, add screenshots of the 3D preview or exported output.
 
 **Environment**
+
 - Browser + version:
 - OS:
 

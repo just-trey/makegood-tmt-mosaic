@@ -25,7 +25,10 @@ export function initViewport(host: HTMLElement): void {
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x070a13);
-  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(
+    new RoomEnvironment(),
+    0.04,
+  ).texture;
 
   camera = new THREE.PerspectiveCamera(40, 1, 0.1, 5000);
   camera.position.set(90, -140, 110);
@@ -39,9 +42,12 @@ export function initViewport(host: HTMLElement): void {
   dl.position.set(80, -60, 120);
   dl.castShadow = true;
   dl.shadow.mapSize.set(2048, 2048);
-  dl.shadow.camera.left = -200; dl.shadow.camera.right = 200;
-  dl.shadow.camera.top = 200; dl.shadow.camera.bottom = -200;
-  dl.shadow.camera.near = 1; dl.shadow.camera.far = 600;
+  dl.shadow.camera.left = -200;
+  dl.shadow.camera.right = 200;
+  dl.shadow.camera.top = 200;
+  dl.shadow.camera.bottom = -200;
+  dl.shadow.camera.near = 1;
+  dl.shadow.camera.far = 600;
   dl.shadow.normalBias = 0.5; // scene units are mm; avoids acne on large flat faces
   scene.add(dl);
   const dl2 = new THREE.DirectionalLight(0xffffff, 0.4);
@@ -51,7 +57,10 @@ export function initViewport(host: HTMLElement): void {
   const grid = new THREE.GridHelper(600, 30, 0x2b3457, 0x1c2440); // 600mm span — fits the wheel assembly
   grid.rotation.x = Math.PI / 2;
   scene.add(grid);
-  const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.ShadowMaterial({ opacity: 0.3 }));
+  const shadowCatcher = new THREE.Mesh(
+    new THREE.PlaneGeometry(600, 600),
+    new THREE.ShadowMaterial({ opacity: 0.3 }),
+  );
   shadowCatcher.position.z = -0.05; // just under the grid plane so coplanar model bottoms don't z-fight
   shadowCatcher.receiveShadow = true;
   scene.add(shadowCatcher);
@@ -59,7 +68,8 @@ export function initViewport(host: HTMLElement): void {
   scene.add(modelGroup);
 
   function resize(): void {
-    const w = host.clientWidth, h = host.clientHeight;
+    const w = host.clientWidth,
+      h = host.clientHeight;
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -71,7 +81,7 @@ export function initViewport(host: HTMLElement): void {
     requestAnimationFrame(animate);
     // modelGroup is rebuilt from several code paths — flagging every frame catches them all
     // (object count is small). Transparent ghosts don't cast shadows.
-    modelGroup.traverse(o => {
+    modelGroup.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh) {
         mesh.castShadow = !(mesh.material as THREE.Material).transparent;
@@ -109,10 +119,12 @@ export function frameModelIfPending(): void {
   const box = new THREE.Box3().setFromObject(modelGroup);
   if (box.isEmpty()) return; // nothing built yet — try again next rebuild
   pendingFrame = false;
-  const size = new THREE.Vector3(); box.getSize(size);
-  const center = new THREE.Vector3(); box.getCenter(center);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
   const radius = Math.max(size.x, size.y, size.z, 20) * 0.5;
-  const dist = radius / Math.sin((camera.fov * Math.PI / 180) / 2) * 1.25;
+  const dist = (radius / Math.sin((camera.fov * Math.PI) / 180 / 2)) * 1.25;
   const dir = preferredViewDir
     ? preferredViewDir.clone()
     : new THREE.Vector3().subVectors(camera.position, controls.target);

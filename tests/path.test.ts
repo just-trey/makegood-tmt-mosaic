@@ -12,12 +12,21 @@ describe('parsePathD', () => {
 
   it('handles relative commands', () => {
     const loops = parsePathD('m10 10 l10 0 l0 10 z');
-    expect(loops[0].map(p => [p.x, p.y])).toEqual([[10, 10], [20, 10], [20, 20], [10, 10]]);
+    expect(loops[0].map((p) => [p.x, p.y])).toEqual([
+      [10, 10],
+      [20, 10],
+      [20, 20],
+      [10, 10],
+    ]);
   });
 
   it('handles H and V', () => {
     const loops = parsePathD('M0 0 H10 V5');
-    expect(loops[0]).toEqual([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 5 }]);
+    expect(loops[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 5 },
+    ]);
   });
 
   it('repeats the previous command implicitly', () => {
@@ -28,7 +37,11 @@ describe('parsePathD', () => {
 
   it('treats coordinates after M as implicit L (per SVG spec)', () => {
     const loops = parsePathD('M0 0 10 0 10 10');
-    expect(loops[0]).toEqual([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }]);
+    expect(loops[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+    ]);
   });
 
   it('splits multiple subpaths into separate loops', () => {
@@ -59,7 +72,12 @@ describe('parsePathD', () => {
 
 describe('signedArea', () => {
   it('is positive for CCW and negative for CW', () => {
-    const ccw = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    const ccw = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
     expect(signedArea(ccw)).toBeCloseTo(100);
     expect(signedArea(ccw.slice().reverse())).toBeCloseTo(-100);
   });
