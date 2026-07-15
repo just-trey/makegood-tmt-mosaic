@@ -40,6 +40,13 @@ export default defineConfig(({ mode }) => {
     // Relative base so the built site works at any GitHub Pages path
     // (https://<user>.github.io/<repo>/) without hardcoding the repo name.
     base: './',
+    // Preview server config (used by scripts/smoke.mjs). host:true binds 0.0.0.0
+    // so the CI Playwright container can reach it.
+    preview: {
+      host: true,
+      port: 4173,
+      strictPort: true,
+    },
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version || 'dev'),
     },

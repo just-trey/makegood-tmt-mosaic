@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Fixed the deployed GitHub Pages site failing to load (CSS/JS 404s): a stray
+  `vite.config.js` was shadowing `vite.config.ts` — Vite loads `.js` before
+  `.ts` — so the production build silently dropped the real config (asset base,
+  version token, analytics) and fell back to a root base whose `/assets/…` URLs
+  404 under the `/<repo>/` project path. Removed the duplicate and folded its
+  preview-server settings into `vite.config.ts`.
 - Prevented the app from crashing on startup when the build-time version token
   was unavailable, which was causing the Playwright smoke check to time out.
 - Assembly artwork on a +Y-facing design face (e.g. the wheel's default face)
