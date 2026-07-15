@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-15
+
 ### Fixed
 
 - Print-ready export was pathologically slow — a real assembly 3MF took ~90s,
@@ -69,6 +71,7 @@ Initial public alpha. Baseline feature set as of this release:
 - Automatic boolean-failure recovery: vertex deduplication, degenerate-sliver
   scrubbing, and reduced-precision retries for self-intersecting source paths.
 
-[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/just-trey/makegood-tmt-mosaic/releases/tag/v0.1.0
