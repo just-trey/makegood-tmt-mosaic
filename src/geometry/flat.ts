@@ -155,7 +155,7 @@ export function buildGeometry(input: FlatBuildInput): FlatBuild | null {
   // leftover background region
   let unionAll: PolyFeature | null = null;
   colorEntries.forEach(c => { unionAll = safeUnion(unionAll, c.feature); });
-  let leftover = unionAll ? safeDiff(footprint, unionAll) : footprint;
+  const leftover = unionAll ? safeDiff(footprint, unionAll) : footprint;
 
   if (recessBg && leftover) {
     // the background recess honors its own per-region depth override, like any color
@@ -164,7 +164,6 @@ export function buildGeometry(input: FlatBuildInput): FlatBuild | null {
       color: '#cfd6dc', key: BACKGROUND_KEY, members: [BACKGROUND_KEY], isMerge: false,
       feature: leftover, depth: clampDepth(bgDepth), isBackground: true,
     });
-    leftover = null;
   }
 
   // ---- base/plinth: stacked slabs between distinct depth boundaries ----

@@ -3,7 +3,7 @@
 // moduleResolution "bundler", so TypeScript can't resolve the real typings — this shim
 // declares just the surface we call. Delete it if/when Turf is upgraded to v7+.
 declare module '@turf/turf' {
-  import type { Feature, GeoJSON, MultiPolygon, Polygon, Properties } from 'geojson';
+  import type { Feature, GeoJSON, MultiPolygon, Polygon } from 'geojson';
 
   type Poly = Feature<Polygon | MultiPolygon> | Polygon | MultiPolygon;
 
