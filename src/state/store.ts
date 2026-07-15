@@ -35,6 +35,8 @@ export interface AppState {
   scalePct: number;
   offsetX: number;
   offsetY: number;
+  flipX: boolean;
+  flipY: boolean;
 
   // depth
   globalDepth: number;
@@ -73,6 +75,8 @@ export const state: AppState = {
   scalePct: 100,
   offsetX: 0,
   offsetY: 0,
+  flipX: false,
+  flipY: false,
 
   globalDepth: 1.0,
   recessBg: false,
@@ -99,6 +103,8 @@ export function currentBaseParams(): BaseParams | null {
     scaleMult: state.scalePct / 100,
     offsetX: state.offsetX,
     offsetY: state.offsetY,
+    flipX: state.flipX,
+    flipY: state.flipY,
   };
   if (state.shapeKind === 'disc')
     return { diameter: state.disc.diameter, thickness: state.disc.thickness, ...fit };

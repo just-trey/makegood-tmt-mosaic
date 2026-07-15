@@ -9,8 +9,10 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Environment
+# Environment (keep the token out of source; .env.example is the tracked template)
 .env
+.env.*
+!.env.example
 # OS / editor junk
 .DS_Store
 Thumbs.db
