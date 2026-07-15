@@ -27,14 +27,48 @@ export function normalizeColor(str: string | null): string | null {
   return '#000000';
 }
 
+function getInlineStyleProp(el: Element, prop: string): string | null {
+  const style = el.getAttribute('style');
+  if (!style) return null;
+  const m = style.match(new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)'));
+  return m ? m[1].trim() : null;
+}
+
 /** Read a presentation property from the style attribute first, then the attribute. */
 export function getStyleProp(el: Element, prop: string): string | null {
-  const style = el.getAttribute('style');
-  if (style) {
-    const m = style.match(new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)'));
-    if (m) return m[1].trim();
-  }
-  return el.getAttribute(prop);
+  return getInlineStyleProp(el, prop) ?? el.getAttribute(prop);
+}
+
+/**
+ * Collect `.className { prop: value; ... }` rules from every <style> block in the document.
+ * Only class selectors are recognized (e.g. Illustrator/Inkscape's `.cls-1, .cls-2 {...}`
+ * export pattern) — tag/id/combinator selectors are deliberately ignored so this can never
+ * change the resolved fill of an SVG that has no `class` attributes on its shapes.
+ */
+function parseClassRules(doc: Document): Map<string, Record<string, string>> {
+  const rules = new Map<string, Record<string, string>>();
+  doc.querySelectorAll('style').forEach((styleEl) => {
+    const css = (styleEl.textContent || '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const blockRe = /([^{}]+)\{([^{}]*)\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = blockRe.exec(css))) {
+      const decls: Record<string, string> = {};
+      m[2].split(';').forEach((decl) => {
+        const idx = decl.indexOf(':');
+        if (idx < 0) return;
+        const prop = decl.slice(0, idx).trim();
+        const value = decl.slice(idx + 1).trim();
+        if (prop && value) decls[prop] = value;
+      });
+      if (!Object.keys(decls).length) continue;
+      const classNames = m[1].match(/\.[-\w]+/g) || [];
+      classNames.forEach((c) => {
+        const name = c.slice(1);
+        rules.set(name, { ...rules.get(name), ...decls });
+      });
+    }
+  });
+  return rules;
 }
 
 /**
@@ -64,10 +98,28 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   const shapes: SVGShape[] = [];
   let order = 0;
 
+  // Cascade: inline `style` attribute > matched <style> class rule > presentation attribute.
+  // Elements with no `class` attribute (i.e. every shape in SVGs we already support) fall
+  // straight through the empty middle step to the same two lookups as before.
+  const classRules = parseClassRules(doc);
+  function resolveProp(el: Element, prop: string): string | null {
+    const inline = getInlineStyleProp(el, prop);
+    if (inline != null) return inline;
+    const classAttr = el.getAttribute('class');
+    if (classAttr) {
+      const classes = classAttr.trim().split(/\s+/).filter(Boolean);
+      for (let i = classes.length - 1; i >= 0; i--) {
+        const decls = classRules.get(classes[i]);
+        if (decls && prop in decls) return decls[prop];
+      }
+    }
+    return el.getAttribute(prop);
+  }
+
   function getAncestorFill(el: Element): string | null {
     let p = el.parentElement;
     while (p) {
-      const f = getStyleProp(p, 'fill');
+      const f = resolveProp(p, 'fill');
       if (f && !/url\(/.test(f)) return f;
       p = p.parentElement;
     }
@@ -95,10 +147,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     const localM = parseTransformAttr(el.getAttribute('transform'));
     const M = Mat.multiply(parentM, localM);
 
-    const fillRaw = getStyleProp(el, 'fill');
+    const fillRaw = resolveProp(el, 'fill');
     const fillUrl = fillRaw && /url\(/.test(fillRaw);
-    const opacity = parseFloat(getStyleProp(el, 'fill-opacity') || '');
-    const displayNone = getStyleProp(el, 'display') === 'none';
+    const opacity = parseFloat(resolveProp(el, 'fill-opacity') || '');
+    const displayNone = resolveProp(el, 'display') === 'none';
 
     if (
       tag === 'path' ||

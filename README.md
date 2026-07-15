@@ -149,6 +149,19 @@ appears:
   leftover boolean results from the design tool, hand-edited paths with
   crossed segments.
 
+## Troubleshooting: "Couldn't build the cut solid" warnings (assembly mode)
+
+Assembly mode clips each color's region to the part's face boundary, then
+extrudes it into a 3D pocket. Dense or detailed line-work (fine outlines,
+small highlight shapes) can come out of that clip touching itself at a point
+without Turf treating it as invalid — but Manifold's boolean engine rejects
+the resulting mesh as non-watertight when building the pocket. The app
+automatically repairs this (via Manifold's own 2D boolean engine, offsetting
+the region by a hair and back to break the exact-touching topology) and
+retries before giving up. If the warning still appears, that color's pocket
+was skipped on that part — same source fix as above (clean the path in
+Illustrator/Inkscape) usually resolves it.
+
 ## Design system
 
 The visual language is the TMT Mosaic design system — dark navy/blue,

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type ManifoldModule from 'manifold-3d';
-import type { IndexedMesh, PolyFeature } from '../types';
+import type { IndexedMesh, PolyFeature, SVGShape } from '../types';
 import { featureToShapes } from './flat';
+import { shapeToFeature } from './regions';
 
 export type ManifoldAPI = Awaited<ReturnType<typeof ManifoldModule>>;
 export type ManifoldSolid = InstanceType<ManifoldAPI['Manifold']>;
@@ -200,4 +201,41 @@ export function extrudeRegionToSoup(
     }
   }
   return soup;
+}
+
+/**
+ * Repair a self-intersecting/pinched region (e.g. dense line-work that touches itself after
+ * being clipped to a part boundary) using Manifold's own 2D boolean engine, CrossSection —
+ * turf's clipper can emit such regions without throwing, but they then fail Manifold's
+ * watertight check at extrusion time. Feeding every ring in flat (outer and hole alike) and
+ * resolving with a fill rule handles genuine self-crossings regardless of winding, but doesn't
+ * by itself fix contours that merely *touch* (a hole pinched against its own outer boundary at a
+ * single point, or two adjacent shapes sharing an edge) — THREE's earcut triangulator still
+ * chokes on that exact-touching topology. A tiny inward offset-and-back (0.01mm, far below print
+ * resolution) breaks those exact coincidences by construction; simplify() cleans up the sliver
+ * segments the offset round-trip introduces. The cleaned contours are re-nested into proper
+ * outer/hole polygons by shapeToFeature's containment-depth algorithm, which doesn't care about
+ * CrossSection's own winding convention.
+ */
+export function repairSelfIntersections(
+  wasm: ManifoldAPI,
+  feature: PolyFeature,
+): PolyFeature | null {
+  const g = feature.geometry;
+  const polys: Ring[][] =
+    g.type === 'Polygon' ? [g.coordinates as Ring[]] : (g.coordinates as Ring[][]);
+  const contours = polys.flat().filter((r) => r.length >= 4);
+  if (!contours.length) return null;
+  const cs = new wasm.CrossSection(contours as [number, number][][], 'NonZero');
+  const eroded = cs.offset(-0.01, 'Round').simplify(1e-4);
+  const cleaned = eroded.toPolygons();
+  eroded.delete();
+  cs.delete();
+  if (!cleaned.length) return null;
+  const shape: SVGShape = {
+    fill: '',
+    order: 0,
+    loops: cleaned.map((ring) => ring.map(([x, y]) => ({ x, y }))),
+  };
+  return shapeToFeature(shape);
 }
