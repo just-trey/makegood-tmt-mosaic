@@ -172,6 +172,11 @@ is imported by the app. Two other brand themes in the tokens folder
 - Full assembled-chair view with drag-and-drop filament colors per part.
 - Curved-surface wrapping.
 - Adaptive Bezier flattening tolerance instead of a fixed segment count.
+- Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
+  existing half-wheel (Top ×2 + Cap) kind, and a hubcap part for the wheel
+  assembly — requested by users wanting the full wheel image, not just the
+  current half-wheel pair.
+- Footrest part, and a full parent-handle assembly kind.
 
 ## TODO / tech debt
 
@@ -185,3 +190,13 @@ is imported by the app. Two other brand themes in the tokens folder
   boolean-heavy paths (`npm test` + `npm run smoke` + a complex real SVG),
   and only then consider simplifying the retry workarounds if the new
   clipping engine no longer needs them.
+- **Rebuild debounce is too short for typed numeric input.**
+  `scheduleRebuild()` in [src/app/scheduler.ts](src/app/scheduler.ts) uses a
+  flat 30ms debounce tuned for slider drags. The "Rebuilding…" overlay shows
+  synchronously on every keystroke (before the debounce timer even fires),
+  and an in-flight rebuild isn't cancelled — so typing a multi-digit value
+  into the scale/margin number fields (e.g. "50") kicks off a rebuild on the
+  first digit and the second digit's effect waits behind it. User feedback:
+  "as soon as I typed the 5, it started rebuilding, then I was able to add
+  the 0." Needs a longer debounce for text-input changes (sliders can stay
+  live) or an explicit "Apply" step for the numeric fields.
