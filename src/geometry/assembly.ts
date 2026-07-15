@@ -193,16 +193,44 @@ export async function buildAssemblyGeometry(
       viewSignSet = true;
     }
 
-    // face boundary as a turf polygon in native X/Z, to clip regions to the actual face
+    // face boundary as a turf polygon in native X/Z, to clip regions to the actual face. A
+    // cut-through part (e.g. a domed cap) has a design meant to span the whole curved surface,
+    // not just the small flat patch used to place it, so skip the clip — the boolean subtract
+    // against the real mesh below is what actually bounds the cut.
     let boundaryPoly: PolyFeature | null = null;
-    const bRing = part.boundaryLoop.map((p) => [p[0], p[2]]);
-    if (bRing.length >= 3) {
-      if (bRing[0][0] !== bRing[bRing.length - 1][0] || bRing[0][1] !== bRing[bRing.length - 1][1])
-        bRing.push(bRing[0]);
-      try {
-        boundaryPoly = turf.polygon([bRing]) as PolyFeature;
-      } catch {
-        boundaryPoly = null;
+    if (!part.cutThrough) {
+      const bRing = part.boundaryLoop.map((p) => [p[0], p[2]]);
+      if (bRing.length >= 3) {
+        if (
+          bRing[0][0] !== bRing[bRing.length - 1][0] ||
+          bRing[0][1] !== bRing[bRing.length - 1][1]
+        )
+          bRing.push(bRing[0]);
+        try {
+          boundaryPoly = turf.polygon([bRing]) as PolyFeature;
+        } catch {
+          boundaryPoly = null;
+        }
+      }
+    }
+
+    // A cut-through part ignores the normal depth setting: either it cuts a fixed mm depth
+    // straight down from the face (e.g. the cap's 3mm shell above its mounting boss — deeper
+    // would breach it), or, with no configured depth, pierces the part's whole vertical extent
+    // (plus overshoot past the far surface) regardless of local curvature/thickness.
+    let throughDepth = 0;
+    if (part.cutThrough) {
+      if (part.cutThroughDepth != null) {
+        throughDepth = part.cutThroughDepth;
+      } else {
+        let yMin = Infinity,
+          yMax = -Infinity;
+        for (let i = 1; i < part.positions.length; i += 3) {
+          const y = part.positions[i];
+          if (y < yMin) yMin = y;
+          if (y > yMax) yMax = y;
+        }
+        throughDepth = (nsign > 0 ? faceY - yMin : yMax - faceY) + OVERSHOOT_MM;
       }
     }
 
@@ -215,8 +243,9 @@ export async function buildAssemblyGeometry(
         feat = safeIntersect(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
         if (!feat) return;
       }
-      const depth = (colorSettings[c.key] && colorSettings[c.key].depth) || globalDepth;
-      if (depth <= 0) return;
+      const depthSetting = (colorSettings[c.key] && colorSettings[c.key].depth) || globalDepth;
+      if (depthSetting <= 0) return;
+      const depth = part.cutThrough ? throughDepth : depthSetting;
       const soup = extrudeRegionToSoup(feat, faceY, depth, OVERSHOOT_MM, nsign);
       if (!soup || !soup.length) return;
       try {
