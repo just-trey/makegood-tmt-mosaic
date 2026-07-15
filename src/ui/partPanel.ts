@@ -81,7 +81,7 @@ function bindShapeInput(sel: string, apply: (v: number) => void): void {
   input(sel).addEventListener('input', () => {
     apply(numVal(sel));
     updateOffsetSliderRanges();
-    scheduleRebuild();
+    scheduleRebuild('typed');
   });
 }
 
@@ -163,7 +163,7 @@ export function initPartPanel(): void {
   input('#p-asm-radius').addEventListener('input', () => {
     state.asmRadius = numVal('#p-asm-radius', 138);
     updateOffsetSliderRanges();
-    scheduleRebuild();
+    scheduleRebuild('typed');
   });
 
   // STL reference upload

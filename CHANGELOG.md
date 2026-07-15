@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   non-watertight, even though the shape is otherwise valid. Failed regions are
   now automatically repaired (via Manifold's own 2D boolean engine) and
   retried before falling back to a warning.
+- Typing a multi-digit value into a numeric field (scale, margin, depth,
+  dimensions) no longer kicked off a rebuild on the first digit and stacked a
+  second one behind it — number fields now debounce until you stop typing,
+  and the "Rebuilding…" overlay no longer flashes on every keystroke.
+  Dragging a slider on a complex/heavy model no longer stutters either: it
+  now rebuilds once on release instead of flooding redraws mid-drag, while
+  cheap models keep live preview during the drag.
+- On a heavy model, changing a value used to make the viewport appear to
+  freeze with no indication anything was happening until the redraw finished.
+  The "Rebuilding…" overlay now reliably shows during the freeze (it's given
+  a paint frame before the geometry work blocks the main thread), and heavy
+  rebuilds are recognized up front so even the first one shows it — while
+  light rebuilds still update instantly with no overlay.
 
 ### Changed
 

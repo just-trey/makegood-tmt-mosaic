@@ -5,7 +5,7 @@ import { $, input, numVal } from './dom';
 export function initDepthPanel(): void {
   input('#p-depth').addEventListener('input', () => {
     state.globalDepth = numVal('#p-depth', 1.0);
-    scheduleRebuild();
+    scheduleRebuild('typed');
   });
   input('#p-recess-bg').addEventListener('change', () => {
     state.recessBg = input('#p-recess-bg').checked;
