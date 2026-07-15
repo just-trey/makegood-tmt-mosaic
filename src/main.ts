@@ -13,6 +13,8 @@ import { initArtworkPanel } from './ui/artworkPanel';
 import { initExportPanel } from './ui/exportPanel';
 import { $ } from './ui/dom';
 
+$('#app-version').textContent = `v${__APP_VERSION__}`;
+
 initViewport($('#canvas-host'));
 setRebuildHandler(rebuildCurrent);
 

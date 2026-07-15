@@ -1,7 +1,8 @@
 {
   "name": "tmt-mosaic",
   "private": true,
-  "version": "2.0.0",
+  "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,6 +19,7 @@
     "three": "0.160.1"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "@types/three": "0.160.0",
     "playwright": "^1.61.1",
     "typescript": "^5.5.0",
