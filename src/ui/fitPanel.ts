@@ -75,16 +75,31 @@ export function initFitPanel(): void {
     state.offsetY = v;
   });
 
+  const flipX = input('#p-flip-x'),
+    flipY = input('#p-flip-y');
+  flipX.addEventListener('change', () => {
+    state.flipX = flipX.checked;
+    scheduleRebuild();
+  });
+  flipY.addEventListener('change', () => {
+    state.flipY = flipY.checked;
+    scheduleRebuild();
+  });
+
   input('#btn-reset-fit').addEventListener('click', () => {
     state.scalePct = 100;
     state.offsetX = 0;
     state.offsetY = 0;
+    state.flipX = false;
+    state.flipY = false;
     input('#p-scale').value = '100';
     input('#p-scale-num').value = '100';
     input('#p-offset-x').value = '0';
     input('#p-offset-y').value = '0';
     input('#p-offset-x-slider').value = '0';
     input('#p-offset-y-slider').value = '0';
+    flipX.checked = false;
+    flipY.checked = false;
     scheduleRebuild();
   });
 

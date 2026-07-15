@@ -130,6 +130,8 @@ export function fitTransform(
   scaleMult: number,
   offsetX: number,
   offsetY: number,
+  flipX: boolean,
+  flipY: boolean,
 ): FitTransform {
   const svgW = svgBBox.maxX - svgBBox.minX,
     svgH = svgBBox.maxY - svgBBox.minY;
@@ -140,23 +142,36 @@ export function fitTransform(
   const scale = autoScale * (scaleMult || 1);
   const cx = (svgBBox.minX + svgBBox.maxX) / 2,
     cy = (svgBBox.minY + svgBBox.maxY) / 2;
-  // SVG y grows downward; the physical plate has +Y "up" on the printed face — flip Y.
-  return { scale, cx, cy, flipY: true, offsetX: offsetX || 0, offsetY: offsetY || 0 };
+  // SVG y grows downward; the physical plate has +Y "up" on the printed face, so the base Y
+  // multiplier is -1. The user flip toggles mirror on top of that (horizontal, and vertical
+  // over the built-in correction).
+  const xMul = flipX ? -1 : 1;
+  const yMul = flipY ? 1 : -1;
+  return {
+    scale,
+    cx,
+    cy,
+    xMul,
+    yMul,
+    reverse: xMul * yMul < 0,
+    offsetX: offsetX || 0,
+    offsetY: offsetY || 0,
+  };
 }
 
 export function transformFeature(feature: PolyFeature, fit: FitTransform): PolyFeature {
   function tp(pt: number[]): number[] {
-    const x = (pt[0] - fit.cx) * fit.scale + fit.offsetX;
-    const y = (pt[1] - fit.cy) * fit.scale * (fit.flipY ? -1 : 1) + fit.offsetY;
+    const x = (pt[0] - fit.cx) * fit.scale * fit.xMul + fit.offsetX;
+    const y = (pt[1] - fit.cy) * fit.scale * fit.yMul + fit.offsetY;
     return [x, y];
   }
-  // A pure mirror (flipY) reverses every ring's winding order. That's fine topologically
-  // (exterior/hole relationships are unaffected by a uniform mirror) but it would flip the
-  // extruded mesh's face normals inward. Re-reverse each ring post-mirror to restore the
-  // original winding sense so extrusion produces outward-facing normals.
+  // A reflection (an odd number of axis flips) reverses every ring's winding order. That's fine
+  // topologically (exterior/hole relationships are unaffected by a uniform mirror) but it would
+  // flip the extruded mesh's face normals inward. Re-reverse each ring to restore the original
+  // winding sense so extrusion produces outward-facing normals.
   function fixRing(ring: Ring): Ring {
     const m = ring.map(tp);
-    return fit.flipY ? m.slice().reverse() : m;
+    return fit.reverse ? m.slice().reverse() : m;
   }
   const g = feature.geometry;
   const geom =
@@ -202,6 +217,8 @@ export function buildGeometry(input: FlatBuildInput): FlatBuild | null {
     baseParams.scaleMult,
     baseParams.offsetX,
     baseParams.offsetY,
+    baseParams.flipX,
+    baseParams.flipY,
   );
   const footprint = footprintFeature(shapeKind, baseParams);
   const thickness = baseParams.thickness;

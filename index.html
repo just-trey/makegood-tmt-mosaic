@@ -248,10 +248,21 @@
             </div>
             <span class="hint">mm</span>
           </div>
+          <div class="row">
+            <label>Mirror</label>
+            <div class="field" style="flex: 0; gap: 12px; justify-content: flex-end">
+              <label style="display: flex; align-items: center; gap: 4px"
+                ><input type="checkbox" id="p-flip-x" /> Flip H</label
+              >
+              <label style="display: flex; align-items: center; gap: 4px"
+                ><input type="checkbox" id="p-flip-y" /> Flip V</label
+              >
+            </div>
+          </div>
           <button class="btn small full" id="btn-reset-fit">Reset to auto-fit</button>
           <div class="hint">
             Margin sets the auto-fit border; Scale multiplies on top (over 100% bleeds past the
-            edge).
+            edge). Flip H mirrors the artwork left-to-right (fixes text that reads backwards).
           </div>
         </details>
 
@@ -330,5 +341,7 @@
     </div>
 
     <script type="module" src="/src/main.ts"></script>
+    <!-- Cloudflare Web Analytics is injected at build time from CF_BEACON_TOKEN
+         (see vite.config.ts) so it only runs on our deploy, not on forks. -->
   </body>
 </html>

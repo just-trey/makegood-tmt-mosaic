@@ -37,13 +37,22 @@ export interface BaseParams {
   scaleMult: number;
   offsetX: number;
   offsetY: number;
+  /** user horizontal mirror (fixes artwork that reads back-to-front) */
+  flipX: boolean;
+  /** user vertical mirror, on top of the built-in SVG y-down correction */
+  flipY: boolean;
 }
 
 export interface FitTransform {
   scale: number;
   cx: number;
   cy: number;
-  flipY: boolean;
+  /** ±1 horizontal multiplier (−1 = user mirror) */
+  xMul: number;
+  /** ±1 vertical multiplier: base −1 (SVG y-down → plate y-up), flipped again by the user toggle */
+  yMul: number;
+  /** rings need winding reversal when the net transform is a reflection (odd # of axis flips) */
+  reverse: boolean;
   offsetX: number;
   offsetY: number;
 }

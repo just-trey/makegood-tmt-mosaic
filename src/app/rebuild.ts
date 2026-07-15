@@ -185,6 +185,8 @@ async function rebuildAssemblyScene(): Promise<void> {
     scaleMult: state.scalePct / 100,
     offX: state.offsetX,
     offZ: state.offsetY,
+    flipX: state.flipX,
+    flipY: state.flipY,
   });
   lastAssemblyBuild = built;
   const modelGroup = getModelGroup();

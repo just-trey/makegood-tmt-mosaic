@@ -26,6 +26,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        # Set this as a repo Variable (Settings → Secrets and variables → Actions →
+        # Variables). Forks don't inherit it, so their deploys ship without the beacon.
+        env:
+          CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
