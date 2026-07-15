@@ -6,6 +6,8 @@
 npm install
 npm run dev         # dev server with hot reload
 npm run typecheck   # tsc --noEmit
+npm run lint        # eslint .
+npm run format      # prettier --write .
 npm test            # vitest run
 npm run smoke       # build + end-to-end smoke test (scripts/smoke.mjs)
 npm run build       # typecheck + production build to dist/
@@ -13,8 +15,9 @@ npm run build       # typecheck + production build to dist/
 
 ## Before opening a PR
 
-- `typecheck`, `test`, and `smoke` must all pass — CI runs the same three
-  on every PR and blocks merge into `main` if any fail.
+- `lint`, `format:check`, `typecheck`, `test`, and `smoke` must all pass —
+  CI runs the same steps on every PR and blocks merge into `main` if any
+  fail. Run `npm run format` to auto-fix formatting before committing.
 - Add a bullet under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for
   any user-visible change (Keep a Changelog categories: Added/Changed/Fixed/
   Removed). Skip it for internal refactors, tests, or CI/tooling changes with
@@ -36,8 +39,9 @@ npm run build       # typecheck + production build to dist/
 
 ## Code conventions
 
-- No linter or formatter is configured — match the style already in the
-  file you're editing rather than introducing a new one.
+- ESLint (`eslint.config.js`, typescript-eslint recommended) + Prettier
+  (`.prettierrc.json`) are configured — run `npm run lint` /
+  `npm run format` rather than hand-formatting.
 - TypeScript `strict` is on (see [tsconfig.json](tsconfig.json)); don't
   weaken it to make something compile.
 - Default to no comments. Only add one for a non-obvious *why* — a hidden
