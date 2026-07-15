@@ -3,9 +3,13 @@ import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 
 const exporter = new STLExporter();
 
-export function meshToSTLBlob(obj: THREE.Object3D): Blob {
+export function meshToSTLBytes(obj: THREE.Object3D): Uint8Array {
   const result = exporter.parse(obj as THREE.Mesh, { binary: true }) as unknown as DataView;
-  return new Blob([result.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+  return new Uint8Array(result.buffer as ArrayBuffer, result.byteOffset, result.byteLength);
+}
+
+export function meshToSTLBlob(obj: THREE.Object3D): Blob {
+  return new Blob([meshToSTLBytes(obj) as BlobPart], { type: 'application/octet-stream' });
 }
 
 /** Write a raw triangle soup (N*9 interleaved xyz) as a binary STL. */

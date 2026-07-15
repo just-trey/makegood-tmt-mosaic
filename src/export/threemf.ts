@@ -1,4 +1,5 @@
-import JSZip from 'jszip';
+import type { IndexedMesh } from '../types';
+import { zipStore, type ZipEntry } from './zip';
 
 export interface ExportMaterial {
   name: string;
@@ -7,7 +8,10 @@ export interface ExportMaterial {
 export interface ExportSub {
   name: string;
   matIndex: number;
-  soup: Float32Array;
+  /** Manifold's native index, emitted as-is when available (skips re-welding the soup). */
+  indexed?: IndexedMesh;
+  /** Unindexed soup; welded on the fly when `indexed` is absent (flat mode, fallback parts). */
+  soup?: Float32Array;
 }
 export interface ExportPart {
   name: string;
@@ -21,7 +25,12 @@ export interface ExportOptions {
   plate?: { w: number; d: number };
 }
 
-/** Triangle soup -> indexed {verts, tris} for compact 3MF output. */
+/**
+ * Triangle soup -> indexed {verts, tris} for compact 3MF output. The key rounds to 4 decimals
+ * (0.1 micron) via integer scaling — Math.round is markedly cheaper than toFixed(4), which
+ * matters on large meshes. Used for meshes that don't arrive pre-indexed (flat mode, fallback
+ * parts); Manifold-derived assembly meshes carry their own index and skip this entirely.
+ */
 export function soupToIndexed(soup: Float32Array): { verts: number[]; tris: number[] } {
   const map = new Map<string, number>();
   const verts: number[] = [];
@@ -30,7 +39,7 @@ export function soupToIndexed(soup: Float32Array): { verts: number[]; tris: numb
     const x = soup[i],
       y = soup[i + 1],
       z = soup[i + 2];
-    const k = x.toFixed(4) + ',' + y.toFixed(4) + ',' + z.toFixed(4);
+    const k = Math.round(x * 1e4) + ',' + Math.round(y * 1e4) + ',' + Math.round(z * 1e4);
     let idx = map.get(k);
     if (idx === undefined) {
       idx = verts.length / 3;
@@ -154,22 +163,24 @@ export async function build3MFCombined(
     gap = 8;
   const plateW = (opts.plate && opts.plate.w) || 256;
   const plateD = (opts.plate && opts.plate.d) || 256;
-  const z = new JSZip();
-  z.file(
-    '[Content_Types].xml',
-    `<?xml version="1.0" encoding="UTF-8"?>
+  const enc = new TextEncoder();
+  const files: ZipEntry[] = [
+    {
+      name: '[Content_Types].xml',
+      data: enc.encode(`<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
-</Types>`,
-  );
-  z.file(
-    '_rels/.rels',
-    `<?xml version="1.0" encoding="UTF-8"?>
+</Types>`),
+    },
+    {
+      name: '_rels/.rels',
+      data: enc.encode(`<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
-</Relationships>`,
-  );
+</Relationships>`),
+    },
+  ];
 
   interface Placed {
     part: ExportPart;
@@ -264,7 +275,9 @@ export async function build3MFCombined(
   for (const pl of placed) {
     const subs: { id: number; name: string; matIndex: number }[] = [];
     for (const sub of pl.part.subs) {
-      const { verts, tris } = soupToIndexed(sub.soup);
+      const { verts, tris }: { verts: ArrayLike<number>; tris: ArrayLike<number> } = sub.indexed
+        ? { verts: sub.indexed.positions, tris: sub.indexed.indices }
+        : soupToIndexed(sub.soup!);
       const oid = nextId++;
       subs.push({ id: oid, name: sub.name, matIndex: sub.matIndex });
       const vlines: string[] = [];
@@ -326,7 +339,7 @@ ${objXml} </resources>
 ${items.join('\n')}
  </build>
 </model>`;
-  z.file('3D/3dmodel.model', model);
+  files.push({ name: '3D/3dmodel.model', data: enc.encode(model) });
 
   // model_settings.config: this is where Bambu Studio actually reads object/part names,
   // per-part filament (extruder) assignment, and plate membership from.
@@ -366,8 +379,11 @@ ${items.join('\n')}
     );
   cfg.push('  </assemble>');
   cfg.push('</config>');
-  z.file('Metadata/model_settings.config', cfg.join('\n'));
+  files.push({ name: 'Metadata/model_settings.config', data: enc.encode(cfg.join('\n')) });
 
-  z.file('Metadata/project_settings.config', bambuProjectSettings(materials, plateW, plateD));
-  return z.generateAsync({ type: 'blob' });
+  files.push({
+    name: 'Metadata/project_settings.config',
+    data: enc.encode(bambuProjectSettings(materials, plateW, plateD)),
+  });
+  return zipStore(files);
 }

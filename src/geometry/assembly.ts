@@ -6,6 +6,7 @@ import type {
   AssemblyPart,
   AssemblyPartOutput,
   ColorSettings,
+  IndexedMesh,
   ParsedSVG,
   PolyFeature,
 } from '../types';
@@ -15,7 +16,7 @@ import {
   getManifold,
   manifoldDelete,
   manifoldIsValid,
-  manifoldToSoup,
+  manifoldToMeshes,
   mapFeatureCoords,
   soupToManifold,
   type ManifoldSolid,
@@ -306,9 +307,12 @@ export async function buildAssemblyGeometry(
     const prismList = prismEntries.map(([, p]) => p);
     const cutter = prismList.length === 1 ? prismList[0] : Manifold.union(prismList);
     let bodySoup: Float32Array;
+    let bodyIndexed: AssemblyPartOutput['bodyIndexed'];
     try {
       const body = Manifold.difference(partMan, cutter);
-      bodySoup = manifoldToSoup(body);
+      const meshes = manifoldToMeshes(body);
+      bodySoup = meshes.soup;
+      bodyIndexed = meshes.indexed;
       manifoldDelete(body);
     } catch {
       warn(`Boolean cut failed on part "${part.name}".`);
@@ -317,11 +321,15 @@ export async function buildAssemblyGeometry(
 
     // per-color inlay = part ∩ prism (the part caps the overshoot, so the inlay top is flush)
     const inlaySoups: Record<number, Float32Array> = {};
+    const inlayIndexed: Record<number, IndexedMesh> = {};
     prismEntries.forEach(([ci, prism]) => {
       try {
         const inl = Manifold.intersection(partMan, prism);
-        const s = manifoldToSoup(inl);
-        if (s.length) inlaySoups[+ci] = s;
+        const { soup, indexed } = manifoldToMeshes(inl);
+        if (soup.length) {
+          inlaySoups[+ci] = soup;
+          inlayIndexed[+ci] = indexed;
+        }
         manifoldDelete(inl);
       } catch {
         warn(`Couldn't fit the inlay for a color on "${part.name}".`);
@@ -332,7 +340,7 @@ export async function buildAssemblyGeometry(
     prismList.forEach((p) => manifoldDelete(p));
     manifoldDelete(partMan);
 
-    partOutputs.push({ part, bodySoup, inlaySoups });
+    partOutputs.push({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed });
   }
   return { partOutputs, palette, viewSign };
 }
