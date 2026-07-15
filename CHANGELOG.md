@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Print-ready export was pathologically slow — a real assembly 3MF took ~90s,
+  and time scaled with mesh size (large mosaics ran into minutes). JSZip's
+  `generateAsync` pumps its worker through nested `setTimeout(0)` calls that
+  browsers clamp to a 4ms floor, so multi-megabyte archives crawl. Replaced it
+  with a direct synchronous STORE-zip writer (a 3MF is just an uncompressed
+  zip); the same assembly export now finishes in ~5s. The STL-set export uses
+  the same writer. Assembly 3MF also now emits Manifold's native vertex index
+  directly instead of re-welding the triangle soup.
 - Fixed the deployed GitHub Pages site failing to load (CSS/JS 404s): a stray
   `vite.config.js` was shadowing `vite.config.ts` — Vite loads `.js` before
   `.ts` — so the production build silently dropped the real config (asset base,

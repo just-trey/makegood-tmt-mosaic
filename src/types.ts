@@ -150,10 +150,23 @@ export interface AssemblyPaletteEntry {
   feature: PolyFeature | null;
 }
 
+/** Indexed mesh: unique vertices (xyz interleaved) + 3 indices per triangle. */
+export interface IndexedMesh {
+  positions: Float32Array;
+  indices: Uint32Array;
+}
+
 export interface AssemblyPartOutput {
   part: AssemblyPart;
   bodySoup: Float32Array;
   inlaySoups: Record<number, Float32Array>;
+  /**
+   * Manifold's native indexing, kept alongside the (flat-shaded) scene soup so 3MF export can
+   * emit vertices/triangles directly instead of re-welding the soup. Absent on fallback parts
+   * that never went through a boolean (export re-indexes their soup instead).
+   */
+  bodyIndexed?: IndexedMesh;
+  inlayIndexed?: Record<number, IndexedMesh>;
 }
 
 export interface AssemblyBuild {

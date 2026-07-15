@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type ManifoldModule from 'manifold-3d';
-import type { PolyFeature } from '../types';
+import type { IndexedMesh, PolyFeature } from '../types';
 import { featureToShapes } from './flat';
 
 export type ManifoldAPI = Awaited<ReturnType<typeof ManifoldModule>>;
@@ -50,17 +50,33 @@ export function manifoldIsValid(man: ManifoldSolid): boolean {
   }
 }
 
-export function manifoldToSoup(man: ManifoldSolid): Float32Array {
+/**
+ * Extract both representations from a single getMesh() call: the flat (unindexed) soup the
+ * three.js scene needs for hard-edged shading, and Manifold's native indexed mesh (welded
+ * vertices + triangle indices) that 3MF export emits directly — the index is already computed,
+ * so export never has to re-weld the soup. Both are copied out of the WASM heap so they survive
+ * man.delete().
+ */
+export function manifoldToMeshes(man: ManifoldSolid): { soup: Float32Array; indexed: IndexedMesh } {
   const mesh = man.getMesh();
   const { numProp, vertProperties, triVerts } = mesh;
-  const out = new Float32Array(triVerts.length * 3);
-  for (let t = 0; t < triVerts.length; t++) {
-    const vi = triVerts[t] * numProp;
-    out[t * 3] = vertProperties[vi];
-    out[t * 3 + 1] = vertProperties[vi + 1];
-    out[t * 3 + 2] = vertProperties[vi + 2];
+  const vertCount = (vertProperties.length / numProp) | 0;
+  const positions = new Float32Array(vertCount * 3);
+  for (let v = 0; v < vertCount; v++) {
+    const vi = v * numProp;
+    positions[v * 3] = vertProperties[vi];
+    positions[v * 3 + 1] = vertProperties[vi + 1];
+    positions[v * 3 + 2] = vertProperties[vi + 2];
   }
-  return out;
+  const indices = Uint32Array.from(triVerts);
+  const soup = new Float32Array(indices.length * 3);
+  for (let t = 0; t < indices.length; t++) {
+    const pi = indices[t] * 3;
+    soup[t * 3] = positions[pi];
+    soup[t * 3 + 1] = positions[pi + 1];
+    soup[t * 3 + 2] = positions[pi + 2];
+  }
+  return { soup, indexed: { positions, indices } };
 }
 
 export function manifoldDelete(m: ManifoldSolid | null | undefined): void {
