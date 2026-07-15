@@ -18,10 +18,11 @@ import {
   manifoldIsValid,
   manifoldToMeshes,
   mapFeatureCoords,
+  repairSelfIntersections,
   soupToManifold,
   type ManifoldSolid,
 } from './manifold';
-import { warn } from '../warnings';
+import { notice, warn } from '../warnings';
 
 /** How far each cutter pokes above the face so the pocket opens cleanly at the surface. */
 export const OVERSHOOT_MM = 0.5;
@@ -137,7 +138,7 @@ export async function buildAssemblyGeometry(
       cy: (b.minY + b.maxY) / 2,
       r: Math.max(b.maxX - b.minX, b.maxY - b.minY) / 2 || 1,
     };
-    warn(
+    notice(
       'This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.',
     );
   }
@@ -272,10 +273,30 @@ export async function buildAssemblyGeometry(
       const soup = extrudeRegionToSoup(feat, faceY, depth, OVERSHOOT_MM, nsign);
       if (!soup || !soup.length) return;
       try {
-        colorPrisms[ci] = soupToManifold(wasm, soup);
+        const man = soupToManifold(wasm, soup);
+        if (!manifoldIsValid(man)) throw new Error('empty manifold');
+        colorPrisms[ci] = man;
+        return;
       } catch {
-        warn(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
+        /* retry below with self-intersections repaired */
       }
+      // Clipping dense/overlapping line-work to the part boundary can leave the region
+      // self-touching in a way turf doesn't flag as invalid but Manifold rejects as non-watertight
+      // — repair it with Manifold's own 2D boolean engine and retry once before giving up.
+      try {
+        const repaired = repairSelfIntersections(wasm, feat);
+        const soup2 = repaired && extrudeRegionToSoup(repaired, faceY, depth, OVERSHOOT_MM, nsign);
+        if (soup2 && soup2.length) {
+          const man2 = soupToManifold(wasm, soup2);
+          if (manifoldIsValid(man2)) {
+            colorPrisms[ci] = man2;
+            return;
+          }
+        }
+      } catch {
+        /* fall through to warn */
+      }
+      warn(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
     });
 
     const prismEntries = Object.entries(colorPrisms);

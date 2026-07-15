@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- SVGs that declare fill colors via CSS classes in a `<style>` block (the
+  common Illustrator/Inkscape "presentation attributes → CSS" export shape,
+  e.g. `<path class="cls-1"/>` with `.cls-1 { fill: #… }` in `<defs>`) loaded
+  as a single solid-black shape instead of their real colors, since the parser
+  only read inline `style` attributes and `fill` presentation attributes.
+  Class-based fills are now resolved.
+- Assembly cutting could silently drop a color's recess on some parts —
+  clipping dense/detailed line-work to a part's face boundary can leave the
+  region touching itself in a way Manifold's boolean engine rejects as
+  non-watertight, even though the shape is otherwise valid. Failed regions are
+  now automatically repaired (via Manifold's own 2D boolean engine) and
+  retried before falling back to a warning.
+
+### Changed
+
+- The "no `<circle>` marking the design boundary" message (shown when an SVG
+  has no explicit design-boundary circle and auto-centering is used instead)
+  is now a quieter info note instead of an error-styled warning pill — it's
+  expected for most artwork, not a sign something broke.
+
 ## [0.2.0] - 2026-07-15
 
 ### Fixed
