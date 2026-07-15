@@ -108,7 +108,7 @@ try {
   await sleep(800);
   await page.screenshot({ path: path.join(OUT, '4-flat-disc.png') });
 
-  console.log('6. background depth override (the fixed bug)…');
+  console.log('6. overriding the background recess depth (flat mode)…');
   await page.check('#p-recess-bg');
   await page.waitForFunction(
     () => {
