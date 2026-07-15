@@ -61,7 +61,10 @@ start honoring the stricter pre/post-1.0 compatibility guarantees.
   formats or supported inputs.
 
 Releases are tagged (`vX.Y.Z`) against `main`, with notes drawn from
-[CHANGELOG.md](CHANGELOG.md).
+[CHANGELOG.md](CHANGELOG.md). Pushing a `v*` tag is what deploys the live
+site — merging to `main` does not. This means `main` can carry multiple
+merged, CI-checked PRs ahead of what's actually live; nothing ships until a
+release is deliberately tagged.
 
 ## Questions
 
