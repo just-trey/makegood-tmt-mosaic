@@ -12,8 +12,10 @@ import { initDepthPanel } from './ui/depthPanel';
 import { initArtworkPanel } from './ui/artworkPanel';
 import { initExportPanel } from './ui/exportPanel';
 import { $ } from './ui/dom';
+import { getAppVersion } from './version';
 
-$('#app-version').textContent = `v${__APP_VERSION__}`;
+$('#app-version').textContent =
+  `v${getAppVersion(typeof __APP_VERSION__ === 'undefined' ? undefined : __APP_VERSION__)}`;
 
 initViewport($('#canvas-host'));
 setRebuildHandler(rebuildCurrent);

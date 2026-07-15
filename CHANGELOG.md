@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Prevented the app from crashing on startup when the build-time version token
+  was unavailable, which was causing the Playwright smoke check to time out.
 - Assembly artwork on a +Y-facing design face (e.g. the wheel's default face)
   loaded mirrored left-to-right, so text read backwards. Placement now
   auto-corrects per face so artwork is right-reading by default, viewed from

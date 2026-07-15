@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
     // (https://<user>.github.io/<repo>/) without hardcoding the repo name.
     base: './',
     define: {
-      __APP_VERSION__: JSON.stringify(pkg.version),
+      __APP_VERSION__: JSON.stringify(pkg.version || 'dev'),
     },
     plugins: cfToken ? [cloudflareBeacon(cfToken)] : [],
     optimizeDeps: {
