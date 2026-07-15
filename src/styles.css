@@ -489,7 +489,7 @@ input[type='checkbox'] {
 #loading-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(7, 10, 19, 0.85);
+  background: rgba(7, 10, 19, 0.7);
   display: none;
   align-items: center;
   justify-content: center;

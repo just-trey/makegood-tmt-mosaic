@@ -1,7 +1,7 @@
 import './styles.css';
 import { initViewport } from './scene/viewport';
-import { setRebuildHandler } from './app/scheduler';
-import { rebuildCurrent } from './app/rebuild';
+import { setRebuildCostHint, setRebuildHandler } from './app/scheduler';
+import { estimateRebuildSlow, rebuildCurrent } from './app/rebuild';
 import { loadFilaments } from './state/filaments';
 import { loadPartsLibrary } from './assembly/parts';
 import { initColorListPanel, renderColorList } from './ui/colorList';
@@ -19,6 +19,7 @@ $('#app-version').textContent =
 
 initViewport($('#canvas-host'));
 setRebuildHandler(rebuildCurrent);
+setRebuildCostHint(estimateRebuildSlow);
 
 initColorListPanel();
 initAssemblyPanel();

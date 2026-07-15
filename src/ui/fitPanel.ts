@@ -1,5 +1,5 @@
 import { currentBaseParams, state } from '../state/store';
-import { scheduleRebuild } from '../app/scheduler';
+import { isRebuildLikelySlow, scheduleRebuild } from '../app/scheduler';
 import { input } from './dom';
 
 /**
@@ -19,12 +19,17 @@ function syncPair(
   slider.addEventListener('input', () => {
     num.value = slider.value;
     apply(parseFloat(slider.value) || 0);
+    // On a heavy model rebuilds are slow — stay smooth during the drag and rebuild once
+    // on release (below) instead of flooding slow redraws.
+    if (!isRebuildLikelySlow()) scheduleRebuild();
+  });
+  slider.addEventListener('change', () => {
     scheduleRebuild();
   });
   num.addEventListener('input', () => {
     slider.value = num.value;
     apply(parseFloat(clampNum ? slider.value : num.value) || 0);
-    scheduleRebuild();
+    scheduleRebuild('typed');
   });
   if (clampNum)
     num.addEventListener('change', () => {

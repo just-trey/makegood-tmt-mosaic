@@ -203,13 +203,3 @@ is imported by the app. Two other brand themes in the tokens folder
   boolean-heavy paths (`npm test` + `npm run smoke` + a complex real SVG),
   and only then consider simplifying the retry workarounds if the new
   clipping engine no longer needs them.
-- **Rebuild debounce is too short for typed numeric input.**
-  `scheduleRebuild()` in [src/app/scheduler.ts](src/app/scheduler.ts) uses a
-  flat 30ms debounce tuned for slider drags. The "Rebuilding…" overlay shows
-  synchronously on every keystroke (before the debounce timer even fires),
-  and an in-flight rebuild isn't cancelled — so typing a multi-digit value
-  into the scale/margin number fields (e.g. "50") kicks off a rebuild on the
-  first digit and the second digit's effect waits behind it. User feedback:
-  "as soon as I typed the 5, it started rebuilding, then I was able to add
-  the 0." Needs a longer debounce for text-input changes (sliders can stay
-  live) or an explicit "Apply" step for the numeric fields.

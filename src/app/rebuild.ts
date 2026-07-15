@@ -48,6 +48,27 @@ function setExportEnabled(enabled: boolean): void {
   $<HTMLButtonElement>('#btn-export-stl').disabled = !enabled;
 }
 
+/**
+ * Assembly rebuilds do 3D boolean CSG per part and are always heavy enough (hundreds of
+ * ms) to warrant the "Rebuilding…" curtain. Flat rebuilds are a 2D extrude and usually
+ * fast, but a very dense design still bites — so gauge those by the artwork's total
+ * polygon-vertex count, which is what the boolean/extrude cost scales with. Calibrated so
+ * the sample badge (fast) stays under and a detailed multi-hundred-point SVG goes over.
+ */
+const SLOW_FLAT_POINTS = 4000;
+
+/**
+ * Up-front guess of whether the next rebuild will be slow, from the current design/mode —
+ * see setRebuildCostHint. Cheap: a point-count sum, no geometry work.
+ */
+export function estimateRebuildSlow(): boolean {
+  if (!state.parsed) return false; // no artwork yet — bare plate/wheel render is fast
+  if (state.shapeKind === 'assembly') return true;
+  let points = 0;
+  for (const shape of state.parsed.shapes) for (const loop of shape.loops) points += loop.length;
+  return points > SLOW_FLAT_POINTS;
+}
+
 /** Entry point the scheduler debounces into. */
 export async function rebuildCurrent(): Promise<void> {
   if (state.shapeKind === 'assembly') await rebuildAssemblyScene();
