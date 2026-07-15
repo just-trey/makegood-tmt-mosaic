@@ -17,14 +17,21 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     // (so top = 1 primary + 1 rotated copy = 2 physical tops); copyDefaults seed each copy's
     // pivot/angle (same values the manual "+ Add rotated copy" button uses).
     roles: [
-      { id: 'top', name: 'Top', libraryPartId: 'top', allowRotatedCopies: true, copies: 1, copyDefaults: { pivotX: 0, pivotZ: 0, angleDeg: 180 } },
+      {
+        id: 'top',
+        name: 'Top',
+        libraryPartId: 'top',
+        allowRotatedCopies: true,
+        copies: 1,
+        copyDefaults: { pivotX: 0, pivotZ: 0, angleDeg: 180 },
+      },
       { id: 'cap', name: 'Cap', libraryPartId: 'cap', allowRotatedCopies: false },
     ],
   },
 ];
 
 export function currentAssemblyKind(): AssemblyKind | null {
-  return ASSEMBLY_KINDS.find(k => k.id === state.assembly.kindId) || null;
+  return ASSEMBLY_KINDS.find((k) => k.id === state.assembly.kindId) || null;
 }
 
 /**
@@ -32,5 +39,10 @@ export function currentAssemblyKind(): AssemblyKind | null {
  * (i.e. stl/parts.json loaded).
  */
 export function asmKindCanAutoLoad(kind: AssemblyKind | null): boolean {
-  return !!kind && kind.roles.every(r => !r.libraryPartId || !!state.assembly.library.find(e => e.id === r.libraryPartId));
+  return (
+    !!kind &&
+    kind.roles.every(
+      (r) => !r.libraryPartId || !!state.assembly.library.find((e) => e.id === r.libraryPartId),
+    )
+  );
 }

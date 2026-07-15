@@ -4,10 +4,7 @@ import { rotXthenZ, soupToIndexed, xmlEscape } from '../src/export/threemf';
 describe('soupToIndexed', () => {
   it('welds shared vertices across triangles', () => {
     // two triangles sharing the edge (1,0,0)-(0,1,0)
-    const soup = new Float32Array([
-      0, 0, 0, 1, 0, 0, 0, 1, 0,
-      1, 0, 0, 1, 1, 0, 0, 1, 0,
-    ]);
+    const soup = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
     const { verts, tris } = soupToIndexed(soup);
     expect(verts.length / 3).toBe(4); // 6 raw -> 4 unique
     expect(tris).toHaveLength(6);
@@ -24,9 +21,9 @@ describe('xmlEscape', () => {
 describe('rotXthenZ', () => {
   it('is the identity for zero angles', () => {
     const R = rotXthenZ(0, 0);
-    expect(R[0].map(v => +v.toFixed(9))).toEqual([1, 0, 0]);
-    expect(R[1].map(v => +v.toFixed(9))).toEqual([0, 1, 0]);
-    expect(R[2].map(v => +v.toFixed(9))).toEqual([0, 0, 1]);
+    expect(R[0].map((v) => +v.toFixed(9))).toEqual([1, 0, 0]);
+    expect(R[1].map((v) => +v.toFixed(9))).toEqual([0, 1, 0]);
+    expect(R[2].map((v) => +v.toFixed(9))).toEqual([0, 0, 1]);
   });
 
   it('tilts a +Y face normal to +Z with theta = -90 (face-down layout math)', () => {

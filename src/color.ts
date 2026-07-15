@@ -9,5 +9,5 @@ export function blendHexes(hexes: string[]): string {
   const r = Math.round(rgbs.reduce((s, c) => s + c.r, 0) / rgbs.length);
   const g = Math.round(rgbs.reduce((s, c) => s + c.g, 0) / rgbs.length);
   const b = Math.round(rgbs.reduce((s, c) => s + c.b, 0) / rgbs.length);
-  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 }

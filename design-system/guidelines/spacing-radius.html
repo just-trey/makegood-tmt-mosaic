@@ -1,18 +1,64 @@
 <!-- @dsCard group="Spacing" viewport="700x180" subtitle="Spacing scale and corner radii" name="Spacing & radius" -->
-<!DOCTYPE html><html><head><link rel="stylesheet" href="../styles.css">
-<style>body{margin:0;background:var(--surface-panel);padding:16px;box-sizing:border-box;font-family:var(--font-mono);font-size:10px;color:var(--text-secondary);display:flex;flex-direction:column;gap:14px}
-.row{display:flex;align-items:center;gap:8px}
-.bar{background:var(--accent-primary);height:10px;border-radius:2px}
-.rad{width:44px;height:44px;background:var(--surface-panel-2);border:1px solid var(--border-default)}
-</style></head><body>
-<div class="row"><div class="bar" style="width:4px"></div>4</div>
-<div class="row"><div class="bar" style="width:8px"></div>8</div>
-<div class="row"><div class="bar" style="width:14px"></div>14</div>
-<div class="row"><div class="bar" style="width:18px"></div>18</div>
-<div class="row"><div class="bar" style="width:24px"></div>24</div>
-<div class="row" style="gap:16px">
-  <div class="rad" style="border-radius:4px"></div>
-  <div class="rad" style="border-radius:6px"></div>
-  <div class="rad" style="border-radius:8px"></div>
-</div>
-</body></html>
+<!doctype html>
+<html>
+  <head>
+    <link rel="stylesheet" href="../styles.css" />
+    <style>
+      body {
+        margin: 0;
+        background: var(--surface-panel);
+        padding: 16px;
+        box-sizing: border-box;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--text-secondary);
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .bar {
+        background: var(--accent-primary);
+        height: 10px;
+        border-radius: 2px;
+      }
+      .rad {
+        width: 44px;
+        height: 44px;
+        background: var(--surface-panel-2);
+        border: 1px solid var(--border-default);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <div class="bar" style="width: 4px"></div>
+      4
+    </div>
+    <div class="row">
+      <div class="bar" style="width: 8px"></div>
+      8
+    </div>
+    <div class="row">
+      <div class="bar" style="width: 14px"></div>
+      14
+    </div>
+    <div class="row">
+      <div class="bar" style="width: 18px"></div>
+      18
+    </div>
+    <div class="row">
+      <div class="bar" style="width: 24px"></div>
+      24
+    </div>
+    <div class="row" style="gap: 16px">
+      <div class="rad" style="border-radius: 4px"></div>
+      <div class="rad" style="border-radius: 6px"></div>
+      <div class="rad" style="border-radius: 8px"></div>
+    </div>
+  </body>
+</html>

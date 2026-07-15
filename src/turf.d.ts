@@ -7,10 +7,25 @@ declare module '@turf/turf' {
 
   type Poly = Feature<Polygon | MultiPolygon> | Polygon | MultiPolygon;
 
-  export function union(poly1: Poly, poly2: Poly, options?: { properties?: object }): Feature<Polygon | MultiPolygon> | null;
+  export function union(
+    poly1: Poly,
+    poly2: Poly,
+    options?: { properties?: object },
+  ): Feature<Polygon | MultiPolygon> | null;
   export function difference(poly1: Poly, poly2: Poly): Feature<Polygon | MultiPolygon> | null;
-  export function intersect(poly1: Poly, poly2: Poly, options?: { properties?: object }): Feature<Polygon | MultiPolygon> | null;
-  export function truncate<T>(geojson: T, options?: { precision?: number; coordinates?: number; mutate?: boolean }): T;
+  export function intersect(
+    poly1: Poly,
+    poly2: Poly,
+    options?: { properties?: object },
+  ): Feature<Polygon | MultiPolygon> | null;
+  export function truncate<T>(
+    geojson: T,
+    options?: { precision?: number; coordinates?: number; mutate?: boolean },
+  ): T;
   export function area(geojson: GeoJSON | Feature<Polygon | MultiPolygon>): number;
-  export function polygon(coordinates: number[][][], properties?: object, options?: object): Feature<Polygon>;
+  export function polygon(
+    coordinates: number[][][],
+    properties?: object,
+    options?: object,
+  ): Feature<Polygon>;
 }

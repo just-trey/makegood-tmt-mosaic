@@ -40,7 +40,7 @@ sections before making structural changes.
 
 - Keep PRs focused — one logical change per PR is easier to review and
   revert if needed.
-- Describe *why* the change is needed, not just what it does — the diff
+- Describe _why_ the change is needed, not just what it does — the diff
   already shows what changed.
 - Add or update tests under `tests/` for behavior changes.
 - If your change is user-visible, add an entry under `[Unreleased]` in

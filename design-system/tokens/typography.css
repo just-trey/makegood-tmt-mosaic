@@ -1,4 +1,4 @@
-:root{
+:root {
   /* Outfit for headings, Inter for body/labels, IBM Plex Mono for values/data */
   --font-heading: 'Outfit', -apple-system, 'Segoe UI', sans-serif;
   --font-sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
@@ -15,7 +15,7 @@
   --weight-semibold: 600;
   --weight-bold: 700;
 
-  --tracking-label: .08em;
+  --tracking-label: 0.08em;
   --leading-tight: 1.2;
   --leading-normal: 1.5;
 }

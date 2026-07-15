@@ -23,17 +23,20 @@ async function exportPrintReady3MF(): Promise<void> {
     const built = getLastAssemblyBuild();
     if (!built || !built.partOutputs.length) return;
     const palette = built.palette;
-    materials = [{ name: 'Body', color: bodyColor }]
-      .concat(palette.map(p => ({ name: nearestFilamentName(p.hex), color: p.hex })));
-    parts = built.partOutputs.filter(o => o.bodySoup && o.bodySoup.length).map(({ part, bodySoup, inlaySoups }) => {
-      const nrm = asmPartFaceNormal(part, state.assembly.parts);
-      const nsign = (nrm && nrm[1] < 0) ? -1 : 1;
-      const subs = [{ name: 'Body', matIndex: 0, soup: bodySoup }];
-      Object.entries(inlaySoups).forEach(([ci, soup]) => {
-        subs.push({ name: nearestFilamentName(palette[+ci].hex), matIndex: (+ci) + 1, soup });
+    materials = [{ name: 'Body', color: bodyColor }].concat(
+      palette.map((p) => ({ name: nearestFilamentName(p.hex), color: p.hex })),
+    );
+    parts = built.partOutputs
+      .filter((o) => o.bodySoup && o.bodySoup.length)
+      .map(({ part, bodySoup, inlaySoups }) => {
+        const nrm = asmPartFaceNormal(part, state.assembly.parts);
+        const nsign = nrm && nrm[1] < 0 ? -1 : 1;
+        const subs = [{ name: 'Body', matIndex: 0, soup: bodySoup }];
+        Object.entries(inlaySoups).forEach(([ci, soup]) => {
+          subs.push({ name: nearestFilamentName(palette[+ci].hex), matIndex: +ci + 1, soup });
+        });
+        return { name: part.name, nsign, bodySoup, subs };
       });
-      return { name: part.name, nsign, bodySoup, subs };
-    });
     fname = 'mosaic-wheel.3mf';
   } else {
     const built = getLastBuild();
@@ -41,17 +44,26 @@ async function exportPrintReady3MF(): Promise<void> {
     // flat-plate mode: the already-built slab-stack body + per-color plugs become one
     // multi-part object. nsign 0 = exported upright, no face-down tilt — the design face
     // is already +Z and the underside already sits at Z=0.
-    materials = [{ name: 'Body', color: bodyColor }]
-      .concat(built.colorMeshes.map(c => ({ name: c.isBackground ? 'Background' : nearestFilamentName(c.color), color: c.color })));
+    materials = [{ name: 'Body', color: bodyColor }].concat(
+      built.colorMeshes.map((c) => ({
+        name: c.isBackground ? 'Background' : nearestFilamentName(c.color),
+        color: c.color,
+      })),
+    );
     const bodySoup = soupFromObject(built.baseGroup);
-    const subs = [{ name: 'Body', matIndex: 0, soup: bodySoup }]
-      .concat(built.colorMeshes.map((c, i) => ({ name: materials[i + 1].name, matIndex: i + 1, soup: soupFromObject(c.mesh) })));
+    const subs = [{ name: 'Body', matIndex: 0, soup: bodySoup }].concat(
+      built.colorMeshes.map((c, i) => ({
+        name: materials[i + 1].name,
+        matIndex: i + 1,
+        soup: soupFromObject(c.mesh),
+      })),
+    );
     parts = [{ name: 'Mosaic plate', nsign: 0, bodySoup, subs }];
     fname = 'mosaic-plate.3mf';
   }
 
   showOverlay('Exporting print-ready 3MF…');
-  await new Promise(r => setTimeout(r, 10));
+  await new Promise((r) => setTimeout(r, 10));
   try {
     // No Z spin: the unrotated footprint is the smallest bbox for the half-disc tops, which is
     // what lets the cap share a plate when the plate is wide enough.
@@ -69,14 +81,15 @@ async function exportSTLSet(): Promise<void> {
   const built = getLastBuild();
   if (!built) return;
   showOverlay('Exporting STL set…');
-  await new Promise(r => setTimeout(r, 10));
+  await new Promise((r) => setTimeout(r, 10));
   try {
     const zip = new JSZip();
     zip.file('base.stl', meshToSTLBlob(built.baseGroup));
     built.colorMeshes.forEach((c, idx) => {
       let label: string;
       if (c.isBackground) label = 'background';
-      else if (c.isMergeGroup) label = 'merged_' + c.members.map(h => h.replace('#', '')).join('+');
+      else if (c.isMergeGroup)
+        label = 'merged_' + c.members.map((h) => h.replace('#', '')).join('+');
       else label = c.color.replace('#', '');
       zip.file(`color_${String(idx + 1).padStart(2, '0')}_${label}.stl`, meshToSTLBlob(c.mesh));
     });
@@ -105,7 +118,7 @@ affiliated with Bambu Lab.
 }
 
 export function initExportPanel(): void {
-  $<HTMLSelectElement>('#p-plate-size').addEventListener('change', e => {
+  $<HTMLSelectElement>('#p-plate-size').addEventListener('change', (e) => {
     state.plateSize = (e.target as HTMLSelectElement).value;
   });
   $('#btn-export').addEventListener('click', () => void exportPrintReady3MF());

@@ -1,6 +1,11 @@
 import type * as THREE from 'three';
 import type {
-  AssemblyPart, BaseParams, ColorSettings, LibraryEntry, ParsedSVG, ShapeKind,
+  AssemblyPart,
+  BaseParams,
+  ColorSettings,
+  LibraryEntry,
+  ParsedSVG,
+  ShapeKind,
 } from '../types';
 import { getFilament } from './filaments';
 
@@ -95,9 +100,29 @@ export function currentBaseParams(): BaseParams | null {
     offsetX: state.offsetX,
     offsetY: state.offsetY,
   };
-  if (state.shapeKind === 'disc') return { diameter: state.disc.diameter, thickness: state.disc.thickness, ...fit };
-  if (state.shapeKind === 'rect') return { width: state.rect.width, height: state.rect.height, thickness: state.rect.thickness, ...fit };
-  if (state.shapeKind === 'round') return { width: state.round.width, height: state.round.height, corner: state.round.corner, thickness: state.round.thickness, ...fit };
-  if (state.shapeKind === 'stl') return { width: state.stlPlate.width, height: state.stlPlate.height, thickness: state.stlPlate.thickness, ...fit };
+  if (state.shapeKind === 'disc')
+    return { diameter: state.disc.diameter, thickness: state.disc.thickness, ...fit };
+  if (state.shapeKind === 'rect')
+    return {
+      width: state.rect.width,
+      height: state.rect.height,
+      thickness: state.rect.thickness,
+      ...fit,
+    };
+  if (state.shapeKind === 'round')
+    return {
+      width: state.round.width,
+      height: state.round.height,
+      corner: state.round.corner,
+      thickness: state.round.thickness,
+      ...fit,
+    };
+  if (state.shapeKind === 'stl')
+    return {
+      width: state.stlPlate.width,
+      height: state.stlPlate.height,
+      thickness: state.stlPlate.thickness,
+      ...fit,
+    };
   return null;
 }

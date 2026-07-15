@@ -4,7 +4,12 @@ import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
 import { hideOverlay, showOverlay } from '../ui/overlay';
-import { detectFlatPatches, extractPatchBoundary, excludeTriangles, load3MF } from '../geometry/meshparts';
+import {
+  detectFlatPatches,
+  extractPatchBoundary,
+  excludeTriangles,
+  load3MF,
+} from '../geometry/meshparts';
 import { asmKindCanAutoLoad, currentAssemblyKind } from './kinds';
 
 // The assembly panel registers its render functions here, so part management can refresh the
@@ -17,8 +22,20 @@ export function onAssemblyPartsChanged(fn: () => void): void {
 export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
   const id = state.assembly.nextPartId++;
   const part: AssemblyPart = {
-    id, name: role.name, roleId: role.id, positions: null, patches: null, patchIdx: 0, boundaryLoop: null,
-    topZ: 0, baseDepth: 3.0, isDuplicateOf: null, pivotX: 0, pivotZ: 0, angleDeg: 180, loaded: false,
+    id,
+    name: role.name,
+    roleId: role.id,
+    positions: null,
+    patches: null,
+    patchIdx: 0,
+    boundaryLoop: null,
+    topZ: 0,
+    baseDepth: 3.0,
+    isDuplicateOf: null,
+    pivotX: 0,
+    pivotZ: 0,
+    angleDeg: 180,
+    loaded: false,
   };
   state.assembly.parts.push(part);
   return part;
@@ -27,7 +44,9 @@ export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
 export function asmAddRolePart(role: AssemblyRole): void {
   const part = asmCreateRolePart(role);
   notifyPartsChanged();
-  const entry = role.libraryPartId ? state.assembly.library.find(e => e.id === role.libraryPartId) : undefined;
+  const entry = role.libraryPartId
+    ? state.assembly.library.find((e) => e.id === role.libraryPartId)
+    : undefined;
   if (entry) void asmLoadLibraryEntryIntoPart(part, entry);
 }
 
@@ -40,15 +59,23 @@ export async function asmLoadFullAssembly(): Promise<void> {
   const kind = currentAssemblyKind();
   if (!kind) return;
   if (!asmKindCanAutoLoad(kind)) {
-    alert(`Can't auto-load ${kind.name}: the parts library (stl/parts.json) isn't reachable. Check the deployment or drag the parts in manually.`);
+    alert(
+      `Can't auto-load ${kind.name}: the parts library (stl/parts.json) isn't reachable. Check the deployment or drag the parts in manually.`,
+    );
     return;
   }
-  if (state.assembly.parts.length && !confirm(`Load the full ${kind.name}? This clears any parts you've already added.`)) return;
+  if (
+    state.assembly.parts.length &&
+    !confirm(`Load the full ${kind.name}? This clears any parts you've already added.`)
+  )
+    return;
   state.assembly.parts = [];
   showOverlay(`Loading ${kind.name}…`);
   try {
     for (const role of kind.roles) {
-      const entry = role.libraryPartId ? state.assembly.library.find(e => e.id === role.libraryPartId) : undefined;
+      const entry = role.libraryPartId
+        ? state.assembly.library.find((e) => e.id === role.libraryPartId)
+        : undefined;
       const primary = asmCreateRolePart(role);
       if (entry) await asmLoadLibraryEntryIntoPart(primary, entry);
       if (role.allowRotatedCopies) {
@@ -67,7 +94,10 @@ export async function asmLoadFullAssembly(): Promise<void> {
   scheduleRebuild();
 }
 
-export async function asmLoadLibraryEntryIntoPart(part: AssemblyPart, entry: LibraryEntry): Promise<void> {
+export async function asmLoadLibraryEntryIntoPart(
+  part: AssemblyPart,
+  entry: LibraryEntry,
+): Promise<void> {
   if (entry.baseDepth) part.baseDepth = entry.baseDepth;
   try {
     const res = await fetch(entry.file);
@@ -75,25 +105,39 @@ export async function asmLoadLibraryEntryIntoPart(part: AssemblyPart, entry: Lib
     const buf = await res.arrayBuffer();
     await asmLoadPartBuffer(part, buf, entry.file);
   } catch (e) {
-    alert(`Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`);
+    alert(
+      `Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`,
+    );
   }
 }
 
 export function asmAddRoleDuplicate(role: AssemblyRole): void {
-  const src = state.assembly.parts.find(p => p.roleId === role.id && !p.isDuplicateOf);
+  const src = state.assembly.parts.find((p) => p.roleId === role.id && !p.isDuplicateOf);
   if (!src) return;
   asmAddDuplicate(src.id);
 }
 
 export function asmAddDuplicate(sourceId: number): AssemblyPart | null {
-  const src = state.assembly.parts.find(p => p.id === sourceId);
+  const src = state.assembly.parts.find((p) => p.id === sourceId);
   if (!src) return null;
   const id = state.assembly.nextPartId++;
   const dup: AssemblyPart = {
-    id, name: `${src.name} (rotated copy)`, roleId: src.roleId, positions: src.positions, patches: src.patches,
-    patchIdx: src.patchIdx, boundaryLoop: src.boundaryLoop, restPositions: src.restPositions, topZ: src.topZ,
-    baseDepth: src.baseDepth, patchNormal: src.patchNormal, isDuplicateOf: sourceId,
-    pivotX: 0, pivotZ: 0, angleDeg: 180, loaded: src.loaded,
+    id,
+    name: `${src.name} (rotated copy)`,
+    roleId: src.roleId,
+    positions: src.positions,
+    patches: src.patches,
+    patchIdx: src.patchIdx,
+    boundaryLoop: src.boundaryLoop,
+    restPositions: src.restPositions,
+    topZ: src.topZ,
+    baseDepth: src.baseDepth,
+    patchNormal: src.patchNormal,
+    isDuplicateOf: sourceId,
+    pivotX: 0,
+    pivotZ: 0,
+    angleDeg: 180,
+    loaded: src.loaded,
   };
   state.assembly.parts.push(dup);
   notifyPartsChanged();
@@ -101,14 +145,18 @@ export function asmAddDuplicate(sourceId: number): AssemblyPart | null {
 }
 
 export function asmRemovePart(id: number): void {
-  state.assembly.parts = state.assembly.parts.filter(p => p.id !== id && p.isDuplicateOf !== id);
+  state.assembly.parts = state.assembly.parts.filter((p) => p.id !== id && p.isDuplicateOf !== id);
   notifyPartsChanged();
   requestFrame();
   scheduleRebuild();
 }
 
 /** Core mesh-buffer loader, shared by drag-and-drop upload and the parts library (fetch()). */
-export async function asmLoadPartBuffer(part: AssemblyPart, buf: ArrayBuffer, filename: string): Promise<void> {
+export async function asmLoadPartBuffer(
+  part: AssemblyPart,
+  buf: ArrayBuffer,
+  filename: string,
+): Promise<void> {
   const lower = filename.toLowerCase();
   let positions: Float32Array;
   if (lower.endsWith('.3mf')) {
@@ -132,8 +180,11 @@ export async function asmLoadPartBuffer(part: AssemblyPart, buf: ArrayBuffer, fi
 
 export async function asmLoadPartFile(part: AssemblyPart, file: File): Promise<void> {
   const buf = await file.arrayBuffer();
-  try { await asmLoadPartBuffer(part, buf, file.name); }
-  catch (e) { alert((e as Error).message); }
+  try {
+    await asmLoadPartBuffer(part, buf, file.name);
+  } catch (e) {
+    alert((e as Error).message);
+  }
 }
 
 export function applyAsmPatchChoice(part: AssemblyPart): void {

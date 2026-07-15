@@ -1,7 +1,7 @@
 /* Reference palette extracted from 3d-mobility.org (data-theme="ocean-blue").
    This is a separate product (the "Maker Connect" community/forum app) from Mosaic —
    kept as its own file rather than merged into the Mosaic tokens. */
-:root{
+:root {
   --3dmob-primary: #5b8cc9;
   --3dmob-secondary: #8a9fc7;
   --3dmob-accent: #7eb8d8;
@@ -9,6 +9,7 @@
   --3dmob-gradient-via: #6b8cba;
   --3dmob-gradient-to: #3d5a80;
   --3dmob-announcement-bg: #f59e0b; /* amber-500 announcement bar */
-  --3dmob-font-heading: 'Outfit', -apple-system, sans-serif; /* "friendly/tech" per site's own code comment */
+  --3dmob-font-heading:
+    'Outfit', -apple-system, sans-serif; /* "friendly/tech" per site's own code comment */
   --3dmob-font-body: 'Inter', -apple-system, sans-serif;
 }
