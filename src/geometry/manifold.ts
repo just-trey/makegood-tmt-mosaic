@@ -43,7 +43,11 @@ export function soupToManifold(wasm: ManifoldAPI, soup: Float32Array): ManifoldS
  * signal — more version-robust than comparing the status() enum.
  */
 export function manifoldIsValid(man: ManifoldSolid): boolean {
-  try { return man.numTri() > 0; } catch { return false; }
+  try {
+    return man.numTri() > 0;
+  } catch {
+    return false;
+  }
 }
 
 export function manifoldToSoup(man: ManifoldSolid): Float32Array {
@@ -60,16 +64,30 @@ export function manifoldToSoup(man: ManifoldSolid): Float32Array {
 }
 
 export function manifoldDelete(m: ManifoldSolid | null | undefined): void {
-  if (m && typeof m.delete === 'function') { try { m.delete(); } catch { /* already freed */ } }
+  if (m && typeof m.delete === 'function') {
+    try {
+      m.delete();
+    } catch {
+      /* already freed */
+    }
+  }
 }
 
 /** Deep-map every coordinate pair of a turf Polygon/MultiPolygon feature. */
-export function mapFeatureCoords(feature: PolyFeature, fn: (pt: number[]) => number[]): PolyFeature {
+export function mapFeatureCoords(
+  feature: PolyFeature,
+  fn: (pt: number[]) => number[],
+): PolyFeature {
   const g = feature.geometry;
   const ring = (r: Ring) => r.map(fn);
   const poly = (p: Ring[]) => p.map(ring);
-  const coords = g.type === 'Polygon' ? poly(g.coordinates as Ring[]) : (g.coordinates as Ring[][]).map(poly);
-  return { type: 'Feature', properties: {}, geometry: { type: g.type, coordinates: coords } } as PolyFeature;
+  const coords =
+    g.type === 'Polygon' ? poly(g.coordinates as Ring[]) : (g.coordinates as Ring[][]).map(poly);
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: g.type, coordinates: coords },
+  } as PolyFeature;
 }
 
 /** Signed area of a [[x,y],...] ring (>0 = CCW in standard math orientation). */
@@ -89,13 +107,21 @@ export function ringSignedArea2(ring: Ring): number {
  */
 export function normalizeFeatureWinding(feature: PolyFeature): PolyFeature {
   const g = feature.geometry;
-  const fixPoly = (poly: Ring[]) => poly.map((ring, ri) => {
-    const wantCCW = ri === 0;
-    const isCCW = ringSignedArea2(ring) > 0;
-    return (isCCW !== wantCCW) ? ring.slice().reverse() : ring;
-  });
-  const coords = g.type === 'Polygon' ? fixPoly(g.coordinates as Ring[]) : (g.coordinates as Ring[][]).map(fixPoly);
-  return { type: 'Feature', properties: {}, geometry: { type: g.type, coordinates: coords } } as PolyFeature;
+  const fixPoly = (poly: Ring[]) =>
+    poly.map((ring, ri) => {
+      const wantCCW = ri === 0;
+      const isCCW = ringSignedArea2(ring) > 0;
+      return isCCW !== wantCCW ? ring.slice().reverse() : ring;
+    });
+  const coords =
+    g.type === 'Polygon'
+      ? fixPoly(g.coordinates as Ring[])
+      : (g.coordinates as Ring[][]).map(fixPoly);
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: g.type, coordinates: coords },
+  } as PolyFeature;
 }
 
 /**
@@ -107,20 +133,40 @@ export function normalizeFeatureWinding(feature: PolyFeature): PolyFeature {
  * back to the surface when intersected for the flush inlay.
  */
 export function extrudeRegionToSoup(
-  feature: PolyFeature, faceY: number, depth: number, overshoot: number, sign: number,
+  feature: PolyFeature,
+  faceY: number,
+  depth: number,
+  overshoot: number,
+  sign: number,
 ): Float32Array | null {
   sign = sign < 0 ? -1 : 1;
   const shapes = featureToShapes(normalizeFeatureWinding(feature)); // THREE.Shape in (x = worldX, y = worldZ)
   if (!shapes.length) return null;
   const total = depth + overshoot;
-  const geo = new THREE.ExtrudeGeometry(shapes, { depth: total, bevelEnabled: false, curveSegments: 1 });
+  const geo = new THREE.ExtrudeGeometry(shapes, {
+    depth: total,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
   // local (x, y, z∈[0,total]) -> world (x, faceY + sign*(overshoot - z), y).
   // z=0 -> faceY + sign*overshoot (just outside the surface); z=total -> faceY - sign*depth (into material).
   const m = new THREE.Matrix4().set(
-    1, 0, 0, 0,
-    0, 0, -sign, faceY + sign * overshoot,
-    0, 1, 0, 0,
-    0, 0, 0, 1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -sign,
+    faceY + sign * overshoot,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
   );
   geo.applyMatrix4(m);
   const soup = Float32Array.from(geo.attributes.position.array as Float32Array);
@@ -130,7 +176,11 @@ export function extrudeRegionToSoup(
   // of each triangle to restore outward (CCW-from-outside) winding.
   if (sign < 0) {
     for (let i = 0; i < soup.length; i += 9) {
-      for (let k = 0; k < 3; k++) { const t = soup[i + 3 + k]; soup[i + 3 + k] = soup[i + 6 + k]; soup[i + 6 + k] = t; }
+      for (let k = 0; k < 3; k++) {
+        const t = soup[i + 3 + k];
+        soup[i + 3 + k] = soup[i + 6 + k];
+        soup[i + 6 + k] = t;
+      }
     }
   }
   return soup;

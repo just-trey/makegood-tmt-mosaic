@@ -42,19 +42,23 @@ function loadSVGFile(file: File): void {
 export function initArtworkPanel(): void {
   const dropzone = $('#dropzone');
   dropzone.addEventListener('click', () => input('#svg-input').click());
-  input('#svg-input').addEventListener('change', e => {
+  input('#svg-input').addEventListener('change', (e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (f) loadSVGFile(f);
   });
-  ['dragover', 'dragenter'].forEach(ev => dropzone.addEventListener(ev, e => {
-    e.preventDefault();
-    dropzone.classList.add('drag');
-  }));
-  ['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => {
-    e.preventDefault();
-    dropzone.classList.remove('drag');
-  }));
-  dropzone.addEventListener('drop', e => {
+  ['dragover', 'dragenter'].forEach((ev) =>
+    dropzone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropzone.classList.add('drag');
+    }),
+  );
+  ['dragleave', 'drop'].forEach((ev) =>
+    dropzone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('drag');
+    }),
+  );
+  dropzone.addEventListener('drop', (e) => {
     const f = (e as DragEvent).dataTransfer?.files[0];
     if (f) loadSVGFile(f);
   });

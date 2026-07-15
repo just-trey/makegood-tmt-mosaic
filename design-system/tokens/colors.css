@@ -1,4 +1,4 @@
-:root{
+:root {
   /* v3 palette — MakeGood brand colors (deep navy + blue/cyan), re-tuned for WCAG AA
      contrast, replacing the v2 industrial orange scheme. See tokens/colors-makegood-dark.css
      for the source ratios. */
@@ -12,10 +12,10 @@
   --color-accent-cyan: #5eead4;
   --color-danger: #f9438a;
 
-  --color-accent-blue-wash: rgba(109,147,255,.10);
-  --color-accent-blue-glow: rgba(109,147,255,.06);
-  --color-danger-wash: rgba(249,67,138,.12);
-  --color-danger-border: rgba(249,67,138,.4);
+  --color-accent-blue-wash: rgba(109, 147, 255, 0.1);
+  --color-accent-blue-glow: rgba(109, 147, 255, 0.06);
+  --color-danger-wash: rgba(249, 67, 138, 0.12);
+  --color-danger-border: rgba(249, 67, 138, 0.4);
   --color-danger-text: #ffb3d1;
 
   /* semantic aliases — use these in components, not the raw palette above */

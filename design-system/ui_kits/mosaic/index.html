@@ -1,179 +1,415 @@
 <!-- @dsCard group="Mosaic" viewport="1200x720" name="Mosaic — SVG inlay tool" -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>TMT Mosaic — recreated with the design system</title>
-<link rel="stylesheet" href="../../styles.css">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Inter:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="../../_ds_bundle.js"></script>
-<style>
-  *{box-sizing:border-box}
-  html,body{height:100%;margin:0;background:var(--surface-canvas);color:var(--text-primary);font-family:var(--font-sans);font-size:var(--text-base)}
-  #app{display:grid;grid-template-columns:340px 1fr;grid-template-rows:64px 1fr;height:100%}
-  header{grid-column:1/3;display:flex;align-items:center;gap:10px;padding:0 20px;background:var(--surface-panel);border-bottom:1px solid var(--border-default)}
-  #left{background:var(--surface-panel);border-right:1px solid var(--border-default);overflow-y:auto;padding:14px}
-  #right{position:relative;background:var(--surface-viewport);overflow:hidden;background-image:linear-gradient(rgba(109,147,255,.05) 1px, transparent 1px),linear-gradient(90deg, rgba(109,147,255,.05) 1px, transparent 1px);background-size:24px 24px}
-  #hud{position:absolute;top:12px;left:12px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);background:rgba(20,23,26,.6);padding:6px 10px;border-radius:6px;border:1px solid var(--border-default);line-height:1.5}
-  #warn{position:absolute;bottom:12px;left:12px;right:12px}
-  .hint{color:var(--text-secondary);font-size:11px;line-height:1.5;margin-top:4px}
-  a{color:var(--accent-primary)}
-  a:hover{color:var(--accent-secondary)}
-</style>
-</head>
-<body>
-<div id="root"></div>
-<script type="text/babel">
-const { Button, TextInput, Select, Checkbox, Slider, SegmentedControl, Panel, WarningPill, Badge, LoadingOverlay, Dropzone, ColorRow, ThumbnailSelect } = window.DS;
+  <head>
+    <meta charset="UTF-8" />
+    <title>TMT Mosaic — recreated with the design system</title>
+    <link rel="stylesheet" href="../../styles.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Inter:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="../../_ds_bundle.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--surface-canvas);
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        font-size: var(--text-base);
+      }
+      #app {
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        grid-template-rows: 64px 1fr;
+        height: 100%;
+      }
+      header {
+        grid-column: 1/3;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 20px;
+        background: var(--surface-panel);
+        border-bottom: 1px solid var(--border-default);
+      }
+      #left {
+        background: var(--surface-panel);
+        border-right: 1px solid var(--border-default);
+        overflow-y: auto;
+        padding: 14px;
+      }
+      #right {
+        position: relative;
+        background: var(--surface-viewport);
+        overflow: hidden;
+        background-image:
+          linear-gradient(rgba(109, 147, 255, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(109, 147, 255, 0.05) 1px, transparent 1px);
+        background-size: 24px 24px;
+      }
+      #hud {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-secondary);
+        background: rgba(20, 23, 26, 0.6);
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border-default);
+        line-height: 1.5;
+      }
+      #warn {
+        position: absolute;
+        bottom: 12px;
+        left: 12px;
+        right: 12px;
+      }
+      .hint {
+        color: var(--text-secondary);
+        font-size: 11px;
+        line-height: 1.5;
+        margin-top: 4px;
+      }
+      a {
+        color: var(--accent-primary);
+      }
+      a:hover {
+        color: var(--accent-secondary);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel">
+      const {
+        Button,
+        TextInput,
+        Select,
+        Checkbox,
+        Slider,
+        SegmentedControl,
+        Panel,
+        WarningPill,
+        Badge,
+        LoadingOverlay,
+        Dropzone,
+        ColorRow,
+        ThumbnailSelect,
+      } = window.DS;
 
-// Placeholder thumbnail: subtly-striped swatch + a monospace label, standing in for a real
-// rendered-part preview image (no real STL renders available in this design system).
-function thumb(color, label){
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><defs><pattern id="s" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="' + color + '" opacity="0.25"/><rect width="4" height="8" fill="' + color + '" opacity="0.4"/></pattern></defs><rect width="56" height="56" fill="#14171a"/><rect width="56" height="56" fill="url(#s)"/><text x="28" y="31" font-family="monospace" font-size="9" fill="#dde3e8" text-anchor="middle">' + label + '</text></svg>';
-  return 'data:image/svg+xml,' + encodeURIComponent(svg);
-}
+      // Placeholder thumbnail: subtly-striped swatch + a monospace label, standing in for a real
+      // rendered-part preview image (no real STL renders available in this design system).
+      function thumb(color, label) {
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><defs><pattern id="s" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="' +
+          color +
+          '" opacity="0.25"/><rect width="4" height="8" fill="' +
+          color +
+          '" opacity="0.4"/></pattern></defs><rect width="56" height="56" fill="#14171a"/><rect width="56" height="56" fill="url(#s)"/><text x="28" y="31" font-family="monospace" font-size="9" fill="#dde3e8" text-anchor="middle">' +
+          label +
+          '</text></svg>';
+        return 'data:image/svg+xml,' + encodeURIComponent(svg);
+      }
 
-function Mosaic(){
-  const [shape, setShape] = React.useState('assembly');
-  const [diameter, setDiameter] = React.useState(80);
-  const [thickness, setThickness] = React.useState(4);
-  const [margin, setMargin] = React.useState(5);
-  const [scale, setScale] = React.useState(100);
-  const [depth, setDepth] = React.useState(1.0);
-  const [recessBg, setRecessBg] = React.useState(false);
-  const [topPart, setTopPart] = React.useState('wheel-top');
-  const [capPart, setCapPart] = React.useState('wheel-cap');
-  const [colors, setColors] = React.useState([
-    { hex: '#e8a13a', areaPct: 34, depth: 1.0, selected: false },
-    { hex: '#4fb0ae', areaPct: 41, depth: 1.0, selected: false },
-    { hex: '#1b1f23', areaPct: 25, depth: 0.6, selected: false },
-  ]);
-  const [busy, setBusy] = React.useState(false);
-  const anySelected = colors.some(c => c.selected);
+      function Mosaic() {
+        const [shape, setShape] = React.useState('assembly');
+        const [diameter, setDiameter] = React.useState(80);
+        const [thickness, setThickness] = React.useState(4);
+        const [margin, setMargin] = React.useState(5);
+        const [scale, setScale] = React.useState(100);
+        const [depth, setDepth] = React.useState(1.0);
+        const [recessBg, setRecessBg] = React.useState(false);
+        const [topPart, setTopPart] = React.useState('wheel-top');
+        const [capPart, setCapPart] = React.useState('wheel-cap');
+        const [colors, setColors] = React.useState([
+          { hex: '#e8a13a', areaPct: 34, depth: 1.0, selected: false },
+          { hex: '#4fb0ae', areaPct: 41, depth: 1.0, selected: false },
+          { hex: '#1b1f23', areaPct: 25, depth: 0.6, selected: false },
+        ]);
+        const [busy, setBusy] = React.useState(false);
+        const anySelected = colors.some((c) => c.selected);
 
-  function setColorDepth(i, d){
-    setColors(cs => cs.map((c, idx) => idx===i ? {...c, depth:d} : c));
-  }
-  function toggleSelect(i, v){
-    setColors(cs => cs.map((c, idx) => idx===i ? {...c, selected:v} : c));
-  }
+        function setColorDepth(i, d) {
+          setColors((cs) => cs.map((c, idx) => (idx === i ? { ...c, depth: d } : c)));
+        }
+        function toggleSelect(i, v) {
+          setColors((cs) => cs.map((c, idx) => (idx === i ? { ...c, selected: v } : c)));
+        }
 
-  return (
-    <div id="app">
-      <header>
-        <img src="../../assets/makegood-logo.png" alt="MakeGood" style={{height:34,width:'auto'}} />
-        <div style={{width:1,height:26,background:'var(--border-default)'}} />
-        <h1 style={{fontSize:18,fontWeight:600,margin:0,letterSpacing:.2,fontFamily:'var(--font-heading)'}}>TMT Mosaic</h1>
-        <span style={{color:'var(--text-secondary)',fontSize:11,marginLeft:2}}>for MakeGood TMT · SVG → multicolor recess geometry</span>
-        <div style={{flex:1}} />
-        <Badge>1,204 tris</Badge>
-        <Badge tone="accent">{colors.length} colors</Badge>
-      </header>
+        return (
+          <div id="app">
+            <header>
+              <img
+                src="../../assets/makegood-logo.png"
+                alt="MakeGood"
+                style={{ height: 34, width: 'auto' }}
+              />
+              <div style={{ width: 1, height: 26, background: 'var(--border-default)' }} />
+              <h1
+                style={{
+                  fontSize: 18,
+                  fontWeight: 600,
+                  margin: 0,
+                  letterSpacing: 0.2,
+                  fontFamily: 'var(--font-heading)',
+                }}
+              >
+                TMT Mosaic
+              </h1>
+              <span style={{ color: 'var(--text-secondary)', fontSize: 11, marginLeft: 2 }}>
+                for MakeGood TMT · SVG → multicolor recess geometry
+              </span>
+              <div style={{ flex: 1 }} />
+              <Badge>1,204 tris</Badge>
+              <Badge tone="accent">{colors.length} colors</Badge>
+            </header>
 
-      <div id="left">
-        <Panel title="Artwork">
-          <Dropzone label="Drop an SVG here, or click to browse" onFiles={() => setBusy(true)} />
-          <div style={{marginTop:8}}>
-            <Button size="small" fullWidth onClick={() => setBusy(true)}>Load sample artwork</Button>
-          </div>
-          <div className="hint">Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.</div>
-        </Panel>
-
-        <Panel title="Base part">
-          <div style={{marginBottom:8}}>
-            <SegmentedControl value={shape} onChange={setShape} options={[
-              {value:'disc',label:'Disc'},{value:'rect',label:'Rect'},{value:'round',label:'Round rect'},{value:'stl',label:'STL ref'},{value:'assembly',label:'Assembly'},
-            ]} />
-          </div>
-          {shape === 'disc' && (
-            <div style={{display:'flex',flexDirection:'column',gap:7}}>
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <label style={{color:'var(--text-secondary)',fontSize:12,minWidth:82}}>Diameter</label>
-                <div style={{flex:1}}><TextInput type="number" value={diameter} onChange={v=>setDiameter(Number(v))} min={1} step={1} /></div>
-                <span className="hint">mm</span>
-              </div>
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <label style={{color:'var(--text-secondary)',fontSize:12,minWidth:82}}>Thickness</label>
-                <div style={{flex:1}}><TextInput type="number" value={thickness} onChange={v=>setThickness(Number(v))} min={0.4} step={0.1} /></div>
-                <span className="hint">mm</span>
-              </div>
-            </div>
-          )}
-          {shape === 'assembly' && (
-            <div style={{display:'flex',flexDirection:'column',gap:10}}>
-              <div className="hint">Assembly: Wheel — add each role below, Mosaic auto-detects its dominant flat face.</div>
-              <div>
-                <label style={{color:'var(--text-secondary)',fontSize:11,display:'block',marginBottom:4}}>Top (allows rotated copies)</label>
-                <ThumbnailSelect
-                  value={topPart}
-                  onChange={setTopPart}
-                  options={[
-                    {value:'wheel-top', label:'Wheel — Top', meta:'stl/wheel-top.stl', thumbnail:thumb('#4fb0ae','TOP')},
-                    {value:'wheel-top-alt', label:'Wheel — Top (alt tread)', meta:'stl/wheel-top-alt.stl', thumbnail:thumb('#3d8f8d','ALT')},
-                  ]}
+            <div id="left">
+              <Panel title="Artwork">
+                <Dropzone
+                  label="Drop an SVG here, or click to browse"
+                  onFiles={() => setBusy(true)}
                 />
-              </div>
-              <div>
-                <label style={{color:'var(--text-secondary)',fontSize:11,display:'block',marginBottom:4}}>Cap (exactly one)</label>
-                <ThumbnailSelect
-                  value={capPart}
-                  onChange={setCapPart}
-                  options={[
-                    {value:'wheel-cap', label:'Wheel — Cap', meta:'stl/wheel-cap.stl', thumbnail:thumb('#e8a13a','CAP')},
-                  ]}
-                />
-              </div>
-              <Button size="small" fullWidth>+ Add rotated copy of Top</Button>
+                <div style={{ marginTop: 8 }}>
+                  <Button size="small" fullWidth onClick={() => setBusy(true)}>
+                    Load sample artwork
+                  </Button>
+                </div>
+                <div className="hint">
+                  Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.
+                </div>
+              </Panel>
+
+              <Panel title="Base part">
+                <div style={{ marginBottom: 8 }}>
+                  <SegmentedControl
+                    value={shape}
+                    onChange={setShape}
+                    options={[
+                      { value: 'disc', label: 'Disc' },
+                      { value: 'rect', label: 'Rect' },
+                      { value: 'round', label: 'Round rect' },
+                      { value: 'stl', label: 'STL ref' },
+                      { value: 'assembly', label: 'Assembly' },
+                    ]}
+                  />
+                </div>
+                {shape === 'disc' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <label style={{ color: 'var(--text-secondary)', fontSize: 12, minWidth: 82 }}>
+                        Diameter
+                      </label>
+                      <div style={{ flex: 1 }}>
+                        <TextInput
+                          type="number"
+                          value={diameter}
+                          onChange={(v) => setDiameter(Number(v))}
+                          min={1}
+                          step={1}
+                        />
+                      </div>
+                      <span className="hint">mm</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <label style={{ color: 'var(--text-secondary)', fontSize: 12, minWidth: 82 }}>
+                        Thickness
+                      </label>
+                      <div style={{ flex: 1 }}>
+                        <TextInput
+                          type="number"
+                          value={thickness}
+                          onChange={(v) => setThickness(Number(v))}
+                          min={0.4}
+                          step={0.1}
+                        />
+                      </div>
+                      <span className="hint">mm</span>
+                    </div>
+                  </div>
+                )}
+                {shape === 'assembly' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div className="hint">
+                      Assembly: Wheel — add each role below, Mosaic auto-detects its dominant flat
+                      face.
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          color: 'var(--text-secondary)',
+                          fontSize: 11,
+                          display: 'block',
+                          marginBottom: 4,
+                        }}
+                      >
+                        Top (allows rotated copies)
+                      </label>
+                      <ThumbnailSelect
+                        value={topPart}
+                        onChange={setTopPart}
+                        options={[
+                          {
+                            value: 'wheel-top',
+                            label: 'Wheel — Top',
+                            meta: 'stl/wheel-top.stl',
+                            thumbnail: thumb('#4fb0ae', 'TOP'),
+                          },
+                          {
+                            value: 'wheel-top-alt',
+                            label: 'Wheel — Top (alt tread)',
+                            meta: 'stl/wheel-top-alt.stl',
+                            thumbnail: thumb('#3d8f8d', 'ALT'),
+                          },
+                        ]}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          color: 'var(--text-secondary)',
+                          fontSize: 11,
+                          display: 'block',
+                          marginBottom: 4,
+                        }}
+                      >
+                        Cap (exactly one)
+                      </label>
+                      <ThumbnailSelect
+                        value={capPart}
+                        onChange={setCapPart}
+                        options={[
+                          {
+                            value: 'wheel-cap',
+                            label: 'Wheel — Cap',
+                            meta: 'stl/wheel-cap.stl',
+                            thumbnail: thumb('#e8a13a', 'CAP'),
+                          },
+                        ]}
+                      />
+                    </div>
+                    <Button size="small" fullWidth>
+                      + Add rotated copy of Top
+                    </Button>
+                  </div>
+                )}
+              </Panel>
+
+              <Panel title="Artwork fit">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                  <label style={{ color: 'var(--text-secondary)', fontSize: 12, minWidth: 82 }}>
+                    Margin
+                  </label>
+                  <div style={{ flex: 1 }}>
+                    <Slider
+                      value={margin}
+                      min={0}
+                      max={30}
+                      onChange={setMargin}
+                      valueLabel={margin + '%'}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                  <label style={{ color: 'var(--text-secondary)', fontSize: 12, minWidth: 82 }}>
+                    Scale
+                  </label>
+                  <div style={{ flex: 1 }}>
+                    <Slider
+                      value={scale}
+                      min={25}
+                      max={400}
+                      onChange={setScale}
+                      valueLabel={scale + '%'}
+                    />
+                  </div>
+                </div>
+                <Button size="small" fullWidth>
+                  Reset to auto-fit
+                </Button>
+              </Panel>
+
+              <Panel title="Depth">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                  <label style={{ color: 'var(--text-secondary)', fontSize: 12, minWidth: 110 }}>
+                    Default depth
+                  </label>
+                  <div style={{ flex: 1 }}>
+                    <TextInput
+                      type="number"
+                      value={depth}
+                      onChange={(v) => setDepth(Number(v))}
+                      min={0.05}
+                      step={0.05}
+                    />
+                  </div>
+                  <span className="hint">mm</span>
+                </div>
+                <Checkbox checked={recessBg} onChange={setRecessBg} label="Recess bg too" />
+              </Panel>
+
+              <Panel title="Colors detected">
+                {anySelected && (
+                  <div style={{ marginBottom: 8 }}>
+                    <Button size="small" fullWidth>
+                      Merge selected into one recess
+                    </Button>
+                  </div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {colors.map((c, i) => (
+                    <ColorRow
+                      key={i}
+                      hex={c.hex}
+                      areaPct={c.areaPct}
+                      depth={c.depth}
+                      onDepthChange={(d) => setColorDepth(i, d)}
+                      selected={c.selected}
+                      onSelectedChange={(v) => toggleSelect(i, v)}
+                    />
+                  ))}
+                </div>
+                <div className="hint" style={{ marginTop: 8 }}>
+                  Check two or more colors above, then merge them into a single filament/AMS slot.
+                </div>
+              </Panel>
+
+              <Panel title="Export">
+                <Button
+                  variant="primary"
+                  fullWidth
+                  onClick={() => {
+                    setBusy(true);
+                    setTimeout(() => setBusy(false), 900);
+                  }}
+                >
+                  Export STL set (.zip)
+                </Button>
+                <div className="hint">One STL per color, plus base.stl for the uncut plate.</div>
+              </Panel>
             </div>
-          )}
-        </Panel>
 
-        <Panel title="Artwork fit">
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:7}}>
-            <label style={{color:'var(--text-secondary)',fontSize:12,minWidth:82}}>Margin</label>
-            <div style={{flex:1}}><Slider value={margin} min={0} max={30} onChange={setMargin} valueLabel={margin+'%'} /></div>
+            <div id="right">
+              <div id="hud">drag to orbit · scroll to zoom · shift-drag to pan</div>
+              <div id="warn">
+                <WarningPill>
+                  Skipped a &lt;path&gt; with a gradient fill (not a flat color) — element ignored.
+                </WarningPill>
+              </div>
+              <LoadingOverlay visible={busy} label="Rebuilding geometry…" />
+            </div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:7}}>
-            <label style={{color:'var(--text-secondary)',fontSize:12,minWidth:82}}>Scale</label>
-            <div style={{flex:1}}><Slider value={scale} min={25} max={400} onChange={setScale} valueLabel={scale+'%'} /></div>
-          </div>
-          <Button size="small" fullWidth>Reset to auto-fit</Button>
-        </Panel>
-
-        <Panel title="Depth">
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:7}}>
-            <label style={{color:'var(--text-secondary)',fontSize:12,minWidth:110}}>Default depth</label>
-            <div style={{flex:1}}><TextInput type="number" value={depth} onChange={v=>setDepth(Number(v))} min={0.05} step={0.05} /></div>
-            <span className="hint">mm</span>
-          </div>
-          <Checkbox checked={recessBg} onChange={setRecessBg} label="Recess bg too" />
-        </Panel>
-
-        <Panel title="Colors detected">
-          {anySelected && <div style={{marginBottom:8}}><Button size="small" fullWidth>Merge selected into one recess</Button></div>}
-          <div style={{display:'flex',flexDirection:'column',gap:6}}>
-            {colors.map((c,i) => (
-              <ColorRow key={i} hex={c.hex} areaPct={c.areaPct} depth={c.depth} onDepthChange={(d)=>setColorDepth(i,d)} selected={c.selected} onSelectedChange={(v)=>toggleSelect(i,v)} />
-            ))}
-          </div>
-          <div className="hint" style={{marginTop:8}}>Check two or more colors above, then merge them into a single filament/AMS slot.</div>
-        </Panel>
-
-        <Panel title="Export">
-          <Button variant="primary" fullWidth onClick={() => { setBusy(true); setTimeout(()=>setBusy(false), 900); }}>Export STL set (.zip)</Button>
-          <div className="hint">One STL per color, plus base.stl for the uncut plate.</div>
-        </Panel>
-      </div>
-
-      <div id="right">
-        <div id="hud">drag to orbit · scroll to zoom · shift-drag to pan</div>
-        <div id="warn"><WarningPill>Skipped a &lt;path&gt; with a gradient fill (not a flat color) — element ignored.</WarningPill></div>
-        <LoadingOverlay visible={busy} label="Rebuilding geometry…" />
-      </div>
-    </div>
-  );
-}
-ReactDOM.createRoot(document.getElementById('root')).render(<Mosaic />);
-</script>
-</body>
+        );
+      }
+      ReactDOM.createRoot(document.getElementById('root')).render(<Mosaic />);
+    </script>
+  </body>
 </html>

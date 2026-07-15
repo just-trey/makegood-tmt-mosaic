@@ -1,7 +1,17 @@
-export function Button({ children, variant = 'default', size = 'default', disabled = false, fullWidth = false, onClick }) {
+export function Button({
+  children,
+  variant = 'default',
+  size = 'default',
+  disabled = false,
+  fullWidth = false,
+  onClick,
+}) {
   const isPrimary = variant === 'primary';
   const style = {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     fontFamily: 'var(--font-sans)',
     fontSize: size === 'small' ? 'var(--text-sm)' : 'var(--text-md)',
     fontWeight: isPrimary ? 'var(--weight-semibold)' : 'var(--weight-regular)',
@@ -20,8 +30,17 @@ export function Button({ children, variant = 'default', size = 'default', disabl
       style={style}
       disabled={disabled}
       onClick={onClick}
-      onMouseEnter={(e) => { if (disabled) return; if (isPrimary) e.currentTarget.style.filter = 'brightness(1.08)'; else e.currentTarget.style.borderColor = 'var(--accent-primary)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; e.currentTarget.style.borderColor = isPrimary ? 'var(--accent-primary)' : 'var(--border-default)'; }}
+      onMouseEnter={(e) => {
+        if (disabled) return;
+        if (isPrimary) e.currentTarget.style.filter = 'brightness(1.08)';
+        else e.currentTarget.style.borderColor = 'var(--accent-primary)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.filter = 'none';
+        e.currentTarget.style.borderColor = isPrimary
+          ? 'var(--accent-primary)'
+          : 'var(--border-default)';
+      }}
     >
       {children}
     </button>

@@ -1,6 +1,9 @@
 import type { Feature, MultiPolygon, Polygon } from 'geojson';
 
-export interface Pt { x: number; y: number }
+export interface Pt {
+  x: number;
+  y: number;
+}
 export type Loop = Pt[];
 
 /** 2D affine transform [a,b,c,d,e,f]: x' = a*x + c*y + e, y' = b*x + d*y + f */
@@ -9,7 +12,11 @@ export type Mat6 = [number, number, number, number, number, number];
 /** The one geometry currency between SVG parsing, boolean ops, and extrusion. */
 export type PolyFeature = Feature<Polygon | MultiPolygon>;
 
-export interface SVGShape { fill: string; loops: Loop[]; order: number }
+export interface SVGShape {
+  fill: string;
+  loops: Loop[];
+  order: number;
+}
 
 export interface ParsedSVG {
   shapes: SVGShape[];
@@ -33,7 +40,12 @@ export interface BaseParams {
 }
 
 export interface FitTransform {
-  scale: number; cx: number; cy: number; flipY: boolean; offsetX: number; offsetY: number;
+  scale: number;
+  cx: number;
+  cy: number;
+  flipY: boolean;
+  offsetX: number;
+  offsetY: number;
 }
 
 /** One recess region after user merges are applied (key is a hex or "merge:a,b"). */
@@ -45,7 +57,9 @@ export interface ResolvedRegion {
   previewColor: string;
 }
 
-export interface ColorSettings { [key: string]: { depth: number } }
+export interface ColorSettings {
+  [key: string]: { depth: number };
+}
 
 /** A coplanar triangle patch detected on a loaded mesh. */
 export interface FlatPatch {
@@ -85,11 +99,24 @@ export interface AssemblyRole {
   copyDefaults?: { pivotX: number; pivotZ: number; angleDeg: number };
 }
 
-export interface AssemblyKind { id: string; name: string; roles: AssemblyRole[] }
+export interface AssemblyKind {
+  id: string;
+  name: string;
+  roles: AssemblyRole[];
+}
 
-export interface LibraryEntry { id: string; name: string; file: string; baseDepth?: number }
+export interface LibraryEntry {
+  id: string;
+  name: string;
+  file: string;
+  baseDepth?: number;
+}
 
-export interface Filament { id: string; name: string; hex: string }
+export interface Filament {
+  id: string;
+  name: string;
+  hex: string;
+}
 
 export interface AssemblyPaletteEntry {
   hex: string;

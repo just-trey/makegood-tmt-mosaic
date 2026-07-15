@@ -5,8 +5,18 @@ A dropdown selector where each option shows a small thumbnail + label (+ optiona
   value={partId}
   onChange={setPartId}
   options={[
-    { value: 'wheel-top', label: 'Wheel — Top', thumbnail: 'thumbs/wheel-top.png', meta: 'stl/wheel-top.stl' },
-    { value: 'wheel-cap', label: 'Wheel — Cap', thumbnail: 'thumbs/wheel-cap.png', meta: 'stl/wheel-cap.stl' },
+    {
+      value: 'wheel-top',
+      label: 'Wheel — Top',
+      thumbnail: 'thumbs/wheel-top.png',
+      meta: 'stl/wheel-top.stl',
+    },
+    {
+      value: 'wheel-cap',
+      label: 'Wheel — Cap',
+      thumbnail: 'thumbs/wheel-cap.png',
+      meta: 'stl/wheel-cap.stl',
+    },
   ]}
 />
 ```

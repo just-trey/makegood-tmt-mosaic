@@ -8,11 +8,15 @@ export function SegmentedControl({ options = [], value, onChange }) {
             key={opt.value}
             onClick={() => onChange && onChange(opt.value)}
             style={{
-              flex: 1, padding: '7px 4px', fontSize: 'var(--text-sm)', borderRadius: 'var(--radius-lg)',
+              flex: 1,
+              padding: '7px 4px',
+              fontSize: 'var(--text-sm)',
+              borderRadius: 'var(--radius-lg)',
               border: '1px solid ' + (active ? 'var(--accent-primary)' : 'var(--border-default)'),
               background: active ? 'var(--color-accent-teal-wash)' : 'var(--surface-panel-2)',
               color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
-              cursor: 'pointer', fontFamily: 'var(--font-sans)',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-sans)',
             }}
           >
             {opt.label}

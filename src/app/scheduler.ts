@@ -15,8 +15,9 @@ export function scheduleRebuild(): void {
   clearTimeout(timer);
   showOverlay('Rebuilding geometry…');
   timer = setTimeout(async () => {
-    try { await handler(); }
-    catch (e) {
+    try {
+      await handler();
+    } catch (e) {
       console.error(e);
       warn('Rebuild failed: ' + (e as Error).message);
       renderWarnings();

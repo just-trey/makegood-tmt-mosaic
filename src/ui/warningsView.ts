@@ -4,7 +4,7 @@ import { $ } from './dom';
 export function renderWarnings(): void {
   const box = $('#warnings');
   box.innerHTML = '';
-  WARNINGS.slice(0, 6).forEach(w => {
+  WARNINGS.slice(0, 6).forEach((w) => {
     const d = document.createElement('div');
     d.className = 'warn-pill';
     d.textContent = '⚠ ' + w;

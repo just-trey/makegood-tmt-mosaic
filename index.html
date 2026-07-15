@@ -1,147 +1,334 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>TMT Mosaic — SVG Color Inlay Generator</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-</head>
-<body>
-<div id="app">
-  <div class="accent-stripe"></div>
-  <header>
-    <img src="assets/makegood-logo.png" alt="MakeGood" style="height:34px;width:auto">
-    <h1>TMT Mosaic</h1>
-    <a class="version-tag" id="app-version" href="https://github.com/just-trey/makegood-tmt-mosaic/blob/main/CHANGELOG.md" target="_blank" rel="noopener" title="View changelog"></a>
-    <span class="sub">for the MakeGood TMT · SVG → multicolor recess geometry</span>
-    <div class="spacer"></div>
-    <span class="stat" id="stat-tris">0 tris</span>
-    <span class="stat" id="stat-colors" style="display:none">0 colors</span>
-  </header>
+  <head>
+    <meta charset="UTF-8" />
+    <title>TMT Mosaic — SVG Color Inlay Generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <div class="accent-stripe"></div>
+      <header>
+        <img src="assets/makegood-logo.png" alt="MakeGood" style="height: 34px; width: auto" />
+        <h1>TMT Mosaic</h1>
+        <a
+          class="version-tag"
+          id="app-version"
+          href="https://github.com/just-trey/makegood-tmt-mosaic/blob/main/CHANGELOG.md"
+          target="_blank"
+          rel="noopener"
+          title="View changelog"
+        ></a>
+        <span class="sub">for the MakeGood TMT · SVG → multicolor recess geometry</span>
+        <div class="spacer"></div>
+        <span class="stat" id="stat-tris">0 tris</span>
+        <span class="stat" id="stat-colors" style="display: none">0 colors</span>
+      </header>
 
-  <div id="left">
+      <div id="left">
+        <details class="sec" open>
+          <summary>Part</summary>
+          <div class="shape-picker">
+            <div class="shape-thumb" id="shape-thumb" aria-hidden="true"></div>
+            <select id="shape-kind" aria-label="Part shape">
+              <option value="assembly" selected>Wheel assembly</option>
+              <option value="disc">Disc</option>
+              <option value="rect">Rectangle</option>
+              <option value="round">Rounded rectangle</option>
+              <option value="stl">STL reference</option>
+            </select>
+          </div>
 
-    <details class="sec" open>
-      <summary>Part</summary>
-      <div class="shape-picker">
-        <div class="shape-thumb" id="shape-thumb" aria-hidden="true"></div>
-        <select id="shape-kind" aria-label="Part shape">
-          <option value="assembly" selected>Wheel assembly</option>
-          <option value="disc">Disc</option>
-          <option value="rect">Rectangle</option>
-          <option value="round">Rounded rectangle</option>
-          <option value="stl">STL reference</option>
-        </select>
+          <div id="shape-params-disc">
+            <div class="row">
+              <label>Diameter</label>
+              <div class="field">
+                <input type="number" id="p-diameter" value="80" min="1" step="1" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+            <div class="row">
+              <label>Thickness</label>
+              <div class="field">
+                <input type="number" id="p-thickness" value="4" min="0.4" step="0.1" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+          </div>
+          <div id="shape-params-rect" style="display: none">
+            <div class="row">
+              <label>Width</label>
+              <div class="field">
+                <input type="number" id="p-width" value="80" min="1" step="1" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+            <div class="row">
+              <label>Height</label>
+              <div class="field">
+                <input type="number" id="p-height" value="60" min="1" step="1" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+            <div class="row">
+              <label>Thickness</label>
+              <div class="field">
+                <input type="number" id="p-thickness-r" value="4" min="0.4" step="0.1" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+          </div>
+          <div id="shape-params-round" style="display: none">
+            <div class="row">
+              <label>Width</label>
+              <div class="field">
+                <input type="number" id="p-width-rr" value="80" min="1" step="1" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+            <div class="row">
+              <label>Height</label>
+              <div class="field">
+                <input type="number" id="p-height-rr" value="60" min="1" step="1" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+            <div class="row">
+              <label>Corner r</label>
+              <div class="field">
+                <input type="number" id="p-corner" value="8" min="0" step="0.5" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+            <div class="row">
+              <label>Thickness</label>
+              <div class="field">
+                <input type="number" id="p-thickness-rr" value="4" min="0.4" step="0.1" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+          </div>
+          <div id="shape-params-stl" style="display: none">
+            <div
+              id="stl-dropzone"
+              style="
+                border: 1.5px dashed var(--line);
+                border-radius: var(--radius-2xl);
+                padding: 14px 8px;
+                text-align: center;
+                color: var(--text-dim);
+                cursor: pointer;
+                font-size: 12px;
+              "
+            >
+              Drop base STL for reference<br /><span class="fname" id="stl-fname"></span>
+              <input type="file" id="stl-input" accept=".stl" style="display: none" />
+            </div>
+            <div class="row" style="margin-top: 8px">
+              <label>Face Z</label>
+              <div class="field"><input type="number" id="p-facez" value="0" step="0.1" /></div>
+              <button class="btn small" id="btn-autoz">Auto (top)</button>
+            </div>
+            <div class="row">
+              <label>Footprint</label>
+              <div class="field"><input type="number" id="p-width-stl" value="80" step="1" /></div>
+              <div class="field"><input type="number" id="p-height-stl" value="60" step="1" /></div>
+            </div>
+            <div class="row">
+              <label>Insert thick.</label>
+              <div class="field">
+                <input type="number" id="p-thickness-stl" value="4" min="0.4" step="0.1" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+            <div class="hint">
+              STL is <b>reference-only</b>: the mesh guides sizing/alignment, and export produces a
+              flat plate insert sized to the face above.
+            </div>
+          </div>
+
+          <div id="shape-params-assembly" style="display: none">
+            <select id="p-asm-kind" style="display: none"></select>
+            <div id="assembly-role-controls" style="margin-bottom: 8px"></div>
+            <div id="assembly-part-list"></div>
+            <div class="row" style="margin-top: 8px">
+              <label>Design radius</label>
+              <div class="field">
+                <input type="number" id="p-asm-radius" value="138" step="0.5" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+            <div class="hint">
+              Pockets are cut into each part's real mesh — load an SVG below to see it on the wheel.
+            </div>
+          </div>
+
+          <div class="row" style="margin-top: 8px">
+            <label>Base color</label>
+            <div class="field base-color-swatches" id="base-color-swatches"></div>
+          </div>
+        </details>
+
+        <details class="sec" open>
+          <summary>Artwork</summary>
+          <div id="dropzone">
+            Drop an SVG here, or click to browse<br />
+            <span class="fname" id="svg-fname"></span>
+            <input type="file" id="svg-input" accept=".svg,image/svg+xml" style="display: none" />
+          </div>
+          <div class="btn-row" style="margin-top: 8px">
+            <button class="btn small" id="btn-sample" style="flex: 1">Load sample artwork</button>
+          </div>
+          <div class="hint">
+            Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.
+          </div>
+        </details>
+
+        <details class="sec" open>
+          <summary>Artwork fit</summary>
+          <div class="row">
+            <label>Margin</label>
+            <div class="field pair">
+              <input type="range" id="p-margin" min="0" max="30" step="1" value="5" /><input
+                type="number"
+                id="p-margin-num"
+                min="0"
+                max="30"
+                step="1"
+                value="5"
+              />
+            </div>
+            <span class="hint">%</span>
+          </div>
+          <div class="row">
+            <label>Scale</label>
+            <div class="field pair">
+              <input type="range" id="p-scale" min="25" max="400" step="1" value="100" /><input
+                type="number"
+                id="p-scale-num"
+                min="25"
+                max="400"
+                step="1"
+                value="100"
+              />
+            </div>
+            <span class="hint">%</span>
+          </div>
+          <div class="row">
+            <label>Offset X</label>
+            <div class="field pair">
+              <input
+                type="range"
+                id="p-offset-x-slider"
+                min="-40"
+                max="40"
+                step="0.5"
+                value="0"
+              /><input type="number" id="p-offset-x" value="0" step="0.5" />
+            </div>
+            <span class="hint">mm</span>
+          </div>
+          <div class="row">
+            <label>Offset Y</label>
+            <div class="field pair">
+              <input
+                type="range"
+                id="p-offset-y-slider"
+                min="-40"
+                max="40"
+                step="0.5"
+                value="0"
+              /><input type="number" id="p-offset-y" value="0" step="0.5" />
+            </div>
+            <span class="hint">mm</span>
+          </div>
+          <button class="btn small full" id="btn-reset-fit">Reset to auto-fit</button>
+          <div class="hint">
+            Margin sets the auto-fit border; Scale multiplies on top (over 100% bleeds past the
+            edge).
+          </div>
+        </details>
+
+        <details class="sec" open>
+          <summary>Depth</summary>
+          <div class="row">
+            <label>Default depth</label>
+            <div class="field">
+              <input type="number" id="p-depth" value="1.0" min="0.05" step="0.05" />
+            </div>
+            <span class="hint">mm</span>
+          </div>
+          <div class="row">
+            <label>Recess bg too</label>
+            <div class="field" style="flex: 0"><input type="checkbox" id="p-recess-bg" /></div>
+            <span class="hint" id="bg-depth-hint" style="display: none"
+              >uses default depth, override below</span
+            >
+          </div>
+          <div class="hint">
+            Measured down from the top face; override per-color below for fine detail.
+          </div>
+        </details>
+
+        <details class="sec" open>
+          <summary>Colors detected</summary>
+          <button class="btn small full" id="btn-merge" style="display: none; margin-bottom: 8px">
+            Merge selected into one recess
+          </button>
+          <div class="color-list" id="color-list">
+            <div class="empty-hint">
+              Load an SVG to detect color regions. Each flat fill color becomes its own recess,
+              filled by a separate AMS filament.
+            </div>
+          </div>
+          <div class="slot-count" id="slot-count"></div>
+          <div class="hint">
+            <b>Drag one color onto another</b> (or check several) to merge into one AMS slot; merged
+            groups share a depth — "unmerge" splits them back.
+          </div>
+        </details>
+
+        <details class="sec" open>
+          <summary>Export</summary>
+          <div class="row" id="plate-size-row">
+            <label>Build plate</label>
+            <div class="field">
+              <select id="p-plate-size">
+                <option value="256x256" selected>256 × 256 (X1C / P1S / A1)</option>
+                <option value="350x320">350 × 320 (H2D)</option>
+                <option value="180x180">180 × 180 (A1 mini)</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn primary full" id="btn-export" disabled>Export print-ready 3MF</button>
+          <button class="btn small full" id="btn-export-stl" disabled style="margin-top: 6px">
+            Export STL set (.zip)
+          </button>
+          <div class="hint" id="export-hint">
+            3MF is print-ready for Bambu Studio with colors pre-assigned to filament slots; the STL
+            set is the fallback for other slicers.
+          </div>
+        </details>
       </div>
 
-      <div id="shape-params-disc">
-        <div class="row"><label>Diameter</label><div class="field"><input type="number" id="p-diameter" value="80" min="1" step="1"></div><span class="hint">mm</span></div>
-        <div class="row"><label>Thickness</label><div class="field"><input type="number" id="p-thickness" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
-      </div>
-      <div id="shape-params-rect" style="display:none">
-        <div class="row"><label>Width</label><div class="field"><input type="number" id="p-width" value="80" min="1" step="1"></div><span class="hint">mm</span></div>
-        <div class="row"><label>Height</label><div class="field"><input type="number" id="p-height" value="60" min="1" step="1"></div><span class="hint">mm</span></div>
-        <div class="row"><label>Thickness</label><div class="field"><input type="number" id="p-thickness-r" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
-      </div>
-      <div id="shape-params-round" style="display:none">
-        <div class="row"><label>Width</label><div class="field"><input type="number" id="p-width-rr" value="80" min="1" step="1"></div><span class="hint">mm</span></div>
-        <div class="row"><label>Height</label><div class="field"><input type="number" id="p-height-rr" value="60" min="1" step="1"></div><span class="hint">mm</span></div>
-        <div class="row"><label>Corner r</label><div class="field"><input type="number" id="p-corner" value="8" min="0" step="0.5"></div><span class="hint">mm</span></div>
-        <div class="row"><label>Thickness</label><div class="field"><input type="number" id="p-thickness-rr" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
-      </div>
-      <div id="shape-params-stl" style="display:none">
-        <div id="stl-dropzone" style="border:1.5px dashed var(--line);border-radius:var(--radius-2xl);padding:14px 8px;text-align:center;color:var(--text-dim);cursor:pointer;font-size:12px;">
-          Drop base STL for reference<br><span class="fname" id="stl-fname"></span>
-          <input type="file" id="stl-input" accept=".stl" style="display:none">
+      <div id="right">
+        <div id="canvas-host"></div>
+        <div id="viewport-hud">drag to orbit · scroll to zoom · shift-drag to pan</div>
+        <div id="warnings"></div>
+        <div id="loading-overlay">
+          <div class="spinner"></div>
+          <div id="loading-text">Rebuilding geometry…</div>
         </div>
-        <div class="row" style="margin-top:8px;"><label>Face Z</label><div class="field"><input type="number" id="p-facez" value="0" step="0.1"></div>
-          <button class="btn small" id="btn-autoz">Auto (top)</button></div>
-        <div class="row"><label>Footprint</label><div class="field"><input type="number" id="p-width-stl" value="80" step="1"></div>
-          <div class="field"><input type="number" id="p-height-stl" value="60" step="1"></div></div>
-        <div class="row"><label>Insert thick.</label><div class="field"><input type="number" id="p-thickness-stl" value="4" min="0.4" step="0.1"></div><span class="hint">mm</span></div>
-        <div class="hint">STL is <b>reference-only</b>: the mesh guides sizing/alignment, and export produces a flat plate insert sized to the face above.</div>
       </div>
+      <div class="accent-stripe"></div>
+    </div>
 
-      <div id="shape-params-assembly" style="display:none">
-        <select id="p-asm-kind" style="display:none"></select>
-        <div id="assembly-role-controls" style="margin-bottom:8px;"></div>
-        <div id="assembly-part-list"></div>
-        <div class="row" style="margin-top:8px;"><label>Design radius</label><div class="field"><input type="number" id="p-asm-radius" value="138" step="0.5"></div><span class="hint">mm</span></div>
-        <div class="hint">Pockets are cut into each part's real mesh — load an SVG below to see it on the wheel.</div>
-      </div>
-
-      <div class="row" style="margin-top:8px;"><label>Base color</label><div class="field base-color-swatches" id="base-color-swatches"></div></div>
-
-    </details>
-
-    <details class="sec" open>
-      <summary>Artwork</summary>
-      <div id="dropzone">
-        Drop an SVG here, or click to browse<br>
-        <span class="fname" id="svg-fname"></span>
-        <input type="file" id="svg-input" accept=".svg,image/svg+xml" style="display:none">
-      </div>
-      <div class="btn-row" style="margin-top:8px;">
-        <button class="btn small" id="btn-sample" style="flex:1;">Load sample artwork</button>
-      </div>
-      <div class="hint">Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.</div>
-    </details>
-
-    <details class="sec" open>
-      <summary>Artwork fit</summary>
-      <div class="row"><label>Margin</label><div class="field pair"><input type="range" id="p-margin" min="0" max="30" step="1" value="5"><input type="number" id="p-margin-num" min="0" max="30" step="1" value="5"></div><span class="hint">%</span></div>
-      <div class="row"><label>Scale</label><div class="field pair"><input type="range" id="p-scale" min="25" max="400" step="1" value="100"><input type="number" id="p-scale-num" min="25" max="400" step="1" value="100"></div><span class="hint">%</span></div>
-      <div class="row"><label>Offset X</label><div class="field pair"><input type="range" id="p-offset-x-slider" min="-40" max="40" step="0.5" value="0"><input type="number" id="p-offset-x" value="0" step="0.5"></div><span class="hint">mm</span></div>
-      <div class="row"><label>Offset Y</label><div class="field pair"><input type="range" id="p-offset-y-slider" min="-40" max="40" step="0.5" value="0"><input type="number" id="p-offset-y" value="0" step="0.5"></div><span class="hint">mm</span></div>
-      <button class="btn small full" id="btn-reset-fit">Reset to auto-fit</button>
-      <div class="hint">Margin sets the auto-fit border; Scale multiplies on top (over 100% bleeds past the edge).</div>
-    </details>
-
-    <details class="sec" open>
-      <summary>Depth</summary>
-      <div class="row"><label>Default depth</label><div class="field"><input type="number" id="p-depth" value="1.0" min="0.05" step="0.05"></div><span class="hint">mm</span></div>
-      <div class="row"><label>Recess bg too</label><div class="field" style="flex:0;"><input type="checkbox" id="p-recess-bg"></div>
-        <span class="hint" id="bg-depth-hint" style="display:none">uses default depth, override below</span></div>
-      <div class="hint">Measured down from the top face; override per-color below for fine detail.</div>
-    </details>
-
-    <details class="sec" open>
-      <summary>Colors detected</summary>
-      <button class="btn small full" id="btn-merge" style="display:none;margin-bottom:8px;">Merge selected into one recess</button>
-      <div class="color-list" id="color-list">
-        <div class="empty-hint">Load an SVG to detect color regions. Each flat fill color becomes its own recess, filled by a separate AMS filament.</div>
-      </div>
-      <div class="slot-count" id="slot-count"></div>
-      <div class="hint"><b>Drag one color onto another</b> (or check several) to merge into one AMS slot; merged groups share a depth — "unmerge" splits them back.</div>
-    </details>
-
-    <details class="sec" open>
-      <summary>Export</summary>
-      <div class="row" id="plate-size-row"><label>Build plate</label><div class="field">
-        <select id="p-plate-size">
-          <option value="256x256" selected>256 × 256 (X1C / P1S / A1)</option>
-          <option value="350x320">350 × 320 (H2D)</option>
-          <option value="180x180">180 × 180 (A1 mini)</option>
-        </select>
-      </div></div>
-      <button class="btn primary full" id="btn-export" disabled>Export print-ready 3MF</button>
-      <button class="btn small full" id="btn-export-stl" disabled style="margin-top:6px;">Export STL set (.zip)</button>
-      <div class="hint" id="export-hint">3MF is print-ready for Bambu Studio with colors pre-assigned to filament slots; the STL set is the fallback for other slicers.</div>
-    </details>
-
-  </div>
-
-  <div id="right">
-    <div id="canvas-host"></div>
-    <div id="viewport-hud">drag to orbit · scroll to zoom · shift-drag to pan</div>
-    <div id="warnings"></div>
-    <div id="loading-overlay"><div class="spinner"></div><div id="loading-text">Rebuilding geometry…</div></div>
-  </div>
-  <div class="accent-stripe"></div>
-</div>
-
-<script type="module" src="/src/main.ts"></script>
-</body>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

@@ -1,6 +1,7 @@
 # Handoff: TMT Mosaic Design System
 
 ## Overview
+
 This is the component library and visual language for **Mosaic**, the internal tool that
 converts a flat-color SVG into per-color recess geometry for multicolor 3D printing (one STL
 per color + base plate, for Bambu Studio/AMS). It supports MakeGood's open-source Toddler
@@ -8,7 +9,9 @@ Mobility Trainer (TMT) project. The system was reverse-engineered from the real 
 (a single-file `index.html`) and formalized into reusable, documented components.
 
 ## About the design files
+
 Everything in this bundle is a **design reference**, not production code to import as-is:
+
 - `components/**/*.jsx` are close-to-final React implementations meant to be **ported into
   the target codebase's existing environment** (whatever framework/build setup
   makegood-tmt-mosaic actually uses), adapting to its conventions (state management, file
@@ -21,15 +24,18 @@ Everything in this bundle is a **design reference**, not production code to impo
   codebase serves plain CSS).
 
 ## Fidelity
+
 **High-fidelity.** Every component here has a direct counterpart already in the real
 makegood-tmt-mosaic source (`index.html`) — colors, spacing, type, and states were lifted
 from its inline `<style>` block and DOM, not invented. Recreate pixel-perfectly.
 
 ## Design tokens
+
 See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported together via
 `styles.css`). Key values:
 
 **Colors** (v3 navy/blue palette — see `tokens/colors.css`, WCAG AA re-tuned)
+
 - Canvas: `#0c1220` · Panel: `#141b30` · Panel-2 (inputs/rows): `#1c2440`, raised from panel
 - Viewport (3D stage): `#070a13` · Border (hairline, everywhere): `#2b3457`
 - Text primary: `#f5f7fb` near-white cool gray · Text secondary: `#aab3cf` muted gray
@@ -39,6 +45,7 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 - No gradients except one conic-gradient app mark in the header.
 
 **Typography**
+
 - Sans stack (system sans) for UI chrome/labels/copy.
 - Monospace (IBM Plex Mono in the mockup) for every numeric/technical value — mm inputs, hex
   codes, triangle counts. This split is a firm rule: mono = a value the user might copy or
@@ -47,6 +54,7 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 - Heading font: Outfit (mockup only used it for the "Mosaic" wordmark + Panel section labels).
 
 **Spacing / radius / borders**
+
 - Compact paddings (5–8px), tight row gaps (6–8px) — this is a tool, not a marketing surface.
   Don't loosen into typical marketing whitespace.
 - 1px hairline borders everywhere (`--border-default`), no shadows.
@@ -54,6 +62,7 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
   buttons/rows/thumbnails 2px, dropzones 3px, swatches square (0px). See `tokens/spacing.css`.
 
 **States**
+
 - Hover: border brightens to accent blue (buttons/inputs), or a `brightness(1.08)` filter bump
   on the solid primary button. No color-shift-to-lighter-bg hover.
 - Focus: border turns solid blue. No glow/outline ring.
@@ -63,12 +72,15 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
   anywhere.
 
 ## Components
+
 Each component in `components/<category>/` ships three files — use all three:
+
 - `Name.jsx` — reference implementation (props, markup, inline styles using the CSS vars above)
 - `Name.d.ts` — prop types/contract
 - `Name.prompt.md` — written spec (purpose, states, usage notes) — read this first per component
 
 Categories:
+
 - **forms/** — Button, TextInput, Select, ThumbnailSelect, Checkbox, Slider, SegmentedControl
 - **layout/** — Panel (repeating uppercase-label + hairline-rule sidebar section shell — not a
   bordered card)
@@ -79,7 +91,9 @@ Categories:
 — open in a browser to see every state without wiring up the real app.
 
 ## Screens
+
 ### Mosaic — main tool screen (`ui_kits/mosaic/preview.html`)
+
 - **Purpose**: load an SVG, configure a base part (disc/rect/round rect/STL ref/assembly),
   fit and merge detected colors into recess depths, export an STL set.
 - **Layout**: CSS grid, `340px 1fr` columns × `64px 1fr` rows. Header spans both columns.
@@ -107,6 +121,7 @@ Categories:
   overlay for ~900ms in the mockup) + hint text.
 
 ## Interactions
+
 - Dropzone: drag-over toggles a teal border/text/background state; drop calls `onFiles`.
 - ThumbnailSelect: click toggles an absolutely-positioned dropdown list (max-height 220px,
   scrollable); each option shows a thumbnail + label + meta; selecting closes the dropdown.
@@ -121,21 +136,25 @@ Categories:
   label text; blocks interaction with the viewport while visible.
 
 ## Iconography & imagery
+
 None. No icon font or SVG icon set — text labels and a single conic-gradient swatch serve as
 the mark. Don't introduce an icon library without checking with the team first. If a future
 screen needs icons, standardize on one CDN set (e.g. Lucide) and document it as an addition
 here — don't hand-draw SVG icons.
 
 ## Assets
+
 - `assets/makegood-logo.png` — real MakeGood wordmark, used in the header at 34px height.
 
 ## Voice / content rules (for any new copy)
+
 - Precise, technical, first-person when explaining tradeoffs; confident but transparent about
   limitations.
 - No emoji, no marketing fluff. Copy favors units and specifics (mm, %, tris) over adjectives.
 - Second person for UI copy ("Drop an SVG here…"), first person for docs/changelog prose.
 
 ## Files in this bundle
+
 - `styles.css` + `tokens/` — root stylesheet and CSS custom properties (colors, type, spacing)
 - `components/` — per-component `.jsx` + `.d.ts` + `.prompt.md`, plus `*.card.html` specimens
 - `ui_kits/mosaic/preview.html` — full screen recreation (open directly in a browser)
@@ -144,6 +163,7 @@ here — don't hand-draw SVG icons.
   quick visual reference
 
 ## Not in scope
+
 Two further, distinct visual languages were referenced but not built out: a cooler
 Tailwind/shadcn "ocean-blue" forum app (3d-mobility.org) and a warm rainbow-gradient nonprofit
 marketing site (makegood.design). Their token files are in `tokens/colors-3dmobility.css` and

@@ -1,4 +1,4 @@
-:root{
+:root {
   --space-1: 4px;
   --space-2: 6px;
   --space-3: 8px;
@@ -17,5 +17,5 @@
   --radius-2xl: 3px;
 
   --border-width: 1px;
-  --transition-fast: .12s;
+  --transition-fast: 0.12s;
 }
