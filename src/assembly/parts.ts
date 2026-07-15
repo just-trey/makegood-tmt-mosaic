@@ -36,6 +36,8 @@ export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
     pivotZ: 0,
     angleDeg: 180,
     loaded: false,
+    cutThrough: !!role.cutThrough,
+    cutThroughDepth: role.cutThroughDepth,
   };
   state.assembly.parts.push(part);
   return part;
@@ -138,6 +140,8 @@ export function asmAddDuplicate(sourceId: number): AssemblyPart | null {
     pivotZ: 0,
     angleDeg: 180,
     loaded: src.loaded,
+    cutThrough: src.cutThrough,
+    cutThroughDepth: src.cutThroughDepth,
   };
   state.assembly.parts.push(dup);
   notifyPartsChanged();

@@ -87,6 +87,17 @@ export interface AssemblyPart {
   pivotZ: number;
   angleDeg: number;
   loaded: boolean;
+  /**
+   * Project the design across the part's whole curved face instead of clipping to the small
+   * flat patch used to place it (see AssemblyRole.cutThrough).
+   */
+  cutThrough: boolean;
+  /**
+   * Fixed cut depth (mm) for a cutThrough part, measured straight down from the face plane —
+   * e.g. the cap's shell is only 3mm thick above its mounting boss, so cutting deeper would
+   * breach into it. Undefined falls back to piercing the part's full vertical extent.
+   */
+  cutThroughDepth?: number;
 }
 
 export interface AssemblyRole {
@@ -97,6 +108,10 @@ export interface AssemblyRole {
   /** rotated copies auto-added beyond the primary by "load full assembly" */
   copies?: number;
   copyDefaults?: { pivotX: number; pivotZ: number; angleDeg: number };
+  /** parts of this role get a through-cut (see AssemblyPart.cutThrough) instead of a recess */
+  cutThrough?: boolean;
+  /** see AssemblyPart.cutThroughDepth */
+  cutThroughDepth?: number;
 }
 
 export interface AssemblyKind {

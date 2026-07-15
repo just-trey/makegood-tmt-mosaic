@@ -25,7 +25,16 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         copies: 1,
         copyDefaults: { pivotX: 0, pivotZ: 0, angleDeg: 180 },
       },
-      { id: 'cap', name: 'Cap', libraryPartId: 'cap', allowRotatedCopies: false },
+      {
+        id: 'cap',
+        name: 'Cap',
+        libraryPartId: 'cap',
+        allowRotatedCopies: false,
+        cutThrough: true,
+        // the cap's shell is 3mm thick above its mounting boss — cut only that far so the
+        // rest prints in base color without extra filament swaps, and the boss stays intact.
+        cutThroughDepth: 3,
+      },
     ],
   },
 ];
