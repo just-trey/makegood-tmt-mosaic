@@ -44,7 +44,7 @@ npm run build       # typecheck + production build to dist/
   `npm run format` rather than hand-formatting.
 - TypeScript `strict` is on (see [tsconfig.json](tsconfig.json)); don't
   weaken it to make something compile.
-- Default to no comments. Only add one for a non-obvious *why* — a hidden
+- Default to no comments. Only add one for a non-obvious _why_ — a hidden
   constraint, a workaround for a specific bug, behavior that would surprise
   a reader. [src/turf.d.ts](src/turf.d.ts) and the retry logic in
   [src/geometry/regions.ts](src/geometry/regions.ts) are examples of
