@@ -50,6 +50,19 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version || 'dev'),
     },
+    build: {
+      rollupOptions: {
+        // Split the rarely-changing heavy vendors into their own chunks so an app-code
+        // edit doesn't force returning visitors to re-download three.js/Turf. (Manifold's
+        // WASM is already kept out of the initial load via dynamic import.)
+        output: {
+          manualChunks: {
+            three: ['three'],
+            turf: ['@turf/turf'],
+          },
+        },
+      },
+    },
     plugins: cfToken ? [cloudflareBeacon(cfToken)] : [],
     optimizeDeps: {
       // manifold-3d locates its .wasm relative to the module URL; pre-bundling
