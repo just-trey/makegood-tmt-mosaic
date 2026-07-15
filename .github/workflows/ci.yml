@@ -6,7 +6,9 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  # Fast lane: no browser needed, so it returns lint/type/test results in seconds
+  # instead of waiting behind the browser-based smoke test. Runs in parallel with `smoke`.
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,7 +19,21 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
-      - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
       - run: npm test
+
+  # Browser lane: the official Playwright image ships the browsers and all system
+  # libraries pre-installed, so there's no `playwright install` / apt download step.
+  # The image tag MUST match the pinned playwright version in package.json (1.61.1) —
+  # bump both together on upgrade, or the baked browsers won't match the client.
+  smoke:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright:v1.61.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
       - run: npm run smoke
