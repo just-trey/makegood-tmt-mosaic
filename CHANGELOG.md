@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Assembly artwork on a +Y-facing design face (e.g. the wheel's default face)
+  loaded mirrored left-to-right, so text read backwards. Placement now
+  auto-corrects per face so artwork is right-reading by default, viewed from
+  that face's front, on any face and in both modes.
+
+### Added
+
+- **Flip H / Flip V** mirror toggles in Artwork fit, layered on top of the
+  automatic orientation — for artwork you deliberately want mirrored, or a
+  design meant to be read from the back of a face. Reset with "Reset to
+  auto-fit".
+- Cloudflare Web Analytics on the hosted page (cookieless, no personal data
+  collected). The beacon is injected at build time only when `CF_BEACON_TOKEN`
+  is set, so forks build and deploy without it. See `.env.example`.
+
 ## [0.1.1] - 2026-07-15
 
 ### Fixed

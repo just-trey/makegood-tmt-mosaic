@@ -22,7 +22,16 @@ function baseInput(overrides: Partial<FlatBuildInput> = {}): FlatBuildInput {
   return {
     parsed: squareParsed(),
     colorSettings: {},
-    baseParams: { diameter: 80, thickness: 4, marginPct: 5, scaleMult: 1, offsetX: 0, offsetY: 0 },
+    baseParams: {
+      diameter: 80,
+      thickness: 4,
+      marginPct: 5,
+      scaleMult: 1,
+      offsetX: 0,
+      offsetY: 0,
+      flipX: false,
+      flipY: false,
+    },
     shapeKind: 'disc',
     globalDepth: 1,
     recessBg: true,

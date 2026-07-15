@@ -52,6 +52,13 @@ Pushing to `main` builds and deploys `dist/` to **GitHub Pages** via
 [.github/workflows/deploy.yml](.github/workflows/deploy.yml). One-time setup:
 repo **Settings → Pages → Source → GitHub Actions**.
 
+**Analytics (optional).** The Cloudflare Web Analytics beacon is injected at
+build time only when `CF_BEACON_TOKEN` is set — as a repo **Variable**
+(Settings → Secrets and variables → Actions → Variables) for the deploy, and in
+a local `.env.local` for local builds (see [.env.example](.env.example)).
+Unset — as in any fork — and no beacon is injected, so forks never report to
+your account.
+
 ## How it works
 
 1. **The SVG is parsed as vectors, not pixels** ([src/svg/](src/svg/)) — the

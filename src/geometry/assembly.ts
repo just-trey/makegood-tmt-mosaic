@@ -93,6 +93,10 @@ export interface AssemblyBuildInput {
   scaleMult: number;
   offX: number;
   offZ: number;
+  /** user horizontal mirror (fixes artwork that reads back-to-front on the face) */
+  flipX: boolean;
+  /** user vertical mirror, on top of the built-in SVG y-down correction */
+  flipY: boolean;
 }
 
 /**
@@ -105,8 +109,19 @@ export interface AssemblyBuildInput {
 export async function buildAssemblyGeometry(
   input: AssemblyBuildInput,
 ): Promise<AssemblyBuild | null> {
-  const { parsed, parts, mergeGroups, colorSettings, globalDepth, radius, scaleMult, offX, offZ } =
-    input;
+  const {
+    parsed,
+    parts,
+    mergeGroups,
+    colorSettings,
+    globalDepth,
+    radius,
+    scaleMult,
+    offX,
+    offZ,
+    flipX,
+    flipY,
+  } = input;
   if (!parsed) return null;
 
   // Design anchor: the SVG's largest <circle> when there is one (the design's intended outer
@@ -153,16 +168,23 @@ export async function buildAssemblyGeometry(
   }
   const { Manifold } = wasm;
 
+  // User-requested mirrors, layered on top of the automatic per-face correction inside
+  // placeOnPart. Base Z is -1 because SVG Y runs top-down while the viewport is Z-up (keeps the
+  // artwork right-side up on the face); the user's vertical flip toggles that.
+  const userXFlip = flipX ? -1 : 1;
+  const zMul = flipY ? 1 : -1;
   // Place an SVG-space point onto a part's native face frame (mm). Rotated copies get the
   // inverse of their assembly rotation, so the design slice that lands on the copy is baked
-  // into the part's native (unrotated) print orientation.
+  // into the part's native (unrotated) print orientation. A +Y-facing design is viewed from the
+  // +Y side, which reads the artwork mirrored left-to-right, so negate X on those faces to keep
+  // it right-reading by default; a -Y face is viewed from -Y and already reads correctly. Flip H
+  // then mirrors relative to that corrected orientation.
   const placeOnPart =
-    (part: AssemblyPart) =>
+    (part: AssemblyPart, nsign: number) =>
     (pt: number[]): number[] => {
-      let x = (pt[0] - svgC.cx) * mmPerUnit + offX;
-      // SVG Y runs top-down; the viewport is Z-up, so negate to keep the artwork right-side up
-      // on the face (otherwise the whole design reads upside down).
-      let z = -(pt[1] - svgC.cy) * mmPerUnit + offZ;
+      const xMul = userXFlip * (nsign > 0 ? -1 : 1);
+      let x = (pt[0] - svgC.cx) * mmPerUnit * xMul + offX;
+      let z = (pt[1] - svgC.cy) * mmPerUnit * zMul + offZ;
       if (part.isDuplicateOf) {
         const r = rotatePointY(x, z, part.pivotX, part.pivotZ, -part.angleDeg);
         x = r[0];
@@ -234,7 +256,7 @@ export async function buildAssemblyGeometry(
       }
     }
 
-    const place = placeOnPart(part);
+    const place = placeOnPart(part, nsign);
     const colorPrisms: Record<number, ManifoldSolid> = {};
     palette.forEach((c, ci) => {
       if (!c.feature) return;

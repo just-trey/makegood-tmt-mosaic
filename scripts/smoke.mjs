@@ -31,15 +31,26 @@ const server = spawn(`npx vite preview --port ${PORT} --strictPort`, {
 });
 
 const errors = [];
+// Third-party analytics beacons report to a cross-origin endpoint bound to the production
+// hostname, so on localhost they CORS-fail by design — that's expected here and unrelated to
+// the app, so filter their console/network noise out of the smoke assertion.
+const IGNORE_HOSTS = ['cloudflareinsights.com'];
+const isIgnored = (text, url) =>
+  IGNORE_HOSTS.some((h) => (text && text.includes(h)) || (url && url.includes(h)));
 let browser;
 try {
   await waitForServer(`http://localhost:${PORT}/`);
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on('console', (m) => {
-    if (m.type() === 'error') errors.push('[console] ' + m.text());
+    if (m.type() !== 'error') return;
+    if (isIgnored(m.text(), m.location()?.url)) return;
+    errors.push('[console] ' + m.text());
   });
-  page.on('pageerror', (e) => errors.push('[pageerror] ' + e.message));
+  page.on('pageerror', (e) => {
+    if (isIgnored(e.message)) return;
+    errors.push('[pageerror] ' + e.message);
+  });
 
   console.log('1. loading app (assembly mode auto-load)…');
   await page.goto(`http://localhost:${PORT}/`);
