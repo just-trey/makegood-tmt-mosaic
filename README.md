@@ -48,9 +48,12 @@ Fonts stylesheet is the only external request.
 
 ## Deployment
 
-Pushing to `main` builds and deploys `dist/` to **GitHub Pages** via
-[.github/workflows/deploy.yml](.github/workflows/deploy.yml). One-time setup:
-repo **Settings → Pages → Source → GitHub Actions**.
+Pushing a version tag (`vX.Y.Z`) builds and deploys `dist/` to **GitHub
+Pages** via [.github/workflows/deploy.yml](.github/workflows/deploy.yml) — see
+[CONTRIBUTING.md](CONTRIBUTING.md#versioning). Merging to `main` does not
+deploy by itself; a manual `workflow_dispatch` run is also available for an
+out-of-band deploy. One-time setup: repo **Settings → Pages → Source → GitHub
+Actions**.
 
 **Analytics (optional).** The Cloudflare Web Analytics beacon is injected at
 build time only when `CF_BEACON_TOKEN` is set — as a repo **Variable**
