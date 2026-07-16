@@ -4,14 +4,28 @@ import { getLastAssemblyBuild, getLastBuild } from '../app/rebuild';
 import { asmPartFaceNormal } from '../geometry/assembly';
 import {
   build3MFCombined,
+  WHEEL_TOP_ROT_DEG,
+  WHEEL_TOP_POS,
+  WHEEL_CAP_ROT_DEG,
+  WHEEL_CAP_POS,
   type ExportMaterial,
   type ExportPart,
   type ExportSub,
 } from '../export/threemf';
+import { getPrinter } from '../export/printers';
 import { meshToSTLBytes, soupFromObject } from '../export/stl';
 import { zipStore, type ZipEntry } from '../export/zip';
 import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
+import { WARNINGS, warn } from '../warnings';
+import { renderWarnings } from './warningsView';
+
+// suffixes of the two placement-warning messages build3MFCombined can emit — used to clear a
+// stale one from a previous export attempt before reporting this attempt's
+const PLACEMENT_WARNING_SUFFIXES = [
+  'even at its best-fit rotation.',
+  'double-check for overlap in your slicer.',
+];
 
 function download(blob: Blob, fname: string): void {
   const a = document.createElement('a');
@@ -31,6 +45,12 @@ async function exportPrintReady3MF(): Promise<void> {
     materials = [{ name: 'Body', color: bodyColor }].concat(
       palette.map((p) => ({ name: nearestFilamentName(p.hex), color: p.hex })),
     );
+    // wheel-specific plate layout: the primary "top" half + the "cap" share plate 1, each
+    // rotated-duplicate "top" (the wheel's other half) gets its own subsequent plate. Rotation
+    // and position are fixed constants taken from a real, tested MakeGood TMT export (see
+    // WHEEL_TOP_POS/WHEEL_CAP_POS in src/export/threemf.ts) — not computed, since the wheel's
+    // geometry and required orientation are a specific, externally-verified product.
+    let nextHalfPlate = 2;
     parts = built.partOutputs
       .filter((o) => o.bodySoup && o.bodySoup.length)
       .map(({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }) => {
@@ -47,7 +67,30 @@ async function exportPrintReady3MF(): Promise<void> {
             indexed: inlayIndexed?.[+ci],
           });
         });
-        return { name: part.name, nsign, bodySoup, subs };
+        let plateHint: number | undefined,
+          rotZdeg: number | undefined,
+          fixedPos,
+          primeTowerAnchor: boolean | undefined;
+        if (part.roleId === 'top') {
+          plateHint = part.isDuplicateOf == null ? 1 : nextHalfPlate++;
+          rotZdeg = WHEEL_TOP_ROT_DEG;
+          fixedPos = WHEEL_TOP_POS;
+          primeTowerAnchor = true;
+        } else if (part.roleId === 'cap') {
+          plateHint = 1;
+          rotZdeg = WHEEL_CAP_ROT_DEG;
+          fixedPos = WHEEL_CAP_POS;
+        }
+        return {
+          name: part.name,
+          nsign,
+          bodySoup,
+          subs,
+          plateHint,
+          rotZdeg,
+          fixedPos,
+          primeTowerAnchor,
+        };
       });
     fname = 'mosaic-wheel.3mf';
   } else {
@@ -77,10 +120,18 @@ async function exportPrintReady3MF(): Promise<void> {
   showOverlay('Exporting print-ready 3MF…');
   await new Promise((r) => setTimeout(r, 10));
   try {
-    // No Z spin: the unrotated footprint is the smallest bbox for the half-disc tops, which is
-    // what lets the cap share a plate when the plate is wide enough.
-    const [pw, pd] = (state.plateSize || '256x256').split('x').map(Number);
-    const blob = await build3MFCombined(materials, parts, { rotZdeg: 0, plate: { w: pw, d: pd } });
+    const printer = getPrinter(state.printerId);
+    const { blob, warnings: placementWarnings } = await build3MFCombined(materials, parts, {
+      printer,
+    });
+    // drop any stale placement warning from a previous export (e.g. a smaller printer) before
+    // reporting this attempt's — otherwise a fixed/switched export still shows an old warning
+    for (let i = WARNINGS.length - 1; i >= 0; i--) {
+      if (PLACEMENT_WARNING_SUFFIXES.some((s) => WARNINGS[i].message.endsWith(s)))
+        WARNINGS.splice(i, 1);
+    }
+    placementWarnings.forEach((msg) => warn(msg));
+    renderWarnings();
     download(blob, fname);
   } catch (e) {
     console.error(e);
@@ -132,8 +183,8 @@ affiliated with Bambu Lab.
 }
 
 export function initExportPanel(): void {
-  $<HTMLSelectElement>('#p-plate-size').addEventListener('change', (e) => {
-    state.plateSize = (e.target as HTMLSelectElement).value;
+  $<HTMLSelectElement>('#p-printer').addEventListener('change', (e) => {
+    state.printerId = (e.target as HTMLSelectElement).value;
   });
   $('#btn-export').addEventListener('click', () => void exportPrintReady3MF());
   $('#btn-export-stl').addEventListener('click', () => void exportSTLSet());

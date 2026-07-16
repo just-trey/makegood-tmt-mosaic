@@ -4,10 +4,13 @@
 [![Version](https://img.shields.io/badge/version-0.2.1--alpha-orange.svg)](CHANGELOG.md)
 
 A browser app that turns a flat-color SVG into per-color recess geometry for
-multicolor/AMS 3D printing, and exports a print-ready Bambu Studio project 3MF
-— parts placed on build plates, every recess pre-named and pre-assigned to its
-own filament slot with the detected colors, so it opens in Bambu Studio ready
-to slice. A per-color STL set is available as a fallback for other slicers.
+multicolor/AMS 3D printing, and exports a print-ready project 3MF — parts
+placed on build plates, every recess pre-named and pre-assigned to its own
+Generic PETG filament slot with the detected colors, 15% gyroid infill and
+tree (auto) support pre-set, so it opens ready to slice in **Bambu Studio,
+OrcaSlicer, or Snapmaker Orca** (pick your printer from the export panel —
+Bambu X1C/P1S/A1/H2D or Snapmaker U1). A per-color STL set is available as a
+fallback for other slicers.
 
 Built for [MakeGood](https://makegood.design)'s Toddler Mobility Trainer
 (TMT) — a free, open-source 3D-printable mobility device for children ages
@@ -85,6 +88,19 @@ your account.
 5. **Export** writes a Bambu Studio _project_ 3MF (vendor metadata included,
    so it imports without warnings, with named parts, per-part filament slots,
    and multi-plate placement) ([src/export/threemf.ts](src/export/threemf.ts)).
+   The target printer ([src/export/printers.ts](src/export/printers.ts))
+   selects the build plate size and the profile-name strings the project
+   settings reference, so the same writer resolves cleanly in Bambu Studio,
+   OrcaSlicer, and Snapmaker Orca. Wheel-assembly exports pin the primary Top
+   half + Cap onto plate 1 and each rotated-duplicate Top half onto its own
+   plate, using a fixed rotation and plate position for both parts — taken
+   from a real, tested MakeGood TMT export rather than computed, since the
+   wheel's geometry and required orientation are a specific, already-verified
+   product rather than something to re-derive per printer. The prime/wipe
+   tower's plate position is pinned the same way, as a fixed offset from the
+   wheel Top half rather than each slicer's own default. A part that still
+   overhangs its plate is reported as an on-screen warning rather than
+   assumed safe.
 
 ### Code layout
 

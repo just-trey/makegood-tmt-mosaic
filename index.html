@@ -55,7 +55,7 @@
             <p>
               Pick a part shape, drop in an SVG, and each flat fill color becomes its own recessed
               region. Export a 3MF and it's pre-mapped to AMS filament slots — open it in Bambu
-              Studio and print.
+              Studio, OrcaSlicer, or Snapmaker Orca and print.
             </p>
             <p>Everything below matches a section in the left panel, in the same order.</p>
           </section>
@@ -115,9 +115,9 @@
             <div class="help-step">Left panel · Export</div>
             <h3>Getting a printable file</h3>
             <p>
-              Pick your printer's bed size, then export. The 3MF is print-ready for Bambu Studio
-              with colors pre-assigned to filament slots. The STL set is a per-color .zip fallback
-              for slicers that don't read pre-mapped 3MF color data.
+              Pick your printer, then export. The 3MF is print-ready for Bambu Studio, OrcaSlicer,
+              or Snapmaker Orca with colors pre-assigned to filament slots. The STL set is a
+              per-color .zip fallback for slicers that don't read pre-mapped 3MF color data.
             </p>
           </section>
         </div>
@@ -400,12 +400,12 @@
         <details class="sec" open>
           <summary>Export</summary>
           <div class="row" id="plate-size-row">
-            <label>Build plate</label>
+            <label>Printer</label>
             <div class="field">
-              <select id="p-plate-size">
-                <option value="256x256" selected>256 × 256 (X1C / P1S / A1)</option>
-                <option value="350x320">350 × 320 (H2D)</option>
-                <option value="180x180">180 × 180 (A1 mini)</option>
+              <select id="p-printer">
+                <option value="bambu-x1c" selected>256 × 256 (X1C / P1S / A1)</option>
+                <option value="bambu-h2d">350 × 320 (H2D)</option>
+                <option value="snapmaker-u1">270 × 270 (Snapmaker U1)</option>
               </select>
             </div>
           </div>
@@ -414,8 +414,8 @@
             Export STL set (.zip)
           </button>
           <div class="hint" id="export-hint">
-            3MF is print-ready for Bambu Studio with colors pre-assigned to filament slots; the STL
-            set is the fallback for other slicers.
+            3MF is print-ready for Bambu Studio, OrcaSlicer, or Snapmaker Orca with colors
+            pre-assigned to filament slots; the STL set is the fallback for other slicers.
           </div>
         </details>
       </div>

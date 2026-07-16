@@ -1,5 +1,6 @@
 import type { IndexedMesh } from '../types';
 import { zipStore, type ZipEntry } from './zip';
+import type { Printer } from './printers';
 
 export interface ExportMaterial {
   name: string;
@@ -19,10 +20,22 @@ export interface ExportPart {
   nsign: number;
   bodySoup: Float32Array;
   subs: ExportSub[];
+  /** in-plane spin (deg) for this part specifically; falls back to ExportOptions.rotZdeg. */
+  rotZdeg?: number;
+  /** 1-based plate pin — parts sharing a hint go onto the same plate together (stride offset
+   * only; XY placement within the plate comes from fixedPos below). */
+  plateHint?: number;
+  /** Absolute local (pre-stride) plate-plane position, bypassing footprint-based packing —
+   * used for parts whose placement is a fixed, externally-verified constant rather than
+   * something to compute (see WHEEL_TOP_POS/WHEEL_CAP_POS). */
+  fixedPos?: { x: number; y: number };
+  /** This part's final local position anchors its plate's prime/wipe tower offset (see
+   * WHEEL_PRIME_TOWER_DELTA) — set on the wheel's Top half. */
+  primeTowerAnchor?: boolean;
 }
 export interface ExportOptions {
   rotZdeg?: number;
-  plate?: { w: number; d: number };
+  printer: Printer;
 }
 
 /**
@@ -83,54 +96,63 @@ export function rotXthenZ(thetaDeg: number, phiDeg: number): number[][] {
 /**
  * Minimal Bambu Studio project settings (Metadata/project_settings.config). This is what makes
  * the palette show up as actual filament colors on import — Bambu ignores core-spec 3MF
- * basematerials entirely. Only the keys we care about are written; Bambu fills everything else
- * from the named system presets / the user's current profile.
+ * basematerials entirely. Only the keys we care about are written; Bambu (and Snapmaker
+ * Orca/OrcaSlicer, which read the same project_settings.config shape) fill everything else from
+ * the named system presets / the user's current profile.
  */
 export function bambuProjectSettings(
   materials: ExportMaterial[],
-  plateW: number,
-  plateD: number,
+  printer: Printer,
+  wipeTower?: Array<{ x: number; y: number } | undefined>,
 ): string {
-  const presets: Record<
-    string,
-    { printer: string; print: string; filament: string; height: number }
-  > = {
-    '256x256': {
-      printer: 'Bambu Lab X1 Carbon 0.4 nozzle',
-      print: '0.20mm Standard @BBL X1C',
-      filament: 'Bambu PLA Basic @BBL X1C',
-      height: 250,
-    },
-    '350x320': {
-      printer: 'Bambu Lab H2D 0.4 nozzle',
-      print: '0.20mm Standard @BBL H2D',
-      filament: 'Bambu PLA Basic @BBL H2D',
-      height: 325,
-    },
-    '180x180': {
-      printer: 'Bambu Lab A1 mini 0.4 nozzle',
-      print: '0.20mm Standard @BBL A1M',
-      filament: 'Bambu PLA Basic @BBL A1M',
-      height: 180,
-    },
-  };
-  const p = presets[plateW + 'x' + plateD] || presets['256x256'];
+  const { plate } = printer;
   const rep = (v: string) => materials.map(() => v);
+  const nozzle = printer.variant || '0.4';
+  // Keys we override on top of the named print preset. Bambu-family slicers (Bambu Studio,
+  // OrcaSlicer, Snapmaker Orca — same project_settings.config shape, confirmed against a real
+  // Snapmaker Orca export) use `different_settings_to_system` to know these are intentional
+  // per-project overrides rather than incidentally-resolved values; without it, a reload/resave
+  // can silently reconcile them back to the preset's own current default.
+  const printOverrideKeys = [
+    'sparse_infill_density',
+    'sparse_infill_pattern',
+    'enable_support',
+    'support_type',
+  ];
   return JSON.stringify(
     {
       from: 'project',
       name: 'project_settings',
       version: '02.00.03.54',
-      printer_settings_id: p.printer,
-      print_settings_id: p.print,
-      filament_settings_id: rep(p.filament),
+      printer_settings_id: printer.printerId,
+      print_settings_id: printer.printId,
+      filament_settings_id: rep(printer.filamentId),
       filament_colour: materials.map((m) => (m.color || '#CCCCCC').toUpperCase()),
-      filament_type: rep('PLA'),
+      filament_type: rep('PETG'),
       filament_diameter: rep('1.75'),
-      nozzle_diameter: ['0.4'],
-      printable_area: ['0x0', plateW + 'x0', plateW + 'x' + plateD, '0x' + plateD],
-      printable_height: String(p.height),
-      curr_bed_type: 'Textured PEI Plate',
+      nozzle_diameter: [nozzle],
+      printable_area: ['0x0', plate.w + 'x0', plate.w + 'x' + plate.d, '0x' + plate.d],
+      printable_height: String(plate.height),
+      curr_bed_type: printer.bedType,
+      // sparse infill: 15% gyroid, tree(auto) support — same keys across Bambu Studio, OrcaSlicer,
+      // and Snapmaker Orca, layered on top of the printer's own standard process profile.
+      sparse_infill_density: '15%',
+      sparse_infill_pattern: 'gyroid',
+      enable_support: '1',
+      support_type: 'tree(auto)',
+      support_style: 'default',
+      // [print, one per filament, printer] — only the print slot (index 0) differs from system.
+      different_settings_to_system: [printOverrideKeys.join(';'), ...rep(''), ''],
+      // Prime/wipe tower position, one entry per plate — only set for wheel exports (see
+      // WHEEL_PRIME_TOWER_DELTA). Not listed in different_settings_to_system: the reference file
+      // this was verified against doesn't track it there either, so a plain value matches real
+      // slicer behavior. A plate with no anchor part falls back to plate center.
+      ...(wipeTower
+        ? {
+            wipe_tower_x: wipeTower.map((w) => fmtCoord(w ? w.x : plate.w / 2)),
+            wipe_tower_y: wipeTower.map((w) => fmtCoord(w ? w.y : plate.d / 2)),
+          }
+        : {}),
     },
     null,
     1,
@@ -147,22 +169,61 @@ export function bambuProjectSettings(
  *   - Metadata/model_settings.config: part names, per-part filament (extruder) assignment,
  *     and one <plate> block per build plate
  *   - Metadata/project_settings.config: filament colors (see bambuProjectSettings above)
- * Parts are laid MOSAIC-FACE-DOWN, spun `rotZdeg` about vertical, then packed onto
- * `opts.plate`-sized build plates: largest footprint first, each part joining an existing
- * plate's row only if it fits, otherwise opening a new plate. A part bigger than the plate
- * still gets its own plate, centered — the overhang is visible and the user's call.
+ * Parts are laid MOSAIC-FACE-DOWN, spun `opts.rotZdeg` about vertical (or their own
+ * `part.rotZdeg`, when set), then packed onto `opts.printer`'s build plates. Parts carrying a
+ * `plateHint` go onto that plate together instead of through the size-driven greedy packer (used
+ * by the wheel assembly: top half + cap share plate 1, each rotated-duplicate half gets its own
+ * plate) — the greedy packer claims plates largest-footprint-first, each part joining an existing
+ * plate's row only if it fits, otherwise opening a new plate. A part carrying `fixedPos` skips
+ * footprint-based placement entirely and goes exactly there (see WHEEL_TOP_POS/WHEEL_CAP_POS) —
+ * used for parts whose real-world placement has been externally verified rather than computed,
+ * since bounding-box math alone can't tell a genuine overlap from a concave part's open interior.
+ * A part that still overhangs its plate (fixed or computed) is reported back via `warnings`
+ * instead of assumed safe.
  *   materials: index 0 = body/base, then one per palette color
  */
+
+// Wheel assembly's Top (wheel half) and Cap parts use a fixed rotation + plate position instead
+// of computed placement — the geometry is a specific, externally-verified real product (see
+// stubs/whlle-reference.3mf, the shipped MakeGood TMT project file), not something to re-derive.
+// Values are the reference file's own build-item transforms, corrected for the recentering Bambu
+// applies on import (recoverable from that file's model_settings.config source_offset_y/z): Top's
+// -45° spin is the mirror of what a generic angle search would ever land on, and Cap's position
+// is only valid relative to this exact Top placement, so both must be applied together, never
+// re-derived per printer or per export. Verified against all three registered printer plates.
+export const WHEEL_TOP_ROT_DEG = -45;
+export const WHEEL_TOP_POS = { x: 104.106567, y: 104.933839 };
+export const WHEEL_CAP_ROT_DEG = 0;
+// Cap's position relative to Top, from a second reference: stubs/mosaic-wheel-snapmaker.3mf, our
+// own exported wheel reopened and hand-repositioned by the user in Snapmaker Orca (already a
+// vendor project reopen, not a fresh import, so no recentering correction needed). Cap rides
+// along with Top under placeHintedGroup's per-plate group-centering, so this single constant is
+// enough to keep it locked to Top's new position on every printer.
+export const WHEEL_CAP_POS = { x: 87.861827, y: 50.328835 };
+// Prime/wipe tower position, likewise from stubs/mosaic-wheel-snapmaker.3mf — the user manually
+// dragged the tower on that file's plate 1 in Snapmaker Orca. Expressed as an offset from the
+// Top anchor's own final local position (not an absolute), so the same relative placement
+// reproduces on every printer and on every plate a Top half lands on (see `primeTowerAnchor`).
+export const WHEEL_PRIME_TOWER_DELTA = { x: -87.833131, y: -28.867078 };
+// The plate the reference file's own positions were authored against (Bambu X1C, 256x256) — used
+// only to recognize that printer and leave its fixedPos values untouched (see `isRefPlate` below).
+// On any other printer's plate, each fixedPos group is instead re-centered on its own true
+// bounding box (see `placeHintedGroup`), not by a fixed offset off this constant — the reference
+// file's own placement isn't itself centered on its 256x256 plate (off by a few mm), so scaling
+// that same skew down to a bigger plate looked fine on the much-larger H2D bed but was visibly
+// off-center on the Snapmaker U1's, which only has 14mm more room than the reference in each axis.
+const WHEEL_REF_PLATE = { w: 256, d: 256 };
+
 export async function build3MFCombined(
   materials: ExportMaterial[],
   parts: ExportPart[],
-  opts?: ExportOptions,
-): Promise<Blob> {
-  opts = opts || {};
+  opts: ExportOptions,
+): Promise<{ blob: Blob; warnings: string[] }> {
   const rotZ = opts.rotZdeg || 0,
     gap = 8;
-  const plateW = (opts.plate && opts.plate.w) || 256;
-  const plateD = (opts.plate && opts.plate.d) || 256;
+  const printer = opts.printer;
+  const plateW = printer.plate.w;
+  const plateD = printer.plate.d;
   const enc = new TextEncoder();
   const files: ZipEntry[] = [
     {
@@ -198,74 +259,179 @@ export async function build3MFCombined(
     xf?: string;
   }
 
-  // per-part rotation + transformed footprint (from the body bbox corners)
-  const placed: Placed[] = parts.map((part) => {
-    const R = rotXthenZ(-90 * part.nsign, rotZ);
-    const s = part.bodySoup;
-    const mn = [Infinity, Infinity, Infinity],
-      mx = [-Infinity, -Infinity, -Infinity];
-    for (let i = 0; i < s.length; i += 3)
-      for (let k = 0; k < 3; k++) {
-        const v = s[i + k];
-        if (v < mn[k]) mn[k] = v;
-        if (v > mx[k]) mx[k] = v;
-      }
-    const tr = (x: number, y: number, zz: number) => [
-      x * R[0][0] + y * R[1][0] + zz * R[2][0],
-      x * R[0][1] + y * R[1][1] + zz * R[2][1],
-      x * R[0][2] + y * R[1][2] + zz * R[2][2],
-    ];
+  // Rotated footprint at a given in-plane spin angle, from every body vertex — NOT from
+  // rotating the un-rotated bbox's 8 corners. That shortcut is exact only when the part isn't
+  // actually spun (corners == true extremes there), but badly overestimates the footprint of a
+  // non-box shape (e.g. a thin curved crescent) once a real Z angle is combined with the
+  // face-down tilt: the rotated "ghost" corners land far outside where the real mesh ever
+  // reaches. Transforming all vertices is the only way to get the true rotated AABB.
+  function footprintFor(
+    part: ExportPart,
+    angleDeg: number,
+  ): { R: number[][]; w: number; d: number; cx: number; cy: number; minZ: number } {
+    const R = rotXthenZ(-90 * part.nsign, angleDeg);
     const tmn = [Infinity, Infinity, Infinity],
       tmx = [-Infinity, -Infinity, -Infinity];
-    for (const cx of [mn[0], mx[0]])
-      for (const cy of [mn[1], mx[1]])
-        for (const cz of [mn[2], mx[2]]) {
-          const p = tr(cx, cy, cz);
-          for (let k = 0; k < 3; k++) {
-            if (p[k] < tmn[k]) tmn[k] = p[k];
-            if (p[k] > tmx[k]) tmx[k] = p[k];
-          }
-        }
+    for (let i = 0; i < part.bodySoup.length; i += 3) {
+      const x = part.bodySoup[i],
+        y = part.bodySoup[i + 1],
+        z = part.bodySoup[i + 2];
+      const p = [
+        x * R[0][0] + y * R[1][0] + z * R[2][0],
+        x * R[0][1] + y * R[1][1] + z * R[2][1],
+        x * R[0][2] + y * R[1][2] + z * R[2][2],
+      ];
+      for (let k = 0; k < 3; k++) {
+        if (p[k] < tmn[k]) tmn[k] = p[k];
+        if (p[k] > tmx[k]) tmx[k] = p[k];
+      }
+    }
+    // The build-plate flush height has to account for every sub-mesh, not just the body: a
+    // color recess cuts into the body's own surface, so the inlay filling that recess can reach
+    // further along the tilt-affected axis than the (now-holed) body mesh does on its own —
+    // using body-only minZ left the inlay floating below Z=0 in the exported file.
+    let minZ = tmn[2];
+    for (const sub of part.subs) {
+      const verts: ArrayLike<number> | undefined = sub.indexed ? sub.indexed.positions : sub.soup;
+      if (!verts) continue;
+      for (let i = 0; i < verts.length; i += 3) {
+        const x = verts[i],
+          y = verts[i + 1],
+          z = verts[i + 2];
+        const pz = x * R[0][2] + y * R[1][2] + z * R[2][2];
+        if (pz < minZ) minZ = pz;
+      }
+    }
     return {
-      part,
       R,
       w: tmx[0] - tmn[0],
       d: tmx[1] - tmn[1],
       cx: (tmn[0] + tmx[0]) / 2,
       cy: (tmn[1] + tmx[1]) / 2,
-      minZ: tmn[2],
+      minZ,
     };
-  });
+  }
 
-  // greedy plate packing: biggest footprints claim plates first, small parts (the cap)
-  // slot into an existing plate's row when there's room
-  const plates: { row: Placed[] }[] = [];
-  placed
-    .slice()
-    .sort((a, b) => b.w * b.d - a.w * a.d)
-    .forEach((pl) => {
-      let plate = plates.find(
-        (p) =>
-          pl.d <= plateD &&
-          p.row.reduce((s, q) => s + q.w, 0) + p.row.length * gap + pl.w <= plateW,
+  const placed: Placed[] = parts.map((part) => ({
+    part,
+    ...footprintFor(part, part.rotZdeg ?? rotZ),
+  }));
+
+  const warnings: string[] = [];
+  for (const pl of placed) {
+    const worst = Math.max(pl.w - plateW, pl.d - plateD);
+    if (worst > 0.5)
+      warnings.push(
+        `"${pl.part.name}" overhangs the ${plateW}×${plateD}mm plate by ~${Math.ceil(worst)}mm even at its best-fit rotation.`,
       );
-      if (!plate) {
-        plate = { row: [] };
-        plates.push(plate);
+  }
+
+  // Bambu X1C's plate is exactly the size the reference file's fixedPos values were authored
+  // against — leave them verbatim there, the real tested layout. Any other printer's plate gets
+  // each fixedPos group (plate 1's Top + Cap, each plate 2+ rotated-duplicate Top alone)
+  // re-centered on its own true bounding box instead (see `placeHintedGroup`).
+  const isRefPlate = plateW === WHEEL_REF_PLATE.w && plateD === WHEEL_REF_PLATE.d;
+
+  // A part carrying plateHint is pinned to that plate instead of going through the greedy
+  // packer — used by the wheel assembly (top half + cap share plate 1, each rotated-duplicate
+  // half gets its own plate; see exportPanel.ts). Placement within the plate comes from each
+  // part's fixedPos when set (the normal case here — see WHEEL_TOP_POS/WHEEL_CAP_POS), or plate
+  // center as a fallback for any hinted part that doesn't carry one.
+  function placeHintedGroup(items: Placed[]): void {
+    let groupOffsetX = 0,
+      groupOffsetY = 0;
+    if (!isRefPlate) {
+      // True world bounding box of this plate's fixedPos group (e.g. Top + Cap together), from
+      // each item's own rotated footprint (cx/w/d, cy) plus its raw fixedPos — not a symmetric
+      // assumption about where the group sits on the reference plate.
+      let gMinX = Infinity,
+        gMaxX = -Infinity,
+        gMinY = Infinity,
+        gMaxY = -Infinity;
+      items.forEach((pl) => {
+        const pos = pl.part.fixedPos;
+        if (!pos) return;
+        gMinX = Math.min(gMinX, pos.x + pl.cx - pl.w / 2);
+        gMaxX = Math.max(gMaxX, pos.x + pl.cx + pl.w / 2);
+        gMinY = Math.min(gMinY, pos.y + pl.cy - pl.d / 2);
+        gMaxY = Math.max(gMaxY, pos.y + pl.cy + pl.d / 2);
+      });
+      if (gMinX !== Infinity) {
+        groupOffsetX = (plateW - (gMaxX - gMinX)) / 2 - gMinX;
+        groupOffsetY = (plateD - (gMaxY - gMinY)) / 2 - gMinY;
       }
-      plate.row.push(pl);
+    }
+    items.forEach((pl) => {
+      const pos = pl.part.fixedPos;
+      pl.tx = pos ? pos.x + groupOffsetX : plateW / 2 - pl.cx;
+      pl.ty = pos ? pos.y + groupOffsetY : plateD / 2 - pl.cy;
+      pl.tz = -pl.minZ;
     });
+  }
+
+  const useHints = placed.some((pl) => pl.part.plateHint != null);
+  const plates: { row: Placed[]; wipeTower?: { x: number; y: number } }[] = [];
+  if (useHints) {
+    // group by plateHint (ascending); parts without a hint each open their own plate
+    const groups = new Map<number, Placed[]>();
+    let auto = 1e6;
+    placed.forEach((pl) => {
+      const h = pl.part.plateHint ?? auto++;
+      (groups.get(h) || groups.set(h, []).get(h)!).push(pl);
+    });
+    [...groups.keys()].sort((a, b) => a - b).forEach((h) => plates.push({ row: groups.get(h)! }));
+  } else {
+    // greedy plate packing: biggest footprints claim plates first, small parts
+    // slot into an existing plate's row when there's room
+    placed
+      .slice()
+      .sort((a, b) => b.w * b.d - a.w * a.d)
+      .forEach((pl) => {
+        let plate = plates.find(
+          (p) =>
+            pl.d <= plateD &&
+            p.row.reduce((s, q) => s + q.w, 0) + p.row.length * gap + pl.w <= plateW,
+        );
+        if (!plate) {
+          plate = { row: [] };
+          plates.push(plate);
+        }
+        plate.row.push(pl);
+      });
+  }
+  // Local placement first (no world-X offset yet).
+  if (useHints) {
+    plates.forEach((plate) => {
+      placeHintedGroup(plate.row);
+      // Prime/wipe tower position is relative to this plate's own Top anchor's final local
+      // position (still pre-stride here, which is exactly what wipe_tower_x/y want).
+      const anchor = plate.row.find((pl) => pl.part.primeTowerAnchor);
+      if (anchor) {
+        plate.wipeTower = {
+          x: anchor.tx! + WHEEL_PRIME_TOWER_DELTA.x,
+          y: anchor.ty! + WHEEL_PRIME_TOWER_DELTA.y,
+        };
+      }
+    });
+  } else {
+    plates.forEach((plate) => {
+      const totalW = plate.row.reduce((s, q) => s + q.w, 0) + gap * (plate.row.length - 1);
+      let x = plateW / 2 - totalW / 2;
+      plate.row.forEach((pl) => {
+        pl.tx = x + pl.w / 2 - pl.cx; // row across the plate, centered
+        pl.ty = plateD / 2 - pl.cy; // centered front-to-back
+        pl.tz = -pl.minZ; // rest the face flat on the plate (Z=0)
+        x += pl.w + gap;
+      });
+    });
+  }
   // Bambu lays logical plates out along world X with a gap of 1/5 plate width
   // (LOGICAL_PART_PLATE_GAP); build item transforms are world coordinates.
   const stride = plateW * 1.2;
   plates.forEach((plate, pi) => {
-    const totalW = plate.row.reduce((s, q) => s + q.w, 0) + gap * (plate.row.length - 1);
-    let x = pi * stride + plateW / 2 - totalW / 2;
+    const offsetX = pi * stride;
     plate.row.forEach((pl) => {
-      pl.tx = x + pl.w / 2 - pl.cx; // row across the plate, centered
-      pl.ty = plateD / 2 - pl.cy; // centered front-to-back
-      pl.tz = -pl.minZ; // rest the face flat on the plate (Z=0)
-      x += pl.w + gap;
+      pl.tx = (pl.tx ?? 0) + offsetX;
     });
   });
 
@@ -359,9 +525,12 @@ ${items.join('\n')}
   }
   let identifyId = 100;
   plates.forEach((plate, pi) => {
+    // Plate name: the distinct part names actually on it (e.g. "Top + Cap"), not a blank —
+    // Bambu Studio/OrcaSlicer show this in the plate list/preview UI.
+    const plateName = [...new Set(plate.row.map((pl) => pl.part.name))].join(' + ');
     cfg.push('  <plate>');
     cfg.push(`    <metadata key="plater_id" value="${pi + 1}"/>`);
-    cfg.push(`    <metadata key="plater_name" value=""/>`);
+    cfg.push(`    <metadata key="plater_name" value="${xmlEscape(plateName)}"/>`);
     cfg.push(`    <metadata key="locked" value="false"/>`);
     plate.row.forEach((pl) => {
       cfg.push('    <model_instance>');
@@ -383,7 +552,13 @@ ${items.join('\n')}
 
   files.push({
     name: 'Metadata/project_settings.config',
-    data: enc.encode(bambuProjectSettings(materials, plateW, plateD)),
+    data: enc.encode(
+      bambuProjectSettings(
+        materials,
+        printer,
+        useHints ? plates.map((p) => p.wipeTower) : undefined,
+      ),
+    ),
   });
-  return zipStore(files);
+  return { blob: zipStore(files), warnings };
 }
