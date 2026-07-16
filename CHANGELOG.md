@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- In-app help panel (the "?" button in the header) walking through each
+  left-panel section — Part, Artwork, Fit, Depth, Colors, Export — so new
+  users don't need to leave the app to learn the workflow. A pulsing badge
+  draws attention to it until it's opened once.
+
 ## [0.2.1] - 2026-07-15
 
 ### Fixed

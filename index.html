@@ -29,7 +29,99 @@
         <div class="spacer"></div>
         <span class="stat" id="stat-tris">0 tris</span>
         <span class="stat" id="stat-colors" style="display: none">0 colors</span>
+        <button class="icon-btn" id="btn-help" aria-haspopup="dialog" title="Help">
+          ?<span class="badge" id="btn-help-badge" aria-hidden="true"></span>
+        </button>
       </header>
+
+      <dialog id="help-dialog" aria-label="Help">
+        <div class="help-head">
+          <h2>How this works</h2>
+          <button class="close-btn" id="btn-help-close" aria-label="Close">&times;</button>
+        </div>
+        <nav class="help-toc">
+          <a href="#h-workflow">Workflow</a>
+          <a href="#h-part">Part</a>
+          <a href="#h-artwork">Artwork</a>
+          <a href="#h-fit">Fit</a>
+          <a href="#h-depth">Depth</a>
+          <a href="#h-colors">Colors</a>
+          <a href="#h-export">Export</a>
+        </nav>
+        <div class="help-body">
+          <section class="help-sec highlight" id="h-workflow">
+            <div class="help-step">Start here</div>
+            <h3>The five-minute version</h3>
+            <p>
+              Pick a part shape, drop in an SVG, and each flat fill color becomes its own recessed
+              region. Export a 3MF and it's pre-mapped to AMS filament slots — open it in Bambu
+              Studio and print.
+            </p>
+            <p>Everything below matches a section in the left panel, in the same order.</p>
+          </section>
+
+          <section class="help-sec" id="h-part">
+            <div class="help-step">Left panel · Part</div>
+            <h3>Choosing a part</h3>
+            <p>
+              "Wheel assembly" loads real MakeGood TMT parts and cuts pockets into their actual
+              mesh. Disc / Rectangle / Rounded rectangle are flat-plate inserts sized by hand. STL
+              reference imports a mesh for sizing only — it's never exported, it just helps you
+              align artwork to a real face.
+            </p>
+          </section>
+
+          <section class="help-sec" id="h-artwork">
+            <div class="help-step">Left panel · Artwork</div>
+            <h3>Preparing your SVG</h3>
+            <p>
+              Use flat, distinct fill colors — no gradients or pattern fills, those get flagged and
+              skipped. Each unique fill becomes a candidate color region before you even touch the
+              fit controls.
+            </p>
+          </section>
+
+          <section class="help-sec" id="h-fit">
+            <div class="help-step">Left panel · Artwork fit</div>
+            <h3>Positioning artwork on the part</h3>
+            <p>
+              Margin sets the auto-fit border. Scale multiplies on top of that — over 100% will
+              bleed past the part's edge. Flip H mirrors left-to-right, useful when text reads
+              backwards after import.
+            </p>
+          </section>
+
+          <section class="help-sec" id="h-depth">
+            <div class="help-step">Left panel · Depth</div>
+            <h3>How deep recesses cut</h3>
+            <p>
+              Depth is measured down from the top face. Set a default for all colors, then override
+              individual ones in the color list below for fine detail work. Check "Recess bg too" to
+              also cut the background instead of leaving it flush.
+            </p>
+          </section>
+
+          <section class="help-sec" id="h-colors">
+            <div class="help-step">Left panel · Colors detected</div>
+            <h3>Merging into AMS slots</h3>
+            <p>
+              Every detected fill starts as its own recess. Drag one color onto another — or check
+              several and hit "Merge selected" — to combine them into a single AMS slot sharing one
+              depth. Useful when you have more colors than filament slots.
+            </p>
+          </section>
+
+          <section class="help-sec" id="h-export">
+            <div class="help-step">Left panel · Export</div>
+            <h3>Getting a printable file</h3>
+            <p>
+              Pick your printer's bed size, then export. The 3MF is print-ready for Bambu Studio
+              with colors pre-assigned to filament slots. The STL set is a per-color .zip fallback
+              for slicers that don't read pre-mapped 3MF color data.
+            </p>
+          </section>
+        </div>
+      </dialog>
 
       <div id="left">
         <details class="sec" open>
