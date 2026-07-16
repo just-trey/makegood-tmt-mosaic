@@ -9,10 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Snapmaker U1 (270 × 270 build plate) as a print-ready 3MF export target,
+  alongside the existing Bambu Lab printers. The exported project settings
+  resolve directly in Snapmaker Orca, Bambu Studio, and OrcaSlicer.
 - In-app help panel (the "?" button in the header) walking through each
   left-panel section — Part, Artwork, Fit, Depth, Colors, Export — so new
   users don't need to leave the app to learn the workflow. A pulsing badge
   draws attention to it until it's opened once.
+- Print-ready 3MF exports now name each build plate (e.g. "Top + Cap") in the
+  plate list/preview instead of leaving it blank.
+- Wheel assembly exports now pin the prime/wipe tower's plate position too,
+  as a fixed offset from the wheel Top half — reused on every plate a Top
+  half lands on and on every supported printer — instead of leaving it to
+  each slicer's own default placement.
+
+### Changed
+
+- Print-ready 3MF exports now default to Generic PETG filament (was PLA) and
+  embed 15% gyroid sparse infill with tree (auto) support enabled, layered on
+  top of the target printer's standard process profile. These are now marked
+  as explicit per-project overrides, so they survive a reload/resave in Bambu
+  Studio, OrcaSlicer, and Snapmaker Orca instead of silently reverting to the
+  named preset's own defaults.
+- Wheel assembly exports now use a fixed, externally-verified layout instead
+  of a computed one: the half-wheel's rotation and the cap's position
+  relative to it are constants taken from a real, tested MakeGood TMT export,
+  reused unchanged across every supported printer and identically on the
+  rotated-duplicate half's own plate. Also fixed the recess/inlay meshes on a
+  part (e.g. the cap's color recess) being able to sit below the build plate
+  (Z<0) — the plate-flush height now accounts for every sub-mesh of a part,
+  not just its uncut body.
+- The cap's fixed position relative to the wheel Top was updated to match a
+  second externally-verified reference export (a real print-tested layout,
+  tuned in Snapmaker Orca).
+- On a printer with a bigger plate than the wheel layout above was authored
+  for (H2D, Snapmaker U1), every plate's wheel-half group (plate 1's top half
+  and cap, and each rotated-duplicate half's own plate) is now re-centered as
+  a rigid group on the larger plate instead of sitting in the corner the
+  reference layout was placed for — each part's position relative to the
+  others on its plate is unaffected, and the X1C plate (which the layout
+  matches exactly) is unchanged.
+
+### Removed
+
+- Bambu Lab A1 mini (180 × 180) as an export target — the build plate is too
+  small for these parts.
 
 ### Fixed
 

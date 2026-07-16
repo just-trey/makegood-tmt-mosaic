@@ -8,6 +8,7 @@ import type {
   ShapeKind,
 } from '../types';
 import { getFilament } from './filaments';
+import { DEFAULT_PRINTER_ID } from '../export/printers';
 
 /**
  * The single source of truth for everything the geometry pipeline consumes.
@@ -43,7 +44,7 @@ export interface AppState {
   recessBg: boolean;
 
   // export
-  plateSize: string;
+  printerId: string;
 
   // assembly
   asmRadius: number;
@@ -81,7 +82,7 @@ export const state: AppState = {
   globalDepth: 1.0,
   recessBg: false,
 
-  plateSize: '256x256',
+  printerId: DEFAULT_PRINTER_ID,
 
   asmRadius: 138,
   assembly: { kindId: null, parts: [], nextPartId: 1, library: [] },
