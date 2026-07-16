@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   users don't need to leave the app to learn the workflow. A pulsing badge
   draws attention to it until it's opened once.
 
+### Fixed
+
+- Cloudflare Web Analytics beacon was silently broken since it was added: the
+  injected `data-cf-beacon` attribute had its embedded quotes backslash-escaped
+  instead of HTML-entity-escaped, so browsers truncated the attribute at the
+  first literal quote and the beacon script never received a token.
+
 ## [0.2.1] - 2026-07-15
 
 ### Fixed
