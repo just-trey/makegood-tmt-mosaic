@@ -194,18 +194,20 @@ is imported by the app. Two other brand themes in the tokens folder
 
 ## Roadmap ideas (not built)
 
+- Adaptive Bezier flattening tolerance instead of a fixed segment count.
+- Smarter color mapping: auto-merge visually similar colors into a single
+  region/filament slot, and let one image color be assigned to the base
+  material instead of a cut inlay.
 - Pick a face directly in the 3D view (raycast → detected patch) to apply
   artwork to any part.
 - Raster image (PNG/JPG) input: quantize to flat color regions, then reuse the
   existing region pipeline.
-- Full assembled-chair view with drag-and-drop filament colors per part.
 - Curved-surface wrapping.
-- Adaptive Bezier flattening tolerance instead of a fixed segment count.
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind, and a hubcap part for the wheel
-  assembly — requested by users wanting the full wheel image, not just the
-  current half-wheel pair.
+  assembly.
 - Footrest part, and a full parent-handle assembly kind.
+- Full assembled-chair view with drag-and-drop filament colors per part.
 
 ## TODO / tech debt
 
