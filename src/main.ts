@@ -11,6 +11,7 @@ import { initFitPanel } from './ui/fitPanel';
 import { initDepthPanel } from './ui/depthPanel';
 import { initArtworkPanel } from './ui/artworkPanel';
 import { initExportPanel } from './ui/exportPanel';
+import { initHelpPanel } from './ui/helpPanel';
 import { $ } from './ui/dom';
 import { getAppVersion } from './version';
 
@@ -28,6 +29,7 @@ initFitPanel();
 initDepthPanel();
 initArtworkPanel();
 initExportPanel();
+initHelpPanel();
 
 renderColorList(null);
 

@@ -27,6 +27,10 @@ npm run build       # typecheck + production build to dist/
   limitations", or "Roadmap ideas". A shipped roadmap item moves out of
   "Roadmap ideas" into a real feature description, not left listed as
   unbuilt.
+- Update the in-app help panel (`#help-dialog` in [index.html](index.html))
+  if the change adds/removes/renames a left-panel control or section, or
+  changes what one does — the panel's sections mirror `#left`'s 1:1 and its
+  copy is static, so it drifts silently otherwise.
 
 ## Git workflow
 
