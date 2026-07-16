@@ -21,7 +21,11 @@ function cloudflareBeacon(token: string): Plugin {
           attrs: {
             defer: true,
             src: 'https://static.cloudflareinsights.com/beacon.min.js',
-            'data-cf-beacon': JSON.stringify({ token }),
+            // Vite's html serializer wraps this in JSON.stringify() to build the attribute,
+            // which backslash-escapes embedded quotes (JS-string style) instead of using HTML
+            // entities — browsers don't treat \" as an escape in an attribute, so the tag was
+            // truncated at the first literal quote. Pre-encoding as &quot; avoids that.
+            'data-cf-beacon': JSON.stringify({ token }).replace(/"/g, '&quot;'),
           },
           injectTo: 'body',
         },
