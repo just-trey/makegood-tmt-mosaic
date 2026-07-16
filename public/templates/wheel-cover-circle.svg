@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="280.15mm" height="280.15mm"
+     viewBox="0 0 280.15 280.15">
+  <!-- Wheel assembly footprint measured from public/stl/top.3mf + cap.3mf.
+       Outer diameter = 280.15 mm (radius 140.075). -->
+  <circle cx="140.075" cy="140.075" r="140.075" fill="#808080"/>
+</svg>
