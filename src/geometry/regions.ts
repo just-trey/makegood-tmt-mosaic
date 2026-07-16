@@ -3,6 +3,7 @@ import type { Loop, PolyFeature, ResolvedRegion, SVGShape } from '../types';
 import { signedArea } from '../svg/path';
 import { blendHexes } from '../color';
 import { warn } from '../warnings';
+import { reportProgress } from '../progress';
 
 type Ring = number[][];
 
@@ -253,29 +254,96 @@ export function safeIntersect(
   }
 }
 
+/** How long a boolean pass runs before yielding a frame to the browser. */
+const YIELD_BUDGET_MS = 30;
+
+/** A macrotask yield (setTimeout, not a microtask) so the browser can repaint the progress
+ * curtain between chunks — microtasks/Promise.resolve() would not unblock rendering. */
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve));
+}
+
+/**
+ * Union a list of features via balanced pairwise merging (pairs, then pairs of pairs), yielding
+ * to the browser on a time budget and reporting progress. A left-fold accumulation re-processes
+ * the ever-growing accumulator on every step; the tree does the same math in O(log n) levels and
+ * benchmarks 2–4x faster on dense designs. safeUnion's fallback semantics are preserved per merge.
+ */
+export async function unionAllCooperative(
+  features: (PolyFeature | null)[],
+  onProgress?: (fraction: number) => void,
+  label?: string,
+): Promise<PolyFeature | null> {
+  let level = features.filter((f): f is PolyFeature => !!f);
+  if (!level.length) return null;
+  const totalOps = Math.max(level.length - 1, 1);
+  let done = 0;
+  let lastYield = performance.now();
+  while (level.length > 1) {
+    const next: PolyFeature[] = [];
+    for (let i = 0; i < level.length; i += 2) {
+      if (i + 1 >= level.length) {
+        next.push(level[i]);
+        continue;
+      }
+      const u = safeUnion(level[i], level[i + 1], label);
+      if (u) next.push(u);
+      done++;
+      onProgress?.(done / totalOps);
+      if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+        await yieldToBrowser();
+        lastYield = performance.now();
+      }
+    }
+    level = next;
+  }
+  return level[0] ?? null;
+}
+
 /**
  * Compute, per color, the net *visible* region accounting for paint order
  * (later elements occlude earlier ones).
+ *
+ * Visibility is f minus the accumulated union of everything painted above it. Subtracting each
+ * later element individually (with a bbox pre-filter) is algebraically identical and looked
+ * attractive, but benchmarked ~2x SLOWER on real artwork — full-canvas backgrounds and lineart
+ * overlap everything, so the filter rarely prunes and the pairwise diffs multiply. The
+ * accumulator stays.
+ *
+ * This is the dominant cost of a rebuild (all the polygon booleans), so it runs cooperatively:
+ * after every ~YIELD_BUDGET_MS of work it yields a frame and reports progress, keeping the tab
+ * responsive and the "Rebuilding…" curtain live instead of freezing the main thread on a dense
+ * SVG. See src/progress.ts and the scheduler.
  */
-export function computeNetRegionsByColor(shapes: SVGShape[]): {
+export async function computeNetRegionsByColor(
+  shapes: SVGShape[],
+  onProgress: (fraction: number) => void = reportProgress,
+): Promise<{
   byColor: Record<string, PolyFeature>;
-  allCovered: PolyFeature | null;
-} {
+}> {
   const features = shapes.map(shapeToFeature).map((f, idx) => ({ f, color: shapes[idx].fill }));
   const byColor: Record<string, PolyFeature> = {};
   let covered: PolyFeature | null = null;
+  const total = features.length || 1;
+  let lastYield = performance.now();
   for (let i = features.length - 1; i >= 0; i--) {
     const { f, color } = features[i];
-    if (!f) continue;
-    const visible = covered ? safeDiff(f, covered, `color ${color}`) : f;
-    if (visible) {
-      byColor[color] = byColor[color]
-        ? (safeUnion(byColor[color], visible, `color ${color}`) as PolyFeature)
-        : visible;
+    if (f) {
+      const visible = covered ? safeDiff(f, covered, `color ${color}`) : f;
+      if (visible) {
+        byColor[color] = byColor[color]
+          ? (safeUnion(byColor[color], visible, `color ${color}`) as PolyFeature)
+          : visible;
+      }
+      covered = covered ? safeUnion(covered, f, `an element under color ${color}`) : f;
     }
-    covered = covered ? safeUnion(covered, f, `an element under color ${color}`) : f;
+    onProgress((total - i) / total);
+    if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+      await yieldToBrowser();
+      lastYield = performance.now();
+    }
   }
-  return { byColor, allCovered: covered };
+  return { byColor };
 }
 
 /**

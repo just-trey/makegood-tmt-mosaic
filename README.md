@@ -211,13 +211,30 @@ is imported by the app. Two other brand themes in the tokens folder
 
 ## TODO / tech debt
 
-- **Upgrade `@turf/turf` from the pinned 6.5.0.** It's pinned deliberately:
+- **Rebuild performance needs ongoing work — this is a heavy application.**
+  A dense 135-path SVG still takes ~13s to rebuild in flat mode, ~9s of
+  which is the paint-order boolean pass in
+  [src/geometry/regions.ts](src/geometry/regions.ts)
+  (`computeNetRegionsByColor`). The rebuild is already cooperative (yields to
+  the browser, live progress %) and the flat union phases use balanced tree
+  merging (~3x faster than the old left-fold), so the tab never freezes —
+  but the compute floor is still high. Measured leads for a follow-up, best
+  first: (1) call the `polygon-clipping` engine directly with n-ary
+  union/difference (one sweep instead of dozens of pairwise ops — but it
+  bypasses Turf's wrappers, so the safeUnion/safeDiff fallback machinery
+  needs care); (2) move the boolean pass into a Web Worker (doesn't reduce
+  compute, makes the wait invisible). Dead end, already measured: bbox
+  pre-filtered per-shape diffs benchmarked ~2x SLOWER than the accumulator
+  on real artwork (full-canvas backgrounds overlap everything) — see the
+  comment on `computeNetRegionsByColor`.
+- **Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression
+  here.** A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):
+  correct output, but its new polygon-clipping engine ran **5–10x slower**
+  on this app's union-accumulation hot path (40ms → 215ms at 20 shapes,
+  76ms → 726ms at 120), turning slow rebuilds into multi-minute ones. Don't
+  re-attempt without benchmarking that path first. The 6.5 quirks remain:
   the boolean-failure workarounds in
   [src/geometry/regions.ts](src/geometry/regions.ts) (degenerate-ring
   scrubbing, precision-truncation retries) target 6.5's exact
-  polygon-clipping bugs, and 6.5's package typings don't resolve under modern
-  TypeScript, hence the shim in [src/turf.d.ts](src/turf.d.ts). Upgrading to
-  Turf 7+ means: bump the dependency, delete `src/turf.d.ts`, re-test the
-  boolean-heavy paths (`npm test` + `npm run smoke` + a complex real SVG),
-  and only then consider simplifying the retry workarounds if the new
-  clipping engine no longer needs them.
+  polygon-clipping bugs, and 6.5's package typings don't resolve under
+  modern TypeScript, hence the shim in [src/turf.d.ts](src/turf.d.ts).

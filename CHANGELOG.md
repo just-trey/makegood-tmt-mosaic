@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Geometry rebuilds no longer freeze the tab on dense artwork. The polygon
+  boolean pass (the bulk of a rebuild) now runs cooperatively — yielding to the
+  browser as it works — so the UI stays responsive instead of triggering the
+  "Page Unresponsive" dialog, and the "Rebuilding…" curtain shows a live
+  percentage (with a "hang tight" note once it's been a while) instead of a
+  frozen line.
+- Dense-artwork rebuilds are also faster: the flat-plate background and
+  base-slab region unions now merge via balanced pairs instead of one long
+  accumulation (~3x faster on that phase, ~18% off the whole rebuild on a
+  135-path test SVG).
+
 ## [0.3.0] - 2026-07-16
 
 ### Added

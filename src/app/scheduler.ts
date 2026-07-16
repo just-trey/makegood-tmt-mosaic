@@ -1,6 +1,7 @@
 import { warn } from '../warnings';
 import { renderWarnings } from '../ui/warningsView';
-import { hideOverlay, showOverlay } from '../ui/overlay';
+import { hideOverlay, showOverlay, updateOverlay } from '../ui/overlay';
+import { setProgressSink } from '../progress';
 
 let handler: () => void | Promise<void> = () => {};
 let costHint: () => boolean = () => false;
@@ -8,6 +9,9 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 
 const LIVE_DEBOUNCE_MS = 30;
 const TYPED_DEBOUNCE_MS = 350;
+/** After this long, the curtain adds a "hang tight" note so a slow rebuild reads as working,
+ * not stuck. */
+const HANG_TIGHT_MS = 8000;
 /** A rebuild slower than this is worth a "Rebuilding…" curtain and worth having a slider
  * defer live updates to drag-release rather than redraw every frame. */
 const SLOW_REBUILD_MS = 130;
@@ -60,13 +64,20 @@ async function runNow(): Promise<void> {
   }
   running = true;
   const showsOverlay = isRebuildLikelySlow();
+  const t0 = performance.now();
   if (showsOverlay) {
     showOverlay('Rebuilding geometry…');
-    // Yield a paint frame so the curtain is actually on screen before the rebuild blocks
-    // the main thread — otherwise it never shows during the freeze.
+    // The rebuild reports progress as it chunks through the boolean pass; show it as a live
+    // percentage, and once it's dragged on a while add a "hang tight" so it reads as working.
+    setProgressSink((fraction) => {
+      const pct = Math.round(fraction * 100);
+      const suffix =
+        performance.now() - t0 > HANG_TIGHT_MS ? ' — detailed artwork, hang tight' : '';
+      updateOverlay(`Rebuilding geometry… ${pct}%${suffix}`);
+    });
+    // Yield a paint frame so the curtain is actually on screen before the rebuild starts.
     await nextPaint();
   }
-  const t0 = performance.now();
   try {
     await handler();
   } catch (e) {
@@ -75,7 +86,10 @@ async function runNow(): Promise<void> {
     renderWarnings();
   } finally {
     lastRebuildMs = performance.now() - t0;
-    if (showsOverlay) hideOverlay();
+    if (showsOverlay) {
+      setProgressSink(null);
+      hideOverlay();
+    }
     running = false;
     if (dirty) {
       dirty = false;
