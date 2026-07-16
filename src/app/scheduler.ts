@@ -7,7 +7,7 @@ let costHint: () => boolean = () => false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
 const LIVE_DEBOUNCE_MS = 30;
-const TYPED_DEBOUNCE_MS = 350;
+const TYPED_DEBOUNCE_MS = 550;
 /** A rebuild slower than this is worth a "Rebuilding…" curtain and worth having a slider
  * defer live updates to drag-release rather than redraw every frame. */
 const SLOW_REBUILD_MS = 130;

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Typed number fields (Design radius, shape dimensions, fit values) now wait
+  550ms after the last keystroke before rebuilding, up from 350ms, so
+  deliberately-typed multi-digit values don't trigger an intermediate rebuild
+  mid-entry.
+
 ## [0.3.0] - 2026-07-16
 
 ### Added
