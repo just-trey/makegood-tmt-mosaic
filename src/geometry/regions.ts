@@ -255,11 +255,11 @@ export function safeIntersect(
 }
 
 /** How long a boolean pass runs before yielding a frame to the browser. */
-const YIELD_BUDGET_MS = 30;
+export const YIELD_BUDGET_MS = 30;
 
 /** A macrotask yield (setTimeout, not a microtask) so the browser can repaint the progress
  * curtain between chunks — microtasks/Promise.resolve() would not unblock rendering. */
-function yieldToBrowser(): Promise<void> {
+export function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve));
 }
 

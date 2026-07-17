@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worst-case deviation from the true curve measured at ~0.002 SVG units
   (well under the fidelity that mattered before), which speeds up every
   downstream step that scales with vertex count.
+- Assembly-mode rebuilds no longer freeze the tab either: the per-part
+  cutting pass (the bulk of an assembly rebuild) now yields to the browser
+  as it works, the same way the flat-mode boolean pass already did, and the
+  "Rebuilding…" curtain shows a live percentage through the whole rebuild
+  instead of jumping to 100% and then hanging until the cut finishes.
 
 ## [0.3.0] - 2026-07-16
 
