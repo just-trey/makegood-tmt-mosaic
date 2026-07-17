@@ -25,10 +25,9 @@ export function initViewport(host: HTMLElement): void {
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x070a13);
-  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(
-    new RoomEnvironment(),
-    0.04,
-  ).texture;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose(); // only frees the generator's scratch render targets — the output texture stays valid
 
   camera = new THREE.PerspectiveCamera(40, 1, 0.1, 5000);
   camera.position.set(90, -140, 110);
@@ -94,9 +93,24 @@ export function initViewport(host: HTMLElement): void {
   animate();
 }
 
-/** Discard the current model group and return a fresh one already in the scene. */
-export function newModelGroup(): THREE.Group {
+/**
+ * Discard the current model group and return a fresh one already in the scene, disposing the
+ * GPU geometry/material buffers of everything it held — rebuilds fire on every debounced slider
+ * tick, so without this VRAM grows for the whole session. `keep`, if given (the persistent STL
+ * reference ghost, which rebuild.ts re-adds to every new group), is skipped so it survives.
+ */
+export function newModelGroup(keep?: THREE.Object3D | null): THREE.Group {
   scene.remove(modelGroup);
+  const materials = new Set<THREE.Material>();
+  modelGroup.traverse((o) => {
+    if (keep && (o === keep || keep.getObjectById(o.id))) return;
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry.dispose();
+    if (Array.isArray(mesh.material)) mesh.material.forEach((m) => materials.add(m));
+    else materials.add(mesh.material);
+  });
+  materials.forEach((m) => m.dispose());
   modelGroup = new THREE.Group();
   scene.add(modelGroup);
   return modelGroup;
