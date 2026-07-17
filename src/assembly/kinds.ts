@@ -24,6 +24,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         allowRotatedCopies: true,
         copies: 1,
         copyDefaults: { pivotX: 0, pivotZ: 0, angleDeg: 180 },
+        copyName: 'Bottom',
       },
       {
         id: 'cap',

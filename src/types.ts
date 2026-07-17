@@ -118,6 +118,11 @@ export interface AssemblyRole {
   /** rotated copies auto-added beyond the primary by "load full assembly" */
   copies?: number;
   copyDefaults?: { pivotX: number; pivotZ: number; angleDeg: number };
+  /**
+   * Display name for a rotated copy of this role, e.g. a wheel's second Top half is
+   * physically the Bottom half — falls back to "<role name> (rotated copy)" if unset.
+   */
+  copyName?: string;
   /** parts of this role get a through-cut (see AssemblyPart.cutThrough) instead of a recess */
   cutThrough?: boolean;
   /** see AssemblyPart.cutThroughDepth */
