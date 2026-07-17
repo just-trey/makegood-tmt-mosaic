@@ -243,15 +243,15 @@ export function safeIntersect(
   b: PolyFeature | null,
   label?: string,
 ): PolyFeature | null {
+  a = cleanFeature(a);
+  b = cleanFeature(b);
   if (!a || !b) return null;
-  try {
-    return turf.intersect(a, b) as PolyFeature | null;
-  } catch {
-    warn(
-      `Clipping color region to the part face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
-    );
-    return a;
-  }
+  const r = boolOpWithRetry((x, y) => turf.intersect(x, y) as PolyFeature | null, a, b);
+  if (r.ok) return r.val ?? null;
+  warn(
+    `Clipping color region to the part face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
+  );
+  return a;
 }
 
 /** How long a boolean pass runs before yielding a frame to the browser. */

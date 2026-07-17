@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (well under the fidelity that mattered before), which speeds up every
   downstream step that scales with vertex count.
 
+### Fixed
+
+- Assembly color regions now clip to the part face more reliably. Clipping a
+  color region to a part's boundary used to give up and leave the region
+  unclipped after a single failed attempt on degenerate geometry, instead of
+  being retried the way the other boolean operations already were.
+
 ## [0.3.0] - 2026-07-16
 
 ### Added
