@@ -82,7 +82,7 @@ export async function asmLoadFullAssembly(): Promise<void> {
       if (entry) await asmLoadLibraryEntryIntoPart(primary, entry);
       if (role.allowRotatedCopies) {
         for (let i = 0; i < (role.copies || 0); i++) {
-          const dup = asmAddDuplicate(primary.id);
+          const dup = asmAddDuplicate(primary.id, role.copyName);
           if (dup && role.copyDefaults) Object.assign(dup, role.copyDefaults);
         }
       }
@@ -116,16 +116,16 @@ export async function asmLoadLibraryEntryIntoPart(
 export function asmAddRoleDuplicate(role: AssemblyRole): void {
   const src = state.assembly.parts.find((p) => p.roleId === role.id && !p.isDuplicateOf);
   if (!src) return;
-  asmAddDuplicate(src.id);
+  asmAddDuplicate(src.id, role.copyName);
 }
 
-export function asmAddDuplicate(sourceId: number): AssemblyPart | null {
+export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPart | null {
   const src = state.assembly.parts.find((p) => p.id === sourceId);
   if (!src) return null;
   const id = state.assembly.nextPartId++;
   const dup: AssemblyPart = {
     id,
-    name: `${src.name} (rotated copy)`,
+    name: copyName ?? `${src.name} (rotated copy)`,
     roleId: src.roleId,
     positions: src.positions,
     patches: src.patches,

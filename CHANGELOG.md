@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Wheel assembly's second Top half (the rotated copy, exported onto its own
+  build plate) is now named "Bottom" instead of "Top (rotated copy)".
+
 ## [0.4.0] - 2026-07-17
 
 ### Added
