@@ -3,6 +3,7 @@ import {
   cleanFeature,
   computeNetRegionsByColor,
   dedupeRing,
+  safeIntersect,
   shapeToFeature,
 } from '../src/geometry/regions';
 import type { PolyFeature, SVGShape } from '../src/types';
@@ -120,6 +121,57 @@ describe('cleanFeature', () => {
       },
     };
     expect(cleanFeature(f)).toBeNull();
+  });
+});
+
+describe('safeIntersect', () => {
+  it('clips a feature with a zero-area sliver hole without throwing', () => {
+    const withSliver: PolyFeature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [10, 0],
+            [10, 10],
+            [0, 10],
+            [0, 0],
+          ],
+          [
+            [2, 2],
+            [5, 2],
+            [2, 2],
+          ], // out-and-back sliver
+        ],
+      },
+    };
+    const square5: PolyFeature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [5, 0],
+            [5, 5],
+            [0, 5],
+            [0, 0],
+          ],
+        ],
+      },
+    };
+    const out = safeIntersect(withSliver, square5);
+    expect(out).not.toBeNull();
+    expect(planarArea(out)).toBeCloseTo(25, 4);
+  });
+
+  it('returns null for disjoint inputs rather than throwing', () => {
+    const a = shapeToFeature({ fill: '#000', loops: [square(0, 0, 5)], order: 0 })!;
+    const b = shapeToFeature({ fill: '#000', loops: [square(20, 20, 5)], order: 0 })!;
+    expect(safeIntersect(a, b)).toBeNull();
   });
 });
 

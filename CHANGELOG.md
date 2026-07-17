@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   when the change didn't touch the parsed artwork itself, so large SVGs
   respond much faster to slider drags.
 
+### Fixed
+
+- Assembly color regions now clip to the part face more reliably. Clipping a
+  color region to a part's boundary used to give up and leave the region
+  unclipped after a single failed attempt on degenerate geometry, instead of
+  being retried the way the other boolean operations already were.
+
 ## [0.3.0] - 2026-07-16
 
 ### Added
