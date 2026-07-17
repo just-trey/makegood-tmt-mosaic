@@ -10,7 +10,13 @@ import type {
   ParsedSVG,
   PolyFeature,
 } from '../types';
-import { applyColorMerges, computeNetRegionsByColor, safeIntersect } from './regions';
+import {
+  applyColorMerges,
+  computeNetRegionsByColor,
+  safeIntersect,
+  YIELD_BUDGET_MS,
+  yieldToBrowser,
+} from './regions';
 import {
   extrudeRegionToSoup,
   getManifold,
@@ -23,6 +29,7 @@ import {
   type ManifoldSolid,
 } from './manifold';
 import { notice, warn } from '../warnings';
+import { reportProgress } from '../progress';
 
 /** How far each cutter pokes above the face so the pocket opens cleanly at the surface. */
 export const OVERSHOOT_MM = 0.5;
@@ -143,7 +150,9 @@ export async function buildAssemblyGeometry(
     );
   }
 
-  const { byColor } = await computeNetRegionsByColor(parsed.shapes);
+  // Split like flat.ts: the per-color net regions are ~0-40%, then the per-part Manifold CSG
+  // loop below (the actual heavy work in assembly mode) covers ~40-100%.
+  const { byColor } = await computeNetRegionsByColor(parsed.shapes, (f) => reportProgress(f * 0.4));
   // Honor "merge colors" here too — merged colors become one region / one AMS slot / one depth.
   // `key` doubles as the per-region depth key.
   const resolved = applyColorMerges(byColor, mergeGroups);
@@ -194,6 +203,26 @@ export async function buildAssemblyGeometry(
       }
       return [x, z];
     };
+
+  // Per-part Manifold CSG is the actual heavy work here (turf's part is done above) — yield to
+  // the browser on the same time budget flat.ts's boolean passes use, and report progress across
+  // parts so the "Rebuilding…" curtain climbs instead of freezing for the whole loop.
+  const totalParts = parts.filter((p) => p.loaded && p.boundaryLoop && p.positions).length || 1;
+  let partsDone = 0;
+  let lastYield = performance.now();
+  const maybeYield = async (): Promise<void> => {
+    if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+      await yieldToBrowser();
+      lastYield = performance.now();
+    }
+  };
+  const reportPartProgress = (subFraction: number): void => {
+    reportProgress(0.4 + ((partsDone + subFraction) / totalParts) * 0.6);
+  };
+  const finishPart = (): void => {
+    partsDone++;
+    reportPartProgress(0);
+  };
 
   const partOutputs: AssemblyPartOutput[] = [];
   let viewSign = 1,
@@ -260,7 +289,9 @@ export async function buildAssemblyGeometry(
 
     const place = placeOnPart(part, nsign);
     const colorPrisms: Record<number, ManifoldSolid> = {};
-    palette.forEach((c, ci) => {
+    // Extracted to a plain function (rather than inlined in the loop below) purely so its
+    // early `return`s mean "skip this color" without fighting the surrounding for-loop/await.
+    const buildColorPrism = (c: AssemblyPaletteEntry, ci: number): void => {
       if (!c.feature) return;
       let feat: PolyFeature | null = mapFeatureCoords(c.feature, place);
       if (boundaryPoly) {
@@ -297,12 +328,21 @@ export async function buildAssemblyGeometry(
         /* fall through to warn */
       }
       warn(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
-    });
+    };
+    // +1 reserved for the body/inlay CSG stage below, so this part's progress reaches 1 only
+    // once everything (colors + final cuts) is actually done.
+    const partUnits = palette.length + 1;
+    for (let ci = 0; ci < palette.length; ci++) {
+      buildColorPrism(palette[ci], ci);
+      reportPartProgress((ci + 1) / partUnits);
+      await maybeYield();
+    }
 
     const prismEntries = Object.entries(colorPrisms);
     if (!prismEntries.length) {
       // no cuts land on this part — emit the untouched body so the assembly still exports whole
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
+      finishPart();
       continue;
     }
 
@@ -312,6 +352,7 @@ export async function buildAssemblyGeometry(
     } catch {
       warn(`Part "${part.name}" mesh couldn't be read by the boolean engine.`);
       prismEntries.forEach(([, p]) => manifoldDelete(p));
+      finishPart();
       continue;
     }
     if (!manifoldIsValid(partMan)) {
@@ -321,6 +362,7 @@ export async function buildAssemblyGeometry(
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
       manifoldDelete(partMan);
       prismEntries.forEach(([, p]) => manifoldDelete(p));
+      finishPart();
       continue;
     }
 
@@ -339,11 +381,12 @@ export async function buildAssemblyGeometry(
       warn(`Boolean cut failed on part "${part.name}".`);
       bodySoup = Float32Array.from(part.positions);
     }
+    await maybeYield();
 
     // per-color inlay = part ∩ prism (the part caps the overshoot, so the inlay top is flush)
     const inlaySoups: Record<number, Float32Array> = {};
     const inlayIndexed: Record<number, IndexedMesh> = {};
-    prismEntries.forEach(([ci, prism]) => {
+    for (const [ci, prism] of prismEntries) {
       try {
         const inl = Manifold.intersection(partMan, prism);
         const { soup, indexed } = manifoldToMeshes(inl);
@@ -355,13 +398,15 @@ export async function buildAssemblyGeometry(
       } catch {
         warn(`Couldn't fit the inlay for a color on "${part.name}".`);
       }
-    });
+      await maybeYield();
+    }
 
     if (cutter !== prismList[0]) manifoldDelete(cutter);
     prismList.forEach((p) => manifoldDelete(p));
     manifoldDelete(partMan);
 
     partOutputs.push({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed });
+    finishPart();
   }
   return { partOutputs, palette, viewSign };
 }
