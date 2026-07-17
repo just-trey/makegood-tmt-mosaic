@@ -39,4 +39,4 @@ $<HTMLSelectElement>('#shape-kind').value = 'assembly';
 setShapeKind('assembly');
 void loadPartsLibrary();
 // Filament palette is async; refresh the swatch row once it lands.
-void loadFilaments().then(renderBaseColorSwatches);
+void loadFilaments().then(() => renderBaseColorSwatches());

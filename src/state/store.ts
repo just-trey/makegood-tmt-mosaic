@@ -22,8 +22,17 @@ export interface AppState {
   stlRefMesh: THREE.Mesh | null;
   /** each inner array of raw hex codes = one merged AMS slot */
   mergeGroups: string[][];
-  /** raw hex codes currently checked in the color list */
-  selectedForMerge: Set<string>;
+  /** auto-merge slider stop — index into AUTO_MERGE_LEVELS (0 = off, default 1 = Slight/dedupe) */
+  autoMergeLevel: number;
+  /** dominant (largest-area) member of baseColorMembers — the color the body actually prints,
+   * kept in sync by the build (see rebuild.ts). Seeded provisionally by addToBase(). */
+  baseColorKey: string | null;
+  /** every raw hex excluded from cutting because they're grouped into the base — accumulated via
+   * addToBase(), shrunk via removeFromBase() */
+  baseColorMembers: string[];
+  /** raw hex codes explicitly pulled out of a group — pinned so the auto-merge slider won't
+   * re-swallow them; in-memory only (not persisted), reset on new artwork */
+  keptApart: string[];
 
   // base-shape parameters (mirrors the left-panel inputs)
   disc: { diameter: number; thickness: number };
@@ -65,7 +74,10 @@ export const state: AppState = {
   colorSettings: {},
   stlRefMesh: null,
   mergeGroups: [],
-  selectedForMerge: new Set(),
+  autoMergeLevel: 1,
+  baseColorKey: null,
+  baseColorMembers: [],
+  keptApart: [],
 
   disc: { diameter: 80, thickness: 4 },
   rect: { width: 80, height: 60, thickness: 4 },
@@ -93,8 +105,61 @@ export const state: AppState = {
 /** Neutral PLA-grey used when no base filament is chosen. */
 export const DEFAULT_BASE_COLOR = '#b9c0c6';
 
+/**
+ * The base is one of: a detected artwork color (wins when set — it recolors the body to that
+ * exact color AND excludes it from being cut, see applyColorMerges), a chosen filament, or the
+ * neutral default. Only one is active at a time — assigning an artwork color and picking a
+ * filament/default are mutually exclusive (see renderBaseColorSwatches).
+ */
 export function baseColorHex(): string {
+  if (state.baseColorKey) return state.baseColorKey;
   return getFilament(state.baseFilamentId)?.hex ?? DEFAULT_BASE_COLOR;
+}
+
+/** Make these hexes THE base, releasing any previous members back to being cut — the "→ base"
+ * button switches the base rather than growing it (users read a second click as "use this one
+ * instead"). Growing the base is the drag gesture's job (see addToBase). */
+export function replaceBase(hexes: string[]): void {
+  const next = hexes.filter(Boolean);
+  if (!next.length) return;
+  clearBaseColor();
+  addToBase(next);
+}
+
+/** Group more raw hexes into the base — accumulates, so dropping a color/merged group onto the
+ * Base row grows the base slot instead of replacing it. The build re-derives baseColorKey as the
+ * true dominant member on next rebuild; seed it here so the swatch/body have *something* to show
+ * before that happens. */
+export function addToBase(hexes: string[]): void {
+  const add = hexes.filter(Boolean);
+  if (!add.length) return;
+  const set = new Set(state.baseColorMembers);
+  add.forEach((h) => set.add(h));
+  state.baseColorMembers = Array.from(set);
+  if (!state.baseColorKey) state.baseColorKey = add[0];
+  add.forEach((h) => {
+    const idx = state.keptApart.indexOf(h);
+    if (idx !== -1) state.keptApart.splice(idx, 1);
+  });
+}
+
+/** Pull one color back out of the base — it returns to being cut as its own recess. */
+export function removeFromBase(hex: string): void {
+  const idx = state.baseColorMembers.indexOf(hex);
+  if (idx === -1) return;
+  state.baseColorMembers.splice(idx, 1);
+  if (!state.baseColorMembers.length) {
+    clearBaseColor();
+  } else if (state.baseColorKey === hex) {
+    // build re-derives the true dominant next rebuild; seed with a remaining member meanwhile
+    state.baseColorKey = state.baseColorMembers[0];
+  }
+}
+
+/** Undo a base assignment — the slot(s) go back to being cut. */
+export function clearBaseColor(): void {
+  state.baseColorKey = null;
+  state.baseColorMembers = [];
 }
 
 /** Derive the flat-mode base parameters for the current shape from state. */

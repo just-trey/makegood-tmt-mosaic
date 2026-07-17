@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import * as turf from '@turf/turf';
 import type {
   BaseParams,
   ColorSettings,
+  DetectedColor,
   FitTransform,
   ParsedSVG,
   PolyFeature,
@@ -10,6 +10,7 @@ import type {
 } from '../types';
 import {
   applyColorMerges,
+  planarArea,
   safeDiff,
   computeNetRegionsByColor,
   unionAllCooperative,
@@ -38,6 +39,10 @@ export interface FlatBuild {
   thickness: number;
   footW: number;
   footH: number;
+  /** every raw fill color detected, independent of current merge/base settings */
+  detectedColors: DetectedColor[];
+  /** the artwork color currently assigned to the base material, if any */
+  baseAssigned: { hex: string; areaPct: number } | null;
 }
 
 export interface FlatBuildInput {
@@ -49,6 +54,11 @@ export interface FlatBuildInput {
   recessBg: boolean;
   mergeGroups: string[][];
   baseColorHex: string;
+  autoMergeLevel?: number;
+  baseColorKey?: string | null;
+  /** every raw hex the base assignment excludes from cutting (see state/store.ts addToBase) */
+  baseColorMembers?: string[];
+  keptApart?: string[];
 }
 
 function ringToShapePoints(ring: Ring): THREE.Vector2[] {
@@ -201,6 +211,10 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
     recessBg,
     mergeGroups,
     baseColorHex,
+    autoMergeLevel,
+    baseColorKey,
+    baseColorMembers,
+    keptApart,
   } = input;
   if (!parsed) return null;
 
@@ -208,6 +222,20 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   // monotonically: the per-color net regions are the bulk (~0–60%), then the background/base
   // union passes below (~60–100%).
   const { byColor } = await computeNetRegionsByColor(parsed.shapes, (f) => reportProgress(f * 0.6));
+
+  const totalRawArea = Object.values(byColor).reduce((s, f) => s + planarArea(f), 0) || 1;
+  const detectedColors: DetectedColor[] = Object.keys(byColor)
+    .map((hex) => ({ hex, areaPct: (100 * planarArea(byColor[hex])) / totalRawArea }))
+    .sort((a, b) => b.areaPct - a.areaPct);
+  // baseColorMembers covers a whole merged group when a merged slot was sent to base; falls back
+  // to just the dominant hex for older callers/plain-color assignments.
+  const baseMembers =
+    baseColorMembers && baseColorMembers.length
+      ? baseColorMembers
+      : baseColorKey
+        ? [baseColorKey]
+        : [];
+  const baseArea = baseMembers.reduce((s, h) => s + planarArea(byColor[h] ?? null), 0);
 
   let footW: number, footH: number;
   if (shapeKind === 'disc') {
@@ -235,7 +263,11 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const clampDepth = (d: number) => Math.min(Math.max(d, 0.02), thickness - 0.05);
 
   // transform + collect active color/merged-group regions with their depth
-  const resolvedRegions = applyColorMerges(byColor, mergeGroups);
+  const resolvedRegions = applyColorMerges(byColor, mergeGroups, {
+    autoMergeLevel,
+    baseColors: baseMembers,
+    keptApart,
+  });
   interface Entry {
     color: string;
     key: string;
@@ -345,17 +377,35 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
         isMergeGroup: c.isMerge,
         depth: c.depth,
         mesh,
-        area: turf.area(c.feature),
+        area: planarArea(c.feature),
         areaPct: 0,
         isBackground: !!c.isBackground,
       } as ColorMeshEntry;
     })
     .filter((c): c is ColorMeshEntry => !!c);
 
-  const totalArea = colorMeshes.reduce((s, c) => s + c.area, 0) || 1;
+  // Fold the excluded base area into the percentage denominator (it's 0 when no base is
+  // assigned, so this is a no-op then) so the color list's percentages reflect the base's real
+  // share of the design instead of only summing the still-cut regions. baseArea is in raw SVG
+  // units while the cut meshes were measured post-transform, so scale it by fit.scale² to put
+  // both on the same (mm²) footing.
+  const baseAreaMm = baseArea * fit.scale * fit.scale;
+  const grandTotal = colorMeshes.reduce((s, c) => s + c.area, 0) + baseAreaMm || 1;
   colorMeshes.forEach((c) => {
-    c.areaPct = (100 * c.area) / totalArea;
+    c.areaPct = (100 * c.area) / grandTotal;
   });
+  // the body prints the base's dominant (largest-area) member, same as a merged cut slot would
+  const dominantBaseMember = baseMembers.reduce<{ hex: string; area: number } | null>((best, h) => {
+    const area = planarArea(byColor[h] ?? null);
+    return !best || area > best.area ? { hex: h, area } : best;
+  }, null);
+  const baseAssigned =
+    baseColorKey && baseArea > 0
+      ? {
+          hex: dominantBaseMember?.hex ?? baseColorKey,
+          areaPct: (100 * baseAreaMm) / grandTotal,
+        }
+      : null;
 
-  return { baseGroup, colorMeshes, thickness, footW, footH };
+  return { baseGroup, colorMeshes, thickness, footW, footH, detectedColors, baseAssigned };
 }

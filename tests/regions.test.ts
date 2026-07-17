@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyColorMerges,
   cleanFeature,
   computeNetRegionsByColor,
   dedupeRing,
@@ -7,6 +8,25 @@ import {
   shapeToFeature,
 } from '../src/geometry/regions';
 import type { PolyFeature, SVGShape } from '../src/types';
+
+function squareFeature(size: number): PolyFeature {
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [0, 0],
+          [size, 0],
+          [size, size],
+          [0, size],
+          [0, 0],
+        ],
+      ],
+    },
+  };
+}
 
 function square(x0: number, y0: number, size: number) {
   return [
@@ -202,5 +222,87 @@ describe('computeNetRegionsByColor', () => {
     const b = await computeNetRegionsByColor(shapesB);
     expect(b).not.toBe(a);
     expect(planarArea(b.byColor['#ff0000'])).toBeCloseTo(planarArea(a.byColor['#ff0000']), 6);
+  });
+});
+
+describe('applyColorMerges', () => {
+  // '#fe0101' is a near-identical red (ΔE well under Slight's cutoff of 3); '#0000ff' is far away.
+  function byColorFixture(): Record<string, PolyFeature> {
+    return {
+      '#ff0000': squareFeature(5),
+      '#fe0101': squareFeature(20), // largest area -> the dominant member if merged with the reds
+      '#0000ff': squareFeature(10),
+    };
+  }
+
+  it('auto-merges visually near-identical colors at Slight, leaves distant colors apart', () => {
+    const out = applyColorMerges(byColorFixture(), [], { autoMergeLevel: 1 });
+    const merged = out.find((r) => r.isMerge)!;
+    expect(merged).toBeDefined();
+    expect(merged.members.sort()).toEqual(['#fe0101', '#ff0000']);
+    expect(out.find((r) => r.key === '#0000ff' && !r.isMerge)).toBeDefined();
+  });
+
+  it('does not auto-merge anything at level 0 (None)', () => {
+    const out = applyColorMerges(byColorFixture(), [], { autoMergeLevel: 0 });
+    expect(out.every((r) => !r.isMerge)).toBe(true);
+    expect(out).toHaveLength(3);
+  });
+
+  it('takes the dominant (largest-area) member as the merged group preview color, not a blend', () => {
+    const out = applyColorMerges(byColorFixture(), [], { autoMergeLevel: 1 });
+    const merged = out.find((r) => r.isMerge)!;
+    expect(merged.previewColor).toBe('#fe0101'); // area 400 > area 25 for '#ff0000'
+  });
+
+  it('ranks dominance by planar area — SVG coordinates are not lat/lon', () => {
+    // A square straddling "latitude" 90 has ~zero geodesic area, so turf.area would wrongly
+    // demote it below a much smaller square; planar shoelace keeps the true ranking.
+    const nearPole: PolyFeature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 88],
+            [4, 88],
+            [4, 92],
+            [0, 92],
+            [0, 88],
+          ],
+        ],
+      },
+    };
+    const out = applyColorMerges({ '#ff0000': squareFeature(2), '#fe0101': nearPole }, [], {
+      autoMergeLevel: 1,
+    });
+    const merged = out.find((r) => r.isMerge)!;
+    expect(merged.previewColor).toBe('#fe0101'); // planar area 16 > 4
+  });
+
+  it('excludes base-assigned colors from the resolved regions entirely', () => {
+    const out = applyColorMerges(byColorFixture(), [], { baseColors: ['#0000ff'] });
+    expect(out.find((r) => r.members.includes('#0000ff'))).toBeUndefined();
+    expect(out).toHaveLength(2);
+  });
+
+  it('keeps a pinned (keptApart) color as its own singleton even within auto-merge threshold', () => {
+    const out = applyColorMerges(byColorFixture(), [], {
+      autoMergeLevel: 1,
+      keptApart: ['#ff0000'],
+    });
+    expect(out.find((r) => r.key === '#ff0000' && !r.isMerge)).toBeDefined();
+    expect(out.find((r) => r.isMerge && r.members.includes('#ff0000'))).toBeUndefined();
+    // the other near-identical red is still on its own too, since its only auto-merge partner is pinned
+    expect(out.find((r) => r.key === '#fe0101' && !r.isMerge)).toBeDefined();
+  });
+
+  it('unions manual merge groups with auto-merge clusters (either link fuses a pair)', () => {
+    const byColor = { ...byColorFixture(), '#00ff00': squareFeature(1) };
+    const out = applyColorMerges(byColor, [['#0000ff', '#00ff00']], { autoMergeLevel: 1 });
+    const merged = out.find((r) => r.members.includes('#0000ff'))!;
+    expect(merged.isMerge).toBe(true);
+    expect(merged.members.sort()).toEqual(['#0000ff', '#00ff00']);
   });
 });
