@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worst-case deviation from the true curve measured at ~0.002 SVG units
   (well under the fidelity that mattered before), which speeds up every
   downstream step that scales with vertex count.
+- Depth/fit/color tweaks no longer recompute the artwork's per-color regions
+  — the polygon boolean pass (the dominant cost of a rebuild) is now skipped
+  when the change didn't touch the parsed artwork itself, so large SVGs
+  respond much faster to slider drags.
 
 ## [0.3.0] - 2026-07-16
 
