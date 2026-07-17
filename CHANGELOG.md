@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- GPU memory no longer grows while adjusting sliders. Rebuilding the model
+  now disposes the previous build's geometry and materials instead of
+  leaking them.
+
 ### Changed
 
 - Geometry rebuilds no longer freeze the tab on dense artwork. The polygon

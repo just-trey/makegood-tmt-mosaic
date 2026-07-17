@@ -78,7 +78,7 @@ export async function rebuildCurrent(): Promise<void> {
 
 async function rebuildScene(): Promise<void> {
   setPreferredViewDir(null); // flat mode: keep the user's current view direction when re-framing
-  const modelGroup = newModelGroup();
+  const modelGroup = newModelGroup(state.stlRefMesh);
   const baseParams = currentBaseParams();
 
   if (!state.parsed) {
@@ -182,7 +182,7 @@ function restAssemblyOnGrid(): void {
 }
 
 async function rebuildAssemblyScene(): Promise<void> {
-  newModelGroup();
+  newModelGroup(state.stlRefMesh);
 
   // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
   if (!state.parsed) {
