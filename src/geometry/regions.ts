@@ -243,15 +243,15 @@ export function safeIntersect(
   b: PolyFeature | null,
   label?: string,
 ): PolyFeature | null {
+  a = cleanFeature(a);
+  b = cleanFeature(b);
   if (!a || !b) return null;
-  try {
-    return turf.intersect(a, b) as PolyFeature | null;
-  } catch {
-    warn(
-      `Clipping color region to the part face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
-    );
-    return a;
-  }
+  const r = boolOpWithRetry((x, y) => turf.intersect(x, y) as PolyFeature | null, a, b);
+  if (r.ok) return r.val ?? null;
+  warn(
+    `Clipping color region to the part face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
+  );
+  return a;
 }
 
 /** How long a boolean pass runs before yielding a frame to the browser. */
@@ -315,12 +315,22 @@ export async function unionAllCooperative(
  * responsive and the "Rebuilding…" curtain live instead of freezing the main thread on a dense
  * SVG. See src/progress.ts and the scheduler.
  */
+let regionsCacheKey: SVGShape[] | null = null;
+let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
+
 export async function computeNetRegionsByColor(
   shapes: SVGShape[],
   onProgress: (fraction: number) => void = reportProgress,
 ): Promise<{
   byColor: Record<string, PolyFeature>;
 }> {
+  // `shapes` (ParsedSVG.shapes) is only ever assigned fresh from a parse and never mutated in
+  // place, so identity is a safe cache key — this is the dominant cost of a rebuild, and
+  // depth/fit/margin/color tweaks don't touch `shapes` at all.
+  if (shapes === regionsCacheKey && regionsCacheVal) {
+    onProgress(1);
+    return regionsCacheVal;
+  }
   const features = shapes.map(shapeToFeature).map((f, idx) => ({ f, color: shapes[idx].fill }));
   const byColor: Record<string, PolyFeature> = {};
   let covered: PolyFeature | null = null;
@@ -343,7 +353,10 @@ export async function computeNetRegionsByColor(
       lastYield = performance.now();
     }
   }
-  return { byColor };
+  const result = { byColor };
+  regionsCacheKey = shapes;
+  regionsCacheVal = result;
+  return result;
 }
 
 /**

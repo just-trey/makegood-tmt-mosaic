@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- GPU memory no longer grows while adjusting sliders. Rebuilding the model
+  now disposes the previous build's geometry and materials instead of
+  leaking them.
+- Assembly color regions now clip to the part face more reliably. Clipping a
+  color region to a part's boundary used to give up and leave the region
+  unclipped after a single failed attempt on degenerate geometry, instead of
+  being retried the way the other boolean operations already were.
+
 ### Changed
 
 - Geometry rebuilds no longer freeze the tab on dense artwork. The polygon
@@ -30,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   as it works, the same way the flat-mode boolean pass already did, and the
   "Rebuilding…" curtain shows a live percentage through the whole rebuild
   instead of jumping to 100% and then hanging until the cut finishes.
+- Depth/fit/color tweaks no longer recompute the artwork's per-color regions
+  — the polygon boolean pass (the dominant cost of a rebuild) is now skipped
+  when the change didn't touch the parsed artwork itself, so large SVGs
+  respond much faster to slider drags.
 
 ## [0.3.0] - 2026-07-16
 

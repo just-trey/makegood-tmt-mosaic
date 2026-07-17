@@ -97,6 +97,8 @@ function loadSTLReference(file: File): void {
       opacity: 0.35,
       roughness: 0.9,
     });
+    state.stlRefMesh?.geometry.dispose();
+    (state.stlRefMesh?.material as THREE.Material | undefined)?.dispose();
     state.stlRefMesh = new THREE.Mesh(geo, mat);
     $('#stl-fname').textContent = file.name;
     input('#p-facez').value = bb.max.z.toFixed(2);

@@ -3,6 +3,7 @@ import {
   cleanFeature,
   computeNetRegionsByColor,
   dedupeRing,
+  safeIntersect,
   shapeToFeature,
 } from '../src/geometry/regions';
 import type { PolyFeature, SVGShape } from '../src/types';
@@ -123,6 +124,57 @@ describe('cleanFeature', () => {
   });
 });
 
+describe('safeIntersect', () => {
+  it('clips a feature with a zero-area sliver hole without throwing', () => {
+    const withSliver: PolyFeature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [10, 0],
+            [10, 10],
+            [0, 10],
+            [0, 0],
+          ],
+          [
+            [2, 2],
+            [5, 2],
+            [2, 2],
+          ], // out-and-back sliver
+        ],
+      },
+    };
+    const square5: PolyFeature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [5, 0],
+            [5, 5],
+            [0, 5],
+            [0, 0],
+          ],
+        ],
+      },
+    };
+    const out = safeIntersect(withSliver, square5);
+    expect(out).not.toBeNull();
+    expect(planarArea(out)).toBeCloseTo(25, 4);
+  });
+
+  it('returns null for disjoint inputs rather than throwing', () => {
+    const a = shapeToFeature({ fill: '#000', loops: [square(0, 0, 5)], order: 0 })!;
+    const b = shapeToFeature({ fill: '#000', loops: [square(20, 20, 5)], order: 0 })!;
+    expect(safeIntersect(a, b)).toBeNull();
+  });
+});
+
 describe('computeNetRegionsByColor', () => {
   it('subtracts later paint from earlier colors (paint order)', async () => {
     const shapes: SVGShape[] = [
@@ -132,5 +184,23 @@ describe('computeNetRegionsByColor', () => {
     const { byColor } = await computeNetRegionsByColor(shapes);
     expect(planarArea(byColor['#ff0000'])).toBeCloseTo(100 - 16, 4);
     expect(planarArea(byColor['#000000'])).toBeCloseTo(16, 4);
+  });
+
+  it('memoizes on shapes array identity — a repeat call skips recompute', async () => {
+    const shapes: SVGShape[] = [{ fill: '#ff0000', loops: [square(0, 0, 10)], order: 0 }];
+    const first = await computeNetRegionsByColor(shapes);
+    const progress: number[] = [];
+    const second = await computeNetRegionsByColor(shapes, (f) => progress.push(f));
+    expect(second).toBe(first); // same object back == no recompute happened
+    expect(progress).toEqual([1]);
+  });
+
+  it('does not reuse the cache across different shapes arrays, even with identical content', async () => {
+    const shapesA: SVGShape[] = [{ fill: '#ff0000', loops: [square(0, 0, 10)], order: 0 }];
+    const shapesB: SVGShape[] = [{ fill: '#ff0000', loops: [square(0, 0, 10)], order: 0 }];
+    const a = await computeNetRegionsByColor(shapesA);
+    const b = await computeNetRegionsByColor(shapesB);
+    expect(b).not.toBe(a);
+    expect(planarArea(b.byColor['#ff0000'])).toBeCloseTo(planarArea(a.byColor['#ff0000']), 6);
   });
 });
