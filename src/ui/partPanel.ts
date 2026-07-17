@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import type { ShapeKind } from '../types';
-import { DEFAULT_BASE_COLOR, state } from '../state/store';
+import { clearBaseColor, DEFAULT_BASE_COLOR, state } from '../state/store';
 import { getFilaments } from '../state/filaments';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
@@ -55,26 +55,51 @@ export function setShapeKind(kind: ShapeKind): void {
   scheduleRebuild();
 }
 
-/** Base-color picker: neutral default plus one swatch per owned filament. */
+/**
+ * Base-color fallback picker: the neutral default + owned-filament swatches used for the body
+ * when no artwork color is grouped into the base (grouping artwork colors into the base is done
+ * from the color list below — see "→ base" / drag-onto-Base in colorList.ts). Only one of an
+ * artwork base or this fallback is active at a time — picking a swatch here clears any artwork
+ * base (see clearBaseColor).
+ */
 export function renderBaseColorSwatches(): void {
   const box = $('#base-color-swatches');
   if (!box) return;
   box.innerHTML = '';
-  const mk = (id: string | null, hex: string, title: string) => {
+
+  const mk = (hex: string, title: string, selected: boolean, onClick: () => void) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'base-swatch' + (state.baseFilamentId === id ? ' selected' : '');
+    b.className = 'base-swatch' + (selected ? ' selected' : '');
     b.style.background = hex;
     b.title = title;
     b.addEventListener('click', () => {
-      state.baseFilamentId = id;
+      onClick();
       renderBaseColorSwatches();
       scheduleRebuild();
     });
     return b;
   };
-  box.appendChild(mk(null, DEFAULT_BASE_COLOR, 'Default (neutral grey)'));
-  getFilaments().forEach((f) => box.appendChild(mk(f.id, f.hex, f.name)));
+
+  box.appendChild(
+    mk(
+      DEFAULT_BASE_COLOR,
+      'Default (neutral grey)',
+      !state.baseColorKey && state.baseFilamentId === null,
+      () => {
+        clearBaseColor();
+        state.baseFilamentId = null;
+      },
+    ),
+  );
+  getFilaments().forEach((f) =>
+    box.appendChild(
+      mk(f.hex, f.name, !state.baseColorKey && state.baseFilamentId === f.id, () => {
+        clearBaseColor();
+        state.baseFilamentId = f.id;
+      }),
+    ),
+  );
 }
 
 function bindShapeInput(sel: string, apply: (v: number) => void): void {

@@ -170,9 +170,19 @@ export interface AssemblyPartOutput {
   inlayIndexed?: Record<number, IndexedMesh>;
 }
 
+/** One raw detected artwork color before any merge/base resolution — feeds the base-color picker. */
+export interface DetectedColor {
+  hex: string;
+  areaPct: number;
+}
+
 export interface AssemblyBuild {
   partOutputs: AssemblyPartOutput[];
   palette: AssemblyPaletteEntry[];
   /** Y direction of the first primary part's design face — the camera opens from this side. */
   viewSign: number;
+  /** every raw fill color detected, independent of current merge/base settings */
+  detectedColors: DetectedColor[];
+  /** the artwork color currently assigned to the base material, if any */
+  baseAssigned: { hex: string; areaPct: number } | null;
 }

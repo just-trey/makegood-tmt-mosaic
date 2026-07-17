@@ -6,6 +6,7 @@ import type {
   AssemblyPart,
   AssemblyPartOutput,
   ColorSettings,
+  DetectedColor,
   IndexedMesh,
   ParsedSVG,
   PolyFeature,
@@ -13,6 +14,7 @@ import type {
 import {
   applyColorMerges,
   computeNetRegionsByColor,
+  planarArea,
   safeIntersect,
   YIELD_BUDGET_MS,
   yieldToBrowser,
@@ -106,6 +108,11 @@ export interface AssemblyBuildInput {
   flipX: boolean;
   /** user vertical mirror, on top of the built-in SVG y-down correction */
   flipY: boolean;
+  autoMergeLevel?: number;
+  baseColorKey?: string | null;
+  /** every raw hex the base assignment excludes from cutting (see state/store.ts addToBase) */
+  baseColorMembers?: string[];
+  keptApart?: string[];
 }
 
 /**
@@ -130,6 +137,10 @@ export async function buildAssemblyGeometry(
     offZ,
     flipX,
     flipY,
+    autoMergeLevel,
+    baseColorKey,
+    baseColorMembers,
+    keptApart,
   } = input;
   if (!parsed) return null;
 
@@ -153,9 +164,42 @@ export async function buildAssemblyGeometry(
   // Split like flat.ts: the per-color net regions are ~0-40%, then the per-part Manifold CSG
   // loop below (the actual heavy work in assembly mode) covers ~40-100%.
   const { byColor } = await computeNetRegionsByColor(parsed.shapes, (f) => reportProgress(f * 0.4));
+  if (!Object.keys(byColor).length) return null; // no fills at all — nothing to place
+
+  const totalRawArea = Object.values(byColor).reduce((s, f) => s + planarArea(f), 0) || 1;
+  const detectedColors: DetectedColor[] = Object.keys(byColor)
+    .map((hex) => ({ hex, areaPct: (100 * planarArea(byColor[hex])) / totalRawArea }))
+    .sort((a, b) => b.areaPct - a.areaPct);
+  // baseColorMembers covers a whole merged group when a merged slot was sent to base; falls back
+  // to just the dominant hex for older callers/plain-color assignments.
+  const baseMembers =
+    baseColorMembers && baseColorMembers.length
+      ? baseColorMembers
+      : baseColorKey
+        ? [baseColorKey]
+        : [];
+  const baseArea = baseMembers.reduce((s, h) => s + planarArea(byColor[h] ?? null), 0);
+  // the body prints the base's dominant (largest-area) member, same as a merged cut slot would
+  const dominantBaseMember = baseMembers.reduce<{ hex: string; area: number } | null>((best, h) => {
+    const area = planarArea(byColor[h] ?? null);
+    return !best || area > best.area ? { hex: h, area } : best;
+  }, null);
+  const baseAssigned =
+    baseColorKey && baseArea > 0
+      ? {
+          hex: dominantBaseMember?.hex ?? baseColorKey,
+          areaPct: (100 * baseArea) / totalRawArea,
+        }
+      : null;
+
   // Honor "merge colors" here too — merged colors become one region / one AMS slot / one depth.
-  // `key` doubles as the per-region depth key.
-  const resolved = applyColorMerges(byColor, mergeGroups);
+  // `key` doubles as the per-region depth key. A base-assigned color is excluded here, so an
+  // all-base design legitimately resolves to an empty palette (uncut body) rather than failing.
+  const resolved = applyColorMerges(byColor, mergeGroups, {
+    autoMergeLevel,
+    baseColors: baseMembers,
+    keptApart,
+  });
   const palette: AssemblyPaletteEntry[] = resolved.map((r) => ({
     hex: r.previewColor,
     key: 'asm:' + r.key,
@@ -163,7 +207,6 @@ export async function buildAssemblyGeometry(
     isMerge: r.isMerge,
     feature: r.feature,
   }));
-  if (!palette.length) return null;
 
   const mmPerUnit = (radius / svgC.r) * scaleMult;
 
@@ -408,5 +451,5 @@ export async function buildAssemblyGeometry(
     partOutputs.push({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed });
     finishPart();
   }
-  return { partOutputs, palette, viewSign };
+  return { partOutputs, palette, viewSign, detectedColors, baseAssigned };
 }

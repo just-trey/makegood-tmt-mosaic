@@ -69,6 +69,13 @@
               reference imports a mesh for sizing only — it's never exported, it just helps you
               align artwork to a real face.
             </p>
+            <p>
+              <b>Body / blank color</b> is the fallback color of the physical blank (neutral grey or
+              a plain filament) — it's what the body prints when no artwork color is grouped into
+              the base. To print an artwork color as the body instead, group it into the Base row in
+              Colors detected below (see "→ base" there) — an artwork base always wins over this
+              fallback.
+            </p>
           </section>
 
           <section class="help-sec" id="h-artwork">
@@ -96,8 +103,8 @@
             <h3>How deep recesses cut</h3>
             <p>
               Depth is measured down from the top face. Set a default for all colors, then override
-              individual ones in the color list below for fine detail work. Check "Recess bg too" to
-              also cut the background instead of leaving it flush.
+              individual ones in Colors detected below for fine detail work. Check "Recess bg too"
+              to also cut the background instead of leaving it flush.
             </p>
           </section>
 
@@ -105,9 +112,26 @@
             <div class="help-step">Left panel · Colors detected</div>
             <h3>Merging into AMS slots</h3>
             <p>
-              Every detected fill starts as its own recess. Drag one color onto another — or check
-              several and hit "Merge selected" — to combine them into a single AMS slot sharing one
-              depth. Useful when you have more colors than filament slots.
+              The <b>Auto-merge</b> slider collapses visually similar colors automatically — None
+              turns it off, Slight (the default) dedupes near-identical export artifacts, Medium and
+              Strong collapse shading ramps toward fewer filaments. It's fully reversible: drag it
+              back down and colors pull back apart. Click a merged color's "×" to pull just that one
+              out without affecting the rest of the group.
+            </p>
+            <p>
+              You can also merge manually: drag one color onto another to combine them into a single
+              AMS slot sharing one depth. A merged slot prints in its dominant member's real color,
+              not a blended average. To split a group back up, click its members' "×" swatches (each
+              pulled color stays out until you re-merge it).
+            </p>
+            <p>
+              The <b>Base</b> row pinned at the top is a slot too — one that prints as the body
+              instead of being cut as a recess. "→ base" on a color (or a whole merged group) makes
+              it the base, swapping out whatever was there; to combine several colors into the base
+              instead, drag them onto the Base row. It shows every color you've grouped in, and it
+              always prints its dominant member's color. Click a base color's "×" to send it back to
+              being cut. Empty the base entirely and the body falls back to the plain Body / blank
+              color picker up in Part.
             </p>
           </section>
 
@@ -261,9 +285,16 @@
             </div>
           </div>
 
-          <div class="row" style="margin-top: 8px">
-            <label>Base color</label>
-            <div class="field base-color-swatches" id="base-color-swatches"></div>
+          <div class="row" style="margin-top: 8px; align-items: flex-start">
+            <label>Body / blank color</label>
+            <div class="field base-color-group">
+              <div class="base-color-swatches" id="base-color-swatches"></div>
+            </div>
+          </div>
+          <div class="hint">
+            The blank's own color — used for the body whenever no artwork color is grouped into the
+            base. To print an artwork color as the body instead, use "→ base" (or drag it onto the
+            Base row) in Colors detected further down.
           </div>
         </details>
 
@@ -381,9 +412,15 @@
 
         <details class="sec" open>
           <summary>Colors detected</summary>
-          <button class="btn small full" id="btn-merge" style="display: none; margin-bottom: 8px">
-            Merge selected into one recess
-          </button>
+          <div class="row">
+            <label>Auto-merge</label>
+            <div class="field">
+              <input type="range" id="p-automerge" min="0" max="3" step="1" value="1" />
+              <div class="auto-merge-labels" id="automerge-labels">
+                <span>None</span><span>Slight</span><span>Medium</span><span>Strong</span>
+              </div>
+            </div>
+          </div>
           <div class="color-list" id="color-list">
             <div class="empty-hint">
               Load an SVG to detect color regions. Each flat fill color becomes its own recess,
@@ -392,8 +429,13 @@
           </div>
           <div class="slot-count" id="slot-count"></div>
           <div class="hint">
-            <b>Drag one color onto another</b> (or check several) to merge into one AMS slot; merged
-            groups share a depth — "unmerge" splits them back.
+            <b>Auto-merge</b> collapses near-identical colors automatically — drag the slider back
+            down to pull them apart again, or click a merged color's "×" to pull just one out.
+            <b>Drag one color onto another</b> to merge manually into one AMS slot; merged groups
+            share a depth and print in the dominant member's color — a member's "×" pulls it back
+            out. Use "→ base" (on a single color or a whole merged group) to print it in the body
+            instead of cutting it — it replaces the current base; drag onto the Base row to add
+            alongside.
           </div>
         </details>
 

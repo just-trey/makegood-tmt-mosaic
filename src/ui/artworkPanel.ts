@@ -1,4 +1,4 @@
-import { state } from '../state/store';
+import { clearBaseColor, state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
 import { parseSVGDocument } from '../svg/parse';
@@ -18,7 +18,10 @@ function applyParsedSVG(svgText: string, fname: string): void {
   state.parsed = parseSVGDocument(svgText);
   state.colorSettings = {};
   state.mergeGroups = [];
-  state.selectedForMerge.clear();
+  // These reference specific hexes from the previous artwork's palette — stale once it changes.
+  // autoMergeLevel is a user preference, not artwork-specific, so it survives a reload.
+  clearBaseColor();
+  state.keptApart = [];
   $('#svg-fname').textContent = fname;
   requestFrame();
   scheduleRebuild();

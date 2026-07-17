@@ -81,6 +81,11 @@ your account.
    show. 2D polygon booleans via Turf.js ([src/geometry/regions.ts](src/geometry/regions.ts)).
    Holes are resolved by **containment depth** (odd nesting depth = hole),
    which is correct for both the `nonzero` and `evenodd` SVG fill rules.
+   Regions are then resolved into recesses: any color assigned to the base
+   material is excluded outright, visually similar colors are auto-merged
+   (a CIE76 ΔE-clustered slider, live and reversible) and unioned with any
+   manual merges, and each merged slot takes its dominant member's real color
+   rather than a blended average (`applyColorMerges` in the same file).
 3. **Flat-plate mode** builds the plate as a stack of flat slabs between depth
    boundaries — pure 2D math, no CSG ([src/geometry/flat.ts](src/geometry/flat.ts)).
 4. **Assembly mode** cuts pockets into real part meshes: each color region is
@@ -199,9 +204,6 @@ is imported by the app. Two other brand themes in the tokens folder
 
 ## Roadmap ideas (not built)
 
-- Smarter color mapping: auto-merge visually similar colors into a single
-  region/filament slot, and let one image color be assigned to the base
-  material instead of a cut inlay.
 - Pick a face directly in the 3D view (raycast → detected patch) to apply
   artwork to any part.
 - Raster image (PNG/JPG) input: quantize to flat color regions, then reuse the

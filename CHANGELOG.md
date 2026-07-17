@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Auto-merge similar colors: a stepped slider (None/Slight/Medium/Strong) in
+  Colors detected collapses visually similar fill colors into shared AMS
+  slots, live and fully reversible — drag it back down to pull colors apart
+  again, or pull just one color out of a merged group with its "×". Slight
+  (dedupe) is on by default.
+- Group colors into the base material: the Base is now a slot pinned at the
+  top of Colors detected, alongside the cut slots. "→ base" (or dragging a
+  color, or a whole merged group, onto the Base row) adds it in; the row
+  shows every color it contains and prints as the dominant member's color.
+  "×" a base color to send it back to being cut. Previously the only option
+  was a generic filament swatch for the body.
+
+### Changed
+
+- Merged color slots now print in the group's dominant (largest-area)
+  member's real color instead of an RGB-averaged blend.
+- Similar colors are now deduped by default (auto-merge Slight) — this
+  changes the detected-color count/output for existing artwork with
+  near-identical export/anti-aliasing color artifacts.
+- The base can now hold more than one color/merged group at once: dragging a
+  color (or merged group) onto the Base row adds it alongside what's already
+  there, while the "→ base" button switches the base to that color (releasing
+  the previous members back to being cut). Removed the duplicate
+  artwork-color swatches from the top base-color area (and the reorder jump
+  that came with picking one there) — grouping artwork colors into the base
+  is now done from the color list's Base row alone.
+- Renamed the Part panel's "Base color" picker to "Body / blank color" and
+  reframed it as the physical blank's own fallback color (the body prints it
+  whenever no artwork color is grouped into the base). This disambiguates it
+  from the Base row in Colors detected, which the two shared name made read
+  as the same control in two places.
+- The Base row in Colors detected now shows an empty-state line ("Base —
+  empty; body uses the blank color set in Part") instead of disappearing
+  when nothing's grouped in, so the "no artwork color as body" case reads as
+  a normal choice. Its label also dropped "(not cut)" in favor of "prints as
+  the body" to avoid overloading the word "cut".
+- Removed the per-color checkbox + "Merge selected" button in Colors
+  detected — it duplicated drag-to-merge and read as unclear/dead-looking
+  next to the newer auto-merge slider and drag-and-drop flow. Manual merges
+  are still made by dragging one color onto another.
+
+### Fixed
+
+- The auto-merge slider's None/Slight/Medium/Strong labels didn't line up
+  under their thumb stops. They're now anchored to the track's own width
+  instead of the full (wider) panel row.
+- A merged group with many members (e.g. a long shading ramp collapsed at
+  Strong) could push its "→ base" button off the edge of the panel. The
+  member swatches now wrap onto their own line below the row's controls
+  instead of competing with them for space.
+- Area percentages and dominant-member color picks could be wildly wrong on
+  complex artwork (e.g. a Base row claiming 740% of the design, or the body
+  printing the wrong member's color). Region areas were measured with turf's
+  geodesic area function, which treats SVG coordinates as latitude/longitude
+  and returns garbage outside real-world ranges — all area comparisons now
+  use plain planar (shoelace) area. Flat mode's base share also mixed raw
+  SVG units with millimeter units in the same percentage; both sides now use
+  the same scale.
+
+### Removed
+
+- The "unmerge" button on merged rows. It only ever affected manual
+  drag-merges, so it silently did nothing on the auto-merged groups the
+  slider now produces (most of them). Its jobs are covered: drag the
+  auto-merge slider down to split slider-made groups, or click a group
+  member's "×" to pull colors out one at a time.
+
 ## [0.3.1] - 2026-07-16
 
 ### Fixed
