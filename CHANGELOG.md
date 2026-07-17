@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-17
+
 ### Added
 
 - Auto-merge similar colors: a stepped slider (None/Slight/Medium/Strong) in
@@ -274,7 +276,8 @@ Initial public alpha. Baseline feature set as of this release:
 - Automatic boolean-failure recovery: vertex deduplication, degenerate-sliver
   scrubbing, and reduced-precision retries for self-intersecting source paths.
 
-[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.2.0...v0.2.1
