@@ -17,7 +17,12 @@ npm run build       # typecheck + production build to dist/
 
 - `lint`, `format:check`, `typecheck`, `test`, and `smoke` must all pass —
   CI runs the same steps on every PR and blocks merge into `main` if any
-  fail. Run `npm run format` to auto-fix formatting before committing.
+  fail. A pre-commit hook (husky + lint-staged) auto-formats staged files;
+  don't run `npm run format` across the whole repo — it churns file endings
+  on Windows.
+- If the change touches `src/geometry/` or `src/export/`, run `/code-review`
+  on the diff before opening the PR. Skip it for docs, UI copy, and other
+  trivial changes.
 - Add a bullet under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for
   any user-visible change (Keep a Changelog categories: Added/Changed/Fixed/
   Removed). Skip it for internal refactors, tests, or CI/tooling changes with
