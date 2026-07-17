@@ -8,7 +8,13 @@ import type {
   PolyFeature,
   ShapeKind,
 } from '../types';
-import { applyColorMerges, safeDiff, safeUnion, computeNetRegionsByColor } from './regions';
+import {
+  applyColorMerges,
+  safeDiff,
+  computeNetRegionsByColor,
+  unionAllCooperative,
+} from './regions';
+import { reportProgress } from '../progress';
 
 type Ring = number[][];
 
@@ -185,7 +191,7 @@ export function transformFeature(feature: PolyFeature, fit: FitTransform): PolyF
 }
 
 /** Build the full flat-plate mesh set: slab-stack base + one plug mesh per recess region. */
-export function buildGeometry(input: FlatBuildInput): FlatBuild | null {
+export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | null> {
   const {
     parsed,
     colorSettings,
@@ -198,7 +204,10 @@ export function buildGeometry(input: FlatBuildInput): FlatBuild | null {
   } = input;
   if (!parsed) return null;
 
-  const { byColor } = computeNetRegionsByColor(parsed.shapes);
+  // The rebuild's progress is split across its phases so the curtain percentage climbs
+  // monotonically: the per-color net regions are the bulk (~0–60%), then the background/base
+  // union passes below (~60–100%).
+  const { byColor } = await computeNetRegionsByColor(parsed.shapes, (f) => reportProgress(f * 0.6));
 
   let footW: number, footH: number;
   if (shapeKind === 'disc') {
@@ -251,10 +260,10 @@ export function buildGeometry(input: FlatBuildInput): FlatBuild | null {
   });
 
   // leftover background region
-  let unionAll: PolyFeature | null = null;
-  colorEntries.forEach((c) => {
-    unionAll = safeUnion(unionAll, c.feature);
-  });
+  const unionAll = await unionAllCooperative(
+    colorEntries.map((c) => c.feature),
+    (f) => reportProgress(0.6 + f * 0.15),
+  );
   const leftover = unionAll ? safeDiff(footprint, unionAll) : footprint;
 
   if (recessBg && leftover) {
@@ -286,15 +295,16 @@ export function buildGeometry(input: FlatBuildInput): FlatBuild | null {
     side: THREE.DoubleSide,
   });
 
+  const layerCount = boundaries.length - 1;
   for (let i = 0; i < boundaries.length - 1; i++) {
     const uA = boundaries[i],
       uB = boundaries[i + 1];
     if (uB - uA < 1e-6) continue;
     const openRegions = colorEntries.filter((c) => c.depth > uA + 1e-6);
-    let removed: PolyFeature | null = null;
-    openRegions.forEach((c) => {
-      removed = safeUnion(removed, c.feature);
-    });
+    const removed = await unionAllCooperative(
+      openRegions.map((c) => c.feature),
+      (f) => reportProgress(0.75 + ((i + f) / layerCount) * 0.25),
+    );
     const layerPoly = removed ? safeDiff(footprint, removed) : footprint;
     if (!layerPoly) continue;
     const shapes = featureToShapes(layerPoly);

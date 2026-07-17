@@ -72,10 +72,10 @@ export function estimateRebuildSlow(): boolean {
 /** Entry point the scheduler debounces into. */
 export async function rebuildCurrent(): Promise<void> {
   if (state.shapeKind === 'assembly') await rebuildAssemblyScene();
-  else rebuildScene();
+  else await rebuildScene();
 }
 
-function rebuildScene(): void {
+async function rebuildScene(): Promise<void> {
   setPreferredViewDir(null); // flat mode: keep the user's current view direction when re-framing
   const modelGroup = newModelGroup();
   const baseParams = currentBaseParams();
@@ -110,7 +110,7 @@ function rebuildScene(): void {
   }
 
   if (!baseParams) return;
-  const built = buildGeometry({
+  const built = await buildGeometry({
     parsed: state.parsed,
     colorSettings: state.colorSettings,
     baseParams,

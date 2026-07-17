@@ -143,7 +143,7 @@ export async function buildAssemblyGeometry(
     );
   }
 
-  const { byColor } = computeNetRegionsByColor(parsed.shapes);
+  const { byColor } = await computeNetRegionsByColor(parsed.shapes);
   // Honor "merge colors" here too — merged colors become one region / one AMS slot / one depth.
   // `key` doubles as the per-region depth key.
   const resolved = applyColorMerges(byColor, mergeGroups);

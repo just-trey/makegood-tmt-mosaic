@@ -124,12 +124,12 @@ describe('cleanFeature', () => {
 });
 
 describe('computeNetRegionsByColor', () => {
-  it('subtracts later paint from earlier colors (paint order)', () => {
+  it('subtracts later paint from earlier colors (paint order)', async () => {
     const shapes: SVGShape[] = [
       { fill: '#ff0000', loops: [square(0, 0, 10)], order: 0 },
       { fill: '#000000', loops: [square(3, 3, 4)], order: 1 }, // painted on top
     ];
-    const { byColor } = computeNetRegionsByColor(shapes);
+    const { byColor } = await computeNetRegionsByColor(shapes);
     expect(planarArea(byColor['#ff0000'])).toBeCloseTo(100 - 16, 4);
     expect(planarArea(byColor['#000000'])).toBeCloseTo(16, 4);
   });
