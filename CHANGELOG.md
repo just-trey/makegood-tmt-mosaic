@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   base-slab region unions now merge via balanced pairs instead of one long
   accumulation (~3x faster on that phase, ~18% off the whole rebuild on a
   135-path test SVG).
+- SVG curves are now flattened to an adaptive deviation tolerance instead of a
+  fixed 18-segment count per Bezier — gentle curves emit only as many points
+  as they need. ~77% fewer polyline points on the 135-path test SVG, with
+  worst-case deviation from the true curve measured at ~0.002 SVG units
+  (well under the fidelity that mattered before), which speeds up every
+  downstream step that scales with vertex count.
 
 ## [0.3.0] - 2026-07-16
 
