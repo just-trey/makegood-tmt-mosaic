@@ -1,7 +1,7 @@
 # TMT Mosaic — SVG Color-Inlay Generator
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.0--alpha-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0--beta-orange.svg)](CHANGELOG.md)
 
 A browser app that turns a flat-color SVG into per-color recess geometry for
 multicolor/AMS 3D printing, and exports a print-ready project 3MF — parts
@@ -16,7 +16,7 @@ Built for [MakeGood](https://makegood.design)'s Toddler Mobility Trainer
 (TMT) — a free, open-source 3D-printable mobility device for children ages
 1–8, distributed via [3d-mobility.org](https://3d-mobility.org).
 
-This project is in **alpha** (pre-1.0, see [Versioning](CONTRIBUTING.md#versioning))
+This project is in **beta** (pre-1.0, see [Versioning](CONTRIBUTING.md#versioning))
 — exported file formats and supported inputs may still change between minor
 releases.
 
