@@ -11,6 +11,7 @@ import {
   frameModelIfPending,
   getModelGroup,
   newModelGroup,
+  refreshModelShadows,
   setPreferredViewDir,
 } from '../scene/viewport';
 import { renderColorList } from '../ui/colorList';
@@ -77,7 +78,7 @@ export async function rebuildCurrent(): Promise<void> {
 
 async function rebuildScene(): Promise<void> {
   setPreferredViewDir(null); // flat mode: keep the user's current view direction when re-framing
-  const modelGroup = newModelGroup();
+  const modelGroup = newModelGroup(state.stlRefMesh);
   const baseParams = currentBaseParams();
 
   if (!state.parsed) {
@@ -105,6 +106,7 @@ async function rebuildScene(): Promise<void> {
     renderWarnings();
     updateTriStat();
     setExportEnabled(false);
+    refreshModelShadows();
     frameModelIfPending();
     return;
   }
@@ -141,6 +143,7 @@ async function rebuildScene(): Promise<void> {
   );
   renderWarnings();
   setExportEnabled(true);
+  refreshModelShadows();
   frameModelIfPending();
 }
 
@@ -179,7 +182,7 @@ function restAssemblyOnGrid(): void {
 }
 
 async function rebuildAssemblyScene(): Promise<void> {
-  newModelGroup();
+  newModelGroup(state.stlRefMesh);
 
   // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
   if (!state.parsed) {
@@ -192,6 +195,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     const primary = state.assembly.parts.find((p) => p.loaded && !p.isDuplicateOf);
     const nrm = primary ? asmPartFaceNormal(primary, state.assembly.parts) : null;
     setPreferredViewDir(new THREE.Vector3(0.35, 0.9 * (nrm && nrm[1] < 0 ? -1 : 1), 0.4));
+    refreshModelShadows();
     frameModelIfPending();
     return;
   }
@@ -219,6 +223,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     renderColorList(null);
     renderWarnings();
     $<HTMLButtonElement>('#btn-export').disabled = true;
+    refreshModelShadows();
     frameModelIfPending();
     return;
   }
@@ -283,5 +288,6 @@ async function rebuildAssemblyScene(): Promise<void> {
   renderColorList(colorListEntries);
   renderWarnings();
   $<HTMLButtonElement>('#btn-export').disabled = built.partOutputs.length === 0;
+  refreshModelShadows();
   frameModelIfPending();
 }
