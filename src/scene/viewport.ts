@@ -79,19 +79,25 @@ export function initViewport(host: HTMLElement): void {
 
   function animate(): void {
     requestAnimationFrame(animate);
-    // modelGroup is rebuilt from several code paths — flagging every frame catches them all
-    // (object count is small). Transparent ghosts don't cast shadows.
-    modelGroup.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.castShadow = !(mesh.material as THREE.Material).transparent;
-        mesh.receiveShadow = true;
-      }
-    });
     controls.update();
     renderer.render(scene, camera);
   }
   animate();
+}
+
+/**
+ * Set shadow flags on every mesh currently in the model group. modelGroup is rebuilt from
+ * several code paths — call this once after each one populates it, rather than every frame.
+ * Transparent ghosts don't cast shadows.
+ */
+export function refreshModelShadows(): void {
+  modelGroup.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) {
+      mesh.castShadow = !(mesh.material as THREE.Material).transparent;
+      mesh.receiveShadow = true;
+    }
+  });
 }
 
 /** Discard the current model group and return a fresh one already in the scene. */
