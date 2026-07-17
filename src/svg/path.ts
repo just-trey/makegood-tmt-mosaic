@@ -1,25 +1,71 @@
 import type { Loop, Pt } from '../types';
 
-export function flattenCubic(p0: Pt, p1: Pt, p2: Pt, p3: Pt, segs: number, out: Pt[]): void {
-  for (let i = 1; i <= segs; i++) {
-    const t = i / segs,
-      mt = 1 - t;
-    const x =
-      mt * mt * mt * p0.x + 3 * mt * mt * t * p1.x + 3 * mt * t * t * p2.x + t * t * t * p3.x;
-    const y =
-      mt * mt * mt * p0.y + 3 * mt * mt * t * p1.y + 3 * mt * t * t * p2.y + t * t * t * p3.y;
-    out.push({ x, y });
-  }
+// Max perpendicular deviation (SVG user units) a subdivided chord may have from the true
+// curve before we stop splitting. ~500-unit-wide artwork is typical (see stubs/*.svg), so this
+// stays well under print-visible error at any reasonable final mm scale while letting flat/small
+// curves bail out after 1-2 segments instead of the old fixed 18.
+const BEZIER_TOLERANCE = 0.15;
+// Recursion cap: bounds worst case at 2**6 = 64 segments per curve (in line with flattenArc's
+// existing 48-segment cap for a full circle) so a degenerate curve can't blow up rebuild time.
+const BEZIER_MAX_DEPTH = 6;
+
+function midpoint(a: Pt, b: Pt): Pt {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-export function flattenQuad(p0: Pt, p1: Pt, p2: Pt, segs: number, out: Pt[]): void {
-  for (let i = 1; i <= segs; i++) {
-    const t = i / segs,
-      mt = 1 - t;
-    const x = mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x;
-    const y = mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y;
-    out.push({ x, y });
+// Perpendicular distance from p to the line through a-b (falls back to point distance if a===b).
+function pointLineDist(p: Pt, a: Pt, b: Pt): number {
+  const dx = b.x - a.x,
+    dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9) return Math.hypot(p.x - a.x, p.y - a.y);
+  return Math.abs(dx * (p.y - a.y) - dy * (p.x - a.x)) / len;
+}
+
+export function flattenCubic(
+  p0: Pt,
+  p1: Pt,
+  p2: Pt,
+  p3: Pt,
+  out: Pt[],
+  tol: number = BEZIER_TOLERANCE,
+  depth = 0,
+): void {
+  const flat =
+    depth >= BEZIER_MAX_DEPTH ||
+    (pointLineDist(p1, p0, p3) <= tol && pointLineDist(p2, p0, p3) <= tol);
+  if (flat) {
+    out.push(p3);
+    return;
   }
+  const p01 = midpoint(p0, p1),
+    p12 = midpoint(p1, p2),
+    p23 = midpoint(p2, p3);
+  const p012 = midpoint(p01, p12),
+    p123 = midpoint(p12, p23);
+  const p0123 = midpoint(p012, p123);
+  flattenCubic(p0, p01, p012, p0123, out, tol, depth + 1);
+  flattenCubic(p0123, p123, p23, p3, out, tol, depth + 1);
+}
+
+export function flattenQuad(
+  p0: Pt,
+  p1: Pt,
+  p2: Pt,
+  out: Pt[],
+  tol: number = BEZIER_TOLERANCE,
+  depth = 0,
+): void {
+  const flat = depth >= BEZIER_MAX_DEPTH || pointLineDist(p1, p0, p2) <= tol;
+  if (flat) {
+    out.push(p2);
+    return;
+  }
+  const p01 = midpoint(p0, p1),
+    p12 = midpoint(p1, p2);
+  const p012 = midpoint(p01, p12);
+  flattenQuad(p0, p01, p012, out, tol, depth + 1);
+  flattenQuad(p012, p12, p2, out, tol, depth + 1);
 }
 
 /** SVG elliptical arc -> polyline, via center parameterization (SVG spec F.6.5). */
@@ -100,7 +146,6 @@ export function parsePathD(d: string): Loop[] {
     startY = 0;
   let prevCmd: string | null = null,
     prevCtrl: Pt | null = null;
-  const BEZ_SEGS = 18;
   while (i < tokens.length) {
     let cmd: string | null = tokens[i];
     if (/^[a-zA-Z]$/.test(cmd)) i++;
@@ -144,7 +189,7 @@ export function parsePathD(d: string): Loop[] {
       const p1 = { x: rel ? cx + x1 : x1, y: rel ? cy + y1 : y1 };
       const p2 = { x: rel ? cx + x2 : x2, y: rel ? cy + y2 : y2 };
       const p3 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
-      flattenCubic({ x: cx, y: cy }, p1, p2, p3, BEZ_SEGS, cur);
+      flattenCubic({ x: cx, y: cy }, p1, p2, p3, cur);
       cx = p3.x;
       cy = p3.y;
       prevCtrl = p2;
@@ -156,7 +201,7 @@ export function parsePathD(d: string): Loop[] {
         : { x: cx, y: cy };
       const p2 = { x: rel ? cx + x2 : x2, y: rel ? cy + y2 : y2 };
       const p3 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
-      flattenCubic({ x: cx, y: cy }, p1, p2, p3, BEZ_SEGS, cur);
+      flattenCubic({ x: cx, y: cy }, p1, p2, p3, cur);
       cx = p3.x;
       cy = p3.y;
       prevCtrl = p2;
@@ -165,7 +210,7 @@ export function parsePathD(d: string): Loop[] {
       const [x1, y1, x, y] = nums(4);
       const p1 = { x: rel ? cx + x1 : x1, y: rel ? cy + y1 : y1 };
       const p2 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
-      flattenQuad({ x: cx, y: cy }, p1, p2, BEZ_SEGS, cur);
+      flattenQuad({ x: cx, y: cy }, p1, p2, cur);
       cx = p2.x;
       cy = p2.y;
       prevCtrl = p1;
@@ -176,7 +221,7 @@ export function parsePathD(d: string): Loop[] {
         ? { x: 2 * cx - prevCtrl.x, y: 2 * cy - prevCtrl.y }
         : { x: cx, y: cy };
       const p2 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
-      flattenQuad({ x: cx, y: cy }, p1, p2, BEZ_SEGS, cur);
+      flattenQuad({ x: cx, y: cy }, p1, p2, cur);
       cx = p2.x;
       cy = p2.y;
       prevCtrl = p1;

@@ -69,7 +69,12 @@ your account.
 
 1. **The SVG is parsed as vectors, not pixels** ([src/svg/](src/svg/)) — the
    `<path>`/`<rect>`/`<circle>`/etc. geometry is read directly, transforms
-   composed, curves flattened, and shapes grouped by fill color.
+   composed, curves flattened, and shapes grouped by fill color. Bezier curves
+   are flattened adaptively (recursive subdivision to a fixed deviation
+   tolerance, [src/svg/path.ts](src/svg/path.ts)) rather than at a fixed
+   segment count, so gentle curves emit few points and only sharp/detailed
+   curves emit many — fewer total vertices flowing into the boolean pass below
+   without losing visible fidelity.
 2. **Each color's _net visible_ region** is computed with paint order taken
    into account — an outline drawn on top of a fill has its footprint
    subtracted from the fill's region, matching what the rasterized image would
@@ -194,7 +199,6 @@ is imported by the app. Two other brand themes in the tokens folder
 
 ## Roadmap ideas (not built)
 
-- Adaptive Bezier flattening tolerance instead of a fixed segment count.
 - Smarter color mapping: auto-merge visually similar colors into a single
   region/filament slot, and let one image color be assigned to the base
   material instead of a cut inlay.
