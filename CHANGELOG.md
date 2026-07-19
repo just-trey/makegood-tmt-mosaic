@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Footrest assembly kind: a second selectable part alongside the wheel, with
+  a true-to-size (1:1mm) design-face SVG template.
+- Footrest export ships with a verified plate pose (centered on any printer's
+  build plate), a prime/wipe tower placement that rides along with it, and
+  per-part print overrides (support off, no brim) baked from a user-verified
+  reference 3MF.
+- Exported print-ready 3MF files are now named after the selected part (e.g.
+  `mosaic-footrest.3mf`) instead of always `mosaic-wheel.3mf`.
+
 ### Fixed
 
 - Wheel assembly's second Top half (the rotated copy, exported onto its own

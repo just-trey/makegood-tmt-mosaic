@@ -99,8 +99,10 @@ export interface AssemblyBuildInput {
   mergeGroups: string[][];
   colorSettings: ColorSettings;
   globalDepth: number;
-  /** design radius in mm — the SVG boundary circle maps to this */
+  /** design radius in mm — the SVG boundary circle maps to this (ignored when designFit==='rect') */
   radius: number;
+  /** how artwork maps onto the face; 'rect' scales the SVG 1:1 in mm and centers on the face */
+  designFit?: 'wheel' | 'rect';
   scaleMult: number;
   offX: number;
   offZ: number;
@@ -132,6 +134,7 @@ export async function buildAssemblyGeometry(
     colorSettings,
     globalDepth,
     radius,
+    designFit,
     scaleMult,
     offX,
     offZ,
@@ -144,21 +147,25 @@ export async function buildAssemblyGeometry(
   } = input;
   if (!parsed) return null;
 
+  const isRect = designFit === 'rect';
+
   // Design anchor: the SVG's largest <circle> when there is one (the design's intended outer
   // boundary), otherwise a pseudo-circle around the artwork's bounding box — centered on the
   // artwork, radius = half its larger dimension — so circle-less SVGs still auto-center on the
-  // hub and span the design diameter instead of refusing to build.
-  let svgC = parsed.rawSVGCircle;
+  // hub and span the design diameter instead of refusing to build. Rect parts always anchor on
+  // the artwork bbox center (a template circle is meaningless there) and skip the wheel notice.
+  const bbox = parsed.bbox;
+  let svgC = isRect ? null : parsed.rawSVGCircle;
   if (!svgC) {
-    const b = parsed.bbox;
     svgC = {
-      cx: (b.minX + b.maxX) / 2,
-      cy: (b.minY + b.maxY) / 2,
-      r: Math.max(b.maxX - b.minX, b.maxY - b.minY) / 2 || 1,
+      cx: (bbox.minX + bbox.maxX) / 2,
+      cy: (bbox.minY + bbox.maxY) / 2,
+      r: Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY) / 2 || 1,
     };
-    notice(
-      'This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.',
-    );
+    if (!isRect)
+      notice(
+        'This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.',
+      );
   }
 
   // Split like flat.ts: the per-color net regions are ~0-40%, then the per-part Manifold CSG
@@ -208,7 +215,15 @@ export async function buildAssemblyGeometry(
     feature: r.feature,
   }));
 
-  const mmPerUnit = (radius / svgC.r) * scaleMult;
+  // Wheel: SVG circle radius maps to the mm Design radius. Rect: convert SVG units to mm via the
+  // file's declared physical size (userUnitMM) so a template lands life-size even if an editor
+  // re-exported it at a different internal resolution; 1:1 fallback (with a heads-up) when the SVG
+  // gives no absolute size.
+  if (isRect && parsed.userUnitMM == null)
+    notice(
+      'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
+    );
+  const mmPerUnit = isRect ? (parsed.userUnitMM ?? 1) * scaleMult : (radius / svgC.r) * scaleMult;
 
   let wasm;
   try {
@@ -233,12 +248,30 @@ export async function buildAssemblyGeometry(
   // +Y side, which reads the artwork mirrored left-to-right, so negate X on those faces to keep
   // it right-reading by default; a -Y face is viewed from -Y and already reads correctly. Flip H
   // then mirrors relative to that corrected orientation.
-  const placeOnPart =
-    (part: AssemblyPart, nsign: number) =>
-    (pt: number[]): number[] => {
+  const placeOnPart = (part: AssemblyPart, nsign: number) => {
+    // Rect parts center the design on the detected face (its native X/Z bbox center), so artwork
+    // lands on the face even when the face is offset from the part origin. Wheel parts anchor on
+    // the hub at the origin.
+    let faceCx = 0,
+      faceCz = 0;
+    if (isRect && part.boundaryLoop && part.boundaryLoop.length) {
+      let minX = Infinity,
+        maxX = -Infinity,
+        minZ = Infinity,
+        maxZ = -Infinity;
+      for (const p of part.boundaryLoop) {
+        if (p[0] < minX) minX = p[0];
+        if (p[0] > maxX) maxX = p[0];
+        if (p[2] < minZ) minZ = p[2];
+        if (p[2] > maxZ) maxZ = p[2];
+      }
+      faceCx = (minX + maxX) / 2;
+      faceCz = (minZ + maxZ) / 2;
+    }
+    return (pt: number[]): number[] => {
       const xMul = userXFlip * (nsign > 0 ? -1 : 1);
-      let x = (pt[0] - svgC.cx) * mmPerUnit * xMul + offX;
-      let z = (pt[1] - svgC.cy) * mmPerUnit * zMul + offZ;
+      let x = (pt[0] - svgC.cx) * mmPerUnit * xMul + offX + faceCx;
+      let z = (pt[1] - svgC.cy) * mmPerUnit * zMul + offZ + faceCz;
       if (part.isDuplicateOf) {
         const r = rotatePointY(x, z, part.pivotX, part.pivotZ, -part.angleDeg);
         x = r[0];
@@ -246,6 +279,7 @@ export async function buildAssemblyGeometry(
       }
       return [x, z];
     };
+  };
 
   // Per-part Manifold CSG is the actual heavy work here (turf's part is done above) — yield to
   // the browser on the same time budget flat.ts's boolean passes use, and report progress across

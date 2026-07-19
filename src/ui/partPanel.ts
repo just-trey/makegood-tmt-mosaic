@@ -8,9 +8,9 @@ import { requestFrame } from '../scene/viewport';
 import { ASSEMBLY_KINDS } from '../assembly/kinds';
 import { maybeAutoLoadAssembly } from '../assembly/parts';
 import {
-  renderAssemblyKindSelect,
   renderAssemblyPartList,
   renderAssemblyRoleControls,
+  syncAssemblyKindControls,
 } from './assemblyPanel';
 import { updateOffsetSliderRanges } from './fitPanel';
 import { $, input, numVal } from './dom';
@@ -31,6 +31,20 @@ function setShapeThumb(kind: string): void {
   if (el) el.innerHTML = SHAPE_THUMBS[kind] || '';
 }
 
+/**
+ * Populates the single part dropdown: one real assembly part per ASSEMBLY_KINDS entry (value
+ * "asm:{id}"), then "disc" — a plain flat-plate insert kept as a quick reference shape. Rect/
+ * round/stl remain in the codebase (their param blocks + bindings are untouched) but aren't
+ * offered here; picking a real part shouldn't require navigating a second nested dropdown.
+ */
+function renderShapeKindOptions(): void {
+  const sel = $<HTMLSelectElement>('#shape-kind');
+  const asmOptions = ASSEMBLY_KINDS.map(
+    (k) => `<option value="asm:${k.id}">${k.name}</option>`,
+  ).join('');
+  sel.innerHTML = asmOptions + '<option value="disc">Disc (reference)</option>';
+}
+
 export function setShapeKind(kind: ShapeKind): void {
   state.shapeKind = kind;
   (['disc', 'rect', 'round', 'stl', 'assembly'] as const).forEach((k) => {
@@ -39,7 +53,7 @@ export function setShapeKind(kind: ShapeKind): void {
   });
   if (kind === 'assembly') {
     if (!state.assembly.kindId) state.assembly.kindId = ASSEMBLY_KINDS[0].id;
-    renderAssemblyKindSelect();
+    syncAssemblyKindControls();
     renderAssemblyRoleControls();
     renderAssemblyPartList();
     maybeAutoLoadAssembly(); // just load the wheel — no separate "Load full …" click needed
@@ -137,9 +151,37 @@ function loadSTLReference(file: File): void {
   reader.readAsArrayBuffer(file);
 }
 
+/** The "asm:{id}" the shape-kind select should show for the current state (empty if flat shape). */
+function currentAsmOptionValue(): string {
+  return state.shapeKind === 'assembly' && state.assembly.kindId
+    ? 'asm:' + state.assembly.kindId
+    : '';
+}
+
 export function initPartPanel(): void {
+  renderShapeKindOptions();
   $<HTMLSelectElement>('#shape-kind').addEventListener('change', (e) => {
-    setShapeKind((e.target as HTMLSelectElement).value as ShapeKind);
+    const sel = e.target as HTMLSelectElement;
+    const val = sel.value;
+    if (val.startsWith('asm:')) {
+      const newKindId = val.slice(4);
+      const switchingKind = state.assembly.kindId !== newKindId;
+      if (
+        switchingKind &&
+        state.assembly.parts.length > 0 &&
+        !confirm('Switching parts will clear the currently loaded ones. Continue?')
+      ) {
+        sel.value = currentAsmOptionValue() || 'disc';
+        return;
+      }
+      if (switchingKind) {
+        state.assembly.kindId = newKindId;
+        state.assembly.parts = [];
+      }
+      setShapeKind('assembly');
+    } else {
+      setShapeKind(val as ShapeKind);
+    }
   });
   setShapeThumb(state.shapeKind); // reflect the initial selection
 

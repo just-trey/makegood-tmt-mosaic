@@ -22,6 +22,13 @@ export interface ExportPart {
   subs: ExportSub[];
   /** in-plane spin (deg) for this part specifically; falls back to ExportOptions.rotZdeg. */
   rotZdeg?: number;
+  /**
+   * Baked full 3x3 plate rotation (row-major, p' = p * R) that overrides the default face-down
+   * tilt+spin. Used for parts whose verified print pose isn't "design face flat on the plate" —
+   * e.g. the footrest stands on its long edge (see FOOTREST_PLATE_R). Taken verbatim from the
+   * part's reference 3MF build-item transform, so rotZdeg/nsign don't apply when this is set.
+   */
+  plateR?: number[][];
   /** 1-based plate pin — parts sharing a hint go onto the same plate together (stride offset
    * only; XY placement within the plate comes from fixedPos below). */
   plateHint?: number;
@@ -29,9 +36,15 @@ export interface ExportPart {
    * used for parts whose placement is a fixed, externally-verified constant rather than
    * something to compute (see WHEEL_TOP_POS/WHEEL_CAP_POS). */
   fixedPos?: { x: number; y: number };
-  /** This part's final local position anchors its plate's prime/wipe tower offset (see
-   * WHEEL_PRIME_TOWER_DELTA) — set on the wheel's Top half. */
-  primeTowerAnchor?: boolean;
+  /** Prime/wipe tower offset from this part's final local position — set on the part that anchors
+   * its plate's tower (the wheel's Top half, or the footrest). Held relative so the tower rides
+   * along with the part on every printer. Baked from the part's reference 3MF (see
+   * WHEEL_PRIME_TOWER_DELTA / FOOTREST_PRIME_TOWER_DELTA). */
+  primeTowerDelta?: { x: number; y: number };
+  /** Per-object Bambu print overrides written into model_settings.config as
+   * <metadata key value/> on this part's object (e.g. { brim_type: 'no_brim', enable_support: '0' }
+   * for the footrest). Baked from the part's reference 3MF; general per-part settings mechanism. */
+  objectSettings?: Record<string, string>;
 }
 export interface ExportOptions {
   rotZdeg?: number;
@@ -143,10 +156,10 @@ export function bambuProjectSettings(
       support_style: 'default',
       // [print, one per filament, printer] — only the print slot (index 0) differs from system.
       different_settings_to_system: [printOverrideKeys.join(';'), ...rep(''), ''],
-      // Prime/wipe tower position, one entry per plate — only set for wheel exports (see
-      // WHEEL_PRIME_TOWER_DELTA). Not listed in different_settings_to_system: the reference file
-      // this was verified against doesn't track it there either, so a plain value matches real
-      // slicer behavior. A plate with no anchor part falls back to plate center.
+      // Prime/wipe tower position, one entry per plate — set for parts that carry a
+      // primeTowerDelta (wheel, footrest). Not listed in different_settings_to_system: the
+      // reference files this was verified against don't track it there either, so a plain value
+      // matches real slicer behavior. A plate with no anchor part falls back to plate center.
       ...(wipeTower
         ? {
             wipe_tower_x: wipeTower.map((w) => fmtCoord(w ? w.x : plate.w / 2)),
@@ -169,17 +182,19 @@ export function bambuProjectSettings(
  *   - Metadata/model_settings.config: part names, per-part filament (extruder) assignment,
  *     and one <plate> block per build plate
  *   - Metadata/project_settings.config: filament colors (see bambuProjectSettings above)
- * Parts are laid MOSAIC-FACE-DOWN, spun `opts.rotZdeg` about vertical (or their own
- * `part.rotZdeg`, when set), then packed onto `opts.printer`'s build plates. Parts carrying a
- * `plateHint` go onto that plate together instead of through the size-driven greedy packer (used
- * by the wheel assembly: top half + cap share plate 1, each rotated-duplicate half gets its own
- * plate) — the greedy packer claims plates largest-footprint-first, each part joining an existing
- * plate's row only if it fits, otherwise opening a new plate. A part carrying `fixedPos` skips
- * footprint-based placement entirely and goes exactly there (see WHEEL_TOP_POS/WHEEL_CAP_POS) —
- * used for parts whose real-world placement has been externally verified rather than computed,
- * since bounding-box math alone can't tell a genuine overlap from a concave part's open interior.
- * A part that still overhangs its plate (fixed or computed) is reported back via `warnings`
- * instead of assumed safe.
+ * Parts are laid MOSAIC-FACE-DOWN (or a baked `part.plateR`, for a part whose verified print pose
+ * isn't a flat face-down tilt — see FOOTREST_PLATE_R), spun `opts.rotZdeg` about vertical (or
+ * their own `part.rotZdeg`, when set), then packed onto `opts.printer`'s build plates. Parts
+ * carrying a `plateHint` go onto that plate together instead of through the size-driven greedy
+ * packer (used by the wheel assembly: top half + cap share plate 1, each rotated-duplicate half
+ * gets its own plate; also used to pin a single part like the footrest to its own plate) — the
+ * greedy packer claims plates largest-footprint-first, each part joining an existing plate's row
+ * only if it fits, otherwise opening a new plate. A part carrying `fixedPos` skips footprint-based
+ * placement entirely and goes exactly there (see WHEEL_TOP_POS/WHEEL_CAP_POS) — used for parts
+ * whose real-world placement has been externally verified rather than computed, since bounding-box
+ * math alone can't tell a genuine overlap from a concave part's open interior. A hinted part
+ * without `fixedPos` (e.g. the footrest) instead centers on its plate. A part that still overhangs
+ * its plate (fixed, centered, or computed) is reported back via `warnings` instead of assumed safe.
  *   materials: index 0 = body/base, then one per palette color
  */
 
@@ -203,16 +218,37 @@ export const WHEEL_CAP_POS = { x: 87.861827, y: 50.328835 };
 // Prime/wipe tower position, likewise from stubs/mosaic-wheel-snapmaker.3mf — the user manually
 // dragged the tower on that file's plate 1 in Snapmaker Orca. Expressed as an offset from the
 // Top anchor's own final local position (not an absolute), so the same relative placement
-// reproduces on every printer and on every plate a Top half lands on (see `primeTowerAnchor`).
+// reproduces on every printer and on every plate a Top half lands on. Passed in via the Top
+// part's ExportPart.primeTowerDelta.
 export const WHEEL_PRIME_TOWER_DELTA = { x: -87.833131, y: -28.867078 };
-// The plate the reference file's own positions were authored against (Bambu X1C, 256x256) — used
-// only to recognize that printer and leave its fixedPos values untouched (see `isRefPlate` below).
-// On any other printer's plate, each fixedPos group is instead re-centered on its own true
-// bounding box (see `placeHintedGroup`), not by a fixed offset off this constant — the reference
-// file's own placement isn't itself centered on its 256x256 plate (off by a few mm), so scaling
-// that same skew down to a bigger plate looked fine on the much-larger H2D bed but was visibly
-// off-center on the Snapmaker U1's, which only has 14mm more room than the reference in each axis.
-const WHEEL_REF_PLATE = { w: 256, d: 256 };
+// The plate size any part's fixedPos constants (WHEEL_TOP_POS/WHEEL_CAP_POS) were authored
+// against (Bambu X1C, 256x256) — used only to recognize that printer and leave those values
+// untouched (see `isRefPlate` below). On any other printer's plate, each fixedPos group is instead
+// re-centered on its own true bounding box (see `placeHintedGroup`), not by a fixed offset off
+// this constant — the reference file's own placement isn't itself centered on its 256x256 plate
+// (off by a few mm), so scaling that same skew down to a bigger plate looked fine on the
+// much-larger H2D bed but was visibly off-center on the Snapmaker U1's, which only has 14mm more
+// room than the reference in each axis.
+const ASSEMBLY_REF_PLATE = { w: 256, d: 256 };
+
+// Footrest placement, baked from its reference Bambu project — the same "use the tested numbers,
+// don't re-derive" approach as the wheel above. The verified pose is a pure Rz(-45°) that stands
+// the part on its long (front-back) edge to print support-free (FOOTREST_PLATE_R, applied as a
+// full matrix via ExportPart.plateR since it's not a face-down tilt). The footrest carries NO
+// fixedPos: the reference's own translation (135.329137, 135.329137) is just the Snapmaker U1's
+// 270×270 bed center and isn't portable, so the footrest instead centers on whatever plate (see
+// placeHintedGroup's no-fixedPos branch). The z lift is recovered as -minZ (rest-on-plate).
+export const FOOTREST_PLATE_R = [
+  [0.707106781, -0.707106781, 0],
+  [0.707106781, 0.707106781, 0],
+  [0, 0, 1],
+];
+// Prime/wipe tower offset from the footrest's (centered) position, baked from
+// stubs/footrest reference tower.3mf: the user placed the tower at (165.138, 177.187) with the
+// footrest at the U1 center (135.329137, 135.329137), so tower - footrest = (29.808863, 41.857863).
+// Held relative (via ExportPart.primeTowerDelta) so it lands in the same empty diagonal corner the
+// 45°-rotated part leaves open, on every printer.
+export const FOOTREST_PRIME_TOWER_DELTA = { x: 29.808863, y: 41.857863 };
 
 export async function build3MFCombined(
   materials: ExportMaterial[],
@@ -269,7 +305,7 @@ export async function build3MFCombined(
     part: ExportPart,
     angleDeg: number,
   ): { R: number[][]; w: number; d: number; cx: number; cy: number; minZ: number } {
-    const R = rotXthenZ(-90 * part.nsign, angleDeg);
+    const R = part.plateR ?? rotXthenZ(-90 * part.nsign, angleDeg);
     const tmn = [Infinity, Infinity, Infinity],
       tmx = [-Infinity, -Infinity, -Infinity];
     for (let i = 0; i < part.bodySoup.length; i += 3) {
@@ -326,11 +362,11 @@ export async function build3MFCombined(
       );
   }
 
-  // Bambu X1C's plate is exactly the size the reference file's fixedPos values were authored
-  // against — leave them verbatim there, the real tested layout. Any other printer's plate gets
-  // each fixedPos group (plate 1's Top + Cap, each plate 2+ rotated-duplicate Top alone)
-  // re-centered on its own true bounding box instead (see `placeHintedGroup`).
-  const isRefPlate = plateW === WHEEL_REF_PLATE.w && plateD === WHEEL_REF_PLATE.d;
+  // Bambu X1C's plate is exactly the size any part's fixedPos values were authored against —
+  // leave them verbatim there, the real tested layout. Any other printer's plate gets each
+  // fixedPos group (plate 1's Top + Cap, each plate 2+ rotated-duplicate Top alone) re-centered on
+  // its own true bounding box instead (see `placeHintedGroup`).
+  const isRefPlate = plateW === ASSEMBLY_REF_PLATE.w && plateD === ASSEMBLY_REF_PLATE.d;
 
   // A part carrying plateHint is pinned to that plate instead of going through the greedy
   // packer — used by the wheel assembly (top half + cap share plate 1, each rotated-duplicate
@@ -403,13 +439,14 @@ export async function build3MFCombined(
   if (useHints) {
     plates.forEach((plate) => {
       placeHintedGroup(plate.row);
-      // Prime/wipe tower position is relative to this plate's own Top anchor's final local
-      // position (still pre-stride here, which is exactly what wipe_tower_x/y want).
-      const anchor = plate.row.find((pl) => pl.part.primeTowerAnchor);
+      // Prime/wipe tower position is relative to this plate's own anchor part's final local
+      // position (still pre-stride here, which is exactly what wipe_tower_x/y want). The anchor is
+      // whichever part on the plate carries a primeTowerDelta (wheel Top / footrest).
+      const anchor = plate.row.find((pl) => pl.part.primeTowerDelta);
       if (anchor) {
         plate.wipeTower = {
-          x: anchor.tx! + WHEEL_PRIME_TOWER_DELTA.x,
-          y: anchor.ty! + WHEEL_PRIME_TOWER_DELTA.y,
+          x: anchor.tx! + anchor.part.primeTowerDelta!.x,
+          y: anchor.ty! + anchor.part.primeTowerDelta!.y,
         };
       }
     });
@@ -514,6 +551,10 @@ ${items.join('\n')}
     cfg.push(`  <object id="${pl.cid}">`);
     cfg.push(`    <metadata key="name" value="${xmlEscape(pl.part.name)}"/>`);
     cfg.push(`    <metadata key="extruder" value="1"/>`);
+    // Per-part print overrides (support off / no brim on the footrest, etc.) — object-level
+    // metadata Bambu applies on top of the global project settings.
+    for (const [key, value] of Object.entries(pl.part.objectSettings ?? {}))
+      cfg.push(`    <metadata key="${xmlEscape(key)}" value="${xmlEscape(value)}"/>`);
     for (const s of pl.subs!) {
       cfg.push(`    <part id="${s.id}" subtype="normal_part">`);
       cfg.push(`      <metadata key="name" value="${xmlEscape(s.name)}"/>`);

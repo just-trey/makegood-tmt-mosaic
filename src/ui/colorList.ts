@@ -243,13 +243,17 @@ export function renderColorList(
 
     list.appendChild(row);
   });
-  const slots = rows.length;
+  // +1 for AMS slots: the body itself always occupies one physical filament slot (materials[0] in
+  // both export paths — see exportPanel.ts), on top of every cut color/group listed below the Base
+  // row. The colors stat stays rows.length — it counts cut regions, not filament slots.
+  const cutColors = rows.length;
+  const slots = cutColors + 1;
   const raw = opts.rawColorCount;
   $('#slot-count').textContent =
     raw && raw !== slots
       ? `${raw} colors → ${slots} AMS slot${slots === 1 ? '' : 's'} needed`
       : slots + ' AMS slot' + (slots === 1 ? '' : 's') + ' needed';
-  $('#stat-colors').textContent = slots + ' colors';
+  $('#stat-colors').textContent = cutColors + ' colors';
   $('#stat-colors').style.display = '';
 }
 

@@ -1,5 +1,6 @@
 import { currentBaseParams, state } from '../state/store';
 import { isRebuildLikelySlow, scheduleRebuild } from '../app/scheduler';
+import { currentAssemblyKind } from '../assembly/kinds';
 import { input } from './dom';
 
 /**
@@ -44,8 +45,13 @@ function syncPair(
 export function updateOffsetSliderRanges(): void {
   let w: number, h: number;
   if (state.shapeKind === 'assembly') {
-    // assembly artwork maps onto the wheel face: ±radius puts the design center at the rim
-    w = h = 2 * (state.asmRadius || 138);
+    if (currentAssemblyKind()?.designFit === 'rect') {
+      // rect parts have no radius; give the offset sliders a fixed nudge range around the face
+      w = h = 300;
+    } else {
+      // assembly artwork maps onto the wheel face: ±radius puts the design center at the rim
+      w = h = 2 * (state.asmRadius || 138);
+    }
   } else {
     const bp = currentBaseParams();
     if (!bp) return;

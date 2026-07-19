@@ -82,6 +82,27 @@ function yRange(soup: Float32Array): { min: number; max: number } {
   return { min, max };
 }
 
+function xzRange(soup: Float32Array): {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+} {
+  let minX = Infinity,
+    maxX = -Infinity,
+    minZ = Infinity,
+    maxZ = -Infinity;
+  for (let i = 0; i < soup.length; i += 3) {
+    const x = soup[i],
+      z = soup[i + 2];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  }
+  return { minX, maxX, minZ, maxZ };
+}
+
 describe('buildAssemblyGeometry', () => {
   it('cuts a pocket into the part and produces a flush inlay', { timeout: 30000 }, async () => {
     const built = (await buildAssemblyGeometry(baseInput()))!;
@@ -123,6 +144,53 @@ describe('buildAssemblyGeometry', () => {
     const part = built.partOutputs[0];
     expect(part.inlaySoups).toEqual({});
     expect(part.bodySoup).toEqual(Float32Array.from(part.part.positions!));
+  });
+
+  it(
+    'rect designFit maps the SVG 1:1 in mm, ignoring Design radius',
+    { timeout: 30000 },
+    async () => {
+      // wheel mode would scale the 10-unit square by radius/circleR (=2) to 20mm; rect maps it 1:1.
+      const built = (await buildAssemblyGeometry(baseInput({ designFit: 'rect', radius: 10 })))!;
+      const inlay = built.partOutputs[0].inlaySoups[0];
+      expect(inlay).toBeDefined();
+      const r = xzRange(inlay);
+      expect(r.maxX - r.minX).toBeCloseTo(10, 4);
+      expect(r.maxZ - r.minZ).toBeCloseTo(10, 4);
+    },
+  );
+
+  it(
+    'rect designFit scales by the SVG physical size (userUnitMM), not raw units',
+    { timeout: 30000 },
+    async () => {
+      // a 10-unit square whose file declares 0.5mm per user unit must cut a 5mm region — this is
+      // the guard against an editor re-exporting the template at a larger internal resolution.
+      const parsed: ParsedSVG = { ...redSquareParsed(), userUnitMM: 0.5 };
+      const built = (await buildAssemblyGeometry(baseInput({ designFit: 'rect', parsed })))!;
+      const r = xzRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.maxX - r.minX).toBeCloseTo(5, 4);
+      expect(r.maxZ - r.minZ).toBeCloseTo(5, 4);
+    },
+  );
+
+  it('rect designFit centers the design on an off-center face', { timeout: 30000 }, async () => {
+    // a face whose bbox center is (5,5) in native X/Z — rect placement should land the artwork
+    // there, not at the part origin (where wheel mode anchors).
+    const part = boxPart({
+      boundaryLoop: [
+        [-5, 10, -5],
+        [15, 10, -5],
+        [15, 10, 15],
+        [-5, 10, 15],
+      ],
+    });
+    const built = (await buildAssemblyGeometry(baseInput({ designFit: 'rect', parts: [part] })))!;
+    const inlay = built.partOutputs[0].inlaySoups[0];
+    expect(inlay).toBeDefined();
+    const r = xzRange(inlay);
+    expect((r.minX + r.maxX) / 2).toBeCloseTo(5, 4);
+    expect((r.minZ + r.maxZ) / 2).toBeCloseTo(5, 4);
   });
 });
 

@@ -155,6 +155,23 @@ export function asmRemovePart(id: number): void {
   scheduleRebuild();
 }
 
+/**
+ * Default design-face patch for a freshly loaded part: the role's preferred-normal face if it
+ * declares one (patches are area-ranked, so the first match is the largest such face), otherwise
+ * the overall largest patch. Falls back to 0 when nothing points the preferred way.
+ */
+function defaultPatchIdx(part: AssemblyPart): number {
+  const patches = part.patches;
+  if (!patches || !patches.length) return 0;
+  const pref = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId)?.preferFaceNormal;
+  if (!pref) return 0;
+  const idx = patches.findIndex((p) => {
+    const dot = p.normal[0] * pref[0] + p.normal[1] * pref[1] + p.normal[2] * pref[2];
+    return dot > 0.9;
+  });
+  return idx >= 0 ? idx : 0;
+}
+
 /** Core mesh-buffer loader, shared by drag-and-drop upload and the parts library (fetch()). */
 export async function asmLoadPartBuffer(
   part: AssemblyPart,
@@ -175,7 +192,7 @@ export async function asmLoadPartBuffer(
   part.positions = positions;
   part.patches = detectFlatPatches(positions);
   requestFrame(); // new part geometry — re-fit the view
-  part.patchIdx = 0; // default: largest-area patch; override via the face dropdown if wrong
+  part.patchIdx = defaultPatchIdx(part); // largest-area patch, or the role's preferred face
   applyAsmPatchChoice(part);
   part.loaded = true;
   notifyPartsChanged();

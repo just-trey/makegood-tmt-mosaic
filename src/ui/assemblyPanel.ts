@@ -1,7 +1,7 @@
 import type { AssemblyPart } from '../types';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
-import { ASSEMBLY_KINDS, asmKindCanAutoLoad, currentAssemblyKind } from '../assembly/kinds';
+import { asmKindCanAutoLoad, currentAssemblyKind } from '../assembly/kinds';
 import {
   applyAsmPatchChoice,
   asmAddRoleDuplicate,
@@ -13,13 +13,11 @@ import {
 } from '../assembly/parts';
 import { $ } from './dom';
 
-export function renderAssemblyKindSelect(): void {
-  const sel = $<HTMLSelectElement>('#p-asm-kind');
-  if (!sel) return;
-  sel.innerHTML = ASSEMBLY_KINDS.map(
-    (k) =>
-      `<option value="${k.id}" ${k.id === state.assembly.kindId ? 'selected' : ''}>${k.name}</option>`,
-  ).join('');
+/** Show/hide controls that only apply to certain assembly kinds (Design radius is wheel-only). */
+export function syncAssemblyKindControls(): void {
+  const isRect = currentAssemblyKind()?.designFit === 'rect';
+  const radiusRow = $('#asm-radius-row');
+  if (radiusRow) radiusRow.style.display = isRect ? 'none' : '';
 }
 
 export function renderAssemblyRoleControls(): void {
@@ -190,22 +188,5 @@ export function initAssemblyPanel(): void {
   onAssemblyPartsChanged(() => {
     renderAssemblyRoleControls();
     renderAssemblyPartList();
-  });
-
-  $<HTMLSelectElement>('#p-asm-kind').addEventListener('change', (e) => {
-    const sel = e.target as HTMLSelectElement;
-    const newKindId = sel.value;
-    if (
-      state.assembly.parts.length > 0 &&
-      !confirm('Switching assembly type will clear all current parts. Continue?')
-    ) {
-      sel.value = state.assembly.kindId || '';
-      return;
-    }
-    state.assembly.kindId = newKindId;
-    state.assembly.parts = [];
-    renderAssemblyRoleControls();
-    renderAssemblyPartList();
-    scheduleRebuild();
   });
 }
