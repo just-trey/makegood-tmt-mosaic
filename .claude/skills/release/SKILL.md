@@ -51,10 +51,13 @@ go-live action.** Treat it as such: confirm with the user before pushing the tag
 unless they've already said to go ahead.
 
 After the tag push, watch the deploy with one blocking background call rather
-than polling:
+than polling. `gh run watch` requires an explicit run ID when non-interactive —
+without one it fails instantly with a usage error that's easy to mistake for a
+broken deploy — so grab the ID first:
 
 ```bash
-gh run watch --exit-status
+gh run list --workflow=deploy.yml --limit 1
+gh run watch <run-id> --exit-status
 ```
 
 ## Reference
