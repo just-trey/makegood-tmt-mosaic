@@ -72,6 +72,7 @@ export async function asmLoadFullAssembly(): Promise<void> {
   )
     return;
   state.assembly.parts = [];
+  const myParts = state.assembly.parts;
   showOverlay(`Loading ${kind.name}…`);
   try {
     for (const role of kind.roles) {
@@ -80,6 +81,10 @@ export async function asmLoadFullAssembly(): Promise<void> {
         : undefined;
       const primary = asmCreateRolePart(role);
       if (entry) await asmLoadLibraryEntryIntoPart(primary, entry);
+      // A part-kind switch mid-load replaces state.assembly.parts with a fresh array and kicks off
+      // its own load; if that happened while we awaited the fetch, stop here so we don't push this
+      // kind's parts into the new kind's list. The newer load owns the overlay and final refresh.
+      if (state.assembly.parts !== myParts) return;
       if (role.allowRotatedCopies) {
         for (let i = 0; i < (role.copies || 0); i++) {
           const dup = asmAddDuplicate(primary.id, role.copyName);

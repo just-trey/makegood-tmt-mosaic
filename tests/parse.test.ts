@@ -134,6 +134,35 @@ describe('parseSVGDocument', () => {
     );
     expect(out.userUnitMM).toBeNull();
   });
+
+  it('does not collapse to a zero scale when width/height is 0', () => {
+    // width="0" must not derive userUnitMM = 0/vbW = 0 (which maps all artwork onto one point);
+    // it falls back to the other axis, or null when neither gives a usable size.
+    const heightFallback = parseSVGDocument(
+      svg(
+        '<rect width="10" height="10" fill="#ff0000"/>',
+        'width="0" height="185mm" viewBox="0 0 266 185"',
+      ),
+    );
+    expect(heightFallback.userUnitMM).toBeCloseTo(1, 9);
+
+    const both = parseSVGDocument(
+      svg('<rect width="10" height="10" fill="#ff0000"/>', 'width="0" viewBox="0 0 266 185"'),
+    );
+    expect(both.userUnitMM).toBeNull();
+  });
+
+  it('uses the smaller (meet) scale when width/height proportions disagree with the viewBox', () => {
+    // 266mm/266 = 1 across, 100mm/185 ≈ 0.54 down — no single true scale, so uniform-fit ("meet")
+    // takes the smaller so the design lands inside the declared box rather than stretched by width.
+    const out = parseSVGDocument(
+      svg(
+        '<rect width="10" height="10" fill="#ff0000"/>',
+        'width="266mm" height="100mm" viewBox="0 0 266 185"',
+      ),
+    );
+    expect(out.userUnitMM).toBeCloseTo(100 / 185, 9);
+  });
 });
 
 describe('svgLengthToMM', () => {

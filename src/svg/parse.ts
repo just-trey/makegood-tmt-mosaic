@@ -129,9 +129,19 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   const widthMM = svgLengthToMM(svgEl.getAttribute('width'));
   const heightMM = svgLengthToMM(svgEl.getAttribute('height'));
   let userUnitMM: number | null = null;
-  if (vb && vbW > 0 && widthMM != null) userUnitMM = widthMM / vbW;
-  else if (vb && vbH > 0 && heightMM != null) userUnitMM = heightMM / vbH;
-  else if (!vb && (widthMM != null || heightMM != null)) userUnitMM = 25.4 / 96; // coords are user px
+  if (vb) {
+    // mm-per-unit from each declared axis independently. Guard `> 0` so a width="0"/height="0"
+    // doesn't collapse to a scale of 0 (which would map every point onto the face origin). When
+    // both axes are present but disagree — the file's width/height proportions differ from its
+    // viewBox aspect — there's no single true scale, so take the smaller: that matches SVG's
+    // default "meet" fitting, which uniformly scales the design to sit inside the declared box
+    // rather than stretching one axis to match the other.
+    const sx = vbW > 0 && widthMM != null && widthMM > 0 ? widthMM / vbW : null;
+    const sy = vbH > 0 && heightMM != null && heightMM > 0 ? heightMM / vbH : null;
+    userUnitMM = sx != null && sy != null ? Math.min(sx, sy) : (sx ?? sy);
+  } else if ((widthMM != null && widthMM > 0) || (heightMM != null && heightMM > 0)) {
+    userUnitMM = 25.4 / 96; // no viewBox: coords are user px
+  }
 
   const shapes: SVGShape[] = [];
   let order = 0;

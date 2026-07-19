@@ -250,7 +250,7 @@ export function renderColorList(
   const slots = cutColors + 1;
   const raw = opts.rawColorCount;
   $('#slot-count').textContent =
-    raw && raw !== slots
+    raw && raw !== cutColors
       ? `${raw} colors → ${slots} AMS slot${slots === 1 ? '' : 's'} needed`
       : slots + ' AMS slot' + (slots === 1 ? '' : 's') + ' needed';
   $('#stat-colors').textContent = cutColors + ' colors';

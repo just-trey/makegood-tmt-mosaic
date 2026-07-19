@@ -5,7 +5,7 @@ import { clearBaseColor, DEFAULT_BASE_COLOR, state } from '../state/store';
 import { getFilaments } from '../state/filaments';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
-import { ASSEMBLY_KINDS } from '../assembly/kinds';
+import { ASSEMBLY_KINDS, currentAssemblyKind } from '../assembly/kinds';
 import { maybeAutoLoadAssembly } from '../assembly/parts';
 import {
   renderAssemblyPartList,
@@ -28,7 +28,11 @@ const SHAPE_THUMBS: Record<string, string> = {
 
 function setShapeThumb(kind: string): void {
   const el = $('#shape-thumb');
-  if (el) el.innerHTML = SHAPE_THUMBS[kind] || '';
+  if (!el) return;
+  // The assembly glyph is the wheel's spoked disc; a rect-fit part (footrest) shows the plain
+  // rectangle glyph instead so the thumbnail matches the part's real shape.
+  const key = kind === 'assembly' && currentAssemblyKind()?.designFit === 'rect' ? 'rect' : kind;
+  el.innerHTML = SHAPE_THUMBS[key] || '';
 }
 
 /**

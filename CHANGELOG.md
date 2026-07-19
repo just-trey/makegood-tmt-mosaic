@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Wheel assembly's second Top half (the rotated copy, exported onto its own
   build plate) is now named "Bottom" instead of "Top (rotated copy)".
+- The "AMS slots needed" counter under Colors detected undercounted by one —
+  it left out the body's own filament slot (materials[0], always present in
+  both export paths). It now reports cut colors + 1. The "N colors → M AMS
+  slots" merge hint also compared detected colors against slots instead of
+  against cut colors, so it showed even when no colors were merged; it now
+  appears only when merging actually reduced the count.
+
+### Removed
+
+- The Rectangle, Rounded rectangle, and STL-reference options from the part
+  picker. The dropdown now lists the real MakeGood TMT parts (Wheel,
+  Footrest) plus a single "Disc (reference)" flat-plate insert. The
+  flat-shape code paths remain but are no longer offered in the UI.
 
 ## [0.4.0] - 2026-07-17
 

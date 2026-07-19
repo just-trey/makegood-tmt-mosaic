@@ -203,10 +203,6 @@ referenced part's `<mesh>` into a single `<object>`, dropping the
   behind the face will cut through. Sanity-check depths against your model.
 - **Gradients/patterns are detected and skipped** with a warning, rather than
   silently producing wrong geometry.
-- In flat-plate STL-reference mode, the uploaded STL is **reference-only**:
-  it guides sizing/alignment and the export is a flat insert plate, not a
-  modified copy of the STL. (Assembly mode is the path that modifies real
-  meshes.)
 
 ## Troubleshooting: "Boolean union/subtraction failed" warnings
 
@@ -297,3 +293,24 @@ is imported by the app. Two other brand themes in the tokens folder
   scrubbing, precision-truncation retries) target 6.5's exact
   polygon-clipping bugs, and 6.5's package typings don't resolve under
   modern TypeScript, hence the shim in [src/turf.d.ts](src/turf.d.ts).
+- **Per-part export placement is a hardcoded `roleId` if/else in
+  [src/ui/exportPanel.ts](src/ui/exportPanel.ts)** — each part's plate hint,
+  rotation, `plateR`, `fixedPos`, prime-tower delta, and object settings are
+  assigned by an `if (roleId === 'top') … else if ('cap') … else if
+('footrest')` chain. Every new assembly part means editing that chain.
+  These are per-role constants; they belong as data on the `AssemblyKind` /
+  role definition (or the part's `ExportPart`) so adding a part stays a
+  data-only change, matching the "one array entry" goal in
+  [src/assembly/kinds.ts](src/assembly/kinds.ts).
+- **The footrest's `objectSettings` literal (`brim_type: 'no_brim'`,
+  `enable_support: '0'`) is duplicated** between the export path in
+  [src/ui/exportPanel.ts](src/ui/exportPanel.ts) and its assertion in
+  [tests/threemf.test.ts](tests/threemf.test.ts). Extract a shared
+  `FOOTREST_OBJECT_SETTINGS` constant so the test verifies the real value
+  instead of a hand-copied duplicate that can silently drift.
+- **The footrest's baked `FOOTREST_PLATE_R` is redundant** with the general
+  `rotXthenZ(-90 * nsign, angleDeg)` path for `nsign: 0` + `rotZdeg: -45`
+  (see [src/export/threemf.ts](src/export/threemf.ts)). It's kept as an
+  explicit full 3×3 for now because it generalizes to a future part with a
+  genuinely tilted reference pose that the axis-aligned path can't express —
+  revisit if that part never materializes.
