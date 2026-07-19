@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Footrest assembly kind: a second selectable part alongside the wheel, with
+  a true-to-size (1:1mm) design-face SVG template.
+- Footrest export ships with a verified plate pose (centered on any printer's
+  build plate), a prime/wipe tower placement that rides along with it, and
+  per-part print overrides (support off, no brim) baked from a user-verified
+  reference 3MF.
+- Exported print-ready 3MF files are now named after the selected part (e.g.
+  `mosaic-footrest.3mf`) instead of always `mosaic-wheel.3mf`.
+
+### Fixed
+
+- The "AMS slots needed" counter under Colors detected undercounted by one —
+  it left out the body's own filament slot (materials[0], always present in
+  both export paths). It now reports cut colors + 1. The "N colors → M AMS
+  slots" merge hint also compared detected colors against slots instead of
+  against cut colors, so it showed even when no colors were merged; it now
+  appears only when merging actually reduced the count.
+
+### Removed
+
+- The Rectangle, Rounded rectangle, and STL-reference options from the part
+  picker. The dropdown now lists the real MakeGood TMT parts (Wheel,
+  Footrest) plus a single "Disc (reference)" flat-plate insert. The
+  flat-shape code paths remain but are no longer offered in the UI.
+
 ## [0.4.1] - 2026-07-19
 
 ### Changed

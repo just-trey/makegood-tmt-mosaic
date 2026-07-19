@@ -64,10 +64,9 @@
             <div class="help-step">Left panel · Part</div>
             <h3>Choosing a part</h3>
             <p>
-              "Wheel assembly" loads real MakeGood TMT parts and cuts pockets into their actual
-              mesh. Disc / Rectangle / Rounded rectangle are flat-plate inserts sized by hand. STL
-              reference imports a mesh for sizing only — it's never exported, it just helps you
-              align artwork to a real face.
+              The dropdown lists real MakeGood TMT parts — pick one (Wheel, Footrest, …) and its
+              actual mesh loads, with pockets cut directly into it. Disc (reference) is a plain
+              flat-plate insert sized by hand, kept as a quick reference shape.
             </p>
             <p>
               <b>Body / blank color</b> is the fallback color of the physical blank (neutral grey or
@@ -153,11 +152,7 @@
           <div class="shape-picker">
             <div class="shape-thumb" id="shape-thumb" aria-hidden="true"></div>
             <select id="shape-kind" aria-label="Part shape">
-              <option value="assembly" selected>Wheel assembly</option>
-              <option value="disc">Disc</option>
-              <option value="rect">Rectangle</option>
-              <option value="round">Rounded rectangle</option>
-              <option value="stl">STL reference</option>
+              <option value="disc">Disc (reference)</option>
             </select>
           </div>
 
@@ -270,10 +265,9 @@
           </div>
 
           <div id="shape-params-assembly" style="display: none">
-            <select id="p-asm-kind" style="display: none"></select>
             <div id="assembly-role-controls" style="margin-bottom: 8px"></div>
             <div id="assembly-part-list"></div>
-            <div class="row" style="margin-top: 8px">
+            <div class="row" id="asm-radius-row" style="margin-top: 8px">
               <label>Design radius</label>
               <div class="field">
                 <input type="number" id="p-asm-radius" value="138" step="0.5" />
@@ -281,7 +275,7 @@
               <span class="hint">mm</span>
             </div>
             <div class="hint">
-              Pockets are cut into each part's real mesh — load an SVG below to see it on the wheel.
+              Pockets are cut into each part's real mesh — load an SVG below to see it on the part.
             </div>
           </div>
 

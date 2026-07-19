@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, expect, it } from 'vitest';
-import { normalizeColor, parseSVGDocument } from '../src/svg/parse';
+import { normalizeColor, parseSVGDocument, svgLengthToMM } from '../src/svg/parse';
 
 // jsdom has no 2d canvas without the native `canvas` package, so normalizeColor's color
 // oracle would return null and every fill would collapse to #000000. Stub just enough of
@@ -108,6 +108,78 @@ describe('parseSVGDocument', () => {
     expect(() => parseSVGDocument(svg('<rect width="4" height="4" fill="none"/>'))).toThrow(
       /No flat-filled shapes/,
     );
+  });
+
+  it('derives userUnitMM from physical size / viewBox (rect placement scale)', () => {
+    // 266mm wide across a 266-unit viewBox -> 1mm per unit
+    const oneToOne = parseSVGDocument(
+      svg('<rect width="10" height="10" fill="#ff0000"/>', 'width="266mm" viewBox="0 0 266 185"'),
+    );
+    expect(oneToOne.userUnitMM).toBeCloseTo(1, 9);
+
+    // same physical width but an editor re-exported the viewBox at ~96dpi px -> ~0.2646mm per unit,
+    // so the artwork still lands life-size instead of ~3.78x too big
+    const pxReexport = parseSVGDocument(
+      svg(
+        '<rect width="10" height="10" fill="#ff0000"/>',
+        'width="266mm" viewBox="0 0 1005.165 699.212"',
+      ),
+    );
+    expect(pxReexport.userUnitMM).toBeCloseTo(266 / 1005.165, 9);
+  });
+
+  it('leaves userUnitMM null when the SVG declares no absolute size', () => {
+    const out = parseSVGDocument(
+      svg('<rect width="10" height="10" fill="#ff0000"/>', 'viewBox="0 0 100 100"'),
+    );
+    expect(out.userUnitMM).toBeNull();
+  });
+
+  it('does not collapse to a zero scale when width/height is 0', () => {
+    // width="0" must not derive userUnitMM = 0/vbW = 0 (which maps all artwork onto one point);
+    // it falls back to the other axis, or null when neither gives a usable size.
+    const heightFallback = parseSVGDocument(
+      svg(
+        '<rect width="10" height="10" fill="#ff0000"/>',
+        'width="0" height="185mm" viewBox="0 0 266 185"',
+      ),
+    );
+    expect(heightFallback.userUnitMM).toBeCloseTo(1, 9);
+
+    const both = parseSVGDocument(
+      svg('<rect width="10" height="10" fill="#ff0000"/>', 'width="0" viewBox="0 0 266 185"'),
+    );
+    expect(both.userUnitMM).toBeNull();
+  });
+
+  it('uses the smaller (meet) scale when width/height proportions disagree with the viewBox', () => {
+    // 266mm/266 = 1 across, 100mm/185 ≈ 0.54 down — no single true scale, so uniform-fit ("meet")
+    // takes the smaller so the design lands inside the declared box rather than stretched by width.
+    const out = parseSVGDocument(
+      svg(
+        '<rect width="10" height="10" fill="#ff0000"/>',
+        'width="266mm" height="100mm" viewBox="0 0 266 185"',
+      ),
+    );
+    expect(out.userUnitMM).toBeCloseTo(100 / 185, 9);
+  });
+});
+
+describe('svgLengthToMM', () => {
+  it('converts absolute units to mm', () => {
+    expect(svgLengthToMM('266mm')).toBeCloseTo(266, 9);
+    expect(svgLengthToMM('2cm')).toBeCloseTo(20, 9);
+    expect(svgLengthToMM('1in')).toBeCloseTo(25.4, 9);
+    expect(svgLengthToMM('96px')).toBeCloseTo(25.4, 9);
+    expect(svgLengthToMM('96')).toBeCloseTo(25.4, 9); // unitless = px
+    expect(svgLengthToMM('72pt')).toBeCloseTo(25.4, 9);
+  });
+
+  it('returns null for relative, empty, or non-numeric lengths', () => {
+    expect(svgLengthToMM('100%')).toBeNull();
+    expect(svgLengthToMM('')).toBeNull();
+    expect(svgLengthToMM(null)).toBeNull();
+    expect(svgLengthToMM('auto')).toBeNull();
   });
 });
 

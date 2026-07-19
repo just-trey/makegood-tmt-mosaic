@@ -7,6 +7,7 @@ import {
   asmPartTransformGroup,
   buildAssemblyGeometry,
 } from '../geometry/assembly';
+import { currentAssemblyKind } from '../assembly/kinds';
 import {
   frameModelIfPending,
   getModelGroup,
@@ -227,6 +228,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     colorSettings: state.colorSettings,
     globalDepth: state.globalDepth,
     radius: state.asmRadius,
+    designFit: currentAssemblyKind()?.designFit,
     scaleMult: state.scalePct / 100,
     offX: state.offsetX,
     offZ: state.offsetY,

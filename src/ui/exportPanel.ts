@@ -8,6 +8,9 @@ import {
   WHEEL_TOP_POS,
   WHEEL_CAP_ROT_DEG,
   WHEEL_CAP_POS,
+  WHEEL_PRIME_TOWER_DELTA,
+  FOOTREST_PLATE_R,
+  FOOTREST_PRIME_TOWER_DELTA,
   type ExportMaterial,
   type ExportPart,
   type ExportSub,
@@ -70,17 +73,29 @@ async function exportPrintReady3MF(): Promise<void> {
         });
         let plateHint: number | undefined,
           rotZdeg: number | undefined,
-          fixedPos,
-          primeTowerAnchor: boolean | undefined;
+          plateR: number[][] | undefined,
+          fixedPos: { x: number; y: number } | undefined,
+          primeTowerDelta: { x: number; y: number } | undefined,
+          objectSettings: Record<string, string> | undefined;
         if (part.roleId === 'top') {
           plateHint = part.isDuplicateOf == null ? 1 : nextHalfPlate++;
           rotZdeg = WHEEL_TOP_ROT_DEG;
           fixedPos = WHEEL_TOP_POS;
-          primeTowerAnchor = true;
+          primeTowerDelta = WHEEL_PRIME_TOWER_DELTA;
         } else if (part.roleId === 'cap') {
           plateHint = 1;
           rotZdeg = WHEEL_CAP_ROT_DEG;
           fixedPos = WHEEL_CAP_POS;
+        } else if (part.roleId === 'footrest') {
+          // place the footrest at its verified reference pose (standing rotation baked from its
+          // reference 3MF — see FOOTREST_PLATE_R). No fixedPos: plateHint routes it through
+          // placeHintedGroup, whose no-fixedPos branch centers it on every plate, with the prime
+          // tower held relative (FOOTREST_PRIME_TOWER_DELTA). Support off + no brim per the user's
+          // verified reference.
+          plateHint = 1;
+          plateR = FOOTREST_PLATE_R;
+          primeTowerDelta = FOOTREST_PRIME_TOWER_DELTA;
+          objectSettings = { brim_type: 'no_brim', enable_support: '0' };
         }
         return {
           name: part.name,
@@ -89,11 +104,13 @@ async function exportPrintReady3MF(): Promise<void> {
           subs,
           plateHint,
           rotZdeg,
+          plateR,
           fixedPos,
-          primeTowerAnchor,
+          primeTowerDelta,
+          objectSettings,
         };
       });
-    fname = 'mosaic-wheel.3mf';
+    fname = `mosaic-${state.assembly.kindId}.3mf`;
   } else {
     const built = getLastBuild();
     if (!built) return;

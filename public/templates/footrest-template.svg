@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  Footrest design template — true-to-size at 1:1 mm (266 x 185mm), matching the
+  footrest's real design face. Load with the Footrest assembly kind at Scale 100%,
+  Offset 0/0 and it lands centered on the face without adjustment.
+
+  The BACK / FRONT labels mark orientation: BACK is the edge nearest the seat back
+  (where the 4 mounting slots are), FRONT is the opposite edge. If your finished
+  design prints mirrored front-to-back on the physical part, toggle "Flip V" in the
+  Fit panel.
+
+  This file is a sizing/orientation guide, not artwork — the pale rectangle is a
+  placeholder "canvas" fill so it's visible if loaded as-is; replace it with your
+  own colored regions before printing. The BACK/FRONT text labels are plain SVG
+  <text> (not parsed by the app), so they show up in a vector editor but are
+  invisible to the cut pipeline — no need to delete them before export.
+-->
+<svg width="266mm" height="185mm" viewBox="0 0 266 185" version="1.1"
+     xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="266" height="185" rx="24" ry="24" fill="#e8e8e8" />
+  <text x="133" y="16" text-anchor="middle" font-family="sans-serif" font-size="10"
+        fill="#666666">FRONT</text>
+  <text x="133" y="178" text-anchor="middle" font-family="sans-serif" font-size="10"
+        fill="#666666">BACK (seat-mount edge)</text>
+</svg>

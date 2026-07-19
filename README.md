@@ -97,7 +97,9 @@ contents, or other personal data are ever sent. See
    lazy-loaded) ([src/geometry/assembly.ts](src/geometry/assembly.ts)).
    Supports rotated-copy parts (the same physical part installed twice, e.g.
    a wheel's two halves): the design slice that lands on the copy is remapped
-   back into the part's native print orientation.
+   back into the part's native print orientation. Round parts (the wheel) map
+   the SVG via a Design-radius/circle model; rectangular parts (the footrest)
+   map it 1:1 in millimeters and auto-center on the detected face instead.
 5. **Export** writes a Bambu Studio _project_ 3MF (vendor metadata included,
    so it imports without warnings, with named parts, per-part filament slots,
    and multi-plate placement) ([src/export/threemf.ts](src/export/threemf.ts)).
@@ -111,9 +113,11 @@ contents, or other personal data are ever sent. See
    wheel's geometry and required orientation are a specific, already-verified
    product rather than something to re-derive per printer. The prime/wipe
    tower's plate position is pinned the same way, as a fixed offset from the
-   wheel Top half rather than each slicer's own default. A part that still
-   overhangs its plate is reported as an on-screen warning rather than
-   assumed safe.
+   wheel's Top half. The footrest instead centers itself on whatever plate
+   (its reference placement wasn't portable across bed sizes — see "Adding an
+   assembly or library part" below) with its own tower offset and per-part
+   support-off/no-brim overrides riding along. A part that still overhangs
+   its plate is reported as an on-screen warning rather than assumed safe.
 
 ### Code layout
 
@@ -137,6 +141,55 @@ links to [public/stl/parts.json](public/stl/parts.json); drop the STL/3MF in
 `public/stl/`, add a manifest entry, and the role auto-loads. Roles without a
 library entry fall back to drag-and-drop.
 
+Two per-kind/per-role fields tune non-wheel parts:
+
+- `AssemblyRole.preferFaceNormal` (unit vector): the design face isn't always
+  the part's single largest flat patch — the footrest's flat back outsizes its
+  seat, for instance. Setting this steers the auto-picked default toward the
+  largest patch facing that direction instead of the overall largest.
+- `AssemblyKind.designFit: 'rect'`: for a rectangular (non-circular) part, maps
+  the SVG 1:1 in millimeters and centers it on the detected face, instead of
+  the wheel's circle/Design-radius model. The Footrest kind uses both fields —
+  see [src/assembly/kinds.ts](src/assembly/kinds.ts) for a worked example.
+
+**Export placement is baked from a verified reference 3MF, never computed or
+read at runtime.** Once a part's real-world print pose has been checked in the
+slicer (a reference project file the user hand-verified — rotation, plate
+position, prime/wipe tower placement, per-part print settings), those numbers
+become constants in [src/export/threemf.ts](src/export/threemf.ts), wired
+onto the part's `ExportPart` in
+[src/ui/exportPanel.ts](src/ui/exportPanel.ts):
+
+- `plateR` — a full baked rotation matrix, for a part whose verified pose
+  isn't a flat face-down tilt (e.g. `FOOTREST_PLATE_R`, which stands the
+  footrest on its long edge to print support-free).
+- `fixedPos` vs. centering — a part's plate position is either a fixed
+  reference coordinate (`WHEEL_TOP_POS`/`WHEEL_CAP_POS`, valid because the
+  reference file's own X1C 256×256 plate is a known constant) or, if the
+  reference coordinate isn't portable across bed sizes (e.g. it was authored
+  against a different printer's plate center), omitted so the part centers
+  itself on whatever plate instead — see the footrest.
+- `primeTowerDelta` — the prime/wipe tower's plate position, expressed as an
+  offset **relative to** the anchor part's own final position rather than an
+  absolute coordinate, so the same relative layout reproduces on every plate
+  size (`WHEEL_PRIME_TOWER_DELTA`, `FOOTREST_PRIME_TOWER_DELTA`).
+- `objectSettings` — per-part Bambu print overrides (e.g.
+  `{ brim_type: 'no_brim', enable_support: '0' }` on the footrest), written
+  into `model_settings.config` on top of the project-wide settings.
+
+The exported filename is derived from the selected assembly kind
+(`mosaic-${state.assembly.kindId}.3mf`), so each part downloads under its own
+name rather than a shared generic one.
+
+**A note on 3MF sources**: `load3MF` ([src/geometry/meshparts.ts](src/geometry/meshparts.ts))
+only reads meshes embedded inline in `3D/3dmodel.model`. Some slicer exports
+(BambuStudio's production-extension format, used for the footrest's source
+file) instead reference the mesh from a separate internal part file via
+`<component p:path="...">`, which `load3MF` does not resolve. If a part loads
+as empty/zero-triangle, check for this and flatten the file (inline the
+referenced part's `<mesh>` into a single `<object>`, dropping the
+`<component>` reference) before adding it to `public/stl/`.
+
 ## Known limitations
 
 - **Flat, roughly horizontal faces only.** Assembly cutting assumes the design
@@ -153,10 +206,6 @@ library entry fall back to drag-and-drop.
   behind the face will cut through. Sanity-check depths against your model.
 - **Gradients/patterns are detected and skipped** with a warning, rather than
   silently producing wrong geometry.
-- In flat-plate STL-reference mode, the uploaded STL is **reference-only**:
-  it guides sizing/alignment and the export is a flat insert plate, not a
-  modified copy of the STL. (Assembly mode is the path that modifies real
-  meshes.)
 
 ## Troubleshooting: "Boolean union/subtraction failed" warnings
 
@@ -215,7 +264,7 @@ is imported by the app. Two other brand themes in the tokens folder
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind, and a hubcap part for the wheel
   assembly.
-- Footrest part, and a full parent-handle assembly kind.
+- A full parent-handle assembly kind.
 
 ## TODO / tech debt
 
@@ -246,3 +295,24 @@ is imported by the app. Two other brand themes in the tokens folder
   scrubbing, precision-truncation retries) target 6.5's exact
   polygon-clipping bugs, and 6.5's package typings don't resolve under
   modern TypeScript, hence the shim in [src/turf.d.ts](src/turf.d.ts).
+- **Per-part export placement is a hardcoded `roleId` if/else in
+  [src/ui/exportPanel.ts](src/ui/exportPanel.ts)** — each part's plate hint,
+  rotation, `plateR`, `fixedPos`, prime-tower delta, and object settings are
+  assigned by an `if (roleId === 'top') … else if ('cap') … else if
+('footrest')` chain. Every new assembly part means editing that chain.
+  These are per-role constants; they belong as data on the `AssemblyKind` /
+  role definition (or the part's `ExportPart`) so adding a part stays a
+  data-only change, matching the "one array entry" goal in
+  [src/assembly/kinds.ts](src/assembly/kinds.ts).
+- **The footrest's `objectSettings` literal (`brim_type: 'no_brim'`,
+  `enable_support: '0'`) is duplicated** between the export path in
+  [src/ui/exportPanel.ts](src/ui/exportPanel.ts) and its assertion in
+  [tests/threemf.test.ts](tests/threemf.test.ts). Extract a shared
+  `FOOTREST_OBJECT_SETTINGS` constant so the test verifies the real value
+  instead of a hand-copied duplicate that can silently drift.
+- **The footrest's baked `FOOTREST_PLATE_R` is redundant** with the general
+  `rotXthenZ(-90 * nsign, angleDeg)` path for `nsign: 0` + `rotZdeg: -45`
+  (see [src/export/threemf.ts](src/export/threemf.ts)). It's kept as an
+  explicit full 3×3 for now because it generalizes to a future part with a
+  genuinely tilted reference pose that the axis-aligned path can't express —
+  revisit if that part never materializes.
