@@ -36,6 +36,10 @@ npm run build       # typecheck + production build to dist/
   if the change adds/removes/renames a left-panel control or section, or
   changes what one does — the panel's sections mirror `#left`'s 1:1 and its
   copy is static, so it drifts silently otherwise.
+- If the change adds, removes, or changes a left-panel control or other
+  primary user action, add or update its analytics event and the catalog in
+  [docs/analytics.md](docs/analytics.md) — see that doc for the event
+  conventions (no PII, `snake_case`, fire on real user intent).
 
 ## Git workflow
 
@@ -70,6 +74,8 @@ npm run build       # typecheck + production build to dist/
 - `src/scene/` — three.js viewport
 - `src/ui/` — panel wiring, one module per left-panel section
 - `src/state/` — filament palette and other async-loaded state
+- `src/analytics/` — `track()`, the Umami custom-event wrapper; see
+  [docs/analytics.md](docs/analytics.md) for the event catalog
 
 For the full pipeline walkthrough, see README.md's "How it works" section.
 

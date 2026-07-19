@@ -14,6 +14,7 @@ import {
 } from './assemblyPanel';
 import { updateOffsetSliderRanges } from './fitPanel';
 import { $, input, numVal } from './dom';
+import { track } from '../analytics/track';
 
 // Tiny SVG thumbnails shown next to the shape dropdown.
 const SHAPE_THUMBS: Record<string, string> = {
@@ -183,8 +184,10 @@ export function initPartPanel(): void {
         state.assembly.parts = [];
       }
       setShapeKind('assembly');
+      track('mode_switch', { kind: 'assembly' });
     } else {
       setShapeKind(val as ShapeKind);
+      track('mode_switch', { kind: val as ShapeKind });
     }
   });
   setShapeThumb(state.shapeKind); // reflect the initial selection

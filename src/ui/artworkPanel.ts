@@ -5,6 +5,7 @@ import { parseSVGDocument } from '../svg/parse';
 import { clearWarnings, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { $, input } from './dom';
+import { track } from '../analytics/track';
 
 const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
   <circle cx="100" cy="100" r="95" fill="#1e5fa8"/>
@@ -32,6 +33,7 @@ function loadSVGFile(file: File): void {
   reader.onload = () => {
     try {
       applyParsedSVG(reader.result as string, file.name);
+      track('artwork_load', { source: 'upload' });
     } catch (e) {
       clearWarnings();
       warn((e as Error).message);
@@ -68,5 +70,6 @@ export function initArtworkPanel(): void {
 
   $('#btn-sample').addEventListener('click', () => {
     applyParsedSVG(SAMPLE_SVG, 'sample-badge.svg');
+    track('artwork_load', { source: 'sample' });
   });
 }

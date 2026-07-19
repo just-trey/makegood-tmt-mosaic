@@ -1,7 +1,7 @@
 # TMT Mosaic — SVG Color-Inlay Generator
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.0--beta-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.1--beta-orange.svg)](CHANGELOG.md)
 
 A browser app that turns a flat-color SVG into per-color recess geometry for
 multicolor/AMS 3D printing, and exports a print-ready project 3MF — parts
@@ -58,12 +58,15 @@ deploy by itself; a manual `workflow_dispatch` run is also available for an
 out-of-band deploy. One-time setup: repo **Settings → Pages → Source → GitHub
 Actions**.
 
-**Analytics (optional).** The Cloudflare Web Analytics beacon is injected at
-build time only when `CF_BEACON_TOKEN` is set — as a repo **Variable**
+**Analytics (optional).** The Umami analytics script is injected at build
+time only when `UMAMI_WEBSITE_ID` is set — as a repo **Variable**
 (Settings → Secrets and variables → Actions → Variables) for the deploy, and in
 a local `.env.local` for local builds (see [.env.example](.env.example)).
-Unset — as in any fork — and no beacon is injected, so forks never report to
-your account.
+Unset — as in any fork — and no script is injected, so forks never report to
+your account. Beyond pageviews, a few cookieless custom events track feature
+usage (artwork loaded, mode switched, export completed) — no file names, file
+contents, or other personal data are ever sent. See
+[docs/analytics.md](docs/analytics.md) for the full event catalog.
 
 ## How it works
 
@@ -262,7 +265,6 @@ is imported by the app. Two other brand themes in the tokens folder
   existing half-wheel (Top ×2 + Cap) kind, and a hubcap part for the wheel
   assembly.
 - A full parent-handle assembly kind.
-- Full assembled-chair view with drag-and-drop filament colors per part.
 
 ## TODO / tech debt
 

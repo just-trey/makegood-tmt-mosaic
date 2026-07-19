@@ -20,8 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Wheel assembly's second Top half (the rotated copy, exported onto its own
-  build plate) is now named "Bottom" instead of "Top (rotated copy)".
 - The "AMS slots needed" counter under Colors detected undercounted by one —
   it left out the body's own filament slot (materials[0], always present in
   both export paths). It now reports cut colors + 1. The "N colors → M AMS
@@ -35,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   picker. The dropdown now lists the real MakeGood TMT parts (Wheel,
   Footrest) plus a single "Disc (reference)" flat-plate insert. The
   flat-shape code paths remain but are no longer offered in the UI.
+
+## [0.4.1] - 2026-07-19
+
+### Changed
+
+- Analytics on the hosted page switched from Cloudflare Web Analytics to
+  Umami. Still opt-in and disabled by default: the script is injected at
+  build time only when `UMAMI_WEBSITE_ID` is set, so forks build and deploy
+  without it. See `.env.example`.
+
+### Fixed
+
+- Wheel assembly's second Top half (the rotated copy, exported onto its own
+  build plate) is now named "Bottom" instead of "Top (rotated copy)".
 
 ## [0.4.0] - 2026-07-17
 
@@ -305,7 +317,8 @@ Initial public alpha. Baseline feature set as of this release:
 - Automatic boolean-failure recovery: vertex deduplication, degenerate-sliver
   scrubbing, and reduced-precision retries for self-intersecting source paths.
 
-[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.2.1...v0.3.0

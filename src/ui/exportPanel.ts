@@ -22,6 +22,7 @@ import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
 import { WARNINGS, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
+import { track } from '../analytics/track';
 
 // suffixes of the two placement-warning messages build3MFCombined can emit — used to clear a
 // stale one from a previous export attempt before reporting this attempt's
@@ -149,9 +150,17 @@ async function exportPrintReady3MF(): Promise<void> {
     }
     placementWarnings.forEach((msg) => warn(msg));
     renderWarnings();
+    track('export', {
+      format: '3mf',
+      mode: state.shapeKind === 'assembly' ? 'assembly' : 'flat',
+      printer: state.printerId,
+      colors: materials.length - 1,
+      warnings: placementWarnings.length,
+    });
     download(blob, fname);
   } catch (e) {
     console.error(e);
+    track('export_failed', { format: '3mf' });
     alert('Export failed: ' + (e as Error).message);
   }
   hideOverlay();
@@ -191,9 +200,16 @@ affiliated with Bambu Lab.
 `;
     files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
     const blob = zipStore(files);
+    track('export', {
+      format: 'stl_zip',
+      mode: 'flat',
+      printer: state.printerId,
+      colors: built.colorMeshes.length,
+    });
     download(blob, 'mosaic-export.zip');
   } catch (e) {
     console.error(e);
+    track('export_failed', { format: 'stl_zip' });
     alert('Export failed: ' + (e as Error).message);
   }
   hideOverlay();

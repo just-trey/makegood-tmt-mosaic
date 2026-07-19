@@ -7,25 +7,21 @@ const pkg = JSON.parse(
 );
 
 /**
- * Inject the Cloudflare Web Analytics beacon only when CF_BEACON_TOKEN is set. The token lives
- * in our deploy environment (a GitHub repo Variable) and a local gitignored .env, never in
- * source — so a fork builds without it and never reports to our account.
+ * Inject the Umami Cloud analytics script only when UMAMI_WEBSITE_ID is set. The website ID
+ * lives in our deploy environment (a GitHub repo Variable) and a local gitignored .env, never
+ * in source — so a fork builds without it and never reports to our account.
  */
-function cloudflareBeacon(token: string): Plugin {
+function umamiBeacon(websiteId: string): Plugin {
   return {
-    name: 'cloudflare-beacon',
+    name: 'umami-beacon',
     transformIndexHtml() {
       return [
         {
           tag: 'script',
           attrs: {
             defer: true,
-            src: 'https://static.cloudflareinsights.com/beacon.min.js',
-            // Vite's html serializer wraps this in JSON.stringify() to build the attribute,
-            // which backslash-escapes embedded quotes (JS-string style) instead of using HTML
-            // entities — browsers don't treat \" as an escape in an attribute, so the tag was
-            // truncated at the first literal quote. Pre-encoding as &quot; avoids that.
-            'data-cf-beacon': JSON.stringify({ token }).replace(/"/g, '&quot;'),
+            src: 'https://cloud.umami.is/script.js',
+            'data-website-id': websiteId,
           },
           injectTo: 'body',
         },
@@ -35,10 +31,10 @@ function cloudflareBeacon(token: string): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  // Read CF_BEACON_TOKEN from the process env (CI passes it) or a local .env file. The empty
+  // Read UMAMI_WEBSITE_ID from the process env (CI passes it) or a local .env file. The empty
   // prefix lets loadEnv return non-VITE_ vars for build-time use (it isn't exposed to the client).
   const env = loadEnv(mode, process.cwd(), '');
-  const cfToken = process.env.CF_BEACON_TOKEN || env.CF_BEACON_TOKEN || '';
+  const umamiWebsiteId = process.env.UMAMI_WEBSITE_ID || env.UMAMI_WEBSITE_ID || '';
 
   return {
     // Relative base so the built site works at any GitHub Pages path
@@ -67,7 +63,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    plugins: cfToken ? [cloudflareBeacon(cfToken)] : [],
+    plugins: umamiWebsiteId ? [umamiBeacon(umamiWebsiteId)] : [],
     optimizeDeps: {
       // manifold-3d locates its .wasm relative to the module URL; pre-bundling
       // breaks that resolution, so leave it to be served as-is in dev.
