@@ -63,7 +63,10 @@ time only when `UMAMI_WEBSITE_ID` is set — as a repo **Variable**
 (Settings → Secrets and variables → Actions → Variables) for the deploy, and in
 a local `.env.local` for local builds (see [.env.example](.env.example)).
 Unset — as in any fork — and no script is injected, so forks never report to
-your account.
+your account. Beyond pageviews, a few cookieless custom events track feature
+usage (artwork loaded, mode switched, export completed) — no file names, file
+contents, or other personal data are ever sent. See
+[docs/analytics.md](docs/analytics.md) for the full event catalog.
 
 ## How it works
 
