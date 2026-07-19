@@ -14,6 +14,7 @@ import {
 } from './assemblyPanel';
 import { updateOffsetSliderRanges } from './fitPanel';
 import { $, input, numVal } from './dom';
+import { track } from '../analytics/track';
 
 // Tiny SVG thumbnails shown next to the shape dropdown.
 const SHAPE_THUMBS: Record<string, string> = {
@@ -139,7 +140,9 @@ function loadSTLReference(file: File): void {
 
 export function initPartPanel(): void {
   $<HTMLSelectElement>('#shape-kind').addEventListener('change', (e) => {
-    setShapeKind((e.target as HTMLSelectElement).value as ShapeKind);
+    const kind = (e.target as HTMLSelectElement).value as ShapeKind;
+    setShapeKind(kind);
+    track('mode_switch', { kind });
   });
   setShapeThumb(state.shapeKind); // reflect the initial selection
 
