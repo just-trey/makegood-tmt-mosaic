@@ -31,6 +31,13 @@ export interface ParsedSVG {
    * (which scales off the design circle) ignores it.
    */
   userUnitMM?: number | null;
+  /**
+   * The document's viewBox extent in user units (null when it declares no viewBox). Rect
+   * placement uses it as a last resort when `userUnitMM` is null: an editor that dropped the
+   * physical size (e.g. Affinity exporting `width="100%"`) still keeps the viewBox, so fitting
+   * it to the part face recovers the intended scale.
+   */
+  viewBox?: { w: number; h: number } | null;
 }
 
 export type ShapeKind = 'assembly' | 'disc' | 'rect' | 'round' | 'stl';

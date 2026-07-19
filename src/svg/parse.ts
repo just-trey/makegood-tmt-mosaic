@@ -335,5 +335,11 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     }
   });
 
-  return { shapes, bbox: { minX, minY, maxX, maxY }, rawSVGCircle, userUnitMM };
+  return {
+    shapes,
+    bbox: { minX, minY, maxX, maxY },
+    rawSVGCircle,
+    userUnitMM,
+    viewBox: vb ? { w: vbW, h: vbH } : null,
+  };
 }

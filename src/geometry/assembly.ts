@@ -60,6 +60,24 @@ export function asmPartFaceNormal(part: AssemblyPart, parts: AssemblyPart[]): nu
   return null;
 }
 
+/** X/Z bounding box (mm) of a part's flat-face boundary loop; null when the loop is empty. */
+function faceXZBBox(
+  loop: number[][] | null | undefined,
+): { cx: number; cz: number; w: number; h: number } | null {
+  if (!loop || !loop.length) return null;
+  let minX = Infinity,
+    maxX = -Infinity,
+    minZ = Infinity,
+    maxZ = -Infinity;
+  for (const p of loop) {
+    if (p[0] < minX) minX = p[0];
+    if (p[0] > maxX) maxX = p[0];
+    if (p[2] < minZ) minZ = p[2];
+    if (p[2] > maxZ) maxZ = p[2];
+  }
+  return { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, w: maxX - minX, h: maxZ - minZ };
+}
+
 /**
  * Visual counterpart to rotatePointY: a duplicate part's rendered meshes need an actual 3D
  * transform (rotatePointY only remaps *which design slice* lands where, never moves geometry),
@@ -217,13 +235,36 @@ export async function buildAssemblyGeometry(
 
   // Wheel: SVG circle radius maps to the mm Design radius. Rect: convert SVG units to mm via the
   // file's declared physical size (userUnitMM) so a template lands life-size even if an editor
-  // re-exported it at a different internal resolution; 1:1 fallback (with a heads-up) when the SVG
-  // gives no absolute size.
-  if (isRect && parsed.userUnitMM == null)
-    notice(
-      'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
-    );
-  const mmPerUnit = isRect ? (parsed.userUnitMM ?? 1) * scaleMult : (radius / svgC.r) * scaleMult;
+  // re-exported it at a different internal resolution.
+  //
+  // When a rect SVG declares no absolute mm size, fit its viewBox to the design face rather than
+  // assuming 1 unit = 1 mm. The template's viewBox *is* the face, so any template trace then lands
+  // life-size at Scale 100% even when the editor dropped the physical size (e.g. Affinity exports
+  // `width="100%"` and rescales the viewBox to its own resolution). Meet-fit (the smaller axis
+  // ratio) matches SVG's default fitting. Genuine 1:1 fallback only when there's no viewBox either.
+  let rectFallbackMmPerUnit = 1;
+  if (isRect && parsed.userUnitMM == null) {
+    const vb = parsed.viewBox;
+    let designFace: { w: number; h: number } | null = null;
+    for (const p of parts) {
+      const bb = faceXZBBox(p.boundaryLoop);
+      if (bb && (!designFace || bb.w * bb.h > designFace.w * designFace.h))
+        designFace = { w: bb.w, h: bb.h };
+    }
+    if (vb && vb.w > 0 && vb.h > 0 && designFace && designFace.w > 0 && designFace.h > 0) {
+      rectFallbackMmPerUnit = Math.min(designFace.w / vb.w, designFace.h / vb.h);
+      notice(
+        'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Use Scale to fine-tune.',
+      );
+    } else {
+      notice(
+        'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
+      );
+    }
+  }
+  const mmPerUnit = isRect
+    ? (parsed.userUnitMM ?? rectFallbackMmPerUnit) * scaleMult
+    : (radius / svgC.r) * scaleMult;
 
   let wasm;
   try {
@@ -254,19 +295,10 @@ export async function buildAssemblyGeometry(
     // the hub at the origin.
     let faceCx = 0,
       faceCz = 0;
-    if (isRect && part.boundaryLoop && part.boundaryLoop.length) {
-      let minX = Infinity,
-        maxX = -Infinity,
-        minZ = Infinity,
-        maxZ = -Infinity;
-      for (const p of part.boundaryLoop) {
-        if (p[0] < minX) minX = p[0];
-        if (p[0] > maxX) maxX = p[0];
-        if (p[2] < minZ) minZ = p[2];
-        if (p[2] > maxZ) maxZ = p[2];
-      }
-      faceCx = (minX + maxX) / 2;
-      faceCz = (minZ + maxZ) / 2;
+    const faceBB = isRect ? faceXZBBox(part.boundaryLoop) : null;
+    if (faceBB) {
+      faceCx = faceBB.cx;
+      faceCz = faceBB.cz;
     }
     return (pt: number[]): number[] => {
       const xMul = userXFlip * (nsign > 0 ? -1 : 1);

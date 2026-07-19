@@ -174,6 +174,21 @@ describe('buildAssemblyGeometry', () => {
     },
   );
 
+  it(
+    'rect designFit fits a size-less SVG to the face via its viewBox',
+    { timeout: 30000 },
+    async () => {
+      // No userUnitMM (an editor stripped the mm size, e.g. Affinity's width="100%"), but the
+      // viewBox is 20 units across a 40mm face -> fit 2mm per unit, so the 10-unit square cuts a
+      // 20mm region instead of landing 1:1. This is what keeps a template trace life-size.
+      const parsed: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 20, h: 20 } };
+      const built = (await buildAssemblyGeometry(baseInput({ designFit: 'rect', parsed })))!;
+      const r = xzRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.maxX - r.minX).toBeCloseTo(20, 4);
+      expect(r.maxZ - r.minZ).toBeCloseTo(20, 4);
+    },
+  );
+
   it('rect designFit centers the design on an off-center face', { timeout: 30000 }, async () => {
     // a face whose bbox center is (5,5) in native X/Z — rect placement should land the artwork
     // there, not at the part origin (where wheel mode anchors).

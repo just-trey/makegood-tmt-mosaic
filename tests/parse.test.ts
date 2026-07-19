@@ -135,6 +135,24 @@ describe('parseSVGDocument', () => {
     expect(out.userUnitMM).toBeNull();
   });
 
+  it('exposes the viewBox extent so rect placement can fit a size-less SVG to the face', () => {
+    // Affinity's SVG export: real mm size stripped to width/height="100%", viewBox rescaled to px.
+    // userUnitMM is unknowable, but the viewBox extent lets rect placement fit it to the part face.
+    const out = parseSVGDocument(
+      svg(
+        '<rect width="10" height="10" fill="#ff0000"/>',
+        'width="100%" height="100%" viewBox="0 0 755 525"',
+      ),
+    );
+    expect(out.userUnitMM).toBeNull();
+    expect(out.viewBox).toEqual({ w: 755, h: 525 });
+  });
+
+  it('reports a null viewBox when the SVG declares none', () => {
+    const out = parseSVGDocument(svg('<rect width="10" height="10" fill="#ff0000"/>'));
+    expect(out.viewBox).toBeNull();
+  });
+
   it('does not collapse to a zero scale when width/height is 0', () => {
     // width="0" must not derive userUnitMM = 0/vbW = 0 (which maps all artwork onto one point);
     // it falls back to the other axis, or null when neither gives a usable size.

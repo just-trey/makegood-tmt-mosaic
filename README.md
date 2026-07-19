@@ -150,7 +150,10 @@ Two per-kind/per-role fields tune non-wheel parts:
 - `AssemblyKind.designFit: 'rect'`: for a rectangular (non-circular) part, maps
   the SVG 1:1 in millimeters and centers it on the detected face, instead of
   the wheel's circle/Design-radius model. The Footrest kind uses both fields —
-  see [src/assembly/kinds.ts](src/assembly/kinds.ts) for a worked example.
+  see [src/assembly/kinds.ts](src/assembly/kinds.ts) for a worked example. When
+  the SVG declares no absolute mm size (some editors export `width="100%"` and
+  rescale the viewBox), rect placement fits the viewBox to the part face rather
+  than assuming 1 unit = 1 mm, so a template trace still lands life-size.
 
 **Export placement is baked from a verified reference 3MF, never computed or
 read at runtime.** Once a part's real-world print pose has been checked in the
