@@ -57,6 +57,18 @@ describe('parsePathD', () => {
     expect(last.y).toBeCloseTo(0, 6);
   });
 
+  it('flattens a near-straight cubic into very few points (adaptive, not a fixed count)', () => {
+    // control points sit almost exactly on the p0-p3 line -> should need ~1 segment
+    const loops = parsePathD('M0 0 C33 0.01 66 -0.01 100 0');
+    expect(loops[0].length).toBeLessThanOrEqual(3);
+  });
+
+  it('flattens a sharply curved cubic into more points than a gentle one', () => {
+    const gentle = parsePathD('M0 0 C25 1 75 -1 100 0')[0];
+    const sharp = parsePathD('M0 0 C0 100 100 -100 100 0')[0];
+    expect(sharp.length).toBeGreaterThan(gentle.length);
+  });
+
   it('flattens elliptical arcs ending at the target point (spec F.6.5 endpoint math)', () => {
     const loops = parsePathD('M0 0 A5 5 0 0 1 10 0');
     const pts = loops[0];

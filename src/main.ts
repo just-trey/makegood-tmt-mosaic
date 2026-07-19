@@ -3,7 +3,9 @@ import { initViewport } from './scene/viewport';
 import { setRebuildCostHint, setRebuildHandler } from './app/scheduler';
 import { estimateRebuildSlow, rebuildCurrent } from './app/rebuild';
 import { loadFilaments } from './state/filaments';
+import { state } from './state/store';
 import { loadPartsLibrary } from './assembly/parts';
+import { ASSEMBLY_KINDS } from './assembly/kinds';
 import { initColorListPanel, renderColorList } from './ui/colorList';
 import { initAssemblyPanel } from './ui/assemblyPanel';
 import { initPartPanel, renderBaseColorSwatches, setShapeKind } from './ui/partPanel';
@@ -33,10 +35,11 @@ initHelpPanel();
 
 renderColorList(null);
 
-// Open in Assembly mode so the wheel is on screen from the first frame — setShapeKind arms the
+// Open on the wheel so a part is on screen from the first frame — setShapeKind arms the
 // auto-load, and loadPartsLibrary() triggers it once the manifest arrives.
-$<HTMLSelectElement>('#shape-kind').value = 'assembly';
+state.assembly.kindId = ASSEMBLY_KINDS[0].id;
+$<HTMLSelectElement>('#shape-kind').value = 'asm:' + state.assembly.kindId;
 setShapeKind('assembly');
 void loadPartsLibrary();
 // Filament palette is async; refresh the swatch row once it lands.
-void loadFilaments().then(renderBaseColorSwatches);
+void loadFilaments().then(() => renderBaseColorSwatches());

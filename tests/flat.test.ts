@@ -42,31 +42,35 @@ function baseInput(overrides: Partial<FlatBuildInput> = {}): FlatBuildInput {
 }
 
 describe('buildGeometry background recess depth', () => {
-  it('uses the global depth when no override is set', () => {
-    const built = buildGeometry(baseInput())!;
+  it('uses the global depth when no override is set', async () => {
+    const built = (await buildGeometry(baseInput()))!;
     const bg = built.colorMeshes.find((c) => c.isBackground)!;
     expect(bg).toBeDefined();
     expect(bg.depth).toBeCloseTo(1);
     expect(bg.mesh.position.z).toBeCloseTo(4 - 1);
   });
 
-  it('honors a per-background depth override from colorSettings', () => {
-    const built = buildGeometry(
+  it('honors a per-background depth override from colorSettings', async () => {
+    const built = (await buildGeometry(
       baseInput({ colorSettings: { [BACKGROUND_KEY]: { depth: 2.5 } } }),
-    )!;
+    ))!;
     const bg = built.colorMeshes.find((c) => c.isBackground)!;
     expect(bg.depth).toBeCloseTo(2.5);
     expect(bg.mesh.position.z).toBeCloseTo(4 - 2.5);
   });
 
-  it('clamps depth to the plate thickness', () => {
-    const built = buildGeometry(baseInput({ colorSettings: { [BACKGROUND_KEY]: { depth: 99 } } }))!;
+  it('clamps depth to the plate thickness', async () => {
+    const built = (await buildGeometry(
+      baseInput({ colorSettings: { [BACKGROUND_KEY]: { depth: 99 } } }),
+    ))!;
     const bg = built.colorMeshes.find((c) => c.isBackground)!;
     expect(bg.depth).toBeCloseTo(4 - 0.05);
   });
 
-  it('color regions keep their own per-key depth', () => {
-    const built = buildGeometry(baseInput({ colorSettings: { '#ff0000': { depth: 0.6 } } }))!;
+  it('color regions keep their own per-key depth', async () => {
+    const built = (await buildGeometry(
+      baseInput({ colorSettings: { '#ff0000': { depth: 0.6 } } }),
+    ))!;
     const red = built.colorMeshes.find((c) => c.key === '#ff0000')!;
     expect(red.depth).toBeCloseTo(0.6);
   });

@@ -1,8 +1,9 @@
 import * as turf from '@turf/turf';
 import type { Loop, PolyFeature, ResolvedRegion, SVGShape } from '../types';
 import { signedArea } from '../svg/path';
-import { blendHexes } from '../color';
+import { deltaE, hexToLab } from '../color';
 import { warn } from '../warnings';
+import { reportProgress } from '../progress';
 
 type Ring = number[][];
 
@@ -176,6 +177,29 @@ export function cleanFeature(f: PolyFeature | null): PolyFeature | null {
 }
 
 /**
+ * Planar shoelace area of a feature (exterior minus holes, per polygon). turf.area is geodesic —
+ * it treats coordinates as lon/lat degrees, and SVG/mm coordinates far outside ±90° wrap its
+ * spherical trig into garbage (including negative per-polygon areas) on real artwork. Every area
+ * ratio and dominant-member comparison in the pipeline must use this instead.
+ */
+export function planarArea(f: PolyFeature | null): number {
+  if (!f || !f.geometry) return 0;
+  function ringArea(r: Ring): number {
+    let s = 0;
+    for (let i = 0; i < r.length - 1; i++) s += r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1];
+    return Math.abs(s / 2);
+  }
+  function polyArea(rings: Ring[]): number {
+    const holes = rings.slice(1).reduce((s, r) => s + ringArea(r), 0);
+    return Math.max(0, ringArea(rings[0]) - holes);
+  }
+  const g = f.geometry;
+  return g.type === 'Polygon'
+    ? polyArea(g.coordinates as Ring[])
+    : (g.coordinates as Ring[][]).reduce((s, p) => s + polyArea(p), 0);
+}
+
+/**
  * Turf 6.5's bundled polygon-clipping recurses without bound when two inputs share edges whose
  * coordinates differ only at ~1e-14 (exactly what circle arcs vs. star-boundary regions
  * produce). Quantizing collapses those phantom distinctions, so on failure retry at decreasing
@@ -242,69 +266,241 @@ export function safeIntersect(
   b: PolyFeature | null,
   label?: string,
 ): PolyFeature | null {
+  a = cleanFeature(a);
+  b = cleanFeature(b);
   if (!a || !b) return null;
-  try {
-    return turf.intersect(a, b) as PolyFeature | null;
-  } catch {
-    warn(
-      `Clipping color region to the part face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
-    );
-    return a;
+  const r = boolOpWithRetry((x, y) => turf.intersect(x, y) as PolyFeature | null, a, b);
+  if (r.ok) return r.val ?? null;
+  warn(
+    `Clipping color region to the part face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
+  );
+  return a;
+}
+
+/** How long a boolean pass runs before yielding a frame to the browser. */
+export const YIELD_BUDGET_MS = 30;
+
+/** A macrotask yield (setTimeout, not a microtask) so the browser can repaint the progress
+ * curtain between chunks — microtasks/Promise.resolve() would not unblock rendering. */
+export function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve));
+}
+
+/**
+ * Union a list of features via balanced pairwise merging (pairs, then pairs of pairs), yielding
+ * to the browser on a time budget and reporting progress. A left-fold accumulation re-processes
+ * the ever-growing accumulator on every step; the tree does the same math in O(log n) levels and
+ * benchmarks 2–4x faster on dense designs. safeUnion's fallback semantics are preserved per merge.
+ */
+export async function unionAllCooperative(
+  features: (PolyFeature | null)[],
+  onProgress?: (fraction: number) => void,
+  label?: string,
+): Promise<PolyFeature | null> {
+  let level = features.filter((f): f is PolyFeature => !!f);
+  if (!level.length) return null;
+  const totalOps = Math.max(level.length - 1, 1);
+  let done = 0;
+  let lastYield = performance.now();
+  while (level.length > 1) {
+    const next: PolyFeature[] = [];
+    for (let i = 0; i < level.length; i += 2) {
+      if (i + 1 >= level.length) {
+        next.push(level[i]);
+        continue;
+      }
+      const u = safeUnion(level[i], level[i + 1], label);
+      if (u) next.push(u);
+      done++;
+      onProgress?.(done / totalOps);
+      if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+        await yieldToBrowser();
+        lastYield = performance.now();
+      }
+    }
+    level = next;
   }
+  return level[0] ?? null;
 }
 
 /**
  * Compute, per color, the net *visible* region accounting for paint order
  * (later elements occlude earlier ones).
+ *
+ * Visibility is f minus the accumulated union of everything painted above it. Subtracting each
+ * later element individually (with a bbox pre-filter) is algebraically identical and looked
+ * attractive, but benchmarked ~2x SLOWER on real artwork — full-canvas backgrounds and lineart
+ * overlap everything, so the filter rarely prunes and the pairwise diffs multiply. The
+ * accumulator stays.
+ *
+ * This is the dominant cost of a rebuild (all the polygon booleans), so it runs cooperatively:
+ * after every ~YIELD_BUDGET_MS of work it yields a frame and reports progress, keeping the tab
+ * responsive and the "Rebuilding…" curtain live instead of freezing the main thread on a dense
+ * SVG. See src/progress.ts and the scheduler.
  */
-export function computeNetRegionsByColor(shapes: SVGShape[]): {
+let regionsCacheKey: SVGShape[] | null = null;
+let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
+
+export async function computeNetRegionsByColor(
+  shapes: SVGShape[],
+  onProgress: (fraction: number) => void = reportProgress,
+): Promise<{
   byColor: Record<string, PolyFeature>;
-  allCovered: PolyFeature | null;
-} {
+}> {
+  // `shapes` (ParsedSVG.shapes) is only ever assigned fresh from a parse and never mutated in
+  // place, so identity is a safe cache key — this is the dominant cost of a rebuild, and
+  // depth/fit/margin/color tweaks don't touch `shapes` at all.
+  if (shapes === regionsCacheKey && regionsCacheVal) {
+    onProgress(1);
+    return regionsCacheVal;
+  }
   const features = shapes.map(shapeToFeature).map((f, idx) => ({ f, color: shapes[idx].fill }));
   const byColor: Record<string, PolyFeature> = {};
   let covered: PolyFeature | null = null;
+  const total = features.length || 1;
+  let lastYield = performance.now();
   for (let i = features.length - 1; i >= 0; i--) {
     const { f, color } = features[i];
-    if (!f) continue;
-    const visible = covered ? safeDiff(f, covered, `color ${color}`) : f;
-    if (visible) {
-      byColor[color] = byColor[color]
-        ? (safeUnion(byColor[color], visible, `color ${color}`) as PolyFeature)
-        : visible;
+    if (f) {
+      const visible = covered ? safeDiff(f, covered, `color ${color}`) : f;
+      if (visible) {
+        byColor[color] = byColor[color]
+          ? (safeUnion(byColor[color], visible, `color ${color}`) as PolyFeature)
+          : visible;
+      }
+      covered = covered ? safeUnion(covered, f, `an element under color ${color}`) : f;
     }
-    covered = covered ? safeUnion(covered, f, `an element under color ${color}`) : f;
+    onProgress((total - i) / total);
+    if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+      await yieldToBrowser();
+      lastYield = performance.now();
+    }
   }
-  return { byColor, allCovered: covered };
+  const result = { byColor };
+  regionsCacheKey = shapes;
+  regionsCacheVal = result;
+  return result;
 }
 
 /**
- * Resolve raw per-color regions into the final list of "regions to cut", collapsing any
- * user-defined merge groups (2+ raw colors sharing one recess/one filament) into a single
- * region each. Everything downstream (depth, geometry, export) treats a merged group exactly
+ * Auto-merge slider stops. Index = slider value, 0 is "off". Thresholds are CIE76 ΔE cutoffs
+ * measured against the stubs/ sample artwork (see the plan doc): Slight dedupes near-identical
+ * export/anti-aliasing artifacts (pappa.svg's near-duplicate reds sit at ΔE 0.4) without
+ * touching real color differences (snoopy.svg's closest pair is ΔE 91.7); Medium starts banding
+ * intentional shading ramps; Strong collapses toward hue families.
+ */
+export const AUTO_MERGE_LEVELS = [
+  { label: 'None', threshold: 0 },
+  { label: 'Slight', threshold: 3 },
+  { label: 'Medium', threshold: 10 },
+  { label: 'Strong', threshold: 18 },
+] as const;
+
+export interface ApplyColorMergesOptions {
+  /** index into AUTO_MERGE_LEVELS; 0 or omitted = no auto-merge */
+  autoMergeLevel?: number;
+  /** raw hexes assigned to the base material — excluded from regions entirely */
+  baseColors?: string[];
+  /** raw hexes the user explicitly pulled out of a group — pinned as singletons */
+  keptApart?: string[];
+}
+
+class UnionFind {
+  private parent = new Map<string, string>();
+  add(x: string): void {
+    if (!this.parent.has(x)) this.parent.set(x, x);
+  }
+  find(x: string): string {
+    let root = x;
+    while (this.parent.get(root) !== root) root = this.parent.get(root)!;
+    let cur = x;
+    while (this.parent.get(cur) !== root) {
+      const next = this.parent.get(cur)!;
+      this.parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  }
+  union(a: string, b: string): void {
+    const ra = this.find(a),
+      rb = this.find(b);
+    if (ra !== rb) this.parent.set(ra, rb);
+  }
+}
+
+/**
+ * Resolve raw per-color regions into the final list of "regions to cut": base-assigned colors
+ * are excluded outright, then manual merge groups and the auto-merge slider's ΔE clusters are
+ * unioned together (either link fuses a pair), then `keptApart` pins are split back out as
+ * singletons. Everything downstream (depth, geometry, export) treats a merged group exactly
  * like a normal color, keyed by a stable group id instead of a hex.
+ *
+ * Auto-clusters are computed live from `byColor` on every call rather than persisted, which is
+ * what makes the slider fully reversible: dragging it down re-splits colors instead of leaving
+ * them stuck together.
  */
 export function applyColorMerges(
   byColor: Record<string, PolyFeature>,
   mergeGroups: string[][],
+  opts: ApplyColorMergesOptions = {},
 ): ResolvedRegion[] {
-  const used = new Set<string>();
-  const out: ResolvedRegion[] = [];
+  const baseSet = new Set(opts.baseColors || []);
+  const pinSet = new Set(opts.keptApart || []);
+  const colors = Object.keys(byColor).filter((h) => !baseSet.has(h));
+  const colorSet = new Set(colors);
+
+  const uf = new UnionFind();
+  colors.forEach((h) => uf.add(h));
+
   (mergeGroups || []).forEach((group) => {
-    const members = group.filter((h) => byColor[h]);
-    if (members.length < 2) return;
+    const members = group.filter((h) => colorSet.has(h));
+    for (let i = 1; i < members.length; i++) uf.union(members[0], members[i]);
+  });
+
+  const threshold = AUTO_MERGE_LEVELS[opts.autoMergeLevel || 0]?.threshold || 0;
+  if (threshold > 0) {
+    const clusterable = colors.filter((h) => !pinSet.has(h));
+    const labs = new Map(clusterable.map((h) => [h, hexToLab(h)]));
+    for (let i = 0; i < clusterable.length; i++) {
+      for (let j = i + 1; j < clusterable.length; j++) {
+        const a = clusterable[i],
+          b = clusterable[j];
+        if (deltaE(labs.get(a)!, labs.get(b)!) <= threshold) uf.union(a, b);
+      }
+    }
+  }
+
+  const groups = new Map<string, string[]>();
+  colors.forEach((h) => {
+    if (pinSet.has(h)) return; // pins are emitted as their own singleton below
+    const root = uf.find(h);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root)!.push(h);
+  });
+
+  const out: ResolvedRegion[] = [];
+  groups.forEach((members) => {
+    if (members.length < 2) {
+      const h = members[0];
+      out.push({ key: h, members: [h], feature: byColor[h], isMerge: false, previewColor: h });
+      return;
+    }
     let feat: PolyFeature | null = null;
     members.forEach((h) => {
       feat = feat ? safeUnion(feat, byColor[h]) : byColor[h];
-      used.add(h);
     });
     if (!feat) return;
+    // The merged slot prints as a real artwork color, not a blended average — the dominant
+    // (largest-area) member's exact hex.
+    const dominant = members
+      .slice()
+      .sort((a, b) => planarArea(byColor[b]) - planarArea(byColor[a]))[0];
     const key = 'merge:' + members.slice().sort().join(',');
-    out.push({ key, members, feature: feat, isMerge: true, previewColor: blendHexes(members) });
+    out.push({ key, members, feature: feat, isMerge: true, previewColor: dominant });
   });
-  Object.keys(byColor).forEach((h) => {
-    if (used.has(h)) return;
-    out.push({ key: h, members: [h], feature: byColor[h], isMerge: false, previewColor: h });
+  colors.forEach((h) => {
+    if (pinSet.has(h))
+      out.push({ key: h, members: [h], feature: byColor[h], isMerge: false, previewColor: h });
   });
   return out;
 }

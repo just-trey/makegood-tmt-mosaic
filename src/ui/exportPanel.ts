@@ -8,6 +8,9 @@ import {
   WHEEL_TOP_POS,
   WHEEL_CAP_ROT_DEG,
   WHEEL_CAP_POS,
+  WHEEL_PRIME_TOWER_DELTA,
+  FOOTREST_PLATE_R,
+  FOOTREST_PRIME_TOWER_DELTA,
   type ExportMaterial,
   type ExportPart,
   type ExportSub,
@@ -19,6 +22,7 @@ import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
 import { WARNINGS, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
+import { track } from '../analytics/track';
 
 // suffixes of the two placement-warning messages build3MFCombined can emit — used to clear a
 // stale one from a previous export attempt before reporting this attempt's
@@ -69,17 +73,29 @@ async function exportPrintReady3MF(): Promise<void> {
         });
         let plateHint: number | undefined,
           rotZdeg: number | undefined,
-          fixedPos,
-          primeTowerAnchor: boolean | undefined;
+          plateR: number[][] | undefined,
+          fixedPos: { x: number; y: number } | undefined,
+          primeTowerDelta: { x: number; y: number } | undefined,
+          objectSettings: Record<string, string> | undefined;
         if (part.roleId === 'top') {
           plateHint = part.isDuplicateOf == null ? 1 : nextHalfPlate++;
           rotZdeg = WHEEL_TOP_ROT_DEG;
           fixedPos = WHEEL_TOP_POS;
-          primeTowerAnchor = true;
+          primeTowerDelta = WHEEL_PRIME_TOWER_DELTA;
         } else if (part.roleId === 'cap') {
           plateHint = 1;
           rotZdeg = WHEEL_CAP_ROT_DEG;
           fixedPos = WHEEL_CAP_POS;
+        } else if (part.roleId === 'footrest') {
+          // place the footrest at its verified reference pose (standing rotation baked from its
+          // reference 3MF — see FOOTREST_PLATE_R). No fixedPos: plateHint routes it through
+          // placeHintedGroup, whose no-fixedPos branch centers it on every plate, with the prime
+          // tower held relative (FOOTREST_PRIME_TOWER_DELTA). Support off + no brim per the user's
+          // verified reference.
+          plateHint = 1;
+          plateR = FOOTREST_PLATE_R;
+          primeTowerDelta = FOOTREST_PRIME_TOWER_DELTA;
+          objectSettings = { brim_type: 'no_brim', enable_support: '0' };
         }
         return {
           name: part.name,
@@ -88,11 +104,13 @@ async function exportPrintReady3MF(): Promise<void> {
           subs,
           plateHint,
           rotZdeg,
+          plateR,
           fixedPos,
-          primeTowerAnchor,
+          primeTowerDelta,
+          objectSettings,
         };
       });
-    fname = 'mosaic-wheel.3mf';
+    fname = `mosaic-${state.assembly.kindId}.3mf`;
   } else {
     const built = getLastBuild();
     if (!built) return;
@@ -132,9 +150,17 @@ async function exportPrintReady3MF(): Promise<void> {
     }
     placementWarnings.forEach((msg) => warn(msg));
     renderWarnings();
+    track('export', {
+      format: '3mf',
+      mode: state.shapeKind === 'assembly' ? 'assembly' : 'flat',
+      printer: state.printerId,
+      colors: materials.length - 1,
+      warnings: placementWarnings.length,
+    });
     download(blob, fname);
   } catch (e) {
     console.error(e);
+    track('export_failed', { format: '3mf' });
     alert('Export failed: ' + (e as Error).message);
   }
   hideOverlay();
@@ -174,9 +200,16 @@ affiliated with Bambu Lab.
 `;
     files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
     const blob = zipStore(files);
+    track('export', {
+      format: 'stl_zip',
+      mode: 'flat',
+      printer: state.printerId,
+      colors: built.colorMeshes.length,
+    });
     download(blob, 'mosaic-export.zip');
   } catch (e) {
     console.error(e);
+    track('export_failed', { format: 'stl_zip' });
     alert('Export failed: ' + (e as Error).message);
   }
   hideOverlay();

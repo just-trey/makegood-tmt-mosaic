@@ -72,6 +72,7 @@ export async function asmLoadFullAssembly(): Promise<void> {
   )
     return;
   state.assembly.parts = [];
+  const myParts = state.assembly.parts;
   showOverlay(`Loading ${kind.name}…`);
   try {
     for (const role of kind.roles) {
@@ -80,9 +81,13 @@ export async function asmLoadFullAssembly(): Promise<void> {
         : undefined;
       const primary = asmCreateRolePart(role);
       if (entry) await asmLoadLibraryEntryIntoPart(primary, entry);
+      // A part-kind switch mid-load replaces state.assembly.parts with a fresh array and kicks off
+      // its own load; if that happened while we awaited the fetch, stop here so we don't push this
+      // kind's parts into the new kind's list. The newer load owns the overlay and final refresh.
+      if (state.assembly.parts !== myParts) return;
       if (role.allowRotatedCopies) {
         for (let i = 0; i < (role.copies || 0); i++) {
-          const dup = asmAddDuplicate(primary.id);
+          const dup = asmAddDuplicate(primary.id, role.copyName);
           if (dup && role.copyDefaults) Object.assign(dup, role.copyDefaults);
         }
       }
@@ -116,16 +121,16 @@ export async function asmLoadLibraryEntryIntoPart(
 export function asmAddRoleDuplicate(role: AssemblyRole): void {
   const src = state.assembly.parts.find((p) => p.roleId === role.id && !p.isDuplicateOf);
   if (!src) return;
-  asmAddDuplicate(src.id);
+  asmAddDuplicate(src.id, role.copyName);
 }
 
-export function asmAddDuplicate(sourceId: number): AssemblyPart | null {
+export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPart | null {
   const src = state.assembly.parts.find((p) => p.id === sourceId);
   if (!src) return null;
   const id = state.assembly.nextPartId++;
   const dup: AssemblyPart = {
     id,
-    name: `${src.name} (rotated copy)`,
+    name: copyName ?? `${src.name} (rotated copy)`,
     roleId: src.roleId,
     positions: src.positions,
     patches: src.patches,
@@ -155,6 +160,23 @@ export function asmRemovePart(id: number): void {
   scheduleRebuild();
 }
 
+/**
+ * Default design-face patch for a freshly loaded part: the role's preferred-normal face if it
+ * declares one (patches are area-ranked, so the first match is the largest such face), otherwise
+ * the overall largest patch. Falls back to 0 when nothing points the preferred way.
+ */
+function defaultPatchIdx(part: AssemblyPart): number {
+  const patches = part.patches;
+  if (!patches || !patches.length) return 0;
+  const pref = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId)?.preferFaceNormal;
+  if (!pref) return 0;
+  const idx = patches.findIndex((p) => {
+    const dot = p.normal[0] * pref[0] + p.normal[1] * pref[1] + p.normal[2] * pref[2];
+    return dot > 0.9;
+  });
+  return idx >= 0 ? idx : 0;
+}
+
 /** Core mesh-buffer loader, shared by drag-and-drop upload and the parts library (fetch()). */
 export async function asmLoadPartBuffer(
   part: AssemblyPart,
@@ -175,7 +197,7 @@ export async function asmLoadPartBuffer(
   part.positions = positions;
   part.patches = detectFlatPatches(positions);
   requestFrame(); // new part geometry — re-fit the view
-  part.patchIdx = 0; // default: largest-area patch; override via the face dropdown if wrong
+  part.patchIdx = defaultPatchIdx(part); // largest-area patch, or the role's preferred face
   applyAsmPatchChoice(part);
   part.loaded = true;
   notifyPartsChanged();

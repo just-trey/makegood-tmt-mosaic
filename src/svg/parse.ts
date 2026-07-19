@@ -27,6 +27,27 @@ export function normalizeColor(str: string | null): string | null {
   return '#000000';
 }
 
+const SVG_LENGTH_UNIT_MM: Record<string, number> = {
+  '': 25.4 / 96, // unitless user units default to px
+  px: 25.4 / 96,
+  pt: 25.4 / 72,
+  pc: 25.4 / 6,
+  mm: 1,
+  cm: 10,
+  in: 25.4,
+};
+
+/** SVG length ("266mm", "1005.2", "10in") -> millimeters. Null for %, unknown units, or non-numeric. */
+export function svgLengthToMM(value: string | null): number | null {
+  if (!value) return null;
+  const m = value.trim().match(/^([+-]?[\d.eE]+)\s*([a-z%]*)$/i);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const factor = SVG_LENGTH_UNIT_MM[m[2].toLowerCase()];
+  return factor == null ? null : n * factor;
+}
+
 function getInlineStyleProp(el: Element, prop: string): string | null {
   const style = el.getAttribute('style');
   if (!style) return null;
@@ -87,12 +108,39 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   // is re-fit to the physical footprint later anyway.
   let rootM = Mat.identity();
   const vb = svgEl.getAttribute('viewBox');
+  let vbW = 0,
+    vbH = 0;
   if (vb) {
-    const [vx, vy] = vb
+    const [vx, vy, vw, vh] = vb
       .trim()
       .split(/[\s,]+/)
       .map(Number);
     rootM = Mat.translate(-vx, -vy);
+    vbW = vw;
+    vbH = vh;
+  }
+
+  // Physical scale for rect placement (mm per working/viewBox unit), from the file's declared
+  // width/height. Wheel mode ignores this — it scales artwork off the design <circle> — but rect
+  // mode maps SVG units straight to mm, so we must honor the real-world size: an editor round-trip
+  // (e.g. re-export from Affinity) can rewrite the viewBox to a different internal resolution while
+  // keeping the same physical width, and without this the design comes out mis-scaled. Null when
+  // the SVG declares no absolute size (rect mode then falls back to 1:1 with a notice).
+  const widthMM = svgLengthToMM(svgEl.getAttribute('width'));
+  const heightMM = svgLengthToMM(svgEl.getAttribute('height'));
+  let userUnitMM: number | null = null;
+  if (vb) {
+    // mm-per-unit from each declared axis independently. Guard `> 0` so a width="0"/height="0"
+    // doesn't collapse to a scale of 0 (which would map every point onto the face origin). When
+    // both axes are present but disagree — the file's width/height proportions differ from its
+    // viewBox aspect — there's no single true scale, so take the smaller: that matches SVG's
+    // default "meet" fitting, which uniformly scales the design to sit inside the declared box
+    // rather than stretching one axis to match the other.
+    const sx = vbW > 0 && widthMM != null && widthMM > 0 ? widthMM / vbW : null;
+    const sy = vbH > 0 && heightMM != null && heightMM > 0 ? heightMM / vbH : null;
+    userUnitMM = sx != null && sy != null ? Math.min(sx, sy) : (sx ?? sy);
+  } else if ((widthMM != null && widthMM > 0) || (heightMM != null && heightMM > 0)) {
+    userUnitMM = 25.4 / 96; // no viewBox: coords are user px
   }
 
   const shapes: SVGShape[] = [];
@@ -287,5 +335,5 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     }
   });
 
-  return { shapes, bbox: { minX, minY, maxX, maxY }, rawSVGCircle };
+  return { shapes, bbox: { minX, minY, maxX, maxY }, rawSVGCircle, userUnitMM };
 }

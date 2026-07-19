@@ -7,13 +7,16 @@ import {
   asmPartTransformGroup,
   buildAssemblyGeometry,
 } from '../geometry/assembly';
+import { currentAssemblyKind } from '../assembly/kinds';
 import {
   frameModelIfPending,
   getModelGroup,
   newModelGroup,
+  refreshModelShadows,
   setPreferredViewDir,
 } from '../scene/viewport';
-import { renderColorList } from '../ui/colorList';
+import { renderColorList, type ColorListEntry } from '../ui/colorList';
+import { renderBaseColorSwatches } from '../ui/partPanel';
 import { renderWarnings } from '../ui/warningsView';
 import { $ } from '../ui/dom';
 
@@ -72,12 +75,12 @@ export function estimateRebuildSlow(): boolean {
 /** Entry point the scheduler debounces into. */
 export async function rebuildCurrent(): Promise<void> {
   if (state.shapeKind === 'assembly') await rebuildAssemblyScene();
-  else rebuildScene();
+  else await rebuildScene();
 }
 
-function rebuildScene(): void {
+async function rebuildScene(): Promise<void> {
   setPreferredViewDir(null); // flat mode: keep the user's current view direction when re-framing
-  const modelGroup = newModelGroup();
+  const modelGroup = newModelGroup(state.stlRefMesh);
   const baseParams = currentBaseParams();
 
   if (!state.parsed) {
@@ -105,12 +108,13 @@ function rebuildScene(): void {
     renderWarnings();
     updateTriStat();
     setExportEnabled(false);
+    refreshModelShadows();
     frameModelIfPending();
     return;
   }
 
   if (!baseParams) return;
-  const built = buildGeometry({
+  const built = await buildGeometry({
     parsed: state.parsed,
     colorSettings: state.colorSettings,
     baseParams,
@@ -119,6 +123,10 @@ function rebuildScene(): void {
     recessBg: state.recessBg,
     mergeGroups: state.mergeGroups,
     baseColorHex: baseColorHex(),
+    autoMergeLevel: state.autoMergeLevel,
+    baseColorKey: state.baseColorKey,
+    baseColorMembers: state.baseColorMembers,
+    keptApart: state.keptApart,
   });
   lastBuild = built;
   if (!built) return;
@@ -128,19 +136,35 @@ function rebuildScene(): void {
   if (state.stlRefMesh && state.shapeKind === 'stl') modelGroup.add(state.stlRefMesh);
 
   updateTriStat();
-  renderColorList(
-    built.colorMeshes.map((c) => ({
-      color: c.color,
-      key: c.key,
-      members: c.members,
-      isMergeGroup: c.isMergeGroup,
-      depth: c.depth,
-      areaPct: c.areaPct,
-      isBackground: c.isBackground,
-    })),
-  );
+  const listEntries: ColorListEntry[] = built.colorMeshes.map((c) => ({
+    color: c.color,
+    key: c.key,
+    members: c.members,
+    isMergeGroup: c.isMergeGroup,
+    depth: c.depth,
+    areaPct: c.areaPct,
+    isBackground: c.isBackground,
+  }));
+  if (built.baseAssigned) {
+    listEntries.push({
+      color: built.baseAssigned.hex,
+      key: 'base:' + built.baseAssigned.hex,
+      members: state.baseColorMembers,
+      isMergeGroup: false,
+      depth: 0,
+      areaPct: built.baseAssigned.areaPct,
+      isBackground: false,
+      isBase: true,
+    });
+    // keep the dominant member in sync so the top fallback area and the 3D body agree — no
+    // scheduleRebuild here, this just mirrors what the build already computed
+    state.baseColorKey = built.baseAssigned.hex;
+  }
+  renderColorList(listEntries, { rawColorCount: built.detectedColors.length });
+  renderBaseColorSwatches();
   renderWarnings();
   setExportEnabled(true);
+  refreshModelShadows();
   frameModelIfPending();
 }
 
@@ -179,7 +203,7 @@ function restAssemblyOnGrid(): void {
 }
 
 async function rebuildAssemblyScene(): Promise<void> {
-  newModelGroup();
+  newModelGroup(state.stlRefMesh);
 
   // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
   if (!state.parsed) {
@@ -192,6 +216,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     const primary = state.assembly.parts.find((p) => p.loaded && !p.isDuplicateOf);
     const nrm = primary ? asmPartFaceNormal(primary, state.assembly.parts) : null;
     setPreferredViewDir(new THREE.Vector3(0.35, 0.9 * (nrm && nrm[1] < 0 ? -1 : 1), 0.4));
+    refreshModelShadows();
     frameModelIfPending();
     return;
   }
@@ -203,11 +228,16 @@ async function rebuildAssemblyScene(): Promise<void> {
     colorSettings: state.colorSettings,
     globalDepth: state.globalDepth,
     radius: state.asmRadius,
+    designFit: currentAssemblyKind()?.designFit,
     scaleMult: state.scalePct / 100,
     offX: state.offsetX,
     offZ: state.offsetY,
     flipX: state.flipX,
     flipY: state.flipY,
+    autoMergeLevel: state.autoMergeLevel,
+    baseColorKey: state.baseColorKey,
+    baseColorMembers: state.baseColorMembers,
+    keptApart: state.keptApart,
   });
   lastAssemblyBuild = built;
   const modelGroup = getModelGroup();
@@ -219,6 +249,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     renderColorList(null);
     renderWarnings();
     $<HTMLButtonElement>('#btn-export').disabled = true;
+    refreshModelShadows();
     frameModelIfPending();
     return;
   }
@@ -255,14 +286,14 @@ async function rebuildAssemblyScene(): Promise<void> {
   });
 
   // aggregate color list across the whole assembly (one shared design/palette)
-  const colorListEntries: Parameters<typeof renderColorList>[0] = [];
+  const colorListEntries: ColorListEntry[] = [];
   built.palette.forEach((c, ci) => {
     let area = 0;
     built.partOutputs.forEach(({ inlaySoups }) => {
       if (inlaySoups[ci]) area += inlaySoups[ci].length / 9;
     });
     if (area > 0)
-      colorListEntries!.push({
+      colorListEntries.push({
         color: c.hex,
         key: c.key,
         members: c.members,
@@ -273,15 +304,35 @@ async function rebuildAssemblyScene(): Promise<void> {
         isBackground: false,
       });
   });
-  const totalArea = colorListEntries!.reduce((s, c) => s + c.areaPct, 0) || 1;
-  colorListEntries!.forEach((c) => {
+  const totalArea = colorListEntries.reduce((s, c) => s + c.areaPct, 0) || 1;
+  colorListEntries.forEach((c) => {
     c.areaPct = (100 * c.areaPct) / totalArea;
   });
+  if (built.baseAssigned) {
+    // Note: this areaPct is on the 2D-design scale (matches detectedColors), while the rows
+    // above are triangle-count-based — both are 0-100 percentages but not on the same footing.
+    // Assembly-mode area is already an approximation; exact parity isn't worth the extra pass.
+    colorListEntries.push({
+      color: built.baseAssigned.hex,
+      key: 'base:' + built.baseAssigned.hex,
+      members: state.baseColorMembers,
+      isMergeGroup: false,
+      depth: 0,
+      areaPct: built.baseAssigned.areaPct,
+      isBackground: false,
+      isBase: true,
+    });
+    // keep the dominant member in sync so the top fallback area and the 3D body agree — no
+    // scheduleRebuild here, this just mirrors what the build already computed
+    state.baseColorKey = built.baseAssigned.hex;
+  }
 
   restAssemblyOnGrid();
   $('#stat-tris').textContent = Math.round(tris) + ' tris';
-  renderColorList(colorListEntries);
+  renderColorList(colorListEntries, { rawColorCount: built.detectedColors.length });
+  renderBaseColorSwatches();
   renderWarnings();
   $<HTMLButtonElement>('#btn-export').disabled = built.partOutputs.length === 0;
+  refreshModelShadows();
   frameModelIfPending();
 }

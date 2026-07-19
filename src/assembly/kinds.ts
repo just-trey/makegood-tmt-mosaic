@@ -24,6 +24,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         allowRotatedCopies: true,
         copies: 1,
         copyDefaults: { pivotX: 0, pivotZ: 0, angleDeg: 180 },
+        copyName: 'Bottom',
       },
       {
         id: 'cap',
@@ -34,6 +35,24 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         // the cap's shell is 3mm thick above its mounting boss — cut only that far so the
         // rest prints in base color without extra filament swaps, and the boss stays intact.
         cutThroughDepth: 3,
+      },
+    ],
+  },
+  {
+    id: 'footrest',
+    name: 'Footrest',
+    // rectangular design face — no circle/radius to anchor on, so the SVG maps 1:1 in mm
+    // and centers on the detected face instead.
+    designFit: 'rect',
+    roles: [
+      {
+        id: 'footrest',
+        name: 'Footrest',
+        libraryPartId: 'footrest',
+        allowRotatedCopies: false,
+        // the flat back of the shell outsizes the seat face by area, so patch auto-detect
+        // needs a nudge toward the +Y-facing (up, seat-side) patch instead of the largest one.
+        preferFaceNormal: [0, 1, 0],
       },
     ],
   },

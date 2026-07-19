@@ -19,10 +19,18 @@ export interface SVGShape {
 }
 
 export interface ParsedSVG {
+  /** Treated as immutable once parsed — regions.ts memoizes computeNetRegionsByColor on its identity. */
   shapes: SVGShape[];
   bbox: { minX: number; minY: number; maxX: number; maxY: number };
   /** Largest <circle> in the document — assembly mode's design-boundary anchor. */
   rawSVGCircle: { cx: number; cy: number; r: number } | null;
+  /**
+   * Millimeters per SVG user (viewBox) unit, derived from the document's physical width/height.
+   * Only rect assembly placement uses it — to map artwork 1:1 in mm regardless of the file's
+   * internal coordinate resolution; null when the SVG declares no absolute size. Wheel mode
+   * (which scales off the design circle) ignores it.
+   */
+  userUnitMM?: number | null;
 }
 
 export type ShapeKind = 'assembly' | 'disc' | 'rect' | 'round' | 'stl';
@@ -117,16 +125,34 @@ export interface AssemblyRole {
   /** rotated copies auto-added beyond the primary by "load full assembly" */
   copies?: number;
   copyDefaults?: { pivotX: number; pivotZ: number; angleDeg: number };
+  /**
+   * Display name for a rotated copy of this role, e.g. a wheel's second Top half is
+   * physically the Bottom half — falls back to "<role name> (rotated copy)" if unset.
+   */
+  copyName?: string;
   /** parts of this role get a through-cut (see AssemblyPart.cutThrough) instead of a recess */
   cutThrough?: boolean;
   /** see AssemblyPart.cutThroughDepth */
   cutThroughDepth?: number;
+  /**
+   * Preferred design face as a unit normal. When set, the loader defaults to the largest-area
+   * detected patch pointing this way instead of the overall largest patch — needed when a part's
+   * biggest flat face isn't the design face (e.g. the footrest's flat back outsizes its seat).
+   */
+  preferFaceNormal?: [number, number, number];
 }
 
 export interface AssemblyKind {
   id: string;
   name: string;
   roles: AssemblyRole[];
+  /**
+   * How SVG artwork maps onto the design face. 'wheel' (default) anchors on the design's circle
+   * and scales by Design radius — right for the round wheel. 'rect' maps the SVG 1:1 in mm and
+   * centers on the detected face, for rectangular parts like the footrest where a radius control
+   * is meaningless.
+   */
+  designFit?: 'wheel' | 'rect';
 }
 
 export interface LibraryEntry {
@@ -169,9 +195,19 @@ export interface AssemblyPartOutput {
   inlayIndexed?: Record<number, IndexedMesh>;
 }
 
+/** One raw detected artwork color before any merge/base resolution — feeds the base-color picker. */
+export interface DetectedColor {
+  hex: string;
+  areaPct: number;
+}
+
 export interface AssemblyBuild {
   partOutputs: AssemblyPartOutput[];
   palette: AssemblyPaletteEntry[];
   /** Y direction of the first primary part's design face — the camera opens from this side. */
   viewSign: number;
+  /** every raw fill color detected, independent of current merge/base settings */
+  detectedColors: DetectedColor[];
+  /** the artwork color currently assigned to the base material, if any */
+  baseAssigned: { hex: string; areaPct: number } | null;
 }

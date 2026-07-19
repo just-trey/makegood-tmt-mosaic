@@ -1,7 +1,7 @@
 # TMT Mosaic — SVG Color-Inlay Generator
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0--alpha-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.1--beta-orange.svg)](CHANGELOG.md)
 
 A browser app that turns a flat-color SVG into per-color recess geometry for
 multicolor/AMS 3D printing, and exports a print-ready project 3MF — parts
@@ -16,7 +16,7 @@ Built for [MakeGood](https://makegood.design)'s Toddler Mobility Trainer
 (TMT) — a free, open-source 3D-printable mobility device for children ages
 1–8, distributed via [3d-mobility.org](https://3d-mobility.org).
 
-This project is in **alpha** (pre-1.0, see [Versioning](CONTRIBUTING.md#versioning))
+This project is in **beta** (pre-1.0, see [Versioning](CONTRIBUTING.md#versioning))
 — exported file formats and supported inputs may still change between minor
 releases.
 
@@ -58,24 +58,37 @@ deploy by itself; a manual `workflow_dispatch` run is also available for an
 out-of-band deploy. One-time setup: repo **Settings → Pages → Source → GitHub
 Actions**.
 
-**Analytics (optional).** The Cloudflare Web Analytics beacon is injected at
-build time only when `CF_BEACON_TOKEN` is set — as a repo **Variable**
+**Analytics (optional).** The Umami analytics script is injected at build
+time only when `UMAMI_WEBSITE_ID` is set — as a repo **Variable**
 (Settings → Secrets and variables → Actions → Variables) for the deploy, and in
 a local `.env.local` for local builds (see [.env.example](.env.example)).
-Unset — as in any fork — and no beacon is injected, so forks never report to
-your account.
+Unset — as in any fork — and no script is injected, so forks never report to
+your account. Beyond pageviews, a few cookieless custom events track feature
+usage (artwork loaded, mode switched, export completed) — no file names, file
+contents, or other personal data are ever sent. See
+[docs/analytics.md](docs/analytics.md) for the full event catalog.
 
 ## How it works
 
 1. **The SVG is parsed as vectors, not pixels** ([src/svg/](src/svg/)) — the
    `<path>`/`<rect>`/`<circle>`/etc. geometry is read directly, transforms
-   composed, curves flattened, and shapes grouped by fill color.
+   composed, curves flattened, and shapes grouped by fill color. Bezier curves
+   are flattened adaptively (recursive subdivision to a fixed deviation
+   tolerance, [src/svg/path.ts](src/svg/path.ts)) rather than at a fixed
+   segment count, so gentle curves emit few points and only sharp/detailed
+   curves emit many — fewer total vertices flowing into the boolean pass below
+   without losing visible fidelity.
 2. **Each color's _net visible_ region** is computed with paint order taken
    into account — an outline drawn on top of a fill has its footprint
    subtracted from the fill's region, matching what the rasterized image would
    show. 2D polygon booleans via Turf.js ([src/geometry/regions.ts](src/geometry/regions.ts)).
    Holes are resolved by **containment depth** (odd nesting depth = hole),
    which is correct for both the `nonzero` and `evenodd` SVG fill rules.
+   Regions are then resolved into recesses: any color assigned to the base
+   material is excluded outright, visually similar colors are auto-merged
+   (a CIE76 ΔE-clustered slider, live and reversible) and unioned with any
+   manual merges, and each merged slot takes its dominant member's real color
+   rather than a blended average (`applyColorMerges` in the same file).
 3. **Flat-plate mode** builds the plate as a stack of flat slabs between depth
    boundaries — pure 2D math, no CSG ([src/geometry/flat.ts](src/geometry/flat.ts)).
 4. **Assembly mode** cuts pockets into real part meshes: each color region is
@@ -84,7 +97,9 @@ your account.
    lazy-loaded) ([src/geometry/assembly.ts](src/geometry/assembly.ts)).
    Supports rotated-copy parts (the same physical part installed twice, e.g.
    a wheel's two halves): the design slice that lands on the copy is remapped
-   back into the part's native print orientation.
+   back into the part's native print orientation. Round parts (the wheel) map
+   the SVG via a Design-radius/circle model; rectangular parts (the footrest)
+   map it 1:1 in millimeters and auto-center on the detected face instead.
 5. **Export** writes a Bambu Studio _project_ 3MF (vendor metadata included,
    so it imports without warnings, with named parts, per-part filament slots,
    and multi-plate placement) ([src/export/threemf.ts](src/export/threemf.ts)).
@@ -98,9 +113,11 @@ your account.
    wheel's geometry and required orientation are a specific, already-verified
    product rather than something to re-derive per printer. The prime/wipe
    tower's plate position is pinned the same way, as a fixed offset from the
-   wheel Top half rather than each slicer's own default. A part that still
-   overhangs its plate is reported as an on-screen warning rather than
-   assumed safe.
+   wheel's Top half. The footrest instead centers itself on whatever plate
+   (its reference placement wasn't portable across bed sizes — see "Adding an
+   assembly or library part" below) with its own tower offset and per-part
+   support-off/no-brim overrides riding along. A part that still overhangs
+   its plate is reported as an on-screen warning rather than assumed safe.
 
 ### Code layout
 
@@ -124,6 +141,55 @@ links to [public/stl/parts.json](public/stl/parts.json); drop the STL/3MF in
 `public/stl/`, add a manifest entry, and the role auto-loads. Roles without a
 library entry fall back to drag-and-drop.
 
+Two per-kind/per-role fields tune non-wheel parts:
+
+- `AssemblyRole.preferFaceNormal` (unit vector): the design face isn't always
+  the part's single largest flat patch — the footrest's flat back outsizes its
+  seat, for instance. Setting this steers the auto-picked default toward the
+  largest patch facing that direction instead of the overall largest.
+- `AssemblyKind.designFit: 'rect'`: for a rectangular (non-circular) part, maps
+  the SVG 1:1 in millimeters and centers it on the detected face, instead of
+  the wheel's circle/Design-radius model. The Footrest kind uses both fields —
+  see [src/assembly/kinds.ts](src/assembly/kinds.ts) for a worked example.
+
+**Export placement is baked from a verified reference 3MF, never computed or
+read at runtime.** Once a part's real-world print pose has been checked in the
+slicer (a reference project file the user hand-verified — rotation, plate
+position, prime/wipe tower placement, per-part print settings), those numbers
+become constants in [src/export/threemf.ts](src/export/threemf.ts), wired
+onto the part's `ExportPart` in
+[src/ui/exportPanel.ts](src/ui/exportPanel.ts):
+
+- `plateR` — a full baked rotation matrix, for a part whose verified pose
+  isn't a flat face-down tilt (e.g. `FOOTREST_PLATE_R`, which stands the
+  footrest on its long edge to print support-free).
+- `fixedPos` vs. centering — a part's plate position is either a fixed
+  reference coordinate (`WHEEL_TOP_POS`/`WHEEL_CAP_POS`, valid because the
+  reference file's own X1C 256×256 plate is a known constant) or, if the
+  reference coordinate isn't portable across bed sizes (e.g. it was authored
+  against a different printer's plate center), omitted so the part centers
+  itself on whatever plate instead — see the footrest.
+- `primeTowerDelta` — the prime/wipe tower's plate position, expressed as an
+  offset **relative to** the anchor part's own final position rather than an
+  absolute coordinate, so the same relative layout reproduces on every plate
+  size (`WHEEL_PRIME_TOWER_DELTA`, `FOOTREST_PRIME_TOWER_DELTA`).
+- `objectSettings` — per-part Bambu print overrides (e.g.
+  `{ brim_type: 'no_brim', enable_support: '0' }` on the footrest), written
+  into `model_settings.config` on top of the project-wide settings.
+
+The exported filename is derived from the selected assembly kind
+(`mosaic-${state.assembly.kindId}.3mf`), so each part downloads under its own
+name rather than a shared generic one.
+
+**A note on 3MF sources**: `load3MF` ([src/geometry/meshparts.ts](src/geometry/meshparts.ts))
+only reads meshes embedded inline in `3D/3dmodel.model`. Some slicer exports
+(BambuStudio's production-extension format, used for the footrest's source
+file) instead reference the mesh from a separate internal part file via
+`<component p:path="...">`, which `load3MF` does not resolve. If a part loads
+as empty/zero-triangle, check for this and flatten the file (inline the
+referenced part's `<mesh>` into a single `<object>`, dropping the
+`<component>` reference) before adding it to `public/stl/`.
+
 ## Known limitations
 
 - **Flat, roughly horizontal faces only.** Assembly cutting assumes the design
@@ -140,10 +206,6 @@ library entry fall back to drag-and-drop.
   behind the face will cut through. Sanity-check depths against your model.
 - **Gradients/patterns are detected and skipped** with a warning, rather than
   silently producing wrong geometry.
-- In flat-plate STL-reference mode, the uploaded STL is **reference-only**:
-  it guides sizing/alignment and the export is a flat insert plate, not a
-  modified copy of the STL. (Assembly mode is the path that modifies real
-  meshes.)
 
 ## Troubleshooting: "Boolean union/subtraction failed" warnings
 
@@ -194,10 +256,6 @@ is imported by the app. Two other brand themes in the tokens folder
 
 ## Roadmap ideas (not built)
 
-- Adaptive Bezier flattening tolerance instead of a fixed segment count.
-- Smarter color mapping: auto-merge visually similar colors into a single
-  region/filament slot, and let one image color be assigned to the base
-  material instead of a cut inlay.
 - Pick a face directly in the 3D view (raycast → detected patch) to apply
   artwork to any part.
 - Raster image (PNG/JPG) input: quantize to flat color regions, then reuse the
@@ -206,18 +264,55 @@ is imported by the app. Two other brand themes in the tokens folder
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind, and a hubcap part for the wheel
   assembly.
-- Footrest part, and a full parent-handle assembly kind.
-- Full assembled-chair view with drag-and-drop filament colors per part.
+- A full parent-handle assembly kind.
 
 ## TODO / tech debt
 
-- **Upgrade `@turf/turf` from the pinned 6.5.0.** It's pinned deliberately:
+- **Rebuild performance needs ongoing work — this is a heavy application.**
+  A dense 135-path SVG still takes ~13s to rebuild in flat mode, ~9s of
+  which is the paint-order boolean pass in
+  [src/geometry/regions.ts](src/geometry/regions.ts)
+  (`computeNetRegionsByColor`). The rebuild is already cooperative (yields to
+  the browser, live progress %) and the flat union phases use balanced tree
+  merging (~3x faster than the old left-fold), so the tab never freezes —
+  but the compute floor is still high. Measured leads for a follow-up, best
+  first: (1) call the `polygon-clipping` engine directly with n-ary
+  union/difference (one sweep instead of dozens of pairwise ops — but it
+  bypasses Turf's wrappers, so the safeUnion/safeDiff fallback machinery
+  needs care); (2) move the boolean pass into a Web Worker (doesn't reduce
+  compute, makes the wait invisible). Dead end, already measured: bbox
+  pre-filtered per-shape diffs benchmarked ~2x SLOWER than the accumulator
+  on real artwork (full-canvas backgrounds overlap everything) — see the
+  comment on `computeNetRegionsByColor`.
+- **Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression
+  here.** A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):
+  correct output, but its new polygon-clipping engine ran **5–10x slower**
+  on this app's union-accumulation hot path (40ms → 215ms at 20 shapes,
+  76ms → 726ms at 120), turning slow rebuilds into multi-minute ones. Don't
+  re-attempt without benchmarking that path first. The 6.5 quirks remain:
   the boolean-failure workarounds in
   [src/geometry/regions.ts](src/geometry/regions.ts) (degenerate-ring
   scrubbing, precision-truncation retries) target 6.5's exact
-  polygon-clipping bugs, and 6.5's package typings don't resolve under modern
-  TypeScript, hence the shim in [src/turf.d.ts](src/turf.d.ts). Upgrading to
-  Turf 7+ means: bump the dependency, delete `src/turf.d.ts`, re-test the
-  boolean-heavy paths (`npm test` + `npm run smoke` + a complex real SVG),
-  and only then consider simplifying the retry workarounds if the new
-  clipping engine no longer needs them.
+  polygon-clipping bugs, and 6.5's package typings don't resolve under
+  modern TypeScript, hence the shim in [src/turf.d.ts](src/turf.d.ts).
+- **Per-part export placement is a hardcoded `roleId` if/else in
+  [src/ui/exportPanel.ts](src/ui/exportPanel.ts)** — each part's plate hint,
+  rotation, `plateR`, `fixedPos`, prime-tower delta, and object settings are
+  assigned by an `if (roleId === 'top') … else if ('cap') … else if
+('footrest')` chain. Every new assembly part means editing that chain.
+  These are per-role constants; they belong as data on the `AssemblyKind` /
+  role definition (or the part's `ExportPart`) so adding a part stays a
+  data-only change, matching the "one array entry" goal in
+  [src/assembly/kinds.ts](src/assembly/kinds.ts).
+- **The footrest's `objectSettings` literal (`brim_type: 'no_brim'`,
+  `enable_support: '0'`) is duplicated** between the export path in
+  [src/ui/exportPanel.ts](src/ui/exportPanel.ts) and its assertion in
+  [tests/threemf.test.ts](tests/threemf.test.ts). Extract a shared
+  `FOOTREST_OBJECT_SETTINGS` constant so the test verifies the real value
+  instead of a hand-copied duplicate that can silently drift.
+- **The footrest's baked `FOOTREST_PLATE_R` is redundant** with the general
+  `rotXthenZ(-90 * nsign, angleDeg)` path for `nsign: 0` + `rotZdeg: -45`
+  (see [src/export/threemf.ts](src/export/threemf.ts)). It's kept as an
+  explicit full 3×3 for now because it generalizes to a future part with a
+  genuinely tilted reference pose that the axis-aligned path can't express —
+  revisit if that part never materializes.
