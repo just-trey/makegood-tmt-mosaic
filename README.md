@@ -216,7 +216,6 @@ is imported by the app. Two other brand themes in the tokens folder
   existing half-wheel (Top ×2 + Cap) kind, and a hubcap part for the wheel
   assembly.
 - Footrest part, and a full parent-handle assembly kind.
-- Full assembled-chair view with drag-and-drop filament colors per part.
 
 ## TODO / tech debt
 
