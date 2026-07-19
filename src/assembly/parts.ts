@@ -232,7 +232,11 @@ export function applyAsmPatchChoice(part: AssemblyPart): void {
  */
 export async function loadPartsLibrary(): Promise<void> {
   try {
-    const res = await fetch('stl/parts.json');
+    // stl/parts.json is a stable (non-content-hashed) URL, unlike the JS bundle — tag it with
+    // the app version so a returning visitor's cached pre-release manifest can't silently lag
+    // behind a bundle that already knows about a newer part (e.g. the footrest launch).
+    const v = typeof __APP_VERSION__ === 'undefined' ? 'dev' : __APP_VERSION__;
+    const res = await fetch(`stl/parts.json?v=${v}`);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     state.assembly.library = await res.json();
     // the manifest may land after the user already opened Assembly mode — re-render and
