@@ -94,15 +94,28 @@ const n2 = (v) => Number(v.toFixed(2));
 // ---------------------------------------------------------------------------
 const FOOT_W = 266; // template canvas mm (matches the verified size already shipped)
 const FOOT_H = 185;
+// The canvas dimensions above are baked, but every extracted point is mapped through
+// FOOT_W/2, FOOT_H/2 as the face center — so if the source mesh's face no longer measures
+// FOOT_W x FOOT_H, the whole outline shifts inside a canvas still declaring the old size.
+// Fail loudly instead of writing a quietly misaligned template.
+const FOOT_TOL = 0.5;
 
 async function genFootrest() {
   const { positions } = await readSoup(stl('footrest.3mf'));
   const patches = detectFlatPatches(positions);
-  // Seat design face = the dominant +Y-facing flat patch (the app's defaultPatchIdx
-  // picks the same one via preferFaceNormal [0,1,0]). Its outer boundary is the real
-  // printable outline the app clips artwork to — NOT a plain rectangle: the BACK edge
-  // carries the mounting slots and the FRONT edge is the curved-lip transition.
-  const up = patches.filter((p) => p.normal[1] > 0.99).sort((a, b) => b.area - a.area);
+  // Seat design face = the dominant +Y-facing flat patch. Match the app's own selection test
+  // (defaultPatchIdx in src/assembly/parts.ts: first area-ranked patch with dot > 0.9 against the
+  // role's preferFaceNormal [0,1,0]) — a stricter threshold here would silently pick a different
+  // face than the app cuts on, or none at all, if the seat ever gets a slight draft. Its outer
+  // boundary is the real printable outline the app clips artwork to — NOT a plain rectangle: the
+  // BACK edge carries the mounting slots and the FRONT edge is the curved-lip transition.
+  const up = patches.filter((p) => p.normal[1] > 0.9);
+  if (!up.length)
+    throw new Error(
+      `no +Y-facing flat patch in footrest.3mf (best normal.y=${n2(
+        Math.max(...patches.map((p) => p.normal[1])),
+      )}) — the seat face is not where this script expects it`,
+    );
   const loops3d = extractPatchBoundary(positions, up[0].triIndices);
   // Project to native (x, z) — the two axes the app uses for the rect face.
   const loopsXZ = loops3d.map((loop) => loop.map((p) => [p[0], p[2]]));
@@ -116,6 +129,11 @@ async function genFootrest() {
       ob.h,
     )} (expect ~${FOOT_W} x ${FOOT_H})`,
   );
+  if (Math.abs(ob.w - FOOT_W) > FOOT_TOL || Math.abs(ob.h - FOOT_H) > FOOT_TOL)
+    throw new Error(
+      `footrest face measures ${n2(ob.w)} x ${n2(ob.h)}mm but the template canvas is ` +
+        `${FOOT_W} x ${FOOT_H}mm — re-verify the part and update FOOT_W/FOOT_H before regenerating`,
+    );
 
   const bboxCx = FOOT_W / 2;
   const bboxCy = FOOT_H / 2;
@@ -175,13 +193,28 @@ async function genFootrest() {
 
 // ---------------------------------------------------------------------------
 // Wheel: the whole cover prints, so this is a reference ring for where the
-// center cap lands, not a hole. Radius = the cap's real footprint, measured
-// from cap.3mf as the max radial distance in the cap's broad (footprint) plane.
+// center cap lands, not a hole. Both circles are measured — the outer disc from
+// top.3mf, the cap ring from cap.3mf as the max radial distance in the cap's
+// broad (footprint) plane.
 // ---------------------------------------------------------------------------
-const WHEEL_D = 280.15; // outer diameter (mm), measured from top.3mf + cap.3mf
-const WHEEL_C = WHEEL_D / 2;
+
+// top.3mf is ONE HALF of the cover: the assembly places a second copy rotated 180° about the Y
+// axis through the origin (ASSEMBLY_KINDS wheel copyDefaults). So the assembled disc is centered
+// on x=0,z=0 by construction, and its outer radius is the half's max radius about that origin —
+// measuring about the half's own bbox center instead would give ~153mm, its diagonal reach.
+async function wheelOuterR() {
+  const { positions } = await readSoup(stl('top.3mf'));
+  let r = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    const d = Math.hypot(positions[i], positions[i + 2]);
+    if (d > r) r = d;
+  }
+  return r;
+}
 
 async function genWheel() {
+  const WHEEL_C = n2(await wheelOuterR());
+  const WHEEL_D = n2(WHEEL_C * 2);
   const { positions } = await readSoup(stl('cap.3mf'));
   // Find the thin (axis) dimension; the other two axes are the footprint plane.
   let min = [Infinity, Infinity, Infinity];
@@ -205,8 +238,11 @@ async function genWheel() {
     if (r > capR) capR = r;
   }
   console.log(
-    `[wheel] cap ext=${ext.map(n2).join(',')} axis=${axis} footprint R=${n2(capR)} (wheel R=${WHEEL_C})`,
+    `[wheel] outer R=${WHEEL_C} (D=${WHEEL_D}, from top.3mf) cap ext=${ext
+      .map(n2)
+      .join(',')} axis=${axis} footprint R=${n2(capR)}`,
   );
+  if (!(WHEEL_C > 0)) throw new Error('top.3mf gave no outer radius — check the mesh');
   if (capR >= WHEEL_C)
     throw new Error('cap footprint radius >= wheel radius — check axis detection');
 

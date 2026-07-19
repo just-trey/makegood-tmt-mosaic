@@ -11,13 +11,22 @@ import {
   asmRemovePart,
   onAssemblyPartsChanged,
 } from '../assembly/parts';
+import { track } from '../analytics/track';
 import { $ } from './dom';
 
 /** Show/hide controls that only apply to certain assembly kinds (Design radius is wheel-only). */
 export function syncAssemblyKindControls(): void {
-  const isRect = currentAssemblyKind()?.designFit === 'rect';
+  const kind = currentAssemblyKind();
   const radiusRow = $('#asm-radius-row');
-  if (radiusRow) radiusRow.style.display = isRect ? 'none' : '';
+  if (radiusRow) radiusRow.style.display = kind?.designFit === 'rect' ? 'none' : '';
+
+  // Design template download — per-kind, so it follows the part selection.
+  const tplRow = $('#asm-template-row');
+  const tplLink = $<HTMLAnchorElement>('#asm-template-link');
+  if (tplRow && tplLink) {
+    tplRow.style.display = kind?.templateFile ? '' : 'none';
+    if (kind?.templateFile) tplLink.href = `templates/${kind.templateFile}`;
+  }
 }
 
 export function renderAssemblyRoleControls(): void {
@@ -189,4 +198,12 @@ export function initAssemblyPanel(): void {
     renderAssemblyRoleControls();
     renderAssemblyPartList();
   });
+  // The link's href is re-pointed per kind in syncAssemblyKindControls; bind the click once here
+  // so repeated syncs don't stack handlers.
+  const tplLink = $('#asm-template-link');
+  if (tplLink)
+    tplLink.addEventListener('click', () => {
+      const kind = currentAssemblyKind();
+      if (kind) track('template_download', { kind: kind.id });
+    });
 }

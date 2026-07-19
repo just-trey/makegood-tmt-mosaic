@@ -319,3 +319,32 @@ is imported by the app. Two other brand themes in the tokens folder
   explicit full 3×3 for now because it generalizes to a future part with a
   genuinely tilted reference pose that the axis-aligned path can't express —
   revisit if that part never materializes.
+- **Rect placement takes its scale from the document but its position from the
+  artwork**, so it discards where you drew things. `svgC` is set to the artwork
+  bbox center for rect parts ([src/geometry/assembly.ts](src/geometry/assembly.ts),
+  near the top of `buildAssemblyGeometry`), while `mmPerUnit` comes from
+  `userUnitMM` or the viewBox — two different frames. Verified: a 10mm square
+  drawn in the top-left corner of a 40×40mm document, on a 40×40mm face, lands
+  at x −5..5 / z −5..5 — dead center, not the x −20..−10 / z 10..20 where it was
+  drawn. This matters most for the footrest template, whose header tells you to
+  keep artwork clear of the mounting-slot gaps: clearance is expressed by
+  _position_, which is exactly what gets thrown away. It only appears to work
+  when the grey canvas path is kept (artwork bbox == template bbox, so
+  re-centering is a no-op); delete the grey and the layout silently collapses to
+  center. Proposed fix: anchor rect placement on the document frame (viewBox or
+  declared mm box) and fall back to the artwork bbox only when there is no frame
+  — matching wheel mode, which already anchors on a document feature (the design
+  circle) and only falls back to a bbox pseudo-circle with a notice. Note this
+  shifts existing off-center designs to where they were actually drawn, and
+  `rect designFit centers the design on an off-center face` in
+  [tests/assembly.test.ts](tests/assembly.test.ts) pins the current behavior, so
+  it needs rewriting as part of the change.
+- **Rect placement derives one artwork scale from the largest face across all
+  parts** ([src/geometry/assembly.ts](src/geometry/assembly.ts),
+  `buildAssemblyGeometry`) while `placeOnPart` honors each part's _own_ face
+  center. Harmless today — the only rect kind (footrest) has a single face —
+  but a future rect assembly mixing face sizes would scale artwork for the
+  biggest face and then center that same oversized artwork on the smaller
+  ones, where the face clip would crop it. Fix when such a part ships: either
+  scale per-part, or make the reference face an explicit choice on the
+  `AssemblyKind` rather than "whichever is largest".

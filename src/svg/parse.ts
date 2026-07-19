@@ -106,18 +106,21 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   // Root transform from the viewBox origin. viewBox coordinate space is treated directly as
   // our working units; width/height attributes are ignored for scale purposes since artwork
   // is re-fit to the physical footprint later anyway.
+  // A viewBox that isn't four finite numbers is treated as absent rather than trusted: a
+  // truncated box (`0 0 100`) leaves the extent undefined, and a non-numeric one would translate
+  // rootM by NaN — poisoning every coordinate downstream instead of failing where it went wrong.
   let rootM = Mat.identity();
-  const vb = svgEl.getAttribute('viewBox');
+  const vbNums = (svgEl.getAttribute('viewBox') || '')
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  const vb = vbNums.length === 4 && vbNums.every((n) => Number.isFinite(n)) ? vbNums : null;
   let vbW = 0,
     vbH = 0;
   if (vb) {
-    const [vx, vy, vw, vh] = vb
-      .trim()
-      .split(/[\s,]+/)
-      .map(Number);
-    rootM = Mat.translate(-vx, -vy);
-    vbW = vw;
-    vbH = vh;
+    rootM = Mat.translate(-vb[0], -vb[1]);
+    vbW = vb[2];
+    vbH = vb[3];
   }
 
   // Physical scale for rect placement (mm per working/viewBox unit), from the file's declared

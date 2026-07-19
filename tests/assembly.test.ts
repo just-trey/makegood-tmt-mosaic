@@ -8,6 +8,7 @@ import {
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
 import type { AssemblyPart, ParsedSVG } from '../src/types';
+import { WARNINGS, clearWarnings } from '../src/warnings';
 
 function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   const geo = new THREE.BoxGeometry(40, 10, 40).toNonIndexed();
@@ -186,6 +187,26 @@ describe('buildAssemblyGeometry', () => {
       const r = xzRange(built.partOutputs[0].inlaySoups[0]);
       expect(r.maxX - r.minX).toBeCloseTo(20, 4);
       expect(r.maxZ - r.minZ).toBeCloseTo(20, 4);
+    },
+  );
+
+  it(
+    'rect designFit reports no size verdict until a part has loaded',
+    { timeout: 30000 },
+    async () => {
+      // A library part still fetching has no face to measure yet. Claiming a 1:1 placement here
+      // would be contradicted moments later by the rebuild the part's own load triggers, so the
+      // build stays quiet instead of emitting a notice it's about to walk back.
+      clearWarnings();
+      const parsed: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 20, h: 20 } };
+      await buildAssemblyGeometry(
+        baseInput({ designFit: 'rect', parsed, parts: [boxPart({ loaded: false })] }),
+      );
+      expect(WARNINGS.filter((w) => /absolute width\/height/.test(w.message))).toEqual([]);
+
+      // …and once it has loaded, the auto-fit notice does appear.
+      await buildAssemblyGeometry(baseInput({ designFit: 'rect', parsed }));
+      expect(WARNINGS.filter((w) => /auto-fit to the part face/.test(w.message))).toHaveLength(1);
     },
   );
 

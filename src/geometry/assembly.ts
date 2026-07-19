@@ -245,18 +245,23 @@ export async function buildAssemblyGeometry(
   let rectFallbackMmPerUnit = 1;
   if (isRect && parsed.userUnitMM == null) {
     const vb = parsed.viewBox;
+    // Only a *loaded* part has a face to measure. A part still fetching from the library would
+    // otherwise leave designFace null, drop us to the 1:1 branch, and report a size the rebuild
+    // its own load triggers immediately contradicts — so when nothing is loaded yet, say nothing
+    // (there's no geometry to place either; the per-part loop below skips it).
     let designFace: { w: number; h: number } | null = null;
     for (const p of parts) {
+      if (!p.loaded) continue;
       const bb = faceXZBBox(p.boundaryLoop);
-      if (bb && (!designFace || bb.w * bb.h > designFace.w * designFace.h))
+      if (bb && bb.w > 0 && bb.h > 0 && (!designFace || bb.w * bb.h > designFace.w * designFace.h))
         designFace = { w: bb.w, h: bb.h };
     }
-    if (vb && vb.w > 0 && vb.h > 0 && designFace && designFace.w > 0 && designFace.h > 0) {
+    if (designFace && vb && vb.w > 0 && vb.h > 0) {
       rectFallbackMmPerUnit = Math.min(designFace.w / vb.w, designFace.h / vb.h);
       notice(
-        'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Use Scale to fine-tune.',
+        'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
       );
-    } else {
+    } else if (designFace) {
       notice(
         'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
       );
