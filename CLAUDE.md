@@ -1,5 +1,14 @@
 # Working in this repo
 
+## Skills
+
+Three project skills in `.claude/skills/` cover the recurring workflows, with
+the verification steps this file only describes in prose:
+
+- `ship-it` — the pre-PR gate (the five checks + the four docs that drift)
+- `add-part` — adding a MakeGood TMT part as an assembly kind
+- `release` — cutting and tagging a release
+
 ## Commands
 
 ```bash
