@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Analytics on the hosted page switched from Cloudflare Web Analytics to
+  Umami. Still opt-in and disabled by default: the script is injected at
+  build time only when `UMAMI_WEBSITE_ID` is set, so forks build and deploy
+  without it. See `.env.example`.
+
 ### Fixed
 
 - Wheel assembly's second Top half (the rotated copy, exported onto its own
