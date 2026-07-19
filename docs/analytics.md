@@ -31,6 +31,14 @@ Fired when the user changes the part-shape mode.
 - **Where:** [src/ui/partPanel.ts](../src/ui/partPanel.ts) — `#shape-kind` change handler in `initPartPanel`.
 - **Props:** `{ kind: 'assembly' | 'disc' | 'rect' | 'round' | 'stl' }`
 
+### `template_download`
+
+Fired when the user downloads an assembly kind's design template from the Part
+panel.
+
+- **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `#asm-template-link` click handler in `initAssemblyPanel`.
+- **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`)
+
 ### `export`
 
 Fired on a successful export, just before the file download starts.

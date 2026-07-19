@@ -8,6 +8,7 @@ import {
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
 import type { AssemblyPart, ParsedSVG } from '../src/types';
+import { WARNINGS, clearWarnings } from '../src/warnings';
 
 function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   const geo = new THREE.BoxGeometry(40, 10, 40).toNonIndexed();
@@ -171,6 +172,41 @@ describe('buildAssemblyGeometry', () => {
       const r = xzRange(built.partOutputs[0].inlaySoups[0]);
       expect(r.maxX - r.minX).toBeCloseTo(5, 4);
       expect(r.maxZ - r.minZ).toBeCloseTo(5, 4);
+    },
+  );
+
+  it(
+    'rect designFit fits a size-less SVG to the face via its viewBox',
+    { timeout: 30000 },
+    async () => {
+      // No userUnitMM (an editor stripped the mm size, e.g. Affinity's width="100%"), but the
+      // viewBox is 20 units across a 40mm face -> fit 2mm per unit, so the 10-unit square cuts a
+      // 20mm region instead of landing 1:1. This is what keeps a template trace life-size.
+      const parsed: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 20, h: 20 } };
+      const built = (await buildAssemblyGeometry(baseInput({ designFit: 'rect', parsed })))!;
+      const r = xzRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.maxX - r.minX).toBeCloseTo(20, 4);
+      expect(r.maxZ - r.minZ).toBeCloseTo(20, 4);
+    },
+  );
+
+  it(
+    'rect designFit reports no size verdict until a part has loaded',
+    { timeout: 30000 },
+    async () => {
+      // A library part still fetching has no face to measure yet. Claiming a 1:1 placement here
+      // would be contradicted moments later by the rebuild the part's own load triggers, so the
+      // build stays quiet instead of emitting a notice it's about to walk back.
+      clearWarnings();
+      const parsed: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 20, h: 20 } };
+      await buildAssemblyGeometry(
+        baseInput({ designFit: 'rect', parsed, parts: [boxPart({ loaded: false })] }),
+      );
+      expect(WARNINGS.filter((w) => /absolute width\/height/.test(w.message))).toEqual([]);
+
+      // …and once it has loaded, the auto-fit notice does appear.
+      await buildAssemblyGeometry(baseInput({ designFit: 'rect', parsed }));
+      expect(WARNINGS.filter((w) => /auto-fit to the part face/.test(w.message))).toHaveLength(1);
     },
   );
 

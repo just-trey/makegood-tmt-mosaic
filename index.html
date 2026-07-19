@@ -75,6 +75,11 @@
               Colors detected below (see "→ base" there) — an artwork base always wins over this
               fallback.
             </p>
+            <p>
+              <b>Download design template</b> gives you that part's design face as a true-to-size
+              (1:1 mm) SVG — its real printable outline, with any no-print gaps already punched out.
+              Draw over it in your editor and load the result under Artwork.
+            </p>
           </section>
 
           <section class="help-sec" id="h-artwork">
@@ -84,6 +89,13 @@
               Use flat, distinct fill colors — no gradients or pattern fills, those get flagged and
               skipped. Each unique fill becomes a candidate color region before you even touch the
               fit controls.
+            </p>
+            <p>
+              For an assembly part, design over the template you downloaded in the Part section
+              above so the size is right. If an editor drops the document's millimeter size on
+              export (Affinity writes <code>width="100%"</code>), the app scales the document's
+              viewBox to fit the part face — setting the editor document to millimeters keeps it
+              exact.
             </p>
           </section>
 
@@ -276,6 +288,11 @@
             </div>
             <div class="hint">
               Pockets are cut into each part's real mesh — load an SVG below to see it on the part.
+            </div>
+            <div class="hint" id="asm-template-row" style="display: none">
+              <a id="asm-template-link" download href="">↓ Download design template (SVG)</a> —
+              true-to-size outline of this part's design face; draw over it, then load the result as
+              your artwork.
             </div>
           </div>
 

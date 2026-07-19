@@ -8,7 +8,7 @@ let costHint: () => boolean = () => false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
 const LIVE_DEBOUNCE_MS = 30;
-const TYPED_DEBOUNCE_MS = 350;
+const TYPED_DEBOUNCE_MS = 550;
 /** After this long, the curtain adds a "hang tight" note so a slow rebuild reads as working,
  * not stuck. */
 const HANG_TIGHT_MS = 8000;

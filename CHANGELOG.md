@@ -7,8 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Design templates are now generated from the part meshes
+  (`scripts/gen-templates.mjs`) and share one visual language: a `#bcbcbc`
+  printable-surface grey and a single blue guide ink for all non-printing
+  marks. The footrest template now shows the part's real printable outline
+  (not a plain rectangle) with all four mounting slots punched out as real
+  gaps in the grey, so an absence of material reads at a glance. The wheel
+  template gains a dotted blue ring marking where the center cap lands (a
+  reference — that area still prints), and both templates share one guide-label
+  size so they read as a matched set.
+- The wheel template's outer disc is now 280mm, measured from `top.3mf`, rather
+  than a hardcoded 280.15mm that disagreed with the mesh it claimed to come
+  from. Placement is unaffected — wheel mode scales artwork off the Design
+  radius, not the template's absolute size.
+- Typed number fields (Design radius, shape dimensions, fit values) now wait
+  550ms after the last keystroke before rebuilding, up from 350ms, so
+  deliberately-typed multi-digit values don't trigger an intermediate rebuild
+  mid-entry.
+
 ### Added
 
+- **Download design template** link in the Part section, offering the selected
+  assembly kind's true-to-size (1:1 mm) design-face SVG. The templates shipped
+  in `public/templates/` previously had no way to reach them from the app.
 - Footrest assembly kind: a second selectable part alongside the wheel, with
   a true-to-size (1:1mm) design-face SVG template.
 - Footrest export ships with a verified plate pose (centered on any printer's
@@ -20,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Artwork for an assembly part (e.g. the footrest) that was exported without an
+  absolute mm size — as Affinity does, writing `width="100%"` and rescaling the
+  viewBox to its own resolution — now auto-fits to the part face via its viewBox
+  instead of landing ~2.8× oversized. A template trace drops in life-size at
+  Scale 100% again. SVGs that declare a real mm size are unaffected. The fit is
+  measured only once a part's mesh has loaded, so the same SVG no longer reports
+  one size and then silently rescales when a library part finishes fetching.
 - The "AMS slots needed" counter under Colors detected undercounted by one —
   it left out the body's own filament slot (materials[0], always present in
   both export paths). It now reports cut colors + 1. The "N colors → M AMS

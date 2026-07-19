@@ -13,6 +13,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
   {
     id: 'wheel',
     name: 'Wheel (Top ×2 + Cap)',
+    templateFile: 'wheel-cover-circle.svg',
     // `copies` = how many rotated copies "load full assembly" auto-adds beyond the primary
     // (so top = 1 primary + 1 rotated copy = 2 physical tops); copyDefaults seed each copy's
     // pivot/angle (same values the manual "+ Add rotated copy" button uses).
@@ -44,6 +45,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     // rectangular design face — no circle/radius to anchor on, so the SVG maps 1:1 in mm
     // and centers on the detected face instead.
     designFit: 'rect',
+    templateFile: 'footrest-template.svg',
     roles: [
       {
         id: 'footrest',
