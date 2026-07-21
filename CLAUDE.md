@@ -97,20 +97,32 @@ explains why and what upgrading requires.
 See README.md's "Adding an assembly or library part" section for the full
 pattern with file references. The checklist:
 
-1. **Flatten the source 3MF** before it goes in `public/stl/`. `load3MF`
-   ([src/geometry/meshparts.ts](src/geometry/meshparts.ts)) only reads meshes
-   inlined in `3D/3dmodel.model`; Bambu's production-extension/multi-part
-   format references mesh data from a separate internal file via
-   `<component p:path="...">`, which `load3MF` can't resolve — a part loaded
-   from one comes in empty/zero-triangle. Inline the referenced `<mesh>` into
-   a single `<object>` first. Add the flattened file + a manifest entry in
+1. **Pick the source mesh before anything else.** The same part often arrives
+   twice — a MakerWorld/Bambu download and a CAD export. Prefer the CAD
+   export: slicer meshes are STEP tessellations blown up to a triangle count
+   that buys nothing, and the extra vertex scatter fragments the design face
+   across `detectFlatPatches`' offset buckets, so the app detects _less_ art
+   surface (measured on the wheel mount: 36,054mm² from Fusion's 25k triangles
+   vs 28,010mm² from Bambu's 388k). Don't decimate a dense mesh when a clean
+   export exists. Run
+   `node .claude/skills/add-part/compare-meshes.mjs <a> <b>` — it reports both
+   and finds the rotation between them, flagging a determinant-−1 match as the
+   opposite hand rather than the same part.
+2. **Pack it with `scripts/pack-part.mjs`**, never copy a mesh into
+   `public/stl/` directly — it re-indexes and DEFLATEs into the single-inlined-
+   `<object>` 3MF `load3MF` reads (a Bambu multi-part 3MF, which references its
+   mesh via `<component p:path="...">`, loads empty with no error). When
+   _replacing_ an existing part, `--align-to` the file it replaces is
+   mandatory: parts are never recentered at load time, so the mesh pose is
+   load-bearing for step 4's constants, the wheel's pivot-at-origin copy, and
+   the templates. Then add the manifest entry in
    [public/stl/parts.json](public/stl/parts.json).
-2. **Register one `AssemblyKind`** in
+3. **Register one `AssemblyKind`** in
    [src/assembly/kinds.ts](src/assembly/kinds.ts) — `designFit: 'rect'` for a
    non-circular part (maps the SVG 1:1 in mm, auto-centers on the face)
    instead of the wheel's circle/Design-radius model; `preferFaceNormal` when
    the largest flat patch isn't the intended design face.
-3. **Bake export placement from a verified reference 3MF — never invent it,
+4. **Bake export placement from a verified reference 3MF — never invent it,
    never read it at runtime.** Get a reference project file where the part's
    real print pose (rotation, plate position, prime/wipe tower placement, any
    per-part print overrides) has actually been checked in the slicer, then
@@ -121,10 +133,10 @@ pattern with file references. The checklist:
    Prefer centering + a relative `primeTowerDelta` over a bed-specific
    absolute coordinate — an absolute position baked from one printer's plate
    center won't be correct on a different bed size.
-4. **Two orientations are intentional, don't try to unify them**: the
+5. **Two orientations are intentional, don't try to unify them**: the
    viewport shows the part design-face-up (how the artist sees it), while the
    export/plate pose is whatever the reference file verified as the correct
    print orientation — these can legitimately differ (e.g. the footrest
    stands on its edge to print support-free).
-5. **Ship a true-to-size SVG template** (1:1 mm, matching the part's real
+6. **Ship a true-to-size SVG template** (1:1 mm, matching the part's real
    design-face dimensions) in `public/templates/`.

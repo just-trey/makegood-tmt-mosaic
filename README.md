@@ -184,14 +184,51 @@ The exported filename is derived from the selected assembly kind
 (`mosaic-${state.assembly.kindId}.3mf`), so each part downloads under its own
 name rather than a shared generic one.
 
-**A note on 3MF sources**: `load3MF` ([src/geometry/meshparts.ts](src/geometry/meshparts.ts))
-only reads meshes embedded inline in `3D/3dmodel.model`. Some slicer exports
-(BambuStudio's production-extension format, used for the footrest's source
-file) instead reference the mesh from a separate internal part file via
-`<component p:path="...">`, which `load3MF` does not resolve. If a part loads
-as empty/zero-triangle, check for this and flatten the file (inline the
-referenced part's `<mesh>` into a single `<object>`, dropping the
-`<component>` reference) before adding it to `public/stl/`.
+**Choosing the source mesh**: a part often exists as both a MakerWorld/slicer
+download and a CAD export. Prefer the CAD export. Slicer meshes are STEP
+tessellations at a triangle count that buys no accuracy, and their extra vertex
+scatter splits a nearly-planar design face across several of
+`detectFlatPatches`' offset buckets — so the app ends up detecting a _smaller_
+art surface from the _denser_ mesh. On the wheel mount the Fusion export's 25k
+triangles yield a 36,054mm² design face where Bambu's 388k triangles yield
+28,010mm², for the same geometry (surface areas agree to 0.02%). Decimating the
+dense mesh is strictly worse than starting from the clean one.
+`node .claude/skills/add-part/compare-meshes.mjs <a> <b>` prints both meshes'
+numbers and solves for the rotation between them. The shipped footrest is the
+worked example: swapping its 235k-triangle slicer mesh for a 10.8k-triangle CAD
+export of the same part took it from 2.8MB to 86KB with the design face
+detecting the same (99.3% to 99.4% of the face in one patch).
+
+One caveat when reading that tool's output: for a part that's symmetric about
+an axis, mirroring it is a no-op, so "mirrored" and "rotated" describe the same
+result and the tool reports the rotation. It only calls a match `MIRRORED` when
+a mirror genuinely beats every rotation — which does mean the opposite hand.
+
+**Packing a part into `public/stl/`**: don't copy a source mesh in directly —
+run it through [scripts/pack-part.mjs](scripts/pack-part.mjs), which re-indexes
+the vertices and DEFLATEs the result into the single-inlined-`<object>` 3MF
+that `load3MF` reads:
+
+```bash
+npx vite-node scripts/pack-part.mjs <src.stl|src.3mf> \
+  [--align-to public/stl/<current>.3mf] --out public/stl/<name>.3mf
+```
+
+`--align-to` is what makes replacing an existing part safe. Parts are **never
+recentered at load time**, so a part's mesh coordinates are load-bearing: the
+baked placement constants above, the wheel's rotate-about-the-origin second
+half, and the generated templates are all pinned to the current poses. Aligning
+moves the new mesh into the old one's exact frame and bakes that into the file,
+so every one of those constants stays valid and nothing changes at runtime. The
+script refuses to write if the two meshes aren't the same part, or if they're
+mirrored (opposite hands — TMT ships left/right variants).
+
+A part that loads as empty/zero-triangle is the one silent failure mode here:
+`load3MF` ([src/geometry/meshparts.ts](src/geometry/meshparts.ts)) only reads
+meshes inlined in `3D/3dmodel.model`, and BambuStudio's production-extension
+format references them from a separate internal file via
+`<component p:path="...">` instead. Packing from a CAD `.stl` sidesteps that
+entirely, which is the recommended path.
 
 ## Known limitations
 
