@@ -19,18 +19,18 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     // pivot/angle (same values the manual "+ Add rotated copy" button uses).
     roles: [
       {
-        id: 'top',
+        id: 'wheel-half',
         name: 'Top',
-        libraryPartId: 'top',
+        libraryPartId: 'wheel-half',
         allowRotatedCopies: true,
         copies: 1,
         copyDefaults: { pivotX: 0, pivotZ: 0, angleDeg: 180 },
         copyName: 'Bottom',
       },
       {
-        id: 'cap',
+        id: 'wheel-hub-cap',
         name: 'Cap',
-        libraryPartId: 'cap',
+        libraryPartId: 'wheel-hub-cap',
         allowRotatedCopies: false,
         cutThrough: true,
         // the cap's shell is 3mm thick above its mounting boss — cut only that far so the

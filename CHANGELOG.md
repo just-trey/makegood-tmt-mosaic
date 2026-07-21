@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   repacked. All three keep their exact pose, so the detected design face is
   unchanged (footrest 54,693.7 to 54,688.3mm², wheel half 29,407.8 to
   29,403.4mm²) and part placement in exported 3MFs is unchanged.
+- The wheel's part ids and filenames are renamed for clarity: `top` to
+  `wheel-half`, `cap` to `wheel-hub-cap`. Internal only — display names in the
+  UI are unchanged.
 
 ## [0.5.0] - 2026-07-19
 

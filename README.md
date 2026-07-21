@@ -345,8 +345,9 @@ is imported by the app. Two other brand themes in the tokens folder
 - **Per-part export placement is a hardcoded `roleId` if/else in
   [src/ui/exportPanel.ts](src/ui/exportPanel.ts)** — each part's plate hint,
   rotation, `plateR`, `fixedPos`, prime-tower delta, and object settings are
-  assigned by an `if (roleId === 'top') … else if ('cap') … else if
-('footrest')` chain. Every new assembly part means editing that chain.
+  assigned by an `if (roleId === 'wheel-half') … else if ('wheel-hub-cap') …
+else if ('footrest')` chain. Every new assembly part means editing that
+  chain.
   These are per-role constants; they belong as data on the `AssemblyKind` /
   role definition (or the part's `ExportPart`) so adding a part stays a
   data-only change, matching the "one array entry" goal in

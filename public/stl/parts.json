@@ -1,5 +1,5 @@
 [
-  { "id": "top", "name": "Wheel half (top)", "file": "stl/top.3mf" },
-  { "id": "cap", "name": "Hub cap", "file": "stl/cap.3mf" },
+  { "id": "wheel-half", "name": "Wheel half (top)", "file": "stl/wheel-half.3mf" },
+  { "id": "wheel-hub-cap", "name": "Hub cap", "file": "stl/wheel-hub-cap.3mf" },
   { "id": "footrest", "name": "Footrest", "file": "stl/footrest.3mf" }
 ]

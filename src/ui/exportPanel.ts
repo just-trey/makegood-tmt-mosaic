@@ -77,12 +77,12 @@ async function exportPrintReady3MF(): Promise<void> {
           fixedPos: { x: number; y: number } | undefined,
           primeTowerDelta: { x: number; y: number } | undefined,
           objectSettings: Record<string, string> | undefined;
-        if (part.roleId === 'top') {
+        if (part.roleId === 'wheel-half') {
           plateHint = part.isDuplicateOf == null ? 1 : nextHalfPlate++;
           rotZdeg = WHEEL_TOP_ROT_DEG;
           fixedPos = WHEEL_TOP_POS;
           primeTowerDelta = WHEEL_PRIME_TOWER_DELTA;
-        } else if (part.roleId === 'cap') {
+        } else if (part.roleId === 'wheel-hub-cap') {
           plateHint = 1;
           rotZdeg = WHEEL_CAP_ROT_DEG;
           fixedPos = WHEEL_CAP_POS;
