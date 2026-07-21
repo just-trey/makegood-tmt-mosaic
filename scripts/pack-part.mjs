@@ -23,25 +23,35 @@ import {
   analyze,
   applyTransform,
   axisName,
+  BBOX_TOL,
   faceCoherence,
   findTransform,
   readMesh,
+  TESSELLATION_GAP,
 } from './lib/mesh.mjs';
 import { soupToIndexed } from '../src/export/threemf.ts';
 
-/** Max acceptable per-axis bbox disagreement with the reference, in mm, after aligning. */
-const BBOX_TOL = 0.05;
+const USAGE =
+  'usage: pack-part.mjs <src.stl|src.3mf> [--align-to <ref.3mf>] [--bbox-tol <mm>] --out <out.3mf>';
 
 function parseArgs(argv) {
-  const out = { src: null, alignTo: null, out: null };
+  const out = { src: null, alignTo: null, out: null, bboxTol: BBOX_TOL };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--align-to') out.alignTo = argv[++i];
-    else if (argv[i] === '--out') out.out = argv[++i];
+    // A flag whose value is missing must not read as "not passed": a dropped --align-to value
+    // would silently skip alignment, which is the one thing this script exists to guarantee.
+    const value = (flag) => {
+      const v = argv[++i];
+      if (!v || v.startsWith('--')) die(`${flag} needs a value\n  ${USAGE}`);
+      return v;
+    };
+    if (argv[i] === '--align-to') out.alignTo = value('--align-to');
+    else if (argv[i] === '--out') out.out = value('--out');
+    else if (argv[i] === '--bbox-tol') out.bboxTol = Number(value('--bbox-tol'));
     else if (!out.src) out.src = argv[i];
     else die(`unexpected argument: ${argv[i]}`);
   }
-  if (!out.src || !out.out)
-    die('usage: pack-part.mjs <src.stl|src.3mf> [--align-to <ref.3mf>] --out <out.3mf>');
+  if (!out.src || !out.out) die(USAGE);
+  if (!(out.bboxTol > 0)) die(`--bbox-tol must be a positive number of mm`);
   return out;
 }
 
@@ -115,11 +125,23 @@ console.log(`              ${soup.length / 9} triangles, ${(srcSize / 1024).toFi
 
 if (args.alignTo) {
   const ref = analyze(await readMesh(args.alignTo));
-  const hit = findTransform(a, ref);
+  const { hit, reason, bboxWorst, score } = findTransform(a, ref, args.bboxTol);
+  if (!hit && reason === 'bbox')
+    die(
+      `no axis map lines up the bounding boxes of ${args.src} and ${args.alignTo}: the closest ` +
+        `is ${bboxWorst.toFixed(3)}mm off on one axis, over the ${args.bboxTol}mm tolerance.\n` +
+        (bboxWorst < TESSELLATION_GAP
+          ? `  A gap that small can be a coarser tessellation clipping a curved part's extremes ` +
+            `rather than a\n  different part -- if you have independent reason to believe these ` +
+            `match, re-run with\n  --bbox-tol ${(bboxWorst + 0.005).toFixed(2)}. `
+          : `  That is far too large to be a tessellation difference; these are different parts. `) +
+        `Refusing to write.`,
+    );
   if (!hit)
     die(
-      `no rigid map from ${args.src} to ${args.alignTo}. These are not the same mesh in two ` +
-        `poses -- likely a different revision or variant. Refusing to write.`,
+      `bounding boxes line up but the geometry does not (best overlap ${(score * 100).toFixed(1)}%). ` +
+        `${args.src} and ${args.alignTo}\n  are not the same mesh in two poses -- likely a ` +
+        `different revision or variant. Refusing to write.`,
     );
   if (hit.r.det < 0)
     die(
@@ -133,7 +155,7 @@ if (args.alignTo) {
   console.log(`              rotate (x, y, z) -> (${axisName(hit.r)})`);
   console.log(`              translate ${hit.translate.map((v) => v.toFixed(3)).join(', ')}`);
   console.log(`              bbox drift ${drift.map((v) => v.toFixed(4)).join(', ')} mm`);
-  if (drift.some((d) => d > BBOX_TOL))
+  if (drift.some((d) => d > args.bboxTol))
     die(
       `aligned mesh is ${Math.max(...drift).toFixed(3)}mm off the reference bbox. Refusing to write.`,
     );
@@ -147,7 +169,8 @@ const fc = faceCoherence(a);
 console.log(`\n  wrote       ${args.out}`);
 console.log(`              ${soup.length / 9} triangles, ${vertCount} vertices`);
 console.log(`              ${(outSize / 1024).toFixed(0)} KB`);
-console.log(
-  `  design face ${fc.patchArea.toFixed(1)} of ${fc.dirArea.toFixed(1)} mm² in ONE patch ` +
-    `(${(100 * fc.ratio).toFixed(1)}%)\n`,
-);
+if (fc)
+  console.log(
+    `  design face ${fc.patchArea.toFixed(1)} of ${fc.dirArea.toFixed(1)} mm² in ONE patch ` +
+      `(${(100 * fc.ratio).toFixed(1)}%)\n`,
+  );

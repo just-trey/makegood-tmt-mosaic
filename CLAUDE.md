@@ -100,14 +100,15 @@ pattern with file references. The checklist:
 1. **Pick the source mesh before anything else.** The same part often arrives
    twice — a MakerWorld/Bambu download and a CAD export. Prefer the CAD
    export: slicer meshes are STEP tessellations blown up to a triangle count
-   that buys nothing, and the extra vertex scatter fragments the design face
-   across `detectFlatPatches`' offset buckets, so the app detects _less_ art
-   surface (measured on the wheel mount: 36,054mm² from Fusion's 25k triangles
-   vs 28,010mm² from Bambu's 388k). Don't decimate a dense mesh when a clean
-   export exists. Run
-   `node .claude/skills/add-part/compare-meshes.mjs <a> <b>` — it reports both
-   and finds the rotation between them, flagging a determinant-−1 match as the
-   opposite hand rather than the same part.
+   that buys no accuracy. Both shipped swaps are the evidence — the footrest
+   went 235k → 10.8k triangles (2.8MB → 86KB) and the wheel half 20.5k → 18.0k
+   (400KB → 176KB), with surface area agreeing to 0.06% and the detected
+   design face unchanged to within 6mm² of 54,000. Extra triangles cost
+   download and load time and buy nothing measurable. Don't decimate a dense
+   mesh when a clean export exists — decimation can move bores and bosses.
+   Run `node .claude/skills/add-part/compare-meshes.mjs <a> <b>` — it reports
+   both and finds the rotation between them, flagging a determinant-−1 match
+   as the opposite hand rather than the same part.
 2. **Pack it with `scripts/pack-part.mjs`**, never copy a mesh into
    `public/stl/` directly — it re-indexes and DEFLATEs into the single-inlined-
    `<object>` 3MF `load3MF` reads (a Bambu multi-part 3MF, which references its

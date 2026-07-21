@@ -186,18 +186,17 @@ name rather than a shared generic one.
 
 **Choosing the source mesh**: a part often exists as both a MakerWorld/slicer
 download and a CAD export. Prefer the CAD export. Slicer meshes are STEP
-tessellations at a triangle count that buys no accuracy, and their extra vertex
-scatter splits a nearly-planar design face across several of
-`detectFlatPatches`' offset buckets — so the app ends up detecting a _smaller_
-art surface from the _denser_ mesh. On the wheel mount the Fusion export's 25k
-triangles yield a 36,054mm² design face where Bambu's 388k triangles yield
-28,010mm², for the same geometry (surface areas agree to 0.02%). Decimating the
-dense mesh is strictly worse than starting from the clean one.
+tessellations at a triangle count that buys no accuracy — the extra triangles
+cost download size and load time and change nothing the app measures. Both
+shipped swaps are the worked example: the footrest went from a 235k-triangle
+slicer mesh to a 10.8k-triangle CAD export (2.8MB → 86KB) and the wheel half
+from 20.5k to 18.0k (400KB → 176KB), with surface areas agreeing to 0.06% and
+the detected design face unchanged (54,693.7 → 54,688.3mm² and 29,407.8 →
+29,403.4mm²). Decimating a dense mesh instead is strictly worse — it can move
+bores and bosses, and it tilts face triangles out of their patch bucket.
 `node .claude/skills/add-part/compare-meshes.mjs <a> <b>` prints both meshes'
-numbers and solves for the rotation between them. The shipped footrest is the
-worked example: swapping its 235k-triangle slicer mesh for a 10.8k-triangle CAD
-export of the same part took it from 2.8MB to 86KB with the design face
-detecting the same (99.3% to 99.4% of the face in one patch).
+numbers, including how much of the design face survives in one
+`detectFlatPatches` bucket, and solves for the rotation between them.
 
 One caveat when reading that tool's output: for a part that's symmetric about
 an axis, mirroring it is a no-op, so "mirrored" and "rotated" describe the same
@@ -211,7 +210,7 @@ that `load3MF` reads:
 
 ```bash
 npx vite-node scripts/pack-part.mjs <src.stl|src.3mf> \
-  [--align-to public/stl/<current>.3mf] --out public/stl/<name>.3mf
+  [--align-to public/stl/<current>.3mf] [--bbox-tol <mm>] --out public/stl/<name>.3mf
 ```
 
 `--align-to` is what makes replacing an existing part safe. Parts are **never
@@ -222,6 +221,14 @@ moves the new mesh into the old one's exact frame and bakes that into the file,
 so every one of those constants stays valid and nothing changes at runtime. The
 script refuses to write if the two meshes aren't the same part, or if they're
 mirrored (opposite hands — TMT ships left/right variants).
+
+Matching requires the two bounding boxes to agree within 0.05mm per axis, which
+a coarse tessellation of a curved part can miss on its own — the shipped wheel
+half moved 0.03mm on Z from re-tessellation alone. The script distinguishes
+that case ("bounding boxes do not line up, closest is 0.07mm off") from a real
+geometry mismatch, and prints the `--bbox-tol` value that would accept it.
+Loosen it only when you have an independent reason to believe the two files are
+the same part.
 
 A part that loads as empty/zero-triangle is the one silent failure mode here:
 `load3MF` ([src/geometry/meshparts.ts](src/geometry/meshparts.ts)) only reads

@@ -27,21 +27,27 @@ It prints triangle count, bbox, surface area and the patches
 the rigid transform between the two.
 
 **Prefer the CAD export.** Slicer/MakerWorld meshes are STEP tessellations blown
-up to a triangle count that buys nothing. Measured on the wheel mount:
+up to a triangle count that buys no accuracy. The two swaps this repo has
+actually shipped, both packed with `--align-to` so the pose is identical:
 
-|                        | Fusion export  | Bambu STL            |
-| ---------------------- | -------------- | -------------------- |
-| triangles              | 24,882         | 388,428 (15.6×)      |
-| file size              | 1.2 MB         | 19.4 MB              |
-| surface area           | 173,082 mm²    | 173,121 mm² (+0.02%) |
-| design face, one patch | **36,054 mm²** | **28,010 mm²**       |
+|                            | footrest (slicer → CAD) | wheel half (slicer → CAD) |
+| -------------------------- | ----------------------- | ------------------------- |
+| triangles                  | 235,490 → 10,772        | 20,502 → 17,968           |
+| shipped size               | 2.8 MB → 86 KB          | 400 KB → 176 KB           |
+| surface area               | agrees to 0.06%         | agrees to 0.01%           |
+| design face, largest patch | 54,693.7 → 54,688.3 mm² | 29,407.8 → 29,403.4 mm²   |
 
-That last row is the one that matters and it is not about file size. A dense mesh
-has more numerical scatter in its vertex positions, so a face that is a hair
-non-planar fragments across `detectFlatPatches`' `offset.toFixed(2)` buckets. The
-dense mesh loses ~29% of the art surface to that fragmentation **before anything
-else touches it**. `compare-meshes.mjs` reports this as "face coherence" — a low
-number is a reason to reject the mesh.
+Read those last two rows together: the geometry the app actually uses is
+unchanged to within a few mm², and the download is 30× smaller. The extra
+triangles buy **nothing** — that is the whole argument, and it does not depend
+on the denser mesh being worse in any other way.
+
+`compare-meshes.mjs` also reports "face coherence": how much of the area facing
+the design face lands in one `detectFlatPatches` bucket rather than fragmenting
+across its `offset.toFixed(2)` offsets. Compare it between candidates — a mesh
+that scores markedly worse will detect less art surface — but don't expect a
+clean export to improve it on its own (the footrest's went 98.1% → 97.1% and the
+part detects the same face).
 
 Corollaries:
 
@@ -56,8 +62,12 @@ Corollaries:
   rotation by a real margin: on a part symmetric about an axis, mirroring is a
   no-op, so the mirror and the rotation describe the same result and the tool
   correctly reports the rotation. The shipped footrest is exactly this case.
-- **A mismatch is a stop sign.** If no rigid map is found, the parts genuinely
-  differ — a revision or a different variant. Don't mix them.
+- **A mismatch is a stop sign, but read which mismatch.** "Bounding boxes do not
+  line up" can just be a coarse tessellation clipping a curved part's extremes
+  (the shipped wheel half moved 0.03mm on Z from re-tessellation alone); the tool
+  prints the `--bbox-tol` that would accept it. "Bounding boxes line up but the
+  geometry disagrees" is the real stop sign — a revision or a different variant.
+  Don't mix those.
 - **Keep both files anyway.** The CAD mesh is the geometry; the slicer file is
   usually the only thing carrying a verified print pose, which is step 4's input.
 
@@ -70,7 +80,7 @@ vertices and DEFLATEs the result into the single-inlined-`<object>` 3MF that
 
 ```bash
 npx vite-node scripts/pack-part.mjs <src.stl|src.3mf> \
-  [--align-to public/stl/<current>.3mf] --out public/stl/<part>.3mf
+  [--align-to public/stl/<current>.3mf] [--bbox-tol <mm>] --out public/stl/<part>.3mf
 ```
 
 **`--align-to` is mandatory when replacing an existing part**, and the reason is
@@ -84,7 +94,10 @@ the old one's exact frame and bakes that into the asset, so nothing in
 refuses to write on a non-match or a mirror.
 
 Sanity-check its report before moving on: **bbox drift must be ~0**, and face
-coherence should not drop. Then add the manifest entry in
+coherence should be in the same neighbourhood as the file you're replacing (a
+point or two either way is tessellation noise; a large drop means the new mesh
+fragments the design face and the app will detect less art surface). Then add
+the manifest entry in
 [public/stl/parts.json](../../../public/stl/parts.json) —
 `{ "id", "name", "file": "stl/<part>.3mf" }`, where `id` is what the kind's
 `libraryPartId` will point at.

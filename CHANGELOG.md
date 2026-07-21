@@ -9,13 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The bundled part meshes are ~90% smaller (3.34MB to 348KB total), so
-  Assembly mode's parts load far faster on a first visit. The footrest carries
-  most of it: it was shipping a 235k-triangle slicer tessellation and is now a
-  10.8k-triangle CAD export of the same part (surface area agrees to 0.06%).
-  The wheel half and hub cap are unchanged in shape and simply repacked. Part
-  placement in exported 3MFs is unchanged — verified byte-for-byte against a
-  pre-change export.
+- The bundled part meshes are ~90% smaller (3.34MB to 338KB total), so
+  Assembly mode's parts load far faster on a first visit. Two of the three are
+  CAD exports of the same parts in place of slicer tessellations: the footrest
+  goes from 235k to 10.8k triangles (surface area agrees to 0.06%) and the
+  wheel half from 20.5k to 18.0k (0.01%). The hub cap is the same mesh,
+  repacked. All three keep their exact pose, so the detected design face is
+  unchanged (footrest 54,693.7 to 54,688.3mm², wheel half 29,407.8 to
+  29,403.4mm²) and part placement in exported 3MFs is unchanged.
 
 ## [0.5.0] - 2026-07-19
 

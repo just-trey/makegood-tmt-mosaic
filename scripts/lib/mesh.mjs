@@ -11,7 +11,18 @@ import fs from 'fs';
 import path from 'path';
 import JSZip from 'jszip';
 
+/** Max acceptable per-axis bbox disagreement between two meshes of the same part, in mm. */
+export const BBOX_TOL = 0.05;
+
+/**
+ * Above this per-axis bbox gap, "same part, coarser tessellation" stops being a plausible story
+ * and the tools should stop offering --bbox-tol as a way out. Re-tessellating a curved part moves
+ * its extremes by hundredths of a mm (the shipped wheel half: 0.03mm), never by a whole one.
+ */
+export const TESSELLATION_GAP = 1.0;
+
 export function readBinarySTL(b) {
+  if (b.length < 84) return null;
   const triCount = b.readUInt32LE(80);
   if (b.length !== 84 + triCount * 50) return null;
   const positions = new Float32Array(triCount * 9);
@@ -25,10 +36,18 @@ export function readBinarySTL(b) {
 export function readAsciiSTL(text) {
   const lines = text.match(/vertex\s+(\S+)\s+(\S+)\s+(\S+)/g);
   if (!lines) return null;
+  if (lines.length % 3)
+    throw new Error(`ASCII STL has ${lines.length} vertices, not a whole number of triangles`);
   const positions = new Float32Array(lines.length * 3);
   lines.forEach((line, i) => positions.set(line.trim().split(/\s+/).slice(1).map(Number), i * 3));
   return positions;
 }
+
+// Attribute-wise rather than one fixed-order regex: 3MF does not mandate an attribute order, and
+// a writer that emits y before x would otherwise read as zero triangles with no error.
+const XA = [/\bx="([^"]*)"/, /\by="([^"]*)"/, /\bz="([^"]*)"/];
+const TA = [/\bv1="([^"]*)"/, /\bv2="([^"]*)"/, /\bv3="([^"]*)"/];
+const attrs = (tag, res) => res.map((r) => +(tag.match(r)?.[1] ?? NaN));
 
 /**
  * Reads only meshes inlined in 3D/3dmodel.model, exactly like load3MF. A Bambu multi-part file
@@ -45,23 +64,41 @@ export async function read3MF(buf) {
       '  ! uses <component p:path> — load3MF cannot resolve this; not usable as geometry',
     );
   const verts = [];
-  for (const m of xml.matchAll(/<vertex\s+x="([^"]+)"\s+y="([^"]+)"\s+z="([^"]+)"/g))
-    verts.push([+m[1], +m[2], +m[3]]);
   const tris = [];
-  for (const m of xml.matchAll(/<triangle\s+v1="(\d+)"\s+v2="(\d+)"\s+v3="(\d+)"/g))
-    tris.push([+m[1], +m[2], +m[3]]);
+  // Walk one <object> at a time and offset by a per-object base, exactly as load3MF does. Triangle
+  // indices are local to their own <mesh>, so reading every <vertex> in the file into one flat
+  // list and trusting the raw indices silently returns the first object's geometry N times.
+  for (const om of xml.matchAll(/<object\b[^>]*(?:\/>|>([\s\S]*?)<\/object>)/g)) {
+    const body = om[1];
+    if (!body) continue;
+    const base = verts.length;
+    for (const v of body.matchAll(/<vertex\b[^>]*>/g)) verts.push(attrs(v[0], XA));
+    for (const t of body.matchAll(/<triangle\b[^>]*>/g))
+      tris.push(attrs(t[0], TA).map((i) => base + i));
+  }
   const positions = new Float32Array(tris.length * 9);
   tris.forEach((t, i) =>
-    t.forEach((vi, k) => positions.set(verts[vi] ?? [0, 0, 0], i * 9 + k * 3)),
+    t.forEach((vi, k) => {
+      const v = verts[vi];
+      // No silent [0,0,0] fallback: an unresolvable index means the file was parsed wrong, and a
+      // vertex quietly pinned to the origin is a spike through the mesh that nothing downstream
+      // would flag.
+      if (!v) throw new Error(`3MF triangle references vertex ${vi}, which does not exist`);
+      positions.set(v, i * 9 + k * 3);
+    }),
   );
   return positions;
 }
 
 export async function readMesh(file) {
   const buf = fs.readFileSync(file);
-  if (path.extname(file).toLowerCase() === '.3mf') return read3MF(buf);
-  const positions = readBinarySTL(buf) ?? readAsciiSTL(buf.toString('utf8'));
+  const positions =
+    path.extname(file).toLowerCase() === '.3mf'
+      ? await read3MF(buf)
+      : (readBinarySTL(buf) ?? readAsciiSTL(buf.toString('utf8')));
   if (!positions) throw new Error(`${file}: not a readable STL`);
+  if (positions.length % 9)
+    throw new Error(`${file}: ${positions.length / 3} vertices is not a whole number of triangles`);
   return positions;
 }
 
@@ -91,62 +128,94 @@ export function triNormalArea(positions, i) {
   return { p0, normal: [n[0] / len, n[1] / len, n[2] / len], area: len / 2 };
 }
 
-/** Bucketed identically to detectFlatPatches in src/geometry/meshparts.ts. */
-export function patches(positions) {
-  const buckets = new Map();
+/**
+ * One pass, two bucketings — the per-triangle cross product is the expensive part and both views
+ * need it.
+ *
+ * `list` is bucketed identically to detectFlatPatches in src/geometry/meshparts.ts (normal AND
+ * plane offset, both to 2 decimals); tests/meshmatch.test.ts pins the two together.
+ *
+ * `spectrum` is total area per *direction*, ignoring plane offset. Because detectFlatPatches keys
+ * on offset.toFixed(2), a face that is a hair non-planar splits into many patches — and it splits
+ * differently at different tessellation densities, which makes raw patch areas useless for
+ * comparing two meshes. Summing by direction is stable across tessellations, so this is what
+ * matching uses.
+ */
+function bucketize(positions) {
+  const pb = new Map();
+  const sb = new Map();
   let total = 0;
   for (let i = 0; i < positions.length / 9; i++) {
     const t = triNormalArea(positions, i);
     if (!t) continue;
     total += t.area;
+
     const offset = t.normal[0] * t.p0[0] + t.normal[1] * t.p0[1] + t.normal[2] * t.p0[2];
-    const key = [...t.normal.map((v) => v.toFixed(2)), offset.toFixed(2)].join(',');
-    let b = buckets.get(key);
-    if (!b) buckets.set(key, (b = { area: 0, normal: t.normal, offset }));
-    b.area += t.area;
+    const pkey = [...t.normal.map((v) => v.toFixed(2)), offset.toFixed(2)].join(',');
+    let p = pb.get(pkey);
+    if (!p) pb.set(pkey, (p = { area: 0, normal: t.normal, offset }));
+    p.area += t.area;
+
+    const cell = t.normal.map((v) => Math.round(v * 20) / 20 + 0); // +0 folds -0 to 0
+    const skey = cell.join(',');
+    let s = sb.get(skey);
+    if (!s) sb.set(skey, (s = { area: 0, normal: t.normal, cell }));
+    s.area += t.area;
   }
-  return { list: [...buckets.values()].sort((a, b) => b.area - a.area), total };
+  const byArea = (a, b) => b.area - a.area;
+  return {
+    list: [...pb.values()].sort(byArea),
+    total,
+    spectrum: [...sb.values()].sort(byArea),
+  };
+}
+
+/** The flat patches detectFlatPatches would rank, plus total surface area. */
+export function patches(positions) {
+  const { list, total } = bucketize(positions);
+  return { list, total };
+}
+
+/** Total area per direction bucket, tessellation-stable. */
+export function normalSpectrum(positions) {
+  return bucketize(positions).spectrum;
 }
 
 /**
- * Total area per *direction*, ignoring plane offset. detectFlatPatches keys on offset.toFixed(2),
- * so a face that is a hair non-planar splits into many buckets — and it splits differently at
- * different tessellation densities, which makes raw patch areas useless for comparing two meshes.
- * Summing by direction is stable across tessellations, so this is what matching uses.
+ * Everything the tools report on or match against, computed in one pass. Deliberately does NOT
+ * retain `positions` — a analyze() result outlives the loop it was made in (compare-meshes holds
+ * one per candidate), and a 388k-triangle soup is ~14MB to keep alive for a triangle count.
  */
-export function normalSpectrum(positions) {
-  const buckets = new Map();
-  for (let i = 0; i < positions.length / 9; i++) {
-    const t = triNormalArea(positions, i);
-    if (!t) continue;
-    const cell = t.normal.map((v) => Math.round(v * 20) / 20 + 0); // +0 folds -0 to 0
-    const key = cell.join(',');
-    let b = buckets.get(key);
-    if (!b) buckets.set(key, (b = { area: 0, normal: t.normal, cell }));
-    b.area += t.area;
-  }
-  return [...buckets.values()].sort((a, b) => b.area - a.area);
+export function analyze(positions) {
+  return { bb: bbox(positions), triCount: positions.length / 9, ...bucketize(positions) };
 }
 
-/** Everything the tools report on or match against, computed once per mesh. */
-export function analyze(positions) {
-  const { list, total } = patches(positions);
-  return { bb: bbox(positions), list, total, spectrum: normalSpectrum(positions), positions };
-}
+/** Two unit normals within ~8 degrees are the same face direction for coherence purposes. */
+const SAME_DIR_DOT = 0.99;
 
 /**
  * How much of the area facing the top patch's direction lands in that single patch. A low number
  * means the face is fragmenting across offset buckets and the app will detect less art surface
  * than the part actually has — the main reason to reject a dense slicer mesh.
+ *
+ * The denominator sums *every* direction bucket pointing that way rather than picking one. The
+ * scatter this metric exists to measure also scatters normals across neighbouring spectrum cells,
+ * so a single cell both undercounts the face (inflating the ratio, hiding the fragmentation) and
+ * can be a neighbouring cell smaller than the patch itself (ratios over 100%).
+ *
+ * Returns null for a mesh with no triangles — the <component p:path> case, where the caller wants
+ * to report the empty read, not crash on it.
  */
 export function faceCoherence(a) {
   const top = a.list[0];
-  const dir = a.spectrum.find(
-    (s) =>
-      s.normal[0] * top.normal[0] + s.normal[1] * top.normal[1] + s.normal[2] * top.normal[2] >
-      0.99,
-  );
-  return { patchArea: top.area, dirArea: dir.area, ratio: top.area / dir.area };
+  if (!top) return null;
+  let dirArea = 0;
+  for (const s of a.spectrum) {
+    const dot =
+      s.normal[0] * top.normal[0] + s.normal[1] * top.normal[1] + s.normal[2] * top.normal[2];
+    if (dot > SAME_DIR_DOT) dirArea += s.area;
+  }
+  return { patchArea: top.area, dirArea, ratio: top.area / dirArea };
 }
 
 /** All 48 signed axis permutations, tagged with determinant (+1 rotation, -1 mirror). */
@@ -220,7 +289,13 @@ function scoreMap(a, bMap, denom, r) {
   return overlap / denom;
 }
 
-export function findTransform(a, b) {
+/**
+ * Returns { hit, reason, bboxWorst, score }. `hit` is null when the two meshes don't match, and
+ * `reason` says which test rejected them — 'bbox' (no axis map lines the bounding boxes up within
+ * `bboxTol`) is a very different diagnosis from 'score' (they line up but the geometry disagrees),
+ * and the caller needs to say so: a coarser tessellation of a curved part can miss on bbox alone.
+ */
+export function findTransform(a, b, bboxTol = BBOX_TOL) {
   // Histogram intersection over direction buckets. Per-bucket equality thresholds don't work
   // here: curved regions discretize differently at 25k vs 388k triangles, so any single bucket
   // can disagree wildly while the overall distribution still matches. Summing min(areaA, areaB)
@@ -228,10 +303,13 @@ export function findTransform(a, b) {
   const bMap = new Map(b.spectrum.map((s) => [s.cell.join(','), s.area]));
   const denom = Math.max(a.total, b.total);
   let bestRot = null,
-    bestMirror = null;
+    bestMirror = null,
+    bboxWorst = Infinity;
   for (const r of axisMaps()) {
     const dims = applyMap(r, a.bb.size).map(Math.abs);
-    if (![0, 1, 2].every((k) => Math.abs(dims[k] - b.bb.size[k]) < 0.05)) continue;
+    const off = Math.max(...[0, 1, 2].map((k) => Math.abs(dims[k] - b.bb.size[k])));
+    if (off < bboxWorst) bboxWorst = off;
+    if (off >= bboxTol) continue;
     const score = scoreMap(a, bMap, denom, r);
     const slot = r.det > 0 ? 'rot' : 'mirror';
     const cur = slot === 'rot' ? bestRot : bestMirror;
@@ -248,5 +326,7 @@ export function findTransform(a, b) {
     bestRot && (!bestMirror || bestRot.score >= bestMirror.score - MIRROR_MARGIN)
       ? bestRot
       : bestMirror;
-  return best && best.score >= MATCH_FLOOR ? best : null;
+  if (!best) return { hit: null, reason: 'bbox', bboxWorst };
+  if (best.score < MATCH_FLOOR) return { hit: null, reason: 'score', bboxWorst, score: best.score };
+  return { hit: best, bboxWorst, score: best.score };
 }
