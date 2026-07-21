@@ -25,4 +25,9 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
     rules: { 'no-empty': ['error', { allowEmptyCatch: true }] },
   },
+  {
+    // Skill helper scripts — Node-only tools run by hand, never bundled.
+    files: ['.claude/skills/**/*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
 );
