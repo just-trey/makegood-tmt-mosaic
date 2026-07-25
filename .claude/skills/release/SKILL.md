@@ -9,35 +9,40 @@ Pre-1.0 semver (`0.x.y`). PATCH for fixes; MINOR (`0.x.0`) when the release
 contains anything under `### Added`. See
 [CONTRIBUTING.md](../../../CONTRIBUTING.md#versioning) before deciding.
 
-Do all four edits **in the release PR itself**, never as a follow-up. Version
-drift between these files is the recurring failure here — the README badge in
+Do this edit **in the release PR itself**, never as a follow-up. Version drift
+between these files is the recurring failure here — the README badge in
 particular was once bumped in a separate PR (#9, after 0.1.1) that the user had
 to catch manually.
 
-## 1. package.json
+## 1. Bump the version
 
-`"version"` → the new version. This is the only version edit the app needs: the
-displayed version derives from it via `__APP_VERSION__` in `vite.config.ts`
-(`getAppVersion` → `src/version.ts`).
+```bash
+node scripts/bump-version.mjs X.Y.Z
+```
+
+This script does all three version edits identically every time, so they can't
+drift:
+
+- **package.json** `"version"` — the only version edit the app needs: the
+  displayed version derives from it via `__APP_VERSION__` in `vite.config.ts`
+  (`getAppVersion` → `src/version.ts`).
+- **README.md version badge** (the shields.io badge near the top) — the step
+  that's been missed before. The script preserves whatever suffix/color the
+  badge already has (e.g. `--beta-orange`) and only swaps the version number.
+- **CHANGELOG.md** — moves the `## [Unreleased]` entries into a new
+  `## [X.Y.Z] - YYYY-MM-DD` section (today's real date), leaves
+  `## [Unreleased]` in place but empty, and rewrites the compare-link refs at
+  the bottom.
+
+It refuses to run (non-zero exit, no files touched) if `## [Unreleased]` has no
+entries, or if any file's current version is already out of sync — read the
+error and fix that by hand first. Review its diff before committing.
 
 There must be exactly one `vite.config.*` in the repo. A stray `vite.config.js`
 silently shadows `vite.config.ts` and has broken the Pages deploy before — check
 if anything about the build looks wrong.
 
-## 2. README.md version badge
-
-Around line 4 (`version-X.Y.Z--alpha`). **Nothing auto-updates this.** It is the
-step most often missed.
-
-## 3. CHANGELOG.md
-
-- Move the `## [Unreleased]` entries into a new `## [X.Y.Z] - YYYY-MM-DD`
-  section, using today's real date.
-- Leave `## [Unreleased]` in place, empty.
-- Update the link refs at the bottom: point `[Unreleased]` at
-  `compare/vX.Y.Z...HEAD`, and add `[X.Y.Z]: …compare/vPREV...vX.Y.Z`.
-
-## 4. Tag — this is the actual ship
+## 2. Tag — this is the actual ship
 
 Push the release PR, let it merge to `main`, **then** tag:
 
