@@ -89,9 +89,13 @@ contents, or other personal data are ever sent. See
    (a CIE76 ΔE-clustered slider, live and reversible) and unioned with any
    manual merges, and each merged slot takes its dominant member's real color
    rather than a blended average (`applyColorMerges` in the same file).
-3. **Flat-plate mode** builds the plate as a stack of flat slabs between depth
+3. **Placement** (scale, X/Y offset, rotation, mirror) is applied before the
+   cut in both modes. It can be set from the Artwork fit sliders or by
+   dragging the artwork directly on its face in the 3D viewport — a selection
+   frame with move/scale/rotate handles, same as the sliders underneath.
+4. **Flat-plate mode** builds the plate as a stack of flat slabs between depth
    boundaries — pure 2D math, no CSG ([src/geometry/flat.ts](src/geometry/flat.ts)).
-4. **Assembly mode** cuts pockets into real part meshes: each color region is
+5. **Assembly mode** cuts pockets into real part meshes: each color region is
    extruded into a prism in the part's own coordinates and booleaned against
    the mesh with [Manifold](https://github.com/elalish/manifold) (WASM CSG,
    lazy-loaded) ([src/geometry/assembly.ts](src/geometry/assembly.ts)).
@@ -100,7 +104,7 @@ contents, or other personal data are ever sent. See
    back into the part's native print orientation. Round parts (the wheel) map
    the SVG via a Design-radius/circle model; rectangular parts (the footrest)
    map it 1:1 in millimeters and auto-center on the detected face instead.
-5. **Export** writes a Bambu Studio _project_ 3MF (vendor metadata included,
+6. **Export** writes a Bambu Studio _project_ 3MF (vendor metadata included,
    so it imports without warnings, with named parts, per-part filament slots,
    and multi-plate placement) ([src/export/threemf.ts](src/export/threemf.ts)).
    The target printer ([src/export/printers.ts](src/export/printers.ts))

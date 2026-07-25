@@ -15,6 +15,7 @@ import {
   refreshModelShadows,
   setPreferredViewDir,
 } from '../scene/viewport';
+import { refreshGizmo } from '../scene/designGizmo';
 import { renderColorList, type ColorListEntry } from '../ui/colorList';
 import { renderBaseColorSwatches } from '../ui/partPanel';
 import { renderWarnings } from '../ui/warningsView';
@@ -76,6 +77,9 @@ export function estimateRebuildSlow(): boolean {
 export async function rebuildCurrent(): Promise<void> {
   if (state.shapeKind === 'assembly') await rebuildAssemblyScene();
   else await rebuildScene();
+  // The on-face gizmo tracks the just-built geometry (including the assembly's post-rebuild grid
+  // lift); a no-op mid-drag so it doesn't fight the pointer.
+  refreshGizmo();
 }
 
 async function rebuildScene(): Promise<void> {
@@ -234,6 +238,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     offZ: state.offsetY,
     flipX: state.flipX,
     flipY: state.flipY,
+    rotationDeg: state.rotationDeg,
     autoMergeLevel: state.autoMergeLevel,
     baseColorKey: state.baseColorKey,
     baseColorMembers: state.baseColorMembers,

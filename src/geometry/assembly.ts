@@ -61,7 +61,7 @@ export function asmPartFaceNormal(part: AssemblyPart, parts: AssemblyPart[]): nu
 }
 
 /** X/Z bounding box (mm) of a part's flat-face boundary loop; null when the loop is empty. */
-function faceXZBBox(
+export function faceXZBBox(
   loop: number[][] | null | undefined,
 ): { cx: number; cz: number; w: number; h: number } | null {
   if (!loop || !loop.length) return null;
@@ -128,6 +128,8 @@ export interface AssemblyBuildInput {
   flipX: boolean;
   /** user vertical mirror, on top of the built-in SVG y-down correction */
   flipY: boolean;
+  /** design rotation about its center on the face, in degrees (0 = as authored) */
+  rotationDeg: number;
   autoMergeLevel?: number;
   baseColorKey?: string | null;
   /** every raw hex the base assignment excludes from cutting (see state/store.ts addToBase) */
@@ -158,6 +160,7 @@ export async function buildAssemblyGeometry(
     offZ,
     flipX,
     flipY,
+    rotationDeg,
     autoMergeLevel,
     baseColorKey,
     baseColorMembers,
@@ -307,8 +310,18 @@ export async function buildAssemblyGeometry(
     }
     return (pt: number[]): number[] => {
       const xMul = userXFlip * (nsign > 0 ? -1 : 1);
-      let x = (pt[0] - svgC.cx) * mmPerUnit * xMul + offX + faceCx;
-      let z = (pt[1] - svgC.cy) * mmPerUnit * zMul + offZ + faceCz;
+      // center+scale+mirror in the face frame, then rotate about the design center (before the
+      // offset+faceCenter translation), so rotation spins the artwork in place rather than
+      // sweeping it around the face.
+      let x = (pt[0] - svgC.cx) * mmPerUnit * xMul;
+      let z = (pt[1] - svgC.cy) * mmPerUnit * zMul;
+      if (rotationDeg) {
+        const rr = rotatePointY(x, z, 0, 0, rotationDeg);
+        x = rr[0];
+        z = rr[1];
+      }
+      x += offX + faceCx;
+      z += offZ + faceCz;
       if (part.isDuplicateOf) {
         const r = rotatePointY(x, z, part.pivotX, part.pivotZ, -part.angleDeg);
         x = r[0];

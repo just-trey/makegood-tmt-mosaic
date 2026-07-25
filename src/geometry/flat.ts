@@ -148,6 +148,7 @@ export function fitTransform(
   offsetY: number,
   flipX: boolean,
   flipY: boolean,
+  rotationDeg: number,
 ): FitTransform {
   const svgW = svgBBox.maxX - svgBBox.minX,
     svgH = svgBBox.maxY - svgBBox.minY;
@@ -163,12 +164,17 @@ export function fitTransform(
   // over the built-in correction).
   const xMul = flipX ? -1 : 1;
   const yMul = flipY ? 1 : -1;
+  const rot = ((rotationDeg || 0) * Math.PI) / 180;
   return {
     scale,
     cx,
     cy,
     xMul,
     yMul,
+    // A rotation is orientation-preserving, so it never alters ring winding — `reverse` still
+    // depends only on the mirror parity below.
+    rotSin: Math.sin(rot),
+    rotCos: Math.cos(rot),
     reverse: xMul * yMul < 0,
     offsetX: offsetX || 0,
     offsetY: offsetY || 0,
@@ -177,8 +183,11 @@ export function fitTransform(
 
 export function transformFeature(feature: PolyFeature, fit: FitTransform): PolyFeature {
   function tp(pt: number[]): number[] {
-    const x = (pt[0] - fit.cx) * fit.scale * fit.xMul + fit.offsetX;
-    const y = (pt[1] - fit.cy) * fit.scale * fit.yMul + fit.offsetY;
+    // center → scale+mirror → rotate about the design center → offset
+    const dx = (pt[0] - fit.cx) * fit.scale * fit.xMul;
+    const dy = (pt[1] - fit.cy) * fit.scale * fit.yMul;
+    const x = dx * fit.rotCos - dy * fit.rotSin + fit.offsetX;
+    const y = dx * fit.rotSin + dy * fit.rotCos + fit.offsetY;
     return [x, y];
   }
   // A reflection (an odd number of axis flips) reverses every ring's winding order. That's fine
@@ -256,6 +265,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
     baseParams.offsetY,
     baseParams.flipX,
     baseParams.flipY,
+    baseParams.rotationDeg,
   );
   const footprint = footprintFeature(shapeKind, baseParams);
   const thickness = baseParams.thickness;

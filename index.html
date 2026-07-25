@@ -104,8 +104,13 @@
             <h3>Positioning artwork on the part</h3>
             <p>
               Margin sets the auto-fit border. Scale multiplies on top of that — over 100% will
-              bleed past the part's edge. Flip H mirrors left-to-right, useful when text reads
-              backwards after import.
+              bleed past the part's edge. Rotation spins the artwork about its own center. Flip H
+              mirrors left-to-right, useful when text reads backwards after import.
+            </p>
+            <p>
+              You can also grab the artwork directly in the 3D view: drag inside the selection frame
+              to move it, drag a corner handle to scale, or drag the green handle to rotate — the
+              sliders track the drag and vice versa.
             </p>
           </section>
 
@@ -381,6 +386,20 @@
               /><input type="number" id="p-offset-y" value="0" step="0.5" />
             </div>
             <span class="hint">mm</span>
+          </div>
+          <div class="row">
+            <label>Rotation</label>
+            <div class="field pair">
+              <input type="range" id="p-rot" min="-180" max="180" step="1" value="0" /><input
+                type="number"
+                id="p-rot-num"
+                min="-180"
+                max="180"
+                step="1"
+                value="0"
+              />
+            </div>
+            <span class="hint">°</span>
           </div>
           <div class="row">
             <label>Mirror</label>

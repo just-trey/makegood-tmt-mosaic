@@ -57,6 +57,20 @@ Fired when an export throws, in the same handlers as `export`.
 
 - **Props:** `{ format: '3mf' | 'stl_zip' }`
 
+### `fit_adjust`
+
+Fired when the user commits a move/scale/rotate change to the artwork
+placement — on slider release (`change`) or on pointer-up from an on-face
+gizmo drag in the 3D viewport. Not fired on every intermediate `input` tick,
+only once per gesture.
+
+- **Where:** [src/ui/fitPanel.ts](../src/ui/fitPanel.ts) — `syncPair`'s
+  slider `change` handler (Scale/Offset X/Offset Y/Rotation).
+  [src/scene/designGizmo.ts](../src/scene/designGizmo.ts) — `onPointerUp`.
+- **Props:**
+  - `via: 'drag' | 'slider'`
+  - `field: 'move' | 'scale' | 'rotate'`
+
 ## Future / not yet wired
 
 Candidates for a later pass, roughly in order of likely value. Follow the same
@@ -66,7 +80,8 @@ pattern: wire at the DOM handler, add the entry here, keep props PII-free.
 - `base_color_change` — `src/ui/partPanel.ts`, `renderBaseColorSwatches` swatch click. Prop: `default` vs `filament`.
 - `automerge_change` — `src/ui/colorList.ts`, `#p-automerge` slider. Prop: `level` (0-3).
 - `color_merge` / `color_to_base` — `src/ui/colorList.ts` drag-merge and "→ base" actions. Prop: resulting group size.
-- `fit_reset` / `fit_flip` — `src/ui/fitPanel.ts`, `#btn-reset-fit` and flip checkboxes.
+- `fit_reset` — `src/ui/fitPanel.ts`, `#btn-reset-fit`.
+- `fit_flip` — `src/ui/fitPanel.ts`, flip checkboxes.
 
 ## Adding a new event
 

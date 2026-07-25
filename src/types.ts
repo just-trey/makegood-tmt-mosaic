@@ -56,6 +56,8 @@ export interface BaseParams {
   flipX: boolean;
   /** user vertical mirror, on top of the built-in SVG y-down correction */
   flipY: boolean;
+  /** design rotation about its center, in degrees (0 = as authored) */
+  rotationDeg: number;
 }
 
 export interface FitTransform {
@@ -66,6 +68,9 @@ export interface FitTransform {
   xMul: number;
   /** ±1 vertical multiplier: base −1 (SVG y-down → plate y-up), flipped again by the user toggle */
   yMul: number;
+  /** sin/cos of the design rotation, applied after scale/mirror and before offset */
+  rotSin: number;
+  rotCos: number;
   /** rings need winding reversal when the net transform is a reflection (odd # of axis flips) */
   reverse: boolean;
   offsetX: number;
