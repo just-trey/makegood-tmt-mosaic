@@ -58,6 +58,23 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
       },
     ],
   },
+  {
+    id: 'wheel-mount-left',
+    name: 'Wheel mount (left)',
+    // rectangular design face, same as the footrest — the artwork maps 1:1 in mm.
+    designFit: 'rect',
+    templateFile: 'wheel-mount-left-template.svg',
+    roles: [
+      {
+        id: 'wheel-mount-left',
+        name: 'Wheel mount (left)',
+        libraryPartId: 'wheel-mount-left',
+        allowRotatedCopies: false,
+        // no preferFaceNormal: the design face is this part's largest flat patch by a wide
+        // margin (36,054mm², next is 9,761mm²), so the default largest-patch pick is correct.
+      },
+    ],
+  },
 ];
 
 export function currentAssemblyKind(): AssemblyKind | null {

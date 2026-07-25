@@ -83,40 +83,83 @@ function shoelace(pts) {
 const n2 = (v) => Number(v.toFixed(2));
 
 // ---------------------------------------------------------------------------
-// Footrest: extract the +Y seat face's holes and place them in the template's
-// coordinate frame. Derivation of the inverse mapping (see src/geometry/
-// assembly.ts placeOnPart, footrest = rect face, +Y normal, defaults):
+// Shared by every `designFit: 'rect'` part (footrest, wheel mount): extract the +Y design face's
+// holes and place them in the template's coordinate frame. Derivation of the inverse mapping (see
+// src/geometry/assembly.ts placeOnPart, rect designFit, +Y-facing part, defaults):
 //   x = -(ptx - bboxCx) + faceCx ,  z = -(pty - bboxCy) + faceCz
 // so  ptx = bboxCx - (x - faceCx) ,  pty = bboxCy - (z - faceCz)
-// The template canvas spans the face 1:1 in mm, so its bbox center (bboxCx,
-// bboxCy) is the canvas center. faceC = center of the outer boundary loop bbox
-// in native (x, z) — exactly what the app uses as the face center.
+// The template canvas spans the face 1:1 in mm, so its bbox center (bboxCx, bboxCy) is the canvas
+// center. faceC = center of the outer boundary loop bbox in native (x, z) — exactly what the app
+// uses as the face center. Only handles a +Y-pointing design face: every rect part shipped so far
+// (footrest, wheel mount) auto-detects onto one, per placeOnPart's nsign>0 branch.
 // ---------------------------------------------------------------------------
-const FOOT_W = 266; // template canvas mm (matches the verified size already shipped)
-const FOOT_H = 185;
-// The canvas dimensions above are baked, but every extracted point is mapped through
-// FOOT_W/2, FOOT_H/2 as the face center — so if the source mesh's face no longer measures
-// FOOT_W x FOOT_H, the whole outline shifts inside a canvas still declaring the old size.
-// Fail loudly instead of writing a quietly misaligned template.
-const FOOT_TOL = 0.5;
 
-async function genFootrest() {
-  const { positions } = await readSoup(stl('footrest.3mf'));
+/**
+ * @param {string} meshFile filename in public/stl/
+ * @param {string} outFile filename in public/templates/
+ * @param {string} partLabel short name for log/error lines, e.g. "footrest"
+ * @param {number} canvasW expected design-face width (mm) — the canvas is baked to this, not
+ *   measured live, so a mesh change that shifts the face size fails loudly instead of shipping a
+ *   template that no longer matches what the app cuts.
+ * @param {number} canvasH expected design-face height (mm)
+ * @param {number} tol max acceptable measured-vs-expected drift (mm) before refusing to write
+ * @param {number} minHoleArea interior loops smaller than this (mm²) are tessellation/fillet
+ *   slivers, not real holes, and are dropped
+ * @param {number[]} [preferFaceNormal] the role's preferFaceNormal in src/assembly/kinds.ts, or
+ *   undefined when it declares none — this MUST match the kind's role so the template is drawn for
+ *   the exact patch the app's defaultPatchIdx selects
+ * @param {string} comment the template's leading XML comment, verbatim
+ * @param {{x: number, y: number, text: string}[]} labels guide-text labels
+ */
+async function genRectTemplate({
+  meshFile,
+  outFile,
+  partLabel,
+  canvasW,
+  canvasH,
+  tol,
+  minHoleArea,
+  preferFaceNormal,
+  comment,
+  labels,
+}) {
+  const { positions } = await readSoup(stl(meshFile));
   const patches = detectFlatPatches(positions);
-  // Seat design face = the dominant +Y-facing flat patch. Match the app's own selection test
-  // (defaultPatchIdx in src/assembly/parts.ts: first area-ranked patch with dot > 0.9 against the
-  // role's preferFaceNormal [0,1,0]) — a stricter threshold here would silently pick a different
-  // face than the app cuts on, or none at all, if the seat ever gets a slight draft. Its outer
-  // boundary is the real printable outline the app clips artwork to — NOT a plain rectangle: the
-  // BACK edge carries the mounting slots and the FRONT edge is the curved-lip transition.
-  const up = patches.filter((p) => p.normal[1] > 0.9);
-  if (!up.length)
-    throw new Error(
-      `no +Y-facing flat patch in footrest.3mf (best normal.y=${n2(
-        Math.max(...patches.map((p) => p.normal[1])),
-      )}) — the seat face is not where this script expects it`,
+  // Select the exact same patch the app cuts on by replicating defaultPatchIdx (src/assembly/
+  // parts.ts): with a preferFaceNormal, the first area-ranked patch whose normal dots > 0.9 with
+  // it; without one, the largest patch overall (patches[0], since detectFlatPatches area-ranks).
+  // Filtering to +Y ourselves (the old approach) would diverge silently from the app for a part
+  // with no preferFaceNormal if a re-pack ever made a non-+Y patch the largest — the app would
+  // land there while we still drew the +Y face.
+  let idx;
+  if (preferFaceNormal) {
+    idx = patches.findIndex(
+      (p) =>
+        p.normal[0] * preferFaceNormal[0] +
+          p.normal[1] * preferFaceNormal[1] +
+          p.normal[2] * preferFaceNormal[2] >
+        0.9,
     );
-  const loops3d = extractPatchBoundary(positions, up[0].triIndices);
+    if (idx < 0)
+      throw new Error(
+        `no patch in ${meshFile} points along preferFaceNormal (${preferFaceNormal.join(
+          ', ',
+        )}) — the design face is not where this script expects it`,
+      );
+  } else {
+    idx = 0; // no preferFaceNormal: the app takes the largest-area patch
+  }
+  const face = patches[idx];
+  // The toTpl mapping below is derived only for a +Y-facing design face (placeOnPart's nsign>0
+  // branch). If the app's own selection just landed on a non-+Y patch, the template would be for a
+  // face the app never cuts — fail loudly rather than ship that mismatch.
+  if (!(face.normal[1] > 0.9))
+    throw new Error(
+      `selected design face in ${meshFile} points (${face.normal
+        .map(n2)
+        .join(', ')}), not +Y — the template mapping only handles a +Y-facing face`,
+    );
+  const loops3d = extractPatchBoundary(positions, face.triIndices);
   // Project to native (x, z) — the two axes the app uses for the rect face.
   const loopsXZ = loops3d.map((loop) => loop.map((p) => [p[0], p[2]]));
   loopsXZ.sort((a, b) => b.length - a.length); // app keeps loops[0] (most points) as the outer
@@ -125,18 +168,19 @@ async function genFootrest() {
   const faceCx = (ob.minA + ob.maxA) / 2;
   const faceCz = (ob.minB + ob.maxB) / 2;
   console.log(
-    `[footrest] loops=${loopsXZ.length} outerPts=${outer.length} faceExtent x=${n2(ob.w)} z=${n2(
-      ob.h,
-    )} (expect ~${FOOT_W} x ${FOOT_H})`,
+    `[${partLabel}] loops=${loopsXZ.length} outerPts=${outer.length} faceExtent x=${n2(
+      ob.w,
+    )} z=${n2(ob.h)} (expect ~${canvasW} x ${canvasH})`,
   );
-  if (Math.abs(ob.w - FOOT_W) > FOOT_TOL || Math.abs(ob.h - FOOT_H) > FOOT_TOL)
+  if (Math.abs(ob.w - canvasW) > tol || Math.abs(ob.h - canvasH) > tol)
     throw new Error(
-      `footrest face measures ${n2(ob.w)} x ${n2(ob.h)}mm but the template canvas is ` +
-        `${FOOT_W} x ${FOOT_H}mm — re-verify the part and update FOOT_W/FOOT_H before regenerating`,
+      `${partLabel} face measures ${n2(ob.w)} x ${n2(ob.h)}mm but the template canvas is ` +
+        `${canvasW} x ${canvasH}mm — re-verify the part and update its canvas constants before ` +
+        `regenerating`,
     );
 
-  const bboxCx = FOOT_W / 2;
-  const bboxCy = FOOT_H / 2;
+  const bboxCx = canvasW / 2;
+  const bboxCy = canvasH / 2;
   const toTpl = ([x, z]) => [n2(bboxCx - (x - faceCx)), n2(bboxCy - (z - faceCz))];
   const toD = (pts) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ') + ' Z';
 
@@ -144,24 +188,60 @@ async function genFootrest() {
     .slice(1)
     .map((loop) => loop.map(toTpl))
     .map((pts) => ({ pts, area: shoelace(pts) }))
-    .filter((h) => h.area >= 15) // drop sliver/noise loops (< ~4x4mm)
+    .filter((h) => h.area >= minHoleArea)
     .sort((a, b) => b.area - a.area);
   console.log(
-    `[footrest] interior holes kept=${holes.length} areas=${holes
+    `[${partLabel}] interior holes kept=${holes.length} areas=${holes
       .map((h) => n2(h.area))
       .join(', ')}`,
   );
 
-  // Punch the interior holes out of the canvas (fill-rule evenodd) so they read
-  // as real gaps in the printable silhouette — the same way the two BACK-corner
-  // slots are already notches in the outer boundary. All four mounting slots then
-  // look identical; an absence of material is self-explanatory, so no fill,
-  // outline, or "no print" label is needed.
+  // Punch the interior holes out of the canvas (fill-rule evenodd) so they read as real gaps in
+  // the printable silhouette — same as any notch already cut into the outer boundary. An absence
+  // of material is self-explanatory, so no fill, outline, or "no print" label is needed.
   const canvasD = [outer.map(toTpl), ...holes.map((h) => h.pts)].map(toD).join(' ');
+
+  const labelSvg = labels
+    .map(
+      ({ x, y, text }) =>
+        `  <text x="${x}" y="${y}" text-anchor="middle" font-family="sans-serif" font-size="${LABEL_SIZE}"\n` +
+        `        fill="${ACCENT}">${text}</text>`,
+    )
+    .join('\n');
 
   const svg = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
-  Footrest design template — true-to-size at 1:1 mm (${FOOT_W} x ${FOOT_H}mm). The grey
+${comment}
+-->
+<svg width="${canvasW}mm" height="${canvasH}mm" viewBox="0 0 ${canvasW} ${canvasH}" version="1.1"
+     xmlns="http://www.w3.org/2000/svg">
+  <path d="${canvasD}" fill="${GRAY}" fill-rule="evenodd" />
+${labelSvg}
+</svg>
+`;
+  writeFileSync(tpl(outFile), svg);
+  console.log(`[${partLabel}] wrote ${outFile}`);
+}
+
+const FOOT_W = 266; // template canvas mm (matches the verified size already shipped)
+const FOOT_H = 185;
+// The canvas dimensions above are baked, but every extracted point is mapped through
+// FOOT_W/2, FOOT_H/2 as the face center — so if the source mesh's face no longer measures
+// FOOT_W x FOOT_H, the whole outline shifts inside a canvas still declaring the old size.
+// Fail loudly instead of writing a quietly misaligned template.
+const FOOT_TOL = 0.5;
+
+function genFootrest() {
+  return genRectTemplate({
+    meshFile: 'footrest.3mf',
+    outFile: 'footrest-template.svg',
+    partLabel: 'footrest',
+    canvasW: FOOT_W,
+    canvasH: FOOT_H,
+    tol: FOOT_TOL,
+    minHoleArea: 15, // drop sliver/noise loops (< ~4x4mm)
+    preferFaceNormal: [0, 1, 0], // matches the footrest role in src/assembly/kinds.ts
+    comment: `  Footrest design template — true-to-size at 1:1 mm (${FOOT_W} x ${FOOT_H}mm). The grey
   shape is the footrest's REAL printable design face (the app clips artwork to exactly
   this outline). Load with the Footrest assembly kind at Scale 100%, Offset 0/0 and it
   lands centered on the face without adjustment.
@@ -176,19 +256,48 @@ async function genFootrest() {
 
   Grey = printable surface. The gaps punched in it (the four mounting slots) are
   real holes — nothing prints there, so keep artwork clear of them. All blue text
-  is guide labels (ignored by the cut pipeline); no need to delete before export.
--->
-<svg width="${FOOT_W}mm" height="${FOOT_H}mm" viewBox="0 0 ${FOOT_W} ${FOOT_H}" version="1.1"
-     xmlns="http://www.w3.org/2000/svg">
-  <path d="${canvasD}" fill="${GRAY}" fill-rule="evenodd" />
-  <text x="${FOOT_W / 2}" y="20" text-anchor="middle" font-family="sans-serif" font-size="${LABEL_SIZE}"
-        fill="${ACCENT}">▴ FRONT (lip edge)</text>
-  <text x="${FOOT_W / 2}" y="150" text-anchor="middle" font-family="sans-serif" font-size="${LABEL_SIZE}"
-        fill="${ACCENT}">BACK (seat-mount edge) ▾</text>
-</svg>
-`;
-  writeFileSync(tpl('footrest-template.svg'), svg);
-  console.log('[footrest] wrote footrest-template.svg');
+  is guide labels (ignored by the cut pipeline); no need to delete before export.`,
+    labels: [
+      { x: FOOT_W / 2, y: 20, text: '▴ FRONT (lip edge)' },
+      { x: FOOT_W / 2, y: 150, text: 'BACK (seat-mount edge) ▾' },
+    ],
+  });
+}
+
+// wheel-mount-left.3mf's design face is 209.07 x 208.50mm as packed by pack-part.mjs --rotate
+// "-y,-z,x" --center (Phase B) — rounded to one decimal since that's the packer's own output
+// precision. One real hole survives the sliver filter: the 1673.5mm² access opening near the
+// part's lower edge; three ~3.1mm² loops nearby are tessellated fillets, not through-holes, and
+// are correctly dropped by the same minHoleArea threshold the footrest uses.
+const MOUNT_W = 209.1;
+const MOUNT_H = 208.5;
+const MOUNT_TOL = 0.5;
+
+function genWheelMountLeft() {
+  return genRectTemplate({
+    meshFile: 'wheel-mount-left.3mf',
+    outFile: 'wheel-mount-left-template.svg',
+    partLabel: 'wheel-mount-left',
+    canvasW: MOUNT_W,
+    canvasH: MOUNT_H,
+    tol: MOUNT_TOL,
+    minHoleArea: 15, // same sliver/fillet-noise threshold as the footrest
+    // no preferFaceNormal: the role in src/assembly/kinds.ts declares none, so the app takes the
+    // largest-area patch — the +Y assertion in genRectTemplate guards that it stays the design face
+    preferFaceNormal: undefined,
+    comment: `  Wheel mount (left) design template — true-to-size at 1:1 mm (${MOUNT_W} x ${MOUNT_H}mm).
+  The grey shape is the mount's REAL printable design face (the app clips artwork to
+  exactly this outline). Load with the Wheel mount (left) assembly kind at Scale 100%,
+  Offset 0/0 and it lands centered on the face without adjustment.
+
+  GENERATED by scripts/gen-templates.mjs from public/stl/wheel-mount-left.3mf — do not
+  hand-edit; re-run "npx vite-node scripts/gen-templates.mjs" to regenerate.
+
+  The gap punched in the grey is a real access hole — nothing prints there, so keep
+  artwork clear of it. The blue text is a guide label (ignored by the cut pipeline);
+  no need to delete before export.`,
+    labels: [{ x: MOUNT_W / 2, y: 20, text: 'design face (left mount)' }],
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -270,4 +379,5 @@ async function genWheel() {
 
 await genFootrest();
 await genWheel();
+await genWheelMountLeft();
 console.log('done.');

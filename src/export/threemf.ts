@@ -127,6 +127,7 @@ export function bambuProjectSettings(
   // per-project overrides rather than incidentally-resolved values; without it, a reload/resave
   // can silently reconcile them back to the preset's own current default.
   const printOverrideKeys = [
+    'brim_type',
     'sparse_infill_density',
     'sparse_infill_pattern',
     'enable_support',
@@ -154,6 +155,11 @@ export function bambuProjectSettings(
       enable_support: '1',
       support_type: 'tree(auto)',
       support_style: 'default',
+      // No brim on any part: these mosaic faces are broad and print flat, so the brim only wastes
+      // filament and adds a peel-off step. Set globally (not per-object) so every exported plate is
+      // brim-free — matches the reference project (mosaic-wheel-mount-left.3mf), whose
+      // project_settings.config carries brim_type=no_brim, tracked in different_settings_to_system.
+      brim_type: 'no_brim',
       // [print, one per filament, printer] — only the print slot (index 0) differs from system.
       different_settings_to_system: [printOverrideKeys.join(';'), ...rep(''), ''],
       // Prime/wipe tower position, one entry per plate — set for parts that carry a
@@ -249,6 +255,36 @@ export const FOOTREST_PLATE_R = [
 // Held relative (via ExportPart.primeTowerDelta) so it lands in the same empty diagonal corner the
 // 45°-rotated part leaves open, on every printer.
 export const FOOTREST_PRIME_TOWER_DELTA = { x: 29.808863, y: 41.857863 };
+
+// Wheel mount (left) placement, baked from stubs/temp/Wheel Mount Left.3mf — the MakeGood TMT
+// distribution project, whose plate 1 is the pose the part actually ships printed in. Like the
+// footrest and unlike the wheel, it carries NO fixedPos: the reference sits at (141.10717,
+// 128.16357) on a 256x256 plate, i.e. 13mm off that plate's own center, which is not a placement
+// to reproduce on a different bed — so the part centers on whatever plate and the tower rides
+// along relatively.
+//
+// The reference's own build-item rotation is recovered rather than baked as a matrix: its design
+// face is the flat face resting on the plate, and the shipped mesh is posed design-face-UP (+Y),
+// so export's default face-down tilt (rotXthenZ(-90 * nsign)) already lands the part the right way
+// up. That is why there is no WHEEL_MOUNT_PLATE_R — verified by diffing the exported build
+// transform against the reference's, not assumed.
+//
+// The one thing that does need a constant is the in-plane spin. The shipped mesh carries a 90°
+// turn about its design-face normal that exists purely so the part reads the right way up in the
+// design view (the artist's orientation); this cancels it back to the reference's plate footprint,
+// so the two orientations stay independent exactly as the add-part skill's step 5 describes.
+// Changing the mesh's spin without changing this by the same amount silently rotates the print.
+export const WHEEL_MOUNT_ROT_DEG = -90;
+//
+// Tower: the reference places it at bbox center (221.842405, 37.463025) with the part centered at
+// (141.10717, 128.16357), so tower - part = (80.735235, -90.700545).
+export const WHEEL_MOUNT_PRIME_TOWER_DELTA = { x: 80.735235, y: -90.700545 };
+// The reference slices this part with tree supports in the *hybrid* style; the global print
+// settings above already enable tree(auto) supports, so the style is the only real difference and
+// the only thing worth overriding per-object. Deliberately NOT carried over: the reference's
+// support_type is tree(manual), i.e. hand-painted enforcers, which nothing in this app can
+// reproduce — auto placement is the honest substitute and is not print-verified.
+export const WHEEL_MOUNT_OBJECT_SETTINGS = { support_style: 'tree_hybrid' };
 
 export async function build3MFCombined(
   materials: ExportMaterial[],

@@ -87,7 +87,7 @@ describe('build3MFCombined footrest placement', () => {
       plateHint: 1,
       plateR: FOOTREST_PLATE_R,
       primeTowerDelta: FOOTREST_PRIME_TOWER_DELTA,
-      objectSettings: { brim_type: 'no_brim', enable_support: '0' },
+      objectSettings: { enable_support: '0' },
     };
   }
 
@@ -125,15 +125,27 @@ describe('build3MFCombined footrest placement', () => {
     });
   }
 
-  it('writes the per-part support-off / no-brim overrides into model_settings', async () => {
+  it('writes the per-part support-off override into model_settings', async () => {
     const { blob } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], [makePart()], {
       printer: getPrinter('bambu-x1c'),
     });
     const zip = await JSZip.loadAsync(await blob.arrayBuffer());
     const cfg = await zip.file('Metadata/model_settings.config')!.async('string');
-    // the footrest object block carries the baked per-object overrides
+    // the footrest object block carries the baked per-object override
     const objBlock = cfg.slice(cfg.indexOf('<object'), cfg.indexOf('</object>'));
-    expect(objBlock).toContain('<metadata key="brim_type" value="no_brim"/>');
     expect(objBlock).toContain('<metadata key="enable_support" value="0"/>');
+  });
+
+  it('disables brim globally for every part in project_settings', async () => {
+    const { blob } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], [makePart()], {
+      printer: getPrinter('bambu-x1c'),
+    });
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const proj = JSON.parse(
+      await zip.file('Metadata/project_settings.config')!.async('string'),
+    ) as { brim_type: string; different_settings_to_system: string[] };
+    expect(proj.brim_type).toBe('no_brim');
+    // tracked as an intentional override so a reload can't reconcile it back to the preset default
+    expect(proj.different_settings_to_system[0]).toContain('brim_type');
   });
 });

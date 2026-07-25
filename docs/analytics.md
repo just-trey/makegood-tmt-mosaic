@@ -62,7 +62,7 @@ Fired when an export throws, in the same handlers as `export`.
 Candidates for a later pass, roughly in order of likely value. Follow the same
 pattern: wire at the DOM handler, add the entry here, keep props PII-free.
 
-- `assembly_kind_select` — `src/ui/assemblyPanel.ts`, `#p-asm-kind` change. Prop: `kindId`. Only `wheel` exists today; gains value as more TMT parts ship.
+- `assembly_kind_select` — `src/ui/partPanel.ts`, `#shape-kind` change handler (the `asm:` branch). Prop: `kindId`. `mode_switch` already fires here but only records `kind: 'assembly'`, not which one — `wheel`, `footrest`, and `wheel-mount-left` all exist today, worth wiring as more parts ship.
 - `base_color_change` — `src/ui/partPanel.ts`, `renderBaseColorSwatches` swatch click. Prop: `default` vs `filament`.
 - `automerge_change` — `src/ui/colorList.ts`, `#p-automerge` slider. Prop: `level` (0-3).
 - `color_merge` / `color_to_base` — `src/ui/colorList.ts` drag-merge and "→ base" actions. Prop: resulting group size.

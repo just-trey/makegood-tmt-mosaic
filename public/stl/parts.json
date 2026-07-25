@@ -1,5 +1,6 @@
 [
   { "id": "wheel-half", "name": "Wheel half (top)", "file": "stl/wheel-half.3mf" },
   { "id": "wheel-hub-cap", "name": "Hub cap", "file": "stl/wheel-hub-cap.3mf" },
-  { "id": "footrest", "name": "Footrest", "file": "stl/footrest.3mf" }
+  { "id": "footrest", "name": "Footrest", "file": "stl/footrest.3mf" },
+  { "id": "wheel-mount-left", "name": "Wheel mount (left)", "file": "stl/wheel-mount-left.3mf" }
 ]

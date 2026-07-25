@@ -218,6 +218,15 @@ export function faceCoherence(a) {
   return { patchArea: top.area, dirArea, ratio: top.area / dirArea };
 }
 
+function mapDet(perm, sign) {
+  const m = [0, 1, 2].map((r) => [0, 1, 2].map((c) => (perm[r] === c ? sign[r] : 0)));
+  return (
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+  );
+}
+
 /** All 48 signed axis permutations, tagged with determinant (+1 rotation, -1 mirror). */
 export function axisMaps() {
   const out = [];
@@ -232,14 +241,38 @@ export function axisMaps() {
   for (const p of perms)
     for (let bits = 0; bits < 8; bits++) {
       const s = [0, 1, 2].map((k) => ((bits >> k) & 1 ? -1 : 1));
-      const m = [0, 1, 2].map((r) => [0, 1, 2].map((c) => (p[r] === c ? s[r] : 0)));
-      const det =
-        m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
-        m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
-        m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-      out.push({ perm: p, sign: s, det });
+      out.push({ perm: p, sign: s, det: mapDet(p, s) });
     }
   return out;
+}
+
+/** The do-nothing map, for translating a soup without reorienting it. */
+export const IDENTITY_MAP = { perm: [0, 1, 2], sign: [1, 1, 1], det: 1 };
+
+/**
+ * Inverse of axisName: "x,-z,y" -> { perm, sign, det }. Lets a caller state a frame conversion
+ * explicitly, which is the only option for a brand-new part — there is no shipped predecessor to
+ * derive one from by matching (see pack-part.mjs --rotate).
+ */
+export function parseAxisMap(spec) {
+  const comps = String(spec)
+    .split(',')
+    .map((s) => s.trim().toLowerCase());
+  if (comps.length !== 3)
+    throw new Error(`axis map "${spec}" needs exactly 3 comma-separated components, e.g. "x,-z,y"`);
+  const perm = [];
+  const sign = [];
+  for (const c of comps) {
+    const m = /^([+-]?)([xyz])$/.exec(c);
+    if (!m) throw new Error(`axis map component "${c}" is not one of x, y, z, -x, -y, -z`);
+    perm.push('xyz'.indexOf(m[2]));
+    sign.push(m[1] === '-' ? -1 : 1);
+  }
+  if (new Set(perm).size !== 3)
+    throw new Error(
+      `axis map "${spec}" repeats an axis — x, y and z must each appear exactly once`,
+    );
+  return { perm, sign, det: mapDet(perm, sign) };
 }
 
 export const applyMap = (r, v) => [0, 1, 2].map((k) => r.sign[k] * v[r.perm[k]]);
