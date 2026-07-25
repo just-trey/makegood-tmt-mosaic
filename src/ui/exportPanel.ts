@@ -11,6 +11,9 @@ import {
   WHEEL_PRIME_TOWER_DELTA,
   FOOTREST_PLATE_R,
   FOOTREST_PRIME_TOWER_DELTA,
+  WHEEL_MOUNT_ROT_DEG,
+  WHEEL_MOUNT_PRIME_TOWER_DELTA,
+  WHEEL_MOUNT_OBJECT_SETTINGS,
   type ExportMaterial,
   type ExportPart,
   type ExportSub,
@@ -90,12 +93,21 @@ async function exportPrintReady3MF(): Promise<void> {
           // place the footrest at its verified reference pose (standing rotation baked from its
           // reference 3MF — see FOOTREST_PLATE_R). No fixedPos: plateHint routes it through
           // placeHintedGroup, whose no-fixedPos branch centers it on every plate, with the prime
-          // tower held relative (FOOTREST_PRIME_TOWER_DELTA). Support off + no brim per the user's
-          // verified reference.
+          // tower held relative (FOOTREST_PRIME_TOWER_DELTA). Support off per the user's verified
+          // reference (brim is off globally — see brim_type in bambuProjectSettings).
           plateHint = 1;
           plateR = FOOTREST_PLATE_R;
           primeTowerDelta = FOOTREST_PRIME_TOWER_DELTA;
-          objectSettings = { brim_type: 'no_brim', enable_support: '0' };
+          objectSettings = { enable_support: '0' };
+        } else if (part.roleId === 'wheel-mount-left') {
+          // No plateR and no fixedPos: the mesh ships design-face-up, so the default face-down
+          // tilt already reproduces the reference's print orientation, and the part centers on
+          // its plate with the tower held relative (see WHEEL_MOUNT_PRIME_TOWER_DELTA). The spin
+          // cancels the mesh's design-view turn (see WHEEL_MOUNT_ROT_DEG).
+          plateHint = 1;
+          rotZdeg = WHEEL_MOUNT_ROT_DEG;
+          primeTowerDelta = WHEEL_MOUNT_PRIME_TOWER_DELTA;
+          objectSettings = WHEEL_MOUNT_OBJECT_SETTINGS;
         }
         return {
           name: part.name,

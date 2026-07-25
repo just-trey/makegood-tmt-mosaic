@@ -7,8 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- New assembly kind: **Wheel mount (left)**, the bracket that carries the
+  wheel. Packed from a Fusion CAD export (24,882 triangles, 246KB) rather than
+  the 388k-triangle slicer tessellation in the reference project, with the
+  same 0.02%-agreement pattern as the footrest/wheel-half swaps. Exports carry
+  tree supports on auto placement in place of the reference's hand-painted
+  enforcers — not yet print-verified, so treat the first print as a check on
+  that substitution. This is the largest single part shipped so far and
+  roughly doubles the bundled asset payload (348KB to ~594KB).
+
 ### Changed
 
+- Print-ready 3MF exports now disable the brim on every part
+  (`brim_type: no_brim`, set globally in the project settings). The mosaic
+  faces are broad and print flat, so a brim only wasted filament and added a
+  peel-off step. The footrest already printed brim-free; the wheel and wheel
+  mount now match it.
 - The bundled part meshes are ~90% smaller (3.34MB to 338KB total), so
   Assembly mode's parts load far faster on a first visit. Two of the three are
   CAD exports of the same parts in place of slicer tessellations: the footrest

@@ -4,6 +4,7 @@ import {
   applyTransform,
   faceCoherence,
   findTransform,
+  parseAxisMap,
   patches,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
 } from '../scripts/lib/mesh.mjs';
@@ -112,6 +113,37 @@ describe('findTransform', () => {
     const { hit } = findTransform(a, b);
     expect(hit).not.toBeNull();
     expect(hit.r.det).toBe(1);
+  });
+});
+
+describe('parseAxisMap', () => {
+  it('round-trips a rotation and applies it to a point', () => {
+    // The Z-up plate frame -> Y-up app frame conversion pack-part.mjs --rotate is used for.
+    const r = parseAxisMap('x,-z,y');
+    expect(r.det).toBe(1);
+    // the plate-frame design normal (0, 0, -1) must come out facing up (+Y)
+    const soup = applyTransform(new Float32Array([0, 0, -1, 0, 0, 0, 0, 0, 0]), r, [0, 0, 0]);
+    expect([soup[0], soup[1], soup[2]]).toEqual([0, 1, 0]);
+  });
+
+  it('tolerates spaces and an explicit + sign', () => {
+    expect(parseAxisMap(' +x , -z , y ')).toEqual(parseAxisMap('x,-z,y'));
+  });
+
+  /**
+   * The whole point of reporting det: a mirror is the opposite hand, not a pose. pack-part.mjs
+   * refuses to write on this, so the flag can't become a back door around the check --align-to
+   * already enforces.
+   */
+  it('reports a mirror as determinant -1 rather than accepting it as a rotation', () => {
+    expect(parseAxisMap('-x,y,z').det).toBe(-1);
+    expect(parseAxisMap('y,x,z').det).toBe(-1);
+  });
+
+  it('rejects malformed maps instead of silently mis-orienting a part', () => {
+    expect(() => parseAxisMap('x,y')).toThrow(/3 comma-separated/);
+    expect(() => parseAxisMap('x,y,w')).toThrow(/not one of/);
+    expect(() => parseAxisMap('x,y,y')).toThrow(/repeats an axis/);
   });
 });
 
