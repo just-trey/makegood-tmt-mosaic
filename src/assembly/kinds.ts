@@ -61,6 +61,8 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
   {
     id: 'wheel-mount-left',
     name: 'Wheel mount (left)',
+    // not yet offered in the Part dropdown; remove once ready to ship.
+    hidden: true,
     // rectangular design face, same as the footrest — the artwork maps 1:1 in mm.
     designFit: 'rect',
     templateFile: 'wheel-mount-left-template.svg',
