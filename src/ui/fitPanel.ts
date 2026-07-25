@@ -1,19 +1,25 @@
 import { currentBaseParams, state } from '../state/store';
 import { isRebuildLikelySlow, scheduleRebuild } from '../app/scheduler';
 import { currentAssemblyKind } from '../assembly/kinds';
+import { refreshGizmo } from '../scene/designGizmo';
+import { track } from '../analytics/track';
 import { input } from './dom';
+
+type FitField = 'move' | 'scale' | 'rotate';
 
 /**
  * Keep a slider/number pair in sync and push the canonical value into state.
  * For clamped pairs (margin/scale) the slider is the source of truth, so a typed number snaps
  * back into the slider's range on blur; for offsets the number is the source of truth and may
  * exceed the slider range (the slider just pegs at its end).
+ * `field` is omitted for pairs that aren't part of the move/scale/rotate gizmo model (margin).
  */
 function syncPair(
   sliderSel: string,
   numSel: string,
   clampNum: boolean,
   apply: (v: number) => void,
+  field?: FitField,
 ): void {
   const slider = input(sliderSel),
     num = input(numSel);
@@ -26,6 +32,7 @@ function syncPair(
   });
   slider.addEventListener('change', () => {
     scheduleRebuild();
+    if (field) track('fit_adjust', { via: 'slider', field });
   });
   num.addEventListener('input', () => {
     slider.value = num.value;
@@ -70,21 +77,51 @@ export function updateOffsetSliderRanges(): void {
   // re-sync thumbs after the range change (pegs if the typed value is out of range)
   input('#p-offset-x-slider').value = String(state.offsetX || 0);
   input('#p-offset-y-slider').value = String(state.offsetY || 0);
+  // Face/part/shape just changed — the gizmo's frame must track the new face immediately,
+  // not wait for the next debounced rebuild.
+  refreshGizmo();
 }
 
 export function initFitPanel(): void {
   syncPair('#p-margin', '#p-margin-num', true, (v) => {
     state.marginPct = v;
   });
-  syncPair('#p-scale', '#p-scale-num', true, (v) => {
-    state.scalePct = v;
-  });
-  syncPair('#p-offset-x-slider', '#p-offset-x', false, (v) => {
-    state.offsetX = v;
-  });
-  syncPair('#p-offset-y-slider', '#p-offset-y', false, (v) => {
-    state.offsetY = v;
-  });
+  syncPair(
+    '#p-scale',
+    '#p-scale-num',
+    true,
+    (v) => {
+      state.scalePct = v;
+    },
+    'scale',
+  );
+  syncPair(
+    '#p-offset-x-slider',
+    '#p-offset-x',
+    false,
+    (v) => {
+      state.offsetX = v;
+    },
+    'move',
+  );
+  syncPair(
+    '#p-offset-y-slider',
+    '#p-offset-y',
+    false,
+    (v) => {
+      state.offsetY = v;
+    },
+    'move',
+  );
+  syncPair(
+    '#p-rot',
+    '#p-rot-num',
+    true,
+    (v) => {
+      state.rotationDeg = v;
+    },
+    'rotate',
+  );
 
   const flipX = input('#p-flip-x'),
     flipY = input('#p-flip-y');
@@ -101,6 +138,7 @@ export function initFitPanel(): void {
     state.scalePct = 100;
     state.offsetX = 0;
     state.offsetY = 0;
+    state.rotationDeg = 0;
     state.flipX = false;
     state.flipY = false;
     input('#p-scale').value = '100';
@@ -109,6 +147,8 @@ export function initFitPanel(): void {
     input('#p-offset-y').value = '0';
     input('#p-offset-x-slider').value = '0';
     input('#p-offset-y-slider').value = '0';
+    input('#p-rot').value = '0';
+    input('#p-rot-num').value = '0';
     flipX.checked = false;
     flipY.checked = false;
     scheduleRebuild();

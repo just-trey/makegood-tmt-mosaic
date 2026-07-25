@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Direct on-face artwork manipulation in the 3D viewport: a selection frame
+  with drag-to-move, corner handles to scale, and a rotate handle now sits on
+  the artwork's face in both Assembly and flat-plate modes, alongside a new
+  Rotation control in the Artwork fit panel. Render quality drops briefly
+  during a drag on heavier models to keep it smooth, and recuts once on
+  release.
 - New assembly kind: **Wheel mount (left)**, the bracket that carries the
   wheel. Packed from a Fusion CAD export (24,882 triangles, 246KB) rather than
   the 388k-triangle slicer tessellation in the reference project, with the

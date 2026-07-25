@@ -7,6 +7,7 @@ let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
 let controls: OrbitControls;
 let modelGroup = new THREE.Group();
+let basePixelRatio = 1;
 
 // Re-frame the camera to fit the current model only when content actually changes (new SVG,
 // parts added, shape switched) — so tweaking a depth slider doesn't yank the user's orbit/zoom
@@ -18,7 +19,8 @@ let preferredViewDir: THREE.Vector3 | null = null;
 
 export function initViewport(host: HTMLElement): void {
   renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  basePixelRatio = Math.min(devicePixelRatio, 2);
+  renderer.setPixelRatio(basePixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   host.appendChild(renderer.domElement);
@@ -124,6 +126,38 @@ export function newModelGroup(keep?: THREE.Object3D | null): THREE.Group {
 
 export function getModelGroup(): THREE.Group {
   return modelGroup;
+}
+
+export function getCamera(): THREE.PerspectiveCamera {
+  return camera;
+}
+
+export function getControls(): OrbitControls {
+  return controls;
+}
+
+export function getDomElement(): HTMLCanvasElement {
+  return renderer.domElement;
+}
+
+/**
+ * Add an object that lives directly in the scene, outside modelGroup — so it survives
+ * newModelGroup()'s dispose-and-replace on every rebuild. Used by the on-face design gizmo,
+ * whose overlay is a persistent singleton that must outlive each recut of the geometry underneath.
+ */
+export function addSceneOverlay(obj: THREE.Object3D): void {
+  scene.add(obj);
+}
+
+/**
+ * Drop render quality for the duration of a viewport drag (gizmo manipulation), then restore it.
+ * Cuts pixel ratio to 1 and disables shadow rendering — both take effect on the next frame of the
+ * always-on render loop, no re-schedule needed. The user accepted degraded quality while dragging.
+ */
+export function setInteracting(on: boolean): void {
+  if (!renderer) return;
+  renderer.setPixelRatio(on ? 1 : basePixelRatio);
+  renderer.shadowMap.enabled = !on;
 }
 
 export function requestFrame(): void {

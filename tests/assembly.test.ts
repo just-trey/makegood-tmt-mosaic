@@ -69,6 +69,7 @@ function baseInput(overrides: Partial<AssemblyBuildInput> = {}): AssemblyBuildIn
     offZ: 0,
     flipX: false,
     flipY: false,
+    rotationDeg: 0,
     ...overrides,
   };
 }
@@ -228,6 +229,52 @@ describe('buildAssemblyGeometry', () => {
     expect((r.minX + r.maxX) / 2).toBeCloseTo(5, 4);
     expect((r.minZ + r.maxZ) / 2).toBeCloseTo(5, 4);
   });
+
+  it(
+    'rotationDeg spins the design about its center (90° swaps X/Z extents)',
+    { timeout: 30000 },
+    async () => {
+      // a 20mm × 6mm rect design (rect fit, 1:1) — at 0° it cuts a wide-and-short region; rotated
+      // 90° about its center the same region becomes narrow-and-tall, so the extents swap while the
+      // center stays put.
+      const wideParsed: ParsedSVG = {
+        shapes: [
+          {
+            fill: '#ff0000',
+            loops: [
+              [
+                { x: 0, y: 0 },
+                { x: 20, y: 0 },
+                { x: 20, y: 6 },
+                { x: 0, y: 6 },
+                { x: 0, y: 0 },
+              ],
+            ],
+            order: 0,
+          },
+        ],
+        bbox: { minX: 0, minY: 0, maxX: 20, maxY: 6 },
+        rawSVGCircle: null,
+        userUnitMM: 1,
+      };
+      const flat = (await buildAssemblyGeometry(
+        baseInput({ designFit: 'rect', parsed: wideParsed, rotationDeg: 0 }),
+      ))!;
+      const turned = (await buildAssemblyGeometry(
+        baseInput({ designFit: 'rect', parsed: wideParsed, rotationDeg: 90 }),
+      ))!;
+      const a = xzRange(flat.partOutputs[0].inlaySoups[0]);
+      const b = xzRange(turned.partOutputs[0].inlaySoups[0]);
+      expect(a.maxX - a.minX).toBeCloseTo(20, 3);
+      expect(a.maxZ - a.minZ).toBeCloseTo(6, 3);
+      // swapped
+      expect(b.maxX - b.minX).toBeCloseTo(6, 3);
+      expect(b.maxZ - b.minZ).toBeCloseTo(20, 3);
+      // center unchanged (design centered on the face at origin)
+      expect((b.minX + b.maxX) / 2).toBeCloseTo((a.minX + a.maxX) / 2, 3);
+      expect((b.minZ + b.maxZ) / 2).toBeCloseTo((a.minZ + a.maxZ) / 2, 3);
+    },
+  );
 });
 
 describe('rotatePointY', () => {

@@ -47,6 +47,8 @@ export interface AppState {
   offsetY: number;
   flipX: boolean;
   flipY: boolean;
+  /** design rotation about its center, in degrees (0 = as authored) */
+  rotationDeg: number;
 
   // depth
   globalDepth: number;
@@ -90,6 +92,7 @@ export const state: AppState = {
   offsetY: 0,
   flipX: false,
   flipY: false,
+  rotationDeg: 0,
 
   globalDepth: 1.0,
   recessBg: false,
@@ -171,6 +174,7 @@ export function currentBaseParams(): BaseParams | null {
     offsetY: state.offsetY,
     flipX: state.flipX,
     flipY: state.flipY,
+    rotationDeg: state.rotationDeg,
   };
   if (state.shapeKind === 'disc')
     return { diameter: state.disc.diameter, thickness: state.disc.thickness, ...fit };

@@ -1,5 +1,6 @@
 import './styles.css';
 import { initViewport } from './scene/viewport';
+import { initDesignGizmo } from './scene/designGizmo';
 import { setRebuildCostHint, setRebuildHandler } from './app/scheduler';
 import { estimateRebuildSlow, rebuildCurrent } from './app/rebuild';
 import { loadFilaments } from './state/filaments';
@@ -21,6 +22,7 @@ $('#app-version').textContent =
   `v${getAppVersion(typeof __APP_VERSION__ === 'undefined' ? undefined : __APP_VERSION__)}`;
 
 initViewport($('#canvas-host'));
+initDesignGizmo();
 setRebuildHandler(rebuildCurrent);
 setRebuildCostHint(estimateRebuildSlow);
 

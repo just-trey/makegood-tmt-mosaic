@@ -31,6 +31,7 @@ function baseInput(overrides: Partial<FlatBuildInput> = {}): FlatBuildInput {
       offsetY: 0,
       flipX: false,
       flipY: false,
+      rotationDeg: 0,
     },
     shapeKind: 'disc',
     globalDepth: 1,
