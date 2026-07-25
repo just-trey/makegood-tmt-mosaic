@@ -171,6 +171,11 @@ export interface AssemblyKind {
    * without one just doesn't show the link.
    */
   templateFile?: string;
+  /**
+   * Kept in ASSEMBLY_KINDS (and fully functional) but left out of the Part dropdown — for a
+   * part that isn't ready to offer to users yet.
+   */
+  hidden?: boolean;
 }
 
 export interface LibraryEntry {

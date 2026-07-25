@@ -44,9 +44,9 @@ function setShapeThumb(kind: string): void {
  */
 function renderShapeKindOptions(): void {
   const sel = $<HTMLSelectElement>('#shape-kind');
-  const asmOptions = ASSEMBLY_KINDS.map(
-    (k) => `<option value="asm:${k.id}">${k.name}</option>`,
-  ).join('');
+  const asmOptions = ASSEMBLY_KINDS.filter((k) => !k.hidden)
+    .map((k) => `<option value="asm:${k.id}">${k.name}</option>`)
+    .join('');
   sel.innerHTML = asmOptions + '<option value="disc">Disc (reference)</option>';
 }
 
