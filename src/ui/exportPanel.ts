@@ -14,6 +14,11 @@ import {
   WHEEL_MOUNT_ROT_DEG,
   WHEEL_MOUNT_PRIME_TOWER_DELTA,
   WHEEL_MOUNT_OBJECT_SETTINGS,
+  STORAGE_OBJECT_SETTINGS,
+  WING_LEFT_PLATE_R,
+  WING_RIGHT_PLATE_R,
+  WING_LEFT_PRIME_TOWER_DELTA,
+  WING_RIGHT_PRIME_TOWER_DELTA,
   type ExportMaterial,
   type ExportPart,
   type ExportSub,
@@ -108,6 +113,24 @@ async function exportPrintReady3MF(): Promise<void> {
           rotZdeg = WHEEL_MOUNT_ROT_DEG;
           primeTowerDelta = WHEEL_MOUNT_PRIME_TOWER_DELTA;
           objectSettings = WHEEL_MOUNT_OBJECT_SETTINGS;
+        } else if (part.roleId === 'storage-left' || part.roleId === 'storage-right') {
+          // Both mirror halves ship design-face-up, so the default face-down tilt reproduces the
+          // reference print pose (design face on the plate) with no plateR and no rotZ spin — the
+          // near-square face fits the bed at any orientation. Centers on its plate; tree-hybrid
+          // supports per the reference. No primeTowerDelta: the part fills the 256mm bed, so no
+          // tower fits and the reference had none placed (see STORAGE_OBJECT_SETTINGS).
+          plateHint = 1;
+          objectSettings = STORAGE_OBJECT_SETTINGS;
+        } else if (part.roleId === 'wing-left') {
+          // Design face prints UP and the part sits diagonally, so the pose is a baked full matrix
+          // (WING_LEFT_PLATE_R), not a face-down tilt. Centers on its plate; tower held relative.
+          plateHint = 1;
+          plateR = WING_LEFT_PLATE_R;
+          primeTowerDelta = WING_LEFT_PRIME_TOWER_DELTA;
+        } else if (part.roleId === 'wing-right') {
+          plateHint = 1;
+          plateR = WING_RIGHT_PLATE_R;
+          primeTowerDelta = WING_RIGHT_PRIME_TOWER_DELTA;
         }
         return {
           name: part.name,

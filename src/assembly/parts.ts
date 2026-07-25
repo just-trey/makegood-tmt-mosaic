@@ -9,6 +9,7 @@ import {
   extractPatchBoundary,
   excludeTriangles,
   load3MF,
+  loopArea,
 } from '../geometry/meshparts';
 import { asmKindCanAutoLoad, currentAssemblyKind } from './kinds';
 
@@ -219,7 +220,9 @@ export function applyAsmPatchChoice(part: AssemblyPart): void {
   part.topZ = patch.offset;
   part.patchNormal = patch.normal;
   const loops = extractPatchBoundary(part.positions, patch.triIndices);
-  loops.sort((a, b) => b.length - a.length);
+  // Outer boundary = the max-area loop, not the max-point-count one (see loopArea): a
+  // tessellation-dense internal sliver can carry more points than the true perimeter.
+  loops.sort((a, b) => loopArea(b) - loopArea(a));
   part.boundaryLoop = loops[0] || null;
   part.restPositions = excludeTriangles(part.positions, patch.triIndices);
 }

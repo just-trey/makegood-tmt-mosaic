@@ -131,6 +131,25 @@ export function extractPatchBoundary(positions: Float32Array, triIndices: number
 }
 
 /**
+ * Planar area enclosed by a 3D boundary loop, via the vector-area (Newell) sum — orientation
+ * independent, so it works for a patch on any plane. Used to pick a patch's OUTER boundary as the
+ * max-area loop: point count is a broken proxy (a heavily-tessellated internal sliver can carry
+ * more points than the true perimeter — e.g. the storage panel's 95-point 2.83mm curl outnumbered
+ * its 36-point 227mm outline), which then clips artwork to that sliver instead of the whole face.
+ */
+export function loopArea(loop: number[][]): number {
+  const s = [0, 0, 0];
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i],
+      b = loop[(i + 1) % loop.length];
+    s[0] += a[1] * b[2] - a[2] * b[1];
+    s[1] += a[2] * b[0] - a[0] * b[2];
+    s[2] += a[0] * b[1] - a[1] * b[0];
+  }
+  return Math.hypot(s[0], s[1], s[2]) / 2;
+}
+
+/**
  * A part's geometry minus one patch's triangles — preview-only context so the viewport can show
  * what an insert sits inside without z-fighting the replaced face.
  */

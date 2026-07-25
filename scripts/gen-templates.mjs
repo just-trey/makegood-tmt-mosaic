@@ -108,6 +108,10 @@ const n2 = (v) => Number(v.toFixed(2));
  * @param {number[]} [preferFaceNormal] the role's preferFaceNormal in src/assembly/kinds.ts, or
  *   undefined when it declares none — this MUST match the kind's role so the template is drawn for
  *   the exact patch the app's defaultPatchIdx selects
+ * @param {number} [spinDeg] the kind's previewSpinDeg in src/assembly/kinds.ts (0/undefined when it
+ *   declares none). The canvas is rotated by this in its own plane so it matches the spun viewport;
+ *   placeOnPart applies the exact inverse, so a trace of this template still lands on the native
+ *   face and the exported cut is unchanged. MUST equal the kind's previewSpinDeg.
  * @param {string} comment the template's leading XML comment, verbatim
  * @param {{x: number, y: number, text: string}[]} labels guide-text labels
  */
@@ -120,6 +124,7 @@ async function genRectTemplate({
   tol,
   minHoleArea,
   preferFaceNormal,
+  spinDeg,
   comment,
   labels,
 }) {
@@ -162,7 +167,10 @@ async function genRectTemplate({
   const loops3d = extractPatchBoundary(positions, face.triIndices);
   // Project to native (x, z) — the two axes the app uses for the rect face.
   const loopsXZ = loops3d.map((loop) => loop.map((p) => [p[0], p[2]]));
-  loopsXZ.sort((a, b) => b.length - a.length); // app keeps loops[0] (most points) as the outer
+  // App keeps the max-AREA loop as the outer (src/assembly/parts.ts, via loopArea) — point count
+  // is a broken proxy that a tessellation-dense internal sliver can win. shoelace on the projected
+  // loop is the same measure the app's vector-area computes for a +Y face.
+  loopsXZ.sort((a, b) => shoelace(b) - shoelace(a));
   const outer = loopsXZ[0];
   const ob = bbox2d(outer);
   const faceCx = (ob.minA + ob.maxA) / 2;
@@ -181,27 +189,60 @@ async function genRectTemplate({
 
   const bboxCx = canvasW / 2;
   const bboxCy = canvasH / 2;
-  const toTpl = ([x, z]) => [n2(bboxCx - (x - faceCx)), n2(bboxCy - (z - faceCz))];
+  const toTpl = ([x, z]) => [bboxCx - (x - faceCx), bboxCy - (z - faceCz)];
   const toD = (pts) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ') + ' Z';
 
+  let outerPts = outer.map(toTpl);
   const holes = loopsXZ
     .slice(1)
     .map((loop) => loop.map(toTpl))
     .map((pts) => ({ pts, area: shoelace(pts) }))
     .filter((h) => h.area >= minHoleArea)
     .sort((a, b) => b.area - a.area);
+  let holePts = holes.map((h) => h.pts);
+  let labelPts = labels.map((l) => ({ ...l }));
+  let cw = canvasW;
+  let ch = canvasH;
   console.log(
     `[${partLabel}] interior holes kept=${holes.length} areas=${holes
       .map((h) => n2(h.area))
       .join(', ')}`,
   );
 
+  // Rotate the whole canvas by the kind's previewSpinDeg so the template reads in the same
+  // orientation as the spun viewport. This is exactly the rotation placeOnPart inverts (M vs M⁻¹),
+  // so a trace of this template still lands on the native face — see previewSpinDeg. Re-origin to a
+  // 0-based viewBox afterward (a 90° spin swaps the canvas W/H); bounds come from the outer outline.
+  if (spinDeg) {
+    const phi = (spinDeg * Math.PI) / 180;
+    const cs = Math.cos(phi);
+    const sn = Math.sin(phi);
+    const rot = ([x, y]) => [
+      (x - bboxCx) * cs + (y - bboxCy) * sn,
+      -(x - bboxCx) * sn + (y - bboxCy) * cs,
+    ];
+    const rotOuter = outerPts.map(rot);
+    const bb = bbox2d(rotOuter);
+    const shift = ([x, y]) => [n2(x - bb.minA), n2(y - bb.minB)];
+    outerPts = rotOuter.map(shift);
+    holePts = holePts.map((pts) => pts.map((p) => shift(rot(p))));
+    labelPts = labelPts.map((l) => {
+      const [x, y] = shift(rot([l.x, l.y]));
+      return { ...l, x, y };
+    });
+    cw = n2(bb.w);
+    ch = n2(bb.h);
+  } else {
+    outerPts = outerPts.map(([x, y]) => [n2(x), n2(y)]);
+    holePts = holePts.map((pts) => pts.map(([x, y]) => [n2(x), n2(y)]));
+  }
+
   // Punch the interior holes out of the canvas (fill-rule evenodd) so they read as real gaps in
   // the printable silhouette — same as any notch already cut into the outer boundary. An absence
   // of material is self-explanatory, so no fill, outline, or "no print" label is needed.
-  const canvasD = [outer.map(toTpl), ...holes.map((h) => h.pts)].map(toD).join(' ');
+  const canvasD = [outerPts, ...holePts].map(toD).join(' ');
 
-  const labelSvg = labels
+  const labelSvg = labelPts
     .map(
       ({ x, y, text }) =>
         `  <text x="${x}" y="${y}" text-anchor="middle" font-family="sans-serif" font-size="${LABEL_SIZE}"\n` +
@@ -213,7 +254,7 @@ async function genRectTemplate({
 <!--
 ${comment}
 -->
-<svg width="${canvasW}mm" height="${canvasH}mm" viewBox="0 0 ${canvasW} ${canvasH}" version="1.1"
+<svg width="${cw}mm" height="${ch}mm" viewBox="0 0 ${cw} ${ch}" version="1.1"
      xmlns="http://www.w3.org/2000/svg">
   <path d="${canvasD}" fill="${GRAY}" fill-rule="evenodd" />
 ${labelSvg}
@@ -294,9 +335,87 @@ function genWheelMountLeft() {
   hand-edit; re-run "npx vite-node scripts/gen-templates.mjs" to regenerate.
 
   The gap punched in the grey is a real access hole — nothing prints there, so keep
-  artwork clear of it. The blue text is a guide label (ignored by the cut pipeline);
-  no need to delete before export.`,
-    labels: [{ x: MOUNT_W / 2, y: 20, text: 'design face (left mount)' }],
+  artwork clear of it.`,
+    // no guide label — see genStorage: it would just restate the part name chosen in the app.
+    labels: [],
+  });
+}
+
+// Storage (left/right): the plate-down design face, packed +Y-up by pack-part.mjs --rotate
+// (Right "y,-x,z", Left "y,x,-z") --center. Near-square ~242.7 x 251.8mm face. Mirror halves, so
+// each gets its own template with the same canvas.
+// Design-face outer boundary, not the part bbox: the flat contact panel is 226.97 x 183.87mm, while
+// the part flares out above it to its ~242.7 x 251.8mm printed footprint. The app centers/clips
+// artwork on this contact face, so the template canvas must match it.
+const STORAGE_W = 226.97;
+const STORAGE_H = 183.87;
+const STORAGE_TOL = 0.5;
+
+function genStorage(side) {
+  return genRectTemplate({
+    meshFile: `storage-${side}.3mf`,
+    outFile: `storage-${side}-template.svg`,
+    partLabel: `storage-${side}`,
+    canvasW: STORAGE_W,
+    canvasH: STORAGE_H,
+    tol: STORAGE_TOL,
+    minHoleArea: 15, // same sliver/fillet-noise threshold as the other rect parts
+    // no preferFaceNormal: the role in src/assembly/kinds.ts declares none, so the app takes the
+    // largest-area patch — the +Y assertion in genRectTemplate guards it stays the design face
+    preferFaceNormal: undefined,
+    spinDeg: -90, // matches previewSpinDeg on the storage roles in src/assembly/kinds.ts
+    comment: `  Storage (${side}) design template — true-to-size at 1:1 mm (${STORAGE_H} x ${STORAGE_W}mm
+  canvas; the design face itself is ${STORAGE_W} x ${STORAGE_H}mm, shown rotated to match the app's view).
+  The grey shape is the storage panel's REAL printable design face — the flat face that
+  rests on the plate (the app clips artwork to exactly this outline). Load with the
+  Storage (${side}) assembly kind at Scale 100%, Offset 0/0 and it lands centered on the
+  face without adjustment.
+
+  GENERATED by scripts/gen-templates.mjs from public/stl/storage-${side}.3mf — do not
+  hand-edit; re-run "npx vite-node scripts/gen-templates.mjs" to regenerate.
+
+  Any gaps punched in the grey are real openings — nothing prints there, so keep artwork
+  clear of them.`,
+    // no guide label: it would just restate the part name (already chosen in the app), and the
+    // -90° canvas spin drags a top-centered label onto the silhouette and off the edge.
+    labels: [],
+  });
+}
+
+// Wing (left/right): the design target is the wing's OUTER face, packed +Y-up by pack-part.mjs
+// --rotate (Left "y,x,-z", Right "y,-x,z") --center. The face is domed, so the template covers its
+// main flat region (the detected anchor patch); the cut-through inlay spreads the design across it,
+// with the raised step and steep curves out of a flat projection's reach. Canvas is that region's
+// measured extent.
+const WING_W = 239.79;
+const WING_H = 95.92;
+const WING_TOL = 0.5;
+
+function genWing(side) {
+  return genRectTemplate({
+    meshFile: `wing-${side}.3mf`,
+    outFile: `wing-${side}-template.svg`,
+    partLabel: `wing-${side}`,
+    canvasW: WING_W,
+    canvasH: WING_H,
+    tol: WING_TOL,
+    minHoleArea: 15,
+    preferFaceNormal: [0, 1, 0], // matches the wing role in src/assembly/kinds.ts (outer face)
+    spinDeg: -90, // matches previewSpinDeg on the wing roles in src/assembly/kinds.ts
+    comment: `  Wing (${side}) design template — true-to-size at 1:1 mm (${WING_H} x ${WING_W}mm canvas;
+  the design face itself is ${WING_W} x ${WING_H}mm, shown rotated to match the app's view).
+  The grey shape is the main flat region of the wing's OUTER face — the face that prints
+  upward. Load with the Wing (${side}) assembly kind at Scale 100%, Offset 0/0 and it lands
+  centered on the face. The design is cut through onto the whole main face (not clipped to
+  this outline); a raised step and the steeply-curved edges of the wing are beyond a flat
+  projection's reach, so keep key detail within this region.
+
+  GENERATED by scripts/gen-templates.mjs from public/stl/wing-${side}.3mf — do not hand-edit;
+  re-run "npx vite-node scripts/gen-templates.mjs" to regenerate.
+
+  Any gaps punched in the grey are real openings.`,
+    // no guide label — see genStorage: redundant with the part name and displaced by the spin.
+    labels: [],
   });
 }
 
@@ -380,4 +499,8 @@ async function genWheel() {
 await genFootrest();
 await genWheel();
 await genWheelMountLeft();
+await genStorage('left');
+await genStorage('right');
+await genWing('left');
+await genWing('right');
 console.log('done.');

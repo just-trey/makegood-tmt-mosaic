@@ -14,12 +14,16 @@
 // They compose with --align-to and run after it: align to the file carrying the verified print
 // pose, then reframe that into the app's convention (design face up, centered on the origin).
 //
+// --weld [mm] closes hairline cracks a CAD tessellation can leave between shells, so the boolean
+// engine reads the part as a solid; every pack also *reports* whether the result is a solid,
+// because assembly-mode export silently drops a non-solid part (exports it uncut with a warning).
+//
 // Writes a single inlined <object>, the only form load3MF (src/geometry/meshparts.ts) reads. It
 // never has to *resolve* a <component p:path>, because every input here is either a CAD STL or
 // an already-flat shipped 3MF.
 //
 // Usage:
-//   npx vite-node scripts/pack-part.mjs <src.stl|src.3mf> [--align-to <ref.3mf>] --out <out.3mf>
+//   npx vite-node scripts/pack-part.mjs <src.stl|src.3mf> [--align-to <ref.3mf>] [--weld [mm]] --out <out.3mf>
 import fs from 'fs';
 import path from 'path';
 import JSZip from 'jszip';
@@ -36,10 +40,22 @@ import {
   TESSELLATION_GAP,
 } from './lib/mesh.mjs';
 import { soupToIndexed } from '../src/export/threemf.ts';
+import {
+  getManifold,
+  manifoldIsValid,
+  manifoldToMeshes,
+  soupToManifold,
+} from '../src/geometry/manifold.ts';
+
+// Default vertex-weld tolerance for --weld, in mm. Enough to close the hairline cracks a CAD
+// tessellation can leave between shells (a few tenths of a micron) without merging genuinely
+// distinct detail — 10x below any print resolution. See the manifold check below for why this
+// matters: a mesh with open edges makes assembly-mode export drop the part uncut.
+const WELD_TOL = 0.001;
 
 const USAGE =
   'usage: pack-part.mjs <src.stl|src.3mf> [--align-to <ref.3mf>] [--bbox-tol <mm>]\n' +
-  '                     [--rotate <x,-z,y>] [--center] --out <out.3mf>';
+  '                     [--rotate <x,-z,y>] [--center] [--weld [mm]] --out <out.3mf>';
 
 function parseArgs(argv) {
   const out = {
@@ -49,6 +65,7 @@ function parseArgs(argv) {
     bboxTol: BBOX_TOL,
     rotate: null,
     center: false,
+    weld: null,
   };
   for (let i = 0; i < argv.length; i++) {
     // A flag whose value is missing must not read as "not passed": a dropped --align-to value
@@ -63,11 +80,19 @@ function parseArgs(argv) {
     else if (argv[i] === '--bbox-tol') out.bboxTol = Number(value('--bbox-tol'));
     else if (argv[i] === '--rotate') out.rotate = value('--rotate');
     else if (argv[i] === '--center') out.center = true;
-    else if (!out.src) out.src = argv[i];
+    else if (argv[i] === '--weld') {
+      // optional value: consume the next arg only if it's a number, else use the default
+      const next = argv[i + 1];
+      out.weld =
+        next && !next.startsWith('--') && Number.isFinite(Number(next))
+          ? Number(argv[++i])
+          : WELD_TOL;
+    } else if (!out.src) out.src = argv[i];
     else die(`unexpected argument: ${argv[i]}`);
   }
   if (!out.src || !out.out) die(USAGE);
   if (!(out.bboxTol > 0)) die(`--bbox-tol must be a positive number of mm`);
+  if (out.weld != null && !(out.weld > 0)) die(`--weld tolerance must be a positive number of mm`);
   return out;
 }
 
@@ -80,6 +105,60 @@ const num = (v) => {
   const s = v.toFixed(4);
   return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
 };
+
+// Weld near-coincident vertices with Manifold's own tolerance-based merge — a proper spatial
+// weld, not a grid snap (a grid snap leaves cracks that straddle a cell boundary). Returns the
+// repaired soup, or dies if the result still isn't a solid the boolean engine accepts. Runs the
+// exact engine the app uses, so a mesh that welds clean here is guaranteed to load there.
+async function weldSoup(soup, tol) {
+  const wasm = await getManifold();
+  const { Manifold, Mesh } = wasm;
+  const triCount = soup.length / 9;
+  const triVerts = new Uint32Array(triCount * 3);
+  for (let i = 0; i < triCount * 3; i++) triVerts[i] = i;
+  const mesh = new Mesh({ numProp: 3, vertProperties: Float32Array.from(soup), triVerts });
+  mesh.tolerance = tol;
+  mesh.merge();
+  let man;
+  try {
+    man = new Manifold(mesh);
+  } catch (e) {
+    die(
+      `--weld ${tol}mm did not close this mesh into a solid (${e.message}). Try a larger tolerance.`,
+    );
+  }
+  if (!manifoldIsValid(man)) {
+    man.delete();
+    die(`--weld ${tol}mm did not close this mesh into a solid. Try a larger tolerance.`);
+  }
+  const out = manifoldToMeshes(man).soup;
+  const genus = man.genus();
+  man.delete();
+  console.log(
+    `  welded      tol ${tol}mm: ${triCount} -> ${out.length / 9} triangles ` +
+      `(closed to a solid, genus ${genus})`,
+  );
+  return out;
+}
+
+// Assembly-mode export cuts pockets with a 3D boolean, which silently drops any part whose mesh
+// the engine can't read as a solid (open edges from a CAD tessellation are the usual cause) —
+// the part then exports uncut with only a warning. Catch that here, at pack time, rather than in
+// the app. Returns a one-line status for the report.
+async function manifoldStatus(soup) {
+  const wasm = await getManifold();
+  try {
+    const man = soupToManifold(wasm, soup);
+    const ok = manifoldIsValid(man);
+    const genus = ok ? man.genus() : null;
+    man.delete();
+    return ok
+      ? `valid solid (genus ${genus})`
+      : `NOT a solid — the app will export this part UNCUT. Re-pack with --weld.`;
+  } catch (e) {
+    return `NOT readable by the boolean engine (${e.message}) — the app will export this part UNCUT. Re-pack with --weld.`;
+  }
+}
 
 function buildModelXML(soup) {
   const { verts, tris } = soupToIndexed(soup);
@@ -214,6 +293,15 @@ if (args.rotate || args.center) {
   );
 }
 
+// Weld last, on the final posed soup: a rigid reframe never opens or closes a crack, so welding
+// before it would just have to be re-checked after. buildModelXML re-indexes the welded soup, so
+// the closed vertices ship unified in the file — the app re-reads it as a solid with no runtime
+// repair (parts are taken as-is; see asmLoadPartBuffer).
+if (args.weld != null) {
+  soup = await weldSoup(soup, args.weld);
+  a = analyze(soup);
+}
+
 const { xml, vertCount } = buildModelXML(soup);
 fs.mkdirSync(path.dirname(args.out), { recursive: true });
 const outSize = await writeThreeMF(args.out, xml);
@@ -225,5 +313,6 @@ console.log(`              ${(outSize / 1024).toFixed(0)} KB`);
 if (fc)
   console.log(
     `  design face ${fc.patchArea.toFixed(1)} of ${fc.dirArea.toFixed(1)} mm² in ONE patch ` +
-      `(${(100 * fc.ratio).toFixed(1)}%)\n`,
+      `(${(100 * fc.ratio).toFixed(1)}%)`,
   );
+console.log(`  cut engine  ${await manifoldStatus(soup)}\n`);

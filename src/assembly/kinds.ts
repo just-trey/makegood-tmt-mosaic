@@ -75,6 +75,91 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
       },
     ],
   },
+  {
+    id: 'storage-left',
+    name: 'Storage (left)',
+    // rectangular design face — the prominent outer panel (with the debossed logo). Maps 1:1 in mm.
+    designFit: 'rect',
+    templateFile: 'storage-left-template.svg',
+    // preview spins the render -90° about the design-face normal so the panel reads upright with
+    // its base resting at the origin (logo at the bottom); cosmetic only — see previewSpinDeg.
+    previewSpinDeg: -90,
+    roles: [
+      {
+        id: 'storage-left',
+        name: 'Storage (left)',
+        libraryPartId: 'storage-left',
+        allowRotatedCopies: false,
+        // no preferFaceNormal: the design face is the prominent +Y outer panel, which is also the
+        // largest flat patch (22,318mm²) — a smooth panel with a shallow debossed logo stays one
+        // big coplanar patch, while the -Y structural back shatters into fragments (largest only
+        // 6,666mm²). So the largest-patch default already lands on the right face.
+      },
+    ],
+  },
+  {
+    id: 'storage-right',
+    name: 'Storage (right)',
+    designFit: 'rect',
+    templateFile: 'storage-right-template.svg',
+    previewSpinDeg: -90,
+    roles: [
+      {
+        id: 'storage-right',
+        name: 'Storage (right)',
+        libraryPartId: 'storage-right',
+        allowRotatedCopies: false,
+        // mirror of storage-left; the prominent +Y outer panel is the largest patch (21,384mm²),
+        // so the largest-patch default is correct — no preferFaceNormal needed.
+      },
+    ],
+  },
+  {
+    id: 'wing-left',
+    name: 'Wing (left)',
+    // rectangular design face — the outer face of the wing. Maps the SVG 1:1 in mm.
+    designFit: 'rect',
+    templateFile: 'wing-left-template.svg',
+    previewSpinDeg: -90,
+    roles: [
+      {
+        id: 'wing-left',
+        name: 'Wing (left)',
+        libraryPartId: 'wing-left',
+        allowRotatedCopies: false,
+        // The design face is the OUTER face (the top layer in the diagonal print pose), which is
+        // NOT the largest patch — the inner face (29,825mm²) outsizes it (16,978mm²) — so nudge to
+        // the +Y-facing (outer) patch, which the mesh ships face up.
+        preferFaceNormal: [0, 1, 0],
+        // The outer face is domed: its main flat region sits at the anchor plane, with a raised
+        // step and curved edges falling away. cutThrough skips the flat-patch clip so the design
+        // spreads across the whole main face rather than only the detected patch; 4mm is a shallow
+        // inlay that stays well clear of the 50mm-thick part's inner face. The raised step and steep
+        // curves are out of a flat down-projection's reach — a true surface wrap is a future item.
+        cutThrough: true,
+        cutThroughDepth: 4,
+      },
+    ],
+  },
+  {
+    id: 'wing-right',
+    name: 'Wing (right)',
+    designFit: 'rect',
+    templateFile: 'wing-right-template.svg',
+    previewSpinDeg: -90,
+    roles: [
+      {
+        id: 'wing-right',
+        name: 'Wing (right)',
+        libraryPartId: 'wing-right',
+        allowRotatedCopies: false,
+        // mirror of wing-left; same outer-face design target and cut-through inlay.
+        preferFaceNormal: [0, 1, 0],
+        cutThrough: true,
+        cutThroughDepth: 4,
+      },
+    ],
+  },
 ];
 
 export function currentAssemblyKind(): AssemblyKind | null {

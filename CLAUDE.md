@@ -116,8 +116,11 @@ pattern with file references. The checklist:
    _replacing_ an existing part, `--align-to` the file it replaces is
    mandatory: parts are never recentered at load time, so the mesh pose is
    load-bearing for step 4's constants, the wheel's pivot-at-origin copy, and
-   the templates. Then add the manifest entry in
-   [public/stl/parts.json](public/stl/parts.json).
+   the templates. Check the pack report's `cut engine` line reads **valid
+   solid**: a CAD tessellation can leave hairline cracks that make the boolean
+   engine reject the mesh, and assembly-mode export then ships the part _uncut_
+   with only a warning — re-pack with `--weld` to close them. Then add the
+   manifest entry in [public/stl/parts.json](public/stl/parts.json).
 3. **Register one `AssemblyKind`** in
    [src/assembly/kinds.ts](src/assembly/kinds.ts) — `designFit: 'rect'` for a
    non-circular part (maps the SVG 1:1 in mm, auto-centers on the face)

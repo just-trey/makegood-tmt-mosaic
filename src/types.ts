@@ -166,6 +166,16 @@ export interface AssemblyKind {
    * without one just doesn't show the link.
    */
   templateFile?: string;
+  /**
+   * In-plane rotation (degrees) about the world Y axis — the design-face normal for the current
+   * rect parts (the camera looks down it), so it spins the design face in its own plane and leaves
+   * it square to the camera. The viewport rotates the rendered part group by this; the design
+   * template (public/templates/, via gen-templates.mjs) is drawn pre-spun to match; and placement
+   * (placeOnPart in geometry/assembly.ts) applies the inverse so a template trace still lands on the
+   * native face. Net effect: preview + template rotate together while the exported cut/print pose
+   * (baked in threemf.ts) is unchanged.
+   */
+  previewSpinDeg?: number;
 }
 
 export interface LibraryEntry {

@@ -121,6 +121,13 @@ export interface AssemblyBuildInput {
   radius: number;
   /** how artwork maps onto the face; 'rect' scales the SVG 1:1 in mm and centers on the face */
   designFit?: 'wheel' | 'rect';
+  /**
+   * The kind's previewSpinDeg (in-plane spin the viewport applies to the part). Placement applies
+   * its inverse so a design authored in the matching spun-frame template lands on the part's native
+   * face — the exported cut is identical to the unspun case; only the preview and the template
+   * rotate. The templates in public/templates/ are generated pre-spun by scripts/gen-templates.mjs.
+   */
+  previewSpinDeg?: number;
   scaleMult: number;
   offX: number;
   offZ: number;
@@ -153,6 +160,7 @@ export async function buildAssemblyGeometry(
     globalDepth,
     radius,
     designFit,
+    previewSpinDeg,
     scaleMult,
     offX,
     offZ,
@@ -288,6 +296,15 @@ export async function buildAssemblyGeometry(
   // artwork right-side up on the face); the user's vertical flip toggles that.
   const userXFlip = flipX ? -1 : 1;
   const zMul = flipY ? 1 : -1;
+  // Undo the kind's preview spin on the incoming design (its template is drawn pre-spun to match
+  // the viewport). This is the exact inverse of the rotation gen-templates.mjs bakes into the
+  // canvas, so a template trace lands back on the native face and the exported cut is identical to
+  // the unspun case; the viewport's own Ry(previewSpinDeg) re-applies the spin on screen. Applied
+  // to the design offset before the face-centering translation, so the artwork stays centered on
+  // the face. cos/sin of +previewSpinDeg give M⁻¹ = [[cos,-sin],[sin,cos]] on (du, dv).
+  const spinRad = ((previewSpinDeg ?? 0) * Math.PI) / 180;
+  const spinCos = Math.cos(spinRad);
+  const spinSin = Math.sin(spinRad);
   // Place an SVG-space point onto a part's native face frame (mm). Rotated copies get the
   // inverse of their assembly rotation, so the design slice that lands on the copy is baked
   // into the part's native (unrotated) print orientation. A +Y-facing design is viewed from the
@@ -306,9 +323,14 @@ export async function buildAssemblyGeometry(
       faceCz = faceBB.cz;
     }
     return (pt: number[]): number[] => {
+      // Design offset from the artwork anchor, un-spun by the kind's previewSpinDeg (identity when
+      // it's 0/unset — every existing part). Rotating here, before the scale/mirror/centering,
+      // keeps the design centered on the face.
+      const du = (pt[0] - svgC.cx) * spinCos - (pt[1] - svgC.cy) * spinSin;
+      const dv = (pt[0] - svgC.cx) * spinSin + (pt[1] - svgC.cy) * spinCos;
       const xMul = userXFlip * (nsign > 0 ? -1 : 1);
-      let x = (pt[0] - svgC.cx) * mmPerUnit * xMul + offX + faceCx;
-      let z = (pt[1] - svgC.cy) * mmPerUnit * zMul + offZ + faceCz;
+      let x = du * mmPerUnit * xMul + offX + faceCx;
+      let z = dv * mmPerUnit * zMul + offZ + faceCz;
       if (part.isDuplicateOf) {
         const r = rotatePointY(x, z, part.pivotX, part.pivotZ, -part.angleDeg);
         x = r[0];

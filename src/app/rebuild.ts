@@ -205,6 +205,13 @@ function restAssemblyOnGrid(): void {
 async function rebuildAssemblyScene(): Promise<void> {
   newModelGroup(state.stlRefMesh);
 
+  // Preview-only cosmetic spin about world Y (the design-face normal for these rect parts, and the
+  // axis the camera looks down) so the design face reads upright without swinging edge-on. The parts
+  // are origin-centered, so this spins them in place; it sits before both render paths and before
+  // restAssemblyOnGrid()/framing, and export never reads this group. See previewSpinDeg on AssemblyKind.
+  const spin = currentAssemblyKind()?.previewSpinDeg;
+  if (spin) getModelGroup().rotation.y = (spin * Math.PI) / 180;
+
   // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
   if (!state.parsed) {
     renderRawAssemblyParts();
@@ -229,6 +236,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     globalDepth: state.globalDepth,
     radius: state.asmRadius,
     designFit: currentAssemblyKind()?.designFit,
+    previewSpinDeg: currentAssemblyKind()?.previewSpinDeg,
     scaleMult: state.scalePct / 100,
     offX: state.offsetX,
     offZ: state.offsetY,

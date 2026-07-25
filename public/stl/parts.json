@@ -2,5 +2,9 @@
   { "id": "wheel-half", "name": "Wheel half (top)", "file": "stl/wheel-half.3mf" },
   { "id": "wheel-hub-cap", "name": "Hub cap", "file": "stl/wheel-hub-cap.3mf" },
   { "id": "footrest", "name": "Footrest", "file": "stl/footrest.3mf" },
-  { "id": "wheel-mount-left", "name": "Wheel mount (left)", "file": "stl/wheel-mount-left.3mf" }
+  { "id": "wheel-mount-left", "name": "Wheel mount (left)", "file": "stl/wheel-mount-left.3mf" },
+  { "id": "storage-left", "name": "Storage (left)", "file": "stl/storage-left.3mf" },
+  { "id": "storage-right", "name": "Storage (right)", "file": "stl/storage-right.3mf" },
+  { "id": "wing-left", "name": "Wing (left)", "file": "stl/wing-left.3mf" },
+  { "id": "wing-right", "name": "Wing (right)", "file": "stl/wing-right.3mf" }
 ]

@@ -80,7 +80,7 @@ vertices and DEFLATEs the result into the single-inlined-`<object>` 3MF that
 
 ```bash
 npx vite-node scripts/pack-part.mjs <src.stl|src.3mf> \
-  [--align-to public/stl/<current>.3mf] [--bbox-tol <mm>] --out public/stl/<part>.3mf
+  [--align-to public/stl/<current>.3mf] [--bbox-tol <mm>] [--weld [mm]] --out public/stl/<part>.3mf
 ```
 
 **`--align-to` is mandatory when replacing an existing part**, and the reason is
@@ -96,8 +96,17 @@ refuses to write on a non-match or a mirror.
 Sanity-check its report before moving on: **bbox drift must be ~0**, and face
 coherence should be in the same neighbourhood as the file you're replacing (a
 point or two either way is tessellation noise; a large drop means the new mesh
-fragments the design face and the app will detect less art surface). Then add
-the manifest entry in
+fragments the design face and the app will detect less art surface). The report
+also ends with a `cut engine` line: it must read **valid solid**. If it reads
+"NOT a solid / NOT readable — the app will export this part UNCUT", the mesh has
+open edges (a CAD tessellation can leave hairline cracks between shells) and
+assembly-mode export will silently ship it uncut with only a warning. Re-pack
+with `--weld` — it closes sub-tolerance cracks with the same boolean engine the
+app validates with, so a mesh that welds clean here is guaranteed to load there.
+`--weld` defaults to 0.001mm (10× below print resolution); pass `--weld <mm>` to
+widen it if the report says the default didn't close the mesh. Watch that
+`genus` doesn't change across tolerances — a jump means the weld is closing real
+holes, not cracks, and the tolerance is too large. Then add the manifest entry in
 [public/stl/parts.json](../../../public/stl/parts.json) —
 `{ "id", "name", "file": "stl/<part>.3mf" }`, where `id` is what the kind's
 `libraryPartId` will point at.

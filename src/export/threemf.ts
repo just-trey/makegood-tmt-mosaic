@@ -286,6 +286,56 @@ export const WHEEL_MOUNT_PRIME_TOWER_DELTA = { x: 80.735235, y: -90.700545 };
 // reproduce — auto placement is the honest substitute and is not print-verified.
 export const WHEEL_MOUNT_OBJECT_SETTINGS = { support_style: 'tree_hybrid' };
 
+// Storage (left/right) placement. Both are mirror halves of the same panel; the design face is the
+// flat face that rests on the plate, and each mesh ships that face UP (+Y), so export's default
+// face-down tilt (rotXthenZ(-90 * nsign)) already lands the part design-face-down, exactly as the
+// reference (stubs/4-plates.3mf, plates "Storage Left"/"Storage Right") prints it. There is thus no
+// STORAGE_PLATE_R and no in-plane spin constant: the ~243×252mm design face is near-square and fits
+// the bed at any 90° step, and the artwork is cut in the packed frame before the tilt, so spin is
+// purely cosmetic. No fixedPos — the part centers on whatever plate and rests via -minZ.
+//
+// Supports: the reference slices Storage with tree supports in the hybrid style; the global print
+// settings already enable tree(auto), so — exactly as WHEEL_MOUNT_OBJECT_SETTINGS documents — only
+// the style is overridden per-object. The reference's support_type tree(manual) (hand-painted
+// enforcers) is deliberately NOT carried over: nothing in this app reproduces painted enforcers, so
+// auto placement is the honest substitute.
+//
+// No prime-tower delta is baked: the design face is ~243×252mm, so a centered Storage part fills the
+// 256×256 X1C bed with only millimetres to spare and a prime tower cannot fit beside it. The
+// reference plates carried only Bambu's default tower (those parts were single-color there), so
+// there is no verified tower placement to bake, and inventing one is exactly what the add-part skill
+// forbids. Multi-color Storage therefore wants a larger bed (H2D) or in-slicer purge handling — see
+// README "Known limitations".
+export const STORAGE_OBJECT_SETTINGS = { support_style: 'tree_hybrid' };
+
+// Wing (left/right) placement, baked from stubs/4-plates.3mf (plates "Wing Left"/"Wing Right").
+// Unlike Storage, the design face (the wing's OUTER face) prints face-UP, not on the plate, and the
+// part sits rotated ~9.5° in-plane so its 272mm length clears the 256mm bed diagonally — so this is
+// the footrest's full-matrix case, not a face-down tilt. Each WING_*_PLATE_R is the reference
+// build-item rotation re-expressed for the shipped mesh's own frame: plateR = Pᵀ·M where P is the
+// pack-part reframe (Left "y,x,-z", Right "y,-x,z") and M the reference transform. Verified by
+// transforming the packed mesh with plateR and confirming its outer-face normal lands at world +Z
+// (up) exactly as the reference does. No fixedPos — the part centers on its plate and rests via
+// -minZ, tower held relative. Wings inherit the global tree(auto) supports (the reference set no
+// per-object support override on them), so no objectSettings.
+export const WING_LEFT_PLATE_R = [
+  [0.986264286, -0.16517493, 0],
+  [0, 0, 1],
+  [-0.16517493, -0.986264286, 0],
+];
+export const WING_RIGHT_PLATE_R = [
+  [-0.175807757, 0.984424518, 0],
+  [0, 0, 1],
+  [0.984424518, 0.175807757, 0],
+];
+// Prime/wipe tower, offset from each wing's centered position. Wing Right is the only plate whose
+// tower the reference actually placed (165, 216.972) with the part at (124.504, 136.539), so
+// tower - part = (40.496, 80.433). The reference's Wing Left plate carried only Bambu's default
+// tower, so its delta is the X-mirror of the verified right-hand value — the mirror part leaves the
+// mirrored corner open. Held relative so it rides along on any bed.
+export const WING_RIGHT_PRIME_TOWER_DELTA = { x: 40.496, y: 80.433 };
+export const WING_LEFT_PRIME_TOWER_DELTA = { x: -40.496, y: 80.433 };
+
 export async function build3MFCombined(
   materials: ExportMaterial[],
   parts: ExportPart[],

@@ -241,7 +241,11 @@ entirely, which is the recommended path.
 
 - **Flat, roughly horizontal faces only.** Assembly cutting assumes the design
   face is horizontal in the part's own coordinates (the app warns otherwise).
-  No curved-surface wrapping.
+  No curved-surface wrapping: a cut-through part (the hub cap, the wings) casts
+  its design as a flat straight-down projection onto the surface, which cleanly
+  marks the main upward-facing region but foreshortens and thins out where the
+  surface steps up or curves steeply away (the wings' raised step and curved
+  edges). A true surface-conforming (sticker-style) wrap is a future item.
 - **"Largest flat patch" is a heuristic.** The auto-picked design face is the
   largest coplanar patch by area; a part with an equally large decorative flat
   face could fool it. The Advanced per-part controls let you pick a different
@@ -253,6 +257,13 @@ entirely, which is the recommended path.
   behind the face will cut through. Sanity-check depths against your model.
 - **Gradients/patterns are detected and skipped** with a warning, rather than
   silently producing wrong geometry.
+- **Bed-filling parts leave no room for a prime tower.** The Storage panels'
+  printed footprint (~243×252mm) nearly fills a 256×256 X1C bed, so a
+  multi-color export — which needs a prime/wipe tower to purge between filament
+  swaps — has nowhere to place one. Print those on a larger bed (H2D) or
+  resolve purging in the slicer (e.g. flush into infill/object). The export
+  still lands the part correctly and warns if a part actually overhangs its
+  plate.
 
 ## Troubleshooting: "Boolean union/subtraction failed" warnings
 

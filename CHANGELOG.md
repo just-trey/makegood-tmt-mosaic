@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- New assembly kinds: **Wing (left)** and **Wing (right)**, the mirror wing
+  panels. Packed from CAD STL exports (37.8k / 29.8k triangles, ~350KB /
+  ~280KB). The design target is the wing's outer face — the face that prints
+  upward — so unlike the other parts the design face is _not_ on the plate; the
+  export bakes the reference's diagonal print pose (the ~272mm-long part sits
+  rotated ~9.5° to clear the 256mm bed) as a full rotation matrix, with the
+  verified prime-tower position from the reference (mirrored for the left).
+  Artwork is cut through onto the whole main flat region of the outer face
+  (`cutThrough`, 4mm) rather than clipped to the detected patch. The outer face
+  is domed, so a raised step and its steeply curved edges are beyond a flat
+  down-projection's reach — a true surface-conforming wrap is a future
+  enhancement (see README "Known limitations").
+- New assembly kinds: **Storage (left)** and **Storage (right)**, the mirror
+  storage panels. Packed from CAD STL exports (46.5k / 42.6k triangles, ~440KB
+  each). The design face is the flat face that rests on the plate; each mesh
+  ships that face up, so export lands it design-face-down in the reference
+  print pose, with tree-hybrid supports (auto placement in place of the
+  reference's hand-painted enforcers — not yet print-verified). Note: the
+  design face is ~227×184mm and the part flares to a ~243×252mm footprint, so a
+  centered panel nearly fills the 256×256 X1C bed with no room for a prime
+  tower — multi-color Storage wants a larger bed (H2D) or in-slicer purge
+  handling (see README "Known limitations").
 - New assembly kind: **Wheel mount (left)**, the bracket that carries the
   wheel. Packed from a Fusion CAD export (24,882 triangles, 246KB) rather than
   the 388k-triangle slicer tessellation in the reference project, with the
@@ -36,6 +58,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The wheel's part ids and filenames are renamed for clarity: `top` to
   `wheel-half`, `cap` to `wheel-hub-cap`. Internal only — display names in the
   UI are unchanged.
+
+### Fixed
+
+- Artwork is now clipped to a design face's true outer boundary — the loop
+  enclosing the most area — instead of the loop with the most points. On a
+  face whose perimeter is coarsely tessellated relative to a small internal
+  feature (the storage panels), a dense internal sliver could win the old
+  point-count tiebreak and clip the design down to a few millimetres. The
+  already-shipped parts (footrest, wheel mount, wheel) are unaffected — their
+  perimeter was already the largest loop by both measures.
 
 ## [0.5.0] - 2026-07-19
 
