@@ -76,8 +76,14 @@ function die(msg) {
   process.exit(1);
 }
 
+// 6 decimals, not 4: writing coordinates at 1e-4mm rounds distinct vertices onto each other, and
+// load3MF's reader (plus Manifold's merge) then welds them into one — fusing surface sheets that
+// were separate and leaving an edge shared by more than two triangles. Manifold rejects the whole
+// mesh as "Not manifold", so the part can't be cut at all. It bit chair-storage-left/right, whose
+// source STLs are watertight; at 1e-6 they round-trip to the same solid the source makes. The
+// extra digits cost ~12% file size, cheap next to silently unusable geometry.
 const num = (v) => {
-  const s = v.toFixed(4);
+  const s = v.toFixed(6);
   return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
 };
 
