@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The Artwork panel now shows the loaded design as a named row with a remove
+  button, so you can clear it without loading something else over it.
+
 ## [0.6.0] - 2026-07-26
 
 ### Added

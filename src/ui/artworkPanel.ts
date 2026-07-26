@@ -1,10 +1,11 @@
-import { clearBaseColor, state } from '../state/store';
-import { loadArtworkSource } from '../state/artwork';
+import { state } from '../state/store';
+import { clearArtwork, loadArtworkSource } from '../state/artwork';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
 import { parseSVGDocument } from '../svg/parse';
 import { clearWarnings, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
+import { renderArtworkList } from './artworkListPanel';
 import { $, input } from './dom';
 import { track } from '../analytics/track';
 
@@ -16,16 +17,17 @@ const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200
   <circle cx="100" cy="100" r="12" fill="#c1272d"/>
 </svg>`;
 
-function applyParsedSVG(svgText: string, fname: string): void {
-  state.parsed = parseSVGDocument(svgText);
-  loadArtworkSource(state.parsed, fname);
-  state.colorSettings = {};
-  state.mergeGroups = [];
-  // These reference specific hexes from the previous artwork's palette — stale once it changes.
-  // autoMergeLevel is a user preference, not artwork-specific, so it survives a reload.
-  clearBaseColor();
-  state.keptApart = [];
+// Exported for the failed-load regression test; not used outside this module.
+export function applyParsedSVG(svgText: string, fname: string): void {
+  // Parse BEFORE clearing: parseSVGDocument throws on a malformed/empty SVG, and a failed load
+  // must be a no-op that leaves the currently-loaded artwork (and its color/merge/base settings)
+  // intact — clearing first would discard the user's work on every bad drop.
+  const parsed = parseSVGDocument(svgText);
+  clearArtwork(); // drop any previously loaded design — one design at a time today
+  state.parsed = parsed;
+  loadArtworkSource(parsed, fname);
   $('#svg-fname').textContent = fname;
+  renderArtworkList();
   requestFrame();
   scheduleRebuild();
 }

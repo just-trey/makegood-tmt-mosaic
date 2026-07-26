@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   activeArtworkInstance,
+  clearArtwork,
   loadArtworkSource,
   syncActiveArtworkPlacement,
 } from '../src/state/artwork';
@@ -16,6 +17,7 @@ function fakeParsed(): ParsedSVG {
 }
 
 beforeEach(() => {
+  state.parsed = null;
   state.sources = [];
   state.artworks = [];
   state.activeArtworkId = null;
@@ -25,6 +27,11 @@ beforeEach(() => {
   state.rotationDeg = 0;
   state.flipX = false;
   state.flipY = false;
+  state.colorSettings = {};
+  state.mergeGroups = [];
+  state.baseColorKey = null;
+  state.baseColorMembers = [];
+  state.keptApart = [];
 });
 
 describe('loadArtworkSource', () => {
@@ -113,5 +120,44 @@ describe('syncActiveArtworkPlacement', () => {
 
   it('is a no-op when there is no active instance', () => {
     expect(() => syncActiveArtworkPlacement()).not.toThrow();
+  });
+});
+
+describe('clearArtwork', () => {
+  it('drops parsed/sources/artworks/activeArtworkId and artwork-specific settings', () => {
+    state.parsed = fakeParsed();
+    loadArtworkSource(state.parsed, 'a.svg');
+    state.colorSettings = { '#fff': { depth: 1 } };
+    state.mergeGroups = [['#fff', '#000']];
+    state.baseColorKey = '#fff';
+    state.baseColorMembers = ['#fff'];
+    state.keptApart = ['#000'];
+
+    clearArtwork();
+
+    expect(state.parsed).toBeNull();
+    expect(state.sources).toEqual([]);
+    expect(state.artworks).toEqual([]);
+    expect(state.activeArtworkId).toBeNull();
+    expect(state.colorSettings).toEqual({});
+    expect(state.mergeGroups).toEqual([]);
+    expect(state.baseColorKey).toBeNull();
+    expect(state.baseColorMembers).toEqual([]);
+    expect(state.keptApart).toEqual([]);
+  });
+
+  it('leaves placement fields (offset/scale/rotation/flip) untouched — a preference, not artwork data', () => {
+    state.offsetX = 5;
+    state.scalePct = 150;
+    state.rotationDeg = 45;
+    state.flipX = true;
+    loadArtworkSource(fakeParsed(), 'a.svg');
+
+    clearArtwork();
+
+    expect(state.offsetX).toBe(5);
+    expect(state.scalePct).toBe(150);
+    expect(state.rotationDeg).toBe(45);
+    expect(state.flipX).toBe(true);
   });
 });

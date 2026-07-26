@@ -24,6 +24,14 @@ Fired when artwork is loaded into the scene.
 - **Where:** [src/ui/artworkPanel.ts](../src/ui/artworkPanel.ts) — `loadSVGFile` (upload via click-browse or drag-drop) and the `#btn-sample` handler.
 - **Props:** `{ source: 'upload' | 'sample' }`
 
+### `artwork_removed`
+
+Fired when the user removes the loaded artwork from the Artwork panel's list
+row.
+
+- **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-remove` click handler in `renderArtworkList`.
+- **Props:** none.
+
 ### `mode_switch`
 
 Fired when the user changes the part-shape mode.

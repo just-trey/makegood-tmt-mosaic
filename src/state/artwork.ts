@@ -1,5 +1,5 @@
 import type { ArtworkInstance, DesignSource, ParsedSVG } from '../types';
-import { state } from './store';
+import { clearBaseColor, state } from './store';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
@@ -39,6 +39,24 @@ export function loadArtworkSource(
 /** The instance the gizmo/fit sliders/assembly build currently target. */
 export function activeArtworkInstance(): ArtworkInstance | null {
   return state.artworks.find((a) => a.id === state.activeArtworkId) ?? null;
+}
+
+/**
+ * Drop the loaded artwork entirely — the counterpart to loadArtworkSource, shared by "load a new
+ * design" (clears the old one first) and the artwork list's remove button. Leaves offset/scale/
+ * rotation/flip alone: those are a placement preference, not artwork-specific, and (like
+ * autoMergeLevel) intentionally survive a reload/removal. Pure state only — callers own any DOM/
+ * rebuild side effects.
+ */
+export function clearArtwork(): void {
+  state.parsed = null;
+  state.sources = [];
+  state.artworks = [];
+  state.activeArtworkId = null;
+  state.colorSettings = {};
+  state.mergeGroups = [];
+  clearBaseColor();
+  state.keptApart = [];
 }
 
 /**
