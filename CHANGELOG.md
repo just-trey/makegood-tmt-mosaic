@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-26
+
 ### Added
 
 - Direct on-face artwork manipulation in the 3D viewport: a selection frame
@@ -380,7 +382,8 @@ Initial public alpha. Baseline feature set as of this release:
 - Automatic boolean-failure recovery: vertex deduplication, degenerate-sliver
   scrubbing, and reduced-precision retries for self-intersecting source paths.
 
-[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.3.1...v0.4.0
