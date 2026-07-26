@@ -63,6 +63,8 @@ export interface AppState {
   asmRadius: number;
   assembly: {
     kindId: string | null;
+    /** chosen hardware variant for a kind with `variants` (chair Standard/Kit); null otherwise */
+    variantId: string | null;
     parts: AssemblyPart[];
     nextPartId: number;
     library: LibraryEntry[];
@@ -113,7 +115,7 @@ export const state: AppState = {
   printerId: DEFAULT_PRINTER_ID,
 
   asmRadius: 138,
-  assembly: { kindId: null, parts: [], nextPartId: 1, library: [] },
+  assembly: { kindId: null, variantId: null, parts: [], nextPartId: 1, library: [] },
 
   baseFilamentId: null,
 
