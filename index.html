@@ -97,6 +97,10 @@
               viewBox to fit the part face — setting the editor document to millimeters keeps it
               exact.
             </p>
+            <p>
+              Once loaded, the design appears as a named row below the dropzone — click × to remove
+              it and start over without loading a different file over it.
+            </p>
           </section>
 
           <section class="help-sec" id="h-fit">
@@ -325,6 +329,7 @@
           <div class="btn-row" style="margin-top: 8px">
             <button class="btn small" id="btn-sample" style="flex: 1">Load sample artwork</button>
           </div>
+          <div id="artwork-list" class="artwork-list" style="display: none"></div>
           <div class="hint">
             Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.
           </div>

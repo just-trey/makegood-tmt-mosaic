@@ -472,6 +472,31 @@ input[type='checkbox'] {
   word-break: break-all;
 }
 
+.artwork-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.artwork-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2xl);
+}
+.artwork-row .artwork-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+
 .shape-picker {
   display: flex;
   align-items: center;

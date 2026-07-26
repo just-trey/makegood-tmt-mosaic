@@ -1,10 +1,11 @@
-import { clearBaseColor, state } from '../state/store';
-import { loadArtworkSource } from '../state/artwork';
+import { state } from '../state/store';
+import { clearArtwork, loadArtworkSource } from '../state/artwork';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
 import { parseSVGDocument } from '../svg/parse';
 import { clearWarnings, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
+import { renderArtworkList } from './artworkListPanel';
 import { $, input } from './dom';
 import { track } from '../analytics/track';
 
@@ -17,15 +18,11 @@ const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200
 </svg>`;
 
 function applyParsedSVG(svgText: string, fname: string): void {
+  clearArtwork(); // drop any previously loaded design first — one design at a time today
   state.parsed = parseSVGDocument(svgText);
   loadArtworkSource(state.parsed, fname);
-  state.colorSettings = {};
-  state.mergeGroups = [];
-  // These reference specific hexes from the previous artwork's palette — stale once it changes.
-  // autoMergeLevel is a user preference, not artwork-specific, so it survives a reload.
-  clearBaseColor();
-  state.keptApart = [];
   $('#svg-fname').textContent = fname;
+  renderArtworkList();
   requestFrame();
   scheduleRebuild();
 }
