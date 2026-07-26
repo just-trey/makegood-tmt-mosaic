@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import JSZip from 'jszip';
+import { ACCENT, GRAY, LABEL_SIZE } from './lib/svgstyle.mjs';
 
 const { detectFlatPatches, extractPatchBoundary } = await import('../src/geometry/meshparts.ts');
 
@@ -21,16 +22,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const stl = (f) => resolve(REPO, 'public/stl', f);
 const tpl = (f) => resolve(REPO, 'public/templates', f);
-
-const GRAY = '#bcbcbc'; // printable-surface canvas gray (between old #808080 / #e8e8e8)
-// One blue "guide ink" for every non-printing template mark (labels, hole
-// outlines, the cap reference ring) — consistent across both templates. Deep
-// enough to keep the small "no print" text readable on GRAY. The hole-vs-ring
-// meaning is carried by fill + dash style, not colour.
-const ACCENT = '#1a4f8f';
-// Shared guide-label size (mm) so the footrest FRONT/BACK labels and the wheel's
-// cap-ring label read as one matched set across both templates.
-const LABEL_SIZE = 8;
 
 // Fast 3MF reader: unzip 3D/3dmodel.model and scrape vertex/triangle attributes
 // with a regex, producing the same flat triangle soup (Float32Array, 9 floats
