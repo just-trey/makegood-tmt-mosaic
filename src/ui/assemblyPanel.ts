@@ -12,6 +12,7 @@ import {
   onAssemblyPartsChanged,
 } from '../assembly/parts';
 import { track } from '../analytics/track';
+import { renderArtworkList } from './artworkListPanel';
 import { $ } from './dom';
 
 /** Show/hide controls that only apply to certain assembly kinds (Design radius is wheel-only). */
@@ -197,6 +198,9 @@ export function initAssemblyPanel(): void {
   onAssemblyPartsChanged(() => {
     renderAssemblyRoleControls();
     renderAssemblyPartList();
+    // Zone charts resolve asynchronously as parts load, so the list's per-instance zone dropdown
+    // (empty until availableZones() has something to offer) needs a re-render here too.
+    renderArtworkList();
   });
   // The link's href is re-pointed per kind in syncAssemblyKindControls; bind the click once here
   // so repeated syncs don't stack handlers.

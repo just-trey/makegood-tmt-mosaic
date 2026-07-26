@@ -8,6 +8,12 @@ vi.mock('../src/app/scheduler', () => ({
   isRebuildLikelySlow: () => false,
 }));
 vi.mock('../src/scene/viewport', () => ({ requestFrame: vi.fn() }));
+// The fit panel's DOM sync isn't what this test covers, and its inputs (#p-scale, #p-offset-x,
+// ...) aren't part of this test's minimal DOM fixture — stub it out like the other side effects.
+vi.mock('../src/ui/fitPanel', () => ({
+  refreshFitInputsFromState: vi.fn(),
+  updateOffsetSliderRanges: vi.fn(),
+}));
 
 import { applyParsedSVG } from '../src/ui/artworkPanel';
 import { state } from '../src/state/store';
@@ -52,16 +58,18 @@ describe('applyParsedSVG failed-load safety', () => {
     expect(state.baseColorKey).toBe('#ff0000');
   });
 
-  it('a valid load replaces the prior artwork and clears its stale settings', () => {
+  it('a second valid load adds alongside the first, leaving existing settings alone', () => {
     applyParsedSVG(GOOD_SVG, 'first.svg');
     state.colorSettings = { '#ff0000': { depth: 1.5 } };
     state.mergeGroups = [['#ff0000', '#0000ff']];
 
     applyParsedSVG(GOOD_SVG, 'second.svg');
 
-    expect(state.sources).toHaveLength(1);
-    expect(state.sources[0].name).toBe('second.svg');
-    expect(state.colorSettings).toEqual({});
-    expect(state.mergeGroups).toEqual([]);
+    expect(state.sources).toHaveLength(2);
+    expect(state.sources.map((s) => s.name)).toEqual(['first.svg', 'second.svg']);
+    // colorSettings/mergeGroups are a shared palette across every loaded design, not tied to
+    // whichever one loaded last — a second load must not discard the first design's settings.
+    expect(state.colorSettings).toEqual({ '#ff0000': { depth: 1.5 } });
+    expect(state.mergeGroups).toEqual([['#ff0000', '#0000ff']]);
   });
 });

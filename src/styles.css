@@ -496,6 +496,18 @@ input[type='checkbox'] {
   font-size: 11px;
   color: var(--text);
 }
+.artwork-row {
+  cursor: pointer;
+}
+.artwork-row.active {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.artwork-row .artwork-zone {
+  font-size: 11px;
+  padding: 2px 4px;
+  max-width: 90px;
+}
 
 .shape-picker {
   display: flex;
