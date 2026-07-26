@@ -2,5 +2,65 @@
   { "id": "wheel-half", "name": "Wheel half (top)", "file": "stl/wheel-half.3mf" },
   { "id": "wheel-hub-cap", "name": "Hub cap", "file": "stl/wheel-hub-cap.3mf" },
   { "id": "footrest", "name": "Footrest", "file": "stl/footrest.3mf" },
-  { "id": "wheel-mount-left", "name": "Wheel mount (left)", "file": "stl/wheel-mount-left.3mf" }
+  { "id": "wheel-mount-left", "name": "Wheel mount (left)", "file": "stl/wheel-mount-left.3mf" },
+
+  { "id": "chair-handle-left", "name": "Chair handle (left)", "file": "stl/chair-handle-left.3mf" },
+  {
+    "id": "chair-handle-right",
+    "name": "Chair handle (right)",
+    "file": "stl/chair-handle-right.3mf"
+  },
+  {
+    "id": "chair-storage-left",
+    "name": "Chair storage (left)",
+    "file": "stl/chair-storage-left.3mf"
+  },
+  {
+    "id": "chair-storage-right",
+    "name": "Chair storage (right)",
+    "file": "stl/chair-storage-right.3mf"
+  },
+  { "id": "chair-wing-left", "name": "Chair wing (left)", "file": "stl/chair-wing-left.3mf" },
+  { "id": "chair-wing-right", "name": "Chair wing (right)", "file": "stl/chair-wing-right.3mf" },
+  {
+    "id": "chair-wheel-mount-left",
+    "name": "Chair wheel mount (left)",
+    "file": "stl/chair-wheel-mount-left.3mf"
+  },
+  {
+    "id": "chair-wheel-mount-right",
+    "name": "Chair wheel mount (right)",
+    "file": "stl/chair-wheel-mount-right.3mf"
+  },
+  { "id": "chair-seat-center", "name": "Chair seat center", "file": "stl/chair-seat-center.3mf" },
+  {
+    "id": "chair-seat-back-bottom",
+    "name": "Chair seat back (bottom)",
+    "file": "stl/chair-seat-back-bottom.3mf"
+  },
+  {
+    "id": "chair-seat-back-top",
+    "name": "Chair seat back (top)",
+    "file": "stl/chair-seat-back-top.3mf"
+  },
+  {
+    "id": "chair-caster-std-left",
+    "name": "Chair caster mount, Standard (left)",
+    "file": "stl/chair-caster-std-left.3mf"
+  },
+  {
+    "id": "chair-caster-std-right",
+    "name": "Chair caster mount, Standard (right)",
+    "file": "stl/chair-caster-std-right.3mf"
+  },
+  {
+    "id": "chair-caster-kit-left",
+    "name": "Chair caster mount, Kit (left)",
+    "file": "stl/chair-caster-kit-left.3mf"
+  },
+  {
+    "id": "chair-caster-kit-right",
+    "name": "Chair caster mount, Kit (right)",
+    "file": "stl/chair-caster-kit-right.3mf"
+  }
 ]
