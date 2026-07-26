@@ -88,6 +88,12 @@ export interface ZoneFrame {
  * `buildAssemblyGeometry` and the gizmo don't need to know which surface they're cutting.
  */
 export interface ZoneMapper {
+  /**
+   * Which baked design zone this maps, matching `DesignZone.id` — what an artwork instance binds
+   * to when the user targets one surface of a multi-zone part. `null` is the implicit flat zone a
+   * part with no sidecar gets, which unbound artwork lands on.
+   */
+  readonly zoneId: string | null;
   /** detected face normal (native frame), or null when the part has none */
   readonly faceNormal: number[] | null;
   /** which way the face points along Y: +1 or -1 */
@@ -111,6 +117,7 @@ export interface ZoneMapper {
  * cut-through depth, placement, and the gizmo frame — so behavior is unchanged.
  */
 export class FlatZoneMapper implements ZoneMapper {
+  readonly zoneId = null;
   readonly faceNormal: number[] | null;
   readonly nsign: number;
   private readonly faceY: number;

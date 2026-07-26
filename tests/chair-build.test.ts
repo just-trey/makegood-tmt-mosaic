@@ -2,7 +2,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import { buildAssemblyGeometry, type AssemblyBuildInput } from '../src/geometry/assembly';
+import {
+  buildAssemblyGeometry,
+  type ArtworkBuildInput,
+  type AssemblyBuildInput,
+} from '../src/geometry/assembly';
 import { zoneMappersFor } from '../src/geometry/zoneMappers';
 import { FlatZoneMapper } from '../src/geometry/zones';
 import { ConformalZoneMapper } from '../src/geometry/conformal';
@@ -118,21 +122,32 @@ function squareParsed(sizeMM: number): ParsedSVG {
   };
 }
 
-function chairInput(parts: AssemblyPart[], sizeMM = 60): AssemblyBuildInput {
+/** One unbound square unless `artworks` names zones explicitly. */
+function chairInput(
+  parts: AssemblyPart[],
+  sizeMM = 60,
+  artworks?: { zoneId: string | null; sizeMM?: number; offX?: number; offZ?: number }[],
+): AssemblyBuildInput {
+  const one = (zoneId: string | null, size: number, offX = 0, offZ = 0): ArtworkBuildInput => ({
+    parsed: squareParsed(size),
+    zoneId,
+    scaleMult: 1,
+    offX,
+    offZ,
+    flipX: false,
+    flipY: false,
+    rotationDeg: 0,
+  });
   return {
-    parsed: squareParsed(sizeMM),
+    artworks: artworks
+      ? artworks.map((a) => one(a.zoneId, a.sizeMM ?? sizeMM, a.offX, a.offZ))
+      : [one(null, sizeMM)],
     parts,
     mergeGroups: [],
     colorSettings: {},
     globalDepth: 1,
     radius: 0,
     designFit: 'rect',
-    scaleMult: 1,
-    offX: 0,
-    offZ: 0,
-    flipX: false,
-    flipY: false,
-    rotationDeg: 0,
   };
 }
 
@@ -242,4 +257,94 @@ describe('conformal build on the real chair', () => {
     expect(out.bodySoup.length).toBe(mesh.positions.length);
     expect(WARNINGS).toHaveLength(0);
   });
+});
+
+describe('per-zone artwork binding', () => {
+  /** How much material a build removed from one part. */
+  async function removedVolume(part: AssemblyPart, input: AssemblyBuildInput): Promise<number> {
+    const build = await buildAssemblyGeometry(input);
+    const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
+    const wasm = await getManifold();
+    const cut = soupToManifold(wasm, out.bodySoup);
+    const orig = soupToManifold(wasm, part.positions!);
+    const removed = orig.volume() - cut.volume();
+    cut.delete();
+    orig.delete();
+    return removed;
+  }
+
+  it('ignores an artwork bound to a zone the part does not carry', async () => {
+    clearWarnings();
+    const mesh = await loadPacked('chair-storage-left');
+    const part = chairPart(
+      'chair-storage-left',
+      mesh,
+      zonesFor('chair-storage-left', mesh).filter((z) => z.id === 'left'),
+    );
+    const build = await buildAssemblyGeometry(chairInput([part], 60, [{ zoneId: 'right' }]));
+    const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
+    // the part carries `left` only, so a `right`-bound design must not fall through onto it
+    expect(Object.keys(out.inlaySoups)).toHaveLength(0);
+    expect(out.bodySoup.length).toBe(mesh.positions.length);
+    expect(WARNINGS).toHaveLength(0);
+  }, 120000);
+
+  it('routes two differently-sized designs to their own zones in one build', async () => {
+    const leftMesh = await loadPacked('chair-storage-left');
+    const rightMesh = await loadPacked('chair-storage-right');
+    const mk = (): AssemblyPart[] => [
+      chairPart(
+        'chair-storage-left',
+        leftMesh,
+        zonesFor('chair-storage-left', leftMesh).filter((z) => z.id === 'left'),
+      ),
+      chairPart(
+        'chair-storage-right',
+        rightMesh,
+        zonesFor('chair-storage-right', rightMesh).filter((z) => z.id === 'right'),
+      ),
+    ];
+
+    const small = 30;
+    const big = 70;
+    const partsA = mk();
+    const a = chairInput(partsA, 60, [
+      { zoneId: 'left', sizeMM: small },
+      { zoneId: 'right', sizeMM: big },
+    ]);
+    const partsB = mk();
+    const b = chairInput(partsB, 60, [
+      { zoneId: 'left', sizeMM: big },
+      { zoneId: 'right', sizeMM: small },
+    ]);
+
+    // Swapping which zone each design is bound to swaps which part loses the most material. If
+    // binding were ignored (both designs cut onto every zone) the two builds would be identical.
+    const aLeft = await removedVolume(partsA[0], a);
+    const aRight = await removedVolume(partsA[1], a);
+    const bLeft = await removedVolume(partsB[0], b);
+    const bRight = await removedVolume(partsB[1], b);
+
+    for (const v of [aLeft, aRight, bLeft, bRight]) expect(v).toBeGreaterThan(0);
+    expect(aLeft).toBeLessThan(aRight);
+    expect(bLeft).toBeGreaterThan(bRight);
+    // Each part's pocket really followed its binding across the swap. Not an equality check
+    // between the two zones: the same design removes slightly different volume on each, since
+    // `left` and `right` curve differently — which is the whole point of a conformal wrap.
+    expect(bLeft / aLeft).toBeGreaterThan(2);
+    expect(aRight / bRight).toBeGreaterThan(2);
+  }, 180000);
+
+  it('cuts an unbound artwork exactly where an explicitly bound one lands', async () => {
+    // Every flow that exists before the panel can add a second design sends one unbound artwork,
+    // so "unbound" has to keep meaning "wherever the part offers" — here, the same pocket.
+    const mesh = await loadPacked('chair-storage-left');
+    const zones = zonesFor('chair-storage-left', mesh).filter((z) => z.id === 'left');
+    const bound = chairPart('chair-storage-left', mesh, zones);
+    const unbound = chairPart('chair-storage-left', mesh, zones);
+    const a = await removedVolume(bound, chairInput([bound], 60, [{ zoneId: 'left' }]));
+    const b = await removedVolume(unbound, chairInput([unbound], 60, [{ zoneId: null }]));
+    expect(a).toBeGreaterThan(0);
+    expect(b).toBeCloseTo(a, 6);
+  }, 180000);
 });

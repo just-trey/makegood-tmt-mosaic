@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { AssemblyBuild } from '../types';
 import { baseColorHex, currentBaseParams, state } from '../state/store';
-import { activeArtworkInstance, syncActiveArtworkPlacement } from '../state/artwork';
+import { syncActiveArtworkPlacement } from '../state/artwork';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
   asmPartFaceNormal,
@@ -226,25 +226,52 @@ async function rebuildAssemblyScene(): Promise<void> {
     return;
   }
 
-  // Placement still comes from the global fit sliders (Phase 2b wires them to the active instance
-  // directly); sync the instance here so assembly-mode code reads placement through it rather than
-  // the legacy fields, without changing what value actually reaches the build.
+  // Placement still comes from the global fit sliders (the instance-aware panel wires them to the
+  // active instance directly); sync the instance here so assembly-mode code reads placement
+  // through it rather than the legacy fields, without changing what value actually reaches the
+  // build.
   syncActiveArtworkPlacement();
-  const activeArtwork = activeArtworkInstance();
+  // Every instance whose source still resolves, each carrying its own placement and zone binding.
+  // With one unbound instance — every flow that exists until the panel can add a second — this is
+  // exactly the single global placement the build used to take.
+  const artworks = state.artworks.flatMap((a) => {
+    const parsed = state.sources.find((s) => s.id === a.sourceId)?.parsed ?? state.parsed;
+    if (!parsed) return [];
+    return [
+      {
+        parsed,
+        zoneId: a.zone?.zoneId ?? null,
+        scaleMult: a.scalePct / 100,
+        offX: a.offsetU,
+        offZ: a.offsetV,
+        flipX: a.flipX,
+        flipY: a.flipY,
+        rotationDeg: a.rotationDeg,
+      },
+    ];
+  });
+  // state.parsed without an instance shouldn't happen (loadArtworkSource creates one), but the
+  // globals remain the source of truth for flat mode, so fall back to them rather than silently
+  // building nothing.
+  if (!artworks.length && state.parsed)
+    artworks.push({
+      parsed: state.parsed,
+      zoneId: null,
+      scaleMult: state.scalePct / 100,
+      offX: state.offsetX,
+      offZ: state.offsetY,
+      flipX: state.flipX,
+      flipY: state.flipY,
+      rotationDeg: state.rotationDeg,
+    });
   const built = await buildAssemblyGeometry({
-    parsed: state.parsed,
+    artworks,
     parts: state.assembly.parts,
     mergeGroups: state.mergeGroups,
     colorSettings: state.colorSettings,
     globalDepth: state.globalDepth,
     radius: state.asmRadius,
     designFit: currentAssemblyKind()?.designFit,
-    scaleMult: (activeArtwork?.scalePct ?? state.scalePct) / 100,
-    offX: activeArtwork?.offsetU ?? state.offsetX,
-    offZ: activeArtwork?.offsetV ?? state.offsetY,
-    flipX: activeArtwork?.flipX ?? state.flipX,
-    flipY: activeArtwork?.flipY ?? state.flipY,
-    rotationDeg: activeArtwork?.rotationDeg ?? state.rotationDeg,
     autoMergeLevel: state.autoMergeLevel,
     baseColorKey: state.baseColorKey,
     baseColorMembers: state.baseColorMembers,
