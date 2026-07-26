@@ -110,6 +110,40 @@ export interface DesignZone {
   name: string;
 }
 
+/** Identifies one design zone: which part it lives on, and the zone's stable id within that part. */
+export interface ZoneRef {
+  partId: number;
+  zoneId: string;
+}
+
+/** One user-loaded (or, later, pattern-library) artwork source, independent of where it's placed. */
+export interface DesignSource {
+  id: string;
+  kind: 'upload' | 'pattern';
+  name: string;
+  parsed: ParsedSVG;
+}
+
+/**
+ * One placement of a DesignSource onto a zone — the unit the on-face gizmo and fit sliders
+ * ultimately target. `zone: null` means the part's single implicit zone (every part has exactly
+ * one today; see `implicitZoneFor` in geometry/zones.ts). Multiple instances per source/zone will
+ * become reachable once the artwork list panel (Phase 2b) exists; today there is always exactly
+ * one, auto-created alongside its source.
+ */
+export interface ArtworkInstance {
+  id: string;
+  sourceId: string;
+  zone: ZoneRef | null;
+  offsetU: number;
+  offsetV: number;
+  scalePct: number;
+  rotationDeg: number;
+  flipX: boolean;
+  flipY: boolean;
+  mode: 'sticker' | 'fill';
+}
+
 export interface AssemblyPart {
   id: number;
   name: string;

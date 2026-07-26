@@ -1,8 +1,10 @@
 import type * as THREE from 'three';
 import type {
+  ArtworkInstance,
   AssemblyPart,
   BaseParams,
   ColorSettings,
+  DesignSource,
   LibraryEntry,
   ParsedSVG,
   ShapeKind,
@@ -68,6 +70,17 @@ export interface AppState {
 
   /** body/base color, chosen from the owned-filament palette (null = neutral default) */
   baseFilamentId: string | null;
+
+  /**
+   * Multi-zone artwork model (assembly mode). `parsed` above stays the single source of parsed
+   * SVG geometry both modes build from — `sources`/`artworks` are a parallel bookkeeping layer
+   * that mirrors it into named instances so a future multi-instance panel (Phase 2b) can list and
+   * target them individually. Today there is always at most one of each; see state/artwork.ts.
+   */
+  sources: DesignSource[];
+  artworks: ArtworkInstance[];
+  /** the instance the gizmo, fit sliders, and (in assembly mode) the build currently target */
+  activeArtworkId: string | null;
 }
 
 export const state: AppState = {
@@ -103,6 +116,10 @@ export const state: AppState = {
   assembly: { kindId: null, parts: [], nextPartId: 1, library: [] },
 
   baseFilamentId: null,
+
+  sources: [],
+  artworks: [],
+  activeArtworkId: null,
 };
 
 /** Neutral PLA-grey used when no base filament is chosen. */

@@ -1,4 +1,5 @@
 import { clearBaseColor, state } from '../state/store';
+import { loadArtworkSource } from '../state/artwork';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
 import { parseSVGDocument } from '../svg/parse';
@@ -17,6 +18,7 @@ const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200
 
 function applyParsedSVG(svgText: string, fname: string): void {
   state.parsed = parseSVGDocument(svgText);
+  loadArtworkSource(state.parsed, fname);
   state.colorSettings = {};
   state.mergeGroups = [];
   // These reference specific hexes from the previous artwork's palette — stale once it changes.
