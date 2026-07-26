@@ -5,6 +5,7 @@ import {
   asmPartTransformGroup,
   buildAssemblyGeometry,
   rotatePointY,
+  type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
 import type { AssemblyPart, ParsedSVG } from '../src/types';
@@ -56,21 +57,36 @@ function redSquareParsed(): ParsedSVG {
   };
 }
 
-function baseInput(overrides: Partial<AssemblyBuildInput> = {}): AssemblyBuildInput {
+/**
+ * The single-artwork shorthand: placement fields are accepted flat, as the build itself took them
+ * before artwork instances existed, and folded into one unbound artwork. Pass `artworks` instead
+ * to place several.
+ */
+type BaseOverrides = Partial<Omit<AssemblyBuildInput, 'artworks'>> &
+  Partial<ArtworkBuildInput> & { artworks?: ArtworkBuildInput[] };
+
+function baseInput(overrides: BaseOverrides = {}): AssemblyBuildInput {
+  const { parsed, zoneId, scaleMult, offX, offZ, flipX, flipY, rotationDeg, artworks, ...rest } =
+    overrides;
   return {
-    parsed: redSquareParsed(),
+    artworks: artworks ?? [
+      {
+        parsed: parsed ?? redSquareParsed(),
+        zoneId: zoneId ?? null,
+        scaleMult: scaleMult ?? 1,
+        offX: offX ?? 0,
+        offZ: offZ ?? 0,
+        flipX: flipX ?? false,
+        flipY: flipY ?? false,
+        rotationDeg: rotationDeg ?? 0,
+      },
+    ],
     parts: [boxPart()],
     mergeGroups: [],
     colorSettings: {},
     globalDepth: 2,
     radius: 10,
-    scaleMult: 1,
-    offX: 0,
-    offZ: 0,
-    flipX: false,
-    flipY: false,
-    rotationDeg: 0,
-    ...overrides,
+    ...rest,
   };
 }
 

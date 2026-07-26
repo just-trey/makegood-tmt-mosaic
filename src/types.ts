@@ -285,7 +285,6 @@ export interface AssemblyPaletteEntry {
   key: string;
   members: string[];
   isMerge: boolean;
-  feature: PolyFeature | null;
 }
 
 /** Indexed mesh: unique vertices (xyz interleaved) + 3 indices per triangle. */

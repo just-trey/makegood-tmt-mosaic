@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Position } from 'geojson';
 import type {
   AssemblyBuild,
   AssemblyPaletteEntry,
@@ -15,6 +16,7 @@ import {
   computeNetRegionsByColor,
   planarArea,
   safeIntersect,
+  safeUnion,
   YIELD_BUDGET_MS,
   yieldToBrowser,
 } from './regions';
@@ -71,16 +73,35 @@ export function asmPartTransformGroup(part: AssemblyPart): {
   };
 }
 
-export interface AssemblyBuildInput {
+/**
+ * Collect two designs' regions for one color into a single feature, WITHOUT a boolean union.
+ * This only ever feeds color detection and merge grouping, where the quantity that matters is
+ * how much of that color there is in total. Separate artworks all live near their own SVG
+ * origin, so a real union would fold unrelated designs' overlapping coordinates together and
+ * undercount every shared color — skewing the area percentages, the dominant-member pick, and
+ * which color gets assigned to the base. Placement is applied per artwork much later.
+ */
+function concatFeatures(a: PolyFeature, b: PolyFeature): PolyFeature {
+  const polysOf = (f: PolyFeature): Position[][][] =>
+    f.geometry.type === 'MultiPolygon'
+      ? (f.geometry.coordinates as Position[][][])
+      : [f.geometry.coordinates as Position[][]];
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'MultiPolygon', coordinates: [...polysOf(a), ...polysOf(b)] },
+  } as PolyFeature;
+}
+
+/** One placed design: an SVG, where it goes, and which surface it goes on. */
+export interface ArtworkBuildInput {
   parsed: ParsedSVG;
-  parts: AssemblyPart[];
-  mergeGroups: string[][];
-  colorSettings: ColorSettings;
-  globalDepth: number;
-  /** design radius in mm — the SVG boundary circle maps to this (ignored when designFit==='rect') */
-  radius: number;
-  /** how artwork maps onto the face; 'rect' scales the SVG 1:1 in mm and centers on the face */
-  designFit?: 'wheel' | 'rect';
+  /**
+   * The `DesignZone.id` this artwork is cut onto. `null` means "every zone the part offers",
+   * which is what a single-zone part's artwork always is — so the ordinary wheel/footrest flow
+   * passes one unbound artwork and behaves exactly as before.
+   */
+  zoneId?: string | null;
   scaleMult: number;
   offX: number;
   offZ: number;
@@ -90,6 +111,22 @@ export interface AssemblyBuildInput {
   flipY: boolean;
   /** design rotation about its center on the face, in degrees (0 = as authored) */
   rotationDeg: number;
+}
+
+export interface AssemblyBuildInput {
+  /**
+   * Every design being cut, in paint order. Colors are pooled across all of them — the same hex
+   * in two artworks is one AMS slot at one depth — while placement stays per artwork.
+   */
+  artworks: ArtworkBuildInput[];
+  parts: AssemblyPart[];
+  mergeGroups: string[][];
+  colorSettings: ColorSettings;
+  globalDepth: number;
+  /** design radius in mm — the SVG boundary circle maps to this (ignored when designFit==='rect') */
+  radius: number;
+  /** how artwork maps onto the face; 'rect' scales the SVG 1:1 in mm and centers on the face */
+  designFit?: 'wheel' | 'rect';
   autoMergeLevel?: number;
   baseColorKey?: string | null;
   /** every raw hex the base assignment excludes from cutting (see state/store.ts addToBase) */
@@ -108,50 +145,58 @@ export async function buildAssemblyGeometry(
   input: AssemblyBuildInput,
 ): Promise<AssemblyBuild | null> {
   const {
-    parsed,
+    artworks,
     parts,
     mergeGroups,
     colorSettings,
     globalDepth,
     radius,
     designFit,
-    scaleMult,
-    offX,
-    offZ,
-    flipX,
-    flipY,
-    rotationDeg,
     autoMergeLevel,
     baseColorKey,
     baseColorMembers,
     keptApart,
   } = input;
-  if (!parsed) return null;
+  if (!artworks.length || artworks.some((a) => !a.parsed)) return null;
 
   const isRect = designFit === 'rect';
 
-  // Design anchor: the SVG's largest <circle> when there is one (the design's intended outer
-  // boundary), otherwise a pseudo-circle around the artwork's bounding box — centered on the
-  // artwork, radius = half its larger dimension — so circle-less SVGs still auto-center on the
-  // hub and span the design diameter instead of refusing to build. Rect parts always anchor on
-  // the artwork bbox center (a template circle is meaningless there) and skip the wheel notice.
-  const bbox = parsed.bbox;
-  let svgC = isRect ? null : parsed.rawSVGCircle;
-  if (!svgC) {
-    svgC = {
-      cx: (bbox.minX + bbox.maxX) / 2,
-      cy: (bbox.minY + bbox.maxY) / 2,
-      r: Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY) / 2 || 1,
-    };
+  // Design anchor, per artwork: the SVG's largest <circle> when there is one (the design's
+  // intended outer boundary), otherwise a pseudo-circle around the artwork's bounding box —
+  // centered on the artwork, radius = half its larger dimension — so circle-less SVGs still
+  // auto-center on the hub and span the design diameter instead of refusing to build. Rect parts
+  // always anchor on the artwork bbox center (a template circle is meaningless there) and skip
+  // the wheel notice.
+  const anchorOf = (parsed: ParsedSVG): { cx: number; cy: number; r: number } => {
+    const existing = isRect ? null : parsed.rawSVGCircle;
+    if (existing) return existing;
+    const bbox = parsed.bbox;
     if (!isRect)
       notice(
         'This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.',
       );
-  }
+    return {
+      cx: (bbox.minX + bbox.maxX) / 2,
+      cy: (bbox.minY + bbox.maxY) / 2,
+      r: Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY) / 2 || 1,
+    };
+  };
 
   // Split like flat.ts: the per-color net regions are ~0-40%, then the per-part Manifold CSG
-  // loop below (the actual heavy work in assembly mode) covers ~40-100%.
-  const { byColor } = await computeNetRegionsByColor(parsed.shapes, (f) => reportProgress(f * 0.4));
+  // loop below (the actual heavy work in assembly mode) covers ~40-100%. Each artwork gets its
+  // own net regions; `byColor` pools them by hex so color detection, merging, base assignment and
+  // depth all see one palette across every design in the scene.
+  const perArtworkColors: Record<string, PolyFeature>[] = [];
+  for (let i = 0; i < artworks.length; i++) {
+    const r = await computeNetRegionsByColor(artworks[i].parsed.shapes, (f) =>
+      reportProgress(((i + f) / artworks.length) * 0.4),
+    );
+    perArtworkColors.push(r.byColor);
+  }
+  const byColor: Record<string, PolyFeature> = {};
+  for (const one of perArtworkColors)
+    for (const [hex, feat] of Object.entries(one))
+      byColor[hex] = byColor[hex] ? concatFeatures(byColor[hex], feat) : feat;
   if (!Object.keys(byColor).length) return null; // no fills at all — nothing to place
 
   const totalRawArea = Object.values(byColor).reduce((s, f) => s + planarArea(f), 0) || 1;
@@ -193,8 +238,45 @@ export async function buildAssemblyGeometry(
     key: 'asm:' + r.key,
     members: r.members,
     isMerge: r.isMerge,
-    feature: r.feature,
   }));
+
+  // The regions each artwork contributes to each palette slot, indexed [color][artwork]. The
+  // grouping above is decided once from the pooled colors so every artwork agrees on which hexes
+  // share a slot; here each artwork's own geometry is folded into those same slots. An artwork
+  // that doesn't use a color contributes nothing to it.
+  const featuresByColor: (PolyFeature | null)[][] = palette.map((c, ci) =>
+    // With one artwork the pooling above was a no-op, so applyColorMerges already unioned this
+    // slot's members over exactly this geometry — reuse it rather than paying for the same turf
+    // union twice on every rebuild.
+    artworks.length === 1
+      ? [resolved[ci].feature]
+      : perArtworkColors.map((one) => {
+          let feat: PolyFeature | null = null;
+          for (const hex of c.members) {
+            const part = one[hex];
+            if (part) feat = feat ? safeUnion(feat, part) : part;
+          }
+          return feat;
+        }),
+  );
+
+  // Only a *loaded* part has a face to measure. A part still fetching from the library would
+  // otherwise leave designFace null, drop us to the 1:1 branch, and report a size the rebuild its
+  // own load triggers immediately contradicts — so when nothing is loaded yet, say nothing
+  // (there's no geometry to place either; the per-part loop below skips it). Computed on demand:
+  // only a rect SVG with no declared mm size needs it, so the wheel path never pays for it.
+  let designFaceMemo: { w: number; h: number } | null | undefined;
+  const largestDesignFace = (): { w: number; h: number } | null => {
+    if (designFaceMemo !== undefined) return designFaceMemo;
+    let found: { w: number; h: number } | null = null;
+    for (const p of parts) {
+      if (!p.loaded) continue;
+      const bb = faceXZBBox(p.boundaryLoop);
+      if (bb && bb.w > 0 && bb.h > 0 && (!found || bb.w * bb.h > found.w * found.h))
+        found = { w: bb.w, h: bb.h };
+    }
+    return (designFaceMemo = found);
+  };
 
   // Wheel: SVG circle radius maps to the mm Design radius. Rect: convert SVG units to mm via the
   // file's declared physical size (userUnitMM) so a template lands life-size even if an editor
@@ -205,34 +287,23 @@ export async function buildAssemblyGeometry(
   // life-size at Scale 100% even when the editor dropped the physical size (e.g. Affinity exports
   // `width="100%"` and rescales the viewBox to its own resolution). Meet-fit (the smaller axis
   // ratio) matches SVG's default fitting. Genuine 1:1 fallback only when there's no viewBox either.
-  let rectFallbackMmPerUnit = 1;
-  if (isRect && parsed.userUnitMM == null) {
+  const mmPerUnitOf = (parsed: ParsedSVG, scaleMult: number, anchorR: number): number => {
+    if (!isRect) return (radius / anchorR) * scaleMult;
+    if (parsed.userUnitMM != null) return parsed.userUnitMM * scaleMult;
     const vb = parsed.viewBox;
-    // Only a *loaded* part has a face to measure. A part still fetching from the library would
-    // otherwise leave designFace null, drop us to the 1:1 branch, and report a size the rebuild
-    // its own load triggers immediately contradicts — so when nothing is loaded yet, say nothing
-    // (there's no geometry to place either; the per-part loop below skips it).
-    let designFace: { w: number; h: number } | null = null;
-    for (const p of parts) {
-      if (!p.loaded) continue;
-      const bb = faceXZBBox(p.boundaryLoop);
-      if (bb && bb.w > 0 && bb.h > 0 && (!designFace || bb.w * bb.h > designFace.w * designFace.h))
-        designFace = { w: bb.w, h: bb.h };
-    }
+    const designFace = largestDesignFace();
     if (designFace && vb && vb.w > 0 && vb.h > 0) {
-      rectFallbackMmPerUnit = Math.min(designFace.w / vb.w, designFace.h / vb.h);
       notice(
         'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
       );
-    } else if (designFace) {
+      return Math.min(designFace.w / vb.w, designFace.h / vb.h) * scaleMult;
+    }
+    if (designFace)
       notice(
         'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
       );
-    }
-  }
-  const mmPerUnit = isRect
-    ? (parsed.userUnitMM ?? rectFallbackMmPerUnit) * scaleMult
-    : (radius / svgC.r) * scaleMult;
+    return scaleMult;
+  };
 
   let wasm;
   try {
@@ -250,15 +321,18 @@ export async function buildAssemblyGeometry(
   // applies. zMul base is -1 because SVG Y runs top-down while the viewport is Z-up (keeps the
   // artwork right-side up on the face); the user's vertical flip toggles that. The mapper's
   // placer folds these design params into the per-part SVG→face-frame map.
-  const placement: DesignPlacement = {
-    svgC,
-    mmPerUnit,
-    xFlip: flipX ? -1 : 1,
-    zMul: flipY ? 1 : -1,
-    offX,
-    offZ,
-    rotationDeg,
-  };
+  const placements: DesignPlacement[] = artworks.map((a) => {
+    const svgC = anchorOf(a.parsed);
+    return {
+      svgC,
+      mmPerUnit: mmPerUnitOf(a.parsed, a.scaleMult, svgC.r),
+      xFlip: a.flipX ? -1 : 1,
+      zMul: a.flipY ? 1 : -1,
+      offX: a.offX,
+      offZ: a.offZ,
+      rotationDeg: a.rotationDeg,
+    };
+  });
 
   // Per-part Manifold CSG is the actual heavy work here (turf's part is done above) — yield to
   // the browser on the same time budget flat.ts's boolean passes use, and report progress across
@@ -324,9 +398,11 @@ export async function buildAssemblyGeometry(
       place: (pt: number[]) => number[],
       c: AssemblyPaletteEntry,
       ci: number,
+      ai: number,
     ): void => {
-      if (!c.feature) return;
-      let feat: PolyFeature | null = mapFeatureCoords(c.feature, place);
+      const source = featuresByColor[ci][ai];
+      if (!source) return;
+      let feat: PolyFeature | null = mapFeatureCoords(source, place);
       if (boundaryPoly) {
         feat = safeIntersect(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
         if (!feat) return;
@@ -371,17 +447,28 @@ export async function buildAssemblyGeometry(
       }
       warn(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
     };
+    // Which artworks land on a given zone: those bound to it by id, plus any unbound one. An
+    // unbound artwork is the single-zone case (wheel, footrest) and goes wherever the part offers
+    // — binding only starts to matter once a part has more than one surface to choose between.
+    const artworksOn = (mapper: ZoneMapper): number[] =>
+      artworks.flatMap((a, ai) => (a.zoneId == null || a.zoneId === mapper.zoneId ? [ai] : []));
+
     // +1 reserved for the body/inlay CSG stage below, so this part's progress reaches 1 only
     // once everything (colors on every zone + final cuts) is actually done.
-    const partUnits = palette.length * mappers.length + 1;
+    const zoneWork = mappers.map(artworksOn);
+    const partUnits = palette.length * zoneWork.reduce((s, l) => s + l.length, 0) + 1;
     let unitsDone = 0;
-    for (const mapper of mappers) {
+    for (let zi = 0; zi < mappers.length; zi++) {
+      const mapper = mappers[zi];
+      if (!zoneWork[zi].length) continue;
       const boundaryPoly = mapper.boundary();
-      const place = mapper.placer(placement);
-      for (let ci = 0; ci < palette.length; ci++) {
-        buildColorPrism(mapper, boundaryPoly, place, palette[ci], ci);
-        reportPartProgress(++unitsDone / partUnits);
-        await maybeYield();
+      for (const ai of zoneWork[zi]) {
+        const place = mapper.placer(placements[ai]);
+        for (let ci = 0; ci < palette.length; ci++) {
+          buildColorPrism(mapper, boundaryPoly, place, palette[ci], ci, ai);
+          reportPartProgress(++unitsDone / partUnits);
+          await maybeYield();
+        }
       }
     }
 

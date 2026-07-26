@@ -96,6 +96,7 @@ export class ConformalZoneMapper implements ZoneMapper {
   constructor(
     private readonly wasm: ManifoldAPI | null,
     private readonly chart: ConformalChart,
+    readonly zoneId: string | null = null,
   ) {
     const { positions3, uv, triangles, normalSign } = chart;
     const vertCount = (positions3.length / 3) | 0;
