@@ -50,6 +50,17 @@ function syncPair(
  * on the base edge. Recomputed whenever the base dimensions or shape change.
  */
 export function updateOffsetSliderRanges(): void {
+  // Margin only feeds flat.ts's auto-fit sizing; assembly mode (wheel and rect alike) maps the
+  // design straight onto the part face and never reads marginPct, so the control is a no-op there.
+  const isAssembly = state.shapeKind === 'assembly';
+  const marginRow = document.getElementById('p-margin-row');
+  if (marginRow) marginRow.style.display = isAssembly ? 'none' : '';
+  const fitHint = document.getElementById('p-fit-hint');
+  if (fitHint)
+    fitHint.textContent = isAssembly
+      ? 'Scale multiplies the design (over 100% bleeds past the part face). Flip H mirrors the artwork left-to-right (fixes text that reads backwards).'
+      : 'Margin sets the auto-fit border; Scale multiplies on top (over 100% bleeds past the edge). Flip H mirrors the artwork left-to-right (fixes text that reads backwards).';
+
   let w: number, h: number;
   if (state.shapeKind === 'assembly') {
     if (currentAssemblyKind()?.designFit === 'rect') {

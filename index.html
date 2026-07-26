@@ -103,7 +103,8 @@
             <div class="help-step">Left panel · Artwork fit</div>
             <h3>Positioning artwork on the part</h3>
             <p>
-              Margin sets the auto-fit border. Scale multiplies on top of that — over 100% will
+              Margin sets the auto-fit border in flat-plate mode (hidden in assembly mode, where the
+              design maps 1:1 onto the part face). Scale multiplies on top of that — over 100% will
               bleed past the part's edge. Rotation spins the artwork about its own center. Flip H
               mirrors left-to-right, useful when text reads backwards after import.
             </p>
@@ -331,7 +332,7 @@
 
         <details class="sec" open>
           <summary>Artwork fit</summary>
-          <div class="row">
+          <div class="row" id="p-margin-row">
             <label>Margin</label>
             <div class="field pair">
               <input type="range" id="p-margin" min="0" max="30" step="1" value="5" /><input
@@ -413,7 +414,7 @@
             </div>
           </div>
           <button class="btn small full" id="btn-reset-fit">Reset to auto-fit</button>
-          <div class="hint">
+          <div class="hint" id="p-fit-hint">
             Margin sets the auto-fit border; Scale multiplies on top (over 100% bleeds past the
             edge). Flip H mirrors the artwork left-to-right (fixes text that reads backwards).
           </div>

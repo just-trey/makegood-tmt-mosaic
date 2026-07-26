@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The wheel's part ids and filenames are renamed for clarity: `top` to
   `wheel-half`, `cap` to `wheel-hub-cap`. Internal only — display names in the
   UI are unchanged.
+- The Margin control is now hidden in Assembly mode: it only ever affected
+  flat-plate mode's auto-fit sizing, so showing it while editing a wheel or
+  footrest was misleading — the slider had no effect there.
 
 ## [0.5.0] - 2026-07-19
 
