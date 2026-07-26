@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "kindId": "chair-body",
+  "parts": [
+    { "libraryPartId": "chair-storage-left", "file": "public/stl/chair-storage-left.3mf" },
+    { "libraryPartId": "chair-storage-right", "file": "public/stl/chair-storage-right.3mf" },
+    { "libraryPartId": "chair-handle-left", "file": "public/stl/chair-handle-left.3mf" },
+    { "libraryPartId": "chair-handle-right", "file": "public/stl/chair-handle-right.3mf" },
+    { "libraryPartId": "chair-wing-left", "file": "public/stl/chair-wing-left.3mf" },
+    { "libraryPartId": "chair-wing-right", "file": "public/stl/chair-wing-right.3mf" },
+    { "libraryPartId": "chair-wheel-mount-left", "file": "public/stl/chair-wheel-mount-left.3mf" },
+    {
+      "libraryPartId": "chair-wheel-mount-right",
+      "file": "public/stl/chair-wheel-mount-right.3mf"
+    },
+    { "libraryPartId": "chair-seat-center", "file": "public/stl/chair-seat-center.3mf" },
+    { "libraryPartId": "chair-seat-back-bottom", "file": "public/stl/chair-seat-back-bottom.3mf" },
+    { "libraryPartId": "chair-seat-back-top", "file": "public/stl/chair-seat-back-top.3mf" }
+  ],
+  "zones": [
+    {
+      "id": "left",
+      "name": "Left side",
+      "seedPoint": [168, 199, -491],
+      "maxAngleDeg": 55,
+      "up": [0, 1, 0]
+    },
+    {
+      "id": "right",
+      "name": "Right side",
+      "seedPoint": [-168, 199, -491],
+      "maxAngleDeg": 55,
+      "up": [0, 1, 0]
+    },
+    {
+      "id": "back",
+      "name": "Back",
+      "seedPoint": [0, 300, -498],
+      "maxAngleDeg": 55,
+      "up": [0, 1, 0]
+    },
+    {
+      "id": "seat",
+      "name": "Seat",
+      "seedPoint": [0, 230, -361],
+      "maxAngleDeg": 50,
+      "up": [0, 0, -1]
+    }
+  ]
+}

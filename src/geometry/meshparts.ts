@@ -7,7 +7,7 @@ import type { FlatPatch } from '../types';
  */
 export async function load3MF(
   arrayBuffer: ArrayBuffer,
-): Promise<{ positions: Float32Array; triCount: number }> {
+): Promise<{ positions: Float32Array; triCount: number; vertices: Float32Array }> {
   const zip = await JSZip.loadAsync(arrayBuffer);
   const modelFile = zip.file('3D/3dmodel.model');
   if (!modelFile) throw new Error('Not a valid 3MF: missing 3D/3dmodel.model');
@@ -43,7 +43,12 @@ export async function load3MF(
       positions[i * 9 + k * 3 + 2] = allVerts[vi][2];
     });
   });
-  return { positions, triCount: allTris.length };
+  // The unique vertex list in file order, kept alongside the (unwelded) soup so a baked design-zone
+  // chart — whose `verts` index this exact order — can be resolved back to 3D positions at load.
+  // For a single-object part (every packed library part) this is just that object's <vertex> list.
+  const vertices = new Float32Array(allVerts.length * 3);
+  allVerts.forEach((v, i) => vertices.set(v, i * 3));
+  return { positions, triCount: allTris.length, vertices };
 }
 
 /**

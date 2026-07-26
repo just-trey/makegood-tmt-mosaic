@@ -87,6 +87,10 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     hidden: true,
     // per-zone rect semantics: each zone's template maps its SVG 1:1 in mm, centered on the chart.
     designFit: 'rect',
+    // baked design-zone sidecar (public/stl/) — the conformal charts artwork wraps onto. The build
+    // wiring that consumes it lands with the per-zone cut refactor; loading it is already covered by
+    // src/geometry/zoneCharts.ts.
+    zonesFile: 'chair-body-zones.json',
     // Standard vs Kit differ only in the caster mounts, but the whole chair must be one or the
     // other — never mixed. The two caster roles resolve per-variant; every other piece is shared.
     variants: [
