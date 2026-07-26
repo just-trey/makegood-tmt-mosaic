@@ -1,0 +1,67 @@
+// @vitest-environment jsdom
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+
+// Keep the load path light and DOM-only: stub the scene/scheduler side effects so importing
+// artworkPanel doesn't pull in three.js or trigger a real rebuild.
+vi.mock('../src/app/scheduler', () => ({
+  scheduleRebuild: vi.fn(),
+  isRebuildLikelySlow: () => false,
+}));
+vi.mock('../src/scene/viewport', () => ({ requestFrame: vi.fn() }));
+
+import { applyParsedSVG } from '../src/ui/artworkPanel';
+import { state } from '../src/state/store';
+
+const GOOD_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>';
+// Valid XML, but no flat-filled shapes — parseSVGDocument throws, same as a malformed drop.
+const BAD_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+
+beforeEach(() => {
+  document.body.innerHTML = '<span id="svg-fname"></span><div id="artwork-list"></div>';
+  state.parsed = null;
+  state.sources = [];
+  state.artworks = [];
+  state.activeArtworkId = null;
+  state.colorSettings = {};
+  state.mergeGroups = [];
+  state.keptApart = [];
+  state.baseColorKey = null;
+  state.baseColorMembers = [];
+});
+
+describe('applyParsedSVG failed-load safety', () => {
+  it('a bad SVG throws and leaves the previously loaded artwork (and its settings) intact', () => {
+    applyParsedSVG(GOOD_SVG, 'good.svg');
+    const prevParsed = state.parsed;
+    const prevSourceId = state.sources[0].id;
+    // simulate work the user did on the loaded design
+    state.colorSettings = { '#ff0000': { depth: 1.5 } };
+    state.mergeGroups = [['#ff0000', '#0000ff']];
+    state.baseColorKey = '#ff0000';
+    state.baseColorMembers = ['#ff0000'];
+
+    expect(() => applyParsedSVG(BAD_SVG, 'bad.svg')).toThrow();
+
+    // nothing was cleared — a failed load is a no-op
+    expect(state.parsed).toBe(prevParsed);
+    expect(state.sources).toHaveLength(1);
+    expect(state.sources[0].id).toBe(prevSourceId);
+    expect(state.colorSettings).toEqual({ '#ff0000': { depth: 1.5 } });
+    expect(state.mergeGroups).toEqual([['#ff0000', '#0000ff']]);
+    expect(state.baseColorKey).toBe('#ff0000');
+  });
+
+  it('a valid load replaces the prior artwork and clears its stale settings', () => {
+    applyParsedSVG(GOOD_SVG, 'first.svg');
+    state.colorSettings = { '#ff0000': { depth: 1.5 } };
+    state.mergeGroups = [['#ff0000', '#0000ff']];
+
+    applyParsedSVG(GOOD_SVG, 'second.svg');
+
+    expect(state.sources).toHaveLength(1);
+    expect(state.sources[0].name).toBe('second.svg');
+    expect(state.colorSettings).toEqual({});
+    expect(state.mergeGroups).toEqual([]);
+  });
+});

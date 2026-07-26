@@ -17,10 +17,15 @@ const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200
   <circle cx="100" cy="100" r="12" fill="#c1272d"/>
 </svg>`;
 
-function applyParsedSVG(svgText: string, fname: string): void {
-  clearArtwork(); // drop any previously loaded design first — one design at a time today
-  state.parsed = parseSVGDocument(svgText);
-  loadArtworkSource(state.parsed, fname);
+// Exported for the failed-load regression test; not used outside this module.
+export function applyParsedSVG(svgText: string, fname: string): void {
+  // Parse BEFORE clearing: parseSVGDocument throws on a malformed/empty SVG, and a failed load
+  // must be a no-op that leaves the currently-loaded artwork (and its color/merge/base settings)
+  // intact — clearing first would discard the user's work on every bad drop.
+  const parsed = parseSVGDocument(svgText);
+  clearArtwork(); // drop any previously loaded design — one design at a time today
+  state.parsed = parsed;
+  loadArtworkSource(parsed, fname);
   $('#svg-fname').textContent = fname;
   renderArtworkList();
   requestFrame();
