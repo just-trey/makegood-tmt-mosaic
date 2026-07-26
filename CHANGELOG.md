@@ -9,8 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- The Artwork panel now shows the loaded design as a named row with a remove
-  button, so you can clear it without loading something else over it.
+- The Artwork panel now supports loading more than one design at once: each
+  load adds a row instead of replacing the last one, click a row to make it
+  the active design the fit sliders and on-face gizmo edit, and on a part
+  with more than one design surface each row can target a specific zone (or
+  place the same design on a second zone) via its own dropdown.
 
 ## [0.6.0] - 2026-07-26
 

@@ -32,6 +32,22 @@ row.
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-remove` click handler in `renderArtworkList`.
 - **Props:** none.
 
+### `artwork_instance_added`
+
+Fired when the user places an already-loaded design onto a second zone via a
+row's "+zone" button.
+
+- **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-add-zone` click handler in `renderArtworkList`.
+- **Props:** none.
+
+### `artwork_instance_zone_changed`
+
+Fired when the user retargets an artwork instance's zone binding from its row
+dropdown.
+
+- **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-zone` change handler in `renderArtworkList`.
+- **Props:** `{ zone: string }` (the zone id, or `'all'` for the unbound/"every zone" option)
+
 ### `mode_switch`
 
 Fired when the user changes the part-shape mode.

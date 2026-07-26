@@ -7,6 +7,8 @@ import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
 import { ASSEMBLY_KINDS, currentAssemblyKind } from '../assembly/kinds';
 import { maybeAutoLoadAssembly } from '../assembly/parts';
+import { clearArtworkZoneBindings } from '../state/artwork';
+import { renderArtworkList } from './artworkListPanel';
 import {
   renderAssemblyPartList,
   renderAssemblyRoleControls,
@@ -182,6 +184,12 @@ export function initPartPanel(): void {
       if (switchingKind) {
         state.assembly.kindId = newKindId;
         state.assembly.parts = [];
+        // The new kind's parts are an entirely different mesh — a zone binding from the old kind
+        // would either match nothing or (worse) silently match a same-named zone on an unrelated
+        // part, so every instance goes back to "every zone the part offers" for the user to
+        // re-target from the list.
+        clearArtworkZoneBindings();
+        renderArtworkList();
       }
       setShapeKind('assembly');
       track('mode_switch', { kind: 'assembly' });

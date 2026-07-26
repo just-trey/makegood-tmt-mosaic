@@ -93,6 +93,24 @@ export function updateOffsetSliderRanges(): void {
   refreshGizmo();
 }
 
+/**
+ * Push the current global fit fields into the slider/number/checkbox DOM — the counterpart to the
+ * gizmo's internal syncFitInputs, needed here too because switching the active artwork instance (or
+ * removing one) reseeds those globals from a different instance without any slider handler firing.
+ */
+export function refreshFitInputsFromState(): void {
+  input('#p-scale').value = String(state.scalePct);
+  input('#p-scale-num').value = String(state.scalePct);
+  input('#p-offset-x').value = String(state.offsetX);
+  input('#p-offset-x-slider').value = String(state.offsetX);
+  input('#p-offset-y').value = String(state.offsetY);
+  input('#p-offset-y-slider').value = String(state.offsetY);
+  input('#p-rot').value = String(state.rotationDeg);
+  input('#p-rot-num').value = String(state.rotationDeg);
+  input('#p-flip-x').checked = state.flipX;
+  input('#p-flip-y').checked = state.flipY;
+}
+
 export function initFitPanel(): void {
   syncPair('#p-margin', '#p-margin-num', true, (v) => {
     state.marginPct = v;

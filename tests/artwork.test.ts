@@ -1,12 +1,18 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   activeArtworkInstance,
+  addInstanceForSource,
+  availableZones,
   clearArtwork,
+  clearArtworkZoneBindings,
   loadArtworkSource,
+  removeArtworkInstance,
+  setActiveArtwork,
+  setArtworkZone,
   syncActiveArtworkPlacement,
 } from '../src/state/artwork';
 import { state } from '../src/state/store';
-import type { ParsedSVG } from '../src/types';
+import type { AssemblyPart, ParsedSVG } from '../src/types';
 
 function fakeParsed(): ParsedSVG {
   return {
@@ -32,7 +38,30 @@ beforeEach(() => {
   state.baseColorKey = null;
   state.baseColorMembers = [];
   state.keptApart = [];
+  state.assembly.parts = [];
 });
+
+/** A minimal zoned part carrying one named DesignZone, for the zone-targeting tests below. */
+function zonedPart(id: number, zoneId: string, zoneName: string): AssemblyPart {
+  return {
+    id,
+    name: `part-${id}`,
+    roleId: 'r',
+    positions: null,
+    patches: null,
+    patchIdx: 0,
+    boundaryLoop: null,
+    zones: [{ id: zoneId, name: zoneName }],
+    topZ: 0,
+    baseDepth: 1,
+    isDuplicateOf: null,
+    pivotX: 0,
+    pivotZ: 0,
+    angleDeg: 0,
+    loaded: true,
+    cutThrough: false,
+  };
+}
 
 describe('loadArtworkSource', () => {
   it('creates one source and one auto-instance on the implicit default zone', () => {
@@ -70,14 +99,15 @@ describe('loadArtworkSource', () => {
     expect(instance.flipY).toBe(true);
   });
 
-  it('replaces (not accumulates) sources/instances on a second load — one design at a time today', () => {
-    loadArtworkSource(fakeParsed(), 'first.svg');
+  it('accumulates sources/instances on a second load and makes the new one active', () => {
+    const first = loadArtworkSource(fakeParsed(), 'first.svg');
     const second = loadArtworkSource(fakeParsed(), 'second.svg');
 
-    expect(state.sources).toHaveLength(1);
-    expect(state.artworks).toHaveLength(1);
-    expect(state.sources[0].name).toBe('second.svg');
+    expect(state.sources).toHaveLength(2);
+    expect(state.artworks).toHaveLength(2);
+    expect(state.sources.map((s) => s.name)).toEqual(['first.svg', 'second.svg']);
     expect(state.activeArtworkId).toBe(second.id);
+    expect(state.artworks).toContain(first);
   });
 
   it('assigns each instance a distinct id across loads', () => {
@@ -159,5 +189,124 @@ describe('clearArtwork', () => {
     expect(state.scalePct).toBe(150);
     expect(state.rotationDeg).toBe(45);
     expect(state.flipX).toBe(true);
+  });
+});
+
+describe('setActiveArtwork', () => {
+  it('pulls the target instance placement into the legacy global fit fields', () => {
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    a.offsetU = 11;
+    a.offsetV = -5;
+    a.scalePct = 60;
+    a.rotationDeg = 270;
+    a.flipX = true;
+    a.flipY = true;
+    const bParsed = fakeParsed();
+    loadArtworkSource(bParsed, 'b.svg'); // becomes active; globals now mirror b
+
+    setActiveArtwork(a.id);
+
+    expect(state.activeArtworkId).toBe(a.id);
+    expect(state.offsetX).toBe(11);
+    expect(state.offsetY).toBe(-5);
+    expect(state.scalePct).toBe(60);
+    expect(state.rotationDeg).toBe(270);
+    expect(state.flipX).toBe(true);
+    expect(state.flipY).toBe(true);
+    // state.parsed follows the active instance's own source, not whichever loaded last
+    expect(state.parsed).not.toBe(bParsed);
+  });
+
+  it('is a no-op on an unknown id', () => {
+    loadArtworkSource(fakeParsed(), 'a.svg');
+    const before = state.offsetX;
+    setActiveArtwork('nope');
+    expect(state.offsetX).toBe(before);
+  });
+});
+
+describe('availableZones / setArtworkZone', () => {
+  it('dedupes zone ids across parts and reports each one once', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left side'), zonedPart(2, 'right', 'Right side')];
+    expect(availableZones()).toEqual([
+      { zoneId: 'left', name: 'Left side' },
+      { zoneId: 'right', name: 'Right side' },
+    ]);
+  });
+
+  it('is empty when no loaded part carries zones', () => {
+    expect(availableZones()).toEqual([]);
+  });
+
+  it('binds an instance to a zone, resolving partId from the part that carries it', () => {
+    state.assembly.parts = [zonedPart(7, 'left', 'Left side')];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+
+    setArtworkZone(a.id, 'left');
+    expect(a.zone).toEqual({ partId: 7, zoneId: 'left' });
+
+    setArtworkZone(a.id, null);
+    expect(a.zone).toBeNull();
+  });
+});
+
+describe('addInstanceForSource', () => {
+  it('creates a second instance on the same source with neutral placement, and activates it', () => {
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    state.offsetX = 20; // simulate the user having moved the first instance
+    state.assembly.parts = [zonedPart(1, 'right', 'Right side')];
+
+    const b = addInstanceForSource(a.sourceId, 'right');
+
+    expect(state.artworks).toHaveLength(2);
+    expect(b.sourceId).toBe(a.sourceId);
+    expect(b.zone).toEqual({ partId: 1, zoneId: 'right' });
+    expect(b.offsetU).toBe(0);
+    expect(b.scalePct).toBe(100);
+    expect(state.activeArtworkId).toBe(b.id);
+  });
+});
+
+describe('removeArtworkInstance', () => {
+  it('removes one instance and its source when it was the source’s only instance', () => {
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    removeArtworkInstance(a.id);
+    expect(state.artworks).toEqual([]);
+    expect(state.sources).toEqual([]);
+    expect(state.parsed).toBeNull(); // falls all the way through to clearArtwork()
+  });
+
+  it('keeps the source alive when another instance still uses it', () => {
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    state.assembly.parts = [zonedPart(1, 'right', 'Right side')];
+    const b = addInstanceForSource(a.sourceId, 'right');
+
+    removeArtworkInstance(b.id);
+
+    expect(state.artworks).toEqual([a]);
+    expect(state.sources.map((s) => s.id)).toEqual([a.sourceId]);
+  });
+
+  it('reactivates a remaining instance when the active one is removed', () => {
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    const b = loadArtworkSource(fakeParsed(), 'b.svg');
+    expect(state.activeArtworkId).toBe(b.id);
+
+    removeArtworkInstance(b.id);
+
+    expect(state.activeArtworkId).toBe(a.id);
+  });
+});
+
+describe('clearArtworkZoneBindings', () => {
+  it('unbinds every instance without touching sources/instances themselves', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left side')];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'left');
+
+    clearArtworkZoneBindings();
+
+    expect(a.zone).toBeNull();
+    expect(state.artworks).toHaveLength(1);
   });
 });
