@@ -99,6 +99,13 @@ describe('chart validation', () => {
       () => new ConformalZoneMapper(wasm, { ...chart, uv: chart.uv.slice(0, chart.uv.length - 2) }),
     ).toThrow();
   });
+
+  it('rejects a triangle index beyond the vertex count (mismatched sidecar)', () => {
+    const chart = makeCylinderChart();
+    const triangles = Uint32Array.from(chart.triangles);
+    triangles[0] = chart.positions3.length / 3;
+    expect(() => new ConformalZoneMapper(wasm, { ...chart, triangles })).toThrow();
+  });
 });
 
 describe('surface evaluation (frameAt)', () => {

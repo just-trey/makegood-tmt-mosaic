@@ -100,6 +100,11 @@ export class ConformalZoneMapper implements ZoneMapper {
       throw new Error('chart triangle index count not divisible by 3');
     const triCount = (triangles.length / 3) | 0;
     if (!triCount) throw new Error('chart has no triangles');
+    // Validate indices here, where the (disk-loaded, possibly mismatched) sidecar data enters:
+    // an out-of-range index would NaN-poison the normals and only surface later as a mysterious
+    // failed cut.
+    for (const i of triangles)
+      if (i >= vertCount) throw new Error(`chart triangle index ${i} >= vertex count ${vertCount}`);
 
     // Per-vertex smooth normals (area-weighted: unnormalized cross products sum) and the
     // area-weighted average chart normal for the ZoneMapper faceNormal/nsign contract.
