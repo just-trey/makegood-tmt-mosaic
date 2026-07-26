@@ -88,8 +88,13 @@ export class ConformalZoneMapper implements ZoneMapper {
   private boundaryComputed = false;
   private boundaryPoly: PolyFeature | null = null;
 
+  /**
+   * `wasm` may be null for a read-only mapper (the gizmo builds one synchronously just to read
+   * frameAt/placer/boundary, where the boolean engine isn't needed and may not be loaded yet);
+   * buildCutter throws rather than silently dropping a cut if one is ever asked for.
+   */
   constructor(
-    private readonly wasm: ManifoldAPI,
+    private readonly wasm: ManifoldAPI | null,
     private readonly chart: ConformalChart,
   ) {
     const { positions3, uv, triangles, normalSign } = chart;
@@ -361,6 +366,7 @@ export class ConformalZoneMapper implements ZoneMapper {
   }
 
   buildCutter(feat: PolyFeature, depth: number, overshoot: number): Float32Array | null {
+    if (!this.wasm) throw new Error('ConformalZoneMapper: buildCutter needs the boolean engine');
     // Flat prism in cutter space: x=u, z=v, y=−h ∈ [−overshoot, +depth]. The warp
     // (u,v,h) → S + h·N̂ is orientation-REVERSING for a right-handed as-seen-from-outside UV
     // chart (det[S_u, N̂, S_v] = −1 — peeling the surface flat with h up flips handedness), so
@@ -385,7 +391,7 @@ export class ConformalZoneMapper implements ZoneMapper {
     let warped: ManifoldSolid | null = null;
     let outside = false;
     try {
-      prism = soupToManifold(this.wasm, soup);
+      prism = soupToManifold(this.wasm!, soup);
       if (!manifoldIsValid(prism)) return null;
       fine = prism.refineToLength(refineLen);
       // Never throw from inside the WASM callback (no clean unwind through the C++ frames) —

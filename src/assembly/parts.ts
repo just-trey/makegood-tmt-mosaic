@@ -1,5 +1,5 @@
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
-import type { AssemblyPart, AssemblyRole, LibraryEntry } from '../types';
+import type { AssemblyPart, AssemblyRole, DesignZone, LibraryEntry } from '../types';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
@@ -10,6 +10,8 @@ import {
   excludeTriangles,
   load3MF,
 } from '../geometry/meshparts';
+import { fingerprintMatches, loadZonesSidecar, reconstructChart } from '../geometry/zoneCharts';
+import { warn } from '../warnings';
 import {
   asmKindCanAutoLoad,
   currentAssemblyKind,
@@ -110,6 +112,7 @@ export async function asmLoadLibraryEntryIntoPart(
   entry: LibraryEntry,
 ): Promise<void> {
   if (entry.baseDepth) part.baseDepth = entry.baseDepth;
+  part.libraryPartId = entry.id;
   try {
     const res = await fetch(entry.file);
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -137,10 +140,16 @@ export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPa
     name: copyName ?? `${src.name} (rotated copy)`,
     roleId: src.roleId,
     positions: src.positions,
+    vertices: src.vertices,
+    libraryPartId: src.libraryPartId,
     patches: src.patches,
     patchIdx: src.patchIdx,
     boundaryLoop: src.boundaryLoop,
     restPositions: src.restPositions,
+    // Conformal charts are baked in the source's native frame and (unlike the flat placer) carry
+    // no inverse-rotation remap, so a *rotated* copy of a charted part would cut in the wrong
+    // place. Unreachable today — every role on the only zoned kind sets allowRotatedCopies:false.
+    zones: src.zones,
     topZ: src.topZ,
     baseDepth: src.baseDepth,
     patchNormal: src.patchNormal,
@@ -192,6 +201,7 @@ export async function asmLoadPartBuffer(
   if (lower.endsWith('.3mf')) {
     const r = await load3MF(buf);
     positions = r.positions;
+    part.vertices = r.vertices;
   } else if (lower.endsWith('.stl')) {
     const geo = new STLLoader().parse(buf);
     positions = geo.attributes.position.array as Float32Array;
@@ -203,9 +213,61 @@ export async function asmLoadPartBuffer(
   requestFrame(); // new part geometry — re-fit the view
   part.patchIdx = defaultPatchIdx(part); // largest-area patch, or the role's preferred face
   applyAsmPatchChoice(part);
+  await attachBakedZones(part, positions.length / 9);
   part.loaded = true;
   notifyPartsChanged();
   scheduleRebuild();
+}
+
+/**
+ * Attach the kind's baked design zones to a freshly loaded part, when it has any. Sets
+ * `part.zones` for every part of a sidecar-backed kind — including to `[]` for a piece the bake
+ * gave no zone, which is what tells the build to leave that piece plain (see AssemblyPart.zones).
+ * Parts of a kind with no sidecar are left untouched and keep the implicit flat zone.
+ *
+ * A failure here (unreachable sidecar, or a part re-packed since the bake so its fingerprint no
+ * longer matches) warns and leaves the part zoneless rather than cutting against stale UV data.
+ */
+async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<void> {
+  const zonesFile = currentAssemblyKind()?.zonesFile;
+  if (!zonesFile || !part.libraryPartId || !part.vertices) return;
+  const partId = part.libraryPartId;
+  const vertices = part.vertices;
+  let sidecar;
+  try {
+    sidecar = await loadZonesSidecar(zonesFile);
+  } catch (e) {
+    warn(
+      `Couldn't load the design zones for "${part.name}" (${zonesFile}: ${(e as Error).message}) — it will load without design surfaces.`,
+    );
+    return;
+  }
+  // Every zone/chart pair baked onto this part. Set even when empty: a piece the bake gave no zone
+  // takes no artwork at all, which is not the same as having no sidecar (see AssemblyPart.zones).
+  const baked = sidecar.zones.flatMap((zone) =>
+    zone.charts.filter((c) => c.libraryPartId === partId).map((chart) => ({ zone, chart })),
+  );
+  part.zones = [];
+  if (!baked.length) return;
+
+  // One fingerprint check for the part, not one per chart — it rescans every vertex.
+  if (!fingerprintMatches(sidecar, partId, vertices, triCount)) {
+    warn(
+      `Part "${part.name}" doesn't match the mesh its design zones were baked against, so its artwork surfaces are unavailable. Re-run the zone bake for this part.`,
+    );
+    return;
+  }
+  const zones: DesignZone[] = [];
+  for (const { zone, chart } of baked) {
+    try {
+      zones.push({ id: zone.id, name: zone.name, chart: reconstructChart(zone, chart, vertices) });
+    } catch (e) {
+      warn(
+        `Design zone "${zone.name}" couldn't be applied to "${part.name}": ${(e as Error).message}`,
+      );
+    }
+  }
+  part.zones = zones;
 }
 
 export async function asmLoadPartFile(part: AssemblyPart, file: File): Promise<void> {

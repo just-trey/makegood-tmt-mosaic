@@ -1,4 +1,5 @@
 import type { Feature, MultiPolygon, Polygon } from 'geojson';
+import type { ConformalChart } from './geometry/conformal';
 
 export interface Pt {
   x: number;
@@ -108,6 +109,12 @@ export interface FlatPatch {
 export interface DesignZone {
   id: string;
   name: string;
+  /**
+   * The baked UV chart this zone's artwork wraps onto, reconstructed against the part's loaded
+   * mesh (see geometry/zoneCharts.ts). Present on a conformal zone; absent means the zone is cut
+   * with the flat projection instead.
+   */
+  chart?: ConformalChart;
 }
 
 /** Identifies one design zone: which part it lives on, and the zone's stable id within that part. */
@@ -149,6 +156,14 @@ export interface AssemblyPart {
   name: string;
   roleId: string;
   positions: Float32Array | null;
+  /**
+   * The packed mesh's unique vertex list (file order, xyz interleaved) when the part came from a
+   * 3MF — what a baked zone chart's vertex indices address. Absent for an STL upload, which has
+   * no packed vertex order to index into.
+   */
+  vertices?: Float32Array;
+  /** which stl/parts.json entry this part was loaded from; absent for a drag-and-drop upload */
+  libraryPartId?: string;
   /** part geometry minus the design face — preview context only */
   restPositions?: Float32Array;
   patches: FlatPatch[] | null;
@@ -156,9 +171,12 @@ export interface AssemblyPart {
   boundaryLoop: number[][] | null;
   patchNormal?: number[];
   /**
-   * Baked design zones for a multi-face part (chair body, Phase 4+). Undefined means the part
-   * uses one implicit flat zone from its chosen patch, the single-design-face behavior every
-   * part has today.
+   * Baked design zones for a part of a kind that ships a zone sidecar (`AssemblyKind.zonesFile`).
+   * Undefined means no sidecar applies, so the part uses one implicit flat zone from its chosen
+   * patch — the single-design-face behavior every part had before conformal zones. An *empty*
+   * array is meaningful and different: the sidecar loaded but bakes no zone onto this piece
+   * (e.g. the chair's caster mounts), so it takes no artwork at all rather than falling back to
+   * stamping its largest flat patch.
    */
   zones?: DesignZone[];
   topZ: number;

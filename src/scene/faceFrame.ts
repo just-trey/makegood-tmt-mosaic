@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { state } from '../state/store';
 import { currentBaseParams } from '../state/store';
 import { currentAssemblyKind } from '../assembly/kinds';
-import { implicitZoneFor } from '../geometry/zones';
+import { primaryZoneMapper } from '../geometry/zoneMappers';
 import { getModelGroup } from './viewport';
 
 /**
@@ -76,14 +76,19 @@ function flatFrame(): FaceFrame | null {
 
 function assemblyFrame(): FaceFrame | null {
   const parts = state.assembly.parts;
-  const primary = parts.find((p) => p.loaded && !p.isDuplicateOf && p.boundaryLoop && p.positions);
+  // A part of a zoned kind only counts once its zones have resolved and at least one takes
+  // artwork — a structural piece (no baked zone) has nothing for the gizmo to sit on.
+  const primary = parts.find(
+    (p) =>
+      p.loaded && !p.isDuplicateOf && p.boundaryLoop && p.positions && (!p.zones || p.zones.length),
+  );
   if (!primary) return null;
 
   const isRect = currentAssemblyKind()?.designFit === 'rect';
-  // The same mapper the build uses — its frameAt() carries the face direction, face-plane Y, and
-  // (for rect) the face-center anchor, so the gizmo and the cut can't drift apart.
-  const mapper = implicitZoneFor(primary, parts, isRect);
-  if (!mapper.faceNormal) return null;
+  // The same mapper the build uses — its frameAt() carries the face direction, face-plane Y or UV
+  // chart, and (for rect) the face-center anchor, so the gizmo and the cut can't drift apart.
+  const mapper = primaryZoneMapper(primary, parts, isRect);
+  if (!mapper || !mapper.faceNormal) return null;
 
   const bbox = state.parsed!.bbox;
   const svgW = bbox.maxX - bbox.minX,
