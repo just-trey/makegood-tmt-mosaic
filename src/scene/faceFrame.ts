@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { state } from '../state/store';
 import { currentBaseParams } from '../state/store';
 import { currentAssemblyKind } from '../assembly/kinds';
-import { asmPartFaceNormal, faceXZBBox } from '../geometry/assembly';
+import { implicitZoneFor } from '../geometry/zones';
 import { getModelGroup } from './viewport';
 
 /**
@@ -78,21 +78,12 @@ function assemblyFrame(): FaceFrame | null {
   const parts = state.assembly.parts;
   const primary = parts.find((p) => p.loaded && !p.isDuplicateOf && p.boundaryLoop && p.positions);
   if (!primary) return null;
-  const nrm = asmPartFaceNormal(primary, parts);
-  if (!nrm) return null;
-  const nsign = nrm[1] < 0 ? -1 : 1;
-  const faceY = Math.abs(nrm[1]) > 0.1 ? primary.topZ / nrm[1] : primary.topZ;
 
   const isRect = currentAssemblyKind()?.designFit === 'rect';
-  let faceCx = 0,
-    faceCz = 0;
-  if (isRect) {
-    const bb = faceXZBBox(primary.boundaryLoop);
-    if (bb) {
-      faceCx = bb.cx;
-      faceCz = bb.cz;
-    }
-  }
+  // The same mapper the build uses — its frameAt() carries the face direction, face-plane Y, and
+  // (for rect) the face-center anchor, so the gizmo and the cut can't drift apart.
+  const mapper = implicitZoneFor(primary, parts, isRect);
+  if (!mapper.faceNormal) return null;
 
   const bbox = state.parsed!.bbox;
   const svgW = bbox.maxX - bbox.minX,
@@ -110,16 +101,15 @@ function assemblyFrame(): FaceFrame | null {
     mmPerUnit = ((state.asmRadius || 138) / svgR) * scaleMult;
   }
 
+  // frameAt returns the design center in the part's native space; the assembly is lifted to rest
+  // on the grid after each rebuild, so fold in the model-group offset here.
+  const frame = mapper.frameAt(state.offsetX, state.offsetY);
   const mg = getModelGroup().position;
   return {
-    origin: new THREE.Vector3(
-      state.offsetX + faceCx + mg.x,
-      faceY + mg.y,
-      state.offsetY + faceCz + mg.z,
-    ),
-    uAxis: new THREE.Vector3(1, 0, 0),
-    vAxis: new THREE.Vector3(0, 0, 1),
-    normal: new THREE.Vector3(0, nsign, 0),
+    origin: frame.origin.add(mg),
+    uAxis: frame.uAxis,
+    vAxis: frame.vAxis,
+    normal: frame.normal,
     halfW: (svgW * mmPerUnit) / 2,
     halfH: (svgH * mmPerUnit) / 2,
     offsetX: state.offsetX,
