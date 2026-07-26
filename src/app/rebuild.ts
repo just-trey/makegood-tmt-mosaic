@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { AssemblyBuild } from '../types';
 import { baseColorHex, currentBaseParams, state } from '../state/store';
+import { activeArtworkInstance, syncActiveArtworkPlacement } from '../state/artwork';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
   asmPartFaceNormal,
@@ -225,6 +226,11 @@ async function rebuildAssemblyScene(): Promise<void> {
     return;
   }
 
+  // Placement still comes from the global fit sliders (Phase 2b wires them to the active instance
+  // directly); sync the instance here so assembly-mode code reads placement through it rather than
+  // the legacy fields, without changing what value actually reaches the build.
+  syncActiveArtworkPlacement();
+  const activeArtwork = activeArtworkInstance();
   const built = await buildAssemblyGeometry({
     parsed: state.parsed,
     parts: state.assembly.parts,
@@ -233,12 +239,12 @@ async function rebuildAssemblyScene(): Promise<void> {
     globalDepth: state.globalDepth,
     radius: state.asmRadius,
     designFit: currentAssemblyKind()?.designFit,
-    scaleMult: state.scalePct / 100,
-    offX: state.offsetX,
-    offZ: state.offsetY,
-    flipX: state.flipX,
-    flipY: state.flipY,
-    rotationDeg: state.rotationDeg,
+    scaleMult: (activeArtwork?.scalePct ?? state.scalePct) / 100,
+    offX: activeArtwork?.offsetU ?? state.offsetX,
+    offZ: activeArtwork?.offsetV ?? state.offsetY,
+    flipX: activeArtwork?.flipX ?? state.flipX,
+    flipY: activeArtwork?.flipY ?? state.flipY,
+    rotationDeg: activeArtwork?.rotationDeg ?? state.rotationDeg,
     autoMergeLevel: state.autoMergeLevel,
     baseColorKey: state.baseColorKey,
     baseColorMembers: state.baseColorMembers,
