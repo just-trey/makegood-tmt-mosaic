@@ -28,7 +28,8 @@ import {
   soupToManifold,
   type ManifoldSolid,
 } from './manifold';
-import { faceXZBBox, implicitZoneFor, OVERSHOOT_MM, type DesignPlacement } from './zones';
+import { faceXZBBox, OVERSHOOT_MM, type DesignPlacement, type ZoneMapper } from './zones';
+import { zoneMappersFor } from './zoneMappers';
 import { notice, warn } from '../warnings';
 import { reportProgress } from '../progress';
 
@@ -285,28 +286,45 @@ export async function buildAssemblyGeometry(
   for (const part of parts) {
     if (!part.loaded || !part.boundaryLoop || !part.positions) continue;
 
-    // One implicit flat zone per part today; the mapper owns all the surface geometry
-    // (face direction, face-plane Y, boundary clip, cut-through depth, placement) that used to be
-    // computed inline here. Parts with baked zones will dispatch to a conformal mapper instead.
-    const mapper = implicitZoneFor(part, parts, isRect);
+    // Every design surface this part takes artwork on: one implicit flat zone for an ordinary
+    // part, or the baked conformal charts of a sidecar-backed kind (which may be none at all, for
+    // a structural piece). The mapper owns all the surface geometry — face direction, face-plane
+    // Y or UV chart, boundary clip, cut-through depth, placement — that used to be computed
+    // inline here. Cutters from every zone are unioned into the single CSG pass below, so a
+    // multi-zone part is still cut exactly once.
+    //
+    // Placement is still global, so a multi-zone part currently receives the SAME artwork on each
+    // of its zones. Choosing artwork per zone is the artwork-instance work (state.artworks already
+    // models it); until that lands, only the hidden chair kind has more than one zone.
+    const mappers = zoneMappersFor(part, parts, isRect, wasm);
 
-    const nrm = mapper.faceNormal;
-    if (nrm && Math.abs(nrm[1]) < 0.9) {
-      warn(
-        `Part "${part.name}": detected face normal (${nrm.map((v) => v.toFixed(2)).join(', ')}) isn't vertical. Assembly cutting assumes a horizontal face — pick a different face or the cut may be wrong.`,
-      );
+    if (!part.zones) {
+      // Flat-path assumption only: a conformal zone's face legitimately points sideways (the
+      // chair's side panels face ±X), which is precisely what the baked chart exists to handle.
+      const nrm = mappers[0].faceNormal;
+      if (nrm && Math.abs(nrm[1]) < 0.9) {
+        warn(
+          `Part "${part.name}": detected face normal (${nrm.map((v) => v.toFixed(2)).join(', ')}) isn't vertical. Assembly cutting assumes a horizontal face — pick a different face or the cut may be wrong.`,
+        );
+      }
     }
-    if (!part.isDuplicateOf && !viewSignSet) {
-      viewSign = mapper.nsign;
+    if (mappers.length && !part.isDuplicateOf && !viewSignSet) {
+      viewSign = mappers[0].nsign;
       viewSignSet = true;
     }
 
-    const boundaryPoly = mapper.boundary();
-    const place = mapper.placer(placement);
-    const colorPrisms: Record<number, ManifoldSolid> = {};
+    // One color can now be cut on several zones of the same part, so each color collects a list
+    // of solids that is unioned before the body/inlay booleans.
+    const colorPrisms: Record<number, ManifoldSolid[]> = {};
     // Extracted to a plain function (rather than inlined in the loop below) purely so its
     // early `return`s mean "skip this color" without fighting the surrounding for-loop/await.
-    const buildColorPrism = (c: AssemblyPaletteEntry, ci: number): void => {
+    const buildColorPrism = (
+      mapper: ZoneMapper,
+      boundaryPoly: PolyFeature | null,
+      place: (pt: number[]) => number[],
+      c: AssemblyPaletteEntry,
+      ci: number,
+    ): void => {
       if (!c.feature) return;
       let feat: PolyFeature | null = mapFeatureCoords(c.feature, place);
       if (boundaryPoly) {
@@ -317,11 +335,20 @@ export async function buildAssemblyGeometry(
       if (depthSetting <= 0) return;
       const depth = mapper.resolveCutDepth(depthSetting);
       const soup = mapper.buildCutter(feat, depth, OVERSHOOT_MM);
-      if (!soup || !soup.length) return;
+      if (!soup || !soup.length) {
+        // The artwork overlapped this zone (it survived the boundary clip) but no cutter came out.
+        // On a conformal zone that means the warp found no surface under part of the region —
+        // usually a baked boundary claiming more area than the chart actually covers; on a flat
+        // one, a region too degenerate to extrude. Same user-facing outcome as a cutter that
+        // fails to become a solid below, so it shares that message (warnings dedupe by text);
+        // staying silent would drop the color from the part with no explanation at all.
+        warn(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
+        return;
+      }
       try {
         const man = soupToManifold(wasm, soup);
         if (!manifoldIsValid(man)) throw new Error('empty manifold');
-        colorPrisms[ci] = man;
+        (colorPrisms[ci] ||= []).push(man);
         return;
       } catch {
         /* retry below with self-intersections repaired */
@@ -335,7 +362,7 @@ export async function buildAssemblyGeometry(
         if (soup2 && soup2.length) {
           const man2 = soupToManifold(wasm, soup2);
           if (manifoldIsValid(man2)) {
-            colorPrisms[ci] = man2;
+            (colorPrisms[ci] ||= []).push(man2);
             return;
           }
         }
@@ -345,15 +372,29 @@ export async function buildAssemblyGeometry(
       warn(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
     };
     // +1 reserved for the body/inlay CSG stage below, so this part's progress reaches 1 only
-    // once everything (colors + final cuts) is actually done.
-    const partUnits = palette.length + 1;
-    for (let ci = 0; ci < palette.length; ci++) {
-      buildColorPrism(palette[ci], ci);
-      reportPartProgress((ci + 1) / partUnits);
-      await maybeYield();
+    // once everything (colors on every zone + final cuts) is actually done.
+    const partUnits = palette.length * mappers.length + 1;
+    let unitsDone = 0;
+    for (const mapper of mappers) {
+      const boundaryPoly = mapper.boundary();
+      const place = mapper.placer(placement);
+      for (let ci = 0; ci < palette.length; ci++) {
+        buildColorPrism(mapper, boundaryPoly, place, palette[ci], ci);
+        reportPartProgress(++unitsDone / partUnits);
+        await maybeYield();
+      }
     }
 
-    const prismEntries = Object.entries(colorPrisms);
+    // Per color: the union of its cutters across every zone. `owned` tracks each solid exactly
+    // once (originals plus any union built from them) so the cleanup below frees all of them.
+    const owned: ManifoldSolid[] = [];
+    const prismEntries: [number, ManifoldSolid][] = [];
+    for (const [ci, list] of Object.entries(colorPrisms)) {
+      owned.push(...list);
+      const merged = list.length === 1 ? list[0] : Manifold.union(list);
+      if (merged !== list[0]) owned.push(merged);
+      prismEntries.push([+ci, merged]);
+    }
     if (!prismEntries.length) {
       // no cuts land on this part — emit the untouched body so the assembly still exports whole
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
@@ -366,7 +407,7 @@ export async function buildAssemblyGeometry(
       partMan = soupToManifold(wasm, part.positions);
     } catch {
       warn(`Part "${part.name}" mesh couldn't be read by the boolean engine.`);
-      prismEntries.forEach(([, p]) => manifoldDelete(p));
+      owned.forEach(manifoldDelete);
       finishPart();
       continue;
     }
@@ -376,7 +417,7 @@ export async function buildAssemblyGeometry(
       );
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
       manifoldDelete(partMan);
-      prismEntries.forEach(([, p]) => manifoldDelete(p));
+      owned.forEach(manifoldDelete);
       finishPart();
       continue;
     }
@@ -384,6 +425,7 @@ export async function buildAssemblyGeometry(
     // full modified body = part - union(all color pockets)
     const prismList = prismEntries.map(([, p]) => p);
     const cutter = prismList.length === 1 ? prismList[0] : Manifold.union(prismList);
+    if (cutter !== prismList[0]) owned.push(cutter);
     let bodySoup: Float32Array;
     let bodyIndexed: AssemblyPartOutput['bodyIndexed'];
     try {
@@ -406,8 +448,8 @@ export async function buildAssemblyGeometry(
         const inl = Manifold.intersection(partMan, prism);
         const { soup, indexed } = manifoldToMeshes(inl);
         if (soup.length) {
-          inlaySoups[+ci] = soup;
-          inlayIndexed[+ci] = indexed;
+          inlaySoups[ci] = soup;
+          inlayIndexed[ci] = indexed;
         }
         manifoldDelete(inl);
       } catch {
@@ -416,8 +458,7 @@ export async function buildAssemblyGeometry(
       await maybeYield();
     }
 
-    if (cutter !== prismList[0]) manifoldDelete(cutter);
-    prismList.forEach((p) => manifoldDelete(p));
+    owned.forEach(manifoldDelete);
     manifoldDelete(partMan);
 
     partOutputs.push({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed });
