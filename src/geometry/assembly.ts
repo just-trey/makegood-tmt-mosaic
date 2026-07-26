@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import * as turf from '@turf/turf';
 import type {
   AssemblyBuild,
   AssemblyPaletteEntry,
@@ -20,7 +19,6 @@ import {
   yieldToBrowser,
 } from './regions';
 import {
-  extrudeRegionToSoup,
   getManifold,
   manifoldDelete,
   manifoldIsValid,
@@ -30,53 +28,14 @@ import {
   soupToManifold,
   type ManifoldSolid,
 } from './manifold';
+import { faceXZBBox, implicitZoneFor, OVERSHOOT_MM, type DesignPlacement } from './zones';
 import { notice, warn } from '../warnings';
 import { reportProgress } from '../progress';
 
-/** How far each cutter pokes above the face so the pocket opens cleanly at the surface. */
-export const OVERSHOOT_MM = 0.5;
-
-export function rotatePointY(
-  x: number,
-  z: number,
-  pivotX: number,
-  pivotZ: number,
-  angleDeg: number,
-): [number, number] {
-  const r = (angleDeg * Math.PI) / 180,
-    c = Math.cos(r),
-    s = Math.sin(r);
-  const dx = x - pivotX,
-    dz = z - pivotZ;
-  return [pivotX + dx * c - dz * s, pivotZ + dx * s + dz * c];
-}
-
-export function asmPartFaceNormal(part: AssemblyPart, parts: AssemblyPart[]): number[] | null {
-  if (part.patchNormal) return part.patchNormal;
-  if (part.isDuplicateOf) {
-    const src = parts.find((p) => p.id === part.isDuplicateOf);
-    if (src && src.patchNormal) return src.patchNormal;
-  }
-  return null;
-}
-
-/** X/Z bounding box (mm) of a part's flat-face boundary loop; null when the loop is empty. */
-export function faceXZBBox(
-  loop: number[][] | null | undefined,
-): { cx: number; cz: number; w: number; h: number } | null {
-  if (!loop || !loop.length) return null;
-  let minX = Infinity,
-    maxX = -Infinity,
-    minZ = Infinity,
-    maxZ = -Infinity;
-  for (const p of loop) {
-    if (p[0] < minX) minX = p[0];
-    if (p[0] > maxX) maxX = p[0];
-    if (p[2] < minZ) minZ = p[2];
-    if (p[2] > maxZ) maxZ = p[2];
-  }
-  return { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, w: maxX - minX, h: maxZ - minZ };
-}
+// Re-exported from ./zones so existing importers (exportPanel, faceFrame, rebuild, tests) keep
+// their `from '../geometry/assembly'` paths — these are part-geometry primitives the zone layer
+// now owns.
+export { asmPartFaceNormal, faceXZBBox, rotatePointY, OVERSHOOT_MM } from './zones';
 
 /**
  * Visual counterpart to rotatePointY: a duplicate part's rendered meshes need an actual 3D
@@ -286,49 +245,18 @@ export async function buildAssemblyGeometry(
   }
   const { Manifold } = wasm;
 
-  // User-requested mirrors, layered on top of the automatic per-face correction inside
-  // placeOnPart. Base Z is -1 because SVG Y runs top-down while the viewport is Z-up (keeps the
-  // artwork right-side up on the face); the user's vertical flip toggles that.
-  const userXFlip = flipX ? -1 : 1;
-  const zMul = flipY ? 1 : -1;
-  // Place an SVG-space point onto a part's native face frame (mm). Rotated copies get the
-  // inverse of their assembly rotation, so the design slice that lands on the copy is baked
-  // into the part's native (unrotated) print orientation. A +Y-facing design is viewed from the
-  // +Y side, which reads the artwork mirrored left-to-right, so negate X on those faces to keep
-  // it right-reading by default; a -Y face is viewed from -Y and already reads correctly. Flip H
-  // then mirrors relative to that corrected orientation.
-  const placeOnPart = (part: AssemblyPart, nsign: number) => {
-    // Rect parts center the design on the detected face (its native X/Z bbox center), so artwork
-    // lands on the face even when the face is offset from the part origin. Wheel parts anchor on
-    // the hub at the origin.
-    let faceCx = 0,
-      faceCz = 0;
-    const faceBB = isRect ? faceXZBBox(part.boundaryLoop) : null;
-    if (faceBB) {
-      faceCx = faceBB.cx;
-      faceCz = faceBB.cz;
-    }
-    return (pt: number[]): number[] => {
-      const xMul = userXFlip * (nsign > 0 ? -1 : 1);
-      // center+scale+mirror in the face frame, then rotate about the design center (before the
-      // offset+faceCenter translation), so rotation spins the artwork in place rather than
-      // sweeping it around the face.
-      let x = (pt[0] - svgC.cx) * mmPerUnit * xMul;
-      let z = (pt[1] - svgC.cy) * mmPerUnit * zMul;
-      if (rotationDeg) {
-        const rr = rotatePointY(x, z, 0, 0, rotationDeg);
-        x = rr[0];
-        z = rr[1];
-      }
-      x += offX + faceCx;
-      z += offZ + faceCz;
-      if (part.isDuplicateOf) {
-        const r = rotatePointY(x, z, part.pivotX, part.pivotZ, -part.angleDeg);
-        x = r[0];
-        z = r[1];
-      }
-      return [x, z];
-    };
+  // User-requested mirrors, layered on top of the automatic per-face correction the zone mapper
+  // applies. zMul base is -1 because SVG Y runs top-down while the viewport is Z-up (keeps the
+  // artwork right-side up on the face); the user's vertical flip toggles that. The mapper's
+  // placer folds these design params into the per-part SVG→face-frame map.
+  const placement: DesignPlacement = {
+    svgC,
+    mmPerUnit,
+    xFlip: flipX ? -1 : 1,
+    zMul: flipY ? 1 : -1,
+    offX,
+    offZ,
+    rotationDeg,
   };
 
   // Per-part Manifold CSG is the actual heavy work here (turf's part is done above) — yield to
@@ -357,64 +285,24 @@ export async function buildAssemblyGeometry(
   for (const part of parts) {
     if (!part.loaded || !part.boundaryLoop || !part.positions) continue;
 
-    const nrm = asmPartFaceNormal(part, parts);
+    // One implicit flat zone per part today; the mapper owns all the surface geometry
+    // (face direction, face-plane Y, boundary clip, cut-through depth, placement) that used to be
+    // computed inline here. Parts with baked zones will dispatch to a conformal mapper instead.
+    const mapper = implicitZoneFor(part, parts, isRect);
+
+    const nrm = mapper.faceNormal;
     if (nrm && Math.abs(nrm[1]) < 0.9) {
       warn(
         `Part "${part.name}": detected face normal (${nrm.map((v) => v.toFixed(2)).join(', ')}) isn't vertical. Assembly cutting assumes a horizontal face — pick a different face or the cut may be wrong.`,
       );
     }
-    // Which way the face points along Y, and the actual Y of the face plane. topZ is the plane
-    // offset (= nrm.y * faceY), so a face pointing -Y (e.g. the BACK of the wheel) needs the
-    // pocket cut in the opposite direction — otherwise the inlay lands on the wrong side.
-    const nsign = nrm && nrm[1] < 0 ? -1 : 1;
-    const faceY = nrm && Math.abs(nrm[1]) > 0.1 ? part.topZ / nrm[1] : part.topZ;
     if (!part.isDuplicateOf && !viewSignSet) {
-      viewSign = nsign;
+      viewSign = mapper.nsign;
       viewSignSet = true;
     }
 
-    // face boundary as a turf polygon in native X/Z, to clip regions to the actual face. A
-    // cut-through part (e.g. a domed cap) has a design meant to span the whole curved surface,
-    // not just the small flat patch used to place it, so skip the clip — the boolean subtract
-    // against the real mesh below is what actually bounds the cut.
-    let boundaryPoly: PolyFeature | null = null;
-    if (!part.cutThrough) {
-      const bRing = part.boundaryLoop.map((p) => [p[0], p[2]]);
-      if (bRing.length >= 3) {
-        if (
-          bRing[0][0] !== bRing[bRing.length - 1][0] ||
-          bRing[0][1] !== bRing[bRing.length - 1][1]
-        )
-          bRing.push(bRing[0]);
-        try {
-          boundaryPoly = turf.polygon([bRing]) as PolyFeature;
-        } catch {
-          boundaryPoly = null;
-        }
-      }
-    }
-
-    // A cut-through part ignores the normal depth setting: either it cuts a fixed mm depth
-    // straight down from the face (e.g. the cap's 3mm shell above its mounting boss — deeper
-    // would breach it), or, with no configured depth, pierces the part's whole vertical extent
-    // (plus overshoot past the far surface) regardless of local curvature/thickness.
-    let throughDepth = 0;
-    if (part.cutThrough) {
-      if (part.cutThroughDepth != null) {
-        throughDepth = part.cutThroughDepth;
-      } else {
-        let yMin = Infinity,
-          yMax = -Infinity;
-        for (let i = 1; i < part.positions.length; i += 3) {
-          const y = part.positions[i];
-          if (y < yMin) yMin = y;
-          if (y > yMax) yMax = y;
-        }
-        throughDepth = (nsign > 0 ? faceY - yMin : yMax - faceY) + OVERSHOOT_MM;
-      }
-    }
-
-    const place = placeOnPart(part, nsign);
+    const boundaryPoly = mapper.boundary();
+    const place = mapper.placer(placement);
     const colorPrisms: Record<number, ManifoldSolid> = {};
     // Extracted to a plain function (rather than inlined in the loop below) purely so its
     // early `return`s mean "skip this color" without fighting the surrounding for-loop/await.
@@ -427,8 +315,8 @@ export async function buildAssemblyGeometry(
       }
       const depthSetting = (colorSettings[c.key] && colorSettings[c.key].depth) || globalDepth;
       if (depthSetting <= 0) return;
-      const depth = part.cutThrough ? throughDepth : depthSetting;
-      const soup = extrudeRegionToSoup(feat, faceY, depth, OVERSHOOT_MM, nsign);
+      const depth = mapper.resolveCutDepth(depthSetting);
+      const soup = mapper.buildCutter(feat, depth, OVERSHOOT_MM);
       if (!soup || !soup.length) return;
       try {
         const man = soupToManifold(wasm, soup);
@@ -443,7 +331,7 @@ export async function buildAssemblyGeometry(
       // — repair it with Manifold's own 2D boolean engine and retry once before giving up.
       try {
         const repaired = repairSelfIntersections(wasm, feat);
-        const soup2 = repaired && extrudeRegionToSoup(repaired, faceY, depth, OVERSHOOT_MM, nsign);
+        const soup2 = repaired && mapper.buildCutter(repaired, depth, OVERSHOOT_MM);
         if (soup2 && soup2.length) {
           const man2 = soupToManifold(wasm, soup2);
           if (manifoldIsValid(man2)) {

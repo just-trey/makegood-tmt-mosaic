@@ -98,6 +98,18 @@ export interface FlatPatch {
   triIndices: number[];
 }
 
+/**
+ * A design zone on a part: one baked UV chart the artwork maps into, letting a part carry more
+ * than one design surface (and eventually wrap artwork around edges). Populated by the zone bake
+ * pipeline (see the chair-body plan). A part with no zones uses an implicit flat zone derived
+ * from its chosen patch — see `implicitZoneFor` in geometry/zones.ts. Kept minimal here; the
+ * runtime chart + mapper detail lives in geometry/zones.ts.
+ */
+export interface DesignZone {
+  id: string;
+  name: string;
+}
+
 export interface AssemblyPart {
   id: number;
   name: string;
@@ -109,6 +121,12 @@ export interface AssemblyPart {
   patchIdx: number;
   boundaryLoop: number[][] | null;
   patchNormal?: number[];
+  /**
+   * Baked design zones for a multi-face part (chair body, Phase 4+). Undefined means the part
+   * uses one implicit flat zone from its chosen patch, the single-design-face behavior every
+   * part has today.
+   */
+  zones?: DesignZone[];
   topZ: number;
   baseDepth: number;
   isDuplicateOf: number | null;
