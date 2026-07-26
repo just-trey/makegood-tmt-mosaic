@@ -132,6 +132,7 @@ function triNormalArea(verts, tri) {
 }
 
 const edgeKey = (a, b) => (a < b ? `${a},${b}` : `${b},${a}`);
+const dirKey = (a, b) => `${a},${b}`;
 
 function buildEdgeTris(tris) {
   const edgeTris = new Map();
@@ -509,38 +510,84 @@ export function orientChart(verts3, tris, uv, up) {
 }
 
 /**
+ * Split a loop that touches itself at a vertex into simple sub-loops, so every ring handed to
+ * turf is a plain polygon. A figure-eight ring has a well-defined area but no reliable inside.
+ */
+function splitAtRepeats(loop) {
+  const out = [];
+  const stack = [];
+  const at = new Map();
+  for (const v of loop) {
+    const prev = at.get(v);
+    if (prev !== undefined) {
+      const sub = stack.splice(prev);
+      for (const w of sub) at.delete(w);
+      if (sub.length >= 3) out.push(sub);
+    }
+    at.set(v, stack.length);
+    stack.push(v);
+  }
+  if (stack.length >= 3) out.push(stack);
+  return out;
+}
+
+/**
  * Chain the once-used (boundary) directed edges of a triangle subset into closed vertex loops.
  * With outward-consistent winding the outer loop comes out CCW in UV and holes CW.
+ *
+ * Successors are keyed by the directed edge, not by its tail vertex, and resolved by rotating
+ * through the triangle fan around that vertex. A *pinch* vertex -- one the boundary passes
+ * through more than once, where two wedges of the zone meet at a single point -- has several
+ * outgoing boundary edges; a Map keyed by tail vertex keeps only the last, so every loop through
+ * the others breaks open and gets emitted as a fragment. That is what left the chair's `right`
+ * zone with no loop spanning the chart and holes enclosing more area than the outer ring.
+ * Rotating the fan instead walks each boundary edge exactly once.
  */
 export function boundaryVertexLoops(tris) {
   const count = new Map();
-  for (const t of tris)
-    for (let k = 0; k < 3; k++) {
-      const key = edgeKey(t[k], t[(k + 1) % 3]);
-      count.set(key, (count.get(key) || 0) + 1);
-    }
-  const next = new Map();
+  const third = new Map();
   for (const t of tris)
     for (let k = 0; k < 3; k++) {
       const a = t[k];
       const b = t[(k + 1) % 3];
-      if (count.get(edgeKey(a, b)) === 1) next.set(a, b);
+      const key = edgeKey(a, b);
+      count.set(key, (count.get(key) || 0) + 1);
+      third.set(dirKey(a, b), t[(k + 2) % 3]);
     }
+  const isBoundary = (a, b) => count.get(edgeKey(a, b)) === 1;
+
+  // The boundary edge following a→b: start at the triangle carrying a→b and pivot around b
+  // through its fan until an outgoing edge of b is itself boundary.
+  const nextVert = (a, b) => {
+    let x = a;
+    for (let guard = 0; guard < 1e6; guard++) {
+      const c = third.get(dirKey(x, b));
+      if (c === undefined) return null;
+      if (isBoundary(b, c)) return c;
+      x = c;
+    }
+    return null;
+  };
+
   const loops = [];
-  const used = new Set();
-  for (const start of next.keys()) {
-    if (used.has(start)) continue;
-    const loop = [start];
-    used.add(start);
-    let cur = next.get(start);
-    let guard = 0;
-    while (cur !== start && next.has(cur) && !used.has(cur) && guard++ < 1e6) {
-      loop.push(cur);
-      used.add(cur);
-      cur = next.get(cur);
+  const walked = new Set();
+  for (const t of tris)
+    for (let k = 0; k < 3; k++) {
+      let a = t[k];
+      let b = t[(k + 1) % 3];
+      if (!isBoundary(a, b) || walked.has(dirKey(a, b))) continue;
+      const loop = [];
+      for (let guard = 0; guard < 1e6; guard++) {
+        loop.push(a);
+        walked.add(dirKey(a, b));
+        const c = nextVert(a, b);
+        if (c === null) break;
+        a = b;
+        b = c;
+        if (walked.has(dirKey(a, b))) break;
+      }
+      if (loop.length >= 3) loops.push(...splitAtRepeats(loop));
     }
-    if (loop.length >= 3) loops.push(loop);
-  }
   return loops;
 }
 
