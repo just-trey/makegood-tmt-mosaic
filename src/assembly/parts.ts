@@ -10,7 +10,12 @@ import {
   excludeTriangles,
   load3MF,
 } from '../geometry/meshparts';
-import { asmKindCanAutoLoad, currentAssemblyKind } from './kinds';
+import {
+  asmKindCanAutoLoad,
+  currentAssemblyKind,
+  currentVariantId,
+  roleLibraryPartId,
+} from './kinds';
 
 // The assembly panel registers its render functions here, so part management can refresh the
 // UI without importing it (keeps the module graph acyclic).
@@ -46,9 +51,8 @@ export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
 export function asmAddRolePart(role: AssemblyRole): void {
   const part = asmCreateRolePart(role);
   notifyPartsChanged();
-  const entry = role.libraryPartId
-    ? state.assembly.library.find((e) => e.id === role.libraryPartId)
-    : undefined;
+  const partId = roleLibraryPartId(role, currentVariantId());
+  const entry = partId ? state.assembly.library.find((e) => e.id === partId) : undefined;
   if (entry) void asmLoadLibraryEntryIntoPart(part, entry);
 }
 
@@ -75,10 +79,10 @@ export async function asmLoadFullAssembly(): Promise<void> {
   const myParts = state.assembly.parts;
   showOverlay(`Loading ${kind.name}…`);
   try {
+    const variantId = currentVariantId();
     for (const role of kind.roles) {
-      const entry = role.libraryPartId
-        ? state.assembly.library.find((e) => e.id === role.libraryPartId)
-        : undefined;
+      const partId = roleLibraryPartId(role, variantId);
+      const entry = partId ? state.assembly.library.find((e) => e.id === partId) : undefined;
       const primary = asmCreateRolePart(role);
       if (entry) await asmLoadLibraryEntryIntoPart(primary, entry);
       // A part-kind switch mid-load replaces state.assembly.parts with a fresh array and kicks off

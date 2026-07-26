@@ -185,6 +185,13 @@ export interface AssemblyRole {
   id: string;
   name: string;
   libraryPartId?: string;
+  /**
+   * Variant-dependent library part: for a role whose physical piece differs by hardware variant
+   * (the chair's caster mounts come in Standard and Kit), maps each `AssemblyKind.variants` id to
+   * the library part loaded for that variant. Takes precedence over `libraryPartId`; resolved via
+   * `roleLibraryPartId(role, variantId)`.
+   */
+  libraryPartIdByVariant?: Record<string, string>;
   allowRotatedCopies: boolean;
   /** rotated copies auto-added beyond the primary by "load full assembly" */
   copies?: number;
@@ -223,6 +230,18 @@ export interface AssemblyKind {
    * without one just doesn't show the link.
    */
   templateFile?: string;
+  /**
+   * Mutually-exclusive hardware variants of this assembly (the chair is all-Standard or all-Kit,
+   * never mixed). When set, `state.assembly.variantId` holds the choice and roles with a
+   * `libraryPartIdByVariant` load the matching piece. The first entry is the default.
+   */
+  variants?: { id: string; name: string }[];
+  /**
+   * Filename of this kind's design-zone sidecar in `public/stl/` (baked by
+   * `scripts/bake-zones.mjs`). Present on multi-face kinds whose parts carry baked conformal
+   * charts instead of a single implicit flat zone; absent kinds use the flat path.
+   */
+  zonesFile?: string;
   /**
    * Kept in ASSEMBLY_KINDS (and fully functional) but left out of the Part dropdown — for a
    * part that isn't ready to offer to users yet.

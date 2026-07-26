@@ -1,4 +1,4 @@
-import type { AssemblyKind } from '../types';
+import type { AssemblyKind, AssemblyRole } from '../types';
 import { state } from '../state/store';
 
 /**
@@ -77,7 +77,135 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
       },
     ],
   },
+  {
+    id: 'chair-body',
+    name: 'Chair body',
+    // Not yet offered in the Part dropdown: the chair's design faces point sideways (±X/±Z), not
+    // up along Y, so the flat-zone cut path can't place artwork on them meaningfully. It stays
+    // hidden until the baked conformal zones + viewport zone picking land (later Phase 5 PRs);
+    // unhide then. Loading/exporting it as plain assembly parts already works.
+    hidden: true,
+    // per-zone rect semantics: each zone's template maps its SVG 1:1 in mm, centered on the chart.
+    designFit: 'rect',
+    // Standard vs Kit differ only in the caster mounts, but the whole chair must be one or the
+    // other — never mixed. The two caster roles resolve per-variant; every other piece is shared.
+    variants: [
+      { id: 'standard', name: 'Standard' },
+      { id: 'kit', name: 'Kit' },
+    ],
+    // One role per printed piece, all auto-loaded together (no rotated copies — every piece is a
+    // distinct mesh in the shared assembled pose, unlike the wheel's mirrored halves).
+    roles: [
+      {
+        id: 'handle-left',
+        name: 'Handle (left)',
+        libraryPartId: 'chair-handle-left',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'handle-right',
+        name: 'Handle (right)',
+        libraryPartId: 'chair-handle-right',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'storage-left',
+        name: 'Storage (left)',
+        libraryPartId: 'chair-storage-left',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'storage-right',
+        name: 'Storage (right)',
+        libraryPartId: 'chair-storage-right',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'wing-left',
+        name: 'Wing (left)',
+        libraryPartId: 'chair-wing-left',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'wing-right',
+        name: 'Wing (right)',
+        libraryPartId: 'chair-wing-right',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'wheel-mount-left',
+        name: 'Wheel mount (left)',
+        libraryPartId: 'chair-wheel-mount-left',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'wheel-mount-right',
+        name: 'Wheel mount (right)',
+        libraryPartId: 'chair-wheel-mount-right',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'seat-center',
+        name: 'Seat center',
+        libraryPartId: 'chair-seat-center',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'seat-back-bottom',
+        name: 'Seat back (bottom)',
+        libraryPartId: 'chair-seat-back-bottom',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'seat-back-top',
+        name: 'Seat back (top)',
+        libraryPartId: 'chair-seat-back-top',
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'caster-left',
+        name: 'Caster mount (left)',
+        libraryPartIdByVariant: { standard: 'chair-caster-std-left', kit: 'chair-caster-kit-left' },
+        allowRotatedCopies: false,
+      },
+      {
+        id: 'caster-right',
+        name: 'Caster mount (right)',
+        libraryPartIdByVariant: {
+          standard: 'chair-caster-std-right',
+          kit: 'chair-caster-kit-right',
+        },
+        allowRotatedCopies: false,
+      },
+    ],
+  },
 ];
+
+/**
+ * The library part a role loads, resolving a variant-dependent role against the chosen variant.
+ * A `libraryPartIdByVariant` role returns the piece for `variantId` (or undefined if the variant
+ * is unknown); a plain role ignores the variant and returns its `libraryPartId`.
+ */
+export function roleLibraryPartId(
+  role: AssemblyRole,
+  variantId: string | null,
+): string | undefined {
+  if (role.libraryPartIdByVariant)
+    return variantId ? role.libraryPartIdByVariant[variantId] : undefined;
+  return role.libraryPartId;
+}
+
+/**
+ * The active variant for the current kind: the user's choice when it's valid for the kind,
+ * otherwise the kind's first (default) variant. Null for a kind with no variants. Defaulting here
+ * (rather than trusting state) keeps part resolution correct before the variant UI ever runs.
+ */
+export function currentVariantId(): string | null {
+  const kind = currentAssemblyKind();
+  if (!kind?.variants?.length) return null;
+  const chosen = state.assembly.variantId;
+  return chosen && kind.variants.some((v) => v.id === chosen) ? chosen : kind.variants[0].id;
+}
 
 export function currentAssemblyKind(): AssemblyKind | null {
   return ASSEMBLY_KINDS.find((k) => k.id === state.assembly.kindId) || null;
@@ -88,10 +216,10 @@ export function currentAssemblyKind(): AssemblyKind | null {
  * (i.e. stl/parts.json loaded).
  */
 export function asmKindCanAutoLoad(kind: AssemblyKind | null): boolean {
-  return (
-    !!kind &&
-    kind.roles.every(
-      (r) => !r.libraryPartId || !!state.assembly.library.find((e) => e.id === r.libraryPartId),
-    )
-  );
+  if (!kind) return false;
+  const variantId = currentVariantId();
+  return kind.roles.every((r) => {
+    const partId = roleLibraryPartId(r, variantId);
+    return !partId || !!state.assembly.library.find((e) => e.id === partId);
+  });
 }
