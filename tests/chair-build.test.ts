@@ -169,21 +169,8 @@ describe('zone dispatch', () => {
   });
 });
 
-// The `right` zone's first-pass bake is defective and is excluded below: its boundary loops came
-// out fragmented (no single loop spans the chart — the largest is −4326mm² against `left`'s
-// +27352mm², with scrambled winding), so the bake took a fragment as the outer ring and demoted
-// the rest to holes. The resulting clip region claims up to 42mm of area the chart never covers.
-// The build handles it correctly — warns and declines rather than cutting into nothing, which is
-// what `right's bake is inconsistent` below pins — but the zone itself needs re-baking with
-// pinch-tolerant loop chaining before it can take artwork. Tracked as the chair re-bake task.
-const CUTTABLE_ZONES = ['left', 'back', 'seat'];
-
 describe('conformal build on the real chair', () => {
-  it.each(
-    sidecar.zones
-      .filter((z) => CUTTABLE_ZONES.includes(z.id))
-      .map((z) => [z.id, z.charts[0].libraryPartId]),
-  )(
+  it.each(sidecar.zones.map((z) => [z.id, z.charts[0].libraryPartId]))(
     'zone %s carves a pocket into %s and leaves it watertight',
     async (zoneId, partId) => {
       clearWarnings();
@@ -221,36 +208,28 @@ describe('conformal build on the real chair', () => {
     120000,
   );
 
-  it("right's bake is inconsistent, so the build warns instead of cutting into nothing", async () => {
-    clearWarnings();
-    const zone = sidecar.zones.find((z) => z.id === 'right')!;
-    // the defect itself: a valid ring cannot enclose less area than the holes punched out of it
-    const ringArea = (r: number[][]): number => {
-      let a = 0;
-      for (let i = 0; i < r.length; i++) {
-        const p = r[i],
-          q = r[(i + 1) % r.length];
-        a += p[0] * q[1] - q[0] * p[1];
-      }
-      return Math.abs(a) / 2;
-    };
-    const holes = (zone.holes ?? []).reduce((s, h) => s + ringArea(h), 0);
-    expect(holes).toBeGreaterThan(ringArea(zone.boundary));
-
-    const partId = zone.charts[0].libraryPartId;
-    const mesh = await loadPacked(partId);
-    const part = chairPart(
-      partId,
-      mesh,
-      zonesFor(partId, mesh).filter((z) => z.id === 'right'),
-    );
-    const build = await buildAssemblyGeometry(chairInput([part]));
-    const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
-    expect(Object.keys(out.inlaySoups)).toHaveLength(0);
-    expect(out.bodySoup.length).toBe(mesh.positions.length);
-    // and it says so, rather than dropping the color silently
-    expect(WARNINGS.map((w) => w.message).join(' ')).toMatch(/Couldn't build the cut solid/);
-  }, 120000);
+  // The first `right` bake shipped a broken outline — fragmented boundary loops left it with no
+  // ring spanning the chart (largest −4326mm² against `left`'s +27352mm²) and "holes" enclosing
+  // more than the outer ring, so the zone silently refused every cut. Both halves of that are
+  // pinned here: the outline is a sane polygon, and the winding is outward like the others.
+  it.each(sidecar.zones.map((z) => [z.id, z] as const))(
+    'zone %s has a consistent, outward-wound outline',
+    (_id, zone) => {
+      const signedArea = (r: number[][]): number => {
+        let a = 0;
+        for (let i = 0; i < r.length; i++) {
+          const p = r[i],
+            q = r[(i + 1) % r.length];
+          a += p[0] * q[1] - q[0] * p[1];
+        }
+        return a / 2;
+      };
+      const outer = signedArea(zone.boundary);
+      expect(outer).toBeGreaterThan(0);
+      const holes = (zone.holes ?? []).reduce((s, h) => s + Math.abs(signedArea(h)), 0);
+      expect(holes).toBeLessThan(outer);
+    },
+  );
 
   it('leaves a zone-less part completely uncut', async () => {
     clearWarnings();

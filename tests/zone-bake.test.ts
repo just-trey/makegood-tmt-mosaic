@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   bakeZones,
+  boundaryVertexLoops,
   simplifyLoop,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
@@ -326,6 +327,54 @@ describe('bad inputs fail loudly', () => {
     const part = platePart('plate', 4, () => false);
     const zone = { id: 'z', name: 'Z', seedNormal: [0, 0, 1], maxAngleDeg: 30, up: [0, 1, 0] };
     expect(() => bakeZones(config([part], [zone, { ...zone }]), [part])).toThrow(/duplicate/);
+  });
+});
+
+describe('pinch vertices', () => {
+  it('splits a bowtie into two closed loops instead of dropping one', () => {
+    // two triangles meeting at vertex 2 alone: it has two outgoing boundary edges, so a
+    // successor keyed by tail vertex keeps only one and the other loop never closes
+    const loops: number[][] = boundaryVertexLoops([
+      [0, 1, 2],
+      [2, 3, 4],
+    ]);
+    expect(loops).toHaveLength(2);
+    for (const l of loops) {
+      expect(l).toHaveLength(3);
+      expect(l.filter((v) => v === 2)).toHaveLength(1);
+    }
+    expect(loops.map((l) => [...l].sort((a, b) => a - b))).toEqual(
+      expect.arrayContaining([
+        [0, 1, 2],
+        [2, 3, 4],
+      ]),
+    );
+  });
+
+  it('keeps both holes when two of them touch at one vertex', () => {
+    // 40x40 plate with the (1,1) and (2,2) cells removed — the two 10x10 holes share the corner
+    // at (20, 20), pinching the boundary there
+    const part = platePart(
+      'plate',
+      4,
+      (cx, cy) => (cx === 1 && cy === 1) || (cx === 2 && cy === 2),
+    );
+    const zone = {
+      id: 'face',
+      name: 'Face',
+      seedNormal: [0, 0, 1],
+      maxAngleDeg: 30,
+      up: [0, 1, 0],
+    };
+    const z = bakeZones(config([part], [zone]), [part]).sidecar.zones[0];
+
+    expect(loopArea(z.boundary)).toBeCloseTo(1600, 0);
+    expect(z.holes).toHaveLength(2);
+    for (const h of z.holes) expect(Math.abs(loopArea(h))).toBeCloseTo(100, 0);
+    // the invariant the chair's first `right` bake broke: holes are punched out of the outer ring,
+    // so together they can never enclose more area than it does
+    const holes = z.holes.reduce((s: number, h: number[][]) => s + Math.abs(loopArea(h)), 0);
+    expect(holes).toBeLessThan(Math.abs(loopArea(z.boundary)));
   });
 });
 
