@@ -80,6 +80,11 @@
               (1:1 mm) SVG — its real printable outline, with any no-print gaps already punched out.
               Draw over it in your editor and load the result under Artwork.
             </p>
+            <p>
+              A part with hardware variants (Standard vs Kit) shows a version picker above the part
+              list — switching reloads only the pieces that actually differ between versions,
+              confirming first if you've already customized one of them.
+            </p>
           </section>
 
           <section class="help-sec" id="h-artwork">
@@ -296,6 +301,10 @@
           </div>
 
           <div id="shape-params-assembly" style="display: none">
+            <div class="row" id="asm-variant-row" style="display: none; margin-bottom: 8px">
+              <label>Version</label>
+              <div class="field asm-variant-options" id="asm-variant-options"></div>
+            </div>
             <div id="assembly-role-controls" style="margin-bottom: 8px"></div>
             <div id="assembly-part-list"></div>
             <div class="row" id="asm-radius-row" style="margin-top: 8px">

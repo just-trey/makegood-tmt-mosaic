@@ -1,7 +1,7 @@
 import type { AssemblyPart } from '../types';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
-import { asmKindCanAutoLoad, currentAssemblyKind } from '../assembly/kinds';
+import { asmKindCanAutoLoad, currentAssemblyKind, currentVariantId } from '../assembly/kinds';
 import {
   applyAsmPatchChoice,
   asmAddRoleDuplicate,
@@ -10,6 +10,7 @@ import {
   asmLoadPartFile,
   asmRemovePart,
   onAssemblyPartsChanged,
+  switchChairVariant,
 } from '../assembly/parts';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
@@ -28,6 +29,42 @@ export function syncAssemblyKindControls(): void {
     tplRow.style.display = kind?.templateFile ? '' : 'none';
     if (kind?.templateFile) tplLink.href = `templates/${kind.templateFile}`;
   }
+
+  renderAssemblyVariantControls();
+}
+
+/**
+ * The hardware-variant radio (Standard/Kit) for a kind that declares `variants` — hidden for every
+ * other kind. Re-rendered after every switch attempt (not just a successful one) so a cancelled
+ * confirm() snaps the radio back to the still-current variant instead of leaving it showing the
+ * click the user backed out of.
+ */
+export function renderAssemblyVariantControls(): void {
+  const row = $('#asm-variant-row');
+  const box = $('#asm-variant-options');
+  if (!row || !box) return;
+  const kind = currentAssemblyKind();
+  if (!kind?.variants?.length) {
+    row.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  row.style.display = '';
+  const active = currentVariantId();
+  box.innerHTML = kind.variants
+    .map(
+      (v) =>
+        `<label class="variant-option"><input type="radio" name="asm-variant" value="${v.id}" ${
+          v.id === active ? 'checked' : ''
+        }> ${v.name}</label>`,
+    )
+    .join('');
+  box.querySelectorAll<HTMLInputElement>('input[name="asm-variant"]').forEach((r) =>
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      void switchChairVariant(r.value).finally(renderAssemblyVariantControls);
+    }),
+  );
 }
 
 export function renderAssemblyRoleControls(): void {
