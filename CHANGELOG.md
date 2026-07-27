@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - On a part with more than one design surface, you can also click directly
   on a surface in the 3D view to bind the active design to it, instead of
   using the row dropdown.
+- Assembly kinds with hardware variants (Standard vs Kit) show a version
+  picker at the top of the Part section; switching reloads only the parts
+  that actually differ between variants, confirming first if any of them
+  are already loaded.
 
 ## [0.6.0] - 2026-07-26
 

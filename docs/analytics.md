@@ -48,6 +48,14 @@ dropdown.
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-zone` change handler in `renderArtworkList`.
 - **Props:** `{ zone: string }` (the zone id, or `'all'` for the unbound/"every zone" option)
 
+### `chair_variant_selected`
+
+Fired when the user switches the chair's hardware variant (Standard/Kit),
+after any confirm() dialog is accepted.
+
+- **Where:** [src/assembly/parts.ts](../src/assembly/parts.ts) — `switchChairVariant`.
+- **Props:** `{ variant: string }` (the variant id, e.g. `standard` / `kit`)
+
 ### `zone_selected`
 
 Fired when the user clicks a zone directly in the 3D viewport, binding the

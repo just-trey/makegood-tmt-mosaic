@@ -403,6 +403,23 @@ input[type='range'] {
   width: 64px;
   flex: 0 0 auto;
 }
+.asm-variant-options {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.asm-variant-options .variant-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.asm-variant-options input[type='radio'] {
+  accent-color: var(--accent);
+}
 input[type='checkbox'] {
   accent-color: var(--accent);
   width: 14px;

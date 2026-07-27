@@ -12,6 +12,7 @@ import {
 } from '../geometry/meshparts';
 import { fingerprintMatches, loadZonesSidecar, reconstructChart } from '../geometry/zoneCharts';
 import { warn } from '../warnings';
+import { track } from '../analytics/track';
 import {
   asmKindCanAutoLoad,
   currentAssemblyKind,
@@ -105,6 +106,49 @@ export async function asmLoadFullAssembly(): Promise<void> {
   notifyPartsChanged();
   hideOverlay();
   scheduleRebuild();
+}
+
+/**
+ * Switch the chair's hardware variant (Standard/Kit): reloads only the roles that actually differ
+ * per variant (today, the two caster mounts — see `AssemblyRole.libraryPartIdByVariant`), leaving
+ * every other loaded part untouched. Confirms first if any of those roles already has a part
+ * loaded, since a re-fetch discards whatever per-part edits (face pick, base thickness) the user
+ * made on it. A no-op if `variantId` is already current, or the kind has no variants at all.
+ */
+export async function switchChairVariant(variantId: string): Promise<void> {
+  const kind = currentAssemblyKind();
+  if (!kind?.variants?.length || variantId === currentVariantId()) return;
+  const variantRoles = kind.roles.filter((r) => r.libraryPartIdByVariant);
+  const affected = state.assembly.parts.filter((p) => variantRoles.some((r) => r.id === p.roleId));
+  if (
+    affected.length &&
+    !confirm(
+      `Switch to ${kind.variants.find((v) => v.id === variantId)?.name}? This reloads the caster mounts.`,
+    )
+  )
+    return;
+
+  state.assembly.variantId = variantId;
+  state.assembly.parts = state.assembly.parts.filter(
+    (p) => !variantRoles.some((r) => r.id === p.roleId),
+  );
+  notifyPartsChanged();
+  showOverlay('Loading caster mounts…');
+  try {
+    for (const role of variantRoles) {
+      const partId = roleLibraryPartId(role, variantId);
+      const entry = partId ? state.assembly.library.find((e) => e.id === partId) : undefined;
+      const part = asmCreateRolePart(role);
+      if (entry) await asmLoadLibraryEntryIntoPart(part, entry);
+    }
+  } catch (e) {
+    console.error(e);
+    alert('Failed to load the caster mounts: ' + (e as Error).message);
+  }
+  notifyPartsChanged();
+  hideOverlay();
+  scheduleRebuild();
+  track('chair_variant_selected', { variant: variantId });
 }
 
 export async function asmLoadLibraryEntryIntoPart(
