@@ -1,0 +1,22 @@
+[
+  {
+    "id": "cow",
+    "name": "Cow",
+    "file": "cow.svg"
+  },
+  {
+    "id": "dalmatian",
+    "name": "Dalmatian",
+    "file": "dalmatian.svg"
+  },
+  {
+    "id": "zebra",
+    "name": "Zebra",
+    "file": "zebra.svg"
+  },
+  {
+    "id": "tiger",
+    "name": "Tiger",
+    "file": "tiger.svg"
+  }
+]

@@ -113,7 +113,16 @@ contents, or other personal data are ever sent. See
    one design, then target each zone from the Artwork list's per-row dropdown
    or by clicking the surface directly in the 3D view. A kind with hardware
    variants (the chair's Standard/Kit caster mounts) shows a version picker
-   above the part list; switching reloads only the parts that differ.
+   above the part list; switching reloads only the parts that differ. Any
+   artwork row on an assembly part can switch from **Sticker** (one copy) to
+   **Fill**, which repeats the design across the whole zone, tiled in the
+   design's own SVG coordinate space so the tiling stays correct under
+   whatever rotation/scale the zone's mapping applies
+   ([src/geometry/patterns.ts](src/geometry/patterns.ts)). The Artwork panel
+   ships a small built-in library of tileable patterns (Cow, Dalmatian,
+   Zebra, Tiger — [scripts/gen-patterns.mjs](scripts/gen-patterns.mjs)
+   generates them) that default to Fill mode when loaded on an assembly
+   part.
 6. **Export** writes a Bambu Studio _project_ 3MF (vendor metadata included,
    so it imports without warnings, with named parts, per-part filament slots,
    and multi-plate placement) ([src/export/threemf.ts](src/export/threemf.ts)).
@@ -141,6 +150,11 @@ contents, or other personal data are ever sent. See
   palette, loaded from [public/filaments.json](public/filaments.json). Edit
   that file to change the colors offered by the base-color picker and used
   for "nearest filament" labels — no code changes needed.
+- [src/state/patterns.ts](src/state/patterns.ts) — the built-in pattern
+  library manifest, loaded from
+  [public/patterns/patterns.json](public/patterns/patterns.json). Add a new
+  pattern in [scripts/gen-patterns.mjs](scripts/gen-patterns.mjs) and re-run
+  it rather than hand-editing the SVGs or manifest.
 - [src/app/rebuild.ts](src/app/rebuild.ts) — orchestrates state → geometry →
   scene → side panels
 - [src/scene/viewport.ts](src/scene/viewport.ts) — three.js renderer/camera

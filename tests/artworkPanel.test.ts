@@ -14,8 +14,11 @@ vi.mock('../src/ui/fitPanel', () => ({
   refreshFitInputsFromState: vi.fn(),
   updateOffsetSliderRanges: vi.fn(),
 }));
+vi.mock('../src/state/patterns', () => ({
+  getPatterns: () => [{ id: 'cow', name: 'Cow', file: 'cow.svg' }],
+}));
 
-import { applyParsedSVG } from '../src/ui/artworkPanel';
+import { applyParsedSVG, applyPattern } from '../src/ui/artworkPanel';
 import { state } from '../src/state/store';
 
 const GOOD_SVG =
@@ -71,5 +74,34 @@ describe('applyParsedSVG failed-load safety', () => {
     // whichever one loaded last — a second load must not discard the first design's settings.
     expect(state.colorSettings).toEqual({ '#ff0000': { depth: 1.5 } });
     expect(state.mergeGroups).toEqual([['#ff0000', '#0000ff']]);
+  });
+});
+
+describe('applyPattern', () => {
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(GOOD_SVG),
+    }) as unknown as typeof fetch;
+  });
+
+  it('loads as a pattern source, defaulting to Fill mode in assembly mode', async () => {
+    state.shapeKind = 'assembly';
+    await applyPattern('cow');
+    expect(state.sources).toHaveLength(1);
+    expect(state.sources[0].kind).toBe('pattern');
+    expect(state.artworks[0].mode).toBe('fill');
+  });
+
+  it('stays Sticker outside assembly mode, which has no fill pipeline', async () => {
+    state.shapeKind = 'disc';
+    await applyPattern('cow');
+    expect(state.artworks[0].mode).toBe('sticker');
+  });
+
+  it('a pattern id not in the manifest is a no-op', async () => {
+    await applyPattern('does-not-exist');
+    expect(state.sources).toHaveLength(0);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

@@ -103,6 +103,12 @@
               exact.
             </p>
             <p>
+              The thumbnail strip below the dropzone is a small built-in library of tileable
+              patterns (Cow, Dalmatian, Zebra, Tiger) — click one to load it like an uploaded SVG.
+              On an assembly part it defaults to Fill mode, since a pattern exists to repeat across
+              a surface rather than sit as a single sticker.
+            </p>
+            <p>
               Each design you load appears as a named row below the dropzone — click × to remove it.
               Click a row to make it the active design; the fit sliders and the on-face gizmo below
               always edit whichever row is active.
@@ -360,6 +366,7 @@
           <div class="btn-row" style="margin-top: 8px">
             <button class="btn small" id="btn-sample" style="flex: 1">Load sample artwork</button>
           </div>
+          <div id="pattern-picker" class="pattern-picker" style="display: none"></div>
           <div id="artwork-list" class="artwork-list" style="display: none"></div>
           <div class="hint">
             Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.

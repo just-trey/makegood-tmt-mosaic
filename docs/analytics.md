@@ -21,8 +21,8 @@ custom events layered on top via [src/analytics/track.ts](../src/analytics/track
 
 Fired when artwork is loaded into the scene.
 
-- **Where:** [src/ui/artworkPanel.ts](../src/ui/artworkPanel.ts) — `loadSVGFile` (upload via click-browse or drag-drop) and the `#btn-sample` handler.
-- **Props:** `{ source: 'upload' | 'sample' }`
+- **Where:** [src/ui/artworkPanel.ts](../src/ui/artworkPanel.ts) — `loadSVGFile` (upload via click-browse or drag-drop), the `#btn-sample` handler, and `applyPattern` (built-in pattern picker strip).
+- **Props:** `{ source: 'upload' | 'sample' | 'pattern' }`, plus `pattern: string` (the pattern id, e.g. `cow`) when `source` is `'pattern'`
 
 ### `artwork_removed`
 
