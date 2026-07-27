@@ -17,6 +17,7 @@ import {
   setPreferredViewDir,
 } from '../scene/viewport';
 import { refreshGizmo } from '../scene/designGizmo';
+import { refreshZonePickMeshes } from '../scene/zonePick';
 import { renderColorList, type ColorListEntry } from '../ui/colorList';
 import { renderBaseColorSwatches } from '../ui/partPanel';
 import { renderWarnings } from '../ui/warningsView';
@@ -81,6 +82,7 @@ export async function rebuildCurrent(): Promise<void> {
   // The on-face gizmo tracks the just-built geometry (including the assembly's post-rebuild grid
   // lift); a no-op mid-drag so it doesn't fight the pointer.
   refreshGizmo();
+  refreshZonePickMeshes();
 }
 
 async function rebuildScene(): Promise<void> {
