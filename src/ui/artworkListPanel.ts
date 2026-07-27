@@ -4,6 +4,7 @@ import {
   availableZones,
   removeArtworkInstance,
   setActiveArtwork,
+  setArtworkMode,
   setArtworkZone,
 } from '../state/artwork';
 import { scheduleRebuild } from '../app/scheduler';
@@ -28,6 +29,9 @@ export function renderArtworkList(): void {
   }
   list.style.display = '';
   const zones = availableZones();
+  // Fill repeats the design across a zone, which only the assembly-mode cut pipeline implements —
+  // a flat plate would show the control and then ignore it.
+  const canFill = state.shapeKind === 'assembly';
 
   state.artworks.forEach((a) => {
     const source = state.sources.find((s) => s.id === a.sourceId);
@@ -35,6 +39,11 @@ export function renderArtworkList(): void {
     row.className = 'artwork-row' + (a.id === state.activeArtworkId ? ' active' : '');
     row.innerHTML = `
       <span class="artwork-name"></span>
+      ${
+        canFill
+          ? '<select class="artwork-mode" title="Place one copy of this design, or repeat it across the whole surface"></select>'
+          : ''
+      }
       ${zones.length ? '<select class="artwork-zone"></select>' : ''}
       ${
         zones.length
@@ -54,6 +63,20 @@ export function renderArtworkList(): void {
       refreshFitInputsFromState();
       refreshGizmo();
     });
+
+    const modeSel = row.querySelector<HTMLSelectElement>('.artwork-mode');
+    if (modeSel) {
+      modeSel.innerHTML =
+        '<option value="sticker">Sticker</option><option value="fill">Fill</option>';
+      modeSel.value = a.mode;
+      modeSel.addEventListener('click', (e) => e.stopPropagation());
+      modeSel.addEventListener('change', () => {
+        const mode = modeSel.value === 'fill' ? 'fill' : 'sticker';
+        setArtworkMode(a.id, mode);
+        scheduleRebuild();
+        track('artwork_mode_changed', { mode });
+      });
+    }
 
     const zoneSel = row.querySelector<HTMLSelectElement>('.artwork-zone');
     if (zoneSel) {

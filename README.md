@@ -271,6 +271,12 @@ entirely, which is the recommended path.
   behind the face will cut through. Sanity-check depths against your model.
 - **Gradients/patterns are detected and skipped** with a warning, rather than
   silently producing wrong geometry.
+- **Fill (repeat the design across a surface) is assembly-mode only.** The
+  flat-plate shapes (disc/rect/round/STL) run a separate pipeline that places
+  a single design and auto-fits it to the plate; an artwork row's
+  Sticker/Fill control only appears on an assembly part. Fill also assumes
+  the design tiles — its repeat is one SVG document, so a design whose edges
+  don't line up will show seams.
 - **The chair body's export placement isn't slicer-verified yet.** Unlike the
   wheel/footrest/wheel-mount (whose plate position, rotation, and prime-tower
   offset are baked from a checked reference 3MF — see "Export placement is

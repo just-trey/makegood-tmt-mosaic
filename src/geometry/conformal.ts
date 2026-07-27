@@ -10,7 +10,14 @@ import {
   type ManifoldAPI,
   type ManifoldSolid,
 } from './manifold';
-import { rotatePointY, type DesignPlacement, type ZoneFrame, type ZoneMapper } from './zones';
+import {
+  rotatePointY,
+  type CutterOptions,
+  type DesignPlacement,
+  type FillExtent,
+  type ZoneFrame,
+  type ZoneMapper,
+} from './zones';
 
 /**
  * Target edge length (mm) the flat cutter prism is refined to before warping. Short enough that
@@ -20,11 +27,28 @@ import { rotatePointY, type DesignPlacement, type ZoneFrame, type ZoneMapper } f
 export const WARP_REFINE_MM = 1.5;
 
 /**
+ * Refinement (mm) for a fill-mode cutter, which spans the whole zone rather than a sticker-sized
+ * patch. At WARP_REFINE_MM a full chair panel would warp hundreds of thousands of triangles per
+ * color; the coarser step cuts that ~4x. Pattern edges are the visible detail here and they keep
+ * their own resolution — only the flat interior of each shape is subdivided more coarsely.
+ */
+export const FILL_REFINE_MM = 3;
+
+/**
  * How far (mm) outside the chart a cutter vertex may land and still be snapped to the nearest
  * chart triangle. The zone boundary is simplified to ~0.2mm at bake time, so clipped regions can
  * overhang the true chart edge slightly; anything past this is a bad bake or misplaced artwork.
  */
 export const CHART_SNAP_MM = 0.5;
+
+/**
+ * The same tolerance for a fill, which needs more slack for a structural reason: a fill is clipped
+ * to the zone boundary and therefore *always* runs right along it, where the baked (simplified,
+ * and slightly generous) outline overhangs the chart's real triangles — measured at up to ~0.9mm
+ * on the chair. A sticker that far off-chart is a misplacement worth failing on; a fill touching
+ * the edge it was clipped to is not, so those vertices snap to the chart edge instead.
+ */
+export const FILL_SNAP_MM = 2;
 
 /**
  * One baked UV chart: a patch of a part's surface mesh unwrapped into a flat 2D space where
@@ -77,6 +101,7 @@ export class ConformalZoneMapper implements ZoneMapper {
   private readonly invDet: Float64Array;
   private readonly uvCu: number;
   private readonly uvCv: number;
+  private readonly uvBBox: FillExtent;
   // uniform UV grid over the chart bbox for triangle lookup
   private readonly gridMinU: number;
   private readonly gridMinV: number;
@@ -183,6 +208,7 @@ export class ConformalZoneMapper implements ZoneMapper {
     }
     this.uvCu = (minU + maxU) / 2;
     this.uvCv = (minV + maxV) / 2;
+    this.uvBBox = { minX: minU, minY: minV, maxX: maxU, maxY: maxV };
 
     const edgeLens: number[] = [];
     for (let t = 0; t < triCount; t++) {
@@ -362,11 +388,25 @@ export class ConformalZoneMapper implements ZoneMapper {
     return this.boundaryPoly;
   }
 
+  /**
+   * The chart's own UV bounding box, not the baked boundary's: a fill tiles over everything the
+   * chart can carry, and `boundary()` still clips the result back to the zone outline.
+   */
+  fillExtent(): FillExtent | null {
+    const bb = this.uvBBox;
+    return bb.maxX > bb.minX && bb.maxY > bb.minY ? bb : null;
+  }
+
   resolveCutDepth(depthSetting: number): number {
     return depthSetting;
   }
 
-  buildCutter(feat: PolyFeature, depth: number, overshoot: number): Float32Array | null {
+  buildCutter(
+    feat: PolyFeature,
+    depth: number,
+    overshoot: number,
+    opts?: CutterOptions,
+  ): Float32Array | null {
     if (!this.wasm) throw new Error('ConformalZoneMapper: buildCutter needs the boolean engine');
     // Flat prism in cutter space: x=u, z=v, y=−h ∈ [−overshoot, +depth]. The warp
     // (u,v,h) → S + h·N̂ is orientation-REVERSING for a right-handed as-seen-from-outside UV
@@ -378,15 +418,21 @@ export class ConformalZoneMapper implements ZoneMapper {
     if (!soup || !soup.length) return null;
     // A warp that comes out non-manifold (usually pocket depth exceeding local concave curvature
     // pinching the inner surface) sometimes resolves at finer refinement; retry once at L/2.
-    for (const L of [WARP_REFINE_MM, WARP_REFINE_MM / 2]) {
-      const out = this.tryWarp(soup, L);
+    const base = opts?.refineMM && opts.refineMM > 0 ? opts.refineMM : WARP_REFINE_MM;
+    const snap = opts?.snapMM && opts.snapMM > 0 ? opts.snapMM : CHART_SNAP_MM;
+    for (const L of [base, base / 2]) {
+      const out = this.tryWarp(soup, L, snap);
       if (out === 'outside') return null;
       if (out) return out;
     }
     return null;
   }
 
-  private tryWarp(soup: Float32Array, refineLen: number): Float32Array | 'outside' | null {
+  private tryWarp(
+    soup: Float32Array,
+    refineLen: number,
+    snapMM: number,
+  ): Float32Array | 'outside' | null {
     let prism: ManifoldSolid | null = null;
     let fine: ManifoldSolid | null = null;
     let warped: ManifoldSolid | null = null;
@@ -407,7 +453,7 @@ export class ConformalZoneMapper implements ZoneMapper {
             outside = true;
             continue;
           }
-          if (hit.dist > CHART_SNAP_MM) outside = true;
+          if (hit.dist > snapMM) outside = true;
           const { p, n } = this.surfacePoint(hit);
           verts[i * 3] = p[0] + h * n[0];
           verts[i * 3 + 1] = p[1] + h * n[1];

@@ -69,6 +69,30 @@ export interface DesignPlacement {
   rotationDeg: number;
 }
 
+/**
+ * The rectangle a fill-mode artwork must cover, in the zone's own 2D design space (mm). Distinct
+ * from `boundary()`, which is the clip target and is deliberately null on a cut-through zone: a
+ * fill still needs to know how far to tile even when nothing clips it.
+ */
+export interface FillExtent {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * Per-cut knobs a fill needs and a sticker doesn't (both conformal-only; the flat mapper's cutter
+ * is a straight extrusion with nothing to tune). A fill spans the whole zone rather than a
+ * sticker-sized patch, so it refines more coarsely to keep the triangle count workable, and it
+ * tolerates more overhang past the chart because it necessarily runs along the zone's edge — see
+ * FILL_REFINE_MM / FILL_SNAP_MM in conformal.ts for the actual values and why.
+ */
+export interface CutterOptions {
+  refineMM?: number;
+  snapMM?: number;
+}
+
 /** World-space frame of a zone at a given in-plane (u, v), for the on-face gizmo. */
 export interface ZoneFrame {
   /** design-center position in the part's native model space (before the model-group grid lift) */
@@ -102,10 +126,17 @@ export interface ZoneMapper {
   placer(placement: DesignPlacement): (pt: number[]) => number[];
   /** clip target polygon in the zone's 2D design space, or null to skip clipping */
   boundary(): PolyFeature | null;
+  /** area a fill-mode artwork tiles across, in the zone's 2D design space; null when unknown */
+  fillExtent(): FillExtent | null;
   /** the actual cut depth for a color: pass-through, unless a cut-through zone overrides it */
   resolveCutDepth(depthSetting: number): number;
   /** build the cutter geometry from a placed+clipped 2D feature */
-  buildCutter(feat: PolyFeature, depth: number, overshoot: number): Float32Array | null;
+  buildCutter(
+    feat: PolyFeature,
+    depth: number,
+    overshoot: number,
+    opts?: CutterOptions,
+  ): Float32Array | null;
   /** world-space face frame at the given in-plane (u, v), for the gizmo */
   frameAt(u: number, v: number): ZoneFrame;
 }
@@ -126,6 +157,7 @@ export class FlatZoneMapper implements ZoneMapper {
   private boundaryComputed = false;
   private boundaryPoly: PolyFeature | null = null;
   private throughDepthCache: number | null = null;
+  private fillExtentCache: FillExtent | null | undefined;
 
   constructor(
     private readonly part: AssemblyPart,
@@ -174,6 +206,42 @@ export class FlatZoneMapper implements ZoneMapper {
       }
     }
     return this.boundaryPoly;
+  }
+
+  /**
+   * The region a fill tiles over, in native X/Z. Deliberately not derived from `boundary()`, for
+   * both of the reasons that method is unusual: a cut-through part has no clip boundary at all,
+   * and its design is meant to span the whole curved surface rather than the small flat patch used
+   * to place it — so it measures the part's whole X/Z footprint, while an ordinary part measures
+   * the design face it actually cuts into.
+   */
+  fillExtent(): FillExtent | null {
+    if (this.fillExtentCache !== undefined) return this.fillExtentCache;
+    let bb: { cx: number; cz: number; w: number; h: number } | null = null;
+    if (this.part.cutThrough && this.part.positions) {
+      const pos = this.part.positions;
+      let minX = Infinity,
+        maxX = -Infinity,
+        minZ = Infinity,
+        maxZ = -Infinity;
+      for (let i = 0; i < pos.length; i += 3) {
+        if (pos[i] < minX) minX = pos[i];
+        if (pos[i] > maxX) maxX = pos[i];
+        if (pos[i + 2] < minZ) minZ = pos[i + 2];
+        if (pos[i + 2] > maxZ) maxZ = pos[i + 2];
+      }
+      if (maxX > minX)
+        bb = { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, w: maxX - minX, h: maxZ - minZ };
+    } else {
+      bb = faceXZBBox(this.part.boundaryLoop);
+    }
+    if (!bb || !(bb.w > 0) || !(bb.h > 0)) return (this.fillExtentCache = null);
+    return (this.fillExtentCache = {
+      minX: bb.cx - bb.w / 2,
+      minY: bb.cz - bb.h / 2,
+      maxX: bb.cx + bb.w / 2,
+      maxY: bb.cz + bb.h / 2,
+    });
   }
 
   private throughDepth(): number {

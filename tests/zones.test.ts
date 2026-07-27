@@ -194,6 +194,40 @@ describe('FlatZoneMapper surface geometry', () => {
     expect(new FlatZoneMapper(boxPart({ cutThrough: true }), [], false).boundary()).toBeNull();
   });
 
+  it('fillExtent is the design face bbox', () => {
+    // the box's face loop spans a 40mm square, inset from nothing here
+    expect(new FlatZoneMapper(boxPart(), [], false).fillExtent()).toEqual({
+      minX: -20,
+      minY: -20,
+      maxX: 20,
+      maxY: 20,
+    });
+  });
+
+  it('fillExtent covers a cut-through part’s whole footprint, not just its patch', () => {
+    // the design on a cut-through part spans the whole surface, so a fill must tile over the
+    // part's own X/Z extent — here twice the size of the (deliberately shrunk) face loop
+    const through = new FlatZoneMapper(
+      boxPart({
+        cutThrough: true,
+        boundaryLoop: [
+          [-5, 10, -5],
+          [5, 10, -5],
+          [5, 10, 5],
+          [-5, 10, 5],
+        ],
+      }),
+      [],
+      false,
+    );
+    expect(through.boundary()).toBeNull(); // no clip target at all
+    expect(through.fillExtent()).toEqual({ minX: -20, minY: -20, maxX: 20, maxY: 20 });
+  });
+
+  it('fillExtent is null when the part has no face loop to measure', () => {
+    expect(new FlatZoneMapper(boxPart({ boundaryLoop: null }), [], false).fillExtent()).toBeNull();
+  });
+
   it('resolveCutDepth passes through, unless the zone is cut-through', () => {
     expect(new FlatZoneMapper(boxPart(), [], false).resolveCutDepth(2)).toBe(2);
     const through = new FlatZoneMapper(

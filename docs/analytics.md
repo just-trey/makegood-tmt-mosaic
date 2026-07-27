@@ -48,6 +48,14 @@ dropdown.
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-zone` change handler in `renderArtworkList`.
 - **Props:** `{ zone: string }` (the zone id, or `'all'` for the unbound/"every zone" option)
 
+### `artwork_mode_changed`
+
+Fired when the user switches an artwork row between placing one copy and
+repeating the design across the whole surface.
+
+- **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-mode` change handler in `renderArtworkList`.
+- **Props:** `{ mode: string }` (`'sticker'` or `'fill'`)
+
 ### `chair_variant_selected`
 
 Fired when the user switches the chair's hardware variant (Standard/Kit),
