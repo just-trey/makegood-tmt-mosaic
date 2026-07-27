@@ -304,7 +304,12 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
   const zones: DesignZone[] = [];
   for (const { zone, chart } of baked) {
     try {
-      zones.push({ id: zone.id, name: zone.name, chart: reconstructChart(zone, chart, vertices) });
+      zones.push({
+        id: zone.id,
+        name: zone.name,
+        templateFile: zone.templateFile,
+        chart: reconstructChart(zone, chart, vertices),
+      });
     } catch (e) {
       warn(
         `Design zone "${zone.name}" couldn't be applied to "${part.name}": ${(e as Error).message}`,

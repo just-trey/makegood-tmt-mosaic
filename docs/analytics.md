@@ -74,10 +74,11 @@ Fired when the user changes the part-shape mode.
 ### `template_download`
 
 Fired when the user downloads an assembly kind's design template from the Part
-panel.
+panel — either the single per-kind template, or (for a part with more than
+one design surface, like the chair body) one of the per-zone templates.
 
-- **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `#asm-template-link` click handler in `initAssemblyPanel`.
-- **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`)
+- **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `#asm-template-link` click handler in `initAssemblyPanel`, and the per-zone link handlers in `renderZoneTemplateLinks`.
+- **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`), plus `zone: string` (the zone id) on a per-zone download
 
 ### `export`
 
@@ -116,7 +117,7 @@ only once per gesture.
 Candidates for a later pass, roughly in order of likely value. Follow the same
 pattern: wire at the DOM handler, add the entry here, keep props PII-free.
 
-- `assembly_kind_select` — `src/ui/partPanel.ts`, `#shape-kind` change handler (the `asm:` branch). Prop: `kindId`. `mode_switch` already fires here but only records `kind: 'assembly'`, not which one — `wheel`, `footrest`, and `wheel-mount-left` all exist today, worth wiring as more parts ship.
+- `assembly_kind_select` — `src/ui/partPanel.ts`, `#shape-kind` change handler (the `asm:` branch). Prop: `kindId`. `mode_switch` already fires here but only records `kind: 'assembly'`, not which one — `wheel`, `footrest`, and `chair-body` all exist today, worth wiring as more parts ship.
 - `base_color_change` — `src/ui/partPanel.ts`, `renderBaseColorSwatches` swatch click. Prop: `default` vs `filament`.
 - `automerge_change` — `src/ui/colorList.ts`, `#p-automerge` slider. Prop: `level` (0-3).
 - `color_merge` / `color_to_base` — `src/ui/colorList.ts` drag-merge and "→ base" actions. Prop: resulting group size.

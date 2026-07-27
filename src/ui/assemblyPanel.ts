@@ -12,6 +12,7 @@ import {
   onAssemblyPartsChanged,
   switchChairVariant,
 } from '../assembly/parts';
+import { availableZones } from '../state/artwork';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
 import { $ } from './dom';
@@ -31,6 +32,36 @@ export function syncAssemblyKindControls(): void {
   }
 
   renderAssemblyVariantControls();
+  renderZoneTemplateLinks();
+}
+
+/**
+ * Per-zone template downloads, for a kind whose parts carry more than one design surface (the
+ * chair) — the multi-zone counterpart to the single `#asm-template-link` above, which only makes
+ * sense for a kind with exactly one design face. Populated from whatever zones the currently
+ * loaded parts actually offer, so it fills in once the async zone charts resolve (see the
+ * onAssemblyPartsChanged hook below) rather than at kind-select time.
+ */
+export function renderZoneTemplateLinks(): void {
+  const row = $('#asm-zone-template-row');
+  const box = $('#asm-zone-template-links');
+  if (!row || !box) return;
+  const zones = availableZones().filter((z) => z.templateFile);
+  if (!zones.length) {
+    row.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  row.style.display = '';
+  box.innerHTML = zones
+    .map((z, i) => `${i ? ' · ' : ''}<a href="templates/${z.templateFile}" download>${z.name}</a>`)
+    .join('');
+  box.querySelectorAll<HTMLAnchorElement>('a').forEach((a, i) =>
+    a.addEventListener('click', () => {
+      const kind = currentAssemblyKind();
+      if (kind) track('template_download', { kind: kind.id, zone: zones[i].zoneId });
+    }),
+  );
 }
 
 /**
@@ -236,8 +267,10 @@ export function initAssemblyPanel(): void {
     renderAssemblyRoleControls();
     renderAssemblyPartList();
     // Zone charts resolve asynchronously as parts load, so the list's per-instance zone dropdown
-    // (empty until availableZones() has something to offer) needs a re-render here too.
+    // and the per-zone template links (both empty until availableZones() has something to offer)
+    // need a re-render here too.
     renderArtworkList();
+    renderZoneTemplateLinks();
   });
   // The link's href is re-pointed per kind in syncAssemblyKindControls; bind the click once here
   // so repeated syncs don't stack handlers.

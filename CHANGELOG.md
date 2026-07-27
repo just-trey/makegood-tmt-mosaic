@@ -21,6 +21,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   picker at the top of the Part section; switching reloads only the parts
   that actually differ between variants, confirming first if any of them
   are already loaded.
+- New assembly kind: **Chair body**, the MakeGood TMT's main frame (13
+  printed pieces, Standard/Kit caster mounts). Four of its surfaces
+  (left/right/back/seat) take artwork that wraps conformally onto the
+  part's curved geometry instead of a flat orthographic stamp — load a
+  design, then target a surface from the Artwork list's zone dropdown or by
+  clicking it directly in the 3D view. Each surface has its own true-scale
+  design template, downloadable from the Part section once the parts load.
+  **Export placement for this part isn't slicer-verified yet** — see Known
+  limitations in the README; treat the first print as a check on
+  placement/support, not an already-verified layout.
+
+### Removed
+
+- The standalone hidden "Wheel mount (left)" assembly kind. It was briefly
+  shipped and then deliberately un-shipped months ago with no technical
+  blocker recorded, is asymmetric (left-hand only, no matching right-hand
+  kind), and its role id collided with the chair body's own wheel-mount
+  role in the export placement logic (see Fixed below) — retired rather
+  than left as unreachable dead weight. The chair's own left/right
+  wheel-mount parts are unaffected; they were always separate files in a
+  separately-verified pose.
+
+### Fixed
+
+- The chair body's left wheel-mount part was silently picking up the
+  retired standalone kind's baked export placement (a fixed rotation and
+  single-plate hint meant for a lone part on its own plate), because both
+  shared the role id `wheel-mount-left` and the export code matched on that
+  id alone, not the assembly kind. Removing the standalone kind's dedicated
+  branch fixes this — the chair's wheel-mount part now takes the same
+  generic centered placement as its other 12 pieces.
 
 ## [0.6.0] - 2026-07-26
 

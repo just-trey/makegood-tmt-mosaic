@@ -256,36 +256,6 @@ export const FOOTREST_PLATE_R = [
 // 45°-rotated part leaves open, on every printer.
 export const FOOTREST_PRIME_TOWER_DELTA = { x: 29.808863, y: 41.857863 };
 
-// Wheel mount (left) placement, baked from stubs/temp/Wheel Mount Left.3mf — the MakeGood TMT
-// distribution project, whose plate 1 is the pose the part actually ships printed in. Like the
-// footrest and unlike the wheel, it carries NO fixedPos: the reference sits at (141.10717,
-// 128.16357) on a 256x256 plate, i.e. 13mm off that plate's own center, which is not a placement
-// to reproduce on a different bed — so the part centers on whatever plate and the tower rides
-// along relatively.
-//
-// The reference's own build-item rotation is recovered rather than baked as a matrix: its design
-// face is the flat face resting on the plate, and the shipped mesh is posed design-face-UP (+Y),
-// so export's default face-down tilt (rotXthenZ(-90 * nsign)) already lands the part the right way
-// up. That is why there is no WHEEL_MOUNT_PLATE_R — verified by diffing the exported build
-// transform against the reference's, not assumed.
-//
-// The one thing that does need a constant is the in-plane spin. The shipped mesh carries a 90°
-// turn about its design-face normal that exists purely so the part reads the right way up in the
-// design view (the artist's orientation); this cancels it back to the reference's plate footprint,
-// so the two orientations stay independent exactly as the add-part skill's step 5 describes.
-// Changing the mesh's spin without changing this by the same amount silently rotates the print.
-export const WHEEL_MOUNT_ROT_DEG = -90;
-//
-// Tower: the reference places it at bbox center (221.842405, 37.463025) with the part centered at
-// (141.10717, 128.16357), so tower - part = (80.735235, -90.700545).
-export const WHEEL_MOUNT_PRIME_TOWER_DELTA = { x: 80.735235, y: -90.700545 };
-// The reference slices this part with tree supports in the *hybrid* style; the global print
-// settings above already enable tree(auto) supports, so the style is the only real difference and
-// the only thing worth overriding per-object. Deliberately NOT carried over: the reference's
-// support_type is tree(manual), i.e. hand-painted enforcers, which nothing in this app can
-// reproduce — auto placement is the honest substitute and is not print-verified.
-export const WHEEL_MOUNT_OBJECT_SETTINGS = { support_style: 'tree_hybrid' };
-
 export async function build3MFCombined(
   materials: ExportMaterial[],
   parts: ExportPart[],

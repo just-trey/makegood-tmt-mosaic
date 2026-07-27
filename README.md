@@ -103,7 +103,17 @@ contents, or other personal data are ever sent. See
    a wheel's two halves): the design slice that lands on the copy is remapped
    back into the part's native print orientation. Round parts (the wheel) map
    the SVG via a Design-radius/circle model; rectangular parts (the footrest)
-   map it 1:1 in millimeters and auto-center on the detected face instead.
+   map it 1:1 in millimeters and auto-center on the detected face instead. A
+   part can also carry more than one design surface (**design zones**) baked
+   ahead of time by `scripts/bake-zones.mjs` — the chair body has four
+   (left/right/back/seat), each its own true-scale UV chart the artwork wraps
+   onto **conformally** (a sticker follows the surface around a rounded edge
+   the way real vinyl would, not a flat orthographic stamp)
+   ([src/geometry/conformal.ts](src/geometry/conformal.ts)). Load more than
+   one design, then target each zone from the Artwork list's per-row dropdown
+   or by clicking the surface directly in the 3D view. A kind with hardware
+   variants (the chair's Standard/Kit caster mounts) shows a version picker
+   above the part list; switching reloads only the parts that differ.
 6. **Export** writes a Bambu Studio _project_ 3MF (vendor metadata included,
    so it imports without warnings, with named parts, per-part filament slots,
    and multi-plate placement) ([src/export/threemf.ts](src/export/threemf.ts)).
@@ -243,9 +253,13 @@ entirely, which is the recommended path.
 
 ## Known limitations
 
-- **Flat, roughly horizontal faces only.** Assembly cutting assumes the design
-  face is horizontal in the part's own coordinates (the app warns otherwise).
-  No curved-surface wrapping.
+- **Flat, roughly horizontal faces only, unless the part ships baked design
+  zones.** A part with no zone sidecar assumes its design face is horizontal
+  in the part's own coordinates (the app warns otherwise) and projects
+  artwork straight down onto it — no curved-surface wrapping. A part that
+  does ship zones (the chair body) wraps artwork conformally onto each
+  zone's baked UV chart instead; adding zones to a new part means running
+  `scripts/bake-zones.mjs` (see "Adding an assembly or library part" above).
 - **"Largest flat patch" is a heuristic.** The auto-picked design face is the
   largest coplanar patch by area; a part with an equally large decorative flat
   face could fool it. The Advanced per-part controls let you pick a different
@@ -257,6 +271,13 @@ entirely, which is the recommended path.
   behind the face will cut through. Sanity-check depths against your model.
 - **Gradients/patterns are detected and skipped** with a warning, rather than
   silently producing wrong geometry.
+- **The chair body's export placement isn't slicer-verified yet.** Unlike the
+  wheel/footrest/wheel-mount (whose plate position, rotation, and prime-tower
+  offset are baked from a checked reference 3MF — see "Export placement is
+  baked from a verified reference 3MF" above), the chair's 13 parts export
+  through the generic centered path with no baked pose. The 3MF still opens
+  and slices, but treat the first print as a check on placement/support, not
+  an already-verified layout.
 
 ## Troubleshooting: "Boolean union/subtraction failed" warnings
 
@@ -307,11 +328,11 @@ is imported by the app. Two other brand themes in the tokens folder
 
 ## Roadmap ideas (not built)
 
-- Pick a face directly in the 3D view (raycast → detected patch) to apply
-  artwork to any part.
 - Raster image (PNG/JPG) input: quantize to flat color regions, then reuse the
   existing region pipeline.
-- Curved-surface wrapping.
+- Bake the chair body's export placement from a verified reference 3MF (see
+  "Known limitations" above) — the same treatment the wheel/footrest/
+  wheel-mount already have.
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind, and a hubcap part for the wheel
   assembly.

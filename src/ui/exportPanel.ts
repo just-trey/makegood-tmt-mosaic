@@ -11,9 +11,6 @@ import {
   WHEEL_PRIME_TOWER_DELTA,
   FOOTREST_PLATE_R,
   FOOTREST_PRIME_TOWER_DELTA,
-  WHEEL_MOUNT_ROT_DEG,
-  WHEEL_MOUNT_PRIME_TOWER_DELTA,
-  WHEEL_MOUNT_OBJECT_SETTINGS,
   type ExportMaterial,
   type ExportPart,
   type ExportSub,
@@ -99,15 +96,6 @@ async function exportPrintReady3MF(): Promise<void> {
           plateR = FOOTREST_PLATE_R;
           primeTowerDelta = FOOTREST_PRIME_TOWER_DELTA;
           objectSettings = { enable_support: '0' };
-        } else if (part.roleId === 'wheel-mount-left') {
-          // No plateR and no fixedPos: the mesh ships design-face-up, so the default face-down
-          // tilt already reproduces the reference's print orientation, and the part centers on
-          // its plate with the tower held relative (see WHEEL_MOUNT_PRIME_TOWER_DELTA). The spin
-          // cancels the mesh's design-view turn (see WHEEL_MOUNT_ROT_DEG).
-          plateHint = 1;
-          rotZdeg = WHEEL_MOUNT_ROT_DEG;
-          primeTowerDelta = WHEEL_MOUNT_PRIME_TOWER_DELTA;
-          objectSettings = WHEEL_MOUNT_OBJECT_SETTINGS;
         }
         return {
           name: part.name,
