@@ -59,32 +59,8 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     ],
   },
   {
-    id: 'wheel-mount-left',
-    name: 'Wheel mount (left)',
-    // not yet offered in the Part dropdown; remove once ready to ship.
-    hidden: true,
-    // rectangular design face, same as the footrest — the artwork maps 1:1 in mm.
-    designFit: 'rect',
-    templateFile: 'wheel-mount-left-template.svg',
-    roles: [
-      {
-        id: 'wheel-mount-left',
-        name: 'Wheel mount (left)',
-        libraryPartId: 'wheel-mount-left',
-        allowRotatedCopies: false,
-        // no preferFaceNormal: the design face is this part's largest flat patch by a wide
-        // margin (36,054mm², next is 9,761mm²), so the default largest-patch pick is correct.
-      },
-    ],
-  },
-  {
     id: 'chair-body',
     name: 'Chair body',
-    // Not yet offered in the Part dropdown: the chair's design faces point sideways (±X/±Z), not
-    // up along Y, so the flat-zone cut path can't place artwork on them meaningfully. It stays
-    // hidden until the baked conformal zones + viewport zone picking land (later Phase 5 PRs);
-    // unhide then. Loading/exporting it as plain assembly parts already works.
-    hidden: true,
     // per-zone rect semantics: each zone's template maps its SVG 1:1 in mm, centered on the chart.
     designFit: 'rect',
     // baked design-zone sidecar (public/stl/) — the conformal charts artwork wraps onto. The build

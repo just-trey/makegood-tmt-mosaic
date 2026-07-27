@@ -42,7 +42,12 @@ beforeEach(() => {
 });
 
 /** A minimal zoned part carrying one named DesignZone, for the zone-targeting tests below. */
-function zonedPart(id: number, zoneId: string, zoneName: string): AssemblyPart {
+function zonedPart(
+  id: number,
+  zoneId: string,
+  zoneName: string,
+  templateFile?: string,
+): AssemblyPart {
   return {
     id,
     name: `part-${id}`,
@@ -51,7 +56,7 @@ function zonedPart(id: number, zoneId: string, zoneName: string): AssemblyPart {
     patches: null,
     patchIdx: 0,
     boundaryLoop: null,
-    zones: [{ id: zoneId, name: zoneName }],
+    zones: [{ id: zoneId, name: zoneName, templateFile }],
     topZ: 0,
     baseDepth: 1,
     isDuplicateOf: null,
@@ -231,6 +236,13 @@ describe('availableZones / setArtworkZone', () => {
     expect(availableZones()).toEqual([
       { zoneId: 'left', name: 'Left side' },
       { zoneId: 'right', name: 'Right side' },
+    ]);
+  });
+
+  it('passes through each zone’s template filename, for the per-zone download links', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left side', 'left-template.svg')];
+    expect(availableZones()).toEqual([
+      { zoneId: 'left', name: 'Left side', templateFile: 'left-template.svg' },
     ]);
   });
 

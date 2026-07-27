@@ -107,14 +107,16 @@ function partIdForZone(zoneId: string): number {
 
 /**
  * Every zone id currently offered by the loaded assembly parts, deduped and named — what the
- * per-instance zone dropdown offers. Empty outside assembly mode, or for a kind with no zone
- * sidecar (a part with `zones: undefined` has one implicit flat zone, not a pickable one).
+ * per-instance zone dropdown (and the Part panel's per-zone template links) offer. Empty outside
+ * assembly mode, or for a kind with no zone sidecar (a part with `zones: undefined` has one
+ * implicit flat zone, not a pickable one).
  */
-export function availableZones(): { zoneId: string; name: string }[] {
-  const seen = new Map<string, string>();
+export function availableZones(): { zoneId: string; name: string; templateFile?: string }[] {
+  const seen = new Map<string, { name: string; templateFile?: string }>();
   for (const part of state.assembly.parts)
-    for (const z of part.zones ?? []) if (!seen.has(z.id)) seen.set(z.id, z.name);
-  return Array.from(seen, ([zoneId, name]) => ({ zoneId, name }));
+    for (const z of part.zones ?? [])
+      if (!seen.has(z.id)) seen.set(z.id, { name: z.name, templateFile: z.templateFile });
+  return Array.from(seen, ([zoneId, v]) => ({ zoneId, ...v }));
 }
 
 /**

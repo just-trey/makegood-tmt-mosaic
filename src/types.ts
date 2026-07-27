@@ -115,6 +115,12 @@ export interface DesignZone {
    * with the flat projection instead.
    */
   chart?: ConformalChart;
+  /**
+   * Filename of this zone's true-to-size design template in `public/templates/` — the per-zone
+   * counterpart to `AssemblyKind.templateFile` for a kind whose parts each carry more than one
+   * design surface, so each surface needs its own template rather than one for the whole kind.
+   */
+  templateFile?: string;
 }
 
 /** Identifies one design zone: which part it lives on, and the zone's stable id within that part. */
