@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeAll, beforeEach, vi } from 'vitest';
 
 // Keep the load path light and DOM-only: stub the scene/scheduler side effects so importing
 // artworkPanel doesn't pull in three.js or trigger a real rebuild.
@@ -23,8 +23,29 @@ import { state } from '../src/state/store';
 
 const GOOD_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>';
+const TWO_COLOR_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/><rect width="4" height="4" fill="#0000ff"/></svg>';
 // Valid XML, but no flat-filled shapes — parseSVGDocument throws, same as a malformed drop.
 const BAD_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+
+// jsdom has no 2d canvas without the native `canvas` package, and the parser resolves every fill
+// through it — leave it unstubbed and GOOD_SVG's #ff0000 comes back as #000000, which matters now
+// that the color settings below are pruned against the palette the designs actually paint with.
+// Same stub as tests/parse.test.ts.
+beforeAll(() => {
+  HTMLCanvasElement.prototype.getContext = function () {
+    let value = '#000000';
+    return {
+      get fillStyle() {
+        return value;
+      },
+      set fillStyle(s: string) {
+        const str = String(s).trim().toLowerCase();
+        if (/^#[0-9a-f]{6}$/.test(str)) value = str;
+      },
+    };
+  } as unknown as typeof HTMLCanvasElement.prototype.getContext;
+});
 
 beforeEach(() => {
   document.body.innerHTML = '<span id="svg-fname"></span><div id="artwork-list"></div>';
@@ -62,7 +83,7 @@ describe('applyParsedSVG failed-load safety', () => {
   });
 
   it('a second valid load adds alongside the first, leaving existing settings alone', () => {
-    applyParsedSVG(GOOD_SVG, 'first.svg');
+    applyParsedSVG(TWO_COLOR_SVG, 'first.svg');
     state.colorSettings = { '#ff0000': { depth: 1.5 } };
     state.mergeGroups = [['#ff0000', '#0000ff']];
 

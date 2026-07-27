@@ -12,6 +12,11 @@
 // and unioning (what the app's fill engine does at runtime) welds them back into the same
 // shape with no seam — see tileFeature in src/geometry/patterns.ts.
 //
+// The field-traced pattern (zebra) gets there differently: its scalar field is exactly periodic
+// in (W,H), so tracing its contours and clipping to the tile gives pieces that line up with the
+// next tile by construction — provided no contour is dropped on the way. See
+// marchingSquaresContours/closeOpenChains, and the seam assertion in tests/patterns-assets.test.ts.
+//
 // Deliberately avoids <circle> elements: assembly mode's rect/wheel placement auto-detects
 // the largest <circle> in a loaded SVG as a design-boundary anchor (ParsedSVG.rawSVGCircle),
 // which patterns must never trigger. Every shape — including the full-bleed background field —
@@ -182,11 +187,15 @@ function stripeField(rng, { kx, ky, wobbleTerms, wobbleAmp }) {
 
 /**
  * Marching squares over a padded grid, linked into closed loops. `field` must be periodic in
- * (W,H) — see stripeField. Padding samples past the true tile edges so a stripe crossing the
- * boundary stays a single closed loop within the sampled area rather than an open chain;
- * `marchingSquaresContours`'s caller clips the result down to the real [0,W]x[0,H] tile with
- * clipToRect, same as the blob wrap-and-clip, and the field's periodicity guarantees the
- * pieces left on either side of a cut line up with the next tile over.
+ * (W,H) — see stripeField. Padding samples past the true tile edges so the contours near them are
+ * traced in context; the caller clips the result down to the real [0,W]x[0,H] tile with
+ * clipToRect, same as the blob wrap-and-clip, and the field's periodicity guarantees the pieces
+ * left on either side of a cut line up with the next tile over.
+ *
+ * A branching stripe field spans the window, so plenty of contours can't close inside it however
+ * much padding it gets — those are closed against the window border instead (see
+ * closeOpenChains), not discarded. Returned loops are wound with the >threshold side on the left,
+ * so an enclosed white island comes back as a loop of opposite sign to the stripe around it.
  */
 function marchingSquaresContours(field, W, H, { res, padMM, threshold }) {
   const pad = Math.round(padMM * res);
@@ -252,46 +261,168 @@ function marchingSquaresContours(field, W, H, { res, padMM, threshold }) {
         left: () => [xL, lerp(yB, yT, bl, tl)],
       };
       const pairs = AMBIGUOUS[c] ? AMBIGUOUS[c] : [CASES[c]];
-      for (const [a, b] of pairs) segments.push({ a: edgePoint[a](), b: edgePoint[b]() });
+      // Orient every segment the same way — the >threshold side on its LEFT. The CASES table
+      // above doesn't (case 1 and case 14 are inverses of each other yet list the same edge
+      // pair), and without a consistent winding the border-closing below has no way to tell
+      // which way around the window encloses the pattern rather than its negative.
+      const corners = [
+        [xL, yB, bl],
+        [xR, yB, br],
+        [xR, yT, tr],
+        [xL, yT, tl],
+      ].filter((k) => k[2] > threshold);
+      for (const [a, b] of pairs) {
+        const A = edgePoint[a](),
+          B = edgePoint[b]();
+        const mx = (A[0] + B[0]) / 2,
+          my = (A[1] + B[1]) / 2;
+        // the nearest inside corner is always one this segment separates, so its side is the
+        // inside side even for the two-segment ambiguous cases
+        let near = null,
+          best = Infinity;
+        for (const k of corners) {
+          const d = (k[0] - mx) ** 2 + (k[1] - my) ** 2;
+          if (d < best) {
+            best = d;
+            near = k;
+          }
+        }
+        const cross =
+          near === null ? 1 : (B[0] - A[0]) * (near[1] - A[1]) - (B[1] - A[1]) * (near[0] - A[0]);
+        segments.push(cross < 0 ? { a: B, b: A } : { a: A, b: B });
+      }
     }
   }
 
   const key = ([x, y]) => Math.round(x * 500) + ',' + Math.round(y * 500);
-  const bucket = new Map();
+  const byStart = new Map(),
+    byEnd = new Map();
   segments.forEach((seg, id) => {
-    for (const end of [0, 1]) {
-      const k = key(end === 0 ? seg.a : seg.b);
-      if (!bucket.has(k)) bucket.set(k, []);
-      bucket.get(k).push({ id, end });
-    }
+    const ks = key(seg.a),
+      ke = key(seg.b);
+    if (!byStart.has(ks)) byStart.set(ks, []);
+    byStart.get(ks).push(id);
+    if (!byEnd.has(ke)) byEnd.set(ke, []);
+    byEnd.get(ke).push(id);
   });
   const usedSeg = new Array(segments.length).fill(false);
   const loops = [];
+  const open = [];
   for (let id0 = 0; id0 < segments.length; id0++) {
     if (usedSeg[id0]) continue;
     usedSeg[id0] = true;
-    const loop = [segments[id0].a, segments[id0].b];
-    const startKey = key(loop[0]);
-    for (let guard = 0; guard < 20000; guard++) {
-      const tailKey = key(loop[loop.length - 1]);
-      if (tailKey === startKey && loop.length > 2) break; // closed
-      const next = (bucket.get(tailKey) || []).find((c) => !usedSeg[c.id]);
-      if (!next) break; // open chain — dropped below (padding should make this rare)
-      usedSeg[next.id] = true;
-      const seg = segments[next.id];
-      loop.push(next.end === 0 ? seg.b : seg.a);
+    const chain = [segments[id0].a, segments[id0].b];
+    let closed = false;
+    for (let guard = 0; guard < 200000; guard++) {
+      const tailKey = key(chain[chain.length - 1]);
+      if (tailKey === key(chain[0]) && chain.length > 2) {
+        closed = true;
+        break;
+      }
+      const next = (byStart.get(tailKey) || []).find((id) => !usedSeg[id]);
+      if (next === undefined) break;
+      usedSeg[next] = true;
+      chain.push(segments[next].b);
     }
-    if (loop.length >= 4 && key(loop[loop.length - 1]) === startKey) {
-      loop.pop(); // drop the duplicate closing point — toD() closes with Z
-      loops.push(loop);
+    // Walk backwards too: the seed segment is rarely the head of its chain, and leaving the
+    // head dangling used to turn every open contour into a fragment that got discarded.
+    if (!closed)
+      for (let guard = 0; guard < 200000; guard++) {
+        const prev = (byEnd.get(key(chain[0])) || []).find((id) => !usedSeg[id]);
+        if (prev === undefined) break;
+        usedSeg[prev] = true;
+        chain.unshift(segments[prev].a);
+      }
+    if (closed) {
+      chain.pop(); // drop the duplicate closing point — toD() closes with Z
+      if (chain.length >= 3) loops.push(chain);
+    } else if (chain.length >= 2) {
+      open.push(chain);
     }
   }
-  return loops;
+  return loops.concat(
+    closeOpenChains(open, x0, y0, x0 + nx * dx, y0 + ny * dy, Math.min(dx, dy) * 0.5),
+  );
+}
+
+/**
+ * Close the contour chains that run off the edge of the sampled window, by joining them along
+ * the window border.
+ *
+ * These used to be discarded, on the theory that padding made them rare. It doesn't: a branching
+ * stripe field spans the window, so most of its contours *can't* close inside it (zebra kept 77
+ * closed loops and dropped 261 open chains), and which fragments happened to survive was not
+ * translation-invariant — that's what broke the tiling guarantee the header comment claims.
+ *
+ * Every chain is wound with the pattern's interior on its left, so walking the border
+ * counter-clockwise from one chain's tail to the next chain's head keeps that same interior on
+ * the left the whole way round. Chains are chained head-to-tail in border order rather than each
+ * closing back on itself, which is what keeps two chains from both claiming the same border run.
+ */
+function closeOpenChains(chains, xmin, ymin, xmax, ymax, eps) {
+  const w = xmax - xmin,
+    h = ymax - ymin;
+  const P = 2 * (w + h);
+  // CCW perimeter coordinate: bottom left→right, right edge up, top right→left, left edge down.
+  const param = ([x, y]) => {
+    if (Math.abs(y - ymin) <= eps) return x - xmin;
+    if (Math.abs(x - xmax) <= eps) return w + (y - ymin);
+    if (Math.abs(y - ymax) <= eps) return w + h + (xmax - x);
+    if (Math.abs(x - xmin) <= eps) return 2 * w + h + (ymax - y);
+    return null; // not on the border — chain ended somewhere it shouldn't have
+  };
+  const CORNERS = [
+    [0, [xmin, ymin]],
+    [w, [xmax, ymin]],
+    [w + h, [xmax, ymax]],
+    [2 * w + h, [xmin, ymax]],
+  ];
+
+  const items = [];
+  for (const c of chains) {
+    const head = param(c[0]),
+      tail = param(c[c.length - 1]);
+    if (head === null || tail === null) continue; // degenerate; drop as before
+    items.push({ pts: c, head, tail, used: false });
+  }
+  const out = [];
+  for (const start of items) {
+    if (start.used) continue;
+    const loop = [];
+    let cur = start;
+    for (let guard = 0; guard < items.length + 1; guard++) {
+      cur.used = true;
+      loop.push(...cur.pts);
+      // the next chain head strictly ahead of this tail in CCW order (cyclic)
+      let next = null,
+        bestGap = Infinity;
+      for (const it of items) {
+        const gap = (it.head - cur.tail + P) % P;
+        if (gap < bestGap) {
+          bestGap = gap;
+          next = it;
+        }
+      }
+      if (!next) break;
+      for (const [t, pt] of CORNERS)
+        if ((t - cur.tail + P) % P > 0 && (t - cur.tail + P) % P < bestGap) loop.push(pt);
+      if (next === start) break;
+      if (next.used) break; // shouldn't happen; bail rather than loop forever
+      cur = next;
+    }
+    if (loop.length >= 3) out.push(loop);
+  }
+  return out;
 }
 
 const n2 = (v) => Math.round(v * 100) / 100;
 const toD = (loop) => loop.map(([x, y], i) => `${i ? 'L' : 'M'}${n2(x)} ${n2(y)}`).join(' ') + ' Z';
 const MIN_AREA = 0.2; // mm² — drops degenerate slivers Sutherland-Hodgman leaves at a corner
+// The field path needs a real degeneracy epsilon instead: its contours aren't drawn at 9 wrap
+// positions, so every clipped piece is genuine content, and a stripe that barely pokes over a
+// tile edge leaves a legitimate sliver on the far side. Dropping those at 0.2mm² is what left
+// zebra with ink meeting white across the seam.
+const MIN_AREA_FIELD = 1e-6;
 
 /**
  * Render one pattern on a WxH tile: an optional full-bleed background field, then `count`
@@ -323,11 +454,17 @@ function renderPattern(p) {
       padMM: p.padMM ?? 20,
       threshold: p.threshold ?? 0.5,
     });
+    // One <path> with every contour as a subpath, not one path per contour: a stripe field has
+    // enclosed white islands, and the app resolves hole-vs-solid by containment *within a
+    // shape* (shapeToFeature in src/geometry/regions.ts). Split across separate paths each
+    // island would union back into its stripe and fill in solid.
+    const subpaths = [];
     for (const loop of loops) {
       const clipped = clipToRect(loop, 0, 0, W, H);
-      if (clipped.length >= 3 && shoelaceArea(clipped) > MIN_AREA)
-        paths.push({ d: toD(clipped), fill: motifFill });
+      if (clipped.length >= 3 && shoelaceArea(clipped) > MIN_AREA_FIELD)
+        subpaths.push(toD(clipped));
     }
+    if (subpaths.length) paths.push({ d: subpaths.join(' '), fill: motifFill });
   } else {
     const { count, motif, rotBase = 0, rotSpread = Math.PI } = p;
     for (let i = 0; i < count; i++) {

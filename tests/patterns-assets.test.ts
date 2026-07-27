@@ -61,3 +61,72 @@ describe('every built-in pattern asset', () => {
     },
   );
 });
+
+/**
+ * The whole point of these assets is that Fill mode repeats them edge-to-edge, so what has to hold
+ * is that the color a hair inside one edge matches the color a hair inside the opposite edge —
+ * where the next tile's copy butts up against it. Zebra shipped violating this (its marching-squares
+ * contours were traced in a padded window and any contour that didn't close inside it was silently
+ * discarded), with mismatched runs up to 11.67mm; nothing in the suite noticed because the other
+ * three patterns tile by construction.
+ */
+describe('every built-in pattern tiles seamlessly', () => {
+  const SAMPLES = 2000;
+  // A mismatch run this short can't survive a 0.4mm nozzle; anything longer is a visible seam.
+  const MAX_RUN_MM = 0.25;
+
+  const inLoop = (x: number, y: number, loop: { x: number; y: number }[]): boolean => {
+    let hit = false;
+    for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+      const a = loop[i],
+        b = loop[j];
+      if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+    }
+    return hit;
+  };
+
+  it.each(manifest.map((p) => [p.id, p.file] as const))('%s', (_id, file) => {
+    const parsed = parseSVGDocument(readFileSync(resolve(REPO, 'public/patterns', file), 'utf8'));
+    const { minX, minY, maxX, maxY } = parsed.bbox;
+    const W = maxX - minX,
+      H = maxY - minY;
+
+    // topmost shape covering the point wins, matching document-order paint (and the app's own
+    // per-color netting); a shape is covered when an odd number of its subpath loops contain it
+    const colorAt = (x: number, y: number): string => {
+      for (let i = parsed.shapes.length - 1; i >= 0; i--) {
+        const s = parsed.shapes[i];
+        if (s.loops.filter((l) => inLoop(x, y, l)).length % 2 === 1) return s.fill;
+      }
+      return 'none';
+    };
+
+    const d = 0.001;
+    for (const axis of ['x', 'y'] as const) {
+      const span = axis === 'x' ? H : W;
+      const step = span / SAMPLES;
+      let run = 0,
+        worst = 0,
+        bad = 0;
+      for (let i = 0; i < SAMPLES; i++) {
+        const t = minY + (i + 0.5) * step;
+        const s = minX + (i + 0.5) * step;
+        const [near, far] =
+          axis === 'x'
+            ? [colorAt(minX + d, t), colorAt(maxX - d, t)]
+            : [colorAt(s, minY + d), colorAt(s, maxY - d)];
+        if (near === far) run = 0;
+        else {
+          bad++;
+          run += step;
+          worst = Math.max(worst, run);
+        }
+      }
+      expect({ axis, worstRunMM: worst < MAX_RUN_MM, badFrac: bad / SAMPLES < 0.01 }).toEqual({
+        axis,
+        worstRunMM: true,
+        badFrac: true,
+      });
+    }
+  });
+});

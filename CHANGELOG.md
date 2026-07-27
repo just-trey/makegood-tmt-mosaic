@@ -63,6 +63,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   id alone, not the assembly kind. Removing the standalone kind's dedicated
   branch fixes this — the chair's wheel-mount part now takes the same
   generic centered placement as its other 12 pieces.
+- The on-face gizmo now sits on the design surface the active artwork row is
+  actually bound to. It previously always used the first zoned part's first
+  zone, so on the chair body it stayed on the left panel whatever you
+  selected — reading as a frame stuck at an angle, with every drag editing a
+  surface you weren't looking at.
+- The Zebra pattern now really does tile. Its stripes are traced as contours
+  of a repeating wave field, and any contour that didn't happen to close
+  inside the sampled window was being discarded — leaving mismatched runs up
+  to 11.7mm where one repeat met the next, and filling in the white gaps
+  enclosed by a stripe. Contours are now closed against the window edge
+  instead of dropped, and enclosed gaps stay open. Cow, Dalmatian and Tiger
+  are generated a different way and are unchanged.
+- A chair part whose design-zone data can't be downloaded is now left with no
+  design surfaces, rather than falling back to stamping the artwork flat onto
+  whatever the largest flat face of that piece happens to be.
+- Loading or removing a design now drops color settings — base-color
+  assignments, merge groups, pinned-apart colors — for colors no loaded
+  design paints with any more. A color the previous design had sent to the
+  base could otherwise stay silently excluded from being cut.
 
 ## [0.6.0] - 2026-07-26
 
