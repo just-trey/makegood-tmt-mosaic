@@ -140,6 +140,16 @@ export function getDomElement(): HTMLCanvasElement {
   return renderer.domElement;
 }
 
+/** Pointer position in normalized device coords (−1..1), for raycasting — shared by the design
+ * gizmo and zone picking, the two viewport features that hit-test against the pointer. */
+export function pointerToNDC(e: PointerEvent): THREE.Vector2 {
+  const rect = renderer.domElement.getBoundingClientRect();
+  return new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1,
+  );
+}
+
 /**
  * Add an object that lives directly in the scene, outside modelGroup — so it survives
  * newModelGroup()'s dispose-and-replace on every rebuild. Used by the on-face design gizmo,

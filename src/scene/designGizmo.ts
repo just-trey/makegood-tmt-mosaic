@@ -1,7 +1,14 @@
 import * as THREE from 'three';
 import { state } from '../state/store';
 import { scheduleRebuild, isRebuildLikelySlow } from '../app/scheduler';
-import { addSceneOverlay, getCamera, getControls, getDomElement, setInteracting } from './viewport';
+import {
+  addSceneOverlay,
+  getCamera,
+  getControls,
+  getDomElement,
+  pointerToNDC,
+  setInteracting,
+} from './viewport';
 import { computeFaceFrame, type FaceFrame } from './faceFrame';
 import { track } from '../analytics/track';
 
@@ -113,6 +120,16 @@ export function initDesignGizmo(): void {
 }
 
 /**
+ * Whether a gizmo drag is currently in progress — checked by zonePick.ts so a drag that starts on
+ * the gizmo (move/scale/rotate the active artwork) never also gets read as a zone-pick click. Only
+ * meaningful when checked synchronously within the same pointerdown tick this module's own
+ * handler ran in (registration order in main.ts puts this module's listener first).
+ */
+export function isGizmoDragging(): boolean {
+  return !!drag;
+}
+
+/**
  * Rebuild the gizmo overlay from current state. Called after every rebuild and whenever the fit
  * controls change; a no-op mid-drag so it doesn't fight the pointer.
  */
@@ -214,21 +231,12 @@ function drawOverlay(
   armPos.needsUpdate = true;
 }
 
-function pointerNDC(e: PointerEvent): THREE.Vector2 {
-  const dom = getDomElement();
-  const rect = dom.getBoundingClientRect();
-  return new THREE.Vector2(
-    ((e.clientX - rect.left) / rect.width) * 2 - 1,
-    -((e.clientY - rect.top) / rect.height) * 2 + 1,
-  );
-}
-
 function onPointerDown(e: PointerEvent): void {
   if (!overlay || !overlay.visible || e.button !== 0) return;
   const f = computeFaceFrame();
   if (!f) return;
 
-  raycaster.setFromCamera(pointerNDC(e), getCamera());
+  raycaster.setFromCamera(pointerToNDC(e), getCamera());
 
   let mode: DragMode | null = null;
   if (raycaster.intersectObject(rotateHandle, false).length) mode = 'rotate';
@@ -273,7 +281,7 @@ function onPointerDown(e: PointerEvent): void {
 
 function onPointerMove(e: PointerEvent): void {
   if (!drag || e.pointerId !== drag.pointerId) return;
-  raycaster.setFromCamera(pointerNDC(e), getCamera());
+  raycaster.setFromCamera(pointerToNDC(e), getCamera());
   const hit = raycaster.ray.intersectPlane(drag.plane, new THREE.Vector3());
   if (!hit) return;
   const f = drag.frame;

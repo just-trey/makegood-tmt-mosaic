@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the active design the fit sliders and on-face gizmo edit, and on a part
   with more than one design surface each row can target a specific zone (or
   place the same design on a second zone) via its own dropdown.
+- On a part with more than one design surface, you can also click directly
+  on a surface in the 3D view to bind the active design to it, instead of
+  using the row dropdown.
 
 ## [0.6.0] - 2026-07-26
 

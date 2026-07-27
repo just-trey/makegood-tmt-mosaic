@@ -48,6 +48,14 @@ dropdown.
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-zone` change handler in `renderArtworkList`.
 - **Props:** `{ zone: string }` (the zone id, or `'all'` for the unbound/"every zone" option)
 
+### `zone_selected`
+
+Fired when the user clicks a zone directly in the 3D viewport, binding the
+active artwork instance to it.
+
+- **Where:** [src/scene/zonePick.ts](../src/scene/zonePick.ts) — `onPointerUp`.
+- **Props:** `{ zone: string }` (the zone id)
+
 ### `mode_switch`
 
 Fired when the user changes the part-shape mode.

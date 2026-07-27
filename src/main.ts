@@ -1,6 +1,7 @@
 import './styles.css';
 import { initViewport } from './scene/viewport';
 import { initDesignGizmo } from './scene/designGizmo';
+import { initZonePicking } from './scene/zonePick';
 import { setRebuildCostHint, setRebuildHandler } from './app/scheduler';
 import { estimateRebuildSlow, rebuildCurrent } from './app/rebuild';
 import { loadFilaments } from './state/filaments';
@@ -23,6 +24,9 @@ $('#app-version').textContent =
 
 initViewport($('#canvas-host'));
 initDesignGizmo();
+// Registered after the gizmo so its pointerdown handler runs first — zonePick relies on that
+// ordering to tell a gizmo drag apart from a zone-pick click (see isGizmoDragging).
+initZonePicking();
 setRebuildHandler(rebuildCurrent);
 setRebuildCostHint(estimateRebuildSlow);
 
