@@ -32,6 +32,14 @@ import {
 } from './manifold';
 import { faceXZBBox, OVERSHOOT_MM, type DesignPlacement, type ZoneMapper } from './zones';
 import { zoneMappersFor } from './zoneMappers';
+import { FILL_REFINE_MM, FILL_SNAP_MM } from './conformal';
+import {
+  MAX_FILL_TILES,
+  tileCoverage,
+  tileFeature,
+  type TileCell,
+  type TileGrid,
+} from './patterns';
 import { notice, warn } from '../warnings';
 import { reportProgress } from '../progress';
 
@@ -111,6 +119,11 @@ export interface ArtworkBuildInput {
   flipY: boolean;
   /** design rotation about its center on the face, in degrees (0 = as authored) */
   rotationDeg: number;
+  /**
+   * 'sticker' (default) places one copy of the design; 'fill' repeats it across the whole zone,
+   * one period per SVG viewBox, clipped to the zone boundary.
+   */
+  mode?: 'sticker' | 'fill';
 }
 
 export interface AssemblyBuildInput {
@@ -287,8 +300,15 @@ export async function buildAssemblyGeometry(
   // life-size at Scale 100% even when the editor dropped the physical size (e.g. Affinity exports
   // `width="100%"` and rescales the viewBox to its own resolution). Meet-fit (the smaller axis
   // ratio) matches SVG's default fitting. Genuine 1:1 fallback only when there's no viewBox either.
-  const mmPerUnitOf = (parsed: ParsedSVG, scaleMult: number, anchorR: number): number => {
-    if (!isRect) return (radius / anchorR) * scaleMult;
+  // `forceRect` is the fill path: a tile's size is a real-world period, so it maps in mm on every
+  // kind — the wheel's radius-driven scaling would stretch one period across the whole design.
+  const mmPerUnitOf = (
+    parsed: ParsedSVG,
+    scaleMult: number,
+    anchorR: number,
+    forceRect = false,
+  ): number => {
+    if (!isRect && !forceRect) return (radius / anchorR) * scaleMult;
     if (parsed.userUnitMM != null) return parsed.userUnitMM * scaleMult;
     const vb = parsed.viewBox;
     const designFace = largestDesignFace();
@@ -321,11 +341,29 @@ export async function buildAssemblyGeometry(
   // applies. zMul base is -1 because SVG Y runs top-down while the viewport is Z-up (keeps the
   // artwork right-side up on the face); the user's vertical flip toggles that. The mapper's
   // placer folds these design params into the per-part SVG→face-frame map.
-  const placements: DesignPlacement[] = artworks.map((a) => {
-    const svgC = anchorOf(a.parsed);
+  //
+  // A fill's tile is one period of the pattern: the document's viewBox (parsing bakes its origin
+  // out, so the cell starts at 0,0), or the artwork's own bbox for a file that declares no viewBox.
+  const tileCellOf = (parsed: ParsedSVG): TileCell => {
+    const vb = parsed.viewBox;
+    if (vb && vb.w > 0 && vb.h > 0) return { x: 0, y: 0, w: vb.w, h: vb.h };
+    const b = parsed.bbox;
+    return { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY };
+  };
+  const tileCells = artworks.map((a) => tileCellOf(a.parsed));
+
+  const placements: DesignPlacement[] = artworks.map((a, ai) => {
+    // A fill anchors on its tile, not on the design's boundary circle: circle anchoring exists to
+    // fit one design to the Design radius, which for a pattern would scale a single period up to
+    // the whole wheel (and emit the "no <circle>" notice at every user).
+    const cell = tileCells[ai];
+    const fill = a.mode === 'fill';
+    const svgC = fill
+      ? { cx: cell.x + cell.w / 2, cy: cell.y + cell.h / 2, r: Math.max(cell.w, cell.h) / 2 || 1 }
+      : anchorOf(a.parsed);
     return {
       svgC,
-      mmPerUnit: mmPerUnitOf(a.parsed, a.scaleMult, svgC.r),
+      mmPerUnit: mmPerUnitOf(a.parsed, a.scaleMult, svgC.r, fill),
       xFlip: a.flipX ? -1 : 1,
       zMul: a.flipY ? 1 : -1,
       offX: a.offX,
@@ -392,17 +430,26 @@ export async function buildAssemblyGeometry(
     const colorPrisms: Record<number, ManifoldSolid[]> = {};
     // Extracted to a plain function (rather than inlined in the loop below) purely so its
     // early `return`s mean "skip this color" without fighting the surrounding for-loop/await.
-    const buildColorPrism = (
+    const buildColorPrism = async (
       mapper: ZoneMapper,
       boundaryPoly: PolyFeature | null,
       place: (pt: number[]) => number[],
+      grid: TileGrid | null,
       c: AssemblyPaletteEntry,
       ci: number,
       ai: number,
-    ): void => {
+      onProgress: (fraction: number) => void,
+    ): Promise<void> => {
       const source = featuresByColor[ci][ai];
       if (!source) return;
-      let feat: PolyFeature | null = mapFeatureCoords(source, place);
+      // Fill: repeat the color's regions across the grid *in SVG space*, before placement, so the
+      // tiles inherit the placement's rotation/scale/offset and the seam-straddling copies overlap
+      // exactly where the union can weld them.
+      const tiled = grid
+        ? await tileFeature(source, grid, onProgress, `color ${c.hex} on ${part.name}`)
+        : source;
+      if (!tiled) return;
+      let feat: PolyFeature | null = mapFeatureCoords(tiled, place);
       if (boundaryPoly) {
         feat = safeIntersect(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
         if (!feat) return;
@@ -410,7 +457,8 @@ export async function buildAssemblyGeometry(
       const depthSetting = (colorSettings[c.key] && colorSettings[c.key].depth) || globalDepth;
       if (depthSetting <= 0) return;
       const depth = mapper.resolveCutDepth(depthSetting);
-      const soup = mapper.buildCutter(feat, depth, OVERSHOOT_MM);
+      const cutterOpts = grid ? { refineMM: FILL_REFINE_MM, snapMM: FILL_SNAP_MM } : undefined;
+      const soup = mapper.buildCutter(feat, depth, OVERSHOOT_MM, cutterOpts);
       if (!soup || !soup.length) {
         // The artwork overlapped this zone (it survived the boundary clip) but no cutter came out.
         // On a conformal zone that means the warp found no surface under part of the region —
@@ -434,7 +482,7 @@ export async function buildAssemblyGeometry(
       // — repair it with Manifold's own 2D boolean engine and retry once before giving up.
       try {
         const repaired = repairSelfIntersections(wasm, feat);
-        const soup2 = repaired && mapper.buildCutter(repaired, depth, OVERSHOOT_MM);
+        const soup2 = repaired && mapper.buildCutter(repaired, depth, OVERSHOOT_MM, cutterOpts);
         if (soup2 && soup2.length) {
           const man2 = soupToManifold(wasm, soup2);
           if (manifoldIsValid(man2)) {
@@ -464,8 +512,30 @@ export async function buildAssemblyGeometry(
       const boundaryPoly = mapper.boundary();
       for (const ai of zoneWork[zi]) {
         const place = mapper.placer(placements[ai]);
+        // One grid per (zone, artwork) — every color of the same fill repeats identically, so the
+        // (inverted-placement) coverage math runs once rather than per palette slot. A fill that
+        // can't be tiled degrades to a single copy plus a warning, which is at least visible and
+        // adjustable, rather than an empty part.
+        let grid: TileGrid | null = null;
+        if (artworks[ai].mode === 'fill') {
+          const extent = mapper.fillExtent();
+          if (!extent) {
+            warn(
+              `Couldn't measure the fill area on "${part.name}" — placing a single copy of the artwork instead.`,
+            );
+          } else {
+            grid = tileCoverage(place, tileCells[ai], extent);
+            if (!grid)
+              warn(
+                `Filling "${part.name}" would take more than ${MAX_FILL_TILES} tiles at this scale — placing a single copy instead. Raise Scale to fill the surface.`,
+              );
+          }
+        }
         for (let ci = 0; ci < palette.length; ci++) {
-          buildColorPrism(mapper, boundaryPoly, place, palette[ci], ci, ai);
+          const base = unitsDone;
+          await buildColorPrism(mapper, boundaryPoly, place, grid, palette[ci], ci, ai, (f) =>
+            reportPartProgress((base + f) / partUnits),
+          );
           reportPartProgress(++unitsDone / partUnits);
           await maybeYield();
         }

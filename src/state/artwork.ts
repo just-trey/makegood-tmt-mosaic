@@ -17,6 +17,7 @@ export function loadArtworkSource(
   parsed: ParsedSVG,
   name: string,
   kind: DesignSource['kind'] = 'upload',
+  mode: ArtworkInstance['mode'] = 'sticker',
 ): ArtworkInstance {
   const source: DesignSource = { id: `source-${nextSourceId++}`, kind, name, parsed };
   state.sources.push(source);
@@ -31,7 +32,7 @@ export function loadArtworkSource(
     rotationDeg: state.rotationDeg,
     flipX: state.flipX,
     flipY: state.flipY,
-    mode: 'sticker',
+    mode,
   };
   state.artworks.push(instance);
   state.parsed = parsed;
@@ -57,7 +58,9 @@ export function addInstanceForSource(sourceId: string, zoneId: string | null): A
     rotationDeg: 0,
     flipX: false,
     flipY: false,
-    mode: 'sticker',
+    // Sticker/fill is a property of the design, not of where it sits: a pattern placed on a second
+    // zone is still a pattern, so inherit rather than reset (unlike the placement above).
+    mode: state.artworks.find((x) => x.sourceId === sourceId)?.mode ?? 'sticker',
   };
   state.artworks.push(instance);
   setActiveArtwork(instance.id);
@@ -99,6 +102,16 @@ export function setArtworkZone(instanceId: string, zoneId: string | null): void 
   const a = state.artworks.find((x) => x.id === instanceId);
   if (!a) return;
   a.zone = zoneId ? { partId: partIdForZone(zoneId), zoneId } : null;
+}
+
+/**
+ * Switch one instance between placing a single copy of its design and repeating it across the whole
+ * zone. Set per instance, not per source: the same design can legitimately be a sticker on one zone
+ * and a background fill on another.
+ */
+export function setArtworkMode(instanceId: string, mode: ArtworkInstance['mode']): void {
+  const a = state.artworks.find((x) => x.id === instanceId);
+  if (a) a.mode = mode;
 }
 
 function partIdForZone(zoneId: string): number {

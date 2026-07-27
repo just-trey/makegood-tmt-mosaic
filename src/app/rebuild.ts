@@ -249,6 +249,7 @@ async function rebuildAssemblyScene(): Promise<void> {
         flipX: a.flipX,
         flipY: a.flipY,
         rotationDeg: a.rotationDeg,
+        mode: a.mode,
       },
     ];
   });
@@ -265,6 +266,7 @@ async function rebuildAssemblyScene(): Promise<void> {
       flipX: state.flipX,
       flipY: state.flipY,
       rotationDeg: state.rotationDeg,
+      mode: 'sticker',
     });
   const built = await buildAssemblyGeometry({
     artworks,

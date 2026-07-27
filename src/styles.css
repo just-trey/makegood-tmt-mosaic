@@ -502,10 +502,13 @@ input[type='checkbox'] {
   padding: 4px 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius-2xl);
+  /* a zoned part's row carries name + mode + zone + "+zone" + × — more than the panel width fits,
+     so the controls wrap to a second line instead of crushing the filename to one character */
+  flex-wrap: wrap;
 }
 .artwork-row .artwork-name {
   flex: 1;
-  min-width: 0;
+  min-width: 6em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -520,7 +523,8 @@ input[type='checkbox'] {
   border-color: var(--accent);
   background: var(--accent-wash);
 }
-.artwork-row .artwork-zone {
+.artwork-row .artwork-zone,
+.artwork-row .artwork-mode {
   font-size: 11px;
   padding: 2px 4px;
   max-width: 90px;

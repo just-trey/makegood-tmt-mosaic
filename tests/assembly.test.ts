@@ -66,8 +66,19 @@ type BaseOverrides = Partial<Omit<AssemblyBuildInput, 'artworks'>> &
   Partial<ArtworkBuildInput> & { artworks?: ArtworkBuildInput[] };
 
 function baseInput(overrides: BaseOverrides = {}): AssemblyBuildInput {
-  const { parsed, zoneId, scaleMult, offX, offZ, flipX, flipY, rotationDeg, artworks, ...rest } =
-    overrides;
+  const {
+    parsed,
+    zoneId,
+    scaleMult,
+    offX,
+    offZ,
+    flipX,
+    flipY,
+    rotationDeg,
+    mode,
+    artworks,
+    ...rest
+  } = overrides;
   return {
     artworks: artworks ?? [
       {
@@ -79,6 +90,7 @@ function baseInput(overrides: BaseOverrides = {}): AssemblyBuildInput {
         flipX: flipX ?? false,
         flipY: flipY ?? false,
         rotationDeg: rotationDeg ?? 0,
+        mode: mode ?? 'sticker',
       },
     ],
     parts: [boxPart()],
@@ -291,6 +303,94 @@ describe('buildAssemblyGeometry', () => {
       expect((b.minZ + b.maxZ) / 2).toBeCloseTo((a.minZ + a.maxZ) / 2, 3);
     },
   );
+});
+
+describe('fill mode', () => {
+  /** A 4mm square centered in a 10mm-square tile — one period of a (very plain) pattern. */
+  function tileParsed(): ParsedSVG {
+    return {
+      shapes: [
+        {
+          fill: '#ff0000',
+          loops: [
+            [
+              { x: 3, y: 3 },
+              { x: 7, y: 3 },
+              { x: 7, y: 7 },
+              { x: 3, y: 7 },
+              { x: 3, y: 3 },
+            ],
+          ],
+          order: 0,
+        },
+      ],
+      bbox: { minX: 3, minY: 3, maxX: 7, maxY: 7 },
+      rawSVGCircle: null,
+      userUnitMM: 1,
+      viewBox: { w: 10, h: 10 },
+    };
+  }
+
+  it('repeats the tile across the whole face and clips it there', { timeout: 60000 }, async () => {
+    const parsed = tileParsed();
+    const sticker = (await buildAssemblyGeometry(baseInput({ parsed })))!;
+    const fill = (await buildAssemblyGeometry(baseInput({ parsed, mode: 'fill' })))!;
+    const s = xzRange(sticker.partOutputs[0].inlaySoups[0]);
+    const f = xzRange(fill.partOutputs[0].inlaySoups[0]);
+    // one copy is a single 20mm region (wheel mode scales it to the design radius); the fill
+    // reaches across the whole 40mm face and stops exactly at its edge, where the clip lands
+    expect(s.maxX - s.minX).toBeCloseTo(20, 3);
+    expect(f.minX).toBeCloseTo(-20, 3);
+    expect(f.maxX).toBeCloseTo(20, 3);
+    expect(f.minZ).toBeCloseTo(-20, 3);
+    expect(f.maxZ).toBeCloseTo(20, 3);
+    // and it really is many copies, not one stretched one
+    expect(fill.partOutputs[0].inlaySoups[0].length).toBeGreaterThan(
+      8 * sticker.partOutputs[0].inlaySoups[0].length,
+    );
+  });
+
+  it(
+    'a fill anchors on its tile, ignoring the wheel design-circle scaling',
+    { timeout: 60000 },
+    async () => {
+      // Design radius rescales a circle-anchored sticker; a tile is a real-world period, so the
+      // same fill has to come out identical at any radius.
+      const near = (await buildAssemblyGeometry(
+        baseInput({ parsed: tileParsed(), mode: 'fill', radius: 10 }),
+      ))!;
+      const far = (await buildAssemblyGeometry(
+        baseInput({ parsed: tileParsed(), mode: 'fill', radius: 40 }),
+      ))!;
+      const a = xzRange(near.partOutputs[0].inlaySoups[0]);
+      const b = xzRange(far.partOutputs[0].inlaySoups[0]);
+      expect(b.minX).toBeCloseTo(a.minX, 4);
+      expect(b.maxX).toBeCloseTo(a.maxX, 4);
+      expect(far.partOutputs[0].inlaySoups[0].length).toBe(
+        near.partOutputs[0].inlaySoups[0].length,
+      );
+    },
+  );
+
+  it(
+    'refuses an unreasonable tile count, warns, and places a single copy',
+    { timeout: 60000 },
+    async () => {
+      clearWarnings();
+      const built = (await buildAssemblyGeometry(
+        baseInput({ parsed: tileParsed(), mode: 'fill', scaleMult: 0.05 }),
+      ))!;
+      expect(WARNINGS.some((w) => /more than \d+ tiles/.test(w.message))).toBe(true);
+      const r = xzRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.maxX - r.minX).toBeCloseTo(0.2, 3); // the lone 4mm square at 5%
+    },
+  );
+
+  it('a circle-less fill skips the wheel auto-center notice', { timeout: 60000 }, async () => {
+    clearWarnings();
+    await buildAssemblyGeometry(baseInput({ parsed: tileParsed(), mode: 'fill' }));
+    expect(WARNINGS.filter((w) => /no <circle>/.test(w.message))).toEqual([]);
+  });
 });
 
 describe('rotatePointY', () => {

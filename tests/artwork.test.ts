@@ -8,6 +8,7 @@ import {
   loadArtworkSource,
   removeArtworkInstance,
   setActiveArtwork,
+  setArtworkMode,
   setArtworkZone,
   syncActiveArtworkPlacement,
 } from '../src/state/artwork';
@@ -276,6 +277,31 @@ describe('addInstanceForSource', () => {
     expect(b.offsetU).toBe(0);
     expect(b.scalePct).toBe(100);
     expect(state.activeArtworkId).toBe(b.id);
+  });
+
+  it('inherits sticker/fill from the source’s existing instance, unlike placement', () => {
+    const a = loadArtworkSource(fakeParsed(), 'pattern.svg', 'pattern', 'fill');
+    state.assembly.parts = [zonedPart(1, 'right', 'Right side')];
+    expect(addInstanceForSource(a.sourceId, 'right').mode).toBe('fill');
+  });
+});
+
+describe('setArtworkMode', () => {
+  it('switches one instance between sticker and fill', () => {
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    expect(a.mode).toBe('sticker');
+    setArtworkMode(a.id, 'fill');
+    expect(activeArtworkInstance()!.mode).toBe('fill');
+    setArtworkMode(a.id, 'sticker');
+    expect(activeArtworkInstance()!.mode).toBe('sticker');
+  });
+
+  it('leaves other instances alone, and ignores an unknown id', () => {
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    const b = loadArtworkSource(fakeParsed(), 'b.svg');
+    setArtworkMode(a.id, 'fill');
+    expect(state.artworks.find((x) => x.id === b.id)!.mode).toBe('sticker');
+    expect(() => setArtworkMode('nope', 'fill')).not.toThrow();
   });
 });
 

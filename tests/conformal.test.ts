@@ -1,6 +1,12 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as turf from '@turf/turf';
-import { CHART_SNAP_MM, ConformalZoneMapper, type ConformalChart } from '../src/geometry/conformal';
+import {
+  CHART_SNAP_MM,
+  ConformalZoneMapper,
+  FILL_REFINE_MM,
+  FILL_SNAP_MM,
+  type ConformalChart,
+} from '../src/geometry/conformal';
 import {
   getManifold,
   manifoldIsValid,
@@ -185,6 +191,15 @@ describe('boundary', () => {
   it('passes the depth setting through unchanged', () => {
     expect(mapper.resolveCutDepth(2.5)).toBe(2.5);
   });
+
+  it('fillExtent is the chart UV bbox a fill tiles over', () => {
+    const e = mapper.fillExtent()!;
+    expect(e).not.toBeNull();
+    expect(e.minX).toBeCloseTo(0, 4);
+    expect(e.minY).toBeCloseTo(0, 4);
+    expect(e.maxX).toBeCloseTo(ARC_U, 3);
+    expect(e.maxY).toBeCloseTo(H, 3);
+  });
 });
 
 describe('buildCutter', () => {
@@ -217,6 +232,19 @@ describe('buildCutter', () => {
     // cylinder normals have no axial component, so the cutter stays in its v-band
     expect(minY).toBeGreaterThan(H / 2 - 10 - 0.02);
     expect(maxY).toBeLessThan(H / 2 + 10 + 0.02);
+  }, 20000);
+
+  it('refineMM coarsens the warp for a fill-sized cutter, still on the cylinder', () => {
+    const feat = squareAt(ARC_U / 2, H / 2, 10);
+    const fine = mapper.buildCutter(feat, DEPTH, OVER)!;
+    const coarse = mapper.buildCutter(feat, DEPTH, OVER, { refineMM: FILL_REFINE_MM })!;
+    expect(coarse).not.toBeNull();
+    expect(coarse.length).toBeLessThan(fine.length);
+    // coarser subdivision means more chord sag, but the surface is still tracked closely
+    let minR = Infinity;
+    for (let i = 0; i < coarse.length; i += 3)
+      minR = Math.min(minR, Math.hypot(coarse[i], coarse[i + 2]));
+    expect(Math.abs(minR - (R - DEPTH))).toBeLessThan(0.2);
   }, 20000);
 
   it('produces a watertight solid with the analytic shell volume', () => {
@@ -257,5 +285,20 @@ describe('buildCutter', () => {
   it('refuses artwork landing beyond the chart', () => {
     const soup = mapper.buildCutter(squareAt(ARC_U + ARC_U / 2, H / 2, 10), DEPTH, OVER);
     expect(soup).toBeNull();
+  }, 20000);
+
+  it('snapMM widens that tolerance for a fill, which always runs along the zone edge', () => {
+    // 1.2mm past u=0: too far for a sticker, fine for a fill clipped to a boundary the bake let
+    // overhang the chart's real triangles
+    const feat = squareAt(10 - 1.2, H / 2, 10);
+    expect(1.2).toBeGreaterThan(CHART_SNAP_MM);
+    expect(mapper.buildCutter(feat, DEPTH, OVER)).toBeNull();
+    expect(mapper.buildCutter(feat, DEPTH, OVER, { snapMM: FILL_SNAP_MM })).not.toBeNull();
+    // …and still not a licence to place artwork off the chart entirely
+    expect(
+      mapper.buildCutter(squareAt(ARC_U + ARC_U / 2, H / 2, 10), DEPTH, OVER, {
+        snapMM: FILL_SNAP_MM,
+      }),
+    ).toBeNull();
   }, 20000);
 });

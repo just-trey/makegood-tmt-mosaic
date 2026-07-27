@@ -189,7 +189,6 @@ export function initPartPanel(): void {
         // part, so every instance goes back to "every zone the part offers" for the user to
         // re-target from the list.
         clearArtworkZoneBindings();
-        renderArtworkList();
       }
       setShapeKind('assembly');
       track('mode_switch', { kind: 'assembly' });
@@ -197,6 +196,9 @@ export function initPartPanel(): void {
       setShapeKind(val as ShapeKind);
       track('mode_switch', { kind: val as ShapeKind });
     }
+    // Zone bindings above, and the assembly-only Sticker/Fill control, both change with the part —
+    // so the rows re-render on every switch, not just when the assembly kind changed.
+    renderArtworkList();
   });
   setShapeThumb(state.shapeKind); // reflect the initial selection
 
