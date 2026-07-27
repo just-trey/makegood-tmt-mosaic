@@ -530,6 +530,33 @@ input[type='checkbox'] {
   max-width: 90px;
 }
 
+.pattern-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pattern-swatch {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--panel-2);
+}
+.pattern-swatch:hover {
+  border-color: var(--accent);
+}
+.pattern-swatch img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
 .shape-picker {
   display: flex;
   align-items: center;

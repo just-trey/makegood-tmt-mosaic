@@ -286,6 +286,13 @@ export interface Filament {
   hex: string;
 }
 
+/** One entry in the built-in tileable pattern library (public/patterns/patterns.json). */
+export interface PatternEntry {
+  id: string;
+  name: string;
+  file: string;
+}
+
 export interface AssemblyPaletteEntry {
   hex: string;
   key: string;

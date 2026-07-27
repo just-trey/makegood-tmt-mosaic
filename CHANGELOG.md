@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   **Export placement for this part isn't slicer-verified yet** — see Known
   limitations in the README; treat the first print as a check on
   placement/support, not an already-verified layout.
+- A built-in pattern library — Cow, Dalmatian, Zebra, and Tiger — as a
+  thumbnail strip in the Artwork panel. Clicking one loads it like an
+  uploaded SVG (its own row, own zone targeting) and defaults to Fill mode
+  on an assembly part, since a pattern exists to repeat across a surface.
 
 ### Removed
 

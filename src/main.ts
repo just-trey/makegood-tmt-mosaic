@@ -5,6 +5,7 @@ import { initZonePicking } from './scene/zonePick';
 import { setRebuildCostHint, setRebuildHandler } from './app/scheduler';
 import { estimateRebuildSlow, rebuildCurrent } from './app/rebuild';
 import { loadFilaments } from './state/filaments';
+import { loadPatterns } from './state/patterns';
 import { state } from './state/store';
 import { loadPartsLibrary } from './assembly/parts';
 import { ASSEMBLY_KINDS } from './assembly/kinds';
@@ -13,7 +14,7 @@ import { initAssemblyPanel } from './ui/assemblyPanel';
 import { initPartPanel, renderBaseColorSwatches, setShapeKind } from './ui/partPanel';
 import { initFitPanel } from './ui/fitPanel';
 import { initDepthPanel } from './ui/depthPanel';
-import { initArtworkPanel } from './ui/artworkPanel';
+import { initArtworkPanel, renderPatternPicker } from './ui/artworkPanel';
 import { initExportPanel } from './ui/exportPanel';
 import { initHelpPanel } from './ui/helpPanel';
 import { $ } from './ui/dom';
@@ -49,3 +50,5 @@ setShapeKind('assembly');
 void loadPartsLibrary();
 // Filament palette is async; refresh the swatch row once it lands.
 void loadFilaments().then(() => renderBaseColorSwatches());
+// Pattern library manifest is async; render the picker strip once it lands.
+void loadPatterns().then(() => renderPatternPicker());
