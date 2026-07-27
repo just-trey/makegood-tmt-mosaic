@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { state } from '../state/store';
 import { currentBaseParams } from '../state/store';
 import { currentAssemblyKind } from '../assembly/kinds';
-import { primaryZoneMapper } from '../geometry/zoneMappers';
+import { primaryZoneMapper, zoneMappersFor } from '../geometry/zoneMappers';
+import type { ZoneMapper } from '../geometry/zones';
+import { activeArtworkInstance } from '../state/artwork';
+import type { AssemblyPart } from '../types';
 import { getModelGroup } from './viewport';
 
 /**
@@ -74,20 +77,39 @@ function flatFrame(): FaceFrame | null {
   };
 }
 
-function assemblyFrame(): FaceFrame | null {
-  const parts = state.assembly.parts;
+/**
+ * The mapper the gizmo sits on: the one that will actually cut the *active* artwork. On a multi-zone
+ * part the zone the active instance is bound to is the only correct answer — falling back to the
+ * part's first zone (as this used to) leaves the gizmo on an unrelated surface, where it reads as
+ * stuck at an angle and every drag edits a face the user isn't looking at. Unbound artwork, and any
+ * kind with no zone sidecar, still resolve through primaryZoneMapper unchanged.
+ */
+function gizmoMapper(parts: AssemblyPart[], isRect: boolean): ZoneMapper | null {
+  const zoneId = activeArtworkInstance()?.zone?.zoneId;
+  if (zoneId) {
+    const owner = parts.find(
+      (p) => p.loaded && !p.isDuplicateOf && p.zones?.some((z) => z.id === zoneId),
+    );
+    const bound = owner
+      ? zoneMappersFor(owner, parts, isRect, null).find((m) => m.zoneId === zoneId)
+      : undefined;
+    if (bound) return bound;
+  }
   // A part of a zoned kind only counts once its zones have resolved and at least one takes
   // artwork — a structural piece (no baked zone) has nothing for the gizmo to sit on.
   const primary = parts.find(
     (p) =>
       p.loaded && !p.isDuplicateOf && p.boundaryLoop && p.positions && (!p.zones || p.zones.length),
   );
-  if (!primary) return null;
+  return primary ? primaryZoneMapper(primary, parts, isRect) : null;
+}
 
+function assemblyFrame(): FaceFrame | null {
+  const parts = state.assembly.parts;
   const isRect = currentAssemblyKind()?.designFit === 'rect';
   // The same mapper the build uses — its frameAt() carries the face direction, face-plane Y or UV
   // chart, and (for rect) the face-center anchor, so the gizmo and the cut can't drift apart.
-  const mapper = primaryZoneMapper(primary, parts, isRect);
+  const mapper = gizmoMapper(parts, isRect);
   if (!mapper || !mapper.faceNormal) return null;
 
   const bbox = state.parsed!.bbox;

@@ -1,5 +1,5 @@
 import type { ArtworkInstance, DesignSource } from '../types';
-import { loadArtworkSource } from '../state/artwork';
+import { loadArtworkSource, pruneSettingsToPalette } from '../state/artwork';
 import { getPatterns } from '../state/patterns';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
@@ -31,6 +31,7 @@ export function applyParsedSVG(
   // no-op that leaves whatever's already loaded untouched.
   const parsed = parseSVGDocument(svgText);
   loadArtworkSource(parsed, fname, kind, mode); // adds a new source+instance alongside any already loaded
+  pruneSettingsToPalette();
   $('#svg-fname').textContent = fname;
   renderArtworkList();
   refreshFitInputsFromState();

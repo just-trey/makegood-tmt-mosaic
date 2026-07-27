@@ -6,6 +6,7 @@ import {
   clearArtwork,
   clearArtworkZoneBindings,
   loadArtworkSource,
+  pruneSettingsToPalette,
   removeArtworkInstance,
   setActiveArtwork,
   setArtworkMode,
@@ -333,6 +334,74 @@ describe('removeArtworkInstance', () => {
     removeArtworkInstance(b.id);
 
     expect(state.activeArtworkId).toBe(a.id);
+  });
+});
+
+describe('pruneSettingsToPalette', () => {
+  /** A parsed design that paints with exactly these hexes. */
+  function parsedWith(...fills: string[]): ParsedSVG {
+    return {
+      ...fakeParsed(),
+      shapes: fills.map((fill) => ({
+        fill,
+        loops: [
+          [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 },
+          ],
+        ],
+      })),
+    } as ParsedSVG;
+  }
+
+  it('keeps settings whose colors are still painted by some loaded design', () => {
+    loadArtworkSource(parsedWith('#ff0000', '#0000ff'), 'a.svg');
+    state.colorSettings = { '#ff0000': { depth: 1.5 }, 'merge:#0000ff,#ff0000': { depth: 2 } };
+    state.mergeGroups = [['#ff0000', '#0000ff']];
+    state.keptApart = ['#0000ff'];
+    state.baseColorKey = '#ff0000';
+    state.baseColorMembers = ['#ff0000'];
+
+    loadArtworkSource(parsedWith('#00ff00'), 'b.svg');
+    pruneSettingsToPalette();
+
+    expect(state.mergeGroups).toEqual([['#ff0000', '#0000ff']]);
+    expect(state.keptApart).toEqual(['#0000ff']);
+    expect(state.baseColorKey).toBe('#ff0000');
+    expect(Object.keys(state.colorSettings).sort()).toEqual(['#ff0000', 'merge:#0000ff,#ff0000']);
+  });
+
+  it('drops a base assignment whose color no longer exists anywhere', () => {
+    const a = loadArtworkSource(parsedWith('#0000ff'), 'a.svg');
+    loadArtworkSource(parsedWith('#ff0000'), 'b.svg');
+    state.baseColorKey = '#0000ff';
+    state.baseColorMembers = ['#0000ff'];
+    state.keptApart = ['#0000ff'];
+    state.mergeGroups = [['#0000ff', '#ff0000']];
+    state.colorSettings = { '#0000ff': { depth: 1 }, '#ff0000': { depth: 2 } };
+
+    // removing the only design that painted blue is what strands the base assignment — leaving it
+    // would silently exclude #0000ff from being cut the next time some design happens to use it
+    removeArtworkInstance(a.id);
+
+    expect(state.baseColorKey).toBeNull();
+    expect(state.baseColorMembers).toEqual([]);
+    expect(state.keptApart).toEqual([]);
+    expect(state.mergeGroups).toEqual([]); // one live member left, so no group at all
+    expect(state.colorSettings).toEqual({ '#ff0000': { depth: 2 } });
+  });
+
+  it('reseats baseColorKey on a surviving member rather than clearing the whole base', () => {
+    const a = loadArtworkSource(parsedWith('#0000ff'), 'a.svg');
+    loadArtworkSource(parsedWith('#ff0000'), 'b.svg');
+    state.baseColorKey = '#0000ff';
+    state.baseColorMembers = ['#0000ff', '#ff0000'];
+
+    removeArtworkInstance(a.id);
+
+    expect(state.baseColorMembers).toEqual(['#ff0000']);
+    expect(state.baseColorKey).toBe('#ff0000');
   });
 });
 

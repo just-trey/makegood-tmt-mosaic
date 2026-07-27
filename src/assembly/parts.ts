@@ -284,6 +284,9 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
     warn(
       `Couldn't load the design zones for "${part.name}" (${zonesFile}: ${(e as Error).message}) — it will load without design surfaces.`,
     );
+    // Zoneless, not sidecar-less: leaving this undefined would fall back to the implicit flat zone
+    // and stamp the artwork orthographically onto the part's largest flat patch.
+    part.zones = [];
     return;
   }
   // Every zone/chart pair baked onto this part. Set even when empty: a piece the bake gave no zone

@@ -40,6 +40,46 @@ export function loadArtworkSource(
   return instance;
 }
 
+/** Every hex any currently-loaded design actually paints with — the live palette. */
+function livePalette(): Set<string> {
+  const live = new Set<string>();
+  for (const s of state.sources) for (const shape of s.parsed.shapes) live.add(shape.fill);
+  return live;
+}
+
+/**
+ * Drop every color-derived setting whose hex no longer exists in any loaded design.
+ *
+ * Loading a design used to reset these wholesale, which is wrong now that designs pool: a base
+ * assignment or merge group made on one artwork should survive loading a second one. But keeping
+ * them *all* is wrong the other way — when a design is removed, or replaced by one with a
+ * different palette, a hex left in `baseColorMembers` silently excludes it from being cut the
+ * moment some later design happens to use that same hex. Pruning to what's actually on screen is
+ * the only rule that behaves correctly in both directions.
+ */
+export function pruneSettingsToPalette(): void {
+  const live = livePalette();
+  const isLiveKey = (key: string) =>
+    key.startsWith('merge:')
+      ? key
+          .slice(6)
+          .split(',')
+          .some((h) => live.has(h))
+      : !key.startsWith('#') || live.has(key);
+
+  for (const key of Object.keys(state.colorSettings))
+    if (!isLiveKey(key)) delete state.colorSettings[key];
+  state.mergeGroups = state.mergeGroups
+    .map((g) => g.filter((h) => live.has(h)))
+    .filter((g) => g.length > 1);
+  state.keptApart = state.keptApart.filter((h) => live.has(h));
+  state.baseColorMembers = state.baseColorMembers.filter((h) => live.has(h));
+  if (!state.baseColorMembers.length) clearBaseColor();
+  else if (!state.baseColorKey || !state.baseColorMembers.includes(state.baseColorKey))
+    // the build re-derives the true dominant member on the next rebuild
+    state.baseColorKey = state.baseColorMembers[0];
+}
+
 /**
  * A second placement of an already-loaded source — the artwork list's "+ add to another zone"
  * action. Starts from neutral placement (not the current globals): it's going on a different zone
@@ -149,6 +189,7 @@ export function removeArtworkInstance(instanceId: string): void {
     clearArtwork();
     return;
   }
+  pruneSettingsToPalette(); // the removed source's colors are gone; don't keep settings for them
   if (state.activeArtworkId === instanceId) setActiveArtwork(state.artworks[0].id);
 }
 
