@@ -22,8 +22,10 @@
  *                pulls back to +v, and uniformly scaled to millimetres by least squares on
  *                3D-vs-UV edge lengths. Distortion stats are recorded; a max over DISTORTION_WARN
  *                is surfaced for the author to shrink the zone or lower maxAngleDeg.
- *   5. emit    — simplified boundary/hole loops, per-part charts carrying part-local indices,
- *                cross-part seam polylines, the sidecar object, and template SVGs.
+ *   5. emit    — simplified boundary/hole loops, per-part charts carrying part-local indices and
+ *                that part's own share of the zone as outer/hole regions (`subRegions`, what the
+ *                runtime clips its cutter to), cross-part seam polylines, the sidecar object, and
+ *                template SVGs.
  */
 import JSZip from 'jszip';
 import { detectFlatPatches } from '../../src/geometry/meshparts.ts';
@@ -33,6 +35,13 @@ import { ACCENT, GRAY, LABEL_SIZE } from './svgstyle.mjs';
 export const SIMPLIFY_TOL_MM = 0.2;
 /** Interior loops smaller than this (mm²) are tessellation/fillet slivers, not real holes. */
 export const MIN_HOLE_AREA_MM2 = 15;
+/**
+ * Islands smaller than this (mm²) are dropped from a part's clip region. Far below MIN_HOLE_AREA_MM2
+ * on purpose: a hole that small is a fillet artifact worth closing up, but an *island* that small is
+ * surface a cutter would otherwise be clipped away from, so only true tessellation dust (a sliver a
+ * fraction of a millimetre across) may go — and the bake warns whenever any does.
+ */
+export const MIN_ISLAND_AREA_MM2 = 0.4;
 /** Per-edge stretch (max of ratio and its inverse) above which a zone gets a distortion warning. */
 export const DISTORTION_WARN = 1.1;
 /** Max coincident-vertex gap (mm) welded across part seams. */
@@ -652,6 +661,53 @@ const loopArea = (pts) => {
   return a / 2;
 };
 
+const pointInLoop = ([px, py], loop) => {
+  let inside = false;
+  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+    const [xi, yi] = loop[i];
+    const [xj, yj] = loop[j];
+    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+
+/**
+ * Group boundary loops into {outer, holes} regions by containment depth — even depth is a solid
+ * island of its own, odd depth is a hole in its immediate parent. A part's slice of a zone can be
+ * several disjoint islands (a stripe of surface interrupted by a bolt boss, say), so "largest loop
+ * is the outline, everything else is a hole" isn't good enough here; depth is the same rule
+ * shapeToFeature applies to SVG subpaths at runtime.
+ */
+function classifyRegions(loops) {
+  const n = loops.length;
+  const areas = loops.map((l) => Math.abs(loopArea(l)));
+  const parent = new Array(n).fill(-1);
+  for (let i = 0; i < n; i++) {
+    let best = Infinity;
+    for (let j = 0; j < n; j++) {
+      if (i === j || areas[j] <= areas[i] || areas[j] >= best) continue;
+      if (!pointInLoop(loops[i][0], loops[j])) continue;
+      best = areas[j];
+      parent[i] = j;
+    }
+  }
+  const depth = (i) => {
+    let d = 0;
+    for (let p = parent[i]; p !== -1; p = parent[p]) d++;
+    return d;
+  };
+  const regions = [];
+  const regionOf = new Map();
+  for (let i = 0; i < n; i++)
+    if (depth(i) % 2 === 0) {
+      regionOf.set(i, regions.length);
+      regions.push({ outer: loops[i], holes: [] });
+    }
+  for (let i = 0; i < n; i++)
+    if (depth(i) % 2 === 1) regions[regionOf.get(parent[i])].holes.push(loops[i]);
+  return regions;
+}
+
 /** Chain undirected [a,b] vertex-pair edges into open paths and cycles. */
 function chainEdges(edges) {
   const adj = new Map();
@@ -815,6 +871,7 @@ export function bakeZones(config, parts, log = () => {}) {
 
   const simplifyTol = config.simplifyTolMm ?? SIMPLIFY_TOL_MM;
   const minHoleArea = config.minHoleAreaMm2 ?? MIN_HOLE_AREA_MM2;
+  const minIslandArea = config.minIslandAreaMm2 ?? MIN_ISLAND_AREA_MM2;
   const zones = [];
   const templates = [];
   for (const zoneCfg of config.zones) {
@@ -891,16 +948,47 @@ export function bakeZones(config, parts, log = () => {}) {
           }),
         );
       }
+      // This part's own slice of the zone in UV, as proper outer/hole regions. Once a zone spans a
+      // printed seam this is what each part's cutter must be clipped to — clipping to the whole
+      // zone outline instead pushes artwork past the part's own chart, where the warp reports it
+      // off-chart and the color silently vanishes from both parts.
       const subLoops = boundaryVertexLoops(list.map((e) => e.zTri))
         .map((loop) => simplifyLoop(loop.map(uvOf), simplifyTol))
         .filter((pts) => pts.length >= 3);
+      const allRegions = classifyRegions(subLoops)
+        .map((r) => ({
+          outer: roundLoop(r.outer),
+          holes: r.holes.filter((h) => Math.abs(loopArea(h)) >= minHoleArea).map(roundLoop),
+          area: Math.abs(loopArea(r.outer)),
+        }))
+        .sort((a, b) => b.area - a.area);
+      // Islands get their own (much smaller) threshold — dropping one deletes design surface, so
+      // only tessellation dust may go, and never the largest island. Anything dropped is reported:
+      // artwork over it would be silently intersected away at runtime with no other signal.
+      const dropped = allRegions.filter((r, i) => i > 0 && r.area < minIslandArea);
+      if (dropped.length)
+        warnings.push(
+          `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": dropped ${dropped.length} ` +
+            `sliver island(s) under ${minIslandArea}mm² (largest ${dropped[0].area.toFixed(3)}mm²) ` +
+            `from the clip region — artwork placed there will not cut`,
+        );
+      const subRegions = allRegions
+        .filter((r, i) => i === 0 || r.area >= minIslandArea)
+        .map(({ outer, holes }) => ({ outer, holes }));
+      // An empty list would read at runtime as "no per-part clipping" and silently fall back to the
+      // whole zone outline — the exact failure subRegions exists to prevent. Fail the bake instead.
+      if (!subRegions.length)
+        throw new Error(
+          `zone "${zoneCfg.id}": part "${parts[pi].libraryPartId}" contributes triangles but no ` +
+            `usable boundary loop — cannot build its clip region`,
+        );
       charts.push({
         libraryPartId: parts[pi].libraryPartId,
         tris,
         verts: cVerts,
         uv: cUV,
         chartTris,
-        subBoundary: subLoops.map(roundLoop),
+        subRegions,
       });
     }
 
@@ -930,6 +1018,17 @@ export function bakeZones(config, parts, log = () => {}) {
       ),
     );
 
+    // The whole zone's UV bbox — min is exactly (0,0), orientChart translates it there. This is the
+    // template's coordinate space, and the runtime anchors placement and fill tiling on it, so it
+    // must be measured across ALL of the zone's charts: per-part bboxes differ once a zone spans a
+    // seam, and anchoring on those would place the design once per part, each on its own half.
+    let maxU = 0;
+    let maxV = 0;
+    for (let i = 0; i < uv.length; i += 2) {
+      if (uv[i] > maxU) maxU = uv[i];
+      if (uv[i + 1] > maxV) maxV = uv[i + 1];
+    }
+
     const zone = {
       id: zoneCfg.id,
       name: zoneCfg.name,
@@ -938,6 +1037,7 @@ export function bakeZones(config, parts, log = () => {}) {
       boundary: roundLoop(outer.pts),
       holes: holes.map((l) => roundLoop(l.pts)),
       seams,
+      uvBounds: { minU: 0, minV: 0, maxU: round(maxU, 4), maxV: round(maxV, 4) },
       up: [0, 1],
       normalSign: 1,
       distortion: {
@@ -946,13 +1046,6 @@ export function bakeZones(config, parts, log = () => {}) {
       },
     };
     zones.push(zone);
-    // chart bbox min is exactly (0,0) — orientChart translates it there
-    let maxU = 0;
-    let maxV = 0;
-    for (let i = 0; i < uv.length; i += 2) {
-      if (uv[i] > maxU) maxU = uv[i];
-      if (uv[i + 1] > maxV) maxV = uv[i + 1];
-    }
     templates.push({
       file: zone.templateFile,
       svg: zoneTemplateSVG(zone, config.kindId, { maxU, maxV }),
@@ -968,5 +1061,7 @@ export function bakeZones(config, parts, log = () => {}) {
   config.parts.forEach((p, pi) => {
     meshes[p.libraryPartId] = meshFingerprint(parts[pi]);
   });
-  return { sidecar: { schema: 1, kindId: config.kindId, meshes, zones }, templates, warnings };
+  // Sidecar schema 2 (charts carry `subRegions`); independent of the zone *config* schema checked
+  // in validateConfig, which is still 1. Must match SIDECAR_SCHEMA in src/geometry/zoneCharts.ts.
+  return { sidecar: { schema: 2, kindId: config.kindId, meshes, zones }, templates, warnings };
 }

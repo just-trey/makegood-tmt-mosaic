@@ -28,4 +28,9 @@ declare module '@turf/turf' {
     properties?: object,
     options?: object,
   ): Feature<Polygon>;
+  export function multiPolygon(
+    coordinates: number[][][][],
+    properties?: object,
+    options?: object,
+  ): Feature<MultiPolygon>;
 }

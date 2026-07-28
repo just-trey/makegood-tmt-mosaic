@@ -7,6 +7,7 @@ import {
 } from '../scripts/lib/zonebake.mjs';
 import { ConformalZoneMapper, type ConformalChart } from '../src/geometry/conformal';
 import { getManifold, type ManifoldAPI } from '../src/geometry/manifold';
+import type { DesignPlacement } from '../src/geometry/zones';
 
 // Same analytic quarter-cylinder the conformal mapper tests use (radius R about the Y axis,
 // θ ∈ [0, 90°], height H), but as an indexed mesh the bake has to unwrap itself. A polyhedral
@@ -116,6 +117,17 @@ const loopArea = (pts: number[][]): number => {
     a += x1 * y2 - x2 * y1;
   }
   return a / 2;
+};
+
+/** Unrotated, unflipped, 1:1 placement of an SVG whose own centre is (5, 5). */
+const PLACEMENT: DesignPlacement = {
+  svgC: { cx: 5, cy: 5, r: 5 },
+  mmPerUnit: 1,
+  xFlip: 1,
+  zMul: -1,
+  offX: 0,
+  offZ: 0,
+  rotationDeg: 0,
 };
 
 const uvBBox = (uv: number[]): { w: number; h: number } => {
@@ -250,11 +262,71 @@ describe('cross-part welding and seams', () => {
     expect(Math.max(...vs)).toBeCloseTo(H, 1);
   });
 
-  it('gives each chart its own closed UV sub-boundary', () => {
+  // The clip region each part's cutter gets. On this two-part zone it must be that part's HALF of
+  // the surface, not the whole zone — clipping to the zone outline pushes artwork past the chart
+  // the mapper can warp against, and the color disappears from both parts.
+  it('gives each chart its own half of the zone as its clip region', () => {
+    expect(zone.charts).toHaveLength(2);
     for (const c of zone.charts) {
-      expect(c.subBoundary).toHaveLength(1);
-      expect(Math.abs(loopArea(c.subBoundary[0]))).toBeCloseTo((ARC_U * H) / 2, -2);
+      expect(c.subRegions).toHaveLength(1);
+      expect(c.subRegions[0].holes).toEqual([]);
+      expect(Math.abs(loopArea(c.subRegions[0].outer))).toBeCloseTo((ARC_U * H) / 2, -2);
     }
+    // and the two halves account for the whole zone, with neither claiming the other's side
+    const total = zone.charts.reduce(
+      (s: number, c: { subRegions: { outer: number[][] }[] }) =>
+        s + Math.abs(loopArea(c.subRegions[0].outer)),
+      0,
+    );
+    expect(total).toBeCloseTo(Math.abs(loopArea(zone.boundary)), -2);
+  });
+
+  // Placement and fill tiling anchor on the zone's UV bbox, which must therefore be measured across
+  // both charts: anchoring on a chart's own (half-width) bbox would centre a whole copy of the
+  // design on each part's half, so a design straddling the seam would render twice, mis-registered
+  // against the zone-wide template.
+  it('bakes one zone-wide UV bbox and places both parts against it', () => {
+    const all = uvBBox(zone.charts.flatMap((c: { uv: number[] }) => c.uv));
+    expect(zone.uvBounds.minU).toBe(0);
+    expect(zone.uvBounds.minV).toBe(0);
+    expect(zone.uvBounds.maxU).toBeCloseTo(all.w, 3);
+    expect(zone.uvBounds.maxV).toBeCloseTo(all.h, 3);
+    // each part on its own carries only half the arc, so the bbox is genuinely wider than either
+    for (const c of zone.charts) expect(uvBBox(c.uv).w).toBeLessThan(all.w * 0.6);
+
+    const parts: Record<string, Part> = { 'part-a': partA, 'part-b': partB };
+    const place = zone.charts.map(
+      (c: {
+        libraryPartId: string;
+        verts: number[];
+        uv: number[];
+        chartTris: number[][];
+        subRegions: ConformalChart['subRegions'];
+      }) => {
+        const part = parts[c.libraryPartId];
+        const positions3 = new Float32Array(c.verts.length * 3);
+        c.verts.forEach((lv: number, i: number) => positions3.set(part.verts[lv], i * 3));
+        const chart: ConformalChart = {
+          positions3,
+          uv: Float32Array.from(c.uv),
+          triangles: Uint32Array.from(c.chartTris.flat()),
+          normalSign: zone.normalSign,
+          boundary: zone.boundary,
+          holes: zone.holes,
+          subRegions: c.subRegions,
+          zoneBounds: zone.uvBounds,
+        };
+        const mapper = new ConformalZoneMapper(null, chart);
+        // the SVG's own centre maps to the placement anchor
+        return { at: mapper.placer(PLACEMENT)([5, 5]), extent: mapper.fillExtent()! };
+      },
+    );
+    expect(place[1].at[0]).toBeCloseTo(place[0].at[0], 6);
+    expect(place[1].at[1]).toBeCloseTo(place[0].at[1], 6);
+    expect(place[0].at[0]).toBeCloseTo(zone.uvBounds.maxU / 2, 6);
+    expect(place[0].at[1]).toBeCloseTo(zone.uvBounds.maxV / 2, 6);
+    expect(place[1].extent).toEqual(place[0].extent);
+    expect(place[0].extent.maxX).toBeCloseTo(zone.uvBounds.maxU, 6);
   });
 
   it('marks the seam in the zone template', () => {

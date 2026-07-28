@@ -69,7 +69,7 @@ Slicer/export placement baking for the chair is **explicitly deferred** to a lat
 
 ```jsonc
 {
-  "schema": 1,
+  "schema": 2,
   "kindId": "chair-body",
   // guard: per referenced part, refuse to load zones against a mesh they weren't baked for
   "meshes": { "chair-side-left": { "triangleCount": 31240, "bboxHash": "…" } /* … */ },
@@ -86,12 +86,18 @@ Slicer/export placement baking for the chair is **explicitly deferred** to a lat
           "verts": [/* that part's packed vertex indices used by this chart */],
           "uv": [/* interleaved u,v in TRUE mm, shared zone UV space */],
           "chartTris": [/* chart-local index triples, parallel to tris */],
-          "subBoundary": [[/* this part's UV sub-region outline, for per-part clip */]],
+          "subRegions": [{ "outer": [/* loop */], "holes": [] }], // this part's own share of
+          // the zone, in UV mm — what its cutter is clipped to (schema 2; was a flat `subBoundary`
+          // loop list in schema 1, which had no outer/hole classification)
         },
       ],
       "boundary": [[/* zone outer loop, UV mm, ~0.2mm simplified */]],
       "holes": [],
       "seams": [[/* UV polylines where printed parts meet, for UI display */]],
+      // whole-zone UV bbox across all charts (min is 0,0): template space, and
+      // what the runtime anchors placement + fill tiling on, so a seam-spanning
+      // zone places one design rather than one per part
+      "uvBounds": { "minU": 0, "minV": 0, "maxU": 214.3, "maxV": 168.9 },
       "up": [0, 1],
       "normalSign": 1,
       "distortion": { "max": 1.07, "mean": 1.02 },
