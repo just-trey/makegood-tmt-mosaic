@@ -315,7 +315,8 @@ entirely, which is the recommended path.
   baked from a verified reference 3MF" above), the chair's 13 parts export
   through the generic centered path with no baked pose. The 3MF still opens
   and slices, but treat the first print as a check on placement/support, not
-  an already-verified layout.
+  an already-verified layout. This is the top item in "TODO / tech debt"
+  below, which has what closing it needs.
 
 ## Troubleshooting: "Boolean union/subtraction failed" warnings
 
@@ -368,9 +369,13 @@ is imported by the app. Two other brand themes in the tokens folder
 
 - Raster image (PNG/JPG) input: quantize to flat color regions, then reuse the
   existing region pipeline.
-- Bake the chair body's export placement from a verified reference 3MF (see
-  "Known limitations" above) — the same treatment the wheel/footrest/
-  wheel-mount already have.
+- Dead zones: mark the parts of a design zone that are hidden by an adjacent
+  part — joints, overlaps, undersides — where a filament change buys nothing.
+  A design placed across one wastes color changes on surface nobody sees.
+  Shape: a bake step that casts each zone triangle outward, tests occlusion
+  against every other part, and emits a `deadRegions` UV polygon set that the
+  runtime subtracts from the clip region and the template draws hatched, so
+  the artist can see where not to put detail.
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind, and a hubcap part for the wheel
   assembly.
@@ -378,6 +383,31 @@ is imported by the app. Two other brand themes in the tokens folder
 
 ## TODO / tech debt
 
+- **The chair body has no baked export placement — highest-priority item
+  here.** Every other assembly part gets its plate pose from constants baked
+  once out of a reference 3MF whose print orientation was actually checked in
+  the slicer (see "Export placement is baked from a verified reference 3MF"
+  above, and `FOOTREST_PLATE_R` / `FOOTREST_PRIME_TOWER_DELTA` in
+  [src/export/threemf.ts](src/export/threemf.ts) for the worked example). The
+  chair's 13 parts have none — they fall through the generic centered path, so
+  the exported 3MF opens and slices but lands the parts at whatever pose the
+  mesh happens to carry, with no verified rotation, no plate assignment, no
+  support or brim settings, and no prime-tower placement. This is the single
+  largest gap between the chair and the parts that shipped before it: the
+  design pipeline is finished and the print side is not. It is also the most
+  consequential — a 13-part body is where orientation, supports, and plate
+  packing actually decide whether a print succeeds.
+  Blocked on an input, not on code: someone has to lay the parts out in the
+  slicer, check the orientation of each, and save that project file. The rule
+  in [CLAUDE.md](CLAUDE.md) is firm — this placement must be **baked from
+  that verified file, never invented, derived, or read at runtime** — so no
+  amount of work in this repo can produce it first. Once the reference exists,
+  the work is turning its numbers into per-part constants. Prefer centering
+  plus a relative `primeTowerDelta` over a bed-specific absolute coordinate,
+  and note that 13 parts likely span multiple plates, which the existing
+  single-plate constants don't express yet. The hardcoded `roleId` if/else
+  noted below is the thing that has to grow to hold it, so the two are worth
+  doing together.
 - **Rebuild performance needs ongoing work — this is a heavy application.**
   A dense 135-path SVG still takes ~13s to rebuild in flat mode, ~9s of
   which is the paint-order boolean pass in
@@ -406,6 +436,42 @@ is imported by the app. Two other brand themes in the tokens folder
   two chart vertices closer than the quantum would collapse into a
   degenerate UV triangle and the warp's barycentric lookup divides by its
   area.
+- **A seam sliver warns as if artwork were lost.** Where two parts' claims on
+  a zone overlap, clipping a color to one part's `subRegions` can leave a
+  remnant a fraction of a millimetre wide. It survives the turf clip, then
+  yields no cutter, and
+  [src/geometry/assembly.ts](src/geometry/assembly.ts) reports "Couldn't build
+  the cut solid for color … on …" — alarming, and indistinguishable from the
+  real failure it shares a message with. Confirmed in the app (2026-07-28): a
+  design on `back` warned for three colors on "Seat back (bottom)" while
+  printing correctly. The overlaps are inherent to per-part clipping and small
+  — measured across the shipped bake, 23 overlapping part pairs, all
+  seam-sharing, worst 29.85 mm² on a 124,500 mm² zone (a ~0.15 mm ribbon), and
+  `tests/chair-zones.test.ts` holds them under 0.05% of zone area. Fix: drop a
+  clip remnant under an area floor _before_ `buildCutter` rather than
+  attempting it and warning. Pick the floor above the measured ribbon and well
+  under anything printable.
+- **Zone picking has no occlusion test**
+  ([src/scene/zonePick.ts](src/scene/zonePick.ts)) — it raycasts only the
+  invisible chart meshes (three.js 0.160's `intersectObject` ignores
+  `visible`, which is what makes picking work at all), but the real bodies
+  aren't in the target list, so clicking a handle in front of a zone selects
+  the zone behind it. Fix: raycast the visible parts too and reject a zone hit
+  farther than the nearest solid hit. Gets worse as zones multiply — the chair
+  went from 4 to 5 with the full-coverage re-author.
+- **`FILL_SNAP_MM = 2` rests on a stale measurement.** The comment at
+  [src/geometry/conformal.ts](src/geometry/conformal.ts) cites ~0.9 mm of
+  baked-boundary overhang; measured against the shipped bake it was 0.001 mm
+  at baked vertices and 0.197 mm densified — inside `CHART_SNAP_MM = 0.5`. The
+  fill guard is roughly 10x looser than it needs to be, so genuinely misplaced
+  fill artwork snaps silently instead of warning. Re-measure against the
+  current whole-chair zones (bigger zones may legitimately want more slack)
+  and set it from that number rather than nudging it.
+- **One warning covers three different failures**
+  ([src/geometry/assembly.ts](src/geometry/assembly.ts)) — "Raise Scale to
+  fill the surface" is the advice whether `tileCoverage` refused on tile
+  count, non-invertibility, or non-affinity. It is right for the first and
+  misleading for the other two. Split the message per cause.
 - **Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression
   here.** A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):
   correct output, but its new polygon-clipping engine ran **5–10x slower**
