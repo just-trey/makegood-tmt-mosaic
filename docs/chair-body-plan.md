@@ -86,7 +86,9 @@ Slicer/export placement baking for the chair is **explicitly deferred** to a lat
           "verts": [/* that part's packed vertex indices used by this chart */],
           "uv": [/* interleaved u,v in TRUE mm, shared zone UV space */],
           "chartTris": [/* chart-local index triples, parallel to tris */],
-          "subBoundary": [[/* this part's UV sub-region outline, for per-part clip */]],
+          "subRegions": [{ "outer": [/* loop */], "holes": [] }], // this part's own share of
+          // the zone, in UV mm — what its cutter is clipped to (schema 2; was a flat `subBoundary`
+          // loop list in schema 1, which had no outer/hole classification)
         },
       ],
       "boundary": [[/* zone outer loop, UV mm, ~0.2mm simplified */]],

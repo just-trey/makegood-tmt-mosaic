@@ -71,6 +71,14 @@ export interface ConformalChart {
   boundary: number[][];
   /** interior hole rings in UV mm */
   holes?: number[][][];
+  /**
+   * This part's own slice of the zone, in UV mm — what the cutter is clipped to. Absent (or a
+   * single region equal to the zone outline) while a zone lives on one printed part; on a zone
+   * that spans a seam each part gets only its own share, so artwork can't be cut past the chart
+   * this mapper can actually warp against. `boundary` stays the whole zone: the template and the
+   * placement extent are zone-wide regardless of how many parts carry it.
+   */
+  subRegions?: { outer: number[][]; holes: number[][][] }[];
 }
 
 interface ChartHit {
@@ -369,6 +377,12 @@ export class ConformalZoneMapper implements ZoneMapper {
     };
   }
 
+  /**
+   * The UV region a cut on this chart is clipped to: this part's own sub-regions when the bake
+   * supplied them (a MultiPolygon, since a part's share of a zone can be several islands),
+   * otherwise the whole zone outline. Identical geometry for a single-part zone — every chart's
+   * only sub-region is the zone itself — so this is inert until a zone actually spans a seam.
+   */
   boundary(): PolyFeature | null {
     if (this.boundaryComputed) return this.boundaryPoly;
     this.boundaryComputed = true;
@@ -379,9 +393,16 @@ export class ConformalZoneMapper implements ZoneMapper {
       if (a[0] !== b[0] || a[1] !== b[1]) r.push([a[0], a[1]]);
       return r;
     };
-    const rings = [close(this.chart.boundary), ...(this.chart.holes ?? []).map(close)];
+    const sub = this.chart.subRegions;
     try {
-      this.boundaryPoly = turf.polygon(rings) as PolyFeature;
+      this.boundaryPoly = sub?.length
+        ? (turf.multiPolygon(
+            sub.map((r) => [close(r.outer), ...r.holes.map(close)]),
+          ) as PolyFeature)
+        : (turf.polygon([
+            close(this.chart.boundary),
+            ...(this.chart.holes ?? []).map(close),
+          ]) as PolyFeature);
     } catch {
       this.boundaryPoly = null;
     }

@@ -10,6 +10,7 @@ vi.mock('../src/app/scheduler', () => ({
 
 import { asmCreateRolePart, asmLoadPartBuffer } from '../src/assembly/parts';
 import { zoneMappersFor } from '../src/geometry/zoneMappers';
+import { loadZonesSidecar, SIDECAR_SCHEMA } from '../src/geometry/zoneCharts';
 import { state } from '../src/state/store';
 import { WARNINGS } from '../src/warnings';
 import type { AssemblyRole } from '../src/types';
@@ -60,5 +61,27 @@ describe('a chair part loaded with an unreachable zone sidecar', () => {
     expect(part.zones).toEqual([]);
     expect(zoneMappersFor(part, [part], true, null)).toEqual([]);
     expect(WARNINGS.map((w) => w.message).join(' ')).toMatch(/design zones/i);
+  });
+});
+
+/**
+ * The mesh fingerprints guard the geometry pairing; the schema number guards the format. A
+ * returning visitor can be holding a cached sidecar from an older release whose charts have no
+ * per-part clip region at all — reading that with current code would clip every part to the whole
+ * zone outline, which is exactly the failure the clip region exists to prevent.
+ */
+describe('a zone sidecar in an older format', () => {
+  it('is rejected rather than read with its per-part clip regions missing', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        schema: SIDECAR_SCHEMA - 1,
+        kindId: 'chair-body',
+        meshes: {},
+        zones: [],
+      }),
+    }) as unknown as typeof fetch;
+
+    await expect(loadZonesSidecar('stale-schema-zones.json')).rejects.toThrow(/schema/);
   });
 });

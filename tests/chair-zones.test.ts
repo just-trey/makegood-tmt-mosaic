@@ -7,8 +7,10 @@ import {
   fingerprintMatches,
   meshFingerprint,
   reconstructChart,
+  SIDECAR_SCHEMA,
   type ZoneSidecar,
 } from '../src/geometry/zoneCharts';
+import { planarArea } from '../src/geometry/regions';
 import { ConformalZoneMapper } from '../src/geometry/conformal';
 import {
   getManifold,
@@ -67,6 +69,10 @@ describe('chair zone sidecar', () => {
     }
   });
 
+  it('is the schema this build reads', () => {
+    expect(sidecar.schema).toBe(SIDECAR_SCHEMA);
+  });
+
   it('rejects a mesh whose triangle count drifted from the bake', () => {
     const z = sidecar.zones[0];
     const m = partMesh.get(z.charts[0].libraryPartId)!;
@@ -96,6 +102,44 @@ describe('chart reconstruction', () => {
         for (const t of chart.triangles) expect(t).toBeLessThan(c.verts.length);
       }
     }
+  });
+
+  it('carries each chart’s per-part clip region through to the mapper', () => {
+    for (const z of sidecar.zones) {
+      for (const c of z.charts) {
+        const m = partMesh.get(c.libraryPartId)!;
+        expect(c.subRegions.length, `${z.id}/${c.libraryPartId}`).toBeGreaterThan(0);
+        expect(reconstructChart(z, c, m.vertices).subRegions).toBe(c.subRegions);
+      }
+    }
+  });
+
+  // Nothing in the shipped bake spans a printed seam yet (every zone is one part's), so each
+  // chart's clip region must still be the zone outline itself — the runtime change is inert until
+  // a multi-part zone exists, and this is what says so.
+  it('clips to exactly the zone outline while every zone lives on one part', () => {
+    for (const z of sidecar.zones) {
+      expect(z.charts).toHaveLength(1);
+      const [{ subRegions }] = z.charts;
+      expect(subRegions).toHaveLength(1);
+      expect(subRegions[0].outer).toEqual(z.boundary);
+      expect([...subRegions[0].holes].sort()).toEqual([...z.holes].sort());
+    }
+  });
+
+  it('the mapper’s clip region is that sub-region, as a MultiPolygon', () => {
+    const z = sidecar.zones[0];
+    const c = z.charts[0];
+    const m = partMesh.get(c.libraryPartId)!;
+    const poly = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices)).boundary()!;
+
+    expect(poly.geometry.type).toBe('MultiPolygon');
+    // same area as the zone-outline polygon it replaces, to within rounding
+    const zonePoly = turf.polygon([
+      [...z.boundary, z.boundary[0]],
+      ...z.holes.map((h) => [...h, h[0]]),
+    ]) as PolyFeature;
+    expect(planarArea(poly)).toBeCloseTo(planarArea(zonePoly), 3);
   });
 
   it('throws when the mesh is too small for the chart indices', () => {

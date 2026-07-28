@@ -19,8 +19,14 @@ export interface SidecarChart {
   uv: number[];
   /** chart-local index triples (into `verts`/`uv`) */
   chartTris: number[][];
-  /** this part's UV sub-region outline(s), for per-part clipping of cross-seam artwork */
-  subBoundary: number[][][];
+  /**
+   * This part's own slice of the zone in UV, as outer/hole regions — what its cutter is clipped
+   * to. Equal to the zone outline while a zone lives on one part; once a zone spans a printed
+   * seam it is strictly smaller, and clipping to the zone outline instead would push artwork past
+   * this part's chart, where the warp reports it off-chart and drops the color on both parts.
+   * A part's slice can be several disjoint islands, hence a list.
+   */
+  subRegions: { outer: number[][]; holes: number[][][] }[];
 }
 
 export interface SidecarZone {
@@ -37,6 +43,14 @@ export interface SidecarZone {
   normalSign: 1 | -1;
   distortion: { max: number; mean: number };
 }
+
+/**
+ * The only sidecar format this build understands. The per-part mesh fingerprints guard the
+ * *geometry* pairing; this guards the *format*, so a visitor holding a cached schema-1 sidecar
+ * (whose charts carry `subBoundary` rather than `subRegions`) can't be paired with newer code that
+ * would read its per-part clip region as absent and clip every part to the whole zone.
+ */
+export const SIDECAR_SCHEMA = 2;
 
 export interface ZoneSidecar {
   schema: number;
@@ -118,6 +132,7 @@ export function reconstructChart(
     normalSign: zone.normalSign,
     boundary: zone.boundary,
     holes: zone.holes,
+    subRegions: chart.subRegions,
   };
 }
 
@@ -134,7 +149,10 @@ export function loadZonesSidecar(zonesFile: string): Promise<ZoneSidecar> {
   const v = typeof __APP_VERSION__ === 'undefined' ? 'dev' : __APP_VERSION__;
   const p = fetch(`stl/${zonesFile}?v=${v}`).then(async (res) => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as ZoneSidecar;
+    const sidecar = (await res.json()) as ZoneSidecar;
+    if (sidecar.schema !== SIDECAR_SCHEMA)
+      throw new Error(`zone sidecar schema ${sidecar.schema}, expected ${SIDECAR_SCHEMA}`);
+    return sidecar;
   });
   sidecarCache.set(zonesFile, p);
   // don't cache a rejection — let a later call retry the fetch

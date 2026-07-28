@@ -250,11 +250,23 @@ describe('cross-part welding and seams', () => {
     expect(Math.max(...vs)).toBeCloseTo(H, 1);
   });
 
-  it('gives each chart its own closed UV sub-boundary', () => {
+  // The clip region each part's cutter gets. On this two-part zone it must be that part's HALF of
+  // the surface, not the whole zone — clipping to the zone outline pushes artwork past the chart
+  // the mapper can warp against, and the color disappears from both parts.
+  it('gives each chart its own half of the zone as its clip region', () => {
+    expect(zone.charts).toHaveLength(2);
     for (const c of zone.charts) {
-      expect(c.subBoundary).toHaveLength(1);
-      expect(Math.abs(loopArea(c.subBoundary[0]))).toBeCloseTo((ARC_U * H) / 2, -2);
+      expect(c.subRegions).toHaveLength(1);
+      expect(c.subRegions[0].holes).toEqual([]);
+      expect(Math.abs(loopArea(c.subRegions[0].outer))).toBeCloseTo((ARC_U * H) / 2, -2);
     }
+    // and the two halves account for the whole zone, with neither claiming the other's side
+    const total = zone.charts.reduce(
+      (s: number, c: { subRegions: { outer: number[][] }[] }) =>
+        s + Math.abs(loopArea(c.subRegions[0].outer)),
+      0,
+    );
+    expect(total).toBeCloseTo(Math.abs(loopArea(zone.boundary)), -2);
   });
 
   it('marks the seam in the zone template', () => {
