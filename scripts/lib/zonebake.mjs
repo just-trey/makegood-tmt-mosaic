@@ -813,6 +813,30 @@ const loopArea = (pts) => {
   return a / 2;
 };
 
+/**
+ * Area centroid of a polygon, falling back to the bbox centre when the loop is too thin for the
+ * signed-area formula to be stable. Only used to park a text label, so "somewhere sensible inside
+ * the bbox" is the whole requirement — a concave region can push the true centroid outside itself.
+ */
+const loopCentroid = (pts) => {
+  const a = loopArea(pts);
+  if (Math.abs(a) > 1e-9) {
+    let cx = 0;
+    let cy = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [x1, y1] = pts[i];
+      const [x2, y2] = pts[(i + 1) % pts.length];
+      const c = x1 * y2 - x2 * y1;
+      cx += (x1 + x2) * c;
+      cy += (y1 + y2) * c;
+    }
+    return [cx / (6 * a), cy / (6 * a)];
+  }
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+};
+
 const pointInLoop = ([px, py], loop) => {
   let inside = false;
   for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
@@ -821,6 +845,33 @@ const pointInLoop = ([px, py], loop) => {
     if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
+};
+
+/** Odd, so a containment vote can't tie. */
+const CONTAIN_SAMPLES = 9;
+
+/**
+ * Is `inner` contained by `outer`? Votes over edge midpoints spread around `inner` rather than
+ * trusting a single vertex.
+ *
+ * Testing loops[i][0] is not safe here: where splitAtRepeats cuts a figure-eight into lobes, the
+ * first vertex of a sub-loop IS the pinch vertex it shares with its sibling, and a crossing-number
+ * test evaluated exactly on the other loop's boundary is undefined — it answers on which side the
+ * floating-point dust falls. The lobe-as-hole misclassification this function exists to prevent
+ * was therefore being avoided by luck. Edge midpoints of a simple loop can only meet a sibling at
+ * that same pinch point, so a majority over several of them is decided by samples genuinely off
+ * the shared boundary.
+ */
+const loopInsideLoop = (inner, outer) => {
+  const n = Math.min(inner.length, CONTAIN_SAMPLES);
+  let votes = 0;
+  for (let s = 0; s < n; s++) {
+    const i = Math.floor((s * inner.length) / n);
+    const [x1, y1] = inner[i];
+    const [x2, y2] = inner[(i + 1) % inner.length];
+    if (pointInLoop([(x1 + x2) / 2, (y1 + y2) / 2], outer)) votes++;
+  }
+  return votes * 2 > n;
 };
 
 /**
@@ -838,7 +889,7 @@ function classifyRegions(loops) {
     let best = Infinity;
     for (let j = 0; j < n; j++) {
       if (i === j || areas[j] <= areas[i] || areas[j] >= best) continue;
-      if (!pointInLoop(loops[i][0], loops[j])) continue;
+      if (!loopInsideLoop(loops[i], loops[j])) continue;
       best = areas[j];
       parent[i] = j;
     }
@@ -904,13 +955,38 @@ function chainEdges(edges) {
 const xmlEscape = (s) =>
   s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]);
 
+/** Below this (mm²) a sub-region cannot hold a readable part label at 1:1, so it goes unlabelled. */
+const LABEL_MIN_AREA_MM2 = 400;
+
+/** Top strip reserved for the sheet title (baseline 12) and legend (baseline 24), plus descender. */
+const HEADER_BAND_MM = 28;
+
+/**
+ * Mean glyph advance as a fraction of font size, for estimating a label's width well enough to
+ * tell whether two of them collide. 0.45 is about right for lowercase sans-serif, which is all
+ * these labels ever are (shortPartName lowercases the id and strips the kind prefix).
+ */
+const LABEL_ADVANCE_EM = 0.45;
+
+/** `chair-body` + `chair-storage-left` -> `storage left`: the kind prefix is on the sheet already. */
+const shortPartName = (partId, kindId) => {
+  const prefix = `${kindId.split('-')[0]}-`;
+  return (partId.startsWith(prefix) ? partId.slice(prefix.length) : partId).replace(/-/g, ' ');
+};
+
 /**
  * True-size template SVG for one zone: the grey silhouette is the zone's UV outline with holes
  * punched (evenodd), dashed accent polylines mark printed-part seams. SVG y runs down while v
  * runs up, so v is flipped — the app's placer maps SVG y-down to −v the same way, which keeps a
  * template loaded at Scale 100% / Offset 0/0 landing exactly on the zone.
+ *
+ * A zone that spans a seam also names the printed part on each side of it. The seam lines say
+ * *where* the artwork gets split; without the names there is nothing on the sheet saying which
+ * physical piece each area ends up on, which is the thing an artist needs to know before putting a
+ * face across the join. Labels sit on each part's largest sub-region only — the small islands are
+ * usually too thin to hold text.
  */
-export function zoneTemplateSVG(zone, kindId, chartBBox) {
+export function zoneTemplateSVG(zone, kindId, chartBBox, regions) {
   // Canvas = the FULL chart UV bbox, not the simplified boundary's — the runtime centers artwork
   // on the chart bbox, and simplification can shave up to SIMPLIFY_TOL_MM off an extreme point,
   // which would quietly de-center every template by half that.
@@ -920,7 +996,12 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
   const H = up01(chartBBox.maxV);
   const pt = ([u, v]) => [round(u, 2), round(H - v, 2)];
   const toD = (pts) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ') + ' Z';
-  const d = [zone.boundary, ...(zone.holes || [])].map((loop) => toD(loop.map(pt))).join(' ');
+  // Every lobe of the zone, not just the one `boundary`/`holes` describes — a pinched zone has
+  // several, and a template drawing only the largest would hide real design surface.
+  const silhouette = regions?.length
+    ? regions.flatMap((r) => [r.outer, ...r.holes])
+    : [zone.boundary, ...(zone.holes || [])];
+  const d = silhouette.map((loop) => toD(loop.map(pt))).join(' ');
   const seams = (zone.seams || [])
     .map(
       (line) =>
@@ -928,9 +1009,51 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
         `stroke="${ACCENT}" stroke-width="0.6" stroke-dasharray="2 3"/>`,
     )
     .join('\n');
-  const seamNote = zone.seams?.length
+  // Placed labels, so a later one can be dropped rather than land on top of an earlier one.
+  const placed = [];
+  const partLabels = (zone.charts.length > 1 ? zone.charts : [])
+    .map((c) => {
+      const biggest = c.subRegions
+        .map((r) => ({ outer: r.outer, area: Math.abs(loopArea(r.outer)) }))
+        .sort((a, b) => b.area - a.area)[0];
+      return biggest ? { name: c.libraryPartId, ...biggest } : null;
+    })
+    .filter((l) => l && l.area >= LABEL_MIN_AREA_MM2)
+    .map((l) => {
+      const ys = l.outer.map((p) => pt(p)[1]);
+      const [cx, cy] = pt(loopCentroid(l.outer));
+      // The sheet title and legend are centered text at the top; a sub-region whose centroid lands
+      // up there would print straight through them (five of the seat's labels did). Drop to the
+      // middle of whatever of the region sits below the header band, and give up on the label
+      // entirely if the region has nothing down there — no label beats an unreadable overprint.
+      let y = cy;
+      if (y < HEADER_BAND_MM) {
+        const bottom = Math.max(...ys);
+        if (bottom <= HEADER_BAND_MM) return null;
+        y = (Math.max(Math.min(...ys), HEADER_BAND_MM) + bottom) / 2;
+      }
+      const text = shortPartName(l.name, kindId);
+      const half = (text.length * LABEL_ADVANCE_EM * LABEL_SIZE) / 2;
+      if (placed.some((p) => Math.abs(p[0] - cx) < p[2] + half && Math.abs(p[1] - y) < LABEL_SIZE))
+        return null;
+      placed.push([cx, y, half]);
+      return (
+        `  <text x="${round(cx, 2)}" y="${round(y, 2)}" text-anchor="middle" ` +
+        `font-family="sans-serif" font-size="${LABEL_SIZE}" fill="${ACCENT}" ` +
+        `opacity="0.75">${xmlEscape(text)}</text>`
+      );
+    })
+    .filter(Boolean)
+    .join('\n');
+  const legend = [
+    zone.seams?.length ? 'dashed = printed-part seam' : '',
+    partLabels ? 'labels name the printed part' : '',
+  ]
+    .filter(Boolean)
+    .join('; ');
+  const seamNote = legend
     ? `\n  <text x="${W / 2}" y="${Math.min(H - 4, 24)}" text-anchor="middle" ` +
-      `font-family="sans-serif" font-size="${LABEL_SIZE}" fill="${ACCENT}">dashed = printed-part seam</text>`
+      `font-family="sans-serif" font-size="${LABEL_SIZE}" fill="${ACCENT}">${legend}</text>`
     : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
@@ -945,6 +1068,7 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
      xmlns="http://www.w3.org/2000/svg">
   <path d="${d}" fill="${GRAY}" fill-rule="evenodd" />
 ${seams}
+${partLabels}
   <text x="${W / 2}" y="${Math.min(H - 4, 12)}" text-anchor="middle" font-family="sans-serif"
         font-size="${LABEL_SIZE}" fill="${ACCENT}">${xmlEscape(zone.name)}</text>${seamNote}
 </svg>
@@ -960,7 +1084,16 @@ function fnv1a(str) {
   return h.toString(16).padStart(8, '0');
 }
 
-/** Guard fingerprint: refuses at load time to pair zones with a mesh they weren't baked for. */
+/**
+ * Guard fingerprint: refuses at load time to pair zones with a mesh they weren't baked for.
+ *
+ * Math.fround is load-bearing. The runtime hashes the Float32Array load3MF hands it, while the
+ * parsed 3MF here is doubles, and a coordinate can round to a different 3rd decimal across that
+ * narrowing — chair-wheel-mount-left's max z is -203.4805, which is -203.481 as a double and
+ * -203.480 once stored as float32. That mismatch reads at load time as "this part was re-packed
+ * without re-baking" and the part's zones are silently dropped, so the bake has to see exactly the
+ * numbers the browser will.
+ */
 export function meshFingerprint(part) {
   const bb = [
     [Infinity, Infinity, Infinity],
@@ -968,8 +1101,9 @@ export function meshFingerprint(part) {
   ];
   for (const v of part.verts)
     for (let k = 0; k < 3; k++) {
-      if (v[k] < bb[0][k]) bb[0][k] = v[k];
-      if (v[k] > bb[1][k]) bb[1][k] = v[k];
+      const c = Math.fround(v[k]);
+      if (c < bb[0][k]) bb[0][k] = c;
+      if (c > bb[1][k]) bb[1][k] = c;
     }
   const sig = `${part.tris.length}|${bb
     .flat()
@@ -1071,12 +1205,28 @@ export function bakeZones(config, parts, log = () => {}) {
     const uvOf = (z) => [uv[2 * z], uv[2 * z + 1]];
     const loops = boundaryVertexLoops(zTris)
       .map((loop) => simplifyLoop(loop.map(uvOf), simplifyTol))
-      .filter((pts) => pts.length >= 3)
-      .map((pts) => ({ pts, area: loopArea(pts) }));
+      .filter((pts) => pts.length >= 3);
     if (!loops.length) throw new Error(`zone "${zoneCfg.id}": no boundary loop found`);
-    loops.sort((a, b) => Math.abs(b.area) - Math.abs(a.area));
-    const outer = loops[0];
-    const holes = loops.slice(1).filter((l) => Math.abs(l.area) >= minHoleArea);
+    // A zone is one connected island of triangles, but its UV footprint need not be one disk: where
+    // two lobes meet at a pinch vertex, splitAtRepeats hands back a separate simple loop for each.
+    // Classify by containment rather than assuming "largest loop is the outline, rest are holes" —
+    // on the chair's left flank that assumption made the second-largest LOBE a hole of the first,
+    // leaving `boundary` enclosing 22,944mm² of a 124,500mm² zone with 17 of its 18 "holes" lying
+    // outside it entirely.
+    const zoneRegions = classifyRegions(loops)
+      .map((r) => ({
+        outer: r.outer,
+        holes: r.holes.filter((h) => Math.abs(loopArea(h)) >= minHoleArea),
+        area: Math.abs(loopArea(r.outer)),
+      }))
+      .sort((a, b) => b.area - a.area);
+    // `boundary`/`holes` are singular in the sidecar and so can only carry the LARGEST lobe. That is
+    // fine because nothing cuts against them: every chart carries `subRegions`, the bake refuses to
+    // emit a chart without them, and ConformalZoneMapper.boundary() prefers them — the per-part
+    // regions do sum to the whole zone (left: 124,797mm² across its 4 parts, against a 22,944mm²
+    // largest lobe). Treat these two as the display outline, not the clip region.
+    const outer = { pts: zoneRegions[0].outer };
+    const holes = zoneRegions[0].holes.map((pts) => ({ pts }));
     const roundLoop = (pts) => pts.map((p) => [round(p[0], 3), round(p[1], 3)]);
 
     // per-part charts: everything indexed part-locally so the runtime can pair a chart with its
@@ -1155,8 +1305,25 @@ export function bakeZones(config, parts, log = () => {}) {
       });
     }
 
-    // seams: zone-interior edges whose two triangles belong to different printed parts
+    // Seams: where one printed part's share of the zone ends against another's.
+    //
+    // Taken from the parts' own patch boundaries, NOT from edges shared by two parts' triangles.
+    // Real printed parts meet across a clearance with mismatched tessellation, so stitchSeams welds
+    // their *vertices* while the two edge chains almost never coincide — demanding a shared edge
+    // drew 0.93mm of line across the seat's five pieces and 19mm on the back's six. An edge counts
+    // as a seam when it bounds this part's patch (no second triangle of the same part behind it)
+    // and both endpoints are welded to a common other part. Drawn from the lower-numbered part of
+    // each pair only, so a join gets one line rather than two nearly-coincident ones.
     const zoneSet = new Set(zoneTris);
+    const partsAtVert = new Map();
+    for (const ti of zoneTris) {
+      const t = weld.tris[ti];
+      for (const g of t.v) {
+        let s = partsAtVert.get(g);
+        if (!s) partsAtVert.set(g, (s = new Set()));
+        s.add(t.part);
+      }
+    }
     const seamEdges = [];
     const seen = new Set();
     for (const ti of zoneTris) {
@@ -1164,12 +1331,21 @@ export function bakeZones(config, parts, log = () => {}) {
       for (let k = 0; k < 3; k++) {
         const a = t.v[k];
         const b = t.v[(k + 1) % 3];
-        const key = edgeKey(a, b);
+        // keyed per part: a genuinely shared edge must be judged once from each side, or the
+        // lower-part rule below could drop it on behalf of a part that never gets to emit it
+        const key = `${t.part}:${edgeKey(a, b)}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const owners = edgeTris.get(key).filter((o) => zoneSet.has(o));
-        if (owners.length === 2 && weld.tris[owners[0]].part !== weld.tris[owners[1]].part)
-          seamEdges.push([a, b]);
+        const mine = edgeTris
+          .get(edgeKey(a, b))
+          .filter((o) => zoneSet.has(o) && weld.tris[o].part === t.part);
+        if (mine.length > 1) continue;
+        const atA = partsAtVert.get(a);
+        const atB = partsAtVert.get(b);
+        let lowest = Infinity;
+        for (const p of atA) if (p !== t.part && atB.has(p) && p < lowest) lowest = p;
+        if (lowest === Infinity || t.part > lowest) continue;
+        seamEdges.push([a, b]);
       }
     }
     const seams = chainEdges(seamEdges).map((path) =>
@@ -1211,12 +1387,13 @@ export function bakeZones(config, parts, log = () => {}) {
     zones.push(zone);
     templates.push({
       file: zone.templateFile,
-      svg: zoneTemplateSVG(zone, config.kindId, { maxU, maxV }),
+      svg: zoneTemplateSVG(zone, config.kindId, { maxU, maxV }, zoneRegions),
     });
     log(
       `zone "${zone.id}": ${zoneTris.length} tris across ${charts.length} part(s), ` +
-        `${zone.holes.length} hole(s), ${seams.length} seam(s), stretch max ` +
-        `${zone.distortion.max} mean ${zone.distortion.mean}, scale ${stats.scale.toFixed(5)}`,
+        `${zoneRegions.length} lobe(s), ${zone.holes.length} hole(s), ${seams.length} seam(s), ` +
+        `stretch max ${zone.distortion.max} mean ${zone.distortion.mean}, ` +
+        `scale ${stats.scale.toFixed(5)}`,
     );
   }
 

@@ -105,13 +105,18 @@ contents, or other personal data are ever sent. See
    the SVG via a Design-radius/circle model; rectangular parts (the footrest)
    map it 1:1 in millimeters and auto-center on the detected face instead. A
    part can also carry more than one design surface (**design zones**) baked
-   ahead of time by `scripts/bake-zones.mjs` — the chair body has four
-   (left/right/back/seat), each its own true-scale UV chart the artwork wraps
-   onto **conformally** (a sticker follows the surface around a rounded edge
-   the way real vinyl would, not a flat orthographic stamp)
-   ([src/geometry/conformal.ts](src/geometry/conformal.ts)). Load more than
-   one design, then target each zone from the Artwork list's per-row dropdown
-   or by clicking the surface directly in the 3D view. A kind with hardware
+   ahead of time by `scripts/bake-zones.mjs` — the chair body has five
+   (left/right/front/back/seat), each its own true-scale UV chart the artwork
+   wraps onto **conformally** (a sticker follows the surface around a rounded
+   edge the way real vinyl would, not a flat orthographic stamp)
+   ([src/geometry/conformal.ts](src/geometry/conformal.ts)). A zone spans the
+   printed parts under it rather than stopping at a part boundary — the
+   chair's left/right zones run from the storage side across the handle and
+   wheel mount onto the front fender — and artwork laid across a seam is
+   split, cut into each part separately, and exported under that part's
+   object. Load more than one design, then target each zone from the Artwork
+   list's per-row dropdown or by clicking the surface directly in the 3D
+   view. A kind with hardware
    variants (the chair's Standard/Kit caster mounts) shows a version picker
    above the part list; switching reloads only the parts that differ. Any
    artwork row on an assembly part can switch from **Sticker** (one copy) to
@@ -274,6 +279,19 @@ entirely, which is the recommended path.
   does ship zones (the chair body) wraps artwork conformally onto each
   zone's baked UV chart instead; adding zones to a new part means running
   `scripts/bake-zones.mjs` (see "Adding an assembly or library part" above).
+- **A design crossing a printed join lines up only as well as the print
+  does.** The chair's design surfaces span several printed pieces, and a
+  design laid across a join is cut into each piece separately against one
+  shared unwrap — so the halves meet exactly in the model, but on the bench
+  they meet as well as tolerance, warp, and how hard you press the pieces
+  together allow. Keep fine detail (thin lines, small text) away from the
+  dashed seams on the template if that matters to you.
+- **Large wrapped surfaces stretch the artwork somewhat.** Flattening a
+  curved surface cannot preserve every distance at once; the chair's
+  surfaces run 1.11–1.28× at their worst spots (the bake reports the number
+  per surface), concentrated where the surface turns hardest. Even coverage
+  like a pattern fill hides this; a perfect circle placed across a corner
+  will not stay perfectly circular.
 - **"Largest flat patch" is a heuristic.** The auto-picked design face is the
   largest coplanar patch by area; a part with an equally large decorative flat
   face could fool it. The Advanced per-part controls let you pick a different
@@ -376,6 +394,18 @@ is imported by the app. Two other brand themes in the tokens folder
   pre-filtered per-shape diffs benchmarked ~2x SLOWER than the accumulator
   on real artwork (full-canvas backgrounds overlap everything) — see the
   comment on `computeNetRegionsByColor`.
+- **The chair's zone sidecar is 1.7 MB raw / 638 KB gzipped**
+  (`public/stl/chair-body-zones.json`), up from 125 KB gzipped when each zone
+  stopped at one part. Zones that span the whole chair simply carry more
+  triangles. Measured composition: 41% `chartTris`, 30% `uv`, 16% `tris`, 9%
+  `verts` — so it is mostly index arrays, and rounding the UVs buys little.
+  The real fix is delta-encoding the index arrays and/or a binary format;
+  brotli alone would take it to 349 KB if the host serves it. Not urgent (it
+  loads async, after first paint, and only for the chair) but it is the
+  largest asset in the app. Don't quantise UVs below ~0.01 mm to chase this:
+  two chart vertices closer than the quantum would collapse into a
+  degenerate UV triangle and the warp's barycentric lookup divides by its
+  area.
 - **Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression
   here.** A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):
   correct output, but its new polygon-clipping engine ran **5–10x slower**

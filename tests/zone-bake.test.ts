@@ -4,8 +4,10 @@ import {
   boundaryVertexLoops,
   weldParts,
   simplifyLoop,
+  meshFingerprint as bakeFingerprint,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
+import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
 import { ConformalZoneMapper, type ConformalChart } from '../src/geometry/conformal';
 import { getManifold, type ManifoldAPI } from '../src/geometry/manifold';
 import type { DesignPlacement } from '../src/geometry/zones';
@@ -334,6 +336,15 @@ describe('cross-part welding and seams', () => {
     expect(baked.templates[0].svg).toContain('printed-part seam');
     expect(baked.templates[0].svg).toContain('<polyline');
   });
+
+  // The seam line says where the artwork gets split; the labels say which physical piece each side
+  // ends up on, which is what decides whether putting a face across the join is a good idea.
+  it('names the printed part on each side of the seam', () => {
+    const svg = baked.templates[0].svg;
+    expect(svg).toContain('>part a<');
+    expect(svg).toContain('>part b<');
+    expect(svg).toContain('labels name the printed part');
+  });
 });
 
 describe('flat plate with a hole', () => {
@@ -574,5 +585,28 @@ describe('seam welding across a real print clearance', () => {
       const [f0, f1] = w.tris as { v: number[] }[];
       expect(new Set([...f0.v, ...f1.v]).size).toBe(4);
     });
+  });
+});
+
+// The bake parses the 3MF into doubles; the runtime hashes the Float32Array load3MF produces. If
+// the bake doesn't narrow to float32 first, a coordinate can round to a different 3rd decimal on
+// each side, the fingerprints disagree, and the part's zones are dropped at load with no error.
+// Real case: chair-wheel-mount-left's max z of -203.4805 (-203.481 double, -203.480 float32),
+// dormant until that part first appeared in a chart.
+describe('the mesh fingerprint survives the double-to-float32 narrowing', () => {
+  const part = {
+    libraryPartId: 'narrows',
+    verts: [
+      [0, 0, 0],
+      [1, 0, -203.4805],
+      [0, 1, 0],
+    ],
+    tris: [[0, 1, 2]],
+  };
+
+  it('agrees with the runtime fingerprint the loader will compute', () => {
+    const f32 = new Float32Array(part.verts.length * 3);
+    part.verts.forEach((v, i) => f32.set(v, i * 3));
+    expect(bakeFingerprint(part)).toEqual(runtimeFingerprint(f32, part.tris.length));
   });
 });

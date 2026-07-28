@@ -29,12 +29,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   that actually differ between variants, confirming first if any of them
   are already loaded.
 - New assembly kind: **Chair body**, the MakeGood TMT's main frame (13
-  printed pieces, Standard/Kit caster mounts). Four of its surfaces
-  (left/right/back/seat) take artwork that wraps conformally onto the
+  printed pieces, Standard/Kit caster mounts). Five of its surfaces
+  (left/right/front/back/seat) take artwork that wraps conformally onto the
   part's curved geometry instead of a flat orthographic stamp — load a
   design, then target a surface from the Artwork list's zone dropdown or by
-  clicking it directly in the 3D view. Each surface has its own true-scale
-  design template, downloadable from the Part section once the parts load.
+  clicking it directly in the 3D view. A newly loaded design starts on the
+  first surface rather than on all five at once; "All zones" is still there
+  in the dropdown for anyone who wants it stamped everywhere. A surface
+  covers the printed pieces under it rather than stopping at a piece's
+  edge: the left and right ones
+  run from the storage side across the handle and wheel mount onto the front
+  fender, and a design laid across a join is split and cut into each piece
+  separately. Each surface has its own true-scale design template,
+  downloadable from the Part section once the parts load; on a template that
+  spans a join, the dashed lines mark it and the labels name the piece each
+  area lands on.
   **Export placement for this part isn't slicer-verified yet** — see Known
   limitations in the README; treat the first print as a check on
   placement/support, not an already-verified layout.

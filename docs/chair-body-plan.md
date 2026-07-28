@@ -30,8 +30,17 @@ nothing else queued behind it here.
   - [x] Unhide the chair body; retire the standalone `wheel-mount-left` kind — #72
 - [x] **P6a — Fill engine + Sticker/Fill toggle** — #73
 - [x] **P6b — Pattern library (Cow/Dalmatian/Zebra/Tiger)** — #74
+- [x] **P7 — Real-chair defect pass + full-coverage zones** — using the shipped
+      feature on the actual chair surfaced four code defects and, more
+      importantly, that every zone was trapped on the single part it seeded on:
+  - [x] Four defects: gizmo ignoring the active artwork's zone, sidecar-fetch
+        failure degrading to flat stamping, stale palette settings surviving a
+        new design, and the Zebra pattern not tiling — #75
+  - [x] Per-part clip regions in the sidecar (`subRegions`, schema 2) — #76
+  - [x] Cross-part seam weld (`seamWeldTolMm`), opt-in — #77
+  - [x] Enable the seam weld, re-author the zone set, label templates — #78
 
-Once #74 merges, this plan is **complete**. Decisions that were open earlier
+Once #78 merges, this plan is **complete**. Decisions that were open earlier
 and have since been made:
 
 - **`wheel-mount-left` was retired** (#72) rather than reconciled with the
@@ -182,6 +191,23 @@ in-use sources merge into one palette (same hex = one AMS slot).
 ### P6b — Pattern library (done, #74)
 
 `scripts/gen-patterns.mjs`: seeded/deterministic procedural pattern generator (Cow, Dalmatian, Zebra, Tiger), committed as `public/patterns/*.svg` + `patterns.json`. Tileability comes from drawing every blob/streak at a 3×3 torus wrap and clipping to the tile rect, so a shape crossing an edge leaves matching partial pieces that weld together when `tileFeature` unions translated copies at runtime; Zebra instead thresholds a periodic wave field and traces contours with marching squares, so stripes branch/merge like real fur. `src/state/patterns.ts` loads the manifest; a thumbnail picker strip in the Artwork panel (`artworkPanel.ts`) loads a pattern like an uploaded SVG, defaulting to Fill mode on assembly parts. `tests/patterns-assets.test.ts` is an asset regression test over every committed pattern.
+
+### P7 — Real-chair defect pass + full-coverage zones (done, #75–#78)
+
+Using the shipped feature on the real chair showed every zone was trapped on the part it seeded on: `back` was an 80 × 216 mm strip on one panel, and nothing reached the front or the fenders. The cause was in the bake, not the runtime — `weldParts` joined parts by _coincident_ vertices at 1e-3 mm, and separately-printed parts never are coincident; they meet with real print clearance (measured worst contact gap 0.530 mm, seat-center to seat-back-bottom). So triangle adjacency never crossed a seam and the region grow stopped at the part edge, which is also why `seams` was empty on every zone and the baked `subBoundary` had never once been exercised.
+
+- **`subRegions` (sidecar schema 2, #76)** — each chart carries its own part's slice of the zone as proper outer/hole regions, and the runtime clips that part's cutter to it. Had to land _before_ any multi-part zone existed: clipping to the whole-zone outline instead pushes artwork past the chart the warp can resolve, which reports off-chart and drops the colour from both parts.
+- **`stitchSeams` / `seamWeldTolMm` (#77)** — merges vertices of _different_ parts within a much looser tolerance whose area-weighted normals agree, so a zone can grow across a printed join. Deliberately a separate knob from `weldTolMm`: raising that far enough to bridge 0.53 mm also collapses 63% of the vertices _inside_ each part. Two guards earn their keep — a facing test (`dot > 0.3`) so parts facing each other across a gap don't fuse, and a **one-vertex-per-part-per-group** invariant. The second was a review catch: rejecting a candidate pair that shares a part is not enough, because two vertices of one part that share no triangle can each reach the same vertex opposite and meet transitively. On the real chair at 0.6 mm that folded 392 faces onto each other; with the invariant, folds drop to 25 — exactly the count the plain weld already produces from pre-existing slivers, so the stitch adds none.
+- **Zone re-author (#78)** — turning the stitch on makes every zone grow until `maxAngleDeg` stops it rather than until the part runs out, so the whole set had to be re-tuned in the same change. Angles are the measured knee of coverage against stretch: `back` at 55° wraps around the U onto both handles' inner faces and unwraps at 20×, at 35° it is 962 cm² across 6 parts at 1.13×. A `front` zone was added; the planned separate `wing-left`/`wing-right` zones were **dropped as unnecessary** — seeding on the fender reaches the identical triangle set as seeding on the storage side, because the whole flank is one continuous surface once stitched, so `left`/`right` already carry the wing and wheel mount.
+
+| zone           | before          | after             | max stretch |
+| -------------- | --------------- | ----------------- | ----------- |
+| `left`/`right` | 529 cm², 1 part | 1245 cm², 4 parts | 1.22        |
+| `back`         | 173 cm², 1 part | 962 cm², 6 parts  | 1.13        |
+| `front`        | —               | 604 cm², 6 parts  | 1.11        |
+| `seat`         | 186 cm², 1 part | 566 cm², 5 parts  | 1.28        |
+
+Every zone now exceeds `DISTORTION_WARN` (1.1) and says so in the bake log. That threshold was set against single-part, nearly-flat zones; a zone that wraps a real chair flank cannot meet it. The stretch is not uniform — `left` runs p50 1.00 / p99 1.15 — so the warning is worth keeping as a prompt to check, not to silence. Templates gained part-name labels on each sub-region, since the dashed seam lines said _where_ artwork gets split but nothing said which physical piece each side ends up on.
 
 ## Model per phase (as actually used)
 

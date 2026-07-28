@@ -50,10 +50,20 @@ beforeAll(async () => {
   }
 }, 60000);
 
+const closed = (loop: number[][]): number[][] => [...loop, loop[0]];
+const regionPolygon = (r: { outer: number[][]; holes: number[][][] }): PolyFeature =>
+  turf.polygon([closed(r.outer), ...r.holes.map(closed)]) as PolyFeature;
+
 describe('chair zone sidecar', () => {
-  it('is the chair-body sidecar with the four first-pass zones', () => {
+  it('is the chair-body sidecar with the five shipped zones', () => {
     expect(sidecar.kindId).toBe('chair-body');
-    expect(sidecar.zones.map((z) => z.id).sort()).toEqual(['back', 'left', 'right', 'seat']);
+    expect(sidecar.zones.map((z) => z.id).sort()).toEqual([
+      'back',
+      'front',
+      'left',
+      'right',
+      'seat',
+    ]);
   });
 
   it('fingerprints match the packed meshes the charts index into', () => {
@@ -114,32 +124,109 @@ describe('chart reconstruction', () => {
     }
   });
 
-  // Nothing in the shipped bake spans a printed seam yet (every zone is one part's), so each
-  // chart's clip region must still be the zone outline itself — the runtime change is inert until
-  // a multi-part zone exists, and this is what says so.
-  it('clips to exactly the zone outline while every zone lives on one part', () => {
+  // Every shipped zone now spans printed parts, which is the whole point of the seam weld — so the
+  // per-part clip regions must PARTITION the zone: each part's share strictly smaller than the
+  // whole, no part overlapping another, and the shares together covering the zone. A part whose
+  // share crept past its own triangles would cut artwork into a neighbour it doesn't own.
+  it('splits each zone into per-part clip regions that together cover it', () => {
+    // Reference area straight off the baked UV triangles — independent of the loops under test, so
+    // "the regions add up" can't be true by construction.
+    const chartUVArea = (c: (typeof sidecar.zones)[number]['charts'][number]): number => {
+      let a = 0;
+      for (const [i, j, k] of c.chartTris)
+        a += Math.abs(
+          (c.uv[2 * j] - c.uv[2 * i]) * (c.uv[2 * k + 1] - c.uv[2 * i + 1]) -
+            (c.uv[2 * k] - c.uv[2 * i]) * (c.uv[2 * j + 1] - c.uv[2 * i + 1]),
+        );
+      return a / 2;
+    };
+
     for (const z of sidecar.zones) {
-      expect(z.charts).toHaveLength(1);
-      const [{ subRegions }] = z.charts;
-      expect(subRegions).toHaveLength(1);
-      expect(subRegions[0].outer).toEqual(z.boundary);
-      expect([...subRegions[0].holes].sort()).toEqual([...z.holes].sort());
+      expect(z.charts.length, z.id).toBeGreaterThan(1);
+      let sum = 0;
+      let uvArea = 0;
+      for (const c of z.charts) {
+        const own = c.subRegions.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+        expect(own, `${z.id}/${c.libraryPartId}`).toBeGreaterThan(0);
+        sum += own;
+        uvArea += chartUVArea(c);
+      }
+      // 0.2mm boundary simplification and the dropped sub-MIN_ISLAND_AREA_MM2 slivers keep this
+      // from being exact; a part claiming surface it doesn't own would blow well past 2%.
+      expect(sum / uvArea, z.id).toBeCloseTo(1, 1);
     }
   });
 
-  it('the mapper’s clip region is that sub-region, as a MultiPolygon', () => {
+  // The area check above is necessary but NOT sufficient for a partition: two parts overlapping by
+  // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total. Overlap
+  // is the half that actually corrupts output — where two parts both claim a patch of UV, the same
+  // artwork is cut into both, so the design appears twice at the seam on the printed chair.
+  it('gives no two parts of a zone an overlapping claim on the same UV', () => {
+    for (const z of sidecar.zones) {
+      // bbox computed off the outer ring rather than turf.bbox — src/turf.d.ts declares only the
+      // handful of turf entry points the app actually uses, and bbox isn't one of them.
+      const claims = z.charts.map((c) => ({
+        id: c.libraryPartId,
+        regions: c.subRegions.map((r) => ({
+          poly: regionPolygon(r),
+          box: r.outer.reduce(
+            (b, [x, y]) => [
+              Math.min(b[0], x),
+              Math.min(b[1], y),
+              Math.max(b[2], x),
+              Math.max(b[3], y),
+            ],
+            [Infinity, Infinity, -Infinity, -Infinity],
+          ),
+        })),
+      }));
+      const zoneArea = claims.reduce(
+        (s, c) => s + c.regions.reduce((t, r) => t + Math.abs(planarArea(r.poly)), 0),
+        0,
+      );
+      for (let i = 0; i < claims.length; i++)
+        for (let j = i + 1; j < claims.length; j++) {
+          let overlap = 0;
+          for (const a of claims[i].regions)
+            for (const b of claims[j].regions) {
+              if (a.box[0] > b.box[2] || b.box[0] > a.box[2]) continue;
+              if (a.box[1] > b.box[3] || b.box[1] > a.box[3]) continue;
+              const hit = turf.intersect(a.poly, b.poly);
+              if (hit) overlap += Math.abs(planarArea(hit as PolyFeature));
+            }
+          // Not zero: two parts that share a seam have their common boundary traced separately from
+          // each side, and 0.2mm of loop simplification lets the two traces cross. Measured on the
+          // shipped bake, every one of the 23 overlapping pairs shares a seam and the worst is
+          // 29.85mm² (wing-right/wheel-mount-right) on a 124,500mm² zone — 0.024%, a 0.15mm ribbon.
+          // A part whose region genuinely crept across a seam onto its neighbour's patch would
+          // scale as creep × seam length: even 1mm over a 200mm seam is 0.16%, caught here.
+          expect(overlap / zoneArea, `${z.id}: ${claims[i].id} vs ${claims[j].id}`).toBeLessThan(
+            0.0005,
+          );
+        }
+    }
+  });
+
+  // The clip region the cutter is actually built against: this part's own share, NOT the zone
+  // outline. Handing it the zone outline is what pushes artwork past the chart the warp can
+  // resolve, where it reads as off-chart and the colour vanishes from every part at once.
+  it('the mapper’s clip region is that chart’s own sub-region, as a MultiPolygon', () => {
     const z = sidecar.zones[0];
     const c = z.charts[0];
     const m = partMesh.get(c.libraryPartId)!;
     const poly = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices)).boundary()!;
 
     expect(poly.geometry.type).toBe('MultiPolygon');
-    // same area as the zone-outline polygon it replaces, to within rounding
-    const zonePoly = turf.polygon([
-      [...z.boundary, z.boundary[0]],
-      ...z.holes.map((h) => [...h, h[0]]),
-    ]) as PolyFeature;
-    expect(planarArea(poly)).toBeCloseTo(planarArea(zonePoly), 3);
+    const own = c.subRegions.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+    expect(planarArea(poly)).toBeCloseTo(own, 3);
+    // and it is genuinely a share of the zone, not the whole thing. Compared against the sum over
+    // every chart, not `zone.boundary` — that field carries only the largest lobe of a zone whose
+    // UV footprint has many, so one part's share can legitimately exceed it.
+    const whole = z.charts.reduce(
+      (s, ch) => s + ch.subRegions.reduce((t, r) => t + Math.abs(planarArea(regionPolygon(r))), 0),
+      0,
+    );
+    expect(planarArea(poly)).toBeLessThan(whole);
   });
 
   // Placement/fill anchor on the zone bbox, so it has to cover every chart's UV — a chart poking
