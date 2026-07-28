@@ -39,6 +39,12 @@ export interface SidecarZone {
   holes: number[][][];
   /** UV polylines where printed parts meet, for UI display */
   seams: number[][][];
+  /**
+   * The whole zone's UV bbox (min is (0,0) by bake convention) — the template's coordinate space,
+   * and what the mapper anchors placement and fill tiling on. Measured across every chart, so a
+   * zone spanning a seam places one design across the parts rather than one per part.
+   */
+  uvBounds: { minU: number; minV: number; maxU: number; maxV: number };
   up: number[];
   normalSign: 1 | -1;
   distortion: { max: number; mean: number };
@@ -47,8 +53,9 @@ export interface SidecarZone {
 /**
  * The only sidecar format this build understands. The per-part mesh fingerprints guard the
  * *geometry* pairing; this guards the *format*, so a visitor holding a cached schema-1 sidecar
- * (whose charts carry `subBoundary` rather than `subRegions`) can't be paired with newer code that
- * would read its per-part clip region as absent and clip every part to the whole zone.
+ * (whose charts carry `subBoundary` rather than `subRegions`, and whose zones have no `uvBounds`)
+ * can't be paired with newer code that would read its per-part clip region as absent and clip every
+ * part to the whole zone.
  */
 export const SIDECAR_SCHEMA = 2;
 
@@ -133,6 +140,7 @@ export function reconstructChart(
     boundary: zone.boundary,
     holes: zone.holes,
     subRegions: chart.subRegions,
+    zoneBounds: zone.uvBounds,
   };
 }
 

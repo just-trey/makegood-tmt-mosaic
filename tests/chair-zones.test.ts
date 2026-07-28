@@ -142,6 +142,26 @@ describe('chart reconstruction', () => {
     expect(planarArea(poly)).toBeCloseTo(planarArea(zonePoly), 3);
   });
 
+  // Placement/fill anchor on the zone bbox, so it has to cover every chart's UV — a chart poking
+  // outside it would place its share of the design off the anchor the template is drawn against.
+  it('gives the mapper a zone bbox that covers every chart’s UV', () => {
+    for (const z of sidecar.zones) {
+      const b = z.uvBounds;
+      expect(b.minU, z.id).toBe(0);
+      expect(b.minV, z.id).toBe(0);
+      for (const c of z.charts) {
+        const m = partMesh.get(c.libraryPartId)!;
+        expect(reconstructChart(z, c, m.vertices).zoneBounds).toBe(b);
+        for (let i = 0; i < c.uv.length; i += 2) {
+          expect(c.uv[i]).toBeGreaterThanOrEqual(b.minU - 1e-3);
+          expect(c.uv[i]).toBeLessThanOrEqual(b.maxU + 1e-3);
+          expect(c.uv[i + 1]).toBeGreaterThanOrEqual(b.minV - 1e-3);
+          expect(c.uv[i + 1]).toBeLessThanOrEqual(b.maxV + 1e-3);
+        }
+      }
+    }
+  });
+
   it('throws when the mesh is too small for the chart indices', () => {
     const z = sidecar.zones[0];
     const c = z.charts[0];

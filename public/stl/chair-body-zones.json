@@ -4064,6 +4064,7 @@
         ]
       ],
       "seams": [],
+      "uvBounds": { "minU": 0, "minV": 0, "maxU": 225.1647, "maxV": 235.0903 },
       "up": [0, 1],
       "normalSign": 1,
       "distortion": { "max": 1.3138, "mean": 1.0056 }
@@ -7553,6 +7554,7 @@
         ]
       ],
       "seams": [],
+      "uvBounds": { "minU": 0, "minV": 0, "maxU": 225.1454, "maxV": 235.1723 },
       "up": [0, 1],
       "normalSign": 1,
       "distortion": { "max": 1.3141, "mean": 1.0067 }
@@ -9761,6 +9763,7 @@
       ],
       "holes": [],
       "seams": [],
+      "uvBounds": { "minU": 0, "minV": 0, "maxU": 80.0455, "maxV": 215.804 },
       "up": [0, 1],
       "normalSign": 1,
       "distortion": { "max": 1.1682, "mean": 1.0023 }
@@ -12023,6 +12026,7 @@
         ]
       ],
       "seams": [],
+      "uvBounds": { "minU": 0, "minV": 0, "maxU": 79.7662, "maxV": 232.1505 },
       "up": [0, 1],
       "normalSign": 1,
       "distortion": { "max": 1.2783, "mean": 1.0155 }

@@ -75,10 +75,18 @@ export interface ConformalChart {
    * This part's own slice of the zone, in UV mm — what the cutter is clipped to. Absent (or a
    * single region equal to the zone outline) while a zone lives on one printed part; on a zone
    * that spans a seam each part gets only its own share, so artwork can't be cut past the chart
-   * this mapper can actually warp against. `boundary` stays the whole zone: the template and the
-   * placement extent are zone-wide regardless of how many parts carry it.
+   * this mapper can actually warp against. `boundary` stays the whole zone: the template is
+   * zone-wide regardless of how many parts carry it.
    */
   subRegions?: { outer: number[][]; holes: number[][][] }[];
+  /**
+   * The whole zone's UV bbox, measured across every part's chart at bake time — the template's
+   * coordinate space. Placement and fill tiling anchor here rather than on this chart's own
+   * vertices, so a zone spanning a seam places one design across the parts (each part cutting its
+   * share of it) instead of a whole copy centred on each half. Absent for a hand-built chart, which
+   * falls back to this chart's UV bbox — identical for a single-part zone.
+   */
+  zoneBounds?: { minU: number; minV: number; maxU: number; maxV: number };
 }
 
 interface ChartHit {
@@ -200,8 +208,9 @@ export class ConformalZoneMapper implements ZoneMapper {
     this.faceNormal = avgLen > 0 ? [avg[0] / avgLen, avg[1] / avgLen, avg[2] / avgLen] : null;
     this.nsign = this.faceNormal && this.faceNormal[1] < 0 ? -1 : 1;
 
-    // UV bbox (chart center anchors rect placement) + lookup grid, cell ≈ 2× median UV edge so a
-    // typical query lands in a cell holding a handful of triangles.
+    // UV bbox of this chart's own vertices — the lookup grid's extent, and the placement anchor
+    // when the bake supplied no zone-wide bbox. Lookup cell ≈ 2× median UV edge so a typical query
+    // lands in a cell holding a handful of triangles.
     let minU = Infinity,
       maxU = -Infinity,
       minV = Infinity,
@@ -214,9 +223,16 @@ export class ConformalZoneMapper implements ZoneMapper {
       if (vv < minV) minV = vv;
       if (vv > maxV) maxV = vv;
     }
-    this.uvCu = (minU + maxU) / 2;
-    this.uvCv = (minV + maxV) / 2;
-    this.uvBBox = { minX: minU, minY: minV, maxX: maxU, maxY: maxV };
+    // Anchor placement/fill on the zone's bbox when the bake baked one: it is the same for every
+    // part of a seam-spanning zone, where each chart's own bbox is only that part's half.
+    const zb = chart.zoneBounds;
+    const anchor =
+      zb && zb.maxU > zb.minU && zb.maxV > zb.minV
+        ? { minX: zb.minU, minY: zb.minV, maxX: zb.maxU, maxY: zb.maxV }
+        : { minX: minU, minY: minV, maxX: maxU, maxY: maxV };
+    this.uvCu = (anchor.minX + anchor.maxX) / 2;
+    this.uvCv = (anchor.minY + anchor.maxY) / 2;
+    this.uvBBox = anchor;
 
     const edgeLens: number[] = [];
     for (let t = 0; t < triCount; t++) {
@@ -361,7 +377,8 @@ export class ConformalZoneMapper implements ZoneMapper {
    * SVG-space → chart UV (mm). Unlike the flat mapper there is no per-face mirror correction:
    * the bake convention already orients UV as seen from outside the surface, so artwork reads
    * right by construction — only the user's own flips apply. Rect-style placement: 1:1 in mm,
-   * auto-centered on the chart's UV bbox.
+   * auto-centered on the zone's UV bbox (this chart's own bbox only when the bake supplied none),
+   * so every part of a seam-spanning zone maps the design to the same place in zone UV.
    */
   placer(p: DesignPlacement): (pt: number[]) => number[] {
     const { uvCu, uvCv } = this;
@@ -410,8 +427,10 @@ export class ConformalZoneMapper implements ZoneMapper {
   }
 
   /**
-   * The chart's own UV bounding box, not the baked boundary's: a fill tiles over everything the
-   * chart can carry, and `boundary()` still clips the result back to the zone outline.
+   * The zone's UV bounding box (this chart's own when the bake supplied none), not the baked
+   * boundary's: a fill tiles over everything the zone can carry, and `boundary()` still clips the
+   * result back to this part's share of it. Zone-wide so the tile grid of a seam-spanning zone has
+   * one origin and phase across the parts rather than restarting on each.
    */
   fillExtent(): FillExtent | null {
     const bb = this.uvBBox;
