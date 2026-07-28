@@ -2,14 +2,16 @@
   "schema": 1,
   "kindId": "chair-body",
   "_note": [
-    "seamWeldTolMm is deliberately NOT set yet. Setting it to 0.6 stitches every printed seam",
-    "(measured worst contact gap 0.530mm, seat-center to seat-back-bottom) and each zone then",
-    "grows until maxAngleDeg stops it rather than until the part runs out — with these seeds and",
-    "angles that takes 'back' across 6 parts at 20x stretch. Enable it and re-tune the zones in",
-    "the same change.",
-    "The CAD assembly also contains a central rear brace (x -90..90, y 92..186, z -663..-455) that",
-    "the app has no part for; it is 1.008mm from anything else, so a 0.6mm stitch leaves it out."
+    "seamWeldTolMm stitches the printed seams so a zone grows until maxAngleDeg stops it rather",
+    "than until the part runs out. 0.6 clears the chair's widest real contact gap (0.530mm,",
+    "seat-center to seat-back-bottom) and still leaves out the central rear brace in the CAD",
+    "assembly (x -90..90, y 92..186, z -663..-455): it sits 1.008mm from anything else, and the",
+    "app has no part for it, so a zone must never grow onto it.",
+    "The angles below are the measured knee of coverage against stretch, not round numbers —",
+    "'back' at 55deg wraps around the U onto both handles' inner faces and unwraps at 20x, at",
+    "35deg it is 962cm2 across 6 parts at 1.13x. Re-check the bake log after changing any of them."
   ],
+  "seamWeldTolMm": 0.6,
   "parts": [
     { "libraryPartId": "chair-storage-left", "file": "public/stl/chair-storage-left.3mf" },
     { "libraryPartId": "chair-storage-right", "file": "public/stl/chair-storage-right.3mf" },
@@ -31,21 +33,28 @@
       "id": "left",
       "name": "Left side",
       "seedPoint": [168, 199, -491],
-      "maxAngleDeg": 55,
+      "maxAngleDeg": 45,
       "up": [0, 1, 0]
     },
     {
       "id": "right",
       "name": "Right side",
       "seedPoint": [-168, 199, -491],
-      "maxAngleDeg": 55,
+      "maxAngleDeg": 45,
       "up": [0, 1, 0]
     },
     {
       "id": "back",
       "name": "Back",
-      "seedPoint": [0, 300, -498],
-      "maxAngleDeg": 55,
+      "seedPoint": [0, 280, -497],
+      "maxAngleDeg": 35,
+      "up": [0, 1, 0]
+    },
+    {
+      "id": "front",
+      "name": "Front",
+      "seedPoint": [0, 281, -477],
+      "maxAngleDeg": 35,
       "up": [0, 1, 0]
     },
     {
