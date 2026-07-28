@@ -88,6 +88,22 @@ describe('loadArtworkSource', () => {
     expect(state.activeArtworkId).toBe(instance.id);
   });
 
+  it('leaves the instance unbound when the assembly offers a single zone', () => {
+    state.assembly.parts = [zonedPart(1, 'only', 'Only')];
+    expect(loadArtworkSource(fakeParsed(), 'a.svg').zone).toBeNull();
+  });
+
+  // "All zones" remains a real choice in the picker; it just isn't the default once there is more
+  // than one, where it would stamp the design onto every surface of the chair at once — five zones
+  // spanning 25 conformal charts, recut on every slider nudge, to produce a result nobody asked for.
+  it('binds to the first zone when the assembly offers several', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left'), zonedPart(2, 'seat', 'Seat')];
+    const instance = loadArtworkSource(fakeParsed(), 'a.svg');
+
+    expect(instance.zone).toEqual({ partId: 1, zoneId: 'left' });
+    expect(availableZones()[0].zoneId).toBe('left');
+  });
+
   it('seeds instance placement from the current global fit fields', () => {
     state.offsetX = 3;
     state.offsetY = -4;

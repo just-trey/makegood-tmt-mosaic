@@ -33,8 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (left/right/front/back/seat) take artwork that wraps conformally onto the
   part's curved geometry instead of a flat orthographic stamp — load a
   design, then target a surface from the Artwork list's zone dropdown or by
-  clicking it directly in the 3D view. A surface covers the printed pieces
-  under it rather than stopping at a piece's edge: the left and right ones
+  clicking it directly in the 3D view. A newly loaded design starts on the
+  first surface rather than on all five at once; "All zones" is still there
+  in the dropdown for anyone who wants it stamped everywhere. A surface
+  covers the printed pieces under it rather than stopping at a piece's
+  edge: the left and right ones
   run from the storage side across the handle and wheel mount onto the front
   fender, and a design laid across a join is split and cut into each piece
   separately. Each surface has its own true-scale design template,

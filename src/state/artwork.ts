@@ -6,12 +6,18 @@ let nextArtworkId = 1;
 
 /**
  * Register a freshly-parsed SVG as a new design source, alongside whatever is already loaded, and
- * auto-create its instance unbound (`zone: null`, meaning "every zone the part offers" — the flat/
- * single-zone behavior every part had before multi-zone parts). Placement seeds from the current
- * global offset/scale/rotation/flip so a first-time load (still the common case) behaves exactly as
- * before; a source added later starts from that same snapshot rather than the *previous* active
- * instance's placement, since the two designs aren't related. The new instance becomes active, and
- * `state.parsed` — the field flat mode and legacy single-instance code still read — mirrors it.
+ * auto-create its instance. Placement seeds from the current global offset/scale/rotation/flip so a
+ * first-time load (still the common case) behaves exactly as before; a source added later starts
+ * from that same snapshot rather than the *previous* active instance's placement, since the two
+ * designs aren't related. The new instance becomes active, and `state.parsed` — the field flat mode
+ * and legacy single-instance code still read — mirrors it.
+ *
+ * The instance binds to the first offered zone when the assembly has more than one. `zone: null`
+ * ("All zones" in the picker) stays available and unchanged, but it is the wrong *default* on a
+ * multi-zone kind: it stamps the same design onto every surface at once, which on the chair means
+ * 25 conformal charts recut on every slider nudge to produce a result nobody asked for. Kinds with
+ * one zone or none (wheel, footrest, flat mode) still start unbound, so their behavior is
+ * bit-for-bit what it was.
  */
 export function loadArtworkSource(
   parsed: ParsedSVG,
@@ -22,10 +28,12 @@ export function loadArtworkSource(
   const source: DesignSource = { id: `source-${nextSourceId++}`, kind, name, parsed };
   state.sources.push(source);
 
+  const zones = availableZones();
+  const zoneId = zones.length > 1 ? zones[0].zoneId : null;
   const instance: ArtworkInstance = {
     id: `artwork-${nextArtworkId++}`,
     sourceId: source.id,
-    zone: null,
+    zone: zoneId ? { partId: partIdForZone(zoneId), zoneId } : null,
     offsetU: state.offsetX,
     offsetV: state.offsetY,
     scalePct: state.scalePct,

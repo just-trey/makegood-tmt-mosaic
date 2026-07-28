@@ -157,6 +157,56 @@ describe('chart reconstruction', () => {
     }
   });
 
+  // The area check above is necessary but NOT sufficient for a partition: two parts overlapping by
+  // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total. Overlap
+  // is the half that actually corrupts output — where two parts both claim a patch of UV, the same
+  // artwork is cut into both, so the design appears twice at the seam on the printed chair.
+  it('gives no two parts of a zone an overlapping claim on the same UV', () => {
+    for (const z of sidecar.zones) {
+      // bbox computed off the outer ring rather than turf.bbox — src/turf.d.ts declares only the
+      // handful of turf entry points the app actually uses, and bbox isn't one of them.
+      const claims = z.charts.map((c) => ({
+        id: c.libraryPartId,
+        regions: c.subRegions.map((r) => ({
+          poly: regionPolygon(r),
+          box: r.outer.reduce(
+            (b, [x, y]) => [
+              Math.min(b[0], x),
+              Math.min(b[1], y),
+              Math.max(b[2], x),
+              Math.max(b[3], y),
+            ],
+            [Infinity, Infinity, -Infinity, -Infinity],
+          ),
+        })),
+      }));
+      const zoneArea = claims.reduce(
+        (s, c) => s + c.regions.reduce((t, r) => t + Math.abs(planarArea(r.poly)), 0),
+        0,
+      );
+      for (let i = 0; i < claims.length; i++)
+        for (let j = i + 1; j < claims.length; j++) {
+          let overlap = 0;
+          for (const a of claims[i].regions)
+            for (const b of claims[j].regions) {
+              if (a.box[0] > b.box[2] || b.box[0] > a.box[2]) continue;
+              if (a.box[1] > b.box[3] || b.box[1] > a.box[3]) continue;
+              const hit = turf.intersect(a.poly, b.poly);
+              if (hit) overlap += Math.abs(planarArea(hit as PolyFeature));
+            }
+          // Not zero: two parts that share a seam have their common boundary traced separately from
+          // each side, and 0.2mm of loop simplification lets the two traces cross. Measured on the
+          // shipped bake, every one of the 23 overlapping pairs shares a seam and the worst is
+          // 29.85mm² (wing-right/wheel-mount-right) on a 124,500mm² zone — 0.024%, a 0.15mm ribbon.
+          // A part whose region genuinely crept across a seam onto its neighbour's patch would
+          // scale as creep × seam length: even 1mm over a 200mm seam is 0.16%, caught here.
+          expect(overlap / zoneArea, `${z.id}: ${claims[i].id} vs ${claims[j].id}`).toBeLessThan(
+            0.0005,
+          );
+        }
+    }
+  });
+
   // The clip region the cutter is actually built against: this part's own share, NOT the zone
   // outline. Handing it the zone outline is what pushes artwork past the chart the warp can
   // resolve, where it reads as off-chart and the colour vanishes from every part at once.

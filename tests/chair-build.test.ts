@@ -273,8 +273,23 @@ describe('conformal build on the real chair', () => {
         }
         return c;
       };
+      // Probed at edge midpoints, not at h[0]: a hole can be tangent to the outline it sits in (one
+      // of `back`'s 18 is), and there the first vertex lies exactly ON the boundary, where a
+      // crossing-number test has no defined answer. Same reason the bake's own containment test
+      // votes rather than trusting one vertex.
+      const nestedIn = (inner: number[][], outerLoop: number[][]): boolean => {
+        const n = Math.min(inner.length, 9);
+        let votes = 0;
+        for (let s = 0; s < n; s++) {
+          const i = Math.floor((s * inner.length) / n);
+          const [x1, y1] = inner[i];
+          const [x2, y2] = inner[(i + 1) % inner.length];
+          if (inside([(x1 + x2) / 2, (y1 + y2) / 2], outerLoop)) votes++;
+        }
+        return votes * 2 > n;
+      };
       for (const h of zone.holes ?? []) {
-        expect(inside(h[0], zone.boundary), `${_id} hole outside its outline`).toBe(true);
+        expect(nestedIn(h, zone.boundary), `${_id} hole outside its outline`).toBe(true);
         expect(Math.abs(signedArea(h))).toBeLessThan(outer);
       }
     },

@@ -847,6 +847,33 @@ const pointInLoop = ([px, py], loop) => {
   return inside;
 };
 
+/** Odd, so a containment vote can't tie. */
+const CONTAIN_SAMPLES = 9;
+
+/**
+ * Is `inner` contained by `outer`? Votes over edge midpoints spread around `inner` rather than
+ * trusting a single vertex.
+ *
+ * Testing loops[i][0] is not safe here: where splitAtRepeats cuts a figure-eight into lobes, the
+ * first vertex of a sub-loop IS the pinch vertex it shares with its sibling, and a crossing-number
+ * test evaluated exactly on the other loop's boundary is undefined — it answers on which side the
+ * floating-point dust falls. The lobe-as-hole misclassification this function exists to prevent
+ * was therefore being avoided by luck. Edge midpoints of a simple loop can only meet a sibling at
+ * that same pinch point, so a majority over several of them is decided by samples genuinely off
+ * the shared boundary.
+ */
+const loopInsideLoop = (inner, outer) => {
+  const n = Math.min(inner.length, CONTAIN_SAMPLES);
+  let votes = 0;
+  for (let s = 0; s < n; s++) {
+    const i = Math.floor((s * inner.length) / n);
+    const [x1, y1] = inner[i];
+    const [x2, y2] = inner[(i + 1) % inner.length];
+    if (pointInLoop([(x1 + x2) / 2, (y1 + y2) / 2], outer)) votes++;
+  }
+  return votes * 2 > n;
+};
+
 /**
  * Group boundary loops into {outer, holes} regions by containment depth — even depth is a solid
  * island of its own, odd depth is a hole in its immediate parent. A part's slice of a zone can be
@@ -862,7 +889,7 @@ function classifyRegions(loops) {
     let best = Infinity;
     for (let j = 0; j < n; j++) {
       if (i === j || areas[j] <= areas[i] || areas[j] >= best) continue;
-      if (!pointInLoop(loops[i][0], loops[j])) continue;
+      if (!loopInsideLoop(loops[i], loops[j])) continue;
       best = areas[j];
       parent[i] = j;
     }
@@ -931,6 +958,16 @@ const xmlEscape = (s) =>
 /** Below this (mm²) a sub-region cannot hold a readable part label at 1:1, so it goes unlabelled. */
 const LABEL_MIN_AREA_MM2 = 400;
 
+/** Top strip reserved for the sheet title (baseline 12) and legend (baseline 24), plus descender. */
+const HEADER_BAND_MM = 28;
+
+/**
+ * Mean glyph advance as a fraction of font size, for estimating a label's width well enough to
+ * tell whether two of them collide. 0.45 is about right for lowercase sans-serif, which is all
+ * these labels ever are (shortPartName lowercases the id and strips the kind prefix).
+ */
+const LABEL_ADVANCE_EM = 0.45;
+
 /** `chair-body` + `chair-storage-left` -> `storage left`: the kind prefix is on the sheet already. */
 const shortPartName = (partId, kindId) => {
   const prefix = `${kindId.split('-')[0]}-`;
@@ -972,6 +1009,8 @@ export function zoneTemplateSVG(zone, kindId, chartBBox, regions) {
         `stroke="${ACCENT}" stroke-width="0.6" stroke-dasharray="2 3"/>`,
     )
     .join('\n');
+  // Placed labels, so a later one can be dropped rather than land on top of an earlier one.
+  const placed = [];
   const partLabels = (zone.charts.length > 1 ? zone.charts : [])
     .map((c) => {
       const biggest = c.subRegions
@@ -981,13 +1020,30 @@ export function zoneTemplateSVG(zone, kindId, chartBBox, regions) {
     })
     .filter((l) => l && l.area >= LABEL_MIN_AREA_MM2)
     .map((l) => {
-      const [x, y] = pt(loopCentroid(l.outer));
+      const ys = l.outer.map((p) => pt(p)[1]);
+      const [cx, cy] = pt(loopCentroid(l.outer));
+      // The sheet title and legend are centered text at the top; a sub-region whose centroid lands
+      // up there would print straight through them (five of the seat's labels did). Drop to the
+      // middle of whatever of the region sits below the header band, and give up on the label
+      // entirely if the region has nothing down there — no label beats an unreadable overprint.
+      let y = cy;
+      if (y < HEADER_BAND_MM) {
+        const bottom = Math.max(...ys);
+        if (bottom <= HEADER_BAND_MM) return null;
+        y = (Math.max(Math.min(...ys), HEADER_BAND_MM) + bottom) / 2;
+      }
+      const text = shortPartName(l.name, kindId);
+      const half = (text.length * LABEL_ADVANCE_EM * LABEL_SIZE) / 2;
+      if (placed.some((p) => Math.abs(p[0] - cx) < p[2] + half && Math.abs(p[1] - y) < LABEL_SIZE))
+        return null;
+      placed.push([cx, y, half]);
       return (
-        `  <text x="${round(x, 2)}" y="${round(y, 2)}" text-anchor="middle" ` +
+        `  <text x="${round(cx, 2)}" y="${round(y, 2)}" text-anchor="middle" ` +
         `font-family="sans-serif" font-size="${LABEL_SIZE}" fill="${ACCENT}" ` +
-        `opacity="0.75">${xmlEscape(shortPartName(l.name, kindId))}</text>`
+        `opacity="0.75">${xmlEscape(text)}</text>`
       );
     })
+    .filter(Boolean)
     .join('\n');
   const legend = [
     zone.seams?.length ? 'dashed = printed-part seam' : '',
@@ -1249,8 +1305,25 @@ export function bakeZones(config, parts, log = () => {}) {
       });
     }
 
-    // seams: zone-interior edges whose two triangles belong to different printed parts
+    // Seams: where one printed part's share of the zone ends against another's.
+    //
+    // Taken from the parts' own patch boundaries, NOT from edges shared by two parts' triangles.
+    // Real printed parts meet across a clearance with mismatched tessellation, so stitchSeams welds
+    // their *vertices* while the two edge chains almost never coincide — demanding a shared edge
+    // drew 0.93mm of line across the seat's five pieces and 19mm on the back's six. An edge counts
+    // as a seam when it bounds this part's patch (no second triangle of the same part behind it)
+    // and both endpoints are welded to a common other part. Drawn from the lower-numbered part of
+    // each pair only, so a join gets one line rather than two nearly-coincident ones.
     const zoneSet = new Set(zoneTris);
+    const partsAtVert = new Map();
+    for (const ti of zoneTris) {
+      const t = weld.tris[ti];
+      for (const g of t.v) {
+        let s = partsAtVert.get(g);
+        if (!s) partsAtVert.set(g, (s = new Set()));
+        s.add(t.part);
+      }
+    }
     const seamEdges = [];
     const seen = new Set();
     for (const ti of zoneTris) {
@@ -1258,12 +1331,21 @@ export function bakeZones(config, parts, log = () => {}) {
       for (let k = 0; k < 3; k++) {
         const a = t.v[k];
         const b = t.v[(k + 1) % 3];
-        const key = edgeKey(a, b);
+        // keyed per part: a genuinely shared edge must be judged once from each side, or the
+        // lower-part rule below could drop it on behalf of a part that never gets to emit it
+        const key = `${t.part}:${edgeKey(a, b)}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const owners = edgeTris.get(key).filter((o) => zoneSet.has(o));
-        if (owners.length === 2 && weld.tris[owners[0]].part !== weld.tris[owners[1]].part)
-          seamEdges.push([a, b]);
+        const mine = edgeTris
+          .get(edgeKey(a, b))
+          .filter((o) => zoneSet.has(o) && weld.tris[o].part === t.part);
+        if (mine.length > 1) continue;
+        const atA = partsAtVert.get(a);
+        const atB = partsAtVert.get(b);
+        let lowest = Infinity;
+        for (const p of atA) if (p !== t.part && atB.has(p) && p < lowest) lowest = p;
+        if (lowest === Infinity || t.part > lowest) continue;
+        seamEdges.push([a, b]);
       }
     }
     const seams = chainEdges(seamEdges).map((path) =>
