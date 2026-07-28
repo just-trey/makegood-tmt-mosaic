@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   bakeZones,
   boundaryVertexLoops,
+  weldParts,
   simplifyLoop,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
@@ -462,5 +463,116 @@ describe('simplifyLoop', () => {
     expect(out.length).toBeGreaterThan(8);
     // every surviving point is an original point, so radius stays exact
     for (const [x, y] of out) expect(Math.hypot(x, y)).toBeCloseTo(30, 6);
+  });
+});
+
+/**
+ * Separately-printed parts are never coincident — they meet with real clearance (the chair's
+ * widest is 0.53mm), so the 1e-3 weld above finds nothing to join and every zone stays trapped on
+ * the part it seeds on. `seamWeldTolMm` stitches across that gap; without it, "artwork flows over
+ * the seam" is unreachable no matter how the zones are configured.
+ */
+describe('seam welding across a real print clearance', () => {
+  const GAP = 0.4; // mm — a plausible print clearance, far beyond the 1e-3 weld
+  const partA = cylinderPart('part-a', 0, NU / 2);
+  const partB = cylinderPart('part-b', NU / 2, NU, [GAP, 0, 0]);
+
+  it('leaves the zone on one part when the gap is not stitched', () => {
+    const baked = bakeZones(config([partA, partB], [WRAP_ZONE]), [partA, partB]);
+    const zone = baked.sidecar.zones[0];
+    expect(zone.charts).toHaveLength(1);
+    expect(zone.seams).toEqual([]);
+  });
+
+  it('spans both parts once seamWeldTolMm covers it, with a seam and a clip region each', () => {
+    const baked = bakeZones(config([partA, partB], [WRAP_ZONE], { seamWeldTolMm: GAP * 1.5 }), [
+      partA,
+      partB,
+    ]);
+    const zone = baked.sidecar.zones[0];
+
+    expect(zone.charts.map((c: { libraryPartId: string }) => c.libraryPartId)).toEqual([
+      'part-a',
+      'part-b',
+    ]);
+    expect(zone.seams).toHaveLength(1);
+    // each part is clipped to its own half — the thing the runtime needs to not drop the color
+    for (const c of zone.charts) {
+      expect(c.subRegions).toHaveLength(1);
+      expect(Math.abs(loopArea(c.subRegions[0].outer))).toBeCloseTo((ARC_U * H) / 2, -2);
+    }
+  });
+
+  it('refuses a tolerance that cannot stitch anything', () => {
+    expect(() =>
+      bakeZones(config([partA, partB], [WRAP_ZONE], { seamWeldTolMm: 1e-4 }), [partA, partB]),
+    ).toThrow(/seamWeldTolMm/);
+  });
+
+  // Checked on weldParts directly: routed through bakeZones this would pass whatever the guard
+  // does, because segmentZone rejects an inverted part on face angle before the weld matters.
+  describe('the facing guard', () => {
+    const flat = (id: string, z: number, up: boolean): Part => {
+      const p = platePart(id, 2, () => false);
+      return {
+        libraryPartId: id,
+        verts: p.verts.map(([x, y]) => [x, y, z]),
+        tris: up ? p.tris : p.tris.map((t) => [t[0], t[2], t[1]]),
+      };
+    };
+
+    it('stitches two parts whose surfaces face the same way', () => {
+      const w = weldParts([flat('a', 0, true), flat('b', GAP, true)], 1e-3, GAP * 1.5);
+      expect(
+        [...w.seamStitches.values()].reduce((s: number, n: number) => s + n, 0),
+      ).toBeGreaterThan(0);
+    });
+
+    it('refuses two parts that face each other across the same gap', () => {
+      // the lap-joint case: one part's outer skin sitting a clearance away from its neighbour's
+      // inner one. Fusing those welds surfaces that are not the same surface.
+      const w = weldParts([flat('a', 0, true), flat('b', GAP, false)], 1e-3, GAP * 1.5);
+      expect([...w.seamStitches.values()]).toEqual([]);
+    });
+  });
+
+  // Rejecting a candidate whose two vertices already share a part is not enough on its own: two
+  // vertices of one part that share no triangle can each reach the *same* vertex opposite and so
+  // meet transitively, folding the faces between them onto each other. Measured on the chair at
+  // 0.6mm before the group-owner check existed: 392 folded faces that the pairwise test let past.
+  describe('the collapse guard', () => {
+    // A quad split (a,b,c)+(a,c,d), so b and d share no triangle. vB sits closer to both b and d
+    // than to a, putting both pairs in the candidate list.
+    const partA: Part = {
+      libraryPartId: 'part-a',
+      verts: [
+        [0, 0, 0],
+        [0.5, 0, 0],
+        [2, 2, 0],
+        [0, 0.5, 0],
+      ],
+      tris: [
+        [0, 1, 2],
+        [0, 2, 3],
+      ],
+    };
+    const partB: Part = {
+      libraryPartId: 'part-b',
+      verts: [
+        [0.3, 0.3, 0.01],
+        [3, 0.3, 0.01],
+        [0.3, 3, 0.01],
+      ],
+      tris: [[0, 1, 2]],
+    };
+
+    it('lets only the nearest of two same-part vertices reach a shared neighbour', () => {
+      const w = weldParts([partA, partB], 1e-3, 0.4);
+      expect([...w.seamStitches.values()]).toEqual([1]);
+      // partA's two faces still span four vertices. Taking both stitches merges b into d, leaving
+      // the faces on the same three vertices wound opposite ways.
+      const [f0, f1] = w.tris as { v: number[] }[];
+      expect(new Set([...f0.v, ...f1.v]).size).toBe(4);
+    });
   });
 });
