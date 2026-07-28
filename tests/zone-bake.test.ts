@@ -535,4 +535,44 @@ describe('seam welding across a real print clearance', () => {
       expect([...w.seamStitches.values()]).toEqual([]);
     });
   });
+
+  // Rejecting a candidate whose two vertices already share a part is not enough on its own: two
+  // vertices of one part that share no triangle can each reach the *same* vertex opposite and so
+  // meet transitively, folding the faces between them onto each other. Measured on the chair at
+  // 0.6mm before the group-owner check existed: 392 folded faces that the pairwise test let past.
+  describe('the collapse guard', () => {
+    // A quad split (a,b,c)+(a,c,d), so b and d share no triangle. vB sits closer to both b and d
+    // than to a, putting both pairs in the candidate list.
+    const partA: Part = {
+      libraryPartId: 'part-a',
+      verts: [
+        [0, 0, 0],
+        [0.5, 0, 0],
+        [2, 2, 0],
+        [0, 0.5, 0],
+      ],
+      tris: [
+        [0, 1, 2],
+        [0, 2, 3],
+      ],
+    };
+    const partB: Part = {
+      libraryPartId: 'part-b',
+      verts: [
+        [0.3, 0.3, 0.01],
+        [3, 0.3, 0.01],
+        [0.3, 3, 0.01],
+      ],
+      tris: [[0, 1, 2]],
+    };
+
+    it('lets only the nearest of two same-part vertices reach a shared neighbour', () => {
+      const w = weldParts([partA, partB], 1e-3, 0.4);
+      expect([...w.seamStitches.values()]).toEqual([1]);
+      // partA's two faces still span four vertices. Taking both stitches merges b into d, leaving
+      // the faces on the same three vertices wound opposite ways.
+      const [f0, f1] = w.tris as { v: number[] }[];
+      expect(new Set([...f0.v, ...f1.v]).size).toBe(4);
+    });
+  });
 });

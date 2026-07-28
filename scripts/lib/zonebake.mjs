@@ -170,10 +170,12 @@ export function weldParts(parts, tolMm = WELD_TOL_MM, seamTolMm = 0) {
  *    neighbour's inner one. It does NOT catch two parts stacked parallel and same-facing a
  *    clearance apart — those look exactly like one surface from here. Keep `seamWeldTolMm` at the
  *    measured contact gap and check the per-seam stitch counts the bake logs.
- *  - **no triangle collapse** — a merge is rejected when some triangle has one corner in each
- *    group, which is the only way merging can degenerate a face (two vertices of one part pulled
- *    together through a shared neighbour on the other side). Cheapest merges are taken first, so
- *    the closest pairing wins the competition for a given vertex.
+ *  - **one vertex per part per group** — a merge is rejected when both groups already touch a
+ *    common part, so no two vertices of one part are ever pulled together through a shared
+ *    neighbour on the other side. Checking this pairwise on the candidate is not enough: two
+ *    vertices of a part that share no triangle can each merge with the *same* vertex opposite and
+ *    meet transitively, which folds the pair of faces between them onto each other. Cheapest
+ *    merges are taken first, so the closest pairing wins the competition for a given vertex.
  */
 function stitchSeams({ verts, tris }, tolMm) {
   const normals = verts.map(() => [0, 0, 0]);
@@ -224,40 +226,32 @@ function stitchSeams({ verts, tris }, tolMm) {
     while (parent[a] !== a) a = parent[a] = parent[parent[a]];
     return a;
   };
-  // incident triangles, but only for vertices some candidate actually touches — that's a thin
-  // ribbon along each seam, not the whole mesh
-  const touched = new Set();
-  for (const [, g, h] of candidates) {
-    touched.add(g);
-    touched.add(h);
-  }
-  const groupTris = new Map();
-  tris.forEach((t, ti) => {
-    for (const v of t.v)
-      if (touched.has(v)) {
-        let s = groupTris.get(v);
-        if (!s) groupTris.set(v, (s = new Set()));
-        s.add(ti);
-      }
-  });
+  // parts touched by a whole group, seeded lazily from the per-vertex sets — only roots that
+  // actually take part in a merge ever get an entry
+  const groupOwners = new Map();
+  const ownersOf = (r) => {
+    let s = groupOwners.get(r);
+    if (!s) groupOwners.set(r, (s = new Set(owners[r])));
+    return s;
+  };
   const seamStitches = new Map();
   for (const [, g, h] of candidates) {
     const a = find(g),
       b = find(h);
     if (a === b) continue;
-    let sa = groupTris.get(a) ?? new Set(),
-      sb = groupTris.get(b) ?? new Set();
-    const [small, large] = sa.size <= sb.size ? [sa, sb] : [sb, sa];
+    const oa = ownersOf(a),
+      ob = ownersOf(b);
+    const [small, large] = oa.size <= ob.size ? [oa, ob] : [ob, oa];
     let clash = false;
-    for (const ti of small)
-      if (large.has(ti)) {
+    for (const p of small)
+      if (large.has(p)) {
         clash = true;
         break;
       }
     if (clash) continue;
     parent[a] = b;
-    for (const ti of sa) sb.add(ti);
-    groupTris.set(b, sb);
+    for (const p of oa) ob.add(p);
+    groupOwners.set(b, ob);
     const pk = [...owners[g]][0] + '-' + [...owners[h]][0];
     seamStitches.set(pk, (seamStitches.get(pk) ?? 0) + 1);
   }
