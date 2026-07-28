@@ -1,6 +1,15 @@
 {
   "schema": 1,
   "kindId": "chair-body",
+  "_note": [
+    "seamWeldTolMm is deliberately NOT set yet. Setting it to 0.6 stitches every printed seam",
+    "(measured worst contact gap 0.530mm, seat-center to seat-back-bottom) and each zone then",
+    "grows until maxAngleDeg stops it rather than until the part runs out — with these seeds and",
+    "angles that takes 'back' across 6 parts at 20x stretch. Enable it and re-tune the zones in",
+    "the same change.",
+    "The CAD assembly also contains a central rear brace (x -90..90, y 92..186, z -663..-455) that",
+    "the app has no part for; it is 1.008mm from anything else, so a 0.6mm stitch leaves it out."
+  ],
   "parts": [
     { "libraryPartId": "chair-storage-left", "file": "public/stl/chair-storage-left.3mf" },
     { "libraryPartId": "chair-storage-right", "file": "public/stl/chair-storage-right.3mf" },

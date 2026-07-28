@@ -7,7 +7,9 @@
  * Stages:
  *   1. weld    — the parts are joined into one surface by matching coincident vertices across
  *                part seams, so one zone's chart can span printed parts (artwork flows over the
- *                seam; the runtime later splits cutters per part).
+ *                seam; the runtime later splits cutters per part). Separately-printed parts are
+ *                never *coincident* — they meet with real clearance — so a config that wants
+ *                cross-seam zones sets `seamWeldTolMm` to stitch them (see stitchSeams).
  *   2. segment — each zone seeds from the largest flat patch matching its seedNormal (the same
  *                detectFlatPatches the app ranks faces with) and region-grows across triangle
  *                adjacency — including welded cross-part edges — while face normals stay within
@@ -46,6 +48,20 @@ export const MIN_ISLAND_AREA_MM2 = 0.4;
 export const DISTORTION_WARN = 1.1;
 /** Max coincident-vertex gap (mm) welded across part seams. */
 export const WELD_TOL_MM = 1e-3;
+/**
+ * Recommended `seamWeldTolMm` for the chair: the gap (mm) stitched between DIFFERENT parts, so a
+ * zone can grow across a printed seam. Measured, not guessed — the chair's widest real contact gap
+ * is 0.530mm (seat-center to seat-back-bottom), so 0.6 clears every seam with margin while leaving
+ * the rear brace in the CAD assembly (1.008mm from anything, and not a part the app has at all)
+ * unstitched, which keeps a zone from wandering onto surface that can never be cut.
+ *
+ * Opt-in per config rather than a default: turning it on makes every zone grow until `maxAngleDeg`
+ * stops it rather than until the part runs out, so a zone set authored against single-part zones
+ * has to be re-tuned in the same change that enables it.
+ */
+export const SEAM_WELD_TOL_MM = 0.6;
+/** Minimum normal agreement for a seam stitch — rejects parts that face each other across a gap. */
+const SEAM_NORMAL_DOT = 0.3;
 
 const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -97,8 +113,15 @@ export async function read3MFIndexed(buf) {
  * parts) share one global index so triangle adjacency crosses printed-part seams. Buckets are
  * tol-sized cells with a 27-neighbour search, so two matching vertices can never be split by
  * landing on opposite sides of a cell wall.
+ *
+ * `seamTolMm` additionally stitches vertices that belong to DIFFERENT parts and are within that
+ * (much looser) distance — see stitchSeams. The chair's parts are printed separately and meet with
+ * real clearance, so nothing across a seam is ever coincident at tolMm and without this a zone can
+ * never grow past the part it seeds on. It is deliberately not the same knob as tolMm: raising
+ * tolMm far enough to bridge a 0.53mm seam would also collapse 63% of the vertices *inside* each
+ * part, destroying the surface the unwrap runs on.
  */
-export function weldParts(parts, tolMm = WELD_TOL_MM) {
+export function weldParts(parts, tolMm = WELD_TOL_MM, seamTolMm = 0) {
   const buckets = new Map();
   const verts = [];
   const key = (c) => c.map((x) => Math.floor(x / tolMm)).join(',');
@@ -129,7 +152,142 @@ export function weldParts(parts, tolMm = WELD_TOL_MM) {
       tris.push({ part: pi, localTri: ti, lv: t, v: t.map((li) => partVertToGlobal[pi][li]) });
     });
   });
-  return { verts, tris };
+  const weld = { verts, tris };
+  return seamTolMm > tolMm ? stitchSeams(weld, seamTolMm) : weld;
+}
+
+/**
+ * Join the parts across their printed seams: merge pairs of welded vertices that belong to
+ * different parts, sit within `tolMm`, and whose surfaces face the same way. Returns a new
+ * {verts, tris, seamStitches} — part-local `lv`/`localTri` on every triangle are untouched, which
+ * is the whole point: zone growth and the unwrap see one continuous surface while the emitted
+ * charts still index each part's own packed mesh.
+ *
+ * Two guards keep this from damaging the surface:
+ *  - **facing** — a vertex pair is only merged when its parts' surface normals there agree
+ *    (dot > SEAM_NORMAL_DOT). Parts that overlap face-to-face (a tab in a slot) have opposed
+ *    normals across a gap this size, and fusing those would weld a part's outer skin to its
+ *    neighbour's inner one. It does NOT catch two parts stacked parallel and same-facing a
+ *    clearance apart — those look exactly like one surface from here. Keep `seamWeldTolMm` at the
+ *    measured contact gap and check the per-seam stitch counts the bake logs.
+ *  - **no triangle collapse** — a merge is rejected when some triangle has one corner in each
+ *    group, which is the only way merging can degenerate a face (two vertices of one part pulled
+ *    together through a shared neighbour on the other side). Cheapest merges are taken first, so
+ *    the closest pairing wins the competition for a given vertex.
+ */
+function stitchSeams({ verts, tris }, tolMm) {
+  const normals = verts.map(() => [0, 0, 0]);
+  const owners = verts.map(() => new Set());
+  for (const t of tris) {
+    const g = triNormalArea(verts, t);
+    for (const v of t.v) {
+      owners[v].add(t.part);
+      if (g) for (let k = 0; k < 3; k++) normals[v][k] += g.normal[k] * g.area;
+    }
+  }
+  const unit = normals.map((n) => {
+    const l = Math.hypot(n[0], n[1], n[2]);
+    return l > 1e-12 ? [n[0] / l, n[1] / l, n[2] / l] : null;
+  });
+
+  const grid = new Map();
+  const cell = (p) =>
+    `${Math.floor(p[0] / tolMm)},${Math.floor(p[1] / tolMm)},${Math.floor(p[2] / tolMm)}`;
+  verts.forEach((p, g) => {
+    const k = cell(p);
+    let l = grid.get(k);
+    if (!l) grid.set(k, (l = []));
+    l.push(g);
+  });
+  const candidates = [];
+  verts.forEach((p, g) => {
+    const b = [0, 1, 2].map((k) => Math.floor(p[k] / tolMm));
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          for (const h of grid.get(`${b[0] + dx},${b[1] + dy},${b[2] + dz}`) ?? []) {
+            if (h <= g) continue;
+            // already one vertex of both parts, or the same part on both sides — nothing to stitch
+            if ([...owners[g]].some((o) => owners[h].has(o))) continue;
+            const q = verts[h];
+            const d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+            if (d > tolMm) continue;
+            if (!unit[g] || !unit[h] || dot3(unit[g], unit[h]) <= SEAM_NORMAL_DOT) continue;
+            candidates.push([d, g, h]);
+          }
+        }
+  });
+  candidates.sort((a, b) => a[0] - b[0]);
+
+  const parent = verts.map((_, i) => i);
+  const find = (a) => {
+    while (parent[a] !== a) a = parent[a] = parent[parent[a]];
+    return a;
+  };
+  // incident triangles, but only for vertices some candidate actually touches — that's a thin
+  // ribbon along each seam, not the whole mesh
+  const touched = new Set();
+  for (const [, g, h] of candidates) {
+    touched.add(g);
+    touched.add(h);
+  }
+  const groupTris = new Map();
+  tris.forEach((t, ti) => {
+    for (const v of t.v)
+      if (touched.has(v)) {
+        let s = groupTris.get(v);
+        if (!s) groupTris.set(v, (s = new Set()));
+        s.add(ti);
+      }
+  });
+  const seamStitches = new Map();
+  for (const [, g, h] of candidates) {
+    const a = find(g),
+      b = find(h);
+    if (a === b) continue;
+    let sa = groupTris.get(a) ?? new Set(),
+      sb = groupTris.get(b) ?? new Set();
+    const [small, large] = sa.size <= sb.size ? [sa, sb] : [sb, sa];
+    let clash = false;
+    for (const ti of small)
+      if (large.has(ti)) {
+        clash = true;
+        break;
+      }
+    if (clash) continue;
+    parent[a] = b;
+    for (const ti of sa) sb.add(ti);
+    groupTris.set(b, sb);
+    const pk = [...owners[g]][0] + '-' + [...owners[h]][0];
+    seamStitches.set(pk, (seamStitches.get(pk) ?? 0) + 1);
+  }
+
+  // compact: one vertex per group, at the mean of its members (the two parts' surfaces are meant
+  // to be the same place, so averaging is the honest representative)
+  const remap = new Int32Array(verts.length).fill(-1);
+  const outVerts = [];
+  const acc = new Map();
+  for (let i = 0; i < verts.length; i++) {
+    const r = find(i);
+    let slot = remap[r];
+    if (slot === -1) {
+      slot = remap[r] = outVerts.length;
+      outVerts.push([0, 0, 0]);
+      acc.set(slot, 0);
+    }
+    for (let k = 0; k < 3; k++) outVerts[slot][k] += verts[i][k];
+    acc.set(slot, acc.get(slot) + 1);
+    remap[i] = slot;
+  }
+  outVerts.forEach((p, i) => {
+    const n = acc.get(i);
+    for (let k = 0; k < 3; k++) p[k] /= n;
+  });
+  return {
+    verts: outVerts,
+    tris: tris.map((t) => ({ ...t, v: t.v.map((g) => remap[g]) })),
+    seamStitches,
+  };
 }
 
 function triNormalArea(verts, tri) {
@@ -833,6 +991,11 @@ function validateConfig(config) {
     throw new Error('zone config needs a non-empty parts list');
   if (!Array.isArray(config.zones) || !config.zones.length)
     throw new Error('zone config needs a non-empty zones list');
+  if (
+    config.seamWeldTolMm !== undefined &&
+    !(config.seamWeldTolMm > (config.weldTolMm ?? WELD_TOL_MM))
+  )
+    throw new Error('seamWeldTolMm must be larger than weldTolMm to stitch anything');
   const ids = new Set();
   for (const z of config.zones) {
     if (!z.id || !z.name) throw new Error('every zone needs an id and a name');
@@ -857,7 +1020,7 @@ export function bakeZones(config, parts, log = () => {}) {
   )
     throw new Error('parts array does not match config.parts (same ids, same order, required)');
   const warnings = [];
-  const weld = weldParts(parts, config.weldTolMm ?? WELD_TOL_MM);
+  const weld = weldParts(parts, config.weldTolMm ?? WELD_TOL_MM, config.seamWeldTolMm ?? 0);
   const triGeom = weld.tris.map((t) => triNormalArea(weld.verts, t));
   const soup = new Float32Array(weld.tris.length * 9);
   weld.tris.forEach((t, ti) => {
@@ -868,6 +1031,12 @@ export function bakeZones(config, parts, log = () => {}) {
   log(
     `welded ${parts.length} part(s): ${weld.verts.length} vertices, ${weld.tris.length} triangles`,
   );
+  // Per-seam stitch counts: a pair with only a handful is a hinge, not a bridge — the unwrap will
+  // pivot around it and a zone crossing there will distort. Worth seeing rather than guessing.
+  for (const [pk, n] of [...(weld.seamStitches ?? new Map())].sort((a, b) => a[1] - b[1])) {
+    const [a, b] = pk.split('-').map((i) => parts[+i].libraryPartId);
+    log(`  seam ${a} <-> ${b}: ${n} stitch(es)`);
+  }
 
   const simplifyTol = config.simplifyTolMm ?? SIMPLIFY_TOL_MM;
   const minHoleArea = config.minHoleAreaMm2 ?? MIN_HOLE_AREA_MM2;
