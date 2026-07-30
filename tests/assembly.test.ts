@@ -339,6 +339,79 @@ describe('buildAssemblyGeometry', () => {
         }
       },
     );
+
+    it(
+      'frees the body solid when the boolean succeeds but converting its mesh throws',
+      { timeout: 30000 },
+      async () => {
+        // The leak this pins: Manifold.difference returns a live solid, then manifoldToMeshes
+        // throws inside it (getMesh / a RangeError allocating the vertex array on a huge
+        // result). If the handle isn't freed in a finally, that solid is unreachable WASM
+        // memory — the exact failure the uncut-export path is supposed to avoid.
+        const wasm = await getManifold();
+        const proto = Object.getPrototypeOf(wasm.Manifold.prototype);
+        // First getMesh call in the build is the body's, so once is enough to hit only it.
+        const getMeshSpy = vi.spyOn(proto, 'getMesh').mockImplementationOnce(() => {
+          throw new Error('mock getMesh failure');
+        });
+        const deleteSpy = vi.spyOn(proto, 'delete');
+        clearWarnings();
+        try {
+          const built = (await buildAssemblyGeometry(baseInput()))!;
+          const part = built.partOutputs[0];
+
+          // treated as a body-cut failure: uncut body, no inlays
+          expect(part.bodySoup).toEqual(Float32Array.from(part.part.positions!));
+          expect(part.inlaySoups).toEqual({});
+
+          // Three solids exist and must all be freed: the cut prism, the part mesh, and the
+          // body that difference() successfully produced before getMesh threw. Two deletes
+          // would mean the body handle leaked.
+          expect(deleteSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
+        } finally {
+          getMeshSpy.mockRestore();
+          deleteSpy.mockRestore();
+        }
+      },
+    );
+
+    it(
+      'keeps the cut body but names the color and says the recess prints empty when only the ' +
+        'inlay intersection fails',
+      { timeout: 30000 },
+      async () => {
+        // The asymmetric case: the body difference succeeds, so the pocket is already cut and
+        // redoing it is the expensive half — the part ships with a real recess and no inlay.
+        const wasm = await getManifold();
+        const intersectSpy = vi.spyOn(wasm.Manifold, 'intersection').mockImplementation(() => {
+          throw new Error('mock intersection failure');
+        });
+        const deleteSpy = vi.spyOn(Object.getPrototypeOf(wasm.Manifold.prototype), 'delete');
+        clearWarnings();
+        try {
+          const built = (await buildAssemblyGeometry(baseInput()))!;
+          const part = built.partOutputs[0];
+
+          // the body really was cut — this is not the export-uncut escape
+          expect(part.bodySoup).not.toEqual(Float32Array.from(part.part.positions!));
+          expect(part.inlaySoups).toEqual({});
+
+          // the warning has to name the color and say the recess ships empty, or it's
+          // indistinguishable from the alarming-but-harmless seam-sliver case
+          const w = WARNINGS.find((x) => /couldn't fit the inlay/i.test(x.message));
+          expect(w).toBeDefined();
+          expect(w!.message).toMatch(/#ff0000/);
+          expect(w!.message).toMatch(/empty recess/i);
+
+          // No leak: the cut prism, the part mesh, and the successfully-built body must all be
+          // freed even though every intersection threw.
+          expect(deleteSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
+        } finally {
+          intersectSpy.mockRestore();
+          deleteSpy.mockRestore();
+        }
+      },
+    );
   });
 
   it(

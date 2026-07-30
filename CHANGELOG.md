@@ -73,10 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   boolean pass no longer aborts the whole rebuild (leaving a blank
   viewport and leaking WASM memory) if merging one color's cutters, or a
   part's whole cutter set, fails.
-- Clearing an assembly part's Advanced pivot/angle/base-thickness field
-  emptied the input to a value that silently became `NaN`, which blanked the
-  entire 3D viewport with no warning. The field now snaps back to its last
-  value instead.
+- Clearing an assembly part's Advanced pivot or angle field emptied the input
+  to a value that silently became `NaN`, which reached the part transform and
+  blanked the entire 3D viewport with no warning. Those fields now snap back
+  to their last value instead.
 - The exported 3MF writer now refuses to write a non-finite plate coordinate
   or transform (previously silently substituted as `0`), so an internal bug
   producing bad geometry fails the export instead of shipping a malformed

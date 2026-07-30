@@ -608,15 +608,19 @@ export async function buildAssemblyGeometry(
     let bodySoup: Float32Array;
     let bodyIndexed: AssemblyPartOutput['bodyIndexed'];
     let bodyCutFailed = false;
+    // `body` is declared outside the try so the finally can free it even when the throw came
+    // from manifoldToMeshes rather than the boolean — otherwise the solid is unreachable.
+    let body: ManifoldSolid | null = null;
     try {
-      const body = Manifold.difference(partMan, cutter);
+      body = Manifold.difference(partMan, cutter);
       const meshes = manifoldToMeshes(body);
       bodySoup = meshes.soup;
       bodyIndexed = meshes.indexed;
-      manifoldDelete(body);
     } catch {
       bodyCutFailed = true;
       bodySoup = Float32Array.from(part.positions);
+    } finally {
+      manifoldDelete(body);
     }
     await maybeYield();
 
@@ -639,16 +643,25 @@ export async function buildAssemblyGeometry(
     const inlaySoups: Record<number, Float32Array> = {};
     const inlayIndexed: Record<number, IndexedMesh> = {};
     for (const [ci, prism] of prismEntries) {
+      let inl: ManifoldSolid | null = null;
       try {
-        const inl = Manifold.intersection(partMan, prism);
+        inl = Manifold.intersection(partMan, prism);
         const { soup, indexed } = manifoldToMeshes(inl);
         if (soup.length) {
           inlaySoups[ci] = soup;
           inlayIndexed[ci] = indexed;
         }
-        manifoldDelete(inl);
       } catch {
-        warn(`Couldn't fit the inlay for a color on "${part.name}".`);
+        // Unlike the body-cut failure above, this can't be undone by exporting uncut — the
+        // body's pocket for this color is already cut and redoing that difference is the
+        // expensive half. Name the color and say the recess ships empty so the warning is
+        // actionable rather than just alarming.
+        warn(
+          `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}" — its pocket ` +
+            `is cut into the body but will print as an empty recess.`,
+        );
+      } finally {
+        manifoldDelete(inl);
       }
       await maybeYield();
     }
