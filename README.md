@@ -413,6 +413,11 @@ artwork than you designed:
 - **"Couldn't fit the inlay for color … — its pocket is cut into the body but
   will print as an empty recess"** — the recess is cut but nothing fills it,
   so that color prints as a bare cavity.
+- **"Part … has no geometry to export — its pocket cut went all the way
+  through …"** — the boolean _succeeded_ but produced zero geometry: a
+  pocket's depth reached (or exceeded) the part's wall thickness at that
+  point, cutting clean through instead of leaving a floor. That part is
+  dropped from the export entirely rather than shipping a hollow shell.
 
 These are Manifold 3D boolean failures rather than the 2D clip problem above,
 so path-cleaning is less reliably the fix; if one reproduces, the part mesh
