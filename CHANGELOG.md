@@ -76,6 +76,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Wheel mode's design-boundary anchor (the SVG's largest `<circle>`) is now
+  read through the same viewBox-origin and group-transform math as every
+  other shape, and only searches the same visible subtree (excluding
+  `defs`/`clipPath`/`mask`/`pattern`/`symbol`) instead of scanning the whole
+  document. Previously, a non-zero-origin viewBox or a circle nested inside
+  a transformed `<g>` could anchor the design off-center with no visible
+  indication, and an invisible clip-path circle larger than the real
+  boundary could silently win over the real one.
 - A part whose cut solid couldn't be built (the boolean CSG pass failing on
   that part) previously still exported its per-color inlay solids alongside
   the untouched, uncut body — a slicer would then resolve the overlapping

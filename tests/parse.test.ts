@@ -104,6 +104,42 @@ describe('parseSVGDocument', () => {
     expect(out.rawSVGCircle).toEqual({ cx: 50, cy: 40, r: 30 });
   });
 
+  it('bakes the viewBox origin into the anchor circle, like every other shape', () => {
+    const out = parseSVGDocument(
+      svg('<circle cx="150" cy="140" r="30" fill="#00ff00"/>', 'viewBox="100 100 200 200"'),
+    );
+    expect(out.rawSVGCircle).toEqual({ cx: 50, cy: 40, r: 30 });
+  });
+
+  it('bakes a nested group transform into the anchor circle center and radius', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<g transform="translate(5,7) scale(2)"><circle cx="10" cy="10" r="3" fill="#00ff00"/></g>',
+      ),
+    );
+    expect(out.rawSVGCircle).toEqual({ cx: 25, cy: 27, r: 6 });
+  });
+
+  it('ignores a larger circle nested inside defs/clipPath when picking the anchor', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<defs><clipPath id="c"><circle cx="0" cy="0" r="1000" /></clipPath></defs>' +
+          '<circle cx="50" cy="40" r="30" fill="#00ff00"/>',
+      ),
+    );
+    expect(out.rawSVGCircle).toEqual({ cx: 50, cy: 40, r: 30 });
+  });
+
+  it('reports no anchor circle when the only <circle> is nested inside defs', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<defs><clipPath id="c"><circle cx="0" cy="0" r="1000" /></clipPath></defs>' +
+          '<rect width="4" height="4" fill="#00ff00"/>',
+      ),
+    );
+    expect(out.rawSVGCircle).toBeNull();
+  });
+
   it('throws when no flat-filled shapes exist', () => {
     expect(() => parseSVGDocument(svg('<rect width="4" height="4" fill="none"/>'))).toThrow(
       /No flat-filled shapes/,
