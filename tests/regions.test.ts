@@ -7,7 +7,7 @@ import {
   safeIntersect,
   shapeToFeature,
 } from '../src/geometry/regions';
-import type { PolyFeature, SVGShape } from '../src/types';
+import type { Loop, PolyFeature, SVGShape } from '../src/types';
 
 function squareFeature(size: number): PolyFeature {
   return {
@@ -95,6 +95,52 @@ describe('shapeToFeature', () => {
     };
     const f = shapeToFeature(shape)!;
     expect(planarArea(f)).toBeCloseTo(400 - 100 + 4, 6);
+  });
+
+  // Centered concentric squares (not sharing a corner point like `square()` above) so
+  // point-in-polygon containment tests never land exactly on another ring's boundary.
+  function concentricSquare(half: number) {
+    return [
+      { x: -half, y: -half },
+      { x: half, y: -half },
+      { x: half, y: half },
+      { x: -half, y: half },
+    ];
+  }
+
+  // getDepth memoizes in loop order, so it only recurses deeply if the innermost ring is
+  // *earlier* in the loops array than the rings it's nested inside — building outermost-first
+  // (like a normal authoring tool would) never stack-overflows regardless of nesting count.
+  // n is empirically tuned (overflows ~9000 on this machine/Node version) with ~35% headroom;
+  // a future Node/V8 stack-size change could shift the real threshold enough to need retuning.
+  it('names deeply nested rings instead of a raw stack overflow (getDepth path)', () => {
+    const n = 12000;
+    const loops: Loop[] = [];
+    for (let i = n - 1; i >= 0; i--) loops.push(concentricSquare(n - i));
+    const shape: SVGShape = { fill: '#000000', loops, order: 0 };
+    expect(() => shapeToFeature(shape)).toThrow(/nested.*geometry|geometry.*nested/i);
+    try {
+      shapeToFeature(shape);
+    } catch (e) {
+      expect((e as Error).message).not.toMatch(/call stack/i);
+    }
+  });
+
+  // emitPoly recurses on every 2 levels of containment depth (odd depths are holes, not
+  // recursion targets) and allocates per frame, so it overflows at a shallower ring count than
+  // getDepth even in ordinary outermost-first order. Same empirical-tuning caveat as above
+  // (overflows ~6000 on this machine/Node version).
+  it('names deeply nested rings instead of a raw stack overflow (emitPoly path)', () => {
+    const n = 8000;
+    const loops: Loop[] = [];
+    for (let i = 0; i < n; i++) loops.push(concentricSquare(n - i));
+    const shape: SVGShape = { fill: '#000000', loops, order: 0 };
+    expect(() => shapeToFeature(shape)).toThrow(/nested.*geometry|geometry.*nested/i);
+    try {
+      shapeToFeature(shape);
+    } catch (e) {
+      expect((e as Error).message).not.toMatch(/call stack/i);
+    }
   });
 });
 

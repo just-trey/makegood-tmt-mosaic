@@ -4,6 +4,7 @@ import { signedArea } from '../svg/path';
 import { deltaE, hexToLab } from '../color';
 import { warn } from '../warnings';
 import { reportProgress } from '../progress';
+import { rethrowStackOverflowAs } from '../errors';
 
 type Ring = number[][];
 
@@ -98,7 +99,14 @@ export function shapeToFeature(shape: SVGShape): PolyFeature | null {
     if (depth[i] !== -1) return depth[i];
     return (depth[i] = parent[i] === -1 ? 0 : 1 + getDepth(parent[i]));
   }
-  for (let i = 0; i < n; i++) getDepth(i);
+  try {
+    for (let i = 0; i < n; i++) getDepth(i);
+  } catch (e) {
+    rethrowStackOverflowAs(
+      e,
+      "This SVG has unusually deeply nested geometry (rings nested past a normal depth) and couldn't be processed.",
+    );
+  }
 
   const children: number[][] = Array.from({ length: n }, () => []);
   for (let i = 0; i < n; i++) if (parent[i] !== -1) children[parent[i]].push(i);
@@ -115,7 +123,14 @@ export function shapeToFeature(shape: SVGShape): PolyFeature | null {
     });
     polys.push([extRing, ...holeRings]);
   }
-  for (let i = 0; i < n; i++) if (depth[i] === 0) emitPoly(i);
+  try {
+    for (let i = 0; i < n; i++) if (depth[i] === 0) emitPoly(i);
+  } catch (e) {
+    rethrowStackOverflowAs(
+      e,
+      "This SVG has unusually deeply nested geometry (rings nested past a normal depth) and couldn't be processed.",
+    );
+  }
   if (!polys.length) return null;
 
   const geom =

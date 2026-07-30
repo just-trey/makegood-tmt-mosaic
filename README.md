@@ -536,6 +536,11 @@ is imported by the app. Two other brand themes in the tokens folder
   dense Illustrator export (hundreds of subpaths in one `<path>`, e.g.
   fur/stipple line art) that no current sample exercises. Revisit if/when
   such a file is actually encountered, rather than guessing a threshold now.
+  A separate, far more extreme case — thousands of nested rings or `<g>`
+  elements deep enough to overflow the JS call stack — fails with a named
+  "unusually deeply nested" error instead of a raw stack-overflow message,
+  but still isn't depth-limited; see `shapeToFeature` and `walk` in
+  [regions.ts](src/geometry/regions.ts) and [parse.ts](src/svg/parse.ts).
 - **The chair's zone sidecar is 1.7 MB raw / 638 KB gzipped**
   (`public/stl/chair-body-zones.json`), up from 125 KB gzipped when each zone
   stopped at one part. Zones that span the whole chair simply carry more
