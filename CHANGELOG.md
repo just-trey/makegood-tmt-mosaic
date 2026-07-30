@@ -50,6 +50,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   thumbnail strip in the Artwork panel. Clicking one loads it like an
   uploaded SVG (its own row, own zone targeting) and defaults to Fill mode
   on an assembly part, since a pattern exists to repeat across a surface.
+- Export placement's baked-constants lookup now checks that the loaded mesh
+  actually matches the mesh those constants were verified against, using the
+  same mesh-fingerprint guard (triangle count + bbox hash) design zones
+  already use. A part id renamed out of sync with the placement table, or a
+  shipped asset re-packed without re-baking, now exports auto-placed with a
+  warning naming the part instead of silently applying another part's
+  rotation/position. A mesh you drag in yourself only inherits a role's
+  baked placement if it really is the same mesh — otherwise it's placed
+  automatically with a quiet notice, including when you drop it onto a part
+  that had already auto-loaded from the library. (See the
+  `wheel-mount-left` id-collision fix above for the class of bug this
+  generalizes a guard against.)
 
 ### Removed
 

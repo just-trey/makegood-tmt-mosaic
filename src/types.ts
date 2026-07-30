@@ -170,6 +170,15 @@ export interface AssemblyPart {
   vertices?: Float32Array;
   /** which stl/parts.json entry this part was loaded from; absent for a drag-and-drop upload */
   libraryPartId?: string;
+  /**
+   * True when the *current* mesh came from a user drag-and-drop rather than the parts library.
+   * Not derivable from `libraryPartId`: dropping a file onto a role that already auto-loaded its
+   * library part deliberately leaves that id in place (attachBakedZones still needs it to find the
+   * kind's baked charts), so the id alone can't say where the loaded geometry came from. Export
+   * placement reads this to tell "our asset drifted", a repo defect, from "the user brought their
+   * own mesh", which is supported — see resolvePlacement in src/export/placement.ts.
+   */
+  meshFromUpload?: boolean;
   /** part geometry minus the design face — preview context only */
   restPositions?: Float32Array;
   patches: FlatPatch[] | null;

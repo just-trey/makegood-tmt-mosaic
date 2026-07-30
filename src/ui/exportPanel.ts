@@ -4,85 +4,50 @@ import { getLastAssemblyBuild, getLastBuild } from '../app/rebuild';
 import { asmPartFaceNormal } from '../geometry/assembly';
 import {
   build3MFCombined,
-  WHEEL_TOP_ROT_DEG,
-  WHEEL_TOP_POS,
-  WHEEL_CAP_ROT_DEG,
-  WHEEL_CAP_POS,
-  WHEEL_PRIME_TOWER_DELTA,
-  FOOTREST_PLATE_R,
-  FOOTREST_PRIME_TOWER_DELTA,
   type ExportMaterial,
   type ExportPart,
   type ExportSub,
 } from '../export/threemf';
-import { CHAIR_PLACEMENT } from '../export/chairPlacement';
+import { placementNotice, resolvePlacement } from '../export/placement';
 import { getPrinter } from '../export/printers';
 import { meshToSTLBytes, soupFromObject } from '../export/stl';
 import { zipStore, type ZipEntry } from '../export/zip';
 import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
-import { WARNINGS, warn } from '../warnings';
+import { WARNINGS, warn, notice } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { track } from '../analytics/track';
 
-// suffixes of the placement-warning messages build3MFCombined can emit — used to clear a
-// stale one from a previous export attempt before reporting this attempt's
+// suffixes of the placement-related messages this module and build3MFCombined can emit — used to
+// clear a stale one from a previous export attempt before reporting this attempt's
 const PLACEMENT_WARNING_SUFFIXES = [
   'even at its best-fit rotation.',
   'double-check for overlap in your slicer.',
   'reposition it in your slicer before printing.',
   'move the tower in your slicer.',
+  // placementNotice's mesh-identity guard — every variant of it ends this way, which
+  // tests/placement.test.ts pins so a reworded message can't silently stop being cleared
+  'placed automatically — check it in your slicer before printing.',
 ];
-
-/** The placement fields a part can have baked; the rest of ExportPart comes from the build. */
-type PartPlacement = Pick<
-  ExportPart,
-  | 'plateHint'
-  | 'rotZdeg'
-  | 'plateR'
-  | 'fixedPos'
-  | 'primeTowerDelta'
-  | 'primeTowerDeltaByPlate'
-  | 'objectSettings'
->;
-
-/**
- * Verified plate placement per part, keyed by library part id. Every entry traces back to a
- * project file whose print pose a human checked in the slicer — never computed here. See the
- * constants' own provenance comments in src/export/threemf.ts, and chairPlacement.ts (generated)
- * for the chair's 15.
- *
- * Keyed by library part rather than role because the chair's two caster roles resolve to a
- * different mesh per hardware variant, and Standard and Kit sit on different plates. Roles whose
- * id and library part id coincide (the wheel's and the footrest's) still resolve for a
- * hand-uploaded mesh, via the roleId fallback at the lookup.
- */
-const PLACEMENT: Record<string, PartPlacement> = {
-  'wheel-half': {
-    plateHint: 1,
-    rotZdeg: WHEEL_TOP_ROT_DEG,
-    fixedPos: WHEEL_TOP_POS,
-    primeTowerDelta: WHEEL_PRIME_TOWER_DELTA,
-  },
-  'wheel-hub-cap': { plateHint: 1, rotZdeg: WHEEL_CAP_ROT_DEG, fixedPos: WHEEL_CAP_POS },
-  // Support off per the user's verified reference (brim is off globally — see brim_type in
-  // bambuProjectSettings). No fixedPos: the reference's own translation is just the Snapmaker U1's
-  // bed center and isn't portable, so plateHint routes it through placeHintedGroup's centering
-  // branch with the tower held relative.
-  footrest: {
-    plateHint: 1,
-    plateR: FOOTREST_PLATE_R,
-    primeTowerDelta: FOOTREST_PRIME_TOWER_DELTA,
-    objectSettings: { enable_support: '0' },
-  },
-  ...CHAIR_PLACEMENT,
-};
 
 function download(blob: Blob, fname: string): void {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = fname;
   a.click();
+}
+
+/**
+ * Drop any placement message left over from a previous export attempt (a smaller printer, or a part
+ * since swapped back to its verified library mesh) so this attempt reports only its own. Callers
+ * must re-render afterwards on every path, including the ones that bail — WARNINGS is the model
+ * behind the on-screen pills, and mutating it without a render leaves the two disagreeing.
+ */
+function clearStalePlacementNotices(): void {
+  for (let i = WARNINGS.length - 1; i >= 0; i--) {
+    if (PLACEMENT_WARNING_SUFFIXES.some((s) => WARNINGS[i].message.endsWith(s)))
+      WARNINGS.splice(i, 1);
+  }
 }
 
 async function exportPrintReady3MF(): Promise<void> {
@@ -92,6 +57,7 @@ async function exportPrintReady3MF(): Promise<void> {
   if (state.shapeKind === 'assembly') {
     const built = getLastAssemblyBuild();
     if (!built || !built.partOutputs.length) return;
+    clearStalePlacementNotices();
     const palette = built.palette;
     materials = [{ name: 'Body', color: bodyColor }].concat(
       palette.map((p) => ({ name: nearestFilamentName(p.hex), color: p.hex })),
@@ -116,13 +82,15 @@ async function exportPrintReady3MF(): Promise<void> {
             indexed: inlayIndexed?.[+ci],
           });
         });
-        const placement = PLACEMENT[part.libraryPartId ?? part.roleId];
+        const resolution = resolvePlacement(part);
+        const note = placementNotice(part.name, resolution);
+        if (note) (note.level === 'warn' ? warn : notice)(note.message);
         return {
           name: part.name,
           nsign,
           bodySoup,
           subs,
-          ...placement,
+          ...(resolution.verified ? resolution.placement : {}),
           // the wheel's rotated duplicate halves are the one placement that can't be a constant:
           // each copy is the same mesh again and claims its own plate after the primary's.
           ...(part.roleId === 'wheel-half' && part.isDuplicateOf != null
@@ -134,6 +102,7 @@ async function exportPrintReady3MF(): Promise<void> {
   } else {
     const built = getLastBuild();
     if (!built) return;
+    clearStalePlacementNotices();
     // flat-plate mode: the already-built slab-stack body + per-color plugs become one
     // multi-part object. nsign 0 = exported upright, no face-down tilt — the design face
     // is already +Z and the underside already sits at Z=0.
@@ -162,14 +131,7 @@ async function exportPrintReady3MF(): Promise<void> {
     const { blob, warnings: placementWarnings } = await build3MFCombined(materials, parts, {
       printer,
     });
-    // drop any stale placement warning from a previous export (e.g. a smaller printer) before
-    // reporting this attempt's — otherwise a fixed/switched export still shows an old warning
-    for (let i = WARNINGS.length - 1; i >= 0; i--) {
-      if (PLACEMENT_WARNING_SUFFIXES.some((s) => WARNINGS[i].message.endsWith(s)))
-        WARNINGS.splice(i, 1);
-    }
     placementWarnings.forEach((msg) => warn(msg));
-    renderWarnings();
     track('export', {
       format: '3mf',
       mode: state.shapeKind === 'assembly' ? 'assembly' : 'flat',
@@ -183,6 +145,9 @@ async function exportPrintReady3MF(): Promise<void> {
     track('export_failed', { format: '3mf' });
     alert('Export failed: ' + (e as Error).message);
   }
+  // outside the try: the per-part messages above were emitted before it, so a failed build still
+  // has to render them rather than leaving the pills showing the previous attempt's
+  renderWarnings();
   hideOverlay();
 }
 

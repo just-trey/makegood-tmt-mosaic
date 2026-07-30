@@ -153,6 +153,25 @@ unless the reference genuinely requires a specific plate position.
 If you don't have a verified reference file, stop and say so. Do not ship a
 guess — a guessed pose yields a 3MF that opens fine and prints wrong.
 
+Add the new part's id to `PLACEMENT` in
+[src/export/placement.ts](../../../src/export/placement.ts) (or, for the
+chair, re-run `bake-chair-placement.mjs` to regenerate `chairPlacement.ts`),
+then reseal it — `PLACEMENT`'s constants are only trusted for a mesh that
+matches its recorded fingerprint (`resolvePlacement`, same guard
+`fingerprintMatches` applies to zone charts):
+
+```bash
+npx vite-node scripts/bake-part-fingerprints.mjs
+```
+
+**Run this after _every_ re-pack of a shipped part, too** — not just new
+parts. Re-packing changes the mesh; if you don't re-verify the print pose in
+the slicer and reseal here, the part loses its baked placement at export time
+(a loud warning, not a silent wrong pose — but still lost). `git diff
+src/export/partFingerprints.ts` should show only the part(s) you actually
+touched; anything else changing means an unrelated asset moved and needs its
+own placement re-check.
+
 ## 5. Two orientations are intentional
 
 The viewport shows the part **design-face-up** (how the artist sees it). The
