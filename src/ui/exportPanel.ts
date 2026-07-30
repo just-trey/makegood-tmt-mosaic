@@ -50,7 +50,7 @@ function clearStalePlacementNotices(): void {
   }
 }
 
-async function exportPrintReady3MF(): Promise<void> {
+export async function exportPrintReady3MF(): Promise<void> {
   let materials: ExportMaterial[], parts: ExportPart[], fname: string;
   const bodyColor = baseColorHex().toUpperCase();
 
@@ -67,7 +67,14 @@ async function exportPrintReady3MF(): Promise<void> {
     // half) claims the next plate after that, which is the counter here.
     let nextHalfPlate = 2;
     parts = built.partOutputs
-      .filter((o) => o.bodySoup && o.bodySoup.length)
+      .filter((o) => {
+        if (o.bodySoup.length) return true;
+        warn(
+          `Part "${o.part.name}" has no geometry to export — its pocket cut went all the way ` +
+            `through, likely because its depth exceeds the wall thickness there.`,
+        );
+        return false;
+      })
       .map(({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }) => {
         const nrm = asmPartFaceNormal(part, state.assembly.parts);
         const nsign = nrm && nrm[1] < 0 ? -1 : 1;

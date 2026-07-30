@@ -85,6 +85,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   boolean pass no longer aborts the whole rebuild (leaving a blank
   viewport and leaking WASM memory) if merging one color's cutters, or a
   part's whole cutter set, fails.
+- A part whose pocket cut reached all the way through it (depth exceeding the
+  wall thickness at that point) previously vanished from the viewport and
+  export with no explanation — the boolean succeeded but produced zero
+  geometry, so none of the existing CSG-failure warnings fired. Export now
+  warns which part was dropped and why before excluding it.
 - Clearing an assembly part's Advanced pivot or angle field emptied the input
   to a value that silently became `NaN`, which reached the part transform and
   blanked the entire 3D viewport with no warning. Those fields now snap back
