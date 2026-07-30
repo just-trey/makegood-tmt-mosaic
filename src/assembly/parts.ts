@@ -157,6 +157,7 @@ export async function asmLoadLibraryEntryIntoPart(
 ): Promise<void> {
   if (entry.baseDepth) part.baseDepth = entry.baseDepth;
   part.libraryPartId = entry.id;
+  part.meshFromUpload = false;
   try {
     const res = await fetch(entry.file);
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -186,6 +187,7 @@ export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPa
     positions: src.positions,
     vertices: src.vertices,
     libraryPartId: src.libraryPartId,
+    meshFromUpload: src.meshFromUpload,
     patches: src.patches,
     patchIdx: src.patchIdx,
     boundaryLoop: src.boundaryLoop,
@@ -324,6 +326,9 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
 
 export async function asmLoadPartFile(part: AssemblyPart, file: File): Promise<void> {
   const buf = await file.arrayBuffer();
+  // Set before the load, not after: a throw part-way still leaves whatever mesh state it got to,
+  // and that mesh is the user's either way. libraryPartId deliberately stays (see meshFromUpload).
+  part.meshFromUpload = true;
   try {
     await asmLoadPartBuffer(part, buf, file.name);
   } catch (e) {

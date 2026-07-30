@@ -233,3 +233,16 @@ if (fc)
     `  design face ${fc.patchArea.toFixed(1)} of ${fc.dirArea.toFixed(1)} mm² in ONE patch ` +
       `(${(100 * fc.ratio).toFixed(1)}%)\n`,
   );
+
+// Deliberately a reminder, not an automatic reseal. Resealing is what tells the app "these verified
+// placement constants belong to this mesh", and only a human who has re-checked the print pose in
+// the slicer can say that. Doing it here would re-bless every re-pack silently and turn the seal
+// into a rubber stamp; leaving it undone instead trips tests/placement.test.ts, which is the point.
+if (path.resolve(args.out).includes(path.join('public', 'stl')))
+  console.log(
+    `  NEXT        this mesh isn't covered by the export-placement seal yet.\n` +
+      `              Re-verify the print pose in the slicer, then reseal:\n` +
+      `                npx vite-node scripts/bake-part-fingerprints.mjs\n` +
+      `              Until you do, tests/placement.test.ts fails and the part exports\n` +
+      `              auto-placed rather than at its baked pose.\n`,
+  );

@@ -195,8 +195,8 @@ read at runtime.** Once a part's real-world print pose has been checked in the
 slicer (a reference project file the user hand-verified — rotation, plate
 position, prime/wipe tower placement, per-part print settings), those numbers
 become constants in [src/export/threemf.ts](src/export/threemf.ts), wired
-onto the part's `ExportPart` in
-[src/ui/exportPanel.ts](src/ui/exportPanel.ts):
+onto the part's `ExportPart` by `resolvePlacement` in
+[src/export/placement.ts](src/export/placement.ts):
 
 - `plateR` — a full baked rotation matrix, for a part whose verified pose
   isn't a flat face-down tilt (e.g. `FOOTREST_PLATE_R`, which stands the
@@ -218,6 +218,34 @@ onto the part's `ExportPart` in
 The exported filename is derived from the selected assembly kind
 (`mosaic-${state.assembly.kindId}.3mf`), so each part downloads under its own
 name rather than a shared generic one.
+
+**The lookup that applies those constants checks the loaded mesh matches the
+one they were verified against**, using the same fingerprint (triangle count +
+bbox hash) that [src/geometry/zoneCharts.ts](src/geometry/zoneCharts.ts) uses
+to guard baked zone charts. Every `public/stl/parts.json` entry is sealed in
+[src/export/partFingerprints.ts](src/export/partFingerprints.ts) (generated —
+see below); `resolvePlacement` refuses to hand back a part's baked placement
+if the loaded mesh doesn't match its seal. Two situations, two severities:
+
+- A library part (`libraryPartId` set) whose mesh doesn't match its seal — an
+  id renamed in `parts.json`/`kinds.ts` without updating `PLACEMENT`, or an
+  asset re-packed without re-baking — is a build-integrity defect. The part
+  exports auto-placed (default face-down tilt, no plate pin, no tower) with a
+  loud warning naming it; `tests/placement.test.ts` cross-references every
+  `parts.json` id against `ASSEMBLY_KINDS` roles and `PLACEMENT`'s keys so a
+  rename like this fails CI instead of shipping silently.
+- A hand-dropped mesh only inherits a role's baked placement if its
+  fingerprint matches the shipped part exactly. Otherwise it's placed
+  automatically with a quiet notice — the documented drag-and-drop fallback
+  working as intended, not a defect. Provenance comes from
+  `AssemblyPart.meshFromUpload`, not from the absence of a `libraryPartId`:
+  dropping a file onto a role that already auto-loaded its library part
+  leaves that id on the part (the baked zone lookup still needs it), so the
+  id alone would report every such drop as one of our own assets drifting.
+
+**Re-packing a shipped part means re-verifying its placement, then resealing
+it** with `npx vite-node scripts/bake-part-fingerprints.mjs` — see the
+add-part skill.
 
 **Choosing the source mesh**: a part often exists as both a MakerWorld/slicer
 download and a CAD export. Prefer the CAD export. Slicer meshes are STEP
@@ -550,18 +578,32 @@ is imported by the app. Two other brand themes in the tokens folder
   scrubbing, precision-truncation retries) target 6.5's exact
   polygon-clipping bugs, and 6.5's package typings don't resolve under
   modern TypeScript, hence the shim in [src/turf.d.ts](src/turf.d.ts).
+- **The export-placement seal proves a mesh hasn't changed, not that anyone
+  re-verified it.** `PART_FINGERPRINTS` is generated
+  ([scripts/bake-part-fingerprints.mjs](scripts/bake-part-fingerprints.mjs)),
+  and re-packing a part without resealing is caught loudly — the seal test
+  in [tests/placement.test.ts](tests/placement.test.ts) fails. The gap is the
+  step after: resealing is a single command that will happily re-bless a mesh
+  whose print pose nobody re-checked in the slicer, which is exactly the
+  motion someone takes to make the failing test go away. It is deliberately
+  _not_ wired into `pack-part.mjs` for that reason (auto-resealing would
+  delete the tripwire), so the guarantee rests on the reminder that script
+  prints and on the add-part skill. Closing this properly means recording
+  _what_ was verified — the reference file and its hash — alongside the mesh
+  fingerprint, so a reseal against an unchanged reference is distinguishable
+  from one that silently redefines the verified pose.
 - **Per-part export placement is a lookup table in
-  [src/ui/exportPanel.ts](src/ui/exportPanel.ts), not part of the part
+  [src/export/placement.ts](src/export/placement.ts), not part of the part
   definition.** It used to be an `if (roleId === …) else if …` chain; the
   chair's fifteen pieces turned that into a `PLACEMENT` record keyed by
   library part id, so adding a part is now a data change rather than a code
-  one. It still lives in the export panel, though, away from the role it
-  describes — these are per-part constants and belong as data on the
-  `AssemblyKind` / role definition, matching the "one array entry" goal in
+  one. It still lives apart from the role it describes, though — these are
+  per-part constants and belong as data on the `AssemblyKind` / role
+  definition, matching the "one array entry" goal in
   [src/assembly/kinds.ts](src/assembly/kinds.ts).
 - **The footrest's `objectSettings` literal (`brim_type: 'no_brim'`,
   `enable_support: '0'`) is duplicated** between the export path in
-  [src/ui/exportPanel.ts](src/ui/exportPanel.ts) and its assertion in
+  [src/export/placement.ts](src/export/placement.ts) and its assertion in
   [tests/threemf.test.ts](tests/threemf.test.ts). Extract a shared
   `FOOTREST_OBJECT_SETTINGS` constant so the test verifies the real value
   instead of a hand-copied duplicate that can silently drift.
