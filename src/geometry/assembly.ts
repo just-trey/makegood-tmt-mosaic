@@ -548,13 +548,23 @@ export async function buildAssemblyGeometry(
     const prismEntries: [number, ManifoldSolid][] = [];
     for (const [ci, list] of Object.entries(colorPrisms)) {
       owned.push(...list);
-      const merged = list.length === 1 ? list[0] : Manifold.union(list);
+      let merged: ManifoldSolid;
+      try {
+        merged = list.length === 1 ? list[0] : Manifold.union(list);
+      } catch {
+        // This color's cutters (from different zones of the same part) couldn't be merged —
+        // drop just this color rather than losing the whole part's cut.
+        warn(`Couldn't combine the cut solids for color ${palette[+ci].hex} on "${part.name}".`);
+        continue;
+      }
       if (merged !== list[0]) owned.push(merged);
       prismEntries.push([+ci, merged]);
     }
     if (!prismEntries.length) {
-      // no cuts land on this part — emit the untouched body so the assembly still exports whole
+      // no cuts land on this part (or none survived the merge above) — emit the untouched body
+      // so the assembly still exports whole
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
+      owned.forEach(manifoldDelete);
       finishPart();
       continue;
     }
@@ -581,10 +591,23 @@ export async function buildAssemblyGeometry(
 
     // full modified body = part - union(all color pockets)
     const prismList = prismEntries.map(([, p]) => p);
-    const cutter = prismList.length === 1 ? prismList[0] : Manifold.union(prismList);
+    let cutter: ManifoldSolid;
+    try {
+      cutter = prismList.length === 1 ? prismList[0] : Manifold.union(prismList);
+    } catch {
+      // Nothing to cut with — same escape as the non-watertight branch above: export the
+      // untouched body rather than risk a half-cut/half-inlaid pair that would overlap.
+      warn(`Couldn't combine this part's cut solids on "${part.name}" — exporting it uncut.`);
+      partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
+      manifoldDelete(partMan);
+      owned.forEach(manifoldDelete);
+      finishPart();
+      continue;
+    }
     if (cutter !== prismList[0]) owned.push(cutter);
     let bodySoup: Float32Array;
     let bodyIndexed: AssemblyPartOutput['bodyIndexed'];
+    let bodyCutFailed = false;
     try {
       const body = Manifold.difference(partMan, cutter);
       const meshes = manifoldToMeshes(body);
@@ -592,10 +615,25 @@ export async function buildAssemblyGeometry(
       bodyIndexed = meshes.indexed;
       manifoldDelete(body);
     } catch {
-      warn(`Boolean cut failed on part "${part.name}".`);
+      bodyCutFailed = true;
       bodySoup = Float32Array.from(part.positions);
     }
     await maybeYield();
+
+    if (bodyCutFailed) {
+      // The body and its inlays come from the same boolean pass — if the cut itself failed,
+      // building inlays anyway would ship a solid uncut body plus inlay solids occupying the
+      // same volume, which a slicer resolves arbitrarily. Export uncut and inlay-less instead.
+      warn(
+        `Boolean cut failed on part "${part.name}" — exporting it uncut and without inlays ` +
+          `(a half-done cut/inlay pair would overlap in the export).`,
+      );
+      partOutputs.push({ part, bodySoup, inlaySoups: {} });
+      owned.forEach(manifoldDelete);
+      manifoldDelete(partMan);
+      finishPart();
+      continue;
+    }
 
     // per-color inlay = part ∩ prism (the part caps the overshoot, so the inlay top is flush)
     const inlaySoups: Record<number, Float32Array> = {};

@@ -91,7 +91,9 @@ export function xmlEscape(s: unknown): string {
 }
 
 export function fmtCoord(v: number): string {
-  return Number.isFinite(v) ? v.toFixed(5) : '0';
+  if (!Number.isFinite(v))
+    throw new Error('Refusing to write a non-finite coordinate into the exported 3MF.');
+  return v.toFixed(5);
 }
 
 /**
@@ -648,7 +650,13 @@ ${subs.map((s) => `    <component objectid="${s.id}"/>`).join('\n')}
       pl.ty!,
       pl.tz!,
     ]
-      .map((v) => +v.toFixed(6))
+      .map((v) => {
+        if (!Number.isFinite(v))
+          throw new Error(
+            `Part "${pl.part.name}" has a non-finite plate transform — refusing to write a malformed 3MF.`,
+          );
+        return +v.toFixed(6);
+      })
       .join(' ');
     items.push(`  <item objectid="${cid}" transform="${pl.xf}" printable="1"/>`);
   }

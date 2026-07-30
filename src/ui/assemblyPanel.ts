@@ -208,6 +208,12 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
       const t = e.target as HTMLInputElement;
       const field = t.dataset.asm as 'pivotX' | 'pivotZ' | 'angleDeg' | 'baseDepth' | 'patchIdx';
       const val = field === 'patchIdx' ? parseInt(t.value) : parseFloat(t.value);
+      if (!Number.isFinite(val)) {
+        // A cleared field yields '' -> NaN, which reaches three.js as a NaN transform and
+        // blanks the whole viewport (Box3.isEmpty() is false on NaN bounds) — snap back instead.
+        t.value = String(part[field]);
+        return;
+      }
       part[field] = val;
       if (field === 'patchIdx') applyAsmPatchChoice(part);
       scheduleRebuild();
