@@ -524,6 +524,18 @@ is imported by the app. Two other brand themes in the tokens folder
   pre-filtered per-shape diffs benchmarked ~2x SLOWER than the accumulator
   on real artwork (full-canvas backgrounds overlap everything) — see the
   comment on `computeNetRegionsByColor`.
+- **Region computation is O(n²·len) per path**
+  ([regions.ts:357](src/geometry/regions.ts#L357), `shapes.map(shapeToFeature)`,
+  before the first yield) — `shapeToFeature`'s containment-depth resolution
+  tests every subpath ring against every other ring with a point-in-polygon
+  scan. Benchmarked against production/sample SVGs
+  ([scripts/bench-shape-to-feature.ts](scripts/bench-shape-to-feature.ts)):
+  worst real-world case measured 5.88 ms (`public/patterns/zebra.svg`, a
+  single 69-subpath path), an order of magnitude under the 30 ms yield
+  budget — not a live issue on any file currently in use. Risk case is a
+  dense Illustrator export (hundreds of subpaths in one `<path>`, e.g.
+  fur/stipple line art) that no current sample exercises. Revisit if/when
+  such a file is actually encountered, rather than guessing a threshold now.
 - **The chair's zone sidecar is 1.7 MB raw / 638 KB gzipped**
   (`public/stl/chair-body-zones.json`), up from 125 KB gzipped when each zone
   stopped at one part. Zones that span the whole chair simply carry more
