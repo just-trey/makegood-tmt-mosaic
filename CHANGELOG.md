@@ -64,6 +64,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A part whose cut solid couldn't be built (the boolean CSG pass failing on
+  that part) previously still exported its per-color inlay solids alongside
+  the untouched, uncut body — a slicer would then resolve the overlapping
+  geometry arbitrarily, an export-quality bug with no indication in the
+  on-screen warning that the file itself was malformed. That part now exports
+  uncut and without inlays instead, and the warning says so. The same
+  boolean pass no longer aborts the whole rebuild (leaving a blank
+  viewport and leaking WASM memory) if merging one color's cutters, or a
+  part's whole cutter set, fails.
+- Clearing an assembly part's Advanced pivot or angle field emptied the input
+  to a value that silently became `NaN`, which reached the part transform and
+  blanked the entire 3D viewport with no warning. Those fields now snap back
+  to their last value instead.
+- The exported 3MF writer now refuses to write a non-finite plate coordinate
+  or transform (previously silently substituted as `0`), so an internal bug
+  producing bad geometry fails the export instead of shipping a malformed
+  file with a spike vertex.
 - The chair body's left wheel-mount part was silently picking up the
   retired standalone kind's baked export placement (a fixed rotation and
   single-plate hint meant for a lone part on its own plate), because both

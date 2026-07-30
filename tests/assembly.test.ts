@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import {
   asmPartFaceNormal,
@@ -8,6 +8,7 @@ import {
   type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
+import { getManifold } from '../src/geometry/manifold';
 import type { AssemblyPart, ParsedSVG } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 
@@ -54,6 +55,44 @@ function redSquareParsed(): ParsedSVG {
     shapes: [{ fill: '#ff0000', loops, order: 0 }],
     bbox: { minX: 0, minY: 0, maxX: 10, maxY: 10 },
     rawSVGCircle: { cx: 5, cy: 5, r: 5 },
+  };
+}
+
+/** Two non-overlapping squares (red, blue) in one document — used to give one color multiple
+ * contributing artworks (see the CSG failure-handling tests below) while keeping a second color
+ * that only ever gets one contributor. */
+function twoColorSquaresParsed(): ParsedSVG {
+  return {
+    shapes: [
+      {
+        fill: '#ff0000',
+        loops: [
+          [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+            { x: 0, y: 10 },
+            { x: 0, y: 0 },
+          ],
+        ],
+        order: 0,
+      },
+      {
+        fill: '#0000ff',
+        loops: [
+          [
+            { x: 10, y: 0 },
+            { x: 20, y: 0 },
+            { x: 20, y: 10 },
+            { x: 10, y: 10 },
+            { x: 10, y: 0 },
+          ],
+        ],
+        order: 1,
+      },
+    ],
+    bbox: { minX: 0, minY: 0, maxX: 20, maxY: 10 },
+    rawSVGCircle: { cx: 10, cy: 5, r: 10 },
   };
 }
 
@@ -174,6 +213,205 @@ describe('buildAssemblyGeometry', () => {
     const part = built.partOutputs[0];
     expect(part.inlaySoups).toEqual({});
     expect(part.bodySoup).toEqual(Float32Array.from(part.part.positions!));
+  });
+
+  describe('CSG failure handling', () => {
+    it(
+      "drops just the color whose zone cutters fail to merge, keeping the part's other colors cut",
+      { timeout: 30000 },
+      async () => {
+        // Two artworks both painting red (so #ff0000 gets two prisms on the single implicit
+        // zone, which the build has to Manifold.union together), plus one contributing blue
+        // (a single prism, never reaching that union call).
+        const artworks: ArtworkBuildInput[] = [
+          {
+            parsed: twoColorSquaresParsed(),
+            zoneId: null,
+            scaleMult: 1,
+            offX: 0,
+            offZ: 0,
+            flipX: false,
+            flipY: false,
+            rotationDeg: 0,
+            mode: 'sticker',
+          },
+          {
+            parsed: redSquareParsed(),
+            zoneId: null,
+            scaleMult: 1,
+            offX: 0,
+            offZ: 0,
+            flipX: false,
+            flipY: false,
+            rotationDeg: 0,
+            mode: 'sticker',
+          },
+        ];
+
+        const wasm = await getManifold();
+        const unionSpy = vi.spyOn(wasm.Manifold, 'union').mockImplementation(() => {
+          throw new Error('mock union failure');
+        });
+        // `owned` (assembly.ts) tracks every solid created for this part and frees them all via
+        // manifoldDelete — including the two red prisms whose union failed, which are pushed
+        // into `owned` before the union is even attempted. Spying on the underlying .delete()
+        // that manifoldDelete calls is the only way to observe that from outside the module.
+        // The getPrototypeOf hop is load-bearing, not stylistic: `wasm.Manifold.prototype` itself
+        // is an empty Embind shim object that real solids don't actually chain through, so
+        // `vi.spyOn(wasm.Manifold.prototype, 'delete')` succeeds silently but records zero calls
+        // (verified experimentally — no error, just nothing captured). The real bound prototype,
+        // and the one solid instances resolve `.delete` against, is one level up.
+        const deleteSpy = vi.spyOn(Object.getPrototypeOf(wasm.Manifold.prototype), 'delete');
+        clearWarnings();
+        try {
+          const built = (await buildAssemblyGeometry(baseInput({ artworks })))!;
+          expect(built).not.toBeNull();
+          expect(built.palette.map((p) => p.hex).sort()).toEqual(['#0000ff', '#ff0000']);
+
+          const redIdx = built.palette.findIndex((p) => p.hex === '#ff0000');
+          const blueIdx = built.palette.findIndex((p) => p.hex === '#0000ff');
+          const part = built.partOutputs[0];
+          // red's merge failed and was dropped — no inlay for it, but the part is not abandoned
+          expect(part.inlaySoups[redIdx]).toBeUndefined();
+          // blue only ever had one contributing prism (no union call), so it survives and cuts
+          expect(part.inlaySoups[blueIdx]).toBeDefined();
+          // the body was still cut (by blue's prism), not left untouched
+          expect(part.bodySoup).not.toEqual(Float32Array.from(part.part.positions!));
+
+          expect(
+            WARNINGS.some(
+              (w) =>
+                /couldn't combine the cut solids/i.test(w.message) && /#ff0000/.test(w.message),
+            ),
+          ).toBe(true);
+
+          // No leak: this build creates exactly 5 solids that need freeing — red's two
+          // (never-merged) prisms, blue's one prism, the part mesh, and blue's inlay — and all
+          // five must still be deleted even though red's merge threw partway through the loop.
+          expect(deleteSpy.mock.calls.length).toBeGreaterThanOrEqual(5);
+        } finally {
+          unionSpy.mockRestore();
+          deleteSpy.mockRestore();
+        }
+      },
+    );
+
+    it(
+      'exports uncut and without inlays when the body-cut boolean fails, instead of shipping ' +
+        'a cut/inlay pair that would overlap',
+      { timeout: 30000 },
+      async () => {
+        const wasm = await getManifold();
+        const diffSpy = vi.spyOn(wasm.Manifold, 'difference').mockImplementation(() => {
+          throw new Error('mock difference failure');
+        });
+        const intersectSpy = vi.spyOn(wasm.Manifold, 'intersection');
+        // See the getPrototypeOf note in the test above — spying on `wasm.Manifold.prototype`
+        // directly compiles fine but silently misses every real .delete() call.
+        const deleteSpy = vi.spyOn(Object.getPrototypeOf(wasm.Manifold.prototype), 'delete');
+        clearWarnings();
+        try {
+          const built = (await buildAssemblyGeometry(baseInput()))!;
+          expect(built).not.toBeNull();
+          const part = built.partOutputs[0];
+
+          // same shape as the existing non-watertight-mesh branch: uncut body, no inlays
+          expect(part.inlaySoups).toEqual({});
+          expect(part.bodySoup).toEqual(Float32Array.from(part.part.positions!));
+          // no half-done inlay was even attempted once the body cut itself failed
+          expect(intersectSpy).not.toHaveBeenCalled();
+
+          expect(
+            WARNINGS.some(
+              (w) =>
+                /boolean cut failed/i.test(w.message) &&
+                /uncut and without inlays/i.test(w.message),
+            ),
+          ).toBe(true);
+
+          // No leak: the single cut prism and the part mesh must still be freed even though the
+          // difference threw and no inlay was ever built.
+          expect(deleteSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+        } finally {
+          diffSpy.mockRestore();
+          intersectSpy.mockRestore();
+          deleteSpy.mockRestore();
+        }
+      },
+    );
+
+    it(
+      'frees the body solid when the boolean succeeds but converting its mesh throws',
+      { timeout: 30000 },
+      async () => {
+        // The leak this pins: Manifold.difference returns a live solid, then manifoldToMeshes
+        // throws inside it (getMesh / a RangeError allocating the vertex array on a huge
+        // result). If the handle isn't freed in a finally, that solid is unreachable WASM
+        // memory — the exact failure the uncut-export path is supposed to avoid.
+        const wasm = await getManifold();
+        const proto = Object.getPrototypeOf(wasm.Manifold.prototype);
+        // First getMesh call in the build is the body's, so once is enough to hit only it.
+        const getMeshSpy = vi.spyOn(proto, 'getMesh').mockImplementationOnce(() => {
+          throw new Error('mock getMesh failure');
+        });
+        const deleteSpy = vi.spyOn(proto, 'delete');
+        clearWarnings();
+        try {
+          const built = (await buildAssemblyGeometry(baseInput()))!;
+          const part = built.partOutputs[0];
+
+          // treated as a body-cut failure: uncut body, no inlays
+          expect(part.bodySoup).toEqual(Float32Array.from(part.part.positions!));
+          expect(part.inlaySoups).toEqual({});
+
+          // Three solids exist and must all be freed: the cut prism, the part mesh, and the
+          // body that difference() successfully produced before getMesh threw. Two deletes
+          // would mean the body handle leaked.
+          expect(deleteSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
+        } finally {
+          getMeshSpy.mockRestore();
+          deleteSpy.mockRestore();
+        }
+      },
+    );
+
+    it(
+      'keeps the cut body but names the color and says the recess prints empty when only the ' +
+        'inlay intersection fails',
+      { timeout: 30000 },
+      async () => {
+        // The asymmetric case: the body difference succeeds, so the pocket is already cut and
+        // redoing it is the expensive half — the part ships with a real recess and no inlay.
+        const wasm = await getManifold();
+        const intersectSpy = vi.spyOn(wasm.Manifold, 'intersection').mockImplementation(() => {
+          throw new Error('mock intersection failure');
+        });
+        const deleteSpy = vi.spyOn(Object.getPrototypeOf(wasm.Manifold.prototype), 'delete');
+        clearWarnings();
+        try {
+          const built = (await buildAssemblyGeometry(baseInput()))!;
+          const part = built.partOutputs[0];
+
+          // the body really was cut — this is not the export-uncut escape
+          expect(part.bodySoup).not.toEqual(Float32Array.from(part.part.positions!));
+          expect(part.inlaySoups).toEqual({});
+
+          // the warning has to name the color and say the recess ships empty, or it's
+          // indistinguishable from the alarming-but-harmless seam-sliver case
+          const w = WARNINGS.find((x) => /couldn't fit the inlay/i.test(x.message));
+          expect(w).toBeDefined();
+          expect(w!.message).toMatch(/#ff0000/);
+          expect(w!.message).toMatch(/empty recess/i);
+
+          // No leak: the cut prism, the part mesh, and the successfully-built body must all be
+          // freed even though every intersection threw.
+          expect(deleteSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
+        } finally {
+          intersectSpy.mockRestore();
+          deleteSpy.mockRestore();
+        }
+      },
+    );
   });
 
   it(
