@@ -41,6 +41,12 @@ export interface ExportPart {
    * along with the part on every printer. Baked from the part's reference 3MF (see
    * WHEEL_PRIME_TOWER_DELTA / FOOTREST_PRIME_TOWER_DELTA). */
   primeTowerDelta?: { x: number; y: number };
+  /** Bed-specific overrides for `primeTowerDelta`, keyed `"<w>x<d>"` in mm. Holding the tower
+   * relative to its part transfers it across bed sizes for free in most cases — but not always: a
+   * position with room to spare on a 270mm plate can end up against the edge once a 256mm plate
+   * re-centers the group. A key here means that bed was verified separately and disagreed; a bed
+   * with no key uses primeTowerDelta. */
+  primeTowerDeltaByPlate?: Record<string, { x: number; y: number }>;
   /** Per-object Bambu print overrides written into model_settings.config as
    * <metadata key value/> on this part's object (e.g. { brim_type: 'no_brim', enable_support: '0' }
    * for the footrest). Baked from the part's reference 3MF; general per-part settings mechanism. */
@@ -92,6 +98,19 @@ export function fmtCoord(v: number): string {
  * Row-vector rotation R = Rx(theta) * Rz(phi) (apply face-down tilt first, then spin about the
  * vertical axis). Returned as a 3x3 where a point transforms as p' = p * R.
  */
+/**
+ * How many columns of logical build plates the slicer lays a project out in — Bambu's own
+ * PartPlateList::compute_colum_count, which is `ceil(sqrt(n))` written the long way. Plates are a
+ * square-ish grid, not a row: a 4-plate project is 2x2 and a 12-plate one is 4x3, both confirmed
+ * against real MakeGood project files. It happens to return 2 for a 2-plate project, i.e. a single
+ * row, which is why the wheel's two-plate export was correct while this was hardcoded to a row.
+ */
+export function plateColumns(count: number): number {
+  const value = Math.sqrt(count);
+  const rounded = Math.round(value);
+  return value > rounded ? rounded + 1 : rounded;
+}
+
 export function rotXthenZ(thetaDeg: number, phiDeg: number): number[][] {
   const t = (thetaDeg * Math.PI) / 180,
     p = (phiDeg * Math.PI) / 180;
@@ -162,10 +181,11 @@ export function bambuProjectSettings(
       brim_type: 'no_brim',
       // [print, one per filament, printer] — only the print slot (index 0) differs from system.
       different_settings_to_system: [printOverrideKeys.join(';'), ...rep(''), ''],
-      // Prime/wipe tower position, one entry per plate — set for parts that carry a
-      // primeTowerDelta (wheel, footrest). Not listed in different_settings_to_system: the
-      // reference files this was verified against don't track it there either, so a plain value
-      // matches real slicer behavior. A plate with no anchor part falls back to plate center.
+      // Prime/wipe tower position, one entry per plate — from the verified primeTowerDelta of a
+      // part on that plate (wheel, footrest), else the suggested free corner build3MFCombined
+      // works out (see suggestTowerPos). Not listed in different_settings_to_system: the reference
+      // files this was verified against don't track it there either, so a plain value matches real
+      // slicer behavior.
       ...(wipeTower
         ? {
             wipe_tower_x: wipeTower.map((w) => fmtCoord(w ? w.x : plate.w / 2)),
@@ -360,12 +380,17 @@ export async function build3MFCombined(
   }));
 
   const warnings: string[] = [];
+  // Parts already known not to fit at any position, so the off-plate position check below stays
+  // quiet about them rather than saying the same thing twice in different words.
+  const tooBig = new Set<ExportPart>();
   for (const pl of placed) {
     const worst = Math.max(pl.w - plateW, pl.d - plateD);
-    if (worst > 0.5)
+    if (worst > 0.5) {
+      tooBig.add(pl.part);
       warnings.push(
         `"${pl.part.name}" overhangs the ${plateW}×${plateD}mm plate by ~${Math.ceil(worst)}mm even at its best-fit rotation.`,
       );
+    }
   }
 
   // Bambu X1C's plate is exactly the size any part's fixedPos values were authored against —
@@ -373,6 +398,8 @@ export async function build3MFCombined(
   // fixedPos group (plate 1's Top + Cap, each plate 2+ rotated-duplicate Top alone) re-centered on
   // its own true bounding box instead (see `placeHintedGroup`).
   const isRefPlate = plateW === ASSEMBLY_REF_PLATE.w && plateD === ASSEMBLY_REF_PLATE.d;
+  /** Lookup key for ExportPart.primeTowerDeltaByPlate. */
+  const bedKey = `${plateW}x${plateD}`;
 
   // A part carrying plateHint is pinned to that plate instead of going through the greedy
   // packer — used by the wheel assembly (top half + cap share plate 1, each rotated-duplicate
@@ -403,12 +430,72 @@ export async function build3MFCombined(
         groupOffsetY = (plateD - (gMaxY - gMinY)) / 2 - gMinY;
       }
     }
+    // Centering is a single-part fallback: two parts on one plate that both take it resolve to the
+    // same spot and print through each other. Nothing ships in that state (every hinted part today
+    // carries a fixedPos, or is alone on its plate), but it fails silently rather than loudly, so
+    // say so instead of letting it reach a slicer.
+    const centered = items.filter((pl) => !pl.part.fixedPos);
+    if (centered.length > 1)
+      warnings.push(
+        `${centered.map((pl) => `"${pl.part.name}"`).join(', ')} share a build plate with no ` +
+          `verified position between them, so they are stacked on the plate center — ` +
+          `double-check for overlap in your slicer.`,
+      );
     items.forEach((pl) => {
       const pos = pl.part.fixedPos;
       pl.tx = pos ? pos.x + groupOffsetX : plateW / 2 - pl.cx;
       pl.ty = pos ? pos.y + groupOffsetY : plateD / 2 - pl.cy;
       pl.tz = -pl.minZ;
     });
+  }
+
+  /**
+   * Where to park the prime tower on a plate whose parts carry no verified `primeTowerDelta`.
+   * Deliberately NOT a baked position — it is a starting point for the human pass that produces
+   * one, and only has to beat the old behavior of dropping the tower on the plate center, i.e.
+   * straight through the part. Insets the tower's nominal footprint into whichever plate corner
+   * the parts intrude on least.
+   */
+  function suggestTowerPos(items: Placed[]): { x: number; y: number } {
+    const TOWER = 60; // nominal prime-tower footprint; the slicer sizes the real one per filament count
+    const half = TOWER / 2;
+    // Scoring each axis on its own picks a corner neither axis objects to but a part still
+    // occupies: "most room to the left" and "most room to the front" can meet inside the very
+    // part they were measuring around. Score whole corners instead, against each part's own
+    // footprint rather than the group's bounding box — two parts with a gap between them (the
+    // caster plate) leave corners free that their combined box would call occupied.
+    const overlap = (c: { x: number; y: number }) =>
+      items.reduce((sum, pl) => {
+        const ox =
+          Math.min(pl.tx! + pl.cx + pl.w / 2, c.x + half) -
+          Math.max(pl.tx! + pl.cx - pl.w / 2, c.x - half);
+        const oy =
+          Math.min(pl.ty! + pl.cy + pl.d / 2, c.y + half) -
+          Math.max(pl.ty! + pl.cy - pl.d / 2, c.y - half);
+        return sum + Math.max(0, ox) * Math.max(0, oy);
+      }, 0);
+    const corners = [
+      { x: half, y: half },
+      { x: plateW - half, y: half },
+      { x: half, y: plateD - half },
+      { x: plateW - half, y: plateD - half },
+    ];
+    const best = corners.reduce((a, b) => (overlap(b) < overlap(a) ? b : a));
+    // Whether wipe_tower_x/y names the tower's center or its origin corner isn't pinned down, so
+    // the footprint here (centered, matching the inset) is one of two readings — near enough to
+    // rank corners, not near enough to promise clearance. A crowded plate gets a warning rather
+    // than a position that quietly prints through a part. A plate down to one filament prints no
+    // tower at all (the caster plate, which carries no artwork), so whatever this returns for it
+    // is never used and saying anything about it would be noise.
+    const needsTower = new Set(items.flatMap((pl) => pl.part.subs.map((s) => s.matIndex))).size > 1;
+    if (needsTower && overlap(best) > 0)
+      warnings.push(
+        `The prime tower on the plate holding ${items.map((pl) => `"${pl.part.name}"`).join(', ')} ` +
+          `has no verified position, and every corner of the ${plateW}×${plateD}mm plate overlaps ` +
+          `a part, so it was parked at (${best.x.toFixed(0)}, ${best.y.toFixed(0)}) — ` +
+          `move the tower in your slicer.`,
+      );
+    return best;
   }
 
   const useHints = placed.some((pl) => pl.part.plateHint != null);
@@ -449,12 +536,12 @@ export async function build3MFCombined(
       // position (still pre-stride here, which is exactly what wipe_tower_x/y want). The anchor is
       // whichever part on the plate carries a primeTowerDelta (wheel Top / footrest).
       const anchor = plate.row.find((pl) => pl.part.primeTowerDelta);
-      if (anchor) {
-        plate.wipeTower = {
-          x: anchor.tx! + anchor.part.primeTowerDelta!.x,
-          y: anchor.ty! + anchor.part.primeTowerDelta!.y,
-        };
-      }
+      const delta =
+        anchor && (anchor.part.primeTowerDeltaByPlate?.[bedKey] ?? anchor.part.primeTowerDelta);
+      plate.wipeTower =
+        anchor && delta
+          ? { x: anchor.tx! + delta.x, y: anchor.ty! + delta.y }
+          : suggestTowerPos(plate.row);
     });
   } else {
     plates.forEach((plate) => {
@@ -468,13 +555,41 @@ export async function build3MFCombined(
       });
     });
   }
-  // Bambu lays logical plates out along world X with a gap of 1/5 plate width
-  // (LOGICAL_PART_PLATE_GAP); build item transforms are world coordinates.
-  const stride = plateW * 1.2;
+  // Fitting on the plate and being *put* on it are different claims: the size check above only
+  // rules out parts too big for any position, while everything placed by a baked fixedPos lands
+  // where a reference file said, on a plate that may not be the one it was authored against.
+  // Positions are still plate-local here, which is the frame the plate's own 0..plateW/D bounds
+  // are in.
   plates.forEach((plate, pi) => {
-    const offsetX = pi * stride;
+    plate.row.forEach((pl) => {
+      if (tooBig.has(pl.part)) return;
+      const over = Math.max(
+        -(pl.tx! + pl.cx - pl.w / 2),
+        pl.tx! + pl.cx + pl.w / 2 - plateW,
+        -(pl.ty! + pl.cy - pl.d / 2),
+        pl.ty! + pl.cy + pl.d / 2 - plateD,
+      );
+      if (over > 0.5)
+        warnings.push(
+          `"${pl.part.name}" is placed ~${Math.ceil(over)}mm past the edge of ` +
+            `${plates.length > 1 ? `plate ${pi + 1}` : 'the plate'} on this ` +
+            `${plateW}×${plateD}mm bed — reposition it in your slicer before printing.`,
+        );
+    });
+  });
+
+  // Build item transforms are world coordinates, and the slicer reads which logical plate an
+  // object is on from where it lands in that world. Plates tile a grid (see plateColumns) with a
+  // gap of 1/5 plate size on each axis (LOGICAL_PART_PLATE_GAP), filling left-to-right then
+  // downward — +X across, -Y down. A row-only layout is right up to two plates and silently puts
+  // plate 3 onto empty space beyond the grid's last column after that.
+  const cols = plateColumns(plates.length);
+  plates.forEach((plate, pi) => {
+    const offsetX = (pi % cols) * plateW * 1.2;
+    const offsetY = -Math.floor(pi / cols) * plateD * 1.2;
     plate.row.forEach((pl) => {
       pl.tx = (pl.tx ?? 0) + offsetX;
+      pl.ty = (pl.ty ?? 0) + offsetY;
     });
   });
 

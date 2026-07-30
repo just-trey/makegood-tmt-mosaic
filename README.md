@@ -145,7 +145,9 @@ contents, or other personal data are ever sent. See
    (its reference placement wasn't portable across bed sizes — see "Adding an
    assembly or library part" below) with its own tower offset and per-part
    support-off/no-brim overrides riding along. A part that still overhangs
-   its plate is reported as an on-screen warning rather than assumed safe.
+   its plate, one placed past the plate edge, and a plate whose tower has no
+   verified position and no free corner to fall back on are each reported as
+   an on-screen warning rather than assumed safe.
 
 ### Code layout
 
@@ -309,14 +311,28 @@ entirely, which is the recommended path.
   Sticker/Fill control only appears on an assembly part. Fill also assumes
   the design tiles — its repeat is one SVG document, so a design whose edges
   don't line up will show seams.
-- **The chair body's export placement isn't slicer-verified yet.** Unlike the
-  wheel/footrest/wheel-mount (whose plate position, rotation, and prime-tower
-  offset are baked from a checked reference 3MF — see "Export placement is
-  baked from a verified reference 3MF" above), the chair's 13 parts export
-  through the generic centered path with no baked pose. The 3MF still opens
-  and slices, but treat the first print as a check on placement/support, not
-  an already-verified layout. This is the top item in "TODO / tech debt"
-  below, which has what closing it needs.
+- **The chair body's prime-tower positions are verified on 270mm and 256mm
+  beds only.** Each plate's tower was placed by hand in the slicer against
+  real four-filament geometry and baked as an offset from that plate's anchor
+  part, so it travels with the part when a different bed size re-centers the
+  plate. Both shipped bed sizes were checked separately, and seven of the ten
+  towers transferred between them unchanged; the two wheel-mount plates and
+  one handle plate needed their own 256mm values and carry them. Any _other_
+  bed size inherits the 270mm positions untested. The caster plate prints one
+  filament and has no tower at all. See "TODO / tech debt" below.
+- **Parts the reference sets to manual tree support arrive without the
+  painted enforcers.** The handles, wheel mounts, storage boxes, and seat
+  center carry `support_type = tree(manual)` from the reference project,
+  which relies on support enforcers painted onto the mesh. Those live as
+  per-triangle mesh attributes the exporter doesn't write, so the setting
+  arrives and the painting doesn't. Paint them yourself, or switch those
+  parts to auto support, before printing.
+- **The caster mounts can't carry artwork.** All four (Standard and Kit, left
+  and right) are the only chair pieces missing from the zone sidecar, so no
+  zone reaches them, their plate exports in the body color alone, and it gets
+  no prime tower. That isn't because they have no surface to decorate — each
+  has a 10,395 mm² flat upward face at y = 120, identical between the two
+  variants. See "TODO / tech debt" below for what adding a zone would take.
 
 ## Troubleshooting: "Boolean union/subtraction failed" warnings
 
@@ -383,31 +399,58 @@ is imported by the app. Two other brand themes in the tokens folder
 
 ## TODO / tech debt
 
-- **The chair body has no baked export placement — highest-priority item
-  here.** Every other assembly part gets its plate pose from constants baked
-  once out of a reference 3MF whose print orientation was actually checked in
-  the slicer (see "Export placement is baked from a verified reference 3MF"
-  above, and `FOOTREST_PLATE_R` / `FOOTREST_PRIME_TOWER_DELTA` in
-  [src/export/threemf.ts](src/export/threemf.ts) for the worked example). The
-  chair's 13 parts have none — they fall through the generic centered path, so
-  the exported 3MF opens and slices but lands the parts at whatever pose the
-  mesh happens to carry, with no verified rotation, no plate assignment, no
-  support or brim settings, and no prime-tower placement. This is the single
-  largest gap between the chair and the parts that shipped before it: the
-  design pipeline is finished and the print side is not. It is also the most
-  consequential — a 13-part body is where orientation, supports, and plate
-  packing actually decide whether a print succeeds.
-  Blocked on an input, not on code: someone has to lay the parts out in the
-  slicer, check the orientation of each, and save that project file. The rule
-  in [CLAUDE.md](CLAUDE.md) is firm — this placement must be **baked from
-  that verified file, never invented, derived, or read at runtime** — so no
-  amount of work in this repo can produce it first. Once the reference exists,
-  the work is turning its numbers into per-part constants. Prefer centering
-  plus a relative `primeTowerDelta` over a bed-specific absolute coordinate,
-  and note that 13 parts likely span multiple plates, which the existing
-  single-plate constants don't express yet. The hardcoded `roleId` if/else
-  noted below is the thing that has to grow to hold it, so the two are worth
-  doing together.
+- **The chair's prime-tower positions have only been verified on one bed
+  size.** All of its export placement — plate assignment, rotation, position,
+  the per-part brim/support/infill overrides, and now the tower — is baked by
+  [scripts/bake-chair-placement.mjs](scripts/bake-chair-placement.mjs) into
+  [src/export/chairPlacement.ts](src/export/chairPlacement.ts) from two
+  human-checked files: MakeGood's 12-plate Bambu Studio project for the poses
+  (the script re-verifies every shipped mesh against it before writing, worst
+  plate-space disagreement 0.024 mm), and a four-filament export with every
+  tower dragged into place for the towers. The second one had to exist
+  separately because the first prints in one or two filaments and never had a
+  real tower on it.
+  What's left: both shipped bed sizes have had that pass (270mm Snapmaker,
+  256mm A1), and the deltas are stored relative to each plate's anchor part so
+  they follow the part when a bed re-centers the group. Seven of the ten
+  transferred between the two beds unchanged, which is the evidence the
+  relative model works; the two wheel-mount plates (1.8mm and 3.9mm) and one
+  handle plate (1.2mm) did not, and carry a `primeTowerDeltaByPlate` entry for
+  256x256. **Any third bed size inherits the 270mm numbers untested** — the
+  350x320 `bambu-h2d` entry in [src/export/printers.ts](src/export/printers.ts)
+  is the one that exists today, and the first non-square bed of the three.
+  Adding a bed means another pass:
+  `scripts/export-chair-examples.mjs` builds the files, and the bake takes one
+  `--towers` file per bed and works out for itself which plates disagree.
+  The caster plates stay on `suggestTowerPos` in
+  [src/export/threemf.ts](src/export/threemf.ts), which is correct — they
+  print one filament and get no tower.
+  One loose end in the tooling: whether `wipe_tower_x/y` names the tower's
+  center or its origin corner isn't pinned down, so the export script only
+  checks that a tower lands on the bed, not that a given footprint clears the
+  edge. Both reference files put a tower at exactly x = 15 on a 256mm bed,
+  which a center-based check would wrongly reject.
+- **The caster mounts have no design zone, and settling that means settling
+  what the "central rear brace" is.** They are absent from
+  [scripts/zone-configs/chair-body.json](scripts/zone-configs/chair-body.json)'s
+  part list — the other eleven pieces are all in it — on the call recorded in
+  [docs/chair-body-plan.md](docs/chair-body-plan.md) that "caster mounts and
+  wheel mounts are structural-only". That call was already revised for half of
+  it: the wheel mounts now carry `left`, `right`, and `seat`. The casters are
+  decoratable too (10,395 mm² of flat upward face at y = 120, the same in both
+  variants), so this is worth revisiting.
+  What makes it more than adding four lines to the config: that file's `_note`
+  reserves a volume for "the central rear brace in the CAD assembly ... the app
+  has no part for it, so a zone must never grow onto it", and the bounds it
+  quotes (x −90..90, y 92..186, z −663..−455) are exactly the two caster
+  mounts' combined bounding box (x −89.9..89.9, y 92..185.6, z −662.5..−454.9,
+  the note's numbers rounded outward). Either the note is describing the
+  casters — in which case the 1.008 mm gap it protects is the gap _to_ them,
+  and raising `seamWeldTolMm` past it would grow a neighbouring zone onto them
+  as intended — or there really is an unshipped brace inside that same volume
+  and the note stands as written. Resolve that against the CAD assembly before
+  touching the tolerance, because it is the tolerance the existing five zones'
+  measured coverage was tuned against; changing it re-bakes all of them.
 - **Rebuild performance needs ongoing work — this is a heavy application.**
   A dense 135-path SVG still takes ~13s to rebuild in flat mode, ~9s of
   which is the paint-order boolean pass in
@@ -483,15 +526,14 @@ is imported by the app. Two other brand themes in the tokens folder
   scrubbing, precision-truncation retries) target 6.5's exact
   polygon-clipping bugs, and 6.5's package typings don't resolve under
   modern TypeScript, hence the shim in [src/turf.d.ts](src/turf.d.ts).
-- **Per-part export placement is a hardcoded `roleId` if/else in
-  [src/ui/exportPanel.ts](src/ui/exportPanel.ts)** — each part's plate hint,
-  rotation, `plateR`, `fixedPos`, prime-tower delta, and object settings are
-  assigned by an `if (roleId === 'wheel-half') … else if ('wheel-hub-cap') …
-else if ('footrest')` chain. Every new assembly part means editing that
-  chain.
-  These are per-role constants; they belong as data on the `AssemblyKind` /
-  role definition (or the part's `ExportPart`) so adding a part stays a
-  data-only change, matching the "one array entry" goal in
+- **Per-part export placement is a lookup table in
+  [src/ui/exportPanel.ts](src/ui/exportPanel.ts), not part of the part
+  definition.** It used to be an `if (roleId === …) else if …` chain; the
+  chair's fifteen pieces turned that into a `PLACEMENT` record keyed by
+  library part id, so adding a part is now a data change rather than a code
+  one. It still lives in the export panel, though, away from the role it
+  describes — these are per-part constants and belong as data on the
+  `AssemblyKind` / role definition, matching the "one array entry" goal in
   [src/assembly/kinds.ts](src/assembly/kinds.ts).
 - **The footrest's `objectSettings` literal (`brim_type: 'no_brim'`,
   `enable_support: '0'`) is duplicated** between the export path in

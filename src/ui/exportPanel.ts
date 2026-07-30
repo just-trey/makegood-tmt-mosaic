@@ -15,6 +15,7 @@ import {
   type ExportPart,
   type ExportSub,
 } from '../export/threemf';
+import { CHAIR_PLACEMENT } from '../export/chairPlacement';
 import { getPrinter } from '../export/printers';
 import { meshToSTLBytes, soupFromObject } from '../export/stl';
 import { zipStore, type ZipEntry } from '../export/zip';
@@ -24,12 +25,58 @@ import { WARNINGS, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { track } from '../analytics/track';
 
-// suffixes of the two placement-warning messages build3MFCombined can emit — used to clear a
+// suffixes of the placement-warning messages build3MFCombined can emit — used to clear a
 // stale one from a previous export attempt before reporting this attempt's
 const PLACEMENT_WARNING_SUFFIXES = [
   'even at its best-fit rotation.',
   'double-check for overlap in your slicer.',
+  'reposition it in your slicer before printing.',
+  'move the tower in your slicer.',
 ];
+
+/** The placement fields a part can have baked; the rest of ExportPart comes from the build. */
+type PartPlacement = Pick<
+  ExportPart,
+  | 'plateHint'
+  | 'rotZdeg'
+  | 'plateR'
+  | 'fixedPos'
+  | 'primeTowerDelta'
+  | 'primeTowerDeltaByPlate'
+  | 'objectSettings'
+>;
+
+/**
+ * Verified plate placement per part, keyed by library part id. Every entry traces back to a
+ * project file whose print pose a human checked in the slicer — never computed here. See the
+ * constants' own provenance comments in src/export/threemf.ts, and chairPlacement.ts (generated)
+ * for the chair's 15.
+ *
+ * Keyed by library part rather than role because the chair's two caster roles resolve to a
+ * different mesh per hardware variant, and Standard and Kit sit on different plates. Roles whose
+ * id and library part id coincide (the wheel's and the footrest's) still resolve for a
+ * hand-uploaded mesh, via the roleId fallback at the lookup.
+ */
+const PLACEMENT: Record<string, PartPlacement> = {
+  'wheel-half': {
+    plateHint: 1,
+    rotZdeg: WHEEL_TOP_ROT_DEG,
+    fixedPos: WHEEL_TOP_POS,
+    primeTowerDelta: WHEEL_PRIME_TOWER_DELTA,
+  },
+  'wheel-hub-cap': { plateHint: 1, rotZdeg: WHEEL_CAP_ROT_DEG, fixedPos: WHEEL_CAP_POS },
+  // Support off per the user's verified reference (brim is off globally — see brim_type in
+  // bambuProjectSettings). No fixedPos: the reference's own translation is just the Snapmaker U1's
+  // bed center and isn't portable, so plateHint routes it through placeHintedGroup's centering
+  // branch with the tower held relative.
+  footrest: {
+    plateHint: 1,
+    plateR: FOOTREST_PLATE_R,
+    primeTowerDelta: FOOTREST_PRIME_TOWER_DELTA,
+    objectSettings: { enable_support: '0' },
+  },
+  ...CHAIR_PLACEMENT,
+};
 
 function download(blob: Blob, fname: string): void {
   const a = document.createElement('a');
@@ -49,11 +96,9 @@ async function exportPrintReady3MF(): Promise<void> {
     materials = [{ name: 'Body', color: bodyColor }].concat(
       palette.map((p) => ({ name: nearestFilamentName(p.hex), color: p.hex })),
     );
-    // wheel-specific plate layout: the primary "top" half + the "cap" share plate 1, each
-    // rotated-duplicate "top" (the wheel's other half) gets its own subsequent plate. Rotation
-    // and position are fixed constants taken from a real, tested MakeGood TMT export (see
-    // WHEEL_TOP_POS/WHEEL_CAP_POS in src/export/threemf.ts) — not computed, since the wheel's
-    // geometry and required orientation are a specific, externally-verified product.
+    // Plate layout comes from PLACEMENT above — verified constants, not computed. The wheel's
+    // primary "top" half + "cap" share plate 1; each rotated-duplicate "top" (the wheel's other
+    // half) claims the next plate after that, which is the counter here.
     let nextHalfPlate = 2;
     parts = built.partOutputs
       .filter((o) => o.bodySoup && o.bodySoup.length)
@@ -71,43 +116,18 @@ async function exportPrintReady3MF(): Promise<void> {
             indexed: inlayIndexed?.[+ci],
           });
         });
-        let plateHint: number | undefined,
-          rotZdeg: number | undefined,
-          plateR: number[][] | undefined,
-          fixedPos: { x: number; y: number } | undefined,
-          primeTowerDelta: { x: number; y: number } | undefined,
-          objectSettings: Record<string, string> | undefined;
-        if (part.roleId === 'wheel-half') {
-          plateHint = part.isDuplicateOf == null ? 1 : nextHalfPlate++;
-          rotZdeg = WHEEL_TOP_ROT_DEG;
-          fixedPos = WHEEL_TOP_POS;
-          primeTowerDelta = WHEEL_PRIME_TOWER_DELTA;
-        } else if (part.roleId === 'wheel-hub-cap') {
-          plateHint = 1;
-          rotZdeg = WHEEL_CAP_ROT_DEG;
-          fixedPos = WHEEL_CAP_POS;
-        } else if (part.roleId === 'footrest') {
-          // place the footrest at its verified reference pose (standing rotation baked from its
-          // reference 3MF — see FOOTREST_PLATE_R). No fixedPos: plateHint routes it through
-          // placeHintedGroup, whose no-fixedPos branch centers it on every plate, with the prime
-          // tower held relative (FOOTREST_PRIME_TOWER_DELTA). Support off per the user's verified
-          // reference (brim is off globally — see brim_type in bambuProjectSettings).
-          plateHint = 1;
-          plateR = FOOTREST_PLATE_R;
-          primeTowerDelta = FOOTREST_PRIME_TOWER_DELTA;
-          objectSettings = { enable_support: '0' };
-        }
+        const placement = PLACEMENT[part.libraryPartId ?? part.roleId];
         return {
           name: part.name,
           nsign,
           bodySoup,
           subs,
-          plateHint,
-          rotZdeg,
-          plateR,
-          fixedPos,
-          primeTowerDelta,
-          objectSettings,
+          ...placement,
+          // the wheel's rotated duplicate halves are the one placement that can't be a constant:
+          // each copy is the same mesh again and claims its own plate after the primary's.
+          ...(part.roleId === 'wheel-half' && part.isDuplicateOf != null
+            ? { plateHint: nextHalfPlate++ }
+            : {}),
         };
       });
     fname = `mosaic-${state.assembly.kindId}.3mf`;

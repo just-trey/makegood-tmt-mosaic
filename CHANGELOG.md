@@ -44,9 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   downloadable from the Part section once the parts load; on a template that
   spans a join, the dashed lines mark it and the labels name the piece each
   area lands on.
-  **Export placement for this part isn't slicer-verified yet** — see Known
-  limitations in the README; treat the first print as a check on
-  placement/support, not an already-verified layout.
+  Export placement is baked from MakeGood's own slicer-verified project, and
+  the prime tower from a second verified file (see Changed below).
 - A built-in pattern library — Cow, Dalmatian, Zebra, and Tiger — as a
   thumbnail strip in the Artwork panel. Clicking one loads it like an
   uploaded SVG (its own row, own zone targeting) and defaults to Fill mode
@@ -91,6 +90,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   assignments, merge groups, pinned-apart colors — for colors no loaded
   design paints with any more. A color the previous design had sent to the
   base could otherwise stay silently excluded from being cut.
+- An export of three or more build plates laid them out in a single row,
+  where the slicer expects a square-ish grid. The third plate and everything
+  after it landed on empty space past the grid's last column. Nothing shipped
+  had hit it — the wheel's two-plate export is a single row either way — but
+  every chair export is eleven plates.
+- A plate whose prime tower has no verified position could be handed one
+  inside a part. The fallback chose its X and Y insets independently, so a
+  group that left room along each axis separately could still occupy the
+  corner where that room met. It now scores whole corners, and warns when
+  every corner of the plate is occupied instead of picking one silently.
+- Export warnings now cover a part placed past the edge of the plate, not
+  only one too big to fit the plate at any position. A verified placement
+  transfers to a smaller bed than the one it was checked on without
+  anything having said so.
 
 ## [0.6.0] - 2026-07-26
 
@@ -105,6 +118,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The chair body's 15 pieces now export at their verified print poses, one
+  per build plate, instead of centered on whatever pose the mesh happened to
+  carry. Plate assignment, rotation, position, and each piece's brim,
+  support, infill and wall settings are baked from MakeGood's own 12-plate
+  Bambu Studio project for the complete chair — the same "use the numbers
+  from a file a human checked in the slicer" rule the wheel and footrest
+  already followed. Standard and Kit caster mounts each keep their own plate.
+  Each plate's prime tower is baked too, from four-filament exports with every
+  tower positioned by hand — one per bed size — and stored as an offset from
+  that plate's anchor part so it follows the part when a different bed
+  re-centers the plate. Both shipped bed sizes were checked; seven of the ten
+  towers transferred between them unchanged, and the two wheel-mount plates
+  and one handle plate carry their own 256mm values. A bed size that hasn't
+  had that pass inherits the 270mm positions untested. The caster plate prints
+  a single filament and has no tower.
 - Print-ready 3MF exports now disable the brim on every part
   (`brim_type: no_brim`, set globally in the project settings). The mosaic
   faces are broad and print flat, so a brim only wasted filament and added a
