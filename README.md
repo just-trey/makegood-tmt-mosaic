@@ -370,6 +370,30 @@ retries before giving up. If the warning still appears, that color's pocket
 was skipped on that part — same source fix as above (clean the path in
 Illustrator/Inkscape) usually resolves it.
 
+The 3D boolean pass can also fail later, past a single color's pocket. Each
+of those failures degrades to something a slicer can print rather than a
+malformed file, and the warning tells you which outcome you got — worth
+reading before printing, because two of them mean the part carries less
+artwork than you designed:
+
+- **"Couldn't combine the cut solids for color … on …"** — that one color is
+  dropped from that part. Every other color still cuts normally.
+- **"… exporting it uncut"**, or **"Boolean cut failed on part … — exporting
+  it uncut and without inlays"** — that part ships with no artwork at all. It
+  is still a valid printable part, just a blank one, so don't print it
+  expecting the design.
+- **"Couldn't fit the inlay for color … — its pocket is cut into the body but
+  will print as an empty recess"** — the recess is cut but nothing fills it,
+  so that color prints as a bare cavity.
+
+These are Manifold 3D boolean failures rather than the 2D clip problem above,
+so path-cleaning is less reliably the fix; if one reproduces, the part mesh
+and the amount of fine detail landing on it are both worth suspecting. What
+these are _not_ is silent: before this handling existed, the same failures
+either aborted the whole rebuild (blank viewport) or shipped the uncut body
+alongside inlay solids occupying the same volume, which a slicer resolves
+arbitrarily.
+
 ## Design system
 
 The visual language is the TMT Mosaic design system — dark navy/blue,
