@@ -600,3 +600,39 @@ is imported by the app. Two other brand themes in the tokens folder
   ones, where the face clip would crop it. Fix when such a part ships: either
   scale per-part, or make the reference face an explicit choice on the
   `AssemblyKind` rather than "whichever is largest".
+- **The CSG failure branches are asserted one layer above the file that
+  ships.** The `CSG failure handling` tests in
+  [tests/assembly.test.ts](tests/assembly.test.ts) pin the in-memory
+  `AssemblyPartOutput` — `bodySoup` equal to the untouched positions,
+  `inlaySoups` empty — but nothing asserts what `build3MFCombined` actually
+  writes, and the bug those branches exist to fix was an _export_ bug: an
+  uncut body shipping alongside inlay solids occupying the same volume. The
+  claim still unpinned is that a part which failed to cut emits exactly one
+  object and zero inlay objects in `3D/3dmodel.model`. The machinery is
+  already present — [tests/threemf.test.ts](tests/threemf.test.ts) unzips a
+  built 3MF with JSZip and reads that entry (see its `itemTransforms` /
+  `projectSettings` helpers) — so the fix is an analogous helper returning the
+  per-part object set, asserted from the failure tests. The other half: none
+  of these branches has been watched degrading in the running app either, only
+  under mocked `Manifold.union` / `.difference` / `.intersection`, so a
+  dev-only forced throw is what would make a live check repeatable rather than
+  a hand-edit each time.
+- **The warning panel can hide the warnings that matter most, and the CSG
+  failure messages are the worst fit for it.**
+  [src/ui/warningsView.ts](src/ui/warningsView.ts) renders only
+  `WARNINGS.slice(0, 6)` as pills and collapses the rest into "+ N more
+  warnings", with no way to read them. Dedupe in
+  [src/warnings.ts](src/warnings.ts) is by exact message and these messages
+  embed the part name, so per-part warnings never collapse — they each take a
+  slot. Measured against the longest real part name ("Chair caster mount,
+  Standard (right)", 36 chars) the four CSG failure messages run 92, 103, 151
+  and 163 characters, and the chair has 15 pieces: an all-parts body-cut
+  failure produces 15 distinct warnings of which 6 are readable, and a
+  per-color inlay failure across 4 colors produces 60. This is not
+  hypothetical — the seam-sliver entry above records a real case where one
+  design on `back` warned for **three** colors on a single part, so 3 of the 6
+  slots went to one piece. Fix: make the overflow readable (scroll or expand)
+  and/or group per-part warnings into one pill naming the count, so "your part
+  shipped blank" can't be the message that gets truncated away. Note the pill
+  lengths are measured but their _rendered_ wrapping in the panel is not —
+  worth eyeballing at a narrow viewport as part of the same change.
