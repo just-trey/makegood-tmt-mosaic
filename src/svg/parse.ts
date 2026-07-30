@@ -149,6 +149,12 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   const shapes: SVGShape[] = [];
   let order = 0;
 
+  // Largest <circle> found by the same visible-subtree walk as shapes below (assembly mode's
+  // design-boundary anchor) — tracked here, not via a separate querySelectorAll, so it inherits
+  // the defs/clipPath/mask/pattern/symbol exclusion and the accumulated transform M for free.
+  let rawSVGCircle: ParsedSVG['rawSVGCircle'] = null;
+  let bestR = -1;
+
   // Cascade: inline `style` attribute > matched <style> class rule > presentation attribute.
   // Elements with no `class` attribute (i.e. every shape in SVGs we already support) fall
   // straight through the empty middle step to the same two lookups as before.
@@ -197,6 +203,25 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
     const localM = parseTransformAttr(el.getAttribute('transform'));
     const M = Mat.multiply(parentM, localM);
+
+    if (tag === 'circle') {
+      // Anchor candidacy ignores fill/display-none — a design-boundary marker circle is
+      // commonly fill="none". rawSVGCircle is a scalar {cx,cy,r}, unlike shape loops (which
+      // stay exact under any transform by mapping every point individually); a skew or
+      // non-uniform scale turns a circle into an ellipse, so r is necessarily approximated via
+      // the transform's x-axis scale — exact for translate/rotate/uniform-scale, approximate
+      // otherwise.
+      const cxA = +(el.getAttribute('cx') || 0);
+      const cyA = +(el.getAttribute('cy') || 0);
+      const rAttr = +(el.getAttribute('r') || 0);
+      const scale = Math.hypot(M[0], M[1]);
+      const r = rAttr * scale;
+      if (r > bestR) {
+        bestR = r;
+        const c = Mat.apply(M, cxA, cyA);
+        rawSVGCircle = { cx: c.x, cy: c.y, r };
+      }
+    }
 
     const fillRaw = resolveProp(el, 'fill');
     const fillUrl = fillRaw && /url\(/.test(fillRaw);
@@ -321,22 +346,6 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       }),
     ),
   );
-
-  // For assembly mode: the largest <circle> (typically the design's outer/background boundary)
-  // lets real-mesh parts be mapped hub-centered without re-deriving a bbox fit.
-  let rawSVGCircle: ParsedSVG['rawSVGCircle'] = null;
-  let bestR = -1;
-  doc.querySelectorAll('circle').forEach((c) => {
-    const r = parseFloat(c.getAttribute('r') || '');
-    if (r > bestR) {
-      bestR = r;
-      rawSVGCircle = {
-        cx: parseFloat(c.getAttribute('cx') || '0'),
-        cy: parseFloat(c.getAttribute('cy') || '0'),
-        r,
-      };
-    }
-  });
 
   return {
     shapes,
