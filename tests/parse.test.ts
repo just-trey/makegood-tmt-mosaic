@@ -146,6 +146,22 @@ describe('parseSVGDocument', () => {
     );
   });
 
+  // depth is empirically tuned (walk overflows ~3000 on this machine/Node version, via jsdom's
+  // heavier per-element traversal) with ~2x headroom; a future Node/V8 stack-size change could
+  // shift the real threshold enough to need retuning.
+  it('names deeply nested groups instead of a raw stack overflow', () => {
+    const depth = 6000;
+    let inner = '<rect width="4" height="4" fill="#ff0000"/>';
+    for (let i = 0; i < depth; i++) inner = `<g>${inner}</g>`;
+    const doc = svg(inner);
+    expect(() => parseSVGDocument(doc)).toThrow(/nested.*group|group.*nested/i);
+    try {
+      parseSVGDocument(doc);
+    } catch (e) {
+      expect((e as Error).message).not.toMatch(/call stack/i);
+    }
+  });
+
   it('derives userUnitMM from physical size / viewBox (rect placement scale)', () => {
     // 266mm wide across a 266-unit viewBox -> 1mm per unit
     const oneToOne = parseSVGDocument(

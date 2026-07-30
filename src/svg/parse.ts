@@ -2,6 +2,7 @@ import type { Loop, Mat6, ParsedSVG, SVGShape } from '../types';
 import { Mat, parseTransformAttr } from './matrix';
 import { ellipsePoints, parsePathD } from './path';
 import { clearWarnings, warn } from '../warnings';
+import { rethrowStackOverflowAs } from '../errors';
 
 // Normalize any CSS color string to "#rrggbb" using a canvas as an oracle.
 let colorCanvas: CanvasRenderingContext2D | null = null;
@@ -327,7 +328,14 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     for (const child of el.children) walk(child, M);
   }
 
-  for (const child of svgEl.children) walk(child, rootM);
+  try {
+    for (const child of svgEl.children) walk(child, rootM);
+  } catch (e) {
+    rethrowStackOverflowAs(
+      e,
+      "This SVG has unusually deeply nested groups (elements nested past a normal depth) and couldn't be processed.",
+    );
+  }
 
   if (!shapes.length) throw new Error('No flat-filled shapes were found in this SVG.');
 

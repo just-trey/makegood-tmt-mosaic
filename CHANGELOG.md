@@ -146,6 +146,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   only one too big to fit the plate at any position. A verified placement
   transfers to a smaller bed than the one it was checked on without
   anything having said so.
+- An SVG with pathologically deep nesting (thousands of nested rings in one
+  path, or thousands of nested `<g>` elements) failed with a raw "Maximum
+  call stack size exceeded" instead of a message naming what was wrong with
+  the file.
 
 ## [0.6.0] - 2026-07-26
 
