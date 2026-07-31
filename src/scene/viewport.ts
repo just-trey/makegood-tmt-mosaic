@@ -21,8 +21,8 @@ let preferredViewDir: THREE.Vector3 | null = null;
  * Ground plane span. The grid doubles as a ruler, so the cell stays a round 20mm and the span is
  * sized to the largest assembly the (fixed, closed) part library contains: the chair's footprint is
  * 380 × 658mm, which the old 600mm stage — sized for the 280mm wheel — overhung at both ends.
- * `tests/display-frame.test.ts` asserts every kind still fits, so a new part outsizing the stage
- * fails there rather than in the viewport.
+ * `tests/display-frame.test.ts` measures every kind in `ASSEMBLY_KINDS` against this constant, so a
+ * new part outsizing the stage fails there rather than silently overhanging in the viewport.
  */
 export const GRID_SPAN_MM = 800;
 const GRID_CELL_MM = 20;

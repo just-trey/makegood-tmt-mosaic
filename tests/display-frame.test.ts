@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
-import type { DisplayFrame } from '../src/types';
+import type { AssemblyKind, AssemblyRole, DisplayFrame } from '../src/types';
 import {
   assemblyViewDir,
   displayQuaternion,
@@ -30,31 +30,63 @@ interface Entry {
   file: string;
 }
 const manifest: Entry[] = JSON.parse(readFileSync(stl('stl/parts.json'), 'utf8'));
-const chairEntries = manifest.filter((e) => e.id.startsWith('chair-'));
+const chairIds = manifest.filter((e) => e.id.startsWith('chair-')).map((e) => e.id);
 
 const boxes = new Map<string, { mn: number[]; mx: number[] }>();
 
 beforeAll(async () => {
-  for (const e of chairEntries) {
+  for (const e of manifest) {
     const a = analyze(await readMesh(stl(e.file)));
     boxes.set(e.id, { mn: a.bb.mn, mx: a.bb.mx });
   }
 }, 60000);
 
-/** A part's bounding box in world space once posed by `q`. */
-function posedBox(id: string, q: THREE.Quaternion): THREE.Box3 {
+/** A part's bounding box in world space once placed by instance transform `m` and posed by `q`. */
+function posedBox(id: string, q: THREE.Quaternion, m?: THREE.Matrix4): THREE.Box3 {
   const b = boxes.get(id)!;
   const box = new THREE.Box3();
   for (let i = 0; i < 8; i++) {
-    box.expandByPoint(
-      new THREE.Vector3(
-        i & 1 ? b.mx[0] : b.mn[0],
-        i & 2 ? b.mx[1] : b.mn[1],
-        i & 4 ? b.mx[2] : b.mn[2],
-      ).applyQuaternion(q),
+    const v = new THREE.Vector3(
+      i & 1 ? b.mx[0] : b.mn[0],
+      i & 2 ? b.mx[1] : b.mn[1],
+      i & 4 ? b.mx[2] : b.mn[2],
     );
+    box.expandByPoint((m ? v.applyMatrix4(m) : v).applyQuaternion(q));
   }
   return box;
+}
+
+/**
+ * Every library part a kind can stand on the grid, with the instance transform each is placed by.
+ * Both hardware variants, since either can load — the union is conservative, so if it fits, either
+ * variant does. A role with rotated copies contributes the copy's pose too: the wheel's second Top
+ * half is the same mesh spun 180° about the design-face normal, which sweeps a larger footprint
+ * than the primary alone.
+ */
+function kindInstances(kind: AssemblyKind): { id: string; m?: THREE.Matrix4 }[] {
+  const out: { id: string; m?: THREE.Matrix4 }[] = [];
+  const ids = (role: AssemblyRole): string[] =>
+    role.libraryPartIdByVariant
+      ? Object.values(role.libraryPartIdByVariant)
+      : role.libraryPartId
+        ? [role.libraryPartId]
+        : [];
+  for (const role of kind.roles) {
+    const d = role.copyDefaults;
+    // matches buildAssembly's outer/inner pair in src/geometry/assembly.ts
+    const copy =
+      role.copies && d
+        ? new THREE.Matrix4()
+            .makeTranslation(d.pivotX, 0, d.pivotZ)
+            .multiply(new THREE.Matrix4().makeRotationY((-d.angleDeg * Math.PI) / 180))
+            .multiply(new THREE.Matrix4().makeTranslation(-d.pivotX, 0, -d.pivotZ))
+        : null;
+    for (const id of ids(role)) {
+      out.push({ id });
+      if (copy) out.push({ id, m: copy });
+    }
+  }
+  return out;
 }
 
 /** Lowest world Z a part's bounding box reaches once posed — i.e. how close it sits to the grid. */
@@ -112,11 +144,13 @@ describe('the chair display frame against the shipped meshes', () => {
     expect(chairKind.displayFrame, 'the chair must author a display frame').toBeDefined();
     const mn = [Infinity, Infinity, Infinity];
     const mx = [-Infinity, -Infinity, -Infinity];
-    for (const b of boxes.values())
+    for (const id of chairIds) {
+      const b = boxes.get(id)!;
       for (let k = 0; k < 3; k++) {
         mn[k] = Math.min(mn[k], b.mn[k]);
         mx[k] = Math.max(mx[k], b.mx[k]);
       }
+    }
     const extent = mx.map((v, k) => v - mn[k]);
     const upAxis = chairKind.displayFrame!.up.findIndex((c) => c !== 0);
     // ~547mm tall vs ~380 wide — taller than it is wide, which is what "up" has to mean here.
@@ -137,18 +171,6 @@ describe('the chair display frame against the shipped meshes', () => {
     expect(low('chair-caster-std-left')).toBeGreaterThan(floor);
   });
 
-  it('leaves a footprint the grid can hold, so the chair stands on the stage not past it', () => {
-    // The viewport centers the posed assembly over the grid, so what matters is the footprint's
-    // SIZE, not where the CAD origin happens to sit. Union of both variants — if the conservative
-    // box fits, either variant does.
-    const q = displayQuaternionFor(chairKind);
-    const foot = new THREE.Box3();
-    for (const id of boxes.keys()) foot.union(posedBox(id, q));
-    const size = foot.getSize(new THREE.Vector3());
-    expect(size.x, 'chair width vs grid span').toBeLessThan(GRID_SPAN_MM);
-    expect(size.y, 'chair depth vs grid span').toBeLessThan(GRID_SPAN_MM);
-  });
-
   it('points the opening camera at the front for a posed kind, at the design face otherwise', () => {
     // posed: camera on −Y, the side the authored front now faces
     expect(assemblyViewDir(chairKind, 1).y).toBeLessThan(0);
@@ -157,5 +179,24 @@ describe('the chair display frame against the shipped meshes', () => {
     const wheel = ASSEMBLY_KINDS.find((k) => k.id === 'wheel')!;
     expect(assemblyViewDir(wheel, 1).y).toBeGreaterThan(0);
     expect(assemblyViewDir(wheel, -1).y).toBeLessThan(0);
+  });
+});
+
+describe('the viewport grid against the shipped meshes', () => {
+  it('is big enough for every kind to stand on the stage, not past it', () => {
+    // The viewport centers the posed assembly over the grid, so what matters is the footprint's
+    // SIZE, not where the CAD origin happens to sit — the chair's is a datum near its front, which
+    // is what used to put it off the back edge. This is what lets `GRID_SPAN_MM` promise that a new
+    // part outsizing the stage fails here rather than silently overhanging in the viewport.
+    for (const kind of ASSEMBLY_KINDS) {
+      const q = displayQuaternionFor(kind);
+      const foot = new THREE.Box3();
+      for (const inst of kindInstances(kind)) foot.union(posedBox(inst.id, q, inst.m));
+      // else an empty box passes both bounds vacuously and the kind goes unmeasured
+      expect(foot.isEmpty(), `${kind.id} resolved no library parts`).toBe(false);
+      const size = foot.getSize(new THREE.Vector3());
+      expect(size.x, `${kind.id} width vs grid span`).toBeLessThan(GRID_SPAN_MM);
+      expect(size.y, `${kind.id} depth vs grid span`).toBeLessThan(GRID_SPAN_MM);
+    }
   });
 });
