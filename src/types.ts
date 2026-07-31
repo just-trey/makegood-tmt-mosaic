@@ -246,6 +246,25 @@ export interface AssemblyRole {
   preferFaceNormal?: [number, number, number];
 }
 
+/**
+ * How an assembly is posed in the *viewport*, in native part coordinates: `up` renders as world
+ * up, `front` faces the default camera.
+ *
+ * Needed because the app has one implicit part-frame convention — "the design face is a Y-plane"
+ * — which doubles as a display pose for a plate-like kind (the wheel and footrest stand up facing
+ * the camera for free). A 3D body has no single design face, so it is packed in its CAD frame
+ * instead and that convention misreads it: the chair's CAD up is +Y, which the Z-up scene renders
+ * horizontal, laying it on its back.
+ *
+ * Display only. Part meshes, the cut pipeline, the baked zone charts and export plate placement
+ * all keep native coordinates. Per the add-part skill the viewport pose and the plate pose are
+ * deliberately different; this is a third frame, not a unification of them.
+ */
+export interface DisplayFrame {
+  up: [number, number, number];
+  front: [number, number, number];
+}
+
 export interface AssemblyKind {
   id: string;
   name: string;
@@ -275,6 +294,11 @@ export interface AssemblyKind {
    * charts instead of a single implicit flat zone; absent kinds use the flat path.
    */
   zonesFile?: string;
+  /**
+   * Viewport pose for this kind. Omitted for kinds already packed design-face-up (the wheel and
+   * footrest), which render correctly with no transform at all.
+   */
+  displayFrame?: DisplayFrame;
   /**
    * Kept in ASSEMBLY_KINDS (and fully functional) but left out of the Part dropdown — for a
    * part that isn't ready to offer to users yet.

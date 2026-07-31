@@ -6,7 +6,7 @@ import { primaryZoneMapper, zoneMappersFor } from '../geometry/zoneMappers';
 import type { ZoneMapper } from '../geometry/zones';
 import { activeArtworkInstance } from '../state/artwork';
 import type { AssemblyPart } from '../types';
-import { getModelGroup } from './viewport';
+import { modelToWorldDir, modelToWorldPoint } from './viewport';
 
 /**
  * Everything the on-face design gizmo needs to translate between the viewport and the placement
@@ -14,10 +14,9 @@ import { getModelGroup } from './viewport';
  * face in *world* space, plus the in-plane axes those two offsets move along.
  *
  * The axes are deliberately read off the SAME conventions the geometry build uses so a drag maps
- * 1:1 to what the recut produces: in both modes `offsetX` moves the design along world +X; in flat
- * mode `offsetY` is world +Y (plate top), in assembly mode it is world +Z (the part stands up along
- * Y and its design face is a Y-plane). The origin folds in `getModelGroup().position`, since the
- * assembly is lifted to rest on the grid after each rebuild.
+ * 1:1 to what the recut produces. Everything here is in WORLD space: the mappers work in the
+ * part's native frame, so both the origin and the axes are pushed through the model group's
+ * transform (the grid lift, plus the display rotation for a kind that authors a display frame).
  */
 export interface FaceFrame {
   /** world position of the design center (where the SVG anchor lands) */
@@ -62,12 +61,13 @@ function flatFrame(): FaceFrame | null {
     mH = footH * (1 - bp.marginPct / 50);
   const autoScale = Math.min(mW / svgW, mH / svgH);
   const scale = autoScale * (state.scalePct / 100);
-  const mg = getModelGroup().position;
+  // Flat mode never poses the model group, so this is the grid lift alone today — routed through
+  // the same helpers as the assembly path so it stays right if that ever changes.
   return {
-    origin: new THREE.Vector3(state.offsetX + mg.x, state.offsetY + mg.y, bp.thickness + mg.z),
-    uAxis: new THREE.Vector3(1, 0, 0),
-    vAxis: new THREE.Vector3(0, 1, 0),
-    normal: new THREE.Vector3(0, 0, 1),
+    origin: modelToWorldPoint(new THREE.Vector3(state.offsetX, state.offsetY, bp.thickness)),
+    uAxis: modelToWorldDir(new THREE.Vector3(1, 0, 0)),
+    vAxis: modelToWorldDir(new THREE.Vector3(0, 1, 0)),
+    normal: modelToWorldDir(new THREE.Vector3(0, 0, 1)),
     halfW: (svgW * scale) / 2,
     halfH: (svgH * scale) / 2,
     offsetX: state.offsetX,
@@ -128,15 +128,15 @@ function assemblyFrame(): FaceFrame | null {
     mmPerUnit = ((state.asmRadius || 138) / svgR) * scaleMult;
   }
 
-  // frameAt returns the design center in the part's native space; the assembly is lifted to rest
-  // on the grid after each rebuild, so fold in the model-group offset here.
+  // frameAt returns the design center and axes in the part's NATIVE space; the model group is both
+  // lifted onto the grid and (for a kind with a display frame) rotated, so the whole frame has to
+  // come through that transform — the origin as a point, the axes as directions.
   const frame = mapper.frameAt(state.offsetX, state.offsetY);
-  const mg = getModelGroup().position;
   return {
-    origin: frame.origin.add(mg),
-    uAxis: frame.uAxis,
-    vAxis: frame.vAxis,
-    normal: frame.normal,
+    origin: modelToWorldPoint(frame.origin),
+    uAxis: modelToWorldDir(frame.uAxis),
+    vAxis: modelToWorldDir(frame.vAxis),
+    normal: modelToWorldDir(frame.normal),
     halfW: (svgW * mmPerUnit) / 2,
     halfH: (svgH * mmPerUnit) / 2,
     offsetX: state.offsetX,

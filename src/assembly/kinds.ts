@@ -63,6 +63,13 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     name: 'Chair body',
     // per-zone rect semantics: each zone's template maps its SVG 1:1 in mm, centered on the chart.
     designFit: 'rect',
+    // The chair is packed in its CAD frame (up is +Y, the front where the wings/footrest sit is
+    // +Z), not design-face-up like the wheel and footrest — a body with five design surfaces has
+    // no single face to point at the camera. Without this the Z-up viewport renders CAD +Y
+    // horizontal and the chair lies on its back. Verified against the shipped meshes: wings and
+    // casters are lowest in Y (15, 92), handles and seat back highest (562); wings sit at z ≈ −4
+    // and the handles you push from behind at z ≈ −631.
+    displayFrame: { up: [0, 1, 0], front: [0, 0, 1] },
     // baked design-zone sidecar (public/stl/) — the conformal charts artwork wraps onto. The build
     // wiring that consumes it lands with the per-zone cut refactor; loading it is already covered by
     // src/geometry/zoneCharts.ts.

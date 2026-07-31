@@ -17,6 +17,16 @@ let basePixelRatio = 1;
 let pendingFrame = true;
 let preferredViewDir: THREE.Vector3 | null = null;
 
+/**
+ * Ground plane span. The grid doubles as a ruler, so the cell stays a round 20mm and the span is
+ * sized to the largest assembly the (fixed, closed) part library contains: the chair's footprint is
+ * 380 × 658mm, which the old 600mm stage — sized for the 280mm wheel — overhung at both ends.
+ * `tests/display-frame.test.ts` measures every kind in `ASSEMBLY_KINDS` against this constant, so a
+ * new part outsizing the stage fails there rather than silently overhanging in the viewport.
+ */
+export const GRID_SPAN_MM = 800;
+const GRID_CELL_MM = 20;
+
 export function initViewport(host: HTMLElement): void {
   renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   basePixelRatio = Math.min(devicePixelRatio, 2);
@@ -55,11 +65,11 @@ export function initViewport(host: HTMLElement): void {
   dl2.position.set(-60, 80, 40);
   scene.add(dl2);
 
-  const grid = new THREE.GridHelper(600, 30, 0x2b3457, 0x1c2440); // 600mm span — fits the wheel assembly
+  const grid = new THREE.GridHelper(GRID_SPAN_MM, GRID_SPAN_MM / GRID_CELL_MM, 0x2b3457, 0x1c2440);
   grid.rotation.x = Math.PI / 2;
   scene.add(grid);
   const shadowCatcher = new THREE.Mesh(
-    new THREE.PlaneGeometry(600, 600),
+    new THREE.PlaneGeometry(GRID_SPAN_MM, GRID_SPAN_MM),
     new THREE.ShadowMaterial({ opacity: 0.3 }),
   );
   shadowCatcher.position.z = -0.05; // just under the grid plane so coplanar model bottoms don't z-fight
@@ -126,6 +136,36 @@ export function newModelGroup(keep?: THREE.Object3D | null): THREE.Group {
 
 export function getModelGroup(): THREE.Group {
   return modelGroup;
+}
+
+/**
+ * Map a point from model space — part-native coordinates, before the grid lift and before any
+ * display-frame rotation — into world space.
+ *
+ * The model group carries a full transform, not just a translation: assembly kinds that author a
+ * `displayFrame` are rotated for display as well as lifted onto the grid. Anything living OUTSIDE
+ * modelGroup that must stay attached to what the user sees — the on-face design gizmo and the
+ * zone-pick meshes, both scene-level siblings so they survive newModelGroup() — has to apply that
+ * same transform by hand. Reading only `.position` silently detaches them the moment a kind poses
+ * itself, with nothing to catch it but the gizmo landing somewhere wrong.
+ *
+ * Mutates and returns `v`, per three's vector convention.
+ */
+export function modelToWorldPoint(v: THREE.Vector3): THREE.Vector3 {
+  modelGroup.updateMatrixWorld();
+  return v.applyMatrix4(modelGroup.matrixWorld);
+}
+
+/** Direction-only counterpart of `modelToWorldPoint` — rotation without the translation. */
+export function modelToWorldDir(v: THREE.Vector3): THREE.Vector3 {
+  return v.applyQuaternion(modelGroup.quaternion);
+}
+
+/** Give a scene-level sibling the model group's full transform. */
+export function syncToModelGroup(obj: THREE.Object3D): void {
+  obj.position.copy(modelGroup.position);
+  obj.quaternion.copy(modelGroup.quaternion);
+  obj.scale.copy(modelGroup.scale);
 }
 
 export function getCamera(): THREE.PerspectiveCamera {

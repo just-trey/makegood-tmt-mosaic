@@ -3,7 +3,13 @@ import { state } from '../state/store';
 import { activeArtworkInstance, setArtworkZone } from '../state/artwork';
 import { asmPartTransformGroup } from '../geometry/assembly';
 import { scheduleRebuild } from '../app/scheduler';
-import { addSceneOverlay, getCamera, getDomElement, getModelGroup, pointerToNDC } from './viewport';
+import {
+  addSceneOverlay,
+  getCamera,
+  getDomElement,
+  pointerToNDC,
+  syncToModelGroup,
+} from './viewport';
 import { isGizmoDragging, refreshGizmo } from './designGizmo';
 import { renderArtworkList } from '../ui/artworkListPanel';
 import { refreshFitInputsFromState } from '../ui/fitPanel';
@@ -100,9 +106,11 @@ export function refreshZonePickMeshes(): void {
   targets = [];
   pickRoot.clear();
   if (state.shapeKind !== 'assembly') return;
-  // pickRoot is a scene-level sibling of modelGroup, not a child, so it needs the same grid-lift
-  // offset applied manually — see restAssemblyOnGrid() in rebuild.ts.
-  pickRoot.position.copy(getModelGroup().position);
+  // pickRoot is a scene-level sibling of modelGroup, not a child, so it needs the model group's
+  // transform applied manually — the grid lift AND the kind's display rotation. Copying position
+  // alone would leave every pick target un-rotated behind a posed chair, so clicks would select a
+  // zone by where it used to be. See poseAssemblyForDisplay() in rebuild.ts.
+  syncToModelGroup(pickRoot);
 
   for (const part of state.assembly.parts) {
     if (!part.loaded || !part.zones?.length) continue;

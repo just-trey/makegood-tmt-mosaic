@@ -1,12 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 
-// The gizmo frame is pure math over state; the viewport only contributes the post-rebuild grid
-// offset, so stub it rather than standing up a WebGL scene.
-vi.mock('../src/scene/viewport', () => ({
-  getModelGroup: () => ({ position: new THREE.Vector3(0, 0, 0) }),
-  requestFrame: vi.fn(),
-}));
+// The gizmo frame is pure math over state; the viewport only contributes the model group's
+// transform — the post-rebuild grid lift plus, for a kind that authors one, its display rotation.
+// Stubbed with a real (identity) Group rather than a WebGL scene, so the model→world helpers run
+// their actual matrix math here instead of being faked into always agreeing.
+vi.mock('../src/scene/viewport', async () => {
+  const three = await import('three');
+  const group = new three.Group();
+  return {
+    getModelGroup: () => group,
+    modelToWorldPoint: (v: THREE.Vector3) => {
+      group.updateMatrixWorld();
+      return v.applyMatrix4(group.matrixWorld);
+    },
+    modelToWorldDir: (v: THREE.Vector3) => v.applyQuaternion(group.quaternion),
+    syncToModelGroup: vi.fn(),
+    requestFrame: vi.fn(),
+  };
+});
 
 import { computeFaceFrame } from '../src/scene/faceFrame';
 import { loadArtworkSource, setArtworkZone } from '../src/state/artwork';

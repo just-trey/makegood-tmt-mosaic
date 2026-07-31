@@ -172,12 +172,33 @@ src/export/partFingerprints.ts` should show only the part(s) you actually
 touched; anything else changing means an unrelated asset moved and needs its
 own placement re-check.
 
-## 5. Two orientations are intentional
+## 5. The separate orientations are intentional
 
-The viewport shows the part **design-face-up** (how the artist sees it). The
-export/plate pose is whatever the reference file verified as correct for
-printing. These legitimately differ — the footrest stands on its long edge to
-print support-free. Don't "fix" the mismatch by unifying them.
+Up to three frames are in play and they legitimately differ. Don't "fix" the
+mismatch by unifying them.
+
+1. **Native** — the coordinates the mesh actually ships in, baked by
+   `pack-part.mjs`. Everything downstream reads these: the cut pipeline, the
+   baked zone charts, the export placement tables.
+2. **Export/plate pose** — whatever the reference file verified as correct for
+   printing. The footrest stands on its long edge to print support-free.
+3. **Viewport pose** — how the artist sees it.
+
+For a plate-like part, 1 and 3 coincide for free: pack it **design-face-up** and
+the app's "the design face is a Y-plane" convention renders it standing up
+facing the camera, which is why the wheel and footrest need nothing here.
+
+A part with no single design face can't be packed that way — the chair is packed
+in its CAD frame instead. Give such a kind a `displayFrame` in
+[kinds.ts](../../../src/assembly/kinds.ts) (`up` and `front` as native-space
+directions) and the viewport poses it without touching the native coordinates.
+Omit it for anything already design-face-up.
+
+Careful when adding one: anything that lives OUTSIDE `modelGroup` and has to
+stay stuck to the model — the design gizmo, the zone-pick targets — must go
+through `modelToWorldPoint`/`modelToWorldDir`/`syncToModelGroup` in
+[viewport.ts](../../../src/scene/viewport.ts). Reading `.position` alone works
+until a kind poses itself, then silently detaches with nothing to catch it.
 
 This is also why step 1's rotation matters rather than being trivia: when the CAD
 mesh and the reference file disagree about axes, that transform is exactly what
