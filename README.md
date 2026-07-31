@@ -165,6 +165,10 @@ contents, or other personal data are ever sent. See
 - [src/app/rebuild.ts](src/app/rebuild.ts) — orchestrates state → geometry →
   scene → side panels
 - [src/scene/viewport.ts](src/scene/viewport.ts) — three.js renderer/camera
+- [src/scene/displayFrame.ts](src/scene/displayFrame.ts) — how an assembly
+  kind is posed for display. Viewport only: native part coordinates, the
+  export/plate pose, and this are three separate frames on purpose (the
+  `add-part` skill, "The separate orientations are intentional")
 - [src/ui/](src/ui/) — one module per left-panel section
 - [src/assembly/](src/assembly/) — assembly kinds (roles) and part loading
 

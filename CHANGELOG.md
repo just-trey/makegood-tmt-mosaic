@@ -76,7 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Wheel mode's design-boundary anchor (the SVG's largest `<circle>`) is now
+- The chair body rendered lying on its back with its top facing forward. The
+  viewport is Z-up and parts are never transformed at load, so the chair —
+  packed in its CAD frame, where up is +Y — came in rotated a quarter turn,
+  and the "rest the assembly on the grid" step then sat it on its rear face,
+  leaving the wings 650 mm in the air. Assembly kinds can now declare a
+  `displayFrame` (which native direction is up, and which is the front) that
+  poses them in the viewport; the wheel and footrest declare none and render
+  exactly as before, since the existing "the design face is a Y-plane"
+  convention already poses a plate-like part correctly. This is a viewport
+  pose only — part meshes, the cut pipeline, the baked zone charts, and
+  export plate placement all still use each part's native coordinates.
   read through the same viewBox-origin and group-transform math as every
   other shape, and only searches the same visible subtree (excluding
   `defs`/`clipPath`/`mask`/`pattern`/`symbol`) instead of scanning the whole
