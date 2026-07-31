@@ -9,7 +9,10 @@ import {
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
 import { getManifold } from '../src/geometry/manifold';
-import type { AssemblyPart, ParsedSVG } from '../src/types';
+import { build3MFCombined, type ExportPart, type ExportSub } from '../src/export/threemf';
+import { getPrinter } from '../src/export/printers';
+import { partObjectSummaries } from './lib/threemf';
+import type { AssemblyPart, AssemblyPartOutput, ParsedSVG } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 
 function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
@@ -216,6 +219,36 @@ describe('buildAssemblyGeometry', () => {
   });
 
   describe('CSG failure handling', () => {
+    // The in-memory assertions below stop one layer above the file that ships, and the bug these
+    // branches exist for was an export bug — an uncut body shipping alongside inlay solids in the
+    // same volume. These two build the real 3MF from the same output and read back what it
+    // contains, mirroring exportPanel.ts's ExportPart wiring so the test and the app agree.
+    function toExportPart(out: AssemblyPartOutput): ExportPart {
+      const subs: ExportSub[] = [
+        { name: 'Body', matIndex: 0, soup: out.bodySoup, indexed: out.bodyIndexed },
+      ];
+      Object.entries(out.inlaySoups).forEach(([ci, soup]) =>
+        subs.push({
+          name: `color${ci}`,
+          matIndex: +ci + 1,
+          soup,
+          indexed: out.inlayIndexed?.[+ci],
+        }),
+      );
+      return { name: out.part.name, nsign: 1, bodySoup: out.bodySoup, subs };
+    }
+
+    async function exportSummary(out: AssemblyPartOutput) {
+      const { blob } = await build3MFCombined(
+        [{ name: 'Body', color: '#cccccc' }],
+        [toExportPart(out)],
+        { printer: getPrinter('bambu-x1c') },
+      );
+      const summaries = await partObjectSummaries(blob);
+      expect(summaries).toHaveLength(1);
+      return summaries[0];
+    }
+
     it(
       "drops just the color whose zone cutters fail to merge, keeping the part's other colors cut",
       { timeout: 30000 },
@@ -278,6 +311,13 @@ describe('buildAssemblyGeometry', () => {
           // the body was still cut (by blue's prism), not left untouched
           expect(part.bodySoup).not.toEqual(Float32Array.from(part.part.positions!));
 
+          // ...and the exported file carries exactly that: body plus blue's inlay alone. The
+          // extruder pins which color survived — red's would be redIdx + 2.
+          const summary = await exportSummary(part);
+          expect(summary.bodyCount).toBe(1);
+          expect(summary.inlayCount).toBe(1);
+          expect(summary.extruders).toEqual([1, blueIdx + 2]);
+
           expect(
             WARNINGS.some(
               (w) =>
@@ -320,6 +360,12 @@ describe('buildAssemblyGeometry', () => {
           expect(part.bodySoup).toEqual(Float32Array.from(part.part.positions!));
           // no half-done inlay was even attempted once the body cut itself failed
           expect(intersectSpy).not.toHaveBeenCalled();
+
+          // ...and nothing inlay-shaped reached the file either: the exported part is its body
+          // and nothing else, so there is no solid left overlapping the uncut volume.
+          const summary = await exportSummary(part);
+          expect(summary.bodyCount).toBe(1);
+          expect(summary.inlayCount).toBe(0);
 
           expect(
             WARNINGS.some(
