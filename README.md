@@ -651,23 +651,17 @@ is imported by the app. Two other brand themes in the tokens folder
   ones, where the face clip would crop it. Fix when such a part ships: either
   scale per-part, or make the reference face an explicit choice on the
   `AssemblyKind` rather than "whichever is largest".
-- **The CSG failure branches are asserted one layer above the file that
-  ships.** The `CSG failure handling` tests in
-  [tests/assembly.test.ts](tests/assembly.test.ts) pin the in-memory
-  `AssemblyPartOutput` — `bodySoup` equal to the untouched positions,
-  `inlaySoups` empty — but nothing asserts what `build3MFCombined` actually
-  writes, and the bug those branches exist to fix was an _export_ bug: an
-  uncut body shipping alongside inlay solids occupying the same volume. The
-  claim still unpinned is that a part which failed to cut emits exactly one
-  object and zero inlay objects in `3D/3dmodel.model`. The machinery is
-  already present — [tests/threemf.test.ts](tests/threemf.test.ts) unzips a
-  built 3MF with JSZip and reads that entry (see its `itemTransforms` /
-  `projectSettings` helpers) — so the fix is an analogous helper returning the
-  per-part object set, asserted from the failure tests. The other half: none
-  of these branches has been watched degrading in the running app either, only
-  under mocked `Manifold.union` / `.difference` / `.intersection`, so a
-  dev-only forced throw is what would make a live check repeatable rather than
-  a hand-edit each time.
+- **The CSG failure branches have never been watched degrading in the running
+  app.** What they emit is now pinned in CI — the `CSG failure handling` tests
+  in [tests/assembly.test.ts](tests/assembly.test.ts) build the real 3MF and
+  assert the shipped body/inlay object counts via `partObjectSummaries`
+  ([tests/lib/threemf.ts](tests/lib/threemf.ts)), so the export bug those
+  branches exist to fix — an uncut body shipping alongside inlay solids in the
+  same volume — can't come back silently. But every one of those runs is
+  driven by a mocked `Manifold.union` / `.difference` / `.intersection`. Nobody
+  has seen the branches fire against the real engine in the app, and a
+  dev-only forced throw is what would make that check repeatable rather than a
+  hand-edit each time.
 - **The warning panel can hide the warnings that matter most, and the CSG
   failure messages are the worst fit for it.**
   [src/ui/warningsView.ts](src/ui/warningsView.ts) renders only
