@@ -40,7 +40,7 @@ import {
   type TileCell,
   type TileGrid,
 } from './patterns';
-import { notice, warn } from '../warnings';
+import { noticeBuild, warnBuild } from '../warnings';
 import { reportProgress } from '../progress';
 
 // Re-exported from ./zones so existing importers (exportPanel, faceFrame, rebuild, tests) keep
@@ -210,7 +210,7 @@ export async function buildAssemblyGeometry(
     }
     const bbox = parsed.bbox;
     if (!isRect)
-      notice(
+      noticeBuild(
         'This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.',
       );
     return {
@@ -338,13 +338,13 @@ export async function buildAssemblyGeometry(
     const vb = parsed.viewBox;
     const designFace = largestDesignFace();
     if (designFace && vb && vb.w > 0 && vb.h > 0) {
-      notice(
+      noticeBuild(
         'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
       );
       return Math.min(designFace.w / vb.w, designFace.h / vb.h) * scaleMult;
     }
     if (designFace)
-      notice(
+      noticeBuild(
         'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
       );
     return scaleMult;
@@ -354,7 +354,7 @@ export async function buildAssemblyGeometry(
   try {
     wasm = await getManifold();
   } catch (e) {
-    warn(
+    warnBuild(
       'Could not load the Manifold boolean engine — assembly cutting is unavailable. ' +
         (e as Error).message,
     );
@@ -440,7 +440,7 @@ export async function buildAssemblyGeometry(
       // chair's side panels face ±X), which is precisely what the baked chart exists to handle.
       const nrm = mappers[0].faceNormal;
       if (nrm && Math.abs(nrm[1]) < 0.9) {
-        warn(
+        warnBuild(
           `Part "${part.name}": detected face normal (${nrm.map((v) => v.toFixed(2)).join(', ')}) isn't vertical. Assembly cutting assumes a horizontal face — pick a different face or the cut may be wrong.`,
         );
       }
@@ -491,7 +491,7 @@ export async function buildAssemblyGeometry(
         // one, a region too degenerate to extrude. Same user-facing outcome as a cutter that
         // fails to become a solid below, so it shares that message (warnings dedupe by text);
         // staying silent would drop the color from the part with no explanation at all.
-        warn(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
+        warnBuild(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
         return;
       }
       try {
@@ -518,7 +518,7 @@ export async function buildAssemblyGeometry(
       } catch {
         /* fall through to warn */
       }
-      warn(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
+      warnBuild(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
     };
     // Which artworks land on a given zone: those bound to it by id, plus any unbound one. An
     // unbound artwork is the single-zone case (wheel, footrest) and goes wherever the part offers
@@ -545,13 +545,13 @@ export async function buildAssemblyGeometry(
         if (artworks[ai].mode === 'fill') {
           const extent = mapper.fillExtent();
           if (!extent) {
-            warn(
+            warnBuild(
               `Couldn't measure the fill area on "${part.name}" — placing a single copy of the artwork instead.`,
             );
           } else {
             grid = tileCoverage(place, tileCells[ai], extent);
             if (!grid)
-              warn(
+              warnBuild(
                 `Filling "${part.name}" would take more than ${MAX_FILL_TILES} tiles at this scale — placing a single copy instead. Raise Scale to fill the surface.`,
               );
           }
@@ -579,7 +579,9 @@ export async function buildAssemblyGeometry(
       } catch {
         // This color's cutters (from different zones of the same part) couldn't be merged —
         // drop just this color rather than losing the whole part's cut.
-        warn(`Couldn't combine the cut solids for color ${palette[+ci].hex} on "${part.name}".`);
+        warnBuild(
+          `Couldn't combine the cut solids for color ${palette[+ci].hex} on "${part.name}".`,
+        );
         continue;
       }
       if (merged !== list[0]) owned.push(merged);
@@ -598,13 +600,13 @@ export async function buildAssemblyGeometry(
     try {
       partMan = soupToManifold(wasm, part.positions);
     } catch {
-      warn(`Part "${part.name}" mesh couldn't be read by the boolean engine.`);
+      warnBuild(`Part "${part.name}" mesh couldn't be read by the boolean engine.`);
       owned.forEach(manifoldDelete);
       finishPart();
       continue;
     }
     if (!manifoldIsValid(partMan)) {
-      warn(
+      warnBuild(
         `Part "${part.name}" isn't a watertight/manifold mesh, so it can't be cut cleanly — repair it (close holes, fix flipped faces) and retry. Exporting it uncut for now.`,
       );
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
@@ -622,7 +624,7 @@ export async function buildAssemblyGeometry(
     } catch {
       // Nothing to cut with — same escape as the non-watertight branch above: export the
       // untouched body rather than risk a half-cut/half-inlaid pair that would overlap.
-      warn(`Couldn't combine this part's cut solids on "${part.name}" — exporting it uncut.`);
+      warnBuild(`Couldn't combine this part's cut solids on "${part.name}" — exporting it uncut.`);
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
       manifoldDelete(partMan);
       owned.forEach(manifoldDelete);
@@ -653,7 +655,7 @@ export async function buildAssemblyGeometry(
       // The body and its inlays come from the same boolean pass — if the cut itself failed,
       // building inlays anyway would ship a solid uncut body plus inlay solids occupying the
       // same volume, which a slicer resolves arbitrarily. Export uncut and inlay-less instead.
-      warn(
+      warnBuild(
         `Boolean cut failed on part "${part.name}" — exporting it uncut and without inlays ` +
           `(a half-done cut/inlay pair would overlap in the export).`,
       );
@@ -681,7 +683,7 @@ export async function buildAssemblyGeometry(
         // body's pocket for this color is already cut and redoing that difference is the
         // expensive half. Name the color and say the recess ships empty so the warning is
         // actionable rather than just alarming.
-        warn(
+        warnBuild(
           `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}" — its pocket ` +
             `is cut into the body but will print as an empty recess.`,
         );

@@ -2,7 +2,7 @@ import * as turf from '@turf/turf';
 import type { Loop, PolyFeature, ResolvedRegion, SVGShape } from '../types';
 import { signedArea } from '../svg/path';
 import { deltaE, hexToLab } from '../color';
-import { warn } from '../warnings';
+import { warnBuild } from '../warnings';
 import { reportProgress } from '../progress';
 import { rethrowStackOverflowAs } from '../errors';
 
@@ -242,6 +242,18 @@ function boolOpWithRetry(
   }
 }
 
+/**
+ * Diagnostics from the boolean helpers, tee'd into the memoized pass's record (if one is running)
+ * on the way to the warning list. computeNetRegionsByColor's result is cached across rebuilds, so
+ * a cache hit has to replay them — see the cache-hit branch below.
+ */
+let boolDiagnostics: string[] | null = null;
+
+function warnBool(message: string): void {
+  boolDiagnostics?.push(message);
+  warnBuild(message);
+}
+
 export function safeUnion(
   a: PolyFeature | null,
   b: PolyFeature | null,
@@ -253,7 +265,7 @@ export function safeUnion(
   if (!b) return a;
   const r = boolOpWithRetry((x, y) => turf.union(x, y) as PolyFeature | null, a, b);
   if (r.ok) return r.val ?? null;
-  warn(
+  warnBool(
     `Boolean union failed${label ? ` for ${label}` : ''} (likely a self-intersecting path in the source SVG) — using the unmerged shape as a fallback, so this region may be missing part of its area.`,
   );
   return a;
@@ -270,7 +282,7 @@ export function safeDiff(
   if (!b) return a;
   const r = boolOpWithRetry((x, y) => turf.difference(x, y) as PolyFeature | null, a, b);
   if (r.ok) return r.val ?? null;
-  warn(
+  warnBool(
     `Boolean subtraction failed${label ? ` for ${label}` : ''} (likely a self-intersecting path in the source SVG) — that region may overlap its neighbor instead of having the overlap cut out.`,
   );
   return a;
@@ -286,7 +298,7 @@ export function safeIntersect(
   if (!a || !b) return null;
   const r = boolOpWithRetry((x, y) => turf.intersect(x, y) as PolyFeature | null, a, b);
   if (r.ok) return r.val ?? null;
-  warn(
+  warnBool(
     `Clipping color region to the part face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
   );
   return a;
@@ -355,6 +367,7 @@ export async function unionAllCooperative(
  */
 let regionsCacheKey: SVGShape[] | null = null;
 let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
+let regionsCacheDiagnostics: string[] = [];
 
 export async function computeNetRegionsByColor(
   shapes: SVGShape[],
@@ -366,35 +379,47 @@ export async function computeNetRegionsByColor(
   // place, so identity is a safe cache key — this is the dominant cost of a rebuild, and
   // depth/fit/margin/color tweaks don't touch `shapes` at all.
   if (shapes === regionsCacheKey && regionsCacheVal) {
+    // The cached regions may be degraded ones a failed boolean fell back to. No op re-runs on a
+    // hit, so replay what the computing pass reported: the warnings are build-scoped and the
+    // rebuild that's now using these regions cleared them, and the degradation is still on screen.
+    for (const m of regionsCacheDiagnostics) warnBuild(m);
     onProgress(1);
     return regionsCacheVal;
   }
-  const features = shapes.map(shapeToFeature).map((f, idx) => ({ f, color: shapes[idx].fill }));
-  const byColor: Record<string, PolyFeature> = {};
-  let covered: PolyFeature | null = null;
-  const total = features.length || 1;
-  let lastYield = performance.now();
-  for (let i = features.length - 1; i >= 0; i--) {
-    const { f, color } = features[i];
-    if (f) {
-      const visible = covered ? safeDiff(f, covered, `color ${color}`) : f;
-      if (visible) {
-        byColor[color] = byColor[color]
-          ? (safeUnion(byColor[color], visible, `color ${color}`) as PolyFeature)
-          : visible;
+  const outerDiagnostics = boolDiagnostics;
+  const diagnostics: string[] = [];
+  boolDiagnostics = diagnostics;
+  try {
+    const features = shapes.map(shapeToFeature).map((f, idx) => ({ f, color: shapes[idx].fill }));
+    const byColor: Record<string, PolyFeature> = {};
+    let covered: PolyFeature | null = null;
+    const total = features.length || 1;
+    let lastYield = performance.now();
+    for (let i = features.length - 1; i >= 0; i--) {
+      const { f, color } = features[i];
+      if (f) {
+        const visible = covered ? safeDiff(f, covered, `color ${color}`) : f;
+        if (visible) {
+          byColor[color] = byColor[color]
+            ? (safeUnion(byColor[color], visible, `color ${color}`) as PolyFeature)
+            : visible;
+        }
+        covered = covered ? safeUnion(covered, f, `an element under color ${color}`) : f;
       }
-      covered = covered ? safeUnion(covered, f, `an element under color ${color}`) : f;
+      onProgress((total - i) / total);
+      if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+        await yieldToBrowser();
+        lastYield = performance.now();
+      }
     }
-    onProgress((total - i) / total);
-    if (performance.now() - lastYield > YIELD_BUDGET_MS) {
-      await yieldToBrowser();
-      lastYield = performance.now();
-    }
+    const result = { byColor };
+    regionsCacheKey = shapes;
+    regionsCacheVal = result;
+    regionsCacheDiagnostics = diagnostics;
+    return result;
+  } finally {
+    boolDiagnostics = outerDiagnostics;
   }
-  const result = { byColor };
-  regionsCacheKey = shapes;
-  regionsCacheVal = result;
-  return result;
 }
 
 /**
