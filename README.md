@@ -560,6 +560,19 @@ is imported by the app. Two other brand themes in the tokens folder
   two chart vertices closer than the quantum would collapse into a
   degenerate UV triangle and the warp's barycentric lookup divides by its
   area.
+- **`CHART_SNAP_MM` tracks a bake artifact instead of guarding placement.** A
+  part's baked claim on a zone (`subRegions`) is slightly more generous than the
+  triangulation inside it, so the claim outline pokes narrow tendrils past the
+  end of the chart. Cutter vertices landing in one are legitimate artwork with
+  no triangle under them, so the snap tolerance has to be wide enough to absorb
+  the deepest one — 2.150 mm on the shipped bake — which is why it is 3 mm
+  rather than the sub-millimetre value a pure misplacement guard would want.
+  Fix: re-bake so each claim matches its triangulation, then tighten the
+  constant. Deferred because it invalidates every downloaded template and the
+  sidecar. Until then `tests/chair-zones.test.ts` pins the measured worst case;
+  **measure it by hill-climbing, not by rastering** — the depth is a distance
+  function, so a step-_h_ grid under-reports the peak by up to _h_/√2, and a
+  1 mm raster put the worst at 1.915 mm against a true 2.150 mm.
 - **A seam sliver warns as if artwork were lost.** Where two parts' claims on
   a zone overlap, clipping a color to one part's `subRegions` can leave a
   remnant a fraction of a millimetre wide. It survives the turf clip, then

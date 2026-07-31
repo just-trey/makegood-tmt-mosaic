@@ -41,20 +41,27 @@ export const FILL_REFINE_MM = 3;
  *
  * The number is set by the bake, not by taste: a part's baked claim on a zone (`subRegions`) is
  * slightly more generous than the triangulation inside it, so points within the claim can sit a
- * little off every real triangle. Measured across all 25 shipped chair charts (2026-07-31) by
- * rastering each claim and taking the distance from each uncovered sample to the nearest chart
- * triangle: worst **1.915mm** (`chair-storage-left/left`), 12 of 25 charts over 0.5mm, and the
- * uncovered area never above 0.67% of the claim. So this bounds a real, small, everywhere-present
- * bake artifact — with only ~4% headroom at 2mm. `tests/chair-zones.test.ts` pins that invariant,
- * so a re-bake that widens the gap fails CI instead of silently dropping cuts.
+ * little off every real triangle. Measured across all 25 shipped chair charts (2026-07-31): worst
+ * **2.150mm** (`right/chair-wing-right`), then 2.104 (`back/chair-seat-back-top`) and 2.102
+ * (`left/chair-storage-left`); every other chart stays under 1mm. So 3 bounds a real bake artifact
+ * with ~28% headroom, and `tests/chair-zones.test.ts` pins it — a re-bake that widens the gap fails
+ * CI instead of silently dropping cuts.
+ *
+ * **Measure this by refinement, never by rastering.** The depth is a distance function, so it is
+ * 1-Lipschitz: sampling it on a grid of step h under-reports by up to h/√2, and the peaks here are
+ * narrow spikes where the claim outline pokes a thin tendril past the end of the triangulation. A
+ * 1mm raster put the worst at 1.915mm and made 2 look like it had headroom; it does not. The test
+ * seeds from a coarse scan and then hill-climbs each seed, which is what produces the figures above.
  *
  * This used to be 0.5 for stickers with a separate 2mm for fills, on the theory that only a fill
- * runs along the clipped boundary. That was wrong: the gaps are *interior* to the claim (the
- * failing points measured 5-6mm inside the outline, not on the cut edge), so they hit both modes
- * identically — a sticker large enough to cover one just failed, which is what dropped two colors
- * off the chair's seat-back parts.
+ * runs along the clipped boundary. That was wrong: the gaps sit inside the claim, so they hit both
+ * modes identically — a sticker large enough to cover one just failed, which is what dropped two
+ * colors off the chair's seat-back parts.
+ *
+ * The real fix is re-baking so each claim matches its triangulation, which would let this go back
+ * to a tight misplacement guard instead of tracking a bake artifact. See README tech debt.
  */
-export const CHART_SNAP_MM = 2;
+export const CHART_SNAP_MM = 3;
 
 /**
  * One baked UV chart: a patch of a part's surface mesh unwrapped into a flat 2D space where
@@ -465,9 +472,8 @@ export class ConformalZoneMapper implements ZoneMapper {
     // A warp that comes out non-manifold (usually pocket depth exceeding local concave curvature
     // pinching the inner surface) sometimes resolves at finer refinement; retry once at L/2.
     const base = opts?.refineMM && opts.refineMM > 0 ? opts.refineMM : WARP_REFINE_MM;
-    const snap = opts?.snapMM && opts.snapMM > 0 ? opts.snapMM : CHART_SNAP_MM;
     for (const L of [base, base / 2]) {
-      const out = this.tryWarp(soup, L, snap);
+      const out = this.tryWarp(soup, L, CHART_SNAP_MM);
       if (out === 'outside') return null;
       if (out) return out;
     }

@@ -345,6 +345,11 @@ describe('baked claims stay inside the snap tolerance', () => {
     return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
   };
 
+  /** Spatial index cell, and the radius past which a gap is too big to be a bake artifact anyway. */
+  const BUCKET_MM = 6;
+  /** Coarse scan step; anything above it becomes a hill-climb seed. */
+  const SEED_MM = 0.5;
+
   it.each(
     sidecar.zones.flatMap((z) =>
       z.charts.map((c) => [`${z.id}/${c.libraryPartId}`, z, c] as const),
@@ -365,21 +370,39 @@ describe('baked claims stay inside the snap tolerance', () => {
           i2 = triangles[t * 3 + 2];
         return [uv[i0 * 2], uv[i0 * 2 + 1], uv[i1 * 2], uv[i1 * 2 + 1], uv[i2 * 2], uv[i2 * 2 + 1]];
       };
-      const covered = (px: number, py: number): boolean => {
-        for (let t = 0; t < triCount; t++) {
-          const [ax, ay, bx, by, cx, cy] = corners(t);
-          const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
-          if (Math.abs(d) < 1e-12) continue;
-          const l0 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / d;
-          const l1 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / d;
-          if (l0 >= -1e-9 && l1 >= -1e-9 && 1 - l0 - l1 >= -1e-9) return true;
+      // Bucket the triangles so a query touches a handful instead of all ~2000: without this the
+      // seed scan below is O(claim area x triCount) and takes minutes per chart.
+      const buckets = new Map<string, number[]>();
+      const key = (cu: number, cv: number): string => `${cu},${cv}`;
+      for (let t = 0; t < triCount; t++) {
+        const [ax, ay, bx, by, cx, cy] = corners(t);
+        const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        // The runtime lookup skips UV-degenerate triangles (invDet === 0 in conformal.ts), so they
+        // neither cover a point nor offer a snap target. Skip them here or this measures something
+        // weaker than the check it exists to guard.
+        if (Math.abs(d) <= 1e-9) continue;
+        for (let cu = Math.floor((Math.min(ax, bx, cx) - BUCKET_MM) / BUCKET_MM); ; cu++) {
+          if (cu > Math.floor((Math.max(ax, bx, cx) + BUCKET_MM) / BUCKET_MM)) break;
+          for (let cv = Math.floor((Math.min(ay, by, cy) - BUCKET_MM) / BUCKET_MM); ; cv++) {
+            if (cv > Math.floor((Math.max(ay, by, cy) + BUCKET_MM) / BUCKET_MM)) break;
+            const k = key(cu, cv);
+            const b = buckets.get(k);
+            if (b) b.push(t);
+            else buckets.set(k, [t]);
+          }
         }
-        return false;
-      };
+      }
+
+      /** Distance from (px, py) to the triangulation; 0 inside it. A distance, so 1-Lipschitz. */
       const offChart = (px: number, py: number): number => {
         let best = Infinity;
-        for (let t = 0; t < triCount; t++) {
+        for (const t of buckets.get(key(Math.floor(px / BUCKET_MM), Math.floor(py / BUCKET_MM))) ??
+          []) {
           const [ax, ay, bx, by, cx, cy] = corners(t);
+          const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+          const l0 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / d;
+          const l1 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / d;
+          if (l0 >= -1e-9 && l1 >= -1e-9 && 1 - l0 - l1 >= -1e-9) return 0;
           best = Math.min(
             best,
             distToSeg(px, py, ax, ay, bx, by),
@@ -387,28 +410,53 @@ describe('baked claims stay inside the snap tolerance', () => {
             distToSeg(px, py, cx, cy, ax, ay),
           );
         }
-        return best;
+        return best === Infinity ? BUCKET_MM : best;
       };
 
       let worst = 0;
       for (const sub of chart.subRegions ?? []) {
+        const inClaim = (px: number, py: number): boolean =>
+          pointInRing(px, py, sub.outer) && !sub.holes.some((h) => pointInRing(px, py, h));
         const xs = sub.outer.map((p) => p[0]),
           ys = sub.outer.map((p) => p[1]);
         const [u0, u1] = [Math.min(...xs), Math.max(...xs)];
         const [v0, v1] = [Math.min(...ys), Math.max(...ys)];
-        // 1mm raster: the gaps this is guarding against are thin ribbons metres long in aggregate,
-        // not sub-millimetre specks, and a finer step multiplies a whole-sidecar scan for no signal.
-        for (let su = u0; su <= u1; su += 1)
-          for (let sv = v0; sv <= v1; sv += 1) {
-            if (!pointInRing(su, sv, sub.outer)) continue;
-            if (sub.holes.some((h) => pointInRing(su, sv, h))) continue;
-            if (covered(su, sv)) continue;
+        // Scan coarsely for candidates, then hill-climb each one. A plain raster CANNOT measure
+        // this: offChart is 1-Lipschitz, so a step-h grid under-reports the peak by up to h/√2, and
+        // the peaks are narrow spikes where the claim outline pokes a tendril past the end of the
+        // triangulation. A 1mm raster reported 1.915mm where the true worst is 2.150mm — enough to
+        // make an over-tolerance bake look like it passed.
+        const seeds: [number, number, number][] = [];
+        for (let su = u0; su <= u1; su += SEED_MM)
+          for (let sv = v0; sv <= v1; sv += SEED_MM) {
+            if (!inClaim(su, sv)) continue;
             const d = offChart(su, sv);
             if (d > worst) worst = d;
+            if (d > SEED_MM) seeds.push([su, sv, d]);
           }
+        for (const [su, sv, d0] of seeds) {
+          let bu = su,
+            bv = sv,
+            bd = d0;
+          for (let step = SEED_MM / 2; step > 0.002; step /= 2)
+            for (let du = -2; du <= 2; du++)
+              for (let dv = -2; dv <= 2; dv++) {
+                const pu = bu + du * step,
+                  pv = bv + dv * step;
+                if (!inClaim(pu, pv)) continue;
+                const d = offChart(pu, pv);
+                if (d > bd) {
+                  bd = d;
+                  bu = pu;
+                  bv = pv;
+                }
+              }
+          if (bd > worst) worst = bd;
+        }
       }
-      // Worst on the shipped bake is 1.915mm (chair-storage-left/left) — this has ~4% headroom, so a
-      // failure here means the bake changed, not that the raster got unlucky.
+      // Worst on the shipped bake is 2.150mm (right/chair-wing-right), then 2.104 and 2.102; every
+      // other chart is under 1mm. A failure here means the bake changed, not that the scan got
+      // unlucky — the hill-climb above is what makes that distinction trustworthy.
       expect(worst, `${who} worst uncovered depth`).toBeLessThan(CHART_SNAP_MM);
     },
     60000,
