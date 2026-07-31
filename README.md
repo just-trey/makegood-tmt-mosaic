@@ -566,15 +566,22 @@ is imported by the app. Two other brand themes in the tokens folder
   yields no cutter, and
   [src/geometry/assembly.ts](src/geometry/assembly.ts) reports "Couldn't build
   the cut solid for color … on …" — alarming, and indistinguishable from the
-  real failure it shares a message with. Confirmed in the app (2026-07-28): a
-  design on `back` warned for three colors on "Seat back (bottom)" while
-  printing correctly. The overlaps are inherent to per-part clipping and small
-  — measured across the shipped bake, 23 overlapping part pairs, all
-  seam-sharing, worst 29.85 mm² on a 124,500 mm² zone (a ~0.15 mm ribbon), and
-  `tests/chair-zones.test.ts` holds them under 0.05% of zone area. Fix: drop a
-  clip remnant under an area floor _before_ `buildCutter` rather than
-  attempting it and warning. Pick the floor above the measured ribbon and well
-  under anything printable.
+  real failure it shares a message with. The overlaps are inherent to per-part
+  clipping and small — measured across the shipped bake, 23 overlapping part
+  pairs, all seam-sharing, worst 29.85 mm² on a 124,500 mm² zone (a ~0.15 mm
+  ribbon), and `tests/chair-zones.test.ts` holds them under 0.05% of zone area.
+  Fix: drop a clip remnant under an area floor _before_ `buildCutter` rather
+  than attempting it and warning. Pick the floor above the measured ribbon and
+  well under anything printable.
+
+  This bullet used to cite the 2026-07-28 "Seat back (bottom)" warnings as a
+  confirmed sighting. Instrumenting the running app on 2026-07-31 showed that
+  those had a different cause — cutter vertices landing outside the snap
+  tolerance, since fixed — and that they looked permanent only because warnings
+  were never cleared per rebuild, also since fixed. So the seam remnant is still
+  real geometry and still reaches `buildCutter`, but **no warning has actually
+  been traced to it**. Confirm one before spending the fix on it.
+
 - **Zone picking has no occlusion test**
   ([src/scene/zonePick.ts](src/scene/zonePick.ts)) — it raycasts only the
   invisible chart meshes (three.js 0.160's `intersectObject` ignores
