@@ -1,6 +1,7 @@
 ---
 name: add-part
 description: Add a new MakeGood TMT part as an assembly kind — pick the best source mesh, pack it into public/stl/ aligned to the frame the app expects, register the AssemblyKind, bake export placement from a verified reference file, and ship a 1:1 template. Use when adding, replacing, or debugging the setup of, any part in public/stl/ + src/assembly/kinds.ts.
+model: opus
 ---
 
 # Add an assembly part

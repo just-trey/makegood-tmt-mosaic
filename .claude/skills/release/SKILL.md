@@ -1,6 +1,8 @@
 ---
 name: release
 description: Cut a release of tmt-mosaic — bump the version everywhere that doesn't auto-track, finalize the CHANGELOG, and push the tag that actually triggers the Pages deploy. Use when asked to cut, prep, or ship a release, or to bump the version.
+model: sonnet
+disable-model-invocation: true
 ---
 
 # Cut a release
