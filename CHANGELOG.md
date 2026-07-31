@@ -87,6 +87,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   convention already poses a plate-like part correctly. This is a viewport
   pose only — part meshes, the cut pipeline, the baked zone charts, and
   export plate placement all still use each part's native coordinates.
+- An assembly is now centered over the viewport's grid, not just rested on
+  it, and the grid grew from 600 mm to 800 mm (still 20 mm cells) to hold
+  the largest part in the library. The chair's CAD origin is a datum rather
+  than the middle of the part, so its 380 × 658 mm footprint ran from 4 mm
+  to 662 mm along the grid — leaving it standing almost entirely off the
+  back edge of a stage that was sized for the 280 mm wheel. The wheel and
+  footrest were already centered on their origins and don't move
+  perceptibly.
+- Wheel mode's design-boundary anchor (the SVG's largest `<circle>`) is now
   read through the same viewBox-origin and group-transform math as every
   other shape, and only searches the same visible subtree (excluding
   `defs`/`clipPath`/`mask`/`pattern`/`symbol`) instead of scanning the whole

@@ -10,6 +10,7 @@ import {
   displayQuaternion,
   displayQuaternionFor,
 } from '../src/scene/displayFrame';
+import { GRID_SPAN_MM } from '../src/scene/viewport';
 import {
   analyze,
   readMesh,
@@ -40,19 +41,25 @@ beforeAll(async () => {
   }
 }, 60000);
 
+/** A part's bounding box in world space once posed by `q`. */
+function posedBox(id: string, q: THREE.Quaternion): THREE.Box3 {
+  const b = boxes.get(id)!;
+  const box = new THREE.Box3();
+  for (let i = 0; i < 8; i++) {
+    box.expandByPoint(
+      new THREE.Vector3(
+        i & 1 ? b.mx[0] : b.mn[0],
+        i & 2 ? b.mx[1] : b.mn[1],
+        i & 4 ? b.mx[2] : b.mn[2],
+      ).applyQuaternion(q),
+    );
+  }
+  return box;
+}
+
 /** Lowest world Z a part's bounding box reaches once posed — i.e. how close it sits to the grid. */
 function lowestWorldZ(id: string, q: THREE.Quaternion): number {
-  const b = boxes.get(id)!;
-  let min = Infinity;
-  for (let i = 0; i < 8; i++) {
-    const v = new THREE.Vector3(
-      i & 1 ? b.mx[0] : b.mn[0],
-      i & 2 ? b.mx[1] : b.mn[1],
-      i & 4 ? b.mx[2] : b.mn[2],
-    ).applyQuaternion(q);
-    if (v.z < min) min = v.z;
-  }
-  return min;
+  return posedBox(id, q).min.z;
 }
 
 const chairKind = ASSEMBLY_KINDS.find((k) => k.id === 'chair-body')!;
@@ -128,6 +135,18 @@ describe('the chair display frame against the shipped meshes', () => {
     // and the pieces that DID rest on the grid before are no longer the lowest thing
     expect(low('chair-storage-left')).toBeGreaterThan(floor);
     expect(low('chair-caster-std-left')).toBeGreaterThan(floor);
+  });
+
+  it('leaves a footprint the grid can hold, so the chair stands on the stage not past it', () => {
+    // The viewport centers the posed assembly over the grid, so what matters is the footprint's
+    // SIZE, not where the CAD origin happens to sit. Union of both variants — if the conservative
+    // box fits, either variant does.
+    const q = displayQuaternionFor(chairKind);
+    const foot = new THREE.Box3();
+    for (const id of boxes.keys()) foot.union(posedBox(id, q));
+    const size = foot.getSize(new THREE.Vector3());
+    expect(size.x, 'chair width vs grid span').toBeLessThan(GRID_SPAN_MM);
+    expect(size.y, 'chair depth vs grid span').toBeLessThan(GRID_SPAN_MM);
   });
 
   it('points the opening camera at the front for a posed kind, at the design face otherwise', () => {

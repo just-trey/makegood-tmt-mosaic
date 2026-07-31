@@ -17,6 +17,16 @@ let basePixelRatio = 1;
 let pendingFrame = true;
 let preferredViewDir: THREE.Vector3 | null = null;
 
+/**
+ * Ground plane span. The grid doubles as a ruler, so the cell stays a round 20mm and the span is
+ * sized to the largest assembly the (fixed, closed) part library contains: the chair's footprint is
+ * 380 × 658mm, which the old 600mm stage — sized for the 280mm wheel — overhung at both ends.
+ * `tests/display-frame.test.ts` asserts every kind still fits, so a new part outsizing the stage
+ * fails there rather than in the viewport.
+ */
+export const GRID_SPAN_MM = 800;
+const GRID_CELL_MM = 20;
+
 export function initViewport(host: HTMLElement): void {
   renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   basePixelRatio = Math.min(devicePixelRatio, 2);
@@ -55,11 +65,11 @@ export function initViewport(host: HTMLElement): void {
   dl2.position.set(-60, 80, 40);
   scene.add(dl2);
 
-  const grid = new THREE.GridHelper(600, 30, 0x2b3457, 0x1c2440); // 600mm span — fits the wheel assembly
+  const grid = new THREE.GridHelper(GRID_SPAN_MM, GRID_SPAN_MM / GRID_CELL_MM, 0x2b3457, 0x1c2440);
   grid.rotation.x = Math.PI / 2;
   scene.add(grid);
   const shadowCatcher = new THREE.Mesh(
-    new THREE.PlaneGeometry(600, 600),
+    new THREE.PlaneGeometry(GRID_SPAN_MM, GRID_SPAN_MM),
     new THREE.ShadowMaterial({ opacity: 0.3 }),
   );
   shadowCatcher.position.z = -0.05; // just under the grid plane so coplanar model bottoms don't z-fight

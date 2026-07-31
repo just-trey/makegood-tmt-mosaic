@@ -201,15 +201,18 @@ function renderRawAssemblyParts(): void {
 }
 
 /**
- * Pose the assembly for display: turn it into the kind's authored display frame, then lift it so
- * it rests on the grid like the flat plates do.
+ * Pose the assembly for display: turn it into the kind's authored display frame, then stand it on
+ * the grid — centered over it, resting on it.
  *
- * Both steps exist because parts are never transformed at load — the wheel's native coordinates
- * are hub-centered and straddle z=0, and the chair's are its CAD frame. Both are viewport-only:
- * the cut pipeline, the baked charts and export placement all read the parts, not the scene.
+ * All of it exists because parts are never transformed at load — the wheel's native coordinates
+ * are hub-centered and straddle z=0, and the chair's are its CAD frame, whose origin is a CAD datum
+ * rather than the middle of the part (the chair's footprint runs 4..662mm along the grid's Y, so
+ * uncentered it stood almost entirely off the back edge of the stage). All viewport-only: the cut
+ * pipeline, the baked charts and export placement read the parts, not the scene.
  *
- * The rotation has to be applied BEFORE the lift, since it changes which face is lowest — that is
- * the whole point for the chair, whose rearmost face was resting on the grid.
+ * The rotation has to be applied BEFORE measuring, since it changes both which face is lowest and
+ * where the footprint lies — that is the whole point for the chair, whose rearmost face was
+ * resting on the grid.
  */
 function poseAssemblyForDisplay(): void {
   const modelGroup = getModelGroup();
@@ -217,7 +220,9 @@ function poseAssemblyForDisplay(): void {
   modelGroup.position.set(0, 0, 0);
   modelGroup.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(modelGroup);
-  if (!box.isEmpty()) modelGroup.position.z = -box.min.z;
+  if (box.isEmpty()) return;
+  const center = box.getCenter(new THREE.Vector3());
+  modelGroup.position.set(-center.x, -center.y, -box.min.z);
 }
 
 async function rebuildAssemblyScene(): Promise<void> {
