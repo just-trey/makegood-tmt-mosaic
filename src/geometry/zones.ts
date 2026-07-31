@@ -84,9 +84,10 @@ export interface FillExtent {
 /**
  * Per-cut knobs a fill needs and a sticker doesn't (both conformal-only; the flat mapper's cutter
  * is a straight extrusion with nothing to tune). A fill spans the whole zone rather than a
- * sticker-sized patch, so it refines more coarsely to keep the triangle count workable, and it
- * tolerates more overhang past the chart because it necessarily runs along the zone's edge — see
- * FILL_REFINE_MM / FILL_SNAP_MM in conformal.ts for the actual values and why.
+ * sticker-sized patch, so it refines more coarsely to keep the triangle count workable — see
+ * FILL_REFINE_MM in conformal.ts. `snapMM` is left overridable for tests; the build passes the
+ * same CHART_SNAP_MM in both modes, since that tolerance covers a bake artifact neither mode
+ * escapes (see its comment).
  */
 export interface CutterOptions {
   refineMM?: number;

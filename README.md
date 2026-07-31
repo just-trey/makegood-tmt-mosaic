@@ -583,14 +583,6 @@ is imported by the app. Two other brand themes in the tokens folder
   the zone behind it. Fix: raycast the visible parts too and reject a zone hit
   farther than the nearest solid hit. Gets worse as zones multiply — the chair
   went from 4 to 5 with the full-coverage re-author.
-- **`FILL_SNAP_MM = 2` rests on a stale measurement.** The comment at
-  [src/geometry/conformal.ts](src/geometry/conformal.ts) cites ~0.9 mm of
-  baked-boundary overhang; measured against the shipped bake it was 0.001 mm
-  at baked vertices and 0.197 mm densified — inside `CHART_SNAP_MM = 0.5`. The
-  fill guard is roughly 10x looser than it needs to be, so genuinely misplaced
-  fill artwork snaps silently instead of warning. Re-measure against the
-  current whole-chair zones (bigger zones may legitimately want more slack)
-  and set it from that number rather than nudging it.
 - **One warning covers three different failures**
   ([src/geometry/assembly.ts](src/geometry/assembly.ts)) — "Raise Scale to
   fill the surface" is the advice whether `tileCoverage` refused on tile

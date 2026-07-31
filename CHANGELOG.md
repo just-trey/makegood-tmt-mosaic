@@ -76,6 +76,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A design placed as a **sticker** on one of the chair's curved surfaces could
+  drop a color from the cut, reported as "Couldn't build the cut solid". The
+  tolerance deciding how far off the baked chart a cutter vertex may land before
+  the cut is refused was 0.5 mm for a sticker against 2 mm for a fill, on the
+  assumption that only a fill runs along the clipped surface boundary. That
+  assumption was wrong: a part's baked claim on a surface is slightly more
+  generous than the triangulation inside it, leaving thin uncovered patches in
+  the claim's **interior** — worst 1.915 mm deep, never more than 0.67% of the
+  claimed area — which a sticker meets exactly as a fill does. Both modes now
+  use the same 2 mm tolerance, and a fill keeps its own coarser refinement. A
+  test pins that worst case across all 25 chair charts, so a re-bake that opens
+  a wider gap fails CI instead of silently dropping cuts again.
 - A warning could stay on screen after the rebuild that produced it had been
   superseded by a later, successful one. Warnings were cleared only when an SVG
   was parsed or the Artwork panel changed, never per rebuild, and they dedupe by

@@ -4,7 +4,6 @@ import {
   CHART_SNAP_MM,
   ConformalZoneMapper,
   FILL_REFINE_MM,
-  FILL_SNAP_MM,
   type ConformalChart,
 } from '../src/geometry/conformal';
 import {
@@ -354,18 +353,19 @@ describe('buildCutter', () => {
     expect(soup).toBeNull();
   }, 20000);
 
-  it('snapMM widens that tolerance for a fill, which always runs along the zone edge', () => {
-    // 1.2mm past u=0: too far for a sticker, fine for a fill clipped to a boundary the bake let
-    // overhang the chart's real triangles
+  // A sticker gets the same tolerance a fill does. The two used to differ (0.5 vs 2) on the theory
+  // that only a fill runs along the clipped boundary; measuring the shipped bake showed the
+  // uncovered patches sit *interior* to each part's claim, so both modes meet them equally — and a
+  // sticker covering one was failing on the chair's seat-back parts.
+  it('snaps an overhang a sticker also has to survive, not just a fill', () => {
     const feat = squareAt(10 - 1.2, H / 2, 10);
-    expect(1.2).toBeGreaterThan(CHART_SNAP_MM);
-    expect(mapper.buildCutter(feat, DEPTH, OVER)).toBeNull();
-    expect(mapper.buildCutter(feat, DEPTH, OVER, { snapMM: FILL_SNAP_MM })).not.toBeNull();
-    // …and still not a licence to place artwork off the chart entirely
-    expect(
-      mapper.buildCutter(squareAt(ARC_U + ARC_U / 2, H / 2, 10), DEPTH, OVER, {
-        snapMM: FILL_SNAP_MM,
-      }),
-    ).toBeNull();
+    expect(1.2).toBeLessThan(CHART_SNAP_MM);
+    expect(mapper.buildCutter(feat, DEPTH, OVER)).not.toBeNull();
+  }, 20000);
+
+  it('still refuses artwork off the chart entirely, at either refinement', () => {
+    const far = squareAt(ARC_U + ARC_U / 2, H / 2, 10);
+    expect(mapper.buildCutter(far, DEPTH, OVER)).toBeNull();
+    expect(mapper.buildCutter(far, DEPTH, OVER, { refineMM: FILL_REFINE_MM })).toBeNull();
   }, 20000);
 });

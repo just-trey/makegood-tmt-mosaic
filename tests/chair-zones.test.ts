@@ -11,7 +11,7 @@ import {
   type ZoneSidecar,
 } from '../src/geometry/zoneCharts';
 import { planarArea } from '../src/geometry/regions';
-import { ConformalZoneMapper } from '../src/geometry/conformal';
+import { CHART_SNAP_MM, ConformalZoneMapper } from '../src/geometry/conformal';
 import {
   getManifold,
   manifoldIsValid,
@@ -307,5 +307,110 @@ describe('reconstructed charts drive the conformal mapper on real geometry', () 
       man.delete();
     },
     20000,
+  );
+});
+
+// The tolerance CHART_SNAP_MM has to cover, measured rather than assumed. A part's baked claim on
+// a zone is slightly more generous than the triangulation inside it, so points within the claim can
+// sit a little off every real triangle; a cutter vertex landing in one of those gaps is snapped, or
+// the whole colour is dropped from that part when it's further out than the tolerance allows.
+//
+// That is exactly how the chair's seat-back parts lost two colours in sticker mode while the old
+// tolerance was 0.5mm. Pinning the invariant here means a re-bake that opens a wider gap fails CI,
+// instead of silently dropping cuts on whichever design happens to cover the spot.
+describe('baked claims stay inside the snap tolerance', () => {
+  const pointInRing = (px: number, py: number, ring: number[][]): boolean => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0],
+        yi = ring[i][1],
+        xj = ring[j][0],
+        yj = ring[j][1];
+      if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const distToSeg = (
+    px: number,
+    py: number,
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+  ): number => {
+    const dx = bx - ax,
+      dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  };
+
+  it.each(
+    sidecar.zones.flatMap((z) =>
+      z.charts.map((c) => [`${z.id}/${c.libraryPartId}`, z, c] as const),
+    ),
+  )(
+    '%s claims no patch further off its triangles than the snap tolerance',
+    (who, zone, chartMeta) => {
+      const chart = reconstructChart(
+        zone,
+        chartMeta,
+        partMesh.get(chartMeta.libraryPartId)!.vertices,
+      );
+      const { uv, triangles } = chart;
+      const triCount = triangles.length / 3;
+      const corners = (t: number): number[] => {
+        const i0 = triangles[t * 3],
+          i1 = triangles[t * 3 + 1],
+          i2 = triangles[t * 3 + 2];
+        return [uv[i0 * 2], uv[i0 * 2 + 1], uv[i1 * 2], uv[i1 * 2 + 1], uv[i2 * 2], uv[i2 * 2 + 1]];
+      };
+      const covered = (px: number, py: number): boolean => {
+        for (let t = 0; t < triCount; t++) {
+          const [ax, ay, bx, by, cx, cy] = corners(t);
+          const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+          if (Math.abs(d) < 1e-12) continue;
+          const l0 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / d;
+          const l1 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / d;
+          if (l0 >= -1e-9 && l1 >= -1e-9 && 1 - l0 - l1 >= -1e-9) return true;
+        }
+        return false;
+      };
+      const offChart = (px: number, py: number): number => {
+        let best = Infinity;
+        for (let t = 0; t < triCount; t++) {
+          const [ax, ay, bx, by, cx, cy] = corners(t);
+          best = Math.min(
+            best,
+            distToSeg(px, py, ax, ay, bx, by),
+            distToSeg(px, py, bx, by, cx, cy),
+            distToSeg(px, py, cx, cy, ax, ay),
+          );
+        }
+        return best;
+      };
+
+      let worst = 0;
+      for (const sub of chart.subRegions ?? []) {
+        const xs = sub.outer.map((p) => p[0]),
+          ys = sub.outer.map((p) => p[1]);
+        const [u0, u1] = [Math.min(...xs), Math.max(...xs)];
+        const [v0, v1] = [Math.min(...ys), Math.max(...ys)];
+        // 1mm raster: the gaps this is guarding against are thin ribbons metres long in aggregate,
+        // not sub-millimetre specks, and a finer step multiplies a whole-sidecar scan for no signal.
+        for (let su = u0; su <= u1; su += 1)
+          for (let sv = v0; sv <= v1; sv += 1) {
+            if (!pointInRing(su, sv, sub.outer)) continue;
+            if (sub.holes.some((h) => pointInRing(su, sv, h))) continue;
+            if (covered(su, sv)) continue;
+            const d = offChart(su, sv);
+            if (d > worst) worst = d;
+          }
+      }
+      // Worst on the shipped bake is 1.915mm (chair-storage-left/left) — this has ~4% headroom, so a
+      // failure here means the bake changed, not that the raster got unlucky.
+      expect(worst, `${who} worst uncovered depth`).toBeLessThan(CHART_SNAP_MM);
+    },
+    60000,
   );
 });

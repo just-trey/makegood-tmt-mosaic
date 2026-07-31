@@ -36,19 +36,25 @@ export const FILL_REFINE_MM = 3;
 
 /**
  * How far (mm) outside the chart a cutter vertex may land and still be snapped to the nearest
- * chart triangle. The zone boundary is simplified to ~0.2mm at bake time, so clipped regions can
- * overhang the true chart edge slightly; anything past this is a bad bake or misplaced artwork.
+ * chart triangle. Anything past this is misplaced artwork, and fails the cut rather than being
+ * silently dragged onto the surface.
+ *
+ * The number is set by the bake, not by taste: a part's baked claim on a zone (`subRegions`) is
+ * slightly more generous than the triangulation inside it, so points within the claim can sit a
+ * little off every real triangle. Measured across all 25 shipped chair charts (2026-07-31) by
+ * rastering each claim and taking the distance from each uncovered sample to the nearest chart
+ * triangle: worst **1.915mm** (`chair-storage-left/left`), 12 of 25 charts over 0.5mm, and the
+ * uncovered area never above 0.67% of the claim. So this bounds a real, small, everywhere-present
+ * bake artifact — with only ~4% headroom at 2mm. `tests/chair-zones.test.ts` pins that invariant,
+ * so a re-bake that widens the gap fails CI instead of silently dropping cuts.
+ *
+ * This used to be 0.5 for stickers with a separate 2mm for fills, on the theory that only a fill
+ * runs along the clipped boundary. That was wrong: the gaps are *interior* to the claim (the
+ * failing points measured 5-6mm inside the outline, not on the cut edge), so they hit both modes
+ * identically — a sticker large enough to cover one just failed, which is what dropped two colors
+ * off the chair's seat-back parts.
  */
-export const CHART_SNAP_MM = 0.5;
-
-/**
- * The same tolerance for a fill, which needs more slack for a structural reason: a fill is clipped
- * to the zone boundary and therefore *always* runs right along it, where the baked (simplified,
- * and slightly generous) outline overhangs the chart's real triangles — measured at up to ~0.9mm
- * on the chair. A sticker that far off-chart is a misplacement worth failing on; a fill touching
- * the edge it was clipped to is not, so those vertices snap to the chart edge instead.
- */
-export const FILL_SNAP_MM = 2;
+export const CHART_SNAP_MM = 2;
 
 /**
  * One baked UV chart: a patch of a part's surface mesh unwrapped into a flat 2D space where
