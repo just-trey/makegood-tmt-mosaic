@@ -1,6 +1,7 @@
 ---
 name: ship-it
 description: Pre-PR gate for this repo — runs the five CI gates locally, then checks the four docs that drift silently (CHANGELOG, README, in-app help panel, analytics catalog) against the actual diff, and watches CI without polling. Use before opening or updating a PR, or when asked "is this ready to push / ready for a PR".
+model: sonnet
 ---
 
 # Ship it
