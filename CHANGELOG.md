@@ -76,6 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A warning could stay on screen after the rebuild that produced it had been
+  superseded by a later, successful one. Warnings were cleared only when an SVG
+  was parsed or the Artwork panel changed, never per rebuild, and they dedupe by
+  message — so a cut failure raised under an earlier zone or mode binding
+  survived indefinitely, describing geometry that was no longer in the viewport
+  or in the export. Diagnostics that a rebuild regenerates from scratch every
+  attempt are now cleared at the start of each attempt; standing facts that
+  nothing re-derives — a part's load-time fingerprint mismatch, an export
+  placement notice — are left in place.
 - The chair body rendered lying on its back with its top facing forward. The
   viewport is Z-up and parts are never transformed at load, so the chair —
   packed in its CAD frame, where up is +Y — came in rotated a quarter turn,

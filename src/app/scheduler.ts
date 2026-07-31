@@ -1,4 +1,4 @@
-import { warn } from '../warnings';
+import { clearBuildWarnings, warnBuild } from '../warnings';
 import { renderWarnings } from '../ui/warningsView';
 import { hideOverlay, showOverlay, updateOverlay } from '../ui/overlay';
 import { setProgressSink } from '../progress';
@@ -63,6 +63,10 @@ async function runNow(): Promise<void> {
     return;
   }
   running = true;
+  // Fresh diagnostics for this attempt — a warning from whatever the last rebuild's inputs were
+  // (a different zone binding, an artwork that's since been swapped) can't outlive it and still
+  // show once this one lands. Standing facts (WARNINGS proper) aren't touched.
+  clearBuildWarnings();
   const showsOverlay = isRebuildLikelySlow();
   const t0 = performance.now();
   if (showsOverlay) {
@@ -82,7 +86,7 @@ async function runNow(): Promise<void> {
     await handler();
   } catch (e) {
     console.error(e);
-    warn('Rebuild failed: ' + (e as Error).message);
+    warnBuild('Rebuild failed: ' + (e as Error).message);
     renderWarnings();
   } finally {
     lastRebuildMs = performance.now() - t0;

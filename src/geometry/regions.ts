@@ -2,7 +2,7 @@ import * as turf from '@turf/turf';
 import type { Loop, PolyFeature, ResolvedRegion, SVGShape } from '../types';
 import { signedArea } from '../svg/path';
 import { deltaE, hexToLab } from '../color';
-import { warn } from '../warnings';
+import { warnBuild } from '../warnings';
 import { reportProgress } from '../progress';
 import { rethrowStackOverflowAs } from '../errors';
 
@@ -253,7 +253,7 @@ export function safeUnion(
   if (!b) return a;
   const r = boolOpWithRetry((x, y) => turf.union(x, y) as PolyFeature | null, a, b);
   if (r.ok) return r.val ?? null;
-  warn(
+  warnBuild(
     `Boolean union failed${label ? ` for ${label}` : ''} (likely a self-intersecting path in the source SVG) — using the unmerged shape as a fallback, so this region may be missing part of its area.`,
   );
   return a;
@@ -270,7 +270,7 @@ export function safeDiff(
   if (!b) return a;
   const r = boolOpWithRetry((x, y) => turf.difference(x, y) as PolyFeature | null, a, b);
   if (r.ok) return r.val ?? null;
-  warn(
+  warnBuild(
     `Boolean subtraction failed${label ? ` for ${label}` : ''} (likely a self-intersecting path in the source SVG) — that region may overlap its neighbor instead of having the overlap cut out.`,
   );
   return a;
@@ -286,7 +286,7 @@ export function safeIntersect(
   if (!a || !b) return null;
   const r = boolOpWithRetry((x, y) => turf.intersect(x, y) as PolyFeature | null, a, b);
   if (r.ok) return r.val ?? null;
-  warn(
+  warnBuild(
     `Clipping color region to the part face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
   );
   return a;
