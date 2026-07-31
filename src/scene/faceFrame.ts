@@ -3,6 +3,7 @@ import { state } from '../state/store';
 import { currentBaseParams } from '../state/store';
 import { currentAssemblyKind } from '../assembly/kinds';
 import { primaryZoneMapper, zoneMappersFor } from '../geometry/zoneMappers';
+import { canvasAnchor } from '../geometry/assembly';
 import type { ZoneMapper } from '../geometry/zones';
 import { activeArtworkInstance } from '../state/artwork';
 import type { AssemblyPart } from '../types';
@@ -116,22 +117,50 @@ function assemblyFrame(): FaceFrame | null {
   const svgW = bbox.maxX - bbox.minX,
     svgH = bbox.maxY - bbox.minY;
   if (!(svgW > 0) || !(svgH > 0)) return null;
+  const contentCx = (bbox.minX + bbox.maxX) / 2,
+    contentCy = (bbox.minY + bbox.maxY) / 2;
+  // The same anchor the build resolves (assembly.ts anchorOf): the document canvas for a rect
+  // design, the design circle for a wheel one, the content bbox when neither exists.
+  const anchor = (isRect ? canvasAnchor(state.parsed!) : state.parsed!.rawSVGCircle) ?? {
+    cx: contentCx,
+    cy: contentCy,
+    r: Math.max(svgW, svgH) / 2 || 1,
+  };
   // Same mmPerUnit the build uses. The rect auto-fit-to-face fallback (userUnitMM null) is only
   // approximated here for frame *sizing*; the scale gesture is ratio-based so it stays correct
   // regardless, and the true size is restored on the next rebuild.
   const scaleMult = state.scalePct / 100;
-  let mmPerUnit: number;
-  if (isRect) {
-    mmPerUnit = (state.parsed!.userUnitMM ?? 1) * scaleMult;
-  } else {
-    const svgR = state.parsed!.rawSVGCircle?.r ?? (Math.max(svgW, svgH) / 2 || 1);
-    mmPerUnit = ((state.asmRadius || 138) / svgR) * scaleMult;
-  }
+  const mmPerUnit = isRect
+    ? (state.parsed!.userUnitMM ?? 1) * scaleMult
+    : ((state.asmRadius || 138) / anchor.r) * scaleMult;
+
+  // The cut is anchored on the *document*, so it lands wherever the drawn content sits relative to
+  // that anchor — off-center on the face for a design drawn off-center on its sheet. The frame has
+  // to pick up the same displacement or it stops enclosing the artwork it is meant to select, and
+  // the move hit-test grabs empty face. Measure it through the mapper's own placer, as the placed
+  // content center minus the placed anchor, so the flips, mirror correction, scale and rotation
+  // all come from the code the build uses rather than being restated here. The offsets cancel in
+  // the difference, hence 0/0. Exactly zero whenever the anchor already is the content center —
+  // every design that fills its sheet, and every circle-less wheel design.
+  const place = mapper.placer({
+    svgC: anchor,
+    mmPerUnit,
+    xFlip: state.flipX ? -1 : 1,
+    zMul: state.flipY ? 1 : -1,
+    offX: 0,
+    offZ: 0,
+    rotationDeg: state.rotationDeg,
+  });
+  const placedContent = place([contentCx, contentCy]);
+  const placedAnchor = place([anchor.cx, anchor.cy]);
 
   // frameAt returns the design center and axes in the part's NATIVE space; the model group is both
   // lifted onto the grid and (for a kind with a display frame) rotated, so the whole frame has to
   // come through that transform — the origin as a point, the axes as directions.
-  const frame = mapper.frameAt(state.offsetX, state.offsetY);
+  const frame = mapper.frameAt(
+    state.offsetX + placedContent[0] - placedAnchor[0],
+    state.offsetY + placedContent[1] - placedAnchor[1],
+  );
   return {
     origin: modelToWorldPoint(frame.origin),
     uAxis: modelToWorldDir(frame.uAxis),

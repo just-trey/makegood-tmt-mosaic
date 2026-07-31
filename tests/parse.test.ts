@@ -205,6 +205,34 @@ describe('parseSVGDocument', () => {
     expect(out.viewBox).toBeNull();
   });
 
+  it('reports the canvas rect placement anchors on: the viewBox when there is one', () => {
+    const out = parseSVGDocument(
+      svg('<rect width="10" height="10" fill="#ff0000"/>', 'width="266mm" viewBox="0 0 266 185"'),
+    );
+    expect(out.canvas).toEqual({ w: 266, h: 185 });
+  });
+
+  it('falls back to the declared mm box as the canvas when there is no viewBox', () => {
+    // No viewBox, so coordinates are user px at 96dpi — the declared physical size still states a
+    // canvas, and without it a design drawn away from the origin would re-center on the part.
+    const out = parseSVGDocument(
+      svg('<rect width="10" height="10" fill="#ff0000"/>', 'width="25.4mm" height="12.7mm"'),
+    );
+    expect(out.canvas?.w).toBeCloseTo(96, 6);
+    expect(out.canvas?.h).toBeCloseTo(48, 6);
+  });
+
+  it('reports no canvas when the SVG declares neither a viewBox nor both dimensions', () => {
+    expect(
+      parseSVGDocument(svg('<rect width="10" height="10" fill="#ff0000"/>')).canvas,
+    ).toBeNull();
+    // A lone width leaves the canvas height unknown, which is not an anchor.
+    const oneAxis = parseSVGDocument(
+      svg('<rect width="10" height="10" fill="#ff0000"/>', 'width="25.4mm"'),
+    );
+    expect(oneAxis.canvas).toBeNull();
+  });
+
   it.each([
     ['truncated', 'viewBox="0 0 100"'],
     ['non-numeric', 'viewBox="none"'],
