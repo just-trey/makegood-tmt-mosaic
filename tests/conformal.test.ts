@@ -13,8 +13,9 @@ import {
   soupToManifold,
   type ManifoldAPI,
 } from '../src/geometry/manifold';
+import { canvasAnchor } from '../src/geometry/assembly';
 import type { DesignPlacement } from '../src/geometry/zones';
-import type { PolyFeature } from '../src/types';
+import type { ParsedSVG, PolyFeature } from '../src/types';
 
 // Quarter-cylinder shell, the one curved surface that unwraps exactly: radius R about the Y axis,
 // θ ∈ [0, 90°], height H. UV is the analytic unwrap (u = R·θ arc length, v = y), so every chart
@@ -174,6 +175,72 @@ describe('placer', () => {
     const [u, v] = place([6, 5]);
     expect(u).toBeCloseTo(ARC_U / 2, 6);
     expect(v).toBeCloseTo(H / 2 + 1, 6);
+  });
+});
+
+// The template the bake emits for a zone spans it 1:1 in mm with SVG y running down
+// (svg_y = H - v, scripts/lib/zonebake.mjs zoneTemplateSVG). Anchoring placement on that canvas
+// rather than on the drawn content is what makes the template's own promise — "load at Scale 100%,
+// Offset 0/0 and it lands on the zone" — hold for a design that doesn't fill the sheet.
+describe('canvas anchoring (zone templates)', () => {
+  const sheet = (bbox: ParsedSVG['bbox']): ParsedSVG => ({
+    shapes: [],
+    bbox,
+    rawSVGCircle: null,
+    canvas: { w: ARC_U, h: H },
+  });
+
+  const placeOn = (p: ParsedSVG): ((pt: number[]) => number[]) => {
+    const anchor = canvasAnchor(p);
+    if (!anchor) throw new Error('test sheet declares a viewBox; canvasAnchor should find it');
+    return mapper.placer(placement({ svgC: anchor }));
+  };
+
+  it('inverts the template mapping: svg (x, y) → uv (x, H − y)', () => {
+    const place = placeOn(sheet({ minX: 0, minY: 0, maxX: ARC_U, maxY: H }));
+    for (const [x, y] of [
+      [0, 0],
+      [ARC_U, H],
+      [ARC_U / 3, H / 4],
+    ]) {
+      const [u, v] = place([x, y]);
+      expect(u).toBeCloseTo(x, 6);
+      expect(v).toBeCloseTo(H - y, 6);
+    }
+  });
+
+  it('keeps a corner-drawn shape in its corner (the fender case)', () => {
+    const corner = { minX: 0, minY: 0, maxX: ARC_U * 0.2, maxY: H * 0.2 };
+    const [u, v] = placeOn(sheet(corner))([0, 0]);
+    expect(u).toBeCloseTo(0, 6);
+    expect(v).toBeCloseTo(H, 6);
+
+    // Anchoring on the drawn content instead — the old behavior — drags that same corner 40% of
+    // the way across the zone and well down it, which is how a fender-shaped design ended up cut
+    // on the neighbouring part.
+    const [uOld, vOld] = mapper.placer(
+      placement({
+        svgC: { cx: (corner.minX + corner.maxX) / 2, cy: (corner.minY + corner.maxY) / 2, r: 1 },
+      }),
+    )([0, 0]);
+    expect(uOld).toBeCloseTo(ARC_U * 0.4, 6);
+    expect(vOld).toBeCloseTo(H * 0.6, 6);
+  });
+
+  it('agrees with content anchoring when the design fills its canvas', () => {
+    const full = { minX: 0, minY: 0, maxX: ARC_U, maxY: H };
+    const anchor = canvasAnchor(sheet(full));
+    expect(anchor?.cx).toBeCloseTo((full.minX + full.maxX) / 2, 6);
+    expect(anchor?.cy).toBeCloseTo((full.minY + full.maxY) / 2, 6);
+  });
+
+  it('reports no canvas when the document declares neither a viewBox nor a size', () => {
+    const noCanvas: ParsedSVG = {
+      shapes: [],
+      bbox: { minX: 0, minY: 0, maxX: 10, maxY: 10 },
+      rawSVGCircle: null,
+    };
+    expect(canvasAnchor(noCanvas)).toBeNull();
   });
 });
 

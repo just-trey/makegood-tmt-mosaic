@@ -156,3 +156,48 @@ describe('assembly gizmo frame follows the active artwork instance', () => {
     expect(Math.abs(frame.normal.x)).toBeCloseTo(1, 6); // part 1 / zone "left"
   });
 });
+
+// Placement anchors a rect design on its document canvas, so a design drawn away from the middle
+// of its sheet is cut away from the middle of the zone. The frame has to track that: designGizmo's
+// move hit-test accepts a click at |u| <= halfW, |v| <= halfH from `origin`, so a frame left behind
+// on the anchor selects bare surface and drags artwork the user never grabbed.
+describe('assembly gizmo frame encloses the artwork the cut places', () => {
+  // CHART_A is S(u,v) = [170, v, -600 + u] over UV 0..100, so its UV center (50,50) — where an
+  // anchor-centered frame would sit — is world [170, 50, -550].
+  const onSheet = (bbox: ParsedSVG['bbox']): ParsedSVG =>
+    ({
+      shapes: [],
+      bbox,
+      rawSVGCircle: null,
+      userUnitMM: 1,
+      canvas: { w: 100, h: 100 },
+    }) as unknown as ParsedSVG;
+
+  const frameFor = (bbox: ParsedSVG['bbox']): NonNullable<ReturnType<typeof computeFaceFrame>> => {
+    const a = loadArtworkSource(onSheet(bbox), 'sheet.svg');
+    setArtworkZone(a.id, 'left');
+    return computeFaceFrame()!;
+  };
+
+  it('stays on the anchor for a design that fills its sheet', () => {
+    const frame = frameFor({ minX: 0, minY: 0, maxX: 100, maxY: 100 });
+
+    expect(frame.origin.y).toBeCloseTo(50, 6);
+    expect(frame.origin.z).toBeCloseTo(-550, 6);
+    expect(frame.halfW).toBeCloseTo(50, 6);
+    expect(frame.halfH).toBeCloseTo(50, 6);
+  });
+
+  it('follows a design drawn in one corner of its sheet', () => {
+    // 20x20 of content in the sheet's top-left. SVG y runs opposite v, so the content center at
+    // SVG (10,10) is UV (10, 90) — world [170, 90, -590], two-fifths of the zone away from the
+    // anchor in each axis.
+    const frame = frameFor({ minX: 0, minY: 0, maxX: 20, maxY: 20 });
+
+    expect(frame.origin.x).toBeCloseTo(170, 6);
+    expect(frame.origin.y).toBeCloseTo(90, 6);
+    expect(frame.origin.z).toBeCloseTo(-590, 6);
+    expect(frame.halfW).toBeCloseTo(10, 6);
+    expect(frame.halfH).toBeCloseTo(10, 6);
+  });
+});

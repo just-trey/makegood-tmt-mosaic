@@ -497,6 +497,34 @@ describe('buildAssemblyGeometry', () => {
   });
 
   it(
+    'rect designFit anchors on the document canvas, not the drawn content',
+    { timeout: 30000 },
+    async () => {
+      // A template sheet spanning the whole 40mm face with a 10mm square drawn in one corner of
+      // it. The square is asking to be cut in that corner — anchoring on its own bbox instead
+      // would re-center it on the face, which is what dropped a fender-shaped design onto the
+      // neighbouring part of the chair's `left` zone. The +Y face mirrors X (placeOnPart's
+      // nsign > 0 branch), so the SVG's top-left corner maps to the face's +X/+Z corner.
+      //
+      // The sheet states its canvas as a declared mm box with no viewBox — the case a re-exported
+      // template hits, and the one that still re-centered after the first cut of this fix.
+      const parsed: ParsedSVG = {
+        ...redSquareParsed(),
+        rawSVGCircle: null,
+        userUnitMM: 1,
+        viewBox: null,
+        canvas: { w: 40, h: 40 },
+      };
+      const built = (await buildAssemblyGeometry(baseInput({ designFit: 'rect', parsed })))!;
+      const r = xzRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.maxX - r.minX).toBeCloseTo(10, 3);
+      expect(r.maxZ - r.minZ).toBeCloseTo(10, 3);
+      expect((r.minX + r.maxX) / 2).toBeCloseTo(15, 3);
+      expect((r.minZ + r.maxZ) / 2).toBeCloseTo(15, 3);
+    },
+  );
+
+  it(
     'rotationDeg spins the design about its center (90° swaps X/Z extents)',
     { timeout: 30000 },
     async () => {

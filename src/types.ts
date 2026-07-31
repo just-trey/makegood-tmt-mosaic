@@ -39,6 +39,17 @@ export interface ParsedSVG {
    * it to the part face recovers the intended scale.
    */
   viewBox?: { w: number; h: number } | null;
+  /**
+   * The document's own canvas in user units, origin at (0,0) — the viewBox extent when it declares
+   * one, else the declared physical width/height at the same 96dpi `userUnitMM` assumes for a
+   * viewBox-less file. Rect placement anchors artwork on this rather than on the drawn content, so
+   * a design positioned within its sheet keeps that position on the part. Null when the file
+   * declares neither, leaving nothing but the content to anchor on.
+   *
+   * Distinct from `viewBox`, which stays the viewBox alone because the scale fallback and the fill
+   * tile cell both mean specifically that.
+   */
+  canvas?: { w: number; h: number } | null;
 }
 
 export type ShapeKind = 'assembly' | 'disc' | 'rect' | 'round' | 'stl';

@@ -148,6 +148,28 @@ export interface AssemblyBuildInput {
 }
 
 /**
+ * Where a `designFit: 'rect'` design's own coordinate frame is pinned to the target surface: the
+ * center of the document canvas (its viewBox, or its declared mm box), not of the drawn content.
+ *
+ * A zone/part template is drawn in the surface's own mm frame — `zoneTemplateSVG` and
+ * `gen-templates.mjs` both emit a canvas that spans the surface 1:1 — so a shape sitting in one
+ * corner of the sheet is asking to be cut in that corner of the surface. Anchoring on the content
+ * bbox instead re-centers every design, which is what put a fender-shaped drawing on whichever
+ * part happened to occupy the middle of the `left` zone.
+ *
+ * The two agree exactly when the artwork fills its canvas (bbox center == canvas center), which is
+ * the case every design that worked before this hits.
+ *
+ * Null when the file declares no canvas at all — neither a viewBox nor a physical size — since
+ * then there is nothing to anchor to but the content, and the caller falls back to its bbox.
+ */
+export function canvasAnchor(parsed: ParsedSVG): { cx: number; cy: number; r: number } | null {
+  const c = parsed.canvas;
+  if (!c || !(c.w > 0) || !(c.h > 0)) return null;
+  return { cx: c.w / 2, cy: c.h / 2, r: Math.max(c.w, c.h) / 2 };
+}
+
+/**
  * Vector + mesh-boolean assembly build. For each part: take the SVG's real per-color net
  * regions, place them onto the part's flat face in the part's own native coordinates, extrude
  * each to a prism, then use Manifold to (a) subtract all prisms from the real part mesh -> the
@@ -178,11 +200,14 @@ export async function buildAssemblyGeometry(
   // intended outer boundary), otherwise a pseudo-circle around the artwork's bounding box —
   // centered on the artwork, radius = half its larger dimension — so circle-less SVGs still
   // auto-center on the hub and span the design diameter instead of refusing to build. Rect parts
-  // always anchor on the artwork bbox center (a template circle is meaningless there) and skip
-  // the wheel notice.
+  // anchor on the document canvas (see canvasAnchor) and skip the wheel notice.
   const anchorOf = (parsed: ParsedSVG): { cx: number; cy: number; r: number } => {
     const existing = isRect ? null : parsed.rawSVGCircle;
     if (existing) return existing;
+    if (isRect) {
+      const canvas = canvasAnchor(parsed);
+      if (canvas) return canvas;
+    }
     const bbox = parsed.bbox;
     if (!isRect)
       notice(

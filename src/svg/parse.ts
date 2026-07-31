@@ -147,6 +147,17 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     userUnitMM = 25.4 / 96; // no viewBox: coords are user px
   }
 
+  // The document's own canvas, which rect placement anchors artwork on. A viewBox states it
+  // directly; without one, the declared physical size does, converted at the same 96dpi the
+  // branch above assumes. Both axes are required in that second case — a lone width leaves the
+  // canvas height unknown, and half a canvas is not an anchor.
+  let canvas: { w: number; h: number } | null = null;
+  if (vb && vbW > 0 && vbH > 0) {
+    canvas = { w: vbW, h: vbH };
+  } else if (!vb && userUnitMM != null && widthMM != null && heightMM != null) {
+    if (widthMM > 0 && heightMM > 0) canvas = { w: widthMM / userUnitMM, h: heightMM / userUnitMM };
+  }
+
   const shapes: SVGShape[] = [];
   let order = 0;
 
@@ -361,5 +372,6 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     rawSVGCircle,
     userUnitMM,
     viewBox: vb ? { w: vbW, h: vbH } : null,
+    canvas,
   };
 }

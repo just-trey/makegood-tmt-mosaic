@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Removed
 
 - The standalone hidden "Wheel mount (left)" assembly kind. It was briefly
-  shipped and then deliberately un-shipped months ago with no technical
+  shipped and then deliberately un-shipped with no technical
   blocker recorded, is asymmetric (left-hand only, no matching right-hand
   kind), and its role id collided with the chair body's own wheel-mount
   role in the export placement logic (see Fixed below) — retired rather
@@ -169,6 +169,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   path, or thousands of nested `<g>` elements) failed with a raw "Maximum
   call stack size exceeded" instead of a message naming what was wrong with
   the file.
+- A rect-fit design (a design-zone template, or the footrest's flat face) was
+  placed by centering the artwork's own drawn content on the target surface,
+  rather than by lining up the artwork's document canvas with the surface.
+  The two agree for a design that fills its canvas, but a design drawn in one
+  corner of a template — matching where that corner actually sits on the
+  physical part — got re-centered onto the surface instead, landing on
+  whichever part happened to sit in the middle of the zone. Position was the
+  one thing a template expresses that placement threw away, which also meant
+  the footrest template's "keep artwork clear of the mounting slots" guidance
+  couldn't be followed. Placement now anchors on the document's own canvas —
+  its viewBox, or its declared millimeter size when it has no viewBox — so a
+  template loaded at Scale 100% / Offset 0/0 lands exactly where it was drawn.
+  A design that fills its sheet is unaffected.
+- The on-face gizmo now encloses the artwork on a design drawn off-center in
+  its document, instead of sitting where the document's center lands. The
+  frame is what the move gesture hit-tests against, so a design placed away
+  from the middle of its sheet previously offered a selection box that didn't
+  overlap the artwork it belonged to.
 
 ## [0.6.0] - 2026-07-26
 

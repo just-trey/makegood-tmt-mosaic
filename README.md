@@ -103,7 +103,10 @@ contents, or other personal data are ever sent. See
    a wheel's two halves): the design slice that lands on the copy is remapped
    back into the part's native print orientation. Round parts (the wheel) map
    the SVG via a Design-radius/circle model; rectangular parts (the footrest)
-   map it 1:1 in millimeters and auto-center on the detected face instead. A
+   map it 1:1 in millimeters instead, lining the SVG's own canvas — its
+   viewBox, or its declared mm size — up with the detected face, so a design
+   drawn off-center on a template stays off-center on the part. A file that
+   declares neither is centered on its drawn content, as before. A
    part can also carry more than one design surface (**design zones**) baked
    ahead of time by `scripts/bake-zones.mjs` — the chair body has five
    (left/right/front/back/seat), each its own true-scale UV chart the artwork
@@ -639,26 +642,6 @@ is imported by the app. Two other brand themes in the tokens folder
   explicit full 3×3 for now because it generalizes to a future part with a
   genuinely tilted reference pose that the axis-aligned path can't express —
   revisit if that part never materializes.
-- **Rect placement takes its scale from the document but its position from the
-  artwork**, so it discards where you drew things. `svgC` is set to the artwork
-  bbox center for rect parts ([src/geometry/assembly.ts](src/geometry/assembly.ts),
-  near the top of `buildAssemblyGeometry`), while `mmPerUnit` comes from
-  `userUnitMM` or the viewBox — two different frames. Verified: a 10mm square
-  drawn in the top-left corner of a 40×40mm document, on a 40×40mm face, lands
-  at x −5..5 / z −5..5 — dead center, not the x −20..−10 / z 10..20 where it was
-  drawn. This matters most for the footrest template, whose header tells you to
-  keep artwork clear of the mounting-slot gaps: clearance is expressed by
-  _position_, which is exactly what gets thrown away. It only appears to work
-  when the grey canvas path is kept (artwork bbox == template bbox, so
-  re-centering is a no-op); delete the grey and the layout silently collapses to
-  center. Proposed fix: anchor rect placement on the document frame (viewBox or
-  declared mm box) and fall back to the artwork bbox only when there is no frame
-  — matching wheel mode, which already anchors on a document feature (the design
-  circle) and only falls back to a bbox pseudo-circle with a notice. Note this
-  shifts existing off-center designs to where they were actually drawn, and
-  `rect designFit centers the design on an off-center face` in
-  [tests/assembly.test.ts](tests/assembly.test.ts) pins the current behavior, so
-  it needs rewriting as part of the change.
 - **Rect placement derives one artwork scale from the largest face across all
   parts** ([src/geometry/assembly.ts](src/geometry/assembly.ts),
   `buildAssemblyGeometry`) while `placeOnPart` honors each part's _own_ face
