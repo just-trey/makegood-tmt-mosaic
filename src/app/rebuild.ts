@@ -16,6 +16,7 @@ import {
   refreshModelShadows,
   setPreferredViewDir,
 } from '../scene/viewport';
+import { assemblyViewDir, displayQuaternionFor } from '../scene/displayFrame';
 import { refreshGizmo } from '../scene/designGizmo';
 import { refreshZonePickMeshes } from '../scene/zonePick';
 import { renderColorList, type ColorListEntry } from '../ui/colorList';
@@ -200,11 +201,21 @@ function renderRawAssemblyParts(): void {
 }
 
 /**
- * The wheel parts live in their native (hub-centered) coordinates, which straddle the z=0 grid
- * plane — lift the whole group so the assembly rests on the grid like the flat plates do.
+ * Pose the assembly for display: turn it into the kind's authored display frame, then lift it so
+ * it rests on the grid like the flat plates do.
+ *
+ * Both steps exist because parts are never transformed at load — the wheel's native coordinates
+ * are hub-centered and straddle z=0, and the chair's are its CAD frame. Both are viewport-only:
+ * the cut pipeline, the baked charts and export placement all read the parts, not the scene.
+ *
+ * The rotation has to be applied BEFORE the lift, since it changes which face is lowest — that is
+ * the whole point for the chair, whose rearmost face was resting on the grid.
  */
-function restAssemblyOnGrid(): void {
+function poseAssemblyForDisplay(): void {
   const modelGroup = getModelGroup();
+  modelGroup.quaternion.copy(displayQuaternionFor(currentAssemblyKind()));
+  modelGroup.position.set(0, 0, 0);
+  modelGroup.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(modelGroup);
   if (!box.isEmpty()) modelGroup.position.z = -box.min.z;
 }
@@ -215,14 +226,14 @@ async function rebuildAssemblyScene(): Promise<void> {
   // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
   if (!state.parsed) {
     renderRawAssemblyParts();
-    restAssemblyOnGrid();
+    poseAssemblyForDisplay();
     renderColorList(null);
     renderWarnings();
     $<HTMLButtonElement>('#btn-export').disabled = true;
     if (!state.assembly.parts.some((p) => p.loaded)) $('#stat-tris').textContent = '0 tris';
     const primary = state.assembly.parts.find((p) => p.loaded && !p.isDuplicateOf);
     const nrm = primary ? asmPartFaceNormal(primary, state.assembly.parts) : null;
-    setPreferredViewDir(new THREE.Vector3(0.35, 0.9 * (nrm && nrm[1] < 0 ? -1 : 1), 0.4));
+    setPreferredViewDir(assemblyViewDir(currentAssemblyKind(), nrm && nrm[1] < 0 ? -1 : 1));
     refreshModelShadows();
     frameModelIfPending();
     return;
@@ -287,7 +298,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     // Build failed/refused: keep the bare wheel on screen and surface whatever warn()s the
     // build pushed — a silently emptied viewport reads as a crash.
     renderRawAssemblyParts();
-    restAssemblyOnGrid();
+    poseAssemblyForDisplay();
     renderColorList(null);
     renderWarnings();
     $<HTMLButtonElement>('#btn-export').disabled = true;
@@ -296,9 +307,9 @@ async function rebuildAssemblyScene(): Promise<void> {
     return;
   }
 
-  // Open the view looking at the design face (the +normal side), not the blank back of the wheel.
-  const vs = built.viewSign || 1;
-  setPreferredViewDir(new THREE.Vector3(0.35, 0.9 * vs, 0.4));
+  // Open the view looking at the design face (the +normal side), not the blank back of the wheel —
+  // or, for a kind that authors a display frame, at its front.
+  setPreferredViewDir(assemblyViewDir(currentAssemblyKind(), built.viewSign || 1));
 
   const baseMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(baseColorHex()),
@@ -369,7 +380,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     state.baseColorKey = built.baseAssigned.hex;
   }
 
-  restAssemblyOnGrid();
+  poseAssemblyForDisplay();
   $('#stat-tris').textContent = Math.round(tris) + ' tris';
   renderColorList(colorListEntries, { rawColorCount: built.detectedColors.length });
   renderBaseColorSwatches();

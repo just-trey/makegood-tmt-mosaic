@@ -128,6 +128,36 @@ export function getModelGroup(): THREE.Group {
   return modelGroup;
 }
 
+/**
+ * Map a point from model space — part-native coordinates, before the grid lift and before any
+ * display-frame rotation — into world space.
+ *
+ * The model group carries a full transform, not just a translation: assembly kinds that author a
+ * `displayFrame` are rotated for display as well as lifted onto the grid. Anything living OUTSIDE
+ * modelGroup that must stay attached to what the user sees — the on-face design gizmo and the
+ * zone-pick meshes, both scene-level siblings so they survive newModelGroup() — has to apply that
+ * same transform by hand. Reading only `.position` silently detaches them the moment a kind poses
+ * itself, with nothing to catch it but the gizmo landing somewhere wrong.
+ *
+ * Mutates and returns `v`, per three's vector convention.
+ */
+export function modelToWorldPoint(v: THREE.Vector3): THREE.Vector3 {
+  modelGroup.updateMatrixWorld();
+  return v.applyMatrix4(modelGroup.matrixWorld);
+}
+
+/** Direction-only counterpart of `modelToWorldPoint` — rotation without the translation. */
+export function modelToWorldDir(v: THREE.Vector3): THREE.Vector3 {
+  return v.applyQuaternion(modelGroup.quaternion);
+}
+
+/** Give a scene-level sibling the model group's full transform. */
+export function syncToModelGroup(obj: THREE.Object3D): void {
+  obj.position.copy(modelGroup.position);
+  obj.quaternion.copy(modelGroup.quaternion);
+  obj.scale.copy(modelGroup.scale);
+}
+
 export function getCamera(): THREE.PerspectiveCamera {
   return camera;
 }
