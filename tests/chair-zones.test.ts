@@ -427,6 +427,15 @@ describe('baked claims stay inside the snap tolerance', () => {
         // triangulation. A 1mm raster reported 1.915mm where the true worst is 2.150mm — enough to
         // make an over-tolerance bake look like it passed.
         const seeds: [number, number, number][] = [];
+        // Seed from the outline itself, not just the grid: a tendril narrower than SEED_MM falls
+        // between grid samples entirely, and its tip is a ring vertex by construction. These points
+        // are reachable — a clipped cutter's own vertices land on this outline.
+        for (const ring of [sub.outer, ...sub.holes])
+          for (const [pu, pv] of ring) {
+            const d = offChart(pu, pv);
+            if (d > worst) worst = d;
+            if (d > SEED_MM) seeds.push([pu, pv, d]);
+          }
         for (let su = u0; su <= u1; su += SEED_MM)
           for (let sv = v0; sv <= v1; sv += SEED_MM) {
             if (!inClaim(su, sv)) continue;

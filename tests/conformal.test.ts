@@ -357,10 +357,22 @@ describe('buildCutter', () => {
   // that only a fill runs along the clipped boundary; measuring the shipped bake showed the
   // uncovered patches sit *interior* to each part's claim, so both modes meet them equally — and a
   // sticker covering one was failing on the chair's seat-back parts.
+  // 2.2mm clears the worst gap the shipped chair bake actually has (2.150mm, right/chair-wing-right
+  // — see chair-zones.test.ts). A tolerance that stops snapping this far out drops colours off the
+  // seat back again, which is the bug this pair of tests exists to keep fixed.
   it('snaps an overhang a sticker also has to survive, not just a fill', () => {
-    const feat = squareAt(10 - 1.2, H / 2, 10);
-    expect(1.2).toBeLessThan(CHART_SNAP_MM);
-    expect(mapper.buildCutter(feat, DEPTH, OVER)).not.toBeNull();
+    expect(mapper.buildCutter(squareAt(10 - 2.2, H / 2, 10), DEPTH, OVER)).not.toBeNull();
+  }, 20000);
+
+  // The other side of the same guard, and the reason both offsets are literals rather than
+  // multiples of CHART_SNAP_MM: derived offsets move with the constant and so can never fail.
+  // Raising it past 6 fails here instead — the bake needs ~2.15mm, so a tolerance near 6 has
+  // stopped guarding against misplaced artwork and is just snapping whatever it is handed.
+  it('refuses an overhang past the tolerance, at either refinement', () => {
+    expect(CHART_SNAP_MM).toBeLessThan(6);
+    const past = squareAt(10 - 6, H / 2, 10);
+    expect(mapper.buildCutter(past, DEPTH, OVER)).toBeNull();
+    expect(mapper.buildCutter(past, DEPTH, OVER, { refineMM: FILL_REFINE_MM })).toBeNull();
   }, 20000);
 
   it('still refuses artwork off the chart entirely, at either refinement', () => {
