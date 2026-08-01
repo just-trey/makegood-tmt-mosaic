@@ -4,7 +4,6 @@ import {
   CHART_SNAP_MM,
   ConformalZoneMapper,
   FILL_REFINE_MM,
-  FILL_SNAP_MM,
   type ConformalChart,
 } from '../src/geometry/conformal';
 import {
@@ -354,18 +353,31 @@ describe('buildCutter', () => {
     expect(soup).toBeNull();
   }, 20000);
 
-  it('snapMM widens that tolerance for a fill, which always runs along the zone edge', () => {
-    // 1.2mm past u=0: too far for a sticker, fine for a fill clipped to a boundary the bake let
-    // overhang the chart's real triangles
-    const feat = squareAt(10 - 1.2, H / 2, 10);
-    expect(1.2).toBeGreaterThan(CHART_SNAP_MM);
-    expect(mapper.buildCutter(feat, DEPTH, OVER)).toBeNull();
-    expect(mapper.buildCutter(feat, DEPTH, OVER, { snapMM: FILL_SNAP_MM })).not.toBeNull();
-    // …and still not a licence to place artwork off the chart entirely
-    expect(
-      mapper.buildCutter(squareAt(ARC_U + ARC_U / 2, H / 2, 10), DEPTH, OVER, {
-        snapMM: FILL_SNAP_MM,
-      }),
-    ).toBeNull();
+  // A sticker gets the same tolerance a fill does. The two used to differ (0.5 vs 2) on the theory
+  // that only a fill runs along the clipped boundary; measuring the shipped bake showed the
+  // uncovered patches sit *interior* to each part's claim, so both modes meet them equally — and a
+  // sticker covering one was failing on the chair's seat-back parts.
+  // 2.2mm clears the worst gap the shipped chair bake actually has (2.150mm, right/chair-wing-right
+  // — see chair-zones.test.ts). A tolerance that stops snapping this far out drops colours off the
+  // seat back again, which is the bug this pair of tests exists to keep fixed.
+  it('snaps an overhang a sticker also has to survive, not just a fill', () => {
+    expect(mapper.buildCutter(squareAt(10 - 2.2, H / 2, 10), DEPTH, OVER)).not.toBeNull();
+  }, 20000);
+
+  // The other side of the same guard, and the reason both offsets are literals rather than
+  // multiples of CHART_SNAP_MM: derived offsets move with the constant and so can never fail.
+  // Raising it past 6 fails here instead — the bake needs ~2.15mm, so a tolerance near 6 has
+  // stopped guarding against misplaced artwork and is just snapping whatever it is handed.
+  it('refuses an overhang past the tolerance, at either refinement', () => {
+    expect(CHART_SNAP_MM).toBeLessThan(6);
+    const past = squareAt(10 - 6, H / 2, 10);
+    expect(mapper.buildCutter(past, DEPTH, OVER)).toBeNull();
+    expect(mapper.buildCutter(past, DEPTH, OVER, { refineMM: FILL_REFINE_MM })).toBeNull();
+  }, 20000);
+
+  it('still refuses artwork off the chart entirely, at either refinement', () => {
+    const far = squareAt(ARC_U + ARC_U / 2, H / 2, 10);
+    expect(mapper.buildCutter(far, DEPTH, OVER)).toBeNull();
+    expect(mapper.buildCutter(far, DEPTH, OVER, { refineMM: FILL_REFINE_MM })).toBeNull();
   }, 20000);
 });

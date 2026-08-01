@@ -560,21 +560,41 @@ is imported by the app. Two other brand themes in the tokens folder
   two chart vertices closer than the quantum would collapse into a
   degenerate UV triangle and the warp's barycentric lookup divides by its
   area.
+- **`CHART_SNAP_MM` tracks a bake artifact instead of guarding placement.** A
+  part's baked claim on a zone (`subRegions`) is slightly more generous than the
+  triangulation inside it, so the claim outline pokes narrow tendrils past the
+  end of the chart. Cutter vertices landing in one are legitimate artwork with
+  no triangle under them, so the snap tolerance has to be wide enough to absorb
+  the deepest one — 2.150 mm on the shipped bake — which is why it is 3 mm
+  rather than the sub-millimetre value a pure misplacement guard would want.
+  Fix: re-bake so each claim matches its triangulation, then tighten the
+  constant. Deferred because it invalidates every downloaded template and the
+  sidecar. Until then `tests/chair-zones.test.ts` pins the measured worst case;
+  **measure it by hill-climbing, not by rastering** — the depth is a distance
+  function, so a step-_h_ grid under-reports the peak by up to _h_/√2, and a
+  1 mm raster put the worst at 1.915 mm against a true 2.150 mm.
 - **A seam sliver warns as if artwork were lost.** Where two parts' claims on
   a zone overlap, clipping a color to one part's `subRegions` can leave a
   remnant a fraction of a millimetre wide. It survives the turf clip, then
   yields no cutter, and
   [src/geometry/assembly.ts](src/geometry/assembly.ts) reports "Couldn't build
   the cut solid for color … on …" — alarming, and indistinguishable from the
-  real failure it shares a message with. Confirmed in the app (2026-07-28): a
-  design on `back` warned for three colors on "Seat back (bottom)" while
-  printing correctly. The overlaps are inherent to per-part clipping and small
-  — measured across the shipped bake, 23 overlapping part pairs, all
-  seam-sharing, worst 29.85 mm² on a 124,500 mm² zone (a ~0.15 mm ribbon), and
-  `tests/chair-zones.test.ts` holds them under 0.05% of zone area. Fix: drop a
-  clip remnant under an area floor _before_ `buildCutter` rather than
-  attempting it and warning. Pick the floor above the measured ribbon and well
-  under anything printable.
+  real failure it shares a message with. The overlaps are inherent to per-part
+  clipping and small — measured across the shipped bake, 23 overlapping part
+  pairs, all seam-sharing, worst 29.85 mm² on a 124,500 mm² zone (a ~0.15 mm
+  ribbon), and `tests/chair-zones.test.ts` holds them under 0.05% of zone area.
+  Fix: drop a clip remnant under an area floor _before_ `buildCutter` rather
+  than attempting it and warning. Pick the floor above the measured ribbon and
+  well under anything printable.
+
+  This bullet used to cite the 2026-07-28 "Seat back (bottom)" warnings as a
+  confirmed sighting. Instrumenting the running app on 2026-07-31 showed that
+  those had a different cause — cutter vertices landing outside the snap
+  tolerance, since fixed — and that they looked permanent only because warnings
+  were never cleared per rebuild, also since fixed. So the seam remnant is still
+  real geometry and still reaches `buildCutter`, but **no warning has actually
+  been traced to it**. Confirm one before spending the fix on it.
+
 - **Zone picking has no occlusion test**
   ([src/scene/zonePick.ts](src/scene/zonePick.ts)) — it raycasts only the
   invisible chart meshes (three.js 0.160's `intersectObject` ignores
@@ -583,14 +603,6 @@ is imported by the app. Two other brand themes in the tokens folder
   the zone behind it. Fix: raycast the visible parts too and reject a zone hit
   farther than the nearest solid hit. Gets worse as zones multiply — the chair
   went from 4 to 5 with the full-coverage re-author.
-- **`FILL_SNAP_MM = 2` rests on a stale measurement.** The comment at
-  [src/geometry/conformal.ts](src/geometry/conformal.ts) cites ~0.9 mm of
-  baked-boundary overhang; measured against the shipped bake it was 0.001 mm
-  at baked vertices and 0.197 mm densified — inside `CHART_SNAP_MM = 0.5`. The
-  fill guard is roughly 10x looser than it needs to be, so genuinely misplaced
-  fill artwork snaps silently instead of warning. Re-measure against the
-  current whole-chair zones (bigger zones may legitimately want more slack)
-  and set it from that number rather than nudging it.
 - **One warning covers three different failures**
   ([src/geometry/assembly.ts](src/geometry/assembly.ts)) — "Raise Scale to
   fill the surface" is the advice whether `tileCoverage` refused on tile

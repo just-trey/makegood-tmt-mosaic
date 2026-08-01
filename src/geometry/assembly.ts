@@ -32,7 +32,7 @@ import {
 } from './manifold';
 import { faceXZBBox, OVERSHOOT_MM, type DesignPlacement, type ZoneMapper } from './zones';
 import { zoneMappersFor } from './zoneMappers';
-import { FILL_REFINE_MM, FILL_SNAP_MM } from './conformal';
+import { FILL_REFINE_MM } from './conformal';
 import {
   MAX_FILL_TILES,
   tileCoverage,
@@ -482,7 +482,9 @@ export async function buildAssemblyGeometry(
       const depthSetting = (colorSettings[c.key] && colorSettings[c.key].depth) || globalDepth;
       if (depthSetting <= 0) return;
       const depth = mapper.resolveCutDepth(depthSetting);
-      const cutterOpts = grid ? { refineMM: FILL_REFINE_MM, snapMM: FILL_SNAP_MM } : undefined;
+      // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
+      // step); the snap tolerance is a property of the bake, so both modes take the same one.
+      const cutterOpts = grid ? { refineMM: FILL_REFINE_MM } : undefined;
       const soup = mapper.buildCutter(feat, depth, OVERSHOOT_MM, cutterOpts);
       if (!soup || !soup.length) {
         // The artwork overlapped this zone (it survived the boundary clip) but no cutter came out.
