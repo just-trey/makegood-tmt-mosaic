@@ -34,6 +34,7 @@ vi.mock('../src/scene/viewport', () => ({
   getCamera: () => camera,
   getControls: () => controls,
   getDomElement: () => dom,
+  invalidate: vi.fn(),
   // The pointer→NDC conversion is the viewport's job, not this module's: tests hand NDC straight
   // through so they can aim at a projected world point without plumbing a canvas size.
   pointerToNDC: (e: PointerEvent) => new THREE.Vector2(e.clientX, e.clientY),

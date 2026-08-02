@@ -6,6 +6,7 @@ import {
   getCamera,
   getControls,
   getDomElement,
+  invalidate,
   pointerToNDC,
   setInteracting,
 } from './viewport';
@@ -167,6 +168,7 @@ export function refreshGizmo(): void {
   currentFrame = computeFaceFrame();
   if (!currentFrame) {
     overlay.visible = false;
+    invalidate(); // hiding the gizmo is itself a visible change
     return;
   }
   drawOverlay(currentFrame, restPose(currentFrame));
@@ -182,7 +184,14 @@ export function refreshGizmo(): void {
 function updateFacing(): void {
   if (!overlay || drag || !currentFrame) return;
   const toCam = getCamera().position.clone().sub(currentFrame.origin);
-  overlay.visible = toCam.dot(currentFrame.normal) > 0;
+  const facing = toCam.dot(currentFrame.normal) > 0;
+  // Only the flip is a visible change. This runs on every OrbitControls 'change' event, and
+  // those keep firing after a pan (see the note on prevCamPos in viewport.ts) — invalidating
+  // unconditionally would pin the render loop on forever, which is the thing that loop exists
+  // to avoid. refreshGizmo()'s own drawOverlay() invalidates for the redraw case.
+  if (facing === overlay.visible) return;
+  overlay.visible = facing;
+  invalidate();
 }
 
 /** Where the design sits relative to the frame's own center, and how big it is drawn. */
@@ -286,6 +295,12 @@ function drawOverlay(frame: FaceFrame, pose: OverlayPose): void {
   const color = offMM > OFF_SURFACE_TOL_MM ? OFF_SURFACE_COLOR : FRAME_COLOR;
   (frameLine.material as THREE.LineBasicMaterial).color.setHex(color);
   for (const h of cornerHandles) (h.material as THREE.MeshBasicMaterial).color.setHex(color);
+
+  // The overlay is written straight into its buffers here, bypassing everything in viewport.ts that
+  // would otherwise mark the frame dirty. On a heavy model a drag deliberately does NOT rebuild
+  // until release (see onPointerMove), so this is the only thing redrawing the gizmo for the whole
+  // gesture — without it the frame freezes under the pointer.
+  invalidate();
 }
 
 /**

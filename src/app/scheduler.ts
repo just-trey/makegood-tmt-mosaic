@@ -2,6 +2,7 @@ import { clearBuildWarnings, warnBuild } from '../warnings';
 import { renderWarnings } from '../ui/warningsView';
 import { hideOverlay, showOverlay, updateOverlay } from '../ui/overlay';
 import { setProgressSink } from '../progress';
+import { beginWork, endWork } from './idle';
 
 let handler: () => void | Promise<void> = () => {};
 let costHint: () => boolean = () => false;
@@ -21,6 +22,7 @@ type RebuildMode = 'live' | 'typed';
 let running = false;
 let dirty = false;
 let lastRebuildMs = 0;
+let debouncePending = false;
 
 /** main.ts registers the actual rebuild entry point here (breaks the ui <-> rebuild cycle). */
 export function setRebuildHandler(h: () => void | Promise<void>): void {
@@ -63,6 +65,7 @@ async function runNow(): Promise<void> {
     return;
   }
   running = true;
+  beginWork();
   // Fresh diagnostics for this attempt — a warning from whatever the last rebuild's inputs were
   // (a different zone binding, an artwork that's since been swapped) can't outlive it and still
   // show once this one lands. Standing facts (WARNINGS proper) aren't touched.
@@ -95,10 +98,14 @@ async function runNow(): Promise<void> {
       hideOverlay();
     }
     running = false;
+    // Start the follow-up pass (which does its own beginWork()) before releasing this pass's
+    // reservation, so a dirty rebuild never lets the outstanding count touch zero in between —
+    // a whenIdle() waiter must not see a zero-width gap that isn't really idle.
     if (dirty) {
       dirty = false;
       void runNow();
     }
+    endWork();
   }
 }
 
@@ -109,5 +116,20 @@ async function runNow(): Promise<void> {
  */
 export function scheduleRebuild(mode: RebuildMode = 'live'): void {
   clearTimeout(timer);
-  timer = setTimeout(() => void runNow(), mode === 'typed' ? TYPED_DEBOUNCE_MS : LIVE_DEBOUNCE_MS);
+  // Reserve one unit of outstanding work for the whole debounce window, not one per call — a
+  // slider drag calls this every few ms, and only the last call's timer ever fires.
+  if (!debouncePending) {
+    debouncePending = true;
+    beginWork();
+  }
+  timer = setTimeout(
+    () => {
+      debouncePending = false;
+      // runNow() does its own beginWork() before this reservation is released, so the
+      // outstanding count never touches zero on the handoff.
+      void runNow();
+      endWork();
+    },
+    mode === 'typed' ? TYPED_DEBOUNCE_MS : LIVE_DEBOUNCE_MS,
+  );
 }
