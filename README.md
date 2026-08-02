@@ -105,6 +105,10 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - Flat, roughly horizontal faces only, unless the part ships baked design
   zones — see [docs/pipeline.md](docs/pipeline.md).
 - A design crossing a printed join lines up only as well as the print does.
+- A design can't flow across a zone boundary — on the chair it stops where
+  "Left side", "Back" and "Right side" meet. Both ways of merging them into one
+  continuous surface were prototyped and measured as dead ends; the numbers are
+  in [docs/tech-debt.md](docs/tech-debt.md).
 - Large wrapped surfaces stretch the artwork somewhat (the chair's worst spots
   run 1.11–1.28×).
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced

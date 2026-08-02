@@ -174,6 +174,84 @@ were never cleared per rebuild, also since fixed. So the seam remnant is still
 real geometry and still reaches `buildCutter`, but **no warning has actually
 been traced to it**. Confirm one before spending the fix on it.
 
+## Artwork can't wrap unbroken from one flank around the back to the other, and both ways of fixing it are measured dead ends
+
+The chair carries `left`, `right` and `back` as three zones, so a design
+placed on one stops at the zone boundary. Two approaches were prototyped and
+measured against the shipped bake; both lose, for different reasons, and the
+numbers are recorded here so nobody re-derives them.
+
+**A cylindrical band** (unwrap left→back→right about the chair's vertical
+axis, like a label on a bottle). The geometry cooperates in one respect: a θ
+histogram over the three zones' 35,320 triangles shows a **64°-wide empty
+sector centred on +Z**, the chair's front opening, so the wrap seam lands
+where there is no surface. The best-fit axis is x −0.26 (on the centreline,
+as symmetry demands), z −297.27, with an area-weighted mean radius R₀ of
+231.29 mm. But the chair is not a cylinder: only **39.8%** of the band lies
+within ±10% of R₀ and per-part radii run 0.73–1.62 × R₀. Real per-edge
+stretch, measured with the same metric `orientChart` reports, at a 45°
+outward limit: **max 2.113, mean 1.0800, 27% of edges past the
+`DISTORTION_WARN = 1.1` the bake already flags** — and that buys only
+**69.6%** of the surface the three zones carry today. A radius-profile
+variant (u = r̄(y)·θ) is far worse (max 11–16): r̄ changes too fast where the
+wheel mounts give way to the storage boxes.
+
+**One merged LSCM zone.** The standing objection to this — "the exterior
+wraps into a U and `lscm` needs disk topology" — is **wrong**: the same 64°
+gap means the band never closes, so it is a strip, and a strip is a disk. It
+does unwrap, cleanly by every metric the bake reports: one island, **0
+flipped triangles**, max stretch **1.540** / mean **1.0242** over 100% of the
+surface (p99 is 1.152; only 2.14% of edges exceed 1.1), sidecar _smaller_ at
+1675 KB. It still fails, on something the bake does not measure — **UV
+injectivity**. LSCM is only locally conformal, so `flipped == 0` rules out
+local inversion but not the chart folding onto itself globally. Chart area
+covered by more than one triangle:
+
+| zone                                  | self-overlap           |
+| ------------------------------------- | ---------------------- |
+| shipped `left` / `right` / `back`     | 0.11% / 0.04% / 0.03%  |
+| `front` / `seat` (untouched controls) | 0.01% / 0.01%          |
+| merged band                           | **4.85%** (15,976 mm²) |
+
+On that 4.85%, `ConformalZoneMapper.lookup` finds two triangles and takes
+whichever its grid search reaches first, so artwork cuts onto the wrong sheet
+of surface — worse than the seam it removes. 91% of the overlap is _self_
+overlap within four parts (the two handles and two storage boxes), not
+part-against-part.
+
+**There is no angle window between the two failures.** At the shipped
+45/35/45 the band is connected and overlaps 4.85%; at 40/32/40 it is still
+connected and still overlaps 4.58%, for 12% less surface; at 32/28/32
+`assertSingleIsland` fails with 10,891 of 25,515 triangles reachable. Loose
+enough to stay one island means it folds; tight enough not to fold means it
+severs. The link between each flank and the back runs through the handle's
+curved corner, which is both what forces the fold and what only survives at
+loose angles.
+
+**So the three-zone split is load-bearing, and not for the reason the config
+says.** The comments in
+[scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json)
+explain the angles as a coverage-against-stretch knee; the constraint
+underneath is that each zone's normal spread has to stay tight enough for the
+unwrap to stay injective. Anyone widening a zone should measure overlap, not
+just `distortion` and `flipped`.
+
+What would actually close this is a mapper that does not need one global
+chart — per-triangle or atlas-based placement with explicit seam transitions,
+so continuity is carried across chart boundaries instead of by a single
+injective unwrap. That is a substantially bigger change than either
+prototype, and nothing today needs it.
+
+One latent bug found and deliberately **not** fixed: `classifyRegions` in
+[scripts/lib/zonebake.mjs](../scripts/lib/zonebake.mjs) decides outer-vs-hole
+by containment depth parity, which is right for nested SVG subpaths but wrong
+for triangulation boundary loops — a concave part slice has solid lobes
+sitting inside another loop's ring, and parity calls them holes. It cost the
+merged zone 26% and 60% of the two handles' claims. Every shipped claim
+matches its triangulation within 0.3%, so it does not affect the current
+bake; classifying by winding sign instead is the fix if a future zone ever
+trips it.
+
 ## Zone picking has no occlusion test
 
 ([src/scene/zonePick.ts](../src/scene/zonePick.ts)) — it raycasts only the
