@@ -35,6 +35,16 @@ required, not optional, when the diff touches `src/geometry/` or
   [src/geometry/regions.ts](src/geometry/regions.ts) are examples of
   comments that earn their keep.
 
+## Audience
+
+Built for hobbyist printer owners and MakeGood volunteers, not CAD users —
+they know their slicer, not Fusion or mesh editing. A feature or fix that
+requires CAD literacy to use is a bug in the tool. The success measure: a
+first-time volunteer reaches a printable, correctly-colored 3MF without
+touching a 3D modeling tool. Prefer the simpler workflow when two options
+both work. Full framing, including how this compares to MakerWorld Mesh
+Graffiti: [docs/audience.md](docs/audience.md).
+
 ## Docs
 
 Where writing goes — pick one, don't split a topic across two:
@@ -42,6 +52,8 @@ Where writing goes — pick one, don't split a topic across two:
 - **README** — orientation only: what it is, how to run it, how it works at a
   level someone can hold in their head, what it can't do. Keep it under ~200
   lines; if a section outgrows that, it belongs in `docs/`.
+- **[docs/audience.md](docs/audience.md)** — who this is built for and the
+  success measure; read this before filing or acting on UX/workflow findings.
 - **[docs/pipeline.md](docs/pipeline.md)** — how the geometry actually works;
   read this before touching `src/geometry/` or `src/export/`.
 - **[docs/tech-debt.md](docs/tech-debt.md)** — deferred work, known-wrong
