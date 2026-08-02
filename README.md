@@ -49,6 +49,11 @@ dependencies (three.js, Turf, JSZip, the Manifold WASM engine) are bundled at
 build time, so the deployed app has no runtime CDN dependencies. The Google
 Fonts stylesheet is the only external request.
 
+The app opens on the wheel. `?kind=` opens it on a given assembly kind instead
+— `?kind=chair-body`, `?kind=footrest` — so a link can point at the part being
+discussed, and a script driving the app can skip building a part it doesn't
+want. An unknown or absent value opens the wheel, as before.
+
 ## Deployment
 
 Pushing a version tag (`vX.Y.Z`) builds and deploys `dist/` to **GitHub
@@ -463,6 +468,24 @@ is imported by the app. Two other brand themes in the tokens folder
 
 ## TODO / tech debt
 
+- **The browser-driven checks are only fast if Chromium finds a real GPU, and
+  on WSL2 it does not find one by itself.** Falling back to SwiftShader costs
+  roughly 300ms per frame, which also caps `requestAnimationFrame` near 2.5fps
+  and so stretches anything frame-paced. Driving the chair end-to-end takes
+  **~104s** software versus **~12s** with hardware acceleration, on the same
+  machine. The hardware is reachable — `/dev/dxg` plus Mesa's d3d12 gallium
+  driver in `/usr/lib/wsl/lib` — but selecting it needs
+  `GALLIUM_DRIVER=d3d12` in the environment _and_ `--use-gl=angle
+--use-angle=gl-egl` on the command line;
+  `MESA_LOADER_DRIVER_OVERRIDE` alone silently leaves you on llvmpipe, which is
+  also software. [scripts/lib/harness.mjs](scripts/lib/harness.mjs) does this
+  behind `MOSAIC_GPU=1`, opt-in rather than automatic because CI's Playwright
+  container has no GPU at all. `glRenderer(page)` returns the string to assert
+  on — if it says SwiftShader or llvmpipe, any timing taken with it is a
+  software number.
+  What's left: nothing required, but the flags are Chromium/WSL-specific and
+  will need revisiting if either the container image or the WSL graphics stack
+  changes.
 - **The chair's prime-tower positions have only been verified on one bed
   size.** All of its export placement — plate assignment, rotation, position,
   the per-part brim/support/infill overrides, and now the tower — is baked by

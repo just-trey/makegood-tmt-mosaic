@@ -2,6 +2,7 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import type { AssemblyPart, AssemblyRole, DesignZone, LibraryEntry } from '../types';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
+import { beginWork, endWork } from '../app/idle';
 import { requestFrame } from '../scene/viewport';
 import { hideOverlay, showOverlay } from '../ui/overlay';
 import {
@@ -158,6 +159,7 @@ export async function asmLoadLibraryEntryIntoPart(
   if (entry.baseDepth) part.baseDepth = entry.baseDepth;
   part.libraryPartId = entry.id;
   part.meshFromUpload = false;
+  beginWork();
   try {
     const res = await fetch(entry.file);
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -167,6 +169,8 @@ export async function asmLoadLibraryEntryIntoPart(
     alert(
       `Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`,
     );
+  } finally {
+    endWork();
   }
 }
 
@@ -354,6 +358,7 @@ export function applyAsmPatchChoice(part: AssemblyPart): void {
  * drag-and-drop. Adding a new part is "drop the file in public/stl/ + add one manifest entry".
  */
 export async function loadPartsLibrary(): Promise<void> {
+  beginWork();
   try {
     // stl/parts.json is a stable (non-content-hashed) URL, unlike the JS bundle — tag it with
     // the app version so a returning visitor's cached pre-release manifest can't silently lag
@@ -370,6 +375,8 @@ export async function loadPartsLibrary(): Promise<void> {
     }
   } catch {
     // no manifest present — silently do nothing, this is optional
+  } finally {
+    endWork();
   }
 }
 

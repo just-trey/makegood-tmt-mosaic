@@ -17,11 +17,10 @@
 //
 // Usage:
 //   npm run build && node scripts/export-chair-examples.mjs [outDir]
-import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
-import { chromium } from 'playwright';
+import { startPreview, launchBrowser, newPage } from './lib/harness.mjs';
 
 const OUT = process.argv[2] || 'stubs';
 mkdirSync(OUT, { recursive: true });
@@ -44,22 +43,6 @@ const TEST_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60">
   <rect x="0" y="20" width="60" height="20" fill="#f5d020"/>
   <rect x="0" y="40" width="60" height="20" fill="#1e5fa8"/>
 </svg>`;
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function waitForServer(url, tries = 60) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      /* not up yet */
-    }
-    await sleep(500);
-  }
-  throw new Error('preview server never came up');
-}
 
 /**
  * Block until the rebuild triggered by whatever we just clicked has actually finished.
@@ -150,38 +133,14 @@ async function summarisePlates(file) {
 const svgPath = path.join(OUT, 'chair-example-artwork.svg');
 writeFileSync(svgPath, TEST_SVG);
 
-const server = spawn(`npx vite preview --port ${PORT} --strictPort`, {
-  shell: true,
-  stdio: 'ignore',
-  detached: process.platform !== 'win32',
-});
-
-// With shell: true, server.pid is the shell, not vite preview — server.kill() only ever
-// hit the wrapper and leaked the real preview process on port 4173. Killing the whole
-// process group (POSIX) / process tree (Windows) takes the child down with it.
-function killServer() {
-  if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F']);
-  } else {
-    try {
-      process.kill(-server.pid);
-    } catch {}
-  }
-}
-
 let browser;
+const preview = await startPreview({ port: PORT });
 try {
-  await waitForServer(`http://localhost:${PORT}/`);
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 
   for (const { printerId, label } of TARGETS) {
     for (const variant of VARIANTS) {
-      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-      const errors = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      // switching away from the auto-loaded wheel asks for confirmation, and an unhandled dialog is
-      // auto-dismissed — which silently leaves the wheel selected and exports the wrong part
-      page.on('dialog', (d) => void d.accept());
+      const { page, errors } = await newPage(browser, { viewport: { width: 1440, height: 900 } });
 
       console.log(`\n=== ${label} / ${variant} ===`);
       await page.goto(`http://localhost:${PORT}/`);
@@ -291,6 +250,6 @@ try {
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close();
-  killServer();
+  preview.stop();
   process.exit(process.exitCode ?? 0);
 }

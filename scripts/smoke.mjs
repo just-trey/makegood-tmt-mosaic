@@ -1,10 +1,9 @@
 // End-to-end smoke test: serves dist/ with vite preview, drives the app in headless
 // Chromium, and exercises assembly auto-load -> sample SVG -> CSG build -> 3MF export,
 // then flat (disc) mode -> rebuild -> STL zip export.
-import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { chromium } from 'playwright';
+import { startPreview, launchPage } from './lib/harness.mjs';
 
 const OUT = process.argv[2] || '.';
 mkdirSync(OUT, { recursive: true });
@@ -14,57 +13,14 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function waitForServer(url, tries = 60) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      const r = await fetch(url);
-      if (r.ok) return;
-    } catch {}
-    await sleep(500);
-  }
-  throw new Error('preview server never came up');
-}
-
-const server = spawn(`npx vite preview --port ${PORT} --strictPort`, {
-  shell: true,
-  stdio: 'ignore',
-  detached: process.platform !== 'win32',
-});
-
-// With shell: true, server.pid is the shell, not vite preview — server.kill() only ever
-// hit the wrapper and leaked the real preview process on port 4173. Killing the whole
-// process group (POSIX) / process tree (Windows) takes the child down with it.
-function killServer() {
-  if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F']);
-  } else {
-    try {
-      process.kill(-server.pid);
-    } catch {}
-  }
-}
-
-const errors = [];
-// Third-party analytics beacons report to a cross-origin endpoint bound to the production
-// hostname, so on localhost they CORS-fail by design — that's expected here and unrelated to
-// the app, so filter their console/network noise out of the smoke assertion.
-const IGNORE_HOSTS = ['cloudflareinsights.com'];
-const isIgnored = (text, url) =>
-  IGNORE_HOSTS.some((h) => (text && text.includes(h)) || (url && url.includes(h)));
 let browser;
+let errors = [];
+const preview = await startPreview({ port: PORT });
 try {
-  await waitForServer(`http://localhost:${PORT}/`);
-  browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  page.on('console', (m) => {
-    if (m.type() !== 'error') return;
-    if (isIgnored(m.text(), m.location()?.url)) return;
-    errors.push('[console] ' + m.text());
-  });
-  page.on('pageerror', (e) => {
-    if (isIgnored(e.message)) return;
-    errors.push('[pageerror] ' + e.message);
-  });
+  const launched = await launchPage({ viewport: { width: 1440, height: 900 } });
+  browser = launched.browser;
+  const page = launched.page;
+  errors = launched.errors;
 
   console.log('1. loading app (assembly mode auto-load)…');
   await page.goto(`http://localhost:${PORT}/`);
@@ -166,6 +122,6 @@ try {
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close();
-  killServer();
+  preview.stop();
   process.exit(process.exitCode ?? 0);
 }

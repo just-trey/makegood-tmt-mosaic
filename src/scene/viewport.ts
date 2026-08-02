@@ -18,6 +18,80 @@ let pendingFrame = true;
 let preferredViewDir: THREE.Vector3 | null = null;
 
 /**
+ * Whether the next animation frame has anything new to draw. The render loop is on-demand: an
+ * always-on `renderer.render()` costs a full frame of work forever, which on a software renderer
+ * (headless CI, or any machine without working GPU acceleration) is expensive enough to starve the
+ * main thread the boolean rebuilds run on.
+ *
+ * Every mutation that changes what is on screen must set this. The ones that come through this
+ * module set it *inside* the mutator below rather than at each call site, so a new caller in
+ * rebuild.ts can't forget to — the failure mode is a viewport that silently keeps showing the
+ * previous frame, which no unit test catches. Camera motion is handled separately, by
+ * `cameraMovedThisFrame()` in the loop.
+ */
+let needsRender = true;
+
+/** Mark the scene as changed, so the next animation frame draws it. */
+export function invalidate(): void {
+  needsRender = true;
+}
+
+/**
+ * Camera pose as of the previous animation frame, for deciding whether the camera is still moving.
+ *
+ * Deliberately not `OrbitControls.update()`'s return value: its position and quaternion tests are
+ * epsilon-gated, but the target test is an exact `distanceToSquared(...) > 0`, and with damping on
+ * `panOffset` decays geometrically (×0.95 per update) without reaching zero. So after a *pan* it
+ * keeps reporting movement long after the motion stops being visible. Comparing the pose here
+ * against one epsilon covers rotate and pan alike, and keeps this independent of three's internals
+ * across upgrades.
+ *
+ * Note this does not cut OrbitControls' damping tail short — while damping is still easing the
+ * camera by a visible amount, those frames genuinely need drawing. The tail is per-update, not
+ * per-second, so where a frame is slow (software rendering: ~300ms/frame here, which caps rAF at
+ * ~3fps) it stretches out in wall-clock accordingly. That is pre-existing OrbitControls behaviour
+ * and not something this loop introduced — the previous always-on loop simply paid it forever,
+ * everywhere, whether or not the camera was moving.
+ */
+const prevCamPos = new THREE.Vector3();
+const prevCamQuat = new THREE.Quaternion();
+const prevTarget = new THREE.Vector3();
+/** Same magnitude as OrbitControls' own EPS. Scene units are mm, so this is far below a pixel. */
+const CAM_EPS = 1e-6;
+
+function cameraMovedThisFrame(): boolean {
+  return (
+    prevCamPos.distanceToSquared(camera.position) > CAM_EPS ||
+    8 * (1 - Math.abs(prevCamQuat.dot(camera.quaternion))) > CAM_EPS ||
+    prevTarget.distanceToSquared(controls.target) > CAM_EPS
+  );
+}
+
+function recordCameraPose(): void {
+  prevCamPos.copy(camera.position);
+  prevCamQuat.copy(camera.quaternion);
+  prevTarget.copy(controls.target);
+}
+
+/**
+ * OrbitControls decays its damping by `dampingFactor` once per `update()` call, i.e. per frame —
+ * so the glide after releasing the pointer lasts a fixed number of FRAMES, not a fixed time. At
+ * 60fps that is three's intended ~1s. Where frames are slow it stretches out in proportion: on a
+ * software renderer here (~300ms/frame, which itself caps rAF near 2.5fps) the same glide was
+ * measured still running 221 seconds after release, holding the main thread at ~90% throughout.
+ *
+ * So rescale the factor to the real frame time, giving the same per-SECOND decay at any rate.
+ * At 60fps this returns 0.05 exactly, leaving the feel on fast hardware untouched.
+ */
+const BASE_DAMPING = 0.05; // three's default, tuned for 60fps
+const BASE_HZ = 60;
+const MAX_FRAME_DT = 0.25;
+
+function dampingForFrame(dt: number): number {
+  return Math.min(1, 1 - Math.pow(1 - BASE_DAMPING, dt * BASE_HZ));
+}
+
+/**
  * Ground plane span. The grid doubles as a ruler, so the cell stays a round 20mm and the span is
  * sized to the largest assembly the (fixed, closed) part library contains: the chair's footprint is
  * 380 × 658mm, which the old 600mm stage — sized for the 280mm wheel — overhung at both ends.
@@ -84,13 +158,28 @@ export function initViewport(host: HTMLElement): void {
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    invalidate();
   }
   new ResizeObserver(resize).observe(host);
   resize();
 
+  let lastFrameMs = performance.now();
+
   function animate(): void {
     requestAnimationFrame(animate);
+    const now = performance.now();
+    // Clamped so a backgrounded tab resuming doesn't count its whole absence as one frame.
+    const dt = Math.min((now - lastFrameMs) / 1000, MAX_FRAME_DT);
+    lastFrameMs = now;
+    controls.dampingFactor = dampingForFrame(dt);
+    // update() has to run every tick regardless of whether we draw: with damping on it is what
+    // keeps easing the camera after the pointer is released. Whether that easing is still worth
+    // drawing is decided by cameraMovedThisFrame(), not update()'s return value — see note there.
     controls.update();
+    const moved = cameraMovedThisFrame();
+    recordCameraPose();
+    if (!needsRender && !moved) return;
+    needsRender = false;
     renderer.render(scene, camera);
   }
   animate();
@@ -109,6 +198,7 @@ export function refreshModelShadows(): void {
       mesh.receiveShadow = true;
     }
   });
+  invalidate();
 }
 
 /**
@@ -131,6 +221,10 @@ export function newModelGroup(keep?: THREE.Object3D | null): THREE.Group {
   materials.forEach((m) => m.dispose());
   modelGroup = new THREE.Group();
   scene.add(modelGroup);
+  // Not just belt-and-braces with refreshModelShadows(): rebuildScene() bails out between the two
+  // when there is nothing to build (no base params, no built result), leaving the scene cleared —
+  // that emptying still has to reach the screen.
+  invalidate();
   return modelGroup;
 }
 
@@ -208,17 +302,19 @@ export function pointerToNDC(e: PointerEvent): THREE.Vector2 {
  */
 export function addSceneOverlay(obj: THREE.Object3D): void {
   scene.add(obj);
+  invalidate();
 }
 
 /**
  * Drop render quality for the duration of a viewport drag (gizmo manipulation), then restore it.
- * Cuts pixel ratio to 1 and disables shadow rendering — both take effect on the next frame of the
- * always-on render loop, no re-schedule needed. The user accepted degraded quality while dragging.
+ * Cuts pixel ratio to 1 and disables shadow rendering. The user accepted degraded quality while
+ * dragging; the restore on release has to be drawn, hence the invalidate.
  */
 export function setInteracting(on: boolean): void {
   if (!renderer) return;
   renderer.setPixelRatio(on ? 1 : basePixelRatio);
   renderer.shadowMap.enabled = !on;
+  invalidate();
 }
 
 export function requestFrame(): void {
@@ -250,5 +346,8 @@ export function frameModelIfPending(): void {
   camera.near = Math.max(0.1, dist / 500);
   camera.far = dist * 50;
   camera.updateProjectionMatrix();
+  // This update() runs outside the render loop, so its "camera moved" return value goes nowhere —
+  // say so explicitly rather than relying on the next loop tick still reporting the move.
   controls.update();
+  invalidate();
 }

@@ -19,6 +19,11 @@ import { initExportPanel } from './ui/exportPanel';
 import { initHelpPanel } from './ui/helpPanel';
 import { $ } from './ui/dom';
 import { getAppVersion } from './version';
+import { whenIdle } from './app/idle';
+
+// Not DEV-gated: the drive scripts hit vite-preview output (built, not dev), where
+// import.meta.env.DEV is false.
+(window as unknown as { __mosaic: { whenIdle: typeof whenIdle } }).__mosaic = { whenIdle };
 
 $('#app-version').textContent =
   `v${getAppVersion(typeof __APP_VERSION__ === 'undefined' ? undefined : __APP_VERSION__)}`;
@@ -42,9 +47,12 @@ initHelpPanel();
 
 renderColorList(null);
 
-// Open on the wheel so a part is on screen from the first frame — setShapeKind arms the
-// auto-load, and loadPartsLibrary() triggers it once the manifest arrives.
-state.assembly.kindId = ASSEMBLY_KINDS[0].id;
+// Open on the wheel by default so a part is on screen from the first frame — setShapeKind arms
+// the auto-load, and loadPartsLibrary() triggers it once the manifest arrives. A verify/drive
+// script can skip straight past that first build with ?kind=<id> (e.g. ?kind=chair-body).
+const requestedKindId = new URLSearchParams(location.search).get('kind');
+const bootKind = ASSEMBLY_KINDS.find((k) => k.id === requestedKindId) ?? ASSEMBLY_KINDS[0];
+state.assembly.kindId = bootKind.id;
 $<HTMLSelectElement>('#shape-kind').value = 'asm:' + state.assembly.kindId;
 setShapeKind('assembly');
 void loadPartsLibrary();

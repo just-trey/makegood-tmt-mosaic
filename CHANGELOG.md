@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   that had already auto-loaded from the library. (See the
   `wheel-mount-left` id-collision fix above for the class of bug this
   generalizes a guard against.)
+- A `?kind=` URL parameter opens the app straight onto a given assembly kind
+  (`?kind=chair-body`, `?kind=footrest`) instead of the wheel, so a link can
+  point at the part being discussed. An unknown or missing value opens the
+  wheel exactly as before.
 
 ### Removed
 
@@ -75,6 +79,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   separately-verified pose.
 
 ### Fixed
+
+- The 3D viewport redrew every frame for the whole session, whether or not
+  anything had changed, keeping a core busy behind an idle model — noticeable
+  as heat and battery drain on a laptop, and as a slow app on any machine
+  whose browser falls back to software rendering (no working GPU
+  acceleration), where each redraw also competed with the geometry rebuilds
+  for the same thread. It now draws only when something actually changes.
+- The camera's glide after releasing an orbit decayed by a fixed amount per
+  frame rather than per second, so on a slow renderer it kept easing — and
+  redrawing — long after the gesture, measured at 221 s where it should be
+  about one. The decay is now scaled to real frame time, which leaves the
+  glide identical at 60 fps and ends it in about a second at any rate.
 
 - The on-face selection frame on the chair came in several times the size of the
   artwork, sitting away from it at an angle with its handles hanging in space off
