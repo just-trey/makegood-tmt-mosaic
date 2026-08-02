@@ -204,6 +204,21 @@ scrubbing, precision-truncation retries) target 6.5's exact
 polygon-clipping bugs, and 6.5's package typings don't resolve under
 modern TypeScript, hence the shim in [src/turf.d.ts](../src/turf.d.ts).
 
+## Nothing benchmarks the geometry hot path on demand
+
+The 5–10x figure above came from a one-off harness built for that upgrade
+attempt and not kept. So the pin that decision produced is enforced by prose
+and a `package.json` exact version — re-measuring it, or measuring anything
+else on the union-accumulation path, means rebuilding the harness first.
+
+Deliberately not built: a standing `bench-geometry` script would only be
+exercised by an active turf upgrade, and there isn't one. The cost of writing
+it now is real and the cost of re-deriving it later is roughly the same, so
+this waits until a turf upgrade becomes live work — at which point it is step
+one, not an afterthought. Closing it means a repeatable script over that hot
+path at a few shape counts, with the 6.5.0 numbers above as the baseline to
+beat.
+
 ## The export-placement seal proves a mesh hasn't changed, not that anyone re-verified it
 
 `PART_FINGERPRINTS` is generated
