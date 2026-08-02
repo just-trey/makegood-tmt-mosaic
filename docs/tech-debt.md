@@ -261,18 +261,51 @@ scale per-part, or make the reference face an explicit choice on the
 which shares it precisely so the selection frame matches the cut — so a fix
 has to keep them agreeing rather than change one.
 
-## The CSG failure branches have never been watched degrading in the running app
+## The CSG failure branches: closed, and how to re-check them
 
-What they emit is now pinned in CI — the `CSG failure handling` tests
-in [tests/assembly.test.ts](../tests/assembly.test.ts) build the real 3MF and
-assert the shipped body/inlay object counts via `partObjectSummaries`
-([tests/lib/threemf.ts](../tests/lib/threemf.ts)), so the export bug those
-branches exist to fix — an uncut body shipping alongside inlay solids in the
-same volume — can't come back silently. But every one of those runs is
-driven by a mocked `Manifold.union` / `.difference` / `.intersection`. Nobody
-has seen the branches fire against the real engine in the app, and a
-dev-only forced throw is what would make that check repeatable rather than a
-hand-edit each time.
+**Closed.** This was open because the `CSG failure handling` tests in
+[tests/assembly.test.ts](../tests/assembly.test.ts) drive every branch with a
+mocked `Manifold.union` / `.difference` / `.intersection` — they pin what the
+handler emits, but nobody had watched a branch fire against the real engine in
+the running app.
+
+[src/geometry/csgFault.ts](../src/geometry/csgFault.ts) now arms a forced
+failure from the URL (`?csgfault=difference`, `?csgfault=color-union:1`) at the
+five points where a real one originates, and
+[scripts/check-csg-failure.mjs](../scripts/check-csg-failure.mjs) drives the
+app through each, exports a real 3MF, and asserts the degradation that reaches
+the file against an undamaged baseline. Run it with
+`npm run build && node scripts/check-csg-failure.mjs`; the `debug-csg-failure`
+skill is the walkthrough.
+
+First full run (wheel, two-color SVG) — all five branches confirmed degrading as
+documented. The body triangle counts are the measurement worth keeping, because
+they are what distinguishes the two outcomes that otherwise look identical in
+the file (one body, no inlays):
+
+| Fault                       | Total inlays | Body triangles         |
+| --------------------------- | ------------ | ---------------------- |
+| none (baseline, 1 artwork)  | 4            | 45,214                 |
+| `color-union:1` (2 artwork) | 3 (of 4)     | —                      |
+| `part-union`                | 2 (of 4)     | 45,166 — **Cap** uncut |
+| `difference`                | 0            | 44,930 — **uncut**     |
+| `body-mesh`                 | 0            | 44,930 — **uncut**     |
+| `intersection`              | 0            | 45,214 — **still cut** |
+
+`intersection` matching the baseline exactly is the point: its pocket really is
+cut and only the fill failed, which is the "prints as an empty recess" outcome
+in [troubleshooting.md](troubleshooting.md). A change that collapsed it into the
+export-uncut path would show up here as 44,930 and nowhere else.
+
+`part-union` damaging one part rather than all three is also the point, and the
+reason its check is per-part: the part-wide merge only runs on a part carrying
+two or more colors, and on this artwork that is the Cap alone. Top and Bottom
+come out identical to the baseline, which is the property worth asserting —
+the failure stayed inside the part it happened on.
+
+Not covered: the fault points force the _handler_ to run, so they prove the
+degradation and the cleanup, not that Manifold fails on any particular real
+mesh. Genuinely malformed input is still the untested half.
 
 ## The warning panel can hide the warnings that matter most, and the CSG failure messages are the worst fit for it
 
@@ -293,3 +326,10 @@ and/or group per-part warnings into one pill naming the count, so "your part
 shipped blank" can't be the message that gets truncated away. Note the pill
 lengths are measured but their _rendered_ wrapping in the panel is not —
 worth eyeballing at a narrow viewport as part of the same change.
+
+The cap is also why `window.__mosaic.warnings()` exists
+([src/main.ts](../src/main.ts)): the CSG check script asserts that a degraded
+build _warned_, and its `intersection` case already emits 5 pills, so reading
+the panel's DOM would report "degraded silently" as soon as a case crossed 6.
+Whoever makes the overflow readable can leave that hook alone — it wants the
+list, not the rendering.

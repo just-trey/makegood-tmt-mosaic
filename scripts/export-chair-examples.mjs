@@ -20,7 +20,12 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
-import { startPreview, launchBrowser, newPage } from './lib/harness.mjs';
+import {
+  startPreview,
+  launchBrowser,
+  newPage,
+  settledAfterRebuild as settled,
+} from './lib/harness.mjs';
 
 const OUT = process.argv[2] || 'stubs';
 mkdirSync(OUT, { recursive: true });
@@ -43,31 +48,6 @@ const TEST_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60">
   <rect x="0" y="20" width="60" height="20" fill="#f5d020"/>
   <rect x="0" y="40" width="60" height="20" fill="#1e5fa8"/>
 </svg>`;
-
-/**
- * Block until the rebuild triggered by whatever we just clicked has actually finished.
- *
- * `#btn-export` alone is not that signal: it stays enabled from the *previous* build while the
- * next one is scheduled and running, so waiting on it returns immediately and exports stale
- * geometry — which is how a run produced files carrying the design's initial single-zone sticker
- * placement instead of the all-zones fill that had been selected. An assembly rebuild always
- * raises the "Rebuilding geometry…" curtain, so wait for it to come up (past scheduler.ts's
- * debounce) and go back down, then confirm the export button.
- */
-async function settled(page) {
-  const overlay = (visible) =>
-    page.waitForFunction(
-      (want) => (document.querySelector('#loading-overlay')?.style.display === 'flex') === want,
-      visible,
-      { timeout: visible ? 30_000 : 900_000 },
-    );
-  // If the curtain has already been and gone we're past it; don't hang waiting to see it rise.
-  await overlay(true).catch(() => {});
-  await overlay(false);
-  await page.waitForFunction(() => !document.querySelector('#btn-export')?.disabled, null, {
-    timeout: 120_000,
-  });
-}
 
 /**
  * Whether wipe_tower_x/y names the tower's center or its origin corner is not pinned down here,

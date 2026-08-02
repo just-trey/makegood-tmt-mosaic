@@ -211,6 +211,35 @@ export async function settle(page, label, timeoutMs = 120_000) {
 }
 
 /**
+ * Block until the rebuild triggered by whatever we just clicked has actually finished.
+ *
+ * `#btn-export` alone is not that signal: it stays enabled from the *previous* build while the
+ * next one is scheduled and running, so waiting on it returns immediately and exports stale
+ * geometry — which is how a run produced files carrying the design's initial single-zone sticker
+ * placement instead of the all-zones fill that had been selected. An assembly rebuild always
+ * raises the "Rebuilding geometry…" curtain, so wait for it to come up (past scheduler.ts's
+ * debounce) and go back down, then confirm the export button.
+ *
+ * settle() above is the same idea through the app's own idle counter; this one reads nothing but
+ * the DOM, so it needs no cooperation from the build. Use either, but not a private copy of this:
+ * the two scripts that wanted it had already drifted to different rebuild timeouts.
+ */
+export async function settledAfterRebuild(page, { rebuildTimeoutMs = 900_000 } = {}) {
+  const overlay = (visible) =>
+    page.waitForFunction(
+      (want) => (document.querySelector('#loading-overlay')?.style.display === 'flex') === want,
+      visible,
+      { timeout: visible ? 30_000 : rebuildTimeoutMs },
+    );
+  // If the curtain has already been and gone we're past it; don't hang waiting to see it rise.
+  await overlay(true).catch(() => {});
+  await overlay(false);
+  await page.waitForFunction(() => !document.querySelector('#btn-export')?.disabled, null, {
+    timeout: 120_000,
+  });
+}
+
+/**
  * Screenshot clipped to the canvas, so callers don't each re-derive its bounding box.
  *
  * No rAF wait before the capture, despite the render loop drawing on the frame after the one that

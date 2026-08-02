@@ -41,6 +41,7 @@ import {
   type TileGrid,
 } from './patterns';
 import { noticeBuild, warnBuild } from '../warnings';
+import { csgFault, resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
 
 // Re-exported from ./zones so existing importers (exportPanel, faceFrame, rebuild, tests) keep
@@ -295,6 +296,7 @@ export function designMmPerUnit(
 export async function buildAssemblyGeometry(
   input: AssemblyBuildInput,
 ): Promise<AssemblyBuild | null> {
+  resetCsgFaults();
   const {
     artworks,
     parts,
@@ -631,7 +633,12 @@ export async function buildAssemblyGeometry(
       owned.push(...list);
       let merged: ManifoldSolid;
       try {
-        merged = list.length === 1 ? list[0] : Manifold.union(list);
+        if (list.length === 1) {
+          merged = list[0];
+        } else {
+          csgFault('color-union');
+          merged = Manifold.union(list);
+        }
       } catch {
         // This color's cutters (from different zones of the same part) couldn't be merged —
         // drop just this color rather than losing the whole part's cut.
@@ -676,7 +683,12 @@ export async function buildAssemblyGeometry(
     const prismList = prismEntries.map(([, p]) => p);
     let cutter: ManifoldSolid;
     try {
-      cutter = prismList.length === 1 ? prismList[0] : Manifold.union(prismList);
+      if (prismList.length === 1) {
+        cutter = prismList[0];
+      } else {
+        csgFault('part-union');
+        cutter = Manifold.union(prismList);
+      }
     } catch {
       // Nothing to cut with — same escape as the non-watertight branch above: export the
       // untouched body rather than risk a half-cut/half-inlaid pair that would overlap.
@@ -695,7 +707,11 @@ export async function buildAssemblyGeometry(
     // from manifoldToMeshes rather than the boolean — otherwise the solid is unreachable.
     let body: ManifoldSolid | null = null;
     try {
+      csgFault('difference');
       body = Manifold.difference(partMan, cutter);
+      // After the solid exists, before it's converted: the only injection point that exercises the
+      // finally's freed handle rather than just the degradation.
+      csgFault('body-mesh');
       const meshes = manifoldToMeshes(body);
       bodySoup = meshes.soup;
       bodyIndexed = meshes.indexed;
@@ -728,6 +744,7 @@ export async function buildAssemblyGeometry(
     for (const [ci, prism] of prismEntries) {
       let inl: ManifoldSolid | null = null;
       try {
+        csgFault('intersection');
         inl = Manifold.intersection(partMan, prism);
         const { soup, indexed } = manifoldToMeshes(inl);
         if (soup.length) {
