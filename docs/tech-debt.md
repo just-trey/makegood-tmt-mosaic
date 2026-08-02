@@ -101,6 +101,96 @@ pre-filtered per-shape diffs benchmarked ~2x SLOWER than the accumulator
 on real artwork (full-canvas backgrounds overlap everything) — see the
 comment on `computeNetRegionsByColor`.
 
+The chair-body/Fill combination is an order of magnitude worse than the
+number above, measured on `MOSAIC_GPU=1` production build, 2026-08-02: the
+bundled `public/patterns/zebra.svg` in Fill mode on the chair's Left side
+alone (one of five zones) took **405.6s** to settle, non-linear progress
+(41% at t+15s, 43% at t+60s, 52% at t+180s). The same design set to "All
+zones" (all five zones, the conformal-recut cost `state/artwork.ts`'s
+zone-binding-default comment already warns about) did not finish inside a
+900s timeout. This is the conformal-wrap + per-part CSG path specifically,
+not the flat-mode boolean pass measured above — the per-part cut solids and
+the cross-part zone triangulation both scale with triangle count, and the
+chair's zones carry hundreds of thousands of triangles (see the "1.7 MB raw"
+sidecar-size section below). See the next section for the interaction
+consequence.
+
+## The long assembly-mode rebuild has no cancel, and until session persistence lands the only escape destroys the work
+
+`#loading-overlay` (the "Rebuilding geometry…" curtain, `src/ui/overlay.ts`)
+has no cancel or back control at any point in the 405.6s / >900s runs
+measured above — a user who starts the wrong rebuild (wrong pattern, wrong
+zone scope) has to wait it out. Today the only way to interrupt it is a
+reload, which — until the session-durability fix lands (tracked as work,
+not tech debt; see the plan that added this section) — erases every setting
+in the session. That combination is what turns "this is slow" into "this
+tool lost my afternoon" for the vision-lens review that measured it.
+Persistence removes the second half (a reload becomes recoverable instead of
+catastrophic) but not the first: there is still no way to abort a running
+rebuild and get the UI back without waiting or losing the in-flight state.
+Closing this needs either an `AbortController` threaded through the
+CSG/triangulation pipeline (`src/geometry/assembly.ts`,
+`src/app/rebuild.ts`) or moving the pipeline off the main thread so a cancel
+can just discard the worker — the same Web Worker move already listed above
+as a lead for the flat-mode case would likely serve both.
+
+## Auto-merge is a similarity control; the user's actual constraint is a slot count
+
+The slider (`None`/`Slight`/`Medium`/`Strong` — `src/ui/colorList.ts`,
+`initColorListPanel`) walks a ΔE similarity threshold, merging colors that
+look alike. Measured against a real 7-color volunteer SVG on the chair,
+2026-08-02: `None` → 7 AMS slots, `Slight` (the default) → 7, `Medium` → 7,
+`Strong` → 6. The audience's actual question — per
+[docs/audience.md](audience.md) — is "I have a 4-slot AMS Lite, make this
+fit," a target-count constraint, not a similarity tolerance. The near-term
+fix landing now (see the plan that added this section) reconciles the
+computed slot count against the selected printer's capacity and warns when
+it's over, which makes the mismatch visible; it does not change what the
+slider controls. Closing this properly means re-deriving the ΔE thresholds
+against a wider sample of real volunteer SVGs and either replacing the
+aggressiveness slider with a "fit N slots" input that binary-searches a
+threshold, or adding one alongside it. Needs real artwork to tune against,
+not just the one measured sample — that's the reason it's deferred rather
+than done alongside the reconciliation warning.
+
+## The export button doesn't say what it's about to produce
+
+Confirmed on the chair, 2026-08-02: "Export print-ready 3MF" produced a
+35.8 MB, 11-plate, 13-object, 5-filament file with zero on-screen summary
+before or after — the app's state is byte-for-byte identical pre- and
+post-export. That's a multi-day, multi-kilogram print represented as a
+single unlabeled button. The zone-coverage warning and AMS-capacity check
+landing now (see the plan that added this section) surface two of the
+numbers that matter at export time, but not the full picture — plate count,
+per-plate part list, filament colors. Closing this means a pre-export
+summary card reading the same `getLastAssemblyBuild()` /
+`built.partOutputs` data `exportPrintReady3MF` (`src/ui/exportPanel.ts`)
+already has in hand; it's a presentation layer on data that already exists,
+not a new computation.
+
+## Three shape-kind panels ship fully wired but are permanently unreachable from the UI
+
+`rect`, `round`, and `stl` (`src/state/store.ts`'s `ShapeKind`) are excluded
+from the part dropdown on purpose —
+`renderShapeKindOptions()` in [src/ui/partPanel.ts](../src/ui/partPanel.ts)
+carries the comment explaining why ("picking a real part shouldn't require
+navigating a second nested dropdown"). Confirmed deliberate, not orphaned,
+by the `assumptions`-lens review, 2026-08-02, and it's the right call for
+the current audience. Recorded here only so the next person who finds three
+complete, exercised-by-tests, never-rendered UI panels in the bundle knows
+it's a maintenance question (why keep them building and passing tests if
+nothing reaches them) rather than a sign something broke. No action needed
+unless a future part genuinely wants a rect/round/plate flat mode again, at
+which point the dropdown gate is the one line to touch.
+
+## The help dialog's open state doesn't track browser back-navigation
+
+Opening Help, clicking a table-of-contents anchor (`#h-export` etc.), then
+pressing the browser Back button returns the URL to `/` but leaves the
+`<dialog>` open — cosmetic, not functional (`edge-cases`-lens review,
+2026-08-02). Low priority; fix would be a `popstate` listener that closes
+the dialog when the hash it opened on disappears.
+
 ## Region computation is O(n²·len) per path
 
 ([regions.ts:357](../src/geometry/regions.ts#L357), `shapes.map(shapeToFeature)`,
@@ -296,6 +386,12 @@ aren't in the target list, so clicking a handle in front of a zone selects
 the zone behind it. Fix: raycast the visible parts too and reject a zone hit
 farther than the nearest solid hit. Gets worse as zones multiply — the chair
 went from 4 to 5 with the full-coverage re-author.
+
+This is a prerequisite for the roadmap idea of making zones clickable
+_before_ artwork exists (see [docs/roadmap.md](roadmap.md)) — that flow puts
+zone-picking in front of a first-time user instead of behind a load-then-
+rebind step, so a wrong occlusion pick there is a first impression, not a
+power-user edge case. Fix this before building that.
 
 ## One warning covers three different failures
 
