@@ -20,10 +20,17 @@ import { initHelpPanel } from './ui/helpPanel';
 import { $ } from './ui/dom';
 import { getAppVersion } from './version';
 import { whenIdle } from './app/idle';
+import { WARNINGS } from './warnings';
 
 // Not DEV-gated: the drive scripts hit vite-preview output (built, not dev), where
-// import.meta.env.DEV is false.
-(window as unknown as { __mosaic: { whenIdle: typeof whenIdle } }).__mosaic = { whenIdle };
+// import.meta.env.DEV is false. `warnings` is here rather than read off the DOM because the panel
+// renders only the first 6 (warningsView.ts) — a script asserting on warnings has to see all of
+// them or it reports "degraded silently" for a build that warned past the cap.
+(
+  window as unknown as {
+    __mosaic: { whenIdle: typeof whenIdle; warnings: () => string[] };
+  }
+).__mosaic = { whenIdle, warnings: () => WARNINGS.map((w) => w.message) };
 
 $('#app-version').textContent =
   `v${getAppVersion(typeof __APP_VERSION__ === 'undefined' ? undefined : __APP_VERSION__)}`;

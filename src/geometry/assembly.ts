@@ -633,8 +633,12 @@ export async function buildAssemblyGeometry(
       owned.push(...list);
       let merged: ManifoldSolid;
       try {
-        csgFault('color-union');
-        merged = list.length === 1 ? list[0] : Manifold.union(list);
+        if (list.length === 1) {
+          merged = list[0];
+        } else {
+          csgFault('color-union');
+          merged = Manifold.union(list);
+        }
       } catch {
         // This color's cutters (from different zones of the same part) couldn't be merged —
         // drop just this color rather than losing the whole part's cut.
@@ -679,8 +683,12 @@ export async function buildAssemblyGeometry(
     const prismList = prismEntries.map(([, p]) => p);
     let cutter: ManifoldSolid;
     try {
-      csgFault('part-union');
-      cutter = prismList.length === 1 ? prismList[0] : Manifold.union(prismList);
+      if (prismList.length === 1) {
+        cutter = prismList[0];
+      } else {
+        csgFault('part-union');
+        cutter = Manifold.union(prismList);
+      }
     } catch {
       // Nothing to cut with — same escape as the non-watertight branch above: export the
       // untouched body rather than risk a half-cut/half-inlaid pair that would overlap.

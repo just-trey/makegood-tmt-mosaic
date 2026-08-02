@@ -35,12 +35,14 @@ Two things worth keeping straight, because the strings look alike:
   Don't chase it into Manifold.
 
 Counting the `Couldn't …` sites in
-[src/geometry/assembly.ts](../../../src/geometry/assembly.ts) will mislead you:
-six strings, but only **four** are Manifold boolean branches (the per-color
-merge, the part-wide merge, the body difference, the inlay intersection). The
-other two are the extrude step and the fill measure above. Two further failure
-branches don't use the word at all — the part mesh being unreadable by the
-engine, and the part not being watertight.
+[src/geometry/assembly.ts](../../../src/geometry/assembly.ts) will mislead you
+in both directions: six strings, but only **three** of them are Manifold boolean
+branches (the per-color merge, the part-wide merge, the inlay intersection) —
+the other three are the two extrude attempts and the fill measure above.
+Meanwhile the fourth boolean branch, the body difference, doesn't use the word
+at all ("Boolean cut failed on part …"), and neither do two further failure
+branches — the part mesh being unreadable by the engine, and the part not being
+watertight.
 
 ## Force a branch against the real engine
 
@@ -56,7 +58,7 @@ failure from the URL at the five points where a real one originates:
 | `?csgfault=`   | Forces                                      | Documented outcome                   |
 | -------------- | ------------------------------------------- | ------------------------------------ |
 | `color-union`  | one color's cutters failing to merge        | that color dropped, others still cut |
-| `part-union`   | the part-wide cutter merge                  | part exported uncut                  |
+| `part-union`   | the part-wide cutter merge (2+ colors)      | that part exported uncut             |
 | `difference`   | the body cut                                | part exported uncut, no inlays       |
 | `body-mesh`    | mesh conversion **after** the cut succeeded | same, plus the freed-handle path     |
 | `intersection` | one inlay                                   | pocket cut, recess ships empty       |
@@ -66,12 +68,13 @@ The budget resets per build on purpose — a session-wide one gets spent by an
 intermediate rebuild, and the build left on screen then comes out clean with its
 predecessor's warning already cleared, which reads as "the fault did nothing."
 
-Two traps when driving this by hand:
+Two things to know when driving this by hand:
 
 - `color-union` merges one color's prisms **across zones**, so with a single
-  artwork every color has one prism, `Manifold.union` is never called, and the
-  fault fires where no real failure could originate. Load the artwork twice
-  before trusting that case.
+  artwork every color has one prism and `Manifold.union` is never called. The
+  fault sits inside that branch, so it doesn't fire either and the build comes
+  out clean — load the artwork twice before trusting that case. (`part-union`
+  is the same shape: one color means no part-wide merge and nothing to force.)
 - Unlimited `color-union` drops every color on every part, which is
   indistinguishable from `part-union` in the exported file. Use `:1`.
 
@@ -79,7 +82,9 @@ The hook is deliberately **not** `import.meta.env.DEV`-gated, for the same
 reason `window.__mosaic` isn't (see [src/main.ts](../../../src/main.ts)): the
 drive scripts verify `vite preview` output, which is a production build, so a
 DEV gate would put these branches out of reach of exactly the checks that need
-them. An armed page announces itself as a standing warning.
+them. An armed page announces itself as a warning, re-stated on every rebuild —
+loading an SVG clears the notice list, so a once-only notice would be gone by
+the build where the fault actually fires.
 
 ## The repeatable check
 

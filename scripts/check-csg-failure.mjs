@@ -12,7 +12,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
-import { startPreview, launchBrowser, newPage } from './lib/harness.mjs';
+import {
+  startPreview,
+  launchBrowser,
+  newPage,
+  settledAfterRebuild as settled,
+} from './lib/harness.mjs';
 
 const OUT = process.argv[2] || 'stubs/csg-failure';
 mkdirSync(OUT, { recursive: true });
@@ -36,14 +41,22 @@ const tris = (parts) => parts.reduce((n, s) => n + s.bodyTris, 0);
  * harness can tell damaged from undamaged at all.
  *
  * `color-union` is the only case needing two artworks: it merges one color's prisms across zones,
- * so a single artwork leaves every color with one prism and Manifold.union is never reached --
- * the fault would fire where no real failure could originate. It is also the only case armed with
- * a `:1` limit, because that is what makes the point observable: exactly one color is dropped and
- * the survivors have to still cut. Unlimited, it drops every color on every part and the result is
- * indistinguishable from the part-union case.
+ * so a single artwork leaves every color with one prism and Manifold.union is never reached. The
+ * fault sits inside that branch, so with one artwork it simply never fires and the case would come
+ * out identical to the baseline. It is also the only case armed with a `:1` limit, because that is
+ * what makes the point observable: exactly one color is dropped and the survivors have to still
+ * cut. Unlimited, it drops every color on every part and the result is indistinguishable from the
+ * part-union case.
  *
- * The rest need one artwork only -- the test SVG has two colors, so the part-wide prism union and
- * the per-color inlay loop both run for real.
+ * `part-union` is the mirror image of that, and the reason its check is per-part rather than
+ * whole-file: the part-wide merge only runs on a part carrying two or more colors, so on this
+ * artwork only the Cap reaches it. A part the fault cannot touch has to come out byte-for-byte as
+ * the baseline did, which is the stronger statement -- "the failure stayed inside the part it
+ * happened on" -- and the assertion below makes it, instead of the weaker "everything went uncut"
+ * that only held while the fault was armed ahead of the branch it stands for.
+ *
+ * The rest need one artwork only -- the test SVG has two colors, so the body cut and the per-color
+ * inlay loop both run for real on every part.
  */
 const CASES = [
   {
@@ -70,9 +83,17 @@ const CASES = [
   {
     point: 'part-union',
     artworks: 1,
-    expect: 'every part exported uncut, no inlays',
+    expect: 'multi-color parts exported uncut and inlay-less; single-color parts untouched',
     warn: /couldn't combine this part's cut solids/i,
-    check: (parts, base) => total(parts) === 0 && tris(parts) < base.tris,
+    check: (parts, base) =>
+      // Vacuous unless some part actually merged two prisms — otherwise nothing was forced at all.
+      parts.some((s) => base.part(s).inlayCount > 1) &&
+      parts.every((s) => {
+        const b = base.part(s);
+        return b.inlayCount > 1
+          ? s.bodyCount === 1 && s.inlayCount === 0 && s.bodyTris < b.bodyTris
+          : s.inlayCount === b.inlayCount && s.bodyTris === b.bodyTris;
+      }),
   },
   {
     point: 'difference',
@@ -130,31 +151,21 @@ async function partSummaries(file) {
     ),
   ].map(([, name, components]) => {
     const ids = [...components.matchAll(/objectid="(\d+)"/g)].map(([, id]) => id);
+    // Same rule as the twin: a sub-object the config never names is the bug itself, not an inlay
+    // and not a nothing. Scoring it as neither would let a regression that drops config entries
+    // report zero inlays -- i.e. pass the "no overlapping uncut-body + inlay pair" check while
+    // shipping exactly that pair.
+    for (const id of ids) {
+      if (extruderOf.get(id) === undefined)
+        throw new Error(`sub-object ${id} of "${name}" has no model_settings.config entry`);
+    }
     const bodyIds = ids.filter((id) => extruderOf.get(id) === 1);
     return {
       name,
       bodyCount: bodyIds.length,
-      inlayCount: ids.filter((id) => {
-        const e = extruderOf.get(id);
-        return e !== 1 && e !== undefined;
-      }).length,
+      inlayCount: ids.filter((id) => extruderOf.get(id) !== 1).length,
       bodyTris: bodyIds.reduce((n, id) => n + (trisOf.get(id) ?? 0), 0),
     };
-  });
-}
-
-/** See export-chair-examples.mjs: #btn-export stays enabled from the previous build. */
-async function settled(page) {
-  const overlay = (visible) =>
-    page.waitForFunction(
-      (want) => (document.querySelector('#loading-overlay')?.style.display === 'flex') === want,
-      visible,
-      { timeout: visible ? 30_000 : 300_000 },
-    );
-  await overlay(true).catch(() => {});
-  await overlay(false);
-  await page.waitForFunction(() => !document.querySelector('#btn-export')?.disabled, null, {
-    timeout: 120_000,
   });
 }
 
@@ -209,7 +220,12 @@ try {
     await dl.saveAs(out);
 
     const summaries = await partSummaries(out);
-    const all = await page.$$eval('#warnings div', (ns) => ns.map((n) => n.textContent));
+    // Read the notice list itself, not the pills: the panel renders only the first 6 plus an
+    // overflow pill (src/ui/warningsView.ts), and the intersection case already emits 5. A case
+    // that warned past the cap would otherwise be reported as having degraded silently -- the
+    // worse of the two bugs this script exists to catch.
+    const all = await page.evaluate(() => window.__mosaic.warnings());
+    const armedNotice = all.some((w) => /fault injection is armed/i.test(w));
     // The armed-fault notice is this script's own doing; only real degradation warnings count.
     const warnings = all.filter((w) => !/fault injection is armed/i.test(w));
 
@@ -219,11 +235,55 @@ try {
     console.log(`    total inlays: ${total(summaries)}, body triangles: ${tris(summaries)}`);
     warnings.forEach((w) => console.log(`  ! ${w}`));
 
-    if (!c.point) baselines.set(c.artworks, { inlays: total(summaries), tris: tris(summaries) });
-    const baseline = baselines.get(c.artworks) ?? { inlays: 0, tris: 0 };
+    if (!c.point) {
+      const byName = new Map(summaries.map((s) => [s.name, s]));
+      baselines.set(c.artworks, {
+        inlays: total(summaries),
+        tris: tris(summaries),
+        // A part missing from the baseline means the two runs exported different parts, which is
+        // its own failure -- don't let it read as "this part is unchanged".
+        part: (s) => {
+          const b = byName.get(s.name);
+          if (!b) throw new Error(`part "${s.name}" has no baseline — the exports disagree`);
+          return b;
+        },
+      });
+    }
+    // Every check is relative to a measured baseline, so a case with no baseline for its artwork
+    // count can't be judged at all. Say that, rather than substituting zeros and reporting a
+    // geometry failure that is really a missing measurement.
+    const baseline = baselines.get(c.artworks);
+
+    // Checked at the end of the run, not at page load: the artwork load in between calls
+    // clearWarnings(), so this is the state that matters -- an armed build has to still say so
+    // once it is showing the damage, or nobody can tell it from a genuinely broken one.
+    if (armedNotice !== !!c.point) {
+      console.log(
+        armedNotice
+          ? '  FAILED: unarmed build claims a CSG fault is armed'
+          : '  FAILED: armed build no longer says so — the notice did not survive the SVG load',
+      );
+      failures++;
+    }
+
+    // A check that throws (a part with no baseline) is this case failing, not the run collapsing.
+    let checkErr = null;
+    const checkOk =
+      !!baseline &&
+      (() => {
+        try {
+          return c.check(summaries, baseline);
+        } catch (e) {
+          checkErr = e.message;
+          return false;
+        }
+      })();
 
     const matched = c.warn ? warnings.filter((w) => c.warn.test(w)) : [];
-    if (!summaries.length) {
+    if (!baseline) {
+      console.log(`  FAILED: no baseline measured for ${c.artworks} artwork(s) — add that case`);
+      failures++;
+    } else if (!summaries.length) {
       console.log('  FAILED: nothing was exported at all');
       failures++;
     } else if (c.warn && !matched.length) {
@@ -232,8 +292,10 @@ try {
     } else if (c.warnCount !== undefined && matched.length !== c.warnCount) {
       console.log(`  FAILED: expected ${c.warnCount} matching warning(s), got ${matched.length}`);
       failures++;
-    } else if (!c.check(summaries, baseline)) {
-      console.log('  FAILED: exported file does not match the expected degradation');
+    } else if (!checkOk) {
+      console.log(
+        `  FAILED: ${checkErr ?? 'exported file does not match the expected degradation'}`,
+      );
       failures++;
     } else {
       console.log('  OK');

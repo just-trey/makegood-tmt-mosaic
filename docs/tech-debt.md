@@ -287,7 +287,7 @@ the file (one body, no inlays):
 | --------------------------- | ------------ | ---------------------- |
 | none (baseline, 1 artwork)  | 4            | 45,214                 |
 | `color-union:1` (2 artwork) | 3 (of 4)     | —                      |
-| `part-union`                | 0            | 44,930 — **uncut**     |
+| `part-union`                | 2 (of 4)     | 45,166 — **Cap** uncut |
 | `difference`                | 0            | 44,930 — **uncut**     |
 | `body-mesh`                 | 0            | 44,930 — **uncut**     |
 | `intersection`              | 0            | 45,214 — **still cut** |
@@ -296,6 +296,12 @@ the file (one body, no inlays):
 cut and only the fill failed, which is the "prints as an empty recess" outcome
 in [troubleshooting.md](troubleshooting.md). A change that collapsed it into the
 export-uncut path would show up here as 44,930 and nowhere else.
+
+`part-union` damaging one part rather than all three is also the point, and the
+reason its check is per-part: the part-wide merge only runs on a part carrying
+two or more colors, and on this artwork that is the Cap alone. Top and Bottom
+come out identical to the baseline, which is the property worth asserting —
+the failure stayed inside the part it happened on.
 
 Not covered: the fault points force the _handler_ to run, so they prove the
 degradation and the cleanup, not that Manifold fails on any particular real
@@ -320,3 +326,10 @@ and/or group per-part warnings into one pill naming the count, so "your part
 shipped blank" can't be the message that gets truncated away. Note the pill
 lengths are measured but their _rendered_ wrapping in the panel is not —
 worth eyeballing at a narrow viewport as part of the same change.
+
+The cap is also why `window.__mosaic.warnings()` exists
+([src/main.ts](../src/main.ts)): the CSG check script asserts that a degraded
+build _warned_, and its `intersection` case already emits 5 pills, so reading
+the panel's DOM would report "degraded silently" as soon as a case crossed 6.
+Whoever makes the overflow readable can leave that hook alone — it wants the
+list, not the rendering.

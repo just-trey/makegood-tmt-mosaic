@@ -12,8 +12,8 @@ import { warn } from '../warnings';
  * Deliberately **not** `import.meta.env.DEV`-gated, for the same reason `window.__mosaic` isn't
  * (src/main.ts): the drive scripts verify `vite preview` output, which is a production build, so
  * a DEV gate would put these branches out of reach of exactly the checks that need them. Arming
- * one is opt-in per page load and announces itself as a standing warning, so a rigged build can't
- * be mistaken for a broken one.
+ * one is opt-in per page load and announces itself as a warning re-stated on every build (see
+ * announce()), so a rigged build can't be mistaken for a broken one.
  */
 export type CsgFaultPoint =
   'color-union' | 'part-union' | 'difference' | 'body-mesh' | 'intersection';
@@ -26,6 +26,8 @@ const POINTS: readonly CsgFaultPoint[] = [
   'intersection',
 ];
 
+let announcement: string | null = null;
+
 function armed(): { point: CsgFaultPoint; limit: number } | null {
   // Tests and the bake scripts run in node, where there is no location to read.
   if (typeof location === 'undefined') return null;
@@ -34,27 +36,38 @@ function armed(): { point: CsgFaultPoint; limit: number } | null {
   const [name, count] = raw.split(':');
   const point = POINTS.find((p) => p === name);
   if (!point) {
-    warn(`Unknown ?csgfault=${raw} — expected one of: ${POINTS.join(', ')}.`);
+    announcement = `Unknown ?csgfault=${raw} — expected one of: ${POINTS.join(', ')}.`;
     return null;
   }
   const limit = count === undefined ? Infinity : Number(count);
   if (!(limit > 0)) {
-    warn(`?csgfault=${raw} needs a positive count after the colon.`);
+    announcement = `?csgfault=${raw} needs a positive count after the colon.`;
     return null;
   }
+  announcement =
+    `CSG fault injection is armed (?csgfault) — "${point}" will be forced to fail ` +
+    `${limit === Infinity ? 'on every part' : `${limit}×`}. Reload without the ` +
+    `parameter to build normally.`;
   return { point, limit };
 }
 
 const fault = armed();
 let fired = 0;
 
-if (fault) {
-  warn(
-    `CSG fault injection is armed (?csgfault) — "${fault.point}" will be forced to fail ` +
-      `${fault.limit === Infinity ? 'on every part' : `${fault.limit}×`}. Reload without the ` +
-      `parameter to build normally.`,
-  );
+/**
+ * (Re-)state the armed notice. warn() dedupes by message, so calling it per build is free.
+ *
+ * It has to be re-emitted rather than pushed once at import: loading an SVG calls clearWarnings()
+ * (src/svg/parse.ts), which drops standing notices as well as build ones — so a notice pushed at
+ * import survives only until the first artwork lands, and is gone by the build where the fault
+ * actually fires. That is the one state where "a rigged build can't be mistaken for a broken one"
+ * has to hold.
+ */
+function announce(): void {
+  if (announcement) warn(announcement);
 }
+
+announce();
 
 /**
  * Throw if this call site is the armed one. A no-op — and free — on every normal page load.
@@ -76,7 +89,11 @@ export function csgFault(point: CsgFaultPoint): void {
  * from scratch, so a session-wide budget would be spent by an intermediate build and the one left
  * on screen would come out clean, with its predecessor's warning already cleared. That reads as
  * "the fault did nothing" rather than "the fault fired earlier".
+ *
+ * Also where the armed notice is re-stated, since the same artwork load that starts this build
+ * cleared it — see announce().
  */
 export function resetCsgFaults(): void {
   fired = 0;
+  announce();
 }
