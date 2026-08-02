@@ -35,10 +35,37 @@ required, not optional, when the diff touches `src/geometry/` or
   [src/geometry/regions.ts](src/geometry/regions.ts) are examples of
   comments that earn their keep.
 
-## Geometry pipeline
+## Docs
 
-For the full pipeline walkthrough, see README.md's "How it works" section.
+Where writing goes — pick one, don't split a topic across two:
+
+- **README** — orientation only: what it is, how to run it, how it works at a
+  level someone can hold in their head, what it can't do. Keep it under ~200
+  lines; if a section outgrows that, it belongs in `docs/`.
+- **[docs/pipeline.md](docs/pipeline.md)** — how the geometry actually works;
+  read this before touching `src/geometry/` or `src/export/`.
+- **[docs/tech-debt.md](docs/tech-debt.md)** — deferred work, known-wrong
+  behavior, measurements worth not re-taking. One `##` section per item,
+  stating what was measured, why it was deferred, and what closing it would
+  take. This is where the "write deferred work down, don't just remember it"
+  rule points.
+- **[docs/troubleshooting.md](docs/troubleshooting.md)** — one section per
+  user-visible warning string.
+- **[docs/roadmap.md](docs/roadmap.md)** — ideas not yet built.
+- **CHANGELOG.md** — what changed per release, nothing else.
 
 **Before touching boolean/polygon code**: `@turf/turf` is pinned to `6.5.0`
-deliberately — read README.md's "TODO / tech debt" section first, it
-explains why and what upgrading requires.
+deliberately — read [docs/tech-debt.md](docs/tech-debt.md) first, it explains
+why and what upgrading requires.
+
+## Planning
+
+Every plan names the model for each work item, so the choice is made once at
+planning time instead of re-litigated per session:
+
+- **Opus** — `src/geometry/`, `src/export/`, placement/scene math, anything
+  where a wrong number ships a bad print.
+- **Sonnet** — `src/ui/`, state plumbing, docs, config, test scaffolding.
+- Split a PR across both when it has a geometry half and a UI half.
+
+Verify by running the app, not only by running the tests.
