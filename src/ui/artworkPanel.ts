@@ -3,6 +3,7 @@ import { loadArtworkSource, pruneSettingsToPalette } from '../state/artwork';
 import { getPatterns } from '../state/patterns';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
+import { beginWork, endWork } from '../app/idle';
 import { requestFrame } from '../scene/viewport';
 import { parseSVGDocument } from '../svg/parse';
 import { clearWarnings, warn } from '../warnings';
@@ -50,6 +51,11 @@ export function applyParsedSVG(
 export async function applyPattern(id: string): Promise<void> {
   const entry = getPatterns().find((p) => p.id === id);
   if (!entry) return;
+  // Counted as outstanding work for the whole fetch, not just the rebuild it ends in: otherwise
+  // a drive script's whenIdle() resolves while the artwork is still downloading, and it goes on
+  // to screenshot or export a scene that has none of it. applyParsedSVG() takes over the count
+  // (via scheduleRebuild) before the finally runs, so there's no zero-width idle gap between.
+  beginWork();
   try {
     const res = await fetch(`patterns/${entry.file}`);
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -62,6 +68,8 @@ export async function applyPattern(id: string): Promise<void> {
     warn((e as Error).message);
     renderWarnings();
     alert('Could not load pattern: ' + (e as Error).message);
+  } finally {
+    endWork();
   }
 }
 
@@ -94,7 +102,12 @@ export function renderPatternPicker(): void {
 }
 
 function loadSVGFile(file: File): void {
+  beginWork();
   const reader = new FileReader();
+  // onloadend, not the onload path: it also covers a read error or abort, which would otherwise
+  // leave the counter above zero forever and hang every later whenIdle(). It runs after onload,
+  // so the rebuild applyParsedSVG() schedules has already taken over the count.
+  reader.onloadend = () => endWork();
   reader.onload = () => {
     try {
       applyParsedSVG(reader.result as string, file.name);

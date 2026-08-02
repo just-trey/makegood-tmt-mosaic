@@ -184,7 +184,13 @@ export function refreshGizmo(): void {
 function updateFacing(): void {
   if (!overlay || drag || !currentFrame) return;
   const toCam = getCamera().position.clone().sub(currentFrame.origin);
-  overlay.visible = toCam.dot(currentFrame.normal) > 0;
+  const facing = toCam.dot(currentFrame.normal) > 0;
+  // Only the flip is a visible change. This runs on every OrbitControls 'change' event, and
+  // those keep firing after a pan (see the note on prevCamPos in viewport.ts) — invalidating
+  // unconditionally would pin the render loop on forever, which is the thing that loop exists
+  // to avoid. refreshGizmo()'s own drawOverlay() invalidates for the redraw case.
+  if (facing === overlay.visible) return;
+  overlay.visible = facing;
   invalidate();
 }
 

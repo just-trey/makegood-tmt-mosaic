@@ -480,9 +480,11 @@ is imported by the app. Two other brand themes in the tokens folder
   `MESA_LOADER_DRIVER_OVERRIDE` alone silently leaves you on llvmpipe, which is
   also software. [scripts/lib/harness.mjs](scripts/lib/harness.mjs) does this
   behind `MOSAIC_GPU=1`, opt-in rather than automatic because CI's Playwright
-  container has no GPU at all. `glRenderer(page)` returns the string to assert
-  on — if it says SwiftShader or llvmpipe, any timing taken with it is a
-  software number.
+  container has no GPU at all. Asking for it and not getting it is an error,
+  not a slow run: with the flag set, the harness reads the GL renderer string
+  once per browser, prints it, and refuses to continue if it names SwiftShader
+  or llvmpipe — a silent fall back to software is exactly what made this hard
+  to diagnose the first time.
   What's left: nothing required, but the flags are Chromium/WSL-specific and
   will need revisiting if either the container image or the WSL graphics stack
   changes.
