@@ -132,6 +132,21 @@ Outputs, both committed:
   [src/geometry/zoneCharts.ts](../../../src/geometry/zoneCharts.ts).
 - `public/templates/<zoneId>-template.svg`, one per zone, true-size at 1:1 mm.
 
+The sidecar is written minified, but `public/` isn't in `.prettierignore`, so
+the committed copy is prettier's pretty-printed one — ~65k lines against the
+one line the script emits. A fresh bake therefore leaves `npm run format:check`
+(a CI gate) failing on a huge generated artifact. Committing fixes it silently
+via lint-staged, but if you run `ship-it` first, format only that file — never
+`npm run format`, per that skill:
+
+```bash
+npx prettier --write public/stl/<kindId>-zones.json
+```
+
+The templates need no such step. Re-baking `chair-body.json` against the
+committed 3MFs reproduces all six artifacts byte-for-byte after that format
+(verified 2026-08-02), so a non-empty diff there is a real change, not noise.
+
 ## 3. Read the log, then tune
 
 The loop is: adjust `seedPoint`/`seedNormal`/`maxAngleDeg` → re-run → read the

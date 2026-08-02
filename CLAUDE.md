@@ -2,11 +2,15 @@
 
 ## Skills
 
-Three project skills in `.claude/skills/` carry the recurring workflows in
+The project skills in `.claude/skills/` carry the recurring workflows in
 full — read the skill rather than reconstructing the steps:
 
 - `ship-it` — the pre-PR gate (the five checks + the four docs that drift)
+- `run-app` — launching it for manual or headless verification
 - `add-part` — adding a MakeGood TMT part as an assembly kind
+- `bake-zones` — baking the design zones of a multi-surface part
+- `verify-new-bed-size` — checking export placement on an unverified bed
+- `debug-csg-failure` — investigating an assembly-mode CSG warning
 - `release` — cutting and tagging a release
 
 ## Before opening a PR
