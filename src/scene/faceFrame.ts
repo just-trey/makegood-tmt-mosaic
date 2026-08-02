@@ -47,6 +47,14 @@ export interface FaceFrame {
    * unrelated piece of surface. The gizmo shows that rather than drawing a confident frame there.
    */
   offSurfaceMM: number;
+  /**
+   * `offSurfaceMM` for a design center moved (du, dv) mm from where this frame put it — what the
+   * off-surface warning has to ask mid-drag, since the frame itself is captured at pointerdown and
+   * keeps reporting where the design *started*. `giveUpMM` caps the search; beyond it the answer is
+   * only guaranteed to exceed the cap, which is all a "still on the surface?" test needs, and it
+   * keeps the miss from walking the whole chart grid on every pointer-move.
+   */
+  offSurfaceAt(du: number, dv: number, giveUpMM: number): number;
   offsetX: number;
   offsetY: number;
   scalePct: number;
@@ -77,10 +85,16 @@ function flatFrame(): FaceFrame | null {
     mH = footH * (1 - bp.marginPct / 50);
   const autoScale = Math.min(mW / svgW, mH / svgH);
   const scale = autoScale * (state.scalePct / 100);
+  // Captured, not read live inside pointAt below. The gizmo passes displacements measured from the
+  // center of the frame it is holding, so a closure that re-read state.offsetX during a move drag
+  // would add the delta a second time and send the outline off at twice the cursor. The assembly
+  // path captures its center for the same reason.
+  const ox = state.offsetX,
+    oy = state.offsetY;
   // Flat mode never poses the model group, so this is the grid lift alone today — routed through
   // the same helpers as the assembly path so it stays right if that ever changes.
   return {
-    origin: modelToWorldPoint(new THREE.Vector3(state.offsetX, state.offsetY, bp.thickness)),
+    origin: modelToWorldPoint(new THREE.Vector3(ox, oy, bp.thickness)),
     uAxis: modelToWorldDir(new THREE.Vector3(1, 0, 0)),
     vAxis: modelToWorldDir(new THREE.Vector3(0, 1, 0)),
     normal: modelToWorldDir(new THREE.Vector3(0, 0, 1)),
@@ -88,11 +102,11 @@ function flatFrame(): FaceFrame | null {
     halfH: (svgH * scale) / 2,
     // A flat plate IS its own tangent plane, so tracing the outline reduces to the plane formula —
     // kept in the same shape as the assembly path rather than special-cased in the gizmo.
-    pointAt: (du, dv) =>
-      modelToWorldPoint(new THREE.Vector3(state.offsetX + du, state.offsetY + dv, bp.thickness)),
+    pointAt: (du, dv) => modelToWorldPoint(new THREE.Vector3(ox + du, oy + dv, bp.thickness)),
     offSurfaceMM: 0,
-    offsetX: state.offsetX,
-    offsetY: state.offsetY,
+    offSurfaceAt: () => 0,
+    offsetX: ox,
+    offsetY: oy,
     scalePct: state.scalePct,
     rotationDeg: state.rotationDeg,
   };
@@ -257,6 +271,8 @@ function assemblyFrame(): FaceFrame | null {
         : origin.clone().addScaledVector(uAxis, du).addScaledVector(vAxis, dv);
     },
     offSurfaceMM: frame.offChartMM,
+    offSurfaceAt: (du, dv, giveUpMM) =>
+      bestFrameAt(mappers, centerU + du, centerV + dv, from, giveUpMM).offChartMM,
     offsetX: state.offsetX,
     offsetY: state.offsetY,
     scalePct: state.scalePct,

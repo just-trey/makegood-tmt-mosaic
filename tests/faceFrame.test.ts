@@ -326,6 +326,74 @@ describe('assembly gizmo frame picks the part the design center lands on', () =>
 });
 
 /**
+ * The gizmo redraws mid-drag by passing the design's displacement from the center of the frame it
+ * captured at pointerdown — while `state.offsetX/Y` already hold the new position. A frame that
+ * reads those live inside `pointAt` therefore counts the delta twice and sends the outline off at
+ * double the cursor.
+ */
+describe('gizmo frame reports positions relative to its own center', () => {
+  const flatFrame = () => {
+    state.shapeKind = 'disc';
+    state.marginPct = 0;
+    state.disc = { ...state.disc, diameter: 200, thickness: 3 };
+    state.parsed = parsed();
+    state.offsetX = 0;
+    state.offsetY = 0;
+    return computeFaceFrame()!;
+  };
+
+  it('does not move a flat frame’s pointAt when the drag writes a new offset', () => {
+    const f = flatFrame();
+    const before = f.pointAt(10, 0);
+
+    state.offsetX = 10; // what a 10mm move drag has already written by redraw time
+
+    expect(f.pointAt(10, 0).distanceTo(before)).toBeLessThan(1e-9);
+    // one delta from the frame's origin, not two
+    expect(f.pointAt(10, 0).distanceTo(f.origin)).toBeCloseTo(10, 6);
+  });
+
+  it('does the same on an assembly frame', () => {
+    const a = loadArtworkSource(parsed(), 'a.svg');
+    setArtworkZone(a.id, 'left');
+    const f = computeFaceFrame()!;
+    const before = f.pointAt(10, 0);
+
+    state.offsetX = 10;
+
+    expect(f.pointAt(10, 0).distanceTo(before)).toBeLessThan(1e-9);
+    expect(f.pointAt(10, 0).distanceTo(f.origin)).toBeCloseTo(10, 6);
+  });
+});
+
+/**
+ * The off-surface warning has to answer for where the design is being dragged TO. The frame is
+ * captured at pointerdown, so its own `offSurfaceMM` keeps reporting the start of the gesture —
+ * silent through exactly the drag that takes the artwork off the part.
+ */
+describe('gizmo frame answers off-surface for a displaced center', () => {
+  it('tracks the design center leaving the chart', () => {
+    const a = loadArtworkSource(parsed(), 'a.svg');
+    setArtworkZone(a.id, 'left'); // CHART_A: 100x100 of UV, so ±50 from its center
+    const f = computeFaceFrame()!;
+
+    expect(f.offSurfaceMM).toBe(0);
+    expect(f.offSurfaceAt(0, 0, 5)).toBe(0);
+    expect(f.offSurfaceAt(20, -20, 5)).toBe(0);
+    // 10mm past the chart edge — beyond the budget, so only "further than the tolerance" is promised
+    expect(f.offSurfaceAt(60, 0, 5)).toBeGreaterThan(5);
+    expect(f.offSurfaceAt(0, -60, 5)).toBeGreaterThan(5);
+  });
+
+  it('is always on-surface for a flat plate, which has no chart to leave', () => {
+    state.shapeKind = 'disc';
+    state.parsed = parsed();
+
+    expect(computeFaceFrame()!.offSurfaceAt(1e4, 1e4, 5)).toBe(0);
+  });
+});
+
+/**
  * The outline is traced along the surface, not across the tangent plane, so a frame on a curved
  * zone lies on the part instead of hanging in space beside it.
  */
