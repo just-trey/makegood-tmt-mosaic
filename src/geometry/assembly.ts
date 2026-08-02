@@ -170,6 +170,122 @@ export function canvasAnchor(parsed: ParsedSVG): { cx: number; cy: number; r: nu
 }
 
 /**
+ * Design anchor, per artwork: the SVG's largest <circle> when there is one (the design's
+ * intended outer boundary), otherwise a pseudo-circle around the artwork's bounding box —
+ * centered on the artwork, radius = half its larger dimension — so circle-less SVGs still
+ * auto-center on the hub and span the design diameter instead of refusing to build. Rect parts
+ * anchor on the document canvas (see canvasAnchor) and skip the wheel notice.
+ *
+ * Shared with the gizmo ([src/scene/faceFrame.ts]) rather than restated there: a frame drawn
+ * around an anchor the build didn't use encloses empty face instead of the artwork. `notice` is
+ * the build's own reporter; the gizmo passes nothing, since it re-resolves this on every refresh
+ * and would otherwise refill the warnings panel from a mouse-move.
+ */
+export function designAnchor(
+  parsed: ParsedSVG,
+  isRect: boolean,
+  notice: (msg: string) => void = () => {},
+): { cx: number; cy: number; r: number } {
+  const existing = isRect ? null : parsed.rawSVGCircle;
+  if (existing) return existing;
+  if (isRect) {
+    const canvas = canvasAnchor(parsed);
+    if (canvas) return canvas;
+  }
+  const bbox = parsed.bbox;
+  if (!isRect)
+    notice(
+      'This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.',
+    );
+  return {
+    cx: (bbox.minX + bbox.maxX) / 2,
+    cy: (bbox.minY + bbox.maxY) / 2,
+    r: Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY) / 2 || 1,
+  };
+}
+
+/**
+ * The largest flat design face across the loaded parts, memoized — the fallback size reference for
+ * a rect SVG that declares no absolute mm size.
+ *
+ * Only a *loaded* part has a face to measure. A part still fetching from the library would
+ * otherwise leave this null, drop callers to the 1:1 branch, and report a size the rebuild its own
+ * load triggers immediately contradicts — so when nothing is loaded yet, say nothing (there's no
+ * geometry to place either). Lazy because only that no-mm-size case needs it: the wheel path never
+ * pays for the scan.
+ */
+export function memoLargestDesignFace(
+  parts: AssemblyPart[],
+): () => { w: number; h: number } | null {
+  let memo: { w: number; h: number } | null | undefined;
+  return () => {
+    if (memo !== undefined) return memo;
+    let found: { w: number; h: number } | null = null;
+    for (const p of parts) {
+      if (!p.loaded) continue;
+      const bb = faceXZBBox(p.boundaryLoop);
+      if (bb && bb.w > 0 && bb.h > 0 && (!found || bb.w * bb.h > found.w * found.h))
+        found = { w: bb.w, h: bb.h };
+    }
+    return (memo = found);
+  };
+}
+
+/** What `designMmPerUnit` needs about the assembly the design is being placed on. */
+export interface DesignScaleContext {
+  isRect: boolean;
+  /** the wheel's Design radius in mm; unused on a rect kind */
+  radius: number;
+  /** lazy `memoLargestDesignFace(parts)` — only read on the no-declared-size rect branch */
+  designFace: () => { w: number; h: number } | null;
+}
+
+/**
+ * SVG user units → mm for one placed artwork.
+ *
+ * Wheel: SVG circle radius maps to the mm Design radius. Rect: convert SVG units to mm via the
+ * file's declared physical size (userUnitMM) so a template lands life-size even if an editor
+ * re-exported it at a different internal resolution.
+ *
+ * When a rect SVG declares no absolute mm size, fit its viewBox to the design face rather than
+ * assuming 1 unit = 1 mm. The template's viewBox *is* the face, so any template trace then lands
+ * life-size at Scale 100% even when the editor dropped the physical size (e.g. Affinity exports
+ * `width="100%"` and rescales the viewBox to its own resolution). Meet-fit (the smaller axis
+ * ratio) matches SVG's default fitting. Genuine 1:1 fallback only when there's no viewBox either.
+ * `forceRect` is the fill path: a tile's size is a real-world period, so it maps in mm on every
+ * kind — the wheel's radius-driven scaling would stretch one period across the whole design.
+ *
+ * Shared with the gizmo for the same reason as `designAnchor`, and it matters more here: every
+ * artwork the app ships stubs for declares `width="100%"`, so `userUnitMM` is null and this
+ * auto-fit branch is the *normal* path, not an edge case. A gizmo that assumed 1 unit = 1 mm drew
+ * its frame several times the size of the cut.
+ */
+export function designMmPerUnit(
+  parsed: ParsedSVG,
+  scaleMult: number,
+  anchorR: number,
+  ctx: DesignScaleContext,
+  forceRect = false,
+  notice: (msg: string) => void = () => {},
+): number {
+  if (!ctx.isRect && !forceRect) return (ctx.radius / anchorR) * scaleMult;
+  if (parsed.userUnitMM != null) return parsed.userUnitMM * scaleMult;
+  const vb = parsed.viewBox;
+  const designFace = ctx.designFace();
+  if (designFace && vb && vb.w > 0 && vb.h > 0) {
+    notice(
+      'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
+    );
+    return Math.min(designFace.w / vb.w, designFace.h / vb.h) * scaleMult;
+  }
+  if (designFace)
+    notice(
+      'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
+    );
+  return scaleMult;
+}
+
+/**
  * Vector + mesh-boolean assembly build. For each part: take the SVG's real per-color net
  * regions, place them onto the part's flat face in the part's own native coordinates, extrude
  * each to a prism, then use Manifold to (a) subtract all prisms from the real part mesh -> the
@@ -196,29 +312,7 @@ export async function buildAssemblyGeometry(
 
   const isRect = designFit === 'rect';
 
-  // Design anchor, per artwork: the SVG's largest <circle> when there is one (the design's
-  // intended outer boundary), otherwise a pseudo-circle around the artwork's bounding box —
-  // centered on the artwork, radius = half its larger dimension — so circle-less SVGs still
-  // auto-center on the hub and span the design diameter instead of refusing to build. Rect parts
-  // anchor on the document canvas (see canvasAnchor) and skip the wheel notice.
-  const anchorOf = (parsed: ParsedSVG): { cx: number; cy: number; r: number } => {
-    const existing = isRect ? null : parsed.rawSVGCircle;
-    if (existing) return existing;
-    if (isRect) {
-      const canvas = canvasAnchor(parsed);
-      if (canvas) return canvas;
-    }
-    const bbox = parsed.bbox;
-    if (!isRect)
-      noticeBuild(
-        'This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.',
-      );
-    return {
-      cx: (bbox.minX + bbox.maxX) / 2,
-      cy: (bbox.minY + bbox.maxY) / 2,
-      r: Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY) / 2 || 1,
-    };
-  };
+  const anchorOf = (parsed: ParsedSVG) => designAnchor(parsed, isRect, noticeBuild);
 
   // Split like flat.ts: the per-color net regions are ~0-40%, then the per-part Manifold CSG
   // loop below (the actual heavy work in assembly mode) covers ~40-100%. Each artwork gets its
@@ -298,57 +392,17 @@ export async function buildAssemblyGeometry(
         }),
   );
 
-  // Only a *loaded* part has a face to measure. A part still fetching from the library would
-  // otherwise leave designFace null, drop us to the 1:1 branch, and report a size the rebuild its
-  // own load triggers immediately contradicts — so when nothing is loaded yet, say nothing
-  // (there's no geometry to place either; the per-part loop below skips it). Computed on demand:
-  // only a rect SVG with no declared mm size needs it, so the wheel path never pays for it.
-  let designFaceMemo: { w: number; h: number } | null | undefined;
-  const largestDesignFace = (): { w: number; h: number } | null => {
-    if (designFaceMemo !== undefined) return designFaceMemo;
-    let found: { w: number; h: number } | null = null;
-    for (const p of parts) {
-      if (!p.loaded) continue;
-      const bb = faceXZBBox(p.boundaryLoop);
-      if (bb && bb.w > 0 && bb.h > 0 && (!found || bb.w * bb.h > found.w * found.h))
-        found = { w: bb.w, h: bb.h };
-    }
-    return (designFaceMemo = found);
+  const scaleCtx: DesignScaleContext = {
+    isRect,
+    radius,
+    designFace: memoLargestDesignFace(parts),
   };
-
-  // Wheel: SVG circle radius maps to the mm Design radius. Rect: convert SVG units to mm via the
-  // file's declared physical size (userUnitMM) so a template lands life-size even if an editor
-  // re-exported it at a different internal resolution.
-  //
-  // When a rect SVG declares no absolute mm size, fit its viewBox to the design face rather than
-  // assuming 1 unit = 1 mm. The template's viewBox *is* the face, so any template trace then lands
-  // life-size at Scale 100% even when the editor dropped the physical size (e.g. Affinity exports
-  // `width="100%"` and rescales the viewBox to its own resolution). Meet-fit (the smaller axis
-  // ratio) matches SVG's default fitting. Genuine 1:1 fallback only when there's no viewBox either.
-  // `forceRect` is the fill path: a tile's size is a real-world period, so it maps in mm on every
-  // kind — the wheel's radius-driven scaling would stretch one period across the whole design.
   const mmPerUnitOf = (
     parsed: ParsedSVG,
     scaleMult: number,
     anchorR: number,
     forceRect = false,
-  ): number => {
-    if (!isRect && !forceRect) return (radius / anchorR) * scaleMult;
-    if (parsed.userUnitMM != null) return parsed.userUnitMM * scaleMult;
-    const vb = parsed.viewBox;
-    const designFace = largestDesignFace();
-    if (designFace && vb && vb.w > 0 && vb.h > 0) {
-      noticeBuild(
-        'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
-      );
-      return Math.min(designFace.w / vb.w, designFace.h / vb.h) * scaleMult;
-    }
-    if (designFace)
-      noticeBuild(
-        'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
-      );
-    return scaleMult;
-  };
+  ): number => designMmPerUnit(parsed, scaleMult, anchorR, scaleCtx, forceRect, noticeBuild);
 
   let wasm;
   try {

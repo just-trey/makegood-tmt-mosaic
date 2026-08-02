@@ -102,6 +102,14 @@ export interface ZoneFrame {
   vAxis: THREE.Vector3;
   /** unit plane normal */
   normal: THREE.Vector3;
+  /**
+   * How far the queried (u, v) fell outside the surface this mapper covers, in mm — 0 when it
+   * landed on it. A flat face is unbounded in its own plane, so it is always 0; a conformal chart
+   * covers only part of its UV rectangle and answers an outside query with the nearest triangle it
+   * has, which can be a long way off on unrelated geometry. Reported so the gizmo can say so
+   * instead of drawing a frame there as if it were on the design surface.
+   */
+  offChartMM: number;
 }
 
 /**
@@ -136,8 +144,13 @@ export interface ZoneMapper {
     overshoot: number,
     opts?: CutterOptions,
   ): Float32Array | null;
-  /** world-space face frame at the given in-plane (u, v), for the gizmo */
-  frameAt(u: number, v: number): ZoneFrame;
+  /**
+   * World-space face frame at the given in-plane (u, v), for the gizmo. `giveUpMM` caps how far a
+   * mapper will search for the nearest surface before reporting the query as off-chart — an
+   * optimisation for callers making many queries that only need "on it, or not" (see
+   * ConformalZoneMapper.lookup). Ignored by mappers whose surface is unbounded in-plane.
+   */
+  frameAt(u: number, v: number, giveUpMM?: number): ZoneFrame;
 }
 
 /**
@@ -315,6 +328,7 @@ export class FlatZoneMapper implements ZoneMapper {
       uAxis: new THREE.Vector3(1, 0, 0),
       vAxis: new THREE.Vector3(0, 0, 1),
       normal: new THREE.Vector3(0, this.nsign, 0),
+      offChartMM: 0,
     };
   }
 }
