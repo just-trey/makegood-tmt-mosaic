@@ -4,6 +4,9 @@ import {
   asmPartFaceNormal,
   asmPartTransformGroup,
   buildAssemblyGeometry,
+  designAnchor,
+  designMmPerUnit,
+  memoLargestDesignFace,
   rotatePointY,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
@@ -746,5 +749,76 @@ describe('asmPartTransformGroup', () => {
     expect(p.z).toBeCloseTo(ez);
     expect(ex).toBeCloseTo(5);
     expect(ez).toBeCloseTo(-5);
+  });
+});
+
+/**
+ * The anchor and scale resolvers are shared with the gizmo (src/scene/faceFrame.ts) so a frame is
+ * drawn around the same design the build cuts. They were closures inside buildAssemblyGeometry;
+ * these pin the contract now that a second caller depends on it, and keep the `notice` routing
+ * explicit — the build reports, the gizmo (which re-resolves on every refresh) stays silent.
+ */
+describe('shared design anchor and scale resolvers', () => {
+  const face = () => ({ w: 200, h: 200 });
+
+  it('anchors a rect design on its document canvas, a wheel design on its circle', () => {
+    const parsed: ParsedSVG = { ...redSquareParsed(), canvas: { w: 100, h: 80 } };
+    expect(designAnchor(parsed, true)).toEqual({ cx: 50, cy: 40, r: 50 });
+    expect(designAnchor(parsed, false)).toEqual({ cx: 5, cy: 5, r: 5 });
+  });
+
+  it('falls back to the content bbox when there is no canvas and no circle', () => {
+    const parsed: ParsedSVG = { ...redSquareParsed(), rawSVGCircle: null };
+    expect(designAnchor(parsed, true)).toEqual({ cx: 5, cy: 5, r: 5 });
+  });
+
+  it('scales a wheel design by the design radius over the anchor radius', () => {
+    const ctx = { isRect: false, radius: 138, designFace: face };
+    expect(designMmPerUnit(redSquareParsed(), 1, 5, ctx)).toBeCloseTo(138 / 5, 9);
+    // a fill tile is a real-world period, so forceRect maps it in mm on the wheel too
+    expect(designMmPerUnit({ ...redSquareParsed(), userUnitMM: 0.5 }, 1, 5, ctx, true)).toBe(0.5);
+  });
+
+  it('prefers a declared mm size, else auto-fits the viewBox to the design face', () => {
+    const ctx = { isRect: true, radius: 138, designFace: face };
+    expect(designMmPerUnit({ ...redSquareParsed(), userUnitMM: 0.5 }, 2, 5, ctx)).toBe(1);
+    // meet-fit: the smaller axis ratio, matching SVG's own default fitting
+    const noSize: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 100, h: 50 } };
+    expect(designMmPerUnit(noSize, 1, 5, ctx)).toBeCloseTo(2, 9); // min(200/100, 200/50)
+  });
+
+  it('places 1:1 when there is no declared size and no viewBox', () => {
+    const ctx = { isRect: true, radius: 138, designFace: face };
+    expect(designMmPerUnit(redSquareParsed(), 3, 5, ctx)).toBe(3);
+  });
+
+  it('reports through `notice` only when one is passed', () => {
+    const ctx = { isRect: true, radius: 138, designFace: face };
+    const noSize: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 100, h: 100 } };
+    const said: string[] = [];
+    designMmPerUnit(noSize, 1, 5, ctx, false, (m) => said.push(m));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatch(/auto-fit to the part face/);
+    // the gizmo's call: same answer, nothing added to the warnings panel
+    expect(() => designMmPerUnit(noSize, 1, 5, ctx)).not.toThrow();
+  });
+
+  it('measures the largest loaded design face and memoizes it', () => {
+    const small = boxPart({ id: 1 });
+    const big = boxPart({
+      id: 2,
+      boundaryLoop: [
+        [-50, 10, -30],
+        [50, 10, -30],
+        [50, 10, 30],
+        [-50, 10, 30],
+      ],
+    });
+    expect(memoLargestDesignFace([small, big])()).toEqual({ w: 100, h: 60 });
+    // a part still fetching has no face to measure, so nothing is claimed
+    expect(memoLargestDesignFace([boxPart({ loaded: false })])()).toBeNull();
+
+    const once = memoLargestDesignFace([small]);
+    expect(once()).toBe(once());
   });
 });

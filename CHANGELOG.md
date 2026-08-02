@@ -76,6 +76,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The on-face selection frame on the chair came in several times the size of the
+  artwork, sitting away from it at an angle with its handles hanging in space off
+  the part — hard to aim and easy to read as the design being misplaced, when the
+  cut itself was correct. Three separate causes, all in the frame rather than the
+  cut: it re-derived the design's mm-per-unit itself and assumed 1 unit = 1 mm
+  whenever the file declared no absolute size — which is every SVG an editor
+  exports as `width="100%"` — while the build auto-fits the artwork to the part
+  face, so the two disagreed by the ratio between them; it was drawn as a flat
+  rectangle spanned by the surface tangent, which on a curved zone leaves the part
+  by 110 mm at 300 mm across; and on a surface spanning more than one printed part
+  it asked the first part for a point lying on another, getting that part's
+  nearest edge ~100 mm away. The frame now takes its size and anchor from the same
+  code the cut uses, is traced along the surface so it lies on the part and
+  crosses printed seams, and resolves each point against the part that actually
+  carries it. Clicking to drag the design is tested against that traced outline
+  too, so the grab area is the frame you can see rather than the flat rectangle it
+  used to be — on a curved surface those differ by the same 110 mm, which let
+  clicks outside the frame start a move and clicks inside it orbit instead. A
+  design center that ends up off the design surface entirely is drawn in amber
+  rather than as a confident frame on unrelated geometry, updated as you drag.
 - A design placed as a **sticker** on one of the chair's curved surfaces could
   drop a color from the cut, reported as "Couldn't build the cut solid". The
   tolerance deciding how far off the baked chart a cutter vertex may land before

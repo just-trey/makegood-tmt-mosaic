@@ -662,7 +662,10 @@ is imported by the app. Two other brand themes in the tokens folder
   biggest face and then center that same oversized artwork on the smaller
   ones, where the face clip would crop it. Fix when such a part ships: either
   scale per-part, or make the reference face an explicit choice on the
-  `AssemblyKind` rather than "whichever is largest".
+  `AssemblyKind` rather than "whichever is largest". Note the resolver
+  (`designMmPerUnit`) now has two callers — the build and the on-face gizmo,
+  which shares it precisely so the selection frame matches the cut — so a fix
+  has to keep them agreeing rather than change one.
 - **The CSG failure branches have never been watched degrading in the running
   app.** What they emit is now pinned in CI — the `CSG failure handling` tests
   in [tests/assembly.test.ts](tests/assembly.test.ts) build the real 3MF and

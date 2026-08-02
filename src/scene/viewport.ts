@@ -152,8 +152,19 @@ export function getModelGroup(): THREE.Group {
  * Mutates and returns `v`, per three's vector convention.
  */
 export function modelToWorldPoint(v: THREE.Vector3): THREE.Vector3 {
+  return v.applyMatrix4(modelWorldMatrix());
+}
+
+/**
+ * The model group's world matrix, brought up to date — for a caller transforming *many* points at
+ * once. `updateMatrixWorld()` walks the group's whole subtree, which is every loaded part mesh, so
+ * paying it per point (as calling `modelToWorldPoint` in a loop does) costs far more than the
+ * transform itself. Take it once, then apply it. Valid only until something moves the group, which
+ * for the gizmo means the next rebuild — where its frame is recomputed anyway.
+ */
+export function modelWorldMatrix(): THREE.Matrix4 {
   modelGroup.updateMatrixWorld();
-  return v.applyMatrix4(modelGroup.matrixWorld);
+  return modelGroup.matrixWorld;
 }
 
 /** Direction-only counterpart of `modelToWorldPoint` — rotation without the translation. */

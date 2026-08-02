@@ -139,6 +139,22 @@ describe('surface evaluation (frameAt)', () => {
     }
   });
 
+  it('reports zero off-chart distance for a query on the chart', () => {
+    for (const du of [-20, 0, 20])
+      for (const dv of [-25, 0, 25]) expect(mapper.frameAt(du, dv).offChartMM).toBe(0);
+  });
+
+  it('reports how far a query outside the chart had to snap', () => {
+    // The chart spans u 0..ARC_U, v 0..H and frameAt is centered, so +H/2 + 10 in v is 10mm past
+    // the top edge. Without this the gizmo cannot tell a frame it drew on the design surface from
+    // one it drew on the nearest scrap of surface it could find.
+    const past = mapper.frameAt(0, H / 2 + 10);
+    expect(past.offChartMM).toBeCloseTo(10, 1);
+
+    const corner = mapper.frameAt(ARC_U / 2 + 6, H / 2 + 8);
+    expect(corner.offChartMM).toBeCloseTo(Math.hypot(6, 8), 1);
+  });
+
   it('reports the area-weighted average chart normal as faceNormal', () => {
     const n = mapper.faceNormal!;
     // quarter arc averages to the 45° radial direction

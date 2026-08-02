@@ -48,6 +48,35 @@ let currentFrame: FaceFrame | null = null;
 const FRAME_COLOR = 0x4ea1ff;
 const HANDLE_COLOR = 0x4ea1ff;
 const ROTATE_COLOR = 0x54d98c;
+/**
+ * Frame colour once the design center has left the surface — see FaceFrame.offSurfaceMM. Amber
+ * rather than a muted grey: the parts render grey, so a desaturated "inactive" frame is the one
+ * thing that cannot be seen against them, and this state is a warning, not a de-emphasis.
+ */
+const OFF_SURFACE_COLOR = 0xe0a33a;
+/**
+ * How far off the surface the design center may sit before the frame is drawn as off-surface. The
+ * in-chart value is 0 to within float noise, and a legitimate design center can sit a couple of mm
+ * outside inside a small hole, so this only has to clear rounding.
+ */
+const OFF_SURFACE_TOL_MM = 5;
+
+/**
+ * Samples per frame edge. The outline is traced along the surface rather than drawn as a flat
+ * rectangle, so each edge needs enough points to show the curvature: 16 keeps the chair's flank
+ * smooth at 64 surface queries per redraw, against a lookup that already runs per cutter vertex
+ * during a build.
+ */
+const EDGE_SAMPLES = 16;
+const OUTLINE_POINTS = EDGE_SAMPLES * 4;
+
+/** Frame corners in local (pre-rotation) half-extent units, counter-clockwise from (−u, −v). */
+const CORNER_SIGNS: [number, number][] = [
+  [-1, -1],
+  [1, -1],
+  [1, 1],
+  [-1, 1],
+];
 
 function overlayMaterial(color: number): THREE.LineBasicMaterial {
   return new THREE.LineBasicMaterial({
@@ -78,7 +107,7 @@ export function initDesignGizmo(): void {
   overlay.renderOrder = 999; // draw on top of the model
   overlay.visible = false;
 
-  frameLine = new THREE.LineLoop(overlayGeometry(4), overlayMaterial(FRAME_COLOR));
+  frameLine = new THREE.LineLoop(overlayGeometry(OUTLINE_POINTS), overlayMaterial(FRAME_COLOR));
   frameLine.renderOrder = 999;
   overlay.add(frameLine);
 
@@ -140,14 +169,7 @@ export function refreshGizmo(): void {
     overlay.visible = false;
     return;
   }
-  drawOverlay(
-    currentFrame.origin,
-    currentFrame.uAxis,
-    currentFrame.vAxis,
-    currentFrame.halfW,
-    currentFrame.halfH,
-    currentFrame.rotationDeg,
-  );
+  drawOverlay(currentFrame, restPose(currentFrame));
   updateFacing();
 }
 
@@ -163,72 +185,141 @@ function updateFacing(): void {
   overlay.visible = toCam.dot(currentFrame.normal) > 0;
 }
 
-/** Local (u,v) corner offset for sign su,sv in {−1,+1}, rotated by rotationDeg. */
-function rotUV(
-  su: number,
-  sv: number,
-  halfW: number,
-  halfH: number,
-  rotDeg: number,
-): [number, number] {
-  const r = (rotDeg * Math.PI) / 180,
+/** Where the design sits relative to the frame's own center, and how big it is drawn. */
+interface OverlayPose {
+  /** design-center displacement from `frame`'s center, in on-face mm (non-zero only mid-move) */
+  dU: number;
+  dV: number;
+  halfW: number;
+  halfH: number;
+  rotDeg: number;
+}
+
+/** The pose a frame is drawn at when nothing is being dragged. */
+function restPose(frame: FaceFrame): OverlayPose {
+  return { dU: 0, dV: 0, halfW: frame.halfW, halfH: frame.halfH, rotDeg: frame.rotationDeg };
+}
+
+/** Surface point for a local, pre-rotation on-face offset within `pose`. */
+function poseSampler(
+  frame: FaceFrame,
+  pose: OverlayPose,
+): (lu: number, lv: number) => THREE.Vector3 {
+  const r = (pose.rotDeg * Math.PI) / 180,
     c = Math.cos(r),
     s = Math.sin(r);
-  const lu = su * halfW,
-    lv = sv * halfH;
-  return [lu * c - lv * s, lu * s + lv * c];
+  return (lu, lv) => frame.pointAt(pose.dU + lu * c - lv * s, pose.dV + lu * s + lv * c);
 }
 
-function worldFromUV(
-  origin: THREE.Vector3,
-  uAxis: THREE.Vector3,
-  vAxis: THREE.Vector3,
-  u: number,
-  v: number,
-): THREE.Vector3 {
-  return origin.clone().addScaledVector(uAxis, u).addScaledVector(vAxis, v);
+/**
+ * The frame outline in world space, in draw order: each edge walked from its own corner toward the
+ * next in EDGE_SAMPLES steps, so index `i * EDGE_SAMPLES` is corner `i` and consecutive edges share
+ * their endpoints. Every point is its own surface query — this is the frame's real shape, which is
+ * why both the renderer and the move hit-test go through it.
+ */
+function outlinePoints(frame: FaceFrame, pose: OverlayPose): THREE.Vector3[] {
+  const at = poseSampler(frame, pose);
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i < 4; i++) {
+    const [su, sv] = CORNER_SIGNS[i];
+    const [nu, nv] = CORNER_SIGNS[(i + 1) % 4];
+    for (let k = 0; k < EDGE_SAMPLES; k++) {
+      const t = k / EDGE_SAMPLES;
+      pts.push(at((su + (nu - su) * t) * pose.halfW, (sv + (nv - sv) * t) * pose.halfH));
+    }
+  }
+  return pts;
 }
 
-function drawOverlay(
-  origin: THREE.Vector3,
-  uAxis: THREE.Vector3,
-  vAxis: THREE.Vector3,
-  halfW: number,
-  halfH: number,
-  rotDeg: number,
-): void {
+/**
+ * Draw the frame, its corner handles and the rotate arm.
+ *
+ * The outline is traced ON the surface — every point is its own `pointAt` query in the same (u, v)
+ * space the cut is placed in — rather than being drawn as a flat rectangle spanned by the tangent
+ * axes. On a curved zone those two are not close: on the chair's flank a tangent rectangle's
+ * corners leave the part by 110mm at 300mm across, which is why the frame used to read as hanging
+ * in space beside the chair rather than lying on it. The rotate handle is the one thing still
+ * placed off the surface, since it is deliberately a grab target out beyond the edge.
+ */
+function drawOverlay(frame: FaceFrame, pose: OverlayPose): void {
+  const { dU, dV, halfW, halfH, rotDeg } = pose;
   const handleSize = Math.min(Math.max(Math.max(halfW, halfH) * 0.08, 1.5), 8);
   const armLen = Math.max(Math.max(halfW, halfH) * 0.35, handleSize * 3);
+  const at = poseSampler(frame, pose);
 
-  const signs: [number, number][] = [
-    [-1, -1],
-    [1, -1],
-    [1, 1],
-    [-1, 1],
-  ];
+  const pts = outlinePoints(frame, pose);
   const framePos = frameLine.geometry.attributes.position as THREE.BufferAttribute;
-  const corners = signs.map(([su, sv]) => {
-    const [u, v] = rotUV(su, sv, halfW, halfH, rotDeg);
-    return worldFromUV(origin, uAxis, vAxis, u, v);
-  });
-  corners.forEach((c, i) => {
-    framePos.setXYZ(i, c.x, c.y, c.z);
-    cornerHandles[i].position.copy(c);
-    cornerHandles[i].scale.setScalar(handleSize);
-  });
+  for (let i = 0; i < pts.length; i++) framePos.setXYZ(i, pts[i].x, pts[i].y, pts[i].z);
   framePos.needsUpdate = true;
+  for (let i = 0; i < 4; i++) {
+    // each edge walk starts at its own corner, so that sample IS the corner
+    cornerHandles[i].position.copy(pts[i * EDGE_SAMPLES]);
+    cornerHandles[i].scale.setScalar(handleSize);
+  }
 
-  // rotate handle sits off the top edge (mid of the +v side), along the rotated +v direction
-  const [tu, tv] = rotUV(0, 1, halfW, halfH, rotDeg);
-  const topMid = worldFromUV(origin, uAxis, vAxis, tu, tv);
-  const [au, av] = rotUV(0, 1, halfW, halfH + armLen, rotDeg);
-  const rotPos = worldFromUV(origin, uAxis, vAxis, au, av);
+  // Rotate handle sits off the top edge (mid of the +v side): from the surface point at that edge,
+  // straight out along the rotated +v direction. Extending it through `at` instead would wrap it
+  // around whatever the surface does past the frame, which is not a stable place to grab.
+  const topMid = at(0, halfH);
+  const r = (rotDeg * Math.PI) / 180;
+  const outward = frame.uAxis
+    .clone()
+    .multiplyScalar(-Math.sin(r))
+    .addScaledVector(frame.vAxis, Math.cos(r))
+    .normalize();
+  const rotPos = topMid.clone().addScaledVector(outward, armLen);
   rotateHandle.position.copy(rotPos);
   rotateHandle.scale.setScalar(handleSize);
   const armPos = rotateArm.geometry.attributes.position as THREE.BufferAttribute;
   armPos.setXYZ(0, topMid.x, topMid.y, topMid.z);
   armPos.setXYZ(1, rotPos.x, rotPos.y, rotPos.z);
   armPos.needsUpdate = true;
+
+  // Off the surface the frame is drawn around a snapped-to-nearest point that isn't where the
+  // artwork will be cut, so say so rather than showing it in the confident colour. Asked of the
+  // design's LIVE center: `frame` is captured at pointerdown and keeps reporting where the design
+  // started, so reading its own value would stay silent through the one gesture — dragging the
+  // design off the part — that this warning exists for. Budgeted at the tolerance, since past that
+  // the exact distance changes nothing.
+  const offMM =
+    dU === 0 && dV === 0 ? frame.offSurfaceMM : frame.offSurfaceAt(dU, dV, OFF_SURFACE_TOL_MM);
+  const color = offMM > OFF_SURFACE_TOL_MM ? OFF_SURFACE_COLOR : FRAME_COLOR;
+  (frameLine.material as THREE.LineBasicMaterial).color.setHex(color);
+  for (const h of cornerHandles) (h.material as THREE.MeshBasicMaterial).color.setHex(color);
+}
+
+/**
+ * Whether the pointer landed inside the frame as *drawn*, rather than inside the flat rectangle
+ * spanned by the tangent axes. Since the outline is traced on the surface those two are not the
+ * same region on a curved zone — on the chair's flank they diverge by up to 110mm at 300mm across,
+ * which let clicks well outside the visible frame start a move, and made clicks inside it near a
+ * receding edge orbit the camera instead.
+ *
+ * Tested in screen space against the projected outline: the overlay draws with depthTest off and
+ * only while the face points at the camera, so the polygon the user sees is exactly this one, and
+ * point-in-polygon needs no assumption about the surface being convex or single-valued in depth.
+ */
+function insideFrame(frame: FaceFrame, ndc: THREE.Vector2): boolean {
+  const cam = getCamera();
+  const pts = outlinePoints(frame, restPose(frame));
+  const poly: THREE.Vector2[] = [];
+  const scratch = new THREE.Vector3();
+  for (const p of pts) {
+    // A point behind the eye projects mirrored, which would corrupt the winding. No view that has
+    // the frame facing the camera puts one there, so treat it as a miss rather than guess.
+    if (scratch.copy(p).applyMatrix4(cam.matrixWorldInverse).z > -cam.near) return false;
+    const q = scratch.copy(p).project(cam);
+    poly.push(new THREE.Vector2(q.x, q.y));
+  }
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i],
+      b = poly[j];
+    if (a.y > ndc.y !== b.y > ndc.y && ndc.x < ((b.x - a.x) * (ndc.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 function onPointerDown(e: PointerEvent): void {
@@ -248,15 +339,8 @@ function onPointerDown(e: PointerEvent): void {
   const du = hit.clone().sub(f.origin).dot(f.uAxis);
   const dv = hit.clone().sub(f.origin).dot(f.vAxis);
 
-  if (!mode) {
-    // No handle hit — treat as a move only if the click landed inside the (rotated) frame.
-    const r = (-f.rotationDeg * Math.PI) / 180,
-      c = Math.cos(r),
-      s = Math.sin(r);
-    const lu = du * c - dv * s,
-      lv = du * s + dv * c;
-    if (Math.abs(lu) <= f.halfW && Math.abs(lv) <= f.halfH) mode = 'move';
-  }
+  // No handle hit — treat as a move only if the click landed inside the frame as drawn.
+  if (!mode && insideFrame(f, pointerToNDC(e))) mode = 'move';
   if (!mode) return; // let OrbitControls handle the orbit
 
   drag = {
@@ -288,31 +372,30 @@ function onPointerMove(e: PointerEvent): void {
   const du = hit.clone().sub(f.origin).dot(f.uAxis);
   const dv = hit.clone().sub(f.origin).dot(f.vAxis);
 
+  const pose = { dU: 0, dV: 0, halfW: f.halfW, halfH: f.halfH, rotDeg: state.rotationDeg };
   if (drag.mode === 'move') {
     state.offsetX = drag.startOffsetX + (du - drag.grabU);
     state.offsetY = drag.startOffsetY + (dv - drag.grabV);
-    const origin = worldFromUV(
-      f.origin,
-      f.uAxis,
-      f.vAxis,
-      state.offsetX - f.offsetX,
-      state.offsetY - f.offsetY,
-    );
-    drawOverlay(origin, f.uAxis, f.vAxis, f.halfW, f.halfH, state.rotationDeg);
+    // Shift the whole frame by the drag delta; `at` re-queries the surface, so the outline keeps
+    // following the part as it travels rather than sliding along the plane it started on.
+    pose.dU = state.offsetX - f.offsetX;
+    pose.dV = state.offsetY - f.offsetY;
   } else if (drag.mode === 'scale') {
     const dist = Math.hypot(du, dv);
     const ratio = drag.startDist > 1e-3 ? dist / drag.startDist : 1;
     state.scalePct = Math.min(Math.max(drag.startScalePct * ratio, SCALE_MIN), SCALE_MAX);
     const k = state.scalePct / f.scalePct;
-    drawOverlay(f.origin, f.uAxis, f.vAxis, f.halfW * k, f.halfH * k, state.rotationDeg);
+    pose.halfW = f.halfW * k;
+    pose.halfH = f.halfH * k;
   } else {
     const ang = Math.atan2(dv, du);
     let deg = drag.startRotationDeg + ((ang - drag.startAng) * 180) / Math.PI;
     deg = ((deg % 360) + 360) % 360; // [0, 360)
     if (deg > 180) deg -= 360; // wrap to (−180, 180] — keeps +180 as +180, not −180
     state.rotationDeg = deg;
-    drawOverlay(f.origin, f.uAxis, f.vAxis, f.halfW, f.halfH, deg);
+    pose.rotDeg = deg;
   }
+  drawOverlay(f, pose);
 
   syncFitInputs();
   // Light models can recut live; heavy ones (all assemblies) wait for release below.

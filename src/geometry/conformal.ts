@@ -336,8 +336,15 @@ export class ConformalZoneMapper implements ZoneMapper {
    * Nearest chart triangle to (u,v): ring search outward from the containing grid cell, stopping
    * once no closer triangle can exist in an unvisited ring. Always returns the best candidate
    * found — callers decide whether `dist` (0 = inside the chart) is within tolerance.
+   *
+   * `giveUpMM` caps how far out to look, for a caller that only needs "on the chart, or not". A
+   * query landing *inside* the chart resolves in the first ring or two, but one outside it walks
+   * rings until it reaches the chart — up to the whole grid, since cells are only populated where
+   * the chart is. Cutting pays that rarely and needs the true nearest; the gizmo asks dozens of
+   * times per pointer-move, across every part of the zone, and most of those misses are on parts
+   * it does not care about. Uncapped by default, so the cut path is untouched.
    */
-  private lookup(u: number, v: number): ChartHit | null {
+  private lookup(u: number, v: number, giveUpMM?: number): ChartHit | null {
     const cu = this.cellIdxU(u),
       cv = this.cellIdxV(v);
     const maxRing = Math.max(this.gridNU, this.gridNV);
@@ -347,6 +354,7 @@ export class ConformalZoneMapper implements ZoneMapper {
       if (best && best.dist === 0) break;
       // any triangle in ring r is at least (r-1)*minCell away; nothing further out can win
       if (best && best.dist < (r - 1) * minCell) break;
+      if (giveUpMM !== undefined && (r - 1) * minCell > giveUpMM) break;
       for (let dr = -r; dr <= r; dr++) {
         for (let dc = -r; dc <= r; dc++) {
           if (Math.max(Math.abs(dr), Math.abs(dc)) !== r) continue;
@@ -524,10 +532,10 @@ export class ConformalZoneMapper implements ZoneMapper {
     }
   }
 
-  frameAt(u: number, v: number): ZoneFrame {
+  frameAt(u: number, v: number, giveUpMM?: number): ZoneFrame {
     const qu = u + this.uvCu,
       qv = v + this.uvCv;
-    const hit = this.lookup(qu, qv);
+    const hit = this.lookup(qu, qv, giveUpMM);
     if (!hit) {
       // empty/degenerate chart — return a harmless identity-ish frame rather than crash the gizmo
       return {
@@ -535,6 +543,7 @@ export class ConformalZoneMapper implements ZoneMapper {
         uAxis: new THREE.Vector3(1, 0, 0),
         vAxis: new THREE.Vector3(0, 0, 1),
         normal: new THREE.Vector3(0, 1, 0),
+        offChartMM: Infinity,
       };
     }
     const { p, n } = this.surfacePoint(hit);
@@ -559,6 +568,12 @@ export class ConformalZoneMapper implements ZoneMapper {
     if (uAxis.lengthSq() < 1e-12) uAxis.set(1, 0, 0);
     uAxis.normalize();
     const vAxis = new THREE.Vector3().crossVectors(normal, uAxis);
-    return { origin: new THREE.Vector3(p[0], p[1], p[2]), uAxis, vAxis, normal };
+    return {
+      origin: new THREE.Vector3(p[0], p[1], p[2]),
+      uAxis,
+      vAxis,
+      normal,
+      offChartMM: hit.dist,
+    };
   }
 }
