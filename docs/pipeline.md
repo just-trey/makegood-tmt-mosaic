@@ -57,8 +57,11 @@ How the geometry actually works — read this before touching `src/geometry/` or
    load-bearing: a zone's normal spread has to stay tight enough for the
    unwrap to stay **injective**, which `flipped == 0` does not check — merging
    left/back/right into one chart makes it fold onto itself over 4.85% of its
-   area. Measure UV self-overlap, not just stretch, before widening a zone;
-   numbers in [docs/tech-debt.md](tech-debt.md). A kind with hardware
+   area. That is the constraint on _merging_ zones; widening one is capped by
+   stretch first, which doubles for 5° more on the chair's flanks while
+   overlap stays clean. Measure both, and don't assume the boundary between
+   two zones is a curve you could register across — on the chair `left` and
+   `back` share 22 mm of it. Numbers in [docs/tech-debt.md](tech-debt.md). A kind with hardware
    variants (the chair's Standard/Kit caster mounts) shows a version picker
    above the part list; switching reloads only the parts that differ. Any
    artwork row on an assembly part can switch from **Sticker** (one copy) to

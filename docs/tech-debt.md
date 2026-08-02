@@ -174,7 +174,7 @@ were never cleared per rebuild, also since fixed. So the seam remnant is still
 real geometry and still reaches `buildCutter`, but **no warning has actually
 been traced to it**. Confirm one before spending the fix on it.
 
-## Artwork can't wrap unbroken from one flank around the back to the other, and both ways of fixing it are measured dead ends
+## Artwork can't wrap unbroken from one flank around the back to the other, and three ways of fixing it are measured dead ends
 
 The chair carries `left`, `right` and `back` as three zones, so a design
 placed on one stops at the zone boundary. Two approaches were prototyped and
@@ -228,19 +228,54 @@ severs. The link between each flank and the back runs through the handle's
 curved corner, which is both what forces the fold and what only survives at
 loose angles.
 
-**So the three-zone split is load-bearing, and not for the reason the config
-says.** The comments in
-[scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json)
-explain the angles as a coverage-against-stretch knee; the constraint
-underneath is that each zone's normal spread has to stay tight enough for the
-unwrap to stay injective. Anyone widening a zone should measure overlap, not
-just `distortion` and `flipped`.
+**Cross-chart registration** — keep the three charts, but let one placement
+span them by giving each chart a rigid offset into a shared band coordinate,
+so continuity is carried across the boundary instead of by a single injective
+unwrap. This is the option the two failures above leave open, and the one
+that does not need the band to be a single chart at all.
+The transform is real: the best-fit rigid UV motion from `left` to
+`back` comes out at **−0.1° rotation, scale 1.0074, 1.26 mm rms** (`right`
+0.0°, 1.0062, 1.26 mm), all comfortably inside `CHART_SNAP_MM` and plausibly
+inside what the printed assembly delivers anyway.
 
-What would actually close this is a mapper that does not need one global
-chart — per-triangle or atlas-based placement with explicit seam transitions,
-so continuity is carried across chart boundaries instead of by a single
-injective unwrap. That is a substantially bigger change than either
-prototype, and nothing today needs it.
+It fails on the boundary, not the maths. `left` and `back` share **10
+vertices** — two ~11 mm fillet arcs at y≈346 and y≈454 on one handle, about
+22 mm of contact on zones spanning 500 mm of height. They share **zero**
+vertices on the storage boxes, the largest flank surface, because that corner
+turns **89.6°** (86.3° on the handle) while the two zones' limits sum to 80°:
+there is a wedge of surface orientation neither zone accepts, ~28 cm² on the
+storage box and ~92 cm² on the handle, and that unclaimed wedge is what keeps
+them apart. Widening `back` 35°→45° so the limits sum past the corner
+densifies the contact to 55–64 shared vertices and tightens the fit to
+**0.97–1.03 mm rms**, but does not lengthen it by a millimetre: it stays
+inside y 337–462 with **17 gaps over 8 mm** in it. A design registered across
+that would flow through the handle posts and stop everywhere else — which
+reads as broken, where today's clean stop reads as deliberate.
+
+**Correction to the paragraph above: for a single zone, stretch binds long
+before injectivity does.** Injectivity is the constraint on _merging_ zones,
+not on widening one. Widening the flanks 45°→50°, measured against the
+shipped bake:
+
+| zone        | max stretch | mean stretch | UV self-overlap |
+| ----------- | ----------- | ------------ | --------------- |
+| `left` 45°  | 1.224       | 1.0142       | 0.11%           |
+| `left` 50°  | **2.543**   | **1.2342**   | 0.06%           |
+| `right` 45° | 1.226       | 1.0159       | 0.04%           |
+| `right` 50° | **3.470**   | 1.1170       | 0.05%           |
+
+Overlap stays clean at every setting; stretch doubles for 5°. So the config's
+own coverage-against-stretch framing is right for the per-zone angles after
+all — it is only the _three-way split_ that injectivity explains. Widening
+`back` alone is likewise not the free win it looks like: 35°→45° adds 30% more
+triangles but only **+5.4% area** (960 → 1012 cm², the extra triangles being
+fillet detail) while max stretch goes 1.134 → 1.581.
+
+What is left is a different parameterization family — cone-singularity methods
+(BFF, OptCuts) rather than plain LSCM, aimed at low stretch under wide normal
+spread. That is a substantially bigger change than any of the three
+prototypes, and nothing today needs it: `left`/`right`/`back` at the shipped
+angles are close to the best plain LSCM does on this geometry.
 
 One latent bug found and deliberately **not** fixed: `classifyRegions` in
 [scripts/lib/zonebake.mjs](../scripts/lib/zonebake.mjs) decides outer-vs-hole
