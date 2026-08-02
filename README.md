@@ -42,7 +42,11 @@ npm test             # unit tests (Vitest)
 npm run typecheck    # TypeScript, no emit
 npm run build        # typecheck + production build to dist/
 npm run preview      # serve the production build locally
+npm run smoke        # builds, then drives the real app end-to-end
 ```
+
+The full pre-PR checklist is in
+[CONTRIBUTING.md](CONTRIBUTING.md#development-setup).
 
 Everything runs client-side — no backend, no data leaves the browser. All
 dependencies (three.js, Turf, JSZip, the Manifold WASM engine) are bundled at

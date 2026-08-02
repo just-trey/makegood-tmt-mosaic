@@ -13,9 +13,8 @@ Conduct](CODE_OF_CONDUCT.md).
 - **Bug fixes and small improvements**: just open a PR.
 - **New features or anything that changes behavior**: open an issue first to
   discuss the approach before writing code. This avoids wasted work if the
-  idea doesn't fit the project's direction — see the [Roadmap
-  ideas](README.md#roadmap-ideas-not-built) section of the README for known
-  wanted directions.
+  idea doesn't fit the project's direction — see
+  [docs/roadmap.md](docs/roadmap.md) for known wanted directions.
 
 ## Development setup
 
@@ -24,13 +23,20 @@ npm install
 npm run dev        # dev server with hot reload
 ```
 
-Before opening a PR, make sure these all pass:
+Before opening a PR, make sure all five of these pass — they're exactly what CI
+runs, and `main` is protected, so a red one blocks the merge:
 
 ```bash
+npm run lint
+npm run format:check
 npm run typecheck
 npm test
 npm run smoke       # builds and exercises the app end-to-end
 ```
+
+If `format:check` fails, format only the files you actually touched
+(`npx prettier --write <files>`) rather than running `npm run format`, which
+rewrites the whole tree and buries the real diff.
 
 See the [README](README.md) for how the codebase is organized
 (`src/svg/`, `src/geometry/`, etc.) and the known limitations/tech-debt
