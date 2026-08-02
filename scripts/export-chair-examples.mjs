@@ -17,7 +17,7 @@
 //
 // Usage:
 //   npm run build && node scripts/export-chair-examples.mjs [outDir]
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -153,7 +153,21 @@ writeFileSync(svgPath, TEST_SVG);
 const server = spawn(`npx vite preview --port ${PORT} --strictPort`, {
   shell: true,
   stdio: 'ignore',
+  detached: process.platform !== 'win32',
 });
+
+// With shell: true, server.pid is the shell, not vite preview — server.kill() only ever
+// hit the wrapper and leaked the real preview process on port 4173. Killing the whole
+// process group (POSIX) / process tree (Windows) takes the child down with it.
+function killServer() {
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F']);
+  } else {
+    try {
+      process.kill(-server.pid);
+    } catch {}
+  }
+}
 
 let browser;
 try {
@@ -277,6 +291,6 @@ try {
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close();
-  server.kill();
+  killServer();
   process.exit(process.exitCode ?? 0);
 }

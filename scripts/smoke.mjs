@@ -1,7 +1,7 @@
 // End-to-end smoke test: serves dist/ with vite preview, drives the app in headless
 // Chromium, and exercises assembly auto-load -> sample SVG -> CSG build -> 3MF export,
 // then flat (disc) mode -> rebuild -> STL zip export.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -28,7 +28,21 @@ async function waitForServer(url, tries = 60) {
 const server = spawn(`npx vite preview --port ${PORT} --strictPort`, {
   shell: true,
   stdio: 'ignore',
+  detached: process.platform !== 'win32',
 });
+
+// With shell: true, server.pid is the shell, not vite preview — server.kill() only ever
+// hit the wrapper and leaked the real preview process on port 4173. Killing the whole
+// process group (POSIX) / process tree (Windows) takes the child down with it.
+function killServer() {
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F']);
+  } else {
+    try {
+      process.kill(-server.pid);
+    } catch {}
+  }
+}
 
 const errors = [];
 // Third-party analytics beacons report to a cross-origin endpoint bound to the production
@@ -152,6 +166,6 @@ try {
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close();
-  server.kill();
+  killServer();
   process.exit(process.exitCode ?? 0);
 }
