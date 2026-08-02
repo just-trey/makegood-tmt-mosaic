@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- On a part with more than one design surface, loading a design that lands
+  on just one of them now says so: the artwork row shows a "→ Zone name"
+  badge, a pill on load names the zone and how many surfaces are still
+  blank, and exporting with surfaces left blank warns which ones will print
+  body-colored with no design.
 - The Artwork panel now supports loading more than one design at once: each
   load adds a row instead of replacing the last one, click a row to make it
   the active design the fit sliders and on-face gizmo edit, and on a part

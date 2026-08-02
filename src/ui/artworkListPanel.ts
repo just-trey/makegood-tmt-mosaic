@@ -39,6 +39,7 @@ export function renderArtworkList(): void {
     row.className = 'artwork-row' + (a.id === state.activeArtworkId ? ' active' : '');
     row.innerHTML = `
       <span class="artwork-name"></span>
+      ${zones.length ? '<span class="artwork-zone-badge"></span>' : ''}
       ${
         canFill
           ? '<select class="artwork-mode" title="Place one copy of this design, or repeat it across the whole surface"></select>'
@@ -78,6 +79,14 @@ export function renderArtworkList(): void {
       });
     }
 
+    const zoneBadge = row.querySelector<HTMLElement>('.artwork-zone-badge');
+    const updateZoneBadge = (): void => {
+      if (!zoneBadge) return;
+      const zoneName = zones.find((z) => z.zoneId === a.zone?.zoneId)?.name;
+      zoneBadge.textContent = '→ ' + (zoneName ?? 'All zones');
+    };
+    updateZoneBadge();
+
     const zoneSel = row.querySelector<HTMLSelectElement>('.artwork-zone');
     if (zoneSel) {
       zoneSel.innerHTML =
@@ -87,6 +96,7 @@ export function renderArtworkList(): void {
       zoneSel.addEventListener('click', (e) => e.stopPropagation());
       zoneSel.addEventListener('change', () => {
         setArtworkZone(a.id, zoneSel.value || null);
+        updateZoneBadge();
         scheduleRebuild();
         track('artwork_instance_zone_changed', { zone: zoneSel.value || 'all' });
       });
