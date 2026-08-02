@@ -19,10 +19,43 @@ instead of the wheel picker, useful when you already know what you're checking.
 
 ## Headless, for screenshots or a driven check
 
-WSL2 has no display, so headless is the only option here — don't try to launch
-non-headless. `chromium-headless-shell` is already installed (see memory
-`wsl-dev-environment.md` if you're checking); don't re-run
-`npx playwright install`.
+Drive it headless. On a headless Linux/WSL2 box there is no display, so it's
+the only option — don't burn a cycle trying to launch headed there. If
+Playwright isn't set up yet, `npx playwright install chromium-headless-shell`
+once (on the maintainer's box it already is; see memory
+`wsl-dev-environment.md`).
+
+**Driven runs default to software rendering, which is slow.** Headless
+Chromium falls back to SwiftShader — roughly 300ms/frame, which also caps
+`requestAnimationFrame` near 2.5fps and stretches anything frame-paced. On a
+WSL2 box with GPU passthrough, driving the chair end-to-end was measured at
+**~104s** software versus **~12s** on hardware.
+
+`MOSAIC_GPU=1` opts into the hardware path:
+
+```bash
+MOSAIC_GPU=1 node scripts/export-chair-examples.mjs
+```
+
+`launchBrowser()` in [scripts/lib/harness.mjs](../../../scripts/lib/harness.mjs)
+reads it and adds the ANGLE + `GALLIUM_DRIVER=d3d12` flags that select the GPU,
+so it applies to any script built on the harness — which is all of them.
+
+**Whether it helps depends on the machine, and the flag tells you which you
+have.** The selection flags are specific to WSL2's d3d12 passthrough
+(`/dev/dxg` plus Mesa in `/usr/lib/wsl/lib`); on a different OS or a box
+without passthrough there may be nothing to select. Asking for hardware and
+not getting it is a deliberate hard error rather than a silent slow run: the
+harness reads the GL renderer string once per browser and refuses to continue
+if it names SwiftShader or llvmpipe. So trying it is safe and self-verifying —
+either it runs and prints `GPU: ANGLE (…)`, or it stops immediately and tells
+you it fell back.
+
+**Omitting the flag is always correct.** Everything works software-rendered,
+just slower — that is the path CI takes, since the Playwright container has no
+GPU at all. Leave it off if you're unsure, if the error above fires, or if
+you're specifically reproducing CI. Full background:
+[docs/tech-debt.md](../../../docs/tech-debt.md).
 
 Don't invent the launch/wait-for-server shape — copy it from
 [scripts/export-chair-examples.mjs](../../../scripts/export-chair-examples.mjs),
