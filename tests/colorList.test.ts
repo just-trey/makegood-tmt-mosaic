@@ -338,6 +338,41 @@ describe('renderColorList — reset survives the field it sits next to', () => {
     expect(state.colorSettings['#0000ff']).toEqual({ depth: 3 });
   });
 
+  it('ignores the click a real browser still fires on B after a drag from A', () => {
+    // Per spec, if the mousedown target is no longer in the document, click is dispatched directly
+    // at the mouseup target instead of at their common ancestor — so a drag from A's button to B's
+    // both leaves the common-ancestor detour that would normally keep click off any button, *and*
+    // still fires one, landing squarely on B with no origin check of its own. mouseup already
+    // declined to clear B (previous test); click must not re-decide and clear it anyway.
+    state.colorSettings = { '#ff0000': { depth: 2.5 }, '#0000ff': { depth: 3 } };
+    renderColorList([entry('#ff0000'), entry('#0000ff')], { rawColorCount: 2 });
+    const [btnA, btnB] = document.querySelectorAll<HTMLElement>('.color-row .depth-reset');
+
+    btnA.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    btnB.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    btnB.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    expect(state.colorSettings['#0000ff']).toEqual({ depth: 3 });
+  });
+
+  it('forgets an abandoned press once the release lands outside the list', () => {
+    // pressedKey is only written back to null by an in-list mouseup. Without a document-level
+    // catch-all, a release outside the list would leave it naming row A forever — so a later,
+    // wholly unrelated gesture that starts outside the list and happens to end on row A's own
+    // button would pass the "did this press start here" check and clear it anyway.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    const btn = resetButton();
+    const outside = document.querySelector<HTMLElement>('#slot-count')!;
+
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    outside.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    // no mousedown of its own — models a gesture that began outside the list entirely
+    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 2.5 });
+  });
+
   it('rebuilds once for one press, not once per event', () => {
     // Three events are wired, each covering a case the others get wrong. When the rebuild is slow
     // enough that the row is still mounted, the later ones arrive at a button that has already done

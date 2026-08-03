@@ -146,7 +146,8 @@ function renderEmptyBaseRow(list: HTMLElement): void {
  * - `click` covers keyboard activation, which raises neither of the above.
  *
  * All three are idempotent: whichever runs first removes the override, and the rest read its
- * absence as "already handled".
+ * absence as "already handled" — except `click` after a real mouse gesture, which needs its own
+ * guard against the same button-swap race (`mouseHandled`, see below).
  */
 function wireDepthReset(list: HTMLElement): void {
   if (list.dataset.depthResetWired) return;
@@ -154,6 +155,7 @@ function wireDepthReset(list: HTMLElement): void {
   // Which row's "↺" the current press started on, so releasing on a different one — or on nothing
   // — cancels rather than resetting whatever happens to be under the pointer.
   let pressedKey: string | null = null;
+  let mouseHandled = false;
 
   const buttonFor = (e: Event): HTMLElement | null => {
     const btn = (e.target as HTMLElement | null)?.closest?.('.depth-reset') as HTMLElement | null;
@@ -196,13 +198,34 @@ function wireDepthReset(list: HTMLElement): void {
     const btn = buttonFor(e);
     const started = pressedKey;
     pressedKey = null;
+    mouseHandled = true;
     const key = btn?.dataset.resetKey;
     if (!btn || !key || key !== started) return;
     e.stopPropagation();
     clearOverride(btn, key);
   });
 
+  // A release outside the list entirely never reaches the mouseup listener above, so pressedKey
+  // would otherwise still name that abandoned press the next time some *later, unrelated* gesture
+  // happens to end on the same button — and the origin check there would wrongly call it a match.
+  // Catching mouseup on the document as well, after the list's own listener has already read it,
+  // closes that regardless of where the release actually lands.
+  document.addEventListener('mouseup', () => {
+    pressedKey = null;
+  });
+
   list.addEventListener('click', (e) => {
+    // A real mouseup already made this gesture's call, one line above. The click that immediately
+    // follows it is the browser's own synthetic event, not a second independent one — normally
+    // aimed at the common ancestor of the mousedown/mouseup targets and so off any button, but not
+    // when the mousedown target was detached mid-press (this delegation's whole reason to exist):
+    // then click lands directly on the mouseup target instead, with no origin check of its own.
+    // Without this it would re-decide "what's under the pointer now" and could clear a row whose
+    // press actually started elsewhere and was already correctly left alone above.
+    if (mouseHandled) {
+      mouseHandled = false;
+      return;
+    }
     const btn = buttonFor(e);
     if (!btn) return;
     e.preventDefault();
