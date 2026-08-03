@@ -60,12 +60,39 @@ unless they've already said to go ahead.
 After the tag push, watch the deploy with one blocking background call rather
 than polling. `gh run watch` requires an explicit run ID when non-interactive —
 without one it fails instantly with a usage error that's easy to mistake for a
-broken deploy — so grab the ID first:
+broken deploy — so resolve the ID first, **pinned to this tag**:
 
 ```bash
-gh run list --workflow=deploy.yml --limit 1
-gh run watch <run-id> --exit-status
+export tag=vX.Y.Z
+sha=$(git rev-parse "$tag^{commit}")
+n=0
+until id=$(gh run list --workflow=deploy.yml --commit "$sha" --limit 20 \
+             --json databaseId,headBranch \
+             --jq 'map(select(.headBranch == $ENV.tag)) | first | .databaseId // empty' \
+             2>/dev/null); [ -n "$id" ]; do
+  n=$((n + 1))
+  [ $n -ge 30 ] && { echo "no deploy run for $tag after 150s — NOT deployed, investigate"; exit 1; }
+  sleep 5
+done
+gh run watch "$id" --exit-status
 ```
+
+**Never resolve the run with `gh run list --limit 1`.** GitHub takes a few
+seconds to register the run for a new tag, and in that window the newest deploy
+run is still the _previous_ release's — completed and successful. `gh run watch`
+on it returns green in under a second, so the last release's deploy reads as
+this one's. That is a worse version of the `gh pr checks` race that `ship-it`
+guards against (#125): not "nothing to watch and exit 0", but a real pass from
+the wrong commit. Filtering on the tag's commit and `headBranch` asserts the run
+you're watching _is_ this tag's; the `until` loop waits for it to exist and
+hard-fails if it never does.
+
+The loop runs entirely inside one shell call — one model turn total, not one per
+iteration. The no-polling rule is about model-side loops.
+
+Green here means the run's own conclusion, not the absence of an error. Read the
+result text: a zero-duration pass or a run whose title names an older version is
+a failure to verify, not a verification.
 
 ## Reference
 
