@@ -1,1 +1,16 @@
+# main is protected on the remote (no direct pushes), so there is no such thing as a local
+# commit to main that can ever land — it only costs a `git branch` + `git reset` to undo later.
+# CONTRIBUTING and CLAUDE.md both already say "branch off main"; this is the same rule as a
+# guard rather than a comment, because the comment demonstrably doesn't fire.
+#
+# The commit is the right place to catch it: editing on main is harmless, since an uncommitted
+# diff moves to a new branch for free. Escape hatch is `git commit --no-verify`.
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$branch" = "main" ]; then
+  echo "refusing to commit on main — start a branch first:"
+  echo "    git checkout -b <name>     (your staged changes come with you)"
+  echo "to override: git commit --no-verify"
+  exit 1
+fi
+
 npx lint-staged
