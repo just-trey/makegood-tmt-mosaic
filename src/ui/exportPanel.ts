@@ -16,7 +16,7 @@ import { meshToSTLBytes, soupFromObject } from '../export/stl';
 import { zipStore, type ZipEntry } from '../export/zip';
 import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
-import { WARNINGS, warn, warnBuild, notice } from '../warnings';
+import { WARNINGS, warn, warnBuild, notice, noticeBuild } from '../warnings';
 import { schedulePersist } from '../state/persist';
 import { renderWarnings } from './warningsView';
 import { track } from '../analytics/track';
@@ -54,33 +54,51 @@ function clearStalePlacementNotices(): void {
   }
 }
 
-export const SLOT_CAPACITY_WARNING_SUFFIX = 'or plan for multiple AMS units.';
+// suffixes of the two slot-budget messages below — same clear-before-reporting pattern as
+// PLACEMENT_WARNING_SUFFIXES, and pinned by tests/exportPanel.test.ts so a reword can't silently
+// stop clearing and leave both tiers' pills stacked
+export const SLOT_MULTI_UNIT_NOTICE_SUFFIX = 'or swap filament manually mid-print.';
+export const SLOT_OVER_MAX_WARNING_SUFFIX = 'in a single print — reduce colors with auto-merge.';
 
-function clearSlotCapacityWarning(): void {
+function clearSlotBudgetNotices(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
-    if (WARNINGS[i].message.endsWith(SLOT_CAPACITY_WARNING_SUFFIX)) WARNINGS.splice(i, 1);
+    const m = WARNINGS[i].message;
+    if (m.endsWith(SLOT_MULTI_UNIT_NOTICE_SUFFIX) || m.endsWith(SLOT_OVER_MAX_WARNING_SUFFIX))
+      WARNINGS.splice(i, 1);
   }
 }
 
 /**
  * Pre-export guardrail for finding C: "4 colors / 5 slots" reads as a bug when nothing ever
  * reconciles the slot count against what the selected printer actually holds. colorList.ts shows
- * the same over-capacity state live as the user works, in case they miss it there or change the
- * printer after that panel last rendered — this is the last-moment version, matching the
- * warn-but-proceed pattern the coverage check above already uses (a real single-AMS user might
- * still want the file, e.g. to swap filaments manually mid-print).
+ * the same state live as the user works, in case they miss it there or change the printer after
+ * that panel last rendered — this is the last-moment version.
  *
- * warnBuild, not warn, even though nothing here runs per-build: acting on the message (auto-merge
- * the colors down) does schedule a rebuild, and a standing warn() would leave the red pill up
- * contradicting the now-black slot line. The printer picker clears it directly for the same reason.
+ * Two tiers, because one AMS unit is not a capacity. Most volunteers have exactly one, so passing 4
+ * is worth saying — but the Bambus chain up to 16 (25 on the H2D), and calling a 6-slot design an
+ * error on a printer that prints it fine would be the tool inventing a limit. Only the printer's
+ * real maximum is an error, and even that doesn't block: the app's pattern throughout is
+ * warn-but-proceed (see the missing-geometry filter below).
+ *
+ * warnBuild/noticeBuild, not warn/notice, even though nothing here runs per-build: acting on the
+ * message (auto-merge the colors down) does schedule a rebuild, and a standing pill would be left
+ * contradicting the now-clean slot line. The printer picker clears them directly for the same
+ * reason, since changing it schedules no rebuild.
  */
 function warnIfOverCapacity(slotsNeeded: number): void {
-  clearSlotCapacityWarning();
+  clearSlotBudgetNotices();
   const printer = getPrinter(state.printerId);
-  if (slotsNeeded > printer.amsSlotCapacity) {
+  if (slotsNeeded > printer.amsSlotsMax) {
     warnBuild(
-      `${slotsNeeded} AMS slots needed, but a single AMS on ${printer.label} holds ` +
-        `${printer.amsSlotCapacity} — reduce colors with auto-merge, or plan for multiple AMS units.`,
+      `${slotsNeeded} AMS slots needed, but ${printer.label} tops out at ` +
+        `${printer.amsSlotsMax} ${SLOT_OVER_MAX_WARNING_SUFFIX}`,
+    );
+  } else if (slotsNeeded > printer.amsSlotsPerUnit) {
+    noticeBuild(
+      `${slotsNeeded} AMS slots needed — more than the ${printer.amsSlotsPerUnit} in a single ` +
+        `AMS unit. ${printer.label} supports up to ${printer.amsSlotsMax} across daisy-chained ` +
+        `units; with one unit you'll need to reduce colors with auto-merge, ` +
+        SLOT_MULTI_UNIT_NOTICE_SUFFIX,
     );
   }
 }
@@ -302,9 +320,9 @@ export function initExportPanel(): void {
     // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s, and
     // the one that needs its own slot-count redraw rather than picking one up from a rebuild.
     refreshSlotCountCapacity();
-    // the pill was raised against the *previous* printer's capacity; a rebuild would drop it but
-    // this change doesn't schedule one, so a switch to a roomier printer has to clear it here
-    clearSlotCapacityWarning();
+    // the pills were raised against the *previous* printer's numbers; a rebuild would drop them but
+    // this change doesn't schedule one, so a switch to a roomier printer has to clear them here
+    clearSlotBudgetNotices();
     renderWarnings();
     schedulePersist();
   });

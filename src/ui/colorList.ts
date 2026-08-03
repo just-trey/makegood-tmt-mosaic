@@ -304,7 +304,8 @@ function renderSlotCount(): void {
   const el = $('#slot-count');
   if (!lastSlotsNeeded) {
     el.textContent = '';
-    el.classList.remove('over-capacity');
+    el.classList.remove('over-capacity', 'multi-unit');
+    el.removeAttribute('title');
     return;
   }
   // Always shown together, even when raw === cut colors (the common unmerged case) — seeing the
@@ -313,8 +314,23 @@ function renderSlotCount(): void {
   el.textContent =
     `${lastRawColorCount} color${lastRawColorCount === 1 ? '' : 's'} → ` +
     `${lastSlotsNeeded} AMS slot${lastSlotsNeeded === 1 ? '' : 's'} needed`;
-  const capacity = getPrinter(state.printerId).amsSlotCapacity;
-  el.classList.toggle('over-capacity', lastSlotsNeeded > capacity);
+  // Three tiers, not two: one unit's worth of slots is what most people have, but it isn't a
+  // ceiling — the Bambus chain up to 16 (25 on the H2D), so exceeding 4 is a "you'll need more
+  // hardware or manual swaps" note, and only exceeding the printer's real maximum is an error.
+  // The U1 is the case where both numbers are 4, and it goes straight from fine to impossible.
+  const printer = getPrinter(state.printerId);
+  el.classList.toggle('over-capacity', lastSlotsNeeded > printer.amsSlotsMax);
+  el.classList.toggle(
+    'multi-unit',
+    lastSlotsNeeded > printer.amsSlotsPerUnit && lastSlotsNeeded <= printer.amsSlotsMax,
+  );
+  el.title =
+    lastSlotsNeeded > printer.amsSlotsMax
+      ? `More than the ${printer.amsSlotsMax} slots this printer can print in one go.`
+      : lastSlotsNeeded > printer.amsSlotsPerUnit
+        ? `More than the ${printer.amsSlotsPerUnit} slots in a single AMS unit — printable, but ` +
+          `needs more than one unit (up to ${printer.amsSlotsMax}) or manual filament swaps.`
+        : `Fits a single ${printer.amsSlotsPerUnit}-slot AMS unit.`;
 }
 
 /** Redraw the slot-count line against the current printer's AMS capacity — the counterpart to

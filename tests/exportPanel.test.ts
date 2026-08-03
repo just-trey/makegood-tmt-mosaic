@@ -18,7 +18,7 @@ vi.mock('../src/export/placement', () => ({
   placementNotice: vi.fn(() => null),
 }));
 vi.mock('../src/export/printers', () => ({
-  getPrinter: vi.fn(() => ({ label: 'Test Printer', amsSlotCapacity: 4 })),
+  getPrinter: vi.fn(() => ({ label: 'Test Printer', amsSlotsPerUnit: 4, amsSlotsMax: 16 })),
   DEFAULT_PRINTER_ID: 'p1',
 }));
 vi.mock('../src/ui/overlay', () => ({
@@ -29,7 +29,12 @@ vi.mock('../src/analytics/track', () => ({
   track: vi.fn(),
 }));
 
-import { exportPrintReady3MF, SLOT_CAPACITY_WARNING_SUFFIX } from '../src/ui/exportPanel';
+import {
+  exportPrintReady3MF,
+  SLOT_MULTI_UNIT_NOTICE_SUFFIX,
+  SLOT_OVER_MAX_WARNING_SUFFIX,
+} from '../src/ui/exportPanel';
+import { getPrinter } from '../src/export/printers';
 import { getLastAssemblyBuild } from '../src/app/rebuild';
 import { build3MFCombined } from '../src/export/threemf';
 import { state } from '../src/state/store';
@@ -81,6 +86,11 @@ beforeEach(() => {
   vi.mocked(getLastAssemblyBuild).mockReset();
   vi.mocked(build3MFCombined).mockClear();
   clearWarnings();
+  vi.mocked(getPrinter).mockReturnValue({
+    label: 'Test Printer',
+    amsSlotsPerUnit: 4,
+    amsSlotsMax: 16,
+  } as ReturnType<typeof getPrinter>);
   document.body.innerHTML = '<div id="warnings"></div>';
   state.shapeKind = 'assembly';
   state.printerId = 'p1';
@@ -129,38 +139,76 @@ function buildWithPalette(n: number): void {
   });
 }
 
-describe('exportPrintReady3MF — AMS slot capacity', () => {
-  const capacityWarnings = (): string[] =>
-    WARNINGS.filter((w) => w.message.endsWith(SLOT_CAPACITY_WARNING_SUFFIX)).map((w) => w.message);
+describe('exportPrintReady3MF — AMS slot budget', () => {
+  const slotNotices = (): { message: string; level: string }[] =>
+    WARNINGS.filter(
+      (w) =>
+        w.message.endsWith(SLOT_MULTI_UNIT_NOTICE_SUFFIX) ||
+        w.message.endsWith(SLOT_OVER_MAX_WARNING_SUFFIX),
+    );
 
-  it('warns when the export needs more slots than a single AMS holds', async () => {
-    buildWithPalette(4); // + the body's own slot = 5, against a capacity of 4
+  it('says nothing when the design fits one AMS unit', async () => {
+    buildWithPalette(3); // + the body's own slot = 4, exactly one unit
 
     await exportPrintReady3MF();
 
-    expect(capacityWarnings()).toHaveLength(1);
-    expect(capacityWarnings()[0]).toContain('5 AMS slots needed');
-    expect(capacityWarnings()[0]).toContain('Test Printer');
+    expect(slotNotices()).toEqual([]);
   });
 
-  it('stays quiet when the export fits, and clears a previous export’s warning', async () => {
-    buildWithPalette(4);
-    await exportPrintReady3MF();
-    expect(capacityWarnings()).toHaveLength(1);
+  it('notes — does not warn — a count the printer can still reach with more units', async () => {
+    buildWithPalette(4); // 5 slots: past one unit's 4, within the printer's 16
 
-    buildWithPalette(2); // 3 slots, fits
     await exportPrintReady3MF();
 
-    expect(capacityWarnings()).toEqual([]);
+    expect(slotNotices()).toHaveLength(1);
+    expect(slotNotices()[0].level).toBe('info');
+    expect(slotNotices()[0].message).toContain('5 AMS slots needed');
+    expect(slotNotices()[0].message).toContain('up to 16');
+  });
+
+  it('warns only past what the printer can print in one go', async () => {
+    buildWithPalette(16); // 17 slots, past the 16 max
+
+    await exportPrintReady3MF();
+
+    expect(slotNotices()).toHaveLength(1);
+    expect(slotNotices()[0].level).toBe('warn');
+    expect(slotNotices()[0].message).toContain('tops out at 16');
+  });
+
+  it('warns as soon as one unit is exceeded on a printer that cannot chain', async () => {
+    vi.mocked(getPrinter).mockReturnValue({
+      label: 'Snapmaker-like',
+      amsSlotsPerUnit: 4,
+      amsSlotsMax: 4,
+    } as ReturnType<typeof getPrinter>);
+    buildWithPalette(4); // 5 slots
+
+    await exportPrintReady3MF();
+
+    expect(slotNotices()).toHaveLength(1);
+    expect(slotNotices()[0].level).toBe('warn');
+  });
+
+  it('clears a previous export’s pill instead of stacking a second tier on it', async () => {
+    buildWithPalette(16);
+    await exportPrintReady3MF();
+    expect(slotNotices()).toHaveLength(1);
+
+    buildWithPalette(4); // now only the softer multi-unit tier applies
+    await exportPrintReady3MF();
+
+    expect(slotNotices()).toHaveLength(1);
+    expect(slotNotices()[0].level).toBe('info');
   });
 
   it('is build-scoped, so acting on it (merging colors down) drops the pill', async () => {
-    buildWithPalette(4);
+    buildWithPalette(16);
     await exportPrintReady3MF();
-    expect(capacityWarnings()).toHaveLength(1);
+    expect(slotNotices()).toHaveLength(1);
 
     clearBuildWarnings();
 
-    expect(capacityWarnings()).toEqual([]);
+    expect(slotNotices()).toEqual([]);
   });
 });

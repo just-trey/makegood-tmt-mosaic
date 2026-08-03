@@ -208,10 +208,11 @@
             <p>
               The line below the color list ("N colors → M AMS slots needed") always includes the
               body's own slot in the count — that's the "+1" you'll see even before anything is
-              merged. It turns red if the count exceeds a single AMS/toolchanger unit (4 slots on
-              every printer this app supports) for the printer picked below in Export; exporting
-              anyway still works, it just means the file needs manual filament swaps or more than
-              one AMS unit to print in one go.
+              merged. Every AMS/toolchanger unit holds 4, so past 4 the line brightens to say you'll
+              need a second unit or manual filament swaps; the Bambus daisy-chain up to 16 (25 on an
+              H2D across both nozzles), while the Snapmaker U1's 4 toolheads are a hard ceiling.
+              Only going past the printer's real maximum turns the line red, and even then exporting
+              still works.
             </p>
           </section>
 

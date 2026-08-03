@@ -856,6 +856,10 @@ input[type='checkbox'] {
   color: var(--accent-2);
   margin-top: 6px;
 }
+/* needs more than one AMS unit, but the printer can still do it — a note, not an error */
+.slot-count.multi-unit {
+  color: var(--text);
+}
 .slot-count.over-capacity {
   color: var(--danger-text);
 }
