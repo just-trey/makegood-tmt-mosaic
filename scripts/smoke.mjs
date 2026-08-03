@@ -35,6 +35,31 @@ try {
   await sleep(1500); // let the first frame render
   await page.screenshot({ path: path.join(OUT, '1-assembly-loaded.png') });
 
+  // The left panel is a fixed 340px, so a control row that doesn't fit is clipped at every window
+  // size rather than only narrow ones — and what gets cut is the unit suffix at the end of the row,
+  // the smallest and least noticeable part of it. Offset X/Y lost their "mm" this way. Checked
+  // against the panel's own edge rather than by eye, since 2px of a "%" is easy to miss.
+  const clipped = await page.evaluate(() => {
+    const panel = document.querySelector('#left');
+    const edge = panel.getBoundingClientRect().right - 14; // minus the panel's padding
+    return [...document.querySelectorAll('#left .row')]
+      .map((row) => {
+        const hint = row.querySelector(':scope > .hint');
+        if (!hint || !hint.textContent.trim()) return null;
+        const past = +(hint.getBoundingClientRect().right - edge).toFixed(1);
+        const cut = hint.scrollWidth > hint.clientWidth + 0.5;
+        if (past <= 0 && !cut) return null;
+        return `${row.querySelector('label')?.textContent?.trim() || '?'} "${hint.textContent.trim()}" (${past}px past the edge)`;
+      })
+      .filter(Boolean);
+  });
+  if (clipped.length) {
+    errors.push(`clipped unit labels in the left panel: ${clipped.join('; ')}`);
+    console.log(`   CLIPPED: ${clipped.join('; ')}`);
+  } else {
+    console.log('   left-panel unit labels all fit');
+  }
+
   console.log('2. loading sample artwork (triggers Manifold CSG build)…');
   await page.click('#btn-sample');
   await page.waitForSelector('#color-list .color-row', { timeout: 240_000 });
@@ -112,7 +137,7 @@ try {
 
   console.log(
     '\nRESULT:',
-    errors.length ? 'CONSOLE/PAGE ERRORS FOUND' : 'clean — no console or page errors',
+    errors.length ? 'PROBLEMS FOUND' : 'clean — no console or page errors, no clipped labels',
   );
   errors.forEach((e) => console.log('  ', e.slice(0, 300)));
   process.exitCode = errors.length ? 1 : 0;

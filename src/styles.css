@@ -494,14 +494,20 @@ input[type='range'] {
   width: 100%;
   accent-color: var(--accent);
 }
+/* min-width on both: a flex item defaults to min-width:auto, which floors it at its content's
+   min-content width — and a range input's is ~129px in Chrome. That floor stopped the pair
+   shrinking in a 340px panel, so the overflow landed on the unit suffix after it instead, pushing
+   "mm" past the panel's clipped edge on Offset X/Y (11px) and Scale (2px). */
 .field.pair {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 .field.pair input[type='range'] {
   flex: 1;
   width: auto;
+  min-width: 0;
 }
 .field.pair input[type='number'] {
   width: 64px;
