@@ -82,15 +82,23 @@ export function hasLoadedWork(): boolean {
 /**
  * Standard cross-browser beforeunload prompt — every browser ignores the actual returnValue text
  * and shows its own generic "leave site?" copy, so the string here is only for the handful that
- * still don't. Only arms once there's real work to lose; a bare unmodified wheel isn't worth the
- * prompt.
+ * still don't. Only arms once there's real work to lose, and only once flushPendingSave() has
+ * already tried and failed to land it on disk — a session that autosaved successfully is already
+ * recoverable via the restore banner, so warning about it too would just teach makers to reflexively
+ * click through the one case (a failed save) where the warning is actually true.
  */
 export function initBeforeUnloadGuard(): void {
   window.addEventListener('beforeunload', (e) => {
     if (!hasLoadedWork()) return;
+    flushPendingSave();
+    if (!lastSaveFailed) return;
     e.preventDefault();
-    e.returnValue =
-      'Leave TMT Mosaic? Your session is autosaved, but a rebuild in progress may not be yet.';
+    e.returnValue = "TMT Mosaic couldn't save this session — leaving now loses it.";
+  });
+  // beforeunload is skipped outright on mobile backgrounding and bfcache eviction, so this is the
+  // flush that actually runs there.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPendingSave();
   });
 }
 
@@ -138,11 +146,19 @@ function snapshotSession(): PersistedSession {
 }
 
 /**
+ * Whether the most recent saveSession() call actually landed the write — read by
+ * initBeforeUnloadGuard() to decide whether leaving is safe. Not surfaced anywhere mid-work; see
+ * the degrade-silently note on saveSession().
+ */
+let lastSaveFailed = false;
+
+/**
  * Write the current session, swallowing every failure — private browsing with storage disabled,
  * a quota already full of other sites' data, a circular/unserializable value that shouldn't exist
  * but shouldn't crash a rebuild if it did. A session that fails to save just means the next
  * restore-banner check finds nothing, same as a first visit; never worth surfacing to the user
- * mid-work. Mirrors helpPanel.ts's degrade-silently pattern for the same reason.
+ * mid-work. Mirrors helpPanel.ts's degrade-silently pattern for the same reason. lastSaveFailed
+ * is the one exception — read only at unload, to decide whether the native prompt is warranted.
  */
 export function saveSession(): void {
   // An empty snapshot (no artwork, no loaded parts) isn't worth restoring — and saving one
@@ -152,14 +168,20 @@ export function saveSession(): void {
   // save behind either.
   if (!hasLoadedWork()) {
     clearSavedSession();
+    lastSaveFailed = false;
     return;
   }
   try {
     const json = JSON.stringify(snapshotSession());
-    if (json.length > MAX_BYTES) return;
+    if (json.length > MAX_BYTES) {
+      lastSaveFailed = true;
+      return;
+    }
     localStorage.setItem(STORAGE_KEY, json);
+    lastSaveFailed = false;
   } catch {
     // storage unavailable, full, or the write threw for some other reason — nothing to do
+    lastSaveFailed = true;
   }
 }
 
@@ -178,7 +200,26 @@ let restoring = false;
 export function schedulePersist(): void {
   if (restoring) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveSession, 1000);
+  saveTimer = setTimeout(() => {
+    saveTimer = undefined;
+    saveSession();
+  }, 1000);
+}
+
+/**
+ * Runs a fresh save immediately, cancelling any pending debounce, so a reload mid-debounce
+ * doesn't lose the last second of edits — and so lastSaveFailed reflects an attempt against
+ * *current* state rather than a stale flag from whenever the last debounced save happened to
+ * fire (or from before any save was ever attempted this session). Called from
+ * initBeforeUnloadGuard() (localStorage writes complete synchronously, so this reliably lands
+ * before the page actually unloads) and on visibilitychange, since beforeunload itself is
+ * skipped outright on mobile backgrounding and bfcache eviction.
+ */
+function flushPendingSave(): void {
+  if (restoring) return;
+  clearTimeout(saveTimer);
+  saveTimer = undefined;
+  saveSession();
 }
 
 export function clearSavedSession(): void {
@@ -239,7 +280,7 @@ export function loadSavedSession(): PersistedSession | null {
  * Assembly restore awaits asmLoadFullAssembly() directly rather than going through
  * maybeAutoLoadAssembly()'s fire-and-forget call, because the zone bindings below need the
  * restored parts (and their fresh session-local ids) to already exist. state.assembly.parts is
- * empty at this point (nothing has loaded yet this session), so the confirm() guard in
+ * empty at this point (nothing has loaded yet this session), so the confirmDialog() guard in
  * asmLoadFullAssembly — which only fires when parts are already present — never triggers.
  */
 export async function applyRestoredSession(session: PersistedSession): Promise<void> {

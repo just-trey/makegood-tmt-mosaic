@@ -139,6 +139,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Leaving the page (reload, close, navigate away) used to always trigger the
+  browser's native "Reload site? Changes you made may not be saved." prompt
+  once any design was loaded, even though the session autosaves and offers
+  itself back on return — so the prompt fired on essentially every reload
+  regardless of whether anything was actually at risk. It now flushes the
+  pending autosave first and only warns when that save genuinely failed
+  (storage full, private browsing, or a session too large to save).
 - The unit label at the end of the Artwork Fit rows was cut off by the edge
   of the left panel — Offset X and Offset Y lost most of their "mm" and Scale
   part of its "%". The panel is a fixed width, so this happened at every

@@ -220,3 +220,24 @@ missing one of its colors.
   wall in one spot cuts a hole through it and exports silently. "Part … has no
   geometry to export" only appears when the cut consumed the _whole_ part, so
   its absence is not a report that the depth was safe.
+
+## Troubleshooting: "TMT Mosaic couldn't save this session — leaving now loses it" warnings
+
+The app autosaves your session (design, placement, colors, depths) to the
+browser's local storage after every change, and offers it back the next time
+you open the app. Reloading or closing the tab normally shows nothing at all
+— the browser's own "leave site?" prompt only appears when that autosave
+itself failed, right before the page would actually unload.
+
+The browser controls the prompt's exact wording (it ignores the app's text
+and substitutes its own generic copy in most browsers), so what you see may
+not match the string above verbatim.
+
+- **The session isn't lost yet, but leaving now would lose it.** Export a 3MF
+  or the STL set before closing the tab to keep the work regardless.
+- Common causes: the session grew past the app's own size ceiling (a lot of
+  large SVG artwork), the browser's storage quota for this site is full, or
+  you're in a private/incognito window where storage is disabled or
+  cleared on close.
+- Freeing space (closing other tabs on the same site, or clearing old site
+  data) and reloading — the autosave runs again on the next change.
