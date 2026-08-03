@@ -9,11 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- The header logo now links out to [makegood.design](https://makegood.design),
-  and the help panel has a new About section linking makegood.design and
-  [3d-mobility.org](https://3d-mobility.org) (where the TMT's printable
-  part files and assembly instructions live) — previously the app had no
-  link out to either.
+- The help panel has a new About section linking
+  [3d-mobility.org](https://3d-mobility.org), where the TMT's printable
+  part files and assembly instructions live — previously the app had no
+  link out to it.
 - Below 900px window width, a plain message now asks for a wider window
   instead of showing the layout crushed to an unusable sliver. The
   desktop-only range this app targets is now driven and screenshotted
