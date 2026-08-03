@@ -114,12 +114,15 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.
 - Input parts must be watertight/manifold for assembly cutting.
-- Assembly mode has no deep-end wall-thickness check — a part's wall varies
-  across it, so a pocket deeper than the wall at some point is only caught
-  after the cut, as a part with no geometry to export. The shallow end (zero
-  or negative) is caught up front and raised to a safe minimum. The flat
-  modes check both ends: a depth the plate can't hold is cut at the nearest
-  depth it can, with a warning saying which color and what was actually cut.
+- Assembly mode has no deep-end wall-thickness check. A part's wall varies
+  across it, and nothing measures it or compares a depth against it, so a
+  pocket deeper than the wall in one spot cuts a hole clean through and
+  exports without comment. The only deep-end case that says anything is the
+  extreme one where the cut consumes the whole part, leaving nothing to
+  export. The shallow end (zero or negative) is caught up front and raised to
+  a safe minimum. The flat modes check both ends: a depth the plate can't hold
+  is cut at the nearest depth it can, with a warning saying which color and
+  what was actually cut.
 - Gradients/patterns are detected and skipped with a warning.
 - Fill (repeat the design across a surface) is assembly-mode only.
 - Two designs placed over each other on one surface are warned about by name,

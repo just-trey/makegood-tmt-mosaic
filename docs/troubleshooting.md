@@ -215,6 +215,8 @@ missing one of its colors.
 - One warning per color, not per part: depth is a per-color setting, so a
   global **Depth** of 0 reports each affected color once however many parts
   carry it.
-- Assembly mode bounds only the shallow end. There is no upper limit, because
-  a part's wall thickness varies across it — a depth deeper than the wall is
-  caught after the boolean instead, as "Part … has no geometry to export".
+- Assembly mode bounds only the shallow end. There is no upper limit and no
+  check against the wall, which varies across a part — a depth deeper than the
+  wall in one spot cuts a hole through it and exports silently. "Part … has no
+  geometry to export" only appears when the cut consumed the _whole_ part, so
+  its absence is not a report that the depth was safe.

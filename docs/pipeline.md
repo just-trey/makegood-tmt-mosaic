@@ -47,9 +47,12 @@ How the geometry actually works — read this before touching `src/geometry/` or
    Depth is bounded only at the shallow end here — raised to the same 0.2 mm
    floor, with a warning naming the raised _setting_ rather than a cut depth,
    since resolveCutDepth is free to ignore it (a cutThrough part takes its hole
-   the whole way through regardless). The too-deep case can only be caught after
-   the boolean, as a cut that came out empty, because a part's wall thickness
-   varies across it. Supports rotated-copy parts (the same physical part installed twice, e.g.
+   the whole way through regardless). The too-deep end is not checked at all —
+   a part's wall thickness varies across it and nothing measures it, so a pocket
+   deeper than the wall in one spot exports as a part with a hole through it and
+   no warning. Only the extreme case surfaces, where the cut leaves the part
+   empty and the export drops it (exportPanel.ts's `bodySoup.length` guard).
+   Supports rotated-copy parts (the same physical part installed twice, e.g.
    a wheel's two halves): the design slice that lands on the copy is remapped
    back into the part's native print orientation. Round parts (the wheel) map
    the SVG via a Design-radius/circle model; rectangular parts (the footrest)
