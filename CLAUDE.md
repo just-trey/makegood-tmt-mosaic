@@ -20,6 +20,14 @@ into `main`) and the four docs that drift silently. `/code-review` is
 required, not optional, when the diff touches `src/geometry/` or
 `src/export/`.
 
+Run it **before pushing**, and **again after acting on its findings**. Fixes
+to geometry findings are themselves geometry changes, and they are written
+under pressure to make a specific complaint go away — which is exactly when a
+too-narrow patch gets bolted on. On PR #113 three consecutive rounds each
+found a real bug introduced by the previous round's fix; the second was caught
+on code a live run had already reported clean. Reviewing after the push means
+announcing green and then withdrawing it.
+
 ## Git workflow
 
 - `main` is protected: PRs required, the CI check must pass, no direct
@@ -38,6 +46,21 @@ required, not optional, when the diff touches `src/geometry/` or
   a reader. [src/turf.d.ts](src/turf.d.ts) and the retry logic in
   [src/geometry/regions.ts](src/geometry/regions.ts) are examples of
   comments that earn their keep.
+- **Before changing what a shared value means** (`colorSettings`, a depth, a
+  placement), open every reader of it, not just the one you're editing.
+  Changing it at one call site and reasoning only about that site is what
+  produced all three rounds of findings on PR #113 — a typed `0` made
+  meaningful in `src/ui/colorList.ts` was still read as "unset" in
+  `src/geometry/assembly.ts`, and a depth clamped there was then discarded by
+  the `resolveCutDepth` it was handed to.
+- **A tolerance is not a user-facing value.** `0.02mm` keeps a boolean
+  well-defined; offered to someone as the depth their recess was cut at, it
+  names something that slices to nothing and still costs an AMS slot. If a
+  number will be shown to a user or given to them as a fallback, it has to be
+  a number that makes sense on a printer.
+- Needing a special case that reaches across a boundary — `if (part.cutThrough)`
+  in code that shouldn't know how parts cut — means the model is wrong further
+  up. Deleting one such special case closed three review findings at once.
 
 ## Audience
 
