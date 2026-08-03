@@ -505,6 +505,46 @@ _what_ was verified — the reference file and its hash — alongside the mesh
 fingerprint, so a reseal against an unchanged reference is distinguishable
 from one that silently redefines the verified pose.
 
+## The things that check the code get audited less than the code they check
+
+Four instances of one shape are now on record, three of them found within an
+hour of each other on 2026-08-03:
+
+- **`vite preview` served a `dist/` older than its own sources** (#123). Not a
+  leftover process — a correctly started, freshly spawned server serving a
+  build that predated the change under test. Every driven run read as passing
+  while describing code no longer on disk.
+- **`gh pr checks --watch` reported green on a run that had not started**
+  (#125, hit on #124). Directly after `gh pr create` the checks are not yet
+  registered, so gh prints "no checks reported" and exits 0 — the same exit
+  code as a real pass.
+- **`#btn-export` staying enabled read as "the rebuild finished"** when it was
+  still enabled from the _previous_ build, exporting stale geometry. Fixed
+  earlier; the reasoning survives in `settledAfterRebuild()` in
+  [scripts/lib/harness.mjs](../scripts/lib/harness.mjs).
+- **The export-placement seal** — the section directly above — proves a mesh
+  is unchanged, not that the pose was re-verified.
+
+The common shape is a success signal derived from something adjacent to the
+property being asserted, where the ambiguous case is indistinguishable from a
+real pass at the point of use: same exit code, same enabled button, same green.
+
+Worth being precise about the cause, because "be more careful" does not close
+it. The same two files carry a thorough leftover-port guard and a hard error
+when `MOSAIC_GPU=1` silently falls back to SwiftShader — both written to catch
+exactly this kind of quiet wrong answer. The gap is not rigor. It is that code
+gets reviewed and the things that check the code get trusted, so a checker that
+under-verifies is the last place anyone looks.
+
+No systematic audit has been done — the three above were found by tripping over
+them, not by looking. Closing this means walking every place a success signal
+is derived indirectly and either asserting the property itself or making the
+ambiguous case fail loudly. Known starting points, none currently established
+as wrong: `waitForServer()` accepts any HTTP 200 on the port as "our preview is
+up"; `startPreview({ reuse: true })` deliberately trusts the caller about which
+build is listening, and nothing verifies it; smoke's opening wait treats a
+non-zero `#stat-tris` as "the right thing loaded".
+
 ## Per-part export placement is a lookup table in [src/export/placement.ts](../src/export/placement.ts), not part of the part definition
 
 It used to be an `if (roleId === …) else if …` chain; the
