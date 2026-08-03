@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Merging colors no longer requires a drag: each color row now shows a
+  visible "⠿" grip marking what's draggable, plus a "Merge with…" dropdown
+  that does the same thing for keyboard or touch use. The Colors and
+  Artwork panels' persistent hints now also explain Sticker/Fill mode and
+  "+zone", instead of only a hover tooltip.
 - Your session now autosaves as you work — part, artwork, placement, colors,
   depth, and printer — and offers to restore it if you come back after a
   reload, browser close, or crash. A dismissible banner asks first ("Restore

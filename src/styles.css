@@ -724,6 +724,25 @@ input[type='checkbox'] {
   color: var(--text-dim);
   margin-left: auto;
 }
+.drag-grip {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+  cursor: grab;
+  user-select: none;
+  flex: 0 0 auto;
+}
+.color-row .merge-row {
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+}
+.color-row .merge-row select {
+  width: auto;
+  max-width: 160px;
+  font-size: 10.5px;
+  padding: 3px 5px;
+}
 .empty-hint {
   color: var(--text-dim);
   font-size: 12px;
