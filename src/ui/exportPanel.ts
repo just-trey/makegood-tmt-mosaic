@@ -15,6 +15,7 @@ import { zipStore, type ZipEntry } from '../export/zip';
 import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
 import { WARNINGS, warn, notice } from '../warnings';
+import { schedulePersist } from '../state/persist';
 import { renderWarnings } from './warningsView';
 import { track } from '../analytics/track';
 
@@ -210,6 +211,9 @@ affiliated with Bambu Lab.
 export function initExportPanel(): void {
   $<HTMLSelectElement>('#p-printer').addEventListener('change', (e) => {
     state.printerId = (e.target as HTMLSelectElement).value;
+    // Doesn't affect geometry, so nothing schedules a rebuild for it — the one state change that
+    // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s.
+    schedulePersist();
   });
   $('#btn-export').addEventListener('click', () => void exportPrintReady3MF());
   $('#btn-export-stl').addEventListener('click', () => void exportSTLSet());

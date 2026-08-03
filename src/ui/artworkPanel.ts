@@ -31,7 +31,7 @@ export function applyParsedSVG(
   // Parse first: parseSVGDocument throws on a malformed/empty SVG, and a failed load must be a
   // no-op that leaves whatever's already loaded untouched.
   const parsed = parseSVGDocument(svgText);
-  loadArtworkSource(parsed, fname, kind, mode); // adds a new source+instance alongside any already loaded
+  loadArtworkSource(parsed, fname, kind, mode, svgText); // adds a new source+instance alongside any already loaded
   pruneSettingsToPalette();
   $('#svg-fname').textContent = fname;
   renderArtworkList();

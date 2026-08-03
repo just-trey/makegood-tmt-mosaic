@@ -120,6 +120,21 @@ only once per gesture.
   - `via: 'drag' | 'slider'`
   - `field: 'move' | 'scale' | 'rotate'`
 
+### `session_restored`
+
+Fired when the user accepts the restore-session banner offered on load after
+a previous visit left loaded artwork behind.
+
+- **Where:** [src/ui/restoreBanner.ts](../src/ui/restoreBanner.ts) — `#btn-restore-session` click handler.
+- **Props:** none.
+
+### `session_restore_dismissed`
+
+Fired when the user declines the restore-session banner ("Start fresh").
+
+- **Where:** [src/ui/restoreBanner.ts](../src/ui/restoreBanner.ts) — `#btn-restore-dismiss` click handler.
+- **Props:** none.
+
 ## Future / not yet wired
 
 Candidates for a later pass, roughly in order of likely value. Follow the same

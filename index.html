@@ -57,6 +57,10 @@
               region. Export a 3MF and it's pre-mapped to AMS filament slots — open it in Bambu
               Studio, OrcaSlicer, or Snapmaker Orca and print.
             </p>
+            <p>
+              Your session autosaves as you go. Come back after closing the tab or a reload and
+              you'll be offered to restore it — nothing applies or rebuilds until you say so.
+            </p>
             <p>Everything below matches a section in the left panel, in the same order.</p>
           </section>
 
@@ -204,6 +208,15 @@
       </dialog>
 
       <div id="left">
+        <div id="restore-banner" class="restore-banner" hidden>
+          <p></p>
+          <div class="btn-row">
+            <button type="button" class="btn small primary" id="btn-restore-session">
+              Restore
+            </button>
+            <button type="button" class="btn small" id="btn-restore-dismiss">Start fresh</button>
+          </div>
+        </div>
         <details class="sec" open>
           <summary>Part</summary>
           <div class="shape-picker">

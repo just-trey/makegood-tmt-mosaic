@@ -24,8 +24,12 @@ export function loadArtworkSource(
   name: string,
   kind: DesignSource['kind'] = 'upload',
   mode: ArtworkInstance['mode'] = 'sticker',
+  // Defaults to '' for the many tests that construct a ParsedSVG directly and don't care about
+  // round-tripping it — session persistence (state/persist.ts) is the only real caller that needs
+  // this, and it always has real SVG text in hand.
+  svgText: string = '',
 ): ArtworkInstance {
-  const source: DesignSource = { id: `source-${nextSourceId++}`, kind, name, parsed };
+  const source: DesignSource = { id: `source-${nextSourceId++}`, kind, name, parsed, svgText };
   state.sources.push(source);
 
   const zones = availableZones();
@@ -46,6 +50,38 @@ export function loadArtworkSource(
   state.parsed = parsed;
   setActiveArtwork(instance.id);
   return instance;
+}
+
+/**
+ * Repopulate the source/artwork pool from a restored session (see state/persist.ts), preserving
+ * the saved string ids rather than minting fresh ones — `artworks[].sourceId` already points at
+ * them. Zone bindings come in as `zone: null`; the restore caller re-applies each one via
+ * setArtworkZone() once the assembly's parts (and their fresh, session-local numeric partIds) have
+ * reloaded, since a saved `partId` can't outlive the session that assigned it. Advances the id
+ * counters past the restored ones so a design loaded afterward can't collide with a restored id.
+ */
+export function restoreArtworkPool(sources: DesignSource[], artworks: ArtworkInstance[]): void {
+  state.sources = sources;
+  state.artworks = artworks;
+  const maxSuffix = (ids: string[], prefix: string) =>
+    ids.reduce((max, id) => {
+      const n = id.startsWith(prefix) ? parseInt(id.slice(prefix.length), 10) : NaN;
+      return Number.isFinite(n) ? Math.max(max, n) : max;
+    }, 0);
+  nextSourceId = Math.max(
+    nextSourceId,
+    maxSuffix(
+      sources.map((s) => s.id),
+      'source-',
+    ) + 1,
+  );
+  nextArtworkId = Math.max(
+    nextArtworkId,
+    maxSuffix(
+      artworks.map((a) => a.id),
+      'artwork-',
+    ) + 1,
+  );
 }
 
 /** Every hex any currently-loaded design actually paints with — the live palette. */

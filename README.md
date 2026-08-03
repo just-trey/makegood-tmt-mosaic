@@ -124,6 +124,8 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   enforcers; paint them yourself or switch to auto support.
 - The caster mounts can't carry artwork — see
   [docs/tech-debt.md](docs/tech-debt.md).
+- Session autosave/restore covers artwork, placement, colors, depth, part,
+  and printer — not an uploaded STL reference mesh, which isn't kept.
 
 Full detail on any of these: [docs/pipeline.md](docs/pipeline.md) and
 [docs/tech-debt.md](docs/tech-debt.md).
