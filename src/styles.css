@@ -43,6 +43,45 @@ body {
   grid-template-rows: 8px 64px 1fr 8px;
   height: 100%;
 }
+/* Desktop/laptop only — verified usable at 900px and up (see README's Known limitations); the
+   fixed-width left column below that point squeezes the 3D viewport to an unusable sliver rather
+   than reflowing, so this replaces the layout entirely instead of letting it degrade in place. */
+#narrow-notice {
+  display: none;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 14px;
+  padding: 32px;
+  background: var(--bg);
+  color: var(--text);
+}
+#narrow-notice img {
+  height: 40px;
+  width: auto;
+}
+#narrow-notice h1 {
+  font-family: var(--heading);
+  font-size: 18px;
+  margin: 0;
+}
+#narrow-notice p {
+  max-width: 340px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0;
+}
+@media (max-width: 899px) {
+  #app {
+    display: none;
+  }
+  #narrow-notice {
+    display: flex;
+  }
+}
 .accent-stripe {
   grid-column: 1/3;
   background: linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488);
