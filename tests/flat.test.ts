@@ -87,7 +87,7 @@ describe('buildGeometry depth clamp warning', () => {
     ))!;
     expect(built.colorMeshes.find((c) => c.key === '#ff0000')!.depth).toBeCloseTo(3.95);
     expect(WARNINGS.map((w) => w.message)).toContain(
-      'Depth for "#ff0000" was set to 100.00 mm, but a 4.00 mm plate can only cut 0.02–3.95 mm ' +
+      'Depth for "#ff0000" was set to 100.00 mm, but a 4.00 mm plate can only cut 0.20–3.95 mm ' +
         'deep — it was cut at 3.95 mm instead.',
     );
     expect(WARNINGS.every((w) => w.build)).toBe(true);
@@ -97,8 +97,8 @@ describe('buildGeometry depth clamp warning', () => {
     for (const depth of [0, -1]) {
       clearWarnings();
       const built = (await buildGeometry(baseInput({ colorSettings: { '#ff0000': { depth } } })))!;
-      expect(built.colorMeshes.find((c) => c.key === '#ff0000')!.depth).toBeCloseTo(0.02);
-      expect(WARNINGS.some((w) => w.message.includes('it was cut at 0.02 mm instead.'))).toBe(true);
+      expect(built.colorMeshes.find((c) => c.key === '#ff0000')!.depth).toBeCloseTo(0.2);
+      expect(WARNINGS.some((w) => w.message.includes('it was cut at 0.20 mm instead.'))).toBe(true);
     }
   });
 

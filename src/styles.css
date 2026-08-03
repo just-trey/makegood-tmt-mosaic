@@ -825,6 +825,23 @@ input[type='checkbox'] {
   color: var(--text-dim);
   font-size: 11px;
 }
+/* A row with its own depth reads as deliberate, so the global Depth field visibly not moving it
+   has a cause on screen. The ↺ next to it is the way back. */
+.color-row .depth-row input.overridden {
+  border-color: var(--accent);
+}
+.color-row .depth-reset {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.color-row .depth-reset:hover {
+  color: var(--text);
+}
 .color-row .preset {
   font-size: 10.5px;
   color: var(--text-dim);

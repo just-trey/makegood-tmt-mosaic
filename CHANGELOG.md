@@ -181,13 +181,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   says so on every rebuild rather than only the first. Assembly mode already
   warned about its equivalent.
 - A depth of 0 or less on an assembly part dropped that color from the part
-  with no recess, no inlay, and no message. It now cuts at the same 0.02 mm
-  floor the flat modes use, and says so — except on a part cut all the way
-  through (the wheel's cap), where the depth field doesn't drive the cut and
-  the color is still left off that part, now with a warning naming it.
-  Relatedly, a depth field left at a deliberate `0` was read as "no depth set"
-  and silently replaced with the global Depth — a row reading 0.00 could cut a
-  full millimetre.
+  with no recess, no inlay, and no message. It is now raised to 0.20 mm — one
+  typical layer — and says so. Relatedly, a depth field left at a deliberate
+  `0` was read as "no depth set" and silently replaced with the global Depth —
+  a row reading 0.00 could cut a full millimetre.
+- The shallowest depth either mode will fall back to is now 0.20 mm rather
+  than 0.02 mm. A fiftieth of a millimetre is a tenth of a layer: it sliced to
+  nothing, so the color printed as bare body while still using up a filament
+  slot, and the warning said it had been cut.
+- A color's depth row now shows when it carries its own depth rather than
+  following the **Depth** default — the field is outlined and gets a "↺" to
+  put it back. Previously the two looked identical, so a row pinned to its own
+  value made the Depth field appear to do nothing, with no way back except
+  clearing the field, which only the help panel mentioned.
 - Restoring a session saved by an earlier build no longer reinstates a
   per-color depth override for every color. Those were written automatically
   rather than chosen, and restoring them left the global Depth field unable to

@@ -207,3 +207,45 @@ describe('renderColorList — depth field', () => {
     expect(state.colorSettings['#ff0000']).toBeUndefined();
   });
 });
+
+describe('renderColorList — depth override affordance', () => {
+  const depthInput = (): HTMLInputElement =>
+    document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+  const resetBtn = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>('.color-row .depth-reset');
+
+  beforeEach(() => {
+    state.colorSettings = {};
+    state.globalDepth = 1;
+  });
+
+  it('marks a row that carries its own depth, and offers a way back', () => {
+    // Without this the global Depth field silently not moving a row had no visible cause and no
+    // visible undo — clearing the field was the only way, and only the help panel said so.
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(resetBtn()).toBeNull();
+    expect(depthInput().classList.contains('overridden')).toBe(false);
+
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(resetBtn()).not.toBeNull();
+    expect(depthInput().classList.contains('overridden')).toBe(true);
+  });
+
+  it('drops the override when reset is clicked', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    resetBtn()!.click();
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+  });
+
+  it('marks a row set to the same value as the global — it is still pinned', () => {
+    state.globalDepth = 1;
+    state.colorSettings = { '#ff0000': { depth: 1 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    expect(resetBtn()).not.toBeNull();
+  });
+});

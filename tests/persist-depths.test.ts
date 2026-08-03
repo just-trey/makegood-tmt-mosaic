@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { loadSavedSession, saveSession, type PersistedSession } from '../src/state/persist';
+import {
+  loadSavedSession,
+  restoredColorSettings,
+  saveSession,
+  type PersistedSession,
+} from '../src/state/persist';
 import { state } from '../src/state/store';
 
 const STORAGE_KEY = 'tmt-mosaic:session:v1';
@@ -46,7 +51,14 @@ describe('session depth overrides', () => {
     const saved = loadSavedSession();
     expect(saved).not.toBeNull();
     expect(saved?.explicitDepths).toBeUndefined();
-    // what applyRestoredSession keys off — see the colorSettings line there
-    expect(saved?.explicitDepths ? saved.colorSettings : {}).toEqual({});
+    expect(restoredColorSettings(saved!)).toEqual({});
+  });
+
+  it('restores deliberate overrides through the same rule', () => {
+    withLoadedWork();
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    saveSession();
+
+    expect(restoredColorSettings(loadSavedSession()!)).toEqual({ '#ff0000': { depth: 2.5 } });
   });
 });

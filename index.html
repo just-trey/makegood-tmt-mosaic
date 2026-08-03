@@ -184,12 +184,13 @@
             <p>
               Depth is measured down from the top face. Set a default for all colors, then override
               individual ones in Colors detected below for fine detail work. Check "Recess bg too"
-              to also cut the background instead of leaving it flush. Clearing a color's own depth
-              field puts it back under this default. On a flat shape, a depth the plate can't hold
-              is cut at the nearest depth it can — a warning says which color and what was actually
-              cut, so raise Thickness in Part if you want it deeper. A depth of 0 cuts nothing, so
-              it is treated the same way; to stop cutting a color entirely, use "→ base" on its row
-              to print it in the body instead.
+              to also cut the background instead of leaving it flush. A color with its own depth is
+              outlined in the list below and has a "↺" to put it back under this default — if
+              changing this field seems to do nothing, those rows are why. On a flat shape, a depth
+              the plate can't hold is cut at the nearest depth it can — a warning says which color
+              and what was actually cut, so raise Thickness in Part if you want it deeper. Depths
+              below 0.2mm (one layer) print as nothing, so they are raised to it; to stop cutting a
+              color entirely, use "→ base" on its row to print it in the body instead.
             </p>
           </section>
 

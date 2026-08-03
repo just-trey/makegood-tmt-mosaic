@@ -826,26 +826,27 @@ describe('shared design anchor and scale resolvers', () => {
 describe('buildAssemblyGeometry zero-depth handling', () => {
   beforeEach(() => clearWarnings());
 
-  it('raises a zero depth to the floor and says so', { timeout: 30000 }, async () => {
+  it('raises a zero depth to a depth that prints, and says so', { timeout: 30000 }, async () => {
     const built = (await buildAssemblyGeometry(
       baseInput({ colorSettings: { 'asm:#ff0000': { depth: 0 } } }),
     ))!;
     const r = yRange(built.partOutputs[0].inlaySoups[0]);
     expect(r.max).toBeCloseTo(10, 4);
-    expect(r.min).toBeCloseTo(9.98, 4);
+    // one typical layer, not the 0.02 mm geometry tolerance — a tenth of a layer slices to
+    // nothing while still costing an AMS slot
+    expect(r.min).toBeCloseTo(9.8, 4);
     expect(WARNINGS.map((w) => w.message)).toContain(
-      'Depth for color #ff0000 was set to 0.00 mm, which would cut nothing — it was cut at ' +
-        '0.02 mm instead.',
+      'Depth for color #ff0000 was set to 0.00 mm, which would cut nothing — it was raised to ' +
+        '0.20 mm.',
     );
   });
 
   it(
-    'leaves the color off a cutThrough part rather than claiming a 0.02 mm cut',
+    'keeps the color on a cutThrough part instead of dropping it',
     { timeout: 30000 },
     async () => {
-      // resolveCutDepth discards the depth setting on a cutThrough part, so clamping the number
-      // would not change the cut — it would still go the full way through. Reporting a 0.02 mm
-      // cut there would understate a 3 mm through-hole by 150x.
+      // Dropping it deleted the color's list row (a color with no inlay area anywhere gets none),
+      // taking away the depth field the warning tells you to correct.
       const built = (await buildAssemblyGeometry(
         baseInput({
           parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })],
@@ -853,12 +854,27 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
         }),
       ))!;
 
-      expect(built.partOutputs[0].inlaySoups[0]).toBeUndefined();
-      expect(WARNINGS.map((w) => w.message)).toContain(
-        'Color #ff0000 was set to cut 0.00 mm deep, so it was left off "test box" — that part ' +
-          'is cut all the way through, so there is no shallower cut to make.',
-      );
-      expect(WARNINGS.every((w) => !w.message.includes('0.02 mm instead'))).toBe(true);
+      expect(built.partOutputs[0].inlaySoups[0]).toBeDefined();
+    },
+  );
+
+  it(
+    'reports the raised setting, never a cut depth a cutThrough part did not make',
+    { timeout: 30000 },
+    async () => {
+      // resolveCutDepth discards the setting on a cutThrough part and takes the hole the whole
+      // way through. A message naming a cut depth understated a 3 mm through-hole as 0.02 mm.
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })],
+          colorSettings: { 'asm:#ff0000': { depth: 0 } },
+        }),
+      ))!;
+
+      const r = yRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.max - r.min).toBeGreaterThan(2.5); // really cut through, not 0.2 mm
+      expect(WARNINGS.every((w) => !w.message.includes('was cut at'))).toBe(true);
+      expect(WARNINGS.some((w) => w.message.includes('it was raised to 0.20 mm.'))).toBe(true);
     },
   );
 

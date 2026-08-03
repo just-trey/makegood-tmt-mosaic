@@ -164,6 +164,10 @@ export function renderColorList(
     // global Depth field, the fix the warning tells you to apply, no longer reached rows that now
     // carried an explicit override. colorSettings holds deliberate per-row overrides only.
     const shownDepth = requestedDepth(state.colorSettings, state.globalDepth, c.key);
+    // A row carrying its own depth looked identical to one following the global, so the global
+    // Depth field appearing not to work had no visible cause and no visible undo — clearing the
+    // field was the only way back, and it was documented only in the help panel.
+    const isOverridden = Number.isFinite(state.colorSettings[c.key]?.depth);
 
     let swatchHtml: string,
       labelHtml: string,
@@ -213,8 +217,13 @@ export function renderColorList(
       ${membersRowHtml}
       <div class="depth-row">
         <label>depth</label>
-        <input type="number" class="depth-input" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}">
+        <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}"${isOverridden ? '' : ` title="Following the default depth set in Depth — type here to give this row its own"`}>
         <span class="hint">mm</span>
+        ${
+          isOverridden
+            ? `<button type="button" class="depth-reset" title="Set just for this color — click to follow the default depth in Depth again" aria-label="Reset depth for ${c.isBackground ? 'Background' : labelHtml} to the default">↺</button>`
+            : ''
+        }
         <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
       </div>
       ${mergeSelectHtml ? `<div class="merge-row">${mergeSelectHtml}</div>` : ''}`;
@@ -237,6 +246,11 @@ export function renderColorList(
       const typed = parseFloat((e.target as HTMLInputElement).value);
       if (Number.isFinite(typed)) state.colorSettings[c.key] = { depth: typed };
       else delete state.colorSettings[c.key];
+      scheduleRebuild();
+    });
+    row.querySelector<HTMLElement>('.depth-reset')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      delete state.colorSettings[c.key];
       scheduleRebuild();
     });
     row.querySelectorAll<HTMLElement>('[data-pull]').forEach((btn) => {

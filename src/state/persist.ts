@@ -202,6 +202,19 @@ function isPersistedSession(v: unknown): v is PersistedSession {
   );
 }
 
+/**
+ * The depth overrides a restore should adopt. See PersistedSession.explicitDepths: a session saved
+ * before per-row depths meant "the user set this" carries one for every color, so it restores with
+ * none rather than with overrides nobody typed.
+ *
+ * Split out from applyRestoredSession so it can be tested against the real rule — inlined, the
+ * only way to cover it was to restate the condition in the test, which then passed whatever the
+ * source did.
+ */
+export function restoredColorSettings(session: PersistedSession): AppState['colorSettings'] {
+  return session.explicitDepths ? session.colorSettings : {};
+}
+
 export function loadSavedSession(): PersistedSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -259,9 +272,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.baseColorKey = session.baseColorKey;
   state.baseColorMembers = session.baseColorMembers;
   state.mergeGroups = session.mergeGroups;
-  // See PersistedSession.explicitDepths — a session saved before per-row depths meant "the user
-  // set this" restores every row under the global Depth instead of under a seeded override.
-  state.colorSettings = session.explicitDepths ? session.colorSettings : {};
+  state.colorSettings = restoredColorSettings(session);
   state.keptApart = session.keptApart;
 
   const sources: DesignSource[] = session.sources.map((s) => ({

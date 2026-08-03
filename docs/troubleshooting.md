@@ -147,8 +147,9 @@ sticker's colors differ from the pattern's; it is a known gap, also in
 The flat shape modes cut every recess into a plate of one fixed thickness. A
 recess that reached the back of the plate would cut clean through it — a hole
 where a colored inset should be — so the build holds every depth inside what
-the plate can carry: at least 0.02 mm, and at most the thickness less the
-0.05 mm floor left under the deepest recess (3.95 mm on a 4 mm plate). This
+the plate can carry: at least 0.20 mm — one typical layer, since anything
+shallower slices to nothing — and at most the thickness less the 0.05 mm floor
+left under the deepest recess (3.95 mm on a 4 mm plate). This
 warning means one of your depths was outside that range and the recess was cut
 at the nearest depth in it instead.
 
@@ -163,7 +164,9 @@ at the nearest depth in it instead.
 - A region with no depth of its own uses the global **Depth** field, so a
   global depth larger than the plate warns for every region at once — raise
   the thickness or lower the global depth rather than editing rows one by one.
-  Clearing a row's depth field puts that row back under the global.
+  A row carrying its own depth is outlined and has a "↺" beside it; that
+  button, or clearing the field, puts the row back under the global. If the
+  global **Depth** field seems to move nothing, those are the rows to look at.
 
 Assembly mode has the same hazard at the deep end but catches it later and
 words it differently, because there the wall thickness varies across the part
@@ -174,28 +177,21 @@ geometry to export" above.
 
 A depth of zero or less cuts no pocket at all. In assembly mode that used to
 drop the color from the part silently — no recess, no inlay, no message, just
-a part missing one of its colors. The depth is now raised to the 0.02 mm floor
-the flat modes use and the warning names the color and both numbers.
+a part missing one of its colors. The depth is now raised to 0.20 mm, one
+typical layer, and the warning names the color and both numbers.
 
-- **Nothing is dropped** — the color cuts at 0.02 mm, shallow enough to look
-  nearly flat. If you meant to remove the color, use "→ base" on its row to
-  print it in the body instead; if you meant to cut it, give it a real depth.
+- **Nothing is dropped** — the color cuts, just shallowly. That matters beyond
+  tidiness: a color cut nowhere gets no row in the color list, which would take
+  away the very depth field this warning tells you to correct.
+- The message reports the depth it **raised the setting to**, not the depth
+  each part cut. What a part does with a depth is up to the part: the wheel's
+  cap is cut all the way through whatever you set, so no single number would be
+  true of every part.
+- If you meant to remove the color, use "→ base" on its row to print it in the
+  body instead; if you meant to cut it, give it a real depth.
 - One warning per color, not per part: depth is a per-color setting, so a
   global **Depth** of 0 reports each affected color once however many parts
   carry it.
 - Assembly mode bounds only the shallow end. There is no upper limit, because
   a part's wall thickness varies across it — a depth deeper than the wall is
   caught after the boolean instead, as "Part … has no geometry to export".
-
-## Troubleshooting: "… was left off …, that part is cut all the way through"
-
-A few parts are cut straight through rather than recessed — the wheel's cap is
-the one shipped today — and their hole is a fixed depth belonging to the part,
-not the **Depth** field. Setting a color to 0 mm or less there has no shallower
-cut to fall back to, so that color is left off that part and this warning says
-which color and which part. Every other part still cuts it normally.
-
-Give the color a real depth to put it back. This is the one place where a
-zero depth still drops a color rather than cutting it at the 0.02 mm floor,
-because clamping the number would not change anything: a through-cut ignores
-the depth setting and goes the whole way regardless.
