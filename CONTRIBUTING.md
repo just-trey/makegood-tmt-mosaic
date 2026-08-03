@@ -44,6 +44,11 @@ sections before making structural changes.
 
 ## Pull requests
 
+- Branch off `main` before you start. `main` is protected — it takes PRs
+  only, and rejects direct pushes — so a commit made on `main` can never
+  land anyway. The pre-commit hook refuses those outright rather than
+  letting you find out at push time; if you've already started,
+  `git checkout -b <name>` brings your uncommitted work with it.
 - Keep PRs focused — one logical change per PR is easier to review and
   revert if needed.
 - Describe _why_ the change is needed, not just what it does — the diff
