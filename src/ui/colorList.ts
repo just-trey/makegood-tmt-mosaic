@@ -141,6 +141,15 @@ export function renderColorList(
   rows.sort((a, b) => b.areaPct - a.areaPct);
   if (baseEntry) renderBaseRow(list, baseEntry);
   else renderEmptyBaseRow(list);
+  // Labels for the "merge with…" dropdown below, keyed by the same joined-hex string each row
+  // uses as its own drag payload (row.dataset.hexes) — so a row's own entry can be excluded and
+  // picking another produces exactly what dragging one onto the other would.
+  const mergeTargets = rows
+    .filter((c) => !c.isBackground)
+    .map((c) => ({
+      key: c.members.join(','),
+      label: c.isMergeGroup ? `Merged (${c.members.length})` : c.color,
+    }));
   rows.forEach((c) => {
     const row = document.createElement('div');
     row.className = 'color-row';
@@ -172,8 +181,21 @@ export function renderColorList(
       rightControlHtml = `<button class="btn small" data-add-base="${c.color}" title="Print this color in the body instead of cutting it (replaces the current base — drag onto the Base row to add alongside instead)">→ base</button>`;
     }
 
+    // Keyboard/non-drag alternative to the drag-to-merge gesture below — same effect, listed by
+    // the same label a target row shows itself. Only offered when there's something else to
+    // merge with, and never on Background (it isn't a mergeable color).
+    const ownKey = c.members.join(',');
+    const otherTargets = c.isBackground ? [] : mergeTargets.filter((t) => t.key !== ownKey);
+    const mergeSelectHtml = otherTargets.length
+      ? `<select class="merge-with" title="Merge this color with another — same as dragging one onto the other">
+          <option value="">Merge with…</option>
+          ${otherTargets.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
+        </select>`
+      : '';
+
     row.innerHTML = `
       <div class="top">
+        ${c.isBackground ? '' : '<span class="drag-grip" aria-hidden="true" title="Drag to merge with another color">⠿</span>'}
         ${swatchHtml}
         <div class="hex">${labelHtml}</div>
         <div class="area">${c.areaPct.toFixed(1)}%</div>
@@ -185,7 +207,18 @@ export function renderColorList(
         <input type="number" class="depth-input" step="0.05" min="0.05" value="${state.colorSettings[c.key].depth.toFixed(2)}">
         <span class="hint">mm</span>
         <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
-      </div>`;
+      </div>
+      ${mergeSelectHtml ? `<div class="merge-row">${mergeSelectHtml}</div>` : ''}`;
+
+    const mergeSelect = row.querySelector<HTMLSelectElement>('.merge-with');
+    if (mergeSelect) {
+      mergeSelect.addEventListener('click', (e) => e.stopPropagation());
+      mergeSelect.addEventListener('change', () => {
+        const targetKey = mergeSelect.value;
+        if (!targetKey) return;
+        mergeHexes([...ownKey.split(','), ...targetKey.split(',')].filter(Boolean));
+      });
+    }
     row.querySelector<HTMLInputElement>('.depth-input')!.addEventListener('change', (e) => {
       state.colorSettings[c.key] = {
         depth: parseFloat((e.target as HTMLInputElement).value) || 0.1,
