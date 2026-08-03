@@ -4,6 +4,8 @@ import {
   depthDiffers,
   regionLabel,
   requestedDepth,
+  subLayerDepth,
+  thinDepthNotice,
   zeroDepthWarning,
 } from './depth';
 import type {
@@ -298,12 +300,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
           `plate can only cut ${maxDepth.toFixed(2)} mm deep — it was cut at ${depth.toFixed(2)} mm ` +
           `instead.`,
       );
-    else if (depth < MIN_CUT_DEPTH_MM)
-      noticeBuild(
-        `Depth for "${label}" is ${depth.toFixed(2)} mm, thinner than the usual ` +
-          `${MIN_CUT_DEPTH_MM.toFixed(2)} mm print layer — it will only show up if your slicer ` +
-          `profile uses a layer height finer than that.`,
-      );
+    else if (subLayerDepth(depth)) noticeBuild(thinDepthNotice(label, depth));
     return depth;
   };
 

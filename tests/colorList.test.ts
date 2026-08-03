@@ -13,6 +13,7 @@ import { renderColorList, refreshSlotCountCapacity } from '../src/ui/colorList';
 import { state } from '../src/state/store';
 import { getPrinter } from '../src/export/printers';
 import { WARNINGS, clearWarnings } from '../src/warnings';
+import { scheduleRebuild } from '../src/app/scheduler';
 
 function entry(color: string, overrides: Partial<ColorListEntry> = {}): ColorListEntry {
   return {
@@ -294,6 +295,23 @@ describe('renderColorList — reset survives the field it sits next to', () => {
     expect(state.colorSettings['#ff0000']).toBeUndefined();
     // the default must be prevented, or the blur-change still fires and puts the override back
     expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('rebuilds once for one press, not once per event', () => {
+    // The handler is bound to both mousedown and click so a keyboard activation still works. When
+    // the rebuild is slow enough that the row is still mounted, the click arrives at a button that
+    // has already done its job — and an unguarded second call marks the scene dirty and buys a
+    // whole extra CSG pass. Slow rebuilds are exactly the ones that got doubled.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    vi.mocked(scheduleRebuild).mockClear();
+
+    const btn = document.querySelector<HTMLElement>('.color-row .depth-reset')!;
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+    expect(vi.mocked(scheduleRebuild)).toHaveBeenCalledTimes(1);
   });
 
   it('still clears on a keyboard activation, which raises click without mousedown', () => {

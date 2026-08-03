@@ -5,6 +5,8 @@ import {
   depthDiffers,
   regionLabel,
   requestedDepth,
+  subLayerDepth,
+  thinDepthNotice,
   zeroDepthWarning,
 } from './depth';
 import type {
@@ -618,12 +620,8 @@ export async function buildAssemblyGeometry(
       //
       // Warnings dedupe by message, so gating per-part says the right thing when a color sits on
       // several: the note appears if any part cuts at the setting, and stays silent if none do.
-      else if (depthSetting < MIN_CUT_DEPTH_MM && !depthDiffers(depth, depthSetting))
-        noticeBuild(
-          `Depth for "${label}" is ${depthSetting.toFixed(2)} mm, thinner than the usual ` +
-            `${MIN_CUT_DEPTH_MM.toFixed(2)} mm print layer — it will only show up if your slicer ` +
-            `profile uses a layer height finer than that.`,
-        );
+      else if (subLayerDepth(depthSetting) && !depthDiffers(depth, depthSetting))
+        noticeBuild(thinDepthNotice(label, depthSetting));
       // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
       // step); the snap tolerance is a property of the bake, so both modes take the same one.
       const cutterOpts = grid ? { refineMM: FILL_REFINE_MM } : undefined;

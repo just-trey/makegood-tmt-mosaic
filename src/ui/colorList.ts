@@ -145,6 +145,13 @@ function wireDepthReset(list: HTMLElement): void {
     if (!btn) return;
     e.preventDefault();
     e.stopPropagation();
+    // mousedown and click both run this, so the same press arrives twice whenever the row is still
+    // mounted when the second lands — which is precisely the slow rebuilds (chair CSG), since a
+    // fast one re-renders the button away in between. Without this the no-op second pass still
+    // marks the scene dirty and buys a whole extra rebuild, curtain and all. The override is gone
+    // by then, so its absence is the signal that this press was already handled.
+    const key = btn.dataset.resetKey;
+    if (!key || !(key in state.colorSettings)) return;
     // Abandon whatever is half-typed in this row's field. preventDefault above stops the click
     // blurring it, but the rebuild below then *removes* the focused input, and Chrome fires the
     // pending change on removal — re-storing the very override this is clearing, a beat too late
@@ -153,8 +160,7 @@ function wireDepthReset(list: HTMLElement): void {
       .closest('.color-row')
       ?.querySelector<HTMLInputElement>('.depth-input')
       ?.setAttribute('data-abandoned', '1');
-    const key = btn.dataset.resetKey;
-    if (key) delete state.colorSettings[key];
+    delete state.colorSettings[key];
     scheduleRebuild();
   };
   list.addEventListener('mousedown', reset);

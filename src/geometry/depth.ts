@@ -47,6 +47,29 @@ export function zeroDepthWarning(label: string, requested: number, raisedTo: num
 }
 
 /**
+ * Whether a depth is shallow enough to be worth a note — asked at the precision the note prints
+ * at, not at machine epsilon. A 0.199 mm cut is a rounding artefact away from a full layer, and
+ * announcing it produced "is 0.20 mm, thinner than the usual 0.20 mm print layer", which reads as
+ * a bug in the tool. Same reasoning as depthDiffers, applied to the other comparison.
+ */
+export function subLayerDepth(depth: number): boolean {
+  return depth < MIN_CUT_DEPTH_MM && depthDiffers(depth, MIN_CUT_DEPTH_MM);
+}
+
+/**
+ * The note both modes raise for a depth that prints only on a fine profile. Shared for the same
+ * reason as zeroDepthWarning and regionLabel: two copies of a string is how assembly kept a bug
+ * flat mode had already had fixed.
+ */
+export function thinDepthNotice(label: string, depth: number): string {
+  return (
+    `Depth for "${label}" is ${depth.toFixed(2)} mm, thinner than the usual ` +
+    `${MIN_CUT_DEPTH_MM.toFixed(2)} mm print layer — it will only show up if your slicer ` +
+    `profile uses a layer height finer than that.`
+  );
+}
+
+/**
  * The depth a region was *asked* to cut at, before any clamp.
  *
  * A stored `0` is a real answer, not a missing one: `|| globalDepth` read it as unset and
