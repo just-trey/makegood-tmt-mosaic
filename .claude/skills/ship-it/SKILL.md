@@ -57,19 +57,42 @@ copy, and other trivial changes.
 ## 4. Push, then watch CI in one blocking call
 
 Branch off `main` if you aren't already on a branch — `main` rejects direct
-pushes, force-pushes, and branch deletion.
+pushes, force-pushes, and branch deletion. The pre-commit hook enforces this, so
+you'll hit it at the first commit rather than here.
 
 After pushing, watch CI with a **single background** call:
 
 ```bash
+n=0
+until [ "$(gh pr checks --json name --jq length 2>/dev/null || echo 0)" -gt 0 ]; do
+  n=$((n + 1))
+  [ $n -ge 30 ] && { echo "no checks registered after 150s — NOT green, investigate"; exit 1; }
+  sleep 5
+done
 gh pr checks --watch --fail-fast
 ```
 
+**Bare `gh pr checks --watch` is not safe directly after `gh pr create`, which
+is exactly when this skill runs it.** GitHub takes a few seconds to register the
+check runs for a new PR; until it does, `gh` prints "no checks reported on the
+branch" and **exits 0**. That is indistinguishable from success by exit code,
+and the harness reports it as a completed command with no error — so a PR whose
+CI had not yet started reads as passing. This has already happened once (#124).
+The `until` loop above waits for at least one check to exist before trusting the
+watch, and hard-fails rather than passing if none ever appear.
+
+The loop runs entirely inside one shell call, so it does not violate the
+no-polling rule below — it costs one model turn total, not one per iteration.
+
 This blocks in the shell for however long CI takes and costs zero model turns
 while waiting; the harness re-invokes you once, with the result. Do **not** loop
-`gh pr checks` or `gh run list` — each poll re-sends the whole conversation, so
-N polls cost N× the context. One blocking watch costs 1×, flat, regardless of
-duration.
+`gh pr checks` or `gh run list` **from the model side** — each poll re-sends the
+whole conversation, so N polls cost N× the context. One blocking watch costs 1×,
+flat, regardless of duration.
+
+Whatever the watch returns, read the actual result text before calling it green.
+"No checks reported", a zero-duration pass, or an empty check list are all
+failures to verify, not verifications.
 
 Note that CI runs the same five gates from step 1. If those passed locally, this
 step is confirmation rather than discovery — worth it on release tags and on
