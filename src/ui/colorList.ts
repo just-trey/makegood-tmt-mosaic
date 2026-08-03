@@ -143,6 +143,10 @@ function wireDepthReset(list: HTMLElement): void {
   const reset = (e: Event) => {
     const btn = (e.target as HTMLElement | null)?.closest?.('.depth-reset') as HTMLElement | null;
     if (!btn) return;
+    // Primary button only. `click` never fires for a right- or middle-press, so the second-pass
+    // guard below can't catch one — the mousedown would have already thrown the override away
+    // while the context menu was opening, with no undo.
+    if ((e as MouseEvent).button > 0) return;
     e.preventDefault();
     e.stopPropagation();
     // mousedown and click both run this, so the same press arrives twice whenever the row is still
@@ -160,6 +164,14 @@ function wireDepthReset(list: HTMLElement): void {
       .closest('.color-row')
       ?.querySelector<HTMLInputElement>('.depth-input')
       ?.setAttribute('data-abandoned', '1');
+    // Settle a half-typed edit in *another* row now, while it still costs nothing. preventDefault
+    // above suppresses the blur that would normally commit it, so it would otherwise sit pending
+    // until the rebuild below tore the field out — and Chrome's change-on-removal lands mid-render,
+    // after this pass has already read colorSettings, buying a second full rebuild to show it.
+    // Blurring here puts that change in this same tick, where the debounce folds it into one.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && focused.classList.contains('depth-input'))
+      focused.blur();
     delete state.colorSettings[key];
     scheduleRebuild();
   };

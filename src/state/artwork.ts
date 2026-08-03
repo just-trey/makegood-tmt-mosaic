@@ -166,13 +166,20 @@ function livePalette(): Set<string> {
  */
 export function pruneSettingsToPalette(): void {
   const live = livePalette();
-  const isLiveKey = (key: string) =>
-    key.startsWith('merge:')
+  const isLiveKey = (rawKey: string) => {
+    // Assembly-mode depth keys are the flat key with an "asm:" prefix (geometry/assembly.ts).
+    // Read past it: unprefixed, every one of them fell through to the "not a hex, must be
+    // something like __background__" arm and was kept forever, so a per-color depth set in
+    // assembly mode outlived the design it was set on and silently re-applied to the next one
+    // that happened to use the same hex.
+    const key = rawKey.startsWith('asm:') ? rawKey.slice(4) : rawKey;
+    return key.startsWith('merge:')
       ? key
           .slice(6)
           .split(',')
           .some((h) => live.has(h))
       : !key.startsWith('#') || live.has(key);
+  };
 
   for (const key of Object.keys(state.colorSettings))
     if (!isLiveKey(key)) delete state.colorSettings[key];

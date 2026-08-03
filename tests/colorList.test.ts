@@ -314,6 +314,47 @@ describe('renderColorList — reset survives the field it sits next to', () => {
     expect(vi.mocked(scheduleRebuild)).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores a non-primary press, which gets no click to undo it', () => {
+    // `click` never fires for a right- or middle-press, so the second-pass guard can't catch one:
+    // the mousedown threw the override away while the context menu opened, with no undo.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    vi.mocked(scheduleRebuild).mockClear();
+
+    const btn = document.querySelector<HTMLElement>('.color-row .depth-reset')!;
+    const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2 });
+    btn.dispatchEvent(ev);
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 2.5 });
+    expect(ev.defaultPrevented).toBe(false); // and the context menu still opens
+    expect(vi.mocked(scheduleRebuild)).not.toHaveBeenCalled();
+  });
+
+  it('settles a pending edit in another row before rebuilding, not during', () => {
+    // preventDefault suppresses the blur that would commit that edit, so it sat pending until the
+    // rebuild removed the field — and Chrome's change-on-removal then landed mid-render, after the
+    // pass had already read colorSettings, buying a second full rebuild. Blurring it here puts the
+    // change in the same tick, where the debounce folds both into one. jsdom raises no change of
+    // its own on blur, so the assertion is on the blur; the change below stands in for the one the
+    // browser fires off it.
+    state.colorSettings = { '#0000ff': { depth: 2.5 } };
+    renderColorList([entry('#ff0000'), entry('#0000ff')], { rawColorCount: 2 });
+    const rows = document.querySelectorAll<HTMLElement>('.color-row:not(.is-base)');
+    const pending = rows[0].querySelector<HTMLInputElement>('.depth-input')!;
+    pending.focus();
+    pending.value = '3.3'; // typed into the red row, never committed
+
+    rows[1]
+      .querySelector<HTMLElement>('.depth-reset')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+    expect(document.activeElement).not.toBe(pending);
+    pending.dispatchEvent(new Event('change'));
+    // the other row's edit still lands — only the reset's own row is marked abandoned
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 3.3 });
+    expect(state.colorSettings['#0000ff']).toBeUndefined();
+  });
+
   it('still clears on a keyboard activation, which raises click without mousedown', () => {
     state.colorSettings = { '#ff0000': { depth: 2.5 } };
     renderColorList([entry('#ff0000')], { rawColorCount: 1 });

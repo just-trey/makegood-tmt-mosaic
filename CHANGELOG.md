@@ -197,6 +197,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Previously the two looked identical, so a row pinned to its own value made
   the Depth field appear to do nothing, with no way back except clearing the
   field, which only the help panel mentioned.
+- Right-clicking that "↺" no longer throws the override away behind the
+  context menu, and pressing it no longer strands a half-typed depth in
+  another row — that edit used to arrive during the rebuild instead of
+  before it, costing a second full rebuild to show.
+- A per-color depth set on an assembly part is now forgotten along with the
+  design it was set on. It used to be kept indefinitely, so loading a new
+  design that happened to reuse the same color silently cut it at the old
+  depth. Flat-mode depths were already dropped correctly.
 - The depth field is wide enough for a value like "50.00" — it clipped the
   last digit at five characters, which is exactly the range the out-of-range
   warning above asks you to look at.
