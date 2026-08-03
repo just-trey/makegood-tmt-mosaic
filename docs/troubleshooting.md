@@ -66,3 +66,37 @@ these are _not_ is silent: before this handling existed, the same failures
 either aborted the whole rebuild (blank viewport) or shipped the uncut body
 alongside inlay solids occupying the same volume, which a slicer resolves
 arbitrarily.
+
+## Troubleshooting: "N AMS slots needed, but … tops out at M" warnings
+
+The design needs more filament slots than the selected printer can address in
+a single print. The count is one per cut color or merged group, plus one for
+the body itself, and it's the same number the line under the color list shows.
+Unlike most warnings here this one isn't a geometry problem — the 3MF is
+correct and still exports; it just can't be printed in one pass on that
+machine.
+
+Which printer you have decides whether this is even reachable. Every AMS /
+toolchanger unit holds 4 slots, but the Bambus daisy-chain: up to 16 on the
+X1C / P1S / A1, and 25 on an H2D (24 across chained AMS units plus an external
+spool on its second nozzle). The Snapmaker U1's 4 built-in toolheads don't
+chain, so on that printer this warning appears the moment a design needs a
+fifth slot. Past one unit but within the printer's maximum you get a quieter
+note instead, saying the same thing without calling it an error — printable,
+but not on one AMS.
+
+To get the count down:
+
+- **Merge two colors** — drag one color row onto another, or use that row's
+  "Merge with…" dropdown. The group prints in its dominant member's color.
+- **Print a color in the body** — "→ base" on a row moves it out of the cut
+  colors entirely, so it stops costing a slot.
+- **Auto-merge** raises the similarity threshold, which may or may not help:
+  it merges colors that look alike rather than hitting a target count, and on
+  the one real 7-color volunteer SVG measured so far only `Strong` moved the
+  count at all, and only by one. See
+  [tech-debt.md](tech-debt.md) — "Auto-merge is a similarity control".
+
+Exporting anyway is supported and sometimes what you want: a single-AMS owner
+can print the file with manual filament swaps at the slicer's colour-change
+pauses.

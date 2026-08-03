@@ -29,7 +29,6 @@ function entry(color: string, overrides: Partial<ColorListEntry> = {}): ColorLis
 const slotLine = (): HTMLElement => document.querySelector<HTMLElement>('#slot-count')!;
 
 beforeEach(() => {
-  clearWarnings();
   vi.mocked(getPrinter).mockReturnValue({
     label: 'Test Printer',
     amsSlotsPerUnit: 4,
@@ -37,6 +36,10 @@ beforeEach(() => {
   } as ReturnType<typeof getPrinter>);
   document.body.innerHTML =
     '<div id="color-list"></div><div id="slot-count"></div><div id="stat-colors"></div>';
+  // an empty render resets slotBudget's "what's posted" memory, which is module-level and would
+  // otherwise make the next test's identical pill look like one the user had dismissed
+  renderColorList(null);
+  clearWarnings();
 });
 
 describe('renderColorList — slot count line', () => {

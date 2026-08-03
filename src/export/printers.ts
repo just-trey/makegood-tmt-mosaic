@@ -52,8 +52,8 @@ export const PRINTERS: Printer[] = [
     filamentId: 'Generic PETG',
     bedType: 'Textured PEI Plate',
     amsSlotsPerUnit: 4,
-    // the outlier: dual nozzles let it reach 24 AMS slots (4 × AMS 2 Pro + 8 × 2-slot AMS HT) plus
-    // one external spool on the second nozzle
+    // the outlier: dual nozzles let it reach 24 AMS slots (4 × 4-slot AMS 2 Pro + 8 × single-spool
+    // AMS HT) plus one external spool on the second nozzle
     amsSlotsMax: 25,
   },
   {

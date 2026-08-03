@@ -27,7 +27,17 @@ const notices = (): { message: string; level: string }[] =>
 beforeEach(() => {
   clearWarnings();
   vi.mocked(getPrinter).mockReturnValue(chaining);
+  // module-level "what's posted" state carries across tests; a no-design refresh resets it through
+  // the public API rather than reaching into the module
+  refreshSlotBudgetNotice(0);
+  clearWarnings();
 });
+
+/** What the warnings panel's × does. */
+function dismiss(message: string): void {
+  const i = WARNINGS.findIndex((w) => w.message === message);
+  WARNINGS.splice(i, 1);
+}
 
 describe('slotTier', () => {
   it('treats one unit as a budget, not a ceiling, on a printer that chains', () => {
@@ -104,12 +114,71 @@ describe('refreshSlotBudgetNotice', () => {
     expect(notices()).toEqual([]);
   });
 
-  it('is build-scoped, so a rebuild after auto-merging drops it', () => {
+  it('survives a rebuild, since it tracks standing state rather than one build’s diagnostics', () => {
     refreshSlotBudgetNotice(5);
-    expect(notices()).toHaveLength(1);
 
     clearBuildWarnings();
 
+    expect(notices()).toHaveLength(1);
+  });
+
+  it.each([
+    ['multi-unit', 5, chaining],
+    ['over-max', 5, fixed],
+  ])('names merging and "→ base", not just auto-merge, in the %s message', (_l, slots, printer) => {
+    vi.mocked(getPrinter).mockReturnValue(printer as Printer);
+
+    refreshSlotBudgetNotice(slots as number);
+
+    expect(notices()[0].message).toContain('drag one color row onto another');
+    expect(notices()[0].message).toContain('→ base');
+  });
+
+  it('keeps the two suffixes distinct so neither clears the other', () => {
+    expect(SLOT_MULTI_UNIT_NOTICE_SUFFIX.endsWith(SLOT_OVER_MAX_WARNING_SUFFIX)).toBe(false);
+    expect(SLOT_OVER_MAX_WARNING_SUFFIX.endsWith(SLOT_MULTI_UNIT_NOTICE_SUFFIX)).toBe(false);
+  });
+});
+
+describe('refreshSlotBudgetNotice — dismissal', () => {
+  it('stays dismissed while the situation is unchanged', () => {
+    refreshSlotBudgetNotice(5);
+    dismiss(notices()[0].message);
+
+    refreshSlotBudgetNotice(5); // any later render — a depth nudge, a rebuild
+    refreshSlotBudgetNotice(5);
+
     expect(notices()).toEqual([]);
+  });
+
+  it('comes back when the slot count changes', () => {
+    refreshSlotBudgetNotice(5);
+    dismiss(notices()[0].message);
+
+    refreshSlotBudgetNotice(6);
+
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0].message).toContain('6 AMS slots needed');
+  });
+
+  it('comes back when the printer changes, even at the same count', () => {
+    refreshSlotBudgetNotice(5);
+    dismiss(notices()[0].message);
+
+    vi.mocked(getPrinter).mockReturnValue(fixed);
+    refreshSlotBudgetNotice(5);
+
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0].level).toBe('warn');
+  });
+
+  it('comes back after the design drops below the threshold and rises again', () => {
+    refreshSlotBudgetNotice(5);
+    dismiss(notices()[0].message);
+
+    refreshSlotBudgetNotice(3); // fits now — nothing to say
+    refreshSlotBudgetNotice(5); // and over again: worth saying afresh
+
+    expect(notices()).toHaveLength(1);
   });
 });

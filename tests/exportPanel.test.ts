@@ -30,7 +30,11 @@ vi.mock('../src/analytics/track', () => ({
 }));
 
 import { exportPrintReady3MF } from '../src/ui/exportPanel';
-import { SLOT_MULTI_UNIT_NOTICE_SUFFIX, SLOT_OVER_MAX_WARNING_SUFFIX } from '../src/ui/slotBudget';
+import {
+  refreshSlotBudgetNotice,
+  SLOT_MULTI_UNIT_NOTICE_SUFFIX,
+  SLOT_OVER_MAX_WARNING_SUFFIX,
+} from '../src/ui/slotBudget';
 import { getPrinter } from '../src/export/printers';
 import { getLastAssemblyBuild } from '../src/app/rebuild';
 import { build3MFCombined } from '../src/export/threemf';
@@ -82,6 +86,9 @@ beforeAll(() => {
 beforeEach(() => {
   vi.mocked(getLastAssemblyBuild).mockReset();
   vi.mocked(build3MFCombined).mockClear();
+  // resets slotBudget's module-level "what's posted" memory, which would otherwise make the next
+  // test's identical pill look like one the user had dismissed
+  refreshSlotBudgetNotice(0);
   clearWarnings();
   vi.mocked(getPrinter).mockReturnValue({
     label: 'Test Printer',

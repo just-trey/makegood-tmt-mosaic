@@ -856,9 +856,11 @@ input[type='checkbox'] {
   color: var(--accent-2);
   margin-top: 6px;
 }
-/* needs more than one AMS unit, but the printer can still do it — a note, not an error */
+/* needs more than one AMS unit, but the printer can still do it — a note, not an error. Full-
+   strength text plus weight, so it reads as *more* marked than the resting teal rather than less. */
 .slot-count.multi-unit {
   color: var(--text);
+  font-weight: 600;
 }
 .slot-count.over-capacity {
   color: var(--danger-text);
