@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { AssemblyBuild } from '../types';
 import { baseColorHex, currentBaseParams, state } from '../state/store';
-import { syncActiveArtworkPlacement } from '../state/artwork';
+import { availableZones, syncActiveArtworkPlacement, zoneCoverage } from '../state/artwork';
+import { noticeBuild } from '../warnings';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
   asmPartFaceNormal,
@@ -284,6 +285,25 @@ async function rebuildAssemblyScene(): Promise<void> {
       rotationDeg: state.rotationDeg,
       mode: 'sticker',
     });
+  // The default zone binding (loadArtworkSource) picks the first zone silently, since binding
+  // every zone recuts the whole assembly on every nudge — see that function's comment. Surface the
+  // decision here instead of leaving it discoverable only via the per-row dropdown: this is what
+  // caught scripts/export-chair-examples.mjs's own author, and it produces a print that looks right
+  // (a colored patch, a nonzero color count) right up until it's opened in a slicer.
+  const { total: zoneTotal, covered: zoneCovered } = zoneCoverage();
+  if (zoneTotal > 1 && zoneCovered < zoneTotal) {
+    const blank = zoneTotal - zoneCovered;
+    const boundNames = availableZones()
+      .filter((z) => state.artworks.some((a) => a.zone?.zoneId === z.zoneId))
+      .map((z) => z.name);
+    const where =
+      boundNames.length === 1
+        ? `Placed on "${boundNames[0]}"`
+        : `${zoneCovered} of ${zoneTotal} surfaces have artwork`;
+    noticeBuild(
+      `${where} — ${blank} of ${zoneTotal} surface${zoneTotal === 1 ? '' : 's'} still blank. Add more from the zone dropdown, or pick "All zones" to cover every surface.`,
+    );
+  }
   const built = await buildAssemblyGeometry({
     artworks,
     parts: state.assembly.parts,
