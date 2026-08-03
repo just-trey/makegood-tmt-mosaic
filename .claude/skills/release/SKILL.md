@@ -94,6 +94,38 @@ Green here means the run's own conclusion, not the absence of an error. Read the
 result text: a zero-duration pass or a run whose title names an older version is
 a failure to verify, not a verification.
 
+### If the run goes red on environment protection rules
+
+```
+Tag vX.Y.Z is not allowed to deploy to github-pages due to environment
+protection rules
+```
+
+This is a fast red, not a hang: `build` succeeds, uploads the artifact, and
+`deploy` fails immediately. The `github-pages` _environment_ carries its own
+deployment-branch policies, which are separate from `deploy.yml`'s
+`push: tags: ['v*']` trigger — satisfying the trigger says nothing about
+satisfying the environment. They allowed only the `main` branch at first, which
+is exactly how the first tag-triggered deploy failed: the workflow ran because
+the tag matched, then the deploy step was refused because the tag didn't.
+
+The fix is a `v*` **tag** policy alongside the branch one:
+
+```bash
+gh api --method POST \
+  repos/just-trey/makegood-tmt-mosaic/environments/github-pages/deployment-branch-policies \
+  -f name='v*' -f type=tag
+```
+
+That policy is in place today — verified 2026-08-03, the environment lists
+`main` (branch) and `v*` (tag). It should persist, so if a tagged deploy ever
+fails this way again, check whether the policy still exists before adding a
+second one:
+
+```bash
+gh api repos/just-trey/makegood-tmt-mosaic/environments/github-pages/deployment-branch-policies
+```
+
 ## Reference
 
 Follow the `Release v0.1.1 (#6)` commit for the shape of the package.json +
