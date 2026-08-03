@@ -5,10 +5,14 @@
  * whenIdle() bridge both have sharp edges that must not exist in N copies and drift.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 // Third-party analytics beacons report to a cross-origin endpoint bound to the production
 // hostname, so on localhost they CORS-fail by design — filter their console/network noise out
@@ -29,14 +33,69 @@ async function waitForServer(url, tries, intervalMs) {
   throw new Error('preview server never came up');
 }
 
+// Build inputs, for the staleness check below. public/ is in here because the STLs and the
+// filament table are copied verbatim into dist/ — swapping a part mesh changes what the app
+// loads without touching a single .ts file.
+const BUILD_INPUTS = ['src', 'public', 'index.html', 'vite.config.ts'];
+
+function newestMtime(abs) {
+  let st;
+  try {
+    st = statSync(abs);
+  } catch {
+    return 0; // an input that doesn't exist can't make dist/ stale
+  }
+  if (!st.isDirectory()) return st.mtimeMs;
+  let newest = 0;
+  for (const entry of readdirSync(abs)) {
+    newest = Math.max(newest, newestMtime(path.join(abs, entry)));
+  }
+  return newest;
+}
+
+/**
+ * Refuse to serve a dist/ that predates the source it was built from.
+ *
+ * `vite preview` serves a static snapshot — unlike the dev server it never rebuilds, so editing a
+ * file and re-running a driven check silently measures the *previous* build. Nothing about that is
+ * visible from the browser: the app loads, the run passes, and the numbers describe code that is
+ * no longer on disk. That is the failure this repo kept hitting, and it needs no leaked process to
+ * happen — a correctly started, freshly spawned preview serves stale bytes just as happily.
+ *
+ * The port checks below already refuse to trust a server we didn't start; this refuses to trust a
+ * build we didn't make. Same idea, other half of the problem. Scripts document `npm run build &&`
+ * in their headers, but a comment is not a guard.
+ */
+function assertFreshDist() {
+  const built = newestMtime(path.join(REPO, 'dist', 'index.html'));
+  if (!built) {
+    throw new Error('no dist/index.html to serve — run `npm run build` first');
+  }
+  const stale = BUILD_INPUTS.flatMap((rel) => {
+    const abs = path.join(REPO, rel);
+    return newestMtime(abs) > built ? [rel] : [];
+  });
+  if (stale.length) {
+    throw new Error(
+      `dist/ is older than ${stale.join(', ')} — vite preview would serve the previous build.\n` +
+        '  Run `npm run build` first, or pass { allowStaleDist: true } if you deliberately want\n' +
+        '  to drive the older build.',
+    );
+  }
+}
+
 /**
  * Serve dist/ with `vite preview`. Defaults to owning the port outright: a leftover preview
  * (from an earlier run of this same script, or from something else entirely — this repo has hit
  * both) answers happily on the port and then every result below is of somebody else's build, not
  * the one just built. Pass `reuse: true` only when the caller has independently verified whatever
  * is already listening is the build it wants.
+ *
+ * Also refuses to serve a stale dist/ — see assertFreshDist above. `allowStaleDist: true` opts
+ * out, for the rare caller that means it.
  */
-export async function startPreview({ port = 4173, reuse = false } = {}) {
+export async function startPreview({ port = 4173, reuse = false, allowStaleDist = false } = {}) {
+  if (!allowStaleDist) assertFreshDist();
   const already = await fetch(`http://localhost:${port}/`)
     .then(() => true)
     .catch(() => false);

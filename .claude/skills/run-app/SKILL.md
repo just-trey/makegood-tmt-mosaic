@@ -17,6 +17,14 @@ the URL it landed on. Don't assume 5173; read the printed line. `?kind=` opens
 the app on a given assembly kind directly (`?kind=chair-body`, `?kind=footrest`)
 instead of the wheel picker, useful when you already know what you're checking.
 
+This is the **dev** server, and it is the one that cannot go stale: it
+transforms modules per request and hot-reloads, so a long-running one is still
+serving current source days later. A dev server you didn't start is somebody's
+working session — leave it alone, and don't cite its age as evidence of
+anything. Everything below about staleness concerns `vite preview`, which is a
+different program serving a different directory; don't call that one "the
+preview server" too.
+
 ## Headless, for screenshots or a driven check
 
 Drive it headless. On a headless Linux/WSL2 box there is no display, so it's
@@ -34,8 +42,11 @@ WSL2 box with GPU passthrough, driving the chair end-to-end was measured at
 `MOSAIC_GPU=1` opts into the hardware path:
 
 ```bash
-MOSAIC_GPU=1 node scripts/export-chair-examples.mjs
+npm run build && MOSAIC_GPU=1 node scripts/export-chair-examples.mjs
 ```
+
+**The `npm run build &&` is not optional** — see "Stale builds" below. Every
+driven script needs it; only `npm run smoke` builds on your behalf.
 
 `launchBrowser()` in [scripts/lib/harness.mjs](../../../scripts/lib/harness.mjs)
 reads it and adds the ANGLE + `GALLIUM_DRIVER=d3d12` flags that select the GPU,
@@ -72,6 +83,21 @@ factored out in
 than re-deriving a Playwright launch. It also filters out the
 `cloudflareinsights.com` CORS noise that shows up on localhost, so console-error
 assertions built on it don't need to special-case that themselves.
+
+**Stale builds — the failure this repo actually keeps hitting:**
+
+`vite preview` serves `dist/` as a static snapshot. It never rebuilds. So if
+you edit a file and re-run a driven check without building, the run drives the
+_previous_ build: the app loads, the check passes, the screenshots look right,
+and every number describes code that is no longer on disk. Nothing about it
+looks wrong from the browser side. This needs no leftover process to happen —
+a freshly spawned, correctly started preview serves stale bytes just as
+happily, which is why "kill the old server and retry" doesn't fix it.
+
+`startPreview()` now refuses to start when anything under `src/`, `public/`,
+`index.html` or `vite.config.ts` is newer than `dist/index.html`, and names
+what was stale. If you see that error, run `npm run build` — don't reach for
+`allowStaleDist: true` unless you specifically mean to drive the older build.
 
 **Ports, don't conflate them:**
 
