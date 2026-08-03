@@ -124,6 +124,11 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   enforcers; paint them yourself or switch to auto support.
 - The caster mounts can't carry artwork — see
   [docs/tech-debt.md](docs/tech-debt.md).
+- Desktop/laptop screens only. The layout has one fixed-width column and no
+  responsive breakpoint; below roughly 600px width the 3D viewport is
+  crushed to a sliver. Verified usable at 900px and up; a clear message for
+  narrower windows, instead of the crushed layout, is tracked as upcoming
+  work.
 
 Full detail on any of these: [docs/pipeline.md](docs/pipeline.md) and
 [docs/tech-debt.md](docs/tech-debt.md).
