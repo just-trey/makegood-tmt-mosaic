@@ -126,12 +126,14 @@ function renderEmptyBaseRow(list: HTMLElement): void {
 
 export function renderColorList(
   colorMeshes: ColorListEntry[] | null,
-  opts: { rawColorCount?: number } = {},
+  opts: { rawColorCount?: number; slotsNeeded?: number } = {},
 ): void {
   const list = $('#color-list');
   if (!colorMeshes || !colorMeshes.length) {
     list.innerHTML = '<div class="empty-hint">No colors detected yet.</div>';
-    $('#slot-count').textContent = '';
+    lastSlotsNeeded = 0;
+    lastRawColorCount = 0;
+    renderSlotCount();
     $('#stat-colors').textContent = '0 colors';
     $('#stat-colors').style.display = 'none';
     return;
@@ -280,8 +282,13 @@ export function renderColorList(
   // +1 for AMS slots: the body itself always occupies one physical filament slot (materials[0] in
   // both export paths — see exportPanel.ts), on top of every cut color/group listed below the Base
   // row. The colors stat stays rows.length — it counts cut regions, not filament slots.
+  //
+  // slotsNeeded is passed explicitly because rows.length isn't always the export's material count:
+  // in assembly mode a palette color whose inlay fits on no part is dropped from this list
+  // (rebuild.ts skips area === 0) yet still ships as a 3MF material. Reporting fewer slots than the
+  // export warns about is the worse failure, so the caller's number wins where it has one.
   const cutColors = rows.length;
-  lastSlotsNeeded = cutColors + 1;
+  lastSlotsNeeded = opts.slotsNeeded ?? cutColors + 1;
   lastRawColorCount = opts.rawColorCount ?? cutColors;
   renderSlotCount();
   $('#stat-colors').textContent = cutColors + ' colors';
@@ -303,7 +310,9 @@ function renderSlotCount(): void {
   // Always shown together, even when raw === cut colors (the common unmerged case) — seeing the
   // slot count alone reads as a bug the first time the +1-for-body offset shows up; the arrow
   // makes the relationship self-explanatory every time, not just after a merge changes the count.
-  el.textContent = `${lastRawColorCount} colors → ${lastSlotsNeeded} AMS slot${lastSlotsNeeded === 1 ? '' : 's'} needed`;
+  el.textContent =
+    `${lastRawColorCount} color${lastRawColorCount === 1 ? '' : 's'} → ` +
+    `${lastSlotsNeeded} AMS slot${lastSlotsNeeded === 1 ? '' : 's'} needed`;
   const capacity = getPrinter(state.printerId).amsSlotCapacity;
   el.classList.toggle('over-capacity', lastSlotsNeeded > capacity);
 }

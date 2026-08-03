@@ -38,7 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   unit (4 slots) on the printer picked in Export — which also now warns at
   export time. The printer picker itself is relabeled name-first (e.g.
   "Bambu X1C / P1S / A1 (256 × 256mm)").
->>>>>>> c060c83 (Reconcile AMS slot count against the selected printer's capacity)
 - Your session now autosaves as you work — part, artwork, placement, colors,
   depth, and printer — and offers to restore it if you come back after a
   reload, browser close, or crash. A dismissible banner asks first ("Restore

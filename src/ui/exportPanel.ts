@@ -16,7 +16,7 @@ import { meshToSTLBytes, soupFromObject } from '../export/stl';
 import { zipStore, type ZipEntry } from '../export/zip';
 import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
-import { WARNINGS, warn, notice } from '../warnings';
+import { WARNINGS, warn, warnBuild, notice } from '../warnings';
 import { schedulePersist } from '../state/persist';
 import { renderWarnings } from './warningsView';
 import { track } from '../analytics/track';
@@ -54,7 +54,13 @@ function clearStalePlacementNotices(): void {
   }
 }
 
-const SLOT_CAPACITY_WARNING_SUFFIX = 'or plan for multiple AMS units.';
+export const SLOT_CAPACITY_WARNING_SUFFIX = 'or plan for multiple AMS units.';
+
+function clearSlotCapacityWarning(): void {
+  for (let i = WARNINGS.length - 1; i >= 0; i--) {
+    if (WARNINGS[i].message.endsWith(SLOT_CAPACITY_WARNING_SUFFIX)) WARNINGS.splice(i, 1);
+  }
+}
 
 /**
  * Pre-export guardrail for finding C: "4 colors / 5 slots" reads as a bug when nothing ever
@@ -63,14 +69,16 @@ const SLOT_CAPACITY_WARNING_SUFFIX = 'or plan for multiple AMS units.';
  * printer after that panel last rendered — this is the last-moment version, matching the
  * warn-but-proceed pattern the coverage check above already uses (a real single-AMS user might
  * still want the file, e.g. to swap filaments manually mid-print).
+ *
+ * warnBuild, not warn, even though nothing here runs per-build: acting on the message (auto-merge
+ * the colors down) does schedule a rebuild, and a standing warn() would leave the red pill up
+ * contradicting the now-black slot line. The printer picker clears it directly for the same reason.
  */
 function warnIfOverCapacity(slotsNeeded: number): void {
-  for (let i = WARNINGS.length - 1; i >= 0; i--) {
-    if (WARNINGS[i].message.endsWith(SLOT_CAPACITY_WARNING_SUFFIX)) WARNINGS.splice(i, 1);
-  }
+  clearSlotCapacityWarning();
   const printer = getPrinter(state.printerId);
   if (slotsNeeded > printer.amsSlotCapacity) {
-    warn(
+    warnBuild(
       `${slotsNeeded} AMS slots needed, but a single AMS on ${printer.label} holds ` +
         `${printer.amsSlotCapacity} — reduce colors with auto-merge, or plan for multiple AMS units.`,
     );
@@ -294,6 +302,10 @@ export function initExportPanel(): void {
     // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s, and
     // the one that needs its own slot-count redraw rather than picking one up from a rebuild.
     refreshSlotCountCapacity();
+    // the pill was raised against the *previous* printer's capacity; a rebuild would drop it but
+    // this change doesn't schedule one, so a switch to a roomier printer has to clear it here
+    clearSlotCapacityWarning();
+    renderWarnings();
     schedulePersist();
   });
   const exportBtn = $<HTMLButtonElement>('#btn-export');

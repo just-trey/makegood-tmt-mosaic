@@ -18,7 +18,7 @@ vi.mock('../src/export/placement', () => ({
   placementNotice: vi.fn(() => null),
 }));
 vi.mock('../src/export/printers', () => ({
-  getPrinter: vi.fn(() => ({})),
+  getPrinter: vi.fn(() => ({ label: 'Test Printer', amsSlotCapacity: 4 })),
   DEFAULT_PRINTER_ID: 'p1',
 }));
 vi.mock('../src/ui/overlay', () => ({
@@ -29,11 +29,11 @@ vi.mock('../src/analytics/track', () => ({
   track: vi.fn(),
 }));
 
-import { exportPrintReady3MF } from '../src/ui/exportPanel';
+import { exportPrintReady3MF, SLOT_CAPACITY_WARNING_SUFFIX } from '../src/ui/exportPanel';
 import { getLastAssemblyBuild } from '../src/app/rebuild';
 import { build3MFCombined } from '../src/export/threemf';
 import { state } from '../src/state/store';
-import { WARNINGS, clearWarnings } from '../src/warnings';
+import { WARNINGS, clearWarnings, clearBuildWarnings } from '../src/warnings';
 
 function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   const geo = new THREE.BoxGeometry(40, 10, 40).toNonIndexed();
@@ -109,5 +109,58 @@ describe('exportPrintReady3MF — parts consumed entirely by their cut', () => {
     expect(
       WARNINGS.some((w) => w.message.includes('Consumed Part') && /pocket cut/i.test(w.message)),
     ).toBe(true);
+  });
+});
+
+function paletteOf(n: number): { hex: string; key: string; members: string[]; isMerge: boolean }[] {
+  return Array.from({ length: n }, (_, i) => {
+    const hex = `#00000${i}`;
+    return { hex, key: hex, members: [hex], isMerge: false };
+  });
+}
+
+function buildWithPalette(n: number): void {
+  vi.mocked(getLastAssemblyBuild).mockReturnValue({
+    partOutputs: [partOutput()],
+    palette: paletteOf(n),
+    viewSign: 1,
+    detectedColors: [],
+    baseAssigned: null,
+  });
+}
+
+describe('exportPrintReady3MF — AMS slot capacity', () => {
+  const capacityWarnings = (): string[] =>
+    WARNINGS.filter((w) => w.message.endsWith(SLOT_CAPACITY_WARNING_SUFFIX)).map((w) => w.message);
+
+  it('warns when the export needs more slots than a single AMS holds', async () => {
+    buildWithPalette(4); // + the body's own slot = 5, against a capacity of 4
+
+    await exportPrintReady3MF();
+
+    expect(capacityWarnings()).toHaveLength(1);
+    expect(capacityWarnings()[0]).toContain('5 AMS slots needed');
+    expect(capacityWarnings()[0]).toContain('Test Printer');
+  });
+
+  it('stays quiet when the export fits, and clears a previous export’s warning', async () => {
+    buildWithPalette(4);
+    await exportPrintReady3MF();
+    expect(capacityWarnings()).toHaveLength(1);
+
+    buildWithPalette(2); // 3 slots, fits
+    await exportPrintReady3MF();
+
+    expect(capacityWarnings()).toEqual([]);
+  });
+
+  it('is build-scoped, so acting on it (merging colors down) drops the pill', async () => {
+    buildWithPalette(4);
+    await exportPrintReady3MF();
+    expect(capacityWarnings()).toHaveLength(1);
+
+    clearBuildWarnings();
+
+    expect(capacityWarnings()).toEqual([]);
   });
 });
