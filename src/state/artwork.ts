@@ -5,12 +5,76 @@ let nextSourceId = 1;
 let nextArtworkId = 1;
 
 /**
+ * How far each additional design is stepped off the one already sitting at that spot, in mm on the
+ * face, per step.
+ *
+ * A new instance seeds its placement from the current fit settings, so on a part with one design
+ * zone — the wheel, the footrest, and every flat kind — a second design used to land exactly
+ * coplanar with the first: same offset, same scale, same depth, no separation and nothing on screen
+ * saying there were two of them. Stepping it makes the second design visible as its own object and
+ * draggable without first having to move the one on top of it.
+ *
+ * Deliberately small rather than "clear of the first design": the app has no say in how big a
+ * design is placed (the wheel's default is a 276mm circle) and a step sized to separate that would
+ * throw a small design off the face, where the boundary clip would silently eat it. Clearing the
+ * rest of the overlap is the user's call — buildAssemblyGeometry warns and names both designs while
+ * they still cross (see geometry/designOverlap.ts).
+ */
+export const INSTANCE_CASCADE_MM = 8;
+
+/** Two placements count as the same spot within this — a float-comparison tolerance, not a gap. */
+const SAME_SPOT_MM = 1e-6;
+
+/**
+ * Do two zone bindings put their designs on the same surface? `null` is "All zones", which covers
+ * every one of them — so it shares a surface with any binding, including another `null`. Comparing
+ * the ids directly would treat "All zones" as a zone of its own and let a bound design seed on top
+ * of one that is already stamped everywhere.
+ */
+function sharesSurface(a: string | null, b: string | null): boolean {
+  return a === null || b === null || a === b;
+}
+
+/**
+ * The seed offset moved off any instance already placed at that exact spot on the same surface,
+ * stepping diagonally until the spot is free (or `steps` runs out, so a pathological pile of
+ * designs can't spin here). Returns the seed untouched when nothing is there — which is the
+ * first/only design on a part, the common case, so its placement is bit-for-bit what it was.
+ *
+ * Assembly mode only. Flat plate mode renders `state.parsed` alone, so a second design isn't drawn
+ * at all and there is nothing for a new one to sit on top of — stepping there would just walk each
+ * freshly loaded SVG further off the plate with no second design on screen to explain why, and no
+ * overlap warning either, since that check runs in the assembly build.
+ */
+function cascadedOffset(
+  zoneId: string | null,
+  offsetU: number,
+  offsetV: number,
+): { offsetU: number; offsetV: number } {
+  if (state.shapeKind !== 'assembly') return { offsetU, offsetV };
+  const taken = (u: number, v: number): boolean =>
+    state.artworks.some(
+      (a) =>
+        sharesSurface(a.zone?.zoneId ?? null, zoneId) &&
+        Math.abs(a.offsetU - u) < SAME_SPOT_MM &&
+        Math.abs(a.offsetV - v) < SAME_SPOT_MM,
+    );
+  for (let step = 0; step < state.artworks.length + 1; step++) {
+    const u = offsetU + INSTANCE_CASCADE_MM * step,
+      v = offsetV + INSTANCE_CASCADE_MM * step;
+    if (!taken(u, v)) return { offsetU: u, offsetV: v };
+  }
+  return { offsetU, offsetV };
+}
+
+/**
  * Register a freshly-parsed SVG as a new design source, alongside whatever is already loaded, and
  * auto-create its instance. Placement seeds from the current global offset/scale/rotation/flip so a
  * first-time load (still the common case) behaves exactly as before; a source added later starts
  * from that same snapshot rather than the *previous* active instance's placement, since the two
- * designs aren't related. The new instance becomes active, and `state.parsed` — the field flat mode
- * and legacy single-instance code still read — mirrors it.
+ * designs aren't related — stepped off it when that snapshot would drop it exactly on a design
+ * already there (see INSTANCE_CASCADE_MM). The new instance becomes active, and `state.parsed` —
+ * the field flat mode and legacy single-instance code still read — mirrors it.
  *
  * The instance binds to the first offered zone when the assembly has more than one. `zone: null`
  * ("All zones" in the picker) stays available and unchanged, but it is the wrong *default* on a
@@ -38,8 +102,7 @@ export function loadArtworkSource(
     id: `artwork-${nextArtworkId++}`,
     sourceId: source.id,
     zone: zoneId ? { partId: partIdForZone(zoneId), zoneId } : null,
-    offsetU: state.offsetX,
-    offsetV: state.offsetY,
+    ...cascadedOffset(zoneId, state.offsetX, state.offsetY),
     scalePct: state.scalePct,
     rotationDeg: state.rotationDeg,
     flipX: state.flipX,
@@ -128,7 +191,9 @@ export function pruneSettingsToPalette(): void {
  * A second placement of an already-loaded source — the artwork list's "+ add to another zone"
  * action. Starts from neutral placement (not the current globals): it's going on a different zone
  * than wherever the source's other instance(s) sit, so copying that unrelated placement would just
- * be confusing. Becomes the active instance so the fit sliders/gizmo land on it immediately.
+ * be confusing — unless it isn't going elsewhere after all (the same zone, or a part with only one),
+ * where neutral means straight on top of what's there and it steps off instead (INSTANCE_CASCADE_MM).
+ * Becomes the active instance so the fit sliders/gizmo land on it immediately.
  */
 export function addInstanceForSource(sourceId: string, zoneId: string | null): ArtworkInstance {
   const partId = zoneId ? partIdForZone(zoneId) : 0;
@@ -136,8 +201,7 @@ export function addInstanceForSource(sourceId: string, zoneId: string | null): A
     id: `artwork-${nextArtworkId++}`,
     sourceId,
     zone: zoneId ? { partId, zoneId } : null,
-    offsetU: 0,
-    offsetV: 0,
+    ...cascadedOffset(zoneId, 0, 0),
     scalePct: 100,
     rotationDeg: 0,
     flipX: false,

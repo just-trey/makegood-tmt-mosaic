@@ -5,6 +5,7 @@ import {
   availableZones,
   clearArtwork,
   clearArtworkZoneBindings,
+  INSTANCE_CASCADE_MM,
   loadArtworkSource,
   pruneSettingsToPalette,
   removeArtworkInstance,
@@ -41,6 +42,7 @@ beforeEach(() => {
   state.baseColorMembers = [];
   state.keptApart = [];
   state.assembly.parts = [];
+  state.shapeKind = 'disc';
 });
 
 /** A minimal zoned part carrying one named DesignZone, for the zone-targeting tests below. */
@@ -137,6 +139,135 @@ describe('loadArtworkSource', () => {
     const first = loadArtworkSource(fakeParsed(), 'first.svg');
     const second = loadArtworkSource(fakeParsed(), 'second.svg');
     expect(first.id).not.toBe(second.id);
+  });
+});
+
+// A design landing exactly on top of the one already there produces overlapping recesses that
+// nothing downstream can tell apart from one design — see geometry/designOverlap.ts.
+describe('stacked-instance cascade', () => {
+  // assembly mode only — flat plate mode renders state.parsed alone, so there is no second design
+  // on screen for a step to separate from
+  beforeEach(() => {
+    state.shapeKind = 'assembly';
+  });
+
+  it('steps a second design off the first on a single-zone part', () => {
+    state.assembly.parts = [zonedPart(1, 'only', 'Only')];
+    const first = loadArtworkSource(fakeParsed(), 'first.svg');
+    const second = loadArtworkSource(fakeParsed(), 'second.svg');
+
+    expect(first.offsetU).toBe(0);
+    expect(first.offsetV).toBe(0);
+    expect(second.offsetU).toBe(INSTANCE_CASCADE_MM);
+    expect(second.offsetV).toBe(INSTANCE_CASCADE_MM);
+  });
+
+  it('keeps stepping for a third design', () => {
+    loadArtworkSource(fakeParsed(), 'a.svg');
+    loadArtworkSource(fakeParsed(), 'b.svg');
+    expect(loadArtworkSource(fakeParsed(), 'c.svg').offsetU).toBe(INSTANCE_CASCADE_MM * 2);
+  });
+
+  it('steps relative to the seed offset, not from zero', () => {
+    loadArtworkSource(fakeParsed(), 'a.svg');
+    state.offsetX = 20;
+    state.offsetY = -5;
+    const second = loadArtworkSource(fakeParsed(), 'b.svg');
+    // nothing is at (20, -5), so it lands exactly there
+    expect(second.offsetU).toBe(20);
+    expect(second.offsetV).toBe(-5);
+  });
+
+  it('leaves the first/only design on a part untouched', () => {
+    state.offsetX = 12;
+    state.offsetY = 9;
+    const only = loadArtworkSource(fakeParsed(), 'a.svg');
+    expect(only.offsetU).toBe(12);
+    expect(only.offsetV).toBe(9);
+  });
+
+  it('does not step a design going onto a different zone', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left'), zonedPart(2, 'seat', 'Seat')];
+    const first = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(first.id, 'seat');
+    const second = loadArtworkSource(fakeParsed(), 'b.svg'); // defaults to 'left'
+
+    expect(second.zone?.zoneId).toBe('left');
+    expect(second.offsetU).toBe(0);
+    expect(second.offsetV).toBe(0);
+  });
+
+  it('steps a second design bound to the same zone of a multi-zone part', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left'), zonedPart(2, 'seat', 'Seat')];
+    loadArtworkSource(fakeParsed(), 'a.svg');
+    const second = loadArtworkSource(fakeParsed(), 'b.svg'); // both default to 'left'
+
+    expect(second.zone?.zoneId).toBe('left');
+    expect(second.offsetU).toBe(INSTANCE_CASCADE_MM);
+  });
+
+  it('steps a "+zone" instance placed back onto the zone it came from', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left'), zonedPart(2, 'seat', 'Seat')];
+    const first = loadArtworkSource(fakeParsed(), 'a.svg');
+    const again = addInstanceForSource(first.sourceId, 'left');
+
+    expect(again.offsetU).toBe(INSTANCE_CASCADE_MM);
+    expect(again.offsetV).toBe(INSTANCE_CASCADE_MM);
+  });
+
+  it('leaves a "+zone" instance on a genuinely different zone at neutral', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left'), zonedPart(2, 'seat', 'Seat')];
+    const first = loadArtworkSource(fakeParsed(), 'a.svg');
+    const onSeat = addInstanceForSource(first.sourceId, 'seat');
+
+    expect(onSeat.offsetU).toBe(0);
+    expect(onSeat.offsetV).toBe(0);
+  });
+
+  it('makes the stepped placement the one the fit sliders show', () => {
+    loadArtworkSource(fakeParsed(), 'a.svg');
+    loadArtworkSource(fakeParsed(), 'b.svg');
+    expect(state.offsetX).toBe(INSTANCE_CASCADE_MM);
+    expect(state.offsetY).toBe(INSTANCE_CASCADE_MM);
+  });
+
+  // An "All zones" instance is stamped onto every surface, so a zone-bound design seeded at the
+  // same spot lands on top of it — the exact case this cascade exists to prevent.
+  it('steps off an "All zones" design already covering every surface', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left'), zonedPart(2, 'seat', 'Seat')];
+    const first = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(first.id, null);
+
+    const second = loadArtworkSource(fakeParsed(), 'b.svg'); // binds to 'left'
+
+    expect(second.zone?.zoneId).toBe('left');
+    expect(second.offsetU).toBe(INSTANCE_CASCADE_MM);
+  });
+
+  it('steps an "All zones" design off a zone-bound one it would cover', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left'), zonedPart(2, 'seat', 'Seat')];
+    const first = loadArtworkSource(fakeParsed(), 'a.svg'); // binds to 'left'
+
+    const everywhere = addInstanceForSource(first.sourceId, null);
+
+    expect(everywhere.zone).toBeNull();
+    expect(everywhere.offsetU).toBe(INSTANCE_CASCADE_MM);
+  });
+});
+
+// Flat plate mode draws state.parsed and nothing else, so a second design is never on screen —
+// stepping would walk each freshly loaded SVG further off the plate for no visible reason, and the
+// overlap warning that explains the step in assembly mode never runs here.
+describe('stacked-instance cascade — flat mode', () => {
+  it('leaves every load at the seed offset', () => {
+    state.shapeKind = 'disc';
+
+    const first = loadArtworkSource(fakeParsed(), 'a.svg');
+    const second = loadArtworkSource(fakeParsed(), 'b.svg');
+    const third = loadArtworkSource(fakeParsed(), 'c.svg');
+
+    expect([first.offsetU, second.offsetU, third.offsetU]).toEqual([0, 0, 0]);
+    expect(state.offsetX).toBe(0);
   });
 });
 

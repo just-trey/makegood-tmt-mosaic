@@ -40,6 +40,7 @@ import {
   type TileCell,
   type TileGrid,
 } from './patterns';
+import { overlappingDesignPairs, type PlacedDesign } from './designOverlap';
 import { noticeBuild, warnBuild } from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
@@ -105,6 +106,11 @@ function concatFeatures(a: PolyFeature, b: PolyFeature): PolyFeature {
 /** One placed design: an SVG, where it goes, and which surface it goes on. */
 export interface ArtworkBuildInput {
   parsed: ParsedSVG;
+  /**
+   * The design source's name, used only to say which designs a warning is about. Optional because
+   * the build needs nothing from it — a caller that doesn't track names still cuts identically.
+   */
+  name?: string;
   /**
    * The `DesignZone.id` this artwork is cut onto. `null` means "every zone the part offers",
    * which is what a single-zone part's artwork always is — so the ordinary wheel/footrest flow
@@ -284,6 +290,52 @@ export function designMmPerUnit(
       'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
     );
   return scaleMult;
+}
+
+/** The design's content bounding box, placed: a convex quad in the zone's own 2D design space. */
+function placedBBoxQuad(parsed: ParsedSVG, place: (pt: number[]) => number[]): number[][] {
+  const b = parsed.bbox;
+  return [
+    [b.minX, b.minY],
+    [b.maxX, b.minY],
+    [b.maxX, b.maxY],
+    [b.minX, b.maxY],
+  ].map(place);
+}
+
+/**
+ * Name both designs when two of them land on top of each other on one surface.
+ *
+ * Nothing further down the pipeline notices this: each design's cutters are built independently,
+ * the body takes their union and looks perfect, and the color list counts the same colors it would
+ * have anyway — the two inlay solids only meet in the exported file, where a slicer picks between
+ * them however it likes. This is the one place that sees both placements against the same surface.
+ *
+ * Per zone (not per part): a zone spanning several printed parts is one surface, and warnings
+ * dedupe by message, so a pair that overlaps on every part of it says so once.
+ */
+function warnOverlappingDesigns(placed: PlacedDesign[]): void {
+  for (const [a, b] of overlappingDesignPairs(placed)) {
+    const both = a.fill && b.fill;
+    const subject =
+      a.name === b.name ? `Two placements of "${a.name}"` : `Designs "${a.name}" and "${b.name}"`;
+    warnBuild(
+      both
+        ? // Moving or rescaling a fill can't help — it repeats across the whole surface by
+          // definition — so this case names only the things that actually clear it.
+          `${subject} are both set to Fill on the same surface. A fill repeats across the whole` +
+            ' surface, so the second one lands on the first everywhere: where their colors differ,' +
+            ' the export will carry two inlays claiming the same space. Switch one to Sticker,' +
+            ' move it to another surface, or remove it.'
+        : // Bounding boxes, not the artwork itself — see designOverlap.ts. "may" rather than
+          // "will", because a design whose ink sits inside another's hollow (a logo inside a
+          // frame) trips this while the recesses never actually touch.
+          `${subject} overlap on the same surface — where they cross, their recesses cut into` +
+            ' each other and the export may carry two inlays claiming the same space. Move,' +
+            ' rescale, or rotate one of them. Compared as rectangles, so designs that nest' +
+            ' inside each other cleanly can trip this.',
+    );
+  }
 }
 
 /**
@@ -592,6 +644,14 @@ export async function buildAssemblyGeometry(
     for (let zi = 0; zi < mappers.length; zi++) {
       const mapper = mappers[zi];
       if (!zoneWork[zi].length) continue;
+      if (zoneWork[zi].length > 1)
+        warnOverlappingDesigns(
+          zoneWork[zi].map((ai) => ({
+            name: artworks[ai].name || 'design',
+            quad: placedBBoxQuad(artworks[ai].parsed, mapper.placer(placements[ai])),
+            fill: artworks[ai].mode === 'fill',
+          })),
+        );
       const boundaryPoly = mapper.boundary();
       for (const ai of zoneWork[zi]) {
         const place = mapper.placer(placements[ai]);

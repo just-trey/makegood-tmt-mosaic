@@ -393,6 +393,67 @@ zone-picking in front of a first-time user instead of behind a load-then-
 rebind step, so a wrong occlusion pick there is a first impression, not a
 power-user edge case. Fix this before building that.
 
+## A Fill under a sticker overlaps just like two stickers do, and isn't checked
+
+The overlap check in
+[src/geometry/designOverlap.ts](../src/geometry/designOverlap.ts) compares
+two stickers by their placed footprints, and treats two Fills on one zone as
+always overlapping. It deliberately says nothing about a Fill paired with a
+sticker, because a pattern background with a design on top is a real
+workflow and flagging it would fire on the intended use.
+
+But the geometry doesn't care about intent: the sticker's pockets and the
+fill's pockets are separate cutters, so wherever the sticker's colors differ
+from the pattern's underneath it, the export carries two inlay solids in the
+same volume — exactly what the sticker-vs-sticker warning exists for. It is
+unmeasured: no export of that combination has been opened in a slicer to see
+what actually prints, and the app ships no example using it.
+
+Two ways to close it, neither cheap enough to bundle with the check that
+prompted this note. (1) Make it correct rather than warned: subtract the
+sticker's pockets from the fill's before the inlay intersection, so the
+background yields to what sits on it. That is the behavior a user expects,
+and it makes the pairing supported instead of merely tolerated — but it is a
+per-color boolean on the fill's full tiled region, on the path already
+measured at 405s for one chair zone (see the rebuild-performance section).
+(2) Warn only where the fill's ink actually lies under the sticker, which
+needs the placed regions rather than the bounding boxes this check uses.
+Start by measuring (1) on the wheel, where the fill region is small enough
+to time honestly.
+
+## The design-overlap check compares rectangles, and the cascade step is a constant
+
+Two limits of [src/geometry/designOverlap.ts](../src/geometry/designOverlap.ts)
+that were traded away deliberately when it landed, both worth knowing before
+trusting or extending it.
+
+**It compares placed bounding boxes, not artwork.** So it answers "could these
+cut into each other", not "do they". A design whose ink sits inside another's
+hollow — a logo centered in a frame, a caption inside a border — reads as
+fully covered and warns, while the recesses never touch and the export is
+fine. The warning is worded to admit the approximation rather than assert the
+failure, but there is no way for the user to clear that pill short of breaking
+the composition. Making it exact means intersecting the two designs' real
+per-color regions, which is the boolean cost the check was written to stay off
+(see the rebuild-performance section); the cheap half-measure is to compare
+each design's total ink area against its bounding box and skip the pair when
+one is mostly hollow.
+
+**The cascade step is a constant and the warn threshold is a fraction, so they
+only meet above a certain design size.** Stepping a second design diagonally by
+`INSTANCE_CASCADE_MM` (8mm) leaves two w×w designs covering ((w−d)/w)² of each
+other, which crosses `OVERLAP_WARN_FRACTION` only for w ≥ d/(1−√fraction). At
+the 0.25 this shipped with that was 16mm, so the app could cascade two 12mm
+stickers into an 11% overlap and say nothing about geometry it had positioned
+itself; the threshold is 0.10 now, which moves the line to ~11.7mm. It does not
+remove it — a small enough design still gets cascaded into a silent
+sub-threshold overlap. Closing it properly needs the step to scale with the
+design's placed size rather than being a constant, which means knowing that
+size at load time: `cascadedOffset` runs in `state/artwork.ts` with only the
+seed offset in hand, while the placed quad is computed later in the assembly
+build. Either thread the zone's placer back to load time, or move the cascade
+into the build and let it adjust a placement it can actually measure.
+
 ## One warning covers three different failures
 
 ([src/geometry/assembly.ts](../src/geometry/assembly.ts)) — "Raise Scale to

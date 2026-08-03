@@ -117,6 +117,9 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - No wall-thickness safety check — pocket depth is user-supplied.
 - Gradients/patterns are detected and skipped with a warning.
 - Fill (repeat the design across a surface) is assembly-mode only.
+- Two designs placed over each other on one surface are warned about by name,
+  not resolved for you — their recesses still both get cut. A Fill underneath
+  a sticker isn't checked at all; see [docs/tech-debt.md](docs/tech-debt.md).
 - The chair body's prime-tower positions are verified on 270mm and 256mm beds
   only; other bed sizes inherit the 270mm positions untested — see
   [docs/tech-debt.md](docs/tech-debt.md).
