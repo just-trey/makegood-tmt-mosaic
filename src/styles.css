@@ -465,6 +465,20 @@ input[type='checkbox'] {
   gap: 6px;
 }
 
+.restore-banner {
+  background: var(--accent-wash);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  margin-bottom: 14px;
+}
+.restore-banner p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
 #dropzone {
   border: 1.5px dashed var(--line);
   border-radius: var(--radius-2xl);

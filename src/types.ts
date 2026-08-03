@@ -146,6 +146,13 @@ export interface DesignSource {
   kind: 'upload' | 'pattern';
   name: string;
   parsed: ParsedSVG;
+  /**
+   * The raw SVG text `parsed` came from. Kept alongside it (not just derived) because `ParsedSVG`
+   * is a one-way parse — session persistence re-derives `parsed` from this on restore via
+   * `parseSVGDocument()` rather than trying to serialize the parsed form itself, which regions.ts
+   * also memoizes on object identity (see the note on `ParsedSVG`).
+   */
+  svgText: string;
 }
 
 /**

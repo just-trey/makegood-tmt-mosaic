@@ -261,6 +261,14 @@ function updateAutoMergeLabels(level: number): void {
   $all('#automerge-labels span').forEach((el, i) => el.classList.toggle('active', i === level));
 }
 
+/** Push state.autoMergeLevel into the slider + label DOM — the counterpart to
+ * refreshFitInputsFromState() for this control, needed by session restore (state/persist.ts),
+ * which sets autoMergeLevel directly rather than through the slider's own input handler. */
+export function refreshAutoMergeControl(): void {
+  $<HTMLInputElement>('#p-automerge').value = String(state.autoMergeLevel);
+  updateAutoMergeLabels(state.autoMergeLevel);
+}
+
 export function initColorListPanel(): void {
   const slider = $<HTMLInputElement>('#p-automerge');
   slider.value = String(state.autoMergeLevel);

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Your session now autosaves as you work — part, artwork, placement, colors,
+  depth, and printer — and offers to restore it if you come back after a
+  reload, browser close, or crash. A dismissible banner asks first ("Restore
+  your previous session … ?"); nothing is applied automatically, and nothing
+  rebuilds until you choose. Leaving the tab with loaded artwork now also
+  prompts to confirm first. Not restored: an uploaded STL reference mesh.
 - On a part with more than one design surface, loading a design that lands
   on just one of them now says so: the artwork row shows a "→ Zone name"
   badge, a pill on load names the zone and how many surfaces are still

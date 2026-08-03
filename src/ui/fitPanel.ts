@@ -99,6 +99,8 @@ export function updateOffsetSliderRanges(): void {
  * removing one) reseeds those globals from a different instance without any slider handler firing.
  */
 export function refreshFitInputsFromState(): void {
+  input('#p-margin').value = String(state.marginPct);
+  input('#p-margin-num').value = String(state.marginPct);
   input('#p-scale').value = String(state.scalePct);
   input('#p-scale-num').value = String(state.scalePct);
   input('#p-offset-x').value = String(state.offsetX);

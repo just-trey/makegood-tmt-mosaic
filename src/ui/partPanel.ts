@@ -29,6 +29,23 @@ const SHAPE_THUMBS: Record<string, string> = {
   stl: '<svg viewBox="0 0 32 32"><path class="line" d="M16 4 L28 11 L28 21 L16 28 L4 21 L4 11 Z"/><path class="line" d="M4 11 L16 18 L28 11 M16 18 L16 28"/></svg>',
 };
 
+/** Push state.disc/rect/round/asmRadius into the DOM — needed by session restore
+ * (state/persist.ts), which sets them directly rather than through these inputs' own handlers.
+ * stlPlate isn't included: STL reference mode isn't reachable from the shape-kind dropdown (see
+ * renderShapeKindOptions), so a restorable session never has it. */
+export function refreshShapeParamInputs(): void {
+  input('#p-diameter').value = String(state.disc.diameter);
+  input('#p-thickness').value = String(state.disc.thickness);
+  input('#p-width').value = String(state.rect.width);
+  input('#p-height').value = String(state.rect.height);
+  input('#p-thickness-r').value = String(state.rect.thickness);
+  input('#p-width-rr').value = String(state.round.width);
+  input('#p-height-rr').value = String(state.round.height);
+  input('#p-corner').value = String(state.round.corner);
+  input('#p-thickness-rr').value = String(state.round.thickness);
+  input('#p-asm-radius').value = String(state.asmRadius);
+}
+
 function setShapeThumb(kind: string): void {
   const el = $('#shape-thumb');
   if (!el) return;

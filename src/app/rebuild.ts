@@ -23,6 +23,7 @@ import { refreshZonePickMeshes } from '../scene/zonePick';
 import { renderColorList, type ColorListEntry } from '../ui/colorList';
 import { renderBaseColorSwatches } from '../ui/partPanel';
 import { renderWarnings } from '../ui/warningsView';
+import { schedulePersist } from '../state/persist';
 import { $ } from '../ui/dom';
 
 let lastBuild: FlatBuild | null = null;
@@ -85,6 +86,10 @@ export async function rebuildCurrent(): Promise<void> {
   // lift); a no-op mid-drag so it doesn't fight the pointer.
   refreshGizmo();
   refreshZonePickMeshes();
+  // Every rebuild is the state settling after some edit — the one choke point nearly every
+  // mutation already funnels through, so this is the cheapest place to keep the autosave current
+  // rather than hooking each individual setter.
+  schedulePersist();
 }
 
 async function rebuildScene(): Promise<void> {

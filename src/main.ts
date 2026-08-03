@@ -17,6 +17,8 @@ import { initDepthPanel } from './ui/depthPanel';
 import { initArtworkPanel, renderPatternPicker } from './ui/artworkPanel';
 import { initExportPanel } from './ui/exportPanel';
 import { initHelpPanel } from './ui/helpPanel';
+import { initRestoreBanner } from './ui/restoreBanner';
+import { initBeforeUnloadGuard } from './state/persist';
 import { $ } from './ui/dom';
 import { getAppVersion } from './version';
 import { whenIdle } from './app/idle';
@@ -51,6 +53,7 @@ initDepthPanel();
 initArtworkPanel();
 initExportPanel();
 initHelpPanel();
+initBeforeUnloadGuard();
 
 renderColorList(null);
 
@@ -63,6 +66,9 @@ state.assembly.kindId = bootKind.id;
 $<HTMLSelectElement>('#shape-kind').value = 'asm:' + state.assembly.kindId;
 setShapeKind('assembly');
 void loadPartsLibrary();
+// A ?kind= link is an explicit ask for that part — don't offer to override it with a leftover
+// session from before.
+if (!requestedKindId) initRestoreBanner();
 // Filament palette is async; refresh the swatch row once it lands.
 void loadFilaments().then(() => renderBaseColorSwatches());
 // Pattern library manifest is async; render the picker strip once it lands.
