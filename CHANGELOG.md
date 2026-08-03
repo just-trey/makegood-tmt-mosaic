@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The unit label at the end of the Artwork Fit rows was cut off by the edge
+  of the left panel — Offset X and Offset Y lost most of their "mm" and Scale
+  part of its "%". The panel is a fixed width, so this happened at every
+  window size rather than only narrow ones. The slider now gives up the few
+  pixels instead of the label. The smoke check measures every unit label
+  against the panel edge, so a row that stops fitting fails rather than being
+  noticed by eye.
+
 ### Added
 
 - The help panel has a new About section linking
