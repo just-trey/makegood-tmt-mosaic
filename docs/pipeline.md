@@ -29,10 +29,29 @@ How the geometry actually works — read this before touching `src/geometry/` or
    frame with move/scale/rotate handles, same as the sliders underneath.
 4. **Flat-plate mode** builds the plate as a stack of flat slabs between depth
    boundaries — pure 2D math, no CSG ([src/geometry/flat.ts](../src/geometry/flat.ts)).
+   Each region's depth is capped at the thickness less the 0.05 mm floor that
+   keeps a recess from cutting through, and a depth of zero or less — which
+   cuts nothing and says nothing about intent — is raised to 0.2 mm, one
+   typical layer. Either warns, naming the region and both numbers. A positive
+   depth thinner than a layer is honored and only noted: it is a real choice on
+   a fine-layer profile. What a region asked for is resolved in one
+   place for both modes ([src/geometry/depth.ts](../src/geometry/depth.ts)):
+   an explicit per-row override if it is finite, otherwise the global depth.
+   A stored `0` is a real answer there, not an absent one, and the clamped
+   result is never written back into the settings — doing so pinned each row
+   to its own clamp and silenced the warning from the second rebuild on.
 5. **Assembly mode** cuts pockets into real part meshes: each color region is
    extruded into a prism in the part's own coordinates and booleaned against
    the mesh with [Manifold](https://github.com/elalish/manifold) (WASM CSG,
    lazy-loaded) ([src/geometry/assembly.ts](../src/geometry/assembly.ts)).
+   Depth is bounded only at the shallow end here — raised to the same 0.2 mm
+   floor, with a warning naming the raised _setting_ rather than a cut depth,
+   since resolveCutDepth is free to ignore it (a cutThrough part takes its hole
+   the whole way through regardless). The too-deep end is not checked at all —
+   a part's wall thickness varies across it and nothing measures it, so a pocket
+   deeper than the wall in one spot exports as a part with a hole through it and
+   no warning. Only the extreme case surfaces, where the cut leaves the part
+   empty and the export drops it (exportPanel.ts's `bodySoup.length` guard).
    Supports rotated-copy parts (the same physical part installed twice, e.g.
    a wheel's two halves): the design slice that lands on the copy is remapped
    back into the part's native print orientation. Round parts (the wheel) map

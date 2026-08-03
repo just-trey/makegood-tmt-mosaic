@@ -141,3 +141,82 @@ a sticker is not flagged: a pattern background with a design on top is a real
 workflow. That combination has the same overlapping-inlay problem where the
 sticker's colors differ from the pattern's; it is a known gap, also in
 [tech-debt.md](tech-debt.md).
+
+## Troubleshooting: "Depth for … was set to … mm" warnings (flat mode)
+
+The flat shape modes cut every recess into a plate of one fixed thickness. A
+recess that reached the back of the plate would cut clean through it — a hole
+where a colored inset should be — so no depth is allowed past the thickness
+less the 0.05 mm floor left under the deepest recess (3.95 mm on a 4 mm plate).
+This warning means one of your depths was past that and the recess was cut at
+the deepest the plate can take instead.
+
+- **The file is still valid and printable** — the depth actually cut is the
+  last number in the message. Nothing is dropped; only the depth differs from
+  what you typed.
+- Fix it from either end: lower that region's depth, or raise **Thickness** in
+  the Part section so the depth you want fits.
+- The name in the message is the color list row, worded exactly as that row
+  labels itself: a hex for a plain color, "Merged (N)" for a merged group, and
+  "Background" for the background recess row.
+- A region with no depth of its own uses the global **Depth** field, so a
+  global depth larger than the plate warns for every region at once — raise
+  the thickness or lower the global depth rather than editing rows one by one.
+  A row carrying its own depth is highlighted and has a "↺" button beside it;
+  that button, or clearing the field, puts the row back under the global. If
+  the global **Depth** field seems to move nothing, those are the rows to look
+  at.
+
+Assembly mode has the same hazard at the deep end but catches it later and
+words it differently, because there the wall thickness varies across the part
+and the cut-through only shows up once the boolean has run: see "Part … has no
+geometry to export" above.
+
+## Troubleshooting: "Depth for … is … thinner than the usual 0.20 mm print layer"
+
+A quiet note, not an error, and it appears in both modes. The recess is cut
+exactly as deep as you asked — nothing is clamped and nothing is dropped — but
+it is shallower than one layer at the default 0.2 mm layer height, so on a
+standard profile the slicer has no layer to put it in and it prints as bare
+body.
+
+- **If your profile uses a finer layer height** (0.08–0.12 mm is common for
+  detail work), this is fine and the recess will print. The note has no way to
+  read your slicer settings, so it can't tell.
+- **If you are on a standard 0.2 mm profile**, raise the depth to at least
+  0.2 mm or the color won't appear.
+- A depth of exactly 0 or less is a different case: that cuts nothing at all
+  whatever the profile, so it gets raised to 0.2 mm and warns rather than
+  being noted.
+- **It won't appear for a color that only lands on a cut-through part** (the
+  wheel's cap). Such a part ignores the depth setting and takes its hole the
+  whole way through, so the recess prints whatever your layer height is, and
+  the note would be predicting a problem that can't happen. If the same color
+  is also on a part that does cut to depth, the note still appears — it is
+  about that part.
+
+## Troubleshooting: "Depth for … is not a depth that can cut" warnings
+
+A depth of zero or less cuts no pocket at all — a request that says nothing
+about what was actually wanted. Both modes raise it to 0.20 mm, one typical
+layer, and name the color and both numbers. In assembly mode this used to drop
+the color from the part silently: no recess, no inlay, no message, just a part
+missing one of its colors.
+
+- **Nothing is dropped** — the color cuts, just shallowly. That matters beyond
+  tidiness: a color cut nowhere gets no row in the color list, which would take
+  away the very depth field this warning tells you to correct.
+- The message reports the depth it **raised the setting to**, not the depth
+  each part cut. What a part does with a depth is up to the part: the wheel's
+  cap is cut all the way through whatever you set, so no single number would be
+  true of every part.
+- If you meant to remove the color, use "→ base" on its row to print it in the
+  body instead; if you meant to cut it, give it a real depth.
+- One warning per color, not per part: depth is a per-color setting, so a
+  global **Depth** of 0 reports each affected color once however many parts
+  carry it.
+- Assembly mode bounds only the shallow end. There is no upper limit and no
+  check against the wall, which varies across a part — a depth deeper than the
+  wall in one spot cuts a hole through it and exports silently. "Part … has no
+  geometry to export" only appears when the cut consumed the _whole_ part, so
+  its absence is not a report that the depth was safe.

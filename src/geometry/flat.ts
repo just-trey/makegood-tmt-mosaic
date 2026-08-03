@@ -1,4 +1,13 @@
 import * as THREE from 'three';
+import {
+  MIN_CUT_DEPTH_MM,
+  depthDiffers,
+  regionLabel,
+  requestedDepth,
+  subLayerDepth,
+  thinDepthNotice,
+  zeroDepthWarning,
+} from './depth';
 import type {
   BaseParams,
   ColorSettings,
@@ -16,6 +25,7 @@ import {
   unionAllCooperative,
 } from './regions';
 import { reportProgress } from '../progress';
+import { noticeBuild, warnBuild } from '../warnings';
 
 type Ring = number[][];
 
@@ -270,7 +280,29 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const footprint = footprintFeature(shapeKind, baseParams);
   const thickness = baseParams.thickness;
 
-  const clampDepth = (d: number) => Math.min(Math.max(d, 0.02), thickness - 0.05);
+  const maxDepth = thickness - 0.05;
+
+  /**
+   * A recess reaching the back of the plate would cut through it, and one at or below zero cuts
+   * nothing — but both used to be fixed silently, so a depth of 100 on a 4 mm disc exported a
+   * perfectly valid file that simply wasn't the one asked for. Each now says what it did.
+   *
+   * A positive depth thinner than a layer is honored rather than clamped, and only noted: it is a
+   * real choice on a fine-layer profile, and clamping would put it out of reach.
+   */
+  const resolveDepth = (key: string, label: string): number => {
+    const requested = requestedDepth(colorSettings, globalDepth, key);
+    const depth = Math.min(requested <= 0 ? MIN_CUT_DEPTH_MM : requested, maxDepth);
+    if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depth));
+    else if (depthDiffers(depth, requested))
+      warnBuild(
+        `Depth for "${label}" was set to ${requested.toFixed(2)} mm, but a ${thickness.toFixed(2)} mm ` +
+          `plate can only cut ${maxDepth.toFixed(2)} mm deep — it was cut at ${depth.toFixed(2)} mm ` +
+          `instead.`,
+      );
+    else if (subLayerDepth(depth)) noticeBuild(thinDepthNotice(label, depth));
+    return depth;
+  };
 
   // transform + collect active color/merged-group regions with their depth
   const resolvedRegions = applyColorMerges(byColor, mergeGroups, {
@@ -290,7 +322,9 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const colorEntries: Entry[] = [];
   resolvedRegions.forEach((r) => {
     const feat = transformFeature(r.feature, fit);
-    const depth = clampDepth((colorSettings[r.key] && colorSettings[r.key].depth) || globalDepth);
+    // Name the row the user can actually see: the color list renders a group as "Merged (N)" and
+    // never shows its dominant hex as text, so naming it by hex points at nothing on screen.
+    const depth = resolveDepth(r.key, regionLabel(r.previewColor, r.isMerge, r.members.length));
     colorEntries.push({
       color: r.previewColor,
       key: r.key,
@@ -310,15 +344,13 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
 
   if (recessBg && leftover) {
     // the background recess honors its own per-region depth override, like any color
-    const bgDepth =
-      (colorSettings[BACKGROUND_KEY] && colorSettings[BACKGROUND_KEY].depth) || globalDepth;
     colorEntries.push({
       color: '#cfd6dc',
       key: BACKGROUND_KEY,
       members: [BACKGROUND_KEY],
       isMerge: false,
       feature: leftover,
-      depth: clampDepth(bgDepth),
+      depth: resolveDepth(BACKGROUND_KEY, 'Background'),
       isBackground: true,
     });
   }

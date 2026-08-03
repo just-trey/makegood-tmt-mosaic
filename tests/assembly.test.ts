@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import {
   asmPartFaceNormal,
@@ -820,5 +820,145 @@ describe('shared design anchor and scale resolvers', () => {
 
     const once = memoLargestDesignFace([small]);
     expect(once()).toBe(once());
+  });
+});
+
+describe('buildAssemblyGeometry zero-depth handling', () => {
+  beforeEach(() => clearWarnings());
+
+  it('raises a zero depth to a depth that prints, and says so', { timeout: 30000 }, async () => {
+    const built = (await buildAssemblyGeometry(
+      baseInput({ colorSettings: { 'asm:#ff0000': { depth: 0 } } }),
+    ))!;
+    const r = yRange(built.partOutputs[0].inlaySoups[0]);
+    expect(r.max).toBeCloseTo(10, 4);
+    // one typical layer, not the 0.02 mm geometry tolerance — a tenth of a layer slices to
+    // nothing while still costing an AMS slot
+    expect(r.min).toBeCloseTo(9.8, 4);
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      'Depth for "#ff0000" was set to 0.00 mm, which is not a depth that can cut — it was raised to 0.20 mm.',
+    );
+  });
+
+  it(
+    'keeps the color on a cutThrough part instead of dropping it',
+    { timeout: 30000 },
+    async () => {
+      // Dropping it deleted the color's list row (a color with no inlay area anywhere gets none),
+      // taking away the depth field the warning tells you to correct.
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })],
+          colorSettings: { 'asm:#ff0000': { depth: 0 } },
+        }),
+      ))!;
+
+      expect(built.partOutputs[0].inlaySoups[0]).toBeDefined();
+    },
+  );
+
+  it(
+    'reports the raised setting, never a cut depth a cutThrough part did not make',
+    { timeout: 30000 },
+    async () => {
+      // resolveCutDepth discards the setting on a cutThrough part and takes the hole the whole
+      // way through. A message naming a cut depth understated a 3 mm through-hole as 0.02 mm.
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })],
+          colorSettings: { 'asm:#ff0000': { depth: 0 } },
+        }),
+      ))!;
+
+      const r = yRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.max - r.min).toBeGreaterThan(2.5); // really cut through, not 0.2 mm
+      expect(WARNINGS.every((w) => !w.message.includes('was cut at'))).toBe(true);
+      expect(WARNINGS.some((w) => w.message.includes('it was raised to 0.20 mm.'))).toBe(true);
+    },
+  );
+
+  it(
+    'still cuts a cutThrough part all the way through at a normal depth',
+    { timeout: 30000 },
+    async () => {
+      const built = (await buildAssemblyGeometry(
+        baseInput({ parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })] }),
+      ))!;
+      const r = yRange(built.partOutputs[0].inlaySoups[0]);
+      // the through-cut is deeper than the 2 mm globalDepth would have made it
+      expect(r.max - r.min).toBeGreaterThan(2.5);
+      expect(WARNINGS.filter((w) => w.message.startsWith('Depth for color'))).toHaveLength(0);
+    },
+  );
+});
+
+describe('buildAssemblyGeometry depth labels and thin cuts', () => {
+  beforeEach(() => clearWarnings());
+
+  it('names a merged group the way the color list labels it', { timeout: 30000 }, async () => {
+    // The dominant hex is never rendered as text for a merged row, so naming it points the user
+    // at a row that doesn't exist. Flat mode was fixed for this; assembly kept the bug until the
+    // label rule moved into one shared place.
+    await buildAssemblyGeometry(
+      baseInput({
+        parsed: twoColorSquaresParsed(),
+        mergeGroups: [['#ff0000', '#0000ff']],
+        globalDepth: 0,
+      }),
+    );
+
+    expect(WARNINGS.some((w) => w.message.startsWith('Depth for "Merged (2)" was set to'))).toBe(
+      true,
+    );
+    expect(WARNINGS.every((w) => !w.message.startsWith('Depth for color'))).toBe(true);
+  });
+
+  it('honors a positive depth thinner than a layer', { timeout: 30000 }, async () => {
+    const built = (await buildAssemblyGeometry(
+      baseInput({ colorSettings: { 'asm:#ff0000': { depth: 0.12 } } }),
+    ))!;
+
+    const r = yRange(built.partOutputs[0].inlaySoups[0]);
+    expect(r.max - r.min).toBeCloseTo(0.12, 4);
+    const note = WARNINGS.find((w) => w.message.includes('thinner than the usual'));
+    expect(note).toBeDefined();
+    expect(note!.level).toBe('info');
+  });
+
+  it(
+    'stays quiet about a thin depth on a part that cuts through anyway',
+    { timeout: 30000 },
+    async () => {
+      // The note predicts a print outcome ("won't show up at 0.2 mm layers"), and resolveCutDepth
+      // discards the setting on a cutThrough part — so the pill claimed an invisible recess while
+      // the cap was being cut 3 mm clean through. Same trap as the zero-depth message above, which
+      // is why the gate asks the mapper what it did rather than reading part.cutThrough here.
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })],
+          colorSettings: { 'asm:#ff0000': { depth: 0.12 } },
+        }),
+      ))!;
+
+      const r = yRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.max - r.min).toBeGreaterThan(2.5); // cut through, not 0.12 mm
+      expect(WARNINGS.filter((w) => w.message.includes('thinner than the usual'))).toEqual([]);
+    },
+  );
+
+  it('still notes a thin depth when some part does cut to it', { timeout: 30000 }, async () => {
+    // The gate is per-part and warnings dedupe by message, so a color spanning both kinds of
+    // part must still get the note — it is true of the part that honors the setting.
+    await buildAssemblyGeometry(
+      baseInput({
+        parts: [
+          boxPart({ cutThrough: true, cutThroughDepth: 3 }),
+          boxPart({ id: 2, name: 'plain box' }),
+        ],
+        colorSettings: { 'asm:#ff0000': { depth: 0.12 } },
+      }),
+    );
+
+    expect(WARNINGS.filter((w) => w.message.includes('thinner than the usual'))).toHaveLength(1);
   });
 });

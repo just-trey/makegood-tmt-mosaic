@@ -7,16 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- The unit label at the end of the Artwork Fit rows was cut off by the edge
-  of the left panel — Offset X and Offset Y lost most of their "mm" and Scale
-  part of its "%". The panel is a fixed width, so this happened at every
-  window size rather than only narrow ones. The slider now gives up the few
-  pixels instead of the label. The smoke check measures every unit label
-  against the panel edge, so a row that stops fitting fails rather than being
-  noticed by eye.
-
 ### Added
 
 - The help panel has a new About section linking
@@ -149,6 +139,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The unit label at the end of the Artwork Fit rows was cut off by the edge
+  of the left panel — Offset X and Offset Y lost most of their "mm" and Scale
+  part of its "%". The panel is a fixed width, so this happened at every
+  window size rather than only narrow ones. The slider now gives up the few
+  pixels instead of the label. The smoke check measures every unit label
+  against the panel edge, so a row that stops fitting fails rather than being
+  noticed by eye.
 - Neither export button (3MF or STL set) had any guard against
   re-entrancy — confirmed live, 5 rapid clicks on "Export print-ready
   3MF" triggered 5 independent exports and downloads. Both buttons now
@@ -171,6 +168,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   their own valid floor (0 stays valid where it legitimately is, like
   corner radius) and snap back to the last valid value on blur instead of
   leaving a bad number in state.
+- In the flat shape modes (disc, rect, round), a recess depth deeper than the
+  plate — or zero, or negative — was quietly cut at the nearest depth the
+  plate could hold instead, so a depth of `100` on a 4 mm disc exported a
+  perfectly valid file that simply wasn't the one you asked for, with nothing
+  on screen saying so. The depth is still clamped, since a recess reaching the
+  back of the plate would cut through it, but now a warning names the color
+  (or "Background"), what was asked for, and what was actually cut, and it
+  says so on every rebuild rather than only the first. Assembly mode already
+  warned about its equivalent.
+- A depth of 0 or less on an assembly part dropped that color from the part
+  with no recess, no inlay, and no message. It is now raised to 0.20 mm — one
+  typical layer — and says so. Relatedly, a depth field left at a deliberate
+  `0` was read as "no depth set" and silently replaced with the global Depth —
+  a row reading 0.00 could cut a full millimetre.
+- A depth of zero or less now falls back to 0.20 mm rather than 0.02 mm. A
+  fiftieth of a millimetre is a tenth of a layer: it sliced to nothing, so the
+  color printed as bare body while still using up a filament slot, and the
+  warning said it had been cut. A depth you set that is positive but thinner
+  than a layer is still cut exactly as asked — that's a real choice on a fine
+  layer-height profile — with a quiet note that it won't show up on a standard
+  0.2 mm one. That note stays quiet for a color that only lands on a
+  cut-through part like the wheel's cap, which ignores the depth setting and
+  goes the whole way through: there is nothing too thin to print there.
+- A color's depth row now shows when it carries its own depth rather than
+  following the **Depth** default — the field is highlighted and gets a "↺"
+  button to put it back, and hovering either one says which depth is in use.
+  Previously the two looked identical, so a row pinned to its own value made
+  the Depth field appear to do nothing, with no way back except clearing the
+  field, which only the help panel mentioned.
+- A per-color depth set on an assembly part is now forgotten along with the
+  design it was set on. It used to be kept indefinitely, so loading a new
+  design that happened to reuse the same color silently cut it at the old
+  depth. Flat-mode depths were already dropped correctly.
+- The depth field is wide enough for a value like "50.00" — it clipped the
+  last digit at five characters, which is exactly the range the out-of-range
+  warning above asks you to look at.
+- Restoring a session saved by an earlier build no longer reinstates a
+  per-color depth override for every color. Those were written automatically
+  rather than chosen, and restoring them left the global Depth field unable to
+  move any row and the out-of-range warning silent. Restored rows now start
+  under the global Depth again; a depth you had deliberately set on a row
+  before this release has to be set once more.
 - The 3D viewport redrew every frame for the whole session, whether or not
   anything had changed, keeping a core busy behind an idle model — noticeable
   as heat and battery drain on a laptop, and as a slow app on any machine

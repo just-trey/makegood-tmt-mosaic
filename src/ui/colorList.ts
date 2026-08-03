@@ -1,4 +1,5 @@
 import { addToBase, removeFromBase, replaceBase, state } from '../state/store';
+import { requestedDepth } from '../geometry/depth';
 import { scheduleRebuild } from '../app/scheduler';
 import { nearestFilamentName } from '../state/filaments';
 import { getPrinter } from '../export/printers';
@@ -10,7 +11,6 @@ export interface ColorListEntry {
   key: string;
   members: string[];
   isMergeGroup: boolean;
-  depth: number;
   areaPct: number;
   isBackground: boolean;
   /** printed in the body instead of cut — a distinct status row, no depth/merge controls */
@@ -125,6 +125,115 @@ function renderEmptyBaseRow(list: HTMLElement): void {
   list.appendChild(row);
 }
 
+/**
+ * The depth-reset "↺" is wired on the list container, once, rather than per button — the buttons
+ * themselves are too short-lived to hold a handler.
+ *
+ * Editing the depth field schedules a rebuild, and that rebuild replaces the list's innerHTML. A
+ * button listener attached during the previous render is on a node that gets detached mid-gesture,
+ * so the reset lands on nothing and silently does not happen. The container outlives every render,
+ * so delegation catches the event whichever generation of button received it.
+ *
+ * The press is split across three events because each one covers a case the others get wrong:
+ *
+ * - `mousedown` only holds the gesture open. It cannot clear anything: a press dragged off the
+ *   button and released is a cancel, raises no click, and has to leave the row exactly as it was.
+ * - `mouseup` is what clears, and only when it lands on the same button the press started on. It
+ *   is used in preference to `click` because click is fired at the nearest common ancestor of the
+ *   two targets — so a rebuild that swaps the button out mid-press sends it to a container instead,
+ *   which is the failure this delegation exists to survive. mouseup goes to whatever button is
+ *   under the pointer, and the replacement carries the same reset key.
+ * - `click` covers keyboard activation, which raises neither of the above.
+ *
+ * All three are idempotent: whichever runs first removes the override, and the rest read its
+ * absence as "already handled" — except `click` after a real mouse gesture, which needs its own
+ * guard against the same button-swap race (`mouseHandled`, see below).
+ */
+function wireDepthReset(list: HTMLElement): void {
+  if (list.dataset.depthResetWired) return;
+  list.dataset.depthResetWired = '1';
+  // Which row's "↺" the current press started on, so releasing on a different one — or on nothing
+  // — cancels rather than resetting whatever happens to be under the pointer.
+  let pressedKey: string | null = null;
+  let mouseHandled = false;
+
+  const buttonFor = (e: Event): HTMLElement | null => {
+    const btn = (e.target as HTMLElement | null)?.closest?.('.depth-reset') as HTMLElement | null;
+    // Primary button only, or the press that opens a context menu counts as a reset — and no click
+    // follows a right- or middle-press to undo it.
+    return !btn || (e as MouseEvent).button > 0 ? null : btn;
+  };
+
+  const clearOverride = (btn: HTMLElement, key: string): void => {
+    if (!(key in state.colorSettings)) return;
+    // Abandon whatever is half-typed in this row's field. The blur below fires its pending change,
+    // which would otherwise re-store the very override this is clearing.
+    btn
+      .closest('.color-row')
+      ?.querySelector<HTMLInputElement>('.depth-input')
+      ?.setAttribute('data-abandoned', '1');
+    // Settle a half-typed edit in *another* row now, while it still costs nothing. The mousedown
+    // suppressed the blur that would normally commit it, so it would otherwise sit pending until
+    // the rebuild below tore the field out — and Chrome's change-on-removal lands mid-render, after
+    // this pass has already read colorSettings, buying a second full rebuild to show it. Blurring
+    // here puts that change in this same tick, where the debounce folds it into one.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && focused.classList.contains('depth-input'))
+      focused.blur();
+    delete state.colorSettings[key];
+    scheduleRebuild();
+  };
+
+  list.addEventListener('mousedown', (e) => {
+    const btn = buttonFor(e);
+    pressedKey = btn?.dataset.resetKey ?? null;
+    if (!btn) return;
+    // Hold the depth field's blur-`change` off until the press completes. Left to run, it re-stores
+    // the override and schedules the rebuild that replaces this button mid-gesture.
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  list.addEventListener('mouseup', (e) => {
+    const btn = buttonFor(e);
+    const started = pressedKey;
+    pressedKey = null;
+    mouseHandled = true;
+    const key = btn?.dataset.resetKey;
+    if (!btn || !key || key !== started) return;
+    e.stopPropagation();
+    clearOverride(btn, key);
+  });
+
+  // A release outside the list entirely never reaches the mouseup listener above, so pressedKey
+  // would otherwise still name that abandoned press the next time some *later, unrelated* gesture
+  // happens to end on the same button — and the origin check there would wrongly call it a match.
+  // Catching mouseup on the document as well, after the list's own listener has already read it,
+  // closes that regardless of where the release actually lands.
+  document.addEventListener('mouseup', () => {
+    pressedKey = null;
+  });
+
+  list.addEventListener('click', (e) => {
+    // A real mouseup already made this gesture's call, one line above. The click that immediately
+    // follows it is the browser's own synthetic event, not a second independent one — normally
+    // aimed at the common ancestor of the mousedown/mouseup targets and so off any button, but not
+    // when the mousedown target was detached mid-press (this delegation's whole reason to exist):
+    // then click lands directly on the mouseup target instead, with no origin check of its own.
+    // Without this it would re-decide "what's under the pointer now" and could clear a row whose
+    // press actually started elsewhere and was already correctly left alone above.
+    if (mouseHandled) {
+      mouseHandled = false;
+      return;
+    }
+    const btn = buttonFor(e);
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    clearOverride(btn, btn.dataset.resetKey ?? '');
+  });
+}
+
 export function renderColorList(
   colorMeshes: ColorListEntry[] | null,
   opts: { rawColorCount?: number; slotsNeeded?: number } = {},
@@ -140,6 +249,7 @@ export function renderColorList(
     return;
   }
   list.innerHTML = '';
+  wireDepthReset(list);
   const baseEntry = colorMeshes.find((c) => c.isBase) || null;
   const rows = colorMeshes.filter((c) => !c.isBase);
   rows.sort((a, b) => b.areaPct - a.areaPct);
@@ -158,7 +268,16 @@ export function renderColorList(
     const row = document.createElement('div');
     row.className = 'color-row';
 
-    if (!state.colorSettings[c.key]) state.colorSettings[c.key] = { depth: c.depth };
+    // Show what was asked for, and don't write it back. Seeding colorSettings from the build's
+    // depth pinned every row to the *clamped* value on the first render: the second build then
+    // compared 3.95 against 3.95, went quiet, and kept cutting the wrong depth — and lowering the
+    // global Depth field, the fix the warning tells you to apply, no longer reached rows that now
+    // carried an explicit override. colorSettings holds deliberate per-row overrides only.
+    const shownDepth = requestedDepth(state.colorSettings, state.globalDepth, c.key);
+    // A row carrying its own depth looked identical to one following the global, so the global
+    // Depth field appearing not to work had no visible cause and no visible undo — clearing the
+    // field was the only way back, and it was documented only in the help panel.
+    const isOverridden = Number.isFinite(state.colorSettings[c.key]?.depth);
 
     let swatchHtml: string,
       labelHtml: string,
@@ -208,8 +327,17 @@ export function renderColorList(
       ${membersRowHtml}
       <div class="depth-row">
         <label>depth</label>
-        <input type="number" class="depth-input" step="0.05" min="0.05" value="${state.colorSettings[c.key].depth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}">
+        <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}" title="${
+          isOverridden
+            ? `Using its own depth (${shownDepth.toFixed(2)} mm) instead of the ${state.globalDepth.toFixed(2)} mm default`
+            : 'Following the default depth set in Depth — type here to give this row its own'
+        }">
         <span class="hint">mm</span>
+        ${
+          isOverridden
+            ? `<button type="button" class="btn small depth-reset" data-reset-key="${c.key}" title="Reset to the default depth (${state.globalDepth.toFixed(2)} mm)" aria-label="Reset depth for ${c.isBackground ? 'Background' : labelHtml} to the default">↺</button>`
+            : ''
+        }
         <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
       </div>
       ${mergeSelectHtml ? `<div class="merge-row">${mergeSelectHtml}</div>` : ''}`;
@@ -223,10 +351,30 @@ export function renderColorList(
         mergeHexes([...ownKey.split(','), ...targetKey.split(',')].filter(Boolean));
       });
     }
-    row.querySelector<HTMLInputElement>('.depth-input')!.addEventListener('change', (e) => {
-      state.colorSettings[c.key] = {
-        depth: parseFloat((e.target as HTMLInputElement).value) || 0.1,
-      };
+    const depthField = row.querySelector<HTMLInputElement>('.depth-input')!;
+    // Typing is a fresh, deliberate edit, so it re-arms a field the reset had marked. Covers the
+    // reset that never produced a change to consume the marker — clicking ↺ with nothing typed —
+    // which would otherwise leave it for the user's next edit to be swallowed by.
+    depthField.addEventListener('input', () => depthField.removeAttribute('data-abandoned'));
+    depthField.addEventListener('change', (e) => {
+      // A typed 0 or a negative used to land here as 0.1, so the build never saw the number that
+      // was actually asked for and couldn't say it had been overridden. Pass anything numeric
+      // through and let the geometry clamp be the one place that reports the override. Clearing
+      // the field drops the override entirely, so the row goes back to following the global Depth
+      // rather than sticking at a magic 0.1 nobody asked for.
+      // The reset button marks this field before the rebuild tears it out from under a pending
+      // edit; without the guard that edit lands after the reset and undoes it. See wireDepthReset.
+      // Strictly one event: the field usually goes away with the rebuild, but when that rebuild is
+      // slow or fails the row stays mounted, and a marker left set would swallow every later edit
+      // to it — silently, since nothing rebuilds either.
+      const field = e.target as HTMLInputElement;
+      if (field.hasAttribute('data-abandoned')) {
+        field.removeAttribute('data-abandoned');
+        return;
+      }
+      const typed = parseFloat(field.value);
+      if (Number.isFinite(typed)) state.colorSettings[c.key] = { depth: typed };
+      else delete state.colorSettings[c.key];
       scheduleRebuild();
     });
     row.querySelectorAll<HTMLElement>('[data-pull]').forEach((btn) => {

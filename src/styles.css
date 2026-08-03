@@ -818,12 +818,35 @@ input[type='checkbox'] {
   margin-top: 6px;
 }
 .color-row .depth-row input {
-  width: 64px;
+  width: 76px;
   flex: none;
 }
 .color-row .depth-row label {
   color: var(--text-dim);
   font-size: 11px;
+}
+/* A row with its own depth reads as deliberate, so the global Depth field visibly not moving it
+   has a cause on screen. The ↺ next to it is the way back.
+   Deliberately not `border-color: var(--accent)`: that is exactly what `input:focus` sets, and
+   `outline: none` is global here — so an overridden row and a merely-clicked-in one were pixel
+   identical, and every field turned "overridden" the moment it was focused. The inset bar and
+   wash survive focus recoloring the border. */
+.color-row .depth-row input.overridden {
+  background: var(--accent-wash);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+/* Carries .btn for the chrome, so it reads as the same kind of thing as the "→ base" button in
+   the row above it rather than as another dim label — which is what made it hard to spot, not
+   where it sits. It stays next to the field it acts on: everything to its left is a fixed width,
+   so it is already in the same column on every row, and moving it out to the row's right edge
+   only put it beside the filament hint, which it has nothing to do with. 24px is the WCAG 2.5.8
+   target minimum. */
+.color-row .depth-reset {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 13px;
+  line-height: 1;
 }
 .color-row .preset {
   font-size: 10.5px;

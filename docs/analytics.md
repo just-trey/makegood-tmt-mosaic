@@ -144,6 +144,7 @@ pattern: wire at the DOM handler, add the entry here, keep props PII-free.
 - `base_color_change` — `src/ui/partPanel.ts`, `renderBaseColorSwatches` swatch click. Prop: `default` vs `filament`.
 - `automerge_change` — `src/ui/colorList.ts`, `#p-automerge` slider. Prop: `level` (0-3).
 - `color_merge` / `color_to_base` — `src/ui/colorList.ts` drag-merge and "→ base" actions. Prop: resulting group size.
+- `depth_override` / `depth_reset` — `src/ui/colorList.ts`, a row's depth field committing a value and its "↺" clearing one. Prop: whether the value was deeper or shallower than the global. Worth knowing together: how often per-row depths get set at all is what says whether the affordance marking them earns its space.
 - `fit_reset` — `src/ui/fitPanel.ts`, `#btn-reset-fit`.
 - `fit_flip` — `src/ui/fitPanel.ts`, flip checkboxes.
 

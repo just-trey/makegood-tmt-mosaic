@@ -539,6 +539,22 @@ describe('pruneSettingsToPalette', () => {
     expect(state.colorSettings).toEqual({ '#ff0000': { depth: 2 } });
   });
 
+  it('prunes assembly-mode depth keys by the hex behind their "asm:" prefix', () => {
+    const a = loadArtworkSource(parsedWith('#0000ff'), 'a.svg');
+    loadArtworkSource(parsedWith('#ff0000'), 'b.svg');
+    state.colorSettings = {
+      'asm:#0000ff': { depth: 3 },
+      'asm:#ff0000': { depth: 2 },
+      'asm:merge:#0000ff,#00ff00': { depth: 1 },
+      'asm:__background__': { depth: 4 },
+    };
+
+    removeArtworkInstance(a.id);
+
+    // a stale asm:#0000ff would silently cut at 3 mm the next time any design painted blue
+    expect(Object.keys(state.colorSettings).sort()).toEqual(['asm:#ff0000', 'asm:__background__']);
+  });
+
   it('reseats baseColorKey on a surviving member rather than clearing the whole base', () => {
     const a = loadArtworkSource(parsedWith('#0000ff'), 'a.svg');
     loadArtworkSource(parsedWith('#ff0000'), 'b.svg');

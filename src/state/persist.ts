@@ -51,6 +51,16 @@ export interface PersistedSession {
   baseColorMembers: string[];
   mergeGroups: string[][];
   colorSettings: AppState['colorSettings'];
+  /**
+   * Marks a session whose `colorSettings` holds only depths the user deliberately set. Sessions
+   * saved before that was true carry a machine-written override for every color — the color list
+   * used to seed each row from the built (already clamped) depth — which restores as if every
+   * depth had been typed by hand: the global Depth field moves nothing, and an out-of-range depth
+   * stops warning because the stored value already equals its own clamp. The two are
+   * indistinguishable after the fact, so a session without this flag has its depths dropped back
+   * to the global rather than restored as fake overrides.
+   */
+  explicitDepths?: true;
   keptApart: string[];
   sources: PersistedSource[];
   artworks: PersistedArtwork[];
@@ -111,6 +121,7 @@ function snapshotSession(): PersistedSession {
     baseColorMembers: state.baseColorMembers,
     mergeGroups: state.mergeGroups,
     colorSettings: state.colorSettings,
+    explicitDepths: true,
     keptApart: state.keptApart,
     sources: state.sources.map((s) => ({
       id: s.id,
@@ -191,6 +202,19 @@ function isPersistedSession(v: unknown): v is PersistedSession {
   );
 }
 
+/**
+ * The depth overrides a restore should adopt. See PersistedSession.explicitDepths: a session saved
+ * before per-row depths meant "the user set this" carries one for every color, so it restores with
+ * none rather than with overrides nobody typed.
+ *
+ * Split out from applyRestoredSession so it can be tested against the real rule — inlined, the
+ * only way to cover it was to restate the condition in the test, which then passed whatever the
+ * source did.
+ */
+export function restoredColorSettings(session: PersistedSession): AppState['colorSettings'] {
+  return session.explicitDepths ? session.colorSettings : {};
+}
+
 export function loadSavedSession(): PersistedSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -248,7 +272,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.baseColorKey = session.baseColorKey;
   state.baseColorMembers = session.baseColorMembers;
   state.mergeGroups = session.mergeGroups;
-  state.colorSettings = session.colorSettings;
+  state.colorSettings = restoredColorSettings(session);
   state.keptApart = session.keptApart;
 
   const sources: DesignSource[] = session.sources.map((s) => ({

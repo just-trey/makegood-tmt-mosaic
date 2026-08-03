@@ -10,8 +10,10 @@ vi.mock('../src/export/printers', () => ({
 }));
 
 import { renderColorList, refreshSlotCountCapacity } from '../src/ui/colorList';
+import { state } from '../src/state/store';
 import { getPrinter } from '../src/export/printers';
 import { WARNINGS, clearWarnings } from '../src/warnings';
+import { scheduleRebuild } from '../src/app/scheduler';
 
 function entry(color: string, overrides: Partial<ColorListEntry> = {}): ColorListEntry {
   return {
@@ -19,7 +21,6 @@ function entry(color: string, overrides: Partial<ColorListEntry> = {}): ColorLis
     key: color,
     members: [color],
     isMergeGroup: false,
-    depth: 0.6,
     areaPct: 10,
     isBackground: false,
     ...overrides,
@@ -152,5 +153,349 @@ describe('renderColorList — slot count line', () => {
     refreshSlotCountCapacity();
 
     expect(slotLine().textContent).toBe('');
+  });
+});
+
+describe('renderColorList — depth field', () => {
+  const depthInput = (): HTMLInputElement =>
+    document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+
+  beforeEach(() => {
+    state.colorSettings = {};
+    state.globalDepth = 1;
+  });
+
+  it('does not write the rendered depth back into colorSettings', () => {
+    // The bug this guards: seeding colorSettings from the build's (already clamped) depth pinned
+    // every row to it, so the next build compared the clamped value against itself, fell silent,
+    // and kept cutting a depth nobody asked for.
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    expect(state.colorSettings).toEqual({});
+  });
+
+  it('shows the global depth for a row with no override, and follows it when it changes', () => {
+    state.globalDepth = 6;
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(depthInput().value).toBe('6.00');
+
+    state.globalDepth = 1.5;
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(depthInput().value).toBe('1.50');
+  });
+
+  it('shows a per-row override instead of the global', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    expect(depthInput().value).toBe('2.50');
+  });
+
+  it('stores a typed 0 rather than substituting a default', () => {
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    depthInput().value = '0';
+    depthInput().dispatchEvent(new Event('change'));
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 0 });
+  });
+
+  it('drops the override when the field is cleared, returning the row to the global depth', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    depthInput().value = '';
+    depthInput().dispatchEvent(new Event('change'));
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+  });
+});
+
+describe('renderColorList — depth override affordance', () => {
+  const depthInput = (): HTMLInputElement =>
+    document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+  const resetBtn = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>('.color-row .depth-reset');
+
+  beforeEach(() => {
+    state.colorSettings = {};
+    state.globalDepth = 1;
+  });
+
+  it('marks a row that carries its own depth, and offers a way back', () => {
+    // Without this the global Depth field silently not moving a row had no visible cause and no
+    // visible undo — clearing the field was the only way, and only the help panel said so.
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(resetBtn()).toBeNull();
+    expect(depthInput().classList.contains('overridden')).toBe(false);
+
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(resetBtn()).not.toBeNull();
+    expect(depthInput().classList.contains('overridden')).toBe(true);
+  });
+
+  it('explains the override on the field that carries it, not on the one that does not', () => {
+    // The explanation used to sit on the *non*-overridden field, so hovering the field that looked
+    // different to ask why returned an empty tooltip — and the only text that answered it was on a
+    // 19x17px glyph the user had to guess was hoverable.
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(depthInput().title).toContain('Following the default');
+
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(depthInput().title).toContain('2.50 mm');
+    expect(depthInput().title).toContain('1.00 mm default');
+    expect(resetBtn()!.title).toContain('Reset to the default depth');
+  });
+
+  it('gives the reset the same button chrome as the rest of the row', () => {
+    // Borderless and dim, it was styled identically to the `depth` label and the `mm` unit beside
+    // it and shared nothing with the real button in the row above — so nothing at rest said it was
+    // clickable.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    expect(resetBtn()!.classList.contains('btn')).toBe(true);
+  });
+
+  it('drops the override when reset is clicked', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    resetBtn()!.click();
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+  });
+
+  it('marks a row set to the same value as the global — it is still pinned', () => {
+    state.globalDepth = 1;
+    state.colorSettings = { '#ff0000': { depth: 1 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    expect(resetBtn()).not.toBeNull();
+  });
+});
+
+describe('renderColorList — reset survives the field it sits next to', () => {
+  const resetButton = (): HTMLElement =>
+    document.querySelector<HTMLElement>('.color-row .depth-reset')!;
+
+  /** One real mouse press on `down`, released over `up` (the same button unless told otherwise). */
+  function press(
+    down: HTMLElement,
+    { up = down, button = 0 }: { up?: HTMLElement; button?: number } = {},
+  ): MouseEvent {
+    const init = { bubbles: true, cancelable: true, button };
+    const ev = new MouseEvent('mousedown', init);
+    down.dispatchEvent(ev);
+    up.dispatchEvent(new MouseEvent('mouseup', init));
+    // A right- or middle-press raises no click at all, and neither does one released elsewhere.
+    if (button === 0 && up === down) down.dispatchEvent(new MouseEvent('click', init));
+    return ev;
+  }
+
+  beforeEach(() => {
+    state.colorSettings = {};
+    state.globalDepth = 1;
+  });
+
+  it('holds the blur off on mousedown, and clears when the press completes', () => {
+    // Clicking ↺ blurs the depth field first. That blur fires the field's change handler, which
+    // re-stores the override and schedules the rebuild that re-renders the list — destroying the
+    // button before the press could land, so the first press appeared to do nothing.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    const ev = press(resetButton());
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+    // the default must be prevented, or the blur-change still fires and puts the override back
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('leaves the override alone when the press is dragged off and released', () => {
+    // The standard way to cancel a click. Clearing on mousedown made that gesture destroy the depth
+    // anyway — and there is no undo — so nothing may be cleared before the release.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    vi.mocked(scheduleRebuild).mockClear();
+
+    press(resetButton(), { up: document.querySelector<HTMLElement>('#stat-colors')! });
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 2.5 });
+    expect(vi.mocked(scheduleRebuild)).not.toHaveBeenCalled();
+  });
+
+  it('ignores a release on a different row than the press started on', () => {
+    // mouseup goes to whatever is under the pointer, which after a drag across rows is somebody
+    // else's button — and no click follows that gesture either.
+    state.colorSettings = { '#ff0000': { depth: 2.5 }, '#0000ff': { depth: 3 } };
+    renderColorList([entry('#ff0000'), entry('#0000ff')], { rawColorCount: 2 });
+    const buttons = document.querySelectorAll<HTMLElement>('.color-row .depth-reset');
+
+    press(buttons[0], { up: buttons[1] });
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 2.5 });
+    expect(state.colorSettings['#0000ff']).toEqual({ depth: 3 });
+  });
+
+  it('ignores the click a real browser still fires on B after a drag from A', () => {
+    // Per spec, if the mousedown target is no longer in the document, click is dispatched directly
+    // at the mouseup target instead of at their common ancestor — so a drag from A's button to B's
+    // both leaves the common-ancestor detour that would normally keep click off any button, *and*
+    // still fires one, landing squarely on B with no origin check of its own. mouseup already
+    // declined to clear B (previous test); click must not re-decide and clear it anyway.
+    state.colorSettings = { '#ff0000': { depth: 2.5 }, '#0000ff': { depth: 3 } };
+    renderColorList([entry('#ff0000'), entry('#0000ff')], { rawColorCount: 2 });
+    const [btnA, btnB] = document.querySelectorAll<HTMLElement>('.color-row .depth-reset');
+
+    btnA.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    btnB.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    btnB.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    expect(state.colorSettings['#0000ff']).toEqual({ depth: 3 });
+  });
+
+  it('forgets an abandoned press once the release lands outside the list', () => {
+    // pressedKey is only written back to null by an in-list mouseup. Without a document-level
+    // catch-all, a release outside the list would leave it naming row A forever — so a later,
+    // wholly unrelated gesture that starts outside the list and happens to end on row A's own
+    // button would pass the "did this press start here" check and clear it anyway.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    const btn = resetButton();
+    const outside = document.querySelector<HTMLElement>('#slot-count')!;
+
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    outside.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    // no mousedown of its own — models a gesture that began outside the list entirely
+    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 2.5 });
+  });
+
+  it('rebuilds once for one press, not once per event', () => {
+    // Three events are wired, each covering a case the others get wrong. When the rebuild is slow
+    // enough that the row is still mounted, the later ones arrive at a button that has already done
+    // its job — and an unguarded second call marks the scene dirty and buys a whole extra CSG pass.
+    // Slow rebuilds are exactly the ones that got doubled.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    vi.mocked(scheduleRebuild).mockClear();
+
+    press(resetButton());
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+    expect(vi.mocked(scheduleRebuild)).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a non-primary press, which gets no click to undo it', () => {
+    // `click` never fires for a right- or middle-press, so a later pass can't catch one: the press
+    // threw the override away while the context menu opened, with no undo.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    vi.mocked(scheduleRebuild).mockClear();
+
+    const ev = press(resetButton(), { button: 2 });
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 2.5 });
+    expect(ev.defaultPrevented).toBe(false); // and the context menu still opens
+    expect(vi.mocked(scheduleRebuild)).not.toHaveBeenCalled();
+  });
+
+  it('settles a pending edit in another row before rebuilding, not during', () => {
+    // preventDefault suppresses the blur that would commit that edit, so it sat pending until the
+    // rebuild removed the field — and Chrome's change-on-removal then landed mid-render, after the
+    // pass had already read colorSettings, buying a second full rebuild. Blurring it here puts the
+    // change in the same tick, where the debounce folds both into one. jsdom raises no change of
+    // its own on blur, so the assertion is on the blur; the change below stands in for the one the
+    // browser fires off it.
+    state.colorSettings = { '#0000ff': { depth: 2.5 } };
+    renderColorList([entry('#ff0000'), entry('#0000ff')], { rawColorCount: 2 });
+    const rows = document.querySelectorAll<HTMLElement>('.color-row:not(.is-base)');
+    const pending = rows[0].querySelector<HTMLInputElement>('.depth-input')!;
+    pending.focus();
+    pending.value = '3.3'; // typed into the red row, never committed
+
+    press(rows[1].querySelector<HTMLElement>('.depth-reset')!);
+
+    expect(document.activeElement).not.toBe(pending);
+    pending.dispatchEvent(new Event('change'));
+    // the other row's edit still lands — only the reset's own row is marked abandoned
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 3.3 });
+    expect(state.colorSettings['#0000ff']).toBeUndefined();
+  });
+
+  it('still clears on a keyboard activation, which raises click without mousedown', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    resetButton().click();
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+  });
+
+  it('still resets when a rebuild replaced the button mid-press', () => {
+    // What the live run caught and a per-button listener missed: editing the field fires change
+    // immediately, so a rebuild can already be in flight and replace the list's innerHTML between
+    // the press and the release. Delegation from the container survives that, and mouseup lands on
+    // the replacement button — which carries the same reset key — rather than on a detached node.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    const stale = resetButton();
+
+    stale.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    // the rebuild the field's change scheduled, landing before the user lifts the button
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(resetButton()).not.toBe(stale);
+    resetButton().dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+  });
+
+  it('ignores the pending edit that fires after the reset tears the field out', () => {
+    // Found by driving the real app: preventDefault stops the press blurring the field, but the
+    // rebuild then removes the focused input and Chrome fires its pending change on removal —
+    // re-storing the override the reset just cleared, one beat too late to see on screen.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    const input = document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+
+    input.value = '3.3'; // typed, never committed
+    press(resetButton());
+    input.dispatchEvent(new Event('change')); // the last gasp on removal
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+  });
+
+  it('suppresses exactly one change, so a still-mounted row stays editable', () => {
+    // The row is only replaced when a rebuild re-renders the list. While one is already in flight
+    // — or when it throws, which skips renderColorList entirely — the field stays mounted, and a
+    // marker left set would swallow every later edit to it, without even scheduling a rebuild.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    const input = document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+
+    press(resetButton());
+    input.dispatchEvent(new Event('change')); // the one the reset is guarding against
+
+    // no re-render happened; the user now types a real value into the same field
+    input.value = '1.75';
+    input.dispatchEvent(new Event('change'));
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 1.75 });
+  });
+
+  it('re-arms on typing, even when the reset produced no change to consume the marker', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    const input = document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+
+    press(resetButton());
+
+    input.value = '1.75';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('change'));
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 1.75 });
   });
 });
