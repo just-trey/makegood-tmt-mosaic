@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Every confirmation and error alert (switching parts, loading the full
+  assembly, switching the chair's hardware variant, a failed part/pattern/
+  export load) now uses a themed dialog matching the app instead of the
+  browser's own unstyled `confirm()`/`alert()` popup.
 - The warning panel now shows every current warning, not just the first 6
   with the rest collapsed into an unreadable "+ N more warnings" — the
   panel already scrolled, it just never had more than 7 pills to scroll

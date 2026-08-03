@@ -17,6 +17,7 @@ import { initDepthPanel } from './ui/depthPanel';
 import { initArtworkPanel, renderPatternPicker } from './ui/artworkPanel';
 import { initExportPanel } from './ui/exportPanel';
 import { initHelpPanel } from './ui/helpPanel';
+import { initConfirmDialog } from './ui/dialogs';
 import { initRestoreBanner } from './ui/restoreBanner';
 import { initBeforeUnloadGuard } from './state/persist';
 import { $ } from './ui/dom';
@@ -53,6 +54,7 @@ initDepthPanel();
 initArtworkPanel();
 initExportPanel();
 initHelpPanel();
+initConfirmDialog();
 initBeforeUnloadGuard();
 
 renderColorList(null);

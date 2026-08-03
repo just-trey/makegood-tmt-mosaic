@@ -5,9 +5,11 @@ vi.mock('../src/app/scheduler', () => ({ scheduleRebuild: vi.fn() }));
 vi.mock('../src/scene/viewport', () => ({ requestFrame: vi.fn() }));
 vi.mock('../src/ui/overlay', () => ({ showOverlay: vi.fn(), hideOverlay: vi.fn() }));
 vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
+vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
 
 import { switchChairVariant } from '../src/assembly/parts';
 import { track as trackMock } from '../src/analytics/track';
+import { confirmDialog as confirmDialogMock } from '../src/ui/dialogs';
 import { state } from '../src/state/store';
 import type { AssemblyPart } from '../src/types';
 
@@ -44,40 +46,33 @@ afterEach(() => {
   state.assembly.kindId = null;
   state.assembly.variantId = null;
   state.assembly.parts = [];
-  vi.unstubAllGlobals();
+  vi.mocked(confirmDialogMock).mockReset();
 });
 
 describe('switchChairVariant', () => {
   it('is a no-op when the target variant is already current', async () => {
-    const confirmSpy = vi.fn();
-    vi.stubGlobal('confirm', confirmSpy);
-
     await switchChairVariant('standard');
 
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(confirmDialogMock).not.toHaveBeenCalled();
     expect(state.assembly.variantId).toBe('standard');
     expect(vi.mocked(trackMock)).not.toHaveBeenCalled();
   });
 
   it('is a no-op for a kind with no variants', async () => {
     state.assembly.kindId = 'wheel';
-    const confirmSpy = vi.fn();
-    vi.stubGlobal('confirm', confirmSpy);
 
     await switchChairVariant('kit');
 
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(confirmDialogMock).not.toHaveBeenCalled();
     expect(state.assembly.variantId).toBe('standard'); // untouched
   });
 
   it('switches without confirming when no variant-dependent role is loaded yet', async () => {
     state.assembly.parts = [fakePart(1, 'handle-left')];
-    const confirmSpy = vi.fn();
-    vi.stubGlobal('confirm', confirmSpy);
 
     await switchChairVariant('kit');
 
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(confirmDialogMock).not.toHaveBeenCalled();
     expect(state.assembly.variantId).toBe('kit');
     // the unrelated part survives; fresh (unloaded) caster-left/caster-right parts were added
     expect(state.assembly.parts.map((p) => p.roleId).sort()).toEqual([
@@ -95,10 +90,7 @@ describe('switchChairVariant', () => {
       fakePart(3, 'caster-right'),
     ];
     const originalCasterLeft = state.assembly.parts[1];
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => true),
-    );
+    vi.mocked(confirmDialogMock).mockResolvedValue(true);
 
     await switchChairVariant('kit');
 
@@ -118,10 +110,7 @@ describe('switchChairVariant', () => {
   it('cancelling the confirm leaves variant and parts untouched', async () => {
     const casterLeft = fakePart(2, 'caster-left');
     state.assembly.parts = [casterLeft];
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => false),
-    );
+    vi.mocked(confirmDialogMock).mockResolvedValue(false);
 
     await switchChairVariant('kit');
 

@@ -67,8 +67,8 @@ export function renderZoneTemplateLinks(): void {
 /**
  * The hardware-variant radio (Standard/Kit) for a kind that declares `variants` — hidden for every
  * other kind. Re-rendered after every switch attempt (not just a successful one) so a cancelled
- * confirm() snaps the radio back to the still-current variant instead of leaving it showing the
- * click the user backed out of.
+ * confirmDialog() snaps the radio back to the still-current variant instead of leaving it showing
+ * the click the user backed out of.
  */
 export function renderAssemblyVariantControls(): void {
   const row = $('#asm-variant-row');
