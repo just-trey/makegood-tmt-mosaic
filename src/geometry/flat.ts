@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { MIN_CUT_DEPTH_MM, depthDiffers, requestedDepth } from './depth';
 import type {
   BaseParams,
   ColorSettings,
@@ -271,7 +272,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const footprint = footprintFeature(shapeKind, baseParams);
   const thickness = baseParams.thickness;
 
-  const minDepth = 0.02;
+  const minDepth = MIN_CUT_DEPTH_MM;
   const maxDepth = thickness - 0.05;
   const clampDepth = (d: number) => Math.min(Math.max(d, minDepth), maxDepth);
 
@@ -282,10 +283,9 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
    * requested one, the flat-mode counterpart to assembly mode's cut-through warning.
    */
   const resolveDepth = (key: string, label: string): number => {
-    const set = colorSettings[key] && colorSettings[key].depth;
-    const requested = typeof set === 'number' && Number.isFinite(set) ? set : globalDepth;
+    const requested = requestedDepth(colorSettings, globalDepth, key);
     const depth = clampDepth(requested);
-    if (Math.abs(depth - requested) > 1e-6)
+    if (depthDiffers(depth, requested))
       warnBuild(
         `Depth for "${label}" was set to ${requested.toFixed(2)} mm, but a ${thickness.toFixed(2)} mm ` +
           `plate can only cut ${minDepth.toFixed(2)}–${maxDepth.toFixed(2)} mm deep — it was cut at ` +
@@ -312,7 +312,9 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const colorEntries: Entry[] = [];
   resolvedRegions.forEach((r) => {
     const feat = transformFeature(r.feature, fit);
-    const depth = resolveDepth(r.key, r.isMerge ? `${r.previewColor} (merged)` : r.previewColor);
+    // Name the row the user can actually see: the color list renders a group as "Merged (N)" and
+    // never shows its dominant hex as text, so naming it by hex points at nothing on screen.
+    const depth = resolveDepth(r.key, r.isMerge ? `Merged (${r.members.length})` : r.previewColor);
     colorEntries.push({
       color: r.previewColor,
       key: r.key,

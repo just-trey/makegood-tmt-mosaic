@@ -10,6 +10,7 @@ vi.mock('../src/export/printers', () => ({
 }));
 
 import { renderColorList, refreshSlotCountCapacity } from '../src/ui/colorList';
+import { state } from '../src/state/store';
 import { getPrinter } from '../src/export/printers';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 
@@ -19,7 +20,6 @@ function entry(color: string, overrides: Partial<ColorListEntry> = {}): ColorLis
     key: color,
     members: [color],
     isMergeGroup: false,
-    depth: 0.6,
     areaPct: 10,
     isBackground: false,
     ...overrides,
@@ -152,5 +152,58 @@ describe('renderColorList — slot count line', () => {
     refreshSlotCountCapacity();
 
     expect(slotLine().textContent).toBe('');
+  });
+});
+
+describe('renderColorList — depth field', () => {
+  const depthInput = (): HTMLInputElement =>
+    document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+
+  beforeEach(() => {
+    state.colorSettings = {};
+    state.globalDepth = 1;
+  });
+
+  it('does not write the rendered depth back into colorSettings', () => {
+    // The bug this guards: seeding colorSettings from the build's (already clamped) depth pinned
+    // every row to it, so the next build compared the clamped value against itself, fell silent,
+    // and kept cutting a depth nobody asked for.
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    expect(state.colorSettings).toEqual({});
+  });
+
+  it('shows the global depth for a row with no override, and follows it when it changes', () => {
+    state.globalDepth = 6;
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(depthInput().value).toBe('6.00');
+
+    state.globalDepth = 1.5;
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(depthInput().value).toBe('1.50');
+  });
+
+  it('shows a per-row override instead of the global', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    expect(depthInput().value).toBe('2.50');
+  });
+
+  it('stores a typed 0 rather than substituting a default', () => {
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    depthInput().value = '0';
+    depthInput().dispatchEvent(new Event('change'));
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 0 });
+  });
+
+  it('drops the override when the field is cleared, returning the row to the global depth', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    depthInput().value = '';
+    depthInput().dispatchEvent(new Event('change'));
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
   });
 });

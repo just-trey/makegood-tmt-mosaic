@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Position } from 'geojson';
+import { MIN_CUT_DEPTH_MM, depthDiffers, requestedDepth } from './depth';
 import type {
   AssemblyBuild,
   AssemblyPaletteEntry,
@@ -587,8 +588,19 @@ export async function buildAssemblyGeometry(
         feat = safeIntersect(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
         if (!feat) return;
       }
-      const depthSetting = (colorSettings[c.key] && colorSettings[c.key].depth) || globalDepth;
-      if (depthSetting <= 0) return;
+      const requested = requestedDepth(colorSettings, globalDepth, c.key);
+      // A depth at or below zero used to drop this color from the part and say nothing. Assembly
+      // mode can't bound the deep end the way a flat plate can — wall thickness varies across a
+      // part, which is what the cut-through warning below is for — but the shallow end is the same
+      // floor, and going quiet about an overridden depth is exactly what that warning exists to
+      // stop. No part name: the depth is a per-color setting, so this dedupes to one warning
+      // rather than one per part carrying the color.
+      const depthSetting = Math.max(requested, MIN_CUT_DEPTH_MM);
+      if (depthDiffers(depthSetting, requested))
+        warnBuild(
+          `Depth for color ${c.hex} was set to ${requested.toFixed(2)} mm, which would cut ` +
+            `nothing — it was cut at ${depthSetting.toFixed(2)} mm instead.`,
+        );
       const depth = mapper.resolveCutDepth(depthSetting);
       // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
       // step); the snap tolerance is a property of the bake, so both modes take the same one.

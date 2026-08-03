@@ -177,8 +177,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   perfectly valid file that simply wasn't the one you asked for, with nothing
   on screen saying so. The depth is still clamped, since a recess reaching the
   back of the plate would cut through it, but now a warning names the color
-  (or "Background"), what was asked for, and what was actually cut. Assembly
-  mode already warned about its equivalent.
+  (or "Background"), what was asked for, and what was actually cut, and it
+  says so on every rebuild rather than only the first. Assembly mode already
+  warned about its equivalent.
+- A depth of 0 or less on an assembly part dropped that color from the part
+  with no recess, no inlay, and no message. It now cuts at the same 0.02 mm
+  floor the flat modes use, and says so. Relatedly, a depth field left at a
+  deliberate `0` was read as "no depth set" and silently replaced with the
+  global Depth — a row reading 0.00 could cut a full millimetre.
 - The 3D viewport redrew every frame for the whole session, whether or not
   anything had changed, keeping a core busy behind an idle model — noticeable
   as heat and battery drain on a laptop, and as a slow app on any machine

@@ -157,14 +157,32 @@ at the nearest depth in it instead.
   what you typed.
 - Fix it from either end: lower that region's depth, or raise **Thickness** in
   the Part section so the depth you want fits.
-- The name in the message is the color list row: a hex for a plain color, that
-  hex plus "(merged)" for a merged group, and "Background" for the background
-  recess row.
+- The name in the message is the color list row, worded exactly as that row
+  labels itself: a hex for a plain color, "Merged (N)" for a merged group, and
+  "Background" for the background recess row.
 - A region with no depth of its own uses the global **Depth** field, so a
   global depth larger than the plate warns for every region at once — raise
   the thickness or lower the global depth rather than editing rows one by one.
+  Clearing a row's depth field puts that row back under the global.
 
-Assembly mode has the same hazard but catches it later and words it
-differently, because there the wall thickness varies across the part and the
-cut-through only shows up once the boolean has run: see "Part … has no
+Assembly mode has the same hazard at the deep end but catches it later and
+words it differently, because there the wall thickness varies across the part
+and the cut-through only shows up once the boolean has run: see "Part … has no
 geometry to export" above.
+
+## Troubleshooting: "Depth for color … would cut nothing" warnings (assembly mode)
+
+A depth of zero or less cuts no pocket at all. In assembly mode that used to
+drop the color from the part silently — no recess, no inlay, no message, just
+a part missing one of its colors. The depth is now raised to the 0.02 mm floor
+the flat modes use and the warning names the color and both numbers.
+
+- **Nothing is dropped** — the color cuts at 0.02 mm, shallow enough to look
+  nearly flat. If you meant to remove the color, use "→ base" on its row to
+  print it in the body instead; if you meant to cut it, give it a real depth.
+- One warning per color, not per part: depth is a per-color setting, so a
+  global **Depth** of 0 reports each affected color once however many parts
+  carry it.
+- Assembly mode bounds only the shallow end. There is no upper limit, because
+  a part's wall thickness varies across it — a depth deeper than the wall is
+  caught after the boolean instead, as "Part … has no geometry to export".

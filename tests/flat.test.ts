@@ -114,4 +114,53 @@ describe('buildGeometry depth clamp warning', () => {
     await buildGeometry(baseInput());
     expect(WARNINGS).toHaveLength(0);
   });
+
+  it('stays quiet when the clamp only moves the depth below the printed precision', async () => {
+    // 3.951 clamps to 3.95 on a 4 mm plate. Warning about it would print "was set to 3.95 mm …
+    // it was cut at 3.95 mm instead", which reads as a bug in the warning rather than a fact.
+    await buildGeometry(baseInput({ colorSettings: { '#ff0000': { depth: 3.951 } } }));
+    expect(WARNINGS).toHaveLength(0);
+  });
+
+  it('names a merged group the way the color list labels it', async () => {
+    const parsed = squareParsed();
+    parsed.shapes.push({
+      fill: '#00ff00',
+      loops: [
+        [
+          { x: 20, y: 0 },
+          { x: 30, y: 0 },
+          { x: 30, y: 10 },
+          { x: 20, y: 10 },
+        ],
+      ],
+      order: 1,
+    });
+    await buildGeometry(
+      baseInput({
+        parsed,
+        mergeGroups: [['#ff0000', '#00ff00']],
+        globalDepth: 100,
+        recessBg: false,
+      }),
+    );
+    expect(WARNINGS.some((w) => w.message.startsWith('Depth for "Merged (2)" was set to'))).toBe(
+      true,
+    );
+    expect(WARNINGS.every((w) => !w.message.includes('(merged)'))).toBe(true);
+  });
+
+  it('warns on every rebuild, not only the first', async () => {
+    // The clamped depth must never get written back into colorSettings as if the user had asked
+    // for it — that silenced this warning from the second build onward while the depth stayed
+    // wrong. Same input twice must report the same thing twice.
+    const input = baseInput({ colorSettings: { '#ff0000': { depth: 100 } } });
+    await buildGeometry(input);
+    const first = WARNINGS.filter((w) => w.message.startsWith('Depth for')).length;
+    clearWarnings();
+    await buildGeometry(input);
+
+    expect(first).toBeGreaterThan(0);
+    expect(WARNINGS.filter((w) => w.message.startsWith('Depth for'))).toHaveLength(first);
+  });
 });

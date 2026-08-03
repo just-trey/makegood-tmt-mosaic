@@ -32,12 +32,20 @@ How the geometry actually works — read this before touching `src/geometry/` or
    Each region's depth is first held inside what the plate can carry — at least
    0.02 mm, and at most the thickness less the 0.05 mm floor that keeps a
    recess from cutting through — and any depth that had to move warns, naming
-   the region and both numbers.
+   the region and both numbers. What a region asked for is resolved in one
+   place for both modes ([src/geometry/depth.ts](../src/geometry/depth.ts)):
+   an explicit per-row override if it is finite, otherwise the global depth.
+   A stored `0` is a real answer there, not an absent one, and the clamped
+   result is never written back into the settings — doing so pinned each row
+   to its own clamp and silenced the warning from the second rebuild on.
 5. **Assembly mode** cuts pockets into real part meshes: each color region is
    extruded into a prism in the part's own coordinates and booleaned against
    the mesh with [Manifold](https://github.com/elalish/manifold) (WASM CSG,
    lazy-loaded) ([src/geometry/assembly.ts](../src/geometry/assembly.ts)).
-   Supports rotated-copy parts (the same physical part installed twice, e.g.
+   Depth is bounded only at the shallow end here — raised to the same 0.02 mm
+   floor, with a warning — because a part's wall thickness varies across it, so
+   the too-deep case can only be caught after the boolean, as a cut that came
+   out empty. Supports rotated-copy parts (the same physical part installed twice, e.g.
    a wheel's two halves): the design slice that lands on the copy is remapped
    back into the part's native print orientation. Round parts (the wheel) map
    the SVG via a Design-radius/circle model; rectangular parts (the footrest)

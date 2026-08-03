@@ -1,4 +1,5 @@
 import { addToBase, removeFromBase, replaceBase, state } from '../state/store';
+import { requestedDepth } from '../geometry/depth';
 import { scheduleRebuild } from '../app/scheduler';
 import { nearestFilamentName } from '../state/filaments';
 import { getPrinter } from '../export/printers';
@@ -10,7 +11,6 @@ export interface ColorListEntry {
   key: string;
   members: string[];
   isMergeGroup: boolean;
-  depth: number;
   areaPct: number;
   isBackground: boolean;
   /** printed in the body instead of cut — a distinct status row, no depth/merge controls */
@@ -158,7 +158,12 @@ export function renderColorList(
     const row = document.createElement('div');
     row.className = 'color-row';
 
-    if (!state.colorSettings[c.key]) state.colorSettings[c.key] = { depth: c.depth };
+    // Show what was asked for, and don't write it back. Seeding colorSettings from the build's
+    // depth pinned every row to the *clamped* value on the first render: the second build then
+    // compared 3.95 against 3.95, went quiet, and kept cutting the wrong depth — and lowering the
+    // global Depth field, the fix the warning tells you to apply, no longer reached rows that now
+    // carried an explicit override. colorSettings holds deliberate per-row overrides only.
+    const shownDepth = requestedDepth(state.colorSettings, state.globalDepth, c.key);
 
     let swatchHtml: string,
       labelHtml: string,
@@ -208,7 +213,7 @@ export function renderColorList(
       ${membersRowHtml}
       <div class="depth-row">
         <label>depth</label>
-        <input type="number" class="depth-input" step="0.05" min="0.05" value="${state.colorSettings[c.key].depth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}">
+        <input type="number" class="depth-input" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}">
         <span class="hint">mm</span>
         <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
       </div>
@@ -226,10 +231,12 @@ export function renderColorList(
     row.querySelector<HTMLInputElement>('.depth-input')!.addEventListener('change', (e) => {
       // A typed 0 or a negative used to land here as 0.1, so the build never saw the number that
       // was actually asked for and couldn't say it had been overridden. Pass anything numeric
-      // through and let buildGeometry's clamp be the one place that reports the override; only a
-      // blank/unparseable field still falls back.
+      // through and let the geometry clamp be the one place that reports the override. Clearing
+      // the field drops the override entirely, so the row goes back to following the global Depth
+      // rather than sticking at a magic 0.1 nobody asked for.
       const typed = parseFloat((e.target as HTMLInputElement).value);
-      state.colorSettings[c.key] = { depth: Number.isFinite(typed) ? typed : 0.1 };
+      if (Number.isFinite(typed)) state.colorSettings[c.key] = { depth: typed };
+      else delete state.colorSettings[c.key];
       scheduleRebuild();
     });
     row.querySelectorAll<HTMLElement>('[data-pull]').forEach((btn) => {

@@ -156,7 +156,6 @@ async function rebuildScene(): Promise<void> {
     key: c.key,
     members: c.members,
     isMergeGroup: c.isMergeGroup,
-    depth: c.depth,
     areaPct: c.areaPct,
     isBackground: c.isBackground,
   }));
@@ -166,7 +165,6 @@ async function rebuildScene(): Promise<void> {
       key: 'base:' + built.baseAssigned.hex,
       members: state.baseColorMembers,
       isMergeGroup: false,
-      depth: 0,
       areaPct: built.baseAssigned.areaPct,
       isBackground: false,
       isBase: true,
@@ -388,8 +386,6 @@ async function rebuildAssemblyScene(): Promise<void> {
         key: c.key,
         members: c.members,
         isMergeGroup: c.isMerge,
-        depth:
-          (state.colorSettings[c.key] && state.colorSettings[c.key].depth) || state.globalDepth,
         areaPct: area,
         isBackground: false,
       });
@@ -407,7 +403,6 @@ async function rebuildAssemblyScene(): Promise<void> {
       key: 'base:' + built.baseAssigned.hex,
       members: state.baseColorMembers,
       isMergeGroup: false,
-      depth: 0,
       areaPct: built.baseAssigned.areaPct,
       isBackground: false,
       isBase: true,
