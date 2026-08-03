@@ -205,6 +205,17 @@
               being cut. Empty the base entirely and the body falls back to the plain Body / blank
               color picker up in Part.
             </p>
+            <p>
+              The line below the color list ("N colors → M AMS slots needed") always includes the
+              body's own slot in the count — that's the "+1" you'll see even before anything is
+              merged. Every AMS/toolchanger unit holds 4, so past 4 the line stands out and a pill
+              appears saying you'll need a second unit or manual filament swaps; the Bambus
+              daisy-chain up to 16 (25 on an H2D across both nozzles), while the Snapmaker U1's 4
+              toolheads are a hard ceiling. Only going past the printer's real maximum turns the
+              line red, and even then exporting still works. Both update the moment you switch
+              printers below in Export, so you can compare before committing to a file. Dismissing
+              the pill keeps it gone until the count or the printer actually changes.
+            </p>
           </section>
 
           <section class="help-sec" id="h-export">
@@ -608,9 +619,9 @@
             <label for="p-printer">Printer</label>
             <div class="field">
               <select id="p-printer">
-                <option value="bambu-x1c" selected>256 × 256 (X1C / P1S / A1)</option>
-                <option value="bambu-h2d">350 × 320 (H2D)</option>
-                <option value="snapmaker-u1">270 × 270 (Snapmaker U1)</option>
+                <option value="bambu-x1c" selected>Bambu X1C / P1S / A1 (256 × 256mm)</option>
+                <option value="bambu-h2d">Bambu H2D (350 × 320mm)</option>
+                <option value="snapmaker-u1">Snapmaker U1 (270 × 270mm)</option>
               </select>
             </div>
           </div>

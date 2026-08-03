@@ -18,7 +18,7 @@ vi.mock('../src/export/placement', () => ({
   placementNotice: vi.fn(() => null),
 }));
 vi.mock('../src/export/printers', () => ({
-  getPrinter: vi.fn(() => ({})),
+  getPrinter: vi.fn(() => ({ label: 'Test Printer', amsSlotsPerUnit: 4, amsSlotsMax: 16 })),
   DEFAULT_PRINTER_ID: 'p1',
 }));
 vi.mock('../src/ui/overlay', () => ({
@@ -30,6 +30,12 @@ vi.mock('../src/analytics/track', () => ({
 }));
 
 import { exportPrintReady3MF } from '../src/ui/exportPanel';
+import {
+  refreshSlotBudgetNotice,
+  SLOT_MULTI_UNIT_NOTICE_SUFFIX,
+  SLOT_OVER_MAX_WARNING_SUFFIX,
+} from '../src/ui/slotBudget';
+import { getPrinter } from '../src/export/printers';
 import { getLastAssemblyBuild } from '../src/app/rebuild';
 import { build3MFCombined } from '../src/export/threemf';
 import { state } from '../src/state/store';
@@ -80,7 +86,15 @@ beforeAll(() => {
 beforeEach(() => {
   vi.mocked(getLastAssemblyBuild).mockReset();
   vi.mocked(build3MFCombined).mockClear();
+  // resets slotBudget's module-level "what's posted" memory, which would otherwise make the next
+  // test's identical pill look like one the user had dismissed
+  refreshSlotBudgetNotice(0);
   clearWarnings();
+  vi.mocked(getPrinter).mockReturnValue({
+    label: 'Test Printer',
+    amsSlotsPerUnit: 4,
+    amsSlotsMax: 16,
+  } as ReturnType<typeof getPrinter>);
   document.body.innerHTML = '<div id="warnings"></div>';
   state.shapeKind = 'assembly';
   state.printerId = 'p1';
@@ -109,5 +123,54 @@ describe('exportPrintReady3MF — parts consumed entirely by their cut', () => {
     expect(
       WARNINGS.some((w) => w.message.includes('Consumed Part') && /pocket cut/i.test(w.message)),
     ).toBe(true);
+  });
+});
+
+function paletteOf(n: number): { hex: string; key: string; members: string[]; isMerge: boolean }[] {
+  return Array.from({ length: n }, (_, i) => {
+    const hex = `#00000${i}`;
+    return { hex, key: hex, members: [hex], isMerge: false };
+  });
+}
+
+function buildWithPalette(n: number): void {
+  vi.mocked(getLastAssemblyBuild).mockReturnValue({
+    partOutputs: [partOutput()],
+    palette: paletteOf(n),
+    viewSign: 1,
+    detectedColors: [],
+    baseAssigned: null,
+  });
+}
+
+describe('exportPrintReady3MF — AMS slot budget', () => {
+  const slotNotices = (): { message: string; level: string }[] =>
+    WARNINGS.filter(
+      (w) =>
+        w.message.endsWith(SLOT_MULTI_UNIT_NOTICE_SUFFIX) ||
+        w.message.endsWith(SLOT_OVER_MAX_WARNING_SUFFIX),
+    );
+
+  // the tiers themselves are tests/slotBudget.test.ts's job; what matters here is that the export
+  // path feeds it the *export's* material count (body + every palette entry), not the color list's
+  it('posts the pill against the export’s own material count', async () => {
+    buildWithPalette(4); // + the body's own slot = 5, past one unit's 4
+
+    await exportPrintReady3MF();
+
+    expect(slotNotices()).toHaveLength(1);
+    expect(slotNotices()[0].level).toBe('info');
+    expect(slotNotices()[0].message).toContain('5 AMS slots needed');
+  });
+
+  it('re-evaluates rather than leaving the previous export’s pill up', async () => {
+    buildWithPalette(16); // 17 slots, past the 16 max
+    await exportPrintReady3MF();
+    expect(slotNotices()[0].level).toBe('warn');
+
+    buildWithPalette(2); // 3 slots, fits a single unit
+    await exportPrintReady3MF();
+
+    expect(slotNotices()).toEqual([]);
   });
 });

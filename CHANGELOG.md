@@ -32,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   that does the same thing for keyboard or touch use. The Colors and
   Artwork panels' persistent hints now also explain Sticker/Fill mode and
   "+zone", instead of only a hover tooltip.
+- The AMS slot line under the color list now always shows both numbers
+  ("N colors → M AMS slots needed"), not only after a merge changes the
+  count, and reconciles that count against the printer picked in Export —
+  brightening past the 4 slots in a single AMS/toolchanger unit, and
+  turning red only past what that printer can print in one go (16 slots
+  across daisy-chained AMS units on the X1C / P1S / A1, 25 on an H2D
+  across both nozzles, a hard 4 on the Snapmaker U1's built-in
+  toolchanger). A pill spells out which of the two it is and how to get
+  the count down, and both it and the line update the moment you switch
+  printers rather than waiting for an export; dismissing the pill keeps it
+  gone until the count or the printer changes. The printer picker itself
+  is relabeled name-first (e.g. "Bambu X1C / P1S / A1 (256 × 256mm)").
 - Your session now autosaves as you work — part, artwork, placement, colors,
   depth, and printer — and offers to restore it if you come back after a
   reload, browser close, or crash. A dismissible banner asks first ("Restore

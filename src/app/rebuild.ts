@@ -174,7 +174,11 @@ async function rebuildScene(): Promise<void> {
     // scheduleRebuild here, this just mirrors what the build already computed
     state.baseColorKey = built.baseAssigned.hex;
   }
-  renderColorList(listEntries, { rawColorCount: built.detectedColors.length });
+  renderColorList(listEntries, {
+    rawColorCount: built.detectedColors.length,
+    // matches exportPrintReady3MF's flat-mode materials: Body + every colorMesh
+    slotsNeeded: built.colorMeshes.length + 1,
+  });
   renderBaseColorSwatches();
   renderWarnings();
   setExportEnabled(true);
@@ -412,7 +416,12 @@ async function rebuildAssemblyScene(): Promise<void> {
 
   poseAssemblyForDisplay();
   $('#stat-tris').textContent = Math.round(tris) + ' tris';
-  renderColorList(colorListEntries, { rawColorCount: built.detectedColors.length });
+  renderColorList(colorListEntries, {
+    rawColorCount: built.detectedColors.length,
+    // matches exportPrintReady3MF's assembly-mode materials: Body + the whole palette, including
+    // any color the list above skipped for having no inlay area on any part
+    slotsNeeded: built.palette.length + 1,
+  });
   renderBaseColorSwatches();
   renderWarnings();
   $<HTMLButtonElement>('#btn-export').disabled = built.partOutputs.length === 0;

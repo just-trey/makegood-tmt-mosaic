@@ -1,6 +1,8 @@
 import { addToBase, removeFromBase, replaceBase, state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { nearestFilamentName } from '../state/filaments';
+import { getPrinter } from '../export/printers';
+import { refreshSlotBudgetNotice, slotTier } from './slotBudget';
 import { $, $all } from './dom';
 
 export interface ColorListEntry {
@@ -125,12 +127,14 @@ function renderEmptyBaseRow(list: HTMLElement): void {
 
 export function renderColorList(
   colorMeshes: ColorListEntry[] | null,
-  opts: { rawColorCount?: number } = {},
+  opts: { rawColorCount?: number; slotsNeeded?: number } = {},
 ): void {
   const list = $('#color-list');
   if (!colorMeshes || !colorMeshes.length) {
     list.innerHTML = '<div class="empty-hint">No colors detected yet.</div>';
-    $('#slot-count').textContent = '';
+    lastSlotsNeeded = 0;
+    lastRawColorCount = 0;
+    renderSlotCount();
     $('#stat-colors').textContent = '0 colors';
     $('#stat-colors').style.display = 'none';
     return;
@@ -279,15 +283,58 @@ export function renderColorList(
   // +1 for AMS slots: the body itself always occupies one physical filament slot (materials[0] in
   // both export paths — see exportPanel.ts), on top of every cut color/group listed below the Base
   // row. The colors stat stays rows.length — it counts cut regions, not filament slots.
+  //
+  // slotsNeeded is passed explicitly because rows.length isn't always the export's material count:
+  // in assembly mode a palette color whose inlay fits on no part is dropped from this list
+  // (rebuild.ts skips area === 0) yet still ships as a 3MF material. Reporting fewer slots than the
+  // export warns about is the worse failure, so the caller's number wins where it has one.
   const cutColors = rows.length;
-  const slots = cutColors + 1;
-  const raw = opts.rawColorCount;
-  $('#slot-count').textContent =
-    raw && raw !== cutColors
-      ? `${raw} colors → ${slots} AMS slot${slots === 1 ? '' : 's'} needed`
-      : slots + ' AMS slot' + (slots === 1 ? '' : 's') + ' needed';
+  lastSlotsNeeded = opts.slotsNeeded ?? cutColors + 1;
+  lastRawColorCount = opts.rawColorCount ?? cutColors;
+  renderSlotCount();
   $('#stat-colors').textContent = cutColors + ' colors';
   $('#stat-colors').style.display = '';
+}
+
+// Cached across renders so refreshSlotCountCapacity() (called when the printer picker changes,
+// which doesn't itself trigger a rebuild) can redraw the slot line without rebuilding the list.
+let lastSlotsNeeded = 0;
+let lastRawColorCount = 0;
+
+function renderSlotCount(): void {
+  const el = $('#slot-count');
+  refreshSlotBudgetNotice(lastSlotsNeeded);
+  if (!lastSlotsNeeded) {
+    el.textContent = '';
+    el.classList.remove('over-capacity', 'multi-unit');
+    el.removeAttribute('title');
+    return;
+  }
+  // Always shown together, even when raw === cut colors (the common unmerged case) — seeing the
+  // slot count alone reads as a bug the first time the +1-for-body offset shows up; the arrow
+  // makes the relationship self-explanatory every time, not just after a merge changes the count.
+  el.textContent =
+    `${lastRawColorCount} color${lastRawColorCount === 1 ? '' : 's'} → ` +
+    `${lastSlotsNeeded} AMS slot${lastSlotsNeeded === 1 ? '' : 's'} needed`;
+  // Same slotTier() the pill above is posted from, so the line's color and the pill can't disagree
+  const printer = getPrinter(state.printerId);
+  const tier = slotTier(lastSlotsNeeded, printer);
+  el.classList.toggle('over-capacity', tier === 'over-max');
+  el.classList.toggle('multi-unit', tier === 'multi-unit');
+  el.title =
+    tier === 'over-max'
+      ? `More than the ${printer.amsSlotsMax} slots this printer can print in one go.`
+      : tier === 'multi-unit'
+        ? `More than the ${printer.amsSlotsPerUnit} slots in a single AMS unit — printable, but ` +
+          `needs more than one unit (up to ${printer.amsSlotsMax}) or manual filament swaps.`
+        : `Fits a single ${printer.amsSlotsPerUnit}-slot AMS unit.`;
+}
+
+/** Redraw the slot-count line against the current printer's AMS capacity — the counterpart to
+ * refreshAutoMergeControl() etc. for this control. Needed because changing the printer picker
+ * doesn't schedule a rebuild (it doesn't affect geometry), so nothing else would refresh this. */
+export function refreshSlotCountCapacity(): void {
+  renderSlotCount();
 }
 
 function updateAutoMergeLabels(level: number): void {

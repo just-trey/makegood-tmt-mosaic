@@ -11,6 +11,8 @@ import {
 import { placementNotice, resolvePlacement } from '../export/placement';
 import { zoneCoverage } from '../state/artwork';
 import { getPrinter } from '../export/printers';
+import { refreshSlotCountCapacity } from './colorList';
+import { refreshSlotBudgetNotice } from './slotBudget';
 import { meshToSTLBytes, soupFromObject } from '../export/stl';
 import { zipStore, type ZipEntry } from '../export/zip';
 import { hideOverlay, showOverlay } from './overlay';
@@ -161,6 +163,9 @@ export async function exportPrintReady3MF(): Promise<void> {
     fname = 'mosaic-plate.3mf';
   }
 
+  // the color list already posts this live; re-run it here against the export's own material count,
+  // which is the authoritative one
+  refreshSlotBudgetNotice(materials.length);
   showOverlay('Exporting print-ready 3MF…');
   await new Promise((r) => setTimeout(r, 10));
   try {
@@ -266,7 +271,11 @@ export function initExportPanel(): void {
   $<HTMLSelectElement>('#p-printer').addEventListener('change', (e) => {
     state.printerId = (e.target as HTMLSelectElement).value;
     // Doesn't affect geometry, so nothing schedules a rebuild for it — the one state change that
-    // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s.
+    // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s, and
+    // the one that needs its own slot-count redraw rather than picking one up from a rebuild.
+    // re-posts the slot-budget pill against the new printer's numbers as well as redrawing the line
+    refreshSlotCountCapacity();
+    renderWarnings();
     schedulePersist();
   });
   const exportBtn = $<HTMLButtonElement>('#btn-export');
