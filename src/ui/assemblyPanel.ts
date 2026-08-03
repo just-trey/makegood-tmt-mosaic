@@ -159,10 +159,10 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
     row.innerHTML = `
       <div class="top"><div class="hex">${part.name}</div></div>
       <div class="hint">Reuses ${src ? src.name : '?'}'s geometry, rotated into position for design-fitting purposes. Exported cut is re-oriented back to this part's native (unrotated) print orientation.</div>
-      <div class="depth-row"><label>pivot X</label><input type="number" step="0.1" value="${part.pivotX}" data-asm="pivotX" style="width:56px;"></div>
-      <div class="depth-row"><label>pivot Z</label><input type="number" step="0.1" value="${part.pivotZ}" data-asm="pivotZ" style="width:56px;"></div>
-      <div class="depth-row"><label>angle°</label><input type="number" step="1" value="${part.angleDeg}" data-asm="angleDeg" style="width:56px;"></div>
-      <button class="btn small" data-asm-remove style="margin-top:6px;">Remove</button>
+      <div class="depth-row"><label>pivot X</label><input type="number" step="0.1" value="${part.pivotX}" data-asm="pivotX" style="width:56px;" aria-label="Pivot X for ${part.name}"></div>
+      <div class="depth-row"><label>pivot Z</label><input type="number" step="0.1" value="${part.pivotZ}" data-asm="pivotZ" style="width:56px;" aria-label="Pivot Z for ${part.name}"></div>
+      <div class="depth-row"><label>angle°</label><input type="number" step="1" value="${part.angleDeg}" data-asm="angleDeg" style="width:56px;" aria-label="Rotation angle for ${part.name}"></div>
+      <button class="btn small" data-asm-remove style="margin-top:6px;" aria-label="Remove ${part.name}">Remove</button>
     `;
   } else {
     const statusText = part.loaded
@@ -178,13 +178,13 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
     row.innerHTML = `
       <div class="top"><div class="hex">${part.name}</div></div>
       <div style="border:1.5px dashed var(--line);border-radius:6px;padding:8px;text-align:center;font-size:11px;color:var(--text-dim);cursor:pointer;" data-asm-drop>
-        Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file>
+        Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file aria-label="Upload STL/3MF for ${part.name}">
       </div>
       <div class="hint" style="margin-top:4px;">${statusText}</div>
-      ${part.patches ? `<div class="depth-row"><label>face</label><select data-asm="patchIdx" style="flex:1;">${patchOptions}</select></div>` : ''}
-      <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;"><span class="hint">mm of material behind the face this replaces</span></div>
+      ${part.patches ? `<div class="depth-row"><label>face</label><select data-asm="patchIdx" style="flex:1;" aria-label="Design face for ${part.name}">${patchOptions}</select></div>` : ''}
+      <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;" aria-label="Base thickness for ${part.name}"><span class="hint">mm of material behind the face this replaces</span></div>
       <div class="btn-row" style="margin-top:6px;">
-        <button class="btn small" data-asm-remove>Remove</button>
+        <button class="btn small" data-asm-remove aria-label="Remove ${part.name}">Remove</button>
       </div>
     `;
   }

@@ -92,6 +92,7 @@ export function renderPatternPicker(): void {
     btn.type = 'button';
     btn.className = 'pattern-swatch';
     btn.title = p.name;
+    btn.setAttribute('aria-label', `Load "${p.name}" pattern as artwork`);
     const img = document.createElement('img');
     img.src = `patterns/${p.file}`;
     img.alt = p.name;

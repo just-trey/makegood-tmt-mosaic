@@ -42,16 +42,16 @@ export function renderArtworkList(): void {
       ${zones.length ? '<span class="artwork-zone-badge"></span>' : ''}
       ${
         canFill
-          ? '<select class="artwork-mode" title="Place one copy of this design, or repeat it across the whole surface"></select>'
+          ? '<select class="artwork-mode" title="Place one copy of this design, or repeat it across the whole surface" aria-label="Placement mode: Sticker or Fill"></select>'
           : ''
       }
-      ${zones.length ? '<select class="artwork-zone"></select>' : ''}
+      ${zones.length ? '<select class="artwork-zone" aria-label="Target zone"></select>' : ''}
       ${
         zones.length
-          ? '<button type="button" class="btn small artwork-add-zone" title="Place this design on another zone">+zone</button>'
+          ? '<button type="button" class="btn small artwork-add-zone" title="Place this design on another zone" aria-label="Place this design on another zone">+zone</button>'
           : ''
       }
-      <button type="button" class="btn small artwork-remove" title="Remove this artwork">×</button>
+      <button type="button" class="btn small artwork-remove" title="Remove this artwork" aria-label="Remove this artwork">×</button>
     `;
     // set via textContent, not innerHTML — the source name is a user-supplied filename
     row.querySelector<HTMLElement>('.artwork-name')!.textContent = source?.name ?? '(missing)';
