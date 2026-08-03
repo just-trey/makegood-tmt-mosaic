@@ -29,6 +29,10 @@ How the geometry actually works — read this before touching `src/geometry/` or
    frame with move/scale/rotate handles, same as the sliders underneath.
 4. **Flat-plate mode** builds the plate as a stack of flat slabs between depth
    boundaries — pure 2D math, no CSG ([src/geometry/flat.ts](../src/geometry/flat.ts)).
+   Each region's depth is first held inside what the plate can carry — at least
+   0.02 mm, and at most the thickness less the 0.05 mm floor that keeps a
+   recess from cutting through — and any depth that had to move warns, naming
+   the region and both numbers.
 5. **Assembly mode** cuts pockets into real part meshes: each color region is
    extruded into a prism in the part's own coordinates and booleaned against
    the mesh with [Manifold](https://github.com/elalish/manifold) (WASM CSG,

@@ -224,9 +224,12 @@ export function renderColorList(
       });
     }
     row.querySelector<HTMLInputElement>('.depth-input')!.addEventListener('change', (e) => {
-      state.colorSettings[c.key] = {
-        depth: parseFloat((e.target as HTMLInputElement).value) || 0.1,
-      };
+      // A typed 0 or a negative used to land here as 0.1, so the build never saw the number that
+      // was actually asked for and couldn't say it had been overridden. Pass anything numeric
+      // through and let buildGeometry's clamp be the one place that reports the override; only a
+      // blank/unparseable field still falls back.
+      const typed = parseFloat((e.target as HTMLInputElement).value);
+      state.colorSettings[c.key] = { depth: Number.isFinite(typed) ? typed : 0.1 };
       scheduleRebuild();
     });
     row.querySelectorAll<HTMLElement>('[data-pull]').forEach((btn) => {

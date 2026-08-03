@@ -171,6 +171,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   their own valid floor (0 stays valid where it legitimately is, like
   corner radius) and snap back to the last valid value on blur instead of
   leaving a bad number in state.
+- In the flat shape modes (disc, rect, round), a recess depth deeper than the
+  plate — or zero, or negative — was quietly cut at the nearest depth the
+  plate could hold instead, so a depth of `100` on a 4 mm disc exported a
+  perfectly valid file that simply wasn't the one you asked for, with nothing
+  on screen saying so. The depth is still clamped, since a recess reaching the
+  back of the plate would cut through it, but now a warning names the color
+  (or "Background"), what was asked for, and what was actually cut. Assembly
+  mode already warned about its equivalent.
 - The 3D viewport redrew every frame for the whole session, whether or not
   anything had changed, keeping a core busy behind an idle model — noticeable
   as heat and battery drain on a laptop, and as a slow app on any machine

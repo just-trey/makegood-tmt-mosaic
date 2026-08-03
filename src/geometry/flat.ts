@@ -16,6 +16,7 @@ import {
   unionAllCooperative,
 } from './regions';
 import { reportProgress } from '../progress';
+import { warnBuild } from '../warnings';
 
 type Ring = number[][];
 
@@ -270,7 +271,28 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const footprint = footprintFeature(shapeKind, baseParams);
   const thickness = baseParams.thickness;
 
-  const clampDepth = (d: number) => Math.min(Math.max(d, 0.02), thickness - 0.05);
+  const minDepth = 0.02;
+  const maxDepth = thickness - 0.05;
+  const clampDepth = (d: number) => Math.min(Math.max(d, minDepth), maxDepth);
+
+  /**
+   * The clamp above is the safety net that keeps a recess from cutting clean through the plate,
+   * but it used to apply silently — a depth typed deeper than the plate exported a valid file that
+   * simply wasn't what was asked for. Warn whenever the cut depth ends up somewhere other than the
+   * requested one, the flat-mode counterpart to assembly mode's cut-through warning.
+   */
+  const resolveDepth = (key: string, label: string): number => {
+    const set = colorSettings[key] && colorSettings[key].depth;
+    const requested = typeof set === 'number' && Number.isFinite(set) ? set : globalDepth;
+    const depth = clampDepth(requested);
+    if (Math.abs(depth - requested) > 1e-6)
+      warnBuild(
+        `Depth for "${label}" was set to ${requested.toFixed(2)} mm, but a ${thickness.toFixed(2)} mm ` +
+          `plate can only cut ${minDepth.toFixed(2)}–${maxDepth.toFixed(2)} mm deep — it was cut at ` +
+          `${depth.toFixed(2)} mm instead.`,
+      );
+    return depth;
+  };
 
   // transform + collect active color/merged-group regions with their depth
   const resolvedRegions = applyColorMerges(byColor, mergeGroups, {
@@ -290,7 +312,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const colorEntries: Entry[] = [];
   resolvedRegions.forEach((r) => {
     const feat = transformFeature(r.feature, fit);
-    const depth = clampDepth((colorSettings[r.key] && colorSettings[r.key].depth) || globalDepth);
+    const depth = resolveDepth(r.key, r.isMerge ? `${r.previewColor} (merged)` : r.previewColor);
     colorEntries.push({
       color: r.previewColor,
       key: r.key,
@@ -310,15 +332,13 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
 
   if (recessBg && leftover) {
     // the background recess honors its own per-region depth override, like any color
-    const bgDepth =
-      (colorSettings[BACKGROUND_KEY] && colorSettings[BACKGROUND_KEY].depth) || globalDepth;
     colorEntries.push({
       color: '#cfd6dc',
       key: BACKGROUND_KEY,
       members: [BACKGROUND_KEY],
       isMerge: false,
       feature: leftover,
-      depth: clampDepth(bgDepth),
+      depth: resolveDepth(BACKGROUND_KEY, 'Background'),
       isBackground: true,
     });
   }

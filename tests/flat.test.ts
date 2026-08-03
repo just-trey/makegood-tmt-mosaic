@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { BACKGROUND_KEY, buildGeometry, type FlatBuildInput } from '../src/geometry/flat';
+import { WARNINGS, clearWarnings } from '../src/warnings';
 import type { ParsedSVG } from '../src/types';
 
 function squareParsed(): ParsedSVG {
@@ -74,5 +75,43 @@ describe('buildGeometry background recess depth', () => {
     ))!;
     const red = built.colorMeshes.find((c) => c.key === '#ff0000')!;
     expect(red.depth).toBeCloseTo(0.6);
+  });
+});
+
+describe('buildGeometry depth clamp warning', () => {
+  beforeEach(() => clearWarnings());
+
+  it('says so when a depth deeper than the plate is clamped', async () => {
+    const built = (await buildGeometry(
+      baseInput({ colorSettings: { '#ff0000': { depth: 100 } } }),
+    ))!;
+    expect(built.colorMeshes.find((c) => c.key === '#ff0000')!.depth).toBeCloseTo(3.95);
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      'Depth for "#ff0000" was set to 100.00 mm, but a 4.00 mm plate can only cut 0.02–3.95 mm ' +
+        'deep — it was cut at 3.95 mm instead.',
+    );
+    expect(WARNINGS.every((w) => w.build)).toBe(true);
+  });
+
+  it('says so when a zero or negative depth is clamped', async () => {
+    for (const depth of [0, -1]) {
+      clearWarnings();
+      const built = (await buildGeometry(baseInput({ colorSettings: { '#ff0000': { depth } } })))!;
+      expect(built.colorMeshes.find((c) => c.key === '#ff0000')!.depth).toBeCloseTo(0.02);
+      expect(WARNINGS.some((w) => w.message.includes('it was cut at 0.02 mm instead.'))).toBe(true);
+    }
+  });
+
+  it('names the background region rather than a hex', async () => {
+    await buildGeometry(baseInput({ colorSettings: { [BACKGROUND_KEY]: { depth: 99 } } }));
+    expect(WARNINGS.some((w) => w.message.startsWith('Depth for "Background" was set to'))).toBe(
+      true,
+    );
+  });
+
+  it('stays quiet for an in-range depth, and for an unset one', async () => {
+    await buildGeometry(baseInput({ colorSettings: { '#ff0000': { depth: 2 } } }));
+    await buildGeometry(baseInput());
+    expect(WARNINGS).toHaveLength(0);
   });
 });

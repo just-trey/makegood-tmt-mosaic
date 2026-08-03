@@ -141,3 +141,30 @@ a sticker is not flagged: a pattern background with a design on top is a real
 workflow. That combination has the same overlapping-inlay problem where the
 sticker's colors differ from the pattern's; it is a known gap, also in
 [tech-debt.md](tech-debt.md).
+
+## Troubleshooting: "Depth for … was set to … mm" warnings (flat mode)
+
+The flat shape modes cut every recess into a plate of one fixed thickness. A
+recess that reached the back of the plate would cut clean through it — a hole
+where a colored inset should be — so the build holds every depth inside what
+the plate can carry: at least 0.02 mm, and at most the thickness less the
+0.05 mm floor left under the deepest recess (3.95 mm on a 4 mm plate). This
+warning means one of your depths was outside that range and the recess was cut
+at the nearest depth in it instead.
+
+- **The file is still valid and printable** — the depth actually cut is the
+  last number in the message. Nothing is dropped; only the depth differs from
+  what you typed.
+- Fix it from either end: lower that region's depth, or raise **Thickness** in
+  the Part section so the depth you want fits.
+- The name in the message is the color list row: a hex for a plain color, that
+  hex plus "(merged)" for a merged group, and "Background" for the background
+  recess row.
+- A region with no depth of its own uses the global **Depth** field, so a
+  global depth larger than the plate warns for every region at once — raise
+  the thickness or lower the global depth rather than editing rows one by one.
+
+Assembly mode has the same hazard but catches it later and words it
+differently, because there the wall thickness varies across the part and the
+cut-through only shows up once the boolean has run: see "Part … has no
+geometry to export" above.
