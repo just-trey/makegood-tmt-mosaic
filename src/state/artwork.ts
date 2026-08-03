@@ -217,6 +217,24 @@ export function availableZones(): { zoneId: string; name: string; templateFile?:
 }
 
 /**
+ * How many of the assembly's design zones currently carry at least one artwork instance, out of
+ * how many the part offers — the number behind the chair's "N of M surfaces have artwork" notice
+ * and the pre-export coverage check. An instance with `zone: null` ("All zones") counts every zone
+ * covered, since that's what it actually cuts onto. `{ total: 0, ... }` outside assembly mode or on
+ * a single/no-zone kind, where there's nothing to reconcile.
+ */
+export function zoneCoverage(): { total: number; covered: number } {
+  const zones = availableZones();
+  if (!zones.length) return { total: 0, covered: 0 };
+  if (state.artworks.some((a) => a.zone === null))
+    return { total: zones.length, covered: zones.length };
+  const bound = new Set(
+    state.artworks.map((a) => a.zone?.zoneId).filter((id): id is string => !!id),
+  );
+  return { total: zones.length, covered: bound.size };
+}
+
+/**
  * Remove one artwork instance (the list panel's × on a row). If that was the last instance using
  * its source, the source goes with it — an orphaned source can't be targeted by anything and would
  * just be dead weight in the list. Falls back to the full clearArtwork() when nothing is left, so

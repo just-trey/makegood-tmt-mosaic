@@ -9,6 +9,7 @@ import {
   type ExportSub,
 } from '../export/threemf';
 import { placementNotice, resolvePlacement } from '../export/placement';
+import { zoneCoverage } from '../state/artwork';
 import { getPrinter } from '../export/printers';
 import { meshToSTLBytes, soupFromObject } from '../export/stl';
 import { zipStore, type ZipEntry } from '../export/zip';
@@ -51,6 +52,31 @@ function clearStalePlacementNotices(): void {
   }
 }
 
+const COVERAGE_WARNING_SUFFIX = 'will print body-colored with no design.';
+
+/**
+ * The last guardrail before an incomplete-coverage chair export downloads: rebuild.ts already
+ * surfaces this as an info pill the whole time it's true, but that pill is easy to have scrolled
+ * past by the time the user reaches Export. Escalated to warn() here rather than notice() because
+ * this is the last moment before the file — the same coverage gap that caught
+ * scripts/export-chair-examples.mjs's own author. Doesn't block the export: the app's pattern
+ * throughout is warn-but-proceed (see the missing-geometry filter below), and a hard block would
+ * need the themed-dialog work tracked separately rather than a jarring native confirm().
+ */
+function warnIfIncompleteZoneCoverage(): void {
+  for (let i = WARNINGS.length - 1; i >= 0; i--) {
+    if (WARNINGS[i].message.endsWith(COVERAGE_WARNING_SUFFIX)) WARNINGS.splice(i, 1);
+  }
+  const { total, covered } = zoneCoverage();
+  if (total > 1 && covered < total) {
+    warn(
+      `Exporting with artwork on ${covered} of ${total} surfaces — ${total - covered} ` +
+        (total - covered === 1 ? 'surface ' : 'surfaces ') +
+        COVERAGE_WARNING_SUFFIX,
+    );
+  }
+}
+
 export async function exportPrintReady3MF(): Promise<void> {
   let materials: ExportMaterial[], parts: ExportPart[], fname: string;
   const bodyColor = baseColorHex().toUpperCase();
@@ -59,6 +85,7 @@ export async function exportPrintReady3MF(): Promise<void> {
     const built = getLastAssemblyBuild();
     if (!built || !built.partOutputs.length) return;
     clearStalePlacementNotices();
+    warnIfIncompleteZoneCoverage();
     const palette = built.palette;
     materials = [{ name: 'Body', color: bodyColor }].concat(
       palette.map((p) => ({ name: nearestFilamentName(p.hex), color: p.hex })),

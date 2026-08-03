@@ -543,6 +543,11 @@ input[type='checkbox'] {
   padding: 2px 4px;
   max-width: 90px;
 }
+.artwork-row .artwork-zone-badge {
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+}
 
 .pattern-picker {
   display: flex;
