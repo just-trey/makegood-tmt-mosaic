@@ -18,8 +18,13 @@ export const MIN_CUT_DEPTH_MM = 0.2;
  * Compare a requested depth against the one actually cut at the precision the warnings print
  * (2dp), not at machine epsilon — otherwise a 3.951 mm request on a 4 mm plate reports itself as
  * "set to 3.95 mm … cut at 3.95 mm instead."
+ *
+ * Rounding the same way the message does, rather than by an epsilon standing in for it: a 0.005
+ * threshold is only *nearly* that rule, and 0.195 lands in the gap — far enough from 0.20 to pass
+ * the threshold, close enough to print as "0.20". The message is the thing being protected, so ask
+ * it directly.
  */
-export const depthDiffers = (a: number, b: number): boolean => Math.abs(a - b) >= 0.005;
+export const depthDiffers = (a: number, b: number): boolean => a.toFixed(2) !== b.toFixed(2);
 
 /**
  * How the color list labels a region. Every depth message has to name a row the user can actually

@@ -13,6 +13,8 @@ describe('subLayerDepth', () => {
     // contradicts itself in its own sentence.
     expect(subLayerDepth(0.199)).toBe(false);
     expect(subLayerDepth(0.1951)).toBe(false);
+    // Exactly on the old 0.005 epsilon, which let it through while it still prints as "0.20".
+    expect(subLayerDepth(0.195)).toBe(false);
   });
 
   it('still catches a depth that really is under a layer', () => {
@@ -28,7 +30,11 @@ describe('subLayerDepth', () => {
   it('never produces a notice whose two numbers read the same', () => {
     // The guard that matters, stated as the property rather than as a threshold: whatever it lets
     // through has to print as visibly thinner than the layer it is being compared to.
-    for (let d = 0.005; d < MIN_CUT_DEPTH_MM; d += 0.005) {
+    //
+    // Stepped as whole thousandths rather than by `d += 0.005`, which accumulates: that walked
+    // past 0.195 as 0.19500000000000006 and skipped the one value that actually failed.
+    for (let thou = 1; thou < MIN_CUT_DEPTH_MM * 1000; thou++) {
+      const d = thou / 1000;
       if (!subLayerDepth(d)) continue;
       const msg = thinDepthNotice('#ff0000', d);
       expect(msg).not.toContain(

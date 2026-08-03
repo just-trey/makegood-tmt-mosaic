@@ -131,52 +131,84 @@ function renderEmptyBaseRow(list: HTMLElement): void {
  *
  * Editing the depth field schedules a rebuild, and that rebuild replaces the list's innerHTML. A
  * button listener attached during the previous render is on a node that gets detached mid-gesture,
- * so the click lands on nothing and the reset silently does not happen. The container outlives every
- * render, so delegation catches the event whichever generation of button received it. mousedown
- * additionally beats the field's blur-`change`, which would otherwise re-store the override the
- * click is trying to clear; `click` covers keyboard activation, which raises no mousedown. Both are
- * idempotent.
+ * so the reset lands on nothing and silently does not happen. The container outlives every render,
+ * so delegation catches the event whichever generation of button received it.
+ *
+ * The press is split across three events because each one covers a case the others get wrong:
+ *
+ * - `mousedown` only holds the gesture open. It cannot clear anything: a press dragged off the
+ *   button and released is a cancel, raises no click, and has to leave the row exactly as it was.
+ * - `mouseup` is what clears, and only when it lands on the same button the press started on. It
+ *   is used in preference to `click` because click is fired at the nearest common ancestor of the
+ *   two targets — so a rebuild that swaps the button out mid-press sends it to a container instead,
+ *   which is the failure this delegation exists to survive. mouseup goes to whatever button is
+ *   under the pointer, and the replacement carries the same reset key.
+ * - `click` covers keyboard activation, which raises neither of the above.
+ *
+ * All three are idempotent: whichever runs first removes the override, and the rest read its
+ * absence as "already handled".
  */
 function wireDepthReset(list: HTMLElement): void {
   if (list.dataset.depthResetWired) return;
   list.dataset.depthResetWired = '1';
-  const reset = (e: Event) => {
+  // Which row's "↺" the current press started on, so releasing on a different one — or on nothing
+  // — cancels rather than resetting whatever happens to be under the pointer.
+  let pressedKey: string | null = null;
+
+  const buttonFor = (e: Event): HTMLElement | null => {
     const btn = (e.target as HTMLElement | null)?.closest?.('.depth-reset') as HTMLElement | null;
-    if (!btn) return;
-    // Primary button only. `click` never fires for a right- or middle-press, so the second-pass
-    // guard below can't catch one — the mousedown would have already thrown the override away
-    // while the context menu was opening, with no undo.
-    if ((e as MouseEvent).button > 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    // mousedown and click both run this, so the same press arrives twice whenever the row is still
-    // mounted when the second lands — which is precisely the slow rebuilds (chair CSG), since a
-    // fast one re-renders the button away in between. Without this the no-op second pass still
-    // marks the scene dirty and buys a whole extra rebuild, curtain and all. The override is gone
-    // by then, so its absence is the signal that this press was already handled.
-    const key = btn.dataset.resetKey;
-    if (!key || !(key in state.colorSettings)) return;
-    // Abandon whatever is half-typed in this row's field. preventDefault above stops the click
-    // blurring it, but the rebuild below then *removes* the focused input, and Chrome fires the
-    // pending change on removal — re-storing the very override this is clearing, a beat too late
-    // to see. Marking it makes its change handler ignore that last gasp.
+    // Primary button only, or the press that opens a context menu counts as a reset — and no click
+    // follows a right- or middle-press to undo it.
+    return !btn || (e as MouseEvent).button > 0 ? null : btn;
+  };
+
+  const clearOverride = (btn: HTMLElement, key: string): void => {
+    if (!(key in state.colorSettings)) return;
+    // Abandon whatever is half-typed in this row's field. The blur below fires its pending change,
+    // which would otherwise re-store the very override this is clearing.
     btn
       .closest('.color-row')
       ?.querySelector<HTMLInputElement>('.depth-input')
       ?.setAttribute('data-abandoned', '1');
-    // Settle a half-typed edit in *another* row now, while it still costs nothing. preventDefault
-    // above suppresses the blur that would normally commit it, so it would otherwise sit pending
-    // until the rebuild below tore the field out — and Chrome's change-on-removal lands mid-render,
-    // after this pass has already read colorSettings, buying a second full rebuild to show it.
-    // Blurring here puts that change in this same tick, where the debounce folds it into one.
+    // Settle a half-typed edit in *another* row now, while it still costs nothing. The mousedown
+    // suppressed the blur that would normally commit it, so it would otherwise sit pending until
+    // the rebuild below tore the field out — and Chrome's change-on-removal lands mid-render, after
+    // this pass has already read colorSettings, buying a second full rebuild to show it. Blurring
+    // here puts that change in this same tick, where the debounce folds it into one.
     const focused = document.activeElement;
     if (focused instanceof HTMLInputElement && focused.classList.contains('depth-input'))
       focused.blur();
     delete state.colorSettings[key];
     scheduleRebuild();
   };
-  list.addEventListener('mousedown', reset);
-  list.addEventListener('click', reset);
+
+  list.addEventListener('mousedown', (e) => {
+    const btn = buttonFor(e);
+    pressedKey = btn?.dataset.resetKey ?? null;
+    if (!btn) return;
+    // Hold the depth field's blur-`change` off until the press completes. Left to run, it re-stores
+    // the override and schedules the rebuild that replaces this button mid-gesture.
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  list.addEventListener('mouseup', (e) => {
+    const btn = buttonFor(e);
+    const started = pressedKey;
+    pressedKey = null;
+    const key = btn?.dataset.resetKey;
+    if (!btn || !key || key !== started) return;
+    e.stopPropagation();
+    clearOverride(btn, key);
+  });
+
+  list.addEventListener('click', (e) => {
+    const btn = buttonFor(e);
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    clearOverride(btn, btn.dataset.resetKey ?? '');
+  });
 }
 
 export function renderColorList(
