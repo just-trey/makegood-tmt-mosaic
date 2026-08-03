@@ -111,6 +111,7 @@ export function renderBaseColorSwatches(): void {
     b.className = 'base-swatch' + (selected ? ' selected' : '');
     b.style.background = hex;
     b.title = title;
+    b.setAttribute('aria-label', `Use ${title} as the body / blank color`);
     b.addEventListener('click', () => {
       onClick();
       renderBaseColorSwatches();

@@ -101,6 +101,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Every form control now has a real accessible name (`<label for>` or
+  `aria-label`), not just a hover tooltip or nothing at all — a driven
+  audit across five app states (wheel, wheel with artwork, disc mode,
+  chair, chair with artwork; up to 134 controls in the richest state)
+  found zero unlabeled controls after this pass, down from the ~63%
+  baseline ("77 of 123") an earlier review measured.
 - Dropping a PNG/JPG on the artwork dropzone used to fail with "SVG could
   not be parsed — check the file is valid XML," which is true but useless
   for a file that was never XML. It now says plainly that the file is a

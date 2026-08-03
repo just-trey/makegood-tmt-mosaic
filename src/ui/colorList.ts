@@ -187,7 +187,7 @@ export function renderColorList(
     const ownKey = c.members.join(',');
     const otherTargets = c.isBackground ? [] : mergeTargets.filter((t) => t.key !== ownKey);
     const mergeSelectHtml = otherTargets.length
-      ? `<select class="merge-with" title="Merge this color with another — same as dragging one onto the other">
+      ? `<select class="merge-with" title="Merge this color with another — same as dragging one onto the other" aria-label="Merge ${c.isMergeGroup ? `Merged (${c.members.length})` : c.color} with another color">
           <option value="">Merge with…</option>
           ${otherTargets.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
         </select>`
@@ -204,7 +204,7 @@ export function renderColorList(
       ${membersRowHtml}
       <div class="depth-row">
         <label>depth</label>
-        <input type="number" class="depth-input" step="0.05" min="0.05" value="${state.colorSettings[c.key].depth.toFixed(2)}">
+        <input type="number" class="depth-input" step="0.05" min="0.05" value="${state.colorSettings[c.key].depth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}">
         <span class="hint">mm</span>
         <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
       </div>

@@ -230,14 +230,14 @@
 
           <div id="shape-params-disc">
             <div class="row">
-              <label>Diameter</label>
+              <label for="p-diameter">Diameter</label>
               <div class="field">
                 <input type="number" id="p-diameter" value="80" min="1" step="1" />
               </div>
               <span class="hint">mm</span>
             </div>
             <div class="row">
-              <label>Thickness</label>
+              <label for="p-thickness">Thickness</label>
               <div class="field">
                 <input type="number" id="p-thickness" value="4" min="0.4" step="0.1" />
               </div>
@@ -246,21 +246,21 @@
           </div>
           <div id="shape-params-rect" style="display: none">
             <div class="row">
-              <label>Width</label>
+              <label for="p-width">Width</label>
               <div class="field">
                 <input type="number" id="p-width" value="80" min="1" step="1" />
               </div>
               <span class="hint">mm</span>
             </div>
             <div class="row">
-              <label>Height</label>
+              <label for="p-height">Height</label>
               <div class="field">
                 <input type="number" id="p-height" value="60" min="1" step="1" />
               </div>
               <span class="hint">mm</span>
             </div>
             <div class="row">
-              <label>Thickness</label>
+              <label for="p-thickness-r">Thickness</label>
               <div class="field">
                 <input type="number" id="p-thickness-r" value="4" min="0.4" step="0.1" />
               </div>
@@ -269,28 +269,28 @@
           </div>
           <div id="shape-params-round" style="display: none">
             <div class="row">
-              <label>Width</label>
+              <label for="p-width-rr">Width</label>
               <div class="field">
                 <input type="number" id="p-width-rr" value="80" min="1" step="1" />
               </div>
               <span class="hint">mm</span>
             </div>
             <div class="row">
-              <label>Height</label>
+              <label for="p-height-rr">Height</label>
               <div class="field">
                 <input type="number" id="p-height-rr" value="60" min="1" step="1" />
               </div>
               <span class="hint">mm</span>
             </div>
             <div class="row">
-              <label>Corner r</label>
+              <label for="p-corner">Corner r</label>
               <div class="field">
                 <input type="number" id="p-corner" value="8" min="0" step="0.5" />
               </div>
               <span class="hint">mm</span>
             </div>
             <div class="row">
-              <label>Thickness</label>
+              <label for="p-thickness-rr">Thickness</label>
               <div class="field">
                 <input type="number" id="p-thickness-rr" value="4" min="0.4" step="0.1" />
               </div>
@@ -311,20 +311,34 @@
               "
             >
               Drop base STL for reference<br /><span class="fname" id="stl-fname"></span>
-              <input type="file" id="stl-input" accept=".stl" style="display: none" />
+              <input
+                type="file"
+                id="stl-input"
+                accept=".stl"
+                aria-label="Upload STL reference mesh"
+                style="display: none"
+              />
             </div>
             <div class="row" style="margin-top: 8px">
-              <label>Face Z</label>
+              <label for="p-facez">Face Z</label>
               <div class="field"><input type="number" id="p-facez" value="0" step="0.1" /></div>
               <button class="btn small" id="btn-autoz">Auto (top)</button>
             </div>
             <div class="row">
-              <label>Footprint</label>
+              <label for="p-width-stl">Footprint</label>
               <div class="field"><input type="number" id="p-width-stl" value="80" step="1" /></div>
-              <div class="field"><input type="number" id="p-height-stl" value="60" step="1" /></div>
+              <div class="field">
+                <input
+                  type="number"
+                  id="p-height-stl"
+                  value="60"
+                  step="1"
+                  aria-label="Footprint height"
+                />
+              </div>
             </div>
             <div class="row">
-              <label>Insert thick.</label>
+              <label for="p-thickness-stl">Insert thick.</label>
               <div class="field">
                 <input type="number" id="p-thickness-stl" value="4" min="0.4" step="0.1" />
               </div>
@@ -344,7 +358,7 @@
             <div id="assembly-role-controls" style="margin-bottom: 8px"></div>
             <div id="assembly-part-list"></div>
             <div class="row" id="asm-radius-row" style="margin-top: 8px">
-              <label>Design radius</label>
+              <label for="p-asm-radius">Design radius</label>
               <div class="field">
                 <input type="number" id="p-asm-radius" value="138" step="0.5" />
               </div>
@@ -382,7 +396,13 @@
           <div id="dropzone">
             Drop an SVG here, or click to browse<br />
             <span class="fname" id="svg-fname"></span>
-            <input type="file" id="svg-input" accept=".svg,image/svg+xml" style="display: none" />
+            <input
+              type="file"
+              id="svg-input"
+              accept=".svg,image/svg+xml"
+              aria-label="Upload SVG artwork"
+              style="display: none"
+            />
           </div>
           <div class="btn-row" style="margin-top: 8px">
             <button class="btn small" id="btn-sample" style="flex: 1">Load sample artwork</button>
@@ -400,7 +420,7 @@
         <details class="sec" open>
           <summary>Artwork fit</summary>
           <div class="row" id="p-margin-row">
-            <label>Margin</label>
+            <label for="p-margin">Margin</label>
             <div class="field pair">
               <input type="range" id="p-margin" min="0" max="30" step="1" value="5" /><input
                 type="number"
@@ -409,12 +429,13 @@
                 max="30"
                 step="1"
                 value="5"
+                aria-label="Margin, exact value"
               />
             </div>
             <span class="hint">%</span>
           </div>
           <div class="row">
-            <label>Scale</label>
+            <label for="p-scale">Scale</label>
             <div class="field pair">
               <input type="range" id="p-scale" min="25" max="400" step="1" value="100" /><input
                 type="number"
@@ -423,12 +444,13 @@
                 max="400"
                 step="1"
                 value="100"
+                aria-label="Scale, exact value"
               />
             </div>
             <span class="hint">%</span>
           </div>
           <div class="row">
-            <label>Offset X</label>
+            <label for="p-offset-x-slider">Offset X</label>
             <div class="field pair">
               <input
                 type="range"
@@ -437,12 +459,18 @@
                 max="40"
                 step="0.5"
                 value="0"
-              /><input type="number" id="p-offset-x" value="0" step="0.5" />
+              /><input
+                type="number"
+                id="p-offset-x"
+                value="0"
+                step="0.5"
+                aria-label="Offset X, exact value"
+              />
             </div>
             <span class="hint">mm</span>
           </div>
           <div class="row">
-            <label>Offset Y</label>
+            <label for="p-offset-y-slider">Offset Y</label>
             <div class="field pair">
               <input
                 type="range"
@@ -451,12 +479,18 @@
                 max="40"
                 step="0.5"
                 value="0"
-              /><input type="number" id="p-offset-y" value="0" step="0.5" />
+              /><input
+                type="number"
+                id="p-offset-y"
+                value="0"
+                step="0.5"
+                aria-label="Offset Y, exact value"
+              />
             </div>
             <span class="hint">mm</span>
           </div>
           <div class="row">
-            <label>Rotation</label>
+            <label for="p-rot">Rotation</label>
             <div class="field pair">
               <input type="range" id="p-rot" min="-180" max="180" step="1" value="0" /><input
                 type="number"
@@ -465,6 +499,7 @@
                 max="180"
                 step="1"
                 value="0"
+                aria-label="Rotation, exact value"
               />
             </div>
             <span class="hint">°</span>
@@ -490,14 +525,14 @@
         <details class="sec" open>
           <summary>Depth</summary>
           <div class="row">
-            <label>Default depth</label>
+            <label for="p-depth">Default depth</label>
             <div class="field">
               <input type="number" id="p-depth" value="1.0" min="0.05" step="0.05" />
             </div>
             <span class="hint">mm</span>
           </div>
           <div class="row">
-            <label>Recess bg too</label>
+            <label for="p-recess-bg">Recess bg too</label>
             <div class="field" style="flex: 0"><input type="checkbox" id="p-recess-bg" /></div>
             <span class="hint" id="bg-depth-hint" style="display: none"
               >uses default depth, override below</span
@@ -511,7 +546,7 @@
         <details class="sec" open>
           <summary>Colors detected</summary>
           <div class="row">
-            <label>Auto-merge</label>
+            <label for="p-automerge">Auto-merge</label>
             <div class="field">
               <input type="range" id="p-automerge" min="0" max="3" step="1" value="1" />
               <div class="auto-merge-labels" id="automerge-labels">
@@ -541,7 +576,7 @@
         <details class="sec" open>
           <summary>Export</summary>
           <div class="row" id="plate-size-row">
-            <label>Printer</label>
+            <label for="p-printer">Printer</label>
             <div class="field">
               <select id="p-printer">
                 <option value="bambu-x1c" selected>256 × 256 (X1C / P1S / A1)</option>
