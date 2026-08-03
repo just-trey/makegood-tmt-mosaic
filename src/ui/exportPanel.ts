@@ -237,6 +237,31 @@ affiliated with Bambu Lab.
   hideOverlay();
 }
 
+/**
+ * Guards both export buttons against re-entrancy — confirmed live (5 rapid clicks on #btn-export)
+ * that neither export function had any guard at all: every click ran its own full export and
+ * download, independent of any already in flight. The flag is the actual guard, checked before
+ * either export starts; the `disabled` toggle on top is only a visual affordance during the
+ * export, not the mechanism — rebuild.ts owns #btn-export's disabled state the rest of the time
+ * (enabled/disabled based on whether the current build has exportable geometry), and this
+ * shouldn't fight that ownership by unconditionally forcing it back to enabled once an export
+ * that raced with a rebuild finishes.
+ */
+let exporting = false;
+
+async function guardExport(btn: HTMLButtonElement, run: () => Promise<void>): Promise<void> {
+  if (exporting) return;
+  exporting = true;
+  const wasDisabled = btn.disabled;
+  btn.disabled = true;
+  try {
+    await run();
+  } finally {
+    exporting = false;
+    btn.disabled = wasDisabled;
+  }
+}
+
 export function initExportPanel(): void {
   $<HTMLSelectElement>('#p-printer').addEventListener('change', (e) => {
     state.printerId = (e.target as HTMLSelectElement).value;
@@ -244,6 +269,8 @@ export function initExportPanel(): void {
     // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s.
     schedulePersist();
   });
-  $('#btn-export').addEventListener('click', () => void exportPrintReady3MF());
-  $('#btn-export-stl').addEventListener('click', () => void exportSTLSet());
+  const exportBtn = $<HTMLButtonElement>('#btn-export');
+  exportBtn.addEventListener('click', () => void guardExport(exportBtn, exportPrintReady3MF));
+  const exportStlBtn = $<HTMLButtonElement>('#btn-export-stl');
+  exportStlBtn.addEventListener('click', () => void guardExport(exportStlBtn, exportSTLSet));
 }

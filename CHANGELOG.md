@@ -110,6 +110,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Neither export button (3MF or STL set) had any guard against
+  re-entrancy — confirmed live, 5 rapid clicks on "Export print-ready
+  3MF" triggered 5 independent exports and downloads. Both buttons now
+  disable for the duration of their own export and ignore further clicks
+  until it finishes.
 - Every form control now has a real accessible name (`<label for>` or
   `aria-label`), not just a hover tooltip or nothing at all — a driven
   audit across five app states (wheel, wheel with artwork, disc mode,
