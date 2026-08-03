@@ -51,6 +51,16 @@ export interface PersistedSession {
   baseColorMembers: string[];
   mergeGroups: string[][];
   colorSettings: AppState['colorSettings'];
+  /**
+   * Marks a session whose `colorSettings` holds only depths the user deliberately set. Sessions
+   * saved before that was true carry a machine-written override for every color — the color list
+   * used to seed each row from the built (already clamped) depth — which restores as if every
+   * depth had been typed by hand: the global Depth field moves nothing, and an out-of-range depth
+   * stops warning because the stored value already equals its own clamp. The two are
+   * indistinguishable after the fact, so a session without this flag has its depths dropped back
+   * to the global rather than restored as fake overrides.
+   */
+  explicitDepths?: true;
   keptApart: string[];
   sources: PersistedSource[];
   artworks: PersistedArtwork[];
@@ -111,6 +121,7 @@ function snapshotSession(): PersistedSession {
     baseColorMembers: state.baseColorMembers,
     mergeGroups: state.mergeGroups,
     colorSettings: state.colorSettings,
+    explicitDepths: true,
     keptApart: state.keptApart,
     sources: state.sources.map((s) => ({
       id: s.id,
@@ -248,7 +259,9 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.baseColorKey = session.baseColorKey;
   state.baseColorMembers = session.baseColorMembers;
   state.mergeGroups = session.mergeGroups;
-  state.colorSettings = session.colorSettings;
+  // See PersistedSession.explicitDepths — a session saved before per-row depths meant "the user
+  // set this" restores every row under the global Depth instead of under a seeded override.
+  state.colorSettings = session.explicitDepths ? session.colorSettings : {};
   state.keptApart = session.keptApart;
 
   const sources: DesignSource[] = session.sources.map((s) => ({

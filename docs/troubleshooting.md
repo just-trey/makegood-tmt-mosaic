@@ -186,3 +186,16 @@ the flat modes use and the warning names the color and both numbers.
 - Assembly mode bounds only the shallow end. There is no upper limit, because
   a part's wall thickness varies across it — a depth deeper than the wall is
   caught after the boolean instead, as "Part … has no geometry to export".
+
+## Troubleshooting: "… was left off …, that part is cut all the way through"
+
+A few parts are cut straight through rather than recessed — the wheel's cap is
+the one shipped today — and their hole is a fixed depth belonging to the part,
+not the **Depth** field. Setting a color to 0 mm or less there has no shallower
+cut to fall back to, so that color is left off that part and this warning says
+which color and which part. Every other part still cuts it normally.
+
+Give the color a real depth to put it back. This is the one place where a
+zero depth still drops a color rather than cutting it at the 0.02 mm floor,
+because clamping the number would not change anything: a through-cut ignores
+the depth setting and goes the whole way regardless.

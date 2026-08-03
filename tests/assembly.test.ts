@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import {
   asmPartFaceNormal,
@@ -821,4 +821,58 @@ describe('shared design anchor and scale resolvers', () => {
     const once = memoLargestDesignFace([small]);
     expect(once()).toBe(once());
   });
+});
+
+describe('buildAssemblyGeometry zero-depth handling', () => {
+  beforeEach(() => clearWarnings());
+
+  it('raises a zero depth to the floor and says so', { timeout: 30000 }, async () => {
+    const built = (await buildAssemblyGeometry(
+      baseInput({ colorSettings: { 'asm:#ff0000': { depth: 0 } } }),
+    ))!;
+    const r = yRange(built.partOutputs[0].inlaySoups[0]);
+    expect(r.max).toBeCloseTo(10, 4);
+    expect(r.min).toBeCloseTo(9.98, 4);
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      'Depth for color #ff0000 was set to 0.00 mm, which would cut nothing — it was cut at ' +
+        '0.02 mm instead.',
+    );
+  });
+
+  it(
+    'leaves the color off a cutThrough part rather than claiming a 0.02 mm cut',
+    { timeout: 30000 },
+    async () => {
+      // resolveCutDepth discards the depth setting on a cutThrough part, so clamping the number
+      // would not change the cut — it would still go the full way through. Reporting a 0.02 mm
+      // cut there would understate a 3 mm through-hole by 150x.
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })],
+          colorSettings: { 'asm:#ff0000': { depth: 0 } },
+        }),
+      ))!;
+
+      expect(built.partOutputs[0].inlaySoups[0]).toBeUndefined();
+      expect(WARNINGS.map((w) => w.message)).toContain(
+        'Color #ff0000 was set to cut 0.00 mm deep, so it was left off "test box" — that part ' +
+          'is cut all the way through, so there is no shallower cut to make.',
+      );
+      expect(WARNINGS.every((w) => !w.message.includes('0.02 mm instead'))).toBe(true);
+    },
+  );
+
+  it(
+    'still cuts a cutThrough part all the way through at a normal depth',
+    { timeout: 30000 },
+    async () => {
+      const built = (await buildAssemblyGeometry(
+        baseInput({ parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })] }),
+      ))!;
+      const r = yRange(built.partOutputs[0].inlaySoups[0]);
+      // the through-cut is deeper than the 2 mm globalDepth would have made it
+      expect(r.max - r.min).toBeGreaterThan(2.5);
+      expect(WARNINGS.filter((w) => w.message.startsWith('Depth for color'))).toHaveLength(0);
+    },
+  );
 });

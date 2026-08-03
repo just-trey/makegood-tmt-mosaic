@@ -589,19 +589,32 @@ export async function buildAssemblyGeometry(
         if (!feat) return;
       }
       const requested = requestedDepth(colorSettings, globalDepth, c.key);
-      // A depth at or below zero used to drop this color from the part and say nothing. Assembly
-      // mode can't bound the deep end the way a flat plate can — wall thickness varies across a
-      // part, which is what the cut-through warning below is for — but the shallow end is the same
-      // floor, and going quiet about an overridden depth is exactly what that warning exists to
-      // stop. No part name: the depth is a per-color setting, so this dedupes to one warning
-      // rather than one per part carrying the color.
-      const depthSetting = Math.max(requested, MIN_CUT_DEPTH_MM);
-      if (depthDiffers(depthSetting, requested))
+      // A depth at or below zero cuts nothing, and used to drop the color from the part in
+      // silence. What to do about it splits on the part, because resolveCutDepth throws the
+      // setting away on a cutThrough part — its hole is a fixed through-cut, so clamping the
+      // number there would change nothing about the cut while claiming otherwise.
+      if (part.cutThrough) {
+        // Depth doesn't drive this cut, so there is no shallower version of it to fall back to:
+        // asking for nothing still means nothing, as it did before, but now it says so.
+        if (requested <= 0) {
+          warnBuild(
+            `Color ${c.hex} was set to cut ${requested.toFixed(2)} mm deep, so it was left off ` +
+              `"${part.name}" — that part is cut all the way through, so there is no shallower ` +
+              `cut to make.`,
+          );
+          return;
+        }
+      } else if (depthDiffers(Math.max(requested, MIN_CUT_DEPTH_MM), requested)) {
+        // Assembly mode can't bound the deep end the way a flat plate can — wall thickness varies
+        // across a part, which is what the cut-through warning below is for — but the shallow end
+        // is the same floor. No part name: depth is a per-color setting, so this dedupes to one
+        // warning rather than one per part carrying the color.
         warnBuild(
           `Depth for color ${c.hex} was set to ${requested.toFixed(2)} mm, which would cut ` +
-            `nothing — it was cut at ${depthSetting.toFixed(2)} mm instead.`,
+            `nothing — it was cut at ${MIN_CUT_DEPTH_MM.toFixed(2)} mm instead.`,
         );
-      const depth = mapper.resolveCutDepth(depthSetting);
+      }
+      const depth = mapper.resolveCutDepth(Math.max(requested, MIN_CUT_DEPTH_MM));
       // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
       // step); the snap tolerance is a property of the bake, so both modes take the same one.
       const cutterOpts = grid ? { refineMM: FILL_REFINE_MM } : undefined;

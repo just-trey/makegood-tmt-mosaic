@@ -182,9 +182,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   warned about its equivalent.
 - A depth of 0 or less on an assembly part dropped that color from the part
   with no recess, no inlay, and no message. It now cuts at the same 0.02 mm
-  floor the flat modes use, and says so. Relatedly, a depth field left at a
-  deliberate `0` was read as "no depth set" and silently replaced with the
-  global Depth — a row reading 0.00 could cut a full millimetre.
+  floor the flat modes use, and says so — except on a part cut all the way
+  through (the wheel's cap), where the depth field doesn't drive the cut and
+  the color is still left off that part, now with a warning naming it.
+  Relatedly, a depth field left at a deliberate `0` was read as "no depth set"
+  and silently replaced with the global Depth — a row reading 0.00 could cut a
+  full millimetre.
+- Restoring a session saved by an earlier build no longer reinstates a
+  per-color depth override for every color. Those were written automatically
+  rather than chosen, and restoring them left the global Depth field unable to
+  move any row and the out-of-range warning silent. Restored rows now start
+  under the global Depth again; a depth you had deliberately set on a row
+  before this release has to be set once more.
 - The 3D viewport redrew every frame for the whole session, whether or not
   anything had changed, keeping a core busy behind an idle model — noticeable
   as heat and battery drain on a laptop, and as a slow app on any machine
