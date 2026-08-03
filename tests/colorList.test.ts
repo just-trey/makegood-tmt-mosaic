@@ -314,4 +314,40 @@ describe('renderColorList — reset survives the field it sits next to', () => {
 
     expect(state.colorSettings['#ff0000']).toBeUndefined();
   });
+
+  it('suppresses exactly one change, so a still-mounted row stays editable', () => {
+    // The row is only replaced when a rebuild re-renders the list. While one is already in flight
+    // — or when it throws, which skips renderColorList entirely — the field stays mounted, and a
+    // marker left set would swallow every later edit to it, without even scheduling a rebuild.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    const input = document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+
+    document
+      .querySelector<HTMLElement>('.color-row .depth-reset')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    input.dispatchEvent(new Event('change')); // the one the reset is guarding against
+
+    // no re-render happened; the user now types a real value into the same field
+    input.value = '1.75';
+    input.dispatchEvent(new Event('change'));
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 1.75 });
+  });
+
+  it('re-arms on typing, even when the reset produced no change to consume the marker', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    const input = document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+
+    document
+      .querySelector<HTMLElement>('.color-row .depth-reset')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+    input.value = '1.75';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('change'));
+
+    expect(state.colorSettings['#ff0000']).toEqual({ depth: 1.75 });
+  });
 });

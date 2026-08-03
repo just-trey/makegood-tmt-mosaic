@@ -22,13 +22,6 @@ export const MIN_CUT_DEPTH_MM = 0.2;
 export const depthDiffers = (a: number, b: number): boolean => Math.abs(a - b) >= 0.005;
 
 /**
- * The depth a region was *asked* to cut at, before any clamp.
- *
- * A stored `0` is a real answer, not a missing one: `|| globalDepth` read it as unset and
- * substituted the global default, so a deliberately-typed 0 cut at a depth nobody chose. Only an
- * absent or non-finite entry falls back to the global.
- */
-/**
  * How the color list labels a region. Every depth message has to name a row the user can actually
  * see, and a merged group's row reads "Merged (N)" — its dominant hex appears nowhere as text. Both
  * modes go through here so fixing the label in one can't leave the other pointing at a phantom row,
@@ -38,6 +31,13 @@ export function regionLabel(color: string, isMerge: boolean, memberCount: number
   return isMerge ? `Merged (${memberCount})` : color;
 }
 
+/**
+ * The depth a region was *asked* to cut at, before any clamp.
+ *
+ * A stored `0` is a real answer, not a missing one: `|| globalDepth` read it as unset and
+ * substituted the global default, so a deliberately-typed 0 cut at a depth nobody chose. Only an
+ * absent or non-finite entry falls back to the global.
+ */
 export function requestedDepth(
   colorSettings: ColorSettings,
   globalDepth: number,

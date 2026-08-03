@@ -274,7 +274,12 @@ export function renderColorList(
         mergeHexes([...ownKey.split(','), ...targetKey.split(',')].filter(Boolean));
       });
     }
-    row.querySelector<HTMLInputElement>('.depth-input')!.addEventListener('change', (e) => {
+    const depthField = row.querySelector<HTMLInputElement>('.depth-input')!;
+    // Typing is a fresh, deliberate edit, so it re-arms a field the reset had marked. Covers the
+    // reset that never produced a change to consume the marker — clicking ↺ with nothing typed —
+    // which would otherwise leave it for the user's next edit to be swallowed by.
+    depthField.addEventListener('input', () => depthField.removeAttribute('data-abandoned'));
+    depthField.addEventListener('change', (e) => {
       // A typed 0 or a negative used to land here as 0.1, so the build never saw the number that
       // was actually asked for and couldn't say it had been overridden. Pass anything numeric
       // through and let the geometry clamp be the one place that reports the override. Clearing
@@ -282,8 +287,14 @@ export function renderColorList(
       // rather than sticking at a magic 0.1 nobody asked for.
       // The reset button marks this field before the rebuild tears it out from under a pending
       // edit; without the guard that edit lands after the reset and undoes it. See wireDepthReset.
+      // Strictly one event: the field usually goes away with the rebuild, but when that rebuild is
+      // slow or fails the row stays mounted, and a marker left set would swallow every later edit
+      // to it — silently, since nothing rebuilds either.
       const field = e.target as HTMLInputElement;
-      if (field.hasAttribute('data-abandoned')) return;
+      if (field.hasAttribute('data-abandoned')) {
+        field.removeAttribute('data-abandoned');
+        return;
+      }
       const typed = parseFloat(field.value);
       if (Number.isFinite(typed)) state.colorSettings[c.key] = { depth: typed };
       else delete state.colorSettings[c.key];
