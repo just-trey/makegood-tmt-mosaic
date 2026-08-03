@@ -39,9 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   turning red only past what that printer can print in one go (16 slots
   across daisy-chained AMS units on the X1C / P1S / A1, 25 on an H2D
   across both nozzles, a hard 4 on the Snapmaker U1's built-in
-  toolchanger). Export says the same thing at download time. The printer
-  picker itself is relabeled name-first (e.g. "Bambu X1C / P1S / A1
-  (256 × 256mm)").
+  toolchanger). A pill spells out which of the two it is, and both it and
+  the line update the moment you switch printers rather than waiting for
+  an export. The printer picker itself is relabeled name-first (e.g.
+  "Bambu X1C / P1S / A1 (256 × 256mm)").
 - Your session now autosaves as you work — part, artwork, placement, colors,
   depth, and printer — and offers to restore it if you come back after a
   reload, browser close, or crash. A dismissible banner asks first ("Restore

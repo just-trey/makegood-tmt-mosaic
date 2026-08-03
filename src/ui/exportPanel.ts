@@ -12,11 +12,12 @@ import { placementNotice, resolvePlacement } from '../export/placement';
 import { zoneCoverage } from '../state/artwork';
 import { getPrinter } from '../export/printers';
 import { refreshSlotCountCapacity } from './colorList';
+import { refreshSlotBudgetNotice } from './slotBudget';
 import { meshToSTLBytes, soupFromObject } from '../export/stl';
 import { zipStore, type ZipEntry } from '../export/zip';
 import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
-import { WARNINGS, warn, warnBuild, notice, noticeBuild } from '../warnings';
+import { WARNINGS, warn, notice } from '../warnings';
 import { schedulePersist } from '../state/persist';
 import { renderWarnings } from './warningsView';
 import { track } from '../analytics/track';
@@ -51,55 +52,6 @@ function clearStalePlacementNotices(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
     if (PLACEMENT_WARNING_SUFFIXES.some((s) => WARNINGS[i].message.endsWith(s)))
       WARNINGS.splice(i, 1);
-  }
-}
-
-// suffixes of the two slot-budget messages below — same clear-before-reporting pattern as
-// PLACEMENT_WARNING_SUFFIXES, and pinned by tests/exportPanel.test.ts so a reword can't silently
-// stop clearing and leave both tiers' pills stacked
-export const SLOT_MULTI_UNIT_NOTICE_SUFFIX = 'or swap filament manually mid-print.';
-export const SLOT_OVER_MAX_WARNING_SUFFIX = 'in a single print — reduce colors with auto-merge.';
-
-function clearSlotBudgetNotices(): void {
-  for (let i = WARNINGS.length - 1; i >= 0; i--) {
-    const m = WARNINGS[i].message;
-    if (m.endsWith(SLOT_MULTI_UNIT_NOTICE_SUFFIX) || m.endsWith(SLOT_OVER_MAX_WARNING_SUFFIX))
-      WARNINGS.splice(i, 1);
-  }
-}
-
-/**
- * Pre-export guardrail for finding C: "4 colors / 5 slots" reads as a bug when nothing ever
- * reconciles the slot count against what the selected printer actually holds. colorList.ts shows
- * the same state live as the user works, in case they miss it there or change the printer after
- * that panel last rendered — this is the last-moment version.
- *
- * Two tiers, because one AMS unit is not a capacity. Most volunteers have exactly one, so passing 4
- * is worth saying — but the Bambus chain up to 16 (25 on the H2D), and calling a 6-slot design an
- * error on a printer that prints it fine would be the tool inventing a limit. Only the printer's
- * real maximum is an error, and even that doesn't block: the app's pattern throughout is
- * warn-but-proceed (see the missing-geometry filter below).
- *
- * warnBuild/noticeBuild, not warn/notice, even though nothing here runs per-build: acting on the
- * message (auto-merge the colors down) does schedule a rebuild, and a standing pill would be left
- * contradicting the now-clean slot line. The printer picker clears them directly for the same
- * reason, since changing it schedules no rebuild.
- */
-function warnIfOverCapacity(slotsNeeded: number): void {
-  clearSlotBudgetNotices();
-  const printer = getPrinter(state.printerId);
-  if (slotsNeeded > printer.amsSlotsMax) {
-    warnBuild(
-      `${slotsNeeded} AMS slots needed, but ${printer.label} tops out at ` +
-        `${printer.amsSlotsMax} ${SLOT_OVER_MAX_WARNING_SUFFIX}`,
-    );
-  } else if (slotsNeeded > printer.amsSlotsPerUnit) {
-    noticeBuild(
-      `${slotsNeeded} AMS slots needed — more than the ${printer.amsSlotsPerUnit} in a single ` +
-        `AMS unit. ${printer.label} supports up to ${printer.amsSlotsMax} across daisy-chained ` +
-        `units; with one unit you'll need to reduce colors with auto-merge, ` +
-        SLOT_MULTI_UNIT_NOTICE_SUFFIX,
-    );
   }
 }
 
@@ -211,7 +163,9 @@ export async function exportPrintReady3MF(): Promise<void> {
     fname = 'mosaic-plate.3mf';
   }
 
-  warnIfOverCapacity(materials.length);
+  // the color list already posts this live; re-run it here against the export's own material count,
+  // which is the authoritative one
+  refreshSlotBudgetNotice(materials.length);
   showOverlay('Exporting print-ready 3MF…');
   await new Promise((r) => setTimeout(r, 10));
   try {
@@ -319,10 +273,8 @@ export function initExportPanel(): void {
     // Doesn't affect geometry, so nothing schedules a rebuild for it — the one state change that
     // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s, and
     // the one that needs its own slot-count redraw rather than picking one up from a rebuild.
+    // re-posts the slot-budget pill against the new printer's numbers as well as redrawing the line
     refreshSlotCountCapacity();
-    // the pills were raised against the *previous* printer's numbers; a rebuild would drop them but
-    // this change doesn't schedule one, so a switch to a roomier printer has to clear them here
-    clearSlotBudgetNotices();
     renderWarnings();
     schedulePersist();
   });

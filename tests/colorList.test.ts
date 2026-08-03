@@ -11,6 +11,7 @@ vi.mock('../src/export/printers', () => ({
 
 import { renderColorList, refreshSlotCountCapacity } from '../src/ui/colorList';
 import { getPrinter } from '../src/export/printers';
+import { WARNINGS, clearWarnings } from '../src/warnings';
 
 function entry(color: string, overrides: Partial<ColorListEntry> = {}): ColorListEntry {
   return {
@@ -28,6 +29,7 @@ function entry(color: string, overrides: Partial<ColorListEntry> = {}): ColorLis
 const slotLine = (): HTMLElement => document.querySelector<HTMLElement>('#slot-count')!;
 
 beforeEach(() => {
+  clearWarnings();
   vi.mocked(getPrinter).mockReturnValue({
     label: 'Test Printer',
     amsSlotsPerUnit: 4,
@@ -88,6 +90,39 @@ describe('renderColorList — slot count line', () => {
     renderColorList([entry('#ff0000')], { rawColorCount: 2, slotsNeeded: 3 });
 
     expect(slotLine().textContent).toBe('2 colors → 3 AMS slots needed');
+  });
+
+  it('posts the slot-budget pill as the list renders, not only at export time', () => {
+    renderColorList(colors(4), { rawColorCount: 4 }); // 5 slots, past one unit
+
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(
+      expect.stringContaining('5 AMS slots needed'),
+    );
+  });
+
+  it('re-posts the pill against the new printer when the picker changes', () => {
+    renderColorList(colors(4), { rawColorCount: 4 });
+    expect(WARNINGS).toHaveLength(1);
+
+    vi.mocked(getPrinter).mockReturnValue({
+      label: 'Snapmaker-like',
+      amsSlotsPerUnit: 4,
+      amsSlotsMax: 4,
+    } as ReturnType<typeof getPrinter>);
+    refreshSlotCountCapacity();
+
+    expect(WARNINGS).toHaveLength(1);
+    expect(WARNINGS[0].level).toBe('warn');
+    expect(WARNINGS[0].message).toContain('tops out at 4');
+  });
+
+  it('drops the pill along with the line when the colors go away', () => {
+    renderColorList(colors(4), { rawColorCount: 4 });
+    expect(WARNINGS).toHaveLength(1);
+
+    renderColorList(null);
+
+    expect(WARNINGS).toEqual([]);
   });
 
   it('says "1 color", not "1 colors"', () => {
