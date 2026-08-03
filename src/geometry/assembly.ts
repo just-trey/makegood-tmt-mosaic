@@ -316,13 +316,24 @@ function placedBBoxQuad(parsed: ParsedSVG, place: (pt: number[]) => number[]): n
  */
 function warnOverlappingDesigns(placed: PlacedDesign[]): void {
   for (const [a, b] of overlappingDesignPairs(placed)) {
+    const both = a.fill && b.fill;
+    const subject =
+      a.name === b.name ? `Two placements of "${a.name}"` : `Designs "${a.name}" and "${b.name}"`;
     warnBuild(
-      (a.name === b.name
-        ? `Two placements of "${a.name}" overlap`
-        : `Designs "${a.name}" and "${b.name}" overlap`) +
-        ' on the same surface — where they cross, their recesses cut into each other and the' +
-        ' export will carry two inlays claiming the same space. Move, rescale, or rotate one' +
-        ' of them.',
+      both
+        ? // Moving or rescaling a fill can't help — it repeats across the whole surface by
+          // definition — so this case names only the things that actually clear it.
+          `${subject} are both set to Fill on the same surface. A fill repeats across the whole` +
+            ' surface, so the second one lands on the first everywhere: where their colors differ,' +
+            ' the export will carry two inlays claiming the same space. Switch one to Sticker,' +
+            ' move it to another surface, or remove it.'
+        : // Bounding boxes, not the artwork itself — see designOverlap.ts. "may" rather than
+          // "will", because a design whose ink sits inside another's hollow (a logo inside a
+          // frame) trips this while the recesses never actually touch.
+          `${subject} overlap on the same surface — where they cross, their recesses cut into` +
+            ' each other and the export may carry two inlays claiming the same space. Move,' +
+            ' rescale, or rotate one of them. Compared as rectangles, so designs that nest' +
+            ' inside each other cleanly can trip this.',
     );
   }
 }

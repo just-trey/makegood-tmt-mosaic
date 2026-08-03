@@ -17,11 +17,19 @@
  *
  * Not zero: two designs deliberately placed side by side routinely touch bounding boxes by a
  * millimetre or two of whitespace, and warning about that would train users to ignore the pill.
- * A quarter is well clear of that and well under the stacked case this exists for — a second design
- * loaded onto a single-zone part starts one cascade step (state/artwork.ts) from the first, which
- * on any part the app ships leaves >90% covered.
+ * Two 50mm designs sharing 2mm of edge come to 4%, so that case stays quiet.
+ *
+ * The upper bound on this number is the app's own cascade. Stepping a second design diagonally by
+ * `INSTANCE_CASCADE_MM` (state/artwork.ts) leaves two w×w designs covering ((w−d)/w)² of each
+ * other, so the warning only fires for w ≥ d/(1−√fraction): 16mm at a quarter, 11.7mm at a tenth.
+ * A quarter meant the app could cascade two 12mm stickers into an 11% overlap and say nothing about
+ * geometry it had positioned itself. A tenth closes that for every design size the parts here
+ * realistically carry while staying well above incidental edge contact; designs under ~12mm are
+ * still cascaded into a silent sub-threshold overlap, which is recorded in docs/tech-debt.md
+ * because closing it properly needs a step that scales with the placed design rather than a
+ * constant.
  */
-export const OVERLAP_WARN_FRACTION = 0.25;
+export const OVERLAP_WARN_FRACTION = 0.1;
 
 /** One design as placed on one zone, ready to be compared against the others on that zone. */
 export interface PlacedDesign {
@@ -98,6 +106,12 @@ function crossing(prev: number[], cur: number[], dp: number, dc: number): number
  * guaranteed to land on the first. A fill paired with a sticker is deliberately left alone — a
  * pattern background under a sticker is a real workflow, and flagging it would fire on the intended
  * use (see the note in docs/tech-debt.md on what that combination isn't checked for).
+ *
+ * Quads, not artwork: this compares placed bounding boxes, so it answers "could these cut into each
+ * other" rather than "do they". A design whose ink sits entirely inside another's hollow — a logo
+ * centered in a frame — reads as fully covered here while the recesses never touch. The warning is
+ * worded to admit that (see warnOverlappingDesigns); making it exact would mean intersecting the
+ * two designs' real per-color regions, which is the boolean cost this check exists to stay off.
  */
 export function overlappingDesignPairs(placed: PlacedDesign[]): [PlacedDesign, PlacedDesign][] {
   const pairs: [PlacedDesign, PlacedDesign][] = [];

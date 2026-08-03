@@ -91,11 +91,27 @@ describe('overlappingDesignPairs', () => {
   });
 
   it('leaves a small bounding-box graze alone', () => {
-    // 1mm of a 10mm design = 10% of the smaller footprint, under the threshold
-    expect(OVERLAP_WARN_FRACTION).toBeGreaterThan(0.1);
+    // two 50mm designs side by side sharing 2mm of whitespace = 4% of the smaller footprint. This
+    // is the case the threshold exists for: warning here would train users to ignore the pill.
     expect(
-      overlappingDesignPairs([design(rect(0, 0, 10, 10)), design(rect(9, 0, 10, 10))]),
+      overlappingDesignPairs([design(rect(0, 0, 50, 50)), design(rect(48, 0, 50, 50))]),
     ).toEqual([]);
+  });
+
+  // The threshold has to stay under what the app's own cascade leaves, or the app positions two
+  // designs on top of each other and then says nothing about it — see the note on
+  // OVERLAP_WARN_FRACTION. A 12mm sticker stepped 8mm keeps 11% covered.
+  it('flags the cascade step on a design small enough that the step nearly clears it', () => {
+    const pairs = overlappingDesignPairs([
+      design(rect(0, 0, 12, 12), 'a.svg'),
+      design(rect(8, 8, 12, 12), 'b.svg'),
+    ]);
+    expect(pairs).toHaveLength(1);
+  });
+
+  it('keeps the threshold below what the cascade leaves on a 12mm design', () => {
+    const covered = ((12 - 8) / 12) ** 2; // 0.111…
+    expect(OVERLAP_WARN_FRACTION).toBeLessThanOrEqual(covered);
   });
 
   it('measures coverage against the SMALLER design, not the bigger one', () => {

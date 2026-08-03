@@ -135,7 +135,10 @@
               down from it, so it isn't hidden underneath. They still overlap, and a warning names
               both until you move, rescale or separate them — two recesses cut into the same spot
               export as two inlays claiming the same space, which a slicer resolves however it
-              likes. It won't stop you exporting.
+              likes. It won't stop you exporting. Two designs both set to Fill always warn, and
+              there moving them can't help: switch one to Sticker or put it on another surface. The
+              check compares each design's bounding box, so something nested neatly inside another —
+              a logo inside a frame — can trip it even though the recesses never meet.
             </p>
             <p>
               On a part with more than one design surface (like the chair body), each row gets a

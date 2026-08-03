@@ -26,20 +26,36 @@ export const INSTANCE_CASCADE_MM = 8;
 const SAME_SPOT_MM = 1e-6;
 
 /**
- * The seed offset moved off any instance already placed at that exact spot on the same zone,
+ * Do two zone bindings put their designs on the same surface? `null` is "All zones", which covers
+ * every one of them — so it shares a surface with any binding, including another `null`. Comparing
+ * the ids directly would treat "All zones" as a zone of its own and let a bound design seed on top
+ * of one that is already stamped everywhere.
+ */
+function sharesSurface(a: string | null, b: string | null): boolean {
+  return a === null || b === null || a === b;
+}
+
+/**
+ * The seed offset moved off any instance already placed at that exact spot on the same surface,
  * stepping diagonally until the spot is free (or `steps` runs out, so a pathological pile of
  * designs can't spin here). Returns the seed untouched when nothing is there — which is the
  * first/only design on a part, the common case, so its placement is bit-for-bit what it was.
+ *
+ * Assembly mode only. Flat plate mode renders `state.parsed` alone, so a second design isn't drawn
+ * at all and there is nothing for a new one to sit on top of — stepping there would just walk each
+ * freshly loaded SVG further off the plate with no second design on screen to explain why, and no
+ * overlap warning either, since that check runs in the assembly build.
  */
 function cascadedOffset(
   zoneId: string | null,
   offsetU: number,
   offsetV: number,
 ): { offsetU: number; offsetV: number } {
+  if (state.shapeKind !== 'assembly') return { offsetU, offsetV };
   const taken = (u: number, v: number): boolean =>
     state.artworks.some(
       (a) =>
-        (a.zone?.zoneId ?? null) === zoneId &&
+        sharesSurface(a.zone?.zoneId ?? null, zoneId) &&
         Math.abs(a.offsetU - u) < SAME_SPOT_MM &&
         Math.abs(a.offsetV - v) < SAME_SPOT_MM,
     );

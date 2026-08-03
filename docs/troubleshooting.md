@@ -115,7 +115,7 @@ The warning names both designs by filename ("Two placements of …" when they
 are two copies of the same file). Fixes, any of which clears it:
 
 - **Move one of them** — drag it on the face, or use Offset X/Y. The
-  warning clears once they cover less than a quarter of each other.
+  warning clears once they cover less than a tenth of each other.
 - **Scale one down** so it fits in a gap in the other.
 - **Put them on different surfaces**, on a part that has more than one: pick
   a different zone in the artwork row's dropdown.
@@ -125,9 +125,19 @@ A little overlap is deliberately not flagged: designs placed side by side
 routinely share a millimetre or two of empty bounding box, and warning about
 that would make the pill worth ignoring.
 
-Two designs both set to **Fill** on the same surface always warn — a fill
-repeats across the whole surface, so a second one is guaranteed to land on
-the first. A fill _under_ a sticker is not flagged: a pattern background with
-a design on top is a real workflow. That combination has the same
-overlapping-inlay problem where the sticker's colors differ from the
-pattern's; it is a known gap, recorded in [tech-debt.md](tech-debt.md).
+**It compares rectangles, so it can warn about designs that don't really
+touch.** The check uses each design's bounding box, not its artwork — so a
+logo centered inside a frame, or a caption inside a border, reads as fully
+covered even though the recesses never meet and the export is fine. If that
+is what you have, the warning is a false alarm and the file is safe to print;
+there is no way to clear the pill short of moving the inner design off-center.
+Recorded in [tech-debt.md](tech-debt.md) with what an exact check would cost.
+
+Two designs both set to **Fill** on the same surface always warn, and get
+their own message: a fill repeats across the whole surface, so the second one
+lands on the first everywhere. Moving or rescaling cannot clear that one —
+switch one to Sticker, put it on another surface, or remove it. A fill _under_
+a sticker is not flagged: a pattern background with a design on top is a real
+workflow. That combination has the same overlapping-inlay problem where the
+sticker's colors differ from the pattern's; it is a known gap, also in
+[tech-debt.md](tech-debt.md).
