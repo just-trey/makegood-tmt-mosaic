@@ -12,6 +12,7 @@ import { renderArtworkList } from './artworkListPanel';
 import { refreshFitInputsFromState, updateOffsetSliderRanges } from './fitPanel';
 import { $, input } from './dom';
 import { track } from '../analytics/track';
+import { alertDialog } from './dialogs';
 
 const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
   <circle cx="100" cy="100" r="95" fill="#1e5fa8"/>
@@ -67,7 +68,7 @@ export async function applyPattern(id: string): Promise<void> {
     clearWarnings();
     warn((e as Error).message);
     renderWarnings();
-    alert('Could not load pattern: ' + (e as Error).message);
+    await alertDialog('Could not load pattern: ' + (e as Error).message);
   } finally {
     endWork();
   }
@@ -122,7 +123,9 @@ function reportLoadFailure(fname: string, message: string): void {
   clearWarnings();
   warn(message);
   renderWarnings();
-  alert(`Could not load "${fname}": ${message}`);
+  // Fire-and-forget: this is always a terminal error path (the failed load already stopped),
+  // nothing downstream needs to wait for the dialog to close.
+  void alertDialog(`Could not load "${fname}": ${message}`);
 }
 
 function loadSVGFile(file: File): void {

@@ -14,6 +14,7 @@ import {
 import { fingerprintMatches, loadZonesSidecar, reconstructChart } from '../geometry/zoneCharts';
 import { warn } from '../warnings';
 import { track } from '../analytics/track';
+import { alertDialog, confirmDialog } from '../ui/dialogs';
 import {
   asmKindCanAutoLoad,
   currentAssemblyKind,
@@ -69,14 +70,16 @@ export async function asmLoadFullAssembly(): Promise<void> {
   const kind = currentAssemblyKind();
   if (!kind) return;
   if (!asmKindCanAutoLoad(kind)) {
-    alert(
+    await alertDialog(
       `Can't auto-load ${kind.name}: the parts library (stl/parts.json) isn't reachable. Check the deployment or drag the parts in manually.`,
     );
     return;
   }
   if (
     state.assembly.parts.length &&
-    !confirm(`Load the full ${kind.name}? This clears any parts you've already added.`)
+    !(await confirmDialog(
+      `Load the full ${kind.name}? This clears any parts you've already added.`,
+    ))
   )
     return;
   state.assembly.parts = [];
@@ -102,7 +105,7 @@ export async function asmLoadFullAssembly(): Promise<void> {
     }
   } catch (e) {
     console.error(e);
-    alert('Failed to load the assembly: ' + (e as Error).message);
+    await alertDialog('Failed to load the assembly: ' + (e as Error).message);
   }
   notifyPartsChanged();
   hideOverlay();
@@ -123,9 +126,9 @@ export async function switchChairVariant(variantId: string): Promise<void> {
   const affected = state.assembly.parts.filter((p) => variantRoles.some((r) => r.id === p.roleId));
   if (
     affected.length &&
-    !confirm(
+    !(await confirmDialog(
       `Switch to ${kind.variants.find((v) => v.id === variantId)?.name}? This reloads the caster mounts.`,
-    )
+    ))
   )
     return;
 
@@ -144,7 +147,7 @@ export async function switchChairVariant(variantId: string): Promise<void> {
     }
   } catch (e) {
     console.error(e);
-    alert('Failed to load the caster mounts: ' + (e as Error).message);
+    await alertDialog('Failed to load the caster mounts: ' + (e as Error).message);
   }
   notifyPartsChanged();
   hideOverlay();
@@ -166,7 +169,7 @@ export async function asmLoadLibraryEntryIntoPart(
     const buf = await res.arrayBuffer();
     await asmLoadPartBuffer(part, buf, entry.file);
   } catch (e) {
-    alert(
+    await alertDialog(
       `Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`,
     );
   } finally {
@@ -336,7 +339,7 @@ export async function asmLoadPartFile(part: AssemblyPart, file: File): Promise<v
   try {
     await asmLoadPartBuffer(part, buf, file.name);
   } catch (e) {
-    alert((e as Error).message);
+    await alertDialog((e as Error).message);
   }
 }
 

@@ -167,6 +167,29 @@ header .stat {
 #help-dialog::backdrop {
   background: rgba(4, 6, 14, 0.55);
 }
+#confirm-dialog {
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--text);
+  padding: 20px;
+  width: min(380px, 90vw);
+  box-shadow: 0 24px 48px rgba(4, 6, 14, 0.45);
+}
+#confirm-dialog::backdrop {
+  background: rgba(4, 6, 14, 0.55);
+}
+#confirm-dialog p {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .help-head {
   display: flex;
   align-items: center;

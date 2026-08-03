@@ -17,6 +17,7 @@ import {
 import { updateOffsetSliderRanges } from './fitPanel';
 import { $, input, numVal } from './dom';
 import { track } from '../analytics/track';
+import { confirmDialog } from './dialogs';
 
 // Tiny SVG thumbnails shown next to the shape dropdown.
 const SHAPE_THUMBS: Record<string, string> = {
@@ -219,37 +220,39 @@ function currentAsmOptionValue(): string {
 export function initPartPanel(): void {
   renderShapeKindOptions();
   $<HTMLSelectElement>('#shape-kind').addEventListener('change', (e) => {
-    const sel = e.target as HTMLSelectElement;
-    const val = sel.value;
-    if (val.startsWith('asm:')) {
-      const newKindId = val.slice(4);
-      const switchingKind = state.assembly.kindId !== newKindId;
-      if (
-        switchingKind &&
-        state.assembly.parts.length > 0 &&
-        !confirm('Switching parts will clear the currently loaded ones. Continue?')
-      ) {
-        sel.value = currentAsmOptionValue() || 'disc';
-        return;
+    void (async () => {
+      const sel = e.target as HTMLSelectElement;
+      const val = sel.value;
+      if (val.startsWith('asm:')) {
+        const newKindId = val.slice(4);
+        const switchingKind = state.assembly.kindId !== newKindId;
+        if (
+          switchingKind &&
+          state.assembly.parts.length > 0 &&
+          !(await confirmDialog('Switching parts will clear the currently loaded ones. Continue?'))
+        ) {
+          sel.value = currentAsmOptionValue() || 'disc';
+          return;
+        }
+        if (switchingKind) {
+          state.assembly.kindId = newKindId;
+          state.assembly.parts = [];
+          // The new kind's parts are an entirely different mesh — a zone binding from the old kind
+          // would either match nothing or (worse) silently match a same-named zone on an unrelated
+          // part, so every instance goes back to "every zone the part offers" for the user to
+          // re-target from the list.
+          clearArtworkZoneBindings();
+        }
+        setShapeKind('assembly');
+        track('mode_switch', { kind: 'assembly' });
+      } else {
+        setShapeKind(val as ShapeKind);
+        track('mode_switch', { kind: val as ShapeKind });
       }
-      if (switchingKind) {
-        state.assembly.kindId = newKindId;
-        state.assembly.parts = [];
-        // The new kind's parts are an entirely different mesh — a zone binding from the old kind
-        // would either match nothing or (worse) silently match a same-named zone on an unrelated
-        // part, so every instance goes back to "every zone the part offers" for the user to
-        // re-target from the list.
-        clearArtworkZoneBindings();
-      }
-      setShapeKind('assembly');
-      track('mode_switch', { kind: 'assembly' });
-    } else {
-      setShapeKind(val as ShapeKind);
-      track('mode_switch', { kind: val as ShapeKind });
-    }
-    // Zone bindings above, and the assembly-only Sticker/Fill control, both change with the part —
-    // so the rows re-render on every switch, not just when the assembly kind changed.
-    renderArtworkList();
+      // Zone bindings above, and the assembly-only Sticker/Fill control, both change with the
+      // part — so the rows re-render on every switch, not just when the assembly kind changed.
+      renderArtworkList();
+    })();
   });
   setShapeThumb(state.shapeKind); // reflect the initial selection
 

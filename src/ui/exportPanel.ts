@@ -19,6 +19,7 @@ import { WARNINGS, warn, notice } from '../warnings';
 import { schedulePersist } from '../state/persist';
 import { renderWarnings } from './warningsView';
 import { track } from '../analytics/track';
+import { alertDialog } from './dialogs';
 
 // suffixes of the placement-related messages this module and build3MFCombined can emit — used to
 // clear a stale one from a previous export attempt before reporting this attempt's
@@ -60,8 +61,9 @@ const COVERAGE_WARNING_SUFFIX = 'will print body-colored with no design.';
  * past by the time the user reaches Export. Escalated to warn() here rather than notice() because
  * this is the last moment before the file — the same coverage gap that caught
  * scripts/export-chair-examples.mjs's own author. Doesn't block the export: the app's pattern
- * throughout is warn-but-proceed (see the missing-geometry filter below), and a hard block would
- * need the themed-dialog work tracked separately rather than a jarring native confirm().
+ * throughout is warn-but-proceed (see the missing-geometry filter below) — a hard block on every
+ * incomplete-coverage export, themed dialog or not, would be a bigger behavior change than this
+ * warning is trying to make.
  */
 function warnIfIncompleteZoneCoverage(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
@@ -178,7 +180,7 @@ export async function exportPrintReady3MF(): Promise<void> {
   } catch (e) {
     console.error(e);
     track('export_failed', { format: '3mf' });
-    alert('Export failed: ' + (e as Error).message);
+    await alertDialog('Export failed: ' + (e as Error).message);
   }
   // outside the try: the per-part messages above were emitted before it, so a failed build still
   // has to render them rather than leaving the pills showing the previous attempt's
@@ -230,7 +232,7 @@ affiliated with Bambu Lab.
   } catch (e) {
     console.error(e);
     track('export_failed', { format: 'stl_zip' });
-    alert('Export failed: ' + (e as Error).message);
+    await alertDialog('Export failed: ' + (e as Error).message);
   }
   hideOverlay();
 }
