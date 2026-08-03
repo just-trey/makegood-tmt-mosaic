@@ -41,6 +41,19 @@ export function clearWarnings(): void {
 }
 
 /**
+ * Retract one specific notice by its exact message.
+ *
+ * For a standing diagnostic that a later user action can genuinely resolve — re-quantizing an image
+ * at a setting that no longer needs its detail capped, say. Neither clearWarnings() (too broad, it
+ * drops unrelated standing facts) nor clearBuildWarnings() (wrong scope, nothing re-derives these
+ * per rebuild) fits that case.
+ */
+export function dismissNotice(message: string): void {
+  const i = WARNINGS.findIndex((w) => w.message === message);
+  if (i >= 0) WARNINGS.splice(i, 1);
+}
+
+/**
  * Reset just this rebuild attempt's diagnostics — called once per pass (scheduler.ts's runNow),
  * so a cut-solid warning from a superseded build (an earlier zone/mode binding, say) can't outlive
  * the build that produced it and still be showing once a later, successful build is on screen.

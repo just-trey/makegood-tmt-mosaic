@@ -6,7 +6,10 @@ import { scheduleRebuild } from '../app/scheduler';
 import { beginWork, endWork } from '../app/idle';
 import { requestFrame } from '../scene/viewport';
 import { parseSVGDocument } from '../svg/parse';
-import { clearWarnings, warn } from '../warnings';
+import { decodeImageFile, isRasterBuffer } from '../raster/decode';
+import { parseRasterImage } from '../raster/parse';
+import { DETAIL_DEFAULT } from '../raster/stats';
+import { clearWarnings, notice, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { renderArtworkList } from './artworkListPanel';
 import { refreshFitInputsFromState, updateOffsetSliderRanges } from './fitPanel';
@@ -22,6 +25,17 @@ const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200
   <circle cx="100" cy="100" r="12" fill="#c1272d"/>
 </svg>`;
 
+/** Shared tail of every load path: settle the palette, refresh the panels, rebuild. */
+function afterArtworkLoaded(fname: string): void {
+  pruneSettingsToPalette();
+  $('#svg-fname').textContent = fname;
+  renderArtworkList();
+  refreshFitInputsFromState();
+  updateOffsetSliderRanges();
+  requestFrame();
+  scheduleRebuild();
+}
+
 // Exported for the failed-load regression test; not used outside this module.
 export function applyParsedSVG(
   svgText: string,
@@ -33,13 +47,7 @@ export function applyParsedSVG(
   // no-op that leaves whatever's already loaded untouched.
   const parsed = parseSVGDocument(svgText);
   loadArtworkSource(parsed, fname, kind, mode, svgText); // adds a new source+instance alongside any already loaded
-  pruneSettingsToPalette();
-  $('#svg-fname').textContent = fname;
-  renderArtworkList();
-  refreshFitInputsFromState();
-  updateOffsetSliderRanges();
-  requestFrame();
-  scheduleRebuild();
+  afterArtworkLoaded(fname);
 }
 
 /**
@@ -103,21 +111,14 @@ export function renderPatternPicker(): void {
   });
 }
 
-const RASTER_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tif', '.tiff'];
+/** Number of colors a freshly-loaded image starts at. Deliberately modest: an AMS is four slots
+ * plus the body, so a default that produced a twelve-slot export would be a print this tool's
+ * audience cannot actually make. The Colors slider goes to 16 for anyone who wants it. */
+const DEFAULT_RASTER_COLORS = 6;
 
-/**
- * The file picker's `accept=".svg,image/svg+xml"` filters raster images out of that path, but
- * drag-drop bypasses `accept` entirely — a dropped PNG/JPG used to reach parseSVGDocument() and
- * fail there with "SVG could not be parsed — check the file is valid XML," which is true but
- * useless: the file isn't malformed XML, it's not XML at all. Checked before FileReader even
- * starts, so the honest message replaces the misleading one instead of following it.
- */
-// Exported for the raster-drop regression test; not used outside this module.
-export function isRasterImage(file: File): boolean {
-  if (file.type.startsWith('image/') && file.type !== 'image/svg+xml') return true;
-  const name = file.name.toLowerCase();
-  return RASTER_EXTENSIONS.some((ext) => name.endsWith(ext));
-}
+export const RASTER_CAPPED_MESSAGE =
+  'Some detail in this image was too fine to print and was merged into its surroundings. ' +
+  'Lower Colors, or raise Detail, for a cleaner result.';
 
 function reportLoadFailure(fname: string, message: string): void {
   clearWarnings();
@@ -128,31 +129,63 @@ function reportLoadFailure(fname: string, message: string): void {
   void alertDialog(`Could not load "${fname}": ${message}`);
 }
 
-function loadSVGFile(file: File): void {
-  if (isRasterImage(file)) {
-    reportLoadFailure(
-      file.name,
-      "that's a raster image (PNG/JPG), not an SVG. TMT Mosaic needs vector artwork — " +
-        "download this part's design template (Part panel) if it has one, or convert the file " +
-        'to SVG in Inkscape/Illustrator first.',
-    );
-    return;
+/**
+ * Decode and trace an image file into a new design source.
+ *
+ * Async, so it follows applyPattern's work-counter shape rather than loadArtworkFile's: the count
+ * has to span the whole decode, or a drive script's whenIdle() resolves while the image is still
+ * being read and it screenshots a scene without it.
+ */
+async function applyRasterFile(file: File): Promise<void> {
+  beginWork();
+  try {
+    const image = await decodeImageFile(file);
+    const opts = { colors: DEFAULT_RASTER_COLORS, detail: DETAIL_DEFAULT };
+    // Decode and trace before touching state, for the same reason applyParsedSVG parses first.
+    const result = parseRasterImage(image, opts);
+    // No svgText: an image's source of truth is its pixels, and session persistence skips these
+    // sources rather than trying to round-trip a megabyte of them (see state/persist.ts).
+    loadArtworkSource(result.parsed, file.name, 'raster', 'sticker', '', {
+      image,
+      ...opts,
+      palette: result.palette,
+      regions: result.componentCount,
+    });
+    if (result.capped) notice(RASTER_CAPPED_MESSAGE);
+    afterArtworkLoaded(file.name);
+    renderWarnings();
+    track('artwork_load', { source: 'raster' });
+  } catch (e) {
+    reportLoadFailure(file.name, (e as Error).message);
+  } finally {
+    endWork();
   }
+}
+
+function loadArtworkFile(file: File): void {
   beginWork();
   const reader = new FileReader();
   // onloadend, not the onload path: it also covers a read error or abort, which would otherwise
   // leave the counter above zero forever and hang every later whenIdle(). It runs after onload,
-  // so the rebuild applyParsedSVG() schedules has already taken over the count.
+  // so the rebuild applyParsedSVG() schedules — or applyRasterFile's own beginWork() — has already
+  // taken over the count.
   reader.onloadend = () => endWork();
   reader.onload = () => {
+    const buf = new Uint8Array(reader.result as ArrayBuffer);
+    if (isRasterBuffer(buf)) {
+      void applyRasterFile(file);
+      return;
+    }
     try {
-      applyParsedSVG(reader.result as string, file.name);
+      applyParsedSVG(new TextDecoder().decode(buf), file.name);
       track('artwork_load', { source: 'upload' });
     } catch (e) {
       reportLoadFailure(file.name, (e as Error).message);
     }
   };
-  reader.readAsText(file);
+  // One binary read for both paths — the SVG branch decodes it as text itself, which costs nothing
+  // and is what lets the format be sniffed from the bytes rather than trusted from the filename.
+  reader.readAsArrayBuffer(file);
 }
 
 export function initArtworkPanel(): void {
@@ -160,7 +193,7 @@ export function initArtworkPanel(): void {
   dropzone.addEventListener('click', () => input('#svg-input').click());
   input('#svg-input').addEventListener('change', (e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
-    if (f) loadSVGFile(f);
+    if (f) loadArtworkFile(f);
   });
   ['dragover', 'dragenter'].forEach((ev) =>
     dropzone.addEventListener(ev, (e) => {
@@ -176,7 +209,7 @@ export function initArtworkPanel(): void {
   );
   dropzone.addEventListener('drop', (e) => {
     const f = (e as DragEvent).dataTransfer?.files[0];
-    if (f) loadSVGFile(f);
+    if (f) loadArtworkFile(f);
   });
 
   $('#btn-sample').addEventListener('click', () => {

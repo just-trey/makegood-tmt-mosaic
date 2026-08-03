@@ -1,12 +1,19 @@
+import type { DesignSource, RasterState } from '../types';
 import { state } from '../state/store';
 import {
   addInstanceForSource,
   availableZones,
+  isRasterSource,
   removeArtworkInstance,
+  requantizeSource,
   setActiveArtwork,
   setArtworkMode,
   setArtworkZone,
 } from '../state/artwork';
+import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
+import { RASTER_CAPPED_MESSAGE } from './artworkPanel';
+import { dismissNotice, notice } from '../warnings';
+import { renderWarnings } from './warningsView';
 import { scheduleRebuild } from '../app/scheduler';
 import { refreshFitInputsFromState } from './fitPanel';
 import { refreshGizmo } from '../scene/designGizmo';
@@ -29,6 +36,7 @@ export function renderArtworkList(): void {
   }
   list.style.display = '';
   const zones = availableZones();
+  const rasterBlocksDrawn = new Set<string>();
   // Fill repeats the design across a zone, which only the assembly-mode cut pipeline implements —
   // a flat plate would show the control and then ignore it.
   const canFill = state.shapeKind === 'assembly';
@@ -132,5 +140,73 @@ export function renderArtworkList(): void {
       track('artwork_removed');
     });
     list.appendChild(row);
+
+    // Colors/Detail belong to the image, not to this placement of it, so the block is emitted once
+    // per source however many rows that source backs.
+    if (source && isRasterSource(source) && !rasterBlocksDrawn.has(source.id)) {
+      rasterBlocksDrawn.add(source.id);
+      list.appendChild(rasterControls(source));
+    }
   });
+}
+
+/**
+ * The two per-image controls.
+ *
+ * Both re-quantize on `change` (drag release), never on `input`: re-tracing an image is far heavier
+ * than the fit sliders' arithmetic, and running it per pointer-move would stall the drag. The
+ * readout updates live so the slider still feels connected while it's moving.
+ */
+function rasterControls(source: DesignSource & { raster: RasterState }): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'artwork-raster';
+  block.innerHTML = `
+    <div class="row">
+      <label for="raster-colors-${source.id}">Colors</label>
+      <input type="range" id="raster-colors-${source.id}" class="raster-colors"
+             min="${MIN_COLORS}" max="${MAX_COLORS}" step="1" />
+    </div>
+    <div class="row">
+      <label for="raster-detail-${source.id}">Detail</label>
+      <input type="range" id="raster-detail-${source.id}" class="raster-detail"
+             min="0" max="100" step="5" />
+    </div>
+    <div class="raster-readout"></div>
+  `;
+  block.addEventListener('click', (e) => e.stopPropagation());
+
+  const colors = block.querySelector<HTMLInputElement>('.raster-colors')!;
+  const detail = block.querySelector<HTMLInputElement>('.raster-detail')!;
+  const readout = block.querySelector<HTMLElement>('.raster-readout')!;
+  colors.value = String(source.raster.colors);
+  detail.value = String(source.raster.detail);
+
+  // What the image actually resolved to, which is not always what was asked for: a three-color logo
+  // stays three colors however high Colors goes, and saying so beats looking broken.
+  const describe = () =>
+    `${source.raster.palette.length} colors · ${source.raster.regions} regions`;
+  readout.textContent = describe();
+
+  const apply = (patch: { colors?: number; detail?: number }) => {
+    const result = requantizeSource(source.id, patch);
+    if (!result) return;
+    if (result.capped) notice(RASTER_CAPPED_MESSAGE);
+    else dismissNotice(RASTER_CAPPED_MESSAGE);
+    renderWarnings();
+    readout.textContent = describe();
+    scheduleRebuild();
+  };
+
+  colors.addEventListener('input', () => {
+    readout.textContent = `${colors.value} colors · recomputing on release`;
+  });
+  colors.addEventListener('change', () => {
+    apply({ colors: parseInt(colors.value, 10) });
+    track('raster_adjust', { field: 'colors' });
+  });
+  detail.addEventListener('change', () => {
+    apply({ detail: parseInt(detail.value, 10) });
+    track('raster_adjust', { field: 'detail' });
+  });
+  return block;
 }

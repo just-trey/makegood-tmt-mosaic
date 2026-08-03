@@ -254,3 +254,50 @@ not match the string above verbatim.
   cleared on close.
 - Freeing space (closing other tabs on the same site, or clearing old site
   data) and reloading — the autosave runs again on the next change.
+
+## Troubleshooting: "Some detail in this image was too fine to print…"
+
+Full text: _"Some detail in this image was too fine to print and was merged
+into its surroundings. Lower Colors, or raise Detail, for a cleaner result."_
+
+An informational notice, not a failure — the image loaded and cut normally.
+It appears when tracing a raster image produced more separate regions than
+`MAX_COMPONENTS` ([src/raster/trace.ts](../src/raster/trace.ts)) allows, so
+the despeckle floor was raised to exactly the size that fits and the image
+re-traced. Without that cap, a busy photograph would hand the region pipeline
+thousands of speckle islands and freeze the tab for tens of seconds (the cost
+is measured in [tech-debt.md](tech-debt.md)).
+
+What it means in practice: features below the new floor were absorbed into
+whichever color surrounds them. Nothing was dropped or left as a hole, and the
+regions still tile the image exactly — but fine texture is gone. That is
+usually the right answer anyway, since detail near that size is below what a
+0.4mm nozzle can express.
+
+To get a result you're happier with:
+
+- **Lower Colors.** Most of the time this is the real fix. Fewer palette
+  entries means fewer boundaries, which means far fewer islands — a photo at
+  4 colors reads much better as a print than the same photo at 12.
+- **Raise Detail** if you want the small stuff kept and are willing to pay for
+  it in slot count and print time.
+- **Crop or simplify the source** before loading. A busy background the design
+  doesn't need is what usually blows the budget.
+
+## Troubleshooting: "This image has no real-world size…"
+
+Full text: _"This image has no real-world size, so it was auto-fit to the part
+face. Use Scale to fine-tune."_
+
+Expected on every raster image, and safe to ignore unless the size is wrong.
+A PNG or JPG carries no trustworthy physical dimensions — the DPI tags in
+consumer files are almost always a meaningless 72 or 96, and honoring one
+would size a phone photo at well over a metre — so the image is fitted to the
+part's design face instead and `Scale` adjusts from there.
+
+The SVG counterpart of this notice ("This SVG has no absolute width/height in
+mm…") asks you to set the document size in millimeters, which is the right fix
+there and an impossible one for an image; that is why they are two separate
+messages. There is no way to give a raster image an exact real-world size on
+load — use the Part section's design template to check the fit visually, and
+`Scale`/`Offset` to place it.

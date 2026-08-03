@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP as well
+  as an SVG — drop in a logo, a child's drawing or a photo and it's quantized
+  into flat color regions and traced back to outlines, then goes through the
+  same placement, merging, cutting and export path an SVG does. The format is
+  detected from the file's own bytes, so a mislabelled or oddly-named file
+  still works. Transparent areas stay transparent and cut nothing, and a photo
+  taken on a phone arrives the right way up.
+- Each loaded image gets **Colors** and **Detail** sliders on its row. Colors
+  sets how many flat colors to reduce to, with a readout of how many it
+  actually found (fewer, if the image doesn't have that many) and how many
+  separate regions that came to. Detail trades fine texture against
+  printability. Smoothing and speckle removal are otherwise tuned automatically
+  from how detailed the image is, so a photo is handled differently from a logo
+  without anyone having to say which it is. Both re-trace on release rather
+  than mid-drag, and per-color depths carry across the change instead of being
+  reset.
+- An image whose detail runs past what's printable says so, and merges the
+  too-fine parts into their surroundings rather than tracing thousands of
+  specks — see [docs/troubleshooting.md](docs/troubleshooting.md).
 - The help panel has a new About section linking
   [3d-mobility.org](https://3d-mobility.org), where the TMT's printable
   part files and assembly instructions live — previously the app had no

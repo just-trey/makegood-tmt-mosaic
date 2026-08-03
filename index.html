@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>TMT Mosaic — SVG Color Inlay Generator</title>
+    <title>TMT Mosaic — Multicolor Inlay Generator</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -34,7 +34,7 @@
           rel="noopener"
           title="View changelog"
         ></a>
-        <span class="sub">for the MakeGood TMT · SVG → multicolor recess geometry</span>
+        <span class="sub">for the MakeGood TMT · SVG or image → multicolor recess geometry</span>
         <div class="spacer"></div>
         <span class="stat" id="stat-tris">0 tris</span>
         <span class="stat" id="stat-colors" style="display: none">0 colors</span>
@@ -63,9 +63,9 @@
             <div class="help-step">Start here</div>
             <h3>The five-minute version</h3>
             <p>
-              Pick a part shape, drop in an SVG, and each flat fill color becomes its own recessed
-              region. Export a 3MF and it's pre-mapped to AMS filament slots — open it in Bambu
-              Studio, OrcaSlicer, or Snapmaker Orca and print.
+              Pick a part shape, drop in an SVG or a photo, and each flat color becomes its own
+              recessed region. Export a 3MF and it's pre-mapped to AMS filament slots — open it in
+              Bambu Studio, OrcaSlicer, or Snapmaker Orca and print.
             </p>
             <p>
               Your session autosaves as you go. Come back after closing the tab or a reload and
@@ -106,11 +106,36 @@
 
           <section class="help-sec" id="h-artwork">
             <div class="help-step">Left panel · Artwork</div>
-            <h3>Preparing your SVG</h3>
+            <h3>Preparing your artwork</h3>
             <p>
-              Use flat, distinct fill colors — no gradients or pattern fills, those get flagged and
-              skipped. Each unique fill becomes a candidate color region before you even touch the
-              fit controls.
+              You can load either an <strong>SVG</strong> or a <strong>PNG/JPG image</strong>. The
+              format is detected from the file itself, so the extension doesn't have to be right.
+            </p>
+            <p>
+              For an SVG, use flat, distinct fill colors — no gradients or pattern fills, those get
+              flagged and skipped. Each unique fill becomes a candidate color region before you even
+              touch the fit controls.
+            </p>
+            <p>
+              An image has no flat fills to read, so it gets quantized into them: the app picks a
+              palette from the image, snaps every pixel to it, and traces the result back to
+              outlines. Photos work — smoothing and speckle removal are tuned automatically from how
+              detailed the image is, so a photo gets a heavier hand than a logo without you telling
+              it which is which. A transparent background stays transparent and cuts nothing.
+            </p>
+            <p>
+              A loaded image gets two sliders on its row. <strong>Colors</strong> is how many flat
+              colors to reduce to — the readout under it tells you how many it actually found, which
+              can be fewer (a three-color logo stays three however high you push it) and how many
+              separate regions that came to. <strong>Detail</strong> trades fineness against
+              printability: lower merges small specks away and smooths outlines, higher keeps them.
+              Both re-trace the image when you let go of the slider, not while you drag.
+            </p>
+            <p>
+              Colors and Auto-merge below do different jobs and don't fight: Colors decides which
+              regions exist, Auto-merge decides which of them share a filament slot. An image's
+              palette comes out already separated past the "Slight" setting, so that default has
+              nothing left to do on one.
             </p>
             <p>
               For an assembly part, design over the template you downloaded in the Part section
@@ -452,13 +477,13 @@
         <details class="sec" open>
           <summary>Artwork</summary>
           <div id="dropzone">
-            Drop an SVG here, or click to browse<br />
+            Drop an SVG or image here, or click to browse<br />
             <span class="fname" id="svg-fname"></span>
             <input
               type="file"
               id="svg-input"
-              accept=".svg,image/svg+xml"
-              aria-label="Upload SVG artwork"
+              accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+              aria-label="Upload SVG or image artwork"
               style="display: none"
             />
           </div>
@@ -468,7 +493,8 @@
           <div id="pattern-picker" class="pattern-picker" style="display: none"></div>
           <div id="artwork-list" class="artwork-list" style="display: none"></div>
           <div class="hint">
-            Flat, distinct fill colors only. Gradients/patterns are flagged and skipped.
+            SVG: flat, distinct fill colors only — gradients/patterns are flagged and skipped.
+            PNG/JPG: quantized into flat color regions; set Colors and Detail on the loaded row.
             <b>Sticker</b> places one copy of a design; <b>Fill</b> (on a part with a design
             surface) repeats it across the whole surface instead. On a part with more than one
             design surface, "+zone" places the same design again on another surface.

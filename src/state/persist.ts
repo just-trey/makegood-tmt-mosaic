@@ -103,6 +103,12 @@ export function initBeforeUnloadGuard(): void {
 }
 
 function snapshotSession(): PersistedSession {
+  const persistedSources = state.sources.filter((s) => !s.raster);
+  const persistedIds = new Set(persistedSources.map((s) => s.id));
+  const persistedArtworks = state.artworks.filter((a) => persistedIds.has(a.sourceId));
+  const persistedActiveId = persistedArtworks.some((a) => a.id === state.activeArtworkId)
+    ? state.activeArtworkId
+    : (persistedArtworks[0]?.id ?? null);
   return {
     version: SCHEMA_VERSION,
     savedAt: Date.now(),
@@ -131,17 +137,24 @@ function snapshotSession(): PersistedSession {
     colorSettings: state.colorSettings,
     explicitDepths: true,
     keptApart: state.keptApart,
-    sources: state.sources.map((s) => ({
+    // A raster source is skipped, not persisted: restore re-derives `parsed` by re-parsing
+    // `svgText`, and an image has none — it came from pixels. Storing the pixels instead is not an
+    // option either, since one decoded image is ~1MB before JSON encoding against a MAX_BYTES of
+    // 4MB. Its instances go with it, or restore would rebuild placements pointing at a source that
+    // no longer exists. The user re-drops the image; everything else about the session survives.
+    sources: persistedSources.map((s) => ({
       id: s.id,
       kind: s.kind,
       name: s.name,
       svgText: s.svgText,
     })),
-    artworks: state.artworks.map(({ zone, ...rest }) => ({
+    artworks: persistedArtworks.map(({ zone, ...rest }) => ({
       ...rest,
       zoneId: zone?.zoneId ?? null,
     })),
-    activeArtworkId: state.activeArtworkId,
+    // May have pointed at a raster instance that just got filtered out — fall back to a surviving
+    // one rather than restoring a selection that references nothing.
+    activeArtworkId: persistedActiveId,
   };
 }
 

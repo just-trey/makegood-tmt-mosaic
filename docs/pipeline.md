@@ -12,6 +12,37 @@ How the geometry actually works — read this before touching `src/geometry/` or
    segment count, so gentle curves emit few points and only sharp/detailed
    curves emit many — fewer total vertices flowing into the boolean pass below
    without losing visible fidelity.
+   A **raster image** (PNG/JPG/WebP, [src/raster/](../src/raster/)) reaches the
+   same `ParsedSVG` by a different route, and nothing below step 1 knows the
+   difference. Decode downscales to 512px on the long edge
+   ([src/raster/decode.ts](../src/raster/decode.ts)) — already coarser than a
+   0.4mm nozzle across the 276mm wheel, and the measured knee in tracing cost.
+   Pixels under 50% alpha become background and cut nothing. An edge-density
+   statistic ([src/raster/stats.ts](../src/raster/stats.ts)) decides how
+   photographic the image is and sets blur/despeckle/simplify strength from it,
+   which the Detail slider then scales; the user never picks a mode. Quantization
+   is median-cut seeding plus Lloyd refinement **in CIELAB**
+   ([src/raster/quantize.ts](../src/raster/quantize.ts)), deliberately the same
+   space and metric `applyColorMerges` clusters in, and the palette is
+   ΔE-separated afterwards so the default "Slight" auto-merge is a provable
+   no-op on a traced image — Colors decides which regions exist, auto-merge
+   decides which share a slot, and the two never fight.
+
+   **The tracer walks the cracks between pixels, not the pixels**
+   ([src/raster/trace.ts](../src/raster/trace.ts)), so every vertex is an
+   integer lattice point and two adjacent regions share their boundary
+   polyline bit-for-bit. **Simplification happens once per shared chain, and
+   this is load-bearing**: running RDP on each region's rings independently
+   would pull the shared chain two different ways and leave a sliver of bare
+   part surface along every color boundary in the image — a real print defect,
+   since these are cut as geometry. Survivors are marked on the crack graph and
+   both sides filter through the same marks. `tests/raster-trace.test.ts` pins
+   it (two regions still tile their frame exactly after simplification moves
+   the divider); don't "simplify the simplification". Hole-vs-solid and winding
+   are deliberately left to `shapeToFeature` below. Shapes are grouped one per
+   color rather than one per connected component — measured, not assumed, with
+   [scripts/bench-raster.ts](../scripts/bench-raster.ts).
+
 2. **Each color's _net visible_ region** is computed with paint order taken
    into account — an outline drawn on top of a fill has its footprint
    subtracted from the fill's region, matching what the rasterized image would
@@ -138,6 +169,9 @@ How the geometry actually works — read this before touching `src/geometry/` or
   kind is posed for display. Viewport only: native part coordinates, the
   export/plate pose, and this are three separate frames on purpose (the
   `add-part` skill, "The separate orientations are intentional")
+- [src/raster/](../src/raster/) — PNG/JPG → `ParsedSVG`. `decode.ts` is the only
+  module here that touches the DOM; the rest is pure math over typed arrays,
+  which is what lets it be tested in node with no canvas stub
 - [src/ui/](../src/ui/) — one module per left-panel section
 - [src/assembly/](../src/assembly/) — assembly kinds (roles) and part loading
 

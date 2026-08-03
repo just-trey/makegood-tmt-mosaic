@@ -225,6 +225,68 @@ elements deep enough to overflow the JS call stack — fails with a named
 but still isn't depth-limited; see `shapeToFeature` and `walk` in
 [regions.ts](../src/geometry/regions.ts) and [parse.ts](../src/svg/parse.ts).
 
+**Raster tracing is the first producer that could plausibly hit this**, and is
+held off it by the despeckle floor rather than by luck. Measured with
+[scripts/bench-raster.ts](../scripts/bench-raster.ts) at 512px, 8 colors: the
+worst single shape carries ~23 rings and costs ~5 ms, against zebra's 69/5.88 ms
+— so grouping shapes per color, which piles every ring of one color into one
+shape, stays comfortably inside the budget. `MAX_COMPONENTS` (800,
+[trace.ts](../src/raster/trace.ts)) is what guarantees it: exceed it and the
+floor is raised to exactly the area that fits and the image re-traced. If that
+cap is ever raised or the floor lowered, re-run the bench — this is the number
+that keeps the quadratic term small, and the failure mode is a frozen tab, since
+`shapes.map(shapeToFeature)` runs before the first yield.
+
+## Raster shape granularity was settled by measurement, and the losing option is still reachable
+
+Traced components can be grouped one shape per color or one per connected
+component ([`ShapeGranularity`](../src/raster/parse.ts)), and the two costs pull
+opposite ways: per-color risks `shapeToFeature`'s O(rings²·len) _within_ a shape,
+per-component multiplies the paint-order boolean pass by shape count. Measured
+(`scripts/bench-raster.ts`, 512px photographic source): per-color ~830 ms total
+against per-component ~1590 ms, the difference almost entirely in the boolean
+pass (136 ms vs 1055 ms). Per-color ships.
+
+Worth knowing for anyone revisiting it: traced regions are **disjoint by
+construction**, so every `safeDiff` in that pass is provably a no-op. A
+`disjoint` fast path on `computeNetRegionsByColor` would collapse it to array
+concatenation and make per-component viable — and would also cut the per-color
+path's 136 ms. It was left unbuilt because the measurement above says nothing
+needs it: at 8 shapes the pass is not where the time goes. Build it only if the
+component cap is ever raised enough to change that.
+
+## The raster photo-vs-flat-art thresholds are shaped right but calibrated against synthetic images
+
+`FLAT_EDGE_DENSITY` / `PHOTO_EDGE_DENSITY` in
+[src/raster/stats.ts](../src/raster/stats.ts) (0.12 and 0.45) decide how much
+blur and despeckling an image gets, interpolating between so nothing falls off a
+cliff. The statistic is sound — flat art puts its transitions on thin outlines
+around large constant fields, a photograph has one nearly everywhere, and
+`tests/raster-parse.test.ts` pins that separation — but the two endpoints were
+placed from procedurally generated sources, not from a corpus of real files.
+
+Closing it: record `measureImage().edgeDensity` for a real set — the shipped
+`public/patterns/*.svg` and `public/assets/makegood-logo.png` rasterized, several
+phone photos, one quality-40 JPEG (block artifacts must not read as flat), and
+the genuinely hard middle: a UI screenshot, a scanned crayon drawing, a
+gradient-heavy illustration. Confirm the flat and photo clusters are separated by
+a gap and put the endpoints inside it. A screenshot landing on the photo side
+would be the bug to watch for. If the clusters overlap, the statistic itself is
+wrong and wants replacing rather than retuning.
+
+## The raster despeckle floor is a fraction of image area, not a printable size
+
+[src/raster/stats.ts](../src/raster/stats.ts) expresses it as a fraction of the
+working image so it means the same thing at any input resolution — but the raster
+stage never learns how large the part is, so it cannot express the floor as the
+thing that actually matters: a feature smaller than roughly one nozzle width will
+not print however the image was scaled. At the current numbers a 512px image
+auto-fit to an 80mm face puts the photo-strength floor near 0.6mm, which is about
+right, but that is a coincidence of two independent constants rather than a
+derivation. Closing it means threading the resolved mm-per-unit
+(`designMmPerUnit`, [assembly.ts](../src/geometry/assembly.ts)) back into the
+raster stage, which today runs strictly before placement is known.
+
 ## The chair's zone sidecar is 1.7 MB raw / 638 KB gzipped
 
 (`public/stl/chair-body-zones.json`), up from 125 KB gzipped when each zone
