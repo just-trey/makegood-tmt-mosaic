@@ -836,8 +836,7 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
     // nothing while still costing an AMS slot
     expect(r.min).toBeCloseTo(9.8, 4);
     expect(WARNINGS.map((w) => w.message)).toContain(
-      'Depth for color #ff0000 was set to 0.00 mm, which would cut nothing — it was raised to ' +
-        '0.20 mm.',
+      'Depth for "#ff0000" was set to 0.00 mm, which would cut nothing — it was raised to 0.20 mm.',
     );
   });
 
@@ -891,4 +890,38 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
       expect(WARNINGS.filter((w) => w.message.startsWith('Depth for color'))).toHaveLength(0);
     },
   );
+});
+
+describe('buildAssemblyGeometry depth labels and thin cuts', () => {
+  beforeEach(() => clearWarnings());
+
+  it('names a merged group the way the color list labels it', { timeout: 30000 }, async () => {
+    // The dominant hex is never rendered as text for a merged row, so naming it points the user
+    // at a row that doesn't exist. Flat mode was fixed for this; assembly kept the bug until the
+    // label rule moved into one shared place.
+    await buildAssemblyGeometry(
+      baseInput({
+        parsed: twoColorSquaresParsed(),
+        mergeGroups: [['#ff0000', '#0000ff']],
+        globalDepth: 0,
+      }),
+    );
+
+    expect(WARNINGS.some((w) => w.message.startsWith('Depth for "Merged (2)" was set to'))).toBe(
+      true,
+    );
+    expect(WARNINGS.every((w) => !w.message.startsWith('Depth for color'))).toBe(true);
+  });
+
+  it('honors a positive depth thinner than a layer', { timeout: 30000 }, async () => {
+    const built = (await buildAssemblyGeometry(
+      baseInput({ colorSettings: { 'asm:#ff0000': { depth: 0.12 } } }),
+    ))!;
+
+    const r = yRange(built.partOutputs[0].inlaySoups[0]);
+    expect(r.max - r.min).toBeCloseTo(0.12, 4);
+    const note = WARNINGS.find((w) => w.message.includes('thinner than the usual'));
+    expect(note).toBeDefined();
+    expect(note!.level).toBe('info');
+  });
 });

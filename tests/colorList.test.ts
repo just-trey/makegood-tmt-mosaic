@@ -249,3 +249,69 @@ describe('renderColorList — depth override affordance', () => {
     expect(resetBtn()).not.toBeNull();
   });
 });
+
+describe('renderColorList — reset survives the field it sits next to', () => {
+  beforeEach(() => {
+    state.colorSettings = {};
+    state.globalDepth = 1;
+  });
+
+  it('clears the override on mousedown, before the blur that would re-store it', () => {
+    // Clicking ↺ blurs the depth field first. That blur fires the field's change handler, which
+    // re-stores the override and schedules the rebuild that re-renders the list — destroying the
+    // button before its click could land, so the first click appeared to do nothing.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    const btn = document.querySelector<HTMLElement>('.color-row .depth-reset')!;
+    const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    btn.dispatchEvent(ev);
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+    // the default must be prevented, or the blur-change still fires and puts the override back
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('still clears on a keyboard activation, which raises click without mousedown', () => {
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    document.querySelector<HTMLElement>('.color-row .depth-reset')!.click();
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+  });
+
+  it('still resets when a rebuild re-rendered the list between render and click', () => {
+    // What the live run caught and the mousedown-only fix missed: editing the field fires change
+    // immediately, so a rebuild is already in flight and replaces the list's innerHTML. A handler
+    // bound to the button from the previous render is on a detached node by the time the click
+    // lands. Delegation from the container is what survives that.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    // the rebuild the field's change scheduled, landing before the user's click
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    const btn = document.querySelector<HTMLElement>('.color-row .depth-reset')!;
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+  });
+
+  it('ignores the pending edit that fires after the reset tears the field out', () => {
+    // Found by driving the real app: preventDefault stops the click blurring the field, but the
+    // rebuild then removes the focused input and Chrome fires its pending change on removal —
+    // re-storing the override the reset just cleared, one beat too late to see on screen.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    const input = document.querySelector<HTMLInputElement>('.color-row .depth-input')!;
+
+    input.value = '3.3'; // typed, never committed
+    document
+      .querySelector<HTMLElement>('.color-row .depth-reset')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    input.dispatchEvent(new Event('change')); // the last gasp on removal
+
+    expect(state.colorSettings['#ff0000']).toBeUndefined();
+  });
+});

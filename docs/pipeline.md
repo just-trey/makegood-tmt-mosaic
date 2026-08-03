@@ -29,10 +29,12 @@ How the geometry actually works — read this before touching `src/geometry/` or
    frame with move/scale/rotate handles, same as the sliders underneath.
 4. **Flat-plate mode** builds the plate as a stack of flat slabs between depth
    boundaries — pure 2D math, no CSG ([src/geometry/flat.ts](../src/geometry/flat.ts)).
-   Each region's depth is first held inside what the plate can carry — at least
-   0.2 mm (one typical layer; shallower slices to nothing), and at most the
-   thickness less the 0.05 mm floor that keeps a recess from cutting through — and any depth that had to move warns, naming
-   the region and both numbers. What a region asked for is resolved in one
+   Each region's depth is capped at the thickness less the 0.05 mm floor that
+   keeps a recess from cutting through, and a depth of zero or less — which
+   cuts nothing and says nothing about intent — is raised to 0.2 mm, one
+   typical layer. Either warns, naming the region and both numbers. A positive
+   depth thinner than a layer is honored and only noted: it is a real choice on
+   a fine-layer profile. What a region asked for is resolved in one
    place for both modes ([src/geometry/depth.ts](../src/geometry/depth.ts)):
    an explicit per-row override if it is finite, otherwise the global depth.
    A stored `0` is a real answer there, not an absent one, and the clamped

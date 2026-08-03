@@ -87,8 +87,8 @@ describe('buildGeometry depth clamp warning', () => {
     ))!;
     expect(built.colorMeshes.find((c) => c.key === '#ff0000')!.depth).toBeCloseTo(3.95);
     expect(WARNINGS.map((w) => w.message)).toContain(
-      'Depth for "#ff0000" was set to 100.00 mm, but a 4.00 mm plate can only cut 0.20–3.95 mm ' +
-        'deep — it was cut at 3.95 mm instead.',
+      'Depth for "#ff0000" was set to 100.00 mm, but a 4.00 mm plate can only cut 3.95 mm deep — ' +
+        'it was cut at 3.95 mm instead.',
     );
     expect(WARNINGS.every((w) => w.build)).toBe(true);
   });
@@ -98,7 +98,7 @@ describe('buildGeometry depth clamp warning', () => {
       clearWarnings();
       const built = (await buildGeometry(baseInput({ colorSettings: { '#ff0000': { depth } } })))!;
       expect(built.colorMeshes.find((c) => c.key === '#ff0000')!.depth).toBeCloseTo(0.2);
-      expect(WARNINGS.some((w) => w.message.includes('it was cut at 0.20 mm instead.'))).toBe(true);
+      expect(WARNINGS.some((w) => w.message.includes('it was raised to 0.20 mm.'))).toBe(true);
     }
   });
 
@@ -107,6 +107,20 @@ describe('buildGeometry depth clamp warning', () => {
     expect(WARNINGS.some((w) => w.message.startsWith('Depth for "Background" was set to'))).toBe(
       true,
     );
+  });
+
+  it('honors a positive depth thinner than a layer, noting rather than clamping it', async () => {
+    // A 0.12 mm recess is a real choice on a 0.08 mm profile. Clamping it up to 0.2 mm would put
+    // it out of reach entirely, and the user knows their slicer better than this does.
+    const built = (await buildGeometry(
+      baseInput({ colorSettings: { '#ff0000': { depth: 0.12 } } }),
+    ))!;
+
+    expect(built.colorMeshes.find((c) => c.key === '#ff0000')!.depth).toBeCloseTo(0.12);
+    const note = WARNINGS.find((w) => w.message.includes('thinner than the usual'));
+    expect(note).toBeDefined();
+    expect(note!.level).toBe('info');
+    expect(WARNINGS.every((w) => !w.message.includes('was raised to'))).toBe(true);
   });
 
   it('stays quiet for an in-range depth, and for an unset one', async () => {

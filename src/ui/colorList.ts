@@ -125,6 +125,42 @@ function renderEmptyBaseRow(list: HTMLElement): void {
   list.appendChild(row);
 }
 
+/**
+ * The depth-reset "↺" is wired on the list container, once, rather than per button — the buttons
+ * themselves are too short-lived to hold a handler.
+ *
+ * Editing the depth field schedules a rebuild, and that rebuild replaces the list's innerHTML. A
+ * button listener attached during the previous render is on a node that gets detached mid-gesture,
+ * so the click lands on nothing and the reset silently does not happen. The container outlives every
+ * render, so delegation catches the event whichever generation of button received it. mousedown
+ * additionally beats the field's blur-`change`, which would otherwise re-store the override the
+ * click is trying to clear; `click` covers keyboard activation, which raises no mousedown. Both are
+ * idempotent.
+ */
+function wireDepthReset(list: HTMLElement): void {
+  if (list.dataset.depthResetWired) return;
+  list.dataset.depthResetWired = '1';
+  const reset = (e: Event) => {
+    const btn = (e.target as HTMLElement | null)?.closest?.('.depth-reset') as HTMLElement | null;
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // Abandon whatever is half-typed in this row's field. preventDefault above stops the click
+    // blurring it, but the rebuild below then *removes* the focused input, and Chrome fires the
+    // pending change on removal — re-storing the very override this is clearing, a beat too late
+    // to see. Marking it makes its change handler ignore that last gasp.
+    btn
+      .closest('.color-row')
+      ?.querySelector<HTMLInputElement>('.depth-input')
+      ?.setAttribute('data-abandoned', '1');
+    const key = btn.dataset.resetKey;
+    if (key) delete state.colorSettings[key];
+    scheduleRebuild();
+  };
+  list.addEventListener('mousedown', reset);
+  list.addEventListener('click', reset);
+}
+
 export function renderColorList(
   colorMeshes: ColorListEntry[] | null,
   opts: { rawColorCount?: number; slotsNeeded?: number } = {},
@@ -140,6 +176,7 @@ export function renderColorList(
     return;
   }
   list.innerHTML = '';
+  wireDepthReset(list);
   const baseEntry = colorMeshes.find((c) => c.isBase) || null;
   const rows = colorMeshes.filter((c) => !c.isBase);
   rows.sort((a, b) => b.areaPct - a.areaPct);
@@ -221,7 +258,7 @@ export function renderColorList(
         <span class="hint">mm</span>
         ${
           isOverridden
-            ? `<button type="button" class="depth-reset" title="Set just for this color — click to follow the default depth in Depth again" aria-label="Reset depth for ${c.isBackground ? 'Background' : labelHtml} to the default">↺</button>`
+            ? `<button type="button" class="depth-reset" data-reset-key="${c.key}" title="Set just for this color — click to follow the default depth in Depth again" aria-label="Reset depth for ${c.isBackground ? 'Background' : labelHtml} to the default">↺</button>`
             : ''
         }
         <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
@@ -243,14 +280,13 @@ export function renderColorList(
       // through and let the geometry clamp be the one place that reports the override. Clearing
       // the field drops the override entirely, so the row goes back to following the global Depth
       // rather than sticking at a magic 0.1 nobody asked for.
-      const typed = parseFloat((e.target as HTMLInputElement).value);
+      // The reset button marks this field before the rebuild tears it out from under a pending
+      // edit; without the guard that edit lands after the reset and undoes it. See wireDepthReset.
+      const field = e.target as HTMLInputElement;
+      if (field.hasAttribute('data-abandoned')) return;
+      const typed = parseFloat(field.value);
       if (Number.isFinite(typed)) state.colorSettings[c.key] = { depth: typed };
       else delete state.colorSettings[c.key];
-      scheduleRebuild();
-    });
-    row.querySelector<HTMLElement>('.depth-reset')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      delete state.colorSettings[c.key];
       scheduleRebuild();
     });
     row.querySelectorAll<HTMLElement>('[data-pull]').forEach((btn) => {

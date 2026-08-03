@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Position } from 'geojson';
-import { MIN_CUT_DEPTH_MM, depthDiffers, requestedDepth } from './depth';
+import { MIN_CUT_DEPTH_MM, regionLabel, requestedDepth } from './depth';
 import type {
   AssemblyBuild,
   AssemblyPaletteEntry,
@@ -601,11 +601,18 @@ export async function buildAssemblyGeometry(
       //
       // No part name either: depth is a per-color setting, so this dedupes to one warning rather
       // than one per part carrying the color.
-      const depthSetting = Math.max(requested, MIN_CUT_DEPTH_MM);
-      if (depthDiffers(depthSetting, requested))
+      const depthSetting = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
+      const label = regionLabel(c.hex, c.isMerge, c.members.length);
+      if (requested <= 0)
         warnBuild(
-          `Depth for color ${c.hex} was set to ${requested.toFixed(2)} mm, which would cut ` +
-            `nothing — it was raised to ${depthSetting.toFixed(2)} mm.`,
+          `Depth for "${label}" was set to ${requested.toFixed(2)} mm, which would cut nothing — ` +
+            `it was raised to ${depthSetting.toFixed(2)} mm.`,
+        );
+      else if (depthSetting < MIN_CUT_DEPTH_MM)
+        noticeBuild(
+          `Depth for "${label}" is ${depthSetting.toFixed(2)} mm, thinner than the usual ` +
+            `${MIN_CUT_DEPTH_MM.toFixed(2)} mm print layer — it will only show up if your slicer ` +
+            `profile uses a layer height finer than that.`,
         );
       const depth = mapper.resolveCutDepth(depthSetting);
       // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker

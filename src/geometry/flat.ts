@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MIN_CUT_DEPTH_MM, depthDiffers, requestedDepth } from './depth';
+import { MIN_CUT_DEPTH_MM, depthDiffers, regionLabel, requestedDepth } from './depth';
 import type {
   BaseParams,
   ColorSettings,
@@ -17,7 +17,7 @@ import {
   unionAllCooperative,
 } from './regions';
 import { reportProgress } from '../progress';
-import { warnBuild } from '../warnings';
+import { noticeBuild, warnBuild } from '../warnings';
 
 type Ring = number[][];
 
@@ -272,24 +272,35 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const footprint = footprintFeature(shapeKind, baseParams);
   const thickness = baseParams.thickness;
 
-  const minDepth = MIN_CUT_DEPTH_MM;
   const maxDepth = thickness - 0.05;
-  const clampDepth = (d: number) => Math.min(Math.max(d, minDepth), maxDepth);
 
   /**
-   * The clamp above is the safety net that keeps a recess from cutting clean through the plate,
-   * but it used to apply silently — a depth typed deeper than the plate exported a valid file that
-   * simply wasn't what was asked for. Warn whenever the cut depth ends up somewhere other than the
-   * requested one, the flat-mode counterpart to assembly mode's cut-through warning.
+   * A recess reaching the back of the plate would cut through it, and one at or below zero cuts
+   * nothing — but both used to be fixed silently, so a depth of 100 on a 4 mm disc exported a
+   * perfectly valid file that simply wasn't the one asked for. Each now says what it did.
+   *
+   * A positive depth thinner than a layer is honored rather than clamped, and only noted: it is a
+   * real choice on a fine-layer profile, and clamping would put it out of reach.
    */
   const resolveDepth = (key: string, label: string): number => {
     const requested = requestedDepth(colorSettings, globalDepth, key);
-    const depth = clampDepth(requested);
-    if (depthDiffers(depth, requested))
+    const depth = Math.min(requested <= 0 ? MIN_CUT_DEPTH_MM : requested, maxDepth);
+    if (requested <= 0)
+      warnBuild(
+        `Depth for "${label}" was set to ${requested.toFixed(2)} mm, which would cut nothing — ` +
+          `it was raised to ${depth.toFixed(2)} mm.`,
+      );
+    else if (depthDiffers(depth, requested))
       warnBuild(
         `Depth for "${label}" was set to ${requested.toFixed(2)} mm, but a ${thickness.toFixed(2)} mm ` +
-          `plate can only cut ${minDepth.toFixed(2)}–${maxDepth.toFixed(2)} mm deep — it was cut at ` +
-          `${depth.toFixed(2)} mm instead.`,
+          `plate can only cut ${maxDepth.toFixed(2)} mm deep — it was cut at ${depth.toFixed(2)} mm ` +
+          `instead.`,
+      );
+    else if (depth < MIN_CUT_DEPTH_MM)
+      noticeBuild(
+        `Depth for "${label}" is ${depth.toFixed(2)} mm, thinner than the usual ` +
+          `${MIN_CUT_DEPTH_MM.toFixed(2)} mm print layer — it will only show up if your slicer ` +
+          `profile uses a layer height finer than that.`,
       );
     return depth;
   };
@@ -314,7 +325,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
     const feat = transformFeature(r.feature, fit);
     // Name the row the user can actually see: the color list renders a group as "Merged (N)" and
     // never shows its dominant hex as text, so naming it by hex points at nothing on screen.
-    const depth = resolveDepth(r.key, r.isMerge ? `Merged (${r.members.length})` : r.previewColor);
+    const depth = resolveDepth(r.key, regionLabel(r.previewColor, r.isMerge, r.members.length));
     colorEntries.push({
       color: r.previewColor,
       key: r.key,

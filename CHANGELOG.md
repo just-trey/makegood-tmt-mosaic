@@ -185,10 +185,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   typical layer — and says so. Relatedly, a depth field left at a deliberate
   `0` was read as "no depth set" and silently replaced with the global Depth —
   a row reading 0.00 could cut a full millimetre.
-- The shallowest depth either mode will fall back to is now 0.20 mm rather
-  than 0.02 mm. A fiftieth of a millimetre is a tenth of a layer: it sliced to
-  nothing, so the color printed as bare body while still using up a filament
-  slot, and the warning said it had been cut.
+- A depth of zero or less now falls back to 0.20 mm rather than 0.02 mm. A
+  fiftieth of a millimetre is a tenth of a layer: it sliced to nothing, so the
+  color printed as bare body while still using up a filament slot, and the
+  warning said it had been cut. A depth you set that is positive but thinner
+  than a layer is still cut exactly as asked — that's a real choice on a fine
+  layer-height profile — with a quiet note that it won't show up on a standard
+  0.2 mm one.
 - A color's depth row now shows when it carries its own depth rather than
   following the **Depth** default — the field is outlined and gets a "↺" to
   put it back. Previously the two looked identical, so a row pinned to its own

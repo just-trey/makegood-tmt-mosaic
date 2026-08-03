@@ -146,12 +146,10 @@ sticker's colors differ from the pattern's; it is a known gap, also in
 
 The flat shape modes cut every recess into a plate of one fixed thickness. A
 recess that reached the back of the plate would cut clean through it — a hole
-where a colored inset should be — so the build holds every depth inside what
-the plate can carry: at least 0.20 mm — one typical layer, since anything
-shallower slices to nothing — and at most the thickness less the 0.05 mm floor
-left under the deepest recess (3.95 mm on a 4 mm plate). This
-warning means one of your depths was outside that range and the recess was cut
-at the nearest depth in it instead.
+where a colored inset should be — so no depth is allowed past the thickness
+less the 0.05 mm floor left under the deepest recess (3.95 mm on a 4 mm plate).
+This warning means one of your depths was past that and the recess was cut at
+the deepest the plate can take instead.
 
 - **The file is still valid and printable** — the depth actually cut is the
   last number in the message. Nothing is dropped; only the depth differs from
@@ -173,12 +171,30 @@ words it differently, because there the wall thickness varies across the part
 and the cut-through only shows up once the boolean has run: see "Part … has no
 geometry to export" above.
 
-## Troubleshooting: "Depth for color … would cut nothing" warnings (assembly mode)
+## Troubleshooting: "Depth for … is … thinner than the usual 0.20 mm print layer"
 
-A depth of zero or less cuts no pocket at all. In assembly mode that used to
-drop the color from the part silently — no recess, no inlay, no message, just
-a part missing one of its colors. The depth is now raised to 0.20 mm, one
-typical layer, and the warning names the color and both numbers.
+A quiet note, not an error, and it appears in both modes. The recess is cut
+exactly as deep as you asked — nothing is clamped and nothing is dropped — but
+it is shallower than one layer at the default 0.2 mm layer height, so on a
+standard profile the slicer has no layer to put it in and it prints as bare
+body.
+
+- **If your profile uses a finer layer height** (0.08–0.12 mm is common for
+  detail work), this is fine and the recess will print. The note has no way to
+  read your slicer settings, so it can't tell.
+- **If you are on a standard 0.2 mm profile**, raise the depth to at least
+  0.2 mm or the color won't appear.
+- A depth of exactly 0 or less is a different case: that cuts nothing at all
+  whatever the profile, so it gets raised to 0.2 mm and warns rather than
+  being noted.
+
+## Troubleshooting: "Depth for … would cut nothing" warnings
+
+A depth of zero or less cuts no pocket at all — a request that says nothing
+about what was actually wanted. Both modes raise it to 0.20 mm, one typical
+layer, and name the color and both numbers. In assembly mode this used to drop
+the color from the part silently: no recess, no inlay, no message, just a part
+missing one of its colors.
 
 - **Nothing is dropped** — the color cuts, just shallowly. That matters beyond
   tidiness: a color cut nowhere gets no row in the color list, which would take

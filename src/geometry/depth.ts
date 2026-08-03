@@ -1,13 +1,16 @@
 import type { ColorSettings } from '../types';
 
 /**
- * Shallowest cut worth making — one typical layer (0.2 mm is the default profile on every printer
- * this targets).
+ * One typical layer — the default profile on every printer this targets. Used for two things:
  *
- * This is the depth a too-shallow request is *raised to* and told about, so it has to be a depth
- * that actually prints. An earlier 0.02 mm floor was a geometry tolerance borrowed for the job: it
- * kept the boolean well-defined, but a tenth of a layer slices to nothing, so the export gained a
- * color that consumed an AMS slot and printed as bare body while the warning said it had been cut.
+ * - the depth a request of zero or less falls back to. Zero says nothing about what was wanted, so
+ *   the fallback has to be a depth that actually prints. An earlier 0.02 mm fallback was a geometry
+ *   tolerance borrowed for the job: it kept the boolean well-defined, but a tenth of a layer slices
+ *   to nothing, so the export gained a color that cost an AMS slot and printed as bare body.
+ * - the threshold below which a recess only *may* not print, and gets a quiet note rather than a
+ *   clamp. A positive depth is a real choice and is honored: someone on a 0.08 mm profile can cut a
+ *   0.12 mm recess, and clamping them up to 0.2 mm would make that unreachable. They know their
+ *   slicer — see docs/audience.md.
  */
 export const MIN_CUT_DEPTH_MM = 0.2;
 
@@ -25,6 +28,16 @@ export const depthDiffers = (a: number, b: number): boolean => Math.abs(a - b) >
  * substituted the global default, so a deliberately-typed 0 cut at a depth nobody chose. Only an
  * absent or non-finite entry falls back to the global.
  */
+/**
+ * How the color list labels a region. Every depth message has to name a row the user can actually
+ * see, and a merged group's row reads "Merged (N)" — its dominant hex appears nowhere as text. Both
+ * modes go through here so fixing the label in one can't leave the other pointing at a phantom row,
+ * which is exactly how assembly mode kept the bug flat mode had already had fixed.
+ */
+export function regionLabel(color: string, isMerge: boolean, memberCount: number): string {
+  return isMerge ? `Merged (${memberCount})` : color;
+}
+
 export function requestedDepth(
   colorSettings: ColorSettings,
   globalDepth: number,
