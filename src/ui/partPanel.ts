@@ -140,11 +140,44 @@ export function renderBaseColorSwatches(): void {
   );
 }
 
+/**
+ * A field's HTML `min` (already set per-input in index.html, e.g. diameter=1, corner=0) is only
+ * advisory on a number input — the browser doesn't stop the user from typing 0, a negative value,
+ * or clearing it entirely, and numVal()'s NaN fallback used to turn an emptied field into a
+ * silent 0. That reached the geometry as a zero-size dimension with no warning (finding E) —
+ * diameter 0 doesn't error, it just deletes the part. Reads the floor from the input's own `min`
+ * rather than hardcoding "> 0" so a field like corner radius, which is legitimately 0, isn't
+ * rejected at its own valid floor.
+ */
 function bindShapeInput(sel: string, apply: (v: number) => void): void {
-  input(sel).addEventListener('input', () => {
-    apply(numVal(sel));
+  const el = input(sel);
+  const min = el.min !== '' ? parseFloat(el.min) : -Infinity;
+  const isValid = (v: number) => Number.isFinite(v) && v >= min;
+  let lastValid = numVal(sel, min > 0 ? min : 0);
+
+  el.addEventListener('input', () => {
+    const v = numVal(sel, NaN);
+    if (!isValid(v)) {
+      el.classList.add('invalid');
+      el.title = Number.isFinite(min)
+        ? `Needs a number of at least ${min} — the last valid value stays in use until this is fixed.`
+        : 'Needs a number — the last valid value stays in use until this is fixed.';
+      return; // don't apply a nonsensical dimension — leave the last good value in state
+    }
+    el.classList.remove('invalid');
+    el.title = '';
+    lastValid = v;
+    apply(v);
     updateOffsetSliderRanges();
     scheduleRebuild('typed');
+  });
+  // Snap back on blur rather than leaving an invalid value sitting in the field once the user
+  // moves on — state already held at lastValid the whole time, this just makes the field agree.
+  el.addEventListener('blur', () => {
+    if (!isValid(numVal(sel, NaN))) {
+      el.value = String(lastValid);
+      el.classList.remove('invalid');
+    }
   });
 }
 

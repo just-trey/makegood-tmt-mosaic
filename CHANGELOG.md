@@ -91,6 +91,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Dropping a PNG/JPG on the artwork dropzone used to fail with "SVG could
+  not be parsed — check the file is valid XML," which is true but useless
+  for a file that was never XML. It now says plainly that the file is a
+  raster image and points at the part's design template (or converting to
+  SVG) instead.
+- A shape dimension field (diameter, width, height, thickness…) emptied or
+  set to 0 used to apply silently — diameter 0 didn't error, it just
+  deleted the part with no warning. Those fields now reject anything below
+  their own valid floor (0 stays valid where it legitimately is, like
+  corner radius) and snap back to the last valid value on blur instead of
+  leaving a bad number in state.
 - The 3D viewport redrew every frame for the whole session, whether or not
   anything had changed, keeping a core busy behind an idle model — noticeable
   as heat and battery drain on a laptop, and as a slow app on any machine

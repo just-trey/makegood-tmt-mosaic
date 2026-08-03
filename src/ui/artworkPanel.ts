@@ -101,7 +101,39 @@ export function renderPatternPicker(): void {
   });
 }
 
+const RASTER_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tif', '.tiff'];
+
+/**
+ * The file picker's `accept=".svg,image/svg+xml"` filters raster images out of that path, but
+ * drag-drop bypasses `accept` entirely — a dropped PNG/JPG used to reach parseSVGDocument() and
+ * fail there with "SVG could not be parsed — check the file is valid XML," which is true but
+ * useless: the file isn't malformed XML, it's not XML at all. Checked before FileReader even
+ * starts, so the honest message replaces the misleading one instead of following it.
+ */
+// Exported for the raster-drop regression test; not used outside this module.
+export function isRasterImage(file: File): boolean {
+  if (file.type.startsWith('image/') && file.type !== 'image/svg+xml') return true;
+  const name = file.name.toLowerCase();
+  return RASTER_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+function reportLoadFailure(fname: string, message: string): void {
+  clearWarnings();
+  warn(message);
+  renderWarnings();
+  alert(`Could not load "${fname}": ${message}`);
+}
+
 function loadSVGFile(file: File): void {
+  if (isRasterImage(file)) {
+    reportLoadFailure(
+      file.name,
+      "that's a raster image (PNG/JPG), not an SVG. TMT Mosaic needs vector artwork — " +
+        "download this part's design template (Part panel) if it has one, or convert the file " +
+        'to SVG in Inkscape/Illustrator first.',
+    );
+    return;
+  }
   beginWork();
   const reader = new FileReader();
   // onloadend, not the onload path: it also covers a read error or abort, which would otherwise
@@ -113,10 +145,7 @@ function loadSVGFile(file: File): void {
       applyParsedSVG(reader.result as string, file.name);
       track('artwork_load', { source: 'upload' });
     } catch (e) {
-      clearWarnings();
-      warn((e as Error).message);
-      renderWarnings();
-      alert('Could not load SVG: ' + (e as Error).message);
+      reportLoadFailure(file.name, (e as Error).message);
     }
   };
   reader.readAsText(file);
