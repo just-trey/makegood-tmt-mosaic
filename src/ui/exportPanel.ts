@@ -11,6 +11,7 @@ import {
 import { placementNotice, resolvePlacement } from '../export/placement';
 import { zoneCoverage } from '../state/artwork';
 import { getPrinter } from '../export/printers';
+import { refreshSlotCountCapacity } from './colorList';
 import { meshToSTLBytes, soupFromObject } from '../export/stl';
 import { zipStore, type ZipEntry } from '../export/zip';
 import { hideOverlay, showOverlay } from './overlay';
@@ -50,6 +51,29 @@ function clearStalePlacementNotices(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
     if (PLACEMENT_WARNING_SUFFIXES.some((s) => WARNINGS[i].message.endsWith(s)))
       WARNINGS.splice(i, 1);
+  }
+}
+
+const SLOT_CAPACITY_WARNING_SUFFIX = 'or plan for multiple AMS units.';
+
+/**
+ * Pre-export guardrail for finding C: "4 colors / 5 slots" reads as a bug when nothing ever
+ * reconciles the slot count against what the selected printer actually holds. colorList.ts shows
+ * the same over-capacity state live as the user works, in case they miss it there or change the
+ * printer after that panel last rendered — this is the last-moment version, matching the
+ * warn-but-proceed pattern the coverage check above already uses (a real single-AMS user might
+ * still want the file, e.g. to swap filaments manually mid-print).
+ */
+function warnIfOverCapacity(slotsNeeded: number): void {
+  for (let i = WARNINGS.length - 1; i >= 0; i--) {
+    if (WARNINGS[i].message.endsWith(SLOT_CAPACITY_WARNING_SUFFIX)) WARNINGS.splice(i, 1);
+  }
+  const printer = getPrinter(state.printerId);
+  if (slotsNeeded > printer.amsSlotCapacity) {
+    warn(
+      `${slotsNeeded} AMS slots needed, but a single AMS on ${printer.label} holds ` +
+        `${printer.amsSlotCapacity} — reduce colors with auto-merge, or plan for multiple AMS units.`,
+    );
   }
 }
 
@@ -161,6 +185,7 @@ export async function exportPrintReady3MF(): Promise<void> {
     fname = 'mosaic-plate.3mf';
   }
 
+  warnIfOverCapacity(materials.length);
   showOverlay('Exporting print-ready 3MF…');
   await new Promise((r) => setTimeout(r, 10));
   try {
@@ -266,7 +291,9 @@ export function initExportPanel(): void {
   $<HTMLSelectElement>('#p-printer').addEventListener('change', (e) => {
     state.printerId = (e.target as HTMLSelectElement).value;
     // Doesn't affect geometry, so nothing schedules a rebuild for it — the one state change that
-    // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s.
+    // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s, and
+    // the one that needs its own slot-count redraw rather than picking one up from a rebuild.
+    refreshSlotCountCapacity();
     schedulePersist();
   });
   const exportBtn = $<HTMLButtonElement>('#btn-export');

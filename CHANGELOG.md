@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   that does the same thing for keyboard or touch use. The Colors and
   Artwork panels' persistent hints now also explain Sticker/Fill mode and
   "+zone", instead of only a hover tooltip.
+- The AMS slot line under the color list now always shows both numbers
+  ("N colors → M AMS slots needed"), not only after a merge changes the
+  count, and turns red when the count exceeds a single AMS/toolchanger
+  unit (4 slots) on the printer picked in Export — which also now warns at
+  export time. The printer picker itself is relabeled name-first (e.g.
+  "Bambu X1C / P1S / A1 (256 × 256mm)").
+>>>>>>> c060c83 (Reconcile AMS slot count against the selected printer's capacity)
 - Your session now autosaves as you work — part, artwork, placement, colors,
   depth, and printer — and offers to restore it if you come back after a
   reload, browser close, or crash. A dismissible banner asks first ("Restore

@@ -856,6 +856,9 @@ input[type='checkbox'] {
   color: var(--accent-2);
   margin-top: 6px;
 }
+.slot-count.over-capacity {
+  color: var(--danger-text);
+}
 
 .base-color-group {
   display: flex;

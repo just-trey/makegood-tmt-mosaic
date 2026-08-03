@@ -205,6 +205,14 @@
               being cut. Empty the base entirely and the body falls back to the plain Body / blank
               color picker up in Part.
             </p>
+            <p>
+              The line below the color list ("N colors → M AMS slots needed") always includes the
+              body's own slot in the count — that's the "+1" you'll see even before anything is
+              merged. It turns red if the count exceeds a single AMS/toolchanger unit (4 slots on
+              every printer this app supports) for the printer picked below in Export; exporting
+              anyway still works, it just means the file needs manual filament swaps or more than
+              one AMS unit to print in one go.
+            </p>
           </section>
 
           <section class="help-sec" id="h-export">
@@ -608,9 +616,9 @@
             <label for="p-printer">Printer</label>
             <div class="field">
               <select id="p-printer">
-                <option value="bambu-x1c" selected>256 × 256 (X1C / P1S / A1)</option>
-                <option value="bambu-h2d">350 × 320 (H2D)</option>
-                <option value="snapmaker-u1">270 × 270 (Snapmaker U1)</option>
+                <option value="bambu-x1c" selected>Bambu X1C / P1S / A1 (256 × 256mm)</option>
+                <option value="bambu-h2d">Bambu H2D (350 × 320mm)</option>
+                <option value="snapmaker-u1">Snapmaker U1 (270 × 270mm)</option>
               </select>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { addToBase, removeFromBase, replaceBase, state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { nearestFilamentName } from '../state/filaments';
+import { getPrinter } from '../export/printers';
 import { $, $all } from './dom';
 
 export interface ColorListEntry {
@@ -280,14 +281,38 @@ export function renderColorList(
   // both export paths — see exportPanel.ts), on top of every cut color/group listed below the Base
   // row. The colors stat stays rows.length — it counts cut regions, not filament slots.
   const cutColors = rows.length;
-  const slots = cutColors + 1;
-  const raw = opts.rawColorCount;
-  $('#slot-count').textContent =
-    raw && raw !== cutColors
-      ? `${raw} colors → ${slots} AMS slot${slots === 1 ? '' : 's'} needed`
-      : slots + ' AMS slot' + (slots === 1 ? '' : 's') + ' needed';
+  lastSlotsNeeded = cutColors + 1;
+  lastRawColorCount = opts.rawColorCount ?? cutColors;
+  renderSlotCount();
   $('#stat-colors').textContent = cutColors + ' colors';
   $('#stat-colors').style.display = '';
+}
+
+// Cached across renders so refreshSlotCountCapacity() (called when the printer picker changes,
+// which doesn't itself trigger a rebuild) can redraw the slot line without rebuilding the list.
+let lastSlotsNeeded = 0;
+let lastRawColorCount = 0;
+
+function renderSlotCount(): void {
+  const el = $('#slot-count');
+  if (!lastSlotsNeeded) {
+    el.textContent = '';
+    el.classList.remove('over-capacity');
+    return;
+  }
+  // Always shown together, even when raw === cut colors (the common unmerged case) — seeing the
+  // slot count alone reads as a bug the first time the +1-for-body offset shows up; the arrow
+  // makes the relationship self-explanatory every time, not just after a merge changes the count.
+  el.textContent = `${lastRawColorCount} colors → ${lastSlotsNeeded} AMS slot${lastSlotsNeeded === 1 ? '' : 's'} needed`;
+  const capacity = getPrinter(state.printerId).amsSlotCapacity;
+  el.classList.toggle('over-capacity', lastSlotsNeeded > capacity);
+}
+
+/** Redraw the slot-count line against the current printer's AMS capacity — the counterpart to
+ * refreshAutoMergeControl() etc. for this control. Needed because changing the printer picker
+ * doesn't schedule a rebuild (it doesn't affect geometry), so nothing else would refresh this. */
+export function refreshSlotCountCapacity(): void {
+  renderSlotCount();
 }
 
 function updateAutoMergeLabels(level: number): void {
