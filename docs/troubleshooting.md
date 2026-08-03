@@ -162,9 +162,10 @@ the deepest the plate can take instead.
 - A region with no depth of its own uses the global **Depth** field, so a
   global depth larger than the plate warns for every region at once — raise
   the thickness or lower the global depth rather than editing rows one by one.
-  A row carrying its own depth is outlined and has a "↺" beside it; that
-  button, or clearing the field, puts the row back under the global. If the
-  global **Depth** field seems to move nothing, those are the rows to look at.
+  A row carrying its own depth is highlighted and has a "↺" button beside it;
+  that button, or clearing the field, puts the row back under the global. If
+  the global **Depth** field seems to move nothing, those are the rows to look
+  at.
 
 Assembly mode has the same hazard at the deep end but catches it later and
 words it differently, because there the wall thickness varies across the part
@@ -187,8 +188,14 @@ body.
 - A depth of exactly 0 or less is a different case: that cuts nothing at all
   whatever the profile, so it gets raised to 0.2 mm and warns rather than
   being noted.
+- **It won't appear for a color that only lands on a cut-through part** (the
+  wheel's cap). Such a part ignores the depth setting and takes its hole the
+  whole way through, so the recess prints whatever your layer height is, and
+  the note would be predicting a problem that can't happen. If the same color
+  is also on a part that does cut to depth, the note still appears — it is
+  about that part.
 
-## Troubleshooting: "Depth for … would cut nothing" warnings
+## Troubleshooting: "Depth for … is not a depth that can cut" warnings
 
 A depth of zero or less cuts no pocket at all — a request that says nothing
 about what was actually wanted. Both modes raise it to 0.20 mm, one typical

@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import type { Position } from 'geojson';
-import { MIN_CUT_DEPTH_MM, regionLabel, requestedDepth } from './depth';
+import {
+  MIN_CUT_DEPTH_MM,
+  depthDiffers,
+  regionLabel,
+  requestedDepth,
+  zeroDepthWarning,
+} from './depth';
 import type {
   AssemblyBuild,
   AssemblyPaletteEntry,
@@ -595,26 +601,29 @@ export async function buildAssemblyGeometry(
       // instead, so the color stays on screen and stays fixable.
       //
       // The message reports the *setting* it raised, not the cut it produced: what a part does
-      // with a depth is the mapper's business, and a cutThrough part ignores the number entirely
-      // and takes its hole the whole way through — for any depth, not just this one. Naming a cut
-      // depth here claimed 0.02 mm on a part being cut 3 mm through.
+      // with a depth is the mapper's business. Naming a cut depth here claimed 0.02 mm on a part
+      // being cut 3 mm through.
       //
       // No part name either: depth is a per-color setting, so this dedupes to one warning rather
       // than one per part carrying the color.
       const depthSetting = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
       const label = regionLabel(c.hex, c.isMerge, c.members.length);
-      if (requested <= 0)
-        warnBuild(
-          `Depth for "${label}" was set to ${requested.toFixed(2)} mm, which would cut nothing — ` +
-            `it was raised to ${depthSetting.toFixed(2)} mm.`,
-        );
-      else if (depthSetting < MIN_CUT_DEPTH_MM)
+      const depth = mapper.resolveCutDepth(depthSetting);
+      if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depthSetting));
+      // Unlike the warning above — which describes the setting, and is true wherever the color
+      // lands — this one predicts what the recess will look like printed, so it must not be said
+      // about a part that discards the setting and takes its hole the whole way through: "too thin
+      // to show up" is wrong about a 3 mm hole. Ask the mapper what it did with the number rather
+      // than testing `part.cutThrough` here; the mapper owns that decision.
+      //
+      // Warnings dedupe by message, so gating per-part says the right thing when a color sits on
+      // several: the note appears if any part cuts at the setting, and stays silent if none do.
+      else if (depthSetting < MIN_CUT_DEPTH_MM && !depthDiffers(depth, depthSetting))
         noticeBuild(
           `Depth for "${label}" is ${depthSetting.toFixed(2)} mm, thinner than the usual ` +
             `${MIN_CUT_DEPTH_MM.toFixed(2)} mm print layer — it will only show up if your slicer ` +
             `profile uses a layer height finer than that.`,
         );
-      const depth = mapper.resolveCutDepth(depthSetting);
       // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
       // step); the snap tolerance is a property of the bake, so both modes take the same one.
       const cutterOpts = grid ? { refineMM: FILL_REFINE_MM } : undefined;

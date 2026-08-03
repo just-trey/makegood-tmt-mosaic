@@ -461,6 +461,73 @@ fill the surface" is the advice whether `tileCoverage` refused on tile
 count, non-invertibility, or non-affinity. It is right for the first and
 misleading for the other two. Split the message per cause.
 
+## A positive-but-thin depth stays a note, not a warning — considered and kept
+
+A UX review (2026-08-03) recommended promoting the sub-`MIN_CUT_DEPTH_MM`
+message from `ℹ` to `⚠`, on the grounds that it is the case which ships a
+file printing _nothing visible_ — arguably a worse outcome than the
+plate-clamp case that does get a `⚠`. That reasoning is sound as far as it
+goes, and it was rejected on purpose.
+
+The severity split is the whole point of the three-way resolve in
+[src/geometry/depth.ts](../src/geometry/depth.ts): a depth of zero or less
+says nothing about what was wanted and gets raised (a `⚠`, because a value
+was overridden); a depth the plate can't hold gets clamped (a `⚠`, same
+reason); a positive depth thinner than 0.2 mm is **honored exactly as
+asked** and gets an `ℹ`, because nothing was overridden. Someone on a
+0.08 mm layer-height profile cutting a 0.12 mm recess made a real choice,
+and this audience knows their slicer — see
+[audience.md](audience.md). Warning them about a value the app then obeys
+is crying wolf, and a `⚠` would imply an intervention that didn't happen.
+
+So the icon tracks _"did the app change your number?"_, not _"might you be
+disappointed?"_ — which is the distinction that keeps the two `⚠`s
+trustworthy.
+
+What would change the answer: evidence that users hit this by accident
+rather than by choice — e.g. a typo path where 0.02 is reached by
+mis-typing 0.2. If that shows up, the better fix is still not a severity
+bump but a value-shaped one (flag the specific 10×-off case), since
+promoting the whole class re-breaks the fine-profile user.
+
+## The per-color depth reset ("↺") stays beside its field — moving it was tried and rejected
+
+The same UX review as the section above (2026-08-03) also recommended moving
+the ↺ out of the middle of the depth row, where it sits 32 px from the field
+it resets with the "mm" unit label in between, on the reasoning that this
+groups it with the unit rather than with the field. It offered two
+placements: adjacent to the input, or "the row's right edge as a consistent
+slot".
+
+The right-edge version was built and looked at in the running app, and
+rejected: at the end of the row the ↺ reads as belonging to the filament hint
+("≈ Red") and to the color, which it has nothing to do with. It is now back
+where it was, and only its appearance changed (see below).
+
+Two things were measured on the way, both worth not re-deriving:
+
+- **The "consistent slot" argument was already satisfied.** Every element left
+  of the ↺ — the `depth` label, the 76 px field, the `mm` span — is a fixed
+  width, so its left edge is identical on every row: measured 168, 168, 168,
+  168 px across a four-color list. It never shifted with the value's width.
+  The rationale offered for moving it (and the one this repo briefly adopted)
+  was simply wrong about the layout.
+- **What made it hard to find was its appearance, not its position.** It was
+  borderless, transparent, and `--text-dim` — the same three properties as the
+  `depth` label, the `mm` unit, and the filament hint around it, and none of
+  the properties of the real `.btn` in the row above. Giving it `.btn` chrome
+  and a 24 px target fixed the finding the placement change was reaching for.
+
+Rejected alternatives, so they aren't re-attempted: putting the unit inside
+the field (`[2.40 mm]`) collides with Chrome's number-input spinners, which
+this app does not suppress; putting the unit before the value (`depth mm
+[2.40]`) reads wrongly, since a unit follows its number.
+
+What would change the answer: a variable-width element appearing left of the ↺
+in that row — a longer label, a per-row badge — which would break the fixed
+column the first point relies on. Narrow-window and touch layouts were also
+never checked for this row.
+
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
 A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):

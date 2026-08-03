@@ -188,12 +188,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   warning said it had been cut. A depth you set that is positive but thinner
   than a layer is still cut exactly as asked — that's a real choice on a fine
   layer-height profile — with a quiet note that it won't show up on a standard
-  0.2 mm one.
+  0.2 mm one. That note stays quiet for a color that only lands on a
+  cut-through part like the wheel's cap, which ignores the depth setting and
+  goes the whole way through: there is nothing too thin to print there.
 - A color's depth row now shows when it carries its own depth rather than
-  following the **Depth** default — the field is outlined and gets a "↺" to
-  put it back. Previously the two looked identical, so a row pinned to its own
-  value made the Depth field appear to do nothing, with no way back except
-  clearing the field, which only the help panel mentioned.
+  following the **Depth** default — the field is highlighted and gets a "↺"
+  button to put it back, and hovering either one says which depth is in use.
+  Previously the two looked identical, so a row pinned to its own value made
+  the Depth field appear to do nothing, with no way back except clearing the
+  field, which only the help panel mentioned.
+- The depth field is wide enough for a value like "50.00" — it clipped the
+  last digit at five characters, which is exactly the range the out-of-range
+  warning above asks you to look at.
 - Restoring a session saved by an earlier build no longer reinstates a
   per-color depth override for every color. Those were written automatically
   rather than chosen, and restoring them left the global Depth field unable to

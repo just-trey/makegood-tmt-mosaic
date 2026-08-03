@@ -836,7 +836,7 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
     // nothing while still costing an AMS slot
     expect(r.min).toBeCloseTo(9.8, 4);
     expect(WARNINGS.map((w) => w.message)).toContain(
-      'Depth for "#ff0000" was set to 0.00 mm, which would cut nothing — it was raised to 0.20 mm.',
+      'Depth for "#ff0000" was set to 0.00 mm, which is not a depth that can cut — it was raised to 0.20 mm.',
     );
   });
 
@@ -923,5 +923,42 @@ describe('buildAssemblyGeometry depth labels and thin cuts', () => {
     const note = WARNINGS.find((w) => w.message.includes('thinner than the usual'));
     expect(note).toBeDefined();
     expect(note!.level).toBe('info');
+  });
+
+  it(
+    'stays quiet about a thin depth on a part that cuts through anyway',
+    { timeout: 30000 },
+    async () => {
+      // The note predicts a print outcome ("won't show up at 0.2 mm layers"), and resolveCutDepth
+      // discards the setting on a cutThrough part — so the pill claimed an invisible recess while
+      // the cap was being cut 3 mm clean through. Same trap as the zero-depth message above, which
+      // is why the gate asks the mapper what it did rather than reading part.cutThrough here.
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })],
+          colorSettings: { 'asm:#ff0000': { depth: 0.12 } },
+        }),
+      ))!;
+
+      const r = yRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.max - r.min).toBeGreaterThan(2.5); // cut through, not 0.12 mm
+      expect(WARNINGS.filter((w) => w.message.includes('thinner than the usual'))).toEqual([]);
+    },
+  );
+
+  it('still notes a thin depth when some part does cut to it', { timeout: 30000 }, async () => {
+    // The gate is per-part and warnings dedupe by message, so a color spanning both kinds of
+    // part must still get the note — it is true of the part that honors the setting.
+    await buildAssemblyGeometry(
+      baseInput({
+        parts: [
+          boxPart({ cutThrough: true, cutThroughDepth: 3 }),
+          boxPart({ id: 2, name: 'plain box' }),
+        ],
+        colorSettings: { 'asm:#ff0000': { depth: 0.12 } },
+      }),
+    );
+
+    expect(WARNINGS.filter((w) => w.message.includes('thinner than the usual'))).toHaveLength(1);
   });
 });

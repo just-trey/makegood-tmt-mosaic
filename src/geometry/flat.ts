@@ -1,5 +1,11 @@
 import * as THREE from 'three';
-import { MIN_CUT_DEPTH_MM, depthDiffers, regionLabel, requestedDepth } from './depth';
+import {
+  MIN_CUT_DEPTH_MM,
+  depthDiffers,
+  regionLabel,
+  requestedDepth,
+  zeroDepthWarning,
+} from './depth';
 import type {
   BaseParams,
   ColorSettings,
@@ -285,11 +291,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const resolveDepth = (key: string, label: string): number => {
     const requested = requestedDepth(colorSettings, globalDepth, key);
     const depth = Math.min(requested <= 0 ? MIN_CUT_DEPTH_MM : requested, maxDepth);
-    if (requested <= 0)
-      warnBuild(
-        `Depth for "${label}" was set to ${requested.toFixed(2)} mm, which would cut nothing — ` +
-          `it was raised to ${depth.toFixed(2)} mm.`,
-      );
+    if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depth));
     else if (depthDiffers(depth, requested))
       warnBuild(
         `Depth for "${label}" was set to ${requested.toFixed(2)} mm, but a ${thickness.toFixed(2)} mm ` +

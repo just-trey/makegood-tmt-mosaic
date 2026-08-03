@@ -232,6 +232,30 @@ describe('renderColorList — depth override affordance', () => {
     expect(depthInput().classList.contains('overridden')).toBe(true);
   });
 
+  it('explains the override on the field that carries it, not on the one that does not', () => {
+    // The explanation used to sit on the *non*-overridden field, so hovering the field that looked
+    // different to ask why returned an empty tooltip — and the only text that answered it was on a
+    // 19x17px glyph the user had to guess was hoverable.
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(depthInput().title).toContain('Following the default');
+
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+    expect(depthInput().title).toContain('2.50 mm');
+    expect(depthInput().title).toContain('1.00 mm default');
+    expect(resetBtn()!.title).toContain('Reset to the default depth');
+  });
+
+  it('gives the reset the same button chrome as the rest of the row', () => {
+    // Borderless and dim, it was styled identically to the `depth` label and the `mm` unit beside
+    // it and shared nothing with the real button in the row above — so nothing at rest said it was
+    // clickable.
+    state.colorSettings = { '#ff0000': { depth: 2.5 } };
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    expect(resetBtn()!.classList.contains('btn')).toBe(true);
+  });
+
   it('drops the override when reset is clicked', () => {
     state.colorSettings = { '#ff0000': { depth: 2.5 } };
     renderColorList([entry('#ff0000')], { rawColorCount: 1 });

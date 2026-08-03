@@ -32,6 +32,21 @@ export function regionLabel(color: string, isMerge: boolean, memberCount: number
 }
 
 /**
+ * The one message both modes raise, so it can't drift apart in wording the way the label once did.
+ *
+ * It describes the *setting* and the raise, never the cut that followed. Assembly mode hands the
+ * raised value to a mapper that may discard it — a cutThrough part takes its hole the whole way
+ * through for any depth — so a clause like "would cut nothing" would be false there while being
+ * true in flat mode. Everything this says is true wherever the color lands.
+ */
+export function zeroDepthWarning(label: string, requested: number, raisedTo: number): string {
+  return (
+    `Depth for "${label}" was set to ${requested.toFixed(2)} mm, which is not a depth that can ` +
+    `cut — it was raised to ${raisedTo.toFixed(2)} mm.`
+  );
+}
+
+/**
  * The depth a region was *asked* to cut at, before any clamp.
  *
  * A stored `0` is a real answer, not a missing one: `|| globalDepth` read it as unset and
