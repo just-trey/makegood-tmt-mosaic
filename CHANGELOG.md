@@ -7,16 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- The unit label at the end of the Artwork Fit rows was cut off by the edge
-  of the left panel — Offset X and Offset Y lost most of their "mm" and Scale
-  part of its "%". The panel is a fixed width, so this happened at every
-  window size rather than only narrow ones. The slider now gives up the few
-  pixels instead of the label. The smoke check measures every unit label
-  against the panel edge, so a row that stops fitting fails rather than being
-  noticed by eye.
-
 ### Added
 
 - The help panel has a new About section linking
@@ -149,6 +139,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The unit label at the end of the Artwork Fit rows was cut off by the edge
+  of the left panel — Offset X and Offset Y lost most of their "mm" and Scale
+  part of its "%". The panel is a fixed width, so this happened at every
+  window size rather than only narrow ones. The slider now gives up the few
+  pixels instead of the label. The smoke check measures every unit label
+  against the panel edge, so a row that stops fitting fails rather than being
+  noticed by eye.
 - Neither export button (3MF or STL set) had any guard against
   re-entrancy — confirmed live, 5 rapid clicks on "Export print-ready
   3MF" triggered 5 independent exports and downloads. Both buttons now
