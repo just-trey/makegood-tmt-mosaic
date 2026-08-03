@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Below 900px window width, a plain message now asks for a wider window
+  instead of showing the layout crushed to an unusable sliver. The
+  desktop-only range this app targets is now driven and screenshotted
+  (1920 down to 900px) rather than asserted from a single unverified
+  claim.
 - Every confirmation and error alert (switching parts, loading the full
   assembly, switching the chair's hardware variant, a failed part/pattern/
   export load) now uses a themed dialog matching the app instead of the
