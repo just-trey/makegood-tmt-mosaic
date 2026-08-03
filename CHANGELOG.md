@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- The warning panel now shows every current warning, not just the first 6
+  with the rest collapsed into an unreadable "+ N more warnings" — the
+  panel already scrolled, it just never had more than 7 pills to scroll
+  through. Each pill now has its own "×" to dismiss it, plus a "Dismiss
+  all" control when there's more than one.
 - Merging colors no longer requires a drag: each color row now shows a
   visible "⠿" grip marking what's draggable, plus a "Merge with…" dropdown
   that does the same thing for keyboard or touch use. The Colors and

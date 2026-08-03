@@ -310,11 +310,49 @@ header .stat {
   border-radius: var(--radius-lg);
   font-size: 11.5px;
   max-width: 520px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 .warn-pill.info {
   background: var(--accent-wash);
   border-color: var(--accent);
   color: var(--text-dim);
+}
+.warn-pill .warn-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+.warn-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.65;
+}
+.warn-dismiss:hover {
+  opacity: 1;
+}
+.warn-clear-all {
+  pointer-events: auto;
+  align-self: flex-start;
+  flex: 0 0 auto;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  padding: 4px 8px;
+  border-radius: var(--radius-lg);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.warn-clear-all:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
 }
 
 details.sec {

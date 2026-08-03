@@ -530,30 +530,3 @@ the failure stayed inside the part it happened on.
 Not covered: the fault points force the _handler_ to run, so they prove the
 degradation and the cleanup, not that Manifold fails on any particular real
 mesh. Genuinely malformed input is still the untested half.
-
-## The warning panel can hide the warnings that matter most, and the CSG failure messages are the worst fit for it
-
-[src/ui/warningsView.ts](../src/ui/warningsView.ts) renders only
-`WARNINGS.slice(0, 6)` as pills and collapses the rest into "+ N more
-warnings", with no way to read them. Dedupe in
-[src/warnings.ts](../src/warnings.ts) is by exact message and these messages
-embed the part name, so per-part warnings never collapse — they each take a
-slot. Measured against the longest real part name ("Chair caster mount,
-Standard (right)", 36 chars) the four CSG failure messages run 92, 103, 151
-and 163 characters, and the chair has 15 pieces: an all-parts body-cut
-failure produces 15 distinct warnings of which 6 are readable, and a
-per-color inlay failure across 4 colors produces 60. This is not
-hypothetical — the seam-sliver entry above records a real case where one
-design on `back` warned for **three** colors on a single part, so 3 of the 6
-slots went to one piece. Fix: make the overflow readable (scroll or expand)
-and/or group per-part warnings into one pill naming the count, so "your part
-shipped blank" can't be the message that gets truncated away. Note the pill
-lengths are measured but their _rendered_ wrapping in the panel is not —
-worth eyeballing at a narrow viewport as part of the same change.
-
-The cap is also why `window.__mosaic.warnings()` exists
-([src/main.ts](../src/main.ts)): the CSG check script asserts that a degraded
-build _warned_, and its `intersection` case already emits 5 pills, so reading
-the panel's DOM would report "degraded silently" as soon as a case crossed 6.
-Whoever makes the overflow readable can leave that hook alone — it wants the
-list, not the rendering.
