@@ -507,8 +507,8 @@ from one that silently redefines the verified pose.
 
 ## The things that check the code get audited less than the code they check
 
-Four instances of one shape are now on record, three of them found within an
-hour of each other on 2026-08-03:
+Five instances of one shape are now on record, four of them found on
+2026-08-03:
 
 - **`vite preview` served a `dist/` older than its own sources** (#123). Not a
   leftover process — a correctly started, freshly spawned server serving a
@@ -518,6 +518,13 @@ hour of each other on 2026-08-03:
   (#125, hit on #124). Directly after `gh pr create` the checks are not yet
   registered, so gh prints "no checks reported" and exits 0 — the same exit
   code as a real pass.
+- **`gh run watch` on the release deploy watched the _previous_ release's run.**
+  The `release` skill resolved the run with `gh run list --limit 1` immediately
+  after the tag push; until GitHub registers the new run, the newest one is the
+  last release's — completed and successful — so the watch returned green in
+  under a second. Found by auditing this section's own class after #125 landed,
+  and confirmed against the live repo (watching v0.6.0's finished run exited 0
+  instantly). The run is now pinned to the tag's commit and `headBranch`.
 - **`#btn-export` staying enabled read as "the rebuild finished"** when it was
   still enabled from the _previous_ build, exporting stale geometry. Fixed
   earlier; the reasoning survives in `settledAfterRebuild()` in
@@ -536,11 +543,17 @@ exactly this kind of quiet wrong answer. The gap is not rigor. It is that code
 gets reviewed and the things that check the code get trusted, so a checker that
 under-verifies is the last place anyone looks.
 
-No systematic audit has been done — the three above were found by tripping over
-them, not by looking. Closing this means walking every place a success signal
-is derived indirectly and either asserting the property itself or making the
-ambiguous case fail loudly. Known starting points, none currently established
-as wrong: `waitForServer()` accepts any HTTP 200 on the port as "our preview is
+No systematic audit has been done, but the first deliberate look paid: four of
+the five were found by tripping over them, and the fifth came from grepping the
+repo for every other `gh run`/`gh pr checks` invocation right after #125 landed.
+That took minutes and turned up a worse instance than the one that prompted it —
+a false green from the wrong commit, on the go-live action. Treat that as
+evidence the remaining audit is worth doing, not as evidence it's now done.
+
+Closing this means walking every place a success signal is derived indirectly
+and either asserting the property itself or making the ambiguous case fail
+loudly. Known starting points, none currently established as wrong:
+`waitForServer()` accepts any HTTP 200 on the port as "our preview is
 up"; `startPreview({ reuse: true })` deliberately trusts the caller about which
 build is listening, and nothing verifies it; smoke's opening wait treats a
 non-zero `#stat-tris` as "the right thing loaded".
