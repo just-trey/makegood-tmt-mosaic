@@ -115,6 +115,19 @@ chair's zones carry hundreds of thousands of triangles (see the "1.7 MB raw"
 sidecar-size section below). See the next section for the interaction
 consequence.
 
+**Partly superseded, 2026-08-03.** Those numbers were taken against a zebra
+asset carrying 13.6k vertices per tile, most of which were marching-squares
+oversampling rather than shape (see "Turf's tile union has a vertex ceiling"
+below). With the thinned asset the same single-zone case measures
+**93.6s**, against **468.7s** re-measured on the old one — and it is doing
+_more_ work, not less: 2.07M triangles against 853k, because the old asset's
+tile union was failing and falling back to unmerged shapes. So a large share
+of what was recorded here as "conformal-wrap + per-part CSG is slow" was one
+bad asset. The path is still slow enough to want the accumulator or worker
+fix above — 93.6s is not interactive — but re-measure before quoting the
+405.6s figure as the cost of the pipeline itself. The "All zones" >900s
+result has not been re-measured.
+
 ## The long assembly-mode rebuild has no cancel, and until session persistence lands the only escape destroys the work
 
 `#loading-overlay` (the "Rebuilding geometry…" curtain, `src/ui/overlay.ts`)
@@ -711,3 +724,68 @@ the failure stayed inside the part it happened on.
 Not covered: the fault points force the _handler_ to run, so they prove the
 degradation and the cleanup, not that Manifold fails on any particular real
 mesh. Genuinely malformed input is still the untested half.
+
+## Zebra + Fill still loses one color on "Handle (left)"
+
+Left over after the vertex-count fix below, measured on `MOSAIC_GPU=1`
+production build, 2026-08-03: zebra in Fill mode on the chair's Left side
+settles clean apart from a single
+`Couldn't build the cut solid for color #0a0a0a on "Handle (left)"` — so that
+part prints without the black, per the handling described in
+[troubleshooting.md](troubleshooting.md).
+
+This is not a regression from the thinning, but the thinning is what exposed
+it. On the old asset the same part failed _earlier_, at the 2D union
+(`Boolean union failed for color #0a0a0a on Handle (left)`), and fell back to
+the unmerged shape — a coarser input that the 3D boolean then swallowed
+without complaint. With the union succeeding, the full-detail pattern reaches
+Manifold and that is where it now fails. Net it is 8 union failures across 4
+parts down to 1 CSG failure on 1 part, but "one part quietly loses a color"
+is still the outcome.
+
+Different layer from the union problem — this one is Manifold, not turf 6.5 —
+so the fix is likely different too. Worth trying first: whether the handle's
+own mesh density or a near-tangent cut at its curvature is what trips it, by
+re-running with the pattern scaled up (fewer, larger stripes on that part).
+Closing it means reproducing against `?csgfault` (see "The CSG failure
+branches" above) and narrowing to the specific solid Manifold rejects.
+
+## Turf's tile union has a vertex ceiling, and nothing enforces it at runtime
+
+Measured 2026-08-03 while fixing the bundled zebra pattern. Fill mode unions
+one copy of the pattern per tile, and `@turf/turf` 6.5's polygon clipping
+starts failing somewhere around **800k vertices in a single operation**. It
+does not throw at that point — it drops tiles, and the only surface signal is
+`Boolean union failed … (likely a self-intersecting path in the source SVG)`,
+which names the wrong cause: the paths were fine, there were simply too many
+of them.
+
+The numbers that made it concrete, zebra in Fill mode on one chair zone
+(`MOSAIC_GPU=1` production build):
+
+|                                      | 13.6k verts/tile  | 1.3k verts/tile |
+| ------------------------------------ | ----------------- | --------------- |
+| vertices across the zone's 143 tiles | 1.95M             | 187k            |
+| union failures                       | 8, across 4 parts | 0               |
+| triangles produced                   | 853k              | 2.07M           |
+| rebuild                              | 468.7s            | 93.6s           |
+
+The doubled triangle count is the tell that this was silent data loss rather
+than slowness: the failing run produced _less_ geometry because four parts
+fell back to unmerged shapes.
+
+What is fixed: the asset. `scripts/gen-patterns.mjs` thins zebra's contours
+(`simplifyEps`), and `tests/patterns-assets.test.ts` fails any bundled pattern
+whose vertex count times a chair zone's tile count would approach the ceiling.
+
+What is not fixed: **user-supplied** SVGs get no such check. A volunteer's
+detailed drawing in Fill mode on a chair can cross the same line, and will get
+the same misleading self-intersection warning and the same partly-blank
+surface. Closing that means either counting vertices before the tile union and
+warning honestly ("this design is too detailed to repeat across this surface —
+N tiles × M vertices"), or chunking the union into batches small enough to
+stay under the ceiling and merging the results. The batching option also
+removes the ceiling for the bundled patterns, which would make the asset
+budget above a performance concern rather than a correctness one. Upgrading
+turf past 6.5 may move the ceiling but is separately blocked — see the
+`@turf/turf` pin section.

@@ -25,6 +25,19 @@ appears:
   leftover boolean results from the design tool, hand-edited paths with
   crossed segments.
 
+**In Fill mode, don't trust the "self-intersecting path" part of the message.**
+Fill unions one copy of the design per tile, and Turf 6.5 also fails on sheer
+size — somewhere around 800k vertices in one operation — with the identical
+warning. A design that unions cleanly as a Sticker but fails once repeated
+across a chair zone (143 tiles of a 60mm pattern) is hitting the size limit,
+not a bad path, and running Path → Union on it will change nothing. The tell
+is that the failures arrive per-part in a batch rather than on one color, and
+that the finished model carries visibly _less_ geometry than it should — the
+fallback shape is coarser, so parts of the surface come out blank. The fix is
+to simplify the design (fewer, larger shapes) or use Sticker mode. Measured
+numbers and what closing it properly would take are in
+[tech-debt.md](tech-debt.md) — "Turf's tile union has a vertex ceiling".
+
 ## Troubleshooting: "Couldn't build the cut solid" warnings (assembly mode)
 
 Assembly mode clips each color's region to the part's face boundary, then

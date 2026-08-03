@@ -153,6 +153,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   pixels instead of the label. The smoke check measures every unit label
   against the panel edge, so a row that stops fitting fails rather than being
   noticed by eye.
+- The bundled Zebra pattern no longer breaks Fill mode. It shipped with
+  13.6k vertices per tile — marching-squares oversampling, not detail —
+  which put a chair zone's 143 tiles past the polygon library's limit, so
+  the tile union failed on four parts and quietly fell back to coarser
+  shapes while blaming "a self-intersecting path in the source SVG".
+  Regenerated at 1.3k vertices, visually identical and still seamless:
+  the same chair zone now builds with no warnings, 2.07M triangles
+  instead of 853k, in 94s instead of 469s.
 - Neither export button (3MF or STL set) had any guard against
   re-entrancy — confirmed live, 5 rapid clicks on "Export print-ready
   3MF" triggered 5 independent exports and downloads. Both buttons now
