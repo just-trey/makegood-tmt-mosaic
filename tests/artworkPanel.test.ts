@@ -18,7 +18,7 @@ vi.mock('../src/state/patterns', () => ({
   getPatterns: () => [{ id: 'cow', name: 'Cow', file: 'cow.svg' }],
 }));
 
-import { applyParsedSVG, applyPattern } from '../src/ui/artworkPanel';
+import { applyParsedSVG, applyPattern, isRasterImage } from '../src/ui/artworkPanel';
 import { state } from '../src/state/store';
 
 const GOOD_SVG =
@@ -95,6 +95,21 @@ describe('applyParsedSVG failed-load safety', () => {
     // whichever one loaded last — a second load must not discard the first design's settings.
     expect(state.colorSettings).toEqual({ '#ff0000': { depth: 1.5 } });
     expect(state.mergeGroups).toEqual([['#ff0000', '#0000ff']]);
+  });
+});
+
+describe('isRasterImage', () => {
+  it('flags a PNG by MIME type, even with a misleading extension', () => {
+    expect(isRasterImage(new File([''], 'photo.svg', { type: 'image/png' }))).toBe(true);
+  });
+
+  it('flags a JPG dropped with no MIME type, by extension', () => {
+    expect(isRasterImage(new File([''], 'photo.jpg', { type: '' }))).toBe(true);
+  });
+
+  it('does not flag an SVG by MIME type or extension', () => {
+    expect(isRasterImage(new File([''], 'design.svg', { type: 'image/svg+xml' }))).toBe(false);
+    expect(isRasterImage(new File([''], 'design.svg', { type: '' }))).toBe(false);
   });
 });
 

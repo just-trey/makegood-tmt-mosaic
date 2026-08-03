@@ -386,6 +386,10 @@ input[type='text']:focus,
 select:focus {
   border-color: var(--accent);
 }
+input[type='number'].invalid {
+  border-color: var(--danger);
+  background: var(--danger-wash);
+}
 input[type='range'] {
   width: 100%;
   accent-color: var(--accent);
