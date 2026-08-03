@@ -27,9 +27,6 @@ Graffiti — flat-color image-to-multicolor-print tooling aimed at the same
 no-CAD audience. Where this tool goes further, and why a "just make it more
 like Mesh Graffiti" recommendation usually misses the point:
 
-- **True recesses, not surface decals.** Regions are cut into the part as
-  geometry (assembly mode), not layered on top — the color is structural, not
-  a sticker.
 - **Cross-part conformal unwrap.** A design can span a printed seam and still
   line up, because artwork is wrapped onto a baked UV chart per zone instead
   of per flat face.
