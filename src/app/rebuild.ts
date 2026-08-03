@@ -8,6 +8,7 @@ import {
   asmPartFaceNormal,
   asmPartTransformGroup,
   buildAssemblyGeometry,
+  type ArtworkBuildInput,
 } from '../geometry/assembly';
 import { currentAssemblyKind } from '../assembly/kinds';
 import {
@@ -262,12 +263,14 @@ async function rebuildAssemblyScene(): Promise<void> {
   // Every instance whose source still resolves, each carrying its own placement and zone binding.
   // With one unbound instance — every flow that exists until the panel can add a second — this is
   // exactly the single global placement the build used to take.
-  const artworks = state.artworks.flatMap((a) => {
-    const parsed = state.sources.find((s) => s.id === a.sourceId)?.parsed ?? state.parsed;
+  const artworks: ArtworkBuildInput[] = state.artworks.flatMap((a) => {
+    const source = state.sources.find((s) => s.id === a.sourceId);
+    const parsed = source?.parsed ?? state.parsed;
     if (!parsed) return [];
     return [
       {
         parsed,
+        name: source?.name,
         zoneId: a.zone?.zoneId ?? null,
         scaleMult: a.scalePct / 100,
         offX: a.offsetU,

@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   printers rather than waiting for an export; dismissing the pill keeps it
   gone until the count or the printer changes. The printer picker itself
   is relabeled name-first (e.g. "Bambu X1C / P1S / A1 (256 × 256mm)").
+- Loading a second design onto a surface that already has one no longer
+  drops it exactly on top of the first: it starts stepped 8mm across and
+  down, so it is visible as its own object and can be dragged without first
+  having to move the design covering it.
+- Designs that end up overlapping on the same surface — whether left where
+  they landed or dragged there — now warn, naming both by filename. Two
+  overlapping recesses export as two inlays claiming the same space, which
+  a slicer resolves arbitrarily; nothing said so before. The warning doesn't
+  block exporting.
 - Your session now autosaves as you work — part, artwork, placement, colors,
   depth, and printer — and offers to restore it if you come back after a
   reload, browser close, or crash. A dismissible banner asks first ("Restore

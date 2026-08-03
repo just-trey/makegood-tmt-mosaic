@@ -40,7 +40,12 @@ How the geometry actually works — read this before touching `src/geometry/` or
    map it 1:1 in millimeters instead, lining the SVG's own canvas — its
    viewBox, or its declared mm size — up with the detected face, so a design
    drawn off-center on a template stays off-center on the part. A file that
-   declares neither is centered on its drawn content, as before. A
+   declares neither is centered on its drawn content, as before. Several
+   designs can land on one surface, each with its own placement; where two of
+   them cover each other the cut is still made, but their inlays would claim
+   the same volume in the export, so the placements are compared against each
+   other per zone and both designs are named in a warning
+   ([src/geometry/designOverlap.ts](../src/geometry/designOverlap.ts)). A
    part can also carry more than one design surface (**design zones**) baked
    ahead of time by `scripts/bake-zones.mjs` — the chair body has five
    (left/right/front/back/seat), each its own true-scale UV chart the artwork

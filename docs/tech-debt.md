@@ -393,6 +393,34 @@ zone-picking in front of a first-time user instead of behind a load-then-
 rebind step, so a wrong occlusion pick there is a first impression, not a
 power-user edge case. Fix this before building that.
 
+## A Fill under a sticker overlaps just like two stickers do, and isn't checked
+
+The overlap check in
+[src/geometry/designOverlap.ts](../src/geometry/designOverlap.ts) compares
+two stickers by their placed footprints, and treats two Fills on one zone as
+always overlapping. It deliberately says nothing about a Fill paired with a
+sticker, because a pattern background with a design on top is a real
+workflow and flagging it would fire on the intended use.
+
+But the geometry doesn't care about intent: the sticker's pockets and the
+fill's pockets are separate cutters, so wherever the sticker's colors differ
+from the pattern's underneath it, the export carries two inlay solids in the
+same volume — exactly what the sticker-vs-sticker warning exists for. It is
+unmeasured: no export of that combination has been opened in a slicer to see
+what actually prints, and the app ships no example using it.
+
+Two ways to close it, neither cheap enough to bundle with the check that
+prompted this note. (1) Make it correct rather than warned: subtract the
+sticker's pockets from the fill's before the inlay intersection, so the
+background yields to what sits on it. That is the behavior a user expects,
+and it makes the pairing supported instead of merely tolerated — but it is a
+per-color boolean on the fill's full tiled region, on the path already
+measured at 405s for one chair zone (see the rebuild-performance section).
+(2) Warn only where the fill's ink actually lies under the sticker, which
+needs the placed regions rather than the bounding boxes this check uses.
+Start by measuring (1) on the wheel, where the fill region is small enough
+to time honestly.
+
 ## One warning covers three different failures
 
 ([src/geometry/assembly.ts](../src/geometry/assembly.ts)) — "Raise Scale to
