@@ -280,7 +280,11 @@ export function boxBlur(img: RasterImage, radius: number): RasterImage {
 export function quantize(img: RasterImage, colors: number, blurRadius = 0): LabelMap {
   const work = boxBlur(img, blurRadius);
   const k = Math.max(MIN_COLORS, Math.min(MAX_COLORS, Math.round(colors)));
-  const bins = histogram(work);
+  // Palette comes from the image's own colours, assignment from the blurred copy. Discovering it
+  // from the blur instead would let a transition tone — a shade that exists nowhere in the source,
+  // only between two of its colours — win a palette entry, which costs a filament slot and breaks
+  // the promise the readout makes that a three-colour logo stays three however high Colors goes.
+  const bins = histogram(img);
   const labels = new Int16Array(work.w * work.h).fill(BACKGROUND);
   if (!bins.length) return { labels, w: work.w, h: work.h, palette: [] };
 
@@ -303,9 +307,12 @@ export function quantize(img: RasterImage, colors: number, blurRadius = 0): Labe
   separate(centroids, weights);
   lloyd(bins, centroids, assign);
 
-  // One lookup per populated bin, then a single pass over the pixels.
+  // One lookup per populated bin, then a single pass over the pixels. The blurred copy contains
+  // tones the source never had, so its bins have to be resolved too — otherwise every fringe pixel
+  // misses the table and falls through as background, punching holes along each colour boundary.
   const binToCluster = new Int32Array(HIST_SIZE).fill(BACKGROUND);
-  for (let i = 0; i < bins.length; i++) binToCluster[bins[i].key] = nearest(centroids, bins[i].lab);
+  for (const bin of blurRadius > 0 ? histogram(work) : bins)
+    binToCluster[bin.key] = nearest(centroids, bin.lab);
 
   const { data } = work;
   for (let p = 0, i = 0; i < data.length; i += 4, p++) {

@@ -85,6 +85,29 @@ describe('quantize', () => {
     expect([...map.labels].every((l) => l === BACKGROUND)).toBe(true);
   });
 
+  it('spends no palette entry on a colour the blur invented', () => {
+    // The blur exists to stop anti-aliased fringe pixels being assigned alternately (a cartoon eye
+    // came back striped blue and white). It must not also decide the palette: blending two colours
+    // produces a third that is nowhere in the source, and letting it win an entry costs a filament
+    // slot and breaks the promise the readout makes — "a three-colour logo stays three".
+    const rows = Array.from({ length: 12 }, () => 'aaaabbbbcccc');
+    const source = img(rows, { a: '#ff0000', b: '#00ff00', c: '#0000ff' });
+
+    for (const radius of [0, 1, 2]) {
+      const { palette } = quantize(source, 6, radius);
+      expect(palette).toHaveLength(3);
+    }
+  });
+
+  it('still labels every opaque pixel when the blur shifts colours off the palette', () => {
+    // Blurred fringe tones are not in the source histogram. If the lookup is built from the source
+    // bins alone they miss it, fall through as BACKGROUND, and punch a transparent seam along every
+    // colour boundary — a hole in the cut, not a cosmetic issue.
+    const rows = Array.from({ length: 12 }, () => 'aaaaaabbbbbb');
+    const { labels } = quantize(img(rows, { a: '#ff0000', b: '#0000ff' }), 4, 2);
+    expect([...labels].every((l) => l !== BACKGROUND)).toBe(true);
+  });
+
   it('is deterministic — no random seeding', () => {
     const rows = ['rgbk', 'kbgr', 'rrgg', 'bbkk'];
     const colors = { r: '#c81e1e', g: '#1ec83c', b: '#1e3cc8', k: '#141414' };

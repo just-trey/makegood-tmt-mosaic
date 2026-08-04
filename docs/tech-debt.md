@@ -307,6 +307,26 @@ digital straight segments (the arithmetic characterisation) instead of Potrace's
 not have the half-pixel slack that causes this. Worth doing only if thin-feature artwork turns up
 in practice; measure before building.
 
+## The trace parameters are calibrated against a downscale that is no longer constant
+
+`decode.ts` has always noted that the downscale to the working size "doubles as the first noise
+filter", and the blur/despeckle endpoints in [stats.ts](../src/raster/stats.ts) were tuned with
+that filter in place. It was doing more work than the note implies: a 1588px source averaged 3:1
+down to 512px loses the anti-aliased fringe on every colour boundary outright.
+
+Making the working size adaptive broke that assumption without touching the parameters. Flat art
+now averages about 1.5:1, the fringe survives, and those pixels sit between two palette entries and
+get assigned alternately — a cartoon's eye came back striped blue and white. Flat art carries a
+one-pixel blur to compensate, and quantization was split so that the palette is discovered from the
+source while only assignment reads the blurred copy (otherwise a blend tone that exists nowhere in
+the file wins an entry and costs a filament slot; `tests/raster-quantize.test.ts` pins both halves).
+
+What is still unresolved: the compensation is a constant, not a function of how much downscaling
+actually happened. A small source that is never downscaled at all gets the same one-pixel blur as a
+1588px one that was halved, and neither is the case the endpoints were tuned for. Closing it means
+deriving blur from the realised downscale ratio — the decoder knows both sizes — and re-tuning the
+flat endpoint against sources at several scales rather than the one that prompted this.
+
 ## The curve-fit constants are reasoned, not measured against a corpus
 
 `alphaMax` and `flatness` in [src/raster/stats.ts](../src/raster/stats.ts) replaced the old RDP

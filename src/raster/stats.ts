@@ -34,8 +34,18 @@ export function isPhotographic(edgeDensity: number): boolean {
   return edgeDensity >= PHOTO_RESOLUTION_CUTOFF;
 }
 
+/**
+ * Flat art gets a one-pixel blur it did not used to need.
+ *
+ * The downscale to the working size was always doing double duty as a low-pass — see decode.ts.
+ * At 512px a 1588px source was being averaged 3:1, which wiped out the anti-aliased fringe along
+ * every colour boundary before quantization ever saw it. The detail pass only averages 1.5:1, so
+ * those fringe pixels survive, land between two palette entries, and get assigned alternately —
+ * which shows up as thin slivers of the wrong colour interleaved through a small feature. A Mario
+ * cartoon's eye came back striped blue and white.
+ */
 const FLAT_PARAMS: TraceParams = {
-  blurRadius: 0,
+  blurRadius: 1,
   despeckleFrac: 0.00015,
   alphaMax: 1.0,
   flatness: 0.25,

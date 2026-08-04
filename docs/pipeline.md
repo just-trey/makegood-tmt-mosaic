@@ -26,7 +26,12 @@ How the geometry actually works — read this before touching `src/geometry/` or
    Pixels under 50% alpha become background and cut nothing. That same
    edge-density statistic ([src/raster/stats.ts](../src/raster/stats.ts)) sets
    blur/despeckle/curve-fit strength, which the Detail slider then scales; the
-   user never picks a mode. Quantization
+   user never picks a mode. Flat art's one-pixel blur is there to replace what
+   the downscale used to do for free: averaging a 1588px source 3:1 wiped out
+   the anti-aliased fringe on every colour boundary, and the detail pass only
+   averages 1.5:1, so without the blur those fringe pixels survive, fall between
+   two palette entries, and get assigned alternately — a cartoon eye comes back
+   striped blue and white. Quantization
    is median-cut seeding plus Lloyd refinement **in CIELAB**
    ([src/raster/quantize.ts](../src/raster/quantize.ts)), deliberately the same
    space and metric `applyColorMerges` clusters in, and the palette is
