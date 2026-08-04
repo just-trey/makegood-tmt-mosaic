@@ -19,8 +19,34 @@ const EDGE_BUCKET_SHIFT = 5;
 const FLAT_EDGE_DENSITY = 0.12;
 const PHOTO_EDGE_DENSITY = 0.45;
 
-const FLAT_PARAMS: TraceParams = { blurRadius: 0, despeckleFrac: 0.00015, simplifyTol: 0.6 };
-const PHOTO_PARAMS: TraceParams = { blurRadius: 2, despeckleFrac: 0.0022, simplifyTol: 1.5 };
+const FLAT_PARAMS: TraceParams = {
+  blurRadius: 0,
+  despeckleFrac: 0.00015,
+  alphaMax: 1.0,
+  flatness: 0.25,
+};
+const PHOTO_PARAMS: TraceParams = {
+  blurRadius: 2,
+  despeckleFrac: 0.0022,
+  alphaMax: 1.2,
+  flatness: 0.4,
+};
+
+/**
+ * Ceiling on alphaMax. Past 4/3 the corner test accepts every vertex, so a higher number doesn't
+ * mean "smoother", it means "no corners survive anywhere" — a square logo comes back with rounded
+ * corners. The interpolation below can't reach it, but the clamp keeps that true if the endpoints
+ * are ever retuned.
+ */
+const ALPHA_MAX_LIMIT = 4 / 3;
+
+/**
+ * Flatness floor and ceiling, in pixels. The floor is what stops full-right Detail from turning a
+ * sub-pixel sampling tolerance into a point-count explosion: ring length is what `shapeToFeature`
+ * is quadratic in (docs/tech-debt.md), so this bound is a performance guard, not a taste one.
+ */
+const FLATNESS_MIN = 0.1;
+const FLATNESS_MAX = 2;
 
 /** Detail slider midpoint — the value at which the auto-derived parameters are used unchanged. */
 export const DETAIL_DEFAULT = 50;
@@ -77,9 +103,16 @@ export function autoParams(stats: ImageStats, detail: number = DETAIL_DEFAULT): 
   const clampedDetail = Math.max(0, Math.min(100, detail));
   const strength = Math.pow(DETAIL_RANGE, (DETAIL_DEFAULT - clampedDetail) / DETAIL_DEFAULT);
 
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
   return {
     blurRadius: Math.round(lerp(FLAT_PARAMS.blurRadius, PHOTO_PARAMS.blurRadius)),
     despeckleFrac: lerp(FLAT_PARAMS.despeckleFrac, PHOTO_PARAMS.despeckleFrac) * strength,
-    simplifyTol: lerp(FLAT_PARAMS.simplifyTol, PHOTO_PARAMS.simplifyTol) * strength,
+    alphaMax: clamp(lerp(FLAT_PARAMS.alphaMax, PHOTO_PARAMS.alphaMax), 0, ALPHA_MAX_LIMIT),
+    flatness: clamp(
+      lerp(FLAT_PARAMS.flatness, PHOTO_PARAMS.flatness) * strength,
+      FLATNESS_MIN,
+      FLATNESS_MAX,
+    ),
   };
 }

@@ -19,7 +19,7 @@ How the geometry actually works — read this before touching `src/geometry/` or
    0.4mm nozzle across the 276mm wheel, and the measured knee in tracing cost.
    Pixels under 50% alpha become background and cut nothing. An edge-density
    statistic ([src/raster/stats.ts](../src/raster/stats.ts)) decides how
-   photographic the image is and sets blur/despeckle/simplify strength from it,
+   photographic the image is and sets blur/despeckle/curve-fit strength from it,
    which the Detail slider then scales; the user never picks a mode. Quantization
    is median-cut seeding plus Lloyd refinement **in CIELAB**
    ([src/raster/quantize.ts](../src/raster/quantize.ts)), deliberately the same
@@ -29,16 +29,34 @@ How the geometry actually works — read this before touching `src/geometry/` or
    decides which share a slot, and the two never fight.
 
    **The tracer walks the cracks between pixels, not the pixels**
-   ([src/raster/trace.ts](../src/raster/trace.ts)), so every vertex is an
-   integer lattice point and two adjacent regions share their boundary
-   polyline bit-for-bit. **Simplification happens once per shared chain, and
-   this is load-bearing**: running RDP on each region's rings independently
-   would pull the shared chain two different ways and leave a sliver of bare
-   part surface along every color boundary in the image — a real print defect,
-   since these are cut as geometry. Survivors are marked on the crack graph and
-   both sides filter through the same marks. `tests/raster-trace.test.ts` pins
-   it (two regions still tile their frame exactly after simplification moves
-   the divider); don't "simplify the simplification". Hole-vs-solid and winding
+   ([src/raster/trace.ts](../src/raster/trace.ts)), so two adjacent regions
+   share their boundary polyline bit-for-bit. That crack graph is then cut into
+   **chains** — maximal runs between junctions where three or more regions meet,
+   plus junction-free island boundaries — and each chain is fitted to a
+   sub-pixel curve ([src/raster/curve.ts](../src/raster/curve.ts)) rather than
+   emitted as lattice points. This is what stops traced artwork looking blocky:
+   a lattice vertex set can only step in whole pixels, which at 512px across the
+   wheel is a ~0.54mm staircase on every diagonal — visible, and printable.
+   Straight-subpath detection and a minimum-vertex polygon replace the old
+   Ramer–Douglas–Peucker pass entirely; a least-squares adjustment then moves
+   each vertex off the lattice, and `alphaMax` decides per vertex whether it
+   stays a hard corner or becomes a curve, so a logo's square edge survives
+   while an arc goes smooth. Curves are flattened back to polylines because
+   everything downstream speaks `Loop = Pt[]`.
+
+   **The fit happens once per shared chain, and this is load-bearing**: fitting
+   each region's rings independently would pull the shared chain two different
+   ways and leave a sliver of bare part surface along every color boundary in
+   the image — a real print defect, since these are cut as geometry. Each ring
+   is reassembled by splicing whole chains, so both sides of every boundary
+   splice the identical points. A ring is always a whole number of chains
+   (a chain's interior nodes have exactly two cracks, so a traversal that enters
+   one can only leave at the far end), and the ring walk is rotated onto a chain
+   boundary first, since it starts at a lattice corner that needn't be a
+   junction. `tests/raster-trace.test.ts` pins the invariant (two regions still
+   tile their frame exactly after the fit moves the divider off the lattice) and
+   `tests/raster-curve.test.ts` pins the fit itself; don't fit per region.
+   Hole-vs-solid and winding
    are deliberately left to `shapeToFeature` below. Shapes are grouped one per
    color rather than one per connected component — measured, not assumed, with
    [scripts/bench-raster.ts](../scripts/bench-raster.ts).

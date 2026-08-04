@@ -92,7 +92,10 @@ describe('measureImage / autoParams', () => {
     const photo = autoParams({ edgeDensity: 0.8 });
     expect(photo.blurRadius).toBeGreaterThan(flat.blurRadius);
     expect(photo.despeckleFrac).toBeGreaterThan(flat.despeckleFrac);
-    expect(photo.simplifyTol).toBeGreaterThan(flat.simplifyTol);
+    expect(photo.flatness).toBeGreaterThan(flat.flatness);
+    // Flat art keeps corners the photo path is happy to round off — a logo's square edge is a real
+    // feature, the same angle in a photograph is usually quantization noise.
+    expect(photo.alphaMax).toBeGreaterThan(flat.alphaMax);
   });
 
   it('lets the Detail slider pull the auto-derived strength both ways', () => {
@@ -101,6 +104,10 @@ describe('measureImage / autoParams', () => {
     const finer = autoParams({ edgeDensity: 0.3 }, 100);
     expect(bolder.despeckleFrac).toBeGreaterThan(mid.despeckleFrac);
     expect(finer.despeckleFrac).toBeLessThan(mid.despeckleFrac);
-    expect(finer.simplifyTol).toBeLessThan(mid.simplifyTol);
+    expect(finer.flatness).toBeLessThan(mid.flatness);
+    // alphaMax deliberately doesn't move with Detail: it decides corner-vs-curve, not how much
+    // detail survives, and its useful range is too narrow to take a 4x multiplier.
+    expect(finer.alphaMax).toBe(mid.alphaMax);
+    expect(bolder.alphaMax).toBe(mid.alphaMax);
   });
 });

@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - An image whose detail runs past what's printable says so, and merges the
   too-fine parts into their surroundings rather than tracing thousands of
   specks — see [docs/troubleshooting.md](docs/troubleshooting.md).
+- Traced outlines are now fitted curves rather than pixel steps. Every diagonal
+  and curve used to ship the raster's own staircase — at the working resolution
+  that is about half a millimetre of step across the largest part, big enough to
+  print — because the tracer could only put corners on whole-pixel positions.
+  Boundaries are now fitted between pixels, so a traced logo or drawing has
+  smooth edges at any size, while genuine square corners stay square.
 - The help panel has a new About section linking
   [3d-mobility.org](https://3d-mobility.org), where the TMT's printable
   part files and assembly instructions live — previously the app had no

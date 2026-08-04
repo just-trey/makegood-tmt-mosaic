@@ -274,6 +274,55 @@ a gap and put the endpoints inside it. A screenshot landing on the photo side
 would be the bug to watch for. If the clusters overlap, the statistic itself is
 wrong and wants replacing rather than retuning.
 
+## Curve fitting shrinks features a few pixels across, and the guard against it only covers islands
+
+Fitting rounds a corner it doesn't judge sharp, and "sharp" is scale-dependent: Potrace's corner
+measure works out to about `side/2` for a square, which has to clear 4 at the default `alphaMax`,
+so corners survive from roughly nine pixels a side upward and round below that. A feature a few
+pixels across therefore comes back a few percent smaller, and a one-pixel one can't be fitted at
+all — the straightness cone carries half a pixel of slack at each bound, so a one-pixel-thick shape
+reads as a single straight run and the polygon degenerates to a sliver.
+
+[curve.ts](../src/raster/curve.ts) catches the degenerate case with an area guard
+(`MIN_AREA_RATIO`, 0.85): a closed chain whose fit costs more than 15% of its area keeps its
+lattice points instead. Measured, that restores a 30x1 bar to exactly its pixel area.
+
+**The guard is per chain, and cannot be made per ring.** A ring is spliced from chains shared with
+the regions next to it; if one region fell back to the lattice while its neighbour kept the fit,
+the two would no longer agree along that boundary — the sliver the whole shared-chain design exists
+to prevent. So a small region bounded by _junctions_ rather than by a closed chain is not protected:
+`tests/raster-trace.test.ts`'s 4x4 single-pixel checkerboard loses about a third of its area, and
+that is the worst case on record.
+
+How much this matters in practice: at the 512px working resolution a nine-pixel feature is about
+4.8mm across the wheel and a one-pixel one is 0.54mm, at or under the nozzle width — so the shapes
+being rounded are at the edge of printability anyway. Closing it properly means a fit that stays
+exact on thin features rather than detecting and retreating from them, most likely by recognising
+digital straight segments (the arithmetic characterisation) instead of Potrace's cone, which does
+not have the half-pixel slack that causes this. Worth doing only if thin-feature artwork turns up
+in practice; measure before building.
+
+## The curve-fit constants are reasoned, not measured against a corpus
+
+`alphaMax` and `flatness` in [src/raster/stats.ts](../src/raster/stats.ts) replaced the old RDP
+`simplifyTol` when tracing moved to sub-pixel curve fitting. The flat-art endpoints (`alphaMax`
+1.0, `flatness` 0.25px) and photo endpoints (1.2, 0.4px) were picked from what each parameter
+means — 1.0 is the long-standing Potrace default, `4/3` is where the corner test stops rejecting
+anything, and a quarter-pixel flattening tolerance is well inside what the 0.4mm nozzle can
+express — and then checked on the synthetic bench sources plus a single real one (a 1588x1176
+flat-art cartoon, kept in the gitignored `stubs/`, so not reproducible from a clean checkout).
+That is the same weakness the edge-density thresholds have, one section down: the shape is right,
+the numbers have not been swept.
+
+Closing it: sweep `alphaMax` across 0.8–1.334 and `flatness` across 0.1–0.6 on a corpus with
+known-correct answers — a logo whose corners are genuinely square, a scanned drawing, a photo —
+and record where corners start rounding off and where point counts start climbing without a
+visible improvement. The two failure directions are asymmetric and worth naming: too low an
+`alphaMax` gives a faceted arc, too high rounds a square logo's corners, and only the second is
+obvious in a preview. `FLATNESS_MIN` is a performance guard rather than a taste one — it stops a
+full-right Detail slider turning a sub-pixel tolerance into a ring-length explosion, which
+`shapeToFeature` is quadratic in.
+
 ## The raster despeckle floor is a fraction of image area, not a printable size
 
 [src/raster/stats.ts](../src/raster/stats.ts) expresses it as a fraction of the

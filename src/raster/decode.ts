@@ -11,6 +11,11 @@ import type { RasterImage } from './types';
  * faster than the pixel count. Physical: 512px across the largest part the app targets (the wheel,
  * 276mm) is 0.54mm per pixel, already coarser than a 0.4mm nozzle can express, so the extra
  * resolution would be resolving detail that cannot be printed.
+ *
+ * What this number does *not* bound any more is edge smoothness. It used to, because the pixel
+ * lattice was also the output vertex set, which put a 0.54mm staircase on every diagonal; curve.ts
+ * now fits sub-pixel curves through those pixels, so outlines stay smooth at any print size and
+ * raising this would buy finer *detail*, not cleaner edges.
  */
 export const MAX_WORKING_EDGE = 512;
 

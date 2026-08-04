@@ -34,8 +34,15 @@ export interface TraceParams {
   blurRadius: number;
   /** Components smaller than this fraction of the image area are absorbed into their neighbor. */
   despeckleFrac: number;
-  /** RDP tolerance in pixels. */
-  simplifyTol: number;
+  /**
+   * Corner threshold: a fitted vertex below this stays a hard corner, above it becomes curved.
+   * Unlike the other two this is a shape classifier rather than a coarseness control, and its
+   * meaningful range is bounded (see ALPHA_MAX_LIMIT), which is why the Detail slider doesn't
+   * scale it.
+   */
+  alphaMax: number;
+  /** Max deviation in pixels when flattening a fitted curve to line segments. */
+  flatness: number;
 }
 
 export interface RasterOptions {
