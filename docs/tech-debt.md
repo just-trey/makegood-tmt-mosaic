@@ -307,6 +307,39 @@ digital straight segments (the arithmetic characterisation) instead of Potrace's
 not have the half-pixel slack that causes this. Worth doing only if thin-feature artwork turns up
 in practice; measure before building.
 
+## Colors is the one trace control still fixed, and no single value suits real artwork
+
+Working resolution, blur and despeckle are all chosen from the image. The default palette size is
+not — it is a constant, and measured across the sample corpus (`stubs/raster test/`, 2026-08-04) no
+constant works. Asking for more colours than an image actually has does not return fewer, the way
+it does on synthetic flat art: real files are lossy and anti-aliased, so the quantizer always finds
+more tones and spends the surplus on the fringe around every edge.
+
+Measured on the 300x300 Boston Red Sox logo, which has three real colours:
+
+| Colors | Regions | Slots | Result                                            |
+| ------ | ------- | ----- | ------------------------------------------------- |
+| 3      | 37      | 4     | clean                                             |
+| 4      | 56      | 5     | clean                                             |
+| 6      | 364     | 7     | pale halo rings around the ring, letters and sock |
+| 8      | 712     | 9     | worse                                             |
+
+The same default is right for a five-colour cartoon (Tweety traces cleanly at 6) and too low for a
+nine-colour one (Mario loses its yellow buttons at 6, and recovering them at 8 costs the blue iris
+to a desaturated entry). So the harm runs both ways, but not symmetrically: too few colours reads as
+a simplification, while too many reads as a defect — halos look broken, cost filament slots, and
+multiply region count tenfold.
+
+The region count is a usable signal for choosing it automatically. Across the corpus, each step up
+in palette size multiplies regions by 1.2x-2x, except where the surplus starts landing on fringe:
+the logo's 4 -> 6 step multiplies them by 6.5x. A knee detector over that curve would pick the
+palette size the way the other three parameters are already picked, and would suit both a
+three-colour logo and a nine-colour cartoon without the user touching a slider.
+
+What closing it needs: a decision on where to run the search (re-quantizing at several k costs one
+quantize pass each, which the bench puts at tens of milliseconds), and a check that the knee is
+stable on photographs, where region growth is smoother and the signal weakest.
+
 ## The trace parameters are calibrated against a downscale that is no longer constant
 
 `decode.ts` has always noted that the downscale to the working size "doubles as the first noise
