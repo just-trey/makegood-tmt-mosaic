@@ -274,38 +274,51 @@ a gap and put the endpoints inside it. A screenshot landing on the photo side
 would be the bug to watch for. If the clusters overlap, the statistic itself is
 wrong and wants replacing rather than retuning.
 
-## Curve fitting shrinks features a few pixels across, and the guard against it only covers islands
+## Curve fitting rounds small corners, and two components can overlap by up to a working pixel
 
 Fitting rounds a corner it doesn't judge sharp, and "sharp" is scale-dependent: Potrace's corner
 measure works out to about `side/2` for a square, which has to clear 4 at the default `alphaMax`,
 so corners survive from roughly nine pixels a side upward and round below that. A feature a few
-pixels across therefore comes back a few percent smaller, and a one-pixel one can't be fitted at
-all — the straightness cone carries half a pixel of slack at each bound, so a one-pixel-thick shape
-reads as a single straight run and the polygon degenerates to a sliver.
+pixels across therefore comes back a few percent smaller. That part is cosmetic and unchanged.
 
-[curve.ts](../src/raster/curve.ts) catches the degenerate case with an area guard
-(`MIN_AREA_RATIO`, 0.85): a closed chain whose fit costs more than 15% of its area keeps its
-lattice points instead. Measured, that restores a 30x1 bar to exactly its pixel area.
+**A more serious failure existed and is fixed, 2026-08-04.** The straightness cone carries half a
+pixel of slack at each bound, and for a feature thin enough — a one-pixel-wide stroke turning a
+corner, a shallow diagonal, a zigzag, a single-pixel checkerboard cell — the whole boundary can stay
+inside that slack and read as one straight run. The fitted polygon then collapses under three
+points, and the ring was dropped outright: a 2:1 diagonal stroke lost 93 of its 95 segments, a
+zigzag lost half its length, and the 4x4 checkerboard fixture lost about a third of its area. This
+was not shrinkage, it was deletion, and the closed-chain-only guard in
+[curve.ts](../src/raster/curve.ts) (`MIN_AREA_RATIO`, 0.85 — restores a 30x1 bar to exactly its pixel
+area) never saw it, since none of these are closed chains.
 
-**The guard is per chain, and cannot be made per ring.** A ring is spliced from chains shared with
-the regions next to it; if one region fell back to the lattice while its neighbour kept the fit,
-the two would no longer agree along that boundary — the sliver the whole shared-chain design exists
-to prevent. So a small region bounded by _junctions_ rather than by a closed chain is not protected:
-`tests/raster-trace.test.ts`'s 4x4 single-pixel checkerboard loses about a third of its area, and
-that is the worst case on record.
+`unfitCollapsedChains` in [trace.ts](../src/raster/trace.ts) closes it at the right grain: it checks
+area per **component**, which is the smallest thing that has one, then drops back to lattice points
+per **chain**, which is the thing shared between two components — unfitting only the starved side
+would desync a boundary from its neighbour and open exactly the sliver the shared-chain design
+exists to prevent. Re-measured after the fix: the diagonal, the zigzag, and the checkerboard all
+recover their exact pixel area (`tests/raster-trace.test.ts` pins the checkerboard case at 16.000,
+not the ~third-short figure this entry used to cite).
 
-How much this matters in practice: on the 512px photograph path a nine-pixel feature is about 4.8mm
-across the wheel and a one-pixel one is 0.54mm, at or under the nozzle width — so the shapes being
-rounded are at the edge of printability anyway. Flat art now works at 1024px, which _reduces_ this
-limitation rather than worsening it: the threshold is a pixel count, so a feature of a given printed
-size arrives twice as many pixels across and is likelier to clear it. In printed terms the corner
-threshold falls from about 4.8mm to about 2.4mm, and the unfittable one-pixel case from 0.54mm to
-0.27mm — comfortably under a 0.4mm nozzle, which is the point at which this stops being a fidelity
-question at all. Closing it properly means a fit that stays
-exact on thin features rather than detecting and retreating from them, most likely by recognising
-digital straight segments (the arithmetic characterisation) instead of Potrace's cone, which does
-not have the half-pixel slack that causes this. Worth doing only if thin-feature artwork turns up
-in practice; measure before building.
+**What is not fixed, and can't be from this angle:** two components can still overlap by up to one
+working pixel. Chains are byte-identical on the two sides of the boundary they're shared between,
+but nothing bounds how far a fitted chain strays from the lattice path it replaces, so it can sweep
+across a third region it shares no chain with. Re-measured over 3000 random label grids after the
+above fix: worst overlap is still 1.000000 unit², unchanged — `unfitCollapsedChains` catches area
+loss, not this. Downstream it's absorbed: paint order in `computeNetRegionsByColor` subtracts
+cross-colour overlap outright, and two components of one colour land in the same shape and get
+unioned. `tests/raster-trace.test.ts` pins the bound rather than asserting zero.
+
+A bound on chain deviation was tried and rejected: it cannot be set. A 45° staircase's lattice
+corners sit 0.707px off their own chord and a 3:1 staircase's sit 0.949px off, both legitimate, while
+the chains that misbehave measure about 0.97 — there is no threshold separating them.
+
+How much the remaining overlap matters in practice: on the 512px photograph path a one-pixel overlap
+is 0.54mm, at or under the nozzle width. Flat art now works at 1024px, which _halves_ that to
+0.27mm, comfortably under a 0.4mm nozzle — the point at which this stops being a fidelity question at
+all. Closing it properly means a fit that never strays from the lattice path by more than the
+adjacent regions can tolerate, most likely by recognising digital straight segments (the arithmetic
+characterisation) instead of Potrace's cone, which does not have the half-pixel slack that causes
+this. Worth doing only if it shows up as a visible artifact in practice; measure before building.
 
 ## Colors is the one trace control still fixed, and no single value suits real artwork
 

@@ -116,9 +116,24 @@ export function renderPatternPicker(): void {
  * audience cannot actually make. The Colors slider goes to 16 for anyone who wants it. */
 const DEFAULT_RASTER_COLORS = 6;
 
-export const RASTER_CAPPED_MESSAGE =
-  'Some detail in this image was too fine to print and was merged into its surroundings. ' +
-  'Lower Colors, or raise Detail, for a cleaner result.';
+/**
+ * The capped notice, named for the image it is about.
+ *
+ * Per image rather than one shared string, because notices dedupe by message and the list panel
+ * retracts this one by exact text: with a single message, re-quantizing an *uncapped* image pulled
+ * down a still-true notice belonging to a different, capped one. The filename is what tells the two
+ * apart in the pill, too, once more than one image is loaded.
+ *
+ * Both suggestions lower the component count. Detail is the counter-intuitive one: `autoParams`
+ * scales the despeckle floor by 4^((50-detail)/50), so *raising* Detail quarters the floor and lets
+ * through four times the specks — the opposite of what this notice is asking for.
+ */
+export function rasterCappedMessage(name: string): string {
+  return (
+    `Some detail in "${name}" was too fine to print and was merged into its surroundings. ` +
+    'Lower Colors, or lower Detail, for a cleaner result.'
+  );
+}
 
 function reportLoadFailure(fname: string, message: string): void {
   clearWarnings();
@@ -151,7 +166,7 @@ async function applyRasterFile(file: File): Promise<void> {
       palette: result.palette,
       regions: result.componentCount,
     });
-    if (result.capped) notice(RASTER_CAPPED_MESSAGE);
+    if (result.capped) notice(rasterCappedMessage(file.name));
     afterArtworkLoaded(file.name);
     renderWarnings();
     track('artwork_load', { source: 'raster' });

@@ -1,5 +1,6 @@
 import type { Loop, ParsedSVG, SVGShape } from '../types';
 import { autoParams, measureImage } from './stats';
+import { MEASURE_EDGE } from './decode';
 import { quantize } from './quantize';
 import { traceLabelMap } from './trace';
 import type { TracedComponent } from './trace';
@@ -7,7 +8,8 @@ import type { RasterImage, RasterOptions } from './types';
 
 export interface RasterParseResult {
   parsed: ParsedSVG;
-  /** The palette actually emitted — can be shorter than the requested color count. */
+  /** The colors the traced shapes actually paint with — can be shorter than the requested count,
+   * and shorter than the quantizer's own palette. */
   palette: string[];
   /** Traced components, for the panel's live readout and the bench. */
   componentCount: number;
@@ -83,7 +85,11 @@ export function parseRasterImage(
   // varies with that very statistic, and quietly shift every threshold that depends on it.
   const stats =
     img.edgeDensity === undefined ? measureImage(img) : { edgeDensity: img.edgeDensity };
-  const params = autoParams(stats, opts.detail);
+  // Whether the detail pass actually enlarged this image, which is what decides the compensating
+  // blur. Read off the working size rather than passed down: the size is the fact, and an image too
+  // small to be enlarged gave up no downscale filtering and must not be blurred for it.
+  const ranDetailPass = Math.max(img.w, img.h) > MEASURE_EDGE;
+  const params = autoParams(stats, opts.detail, ranDetailPass);
   const map = quantize(img, opts.colors, params.blurRadius);
   if (!map.palette.length)
     throw new Error('No opaque pixels were found in this image — there is nothing to cut.');
@@ -99,6 +105,16 @@ export function parseRasterImage(
       ? shapesByComponent(components, map.palette)
       : shapesByColor(components, map.palette);
 
+  // The quantizer's palette, narrowed to what survived tracing. A colour can win a cluster and then
+  // paint nothing at all — every component of it despeckled away, absorbed by the component cap, or
+  // collapsed into a neighbour — and counting it anyway makes the panel read "3 colors · 2 regions",
+  // makes the smoke's `shown === traced` check fail against a colour list that only has the two, and
+  // lets remapSettingsToPalette carry a depth onto a hex nothing paints (where the prune then drops
+  // it). Palette entries are ΔE-separated by construction, so no two share a hex and this can't
+  // collapse two live entries into one.
+  const painted = new Set(shapes.map((s) => s.fill));
+  const palette = map.palette.filter((hex) => painted.has(hex));
+
   return {
     parsed: {
       shapes,
@@ -113,7 +129,7 @@ export function parseRasterImage(
       canvas: { w: img.w, h: img.h },
       origin: 'raster',
     },
-    palette: map.palette,
+    palette,
     componentCount: components.length,
     capped,
   };

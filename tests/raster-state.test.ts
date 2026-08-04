@@ -89,6 +89,24 @@ describe('raster sources in app state', () => {
     expect(live.has(carried![0])).toBe(true);
   });
 
+  // Assembly mode is the app's primary mode and it keys per-color depths as "asm:#rrggbb"
+  // (geometry/assembly.ts). Remapping only the bare hex meant this carried nothing there, and the
+  // prune that follows — which does read past the prefix — then deleted every custom depth: the
+  // Colors slider was destructive in exactly the mode most users are in.
+  it('carries an assembly-mode depth across the same shift', () => {
+    const source = loadRaster(6);
+    const hex = source.raster!.palette[0];
+    state.colorSettings['asm:' + hex] = { depth: 1.23 };
+
+    requantizeSource(source.id, { detail: 20 });
+
+    const live = new Set(source.parsed.shapes.map((s) => s.fill));
+    const carried = Object.entries(state.colorSettings).find(([, v]) => v.depth === 1.23);
+    expect(carried).toBeDefined();
+    expect(carried![0].startsWith('asm:')).toBe(true);
+    expect(live.has(carried![0].slice(4))).toBe(true);
+  });
+
   it('drops settings for a color that genuinely disappeared', () => {
     const source = loadRaster(6);
     state.colorSettings['#7f00ff'] = { depth: 2 }; // never in this image's palette

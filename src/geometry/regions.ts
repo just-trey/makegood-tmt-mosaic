@@ -79,12 +79,35 @@ export function shapeToFeature(shape: SVGShape): PolyFeature | null {
     return inside;
   }
 
+  /**
+   * The point used to ask "is this ring inside that one".
+   *
+   * A ring lies wholly inside or wholly outside any other ring of the same shape — they never
+   * cross — so in exact arithmetic any point of it answers for all of it. The one case that
+   * doesn't work is a probe sitting exactly *on* the other ring, where an even-odd ray cast is
+   * undefined; and a shape's rings do meet, at isolated points, all the time.
+   *
+   * The first vertex is the worst possible choice there, and systematically so for traced artwork:
+   * `spliceChains` (raster/trace.ts) rotates every ring to start on a chain boundary, and a chain
+   * boundary is a junction — precisely a point where another ring passes through. Measured on a
+   * 28x28 three-way fixture, a 13-unit hole read as "outside" its own component on `raw[0]` alone
+   * (25 of its other 26 vertices, and all 26 edge midpoints, read inside), so it was emitted as a
+   * solid island rather than a hole: the component painted over its own cavity and swallowed the
+   * differently-coloured region living in it.
+   *
+   * An edge midpoint fixes it because coincidence there needs the two rings to share a whole
+   * segment, not just a point — which the crack graph cannot produce (a component's outer ring and
+   * its hole rings are always different chains) and which was already broken for the vertex probe
+   * anyway. Computed once per ring, so this costs nothing in the quadratic loop below.
+   */
+  const probeOf = (raw: Loop) => ({ x: (raw[0].x + raw[1].x) / 2, y: (raw[0].y + raw[1].y) / 2 });
+
   // immediate parent = smallest-area ring that contains this ring (excluding itself)
   const parent = new Array<number>(n).fill(-1);
   for (let i = 0; i < n; i++) {
     let bestArea = Infinity,
       bestIdx = -1;
-    const testPt = rings[i].raw[0];
+    const testPt = probeOf(rings[i].raw);
     for (let j = 0; j < n; j++) {
       if (i === j || rings[j].areaAbs <= rings[i].areaAbs) continue;
       if (rings[j].areaAbs < bestArea && pointInRaw(rings[j].raw, testPt)) {

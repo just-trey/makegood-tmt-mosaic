@@ -43,6 +43,25 @@ describe('isRasterBuffer', () => {
       false,
     );
   });
+
+  // The old extension-based guard covered these too. Sniffing only PNG/JPEG/WebP sent them to the
+  // SVG parser instead, where they came back "SVG could not be parsed — check the file is valid
+  // XML": the exact misleading message the guard existed to replace. GIF and BMP the browser
+  // decodes outright; a TIFF it can't, and gets decodeImageFile's honest message about the format.
+  it('claims the other raster formats, so none of them reaches the XML parser', () => {
+    expect(isRasterBuffer(ascii('GIF89a'))).toBe(true);
+    expect(isRasterBuffer(ascii('GIF87a'))).toBe(true);
+    expect(isRasterBuffer(ascii('BM'))).toBe(true);
+    expect(isRasterBuffer(bytes(0x49, 0x49, 0x2a, 0x00))).toBe(true); // little-endian TIFF
+    expect(isRasterBuffer(bytes(0x4d, 0x4d, 0x00, 0x2a))).toBe(true); // big-endian TIFF
+  });
+
+  it('does not mistake XML whose text happens to start like a magic number', () => {
+    // "BM" is only two bytes, so it is the one sniff loose enough to worry about. An SVG never
+    // starts with it — every well-formed one opens on "<".
+    expect(isRasterBuffer(ascii('<BM/>'))).toBe(false);
+    expect(isRasterBuffer(ascii('GIF'))).toBe(false); // truncated, no version digits
+  });
 });
 
 describe('workingSize', () => {

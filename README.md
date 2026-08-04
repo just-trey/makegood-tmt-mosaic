@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.6.0--beta-orange.svg)](CHANGELOG.md)
 
-A browser app that turns flat-color SVG artwork — or a PNG/JPG image — into
+A browser app that turns flat-color SVG artwork — or a PNG/JPG/WebP image — into
 per-color recess geometry for multicolor/AMS 3D printing, and exports a print-ready project 3MF — parts
 placed on build plates, every recess pre-named and pre-assigned to its own
 Generic PETG filament slot with the detected colors, 15% gyroid infill and
@@ -151,7 +151,9 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - Session autosave/restore covers SVG artwork, placement, colors, depth, part,
   and printer — not an uploaded STL reference mesh, and not a loaded image,
   neither of which is kept. Re-drop the image after a reload; if it was the
-  only design open, nothing is saved and no restore is offered.
+  only design open, nothing is saved and no restore is offered. With an image
+  alongside an SVG the browser asks before you leave, since the save that did
+  land is missing the image.
 - Desktop/laptop screens only, by design — the layout has one fixed-width
   left column and no responsive breakpoint. Verified usable from 900px
   width up (1920 down to 900 driven and screenshotted); below that, a

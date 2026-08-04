@@ -108,8 +108,10 @@
             <div class="help-step">Left panel · Artwork</div>
             <h3>Preparing your artwork</h3>
             <p>
-              You can load either an <strong>SVG</strong> or a <strong>PNG/JPG image</strong>. The
-              format is detected from the file itself, so the extension doesn't have to be right.
+              You can load either an <strong>SVG</strong> or a <strong>PNG/JPG image</strong> (WebP,
+              GIF and BMP work too). The format is detected from the file itself, so the extension
+              doesn't have to be right. TIFF is the one thing no browser can open — re-export it as
+              a PNG.
             </p>
             <p>
               For an SVG, use flat, distinct fill colors — no gradients or pattern fills, those get
@@ -482,7 +484,7 @@
             <input
               type="file"
               id="svg-input"
-              accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+              accept=".svg,.png,.jpg,.jpeg,.webp,.gif,.bmp,image/svg+xml,image/png,image/jpeg,image/webp,image/gif,image/bmp"
               aria-label="Upload SVG or image artwork"
               style="display: none"
             />

@@ -34,22 +34,29 @@ export function isPhotographic(edgeDensity: number): boolean {
   return edgeDensity >= PHOTO_RESOLUTION_CUTOFF;
 }
 
-/**
- * Flat art gets a one-pixel blur it did not used to need.
- *
- * The downscale to the working size was always doing double duty as a low-pass — see decode.ts.
- * At 512px a 1588px source was being averaged 3:1, which wiped out the anti-aliased fringe along
- * every colour boundary before quantization ever saw it. The detail pass only averages 1.5:1, so
- * those fringe pixels survive, land between two palette entries, and get assigned alternately —
- * which shows up as thin slivers of the wrong colour interleaved through a small feature. A Mario
- * cartoon's eye came back striped blue and white.
- */
 const FLAT_PARAMS: TraceParams = {
-  blurRadius: 1,
+  blurRadius: 0,
   despeckleFrac: 0.00015,
   alphaMax: 1.0,
   flatness: 0.25,
 };
+
+/**
+ * Blur added when the detail pass ran, to replace the low-pass it gave up.
+ *
+ * The downscale to the working size was always doing double duty as a noise filter — see decode.ts.
+ * A 1588px source averaged 3:1 down to 512px loses the anti-aliased fringe along every colour
+ * boundary before quantization sees it; the detail pass only averages 1.5:1, so those pixels
+ * survive, fall between two palette entries and get assigned alternately. A cartoon's eye came back
+ * striped blue and white.
+ *
+ * It is conditional because the loss is. An image small enough that the detail pass never enlarges
+ * it — the working size is capped, never upscaled — was not downscaled any harder on the old path
+ * either, so nothing was given up and there is nothing to replace. Applying it there does real
+ * damage instead: on 12x12 pixel art it erased thirteen of fourteen dark pixels, taking an isolated
+ * pixel, a one-pixel cross and an eight-pixel bar with it.
+ */
+const DETAIL_PASS_BLUR = 1;
 const PHOTO_PARAMS: TraceParams = {
   blurRadius: 2,
   despeckleFrac: 0.0022,
@@ -120,7 +127,11 @@ export function measureImage(img: RasterImage): ImageStats {
 }
 
 /** Trace settings for an image, from what it measures as and where the user put Detail. */
-export function autoParams(stats: ImageStats, detail: number = DETAIL_DEFAULT): TraceParams {
+export function autoParams(
+  stats: ImageStats,
+  detail: number = DETAIL_DEFAULT,
+  ranDetailPass = false,
+): TraceParams {
   const span = PHOTO_EDGE_DENSITY - FLAT_EDGE_DENSITY;
   const t = Math.max(0, Math.min(1, (stats.edgeDensity - FLAT_EDGE_DENSITY) / span));
   const lerp = (a: number, b: number) => a + (b - a) * t;
@@ -131,7 +142,9 @@ export function autoParams(stats: ImageStats, detail: number = DETAIL_DEFAULT): 
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
   return {
-    blurRadius: Math.round(lerp(FLAT_PARAMS.blurRadius, PHOTO_PARAMS.blurRadius)),
+    blurRadius:
+      Math.round(lerp(FLAT_PARAMS.blurRadius, PHOTO_PARAMS.blurRadius)) +
+      (ranDetailPass ? DETAIL_PASS_BLUR : 0),
     despeckleFrac: lerp(FLAT_PARAMS.despeckleFrac, PHOTO_PARAMS.despeckleFrac) * strength,
     alphaMax: clamp(lerp(FLAT_PARAMS.alphaMax, PHOTO_PARAMS.alphaMax), 0, ALPHA_MAX_LIMIT),
     flatness: clamp(

@@ -84,17 +84,21 @@ export function hasLoadedWork(): boolean {
  * Standard cross-browser beforeunload prompt — every browser ignores the actual returnValue text
  * and shows its own generic "leave site?" copy, so the string here is only for the handful that
  * still don't. Only arms once there's real work to lose, and only once flushPendingSave() has
- * already tried and failed to land it on disk — a session that autosaved successfully is already
- * recoverable via the restore banner, so warning about it too would just teach makers to reflexively
- * click through the one case (a failed save) where the warning is actually true.
+ * found something the restore banner won't bring back — either the write didn't land at all, or it
+ * landed without a loaded image, which never persists. A session that autosaved in full is already
+ * recoverable, so warning about it too would just teach makers to reflexively click through the
+ * cases where the warning is actually true.
  */
 export function initBeforeUnloadGuard(): void {
   window.addEventListener('beforeunload', (e) => {
     if (!hasLoadedWork()) return;
     flushPendingSave();
-    if (!lastSaveFailed) return;
+    if (!lastSaveFailed && !lastSaveDropped) return;
     e.preventDefault();
-    e.returnValue = "TMT Mosaic couldn't save this session — leaving now loses it.";
+    e.returnValue = lastSaveFailed
+      ? "TMT Mosaic couldn't save this session — leaving now loses it."
+      : 'TMT Mosaic saved this session, but an image cannot be saved — leaving now means ' +
+        're-dropping it.';
   });
   // beforeunload is skipped outright on mobile backgrounding and bfcache eviction, so this is the
   // flush that actually runs there.
@@ -167,6 +171,18 @@ function snapshotSession(): PersistedSession {
 let lastSaveFailed = false;
 
 /**
+ * Whether the most recent snapshot left a loaded design out of the save.
+ *
+ * A raster source never round-trips (its pixels are the design, and they don't fit in
+ * localStorage), so a session holding one is only ever partly recoverable — even when the write
+ * itself succeeds. That is the whole case the unload guard exists for, and lastSaveFailed alone
+ * cannot see it: a session with one SVG and one image saves cleanly, reports success, and drops the
+ * image with nothing said. Tracked separately rather than folded into lastSaveFailed so the two
+ * stay honest about which one happened.
+ */
+let lastSaveDropped = false;
+
+/**
  * Write the current session, swallowing every failure — private browsing with storage disabled,
  * a quota already full of other sites' data, a circular/unserializable value that shouldn't exist
  * but shouldn't crash a rebuild if it did. A session that fails to save just means the next
@@ -187,6 +203,7 @@ export function saveSession(): void {
   // banner that brings back nothing — and, worse, report a clean save to the unload guard, which
   // takes that to mean the work is recoverable when the only way back is to re-drop the image.
   const session = snapshotSession();
+  lastSaveDropped = state.sources.some((s) => s.raster);
   if (!session.artworks.length) {
     clearSavedSession();
     lastSaveFailed = hasLoadedWork();

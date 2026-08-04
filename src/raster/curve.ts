@@ -177,6 +177,14 @@ function segmentPenalty(s: Sums, a: number, b: number): number {
  * refuse to straighten a diagonal and every diagonal would keep every step. The test used instead
  * is directional — a run stops once all four step directions have occurred, or once the cone of
  * directions still consistent with a straight line closes.
+ *
+ * Known gap, deliberately left here rather than tightened: the cone cannot see a feature thinner
+ * than its own slack. Each bound is widened half a pixel toward the corner of the pixel the offset
+ * lands in, so the entire boundary of a one-pixel-thick region stays inside it and reads as one
+ * straight run. Rejecting any run that reverses along an axis does catch it — a genuinely straight
+ * run never uses a direction and its opposite — but measured, that shortens runs everywhere and
+ * costs 34% more output points on photographic sources, for a case `unfitCollapsedChains`
+ * (trace.ts) already catches by area at no cost. The guard there is the load-bearing one.
  */
 function straightReach(points: Pt[], closed: boolean): Int32Array {
   const n = points.length;

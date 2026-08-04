@@ -223,6 +223,17 @@ export function isRasterSource(s: DesignSource): s is DesignSource & { raster: R
 const SETTING_REMAP_DE = 6;
 
 /**
+ * The two forms a per-color depth key takes: the bare hex in flat-plate mode, and the same hex
+ * behind the "asm:" prefix geometry/assembly.ts builds its per-region keys with.
+ *
+ * Both have to be carried. Assembly mode is the app's primary mode, so remapping only the bare form
+ * meant that in the mode nearly every user is in, a nudge of the Colors slider moved no setting and
+ * pruneSettingsToPalette — which does read past the prefix — then deleted every custom recess depth:
+ * exactly the destructive slider this function exists to prevent.
+ */
+const DEPTH_KEY_PREFIXES = ['', 'asm:'];
+
+/**
  * Carry per-color settings across a palette change, for colors no longer painted by anything.
  *
  * Depth on a *merged* group is not carried: its settings key is built from the member hexes, so
@@ -245,8 +256,12 @@ function remapSettingsToPalette(oldPalette: string[], newPalette: string[]): voi
     }
     if (!best) continue;
     const target = best;
-    if (state.colorSettings[oldHex] && !state.colorSettings[target])
-      state.colorSettings[target] = state.colorSettings[oldHex];
+    for (const prefix of DEPTH_KEY_PREFIXES) {
+      const from = prefix + oldHex;
+      const to = prefix + target;
+      if (state.colorSettings[from] && !state.colorSettings[to])
+        state.colorSettings[to] = state.colorSettings[from];
+    }
     const swap = (list: string[]) => list.map((h) => (h === oldHex ? target : h));
     state.keptApart = swap(state.keptApart);
     state.baseColorMembers = swap(state.baseColorMembers);

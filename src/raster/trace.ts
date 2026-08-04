@@ -187,6 +187,73 @@ interface ChainSet {
   chainOf: Int32Array;
 }
 
+/** One component's assembled rings, plus every chain they were spliced from. */
+interface RingSet {
+  loops: Loop[];
+  chains: number[];
+}
+
+/**
+ * Share of its pixel area a component must still enclose after fitting, or its chains are unfitted.
+ *
+ * Matches curve.ts's own guard for closed chains. Rounding a corner costs a few percent; the failure
+ * this catches costs everything.
+ */
+const MIN_COMPONENT_AREA_RATIO = 0.85;
+
+function loopArea(loop: Loop): number {
+  let a = 0;
+  for (let i = 0; i < loop.length; i++) {
+    const p = loop[i];
+    const q = loop[(i + 1) % loop.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a / 2;
+}
+
+/**
+ * Drop back to lattice points on any chain that helped a component lose its area, and report
+ * whether anything changed so the caller can reassemble.
+ *
+ * curve.ts guards a *closed* chain by its own enclosed area, which is the only area a single chain
+ * has. An open chain has none, so the same failure goes uncaught there — and it is not hypothetical:
+ * a one-pixel stroke between two other colours is bounded by open chains that each turn a corner
+ * around it, the straightness cone's half-pixel slack swallows the excursion, both chains fit to
+ * chords, and the region vanishes from the output with no warning. Measured at every length tried.
+ *
+ * The check has to be per component, because that is the smallest thing with an area to compare;
+ * the *fix* has to be per chain, because a chain is shared. Unfitting one is what keeps both sides
+ * of that boundary identical — if only the starved component fell back, it would disagree with its
+ * neighbour along their shared edge and open exactly the sliver the whole design prevents.
+ */
+function unfitCollapsedChains(
+  rings: Map<number, RingSet>,
+  chainSet: ChainSet,
+  areas: number[],
+  labelOf: number[],
+  stride: number,
+): boolean {
+  const suspect = new Set<number>();
+  for (const [comp, entry] of rings) {
+    if (labelOf[comp] === BACKGROUND) continue;
+    const fitted = Math.abs(entry.loops.reduce((s, loop) => s + loopArea(loop), 0));
+    if (fitted >= areas[comp] * MIN_COMPONENT_AREA_RATIO) continue;
+    for (const id of entry.chains) suspect.add(id);
+  }
+  if (!suspect.size) return false;
+
+  let changed = false;
+  for (const id of suspect) {
+    const chain = chainSet.chains[id];
+    const lattice = chain.nodes.map((n) => ({ x: n % stride, y: (n / stride) | 0 }));
+    const body = chain.closed ? lattice.slice(0, -1) : lattice;
+    if (chain.fitted.length === body.length) continue;
+    chain.fitted = body;
+    changed = true;
+  }
+  return changed;
+}
+
 /**
  * Cut the crack graph into chains and fit a sub-pixel curve to each, once and globally.
  *
@@ -195,6 +262,11 @@ interface ChainSet {
  * that shared chain two different ways and leave a sliver of bare part surface along every colour
  * boundary in the image. Fitting the shared chain once and splicing the identical points into both
  * regions keeps the two sides bit-identical — which is what makes the fit safe to do at all.
+ *
+ * What it does *not* buy is that a region never crosses one it shares no chain with. Nothing bounds
+ * how far a fitted chain strays from the lattice path it replaces, so it can sweep over a third
+ * region a pixel away; measured, that is worth up to one working pixel of overlap. See
+ * docs/tech-debt.md — the bound, why it can't be tightened, and what absorbs it downstream.
  */
 function buildChains(labels: Int16Array, w: number, h: number, params: TraceParams): ChainSet {
   const stride = w + 1;
@@ -334,7 +406,7 @@ function walkRings(
   w: number,
   h: number,
   chainSet: ChainSet,
-): Map<number, Loop[]> {
+): Map<number, RingSet> {
   const stride = w + 1;
   const nodeCount = stride * (h + 1);
   const vCount = stride * h;
@@ -361,7 +433,7 @@ function walkRings(
   const step = (n: number, d: number) =>
     d === E ? n + 1 : d === S ? n + stride : d === W ? n - 1 : n - stride;
   const visited = new Uint8Array(nodeCount * 4);
-  const rings = new Map<number, Loop[]>();
+  const rings = new Map<number, RingSet>();
 
   for (let start = 0; start < nodeCount; start++)
     for (let startDir = 0; startDir < 4; startDir++) {
@@ -384,12 +456,15 @@ function walkRings(
         if (nd < 0) break;
         d = nd;
       }
-      const loop = spliceChains(ringNodes, chains, chainOf, crackBetween);
-      if (loop.length >= 3) {
-        const list = rings.get(comp);
-        if (list) list.push(loop);
-        else rings.set(comp, [loop]);
-      }
+      const used: number[] = [];
+      const loop = spliceChains(ringNodes, chains, chainOf, crackBetween, used);
+      const entry = rings.get(comp) ?? { loops: [], chains: [] };
+      // A ring that collapsed below three points contributes no geometry, but the chains it was
+      // built from are exactly the ones to suspect — record them before dropping it, or the guard
+      // below has nothing to work with for the case that loses a region outright.
+      if (loop.length >= 3) entry.loops.push(loop);
+      for (const id of used) if (!entry.chains.includes(id)) entry.chains.push(id);
+      rings.set(comp, entry);
     }
   return rings;
 }
@@ -407,6 +482,7 @@ function spliceChains(
   chains: Chain[],
   chainOf: Int32Array,
   crackBetween: (a: number, b: number) => number,
+  used: number[],
 ): Loop {
   const k = ringNodes.length;
   const loop: Loop = [];
@@ -440,6 +516,7 @@ function spliceChains(
     // two walks in buildChains. Loud rather than silent: skipping the run would ship a region
     // missing part of its outline, which looks plausible in the preview and prints wrong.
     if (!chain) throw new Error(`Traced ring crossed an unregistered boundary (crack chain ${id})`);
+    used.push(id);
     appendFitted(loop, chain, nodes[i], nodes[(i + 1) % k]);
     i = j;
   }
@@ -507,12 +584,14 @@ export function traceLabelMap(map: LabelMap, params: TraceParams): TraceResult {
   }
 
   const chainSet = buildChains(labels, w, h, params);
-  const rings = walkRings(labels, compId, w, h, chainSet);
+  let rings = walkRings(labels, compId, w, h, chainSet);
+  if (unfitCollapsedChains(rings, chainSet, areas, labelOf, w + 1))
+    rings = walkRings(labels, compId, w, h, chainSet);
 
   const components: TracedComponent[] = [];
-  for (const [comp, loops] of rings) {
-    if (labelOf[comp] === BACKGROUND) continue;
-    components.push({ label: labelOf[comp], loops, area: areas[comp] });
+  for (const [comp, entry] of rings) {
+    if (labelOf[comp] === BACKGROUND || !entry.loops.length) continue;
+    components.push({ label: labelOf[comp], loops: entry.loops, area: areas[comp] });
   }
   components.sort((a, b) => b.area - a.area);
   return { components, capped };

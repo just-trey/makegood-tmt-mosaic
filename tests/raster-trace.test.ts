@@ -160,17 +160,85 @@ describe('traceLabelMap', () => {
         const seen = new Set(loop.map((p) => `${p.x},${p.y}`));
         expect(seen.size).toBe(loop.length);
       }
-    // Every cell here is one pixel, far below the size at which a corner survives the fit, so the
-    // total comes up about a third short of 16. curve.ts's area guard can't rescue these: it works
-    // per chain, and these cells are bounded by junctions rather than by closed chains. Making it
-    // work per *ring* is not available — one region falling back to the lattice while the region
-    // across the boundary kept the fit is exactly the sliver the shared-chain design exists to
-    // prevent. Recorded in docs/tech-debt.md; what still has to hold here is that nothing overlaps.
+    // Every cell here is one pixel, far below the size at which a corner survives the fit — and
+    // curve.ts's own area guard only covers closed chains, while these cells are bounded by
+    // junctions. `unfitCollapsedChains` (trace.ts) is the one that reaches this case: it checks
+    // area per *component*, not per chain, so a junction-bounded cell is caught the same as an
+    // island. This exact total is the fix under test, not an incidental pass — it used to come up
+    // about a third short of 16 before that guard existed.
+    // What `toBeNull()` below verifies is a property of this fixture, not a general guarantee — the
+    // general statement is the sliver bound in docs/tech-debt.md, and reading this as the tracer's
+    // guarantee is what let a hole-swallowing bug sit undetected on fixtures with more nesting than
+    // a 4x4 has.
     const feats = components.map((c) => featureOf(c.loops));
     for (let i = 0; i < feats.length; i++)
       for (let j = i + 1; j < feats.length; j++)
         expect(safeIntersect(feats[i], feats[j])).toBeNull();
-    expect(components.reduce((s, c) => s + areaOf(c), 0)).toBeGreaterThan(16 * 0.65);
+    expect(components.reduce((s, c) => s + areaOf(c), 0)).toBeCloseTo(16, 9);
+  });
+
+  /**
+   * Deterministic pseudo-random label field.
+   *
+   * Noise is the adversarial fixture for tracing and nothing like real quantized art: it maximises
+   * junctions, one-pixel features and deep ring nesting all at once. That is exactly why the two
+   * assertions below are stated as bounds rather than as exact tiling — see the notes on each.
+   */
+  function noise(seed: number, size: number, labels: number): LabelMap {
+    let s = (seed * 2654435761) >>> 0 || 1;
+    const next = () => {
+      s ^= s << 13;
+      s >>>= 0;
+      s ^= s >> 17;
+      s ^= s << 5;
+      s >>>= 0;
+      return s / 4294967296;
+    };
+    const arr = new Int16Array(size * size);
+    for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(next() * labels);
+    return {
+      labels: arr,
+      w: size,
+      h: size,
+      palette: Array.from({ length: labels }, (_, i) => '#' + i.toString(16).repeat(6)),
+    };
+  }
+
+  /** [seed, label count]. The first entry is the fixture the containment defect was found on. */
+  const SEEDS: [number, number][] = [
+    [1054097, 2],
+    [1054098, 3],
+    [205920, 2],
+    [348131, 3],
+    [665196, 2],
+    [823473, 4],
+  ];
+
+  /**
+   * The strong "no overlap at all" form the two fixtures above assert is a property of *those*
+   * fixtures, not of the tracer. Two things break it in general, both understood and both bounded:
+   * a fitted chain may stray up to about a pixel from the lattice path it replaces (Potrace's
+   * straightness cone carries that slack by design), and a thin feature bounded by junctions can
+   * lose its ring entirely so a neighbour covers the gap — see docs/tech-debt.md. So what has to
+   * hold generally is that any overlap stays *sliver*-sized: one working pixel, which at the 1024px
+   * flat-art size is 0.27mm across the wheel, well under a 0.4mm nozzle.
+   *
+   * The bound is what caught a real defect: a hole ring starting on a junction read as "outside"
+   * its own component and was emitted as a solid island, so the component painted over its cavity
+   * and swallowed a 13-pixel region of another colour whole. Fixed in shapeToFeature (regions.ts);
+   * this is the assertion that would have failed.
+   */
+  it('keeps any overlap between components down to a sliver', () => {
+    for (const [seed, labels] of SEEDS) {
+      const { components } = traceLabelMap(noise(seed, 28, labels), params());
+      const feats = components.map((c) => featureOf(c.loops));
+      for (let i = 0; i < feats.length; i++)
+        for (let j = i + 1; j < feats.length; j++) {
+          const inter = safeIntersect(feats[i], feats[j]);
+          if (!inter) continue;
+          expect(planarArea(inter)).toBeLessThanOrEqual(1);
+        }
+    }
   });
 
   it('ignores background — a transparent margin cuts nothing', () => {
@@ -178,6 +246,64 @@ describe('traceLabelMap', () => {
     expect(components).toHaveLength(1);
     expect(components[0].label).toBe(0);
     expect(areaOf(components[0])).toBeCloseTo(256, 9);
+  });
+
+  it('keeps a one-pixel stroke sandwiched between two other regions', () => {
+    // The straightness cone is widened by half a pixel at each bound, so the whole boundary of a
+    // one-pixel-thick region can stay inside it and read as one straight run: out one side, around
+    // the end, back the other. The fitted polygon collapses to the chord, the ring drops below three
+    // points, and walkRings discarded it — the stroke disappeared from the output entirely, at every
+    // length, in both orientations. Silent deletion of a whole colour, not degradation.
+    // Caught now by `unfitCollapsedChains` (trace.ts), which checks area per component and unfits
+    // the offending chains back to their lattice points rather than tightening the cone itself — a
+    // tighter cone was tried and cost 34% more output points on photographic sources for no gain
+    // curve.ts's own comment records the measurement and the choice.
+    for (const len of [3, 10, 40]) {
+      const pad = 3;
+      const w = len + pad * 2;
+      const rows = [
+        'a'.repeat(w),
+        'a'.repeat(pad) + 'b'.repeat(len) + 'a'.repeat(pad),
+        'c'.repeat(w),
+        'c'.repeat(w),
+      ];
+      const { components } = traceLabelMap(grid(rows, 'abc'), params());
+      const stroke = components.find((c) => c.label === 1);
+      expect(stroke, `stroke of length ${len} was dropped`).toBeDefined();
+      expect(stroke!.area).toBe(len);
+    }
+  });
+
+  it('keeps that stroke vertically too, not just along the scan direction', () => {
+    const rows = ['aaaaaaa', ...Array.from({ length: 12 }, () => 'aaabccc'), 'ccccccc'];
+    const { components } = traceLabelMap(grid(rows, 'abc'), params());
+    const stroke = components.find((c) => c.label === 1);
+    expect(stroke).toBeDefined();
+    expect(stroke!.area).toBe(12);
+  });
+
+  it('keeps a shallow diagonal stroke intact, not scattered into isolated fragments', () => {
+    // The out-and-back case above collapses one straight run; a stroke that turns a corner instead
+    // (this one steps down two pixels at a time) reads as several short straight runs, and each one
+    // independently degenerates — measured before the fix: 93 of 95 two-pixel runs produced no ring
+    // at all. This is the same failure by a different route, and the same fix has to cover both.
+    const w = 60,
+      h = 32;
+    const rows = Array.from({ length: h }, () => Array(w).fill('a'));
+    for (let x = 0; x < w; x++) {
+      const y = Math.floor(x / 2);
+      if (y < h) rows[y][x] = 'b';
+      for (let yy = y + 1; yy < h; yy++) rows[yy][x] = 'c';
+    }
+    const { components } = traceLabelMap(
+      grid(
+        rows.map((r) => r.join('')),
+        'abc',
+      ),
+      params(),
+    );
+    const strokeArea = components.filter((c) => c.label === 1).reduce((s, c) => s + areaOf(c), 0);
+    expect(strokeArea).toBeCloseTo(w, 9);
   });
 
   it('orders components largest first', () => {

@@ -255,10 +255,14 @@ not match the string above verbatim.
 - Freeing space (closing other tabs on the same site, or clearing old site
   data) and reloading — the autosave runs again on the next change.
 
-## Troubleshooting: "Some detail in this image was too fine to print…"
+## Troubleshooting: "Some detail in … was too fine to print…"
 
-Full text: _"Some detail in this image was too fine to print and was merged
-into its surroundings. Lower Colors, or raise Detail, for a cleaner result."_
+Full text: _"Some detail in "yourfile.png" was too fine to print and was merged
+into its surroundings. Lower Colors, or lower Detail, for a cleaner result."_
+
+The notice names the image, so with several images loaded each gets its own —
+and re-tracing one at a setting that no longer needs capping retracts only
+that one.
 
 An informational notice, not a failure — the image loaded and cut normally.
 It appears when tracing a raster image produced more separate regions than
@@ -279,10 +283,37 @@ To get a result you're happier with:
 - **Lower Colors.** Most of the time this is the real fix. Fewer palette
   entries means fewer boundaries, which means far fewer islands — a photo at
   4 colors reads much better as a print than the same photo at 12.
-- **Raise Detail** if you want the small stuff kept and are willing to pay for
-  it in slot count and print time.
+- **Lower Detail.** Detail runs the other way round from what the name
+  suggests here: it sets how small a speck survives, so _lowering_ it raises
+  the floor and merges the fine stuff deliberately instead of letting the cap
+  do it. Raising Detail quarters the floor and makes this notice more likely,
+  not less.
 - **Crop or simplify the source** before loading. A busy background the design
   doesn't need is what usually blows the budget.
+
+## Troubleshooting: "This image could not be decoded…"
+
+Full text: _"This image could not be decoded — the browser cannot read this
+format, or the file is damaged. PNG, JPG and WebP always work; TIFF never
+does. Re-export it as a PNG."_
+
+The file was recognised as a raster image from its leading bytes, but the
+browser's own image decoder refused it. TMT Mosaic does not carry decoders of
+its own — it hands the file to the browser — so the supported set is whatever
+the browser supports.
+
+- **PNG, JPG and WebP** work everywhere.
+- **GIF and BMP** work in practice, and are accepted for exactly that reason.
+- **TIFF** is never decodable in a browser, however the file was produced.
+  Re-export as PNG from whatever made it.
+- A truncated or partly-downloaded file lands here too. Re-download it and try
+  again before blaming the format.
+
+An SVG never reaches this message: the format is sniffed from the file's first
+bytes, so vector artwork goes to the SVG parser and only raster formats come
+here. That split is also what stops a dropped image from failing with "SVG
+could not be parsed — check the file is valid XML", which is true but useless
+about a file that was never XML.
 
 ## Troubleshooting: "This image has no real-world size…"
 

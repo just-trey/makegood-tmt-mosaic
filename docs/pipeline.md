@@ -26,12 +26,17 @@ How the geometry actually works — read this before touching `src/geometry/` or
    Pixels under 50% alpha become background and cut nothing. That same
    edge-density statistic ([src/raster/stats.ts](../src/raster/stats.ts)) sets
    blur/despeckle/curve-fit strength, which the Detail slider then scales; the
-   user never picks a mode. Flat art's one-pixel blur is there to replace what
-   the downscale used to do for free: averaging a 1588px source 3:1 wiped out
-   the anti-aliased fringe on every colour boundary, and the detail pass only
-   averages 1.5:1, so without the blur those fringe pixels survive, fall between
-   two palette entries, and get assigned alternately — a cartoon eye comes back
-   striped blue and white. Quantization
+   user never picks a mode. Flat art gets a one-pixel blur, **but only when the
+   detail pass actually ran** — that is, only when decode.ts's second draw
+   enlarged the image. It replaces what the downscale used to do for free:
+   averaging a 1588px source 3:1 wiped out the anti-aliased fringe on every
+   colour boundary, and the detail pass only averages 1.5:1, so without the
+   blur those fringe pixels survive, fall between two palette entries, and get
+   assigned alternately — a cartoon eye came back striped blue and white. An
+   image too small to be enlarged was never downscaled any harder either, so it
+   has nothing to compensate for; blurring it anyway erased small features
+   outright (an isolated pixel, a thin cross), which is why the blur is
+   conditional rather than constant. Quantization
    is median-cut seeding plus Lloyd refinement **in CIELAB**
    ([src/raster/quantize.ts](../src/raster/quantize.ts)), deliberately the same
    space and metric `applyColorMerges` clusters in, and the palette is
@@ -67,6 +72,10 @@ How the geometry actually works — read this before touching `src/geometry/` or
    junction. `tests/raster-trace.test.ts` pins the invariant (two regions still
    tile their frame exactly after the fit moves the divider off the lattice) and
    `tests/raster-curve.test.ts` pins the fit itself; don't fit per region.
+   What the shared chain does _not_ buy is that a region never crosses one it
+   shares no chain with — nothing bounds how far a fitted chain strays from its
+   lattice path, worth up to one working pixel of overlap. Bounded and absorbed
+   downstream by paint order; measured in [tech-debt.md](tech-debt.md).
    Hole-vs-solid and winding
    are deliberately left to `shapeToFeature` below. Shapes are grouped one per
    color rather than one per connected component — measured, not assumed, with
@@ -78,6 +87,11 @@ How the geometry actually works — read this before touching `src/geometry/` or
    show. 2D polygon booleans via Turf.js ([src/geometry/regions.ts](../src/geometry/regions.ts)).
    Holes are resolved by **containment depth** (odd nesting depth = hole),
    which is correct for both the `nonzero` and `evenodd` SVG fill rules.
+   Depth is probed with an **edge midpoint** of the inner ring, not a vertex:
+   the ring walk above starts every traced ring on a junction, so its first
+   vertex is a point another ring passes through, where the even-odd ray cast
+   is undefined. Probing there read holes as solid islands, and the shape then
+   painted over its own cavity.
    Regions are then resolved into recesses: any color assigned to the base
    material is excluded outright, visually similar colors are auto-merged
    (a CIE76 ΔE-clustered slider, live and reversible) and unioned with any

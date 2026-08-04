@@ -11,7 +11,7 @@ import {
   setArtworkZone,
 } from '../state/artwork';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
-import { RASTER_CAPPED_MESSAGE } from './artworkPanel';
+import { rasterCappedMessage } from './artworkPanel';
 import { dismissNotice, notice } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { scheduleRebuild } from '../app/scheduler';
@@ -132,6 +132,11 @@ export function renderArtworkList(): void {
     row.querySelector<HTMLButtonElement>('.artwork-remove')!.addEventListener('click', (e) => {
       e.stopPropagation();
       removeArtworkInstance(a.id);
+      // A capped notice names its image, so it has to go with the last instance of it — otherwise
+      // it stands there pointing at a file that is no longer loaded.
+      if (source && !state.sources.some((s) => s.id === source.id))
+        dismissNotice(rasterCappedMessage(source.name));
+      renderWarnings();
       $('#svg-fname').textContent = '';
       renderArtworkList();
       refreshFitInputsFromState();
@@ -190,8 +195,8 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
   const apply = (patch: { colors?: number; detail?: number }) => {
     const result = requantizeSource(source.id, patch);
     if (!result) return;
-    if (result.capped) notice(RASTER_CAPPED_MESSAGE);
-    else dismissNotice(RASTER_CAPPED_MESSAGE);
+    if (result.capped) notice(rasterCappedMessage(source.name));
+    else dismissNotice(rasterCappedMessage(source.name));
     renderWarnings();
     readout.textContent = describe();
     scheduleRebuild();

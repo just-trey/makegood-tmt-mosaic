@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP as well
+- **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP (and a
+  GIF or BMP) as well
   as an SVG — drop in a logo, a child's drawing or a photo and it's quantized
   into flat color regions and traced back to outlines, then goes through the
   same placement, merging, cutting and export path an SVG does. The format is
@@ -173,6 +174,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A hole in a traced image could be painted over instead of cut. Where a
+  region's cavity met its own outline at a point — common in a busy image, and
+  the way traced outlines are stitched makes it the exact point tested — the
+  cavity was read as a solid island rather than a hole, so that color covered
+  it and swallowed whatever other color was sitting inside. Measured on a test
+  fixture: a 13-pixel region of a second color, gone entirely.
+- The "too fine to print" notice advised raising Detail, which makes it _more_
+  likely, not less: Detail sets how small a speck survives, so raising it lets
+  four times as many through. It now says to lower it. The notice also names
+  the image it is about, so with several images loaded, re-tracing one no
+  longer retracts a notice that still applies to another.
+- Nudging Colors on an image wiped every per-color recess depth in assembly
+  mode — the app's main mode. Depths are keyed differently there, and the code
+  that carries settings across a re-trace only knew the flat-plate form, so it
+  matched nothing and the cleanup pass that followed deleted them all. The
+  slider was safe in flat-plate mode only.
+- The color readout for an image counted colors that nothing was left painted
+  in — a color could win a palette entry and then have every one of its regions
+  merged away, and it was still counted. "3 colors · 2 regions" now agrees with
+  the color list.
+- Dropping a GIF, BMP or TIFF failed with "SVG could not be parsed — check the
+  file is valid XML", which is true but useless about a file that was never
+  XML. GIF and BMP now simply load; a TIFF says what is actually wrong with it
+  (no browser can open one) and what to do about it.
+- A session holding both an SVG and an image reported a clean save and dropped
+  the image silently. Leaving now prompts, since the restore brings the SVG
+  back and the image has to be re-dropped.
+- A one-pixel-wide feature in a traced image — a thin stroke, a whisker, a
+  single-pixel checkerboard cell — could vanish entirely rather than round off:
+  its outline was thin enough that the curve fitter mistook the whole shape for
+  a straight line, collapsed it, and dropped it. Measured across a straight
+  stroke, a shallow diagonal and a zigzag, all now trace to their exact pixel
+  area.
+- Flat art small enough to skip the 1024px detail pass still got the one-pixel
+  blur meant to compensate for it, and lost fine detail because of it — an
+  isolated pixel, a thin cross, a short bar. The blur only applies now when the
+  detail pass actually ran.
 - Leaving the page (reload, close, navigate away) used to always trigger the
   browser's native "Reload site? Changes you made may not be saved." prompt
   once any design was loaded, even though the session autosaves and offers

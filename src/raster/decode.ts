@@ -33,26 +33,29 @@ export const MAX_WORKING_EDGE = 1024;
 export const MEASURE_EDGE = 512;
 
 /**
- * Is this buffer a raster image the decoder can handle?
+ * Is this buffer a raster image rather than an SVG?
  *
  * Sniffed from the leading bytes rather than from `File.type` or the extension: a drag-and-drop
  * often arrives with an empty type, and users rename files. The magic numbers cannot be fooled and
  * cost a dozen lines.
+ *
+ * Deliberately "is it raster", not "can we decode it". GIF, BMP and TIFF are here even though the
+ * pipeline has never been aimed at them, because the alternative is worse: anything this returns
+ * false for goes to the SVG parser and comes back "SVG could not be parsed — check the file is
+ * valid XML", which is true but useless, since the file isn't malformed XML, it's not XML at all.
+ * Routed here, GIF and BMP simply work (the browser decodes both), and a TIFF gets decodeImageFile's
+ * honest "this format could not be decoded" instead.
  */
 export function isRasterBuffer(buf: Uint8Array): boolean {
-  const at = (i: number) => (i < buf.length ? buf[i] : -1);
-  const png = at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47;
-  const jpeg = at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff;
-  const webp =
-    at(0) === 0x52 &&
-    at(1) === 0x49 &&
-    at(2) === 0x46 &&
-    at(3) === 0x46 &&
-    at(8) === 0x57 &&
-    at(9) === 0x45 &&
-    at(10) === 0x42 &&
-    at(11) === 0x50;
-  return png || jpeg || webp;
+  const magic = (offset: number, ...bytes: number[]) =>
+    bytes.every((b, i) => offset + i < buf.length && buf[offset + i] === b);
+  const png = magic(0, 0x89, 0x50, 0x4e, 0x47);
+  const jpeg = magic(0, 0xff, 0xd8, 0xff);
+  const webp = magic(0, 0x52, 0x49, 0x46, 0x46) && magic(8, 0x57, 0x45, 0x42, 0x50);
+  const gif = magic(0, 0x47, 0x49, 0x46, 0x38); // GIF87a / GIF89a
+  const bmp = magic(0, 0x42, 0x4d);
+  const tiff = magic(0, 0x49, 0x49, 0x2a, 0x00) || magic(0, 0x4d, 0x4d, 0x00, 0x2a);
+  return png || jpeg || webp || gif || bmp || tiff;
 }
 
 /** Target size preserving aspect, capped at `maxEdge`. Never upscales. */
@@ -91,7 +94,10 @@ export async function decodeImageFile(file: Blob): Promise<RasterImage> {
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   } catch {
-    throw new Error('This image could not be decoded — check the file is a valid PNG or JPEG.');
+    throw new Error(
+      'This image could not be decoded — the browser cannot read this format, or the file is ' +
+        'damaged. PNG, JPG and WebP always work; TIFF never does. Re-export it as a PNG.',
+    );
   }
   try {
     const reference = drawAt(bitmap, MEASURE_EDGE);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseRasterImage } from '../src/raster/parse';
 import { measureImage, autoParams, DETAIL_DEFAULT } from '../src/raster/stats';
+import { quantize } from '../src/raster/quantize';
 import type { RasterImage } from '../src/raster/types';
 import { deltaE, hexToLab } from '../src/color';
 
@@ -64,7 +65,50 @@ describe('parseRasterImage', () => {
   it('throws on a fully transparent image rather than loading an empty design', () => {
     expect(() => parseRasterImage(bands(8, 8, ['#ff0000'], 0), opts)).toThrow(/nothing to cut/);
   });
+
+  // `palette` used to be the quantizer's own, taken before tracing, so a color that won a cluster
+  // and then had every one of its components despeckled away still counted. The panel read
+  // "3 colors · 2 regions", the smoke's `shown === traced` check compared a 3 against a color list
+  // holding 2, and remapSettingsToPalette could carry a depth onto a hex nothing paints.
+  it('reports only the colors the traced shapes actually paint', () => {
+    // A red sprinkle: enough pixels to win a palette entry, every one of them a lone speck the
+    // despeckle floor absorbs. Deterministic placement — this assertion must not flake.
+    const w = 64,
+      h = 64;
+    const img = bands(w, h, ['#0000ff', '#00c000']);
+    for (let p = 0; p < w * h; p++) {
+      const x = p % w,
+        y = (p / w) | 0;
+      if ((x * 5 + y * 3) % 17 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
+      const i = p * 4;
+      img.data[i] = 255;
+      img.data[i + 1] = 0;
+      img.data[i + 2] = 0;
+    }
+    // Detail full-left quadruples the despeckle floor, so a one-pixel speck cannot survive it.
+    const detail = 0;
+    const { parsed, palette } = parseRasterImage(img, { colors: 4, detail });
+    const painted = new Set(parsed.shapes.map((s) => s.fill));
+    expect(palette.length).toBe(painted.size);
+    for (const hex of palette) expect(painted.has(hex)).toBe(true);
+
+    // …and the fixture really does exercise it: the quantizer found a color the trace then lost.
+    const quantized = quantize(img, 4, autoParams(measureImage(img), detail).blurRadius);
+    expect(quantized.palette.length).toBeGreaterThan(palette.length);
+  });
+
+  it('keeps the palette in the quantizer order it narrows', () => {
+    const { parsed, palette } = parseRasterImage(bands(32, 32, ['#ff0000', '#0000ff']), opts);
+    expect(palette).toEqual(
+      [...new Set(parsed.shapes.map((s) => s.fill))].sort(byPalette(palette)),
+    );
+  });
 });
+
+/** Compare two hexes by their position in `palette` — used only to state "same set, same order". */
+function byPalette(palette: string[]) {
+  return (a: string, b: string) => palette.indexOf(a) - palette.indexOf(b);
+}
 
 describe('measureImage / autoParams', () => {
   it('reads flat color bands as flat art and per-pixel noise as photographic', () => {
@@ -96,6 +140,18 @@ describe('measureImage / autoParams', () => {
     // Flat art keeps corners the photo path is happy to round off — a logo's square edge is a real
     // feature, the same angle in a photograph is usually quantization noise.
     expect(photo.alphaMax).toBeGreaterThan(flat.alphaMax);
+  });
+
+  it('only blurs flat art when the detail pass actually gave up a downscale', () => {
+    // The blur replaces the low-pass a 3:1 downscale used to provide. An image too small for the
+    // detail pass to enlarge was not downscaled harder before either, so there is nothing to
+    // replace — and blurring it anyway erased thirteen of fourteen dark pixels on 12x12 pixel art,
+    // taking an isolated pixel, a one-pixel cross and an eight-pixel bar with it.
+    const flat = { edgeDensity: 0.05 };
+    expect(autoParams(flat, DETAIL_DEFAULT, false).blurRadius).toBe(0);
+    expect(autoParams(flat, DETAIL_DEFAULT, true).blurRadius).toBe(1);
+    // A photograph is never enlarged, so it never picks the compensation up.
+    expect(autoParams({ edgeDensity: 0.8 }, DETAIL_DEFAULT, false).blurRadius).toBe(2);
   });
 
   it('lets the Detail slider pull the auto-derived strength both ways', () => {
