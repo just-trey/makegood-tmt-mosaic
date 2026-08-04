@@ -415,6 +415,66 @@ function closeOpenChains(chains, xmin, ymin, xmax, ymax, eps) {
   return out;
 }
 
+/**
+ * Thin an over-sampled contour, keeping the result tileable.
+ *
+ * Marching squares emits a vertex on every grid edge the contour crosses — at res 3 that is one
+ * every 0.33mm along a smooth curve, and zebra shipped 13.6k of them. Vertex count is what decides
+ * whether Fill mode's tile union survives: turf 6.5's polygon-clipping fails somewhere around
+ * 800k vertices in one operation, and the app asks for 143 tiles of a 60mm pattern to cover a chair
+ * zone, so 13.6k/tile blew straight through it and half the tiles were silently dropped.
+ *
+ * Douglas-Peucker can't be used here. It picks vertices to keep from the *whole chain*, and the
+ * chains this runs on are cut arbitrarily by the sampling window, so the same stretch of contour
+ * appearing near x=0 and again near x=60 (the field is periodic) would be thinned differently and
+ * the two sides of the seam would stop lining up. The rule below is purely local and symmetric —
+ * a vertex is dropped only if it sits within `eps` of the line joining its own two neighbours and
+ * is the flattest of that trio — so it depends on nothing but the geometry within two vertices,
+ * which is identical for both periodic copies. Ties break on the neighbours' relative coordinates,
+ * which translation preserves. Passes are capped because each one can move the outline by up to
+ * `eps`; the drop between passes is measured in tests/patterns-assets.test.ts.
+ *
+ * No test asserts the output stays a simple polygon (no self-crossings) — `turf.kinks()` isn't a
+ * usable oracle for that here: the clipped loops this runs on legitimately touch the tile's own
+ * boundary at more than one point (a motif clipped against the same edge at different y values),
+ * which `turf.kinks()` also reports as a kink even though it isn't a crossing. What's actually
+ * verified is empirical — the seam-continuity test plus the "builds with no warnings" measurement
+ * in docs/tech-debt.md — not a geometric proof.
+ */
+function thinContourLoop(loop, eps, maxPasses = 12) {
+  let pts = loop;
+  for (let pass = 0; pass < maxPasses && pts.length > 8; pass++) {
+    const n = pts.length;
+    const flat = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = pts[(i - 1 + n) % n],
+        p = pts[i],
+        b = pts[(i + 1) % n];
+      const dx = b[0] - a[0],
+        dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy);
+      flat[i] = len < 1e-12 ? 0 : Math.abs(dx * (a[1] - p[1]) - dy * (a[0] - p[0])) / len;
+    }
+    // Strictly-flatter-than-both-neighbours keeps the survivors spread out instead of collapsing
+    // a whole run at once, and makes the choice independent of where the loop happens to start.
+    const rank = (i) => [flat[i], pts[i][0], pts[i][1]];
+    const flatter = (i, j) => {
+      const [fa, xa, ya] = rank(i),
+        [fb, xb, yb] = rank(j);
+      return fa !== fb ? fa < fb : xa !== xb ? xa < xb : ya < yb;
+    };
+    const keep = pts.filter((_, i) => {
+      if (flat[i] >= eps) return true;
+      const prev = (i - 1 + n) % n,
+        next = (i + 1) % n;
+      return !(flatter(i, prev) && flatter(i, next));
+    });
+    if (keep.length === n) break;
+    pts = keep;
+  }
+  return pts;
+}
+
 const n2 = (v) => Math.round(v * 100) / 100;
 const toD = (loop) => loop.map(([x, y], i) => `${i ? 'L' : 'M'}${n2(x)} ${n2(y)}`).join(' ') + ' Z';
 const MIN_AREA = 0.2; // mm² — drops degenerate slivers Sutherland-Hodgman leaves at a corner
@@ -460,7 +520,9 @@ function renderPattern(p) {
     // island would union back into its stripe and fill in solid.
     const subpaths = [];
     for (const loop of loops) {
-      const clipped = clipToRect(loop, 0, 0, W, H);
+      // Thinned before the clip, not after: a clipped piece has been cut at the tile edge, and
+      // simplifying from that cut would let the two sides of a seam diverge.
+      const clipped = clipToRect(thinContourLoop(loop, p.simplifyEps ?? 0), 0, 0, W, H);
       if (clipped.length >= 3 && shoelaceArea(clipped) > MIN_AREA_FIELD)
         subpaths.push(toD(clipped));
     }
@@ -539,6 +601,12 @@ const PATTERNS = [
     threshold: 0.5,
     res: 3,
     padMM: 20,
+    // Zebra is the only pattern that needs thinning: its stripes are long smooth curves, so
+    // marching squares at res 3 emitted 13.6k vertices per tile against 0.3-0.9k for the other
+    // three (cow/tiger/dalmatian are blobs — short contours, already sparse). 0.08mm is well under
+    // the 0.2mm nozzle-width scale a printed edge can resolve, so the outline is unchanged to the
+    // eye; see the section in docs/tech-debt.md for what the vertex count was actually breaking.
+    simplifyEps: 0.08,
     motifFill: INK,
     bg: WHITE,
   },

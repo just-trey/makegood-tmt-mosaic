@@ -130,3 +130,37 @@ describe('every built-in pattern tiles seamlessly', () => {
     }
   });
 });
+
+/**
+ * Vertex count is a shipping constraint, not a nicety. Fill mode unions one copy of the pattern
+ * per tile, and turf 6.5's polygon clipping starts failing somewhere around 800k vertices in a
+ * single operation — at which point it doesn't throw, it drops tiles, so the surface comes out
+ * partly blank with only a "likely a self-intersecting path" warning to go on.
+ *
+ * Zebra shipped at 13.6k vertices per tile, which is 1.9M across the 143 tiles a 60mm pattern
+ * needs to cover a chair zone: straight past the limit. Marching squares is why — it emits a
+ * vertex on every grid edge the contour crosses, so a pattern of long smooth curves oversamples
+ * badly while the blobbier ones don't. scripts/gen-patterns.mjs thins zebra's contours
+ * (`simplifyEps`) to bring it in line with the rest.
+ *
+ * The budget below is deliberately far below the failure point rather than just under it: the tile
+ * count scales with the zone, and a future part with a larger design surface asks for more copies
+ * of the same pattern.
+ */
+describe('every built-in pattern stays inside the tiled-union vertex budget', () => {
+  const TILES_PER_CHAIR_ZONE = 143;
+  const BUDGET = 300_000;
+
+  it.each(manifest.map((p) => [p.name, p.file] as const))(
+    '%s is sparse enough to tile a chair zone',
+    (_name, file) => {
+      const svg = readFileSync(resolve(REPO, 'public/patterns', file), 'utf8');
+      // Same loops[] the app itself unions in Fill mode, not a raw M/L count off the source text —
+      // a curve command would flatten to many vertices per command and a text-level count would miss it.
+      const loops = parseSVGDocument(svg).shapes.flatMap((s) => s.loops);
+      const vertices = loops.reduce((n, loop) => n + loop.length, 0);
+
+      expect({ vertices: vertices * TILES_PER_CHAIR_ZONE < BUDGET }).toEqual({ vertices: true });
+    },
+  );
+});
