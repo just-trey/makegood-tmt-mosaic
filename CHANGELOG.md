@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   print — because the tracer could only put corners on whole-pixel positions.
   Boundaries are now fitted between pixels, so a traced logo or drawing has
   smooth edges at any size, while genuine square corners stay square.
+- Flat artwork — logos, drawings, cartoons — is now traced at twice the
+  resolution, which keeps detail that used to be rounded away: on one cartoon,
+  the pupils and highlights in the eyes survive where before they merged into a
+  blob. Photographs stay at the old resolution, where the extra pixels buy
+  sensor noise rather than anything a nozzle can lay down. The app decides which
+  an image is by looking at it, as it already did for smoothing and despeckling.
 - The help panel has a new About section linking
   [3d-mobility.org](https://3d-mobility.org), where the TMT's printable
   part files and assembly instructions live — previously the app had no

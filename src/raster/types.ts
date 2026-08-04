@@ -3,6 +3,14 @@ export interface RasterImage {
   data: Uint8ClampedArray;
   w: number;
   h: number;
+  /**
+   * Edge density as measured at the fixed reference size, carried alongside the pixels because it
+   * cannot be re-derived from them once the working size varies: the same image measures flatter
+   * the larger it is decoded, since edges take up a smaller share of the pixels. Re-measuring the
+   * working image would quietly move the flat-vs-photo thresholds — and the blur and despeckle
+   * strengths that hang off them — every time the working size changed.
+   */
+  edgeDensity?: number;
 }
 
 /**
@@ -18,6 +26,14 @@ export interface LabelMap {
 
 /** Label for a pixel that belongs to no region — transparent, and left as bare part surface. */
 export const BACKGROUND = -1;
+
+/**
+ * Below this alpha a pixel is background — no region, bare part surface (see BACKGROUND).
+ *
+ * Lives here rather than next to the decoder so that the decoder can ask `measureImage` how
+ * photographic an image is without the two modules importing each other in a circle.
+ */
+export const ALPHA_THRESHOLD = 128;
 
 /** What `measureImage` reports about an image, and `autoParams` turns into trace settings. */
 export interface ImageStats {

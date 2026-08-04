@@ -1,5 +1,5 @@
 import type { ImageStats, RasterImage, TraceParams } from './types';
-import { ALPHA_THRESHOLD } from './decode';
+import { ALPHA_THRESHOLD } from './types';
 
 /**
  * Bits per channel kept when bucketing a pixel for the edge-density measurement. 3 bits (8 levels
@@ -18,6 +18,21 @@ const EDGE_BUCKET_SHIFT = 5;
  */
 const FLAT_EDGE_DENSITY = 0.12;
 const PHOTO_EDGE_DENSITY = 0.45;
+
+/**
+ * Where the working resolution switches, as opposed to where the trace parameters interpolate.
+ *
+ * Deliberately a hard line rather than another interpolation: the decoder has to pick one size to
+ * draw at, and a value halfway between two resolutions doesn't exist. Set at the midpoint of the
+ * band the parameters blend across, so an image has to read clearly more photographic than flat
+ * before it loses the detail pass.
+ */
+const PHOTO_RESOLUTION_CUTOFF = (FLAT_EDGE_DENSITY + PHOTO_EDGE_DENSITY) / 2;
+
+/** Whether an image is photographic enough that extra working resolution would buy noise. */
+export function isPhotographic(edgeDensity: number): boolean {
+  return edgeDensity >= PHOTO_RESOLUTION_CUTOFF;
+}
 
 const FLAT_PARAMS: TraceParams = {
   blurRadius: 0,

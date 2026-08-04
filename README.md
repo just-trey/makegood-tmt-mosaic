@@ -127,11 +127,12 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   is cut at the nearest depth it can, with a warning saying which color and
   what was actually cut.
 - Gradients/patterns in an SVG are detected and skipped with a warning.
-- A raster image is processed at 512px on its long edge — already finer than a
-  0.4mm nozzle across the largest part, but it does cap how much _detail_ a
-  trace can pick out. It no longer caps edge quality: outlines are fitted as
-  curves between pixels rather than stepped along them, so they stay smooth
-  however large you print.
+- A raster image is processed at 1024px on its long edge for flat art (logos,
+  drawings, cartoons) and 512px for photographs, chosen from the image itself —
+  the extra pixels buy real detail in a drawing and mostly noise in a photo.
+  That caps how much _detail_ a trace can pick out; it doesn't cap edge quality,
+  since outlines are fitted as curves between pixels rather than stepped along
+  them, so they stay smooth however large you print.
 - A traced image's colors come from the image, not from your filament list; use
   the Colors slider and Auto-merge to get down to the slots you own.
 - Detail below the printable floor is merged into its surroundings rather than

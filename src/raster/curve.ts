@@ -6,9 +6,10 @@ import type { Pt } from '../types';
  * GPL and this repo is MIT, so nothing here is ported from its source.
  *
  * The point of the module: a traced boundary walked on the pixel lattice can only turn in whole
- * pixels, which ships a staircase on every diagonal (~0.54mm across the wheel at the working
- * resolution — printable, not just visible). Fitting a curve through those same pixels recovers
- * sub-pixel accuracy without raising the working resolution.
+ * pixels, which ships a staircase on every diagonal — 0.54mm across the wheel at the 512px the
+ * pipeline used to work at, printable rather than merely visible. Fitting a curve through those
+ * same pixels recovers sub-pixel accuracy without spending resolution on it, which is also what
+ * made the working size affordable to raise for flat art afterwards (see decode.ts).
  */
 export interface CurveParams {
   /** Corner threshold. A fitted vertex at or above this stays a hard corner; below it curves. */

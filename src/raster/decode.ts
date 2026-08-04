@@ -1,26 +1,36 @@
 import type { RasterImage } from './types';
+import { measureImage, isPhotographic } from './stats';
 
 /**
- * Longest edge, in pixels, the pipeline works at. Everything downstream is bounded by this:
- * quantization is O(pixels) and the tracer walks pixel boundaries. The bilinear downscale doubles
- * as the first noise filter.
+ * Longest edge, in pixels, that flat art is worked at — line drawings, logos, cartoons, anything
+ * whose fidelity lives in its outlines.
  *
- * 512 rather than something larger for two independent reasons, one measured and one physical.
- * Measured (scripts/bench-raster.ts, hostile noise source): 512 costs ~550ms across measure +
- * quantize + trace where 768 costs ~1.4s, because component count — and so tracing — climbs far
- * faster than the pixel count. Physical: 512px across the largest part the app targets (the wheel,
- * 276mm) is 0.54mm per pixel, already coarser than a 0.4mm nozzle can express, so the extra
- * resolution would be resolving detail that cannot be printed.
+ * This used to be 512 for everything, on two arguments. The measured one (scripts/bench-raster.ts)
+ * was that tracing cost climbs far faster than pixel count. The physical one was that 512px across
+ * the wheel's 276mm is 0.54mm per pixel, already coarser than a 0.4mm nozzle, so more resolution
+ * would resolve detail that cannot be printed.
  *
- * What this number does *not* bound any more is edge smoothness. It used to, because the pixel
- * lattice was also the output vertex set, which put a 0.54mm staircase on every diagonal; curve.ts
- * now fits sub-pixel curves through those pixels, so outlines stay smooth at any print size and
- * raising this would buy finer *detail*, not cleaner edges.
+ * The physical argument was about *detail* and it still holds. What it never covered is that the
+ * lattice was also the output vertex set, so 512 was simultaneously deciding how much of the image
+ * survived and how jagged its edges were. Curve fitting (curve.ts) separated those, and re-measured
+ * the first: a 1588px cartoon traced at 512 loses the pupils and highlights out of its eyes, and at
+ * 1024 keeps them. The cost is affordable precisely because fitting cut point counts — flat art at
+ * 1024 carries fewer points (2050) than the old lattice tracer produced at 512 (4676).
  */
-export const MAX_WORKING_EDGE = 512;
+export const MAX_WORKING_EDGE = 1024;
 
-/** Below this alpha a pixel is background — no region, bare part surface (see BACKGROUND). */
-export const ALPHA_THRESHOLD = 128;
+/**
+ * Working size for photographic sources, and the fixed size every image is measured at.
+ *
+ * Photographs are the case the old cost argument was really about: at 1024 they carry 11.5k points
+ * against 4.7k at 512, for detail that is mostly sensor noise rather than anything a nozzle will
+ * lay down. They stay here.
+ *
+ * It doubles as the measurement size because edge density is resolution-dependent — the same image
+ * reads flatter the larger it is decoded — and the flat-vs-photo thresholds in stats.ts, plus every
+ * blur and despeckle strength derived from them, were calibrated at this size.
+ */
+export const MEASURE_EDGE = 512;
 
 /**
  * Is this buffer a raster image the decoder can handle?
@@ -45,14 +55,32 @@ export function isRasterBuffer(buf: Uint8Array): boolean {
   return png || jpeg || webp;
 }
 
-/** Target size preserving aspect, capped at MAX_WORKING_EDGE. Never upscales. */
-export function workingSize(w: number, h: number): { w: number; h: number } {
-  const scale = Math.min(1, MAX_WORKING_EDGE / Math.max(w, h));
+/** Target size preserving aspect, capped at `maxEdge`. Never upscales. */
+export function workingSize(w: number, h: number, maxEdge: number): { w: number; h: number } {
+  const scale = Math.min(1, maxEdge / Math.max(w, h));
   return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
 }
 
+function drawAt(bitmap: ImageBitmap, maxEdge: number): RasterImage {
+  const { w, h } = workingSize(bitmap.width, bitmap.height, maxEdge);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('This browser could not open a 2D canvas to read the image.');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  return { data: ctx.getImageData(0, 0, w, h).data, w, h };
+}
+
 /**
- * Decode an image file to RGBA pixels at working size.
+ * Decode an image file to RGBA pixels at the working size its own content earns.
+ *
+ * Two passes, and the first one is not wasted: the image is always drawn at MEASURE_EDGE and
+ * measured there, both because that is the size stats.ts's thresholds were calibrated against and
+ * because the answer decides the second pass. Flat art is redrawn larger, where its outlines have
+ * detail worth keeping; a photograph keeps the first draw, where the extra pixels would buy noise.
  *
  * `imageOrientation: 'from-image'` matters more than it looks: a photo straight off a phone
  * carries its rotation in EXIF, and without this the artwork would arrive sideways with no
@@ -66,17 +94,12 @@ export async function decodeImageFile(file: Blob): Promise<RasterImage> {
     throw new Error('This image could not be decoded — check the file is a valid PNG or JPEG.');
   }
   try {
-    const { w, h } = workingSize(bitmap.width, bitmap.height);
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) throw new Error('This browser could not open a 2D canvas to read the image.');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    const { data } = ctx.getImageData(0, 0, w, h);
-    return { data, w, h };
+    const reference = drawAt(bitmap, MEASURE_EDGE);
+    const { edgeDensity } = measureImage(reference);
+    if (isPhotographic(edgeDensity)) return { ...reference, edgeDensity };
+
+    const detailed = drawAt(bitmap, MAX_WORKING_EDGE);
+    return { ...detailed, edgeDensity };
   } finally {
     bitmap.close();
   }

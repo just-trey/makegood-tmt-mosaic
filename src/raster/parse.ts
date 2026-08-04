@@ -78,7 +78,12 @@ export function parseRasterImage(
   opts: RasterOptions,
   granularity: ShapeGranularity = 'color',
 ): RasterParseResult {
-  const params = autoParams(measureImage(img), opts.detail);
+  // Measured at decode time, at a fixed reference size, and carried on the image — see
+  // RasterImage.edgeDensity. Re-measuring here would read the *working* image, whose size now
+  // varies with that very statistic, and quietly shift every threshold that depends on it.
+  const stats =
+    img.edgeDensity === undefined ? measureImage(img) : { edgeDensity: img.edgeDensity };
+  const params = autoParams(stats, opts.detail);
   const map = quantize(img, opts.colors, params.blurRadius);
   if (!map.palette.length)
     throw new Error('No opaque pixels were found in this image — there is nothing to cut.');

@@ -14,13 +14,19 @@ How the geometry actually works — read this before touching `src/geometry/` or
    without losing visible fidelity.
    A **raster image** (PNG/JPG/WebP, [src/raster/](../src/raster/)) reaches the
    same `ParsedSVG` by a different route, and nothing below step 1 knows the
-   difference. Decode downscales to 512px on the long edge
-   ([src/raster/decode.ts](../src/raster/decode.ts)) — already coarser than a
-   0.4mm nozzle across the 276mm wheel, and the measured knee in tracing cost.
-   Pixels under 50% alpha become background and cut nothing. An edge-density
-   statistic ([src/raster/stats.ts](../src/raster/stats.ts)) decides how
-   photographic the image is and sets blur/despeckle/curve-fit strength from it,
-   which the Detail slider then scales; the user never picks a mode. Quantization
+   difference. Decode draws twice
+   ([src/raster/decode.ts](../src/raster/decode.ts)): once at 512px to measure
+   the image, then again at 1024px if it reads as flat art. Photographs keep the
+   512px draw, where the extra pixels would buy sensor noise rather than detail a
+   nozzle can lay down. The measurement stays pinned to 512px whatever the
+   working size, because edge density is resolution-dependent — the same image
+   reads flatter the larger it is decoded — and every threshold below was
+   calibrated there; the figure rides along on `RasterImage.edgeDensity` so a
+   re-trace from the Colors/Detail sliders can't silently re-derive it.
+   Pixels under 50% alpha become background and cut nothing. That same
+   edge-density statistic ([src/raster/stats.ts](../src/raster/stats.ts)) sets
+   blur/despeckle/curve-fit strength, which the Detail slider then scales; the
+   user never picks a mode. Quantization
    is median-cut seeding plus Lloyd refinement **in CIELAB**
    ([src/raster/quantize.ts](../src/raster/quantize.ts)), deliberately the same
    space and metric `applyColorMerges` clusters in, and the palette is

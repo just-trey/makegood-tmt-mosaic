@@ -1,6 +1,6 @@
 import type { Lab } from '../color';
 import { deltaE, labToHex, rgbToLab } from '../color';
-import { ALPHA_THRESHOLD } from './decode';
+import { ALPHA_THRESHOLD } from './types';
 import { BACKGROUND } from './types';
 import type { LabelMap, RasterImage } from './types';
 

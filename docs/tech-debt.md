@@ -294,9 +294,14 @@ to prevent. So a small region bounded by _junctions_ rather than by a closed cha
 `tests/raster-trace.test.ts`'s 4x4 single-pixel checkerboard loses about a third of its area, and
 that is the worst case on record.
 
-How much this matters in practice: at the 512px working resolution a nine-pixel feature is about
-4.8mm across the wheel and a one-pixel one is 0.54mm, at or under the nozzle width — so the shapes
-being rounded are at the edge of printability anyway. Closing it properly means a fit that stays
+How much this matters in practice: on the 512px photograph path a nine-pixel feature is about 4.8mm
+across the wheel and a one-pixel one is 0.54mm, at or under the nozzle width — so the shapes being
+rounded are at the edge of printability anyway. Flat art now works at 1024px, which _reduces_ this
+limitation rather than worsening it: the threshold is a pixel count, so a feature of a given printed
+size arrives twice as many pixels across and is likelier to clear it. In printed terms the corner
+threshold falls from about 4.8mm to about 2.4mm, and the unfittable one-pixel case from 0.54mm to
+0.27mm — comfortably under a 0.4mm nozzle, which is the point at which this stops being a fidelity
+question at all. Closing it properly means a fit that stays
 exact on thin features rather than detecting and retreating from them, most likely by recognising
 digital straight segments (the arithmetic characterisation) instead of Potrace's cone, which does
 not have the half-pixel slack that causes this. Worth doing only if thin-feature artwork turns up
@@ -343,7 +348,9 @@ Session restore rebuilds each source by re-parsing its saved SVG text
 pixels. Persisting the pixels instead was measured and rejected: one decoded
 512px image is ~1 MB before JSON encoding, against a `MAX_BYTES` ceiling of 4 MB
 for the whole session, so two or three images would blow it and take the SVG
-half of the session down with them.
+half of the session down with them. Flat art now decodes at 1024px, four times
+the pixels, so a single one would fill that ceiling on its own — the case
+against persisting them got stronger, not weaker.
 
 So a raster source and its placements are skipped on save. Consequences worth
 knowing before changing this:
