@@ -61,13 +61,18 @@ function setShapeThumb(kind: string): void {
  * "asm:{id}"), then "disc" — a plain flat-plate insert kept as a quick reference shape. Rect/
  * round/stl remain in the codebase (their param blocks + bindings are untouched) but aren't
  * offered here; picking a real part shouldn't require navigating a second nested dropdown.
+ *
+ * A `hidden` kind is listed only while it's the one already selected, which is reachable solely
+ * through `?kind=` (main.ts). Without that the select would hold a value with no matching option
+ * and render blank, and the next switch away from it would be one-way.
  */
 function renderShapeKindOptions(): void {
   const sel = $<HTMLSelectElement>('#shape-kind');
-  const asmOptions = ASSEMBLY_KINDS.filter((k) => !k.hidden)
+  const asmOptions = ASSEMBLY_KINDS.filter((k) => !k.hidden || k.id === state.assembly.kindId)
     .map((k) => `<option value="asm:${k.id}">${k.name}</option>`)
     .join('');
   sel.innerHTML = asmOptions + '<option value="disc">Disc (reference)</option>';
+  sel.value = currentAsmOptionValue() || 'disc';
 }
 
 export function setShapeKind(kind: ShapeKind): void {
@@ -78,6 +83,9 @@ export function setShapeKind(kind: ShapeKind): void {
   });
   if (kind === 'assembly') {
     if (!state.assembly.kindId) state.assembly.kindId = ASSEMBLY_KINDS[0].id;
+    // The kind is only settled here, so the dropdown's membership is too — a hidden kind is
+    // listed only while it's the selected one.
+    renderShapeKindOptions();
     syncAssemblyKindControls();
     renderAssemblyRoleControls();
     renderAssemblyPartList();

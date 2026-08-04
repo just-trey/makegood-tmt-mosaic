@@ -183,6 +183,26 @@ let lastSaveFailed = false;
 let lastSaveDropped = false;
 
 /**
+ * Whether the session already in storage is on an assembly kind that's currently withheld from
+ * the UI (`AssemblyKind.hidden`). Such a session is never offered back — initRestoreBanner()
+ * skips it — so the empty-snapshot clear in saveSession() would be the thing that destroys it,
+ * about a second after a bare default boot and with nothing shown to the user to explain it.
+ * Held instead until the kind is offered again, or until real work overwrites it through the
+ * normal save path.
+ */
+function savedSessionIsOnHiddenKind(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isPersistedSession(parsed) || parsed.shapeKind !== 'assembly') return false;
+    return !!ASSEMBLY_KINDS.find((k) => k.id === parsed.assembly.kindId)?.hidden;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Write the current session, swallowing every failure — private browsing with storage disabled,
  * a quota already full of other sites' data, a circular/unserializable value that shouldn't exist
  * but shouldn't crash a rebuild if it did. A session that fails to save just means the next
@@ -205,7 +225,7 @@ export function saveSession(): void {
   const session = snapshotSession();
   lastSaveDropped = state.sources.some((s) => s.raster);
   if (!session.artworks.length) {
-    clearSavedSession();
+    if (!savedSessionIsOnHiddenKind()) clearSavedSession();
     lastSaveFailed = hasLoadedWork();
     return;
   }

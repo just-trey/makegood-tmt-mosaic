@@ -141,7 +141,9 @@ How the geometry actually works — read this before touching `src/geometry/` or
    ([src/geometry/designOverlap.ts](../src/geometry/designOverlap.ts)). A
    part can also carry more than one design surface (**design zones**) baked
    ahead of time by `scripts/bake-zones.mjs` — the chair body has five
-   (left/right/front/back/seat), each its own true-scale UV chart the artwork
+   (left/right/front/back/seat; it is the only such part, and is currently
+   withheld from the Part dropdown, reachable at `?kind=chair-body` — see
+   [tech-debt.md](tech-debt.md)), each its own true-scale UV chart the artwork
    wraps onto **conformally** (a sticker follows the surface around a rounded
    edge the way real vinyl would, not a flat orthographic stamp)
    ([src/geometry/conformal.ts](../src/geometry/conformal.ts)). A zone spans the
@@ -166,11 +168,12 @@ How the geometry actually works — read this before touching `src/geometry/` or
    **Fill**, which repeats the design across the whole zone, tiled in the
    design's own SVG coordinate space so the tiling stays correct under
    whatever rotation/scale the zone's mapping applies
-   ([src/geometry/patterns.ts](../src/geometry/patterns.ts)). The Artwork panel
-   ships a small built-in library of tileable patterns (Cow, Dalmatian,
-   Zebra, Tiger — [scripts/gen-patterns.mjs](../scripts/gen-patterns.mjs)
-   generates them) that default to Fill mode when loaded on an assembly
-   part.
+   ([src/geometry/patterns.ts](../src/geometry/patterns.ts)). A built-in
+   library of tileable patterns (Cow, Dalmatian, Zebra, Tiger —
+   [scripts/gen-patterns.mjs](../scripts/gen-patterns.mjs) generates them)
+   ships and loads straight into Fill mode, but its picker strip is currently
+   withheld from the Artwork panel — see [tech-debt.md](tech-debt.md). Fill is
+   unaffected for an SVG you upload yourself.
 6. **Export** writes a Bambu Studio _project_ 3MF (vendor metadata included,
    so it imports without warnings, with named parts, per-part filament slots,
    and multi-plate placement) ([src/export/threemf.ts](../src/export/threemf.ts)).
@@ -204,7 +207,8 @@ How the geometry actually works — read this before touching `src/geometry/` or
   library manifest, loaded from
   [public/patterns/patterns.json](../public/patterns/patterns.json). Add a new
   pattern in [scripts/gen-patterns.mjs](../scripts/gen-patterns.mjs) and re-run
-  it rather than hand-editing the SVGs or manifest.
+  it rather than hand-editing the SVGs or manifest. `PATTERN_LIBRARY_ENABLED`
+  here is what currently withholds the picker strip.
 - [src/app/rebuild.ts](../src/app/rebuild.ts) — orchestrates state → geometry →
   scene → side panels
 - [src/scene/viewport.ts](../src/scene/viewport.ts) — three.js renderer/camera

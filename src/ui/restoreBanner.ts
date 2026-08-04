@@ -44,6 +44,13 @@ function describeSession(session: PersistedSession): string {
 export function initRestoreBanner(): void {
   const session = loadSavedSession();
   if (!session) return;
+  // A session saved on a part that's since been withdrawn from the Part dropdown isn't offered
+  // back — restoring it would drop someone into a part they can't then re-select. The session is
+  // deliberately left in storage rather than cleared, so unhiding the kind brings it back.
+  if (session.shapeKind === 'assembly') {
+    const kind = ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId);
+    if (kind?.hidden) return;
+  }
 
   const banner = $('#restore-banner');
   banner.querySelector('p')!.textContent = describeSession(session);
