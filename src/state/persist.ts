@@ -68,8 +68,9 @@ export interface PersistedSession {
 }
 
 /**
- * Whether there's anything worth losing — gates both the beforeunload prompt and whether
- * saveSession() writes anything. Deliberately just "is a design loaded," not "are assembly parts
+ * Whether there's anything worth losing — gates the beforeunload prompt, and separates "nothing
+ * was loaded" from "what was loaded couldn't be persisted" in saveSession(). Deliberately just
+ * "is a design loaded," not "are assembly parts
  * loaded": every assembly kind auto-loads its parts on boot with zero user effort (maybeAutoLoadAssembly),
  * so that alone is true on nearly every visit and would defeat both gates — warning on a bare
  * unmodified wheel, and re-arming the restore banner within a second of the user dismissing it
@@ -179,13 +180,20 @@ export function saveSession(): void {
   // the default boot's own bare-wheel rebuild reaches this same path. Clear instead, so "Start
   // fresh" actually stays fresh, and so removing the last artwork instance doesn't leave a stale
   // save behind either.
-  if (!hasLoadedWork()) {
+  //
+  // Judged on the snapshot rather than on hasLoadedWork(), because the two disagree for a session
+  // whose only design is an image: snapshotSession() skips raster sources, so that session is
+  // "work is loaded" but "nothing persistable came out of it". Storing it would offer a restore
+  // banner that brings back nothing — and, worse, report a clean save to the unload guard, which
+  // takes that to mean the work is recoverable when the only way back is to re-drop the image.
+  const session = snapshotSession();
+  if (!session.artworks.length) {
     clearSavedSession();
-    lastSaveFailed = false;
+    lastSaveFailed = hasLoadedWork();
     return;
   }
   try {
-    const json = JSON.stringify(snapshotSession());
+    const json = JSON.stringify(session);
     if (json.length > MAX_BYTES) {
       lastSaveFailed = true;
       return;

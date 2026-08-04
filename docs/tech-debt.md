@@ -287,6 +287,35 @@ derivation. Closing it means threading the resolved mm-per-unit
 (`designMmPerUnit`, [assembly.ts](../src/geometry/assembly.ts)) back into the
 raster stage, which today runs strictly before placement is known.
 
+## A loaded image is not part of the saved session
+
+Session restore rebuilds each source by re-parsing its saved SVG text
+([persist.ts](../src/state/persist.ts)), and an image has none — it came from
+pixels. Persisting the pixels instead was measured and rejected: one decoded
+512px image is ~1 MB before JSON encoding, against a `MAX_BYTES` ceiling of 4 MB
+for the whole session, so two or three images would blow it and take the SVG
+half of the session down with them.
+
+So a raster source and its placements are skipped on save. Consequences worth
+knowing before changing this:
+
+- A session whose _only_ design is an image saves nothing at all and offers no
+  restore banner. It must not save an empty-but-valid session instead: the
+  banner shows for anything that parses, and would offer to restore "the Disc"
+  with no designs. `saveSession()` decides this from the snapshot, not from
+  `hasLoadedWork()` — the two deliberately disagree here.
+- That same session reports a _failed_ save to the beforeunload guard, which is
+  what makes leaving the tab prompt. This is the one case where the guard fires
+  without a storage error, and it is correct: the work really is unrecoverable.
+- A mixed SVG + image session saves and restores the SVG half silently, losing
+  the image with no prompt. Warning on it would mean nagging on every mixed
+  session, so it is documented in the README instead.
+
+Closing it means storing the encoded source file (the original PNG bytes, not
+the decoded pixels) plus the Colors/Detail settings, and re-running decode +
+quantize + trace on restore — cheaper to store, but it moves a multi-second
+raster stage into the restore path, which today does no image work at all.
+
 ## The chair's zone sidecar is 1.7 MB raw / 638 KB gzipped
 
 (`public/stl/chair-body-zones.json`), up from 125 KB gzipped when each zone

@@ -145,8 +145,10 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   enforcers; paint them yourself or switch to auto support.
 - The caster mounts can't carry artwork — see
   [docs/tech-debt.md](docs/tech-debt.md).
-- Session autosave/restore covers artwork, placement, colors, depth, part,
-  and printer — not an uploaded STL reference mesh, which isn't kept.
+- Session autosave/restore covers SVG artwork, placement, colors, depth, part,
+  and printer — not an uploaded STL reference mesh, and not a loaded image,
+  neither of which is kept. Re-drop the image after a reload; if it was the
+  only design open, nothing is saved and no restore is offered.
 - Desktop/laptop screens only, by design — the layout has one fixed-width
   left column and no responsive breakpoint. Verified usable from 900px
   width up (1920 down to 900 driven and screenshotted); below that, a

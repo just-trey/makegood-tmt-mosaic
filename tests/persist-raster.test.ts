@@ -104,9 +104,22 @@ describe('session persistence with a raster source', () => {
   it('saves nothing at all when the image is the only design loaded', () => {
     loadRaster();
     saveSession();
-    const saved = loadSavedSession();
     // Not an empty-but-valid session offering to restore nothing — there is genuinely nothing to
-    // restore, so the banner must not appear.
-    expect(saved === null || saved.artworks.length === 0).toBe(true);
+    // restore, so the banner must not appear. Asserted as a hard null: restoreBanner.ts shows the
+    // banner for any session that parses, and an artwork-less one describes itself as "the Disc,
+    // saved just now" with no designs listed.
+    expect(loadSavedSession()).toBeNull();
+  });
+
+  it('leaves a stale save behind for nobody when an image replaces the last SVG', () => {
+    loadArtworkSource(svgParsed(), 'drawing.svg', 'upload', 'sticker', SVG_TEXT);
+    saveSession();
+    expect(loadSavedSession()).not.toBeNull();
+
+    clearArtwork();
+    loadRaster();
+    saveSession();
+
+    expect(loadSavedSession()).toBeNull();
   });
 });

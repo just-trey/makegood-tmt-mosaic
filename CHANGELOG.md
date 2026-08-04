@@ -81,7 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   reload, browser close, or crash. A dismissible banner asks first ("Restore
   your previous session … ?"); nothing is applied automatically, and nothing
   rebuilds until you choose. Leaving the tab with loaded artwork now also
-  prompts to confirm first. Not restored: an uploaded STL reference mesh.
+  prompts to confirm first. Not restored: an uploaded STL reference mesh, or a
+  loaded image — re-drop the image after a reload. A session holding only an
+  image saves nothing and offers no restore, and does prompt on leaving, since
+  that work genuinely can't be brought back.
 - On a part with more than one design surface, loading a design that lands
   on just one of them now says so: the artwork row shows a "→ Zone name"
   badge, a pill on load names the zone and how many surfaces are still
