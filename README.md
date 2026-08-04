@@ -54,9 +54,11 @@ build time, so the deployed app has no runtime CDN dependencies. The Google
 Fonts stylesheet is the only external request.
 
 The app opens on the wheel. `?kind=` opens it on a given assembly kind instead
-— `?kind=chair-body`, `?kind=footrest` — so a link can point at the part being
-discussed, and a script driving the app can skip building a part it doesn't
-want. An unknown or absent value opens the wheel, as before.
+— `?kind=footrest` — so a link can point at the part being discussed, and a
+script driving the app can skip building a part it doesn't want. An unknown or
+absent value opens the wheel, as before. `?kind=` also reaches a kind that
+isn't offered in the Part dropdown, which is the only way to open the chair
+body while it's withheld (see [docs/tech-debt.md](docs/tech-debt.md)).
 
 ## Deployment
 
@@ -94,7 +96,8 @@ contents, or other personal data are ever sent. See
    [Manifold](https://github.com/elalish/manifold) (WASM CSG). Parts with more
    than one design surface (**design zones**, e.g. the chair body) wrap
    artwork **conformally** onto a baked UV chart per zone, split across
-   printed part seams as needed.
+   printed part seams as needed — built and tested, but no part currently
+   offered in the UI uses it (see Known limitations).
 5. **Export** a Bambu Studio project 3MF — named parts, per-part filament
    slots, multi-plate placement — resolved for the selected printer. Placement
    for parts with a verified real-world pose is baked from a hand-checked
@@ -105,6 +108,13 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 
 ## Known limitations
 
+- **The chair body and the built-in pattern library aren't offered in the UI.**
+  Both are built, exported and covered by the test suite, but the Part dropdown
+  offers the wheel and footrest only, and the Artwork panel has no pattern
+  picker — their workflows are being reworked first. The chair remains
+  reachable at `?kind=chair-body`; Fill mode still works with any SVG you
+  upload. The chair-specific bullets below describe it for when it returns.
+  See [docs/tech-debt.md](docs/tech-debt.md).
 - Flat, roughly horizontal faces only, unless the part ships baked design
   zones — see [docs/pipeline.md](docs/pipeline.md).
 - A design crossing a printed join lines up only as well as the print does.

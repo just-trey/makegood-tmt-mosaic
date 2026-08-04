@@ -198,6 +198,57 @@ nothing reaches them) rather than a sign something broke. No action needed
 unless a future part genuinely wants a rect/round/plate flat mode again, at
 which point the dropdown gate is the one line to touch.
 
+## The chair body and the pattern library are withheld from the UI pending rework
+
+Withdrawn from the UI for the 0.7.0 release, on the maintainer's judgment that
+neither workflow is good enough to put in front of a first-time volunteer yet.
+This is a presentation gate, not a removal: both features build, export and
+stay covered by the full test suite.
+
+**What's gated, and where the one line is:**
+
+- **Chair body** — `hidden: true` on the `chair-body` entry in
+  [src/assembly/kinds.ts](../src/assembly/kinds.ts). It drops out of the Part
+  dropdown, and `initRestoreBanner()` in
+  [src/ui/restoreBanner.ts](../src/ui/restoreBanner.ts) stops offering a saved
+  session that was on it. A session that can't be offered back would otherwise
+  be deleted by the empty-snapshot clear in `saveSession()` about a second into
+  the next bare boot, so `savedSessionIsOnHiddenKind()` in
+  [src/state/persist.ts](../src/state/persist.ts) holds it instead — covered by
+  `tests/persist-hidden-kind.test.ts`, including that an _offered_ kind still
+  clears normally. `?kind=chair-body` still reaches it, and
+  `renderShapeKindOptions()` lists the chair while it's the selected kind so the
+  dropdown doesn't render blank — that escape hatch is what the `bake-zones`
+  and `debug-csg-failure` skills, and every chair drive script, rely on.
+- **Pattern library** — `PATTERN_LIBRARY_ENABLED = false` in
+  [src/state/patterns.ts](../src/state/patterns.ts). `loadPatterns()` returns
+  empty, which is the state a missing manifest already produced, so the picker
+  strip hides itself. The four `public/patterns/*.svg` assets, their generator
+  (`scripts/gen-patterns.mjs`), the asset regression test and Fill mode itself
+  are all untouched — Fill still works on any uploaded SVG.
+
+**The specific reason each was pulled is not recorded here**, only that the
+call was made; the sections below are the measured defects that were already
+open against both at the time, and are the obvious place to start when
+deciding what "good enough to unhide" means:
+
+- Chair: "Artwork can't wrap unbroken from one flank around the back to the
+  other" (three measured dead ends), "The chair's zone sidecar is 1.7 MB raw",
+  "The caster mounts have no design zone", "Zone picking has no occlusion
+  test", and the load-a-design-then-rebind-it-to-a-zone order the `vision`-lens
+  review raised (now in [roadmap.md](roadmap.md) as surface-first zone picking).
+- Pattern library: "Zebra + Fill still loses one color on Handle (left)" and
+  "Turf's tile union has a vertex ceiling, and nothing enforces it at runtime".
+
+**Closing it** is flipping the one flag per feature and reverting the doc and
+help-panel copy that this change removed — the `chair-body` entry in README's
+`?kind=` list, and four `#help-dialog` paragraphs that described controls no
+offered part now shows: the pattern-strip paragraph, the per-row zone
+dropdown/"+zone", click-a-surface-to-bind in the Fit section, and the
+Standard/Kit version picker in the Part section. Note `artwork_load` still declares a
+`source: 'pattern'` value that nothing can currently fire; see
+[analytics.md](analytics.md).
+
 ## The help dialog's open state doesn't track browser back-navigation
 
 Opening Help, clicking a table-of-contents anchor (`#h-export` etc.), then
