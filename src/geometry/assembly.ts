@@ -204,12 +204,16 @@ export function designAnchor(
 ): { cx: number; cy: number; r: number } {
   const existing = isRect ? null : parsed.rawSVGCircle;
   if (existing) return existing;
-  if (isRect) {
+  // A raster anchors on its frame on every kind, wheel included, and says nothing about it: an
+  // image cannot contain a boundary circle, so the notice below would fire on every image ever
+  // loaded onto the wheel while asking for something impossible.
+  const isRaster = parsed.origin === 'raster';
+  if (isRect || isRaster) {
     const canvas = canvasAnchor(parsed);
     if (canvas) return canvas;
   }
   const bbox = parsed.bbox;
-  if (!isRect)
+  if (!isRect && !isRaster)
     notice(
       'This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.',
     );
@@ -289,8 +293,13 @@ export function designMmPerUnit(
   const vb = parsed.viewBox;
   const designFace = ctx.designFace();
   if (designFace && vb && vb.w > 0 && vb.h > 0) {
+    // Two strings rather than one format-neutral one: setting the document size in millimetres is
+    // the real fix for an SVG and impossible for an image, and a message that covered both would
+    // have to drop the actionable half for each.
     notice(
-      'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
+      parsed.origin === 'raster'
+        ? 'This image has no real-world size, so it was auto-fit to the part face. Use Scale to fine-tune.'
+        : 'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
     );
     return Math.min(designFace.w / vb.w, designFace.h / vb.h) * scaleMult;
   }

@@ -659,6 +659,38 @@ input[type='checkbox'] {
   white-space: nowrap;
 }
 
+/* Colors/Detail for a loaded image. Sits under its row and is indented into it, because these
+   belong to the image itself — every placement of it shares them — not to the placement. */
+.artwork-raster {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -2px 0 2px 10px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--line);
+}
+.artwork-raster .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.artwork-raster label {
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 4.2em;
+}
+.artwork-raster input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+.artwork-raster .raster-readout {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  padding-left: 2px;
+}
+
 .pattern-picker {
   display: flex;
   flex-wrap: wrap;

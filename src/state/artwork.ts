@@ -1,5 +1,7 @@
-import type { ArtworkInstance, DesignSource, ParsedSVG } from '../types';
+import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState } from '../types';
 import { clearBaseColor, state } from './store';
+import { deltaE, hexToLab } from '../color';
+import { parseRasterImage } from '../raster/parse';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
@@ -90,10 +92,20 @@ export function loadArtworkSource(
   mode: ArtworkInstance['mode'] = 'sticker',
   // Defaults to '' for the many tests that construct a ParsedSVG directly and don't care about
   // round-tripping it — session persistence (state/persist.ts) is the only real caller that needs
-  // this, and it always has real SVG text in hand.
+  // this, and it always has real SVG text in hand. A raster source has none by nature.
   svgText: string = '',
+  // Rides along rather than being attached afterwards, so a source is never briefly in a
+  // half-built state the list panel could render.
+  raster?: RasterState,
 ): ArtworkInstance {
-  const source: DesignSource = { id: `source-${nextSourceId++}`, kind, name, parsed, svgText };
+  const source: DesignSource = {
+    id: `source-${nextSourceId++}`,
+    kind,
+    name,
+    parsed,
+    svgText,
+    raster,
+  };
   state.sources.push(source);
 
   const zones = availableZones();
@@ -192,6 +204,106 @@ export function pruneSettingsToPalette(): void {
   else if (!state.baseColorKey || !state.baseColorMembers.includes(state.baseColorKey))
     // the build re-derives the true dominant member on the next rebuild
     state.baseColorKey = state.baseColorMembers[0];
+}
+
+/** Narrow a source to one backed by decoded pixels — see the invariant on DesignSource. */
+export function isRasterSource(s: DesignSource): s is DesignSource & { raster: RasterState } {
+  return s.raster !== undefined;
+}
+
+/**
+ * How far a color may move across a re-quantize and still be recognised as "the same" color.
+ *
+ * Re-quantizing moves every cluster centroid, so the palette hexes genuinely change on each nudge
+ * of the Colors slider. Without this the prune below would delete the user's per-color depths and
+ * base assignment every time they touched it, and the slider would feel destructive. 6 is a
+ * deliberately generous CIE76 distance — comfortably past the "Slight" auto-merge cutoff of 3, so a
+ * centroid drifting under a slider nudge is carried, while a genuinely different color is not.
+ */
+const SETTING_REMAP_DE = 6;
+
+/**
+ * The two forms a per-color depth key takes: the bare hex in flat-plate mode, and the same hex
+ * behind the "asm:" prefix geometry/assembly.ts builds its per-region keys with.
+ *
+ * Both have to be carried. Assembly mode is the app's primary mode, so remapping only the bare form
+ * meant that in the mode nearly every user is in, a nudge of the Colors slider moved no setting and
+ * pruneSettingsToPalette — which does read past the prefix — then deleted every custom recess depth:
+ * exactly the destructive slider this function exists to prevent.
+ */
+const DEPTH_KEY_PREFIXES = ['', 'asm:'];
+
+/**
+ * Carry per-color settings across a palette change, for colors no longer painted by anything.
+ *
+ * Depth on a *merged* group is not carried: its settings key is built from the member hexes, so
+ * the key itself changes and there is nothing stable to match on. The prune that follows drops it.
+ */
+function remapSettingsToPalette(oldPalette: string[], newPalette: string[]): void {
+  const live = livePalette();
+  const newLabs = newPalette.map((hex) => ({ hex, lab: hexToLab(hex) }));
+  for (const oldHex of oldPalette) {
+    if (live.has(oldHex)) continue; // some other design still paints it — leave its settings put
+    const oldLab = hexToLab(oldHex);
+    let best: string | null = null;
+    let bestD = SETTING_REMAP_DE;
+    for (const cand of newLabs) {
+      const d = deltaE(oldLab, cand.lab);
+      if (d < bestD) {
+        bestD = d;
+        best = cand.hex;
+      }
+    }
+    if (!best) continue;
+    const target = best;
+    for (const prefix of DEPTH_KEY_PREFIXES) {
+      const from = prefix + oldHex;
+      const to = prefix + target;
+      if (state.colorSettings[from] && !state.colorSettings[to])
+        state.colorSettings[to] = state.colorSettings[from];
+    }
+    const swap = (list: string[]) => list.map((h) => (h === oldHex ? target : h));
+    state.keptApart = swap(state.keptApart);
+    state.baseColorMembers = swap(state.baseColorMembers);
+    state.mergeGroups = state.mergeGroups.map(swap);
+    if (state.baseColorKey === oldHex) state.baseColorKey = target;
+  }
+}
+
+/**
+ * Re-run the quantize/trace stages of a loaded image at new Colors/Detail settings.
+ *
+ * The decoded pixels are reused, so this never re-reads the file. Synchronous — the caller owns the
+ * rebuild it schedules afterwards.
+ */
+export function requantizeSource(
+  sourceId: string,
+  patch: { colors?: number; detail?: number },
+): { capped: boolean } | null {
+  const source = state.sources.find((s) => s.id === sourceId);
+  if (!source || !isRasterSource(source)) return null;
+  const colors = patch.colors ?? source.raster.colors;
+  const detail = patch.detail ?? source.raster.detail;
+
+  const result = parseRasterImage(source.raster.image, { colors, detail });
+  const oldPalette = source.raster.palette;
+  // A brand-new ParsedSVG with a brand-new `shapes` array, never a mutation of the old one:
+  // computeNetRegionsByColor memoizes on that array's identity, so an in-place edit would serve
+  // the old regions forever.
+  source.parsed = result.parsed;
+  source.raster = {
+    ...source.raster,
+    colors,
+    detail,
+    palette: result.palette,
+    regions: result.componentCount,
+  };
+
+  const active = activeArtworkInstance();
+  if (active && active.sourceId === source.id) state.parsed = source.parsed;
+  remapSettingsToPalette(oldPalette, result.palette);
+  pruneSettingsToPalette();
+  return { capped: result.capped };
 }
 
 /**

@@ -21,8 +21,17 @@ custom events layered on top via [src/analytics/track.ts](../src/analytics/track
 
 Fired when artwork is loaded into the scene.
 
-- **Where:** [src/ui/artworkPanel.ts](../src/ui/artworkPanel.ts) — `loadSVGFile` (upload via click-browse or drag-drop), the `#btn-sample` handler, and `applyPattern` (built-in pattern picker strip).
-- **Props:** `{ source: 'upload' | 'sample' | 'pattern' }`, plus `pattern: string` (the pattern id, e.g. `cow`) when `source` is `'pattern'`
+- **Where:** [src/ui/artworkPanel.ts](../src/ui/artworkPanel.ts) — `loadArtworkFile` (SVG upload via click-browse or drag-drop), `applyRasterFile` (a PNG/JPG/WebP through the same dropzone), the `#btn-sample` handler, and `applyPattern` (built-in pattern picker strip).
+- **Props:** `{ source: 'upload' | 'sample' | 'pattern' | 'raster' }`, plus `pattern: string` (the pattern id, e.g. `cow`) when `source` is `'pattern'`. `'raster'` covers any decoded image; the format is not recorded.
+
+### `raster_adjust`
+
+Fired when the user commits a change to a loaded image's Colors or Detail
+slider — on `change` (drag release), not on every intermediate `input` tick,
+matching `fit_adjust`.
+
+- **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — the `.raster-colors` and `.raster-detail` change handlers in `rasterControls`.
+- **Props:** `{ field: 'colors' | 'detail' }`. Deliberately not the value: it would be a per-image fingerprint of the artwork, and the rules above rule that out.
 
 ### `artwork_removed`
 

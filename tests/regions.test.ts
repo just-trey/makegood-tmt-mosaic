@@ -87,6 +87,29 @@ describe('shapeToFeature', () => {
     expect(planarArea(f)).toBeCloseTo(100 - 16, 6);
   });
 
+  // Containment is probed with a point of the inner ring, and a ring that starts exactly on its
+  // parent's outline puts that probe in the ray cast's undefined case. Traced artwork hits it every
+  // time: spliceChains (raster/trace.ts) rotates every ring to start on a junction, which is by
+  // definition a point another ring passes through. Probing raw[0] read the hole as "outside", so
+  // it was emitted as a solid island and the shape painted over its own cavity.
+  it('resolves a hole whose first vertex sits on its parent ring', () => {
+    const outer: Loop = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    // Starts at (10, 5) — a point lying exactly on the outer ring's right edge.
+    const hole: Loop = [
+      { x: 10, y: 5 },
+      { x: 6, y: 8 },
+      { x: 6, y: 2 },
+    ];
+    const f = shapeToFeature({ fill: '#000000', loops: [outer, hole], order: 0 })!;
+    expect((f.geometry.coordinates as number[][][]).length).toBe(2); // exterior + 1 hole
+    expect(planarArea(f)).toBeCloseTo(100 - 12, 6);
+  });
+
   it('treats depth-2 nesting as a solid island inside a hole', () => {
     const shape: SVGShape = {
       fill: '#000000',

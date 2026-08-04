@@ -1,12 +1,9 @@
 # Roadmap ideas (not built)
 
-- Raster image (PNG/JPG) input: quantize to flat color regions, then reuse the
-  existing region pipeline. Highest-value item per the maker-workflow review
-  (`stubs/reviews/maker-workflow-review-2026-08-02.md`, 2026-08-02) — this
-  audience's actual starting material is a parent's photo of a logo, not a
-  clean SVG. Until this lands, a raster drop should at least fail with an
-  honest message naming the real cause (tracked as near-term work, not this
-  roadmap item).
+- Snap a traced image's palette to the owned-filament list
+  ([public/filaments.json](../public/filaments.json)) instead of to colors
+  derived from the image, so an image's regions are filaments the user actually
+  has and the AMS slot count is settled before export rather than after.
 - Dead zones: mark the parts of a design zone that are hidden by an adjacent
   part — joints, overlaps, undersides — where a filament change buys nothing.
   A design placed across one wastes color changes on surface nobody sees.

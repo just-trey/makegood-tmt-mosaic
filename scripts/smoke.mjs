@@ -1,9 +1,10 @@
 // End-to-end smoke test: serves dist/ with vite preview, drives the app in headless
 // Chromium, and exercises assembly auto-load -> sample SVG -> CSG build -> 3MF export,
-// then flat (disc) mode -> rebuild -> STL zip export.
+// then flat (disc) mode -> rebuild -> STL zip export, then a PNG through the raster path.
 import { mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { startPreview, launchPage } from './lib/harness.mjs';
+import { encodePNG } from './lib/png.mjs';
 
 const OUT = process.argv[2] || '.';
 mkdirSync(OUT, { recursive: true });
@@ -134,6 +135,52 @@ try {
   const fzip = path.join(OUT, dl3.suggestedFilename());
   await dl3.saveAs(fzip);
   console.log('   saved', dl3.suggestedFilename(), statSync(fzip).size, 'bytes');
+
+  console.log('8. loading a PNG as artwork (browser decode + quantize + trace)…');
+  // Three flat bands, so the trace has an unambiguous answer to check against.
+  const png = encodePNG(96, 96, (x) =>
+    x < 32 ? [230, 60, 60, 255] : x < 64 ? [40, 130, 220, 255] : [250, 205, 80, 255],
+  );
+  await page.setInputFiles('#svg-input', {
+    name: 'smoke-bands.png',
+    mimeType: 'image/png',
+    buffer: png,
+  });
+  await page.waitForSelector('.artwork-raster .raster-colors', { timeout: 120_000 });
+  await page.waitForFunction(() => !document.querySelector('#btn-export-stl')?.disabled, {
+    timeout: 240_000,
+  });
+  const readout = await page.textContent('.artwork-raster .raster-readout');
+  const traced = parseInt(readout, 10);
+  if (!(traced >= 2)) errors.push(`PNG traced no usable palette (readout: ${readout})`);
+  // #stat-colors counts cut regions — the traced palette plus the Background row — so it is not
+  // the tracer's count and never equals it here. #slot-count's leading "N colors →" is, when the
+  // two differ (colorList.ts). Both only update when the color list re-renders, which lands after
+  // the raster readout does, so wait for it rather than reading the previous design's numbers.
+  const paletteCount = (slot, stat) => {
+    const m = /^\s*(\d+)\s+colors\s+→/.exec(slot || '');
+    return m ? parseInt(m[1], 10) : parseInt(stat || '', 10);
+  };
+  await page
+    .waitForFunction(
+      (n) => {
+        const slot = document.querySelector('#slot-count')?.textContent || '';
+        const stat = document.querySelector('#stat-colors')?.textContent || '';
+        const m = /^\s*(\d+)\s+colors\s+→/.exec(slot);
+        return (m ? parseInt(m[1], 10) : parseInt(stat, 10)) === n;
+      },
+      traced,
+      { timeout: 120_000 },
+    )
+    .catch(() => {});
+  const slotText = await page.textContent('#slot-count');
+  const statColors = await page.textContent('#stat-colors');
+  console.log('   traced:', readout, '| slots:', slotText, '| header:', statColors);
+  const shown = paletteCount(slotText, statColors);
+  if (shown !== traced)
+    errors.push(`traced ${traced} colors but the color list shows ${shown} ("${slotText}")`);
+  await sleep(800);
+  await page.screenshot({ path: path.join(OUT, '6-raster-artwork.png') });
 
   console.log(
     '\nRESULT:',

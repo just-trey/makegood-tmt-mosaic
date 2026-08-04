@@ -1,10 +1,10 @@
-# TMT Mosaic — SVG Color-Inlay Generator
+# TMT Mosaic — Multicolor Color-Inlay Generator
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.6.0--beta-orange.svg)](CHANGELOG.md)
 
-A browser app that turns a flat-color SVG into per-color recess geometry for
-multicolor/AMS 3D printing, and exports a print-ready project 3MF — parts
+A browser app that turns flat-color SVG artwork — or a PNG/JPG/WebP image — into
+per-color recess geometry for multicolor/AMS 3D printing, and exports a print-ready project 3MF — parts
 placed on build plates, every recess pre-named and pre-assigned to its own
 Generic PETG filament slot with the detected colors, 15% gyroid infill and
 tree (auto) support pre-set, so it opens ready to slice in **Bambu Studio,
@@ -79,8 +79,11 @@ contents, or other personal data are ever sent. See
 
 ## How it works
 
-1. **Parse** the SVG as vectors, not pixels — shapes grouped by fill color,
-   curves flattened adaptively.
+1. **Read the artwork.** An SVG is parsed as vectors, not pixels — shapes
+   grouped by fill color, curves flattened adaptively. A PNG or JPG is
+   quantized into flat color regions and traced back to vectors, with
+   smoothing and speckle removal auto-tuned from how detailed the image is.
+   Both produce the same thing, and everything below is identical for either.
 2. **Resolve each color's net visible region**, paint order and holes taken
    into account (2D polygon booleans via Turf.js), then merge visually
    similar colors into recess slots.
@@ -123,7 +126,17 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   a safe minimum. The flat modes check both ends: a depth the plate can't hold
   is cut at the nearest depth it can, with a warning saying which color and
   what was actually cut.
-- Gradients/patterns are detected and skipped with a warning.
+- Gradients/patterns in an SVG are detected and skipped with a warning.
+- A raster image is processed at 1024px on its long edge for flat art (logos,
+  drawings, cartoons) and 512px for photographs, chosen from the image itself —
+  the extra pixels buy real detail in a drawing and mostly noise in a photo.
+  That caps how much _detail_ a trace can pick out; it doesn't cap edge quality,
+  since outlines are fitted as curves between pixels rather than stepped along
+  them, so they stay smooth however large you print.
+- A traced image's colors come from the image, not from your filament list; use
+  the Colors slider and Auto-merge to get down to the slots you own.
+- Detail below the printable floor is merged into its surroundings rather than
+  cut, and a very busy image says so instead of tracing thousands of specks.
 - Fill (repeat the design across a surface) is assembly-mode only.
 - Two designs placed over each other on one surface are warned about by name,
   not resolved for you — their recesses still both get cut. A Fill underneath
@@ -135,8 +148,12 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   enforcers; paint them yourself or switch to auto support.
 - The caster mounts can't carry artwork — see
   [docs/tech-debt.md](docs/tech-debt.md).
-- Session autosave/restore covers artwork, placement, colors, depth, part,
-  and printer — not an uploaded STL reference mesh, which isn't kept.
+- Session autosave/restore covers SVG artwork, placement, colors, depth, part,
+  and printer — not an uploaded STL reference mesh, and not a loaded image,
+  neither of which is kept. Re-drop the image after a reload; if it was the
+  only design open, nothing is saved and no restore is offered. With an image
+  alongside an SVG the browser asks before you leave, since the save that did
+  land is missing the image.
 - Desktop/laptop screens only, by design — the layout has one fixed-width
   left column and no responsive breakpoint. Verified usable from 900px
   width up (1920 down to 900 driven and screenshotted); below that, a

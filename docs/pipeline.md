@@ -12,12 +12,86 @@ How the geometry actually works — read this before touching `src/geometry/` or
    segment count, so gentle curves emit few points and only sharp/detailed
    curves emit many — fewer total vertices flowing into the boolean pass below
    without losing visible fidelity.
+   A **raster image** (PNG/JPG/WebP, [src/raster/](../src/raster/)) reaches the
+   same `ParsedSVG` by a different route, and nothing below step 1 knows the
+   difference. Decode draws twice
+   ([src/raster/decode.ts](../src/raster/decode.ts)): once at 512px to measure
+   the image, then again at 1024px if it reads as flat art. Photographs keep the
+   512px draw, where the extra pixels would buy sensor noise rather than detail a
+   nozzle can lay down. The measurement stays pinned to 512px whatever the
+   working size, because edge density is resolution-dependent — the same image
+   reads flatter the larger it is decoded — and every threshold below was
+   calibrated there; the figure rides along on `RasterImage.edgeDensity` so a
+   re-trace from the Colors/Detail sliders can't silently re-derive it.
+   Pixels under 50% alpha become background and cut nothing. That same
+   edge-density statistic ([src/raster/stats.ts](../src/raster/stats.ts)) sets
+   blur/despeckle/curve-fit strength, which the Detail slider then scales; the
+   user never picks a mode. Flat art gets a one-pixel blur, **but only when the
+   detail pass actually ran** — that is, only when decode.ts's second draw
+   enlarged the image. It replaces what the downscale used to do for free:
+   averaging a 1588px source 3:1 wiped out the anti-aliased fringe on every
+   colour boundary, and the detail pass only averages 1.5:1, so without the
+   blur those fringe pixels survive, fall between two palette entries, and get
+   assigned alternately — a cartoon eye came back striped blue and white. An
+   image too small to be enlarged was never downscaled any harder either, so it
+   has nothing to compensate for; blurring it anyway erased small features
+   outright (an isolated pixel, a thin cross), which is why the blur is
+   conditional rather than constant. Quantization
+   is median-cut seeding plus Lloyd refinement **in CIELAB**
+   ([src/raster/quantize.ts](../src/raster/quantize.ts)), deliberately the same
+   space and metric `applyColorMerges` clusters in, and the palette is
+   ΔE-separated afterwards so the default "Slight" auto-merge is a provable
+   no-op on a traced image — Colors decides which regions exist, auto-merge
+   decides which share a slot, and the two never fight.
+
+   **The tracer walks the cracks between pixels, not the pixels**
+   ([src/raster/trace.ts](../src/raster/trace.ts)), so two adjacent regions
+   share their boundary polyline bit-for-bit. That crack graph is then cut into
+   **chains** — maximal runs between junctions where three or more regions meet,
+   plus junction-free island boundaries — and each chain is fitted to a
+   sub-pixel curve ([src/raster/curve.ts](../src/raster/curve.ts)) rather than
+   emitted as lattice points. This is what stops traced artwork looking blocky:
+   a lattice vertex set can only step in whole pixels, which at 512px across the
+   wheel is a ~0.54mm staircase on every diagonal — visible, and printable.
+   Straight-subpath detection and a minimum-vertex polygon replace the old
+   Ramer–Douglas–Peucker pass entirely; a least-squares adjustment then moves
+   each vertex off the lattice, and `alphaMax` decides per vertex whether it
+   stays a hard corner or becomes a curve, so a logo's square edge survives
+   while an arc goes smooth. Curves are flattened back to polylines because
+   everything downstream speaks `Loop = Pt[]`.
+
+   **The fit happens once per shared chain, and this is load-bearing**: fitting
+   each region's rings independently would pull the shared chain two different
+   ways and leave a sliver of bare part surface along every color boundary in
+   the image — a real print defect, since these are cut as geometry. Each ring
+   is reassembled by splicing whole chains, so both sides of every boundary
+   splice the identical points. A ring is always a whole number of chains
+   (a chain's interior nodes have exactly two cracks, so a traversal that enters
+   one can only leave at the far end), and the ring walk is rotated onto a chain
+   boundary first, since it starts at a lattice corner that needn't be a
+   junction. `tests/raster-trace.test.ts` pins the invariant (two regions still
+   tile their frame exactly after the fit moves the divider off the lattice) and
+   `tests/raster-curve.test.ts` pins the fit itself; don't fit per region.
+   What the shared chain does _not_ buy is that a region never crosses one it
+   shares no chain with — nothing bounds how far a fitted chain strays from its
+   lattice path, worth up to one working pixel of overlap. Bounded and absorbed
+   downstream by paint order; measured in [tech-debt.md](tech-debt.md).
+   Hole-vs-solid and winding
+   are deliberately left to `shapeToFeature` below. Shapes are grouped one per
+   color rather than one per connected component — measured, not assumed, with
+   [scripts/bench-raster.ts](../scripts/bench-raster.ts).
+
 2. **Each color's _net visible_ region** is computed with paint order taken
    into account — an outline drawn on top of a fill has its footprint
    subtracted from the fill's region, matching what the rasterized image would
    show. 2D polygon booleans via Turf.js ([src/geometry/regions.ts](../src/geometry/regions.ts)).
    Holes are resolved by **containment depth** (odd nesting depth = hole),
    which is correct for both the `nonzero` and `evenodd` SVG fill rules.
+   Depth is probed with an **edge midpoint** of the inner ring, not a vertex:
+   the ring walk above starts every traced ring on a junction, so its first
+   vertex is a point another ring passes through, where the even-odd ray cast
+   is undefined. Probing there read holes as solid islands, and the shape then
+   painted over its own cavity.
    Regions are then resolved into recesses: any color assigned to the base
    material is excluded outright, visually similar colors are auto-merged
    (a CIE76 ΔE-clustered slider, live and reversible) and unioned with any
@@ -138,6 +212,9 @@ How the geometry actually works — read this before touching `src/geometry/` or
   kind is posed for display. Viewport only: native part coordinates, the
   export/plate pose, and this are three separate frames on purpose (the
   `add-part` skill, "The separate orientations are intentional")
+- [src/raster/](../src/raster/) — PNG/JPG → `ParsedSVG`. `decode.ts` is the only
+  module here that touches the DOM; the rest is pure math over typed arrays,
+  which is what lets it be tested in node with no canvas stub
 - [src/ui/](../src/ui/) — one module per left-panel section
 - [src/assembly/](../src/assembly/) — assembly kinds (roles) and part loading
 

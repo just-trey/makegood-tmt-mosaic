@@ -18,8 +18,10 @@ vi.mock('../src/state/patterns', () => ({
   getPatterns: () => [{ id: 'cow', name: 'Cow', file: 'cow.svg' }],
 }));
 
-import { applyParsedSVG, applyPattern, isRasterImage } from '../src/ui/artworkPanel';
+import { applyParsedSVG, applyPattern, rasterCappedMessage } from '../src/ui/artworkPanel';
 import { state } from '../src/state/store';
+import { autoParams } from '../src/raster/stats';
+import { notice, dismissNotice, clearWarnings, WARNINGS } from '../src/warnings';
 
 const GOOD_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>';
@@ -98,18 +100,33 @@ describe('applyParsedSVG failed-load safety', () => {
   });
 });
 
-describe('isRasterImage', () => {
-  it('flags a PNG by MIME type, even with a misleading extension', () => {
-    expect(isRasterImage(new File([''], 'photo.svg', { type: 'image/png' }))).toBe(true);
+describe('rasterCappedMessage', () => {
+  beforeEach(() => clearWarnings());
+
+  // The notice used to advise "raise Detail", which is backwards: autoParams scales the despeckle
+  // floor by 4^((50-detail)/50), so raising Detail quarters the floor and lets through four times
+  // the specks — more components, not fewer, which is what tripped the cap in the first place.
+  it('advises the direction that actually reduces the component count', () => {
+    const at = (detail: number) => autoParams({ edgeDensity: 0.3 }, detail).despeckleFrac;
+    expect(at(0)).toBeGreaterThan(at(50));
+    expect(at(100)).toBeLessThan(at(50));
+
+    const text = rasterCappedMessage('photo.png');
+    expect(text).toMatch(/lower Detail/i);
+    expect(text).not.toMatch(/raise Detail/i);
   });
 
-  it('flags a JPG dropped with no MIME type, by extension', () => {
-    expect(isRasterImage(new File([''], 'photo.jpg', { type: '' }))).toBe(true);
-  });
+  // One shared message deduped across every image, so re-tracing an *uncapped* image retracted a
+  // still-true notice belonging to a different, capped one.
+  it('is per image, so retracting one leaves another image’s standing', () => {
+    expect(rasterCappedMessage('a.png')).not.toBe(rasterCappedMessage('b.png'));
+    expect(rasterCappedMessage('a.png')).toContain('"a.png"');
 
-  it('does not flag an SVG by MIME type or extension', () => {
-    expect(isRasterImage(new File([''], 'design.svg', { type: 'image/svg+xml' }))).toBe(false);
-    expect(isRasterImage(new File([''], 'design.svg', { type: '' }))).toBe(false);
+    notice(rasterCappedMessage('a.png'));
+    notice(rasterCappedMessage('b.png'));
+    dismissNotice(rasterCappedMessage('b.png'));
+
+    expect(WARNINGS.map((w) => w.message)).toEqual([rasterCappedMessage('a.png')]);
   });
 });
 

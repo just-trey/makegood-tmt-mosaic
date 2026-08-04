@@ -50,6 +50,14 @@ export interface ParsedSVG {
    * tile cell both mean specifically that.
    */
   canvas?: { w: number; h: number } | null;
+  /**
+   * Which producer built this. Absent means the SVG parser, so existing callers read as before.
+   *
+   * Only the user-facing sizing/anchor advice in assembly.ts reads it, and only because that advice
+   * has to be actionable: telling someone to set their document size in millimetres is the right fix
+   * for an SVG and an impossible one for a PNG.
+   */
+  origin?: 'svg' | 'raster';
 }
 
 export type ShapeKind = 'assembly' | 'disc' | 'rect' | 'round' | 'stl';
@@ -140,10 +148,30 @@ export interface ZoneRef {
   zoneId: string;
 }
 
-/** One user-loaded (or, later, pattern-library) artwork source, independent of where it's placed. */
+/**
+ * What a raster source keeps so its palette can be recomputed without re-reading the file.
+ *
+ * The decoded pixels are the expensive, async, DOM-bound part of loading an image; the Colors and
+ * Detail sliders re-run only the quantize/trace stages over them. At the working resolution that is
+ * at most ~1MB per loaded image, against three.js, the Manifold WASM and a 1.7MB zone sidecar.
+ */
+export interface RasterState {
+  image: { data: Uint8ClampedArray; w: number; h: number };
+  colors: number;
+  detail: number;
+  /** The palette the current `parsed` was built with — can be shorter than `colors` asked for. */
+  palette: string[];
+  regions: number;
+}
+
+/**
+ * One user-loaded (or pattern-library) artwork source, independent of where it's placed.
+ *
+ * Invariant: `kind === 'raster'` exactly when `raster` is present.
+ */
 export interface DesignSource {
   id: string;
-  kind: 'upload' | 'pattern';
+  kind: 'upload' | 'pattern' | 'raster';
   name: string;
   parsed: ParsedSVG;
   /**
@@ -151,8 +179,12 @@ export interface DesignSource {
    * is a one-way parse — session persistence re-derives `parsed` from this on restore via
    * `parseSVGDocument()` rather than trying to serialize the parsed form itself, which regions.ts
    * also memoizes on object identity (see the note on `ParsedSVG`).
+   *
+   * Empty for a raster source, whose `parsed` comes from pixels rather than text and so cannot be
+   * re-derived this way — those are skipped by session persistence entirely.
    */
   svgText: string;
+  raster?: RasterState;
 }
 
 /**

@@ -72,6 +72,30 @@ describe('beforeunload guard', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
+  // The mixed case: the save lands, so lastSaveFailed is false, but snapshotSession() drops the
+  // image on the floor and nothing said so. Leaving here really does lose work — the SVG comes
+  // back from the restore banner and the image has to be re-dropped.
+  it('prompts when the save succeeded but left a loaded image out of it', () => {
+    withLoadedWork();
+    state.sources = [
+      { id: 's1', kind: 'upload', name: 'a.svg', svgText: '<svg/>', parsed: null },
+      { id: 's2', kind: 'raster', name: 'photo.png', svgText: '', parsed: null, raster: {} },
+    ] as unknown as typeof state.sources;
+    state.artworks = [
+      { id: 'a1', sourceId: 's1' },
+      { id: 'a2', sourceId: 's2' },
+    ] as unknown as typeof state.artworks;
+
+    expect(dispatchBeforeUnload()).toBe(true);
+    // …and the SVG half genuinely did save, so this is not the write-failed case wearing a hat.
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+  });
+
+  it('goes quiet again once the image is the only thing removed', () => {
+    withLoadedWork();
+    expect(dispatchBeforeUnload()).toBe(false);
+  });
+
   it('flushes a pending save on visibilitychange to hidden, ahead of any unload', () => {
     vi.useFakeTimers();
     try {

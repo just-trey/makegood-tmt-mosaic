@@ -225,6 +225,219 @@ elements deep enough to overflow the JS call stack — fails with a named
 but still isn't depth-limited; see `shapeToFeature` and `walk` in
 [regions.ts](../src/geometry/regions.ts) and [parse.ts](../src/svg/parse.ts).
 
+**Raster tracing is the first producer that could plausibly hit this**, and is
+held off it by the despeckle floor rather than by luck. Measured with
+[scripts/bench-raster.ts](../scripts/bench-raster.ts) at 512px, 8 colors: the
+worst single shape carries ~23 rings and costs ~5 ms, against zebra's 69/5.88 ms
+— so grouping shapes per color, which piles every ring of one color into one
+shape, stays comfortably inside the budget. `MAX_COMPONENTS` (800,
+[trace.ts](../src/raster/trace.ts)) is what guarantees it: exceed it and the
+floor is raised to exactly the area that fits and the image re-traced. If that
+cap is ever raised or the floor lowered, re-run the bench — this is the number
+that keeps the quadratic term small, and the failure mode is a frozen tab, since
+`shapes.map(shapeToFeature)` runs before the first yield.
+
+## Raster shape granularity was settled by measurement, and the losing option is still reachable
+
+Traced components can be grouped one shape per color or one per connected
+component ([`ShapeGranularity`](../src/raster/parse.ts)), and the two costs pull
+opposite ways: per-color risks `shapeToFeature`'s O(rings²·len) _within_ a shape,
+per-component multiplies the paint-order boolean pass by shape count. Measured
+(`scripts/bench-raster.ts`, 512px photographic source): per-color ~830 ms total
+against per-component ~1590 ms, the difference almost entirely in the boolean
+pass (136 ms vs 1055 ms). Per-color ships.
+
+Worth knowing for anyone revisiting it: traced regions are **disjoint by
+construction**, so every `safeDiff` in that pass is provably a no-op. A
+`disjoint` fast path on `computeNetRegionsByColor` would collapse it to array
+concatenation and make per-component viable — and would also cut the per-color
+path's 136 ms. It was left unbuilt because the measurement above says nothing
+needs it: at 8 shapes the pass is not where the time goes. Build it only if the
+component cap is ever raised enough to change that.
+
+## The raster photo-vs-flat-art thresholds are shaped right but calibrated against synthetic images
+
+`FLAT_EDGE_DENSITY` / `PHOTO_EDGE_DENSITY` in
+[src/raster/stats.ts](../src/raster/stats.ts) (0.12 and 0.45) decide how much
+blur and despeckling an image gets, interpolating between so nothing falls off a
+cliff. The statistic is sound — flat art puts its transitions on thin outlines
+around large constant fields, a photograph has one nearly everywhere, and
+`tests/raster-parse.test.ts` pins that separation — but the two endpoints were
+placed from procedurally generated sources, not from a corpus of real files.
+
+Closing it: record `measureImage().edgeDensity` for a real set — the shipped
+`public/patterns/*.svg` and `public/assets/makegood-logo.png` rasterized, several
+phone photos, one quality-40 JPEG (block artifacts must not read as flat), and
+the genuinely hard middle: a UI screenshot, a scanned crayon drawing, a
+gradient-heavy illustration. Confirm the flat and photo clusters are separated by
+a gap and put the endpoints inside it. A screenshot landing on the photo side
+would be the bug to watch for. If the clusters overlap, the statistic itself is
+wrong and wants replacing rather than retuning.
+
+## Curve fitting rounds small corners, and two components can overlap by up to a working pixel
+
+Fitting rounds a corner it doesn't judge sharp, and "sharp" is scale-dependent: Potrace's corner
+measure works out to about `side/2` for a square, which has to clear 4 at the default `alphaMax`,
+so corners survive from roughly nine pixels a side upward and round below that. A feature a few
+pixels across therefore comes back a few percent smaller. That part is cosmetic and unchanged.
+
+**A more serious failure existed and is fixed, 2026-08-04.** The straightness cone carries half a
+pixel of slack at each bound, and for a feature thin enough — a one-pixel-wide stroke turning a
+corner, a shallow diagonal, a zigzag, a single-pixel checkerboard cell — the whole boundary can stay
+inside that slack and read as one straight run. The fitted polygon then collapses under three
+points, and the ring was dropped outright: a 2:1 diagonal stroke lost 93 of its 95 segments, a
+zigzag lost half its length, and the 4x4 checkerboard fixture lost about a third of its area. This
+was not shrinkage, it was deletion, and the closed-chain-only guard in
+[curve.ts](../src/raster/curve.ts) (`MIN_AREA_RATIO`, 0.85 — restores a 30x1 bar to exactly its pixel
+area) never saw it, since none of these are closed chains.
+
+`unfitCollapsedChains` in [trace.ts](../src/raster/trace.ts) closes it at the right grain: it checks
+area per **component**, which is the smallest thing that has one, then drops back to lattice points
+per **chain**, which is the thing shared between two components — unfitting only the starved side
+would desync a boundary from its neighbour and open exactly the sliver the shared-chain design
+exists to prevent. Re-measured after the fix: the diagonal, the zigzag, and the checkerboard all
+recover their exact pixel area (`tests/raster-trace.test.ts` pins the checkerboard case at 16.000,
+not the ~third-short figure this entry used to cite).
+
+**What is not fixed, and can't be from this angle:** two components can still overlap by up to one
+working pixel. Chains are byte-identical on the two sides of the boundary they're shared between,
+but nothing bounds how far a fitted chain strays from the lattice path it replaces, so it can sweep
+across a third region it shares no chain with. Re-measured over 3000 random label grids after the
+above fix: worst overlap is still 1.000000 unit², unchanged — `unfitCollapsedChains` catches area
+loss, not this. Downstream it's absorbed: paint order in `computeNetRegionsByColor` subtracts
+cross-colour overlap outright, and two components of one colour land in the same shape and get
+unioned. `tests/raster-trace.test.ts` pins the bound rather than asserting zero.
+
+A bound on chain deviation was tried and rejected: it cannot be set. A 45° staircase's lattice
+corners sit 0.707px off their own chord and a 3:1 staircase's sit 0.949px off, both legitimate, while
+the chains that misbehave measure about 0.97 — there is no threshold separating them.
+
+How much the remaining overlap matters in practice: on the 512px photograph path a one-pixel overlap
+is 0.54mm, at or under the nozzle width. Flat art now works at 1024px, which _halves_ that to
+0.27mm, comfortably under a 0.4mm nozzle — the point at which this stops being a fidelity question at
+all. Closing it properly means a fit that never strays from the lattice path by more than the
+adjacent regions can tolerate, most likely by recognising digital straight segments (the arithmetic
+characterisation) instead of Potrace's cone, which does not have the half-pixel slack that causes
+this. Worth doing only if it shows up as a visible artifact in practice; measure before building.
+
+## Colors is the one trace control still fixed, and no single value suits real artwork
+
+Working resolution, blur and despeckle are all chosen from the image. The default palette size is
+not — it is a constant, and measured across the sample corpus (`stubs/raster test/`, 2026-08-04) no
+constant works. Asking for more colours than an image actually has does not return fewer, the way
+it does on synthetic flat art: real files are lossy and anti-aliased, so the quantizer always finds
+more tones and spends the surplus on the fringe around every edge.
+
+Measured on the 300x300 Boston Red Sox logo, which has three real colours:
+
+| Colors | Regions | Slots | Result                                            |
+| ------ | ------- | ----- | ------------------------------------------------- |
+| 3      | 37      | 4     | clean                                             |
+| 4      | 56      | 5     | clean                                             |
+| 6      | 364     | 7     | pale halo rings around the ring, letters and sock |
+| 8      | 712     | 9     | worse                                             |
+
+The same default is right for a five-colour cartoon (Tweety traces cleanly at 6) and too low for a
+nine-colour one (Mario loses its yellow buttons at 6, and recovering them at 8 costs the blue iris
+to a desaturated entry). So the harm runs both ways, but not symmetrically: too few colours reads as
+a simplification, while too many reads as a defect — halos look broken, cost filament slots, and
+multiply region count tenfold.
+
+The region count is a usable signal for choosing it automatically. Across the corpus, each step up
+in palette size multiplies regions by 1.2x-2x, except where the surplus starts landing on fringe:
+the logo's 4 -> 6 step multiplies them by 6.5x. A knee detector over that curve would pick the
+palette size the way the other three parameters are already picked, and would suit both a
+three-colour logo and a nine-colour cartoon without the user touching a slider.
+
+What closing it needs: a decision on where to run the search (re-quantizing at several k costs one
+quantize pass each, which the bench puts at tens of milliseconds), and a check that the knee is
+stable on photographs, where region growth is smoother and the signal weakest.
+
+## The trace parameters are calibrated against a downscale that is no longer constant
+
+`decode.ts` has always noted that the downscale to the working size "doubles as the first noise
+filter", and the blur/despeckle endpoints in [stats.ts](../src/raster/stats.ts) were tuned with
+that filter in place. It was doing more work than the note implies: a 1588px source averaged 3:1
+down to 512px loses the anti-aliased fringe on every colour boundary outright.
+
+Making the working size adaptive broke that assumption without touching the parameters. Flat art
+now averages about 1.5:1, the fringe survives, and those pixels sit between two palette entries and
+get assigned alternately — a cartoon's eye came back striped blue and white. Flat art carries a
+one-pixel blur to compensate, and quantization was split so that the palette is discovered from the
+source while only assignment reads the blurred copy (otherwise a blend tone that exists nowhere in
+the file wins an entry and costs a filament slot; `tests/raster-quantize.test.ts` pins both halves).
+
+What is still unresolved: the compensation is a constant, not a function of how much downscaling
+actually happened. A small source that is never downscaled at all gets the same one-pixel blur as a
+1588px one that was halved, and neither is the case the endpoints were tuned for. Closing it means
+deriving blur from the realised downscale ratio — the decoder knows both sizes — and re-tuning the
+flat endpoint against sources at several scales rather than the one that prompted this.
+
+## The curve-fit constants are reasoned, not measured against a corpus
+
+`alphaMax` and `flatness` in [src/raster/stats.ts](../src/raster/stats.ts) replaced the old RDP
+`simplifyTol` when tracing moved to sub-pixel curve fitting. The flat-art endpoints (`alphaMax`
+1.0, `flatness` 0.25px) and photo endpoints (1.2, 0.4px) were picked from what each parameter
+means — 1.0 is the long-standing Potrace default, `4/3` is where the corner test stops rejecting
+anything, and a quarter-pixel flattening tolerance is well inside what the 0.4mm nozzle can
+express — and then checked on the synthetic bench sources plus a single real one (a 1588x1176
+flat-art cartoon, kept in the gitignored `stubs/`, so not reproducible from a clean checkout).
+That is the same weakness the edge-density thresholds have, one section down: the shape is right,
+the numbers have not been swept.
+
+Closing it: sweep `alphaMax` across 0.8–1.334 and `flatness` across 0.1–0.6 on a corpus with
+known-correct answers — a logo whose corners are genuinely square, a scanned drawing, a photo —
+and record where corners start rounding off and where point counts start climbing without a
+visible improvement. The two failure directions are asymmetric and worth naming: too low an
+`alphaMax` gives a faceted arc, too high rounds a square logo's corners, and only the second is
+obvious in a preview. `FLATNESS_MIN` is a performance guard rather than a taste one — it stops a
+full-right Detail slider turning a sub-pixel tolerance into a ring-length explosion, which
+`shapeToFeature` is quadratic in.
+
+## The raster despeckle floor is a fraction of image area, not a printable size
+
+[src/raster/stats.ts](../src/raster/stats.ts) expresses it as a fraction of the
+working image so it means the same thing at any input resolution — but the raster
+stage never learns how large the part is, so it cannot express the floor as the
+thing that actually matters: a feature smaller than roughly one nozzle width will
+not print however the image was scaled. At the current numbers a 512px image
+auto-fit to an 80mm face puts the photo-strength floor near 0.6mm, which is about
+right, but that is a coincidence of two independent constants rather than a
+derivation. Closing it means threading the resolved mm-per-unit
+(`designMmPerUnit`, [assembly.ts](../src/geometry/assembly.ts)) back into the
+raster stage, which today runs strictly before placement is known.
+
+## A loaded image is not part of the saved session
+
+Session restore rebuilds each source by re-parsing its saved SVG text
+([persist.ts](../src/state/persist.ts)), and an image has none — it came from
+pixels. Persisting the pixels instead was measured and rejected: one decoded
+512px image is ~1 MB before JSON encoding, against a `MAX_BYTES` ceiling of 4 MB
+for the whole session, so two or three images would blow it and take the SVG
+half of the session down with them. Flat art now decodes at 1024px, four times
+the pixels, so a single one would fill that ceiling on its own — the case
+against persisting them got stronger, not weaker.
+
+So a raster source and its placements are skipped on save. Consequences worth
+knowing before changing this:
+
+- A session whose _only_ design is an image saves nothing at all and offers no
+  restore banner. It must not save an empty-but-valid session instead: the
+  banner shows for anything that parses, and would offer to restore "the Disc"
+  with no designs. `saveSession()` decides this from the snapshot, not from
+  `hasLoadedWork()` — the two deliberately disagree here.
+- That same session reports a _failed_ save to the beforeunload guard, which is
+  what makes leaving the tab prompt. This is the one case where the guard fires
+  without a storage error, and it is correct: the work really is unrecoverable.
+- A mixed SVG + image session saves and restores the SVG half silently, losing
+  the image with no prompt. Warning on it would mean nagging on every mixed
+  session, so it is documented in the README instead.
+
+Closing it means storing the encoded source file (the original PNG bytes, not
+the decoded pixels) plus the Colors/Detail settings, and re-running decode +
+quantize + trace on restore — cheaper to store, but it moves a multi-second
+raster stage into the restore path, which today does no image work at all.
+
 ## The chair's zone sidecar is 1.7 MB raw / 638 KB gzipped
 
 (`public/stl/chair-body-zones.json`), up from 125 KB gzipped when each zone
