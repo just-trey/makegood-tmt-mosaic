@@ -433,8 +433,15 @@ function closeOpenChains(chains, xmin, ymin, xmax, ymax, eps) {
  * which is identical for both periodic copies. Ties break on the neighbours' relative coordinates,
  * which translation preserves. Passes are capped because each one can move the outline by up to
  * `eps`; the drop between passes is measured in tests/patterns-assets.test.ts.
+ *
+ * No test asserts the output stays a simple polygon (no self-crossings) — `turf.kinks()` isn't a
+ * usable oracle for that here: the clipped loops this runs on legitimately touch the tile's own
+ * boundary at more than one point (a motif clipped against the same edge at different y values),
+ * which `turf.kinks()` also reports as a kink even though it isn't a crossing. What's actually
+ * verified is empirical — the seam-continuity test plus the "builds with no warnings" measurement
+ * in docs/tech-debt.md — not a geometric proof.
  */
-function simplifyLoop(loop, eps, maxPasses = 12) {
+function thinContourLoop(loop, eps, maxPasses = 12) {
   let pts = loop;
   for (let pass = 0; pass < maxPasses && pts.length > 8; pass++) {
     const n = pts.length;
@@ -515,7 +522,7 @@ function renderPattern(p) {
     for (const loop of loops) {
       // Thinned before the clip, not after: a clipped piece has been cut at the tile edge, and
       // simplifying from that cut would let the two sides of a seam diverge.
-      const clipped = clipToRect(simplifyLoop(loop, p.simplifyEps ?? 0), 0, 0, W, H);
+      const clipped = clipToRect(thinContourLoop(loop, p.simplifyEps ?? 0), 0, 0, W, H);
       if (clipped.length >= 3 && shoelaceArea(clipped) > MIN_AREA_FIELD)
         subpaths.push(toD(clipped));
     }

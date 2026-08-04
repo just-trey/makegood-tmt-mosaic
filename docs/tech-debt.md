@@ -132,8 +132,10 @@ result has not been re-measured.
 
 `#loading-overlay` (the "Rebuilding geometry…" curtain, `src/ui/overlay.ts`)
 has no cancel or back control at any point in the 405.6s / >900s runs
-measured above — a user who starts the wrong rebuild (wrong pattern, wrong
-zone scope) has to wait it out. Today the only way to interrupt it is a
+measured above (the 405.6s figure is itself superseded — see the note just
+above this section — but the argument holds at the re-measured 93.6s too:
+a rebuild that long with no cancel is still the problem) — a user who starts
+the wrong rebuild (wrong pattern, wrong zone scope) has to wait it out. Today the only way to interrupt it is a
 reload, which — until the session-durability fix lands (tracked as work,
 not tech debt; see the plan that added this section) — erases every setting
 in the session. That combination is what turns "this is slow" into "this
@@ -777,6 +779,15 @@ fell back to unmerged shapes.
 What is fixed: the asset. `scripts/gen-patterns.mjs` thins zebra's contours
 (`simplifyEps`), and `tests/patterns-assets.test.ts` fails any bundled pattern
 whose vertex count times a chair zone's tile count would approach the ceiling.
+That test's `TILES_PER_CHAIR_ZONE = 143` is this measurement frozen into a
+constant, not derived from live zone geometry (`tileCoverage()` in
+`src/geometry/patterns.ts` needs a real placer + extent, which only exists
+mid-build) — deliberately: pulling the full chair build into what is
+otherwise a fast, dependency-light asset test isn't worth it while the
+budget (300k) already sits well under the failure point (~800k), a 2.6x
+margin a moderately larger future zone would not eat through. If a real
+zone's tile count ever grows enough to close that gap, this constant needs
+re-measuring by hand — nothing will flag it automatically.
 
 What is not fixed: **user-supplied** SVGs get no such check. A volunteer's
 detailed drawing in Fill mode on a chair can cross the same line, and will get

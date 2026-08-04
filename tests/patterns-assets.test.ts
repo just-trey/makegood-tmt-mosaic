@@ -155,7 +155,10 @@ describe('every built-in pattern stays inside the tiled-union vertex budget', ()
     '%s is sparse enough to tile a chair zone',
     (_name, file) => {
       const svg = readFileSync(resolve(REPO, 'public/patterns', file), 'utf8');
-      const vertices = (svg.match(/[ML]/g) ?? []).length;
+      // Same loops[] the app itself unions in Fill mode, not a raw M/L count off the source text —
+      // a curve command would flatten to many vertices per command and a text-level count would miss it.
+      const loops = parseSVGDocument(svg).shapes.flatMap((s) => s.loops);
+      const vertices = loops.reduce((n, loop) => n + loop.length, 0);
 
       expect({ vertices: vertices * TILES_PER_CHAIR_ZONE < BUDGET }).toEqual({ vertices: true });
     },
