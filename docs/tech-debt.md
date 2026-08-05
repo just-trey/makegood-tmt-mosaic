@@ -227,10 +227,66 @@ stay covered by the full test suite.
   (`scripts/gen-patterns.mjs`), the asset regression test and Fill mode itself
   are all untouched — Fill still works on any uploaded SVG.
 
-**The specific reason each was pulled is not recorded here**, only that the
-call was made; the sections below are the measured defects that were already
-open against both at the time, and are the obvious place to start when
-deciding what "good enough to unhide" means:
+**What the maintainer named as the reason**, 2026-08-05, verbatim in substance:
+the front of the fender gets no coverage; dead zones still need defining; part
+edges look jagged rather than smooth in the viewport and get cut off; and the
+SVG templates have odd/wrong edges so they don't look good. Each is graded
+against the shipped data below — the report is the maintainer's, the diagnosis
+is not, and where the cause is confirmed it says so.
+
+1. **The front of the fender gets no coverage — confirmed.** The wings (the
+   "fenders") are reached only by `left` and `right`, which seed on the flank
+   at `maxAngleDeg: 45`
+   ([scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json)).
+   The `front` zone's charts cover `storage-*`, `handle-*` and `seat-back-*`
+   and **no wing at all**, so the forward-facing fender face falls outside
+   every zone and takes no artwork. Note
+   [chair-body-plan.md](chair-body-plan.md) records dropping the planned
+   separate `wing-left`/`wing-right` zones as unnecessary, on the finding that
+   seeding on the fender reaches the same triangles as seeding on the storage
+   side — true for the flank, but that reasoning never covered the front face.
+   Closing it is either a wider `front`, a raised `left`/`right`
+   `maxAngleDeg`, or reinstating the dropped wing zones; all three re-bake and
+   re-tune every zone against the coverage-vs-stretch knee the `_note` warns
+   about.
+
+2. **Dead zones still need defining — open, and previously filed as an idea
+   rather than a blocker.** It is written up in [roadmap.md](roadmap.md)
+   ("Dead zones: mark the parts of a design zone that are hidden by an
+   adjacent part"), which is where unbuilt ideas live. Being named here makes
+   it a gate on unhiding the chair, not a nice-to-have: without it a design
+   placed across a joint spends filament changes on surface nobody sees.
+
+3. **Jagged, non-smooth edges in the viewport — cause confirmed, plus a second
+   distinct defect.** `bufferGeometryFromTris()` in
+   [src/app/rebuild.ts](../src/app/rebuild.ts) builds a **non-indexed**
+   geometry (position only, no `setIndex`) and then calls
+   `computeVertexNormals()`. On non-indexed geometry three.js assigns each
+   triangle's face normal to all three of its vertices, so **every part in the
+   viewport is flat-shaded** and every curved surface bands. It affects the
+   wheel and footrest too; the chair is just big and curved enough to make it
+   obvious. This is display-only — nothing about the exported mesh changes.
+   The likely fix is indexing the geometry (`mergeVertices`) before computing
+   normals, which is also a vertex-count win.
+   **Separately, "they cut off" is real and is not a shading problem:** a
+   1600×1100 headless capture of `?kind=chair-body` has the wings and caster
+   mounts running off the bottom edge of the canvas. The initial framing does
+   not fit the chair's bounds. Worth checking against the kind's
+   `displayFrame`, since the chair is the only kind that authors one.
+
+4. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
+   outline.** Every shipped template in `public/templates/` is a pure `L`
+   polyline with no curve commands: the zone boundary is traced along mesh
+   triangle edges and emitted vertex-for-vertex. So a template's outline is as
+   faceted as the tessellation under it. Two of them are also very ragged
+   rather than merely faceted — `back` carries a 355-point boundary with **18
+   holes**, `front` 146 points with 3 — which is what a grown-region boundary
+   looks like when it stops mid-surface, and is the same boundary the cut
+   clips to. Note the repo already has curve fitting for the raster tracer
+   (`src/raster/curve.ts`); nothing equivalent runs on a zone boundary.
+
+The sections below are the measured defects that were already open against
+both features before this list, and remain part of "good enough to unhide":
 
 - Chair: "Artwork can't wrap unbroken from one flank around the back to the
   other" (three measured dead ends), "The chair's zone sidecar is 1.7 MB raw",
@@ -248,6 +304,43 @@ dropdown/"+zone", click-a-surface-to-bind in the Fit section, and the
 Standard/Kit version picker in the Part section. Note `artwork_load` still declares a
 `source: 'pattern'` value that nothing can currently fire; see
 [analytics.md](analytics.md).
+
+## Every part in the viewport is flat-shaded, and this is not chair-only
+
+Found 2026-08-05 while grading the chair complaints above, but it is **not**
+specific to the chair — it applies to the wheel and the footrest, which are
+offered today.
+
+`bufferGeometryFromTris()` in [src/app/rebuild.ts](../src/app/rebuild.ts) is
+the single path every displayed part mesh goes through — raw assembly parts
+(`renderRawAssemblyParts`), cut bodies, and inlay soups all call it. It sets
+only a `position` attribute from a flat triangle-soup `Float32Array`, never
+calls `setIndex`, and then calls `computeVertexNormals()`. On non-indexed
+geometry three.js gives every vertex its own face's normal, so the result is
+flat shading by construction. `src/scene/zonePick.ts` is the only place in
+`src/` that indexes a geometry, and that mesh is invisible.
+
+Consequence is cosmetic but pervasive: curved surfaces band, and silhouettes
+read as polygonal. It is worst on the chair (large, curved, 368k triangles)
+and mild on the wheel, whose design face is nearly flat — which is likely why
+it went unnoticed until a big curved part existed.
+
+Nothing about export changes: this is the three.js display mesh only, built
+from geometry that has already been cut. The cut/export path never reads these
+normals.
+
+What closing it would take: index the geometry before computing normals —
+`BufferGeometryUtils.mergeVertices()` is the direct route, and it also cuts
+vertex count on meshes that currently repeat every shared vertex three times,
+so it may pay for itself in the 368k-triangle case. The open question is
+whether a blanket merge rounds off intentionally sharp edges (a chamfer, a
+pocket wall) into smooth ones, which would trade one wrong look for another;
+a normal-angle threshold is the usual answer and needs measuring against a
+real part rather than assumed.
+
+Not to be confused with the separate framing defect recorded in the chair
+section above — the chair rendering off the bottom of the canvas is a camera
+fit problem, not a shading one.
 
 ## The help dialog's open state doesn't track browser back-navigation
 
