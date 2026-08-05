@@ -23,7 +23,6 @@ Fired when artwork is loaded into the scene.
 
 - **Where:** [src/ui/artworkPanel.ts](../src/ui/artworkPanel.ts) — `loadArtworkFile` (SVG upload via click-browse or drag-drop), `applyRasterFile` (a PNG/JPG/WebP through the same dropzone), the `#btn-sample` handler, and `applyPattern` (built-in pattern picker strip).
 - **Props:** `{ source: 'upload' | 'sample' | 'pattern' | 'raster' }`, plus `pattern: string` (the pattern id, e.g. `cow`) when `source` is `'pattern'`. `'raster'` covers any decoded image; the format is not recorded.
-- **Note:** `source: 'pattern'` currently fires for nobody — the picker strip that reaches `applyPattern` is withheld from the UI (`PATTERN_LIBRARY_ENABLED`, see [tech-debt.md](tech-debt.md)). The wiring is left in place rather than removed, so expect zero `'pattern'` events until the library is offered again.
 
 ### `raster_adjust`
 

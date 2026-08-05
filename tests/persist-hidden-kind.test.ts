@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { saveSession } from '../src/state/persist';
 import { state } from '../src/state/store';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 
 const STORAGE_KEY = 'tmt-mosaic:session:v1';
 
-const hiddenKindId = ASSEMBLY_KINDS.find((k) => k.hidden)?.id;
-const offeredKindId = ASSEMBLY_KINDS.find((k) => !k.hidden)!.id;
+// No kind ships hidden today (the chair body was, briefly — see docs/tech-debt.md), so the guard
+// is exercised by marking a real kind hidden for the duration of a test rather than by finding
+// one. Driving it off whatever happens to carry `hidden` made the suite go quiet the moment the
+// chair was unhidden: the assertions still "passed" against a kind that no longer had the
+// property, which is the failure mode this arrangement exists to avoid.
+const gated = ASSEMBLY_KINDS[ASSEMBLY_KINDS.length - 1];
+const offered = ASSEMBLY_KINDS[0];
 
 /** Enough loaded work for saveSession to consider the session worth keeping (same shape as
  * tests/persist-unload.test.ts's withLoadedWork). */
@@ -36,7 +41,11 @@ beforeEach(() => {
   state.sources = [];
   state.artworks = [];
   state.shapeKind = 'assembly';
-  state.assembly.kindId = offeredKindId;
+  state.assembly.kindId = offered.id;
+});
+
+afterEach(() => {
+  delete gated.hidden;
 });
 
 // A session on a withheld part is never offered back (restoreBanner.ts), so without this guard
@@ -44,8 +53,8 @@ beforeEach(() => {
 // for a part the maintainer intends to bring back.
 describe('an empty save against a session stored on a hidden kind', () => {
   it('leaves the stored session in place instead of clearing it', () => {
-    expect(hiddenKindId, 'no kind is currently hidden — this guard is untested').toBeTruthy();
-    storeSessionOn(hiddenKindId!);
+    storeSessionOn(gated.id);
+    gated.hidden = true;
 
     saveSession(); // state is empty now: the branch that would normally clear
 
@@ -53,7 +62,7 @@ describe('an empty save against a session stored on a hidden kind', () => {
   });
 
   it('still clears a session stored on a kind that is offered', () => {
-    storeSessionOn(offeredKindId);
+    storeSessionOn(gated.id); // same session, same code path — only `hidden` differs
 
     saveSession();
 
@@ -61,14 +70,15 @@ describe('an empty save against a session stored on a hidden kind', () => {
   });
 
   it('is overwritten once there is real work to save', () => {
-    storeSessionOn(hiddenKindId!);
-    state.assembly.kindId = offeredKindId;
+    storeSessionOn(gated.id);
+    gated.hidden = true;
+    state.assembly.kindId = offered.id;
     withLoadedWork('s2', 'a2');
 
     saveSession();
 
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
-    expect(stored.assembly.kindId).toBe(offeredKindId);
+    expect(stored.assembly.kindId).toBe(offered.id);
     expect(stored.artworks.map((a: { id: string }) => a.id)).toEqual(['a2']);
   });
 });

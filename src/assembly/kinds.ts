@@ -61,9 +61,6 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
   {
     id: 'chair-body',
     name: 'Chair body',
-    // Withheld from the Part dropdown while the multi-zone workflow is reworked — the build path
-    // is untouched and `?kind=chair-body` still reaches it (see docs/tech-debt.md).
-    hidden: true,
     // per-zone rect semantics: each zone's template maps its SVG 1:1 in mm, centered on the chart.
     designFit: 'rect',
     // The chair is packed in its CAD frame (up is +Y, the front where the wings/footrest sit is

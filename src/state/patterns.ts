@@ -3,13 +3,12 @@ import type { PatternEntry } from '../types';
 let patterns: PatternEntry[] = [];
 
 /**
- * Whether the built-in pattern library is offered in the UI. Off while the library is reworked
- * (see docs/tech-debt.md): the assets, the generator and Fill mode itself all stay — this only
- * withholds the picker strip, which renders from whatever this module loaded, so leaving the
- * list empty is the same state a missing manifest already produces. Flip to `true` to offer it
- * again.
+ * Whether the built-in pattern library is offered in the UI. The picker strip renders from
+ * whatever this module loaded, so turning it off is just leaving the list empty — the same state
+ * a missing manifest already produces. Kept as a switch rather than deleted because the library
+ * has been withheld once already while its open defects were worked (see docs/tech-debt.md).
  */
-export const PATTERN_LIBRARY_ENABLED = false;
+export const PATTERN_LIBRARY_ENABLED = true;
 
 /**
  * Load the built-in pattern library manifest (public/patterns/patterns.json). Purely additive

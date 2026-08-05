@@ -97,6 +97,11 @@
               each area lands on — anything you draw across a dashed line gets cut into both pieces,
               and lines up as well as your print and assembly do.
             </p>
+            <p>
+              A part with hardware variants (Standard vs Kit) shows a version picker above the part
+              list — switching reloads only the pieces that actually differ between versions,
+              confirming first if you've already customized one of them.
+            </p>
           </section>
 
           <section class="help-sec" id="h-artwork">
@@ -142,6 +147,12 @@
               exact.
             </p>
             <p>
+              The thumbnail strip below the dropzone is a small built-in library of tileable
+              patterns (Cow, Dalmatian, Zebra, Tiger) — click one to load it like an uploaded SVG.
+              On an assembly part it defaults to Fill mode, since a pattern exists to repeat across
+              a surface rather than sit as a single sticker.
+            </p>
+            <p>
               Each design you load appears as a named row below the dropzone — click × to remove it.
               Click a row to make it the active design; the fit sliders and the on-face gizmo below
               always edit whichever row is active.
@@ -152,9 +163,16 @@
               both until you move, rescale or separate them — two recesses cut into the same spot
               export as two inlays claiming the same space, which a slicer resolves however it
               likes. It won't stop you exporting. Two designs both set to Fill always warn, and
-              there moving them can't help — switch one to Sticker instead. The check compares each
-              design's bounding box, so something nested neatly inside another — a logo inside a
-              frame — can trip it even though the recesses never meet.
+              there moving them can't help: switch one to Sticker or put it on another surface. The
+              check compares each design's bounding box, so something nested neatly inside another —
+              a logo inside a frame — can trip it even though the recesses never meet.
+            </p>
+            <p>
+              On a part with more than one design surface (like the chair body), each row gets a
+              zone dropdown to pick which surface that design lands on. A new design starts on the
+              first zone; switch it with the dropdown, use "+zone" to place the same design a second
+              time on another surface, or pick "All zones" to stamp it onto every surface at once
+              (slow on the chair — it recuts all five).
             </p>
             <p>
               On an assembly part, each row also switches between <strong>Sticker</strong> and
@@ -181,7 +199,9 @@
               to move it, drag a corner handle to scale, or drag the green handle to rotate — the
               sliders track the drag and vice versa. The frame follows the surface, so on a curved
               part it curves too; if it turns amber, the design's center has moved off the design
-              surface and part of the artwork won't be cut.
+              surface and part of the artwork won't be cut. On a part with more than one design
+              surface, clicking a surface (away from the selection frame) binds the active design to
+              it — the same thing the zone dropdown in the Artwork list does.
             </p>
           </section>
 
@@ -478,7 +498,8 @@
             SVG: flat, distinct fill colors only — gradients/patterns are flagged and skipped.
             PNG/JPG: quantized into flat color regions; set Colors and Detail on the loaded row.
             <b>Sticker</b> places one copy of a design; <b>Fill</b> (on a part with a design
-            surface) repeats it across the whole surface instead.
+            surface) repeats it across the whole surface instead. On a part with more than one
+            design surface, "+zone" places the same design again on another surface.
           </div>
         </details>
 

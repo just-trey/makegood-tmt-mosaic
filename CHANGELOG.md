@@ -7,16 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-> **Note.** The chair body and the built-in pattern library are both listed
-> under Added below and then withheld from the UI under Changed. That isn't a
-> contradiction: both were built during this cycle, and both were pulled from
-> the UI before shipping because their workflows weren't ready. Everything
-> about them still works and still ships; they just aren't offered. Anything
-> below describing multiple design surfaces, zones, "+zone", or the
-> Standard/Kit version picker therefore applies only to the chair, which today
-> is reachable at `?kind=chair-body` rather than from the Part dropdown. See
-> [docs/tech-debt.md](docs/tech-debt.md) for why, and what unhiding takes.
-
 ### Added
 
 - **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP (and a
@@ -167,32 +157,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `wheel-mount-left` id-collision fix above for the class of bug this
   generalizes a guard against.)
 - A `?kind=` URL parameter opens the app straight onto a given assembly kind
-  (`?kind=footrest`) instead of the wheel, so a link can point at the part
-  being discussed. An unknown or missing value opens the wheel exactly as
-  before. It also reaches a kind that isn't listed in the Part dropdown, which
-  is how the withheld chair body stays openable (see Changed below).
-
-### Changed
-
-- **The chair body is no longer offered in the Part dropdown.** Its
-  multi-surface workflow is being reworked, and it isn't good enough to put in
-  front of a first-time volunteer yet. Nothing about the part was removed: it
-  still builds, cuts and exports, stays covered by the test suite, and opens at
-  `?kind=chair-body`. The knock-on effects while it's withheld are that no
-  offered part has more than one design surface, so the per-design zone
-  dropdown, the "+zone" button and click-a-surface-to-bind never appear; and a
-  saved session that was on the chair is no longer offered back by the restore
-  banner. That session is not thrown away: it's held in storage — including
-  against the empty-state clear that a bare boot would otherwise trigger a
-  second after load — so it's offered again as soon as the part is, unless you
-  save real work over it in the meantime.
-- **The built-in pattern library (Cow, Dalmatian, Zebra, Tiger) is no longer
-  offered.** The thumbnail strip under the Artwork dropzone is gone for the
-  same reason. Fill mode itself is unchanged — load your own tileable SVG and
-  switch its row to Fill exactly as before. The pattern files still ship, so
-  turning the strip back on is one flag.
-- Both are recorded, with where the flag for each lives and what closing them
-  takes, in [docs/tech-debt.md](docs/tech-debt.md).
+  (`?kind=chair-body`, `?kind=footrest`) instead of the wheel, so a link can
+  point at the part being discussed. An unknown or missing value opens the
+  wheel exactly as before. It also reaches a kind left out of the Part
+  dropdown, should one ever be.
 
 ### Removed
 
