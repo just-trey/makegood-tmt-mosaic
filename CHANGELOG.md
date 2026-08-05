@@ -7,16 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.7.0] - 2026-08-04
-
-> **Note.** The chair body and the built-in pattern library were both built
-> during this cycle and are listed under Added below, then withheld from the UI
-> under Changed before release — their workflows weren't ready. Everything about
-> them still works and still ships; they just aren't offered. Anything below
-> describing multiple design surfaces, zones, "+zone", or the Standard/Kit
-> version picker therefore applies only to the chair, which today is reachable
-> at `?kind=chair-body` rather than from the Part dropdown.
-
 ### Added
 
 - **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP (and a
@@ -180,8 +170,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   still builds, cuts and exports, stays covered by the test suite, and opens at
   `?kind=chair-body`. The knock-on effects while it's withheld are that no
   offered part has more than one design surface, so the per-design zone
-  dropdown, the "+zone" button, click-a-surface-to-bind and the Standard/Kit
-  version picker never appear; and a
+  dropdown, the "+zone" button and click-a-surface-to-bind never appear; and a
   saved session that was on the chair is no longer offered back by the restore
   banner. That session is not thrown away: it's held in storage — including
   against the empty-state clear that a bare boot would otherwise trigger a
@@ -886,8 +875,7 @@ Initial public alpha. Baseline feature set as of this release:
 - Automatic boolean-failure recovery: vertex deduplication, degenerate-sliver
   scrubbing, and reduced-precision retries for self-intersecting source paths.
 
-[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.7.0...HEAD
-[0.7.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.6.0...v0.7.0
+[Unreleased]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.6.0...HEAD
 [0.6.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/just-trey/makegood-tmt-mosaic/compare/v0.4.0...v0.4.1
