@@ -4,7 +4,10 @@
   ([public/filaments.json](../public/filaments.json)) instead of to colors
   derived from the image, so an image's regions are filaments the user actually
   has and the AMS slot count is settled before export rather than after.
-- Dead zones: mark the parts of a design zone that are hidden by an adjacent
+- Dead zones **(named 2026-08-05 as one of the reasons the chair body is
+  withheld from the UI — see [tech-debt.md](tech-debt.md), so this is a gate on
+  bringing it back rather than a free-standing idea)**: mark the parts of a
+  design zone that are hidden by an adjacent
   part — joints, overlaps, undersides — where a filament change buys nothing.
   A design placed across one wastes color changes on surface nobody sees.
   Shape: a bake step that casts each zone triangle outward, tests occlusion
