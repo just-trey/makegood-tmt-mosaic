@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+> **Note.** The chair body and the built-in pattern library are both listed
+> under Added below and then withheld from the UI under Changed. That isn't a
+> contradiction: both were built during this cycle, and both were pulled from
+> the UI before shipping because their workflows weren't ready. Everything
+> about them still works and still ships; they just aren't offered. Anything
+> below describing multiple design surfaces, zones, "+zone", or the
+> Standard/Kit version picker therefore applies only to the chair, which today
+> is reachable at `?kind=chair-body` rather than from the Part dropdown. See
+> [docs/tech-debt.md](docs/tech-debt.md) for why, and what unhiding takes.
+
 ### Added
 
 - **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP (and a
