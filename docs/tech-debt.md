@@ -1,9 +1,16 @@
 # Tech debt
 
-Deferred work, known-wrong behavior, and measurements worth not re-taking. One
-section per item, each stating what was measured, why it was deferred, and
-what closing it would take. Update the relevant section instead of
-re-deriving the number from scratch.
+**Open** deferred work and known-wrong behavior. One section per item, each
+stating what was measured, why it was deferred, and what closing it would
+take. Update the relevant section instead of re-deriving the number from
+scratch.
+
+**When an item is fixed, delete its section — don't mark it `FIXED` and leave
+it.** The CHANGELOG entry and the commit are the record of the fix. Anything a
+future reader still needs — the measurement behind a constant, an approach
+that was tried and lost — belongs in a comment next to the code it constrains,
+not here: that is where someone changing the line will actually see it. Keep a
+closed item only where it is still load-bearing for something open.
 
 ## The browser-driven checks are only fast if Chromium finds a real GPU, and on WSL2 it does not find one by itself
 
