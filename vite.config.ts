@@ -1,4 +1,5 @@
-import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { loadEnv, type Plugin } from 'vite';
+import { defineConfig } from 'vitest/config';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -61,6 +62,17 @@ export default defineConfig(({ mode }) => {
             turf: ['@turf/turf'],
           },
         },
+      },
+    },
+    test: {
+      coverage: {
+        provider: 'v8',
+        // Report on every source file, not just the ones some test imported. Without
+        // this the never-imported UI wiring modules drop out of the table entirely and
+        // the headline percentage reads far better than the code actually is.
+        all: true,
+        include: ['src/**/*.ts'],
+        reporter: ['text', 'html'],
       },
     },
     plugins: umamiWebsiteId ? [umamiBeacon(umamiWebsiteId)] : [],
