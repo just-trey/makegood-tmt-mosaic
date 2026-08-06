@@ -11,6 +11,7 @@ import { clampArtworkModes, clearArtworkZoneBindings } from '../state/artwork';
 import { renderArtworkList } from './artworkListPanel';
 import { renderPatternPicker } from './artworkPanel';
 import {
+  applyBuildParam,
   renderAssemblyPartList,
   renderAssemblyRoleControls,
   syncAssemblyKindControls,
@@ -325,6 +326,12 @@ export function initPartPanel(): void {
     state.asmRadius = numVal('#p-asm-radius', 138);
     updateOffsetSliderRanges();
     scheduleRebuild('typed');
+  });
+  // The kind's build parameter (the hubcap's disc diameter). On `change`, not `input`, unlike the
+  // radius above: this one regenerates the part's mesh through a CSG union, so firing it per
+  // keystroke would queue a boolean for each digit typed.
+  input('#p-asm-buildparam').addEventListener('change', () => {
+    void applyBuildParam(numVal('#p-asm-buildparam', NaN));
   });
 
   // STL reference upload

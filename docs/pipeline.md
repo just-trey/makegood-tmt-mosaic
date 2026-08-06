@@ -240,6 +240,37 @@ Two per-kind/per-role fields tune non-wheel parts:
   rescale the viewBox), rect placement fits the viewBox to the part face rather
   than assuming 1 unit = 1 mm, so a template trace still lands life-size.
 
+### A generated part
+
+Every part above is a mesh that ships. The hubcap is not: only its four
+mounting clips ship (`public/stl/hubcap-clips.3mf`), and the disc they carry is
+built at the user's chosen diameter, then unioned onto them.
+
+The mechanism is `AssemblyRole.buildMesh` — a function on the role, so nothing
+in `src/assembly/` has to know a hubcap exists; the loader's rule is only "if
+the role can build its own mesh, hand it the asset and keep what comes back".
+The fetched asset stays on `AssemblyPart.assetPositions`, which lets a
+parameter change regenerate without another fetch, and which is also the signal
+export placement reads (below). `AssemblyKind.buildParam` declares the numeric
+control as data so the panel renders it without knowing the kind.
+
+The generator is [src/geometry/hubcap.ts](../src/geometry/hubcap.ts). Its
+constants are measurements off the mesh a human modelled, and
+`tests/hubcap.test.ts` regenerates that disc and checks it back against them —
+a generator that cannot reproduce the part it was written from is guessing.
+Two things that look cosmetic are not:
+
+- The disc's underside and the clip tops are **exactly coincident** at
+  y = 24.255 and share no volume, so joining them is a real boolean. Concatenating
+  the soups instead looks identical on screen and exports without complaint,
+  but leaves two solids with a buried skin between them — `HubcapBody.components`
+  exists to catch that, and does, below about 21mm diameter where the disc stops
+  reaching the clips at all.
+- Face winding decides which side of the surface is solid. An inside-out soup
+  has the same bounding box and the same surface area, so the signed volume is
+  the only thing that catches it, and Manifold would otherwise read the part as
+  its own complement.
+
 **Export placement is baked from a verified reference 3MF, never computed or
 read at runtime.** Once a part's real-world print pose has been checked in the
 slicer (a reference project file the user hand-verified — rotation, plate
@@ -264,6 +295,22 @@ onto the part's `ExportPart` by `resolvePlacement` in
 - `objectSettings` — per-part Bambu print overrides (e.g.
   `{ brim_type: 'no_brim', enable_support: '0' }` on the footrest), written
   into `model_settings.config` on top of the project-wide settings.
+
+Those constants are only handed back for a mesh matching the fingerprint they
+were verified against, which means **a generated part can never have them**:
+its mesh is built to vary. `resolvePlacement` reports that as its own reason,
+`'generated-part'`, rather than as the fingerprint mismatch it technically is —
+the mismatch reasons mean the repo's own assets have drifted, which is a defect,
+and this isn't one. Such a part falls through to the computed path: centred on
+its plate, with `suggestTowerPos` parking the prime tower in whichever corner
+the parts intrude on least and warning when every corner is occupied. That
+search runs for **any** plate with no baked tower position, not just hinted
+ones; while it didn't, an unhinted plate wrote no `wipe_tower_x/y` at all and
+the slicer fell back to its own preset default, quite possibly through the part
+the export had just centred there. Note the corner probe tests each part's
+_bounding box_, so a round part is reported as blocking corners it actually
+leaves free — conservative in the right direction, but it means the warning
+fires for every hubcap on a bed near its size.
 
 The exported filename is derived from the selected assembly kind
 (`mosaic-${state.assembly.kindId}.3mf`), so each part downloads under its own

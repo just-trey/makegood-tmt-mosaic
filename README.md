@@ -55,9 +55,9 @@ build time, so the deployed app has no runtime CDN dependencies. The Google
 Fonts stylesheet is the only external request.
 
 The app opens on the wheel. `?kind=` opens it on a given assembly kind instead
-— `?kind=chair-body`, `?kind=footrest` — so a link can point at the part being
-discussed, and a script driving the app can skip building a part it doesn't
-want. An unknown or absent value opens the wheel, as before.
+— `?kind=chair-body`, `?kind=footrest`, `?kind=hubcap` — so a link can point at
+the part being discussed, and a script driving the app can skip building a part
+it doesn't want. An unknown or absent value opens the wheel, as before.
 
 ## Deployment
 
@@ -148,6 +148,13 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - The chair body's prime-tower positions are verified on 270mm and 256mm beds
   only; other bed sizes inherit the 270mm positions untested — see
   [docs/tech-debt.md](docs/tech-debt.md).
+- The hubcap is generated to the diameter you choose, so it can carry no
+  pre-verified plate position or prime-tower placement the way the fixed parts
+  do — a pose is verified against one exact mesh, and this one is built to
+  vary. It exports centred with the tower parked in the freest corner, and says
+  so. On a 256mm bed a 220mm hubcap leaves about a 50mm square corner for the
+  tower, which is enough for a typical 2–4 filament print but is the tightest
+  of the three beds — check it in your slicer.
 - Parts the reference sets to manual tree support arrive without the painted
   enforcers; paint them yourself or switch to auto support.
 - The caster mounts can't carry artwork — see

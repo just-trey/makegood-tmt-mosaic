@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import { getFilament } from './filaments';
 import { DEFAULT_PRINTER_ID } from '../export/printers';
+import { HUBCAP_DEFAULT_DIAMETER_MM } from '../geometry/hubcap';
 
 /**
  * The single source of truth for everything the geometry pipeline consumes.
@@ -61,6 +62,12 @@ export interface AppState {
 
   // assembly
   asmRadius: number;
+  /**
+   * Outer diameter (mm) of the generated hubcap disc. A build parameter rather than a display
+   * one: changing it re-runs the part's generator (asmRebuildGeneratedParts), so it belongs in
+   * state alongside the other things a rebuild reads, not in the panel that edits it.
+   */
+  hubcapDiameterMm: number;
   assembly: {
     kindId: string | null;
     /** chosen hardware variant for a kind with `variants` (chair Standard/Kit); null otherwise */
@@ -115,6 +122,7 @@ export const state: AppState = {
   printerId: DEFAULT_PRINTER_ID,
 
   asmRadius: 138,
+  hubcapDiameterMm: HUBCAP_DEFAULT_DIAMETER_MM,
   assembly: { kindId: null, variantId: null, parts: [], nextPartId: 1, library: [] },
 
   baseFilamentId: null,

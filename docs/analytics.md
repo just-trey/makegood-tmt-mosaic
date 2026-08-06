@@ -97,6 +97,22 @@ one design surface, like the chair body) one of the per-zone templates.
 - **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `#asm-template-link` click handler in `initAssemblyPanel`, and the per-zone link handlers in `renderZoneTemplateLinks`.
 - **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`), plus `zone: string` (the zone id) on a per-zone download
 
+### `build_param_changed`
+
+Fired when the user commits a change to an assembly kind's numeric build
+parameter — today the hubcap's disc diameter. On the input's `change` (blur or
+Enter), not per keystroke, and only when the value actually moved: the same
+handler is what regenerates the part's mesh.
+
+Deliberately **not** fired when the app re-clamps the value itself, which
+happens when switching to a printer whose plate is smaller than the current
+diameter — that is the app correcting state, not user intent (see the `Rules`
+below). The diameter is rounded to a whole millimetre, so the prop is a size
+band rather than a fingerprintable exact value.
+
+- **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `applyBuildParam`, called from the `#p-asm-buildparam` change handler in `initPartPanel`.
+- **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `hubcap`), `param: string` (the state key, e.g. `hubcapDiameterMm`), `value: number` (millimetres, rounded)
+
 ### `export`
 
 Fired on a successful export, just before the file download starts.

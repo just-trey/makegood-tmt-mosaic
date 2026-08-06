@@ -8,10 +8,12 @@ import {
   asmAddRolePart,
   asmLoadFullAssembly,
   asmLoadPartFile,
+  asmRebuildGeneratedParts,
   asmRemovePart,
   onAssemblyPartsChanged,
   switchChairVariant,
 } from '../assembly/parts';
+import { getPrinter } from '../export/printers';
 import { availableZones } from '../state/artwork';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
@@ -27,12 +29,101 @@ export function syncAssemblyKindControls(): void {
   const tplRow = $('#asm-template-row');
   const tplLink = $<HTMLAnchorElement>('#asm-template-link');
   if (tplRow && tplLink) {
-    tplRow.style.display = kind?.templateFile ? '' : 'none';
-    if (kind?.templateFile) tplLink.href = `templates/${kind.templateFile}`;
+    const built = kind?.buildTemplate;
+    tplRow.style.display = built || kind?.templateFile ? '' : 'none';
+    // A generated kind's template is rebuilt from current state every time this runs, so the link
+    // can never hand out a drawing for the size the part used to be.
+    if (built) tplLink.href = templateObjectUrl(built());
+    else if (kind?.templateFile) tplLink.href = `templates/${kind.templateFile}`;
+    if (built || kind?.templateFile) tplLink.download = `${kind!.id}-template.svg`;
   }
 
+  syncBuildParamControl();
   renderAssemblyVariantControls();
   renderZoneTemplateLinks();
+}
+
+/**
+ * Blob URL for a generated template, replacing the previous one. Revoked rather than left to the
+ * GC: this is re-run on every kind switch and every diameter edit, so the leak would be unbounded
+ * over a long session.
+ */
+let lastTemplateUrl: string | null = null;
+function templateObjectUrl(svg: string): string {
+  if (lastTemplateUrl) URL.revokeObjectURL(lastTemplateUrl);
+  lastTemplateUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  return lastTemplateUrl;
+}
+
+/**
+ * The kind's numeric build parameter, if it has one (AssemblyKind.buildParam) — the hubcap's disc
+ * diameter today. The upper bound is the selected printer's plate rather than a constant: a disc
+ * that doesn't fit the bed isn't a part, and letting someone dial past it only to be told at
+ * export time is the slower way to find out.
+ */
+export function syncBuildParamControl(): void {
+  const row = $('#asm-buildparam-row');
+  const input = $<HTMLInputElement>('#p-asm-buildparam');
+  const label = $('#asm-buildparam-label');
+  if (!row || !input || !label) return;
+  const param = currentAssemblyKind()?.buildParam;
+  row.style.display = param ? '' : 'none';
+  if (!param) return;
+  const plate = getPrinter(state.printerId).plate;
+  label.textContent = param.label;
+  input.min = String(round2(param.minMm));
+  input.max = String(round2(Math.min(param.maxMm ?? Infinity, plate.w, plate.d)));
+  input.step = String(param.step);
+  input.value = String(round2(state[param.id]));
+}
+
+const round2 = (v: number): number => Number(v.toFixed(2));
+
+/**
+ * Commit an edit to the kind's build parameter: clamp to the control's own bounds, then rebuild
+ * the generated parts from their cached assets.
+ *
+ * Clamping here rather than trusting the input's min/max because a typed value bypasses them —
+ * and out of range means a disc that misses its clips or overhangs the bed, both of which slice
+ * into something that looks fine on screen.
+ */
+export async function applyBuildParam(raw: number): Promise<void> {
+  const kind = currentAssemblyKind();
+  const param = kind?.buildParam;
+  if (param && Number.isFinite(raw) && (await commitBuildParam(raw))) {
+    track('build_param_changed', { kind: kind!.id, param: param.id, value: Math.round(raw) });
+    return;
+  }
+  // nothing changed, or the field was left empty/garbage — put the live value back
+  syncBuildParamControl();
+}
+
+/**
+ * Re-clamp the build parameter against the *current* printer and regenerate if that moved it.
+ *
+ * Called when the printer changes: the plate is the parameter's upper bound, so switching to a
+ * smaller bed can leave a disc wider than the machine can print. Separate from applyBuildParam
+ * because this is not the user editing the value — per docs/analytics.md, events fire on real
+ * user intent, not on state the app corrected on their behalf.
+ */
+export async function clampBuildParamToPrinter(): Promise<void> {
+  const param = currentAssemblyKind()?.buildParam;
+  if (param) await commitBuildParam(state[param.id]);
+  syncBuildParamControl();
+}
+
+/** Clamp, store and regenerate. Returns whether the value actually moved. */
+async function commitBuildParam(raw: number): Promise<boolean> {
+  const param = currentAssemblyKind()?.buildParam;
+  if (!param) return false;
+  const plate = getPrinter(state.printerId).plate;
+  const max = Math.min(param.maxMm ?? Infinity, plate.w, plate.d);
+  const next = Math.min(max, Math.max(param.minMm, raw));
+  if (next === state[param.id]) return false;
+  state[param.id] = next;
+  syncBuildParamControl(); // show the clamped value before the rebuild, not after it
+  await asmRebuildGeneratedParts();
+  return true;
 }
 
 /**

@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Hubcap part, built to the size you choose.** A new part in the dropdown,
+  and the first one the app generates rather than loads: the four mounting
+  clips ship as a fixed mesh and the disc around them is built at whatever
+  **Hubcap diameter** you set, keeping the same 3mm thickness and 1mm chamfered
+  edge at any size. Artwork recesses into it at the usual depth. The diameter is
+  capped by the selected printer's bed and floored at the size that still covers
+  the clips, so it can't produce a disc that won't print or one whose clips come
+  away as loose pieces. The design template is drawn to the current size rather
+  than being a fixed file.
+- A generated part says plainly that it has no pre-verified plate position,
+  instead of reporting the mismatch as though one of the app's own meshes had
+  drifted.
+
+### Fixed
+
+- The prime tower is now positioned on plates that don't carry a verified
+  position, instead of being left to the slicer's own default — which, for a
+  part the export had just centred on the plate, could put the tower straight
+  through it. Affects flat-plate exports and any part whose placement didn't
+  verify; parts with a baked tower position are unchanged.
+
 - **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP (and a
   GIF or BMP) as well
   as an SVG — drop in a logo, a child's drawing or a photo and it's quantized

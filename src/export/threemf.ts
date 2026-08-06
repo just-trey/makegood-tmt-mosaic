@@ -555,6 +555,11 @@ export async function build3MFCombined(
         pl.tz = -pl.minZ; // rest the face flat on the plate (Z=0)
         x += pl.w + gap;
       });
+      // Same free-corner search the hinted branch does. Without it this branch wrote no
+      // wipe_tower_x/y at all, leaving the slicer on its own preset default — for a part this
+      // branch has just centered on the plate, that default is very likely through it. Reachable
+      // for any part with no plateHint, which is every part whose placement didn't verify.
+      plate.wipeTower = suggestTowerPos(plate.row);
     });
   }
   // Fitting on the plate and being *put* on it are different claims: the size check above only
@@ -723,10 +728,14 @@ ${items.join('\n')}
   files.push({
     name: 'Metadata/project_settings.config',
     data: enc.encode(
+      // Both branches work out a tower position now, so this is no longer gated on useHints.
+      // While it was, an unhinted plate wrote no wipe_tower_x/y at all and the slicer fell back to
+      // its own preset default — which is not the plate center this file's own fallback uses, and
+      // is nowhere near a part that was just centered on the plate.
       bambuProjectSettings(
         materials,
         printer,
-        useHints ? plates.map((p) => p.wipeTower) : undefined,
+        plates.map((p) => p.wipeTower),
       ),
     ),
   });

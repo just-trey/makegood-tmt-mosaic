@@ -12,7 +12,7 @@ import {
   load3MF,
 } from '../geometry/meshparts';
 import { fingerprintMatches, loadZonesSidecar, reconstructChart } from '../geometry/zoneCharts';
-import { warn } from '../warnings';
+import { dismissNotice, warn } from '../warnings';
 import { track } from '../analytics/track';
 import { alertDialog, confirmDialog } from '../ui/dialogs';
 import {
@@ -261,6 +261,37 @@ export async function asmLoadPartBuffer(
   } else {
     throw new Error('Unsupported file type — use .stl or .3mf');
   }
+  await asmAdoptMesh(part, positions);
+}
+
+/**
+ * Take a mesh as the part's geometry: detect its faces, pick a design face, attach baked zones,
+ * and get the scene moving. Shared by the file loader above and by generated parts, so the two
+ * can't drift — the ordering at the end of this function is load-bearing and was got wrong once
+ * already (see the requestFrame comment).
+ *
+ * For a role that builds its own mesh (AssemblyRole.buildMesh), `positions` is the *asset*, and
+ * the built result is what the part actually keeps.
+ */
+async function asmAdoptMesh(part: AssemblyPart, positions: Float32Array): Promise<void> {
+  const role = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId);
+  // A dropped file REPLACES the part, on a generated role as much as any other — running the
+  // builder over it would hand back the user's mesh with a generated disc fused onto it, which is
+  // not what dropping in a mesh means anywhere else in the app. Clearing assetPositions also keeps
+  // resolvePlacement reporting it as the upload it is rather than as a generated part.
+  if (role?.buildMesh && !part.meshFromUpload) {
+    part.assetPositions = positions;
+    const built = await role.buildMesh(positions);
+    positions = built.positions;
+    part.vertices = built.vertices;
+    if (part.buildWarning) dismissNotice(part.buildWarning);
+    part.buildWarning = built.warning;
+    if (built.warning) warn(built.warning);
+  } else if (part.meshFromUpload) {
+    part.assetPositions = undefined;
+    if (part.buildWarning) dismissNotice(part.buildWarning);
+    part.buildWarning = undefined;
+  }
   part.positions = positions;
   part.patches = detectFlatPatches(positions);
   part.patchIdx = defaultPatchIdx(part); // largest-area patch, or the role's preferred face
@@ -274,6 +305,25 @@ export async function asmLoadPartBuffer(
   requestFrame();
   notifyPartsChanged();
   scheduleRebuild();
+}
+
+/**
+ * Re-run every generated part's builder — for when a build parameter (the hubcap's diameter)
+ * changes. Rebuilds from the cached asset, so no part is re-fetched.
+ */
+export async function asmRebuildGeneratedParts(): Promise<void> {
+  const kind = currentAssemblyKind();
+  const parts = state.assembly.parts.filter((p) => {
+    const role = kind?.roles.find((r) => r.id === p.roleId);
+    return role?.buildMesh && p.assetPositions;
+  });
+  if (!parts.length) return;
+  beginWork();
+  try {
+    for (const part of parts) await asmAdoptMesh(part, part.assetPositions!);
+  } finally {
+    endWork();
+  }
 }
 
 /**

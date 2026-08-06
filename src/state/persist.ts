@@ -45,6 +45,8 @@ export interface PersistedSession {
   recessBg: boolean;
   printerId: string;
   asmRadius: number;
+  /** Optional: sessions written before the hubcap kind existed have no value for it. */
+  hubcapDiameterMm?: number;
   assembly: { kindId: string | null; variantId: string | null };
   baseFilamentId: string | null;
   autoMergeLevel: number;
@@ -134,6 +136,7 @@ function snapshotSession(): PersistedSession {
     recessBg: state.recessBg,
     printerId: state.printerId,
     asmRadius: state.asmRadius,
+    hubcapDiameterMm: state.hubcapDiameterMm,
     assembly: { kindId: state.assembly.kindId, variantId: state.assembly.variantId },
     baseFilamentId: state.baseFilamentId,
     autoMergeLevel: state.autoMergeLevel,
@@ -367,6 +370,9 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.recessBg = session.recessBg;
   state.printerId = session.printerId;
   state.asmRadius = session.asmRadius;
+  // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
+  if (typeof session.hubcapDiameterMm === 'number' && Number.isFinite(session.hubcapDiameterMm))
+    state.hubcapDiameterMm = session.hubcapDiameterMm;
   state.baseFilamentId = session.baseFilamentId;
   state.autoMergeLevel = session.autoMergeLevel;
   state.baseColorKey = session.baseColorKey;

@@ -39,15 +39,27 @@ const manifest: ManifestEntry[] = JSON.parse(
 // Every library part id a role in ASSEMBLY_KINDS can actually load — the renamed-part-id guard
 // walks this set rather than trusting PLACEMENT or parts.json alone, so a rename in either place
 // that drifts from the other fails here.
-function reachableLibraryPartIds(): Set<string> {
+//
+// `generatedOnly` splits off the ids belonging to a role that BUILDS its mesh from the asset
+// (AssemblyRole.buildMesh) instead of loading it: those still ship a real asset that must be
+// listed and sealed, but they can carry no baked placement, because a pose is verified against
+// one exact mesh and theirs is built to vary. Requiring a PLACEMENT entry for them would force a
+// constant that resolvePlacement is guaranteed to refuse.
+function reachableLibraryPartIds(generatedOnly = false): Set<string> {
   const ids = new Set<string>();
   for (const kind of ASSEMBLY_KINDS)
     for (const role of kind.roles) {
+      if (!!role.buildMesh !== generatedOnly) continue;
       if (role.libraryPartId) ids.add(role.libraryPartId);
       if (role.libraryPartIdByVariant)
         Object.values(role.libraryPartIdByVariant).forEach((id) => ids.add(id));
     }
   return ids;
+}
+
+/** Both halves — what parts.json must list and what PART_FINGERPRINTS must seal. */
+function allLibraryPartIds(): Set<string> {
+  return new Set([...reachableLibraryPartIds(), ...reachableLibraryPartIds(true)]);
 }
 
 const soupCache = new Map<string, Float32Array>();
@@ -89,13 +101,22 @@ describe('renamed/drifted part ids', () => {
     }
   });
 
+  it('a generated role ships a sealed asset but claims no baked placement', () => {
+    const generated = reachableLibraryPartIds(true);
+    expect(generated.size).toBeGreaterThan(0); // the hubcap clips; guards the split above
+    for (const id of generated) {
+      expect(PART_FINGERPRINTS, id).toHaveProperty(id);
+      expect(PLACEMENT, id).not.toHaveProperty(id);
+    }
+  });
+
   it('PLACEMENT carries no id a role can no longer load', () => {
     const reachable = reachableLibraryPartIds();
     for (const id of Object.keys(PLACEMENT)) expect(reachable.has(id), id).toBe(true);
   });
 
   it('parts.json and the reachable-role set agree exactly', () => {
-    const reachable = [...reachableLibraryPartIds()].sort();
+    const reachable = [...allLibraryPartIds()].sort();
     const listed = manifest.map((e) => e.id).sort();
     expect(listed).toEqual(reachable);
   });
