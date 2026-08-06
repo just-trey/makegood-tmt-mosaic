@@ -263,11 +263,15 @@ export async function asmLoadPartBuffer(
   }
   part.positions = positions;
   part.patches = detectFlatPatches(positions);
-  requestFrame(); // new part geometry — re-fit the view
   part.patchIdx = defaultPatchIdx(part); // largest-area patch, or the role's preferred face
   applyAsmPatchChoice(part);
   await attachBakedZones(part, positions.length / 9);
   part.loaded = true;
+  // After `loaded`, not before: rebuild.ts renders only loaded parts, so a frame requested
+  // earlier can be consumed by a rebuild this part isn't in yet — and nothing requests another.
+  // The chair's thirteen parts load concurrently, which is what made that window reachable: the
+  // view ended up fitted to whichever subset had finished.
+  requestFrame();
   notifyPartsChanged();
   scheduleRebuild();
 }
