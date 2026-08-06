@@ -10,6 +10,7 @@ import {
   setArtworkMode,
   setArtworkZone,
 } from '../state/artwork';
+import { fillModeOffered } from '../assembly/kinds';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
 import { rasterCappedMessage } from './artworkPanel';
 import { dismissNotice, notice } from '../warnings';
@@ -38,8 +39,9 @@ export function renderArtworkList(): void {
   const zones = availableZones();
   const rasterBlocksDrawn = new Set<string>();
   // Fill repeats the design across a zone, which only the assembly-mode cut pipeline implements —
-  // a flat plate would show the control and then ignore it.
-  const canFill = state.shapeKind === 'assembly';
+  // a flat plate would show the control and then ignore it. A kind carrying `withholdFill` opts out
+  // too; fillModeOffered() covers both.
+  const canFill = fillModeOffered();
 
   state.artworks.forEach((a) => {
     const source = state.sources.find((s) => s.id === a.sourceId);

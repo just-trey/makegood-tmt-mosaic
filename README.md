@@ -137,7 +137,10 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   the Colors slider and Auto-merge to get down to the slots you own.
 - Detail below the printable floor is merged into its surroundings rather than
   cut, and a very busy image says so instead of tracing thousands of specks.
-- Fill (repeat the design across a surface) is assembly-mode only.
+- Fill (repeat the design across a surface) is assembly-mode only, and is not
+  offered on the chair body — it was too slow to sit through and dropped a color
+  on one part. The pattern strip is hidden there for the same reason; Sticker
+  placement works normally. See [docs/tech-debt.md](docs/tech-debt.md).
 - Two designs placed over each other on one surface are warned about by name,
   not resolved for you — their recesses still both get cut. A Fill underneath
   a sticker isn't checked at all; see [docs/tech-debt.md](docs/tech-debt.md).

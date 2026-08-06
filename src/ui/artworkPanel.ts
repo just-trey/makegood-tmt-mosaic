@@ -1,7 +1,7 @@
 import type { ArtworkInstance, DesignSource } from '../types';
 import { loadArtworkSource, pruneSettingsToPalette } from '../state/artwork';
 import { getPatterns } from '../state/patterns';
-import { state } from '../state/store';
+import { fillModeOffered } from '../assembly/kinds';
 import { scheduleRebuild } from '../app/scheduler';
 import { beginWork, endWork } from '../app/idle';
 import { requestFrame } from '../scene/viewport';
@@ -69,7 +69,7 @@ export async function applyPattern(id: string): Promise<void> {
     const res = await fetch(`patterns/${entry.file}`);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const svgText = await res.text();
-    const mode = state.shapeKind === 'assembly' ? 'fill' : 'sticker';
+    const mode = fillModeOffered() ? 'fill' : 'sticker';
     applyParsedSVG(svgText, entry.name, 'pattern', mode);
     track('artwork_load', { source: 'pattern', pattern: id });
   } catch (e) {
@@ -84,13 +84,16 @@ export async function applyPattern(id: string): Promise<void> {
 
 /**
  * The built-in pattern picker strip: one thumbnail button per public/patterns/patterns.json
- * entry. Rendered once after the manifest loads (see main.ts) — the strip's membership never
- * changes at runtime, unlike the artwork list below it.
+ * entry. The strip's membership never changes at runtime, but its visibility does — a part
+ * switch re-runs this, since a kind withholding Fill hides it (see below).
  */
 export function renderPatternPicker(): void {
   const strip = $('#pattern-picker');
   const patterns = getPatterns();
-  if (!patterns.length) {
+  // A pattern exists to repeat across a surface; as a single sticker it's a lone swatch of cow
+  // print, which is not what any of these thumbnails look like they'd do. So the strip goes with
+  // Fill rather than degrading into a placement nobody asked for.
+  if (!patterns.length || !fillModeOffered()) {
     strip.style.display = 'none';
     return;
   }

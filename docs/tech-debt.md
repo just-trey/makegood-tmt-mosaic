@@ -128,6 +128,14 @@ fix above — 93.6s is not interactive — but re-measure before quoting the
 405.6s figure as the cost of the pipeline itself. The "All zones" >900s
 result has not been re-measured.
 
+**Withheld from users, 2026-08-05.** The chair-body kind now carries
+`withholdFill` (`src/types.ts`), so Fill and the pattern strip are not offered
+on it and no user can reach the numbers above. This is a gate, not a fix: the
+path is unchanged and every measurement here still stands. Clearing the flag
+needs the accumulator-or-worker fix and the "Handle (left)" color loss below.
+Sticker on the chair is unaffected and was measured at 19.5s for a full
+five-zone rebuild on the same box, which is why only Fill was withheld.
+
 ## The long assembly-mode rebuild has no cancel, and until session persistence lands the only escape destroys the work
 
 `#loading-overlay` (the "Rebuilding geometry…" curtain, `src/ui/overlay.ts`)
@@ -1044,6 +1052,10 @@ degradation and the cleanup, not that Manifold fails on any particular real
 mesh. Genuinely malformed input is still the untested half.
 
 ## Zebra + Fill still loses one color on "Handle (left)"
+
+**Not currently reachable:** the chair body carries `withholdFill`, so Fill and
+the pattern strip are both withheld there — this needs fixing before that flag
+comes off, not before the next release. The defect below is unchanged.
 
 Left over after the vertex-count fix below, measured on `MOSAIC_GPU=1`
 production build, 2026-08-03: zebra in Fill mode on the chair's Left side

@@ -162,6 +162,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   wheel exactly as before. It also reaches a kind left out of the Part
   dropdown, should one ever be.
 
+### Changed
+
+- **Fill is no longer offered on the chair body**, and the built-in pattern
+  strip is hidden there with it. Repeating a design across one of the chair's
+  five zones took over a minute and a half to recut, "All zones" ran past
+  fifteen minutes with no way to stop it, and the bundled zebra pattern lost a
+  color on "Handle (left)" — printing that piece without its black. Sticker
+  placement on the chair is unchanged, as is Fill everywhere else. A design
+  already set to Fill drops back to Sticker when it lands on the chair, rather
+  than quietly rebuilding through the path that misbehaves, and a saved session
+  restores the same way. The underlying defects are still recorded in
+  [docs/tech-debt.md](docs/tech-debt.md); this withholds the feature until they
+  close.
+
 ### Removed
 
 - The standalone hidden "Wheel mount (left)" assembly kind. It was briefly

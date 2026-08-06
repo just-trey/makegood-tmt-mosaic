@@ -7,8 +7,9 @@ import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
 import { ASSEMBLY_KINDS, currentAssemblyKind } from '../assembly/kinds';
 import { maybeAutoLoadAssembly } from '../assembly/parts';
-import { clearArtworkZoneBindings } from '../state/artwork';
+import { clampArtworkModes, clearArtworkZoneBindings } from '../state/artwork';
 import { renderArtworkList } from './artworkListPanel';
+import { renderPatternPicker } from './artworkPanel';
 import {
   renderAssemblyPartList,
   renderAssemblyRoleControls,
@@ -257,9 +258,14 @@ export function initPartPanel(): void {
         setShapeKind(val as ShapeKind);
         track('mode_switch', { kind: val as ShapeKind });
       }
+      // Artwork outlives a part switch, so a design left in Fill by the previous kind has to be
+      // re-clamped against the new one before it reaches a rebuild — hiding the control alone would
+      // leave the old mode live and still cut through the withheld path.
+      clampArtworkModes();
       // Zone bindings above, and the assembly-only Sticker/Fill control, both change with the
       // part — so the rows re-render on every switch, not just when the assembly kind changed.
       renderArtworkList();
+      renderPatternPicker();
     })();
   });
   setShapeThumb(state.shapeKind); // reflect the initial selection

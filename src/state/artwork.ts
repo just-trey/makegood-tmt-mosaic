@@ -2,6 +2,7 @@ import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState } from '../t
 import { clearBaseColor, state } from './store';
 import { deltaE, hexToLab } from '../color';
 import { parseRasterImage } from '../raster/parse';
+import { fillWithheld } from '../assembly/kinds';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
@@ -327,7 +328,9 @@ export function addInstanceForSource(sourceId: string, zoneId: string | null): A
     flipY: false,
     // Sticker/fill is a property of the design, not of where it sits: a pattern placed on a second
     // zone is still a pattern, so inherit rather than reset (unlike the placement above).
-    mode: state.artworks.find((x) => x.sourceId === sourceId)?.mode ?? 'sticker',
+    mode: allowedArtworkMode(
+      state.artworks.find((x) => x.sourceId === sourceId)?.mode ?? 'sticker',
+    ),
   };
   state.artworks.push(instance);
   setActiveArtwork(instance.id);
@@ -378,7 +381,37 @@ export function setArtworkZone(instanceId: string, zoneId: string | null): void 
  */
 export function setArtworkMode(instanceId: string, mode: ArtworkInstance['mode']): void {
   const a = state.artworks.find((x) => x.id === instanceId);
-  if (a) a.mode = mode;
+  if (a) a.mode = allowedArtworkMode(mode);
+}
+
+/**
+ * Fill coerced to Sticker on a kind that withholds it. State never holds Fill for a part where Fill
+ * misbehaves, so the build pipeline needs no matching check — the alternative, letting `mode` stay
+ * 'fill' and reinterpreting it downstream, is the one shared value meaning two things at once that
+ * CLAUDE.md warns about. Deliberately keyed on fillWithheld() and not on whether the control is
+ * currently shown: a flat part hides Fill but merely ignores it, and clamping there would discard a
+ * setting the user picked in assembly mode the moment they glanced at a disc.
+ */
+export function allowedArtworkMode(mode: ArtworkInstance['mode']): ArtworkInstance['mode'] {
+  return mode === 'fill' && fillWithheld() ? 'sticker' : mode;
+}
+
+/**
+ * Re-clamp every loaded design's mode against the current part. Artwork outlives a part switch
+ * (only its zone bindings are cleared), so a design set to Fill on the wheel would otherwise arrive
+ * on the chair still set to Fill and rebuild through the path the flag exists to keep it out of.
+ * Returns whether anything changed, so callers can skip a needless rebuild.
+ */
+export function clampArtworkModes(): boolean {
+  let changed = false;
+  state.artworks.forEach((a) => {
+    const next = allowedArtworkMode(a.mode);
+    if (next !== a.mode) {
+      a.mode = next;
+      changed = true;
+    }
+  });
+  return changed;
 }
 
 function partIdForZone(zoneId: string): number {

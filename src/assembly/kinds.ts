@@ -63,6 +63,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     name: 'Chair body',
     // per-zone rect semantics: each zone's template maps its SVG 1:1 in mm, centered on the chart.
     designFit: 'rect',
+    withholdFill: true,
     // The chair is packed in its CAD frame (up is +Y, the front where the wings/footrest sit is
     // +Z), not design-face-up like the wheel and footrest — a body with five design surfaces has
     // no single face to point at the camera. Without this the Z-up viewport renders CAD +Y
@@ -196,6 +197,26 @@ export function currentVariantId(): string | null {
 
 export function currentAssemblyKind(): AssemblyKind | null {
   return ASSEMBLY_KINDS.find((k) => k.id === state.assembly.kindId) || null;
+}
+
+/**
+ * Whether to *show* Fill for the part currently loaded: only the assembly cut pipeline implements
+ * it, and the kind must not withhold it. Drives the controls (mode select, pattern strip), not what
+ * state may hold — see fillWithheld() for that distinction.
+ */
+export function fillModeOffered(): boolean {
+  if (state.shapeKind !== 'assembly') return false;
+  return !currentAssemblyKind()?.withholdFill;
+}
+
+/**
+ * Whether Fill is withheld on the current kind because it would misbehave, as opposed to merely
+ * being unimplemented (flat modes). Only this warrants rewriting a mode the user already chose:
+ * a flat part just ignores Fill, so clamping there would quietly discard the setting on a
+ * round-trip out to a disc and back.
+ */
+export function fillWithheld(): boolean {
+  return !!currentAssemblyKind()?.withholdFill;
 }
 
 /**
