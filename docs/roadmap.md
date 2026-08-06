@@ -1,5 +1,9 @@
 # Roadmap ideas (not built)
 
+- Hubcap assembly kind for the wheel **(requested directly by a volunteer,
+  2026-08-05 — treat as higher priority than the ideas below)**: a
+  standalone part, not dependent on the quarter-wheel work below — own STL,
+  own baked export placement per the [add-part skill](../.claude/skills/add-part).
 - Snap a traced image's palette to the owned-filament list
   ([public/filaments.json](../public/filaments.json)) instead of to colors
   derived from the image, so an image's regions are filaments the user actually
@@ -14,8 +18,7 @@
   runtime subtracts from the clip region and the template draws hatched, so
   the artist can see where not to put detail.
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
-  existing half-wheel (Top ×2 + Cap) kind, and a hubcap part for the wheel
-  assembly.
+  existing half-wheel (Top ×2 + Cap) kind.
 - A full parent-handle assembly kind.
 - Surface-first zone picking: show the chair's five design zones as
   selectable surfaces on the model from the moment it loads, so "put this on
