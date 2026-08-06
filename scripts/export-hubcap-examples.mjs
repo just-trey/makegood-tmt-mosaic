@@ -56,6 +56,19 @@ function plateSize(printableArea) {
   return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
 }
 
+/**
+ * The plate arrangements a human verified in the slicer, straight off the reference projects
+ * (stubs/mosaic-hubcap.3mf, stubs/mosaic-hubcap-snap.3mf) — Snapmaker converted from its own plate
+ * origin of (0.5, 1). Written out here rather than imported from src/, so this checks the app's
+ * output against the references and not against the same constants that produced it.
+ */
+const VERIFIED = {
+  '256x256': { part: { x: 141.192, y: 142.3629 }, tower: { x: 16.8181, y: 31.8954 }, width: '35' },
+  '270x270': { part: { x: 149.5842, y: 148.0757 }, tower: { x: 27.5488, y: 27.8477 }, width: '30' },
+};
+/** Above this the arrangement wasn't verified and the export should fall back to computing one. */
+const VERIFIED_DIAMETER = 220;
+
 /** Read back what was written: parts per plate, filament count, and the tower position. */
 async function summarise(file) {
   const zip = await JSZip.loadAsync(readFileSync(file));
@@ -73,9 +86,17 @@ async function summarise(file) {
   );
   const proj = JSON.parse(await zip.file('Metadata/project_settings.config').async('string'));
   const [bedW, bedD] = plateSize(proj.printable_area);
+  const model = await zip.file('3D/3dmodel.model').async('string');
+  const items = [...model.matchAll(/<item[^>]*transform="([^"]+)"/g)].map((m) => {
+    const t = m[1].split(/\s+/).map(Number);
+    return { x: t[9], y: t[10] };
+  });
   return {
     bedW,
     bedD,
+    items,
+    towerWidth: proj.prime_tower_width,
+    overrides: proj.different_settings_to_system?.[0] ?? '',
     plates: plates.map((ids, pi) => ({
       parts: ids.map((id) => name[id]),
       filaments: new Set(ids.flatMap((id) => [...extruders[id]])).size,
@@ -180,6 +201,55 @@ try {
 
       const s = await summarise(file);
       console.log(`  bed read back: ${s.bedW}x${s.bedD}mm, ${s.plates.length} plate(s)`);
+
+      // Did the export reproduce the arrangement a human verified in the slicer, or fall back?
+      const bedKey = `${s.bedW}x${s.bedD}`;
+      const v = VERIFIED[bedKey];
+      const shouldUseVerified = !!v && diameter <= VERIFIED_DIAMETER;
+      const at = s.items[0];
+      const t0 = s.plates[0]?.tower;
+      if (shouldUseVerified) {
+        const off = Math.hypot(at.x - v.part.x, at.y - v.part.y);
+        const toff = Math.hypot(t0.x - v.tower.x, t0.y - v.tower.y);
+        console.log(
+          `  VERIFIED plate: part (${at.x.toFixed(3)}, ${at.y.toFixed(3)}), ` +
+            `tower (${t0.x.toFixed(3)}, ${t0.y.toFixed(3)}), width ${s.towerWidth}`,
+        );
+        if (off > 0.01 || toff > 0.01) {
+          console.log(
+            `   !! off the verified arrangement by ${off.toFixed(3)}mm / ${toff.toFixed(3)}mm`,
+          );
+          failed++;
+        }
+        if (s.towerWidth !== v.width) {
+          console.log(`   !! prime_tower_width is ${s.towerWidth}, verified at ${v.width}`);
+          failed++;
+        }
+        // written but not declared an override, the slicer can reconcile it away on resave
+        if (!s.overrides.split(';').includes('prime_tower_width')) {
+          console.log(`   !! prime_tower_width not in different_settings_to_system`);
+          failed++;
+        }
+        // the whole point: the tower's nearest corner must clear the disc
+        const near = { x: v.tower.x + Number(v.width), y: v.tower.y + Number(v.width) };
+        const gap = Math.hypot(v.part.x - near.x, v.part.y - near.y) - diameter / 2;
+        console.log(`  tower clears the disc by ${gap.toFixed(1)}mm`);
+        if (gap < 1) {
+          console.log(`   !! tower overlaps the disc`);
+          failed++;
+        }
+      } else {
+        // no verified arrangement for this bed/size — must centre and say so
+        const centred = Math.hypot(at.x - s.bedW / 2, at.y - s.bedD / 2);
+        console.log(
+          `  computed plate (nothing verified here): part (${at.x.toFixed(3)}, ${at.y.toFixed(3)})` +
+            `, tower (${t0.x.toFixed(3)}, ${t0.y.toFixed(3)})`,
+        );
+        if (centred > 0.5) {
+          console.log(`   !! expected the part centred, it is ${centred.toFixed(2)}mm off`);
+          failed++;
+        }
+      }
       for (const [i, p] of s.plates.entries()) {
         const fits = cornerTower(s.bedW, s.bedD, diameter);
         console.log(

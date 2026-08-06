@@ -14,8 +14,10 @@ import {
   HUBCAP_MIN_DIAMETER_MM,
   HUBCAP_REFERENCE_DIAMETER_MM,
   HUBCAP_THICKNESS_MM,
+  HUBCAP_VERIFIED_DIAMETER_MM,
   buildHubcapBody,
   hubcapDiscSoup,
+  hubcapPlacement,
   hubcapSegments,
   soupVolume,
 } from '../src/geometry/hubcap';
@@ -154,6 +156,74 @@ describe('hubcap disc generator', () => {
       // the chamfer is a fixed 1mm, not a fraction of the disc
       expect(d / 2 - ringRadius(soup, HUBCAP_FACE_Y)).toBeCloseTo(HUBCAP_CHAMFER_MM, 2);
       expect(soupVolume(soup)).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('the verified plate arrangement', () => {
+  // Straight off the two reference projects (stubs/mosaic-hubcap.3mf, stubs/mosaic-hubcap-snap.3mf),
+  // Snapmaker converted from its plate origin of (0.5, 1). Repeated here rather than imported so
+  // this checks the constants against the files, not against themselves.
+  const VERIFIED = {
+    '256x256': { part: { x: 141.192, y: 142.3629 }, tower: { x: 16.8181, y: 31.8954 }, width: 35 },
+    '270x270': { part: { x: 149.5842, y: 148.0757 }, tower: { x: 27.5488, y: 27.8477 }, width: 30 },
+  };
+
+  it('reproduces the tower position a human placed, on both verified beds', () => {
+    for (const [bed, want] of Object.entries(VERIFIED)) {
+      const p = hubcapPlacement(HUBCAP_VERIFIED_DIAMETER_MM, bed)!;
+      expect(p, bed).toBeDefined();
+      // the delta is held relative to the part, so part + delta must land back on the tower
+      const pos = p.fixedPosByPlate[bed];
+      const delta = p.primeTowerDeltaByPlate[bed];
+      expect(pos.x + delta.x).toBeCloseTo(want.tower.x, 4);
+      expect(pos.y + delta.y).toBeCloseTo(want.tower.y, 4);
+      expect(pos.x).toBeCloseTo(want.part.x, 4);
+      expect(pos.y).toBeCloseTo(want.part.y, 4);
+      expect(p.projectSettings.prime_tower_width).toBe(String(want.width));
+    }
+  });
+
+  it('leaves the tower genuinely clear of the disc it was verified against', () => {
+    // The check a human made by eye, made arithmetic: the tower's nearest corner must sit outside
+    // the disc's rim. wipe_tower_x/y is the tower's FRONT-LEFT corner — read as a centre the X1C
+    // tower would hang off the plate, which is how that ambiguity was settled.
+    const r = HUBCAP_VERIFIED_DIAMETER_MM / 2;
+    for (const [bed, want] of Object.entries(VERIFIED)) {
+      const near = { x: want.tower.x + want.width, y: want.tower.y + want.width };
+      const gap = Math.hypot(want.part.x - near.x, want.part.y - near.y) - r;
+      expect(gap, `${bed} tower clearance`).toBeGreaterThan(1);
+      // and the disc itself has to be on the plate
+      const [w, d] = bed.split('x').map(Number);
+      expect(want.part.x - r).toBeGreaterThan(0);
+      expect(want.part.y - r).toBeGreaterThan(0);
+      expect(want.part.x + r).toBeLessThan(w);
+      expect(want.part.y + r).toBeLessThan(d);
+    }
+  });
+
+  it('withholds itself above the verified diameter, and on an unverified bed', () => {
+    // smaller is safe by construction — part and tower both stay put, so the gap only opens
+    expect(hubcapPlacement(HUBCAP_VERIFIED_DIAMETER_MM - 40, '256x256')).toBeDefined();
+    expect(hubcapPlacement(HUBCAP_VERIFIED_DIAMETER_MM, '256x256')).toBeDefined();
+    // larger is not: the X1C arrangement has only ~7mm of clearance to give
+    expect(hubcapPlacement(HUBCAP_VERIFIED_DIAMETER_MM + 0.5, '256x256')).toBeUndefined();
+    expect(hubcapPlacement(250, '256x256')).toBeUndefined();
+    // the H2D was never verified, at any size
+    expect(hubcapPlacement(HUBCAP_VERIFIED_DIAMETER_MM, '350x320')).toBeUndefined();
+    expect(hubcapPlacement(120, '350x320')).toBeUndefined();
+  });
+
+  it('keeps clearing the disc at every diameter it claims to cover', () => {
+    // the "smaller is safe" argument, checked rather than asserted
+    for (const bed of Object.keys(VERIFIED)) {
+      const want = VERIFIED[bed as keyof typeof VERIFIED];
+      for (let d = HUBCAP_MIN_DIAMETER_MM; d <= HUBCAP_VERIFIED_DIAMETER_MM; d += 10) {
+        expect(hubcapPlacement(d, bed), `${bed} @ ${d}mm`).toBeDefined();
+        const near = { x: want.tower.x + want.width, y: want.tower.y + want.width };
+        const gap = Math.hypot(want.part.x - near.x, want.part.y - near.y) - d / 2;
+        expect(gap, `${bed} @ ${d}mm clearance`).toBeGreaterThan(1);
+      }
     }
   });
 });

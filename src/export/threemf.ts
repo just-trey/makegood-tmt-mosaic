@@ -36,6 +36,13 @@ export interface ExportPart {
    * used for parts whose placement is a fixed, externally-verified constant rather than
    * something to compute (see WHEEL_TOP_POS/WHEEL_CAP_POS). */
   fixedPos?: { x: number; y: number };
+  /** Bed-specific absolute positions, keyed `"<w>x<d>"` in mm — the counterpart to
+   * `primeTowerDeltaByPlate`, and used for the same reason: a key means that bed was verified in
+   * its own right. Unlike `fixedPos`, a match here is taken VERBATIM and skips the group
+   * re-centering `placeHintedGroup` applies off the reference plate, because re-centering exists to
+   * rescue a coordinate authored for a different bed and this one wasn't. Takes precedence over
+   * `fixedPos`. */
+  fixedPosByPlate?: Record<string, { x: number; y: number }>;
   /** Prime/wipe tower offset from this part's final local position — set on the part that anchors
    * its plate's tower (the wheel's Top half, or the footrest). Held relative so the tower rides
    * along with the part on every printer. Baked from the part's reference 3MF (see
@@ -51,6 +58,12 @@ export interface ExportPart {
    * <metadata key value/> on this part's object (e.g. { brim_type: 'no_brim', enable_support: '0' }
    * for the footrest). Baked from the part's reference 3MF; general per-part settings mechanism. */
   objectSettings?: Record<string, string>;
+  /** Project-wide Bambu settings this part's verified plate depends on, merged into
+   * project_settings.config (e.g. `prime_tower_width` — the hubcap's tower clearance is only true
+   * for the width it was verified at). Distinct from `objectSettings`, which are per-object
+   * metadata in model_settings.config; these are global to the file, so a value here is a claim
+   * about the whole plate rather than about one object. */
+  projectSettings?: Record<string, string>;
 }
 export interface ExportOptions {
   rotZdeg?: number;
@@ -138,6 +151,8 @@ export function bambuProjectSettings(
   materials: ExportMaterial[],
   printer: Printer,
   wipeTower?: Array<{ x: number; y: number } | undefined>,
+  /** Baked project-wide overrides from the parts on this plate (ExportPart.projectSettings). */
+  extra?: Record<string, string>,
 ): string {
   const { plate } = printer;
   const rep = (v: string) => materials.map(() => v);
@@ -153,6 +168,11 @@ export function bambuProjectSettings(
     'sparse_infill_pattern',
     'enable_support',
     'support_type',
+    // Baked plate settings are listed too, for the reason the paragraph above gives: a value the
+    // slicer doesn't know was deliberate can be reconciled back to the preset's default on a
+    // reload/resave — which for prime_tower_width would silently retire the clearance the
+    // position was verified against.
+    ...Object.keys(extra ?? {}),
   ];
   return JSON.stringify(
     {
@@ -194,6 +214,8 @@ export function bambuProjectSettings(
             wipe_tower_y: wipeTower.map((w) => fmtCoord(w ? w.y : plate.d / 2)),
           }
         : {}),
+      // last, so a baked plate setting wins over anything above it that shares a key
+      ...(extra ?? {}),
     },
     null,
     1,
@@ -277,6 +299,52 @@ export const FOOTREST_PLATE_R = [
 // Held relative (via ExportPart.primeTowerDelta) so it lands in the same empty diagonal corner the
 // 45°-rotated part leaves open, on every printer.
 export const FOOTREST_PRIME_TOWER_DELTA = { x: 29.808863, y: 41.857863 };
+
+/**
+ * Hubcap plate placement, baked from two reference projects the maintainer verified in the slicer
+ * (2026-08-06): stubs/mosaic-hubcap.3mf (Bambu X1C, 256×256) and stubs/mosaic-hubcap-snap.3mf
+ * (Snapmaker U1, 270×270). Both were verified at the 220mm default.
+ *
+ * **The disc was moved as well as the tower, and the two only work together.** Centred, a 220mm
+ * disc leaves no corner a tower fits in on either bed — so the maintainer pushed the part up and
+ * right and put the tower in the freed corner. Applying the tower position without the matching
+ * part position puts the tower through the disc, which is why these are one table and not two
+ * constants. Measured clearance from the disc's rim to the tower's nearest corner: 7.0mm on the
+ * X1C, 18.9mm on the U1.
+ *
+ * Positions are plate-origin-relative. The Snapmaker file's own `printable_area` starts at
+ * (0.5, 1) rather than (0, 0) — Snapmaker Orca rewrites it to its own profile on save — so its
+ * raw numbers are in that shifted frame and were converted here, not copied.
+ *
+ * `wipe_tower_x/y` is the tower's FRONT-LEFT CORNER, not its centre. Settled by these files rather
+ * than assumed: read as a centre, the X1C's 35mm tower would hang off the plate at x = −0.7, and
+ * its clearance to the disc would be 31.6mm rather than the 7.0mm a human clearly placed by eye.
+ *
+ * `prime_tower_width` is written because the clearance above is only true for a tower that wide.
+ * Note it is NOT an override the references carry — `different_settings_to_system` in both is just
+ * `brim_type;enable_support;sparse_infill_pattern`, so 35 and 30 are each slicer's own default for
+ * that printer. Writing it protects the verified clearance from a volunteer whose profile differs;
+ * it is not transferring a choice the maintainer made.
+ *
+ * **Only valid up to the diameter they were verified at** — the hubcap is generated, so a larger
+ * disc invalidates the whole arrangement. That condition lives with the geometry, in
+ * hubcapPlacement() (src/geometry/hubcap.ts).
+ */
+export const HUBCAP_PLATE: Record<
+  string,
+  { pos: { x: number; y: number }; tower: { x: number; y: number }; towerWidthMm: string }
+> = {
+  '256x256': {
+    pos: { x: 141.192, y: 142.3629 },
+    tower: { x: 16.8181, y: 31.8954 },
+    towerWidthMm: '35',
+  },
+  '270x270': {
+    pos: { x: 149.5842, y: 148.0757 },
+    tower: { x: 27.5488, y: 27.8477 },
+    towerWidthMm: '30',
+  },
+};
 
 export async function build3MFCombined(
   materials: ExportMaterial[],
@@ -408,6 +476,10 @@ export async function build3MFCombined(
   // half gets its own plate; see exportPanel.ts). Placement within the plate comes from each
   // part's fixedPos when set (the normal case here — see WHEEL_TOP_POS/WHEEL_CAP_POS), or plate
   // center as a fallback for any hinted part that doesn't carry one.
+  /** A position authored for exactly this bed, if the part carries one. */
+  const bedPos = (part: ExportPart): { x: number; y: number } | undefined =>
+    part.fixedPosByPlate?.[bedKey];
+
   function placeHintedGroup(items: Placed[]): void {
     let groupOffsetX = 0,
       groupOffsetY = 0;
@@ -420,6 +492,8 @@ export async function build3MFCombined(
         gMinY = Infinity,
         gMaxY = -Infinity;
       items.forEach((pl) => {
+        // a per-bed position is already right for this plate — it must not drag the group offset
+        if (bedPos(pl.part)) return;
         const pos = pl.part.fixedPos;
         if (!pos) return;
         gMinX = Math.min(gMinX, pos.x + pl.cx - pl.w / 2);
@@ -436,7 +510,7 @@ export async function build3MFCombined(
     // same spot and print through each other. Nothing ships in that state (every hinted part today
     // carries a fixedPos, or is alone on its plate), but it fails silently rather than loudly, so
     // say so instead of letting it reach a slicer.
-    const centered = items.filter((pl) => !pl.part.fixedPos);
+    const centered = items.filter((pl) => !pl.part.fixedPos && !bedPos(pl.part));
     if (centered.length > 1)
       warnings.push(
         `${centered.map((pl) => `"${pl.part.name}"`).join(', ')} share a build plate with no ` +
@@ -444,9 +518,11 @@ export async function build3MFCombined(
           `double-check for overlap in your slicer.`,
       );
     items.forEach((pl) => {
+      const bed = bedPos(pl.part);
       const pos = pl.part.fixedPos;
-      pl.tx = pos ? pos.x + groupOffsetX : plateW / 2 - pl.cx;
-      pl.ty = pos ? pos.y + groupOffsetY : plateD / 2 - pl.cy;
+      // verbatim for a bed-specific position, offset for a reference-plate one, else centered
+      pl.tx = bed ? bed.x : pos ? pos.x + groupOffsetX : plateW / 2 - pl.cx;
+      pl.ty = bed ? bed.y : pos ? pos.y + groupOffsetY : plateD / 2 - pl.cy;
       pl.tz = -pl.minZ;
     });
   }
@@ -537,7 +613,12 @@ export async function build3MFCombined(
       // Prime/wipe tower position is relative to this plate's own anchor part's final local
       // position (still pre-stride here, which is exactly what wipe_tower_x/y want). The anchor is
       // whichever part on the plate carries a primeTowerDelta (wheel Top / footrest).
-      const anchor = plate.row.find((pl) => pl.part.primeTowerDelta);
+      // Either form counts as anchoring the tower. Searching for `primeTowerDelta` alone missed a
+      // part carrying only per-bed deltas — it would fall through to the suggested corner and
+      // quietly discard a position a human had verified for exactly this plate.
+      const anchor = plate.row.find(
+        (pl) => pl.part.primeTowerDelta || pl.part.primeTowerDeltaByPlate?.[bedKey],
+      );
       const delta =
         anchor && (anchor.part.primeTowerDeltaByPlate?.[bedKey] ?? anchor.part.primeTowerDelta);
       plate.wipeTower =
@@ -736,6 +817,10 @@ ${items.join('\n')}
         materials,
         printer,
         plates.map((p) => p.wipeTower),
+        // Project settings are global to the file, so the parts' baked overrides are merged rather
+        // than kept per plate. Nothing ships two parts that set the same key to different values,
+        // and one that did would be a plate-level claim that can't be honored anyway.
+        Object.assign({}, ...parts.map((p) => p.projectSettings ?? {})),
       ),
     ),
   });

@@ -1068,3 +1068,36 @@ removes the ceiling for the bundled patterns, which would make the asset
 budget above a performance concern rather than a correctness one. Upgrading
 turf past 6.5 may move the ceiling but is separately blocked — see the
 `@turf/turf` pin section.
+
+## The hubcap's plate is verified on two beds and up to one diameter
+
+`HUBCAP_PLATE` ([src/export/threemf.ts](../src/export/threemf.ts)) carries
+hand-verified arrangements for the 256×256 and 270×270 beds, both checked at
+220mm. `hubcapPlacement` ([src/geometry/hubcap.ts](../src/geometry/hubcap.ts))
+applies them only within that, and everything outside falls back to centring the
+part with `suggestTowerPos` picking a corner — correct, and it says so, but it
+is the outcome that needs a slicer pass every time.
+
+What that leaves open, in the order it is likely to bite:
+
+- **The H2D (350×320) has no verified plate at any size.** It is also the bed
+  with the most room — a 220mm disc leaves a ~90mm corner, so the computed
+  fallback is very likely fine. Nobody has confirmed it.
+- **Nothing above 220mm is verified on any bed.** The control goes to the plate
+  size, so a 250mm hubcap on a 270mm bed is reachable and unverified. On the
+  256mm bed the verified clearance is only 7mm, so this is not a case where the
+  existing numbers could be stretched a little.
+
+Closing either is the same job and needs no code: export at the size and
+printer in question (`scripts/export-hubcap-examples.mjs` produces the files),
+position the part and the prime tower in the slicer, save, and add the numbers
+as another `HUBCAP_PLATE` entry — plus raising `HUBCAP_VERIFIED_DIAMETER_MM` if
+the new check is at a larger diameter. Read the provenance comment on
+`HUBCAP_PLATE` first: the part position and the tower position are one claim,
+because on both verified beds the disc had to move off centre to free a corner
+at all, and transferring one without the other puts the tower through the part.
+
+Worth knowing why this can't be solved once and for all the way the fixed parts
+were: a generated part has no stable mesh to seal a pose against, so every
+arrangement is only ever verified for the parameters it was checked at. More
+entries narrow the gap; they don't close the category.

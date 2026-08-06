@@ -148,13 +148,14 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - The chair body's prime-tower positions are verified on 270mm and 256mm beds
   only; other bed sizes inherit the 270mm positions untested — see
   [docs/tech-debt.md](docs/tech-debt.md).
-- The hubcap is generated to the diameter you choose, so it can carry no
-  pre-verified plate position or prime-tower placement the way the fixed parts
-  do — a pose is verified against one exact mesh, and this one is built to
-  vary. It exports centred with the tower parked in the freest corner, and says
-  so. On a 256mm bed a 220mm hubcap leaves about a 50mm square corner for the
-  tower, which is enough for a typical 2–4 filament print but is the tightest
-  of the three beds — check it in your slicer.
+- The hubcap's plate is verified up to 220mm on 256mm and 270mm beds only.
+  Within that it exports at a hand-checked position with the prime tower placed
+  clear of it (7mm of clearance on a 256mm bed, 19mm on a 270mm one). Larger
+  than 220mm, or on any other bed, nothing was verified: it exports centred with
+  the tower parked in the freest corner, and says so — check both in your
+  slicer. Because the part is generated, this can't be a fingerprint-sealed pose
+  the way the fixed parts have; it's an arrangement verified at one size, which
+  is why it stops applying above that size.
 - Parts the reference sets to manual tree support arrive without the painted
   enforcers; paint them yourself or switch to auto support.
 - The caster mounts can't carry artwork — see

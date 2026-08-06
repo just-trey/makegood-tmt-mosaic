@@ -318,6 +318,18 @@ export interface AssemblyRole {
    * its own mesh, let it". Re-run by asmRebuildGeneratedParts when a parameter changes.
    */
   buildMesh?: (asset: Float32Array) => Promise<GeneratedMesh>;
+  /**
+   * The verified plate placement for this role's *current* build parameters, or undefined when
+   * nothing was verified for them.
+   *
+   * Generated parts can't use the fingerprint seal every other part's placement hangs off — their
+   * mesh varies by design, so it never matches. What can still be verified is a specific
+   * arrangement at a specific size, and this is how the role says which. Returning undefined is a
+   * real answer: it means the export should fall back to computing a position and saying so.
+   *
+   * Typed loosely because the placement shape lives in src/export/; the caller narrows it.
+   */
+  buildPlacement?: () => Record<string, unknown> | undefined;
 }
 
 /** What an AssemblyRole.buildMesh returns: the part's mesh, plus anything the user should know. */

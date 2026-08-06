@@ -4,8 +4,10 @@ import {
   HUBCAP_DISCONNECTED_WARNING,
   HUBCAP_MIN_DIAMETER_MM,
   buildHubcapBody,
+  hubcapPlacement,
   hubcapTemplateSvg,
 } from '../geometry/hubcap';
+import { getPrinter } from '../export/printers';
 
 /**
  * An assembly is a fixed, small set of part *roles* (e.g. a wheel is exactly Top + Cap, where
@@ -98,6 +100,13 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         // Deliberately no cutThrough, unlike wheel-hub-cap: that part pierces its 3mm shell, and
         // this one has an identical 3mm shell, so the difference is a choice and not an omission.
         // A recess keeps a 220mm disc rigid, and inherits the 1mm state.globalDepth default.
+        // The verified plate for the size currently set, when there is one — see hubcapPlacement.
+        // A generated part gets no fingerprint-sealed placement, so this is how the one thing a
+        // human *did* check (a specific arrangement at a specific diameter) reaches the export.
+        buildPlacement: () => {
+          const plate = getPrinter(state.printerId).plate;
+          return hubcapPlacement(state.hubcapDiameterMm, `${plate.w}x${plate.d}`);
+        },
         buildMesh: async (asset) => {
           const built = await buildHubcapBody(state.hubcapDiameterMm, asset);
           return {

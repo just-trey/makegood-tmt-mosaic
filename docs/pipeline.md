@@ -297,13 +297,37 @@ onto the part's `ExportPart` by `resolvePlacement` in
   into `model_settings.config` on top of the project-wide settings.
 
 Those constants are only handed back for a mesh matching the fingerprint they
-were verified against, which means **a generated part can never have them**:
-its mesh is built to vary. `resolvePlacement` reports that as its own reason,
-`'generated-part'`, rather than as the fingerprint mismatch it technically is —
-the mismatch reasons mean the repo's own assets have drifted, which is a defect,
-and this isn't one. Such a part falls through to the computed path: centred on
-its plate, with `suggestTowerPos` parking the prime tower in whichever corner
-the parts intrude on least and warning when every corner is occupied. That
+were verified against, which means **a generated part can never be vouched for
+that way**: its mesh is built to vary, so it never matches a seal.
+`resolvePlacement` reports that as its own reason, `'generated-part'`, rather
+than as the fingerprint mismatch it technically is — the mismatch reasons mean
+the repo's own assets have drifted, which is a defect, and this isn't one.
+
+What a generated part _can_ have is an arrangement a human verified at one
+size, which is what `AssemblyRole.buildPlacement` returns: it is handed the
+current build parameters and says whether they are inside what was checked.
+The hubcap's (`hubcapPlacement`, [src/geometry/hubcap.ts](../src/geometry/hubcap.ts))
+applies only on a bed with its own entry in `HUBCAP_PLATE`, and only up to the
+diameter it was verified at — smaller is safe by construction, since the part
+and tower both stay put and a smaller disc only opens the gap between them.
+
+Two mechanisms exist for that arrangement and neither is a general-purpose
+escape hatch. `fixedPosByPlate` is an absolute position authored for one exact
+bed, taken verbatim and skipping the group re-centering `fixedPos` gets off the
+reference plate — re-centering exists to rescue a coordinate authored for a
+different bed, and this one wasn't. `projectSettings` writes a project-wide
+Bambu key (the hubcap sets `prime_tower_width`, because its verified clearance
+is only true for a tower that wide) and is listed in
+`different_settings_to_system` so a reload/resave can't reconcile it back to
+the preset's default. **The part position and the tower position are one
+claim**: on both verified beds the disc had to move off centre to free a corner
+at all, so applying the tower without the matching position puts it through the
+part.
+
+Where nothing was verified, such a part falls through to the computed path:
+centred on its plate, with `suggestTowerPos` parking the prime tower in
+whichever corner the parts intrude on least and warning when every corner is
+occupied. That
 search runs for **any** plate with no baked tower position, not just hinted
 ones; while it didn't, an unhinted plate wrote no `wipe_tower_x/y` at all and
 the slicer fell back to its own preset default, quite possibly through the part

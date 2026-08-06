@@ -1,3 +1,4 @@
+import { HUBCAP_PLATE } from '../export/threemf';
 import { getManifold, soupToManifold, manifoldIsValid, manifoldToMeshes } from './manifold';
 
 /**
@@ -44,6 +45,53 @@ export const HUBCAP_REFERENCE_DIAMETER_MM = 220.752;
  * size than at any other — the clips are what mate with the wheel, and they don't move.
  */
 export const HUBCAP_DEFAULT_DIAMETER_MM = 220;
+
+/**
+ * The diameter the plate arrangements in HUBCAP_PLATE were verified at, and so the largest disc
+ * they may be applied to.
+ *
+ * Equal to the default today, and that is a coincidence worth not collapsing: the default is what
+ * a user is handed, this is what a human checked on a plate. If someone re-verifies at a different
+ * size, this moves and the default needn't.
+ */
+export const HUBCAP_VERIFIED_DIAMETER_MM = 220;
+
+/**
+ * The verified plate arrangement for this bed, or undefined if none applies.
+ *
+ * Two conditions, and both are about not claiming more than was checked:
+ *
+ * - **The bed must have its own entry.** The positions are absolute and bed-specific; there is no
+ *   sensible way to carry them to a plate nobody verified (the H2D today).
+ * - **The disc must not be larger than the verified one.** Smaller is safe by construction — the
+ *   part and the tower both stay put, so a smaller disc only opens the gap between them, and its
+ *   own plate margins only grow. Larger is not, and on a 256mm bed the verified clearance is just
+ *   7mm, so "a bit larger" is enough to eat it.
+ *
+ * Falling through returns undefined, and the caller drops to the computed centring plus
+ * suggestTowerPos, which warns. That is the honest outcome: nothing was verified for that case.
+ */
+export function hubcapPlacement(
+  diameterMm: number,
+  bedKey: string,
+):
+  | {
+      fixedPosByPlate: Record<string, { x: number; y: number }>;
+      primeTowerDeltaByPlate: Record<string, { x: number; y: number }>;
+      projectSettings: Record<string, string>;
+    }
+  | undefined {
+  const plate = HUBCAP_PLATE[bedKey];
+  if (!plate || diameterMm > HUBCAP_VERIFIED_DIAMETER_MM) return undefined;
+  return {
+    fixedPosByPlate: { [bedKey]: plate.pos },
+    // held relative to the part, the frame primeTowerDelta is defined in
+    primeTowerDeltaByPlate: {
+      [bedKey]: { x: plate.tower.x - plate.pos.x, y: plate.tower.y - plate.pos.y },
+    },
+    projectSettings: { prime_tower_width: plate.towerWidthMm },
+  };
+}
 
 /**
  * Radial extent of the clips' *top faces* — the only surface the disc can bond to, since the two

@@ -18,7 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the clips, so it can't produce a disc that won't print or one whose clips come
   away as loose pieces. The design template is drawn to the current size rather
   than being a fixed file.
-- A generated part says plainly that it has no pre-verified plate position,
+- The hubcap's plate is verified up to 220mm on 256mm and 270mm beds: at those
+  sizes it exports at a hand-checked position with the prime tower clear of it
+  (7mm on a 256mm bed, 19mm on a 270mm one) and the tower width that clearance
+  assumes. Above 220mm, or on any other bed, nothing was checked and it falls
+  back to centring with the tower in the freest corner — and says which you got.
+- A generated part says plainly when it has no pre-verified plate position,
   instead of reporting the mismatch as though one of the app's own meshes had
   drifted.
 
