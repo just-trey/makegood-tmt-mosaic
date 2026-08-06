@@ -30,20 +30,43 @@ runs, and `main` is protected, so a red one blocks the merge:
 npm run lint
 npm run format:check
 npm run typecheck
-npm test
-npm run smoke       # builds and exercises the app end-to-end
+npm run test:coverage   # the suite, plus the coverage floors below
+npm run smoke           # builds and exercises the app end-to-end
 ```
 
 If `format:check` fails, format only the files you actually touched
 (`npx prettier --write <files>`) rather than running `npm run format`, which
 rewrites the whole tree and buries the real diff.
 
-`npm run test:coverage` runs the same suite and adds a per-file coverage report
-(terminal summary plus browsable HTML in `coverage/`). It is a sixth command,
-not a sixth gate — CI doesn't run it and there's no threshold to clear. Reach
-for it when you're deciding where a new test would earn its keep, especially
-under `src/geometry/` and `src/export/`, where a wrong result still looks
-plausible.
+## Coverage floors
+
+`npm run test:coverage` is the test gate — the same suite as `npm test`, plus a
+coverage report (terminal summary and browsable HTML in `coverage/`) and a floor
+for each directory, declared in [vite.config.ts](vite.config.ts). Plain
+`npm test` still runs the suite uninstrumented if you want a faster inner loop,
+but CI runs the coverage one, so that's the one that decides.
+
+The floors are a **ratchet, not a target**: each sits a few points _under_ what
+that directory already achieves, so they never ask for a test that doesn't exist
+yet — they only stop the number sliding backwards. Tripping one means coverage
+went down in your diff, and the fix is a test, not a lower floor. A breach looks
+like this, and is a floor rather than a failing test:
+
+```
+ERROR: Coverage for statements (91.4%) does not meet "src/geometry/**" threshold (92%)
+```
+
+It names a glob because the floors are aggregates over a whole directory — read
+the coverage table to find which file in it lost ground.
+
+Two floors are tripwires rather than targets, and are set well below the rest on
+purpose: `src/scene/` is dominated by `viewport.ts`, which owns the WebGL
+renderer and can't be unit tested without a GL context, and `src/ui/` is mostly
+DOM wiring. They exist so those areas can't quietly rot, not to be met.
+
+To raise a floor after genuinely improving an area, run `npm run test:coverage`,
+read the actual, and edit the number by hand — `autoUpdate` is deliberately off,
+since it rewrites `vite.config.ts` mid-run and lands surprise diffs in a PR.
 
 See the [README](README.md) for how the codebase is organized
 (`src/svg/`, `src/geometry/`, etc.) and the known limitations/tech-debt
