@@ -98,6 +98,13 @@ Where writing goes — pick one, don't split a topic across two:
   worked example: it carries the numbers that chose it over the alternative,
   and its tech-debt section is gone.
 
+  **Before deleting, read what the section still owes and move that out first.**
+  A section can be almost entirely closed and still carry the one thread that
+  isn't — a follow-up, an unclaimed optimization, a caveat nobody has measured.
+  That survives as its own section; only the closed part goes. This rule's first
+  use got it wrong: #140 deleted the flat-shading section along with the "index
+  the display meshes" follow-up it carried, and a review had to put it back.
+
   Only keep a closed item here when it is still load-bearing for something
   open — an entry in a list whose own conclusion is that an audit is owed, say.
 

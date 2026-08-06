@@ -12,6 +12,13 @@ that was tried and lost — belongs in a comment next to the code it constrains,
 not here: that is where someone changing the line will actually see it. Keep a
 closed item only where it is still load-bearing for something open.
 
+**Before deleting, read what the section still owes and move that out first.** A
+section can be almost entirely closed and still carry the one thread that isn't
+— a follow-up, an unclaimed optimization, a caveat nobody has measured. That
+survives as its own section; only the closed part goes. Checking that the diff
+removed only the lines you meant to remove is _not_ this check: it confirms the
+scope of the edit, not that what left was finished.
+
 ## The browser-driven checks are only fast if Chromium finds a real GPU, and on WSL2 it does not find one by itself
 
 Falling back to SwiftShader costs
