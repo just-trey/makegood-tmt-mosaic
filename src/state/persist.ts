@@ -2,6 +2,7 @@ import type { AppState } from './store';
 import { state } from './store';
 import type { ArtworkInstance, DesignSource } from '../types';
 import {
+  allowedArtworkMode,
   pruneSettingsToPalette,
   restoreArtworkPool,
   setActiveArtwork,
@@ -404,7 +405,11 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     rotationDeg: a.rotationDeg,
     flipX: a.flipX,
     flipY: a.flipY,
-    mode: a.mode,
+    // Clamped, not trusted: a session saved before its kind withheld Fill (or before the flag
+    // existed) still carries 'fill', and restoring it verbatim would walk straight into the path
+    // the flag keeps users out of. Runs after the kind is set above, so it clamps against the
+    // part actually being restored.
+    mode: allowedArtworkMode(a.mode),
   }));
   restoreArtworkPool(sources, artworks);
   session.artworks.forEach((a) => setArtworkZone(a.id, a.zoneId));

@@ -3,6 +3,7 @@ import {
   activeArtworkInstance,
   addInstanceForSource,
   availableZones,
+  clampArtworkModes,
   clearArtwork,
   clearArtworkZoneBindings,
   INSTANCE_CASCADE_MM,
@@ -43,6 +44,57 @@ beforeEach(() => {
   state.keptApart = [];
   state.assembly.parts = [];
   state.shapeKind = 'disc';
+  state.assembly.kindId = null;
+});
+
+describe('Fill withheld on a kind that opts out', () => {
+  function onKind(kindId: string): void {
+    state.shapeKind = 'assembly';
+    state.assembly.kindId = kindId;
+  }
+
+  it('clamps a Fill mode set on a withholding kind', () => {
+    onKind('chair-body');
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkMode(a.id, 'fill');
+    expect(activeArtworkInstance()!.mode).toBe('sticker');
+  });
+
+  it('leaves Fill alone on a kind that offers it', () => {
+    onKind('wheel');
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkMode(a.id, 'fill');
+    expect(activeArtworkInstance()!.mode).toBe('fill');
+  });
+
+  it('re-clamps artwork carried onto a withholding kind by a part switch', () => {
+    // The hole a UI-only gate would leave: artwork outlives the switch, so a design set to Fill on
+    // the wheel arrives on the chair still set to Fill.
+    onKind('wheel');
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkMode(a.id, 'fill');
+    onKind('chair-body');
+    expect(clampArtworkModes()).toBe(true);
+    expect(activeArtworkInstance()!.mode).toBe('sticker');
+  });
+
+  it('keeps Fill through a detour into a flat mode, which only ignores it', () => {
+    onKind('wheel');
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkMode(a.id, 'fill');
+    state.shapeKind = 'disc';
+    expect(clampArtworkModes()).toBe(false);
+    expect(activeArtworkInstance()!.mode).toBe('fill');
+  });
+
+  it('does not inherit a withheld Fill onto a second placement', () => {
+    onKind('wheel');
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkMode(a.id, 'fill');
+    onKind('chair-body');
+    state.assembly.parts = [zonedPart(1, 'right', 'Right side')];
+    expect(addInstanceForSource(a.sourceId, 'right').mode).toBe('sticker');
+  });
 });
 
 /** A minimal zoned part carrying one named DesignZone, for the zone-targeting tests below. */

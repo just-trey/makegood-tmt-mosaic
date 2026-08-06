@@ -354,6 +354,16 @@ export interface AssemblyKind {
    * part that isn't ready to offer to users yet.
    */
   hidden?: boolean;
+  /**
+   * Fill mode (and with it the built-in pattern strip, which exists to be tiled) is not offered on
+   * this kind — for a part where repeating a design across a zone is implemented but not yet fit to
+   * put in front of a user. Sticker placement is unaffected.
+   *
+   * Set on the chair body: `docs/tech-debt.md` measures one zone in Fill at 93.6s and "All zones"
+   * at over 900s with no cancel, and records `Zebra + Fill` losing a color on "Handle (left)" —
+   * which prints that part without its black. Clear this flag once those close.
+   */
+  withholdFill?: boolean;
 }
 
 export interface LibraryEntry {

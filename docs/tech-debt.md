@@ -128,6 +128,14 @@ fix above — 93.6s is not interactive — but re-measure before quoting the
 405.6s figure as the cost of the pipeline itself. The "All zones" >900s
 result has not been re-measured.
 
+**Withheld from users, 2026-08-05.** The chair-body kind now carries
+`withholdFill` (`src/types.ts`), so Fill and the pattern strip are not offered
+on it and no user can reach the numbers above. This is a gate, not a fix: the
+path is unchanged and every measurement here still stands. Clearing the flag
+needs the accumulator-or-worker fix and the "Handle (left)" color loss below.
+Sticker on the chair is unaffected and was measured at 19.5s for a full
+five-zone rebuild on the same box, which is why only Fill was withheld.
+
 ## The long assembly-mode rebuild has no cancel, and until session persistence lands the only escape destroys the work
 
 `#loading-overlay` (the "Rebuilding geometry…" curtain, `src/ui/overlay.ts`)
@@ -198,40 +206,12 @@ nothing reaches them) rather than a sign something broke. No action needed
 unless a future part genuinely wants a rect/round/plate flat mode again, at
 which point the dropdown gate is the one line to touch.
 
-## The chair body and the pattern library are withheld from the UI pending rework
+## Four open defects in the chair / pattern-library workflow
 
-Withdrawn from the UI for the 0.7.0 release, on the maintainer's judgment that
-neither workflow is good enough to put in front of a first-time volunteer yet.
-This is a presentation gate, not a removal: both features build, export and
-stay covered by the full test suite.
-
-**What's gated, and where the one line is:**
-
-- **Chair body** — `hidden: true` on the `chair-body` entry in
-  [src/assembly/kinds.ts](../src/assembly/kinds.ts). It drops out of the Part
-  dropdown, and `initRestoreBanner()` in
-  [src/ui/restoreBanner.ts](../src/ui/restoreBanner.ts) stops offering a saved
-  session that was on it. A session that can't be offered back would otherwise
-  be deleted by the empty-snapshot clear in `saveSession()` about a second into
-  the next bare boot, so `savedSessionIsOnHiddenKind()` in
-  [src/state/persist.ts](../src/state/persist.ts) holds it instead — covered by
-  `tests/persist-hidden-kind.test.ts`, including that an _offered_ kind still
-  clears normally. `?kind=chair-body` still reaches it, and
-  `renderShapeKindOptions()` lists the chair while it's the selected kind so the
-  dropdown doesn't render blank — that escape hatch is what the `bake-zones`
-  and `debug-csg-failure` skills, and every chair drive script, rely on.
-- **Pattern library** — `PATTERN_LIBRARY_ENABLED = false` in
-  [src/state/patterns.ts](../src/state/patterns.ts). `loadPatterns()` returns
-  empty, which is the state a missing manifest already produced, so the picker
-  strip hides itself. The four `public/patterns/*.svg` assets, their generator
-  (`scripts/gen-patterns.mjs`), the asset regression test and Fill mode itself
-  are all untouched — Fill still works on any uploaded SVG.
-
-**What the maintainer named as the reason**, 2026-08-05, verbatim in substance:
-the front of the fender gets no coverage; dead zones still need defining; part
-edges look jagged rather than smooth in the viewport and get cut off; and the
-SVG templates have odd/wrong edges so they don't look good. Each is graded
-against the shipped data below — the report is the maintainer's, the diagnosis
+Named by the maintainer on 2026-08-05 as the reasons both features were briefly
+withheld from the UI (PR #133, since undone — both are offered again).
+**The defects are not fixed**; only the hiding was undone. They are graded
+against the shipped data below: the report is the maintainer's, the diagnosis
 is not, and where the cause is confirmed it says so.
 
 1. **The front of the fender gets no coverage — confirmed.** The wings (the
@@ -250,26 +230,16 @@ is not, and where the cause is confirmed it says so.
    re-tune every zone against the coverage-vs-stretch knee the `_note` warns
    about.
 
-2. **Dead zones still need defining — open, and previously filed as an idea
-   rather than a blocker.** It is written up in [roadmap.md](roadmap.md)
-   ("Dead zones: mark the parts of a design zone that are hidden by an
-   adjacent part"), which is where unbuilt ideas live. Being named here makes
-   it a gate on unhiding the chair, not a nice-to-have: without it a design
-   placed across a joint spends filament changes on surface nobody sees.
+2. **Dead zones still need defining — open.** It is written up in
+   [roadmap.md](roadmap.md) ("Dead zones: mark the parts of a design zone that
+   are hidden by an adjacent part"). Without it a design placed across a joint
+   spends filament changes on surface nobody sees.
 
-3. **Jagged, non-smooth edges in the viewport — cause confirmed, plus a second
-   distinct defect.** `bufferGeometryFromTris()` in
-   [src/app/rebuild.ts](../src/app/rebuild.ts) builds a **non-indexed**
-   geometry (position only, no `setIndex`) and then calls
-   `computeVertexNormals()`. On non-indexed geometry three.js assigns each
-   triangle's face normal to all three of its vertices, so **every part in the
-   viewport is flat-shaded** and every curved surface bands. It affects the
-   wheel and footrest too; the chair is just big and curved enough to make it
-   obvious. This is display-only — nothing about the exported mesh changes.
-   The likely fix is indexing the geometry (`mergeVertices`) before computing
-   normals, which is also a vertex-count win.
-   **Separately, "they cut off" is real and is not a shading problem:** a
-   1600×1100 headless capture of `?kind=chair-body` has the wings and caster
+3. **Jagged, non-smooth edges in the viewport — cause confirmed, and it is two
+   defects.** The shading half is not chair-specific and has its own section
+   directly below ("Every part in the viewport is flat-shaded"). The other
+   half — **"they cut off"** — is a framing defect, not a shading one: a
+   1600x1100 headless capture of `?kind=chair-body` has the wings and caster
    mounts running off the bottom edge of the canvas. The initial framing does
    not fit the chair's bounds. Worth checking against the kind's
    `displayFrame`, since the chair is the only kind that authors one.
@@ -285,31 +255,28 @@ is not, and where the cause is confirmed it says so.
    clips to. Note the repo already has curve fitting for the raster tracer
    (`src/raster/curve.ts`); nothing equivalent runs on a zone boundary.
 
-The sections below are the measured defects that were already open against
-both features before this list, and remain part of "good enough to unhide":
+Longer-standing defects against the same two features, each with its own
+section below: "Artwork can't wrap unbroken from one flank around the back to
+the other" (three measured dead ends), "The chair's zone sidecar is 1.7 MB
+raw", "The caster mounts have no design zone", "Zone picking has no occlusion
+test", "Zebra + Fill still loses one color on Handle (left)", and "Turf's tile
+union has a vertex ceiling, and nothing enforces it at runtime".
 
-- Chair: "Artwork can't wrap unbroken from one flank around the back to the
-  other" (three measured dead ends), "The chair's zone sidecar is 1.7 MB raw",
-  "The caster mounts have no design zone", "Zone picking has no occlusion
-  test", and the load-a-design-then-rebind-it-to-a-zone order the `vision`-lens
-  review raised (now in [roadmap.md](roadmap.md) as surface-first zone picking).
-- Pattern library: "Zebra + Fill still loses one color on Handle (left)" and
-  "Turf's tile union has a vertex ceiling, and nothing enforces it at runtime".
-
-**Closing it** is flipping the one flag per feature and reverting the doc and
-help-panel copy that this change removed — the `chair-body` entry in README's
-`?kind=` list, and four `#help-dialog` paragraphs that described controls no
-offered part now shows: the pattern-strip paragraph, the per-row zone
-dropdown/"+zone", click-a-surface-to-bind in the Fit section, and the
-Standard/Kit version picker in the Part section. Note `artwork_load` still declares a
-`source: 'pattern'` value that nothing can currently fire; see
-[analytics.md](analytics.md).
+**Infrastructure left behind by the hide, deliberately kept.** `AssemblyKind.hidden`
+still works, `renderShapeKindOptions()` still lists a hidden kind while it is
+the selected one (so `?kind=` can reach one without the select rendering
+blank), and `savedSessionIsOnHiddenKind()` in
+[src/state/persist.ts](../src/state/persist.ts) still stops the empty-snapshot
+clear from silently deleting a saved session on a hidden part. Nothing is
+hidden today, so `tests/persist-hidden-kind.test.ts` marks a kind hidden for
+the duration of a test rather than looking for one — driving it off whatever
+happens to carry `hidden` is what made it go quiet the moment the chair was
+unhidden.
 
 ## Every part in the viewport is flat-shaded, and this is not chair-only
 
 Found 2026-08-05 while grading the chair complaints above, but it is **not**
-specific to the chair — it applies to the wheel and the footrest, which are
-offered today.
+specific to the chair — it applies to the wheel and the footrest too.
 
 `bufferGeometryFromTris()` in [src/app/rebuild.ts](../src/app/rebuild.ts) is
 the single path every displayed part mesh goes through — raw assembly parts
@@ -1085,6 +1052,10 @@ degradation and the cleanup, not that Manifold fails on any particular real
 mesh. Genuinely malformed input is still the untested half.
 
 ## Zebra + Fill still loses one color on "Handle (left)"
+
+**Not currently reachable:** the chair body carries `withholdFill`, so Fill and
+the pattern strip are both withheld there — this needs fixing before that flag
+comes off, not before the next release. The defect below is unchanged.
 
 Left over after the vertex-count fix below, measured on `MOSAIC_GPU=1`
 production build, 2026-08-03: zebra in Fill mode on the chair's Left side

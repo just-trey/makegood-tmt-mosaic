@@ -54,11 +54,9 @@ build time, so the deployed app has no runtime CDN dependencies. The Google
 Fonts stylesheet is the only external request.
 
 The app opens on the wheel. `?kind=` opens it on a given assembly kind instead
-— `?kind=footrest` — so a link can point at the part being discussed, and a
-script driving the app can skip building a part it doesn't want. An unknown or
-absent value opens the wheel, as before. `?kind=` also reaches a kind that
-isn't offered in the Part dropdown, which is the only way to open the chair
-body while it's withheld (see [docs/tech-debt.md](docs/tech-debt.md)).
+— `?kind=chair-body`, `?kind=footrest` — so a link can point at the part being
+discussed, and a script driving the app can skip building a part it doesn't
+want. An unknown or absent value opens the wheel, as before.
 
 ## Deployment
 
@@ -96,8 +94,7 @@ contents, or other personal data are ever sent. See
    [Manifold](https://github.com/elalish/manifold) (WASM CSG). Parts with more
    than one design surface (**design zones**, e.g. the chair body) wrap
    artwork **conformally** onto a baked UV chart per zone, split across
-   printed part seams as needed — built and tested, but no part currently
-   offered in the UI uses it (see Known limitations).
+   printed part seams as needed.
 5. **Export** a Bambu Studio project 3MF — named parts, per-part filament
    slots, multi-plate placement — resolved for the selected printer. Placement
    for parts with a verified real-world pose is baked from a hand-checked
@@ -108,13 +105,6 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 
 ## Known limitations
 
-- **The chair body and the built-in pattern library aren't offered in the UI.**
-  Both are built, exported and covered by the test suite, but the Part dropdown
-  offers the wheel and footrest only, and the Artwork panel has no pattern
-  picker — their workflows are being reworked first. The chair remains
-  reachable at `?kind=chair-body`; Fill mode still works with any SVG you
-  upload. The chair-specific bullets below describe it for when it returns.
-  See [docs/tech-debt.md](docs/tech-debt.md).
 - Flat, roughly horizontal faces only, unless the part ships baked design
   zones — see [docs/pipeline.md](docs/pipeline.md).
 - A design crossing a printed join lines up only as well as the print does.
@@ -147,7 +137,10 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   the Colors slider and Auto-merge to get down to the slots you own.
 - Detail below the printable floor is merged into its surroundings rather than
   cut, and a very busy image says so instead of tracing thousands of specks.
-- Fill (repeat the design across a surface) is assembly-mode only.
+- Fill (repeat the design across a surface) is assembly-mode only, and is not
+  offered on the chair body — it was too slow to sit through and dropped a color
+  on one part. The pattern strip is hidden there for the same reason; Sticker
+  placement works normally. See [docs/tech-debt.md](docs/tech-debt.md).
 - Two designs placed over each other on one surface are warned about by name,
   not resolved for you — their recesses still both get cut. A Fill underneath
   a sticker isn't checked at all; see [docs/tech-debt.md](docs/tech-debt.md).
