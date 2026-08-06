@@ -202,10 +202,11 @@ async function assertGpuActive(browser, page) {
 /**
  * A page on an existing browser, with the console/pageerror collection every script wants, and
  * the confirm-dialog auto-accept every script that switches assembly kinds needs ("switching
- * parts will clear the loaded ones" — an unhandled dialog auto-dismisses and silently leaves the
- * old kind selected). Separate from launchPage() below so a script that drives several pages off
- * one browser (export-chair-examples.mjs: one page per printer/variant combination) doesn't pay
- * for a fresh browser process each time.
+ * parts will clear the loaded ones" — an unhandled prompt leaves the old kind selected). Both
+ * kinds of dialog are covered; see the two handlers below, they are not interchangeable.
+ * Separate from launchPage() below so a script that drives several pages off one browser
+ * (export-chair-examples.mjs: one page per printer/variant combination) doesn't pay for a fresh
+ * browser process each time.
  */
 export async function newPage(browser, { viewport = { width: 1280, height: 1000 } } = {}) {
   const page = await browser.newPage({ viewport });
@@ -220,6 +221,25 @@ export async function newPage(browser, { viewport = { width: 1280, height: 1000 
     errors.push('[pageerror] ' + e.message);
   });
   page.on('dialog', (d) => void d.accept());
+  // The app's confirms are NOT native — src/ui/dialogs.ts replaced window.confirm() with a themed
+  // <dialog>, which fires no 'dialog' event, so the handler above never sees the "switching parts
+  // will clear the currently loaded ones" prompt. Selecting a kind then leaves the modal open and
+  // the OLD kind selected, and the script goes on driving the wheel while its log says "chair".
+  // Auto-accept it the same way, by clicking its OK button whenever it opens.
+  await page.addInitScript(() => {
+    const accept = () => {
+      const d = document.querySelector('#confirm-dialog');
+      if (d && d.open) document.querySelector('#confirm-ok')?.click();
+    };
+    const watch = () =>
+      new MutationObserver(accept).observe(document.body, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ['open'],
+      });
+    if (document.body) watch();
+    else document.addEventListener('DOMContentLoaded', watch);
+  });
   await assertGpuActive(browser, page);
   return { page, errors };
 }

@@ -242,14 +242,14 @@ is not, and where the cause is confirmed it says so.
    are hidden by an adjacent part"). Without it a design placed across a joint
    spends filament changes on surface nobody sees.
 
-3. **Jagged, non-smooth edges in the viewport — cause confirmed, and it is two
-   defects.** The shading half is not chair-specific and has its own section
-   directly below ("Every part in the viewport is flat-shaded"). The other
-   half — **"they cut off"** — is a framing defect, not a shading one: a
-   1600x1100 headless capture of `?kind=chair-body` has the wings and caster
-   mounts running off the bottom edge of the canvas. The initial framing does
-   not fit the chair's bounds. Worth checking against the kind's
-   `displayFrame`, since the chair is the only kind that authors one.
+3. **Jagged, non-smooth edges in the viewport — two defects, framing half
+   fixed.** The shading half is not chair-specific and has its own section
+   directly below ("Every part in the viewport is flat-shaded"), still open.
+   The other half — **"they cut off"** — was a framing defect, not a shading
+   one, and is fixed: the camera fit sized itself from the largest box extent,
+   which put it 1.65x too close on the chair. The derivation is at
+   `fitDistance` in [src/scene/viewport.ts](../src/scene/viewport.ts), pinned
+   by `tests/view-fit.test.ts` and `scripts/check-view-fit.mjs`.
 
 4. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
    outline.** Every shipped template in `public/templates/` is a pure `L`
@@ -944,6 +944,12 @@ Five instances of one shape are now on record, four of them found on
   [scripts/lib/harness.mjs](../scripts/lib/harness.mjs).
 - **The export-placement seal** — the section directly above — proves a mesh
   is unchanged, not that the pose was re-verified.
+- **`newPage()`'s confirm-dialog auto-accept had stopped covering the app's
+  confirms** — `page.on('dialog')` fires only for native `window.confirm`, and
+  `src/ui/dialogs.ts` replaced those with a themed `<dialog>`. Selecting an
+  assembly kind left the modal open and the old kind selected, so a script
+  drove the wheel while its log said "chair". Fixed in `newPage()`; the doc
+  comment that claimed the coverage is what made it invisible.
 
 The common shape is a success signal derived from something adjacent to the
 property being asserted, where the ambiguous case is indistinguishable from a

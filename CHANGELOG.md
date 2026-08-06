@@ -189,6 +189,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The chair opened with its wings and caster mounts cut off the bottom of the
+  viewport. The camera fit sized itself from the part's largest single
+  dimension, which is only the right measure for something as wide as it is
+  deep — on the chair it put the camera 1.65x too close. It now solves the
+  distance that actually contains the part from the direction being viewed,
+  and accounts for the window being narrow as well as short, so nothing is
+  cropped at any window shape. Parts that already fitted are framed slightly
+  larger than before, not smaller.
+- A part could also be framed while the rest of the assembly was still
+  loading, leaving the chair's thirteen pieces fitted to whichever few had
+  arrived first.
 - A hole in a traced image could be painted over instead of cut. Where a
   region's cavity met its own outline at a point — common in a busy image, and
   the way traced outlines are stitched makes it the exact point tested — the

@@ -1,5 +1,5 @@
 import './styles.css';
-import { initViewport } from './scene/viewport';
+import { initViewport, modelNdcExtent } from './scene/viewport';
 import { initDesignGizmo } from './scene/designGizmo';
 import { initZonePicking } from './scene/zonePick';
 import { setRebuildCostHint, setRebuildHandler } from './app/scheduler';
@@ -31,9 +31,13 @@ import { WARNINGS } from './warnings';
 // them or it reports "degraded silently" for a build that warned past the cap.
 (
   window as unknown as {
-    __mosaic: { whenIdle: typeof whenIdle; warnings: () => string[] };
+    __mosaic: {
+      whenIdle: typeof whenIdle;
+      warnings: () => string[];
+      modelNdcExtent: typeof modelNdcExtent;
+    };
   }
-).__mosaic = { whenIdle, warnings: () => WARNINGS.map((w) => w.message) };
+).__mosaic = { whenIdle, warnings: () => WARNINGS.map((w) => w.message), modelNdcExtent };
 
 $('#app-version').textContent =
   `v${getAppVersion(typeof __APP_VERSION__ === 'undefined' ? undefined : __APP_VERSION__)}`;

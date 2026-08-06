@@ -325,22 +325,123 @@ export function setPreferredViewDir(v: THREE.Vector3 | null): void {
   preferredViewDir = v;
 }
 
+/**
+ * The current model's extent in normalized device coordinates — |x| and |y| at or under 1 mean it
+ * is inside the canvas. Exposed for driven checks (window.__mosaic.modelNdcExtent) because the
+ * alternative is reading pixels, and the scene's 800mm grid reaches every edge of the frame no
+ * matter how the model is fitted: a border-pixel test would report "something is drawn there"
+ * whether or not the part overflows. This asserts the framing itself.
+ */
+export function modelNdcExtent(): { x: number; y: number } | null {
+  const box = new THREE.Box3().setFromObject(modelGroup);
+  if (box.isEmpty()) return null;
+  camera.updateMatrixWorld();
+  const v = new THREE.Vector3();
+  let x = 0,
+    y = 0;
+  for (let i = 0; i < 8; i++) {
+    v.set(
+      i & 1 ? box.max.x : box.min.x,
+      i & 2 ? box.max.y : box.min.y,
+      i & 4 ? box.max.z : box.min.z,
+    ).project(camera);
+    x = Math.max(x, Math.abs(v.x));
+    y = Math.max(y, Math.abs(v.y));
+  }
+  return { x, y };
+}
+
+/**
+ * How much of the frame the fitted model fills, as a fraction of the tighter half-axis. 0.9 leaves
+ * a tenth of the frame as breathing room on the binding axis.
+ */
+export const FIT_FILL = 0.9;
+/** Smallest model half-size the fit will honor, so a tiny part isn't framed from inside itself. */
+const FIT_MIN_MM = 10;
+
+/**
+ * Camera distance along `dir` (target → camera) that puts every corner of `box` inside the
+ * frustum, solved rather than approximated.
+ *
+ * The obvious cheap version — half the largest extent, or the bounding sphere's radius, over
+ * sin(fov/2) — is wrong in opposite directions, and the app shipped one and then the other:
+ *
+ *   - Half the largest extent UNDER-shoots: it is the right radius only for a shape whose widest
+ *     span is also its diagonal. On the chair (≈600 × 700 × 700 mm) it read 350 against a true
+ *     578, putting the camera 1.65x too close — past the margin — so the wings and caster mounts
+ *     rendered off the bottom of the canvas. The wheel and footrest hid it, their largest extent
+ *     being their diameter.
+ *   - The bounding sphere OVER-shoots by however much the model isn't a ball. Measured on the
+ *     wheel, a flat disc whose sphere is far bigger than its silhouette: it filled 0.61 of the
+ *     frame where the old formula gave 0.88 — trading a cropped chair for three parts too small.
+ *
+ * So project each corner onto the view basis instead and take the distance the worst one needs.
+ * Exact for any shape and any aspect, in one pass, with no iteration to converge or tune.
+ */
+export function fitDistance(
+  box: THREE.Box3,
+  center: THREE.Vector3,
+  dir: THREE.Vector3,
+  fovDeg: number,
+  aspect: number,
+  worldUp: THREE.Vector3,
+): number {
+  const vFov = (fovDeg * Math.PI) / 180;
+  const tanV = Math.tan(vFov / 2);
+  // camera.fov is the *vertical* one; the horizontal half-angle is narrower whenever the canvas is
+  // taller than it is wide, so fitting to fov alone crops a portrait window. Measured at the 900px
+  // minimum width the app renders at (styles.css hides #app below it): every kind overflowed
+  // sideways, 1.18-1.30 in NDC, until this term was included.
+  const tanH = tanV * aspect;
+  // The view basis, in three's own convention (Matrix4.lookAt: x = up × z, y = z × x, z = dir) —
+  // it has to be the basis the camera will actually adopt, or the fit is solved for a frame the
+  // render doesn't use. Where dir is parallel to up the cross product vanishes and lookAt breaks
+  // the tie by nudging the view axis; do the same, rather than picking an arbitrary fallback that
+  // disagrees with it. Measured: an arbitrary +X fallback cropped a 300x4x4 box to 2.1 in NDC.
+  //
+  // The test is lookAt's own exact zero, deliberately not an epsilon: a merely NEAR-parallel dir
+  // gives a tiny cross product that still normalizes to the exact right direction, and it is the
+  // direction lookAt will use. Taking the nudge there instead lands on a basis rotated 90° from
+  // the camera's, which is worse than no fallback — measured at 1.31 in NDC on a 4x300x4 box
+  // viewed from (0, 1e-7, 1), a direction OrbitControls' own polar clamp (EPS = 1e-6) can produce.
+  const right = new THREE.Vector3().crossVectors(worldUp, dir);
+  if (right.lengthSq() === 0) {
+    const nudged = dir.clone();
+    if (Math.abs(worldUp.z) === 1) nudged.x += 1e-4;
+    else nudged.z += 1e-4;
+    right.crossVectors(worldUp, nudged.normalize());
+  }
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(dir, right).normalize();
+
+  const v = new THREE.Vector3();
+  let dist = 0;
+  for (let i = 0; i < 8; i++) {
+    v.set(
+      i & 1 ? box.max.x : box.min.x,
+      i & 2 ? box.max.y : box.min.y,
+      i & 4 ? box.max.z : box.min.z,
+    ).sub(center);
+    // Depth along the view axis is (dist - v·dir), so a corner is inside when
+    // |v·right| <= tanH * (dist - v·dir) and likewise vertically — solve each for dist.
+    const need = Math.max(Math.abs(v.dot(right)) / tanH, Math.abs(v.dot(up)) / tanV);
+    dist = Math.max(dist, v.dot(dir) + need / FIT_FILL);
+  }
+  return Math.max(dist, FIT_MIN_MM / Math.min(tanH, tanV));
+}
+
 export function frameModelIfPending(): void {
   if (!pendingFrame) return;
   const box = new THREE.Box3().setFromObject(modelGroup);
   if (box.isEmpty()) return; // nothing built yet — try again next rebuild
   pendingFrame = false;
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  const center = new THREE.Vector3();
-  box.getCenter(center);
-  const radius = Math.max(size.x, size.y, size.z, 20) * 0.5;
-  const dist = (radius / Math.sin((camera.fov * Math.PI) / 180 / 2)) * 1.25;
+  const center = box.getCenter(new THREE.Vector3());
   const dir = preferredViewDir
     ? preferredViewDir.clone()
     : new THREE.Vector3().subVectors(camera.position, controls.target);
   if (dir.lengthSq() < 1e-6) dir.set(0.5, -0.85, 0.6);
   dir.normalize();
+  const dist = fitDistance(box, center, dir, camera.fov, camera.aspect, camera.up);
   controls.target.copy(center);
   camera.position.copy(center).addScaledVector(dir, dist);
   camera.near = Math.max(0.1, dist / 500);
