@@ -83,11 +83,24 @@ Where writing goes — pick one, don't split a topic across two:
   success measure; read this before filing or acting on UX/workflow findings.
 - **[docs/pipeline.md](docs/pipeline.md)** — how the geometry actually works;
   read this before touching `src/geometry/` or `src/export/`.
-- **[docs/tech-debt.md](docs/tech-debt.md)** — deferred work, known-wrong
-  behavior, measurements worth not re-taking. One `##` section per item,
-  stating what was measured, why it was deferred, and what closing it would
-  take. This is where the "write deferred work down, don't just remember it"
-  rule points.
+- **[docs/tech-debt.md](docs/tech-debt.md)** — **open** deferred work and
+  known-wrong behavior. One `##` section per item, stating what was measured,
+  why it was deferred, and what closing it would take. This is where the
+  "write deferred work down, don't just remember it" rule points.
+
+  **When the work lands, delete the section.** Don't mark it `FIXED` and leave
+  it — a list that only ever grows stops being a work list, and this one had
+  reached 1100 lines. The record of the fix is the CHANGELOG entry and the
+  commit; anything a future reader still needs — the measurement that picked a
+  constant, the approach that was tried and lost — goes in a comment next to
+  the code it constrains, where someone changing that line will actually hit
+  it. `CREASE_ANGLE_RAD` in [src/app/rebuild.ts](src/app/rebuild.ts) is the
+  worked example: it carries the numbers that chose it over the alternative,
+  and its tech-debt section is gone.
+
+  Only keep a closed item here when it is still load-bearing for something
+  open — an entry in a list whose own conclusion is that an audit is owed, say.
+
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** — one section per
   user-visible warning string.
 - **[docs/roadmap.md](docs/roadmap.md)** — ideas not yet built.
