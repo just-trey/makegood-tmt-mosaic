@@ -38,6 +38,13 @@ If `format:check` fails, format only the files you actually touched
 (`npx prettier --write <files>`) rather than running `npm run format`, which
 rewrites the whole tree and buries the real diff.
 
+`npm run test:coverage` runs the same suite and adds a per-file coverage report
+(terminal summary plus browsable HTML in `coverage/`). It is a sixth command,
+not a sixth gate — CI doesn't run it and there's no threshold to clear. Reach
+for it when you're deciding where a new test would earn its keep, especially
+under `src/geometry/` and `src/export/`, where a wrong result still looks
+plausible.
+
 See the [README](README.md) for how the codebase is organized
 (`src/svg/`, `src/geometry/`, etc.) and the known limitations/tech-debt
 sections before making structural changes.
