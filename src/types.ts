@@ -404,9 +404,13 @@ export interface AssemblyPartOutput {
   bodySoup: Float32Array;
   inlaySoups: Record<number, Float32Array>;
   /**
-   * Manifold's native indexing, kept alongside the (flat-shaded) scene soup so 3MF export can
-   * emit vertices/triangles directly instead of re-welding the soup. Absent on fallback parts
+   * Manifold's native indexing, kept alongside the scene soup so 3MF export can emit
+   * vertices/triangles directly instead of re-welding the soup. Absent on fallback parts
    * that never went through a boolean (export re-indexes their soup instead).
+   *
+   * Export is the only consumer. The scene mesh is built from `bodySoup`/`inlaySoups` and
+   * re-derives its own weld for shading — see the tech-debt section on that; it is a known
+   * duplication, not an oversight of this field.
    */
   bodyIndexed?: IndexedMesh;
   inlayIndexed?: Record<number, IndexedMesh>;
