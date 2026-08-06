@@ -26,11 +26,24 @@ export const HUBCAP_CHAMFER_MM = 1;
 export const HUBCAP_FACE_Y = HUBCAP_BASE_Y + HUBCAP_THICKNESS_MM;
 
 /**
- * The reference disc's diameter. Kept to full precision rather than rounded to 220: it is the
- * number the falsification test compares against, and rounding it would make that test pass
- * against a disc 0.75mm wider than the part a human actually modelled.
+ * The diameter of the disc a human actually modelled, to full precision.
+ *
+ * This is a *measurement*, not a setting: tests/hubcap.test.ts regenerates at this diameter and
+ * checks the result back against the reference mesh's own rings and bbox, so rounding it would
+ * make that test pass against a disc 0.75mm wider than the part it claims to reproduce.
  */
-export const HUBCAP_DEFAULT_DIAMETER_MM = 220.752;
+export const HUBCAP_REFERENCE_DIAMETER_MM = 220.752;
+
+/**
+ * The diameter the app loads with — a round 220mm, deliberately *not*
+ * HUBCAP_REFERENCE_DIAMETER_MM.
+ *
+ * The two were one constant until it turned out to be answering two different questions: what the
+ * reference part measures, and what a user should be handed on load. A volunteer reading "220.75"
+ * has no way to know whether that digit matters, and the part is no more correct at the reference
+ * size than at any other — the clips are what mate with the wheel, and they don't move.
+ */
+export const HUBCAP_DEFAULT_DIAMETER_MM = 220;
 
 /**
  * Radial extent of the clips' *top faces* — the only surface the disc can bond to, since the two

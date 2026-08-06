@@ -36,7 +36,7 @@ export function syncAssemblyKindControls(): void {
  *
  * Its own function, and called from the build-parameter path as well as on kind switch, because a
  * generated template is only true-to-size for the size it was built at: leaving it to the kind
- * switch alone meant changing the hubcap from 220.75mm to 180mm still handed out the 220.75mm
+ * switch alone meant changing the hubcap from 220mm to 180mm still handed out the 220mm
  * drawing — a 1:1 template that is silently the wrong 1:1.
  */
 function syncTemplateLink(): void {
@@ -82,10 +82,10 @@ export function syncBuildParamControl(): void {
   input.min = String(round2(param.minMm));
   input.max = String(round2(Math.min(param.maxMm ?? Infinity, plate.w, plate.d)));
   // `any`, not a fixed step: `min` is the step base, so any real step would put the valid values
-  // on a grid offset by a measured constant (32.09mm), and the hubcap's own default of 220.75
-  // lands between two of them — the field reports :invalid on load and the spinner walks x.09,
-  // x.59. A diameter is a continuous measurement and shouldn't be quantized to make the widget
-  // tidy; arrows still step by 1mm.
+  // on a grid offset by a measured constant (32.09mm), so round diameters land between two of
+  // them — the field reports :invalid and the spinner walks x.09, x.59. A diameter is a
+  // continuous measurement and shouldn't be quantized to make the widget tidy; arrows still step
+  // by 1mm.
   input.step = 'any';
   input.value = String(round2(state[param.id]));
 }

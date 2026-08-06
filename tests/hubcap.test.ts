@@ -12,6 +12,7 @@ import {
   HUBCAP_DEFAULT_DIAMETER_MM,
   HUBCAP_FACE_Y,
   HUBCAP_MIN_DIAMETER_MM,
+  HUBCAP_REFERENCE_DIAMETER_MM,
   HUBCAP_THICKNESS_MM,
   buildHubcapBody,
   hubcapDiscSoup,
@@ -32,7 +33,7 @@ import {
  *   clips    4 bodies, 2036 triangles each, spanning y 19.0828..24.2550
  */
 const REF = {
-  diameter: HUBCAP_DEFAULT_DIAMETER_MM,
+  diameter: HUBCAP_REFERENCE_DIAMETER_MM,
   rOuter: 110.3763,
   rInner: 109.3763,
   yBase: 24.255,
@@ -129,6 +130,18 @@ describe('hubcap disc generator', () => {
     // chord sag well inside one 0.2mm layer
     const sag = (REF.diameter / 2) * (1 - Math.cos(Math.PI / n));
     expect(sag).toBeLessThan(0.05);
+  });
+
+  it('loads at a round 220mm, which is not the reference measurement', () => {
+    // Two questions, deliberately two constants: what the modelled part measures, and what a
+    // volunteer is handed on load. Collapsing them back into one would either put 220.752 in
+    // front of the user or quietly let the reproduction test above check a 220mm disc against a
+    // 220.752mm reference — and it would still pass, because the tolerances are millimetre-scale.
+    expect(HUBCAP_DEFAULT_DIAMETER_MM).toBe(220);
+    expect(HUBCAP_DEFAULT_DIAMETER_MM).not.toBe(HUBCAP_REFERENCE_DIAMETER_MM);
+    // and the default is a size that actually builds
+    expect(HUBCAP_DEFAULT_DIAMETER_MM).toBeGreaterThan(HUBCAP_MIN_DIAMETER_MM);
+    expect(soupVolume(hubcapDiscSoup(HUBCAP_DEFAULT_DIAMETER_MM))).toBeGreaterThan(0);
   });
 
   it('scales to any diameter, keeping the chamfer absolute', () => {

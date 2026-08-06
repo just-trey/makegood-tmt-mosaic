@@ -31,8 +31,8 @@ const TARGETS = [
   { printerId: 'snapmaker-u1', label: 'snapmaker', bed: [270, 270] },
   { printerId: 'bambu-h2d', label: 'h2d', bed: [350, 320] },
 ];
-// the reference size, one well under it, and one at the 256 bed's limit
-const DIAMETERS = [220.75, 180, 250];
+// the size the app loads with, one well under it, and one at the 256 bed's limit
+const DIAMETERS = [220, 180, 250];
 
 /** Three broad bands — enough filaments that a tower is actually printed and sized realistically. */
 const TEST_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60">
