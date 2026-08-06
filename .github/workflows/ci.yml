@@ -20,7 +20,10 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
-      - run: npm test
+      # Coverage rather than plain `npm test`: same suite, one run, plus the per-directory
+      # coverage floors in vite.config.ts. A breach fails this step with an
+      # "ERROR: Coverage for ... does not meet ... threshold" line, not a test failure.
+      - run: npm run test:coverage
 
   # Browser lane: the official Playwright image ships the browsers and all system
   # libraries pre-installed, so there's no `playwright install` / apt download step.

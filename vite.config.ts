@@ -73,6 +73,43 @@ export default defineConfig(({ mode }) => {
         all: true,
         include: ['src/**/*.ts'],
         reporter: ['text', 'html'],
+        /**
+         * A regression ratchet, not an aspiration: every floor sits just under what the code
+         * already achieves, so this never asks for a test that doesn't exist yet — it only stops
+         * the number going backwards. Per-directory rather than one global figure, because a
+         * single project-wide 80 would sit a tenth of a point from red and would be dominated by
+         * the two areas that are deliberately low (see the tripwires below).
+         *
+         * Statements and branches only. Under the v8 provider `lines` is identical to
+         * `statements`, and a `functions` floor would just encode that scheduler.ts and
+         * viewport.ts export untested functions — noise a statements floor already catches.
+         *
+         * Glob floors are aggregates over their matching files, and `perFile` (which would make
+         * every floor per-file instead, and fail on viewport.ts alone) must stay off. The
+         * top-level numbers apply to every file on top of that, not just unmatched ones.
+         *
+         * To raise a floor: `npm run test:coverage`, read the actuals, edit by hand. autoUpdate
+         * is off deliberately — it rewrites this file mid-run and lands surprise diffs in a PR.
+         */
+        thresholds: {
+          autoUpdate: false,
+          'src/geometry/**': { statements: 92, branches: 82 },
+          'src/export/**': { statements: 95, branches: 88 },
+          'src/state/**': { statements: 90, branches: 90 },
+          'src/assembly/**': { statements: 88, branches: 82 },
+          'src/raster/**': { statements: 93, branches: 92 },
+          'src/svg/**': { statements: 80, branches: 74 },
+          'src/app/**': { statements: 76, branches: 85 },
+          // Tripwires, not targets — these two are low on purpose and are only here so they
+          // can't quietly rot further. src/scene/ is dominated by viewport.ts, which owns the
+          // WebGL renderer and needs a GL context; src/app/'s figure carries scheduler.ts, left
+          // as-is by maintainer decision in #145. src/ui/ gets the widest margin of any floor
+          // because one new untested panel moves it several points on its own.
+          'src/scene/**': { statements: 68, branches: 76 },
+          'src/ui/**': { statements: 30, branches: 72 },
+          statements: 78,
+          branches: 84,
+        },
       },
     },
     plugins: umamiWebsiteId ? [umamiBeacon(umamiWebsiteId)] : [],

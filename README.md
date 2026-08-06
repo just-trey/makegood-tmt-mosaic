@@ -39,6 +39,7 @@ Other scripts:
 
 ```bash
 npm test             # unit tests (Vitest)
+npm run test:coverage # the same tests + coverage floors — what CI gates on
 npm run typecheck    # TypeScript, no emit
 npm run build        # typecheck + production build to dist/
 npm run preview      # serve the production build locally

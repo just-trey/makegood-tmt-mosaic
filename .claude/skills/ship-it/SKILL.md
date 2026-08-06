@@ -15,11 +15,27 @@ round trip through GitHub.
 Run these together, in the background, and wait for the notification:
 
 ```bash
-npm run lint && npm run format:check && npm run typecheck && npm test && npm run smoke
+npm run lint && npm run format:check && npm run typecheck && npm run test:coverage && npm run smoke
 ```
 
 `smoke` builds first, so it's the slow one — expect minutes, not seconds. Don't
 poll it; the harness re-invokes you when it exits.
+
+The test gate is `test:coverage`, not `npm test`, because it is what CI runs —
+the same suite plus the per-directory coverage floors in
+[vite.config.ts](../../../vite.config.ts). A breach fails the gate with
+
+```
+ERROR: Coverage for statements (n%) does not meet "src/geometry/**" threshold (m%)
+```
+
+which is a coverage floor, **not** a broken or flaky test — don't go hunting for
+a failing assertion. It names a glob rather than a file because the floors are
+aggregates over a directory, so read the coverage table to find which file in
+that directory lost ground. The fix is a test, not a lower number: the floors sit
+_under_ what the code already achieves, so tripping one means coverage went
+backwards in this diff. Plain `npm test` still runs the suite uninstrumented for
+a fast inner loop.
 
 **Never** fix a `format:check` failure with `npm run format`. That rewrites line
 endings across ~90 files on Windows and buries the real diff. Format only the
