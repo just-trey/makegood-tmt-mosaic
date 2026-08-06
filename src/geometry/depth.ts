@@ -65,6 +65,19 @@ export function subLayerDepth(depth: number): boolean {
  * The note both modes raise for a depth that prints only on a fine profile. Shared for the same
  * reason as zeroDepthWarning and regionLabel: two copies of a string is how assembly kept a bug
  * flat mode had already had fixed.
+ *
+ * **This is an `ℹ`, not a `⚠`, and that was challenged and kept.** A UX review (2026-08-03)
+ * argued for promoting it, on the grounds that this is the case shipping a file that prints
+ * *nothing visible* — worse than the plate clamp, which does warn. Rejected on purpose: the icon
+ * here tracks *"did the app change your number?"*, not *"might you be disappointed?"*. A zero gets
+ * raised and a too-deep value gets clamped, so both warn — something was overridden. A positive
+ * sub-layer depth is honored exactly as asked, and someone on a 0.08 mm profile cutting a 0.12 mm
+ * recess made a real choice (see docs/audience.md). Warning about a value the app then obeys is
+ * crying wolf, and it is what would make the two real `⚠`s stop being trusted.
+ *
+ * What would change the answer: evidence people reach this by accident rather than choice — a typo
+ * path where 0.02 comes from mis-typing 0.2. Even then the fix is value-shaped (flag that specific
+ * 10x-off case), not a severity bump, which would re-break the fine-profile user.
  */
 export function thinDepthNotice(label: string, depth: number): string {
   return (

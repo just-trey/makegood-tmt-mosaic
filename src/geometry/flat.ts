@@ -300,6 +300,8 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
           `plate can only cut ${maxDepth.toFixed(2)} mm deep — it was cut at ${depth.toFixed(2)} mm ` +
           `instead.`,
       );
+    // noticeBuild, not warnBuild: the two branches above overrode the user's number, this one
+    // honors it. Promoting it was proposed and rejected — see thinDepthNotice in depth.ts.
     else if (subLayerDepth(depth)) noticeBuild(thinDepthNotice(label, depth));
     return depth;
   };

@@ -148,6 +148,20 @@ function renderEmptyBaseRow(list: HTMLElement): void {
  * All three are idempotent: whichever runs first removes the override, and the rest read its
  * absence as "already handled" — except `click` after a real mouse gesture, which needs its own
  * guard against the same button-swap race (`mouseHandled`, see below).
+ *
+ * Its position in the row was challenged (UX review, 2026-08-03), moved to the row's right edge,
+ * looked at in the running app, and moved back — why it sits where it does, and why it carries
+ * `.btn`, is on `.color-row .depth-reset` in styles.css, next to the rules that decide it. Three
+ * measurements from that pass that the CSS doesn't carry:
+ *
+ * - The "consistent slot" the move was reaching for already existed: the ↺'s left edge measured
+ *   168px on all four rows of a four-color list, since everything left of it is fixed width. **A
+ *   fix depends on that** — putting anything variable-width left of it (a longer label, a per-row
+ *   badge) breaks the column and reopens the question.
+ * - Rejected alternatives, so they aren't re-attempted: the unit inside the field (`[2.40 mm]`)
+ *   collides with Chrome's number-input spinners, which this app doesn't suppress; the unit before
+ *   the value (`depth mm [2.40]`) reads wrongly, since a unit follows its number.
+ * - Never checked on touch, or at the 900px minimum width the app renders at.
  */
 function wireDepthReset(list: HTMLElement): void {
   if (list.dataset.depthResetWired) return;
@@ -316,6 +330,8 @@ export function renderColorList(
         </select>`
       : '';
 
+    // Nothing variable-width goes into `.depth-row` left of the ↺: its fixed left edge is the
+    // reason it reads as a column and doesn't need moving (see wireDepthReset).
     row.innerHTML = `
       <div class="top">
         ${c.isBackground ? '' : '<span class="drag-grip" aria-hidden="true" title="Drag to merge with another color">⠿</span>'}

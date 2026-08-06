@@ -63,6 +63,13 @@ function setShapeThumb(kind: string): void {
  * round/stl remain in the codebase (their param blocks + bindings are untouched) but aren't
  * offered here; picking a real part shouldn't require navigating a second nested dropdown.
  *
+ * So three complete UI panels (`#shape-params-rect|round|stl`, their bindings, and the `ShapeKind`
+ * branches in state/store.ts) ship in the bundle and nothing renders them — no test drives them
+ * either. That is deliberate and was re-confirmed by review (2026-08-02), not something that broke
+ * — it is a maintenance question (why keep them compiling), not a bug. If a future part genuinely
+ * wants a rect/round/plate flat mode again, the option list below is what to touch: the kinds are
+ * excluded by never being written into `sel.innerHTML`, not by the `hidden` filter above it.
+ *
  * A `hidden` kind is listed only while it's the one already selected, which is reachable solely
  * through `?kind=` (main.ts). Without that the select would hold a value with no matching option
  * and render blank, and the next switch away from it would be one-way.
