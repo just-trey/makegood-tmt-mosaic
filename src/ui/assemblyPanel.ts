@@ -25,22 +25,30 @@ export function syncAssemblyKindControls(): void {
   const radiusRow = $('#asm-radius-row');
   if (radiusRow) radiusRow.style.display = kind?.designFit === 'rect' ? 'none' : '';
 
-  // Design template download — per-kind, so it follows the part selection.
-  const tplRow = $('#asm-template-row');
-  const tplLink = $<HTMLAnchorElement>('#asm-template-link');
-  if (tplRow && tplLink) {
-    const built = kind?.buildTemplate;
-    tplRow.style.display = built || kind?.templateFile ? '' : 'none';
-    // A generated kind's template is rebuilt from current state every time this runs, so the link
-    // can never hand out a drawing for the size the part used to be.
-    if (built) tplLink.href = templateObjectUrl(built());
-    else if (kind?.templateFile) tplLink.href = `templates/${kind.templateFile}`;
-    if (built || kind?.templateFile) tplLink.download = `${kind!.id}-template.svg`;
-  }
-
+  syncTemplateLink();
   syncBuildParamControl();
   renderAssemblyVariantControls();
   renderZoneTemplateLinks();
+}
+
+/**
+ * Point the per-kind template download at the current template.
+ *
+ * Its own function, and called from the build-parameter path as well as on kind switch, because a
+ * generated template is only true-to-size for the size it was built at: leaving it to the kind
+ * switch alone meant changing the hubcap from 220.75mm to 180mm still handed out the 220.75mm
+ * drawing — a 1:1 template that is silently the wrong 1:1.
+ */
+function syncTemplateLink(): void {
+  const kind = currentAssemblyKind();
+  const tplRow = $('#asm-template-row');
+  const tplLink = $<HTMLAnchorElement>('#asm-template-link');
+  if (!tplRow || !tplLink) return;
+  const built = kind?.buildTemplate;
+  tplRow.style.display = built || kind?.templateFile ? '' : 'none';
+  if (built) tplLink.href = templateObjectUrl(built());
+  else if (kind?.templateFile) tplLink.href = `templates/${kind.templateFile}`;
+  if (built || kind?.templateFile) tplLink.download = `${kind!.id}-template.svg`;
 }
 
 /**
@@ -73,7 +81,12 @@ export function syncBuildParamControl(): void {
   label.textContent = param.label;
   input.min = String(round2(param.minMm));
   input.max = String(round2(Math.min(param.maxMm ?? Infinity, plate.w, plate.d)));
-  input.step = String(param.step);
+  // `any`, not a fixed step: `min` is the step base, so any real step would put the valid values
+  // on a grid offset by a measured constant (32.09mm), and the hubcap's own default of 220.75
+  // lands between two of them — the field reports :invalid on load and the spinner walks x.09,
+  // x.59. A diameter is a continuous measurement and shouldn't be quantized to make the widget
+  // tidy; arrows still step by 1mm.
+  input.step = 'any';
   input.value = String(round2(state[param.id]));
 }
 
@@ -121,7 +134,9 @@ async function commitBuildParam(raw: number): Promise<boolean> {
   const next = Math.min(max, Math.max(param.minMm, raw));
   if (next === state[param.id]) return false;
   state[param.id] = next;
-  syncBuildParamControl(); // show the clamped value before the rebuild, not after it
+  // show the clamped value and re-issue the template before the rebuild, not after it
+  syncBuildParamControl();
+  syncTemplateLink();
   await asmRebuildGeneratedParts();
   return true;
 }

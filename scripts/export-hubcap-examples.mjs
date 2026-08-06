@@ -129,6 +129,32 @@ try {
       if (Math.abs(shown - diameter) > 0.01)
         throw new Error(`diameter clamped to ${shown}, expected ${diameter}`);
 
+      // The control must not report itself invalid. `min` is the step base, so any fixed step
+      // puts the valid values on a grid offset by a measured constant and the default diameter
+      // falls between two of them — silently :invalid on load.
+      const valid = await page.$eval('#p-asm-buildparam', (i) => i.checkValidity());
+      if (!valid) {
+        console.log('   !! diameter field reports :invalid');
+        failed++;
+      }
+
+      // The 1:1 template must be rebuilt for the size now set. It is only true-to-size for the
+      // diameter it was generated at, and it used to be re-issued on kind switch alone — so
+      // changing the size handed out the previous size's drawing, at 1:1, with no sign of it.
+      const tplW = await page.$eval('#asm-template-link', async (a) => {
+        const svg = await (await fetch(a.href)).text();
+        return Number(/width="([\d.]+)mm"/.exec(svg)?.[1] ?? NaN);
+      });
+      const expectW = diameter - 2; // the flat design face: the disc less its 1mm chamfer all round
+      if (Math.abs(tplW - expectW) > 0.05) {
+        console.log(
+          `   !! template is ${tplW}mm wide, expected ${expectW}mm for a ${diameter}mm disc`,
+        );
+        failed++;
+      } else {
+        console.log(`  template: ${tplW}mm design face (disc ${diameter}mm less the chamfer)`);
+      }
+
       // The design face must be the disc's TOP, not its (larger) underside. The option text
       // carries the patch normal, so this reads the actual detected face rather than assuming
       // preferFaceNormal took effect — which is the whole thing that could silently be wrong.

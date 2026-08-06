@@ -80,7 +80,6 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
       label: 'Hubcap diameter',
       // below this the disc stops covering the clip tops it has to bond to
       minMm: HUBCAP_MIN_DIAMETER_MM,
-      step: 0.5,
     },
     roles: [
       {

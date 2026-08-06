@@ -9,6 +9,7 @@ import {
   setArtworkZone,
 } from './artwork';
 import { ASSEMBLY_KINDS } from '../assembly/kinds';
+import { HUBCAP_MIN_DIAMETER_MM } from '../geometry/hubcap';
 import { asmLoadFullAssembly } from '../assembly/parts';
 import { parseSVGDocument } from '../svg/parse';
 
@@ -371,8 +372,12 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.printerId = session.printerId;
   state.asmRadius = session.asmRadius;
   // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
+  // Floored on the way in as well: the control clamps, but a stored value doesn't come through the
+  // control, and below the floor the disc misses its mounting clips entirely — see
+  // HUBCAP_MIN_DIAMETER_MM. Not ceilinged, because the upper bound is the *printer's* plate and
+  // that is re-clamped when the printer is known (clampBuildParamToPrinter).
   if (typeof session.hubcapDiameterMm === 'number' && Number.isFinite(session.hubcapDiameterMm))
-    state.hubcapDiameterMm = session.hubcapDiameterMm;
+    state.hubcapDiameterMm = Math.max(HUBCAP_MIN_DIAMETER_MM, session.hubcapDiameterMm);
   state.baseFilamentId = session.baseFilamentId;
   state.autoMergeLevel = session.autoMergeLevel;
   state.baseColorKey = session.baseColorKey;

@@ -380,7 +380,6 @@ export interface AssemblyKind {
     id: 'hubcapDiameterMm';
     label: string;
     minMm: number;
-    step: number;
     /** Upper bound beyond the printer's plate, when the part has one of its own. */
     maxMm?: number;
   };

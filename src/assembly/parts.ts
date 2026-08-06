@@ -310,6 +310,11 @@ async function asmAdoptMesh(part: AssemblyPart, positions: Float32Array): Promis
 /**
  * Re-run every generated part's builder — for when a build parameter (the hubcap's diameter)
  * changes. Rebuilds from the cached asset, so no part is re-fetched.
+ *
+ * Reports a failure the same way the load path does rather than letting it reject. The caller
+ * fires this off with `void`, so an unhandled rejection would be invisible — and the state and the
+ * control would already be showing the new size while the part in the scene, and in any export,
+ * was still the old mesh. Saying nothing there is worse than the failure.
  */
 export async function asmRebuildGeneratedParts(): Promise<void> {
   const kind = currentAssemblyKind();
@@ -321,6 +326,12 @@ export async function asmRebuildGeneratedParts(): Promise<void> {
   beginWork();
   try {
     for (const part of parts) await asmAdoptMesh(part, part.assetPositions!);
+  } catch (e) {
+    console.error(e);
+    await alertDialog(
+      `Could not rebuild "${kind?.name ?? 'the part'}" at the size you asked for: ` +
+        `${(e as Error).message}. The part on screen is still the previous size.`,
+    );
   } finally {
     endWork();
   }
