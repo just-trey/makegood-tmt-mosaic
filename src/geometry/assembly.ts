@@ -629,6 +629,9 @@ export async function buildAssemblyGeometry(
       //
       // Warnings dedupe by message, so gating per-part says the right thing when a color sits on
       // several: the note appears if any part cuts at the setting, and stays silent if none do.
+      //
+      // noticeBuild, not warnBuild: the depth is honored, not overridden. Promoting it was
+      // proposed and rejected — see thinDepthNotice in depth.ts.
       else if (subLayerDepth(depthSetting) && !depthDiffers(depth, depthSetting))
         noticeBuild(thinDepthNotice(label, depthSetting));
       // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
