@@ -213,13 +213,16 @@ nothing reaches them) rather than a sign something broke. No action needed
 unless a future part genuinely wants a rect/round/plate flat mode again, at
 which point the dropdown gate is the one line to touch.
 
-## Four open defects in the chair / pattern-library workflow
+## Three open defects in the chair / pattern-library workflow
 
 Named by the maintainer on 2026-08-05 as the reasons both features were briefly
-withheld from the UI (PR #133, since undone — both are offered again).
-**The defects are not fixed**; only the hiding was undone. They are graded
-against the shipped data below: the report is the maintainer's, the diagnosis
-is not, and where the cause is confirmed it says so.
+withheld from the UI (PR #133, since undone — both are offered again). Four were
+named; the viewport one ("jagged edges, and they cut off") turned out to be two
+unrelated one-file bugs and is fixed and gone from this list — camera fit in
+#139, flat shading in #140. **The remaining three are not fixed**; only the
+hiding was undone. They are graded against the shipped data below: the report is
+the maintainer's, the diagnosis is not, and where the cause is confirmed it says
+so.
 
 1. **The front of the fender gets no coverage — confirmed.** The wings (the
    "fenders") are reached only by `left` and `right`, which seed on the flank
@@ -242,16 +245,7 @@ is not, and where the cause is confirmed it says so.
    are hidden by an adjacent part"). Without it a design placed across a joint
    spends filament changes on surface nobody sees.
 
-3. **Jagged, non-smooth edges in the viewport — two defects, framing half
-   fixed.** The shading half is not chair-specific and has its own section
-   directly below ("Every part in the viewport is flat-shaded"), still open.
-   The other half — **"they cut off"** — was a framing defect, not a shading
-   one, and is fixed: the camera fit sized itself from the largest box extent,
-   which put it 1.65x too close on the chair. The derivation is at
-   `fitDistance` in [src/scene/viewport.ts](../src/scene/viewport.ts), pinned
-   by `tests/view-fit.test.ts` and `scripts/check-view-fit.mjs`.
-
-4. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
+3. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
    outline.** Every shipped template in `public/templates/` is a pure `L`
    polyline with no curve commands: the zone boundary is traced along mesh
    triangle edges and emitted vertex-for-vertex. So a template's outline is as
@@ -280,41 +274,42 @@ the duration of a test rather than looking for one — driving it off whatever
 happens to carry `hidden` is what made it go quiet the moment the chair was
 unhidden.
 
-## Every part in the viewport is flat-shaded, and this is not chair-only
+## The display meshes re-derive a vertex weld the build already did
 
-Found 2026-08-05 while grading the chair complaints above, but it is **not**
-specific to the chair — it applies to the wheel and the footrest too.
+`bufferGeometryFromTris()` in [src/app/rebuild.ts](../src/app/rebuild.ts)
+shades via `toCreasedNormals`, which buckets vertices by position to find the
+faces sharing each one — for the chair that is a string hash per vertex across
+368k triangles, on **every rebuild**, not just on load.
 
-`bufferGeometryFromTris()` in [src/app/rebuild.ts](../src/app/rebuild.ts) is
-the single path every displayed part mesh goes through — raw assembly parts
-(`renderRawAssemblyParts`), cut bodies, and inlay soups all call it. It sets
-only a `position` attribute from a flat triangle-soup `Float32Array`, never
-calls `setIndex`, and then calls `computeVertexNormals()`. On non-indexed
-geometry three.js gives every vertex its own face's normal, so the result is
-flat shading by construction. `src/scene/zonePick.ts` is the only place in
-`src/` that indexes a geometry, and that mesh is invisible.
+Manifold already welded those vertices during the boolean, and the result is
+sitting on the same object the display path destructures: `bodyIndexed` /
+`inlayIndexed` on `AssemblyPartOutput` ([src/types.ts](../src/types.ts)), which
+3MF export consumes rather than re-welding. The display path ignores them.
+Recorded here because the PR that added the creased shading (#140) claimed the
+opposite — that no vertex-count saving was available — which was wrong, and
+wrong in the direction that hides work.
 
-Consequence is cosmetic but pervasive: curved surfaces band, and silhouettes
-read as polygonal. It is worst on the chair (large, curved, 368k triangles)
-and mild on the wheel, whose design face is nearly flat — which is likely why
-it went unnoticed until a big curved part existed.
+**Not a drop-in.** Handing the indexed geometry to `toCreasedNormals` is
+strictly _worse_: it opens with
+`geometry.index ? geometry.toNonIndexed() : geometry`, so an indexed input is
+expanded and then hashed anyway. Capturing the saving means a crease-aware
+normal pass that consumes an index directly — real work, not a swap. Measure
+first: the shading swap cost 3.0s → 4.1s on a chair load, and the weld is the
+plausible cause but was never isolated, so confirm the attribution before
+building anything.
 
-Nothing about export changes: this is the three.js display mesh only, built
-from geometry that has already been cut. The cut/export path never reads these
-normals.
+Two more things worth knowing before touching this:
 
-What closing it would take: index the geometry before computing normals —
-`BufferGeometryUtils.mergeVertices()` is the direct route, and it also cuts
-vertex count on meshes that currently repeat every shared vertex three times,
-so it may pay for itself in the 368k-triangle case. The open question is
-whether a blanket merge rounds off intentionally sharp edges (a chamfer, a
-pocket wall) into smooth ones, which would trade one wrong look for another;
-a normal-angle threshold is the usual answer and needs measuring against a
-real part rather than assumed.
-
-Not to be confused with the separate framing defect recorded in the chair
-section above — the chair rendering off the bottom of the canvas is a camera
-fit problem, not a shading one.
+- `toCreasedNormals` matches vertices by **truncating to 0.01mm**
+  (`hashMultiplier = (1 + 1e-10) * 1e2`, then `~~`), which is bucketing, not an
+  exact or epsilon match. Cut bodies are safe — Manifold emits exactly
+  coincident vertices, which always land in one bucket. A **user-uploaded STL**
+  has no such guarantee (`renderRawAssemblyParts`): a shared corner whose
+  coordinates straddle a bucket boundary stays unwelded and renders as an
+  isolated flat facet. Cosmetic, source-dependent, unmeasured.
+- Whatever replaces it has to keep the crease behaviour rather than drop it.
+  A blanket weld plus `computeVertexNormals()` was measured and rejected — it
+  melted the embossed logo on the storage box; see `CREASE_ANGLE_RAD`.
 
 ## The help dialog's open state doesn't track browser back-navigation
 

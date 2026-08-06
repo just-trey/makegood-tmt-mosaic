@@ -189,6 +189,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Parts in the 3D view were flat-shaded, so every curved surface showed the
+  facets it is built from — banding across the chair's seat and back, and
+  polygonal-looking silhouettes. Curves now read as curves. Machined detail
+  stays crisp: chamfers, panel seams, slot edges and embossed lettering are
+  unchanged. This is the on-screen preview only — nothing about the exported
+  file, or what prints, changes.
 - The chair opened with its wings and caster mounts cut off the bottom of the
   viewport. The camera fit sized itself from the part's largest single
   dimension, which is only the right measure for something as wide as it is
