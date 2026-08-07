@@ -418,6 +418,36 @@ non-rectangular shape was the goal, re-export the source image as a PNG with
 the background actually removed (not just displayed as transparent in an
 editor that doesn't preserve alpha on export) and reload it.
 
+## Troubleshooting: "This shape was too big for the wheel, so it was scaled down to fit"
+
+Full text: _"This shape was too big for the wheel, so it was scaled down to fit —
+the hubcap and the artwork on it are both smaller than the size you set. Reduce
+the size or the scale to take control of it yourself."_
+
+Nothing may overhang the wheel the hubcap mounts on, which is 280mm across. A
+silhouette can exceed that while its **Hubcap diameter** reading looks fine,
+because that number describes the longest side and a shape's corners reach
+further than its longest side does — a square 280mm on a side reaches 198mm
+from the axis and would hang 58mm past the rim.
+
+Rather than refusing, the whole placement is scaled down until it clears, and
+the artwork is scaled by exactly the same factor so the picture still lands on
+the shape cut for it. The visible symptom without this message is the size
+control appearing to stop working, which is why it says so rather than doing it
+silently. Lowering the diameter or the artwork's Scale until this clears puts
+you back in control of the size.
+
+## Troubleshooting: "The artwork is offset too far to sit on the wheel"
+
+Full text: _"The artwork is offset too far to sit on the wheel, so the hubcap
+stays round. Bring it back toward the centre with Offset."_
+
+Scaling a shape down collapses it toward the point it is offset to, so if that
+point is itself off the wheel, no amount of shrinking brings the shape back —
+it would just become a speck in the wrong place. The part stays a circle
+instead. Reduce the artwork's Offset until the design sits over the wheel
+again.
+
 ## Troubleshooting: "Some of this shape is thinner than 1mm"
 
 Full text: _"Some of this shape is thinner than 1mm, which is about one

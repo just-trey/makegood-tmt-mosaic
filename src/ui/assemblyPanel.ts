@@ -513,6 +513,12 @@ export function initAssemblyPanel(): void {
     // The footprint is measured off the built mesh, so it can only be right once the part has
     // been (re)built — which is exactly what this fires for.
     renderBuildParamSize();
+    // And so is the generated template, for the same reason: a hubcap cut to its artwork is drawn
+    // from the outline the build produced. Re-issuing it only where the shape's INPUTS change
+    // (the toggle, the diameter) misses every route that changes the outline without touching
+    // them — Scale, Rotate, a flip, an offset, a re-trace — and left a disc template on a
+    // silhouette part.
+    syncTemplateLink();
   });
   // The link's href is re-pointed per kind in syncAssemblyKindControls; bind the click once here
   // so repeated syncs don't stack handlers.

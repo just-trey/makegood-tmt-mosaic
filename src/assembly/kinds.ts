@@ -7,26 +7,31 @@ import {
   HUBCAP_DISCONNECTED_WARNING,
   HUBCAP_MIN_DIAMETER_MM,
   HUBCAP_MIN_FEATURE_MM,
+  HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL,
   HUBCAP_SILHOUETTE_MISSES_CLIPS,
   HUBCAP_SILHOUETTE_NO_ARTWORK,
   HUBCAP_SILHOUETTE_NO_TRANSPARENCY,
+  HUBCAP_SILHOUETTE_OFF_WHEEL,
   HUBCAP_SILHOUETTE_TOO_MANY,
   HUBCAP_SILHOUETTE_THIN_DETAIL,
+  HUBCAP_WHEEL_DIAMETER_MM,
   buildHubcapBody,
   hubcapPlacement,
   hubcapTemplateSvg,
-  maxSizeForWheel,
   type HubcapShape,
 } from '../geometry/hubcap';
 import { getManifold } from '../geometry/manifold';
 import {
   clipCoverage,
-  fitOutline,
+  fitFactorForRadius,
   outlineArea,
   outlineBounds,
   narrowFeatureArea,
+  scaleOutlineAbout,
   silhouetteFromShapes,
+  type OutlinePlacement,
 } from '../geometry/hubcapOutline';
+import { designAnchor, designMmPerUnit } from '../geometry/assembly';
 import { getPrinter } from '../export/printers';
 
 /**
@@ -96,7 +101,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     designFit: 'rect',
     // Built, not fetched: a static file would be true-to-size at one diameter and wrong at every
     // other. See hubcapTemplateSvg.
-    buildTemplate: () => hubcapTemplateSvg(state.hubcapDiameterMm),
+    buildTemplate: () => hubcapTemplateSvg(hubcapTemplateShape()),
     buildParam: {
       id: 'hubcapDiameterMm',
       label: 'Hubcap diameter',
@@ -347,34 +352,74 @@ export async function hubcapShapeFromState(): Promise<{
   warning?: string;
 }> {
   const circle: HubcapShape = { kind: 'circle', diameterMm: state.hubcapDiameterMm };
-  if (!state.hubcapSilhouette) return { shape: circle };
+  const round = (warning?: string): { shape: HubcapShape; warning?: string } => {
+    lastSilhouetteFit = 1;
+    lastBuiltOutline = null;
+    return { shape: circle, warning };
+  };
+  if (!state.hubcapSilhouette) return round();
 
   // One design only. Two make an outline of two islands, and there is no answer to which one's
   // scale sizes the part.
-  if (state.artworks.length > 1) return { shape: circle, warning: HUBCAP_SILHOUETTE_TOO_MANY };
+  if (state.artworks.length > 1) return round(HUBCAP_SILHOUETTE_TOO_MANY);
 
-  const shapes = state.sources.flatMap((s) => s.parsed?.shapes ?? []);
-  if (!shapes.length) return { shape: circle, warning: HUBCAP_SILHOUETTE_NO_ARTWORK };
+  const art = state.artworks[0];
+  const parsed = art
+    ? (state.sources.find((s) => s.id === art.sourceId)?.parsed ?? state.parsed)
+    : state.parsed;
+  const shapes = parsed?.shapes ?? [];
+  if (!parsed || !shapes.length) return round(HUBCAP_SILHOUETTE_NO_ARTWORK);
+
+  // The placement the CUT will use, read from the same two helpers the cut reads it from. Not a
+  // parallel "fit the outline to a size" rule: that is what let the shape and the picture drift
+  // apart, since one measured the traced content and the other the document canvas. designFace is
+  // passed explicitly rather than through generatedDesignFaceOverride because the override reports
+  // the wheel-capped size derived *below*, and reading it here would be circular.
+  const scaleMult = (art?.scalePct ?? state.scalePct) / 100;
+  const anchor = designAnchor(parsed, true);
+  const pl: OutlinePlacement = {
+    cx: anchor.cx,
+    cy: anchor.cy,
+    mmPerUnit: designMmPerUnit(parsed, scaleMult, anchor.r, {
+      isRect: true,
+      radius: 0,
+      designFace: () => ({ w: state.hubcapDiameterMm, h: state.hubcapDiameterMm }),
+    }),
+    // The design face points +Y and is seen from above, so it reads mirrored; the user's own
+    // horizontal flip layers on top. Same expression as DesignPlacement's xMul at nsign > 0.
+    xMul: (art?.flipX ?? state.flipX) ? 1 : -1,
+    zMul: (art?.flipY ?? state.flipY) ? 1 : -1,
+    rotationDeg: art?.rotationDeg ?? state.rotationDeg,
+    offX: art?.offsetU ?? state.offsetX,
+    offZ: art?.offsetV ?? state.offsetY,
+  };
 
   const wasm = await getManifold();
-  const raw = silhouetteFromShapes(wasm, shapes);
-  if (!raw.length) return { shape: circle, warning: HUBCAP_SILHOUETTE_NO_ARTWORK };
+  const placed = silhouetteFromShapes(wasm, shapes, pl);
+  if (!placed.length) return round(HUBCAP_SILHOUETTE_NO_ARTWORK);
 
-  // Sized exactly as the artwork on it is: the base size the user set, times the same scale
-  // multiplier the placement applies (generatedDesignFaceOverride feeds that side the matching
-  // box). Scaling with the gizmo therefore resizes the part, which is the point — the shape and
-  // the picture are one object and one drag moves both.
-  const scaled = state.hubcapDiameterMm * (state.scalePct / 100);
-  // A silhouette also has to fit the wheel it mounts on, and a shape's corners reach further
-  // than its longest side does.
-  const size = Math.min(scaled, maxSizeForWheel(raw));
-  const outline = fitOutline(raw, size);
+  // Nothing may overhang the wheel it mounts on. Shrinking the whole placement rather than
+  // clamping a "size" number, so the same factor can be handed to the artwork's design face and
+  // the picture stays exactly on the shape cut for it.
+  const fit = fitFactorForRadius(placed, pl.offX, pl.offZ, HUBCAP_WHEEL_DIAMETER_MM / 2);
+  if (fit === null) return round(HUBCAP_SILHOUETTE_OFF_WHEEL);
+  const outline = fit < 1 ? scaleOutlineAbout(placed, pl.offX, pl.offZ, fit) : placed;
 
   // The one hard gate. A shape that misses the clips exports, looks like a hubcap, and comes off
   // the plate in pieces — so it is refused up front rather than discovered after the boolean.
   const covered = clipCoverage(outline, HUBCAP_CLIP_FACE_INNER_R_MM, HUBCAP_CLIP_FACE_OUTER_R_MM);
-  if (covered < HUBCAP_MIN_CLIP_COVERAGE)
-    return { shape: circle, warning: HUBCAP_SILHOUETTE_MISSES_CLIPS };
+  if (covered < HUBCAP_MIN_CLIP_COVERAGE) return round(HUBCAP_SILHOUETTE_MISSES_CLIPS);
+
+  const shape: HubcapShape = { kind: 'silhouette', outline };
+  const keep = (warning?: string): { shape: HubcapShape; warning?: string } => {
+    lastSilhouetteFit = fit;
+    lastBuiltOutline = shape;
+    return { shape, warning };
+  };
+
+  // Capping is silent otherwise, and the symptom — the size control stops doing anything — reads
+  // as a bug rather than as the wheel being the limit.
+  if (fit < 1) return keep(HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL);
 
   // An outline that fills its own bounding box is a rectangle, which on a raster means the image
   // had no transparency to cut around. Said rather than refused: a rectangular hubcap is a
@@ -382,14 +427,35 @@ export async function hubcapShapeFromState(): Promise<{
   const [bx0, bz0, bx1, bz1] = outlineBounds(outline);
   const boxArea = (bx1 - bx0) * (bz1 - bz0);
   if (boxArea > 0 && outlineArea(outline) / boxArea > 0.98)
-    return { shape: { kind: 'silhouette', outline }, warning: HUBCAP_SILHOUETTE_NO_TRANSPARENCY };
+    return keep(HUBCAP_SILHOUETTE_NO_TRANSPARENCY);
 
   // Printability, not correctness: a 0.5mm spike is a valid solid and one nozzle of plastic.
   const narrow = narrowFeatureArea(wasm, outline, HUBCAP_MIN_FEATURE_MM);
-  return {
-    shape: { kind: 'silhouette', outline },
-    warning: narrow > 1 ? HUBCAP_SILHOUETTE_THIN_DETAIL : undefined,
-  };
+  return keep(narrow > 1 ? HUBCAP_SILHOUETTE_THIN_DETAIL : undefined);
+}
+
+/**
+ * What the part was last actually built to, and by how much the wheel cap shrank it.
+ *
+ * Both exist because two synchronous callers — the design-face override below and the 1:1 template
+ * — have to describe the mesh that is on screen, and the only function that knows it is async (it
+ * needs the boolean engine). The rebuild runs the generator before either is read
+ * (`rebuildAssemblyScene`), so this is a cache of the current answer rather than a guess at it.
+ */
+let lastSilhouetteFit = 1;
+let lastBuiltOutline: HubcapShape | null = null;
+
+/**
+ * The shape the hubcap template should be drawn for: whatever the part currently is.
+ *
+ * Only the silhouette comes from the cache. A circle is derived live from the diameter, because
+ * the control changes it and the template link is re-read immediately — reading a cached circle
+ * there served the previous diameter's drawing, which is exactly the quietly-wrong template
+ * hubcapTemplateSvg's comment is about.
+ */
+export function hubcapTemplateShape(): HubcapShape {
+  if (state.hubcapSilhouette && lastBuiltOutline?.kind === 'silhouette') return lastBuiltOutline;
+  return { kind: 'circle', diameterMm: state.hubcapDiameterMm };
 }
 
 /**
@@ -401,14 +467,19 @@ export async function hubcapShapeFromState(): Promise<{
  * different sizes.
  *
  * A square of the size the user asked for breaks it: meet-fit puts the artwork's longer axis on
- * that side, which is the same "longest side is the size" rule the silhouette itself uses, so the
- * shape and the picture agree by construction — and scaling the artwork scales both, because the
- * scale multiplier applies to this exactly as it applies to a real face.
+ * that side, which is the same rule the silhouette's own placement uses, so the shape and the
+ * picture agree by construction — and scaling the artwork scales both, because the scale
+ * multiplier applies to this exactly as it applies to a real face.
+ *
+ * The wheel cap is folded in for the same reason. When the outline had to shrink to clear the rim,
+ * the artwork has to shrink with it; a cap applied to the part alone left the picture at the
+ * uncapped size, with the outer band of every colour region hanging off the edge of the part.
  *
  * Null whenever the toggle is off, which leaves every other kind on the face it always used.
  */
 export function generatedDesignFaceOverride(): { w: number; h: number } | null {
   const kind = currentAssemblyKind();
   if (!kind?.buildParam || !state.hubcapSilhouette) return null;
-  return { w: state.hubcapDiameterMm, h: state.hubcapDiameterMm };
+  const d = state.hubcapDiameterMm * lastSilhouetteFit;
+  return { w: d, h: d };
 }

@@ -263,6 +263,14 @@ function poseAssemblyForDisplay(): void {
 async function rebuildAssemblyScene(): Promise<void> {
   newModelGroup(state.stlRefMesh);
 
+  // The fit sliders and the gizmo write the legacy globals; the instance is where the rest of
+  // assembly mode reads placement from. Sync FIRST, because a part whose shape follows the artwork
+  // is regenerated below and reads that instance — left until its usual spot further down, the
+  // outline was built from the previous scale/rotation/offset and the picture from the new one,
+  // which is the drift the whole placement seam exists to prevent. Idempotent, and the call below
+  // stays where it is so the non-generated path is unchanged.
+  syncActiveArtworkPlacement();
+
   // BEFORE the no-artwork branch below, not after it. A part whose shape follows the artwork has
   // to be rebuilt when the artwork goes away, and that is exactly the case that branch returns
   // early for — so removing the last image left the hubcap still cut to its silhouette, with

@@ -42,6 +42,10 @@ vi.mock('../src/scene/designGizmo', () => ({
   isGizmoDragging: () => false,
 }));
 vi.mock('../src/scene/zonePick', () => ({ refreshZonePickMeshes: vi.fn() }));
+vi.mock('../src/assembly/parts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/assembly/parts')>()),
+  asmRebuildGeneratedParts: vi.fn(async () => true),
+}));
 vi.mock('../src/ui/dom', () => ({ $: (sel: string) => document.querySelector(sel) }));
 
 import { getLastAssemblyBuild, getLastBuild, rebuildCurrent } from '../src/app/rebuild';
@@ -52,6 +56,7 @@ import { refreshGizmo } from '../src/scene/designGizmo';
 import { refreshZonePickMeshes } from '../src/scene/zonePick';
 import { schedulePersist } from '../src/state/persist';
 import { setPreferredViewDir } from '../src/scene/viewport';
+import { asmRebuildGeneratedParts } from '../src/assembly/parts';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 import { state } from '../src/state/store';
 import type { AssemblyBuild, AssemblyPart, ParsedSVG, SVGShape } from '../src/types';
@@ -580,5 +585,50 @@ describe('the blank-surface notice', () => {
     await rebuildCurrent();
 
     expect(WARNINGS.map((w) => w.message).join('\n')).not.toContain('still blank');
+  });
+});
+
+describe('a part whose shape follows the artwork sees the current placement', () => {
+  it('syncs the instance before regenerating, not after', async () => {
+    // The fit sliders and the gizmo write the legacy globals; the generated part reads the
+    // instance. Regenerating first built the outline from the PREVIOUS scale while the cut used
+    // the new one, so a scaled silhouette came out the old size — the exact drift the shared
+    // placement seam exists to prevent, reintroduced by ordering alone.
+    state.shapeKind = 'assembly';
+    state.assembly.kindId = 'hubcap';
+    state.hubcapSilhouette = true;
+    state.assembly.parts = [asmPart({ roleId: 'hubcap' })];
+    state.parsed = parsedSquare();
+    state.sources = [
+      { id: 's1', kind: 'raster', name: 'a.png', parsed: state.parsed, svgText: '' },
+    ] as unknown as typeof state.sources;
+    state.artworks = [
+      {
+        id: 'a1',
+        sourceId: 's1',
+        zone: null,
+        offsetU: 0,
+        offsetV: 0,
+        scalePct: 100, // the instance is stale…
+        rotationDeg: 0,
+        flipX: false,
+        flipY: false,
+        mode: 'sticker',
+      } as unknown as (typeof state.artworks)[number],
+    ];
+    state.activeArtworkId = 'a1';
+    state.scalePct = 250; // …and the slider has moved
+
+    let scaleAtRegen: number | undefined;
+    vi.mocked(asmRebuildGeneratedParts).mockImplementation(async () => {
+      scaleAtRegen = state.artworks[0]?.scalePct;
+      return true;
+    });
+
+    await rebuildCurrent();
+
+    expect(scaleAtRegen).toBe(250);
+
+    state.hubcapSilhouette = false;
   });
 });

@@ -144,6 +144,76 @@ try {
     }
     await page.close();
   }
+
+  // What the code review turned up: the part and the picture were placed by two different rules.
+  {
+    const { page, errors } = await newPage(browser, { viewport: { width: 1440, height: 900 } });
+    await page.goto(`http://localhost:${PORT}/?kind=hubcap`);
+    await page.waitForFunction(
+      () => (document.querySelector('#stat-tris')?.textContent || '') !== '0 tris',
+      null,
+      { timeout: 90_000 },
+    );
+    await page.setInputFiles('#svg-input', 'stubs/mario.png');
+    await page.waitForSelector('#artwork-list .artwork-row', { timeout: 120_000 });
+    await settle(page, 'artwork');
+    await page.check('#p-asm-silhouette');
+    await settle(page, 'silhouette');
+    const has = async (frag) =>
+      (await page.evaluate(() => window.__mosaic.warnings())).some((w) => w.includes(frag));
+
+    console.log('\n=== the part stays on the wheel, however big the artwork is scaled');
+    // Scale, not the diameter field: that one clamps to the printer bed (246mm on a 256 plate), so
+    // it cannot reach the 280mm wheel on most machines. Scale can, and it is the control the gizmo
+    // drives — dragging the artwork bigger is the way a user actually gets here.
+    //
+    // The panel's readout measures the BUILT mesh vertex by vertex, so it is the app's own answer
+    // to "how big did this come out" rather than a restatement of the control.
+    const across = async () => {
+      const t = await page.$eval('#asm-buildparam-size', (e) => e.textContent || '');
+      const m = /([\d.]+)mm across/.exec(t);
+      return m ? Number(m[1]) : null;
+    };
+    const at100 = await across();
+    await page.fill('#p-scale-num', '400');
+    await page.dispatchEvent('#p-scale-num', 'change');
+    await settle(page, 'scaled up');
+    const big = await across();
+    console.log(`  ${at100}mm across at 100% scale, ${big}mm at 400% (wheel allows 280)`);
+    if (big === null) {
+      console.log('   !! no footprint readout to check');
+      failed++;
+    } else if (big > 281) {
+      console.log('   !! the part overhangs the wheel it mounts on');
+      failed++;
+    } else if (!(await has('too big for the wheel'))) {
+      console.log('   !! capped silently — the size control just looks broken');
+      failed++;
+    } else console.log('  capped, and said so');
+    await page.fill('#p-scale-num', '100');
+    await page.dispatchEvent('#p-scale-num', 'change');
+    await settle(page, 'back to 100%');
+
+    console.log('\n=== the template is drawn to the shape, not to a disc');
+    const tpl = await page.evaluate(async () => {
+      const a = document.querySelector('#asm-template-link');
+      if (!a?.href) return null;
+      return await (await fetch(a.href)).text();
+    });
+    if (!tpl) {
+      console.log('   !! no template link to check');
+      failed++;
+    } else if (tpl.includes('<circle') || !tpl.includes('<path')) {
+      console.log('   !! the template is still a disc while the part is a silhouette');
+      failed++;
+    } else console.log('  a path, matching the part');
+
+    if (errors.length) {
+      errors.forEach((e) => console.log(`   !! console: ${e}`));
+      failed += errors.length;
+    }
+    await page.close();
+  }
 } finally {
   await browser?.close();
   preview.stop();

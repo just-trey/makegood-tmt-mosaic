@@ -26,31 +26,100 @@ export type OutlineRing = OutlinePt[];
 export type Outline = OutlineRing[];
 
 /**
- * Scale an outline so its longest side measures `sizeMm`, and centre it on the axis.
+ * Where the artwork lands on the part, in the terms the cut already uses.
  *
- * Longest side rather than width or area: it is the number the user set and the one they can
- * predict from looking at the picture. A tall character asked for at 220mm comes out 220mm tall
- * and narrower than that — which also keeps it inside the wheel, since the wheel is round and
- * 280mm across, so any outline whose longest side clears that clears it in every direction.
+ * This is deliberately the *same* set of numbers `DesignPlacement` (src/geometry/zones.ts) carries,
+ * and `placeArtworkPoint` below is deliberately the same arithmetic as that module's `placer`. The
+ * whole feature rests on the part and the picture being one object; the only way to guarantee that
+ * is for both to be produced by one transform rather than by two that are meant to agree.
+ *
+ * They did not agree before. The outline was fitted by its own traced *content* bounding box while
+ * the artwork was scaled off the document *canvas*, so a padded PNG — a 300x450 subject on a
+ * 512x512 sheet — printed the picture about 12% smaller than the shape cut for it, and offset.
+ * An SVG that declared a physical size skipped the fit entirely and disagreed by whatever that
+ * size happened to be.
  */
-export function fitOutline(rings: Outline, sizeMm: number): Outline {
-  let minX = Infinity,
-    minZ = Infinity,
-    maxX = -Infinity,
-    maxZ = -Infinity;
+export interface OutlinePlacement {
+  /** SVG-space anchor the design centres on — `designAnchor`'s cx/cy. */
+  cx: number;
+  cy: number;
+  /** SVG user units → mm, from `designMmPerUnit`. */
+  mmPerUnit: number;
+  /** ±1 on X, already folded with the +Y-face mirror; see `placer`'s `xMul`. */
+  xMul: number;
+  /** ±1 on Z: -1 for SVG's y-down, +1 when the user flips vertically. */
+  zMul: number;
+  rotationDeg: number;
+  /** millimetre nudge, applied after scale and rotation exactly as the cut applies it */
+  offX: number;
+  offZ: number;
+}
+
+/** One artwork point (SVG space) → the part's own (x, z) millimetres. */
+export function placeArtworkPoint(x: number, y: number, pl: OutlinePlacement): OutlinePt {
+  let px = (x - pl.cx) * pl.mmPerUnit * pl.xMul;
+  let pz = (y - pl.cy) * pl.mmPerUnit * pl.zMul;
+  if (pl.rotationDeg) {
+    const r = (pl.rotationDeg * Math.PI) / 180;
+    const c = Math.cos(r),
+      s = Math.sin(r);
+    const nx = px * c - pz * s;
+    pz = px * s + pz * c;
+    px = nx;
+  }
+  return { x: px + pl.offX, z: pz + pl.offZ };
+}
+
+/** Furthest any part of the outline reaches from the mounting axis at (0, 0). */
+export function outlineReach(rings: Outline): number {
+  let far = 0;
   for (const r of rings)
     for (const p of r) {
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.z < minZ) minZ = p.z;
-      if (p.z > maxZ) maxZ = p.z;
+      const d = Math.hypot(p.x, p.z);
+      if (d > far) far = d;
     }
-  const span = Math.max(maxX - minX, maxZ - minZ);
-  if (!(span > 0)) return rings;
-  const s = sizeMm / span;
-  const cx = (minX + maxX) / 2;
-  const cz = (minZ + maxZ) / 2;
-  return rings.map((r) => r.map((p) => ({ x: (p.x - cx) * s, z: (p.z - cz) * s })));
+  return far;
+}
+
+/**
+ * Shrink an outline toward the design's own offset point by `k`.
+ *
+ * Scaling about the offset rather than about the axis is what keeps this equivalent to having
+ * built the outline with `mmPerUnit * k` in the first place — the placement applies the offset
+ * *after* the scale, so the offset is the one point that doesn't move when mmPerUnit changes.
+ * That equivalence is the whole reason the caller can hand the same `k` to the artwork's design
+ * face and get a picture that still matches the shape.
+ */
+export function scaleOutlineAbout(rings: Outline, ox: number, oz: number, k: number): Outline {
+  return rings.map((r) => r.map((p) => ({ x: ox + (p.x - ox) * k, z: oz + (p.z - oz) * k })));
+}
+
+/**
+ * The largest `k` for which the outline still fits a circle of `maxR` about the axis, or null if
+ * no amount of shrinking gets it there.
+ *
+ * Bisected rather than solved: with a nonzero offset the reach is `|off + k(p - off)|` maximised
+ * over the outline, which is convex in k but not something a single division answers. Twenty
+ * halvings land well inside a print tolerance, and this runs once per rebuild.
+ */
+export function fitFactorForRadius(
+  rings: Outline,
+  ox: number,
+  oz: number,
+  maxR: number,
+): number | null {
+  if (outlineReach(rings) <= maxR) return 1;
+  // Shrinking collapses the shape onto its offset point, so if that point is already outside the
+  // circle there is no k that helps and the caller has to say so instead of scaling to nothing.
+  if (Math.hypot(ox, oz) >= maxR) return null;
+  let lo = 0,
+    hi = 1;
+  for (let i = 0; i < 20; i++) {
+    const mid = (lo + hi) / 2;
+    if (outlineReach(scaleOutlineAbout(rings, ox, oz, mid)) <= maxR) lo = mid;
+    else hi = mid;
+  }
+  return lo;
 }
 
 /** Signed area of one ring. Summed over an outline's rings, holes cancel against their boundary. */
@@ -202,29 +271,31 @@ export function narrowFeatureArea(wasm: ManifoldAPI, rings: Outline, widthMm: nu
  * punch a hole wherever two colours overlap — which, in artwork drawn as stacked layers, is most
  * of it.
  *
- * **Both artwork axes are negated into the part's frame.** Artwork space is y-down (SVG's
- * convention, and the raster decoder's) and the part's ground plane is not, so Y flips —
- * `DesignPlacement.zMul` on the cut path is documented as "-1 (base SVG y-down -> viewport
- * correction)". X flips as well because the design face points +Y and is *seen from above*: a
- * surface's own frame reads mirrored from the side you look at it, which is what the cut path's
- * face basis (src/scene/faceFrame.ts) resolves and what this, building the part before any face
- * exists to ask, has to state as a constant. It is a constant safely: preferFaceNormal pins this
- * kind's design face to +Y.
- *
- * Getting either one wrong produces a shape that looks entirely plausible on its own and is
- * only wrong next to the picture printed on it — the two were caught one at a time, from
- * screenshots, as "upside down" and then as "mirrored".
- *
- * The caller scales and centres with `fitOutline`.
+ * Points arrive already in the part's frame via `placeArtworkPoint` — scale, mirrors, rotation and
+ * offset all applied, from the same numbers the cut uses. Both axes normally negate: artwork space
+ * is y-down (SVG's convention, and the raster decoder's) and the part's ground plane is not, so Y
+ * flips; X flips because the design face points +Y and is *seen from above*, and a surface's own
+ * frame reads mirrored from the side you look at it. Getting either wrong produces a shape that
+ * looks entirely plausible on its own and is only wrong next to the picture printed on it — both
+ * were caught one at a time, from screenshots, as "upside down" and then as "mirrored".
  */
-export function silhouetteFromShapes(wasm: ManifoldAPI, shapes: SVGShape[]): Outline {
+export function silhouetteFromShapes(
+  wasm: ManifoldAPI,
+  shapes: SVGShape[],
+  pl: OutlinePlacement,
+): Outline {
   const regions = shapes
     .map((s) => s.loops.filter((l) => l.length >= 3))
     .filter((loops) => loops.length)
     .map(
       (loops) =>
         new wasm.CrossSection(
-          loops.map((l) => l.map((p) => [-p.x, -p.y] as [number, number])),
+          loops.map((l) =>
+            l.map((p) => {
+              const q = placeArtworkPoint(p.x, p.y, pl);
+              return [q.x, q.z] as [number, number];
+            }),
+          ),
           'EvenOdd',
         ),
     );

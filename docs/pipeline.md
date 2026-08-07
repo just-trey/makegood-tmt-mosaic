@@ -300,25 +300,42 @@ The outline is measured, not trusted blindly, before it becomes a part:
   rather than refusing, since a thin spike still extrudes into a valid, if
   fragile, solid.
 
-Fitting the outline to size reuses the same **Hubcap diameter** control as the
-circle, now read as "longest side" rather than a diameter, and is still capped
-at `HUBCAP_WHEEL_DIAMETER_MM` (280mm, the wheel's own outer radius doubled) via
-`maxSizeForWheel`, which measures the outline's own furthest vertex from its
-centroid rather than assuming a circle's longest-side cap is safe in every
-direction. Sizing an artwork-shaped part also has to defeat the app's normal
+**The outline is placed by the same transform as the cut, not by a parallel
+rule meant to match it.** `hubcapShapeFromState` builds an `OutlinePlacement`
+from `designAnchor` and `designMmPerUnit` — the two helpers the cut itself
+uses — and `placeArtworkPoint` applies them in the same order
+`ZoneMapper.placer` does: scale about the design anchor, mirror each axis,
+rotate about the design centre, then translate by the millimetre offset. So
+scale, rotation, both flips and the offset all reshape the part, and the part
+and the picture cannot disagree by construction.
+
+Two rules of thumb sit inside that. Both axes normally negate — artwork space
+is y-down while the part's ground plane is not (Z), and the design face points
++Y and is viewed from above, so its own frame reads mirrored (X). And the
+anchor is the document _canvas_, not the traced content: fitting the outline to
+its own content bounding box while the artwork was scaled off the canvas is
+exactly how the two drifted apart, and a padded PNG — a 300×450 subject on a
+512×512 sheet — printed the picture about 12% small and offset.
+
+Sizing an artwork-shaped part also has to defeat the app's normal
 auto-fit-to-largest-design-face logic, which would otherwise use the shape
-being fit as the reference for its own fit — `generatedDesignFaceOverride`
+being fit as the reference for its own fit. `generatedDesignFaceOverride`
 substitutes a fixed square sized from the diameter control, read identically by
 the build (`src/geometry/assembly.ts`) and the placement gizmo
 (`src/scene/faceFrame.ts`) so the two never disagree about scale.
 
-Two axes get negated mapping artwork points into the part's own frame:
-artwork/SVG space is y-down while the part's ground plane is not (Y), and the
-design face points +Y and is viewed from above, so its own frame reads
-mirrored from that side (X) — the same correction the cut path applies via
-`DesignPlacement.zMul` and the face basis in `src/scene/faceFrame.ts`, stated
-here as a constant because the silhouette is built before any face exists to
-ask.
+The wheel limit rides on that same override. Nothing may overhang the 280mm
+wheel (`HUBCAP_WHEEL_DIAMETER_MM`), and a shape's corners reach further than
+its longest side, so the check is a radius about the mounting axis rather than
+a maximum "size": `fitFactorForRadius` bisects for the largest factor that
+still clears the rim, `scaleOutlineAbout` applies it about the design's offset
+point — the one point a change in `mmPerUnit` leaves fixed, which is what makes
+shrinking the placed outline identical to having placed it smaller — and the
+override multiplies the design face by the same factor so the artwork comes
+down with the part. A cap applied to the part alone left the outer band of
+every colour region hanging off the edge it was cut into. An offset so far out
+that no factor rescues the shape is refused instead, since shrinking would
+collapse it onto a point that is itself off the wheel.
 
 **Export placement is baked from a verified reference 3MF, never computed or
 read at runtime.** Once a part's real-world print pose has been checked in the

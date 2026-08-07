@@ -3,21 +3,24 @@ import { getManifold } from '../src/geometry/manifold';
 import type { SVGShape } from '../src/types';
 import {
   clipCoverage,
-  fitOutline,
+  fitFactorForRadius,
   narrowFeatureArea,
   outlineArea,
   outlineBounds,
   outlineContains,
+  outlineReach,
+  placeArtworkPoint,
   ringArea,
+  scaleOutlineAbout,
   silhouetteFromShapes,
   type Outline,
+  type OutlinePlacement,
 } from '../src/geometry/hubcapOutline';
 import {
   HUBCAP_CLIP_FACE_INNER_R_MM,
   HUBCAP_CLIP_FACE_OUTER_R_MM,
   HUBCAP_MIN_CLIP_COVERAGE,
   HUBCAP_WHEEL_DIAMETER_MM,
-  maxSizeForWheel,
 } from '../src/geometry/hubcap';
 
 /**
@@ -47,55 +50,104 @@ function rect(w: number, h: number, cx = 0, cz = 0): Outline[0] {
   ];
 }
 
-describe('fitting an outline to the size the user asked for', () => {
-  it('scales the longest side to the size, and centres what it scaled', () => {
-    const tall = [rect(50, 200, 999, -400)];
+/** The identity placement: 1 unit = 1 mm, anchored at the SVG origin, no mirrors. */
+const plain = (over: Partial<OutlinePlacement> = {}): OutlinePlacement => ({
+  cx: 0,
+  cy: 0,
+  mmPerUnit: 1,
+  xMul: 1,
+  zMul: 1,
+  rotationDeg: 0,
+  offX: 0,
+  offZ: 0,
+  ...over,
+});
 
-    const [x0, z0, x1, z1] = outlineBounds(fitOutline(tall, 220));
-
-    expect(z1 - z0).toBeCloseTo(220, 6);
-    expect(x1 - x0).toBeCloseTo(55, 6); // aspect kept: 50/200 of 220
-    expect((x0 + x1) / 2).toBeCloseTo(0, 6);
-    expect((z0 + z1) / 2).toBeCloseTo(0, 6);
+describe('placing an artwork point on the part', () => {
+  it('scales about the anchor, not about the origin', () => {
+    // The anchor is the design's centre; a point one unit right of it lands mmPerUnit mm right of
+    // centre wherever in the document the design happens to sit.
+    const p = placeArtworkPoint(101, 200, plain({ cx: 100, cy: 200, mmPerUnit: 3 }));
+    expect(p.x).toBeCloseTo(3, 6);
+    expect(p.z).toBeCloseTo(0, 6);
   });
 
-  it('leaves a degenerate outline alone rather than dividing by its zero span', () => {
-    const flat = [
-      [
-        { x: 5, z: 5 },
-        { x: 5, z: 5 },
-        { x: 5, z: 5 },
-      ],
+  it('applies the offset after the scale, so the offset stays in millimetres', () => {
+    const a = placeArtworkPoint(10, 0, plain({ mmPerUnit: 2, offX: 5 }));
+    expect(a.x).toBeCloseTo(25, 6); // 10*2 + 5, not (10+5)*2
+  });
+
+  it('rotates about the design centre, not about the offset it is then moved to', () => {
+    // Rotation before translation is what makes the artwork spin in place instead of sweeping
+    // around the part — the same order src/geometry/zones.ts's placer uses.
+    const p = placeArtworkPoint(10, 0, plain({ rotationDeg: 90, offX: 100 }));
+    expect(p.x).toBeCloseTo(100, 6);
+    expect(p.z).toBeCloseTo(10, 6);
+  });
+
+  it('mirrors each axis independently', () => {
+    expect(placeArtworkPoint(3, 7, plain({ xMul: -1 })).x).toBeCloseTo(-3, 6);
+    expect(placeArtworkPoint(3, 7, plain({ zMul: -1 })).z).toBeCloseTo(-7, 6);
+  });
+});
+
+describe('keeping the shape inside the wheel', () => {
+  it('leaves a shape that already fits completely alone', () => {
+    expect(fitFactorForRadius([circle(50)], 0, 0, 140)).toBe(1);
+  });
+
+  it('shrinks an oversized shape to exactly the rim', () => {
+    const big = [circle(300)];
+    const k = fitFactorForRadius(big, 0, 0, 140)!;
+
+    expect(outlineReach(scaleOutlineAbout(big, 0, 0, k))).toBeCloseTo(140, 1);
+  });
+
+  it("catches a square's corners, which reach further than its longest side", () => {
+    // A square 280mm on a side reaches r=198 and would overhang by 58mm. Capping on the longest
+    // side alone — which an earlier version did — passes this shape straight through.
+    const square = [rect(280, 280)];
+    expect(outlineReach(square)).toBeGreaterThan(140);
+
+    const k = fitFactorForRadius(square, 0, 0, 140)!;
+    expect(outlineReach(scaleOutlineAbout(square, 0, 0, k))).toBeCloseTo(140, 1);
+    expect(k).toBeLessThan(1);
+  });
+
+  it('shrinks toward the offset, so the result matches a smaller mmPerUnit exactly', () => {
+    // The equivalence the design-face override depends on: shrinking the placed outline by k has
+    // to equal having placed it with mmPerUnit*k, or the part and the picture come out different
+    // sizes the moment the cap engages.
+    const pts = [
+      { x: 10, y: 0 },
+      { x: 0, y: 40 },
+      { x: -30, y: -20 },
     ];
-    expect(fitOutline(flat, 220)).toEqual(flat);
+    const pl = plain({ mmPerUnit: 4, offX: 12, offZ: -7, rotationDeg: 33 });
+    const placed = [pts.map((p) => placeArtworkPoint(p.x, p.y, pl))];
+    const k = 0.6;
+
+    const shrunk = scaleOutlineAbout(placed, pl.offX, pl.offZ, k);
+    const rebuilt = [pts.map((p) => placeArtworkPoint(p.x, p.y, { ...pl, mmPerUnit: 4 * k }))];
+
+    shrunk[0].forEach((p, i) => {
+      expect(p.x).toBeCloseTo(rebuilt[0][i].x, 6);
+      expect(p.z).toBeCloseTo(rebuilt[0][i].z, 6);
+    });
   });
 
-  it('caps a shape so its furthest point lands on the wheel rim, not past it', () => {
-    // maxSizeForWheel promises "scale to this and the outline just touches the rim". The check is
-    // to fit to exactly that and measure what the outline actually reaches — a promise about a
-    // size is worth nothing if the size it returns overhangs.
-    for (const shape of [
-      [rect(100, 100)], // square: corners reach furthest for a given longest side
-      [rect(50, 200)], // tall and narrow
-      [circle(50)], // round: longest side IS the diameter
-    ]) {
-      const cap = maxSizeForWheel(shape);
-      const fitted = fitOutline(shape, cap);
-      let far = 0;
-      for (const r of fitted) for (const p of r) far = Math.max(far, Math.hypot(p.x, p.z));
-      expect(far * 2).toBeCloseTo(HUBCAP_WHEEL_DIAMETER_MM, 1);
-    }
+  it('refuses when the offset alone is off the wheel, rather than scaling to nothing', () => {
+    // Shrinking collapses the shape onto its offset point, so no k rescues a design pushed past
+    // the rim — returning a tiny k would produce a speck of a part instead of saying so.
+    expect(fitFactorForRadius([circle(10, 64, 200, 0)], 200, 0, 140)).toBeNull();
   });
 
-  it('keeps any shape inside the wheel once its longest side is capped', () => {
-    // The wheel is round and 280mm across, so the case that actually has to hold is the one with
-    // the worst diagonal — a square, whose corners reach furthest for a given longest side.
-    const square = fitOutline([rect(100, 100)], 280);
-    const [x0, z0, x1, z1] = outlineBounds(square);
-    const worstRadius = Math.hypot(Math.max(-x0, x1), Math.max(-z0, z1));
-    // 280 on the longest side is NOT the same as fitting a 280mm circle: this is the number the
-    // size cap has to be derived from, not assumed equal to.
-    expect(worstRadius).toBeGreaterThan(140);
+  it('honours the wheel diameter the rest of the app uses', () => {
+    const k = fitFactorForRadius([rect(500, 500)], 0, 0, HUBCAP_WHEEL_DIAMETER_MM / 2)!;
+    expect(outlineReach(scaleOutlineAbout([rect(500, 500)], 0, 0, k)) * 2).toBeCloseTo(
+      HUBCAP_WHEEL_DIAMETER_MM,
+      0,
+    );
   });
 });
 
@@ -214,7 +266,7 @@ describe('the silhouette of loaded artwork', () => {
     // even-odd pass would punch a hole through each overlap; the union has to fill it.
     const overlapping = [square(40, -10), square(40, 10, 0, '#f00')];
 
-    const rings = silhouetteFromShapes(wasm, overlapping);
+    const rings = silhouetteFromShapes(wasm, overlapping, plain());
 
     expect(outlineArea(rings)).toBeCloseTo(40 * 40 + 20 * 40, 0); // union, not xor
     expect(outlineContains(rings, 0, 0)).toBe(true); // the overlap is solid
@@ -230,7 +282,7 @@ describe('the silhouette of loaded artwork', () => {
       loops: [toArt(circle(50)), toArt(circle(20))],
     };
 
-    const rings = silhouetteFromShapes(wasm, [ring]);
+    const rings = silhouetteFromShapes(wasm, [ring], plain());
 
     expect(outlineContains(rings, 35, 0)).toBe(true);
     expect(outlineContains(rings, 0, 0)).toBe(false);
@@ -240,7 +292,7 @@ describe('the silhouette of loaded artwork', () => {
     const wasm = await getManifold();
     const apart = [square(20, -60), square(20, 60)];
 
-    const rings = silhouetteFromShapes(wasm, apart);
+    const rings = silhouetteFromShapes(wasm, apart, plain());
 
     // two islands: a real outcome, and what the clip check exists to refuse
     expect(outlineArea(rings)).toBeCloseTo(800, 0);
@@ -269,7 +321,9 @@ describe('the silhouette of loaded artwork', () => {
       ],
     };
 
-    const [x0, z0, x1, z1] = outlineBounds(silhouetteFromShapes(wasm, [corner]));
+    const [x0, z0, x1, z1] = outlineBounds(
+      silhouetteFromShapes(wasm, [corner], plain({ xMul: -1, zMul: -1 })),
+    );
 
     // artwork (+x, -y) is right-and-high on screen; the part frame reads it left-and-high
     expect(x1).toBeLessThan(0); // X mirrored — caught as "horizontally flipped"
@@ -280,7 +334,9 @@ describe('the silhouette of loaded artwork', () => {
 
   it('gives nothing back for artwork with no usable loops', async () => {
     const wasm = await getManifold();
-    expect(silhouetteFromShapes(wasm, [])).toEqual([]);
-    expect(silhouetteFromShapes(wasm, [{ fill: '#000', order: 0, loops: [] }])).toEqual([]);
+    expect(silhouetteFromShapes(wasm, [], plain())).toEqual([]);
+    expect(silhouetteFromShapes(wasm, [{ fill: '#000', order: 0, loops: [] }], plain())).toEqual(
+      [],
+    );
   }, 30000);
 });
