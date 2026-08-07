@@ -57,6 +57,17 @@ Since PR #17, `deploy.yml` triggers on `push: tags: ['v*']`, not on merge to
 go-live action.** Treat it as such: confirm with the user before pushing the tag
 unless they've already said to go ahead.
 
+The same tag push also mints the **GitHub Release** — `deploy.yml`'s `release`
+job creates it from this version's CHANGELOG section (via
+`scripts/changelog-extract.mjs`), gated on the build passing. No manual
+`gh release create` step, and nothing to remember: for a while the tags ran
+ahead of the Releases page (releases stopped at v0.2.1 while tags reached
+v0.6.0) precisely because that step was manual. If the two ever drift again, the
+**Backfill GitHub Releases** workflow (`backfill-releases.yml`, run from the
+Actions tab) creates a Release for every `v*` tag missing one; it's idempotent.
+Because the notes come from the CHANGELOG, a tag whose CHANGELOG section is
+wrong ships wrong notes — so get step 1's CHANGELOG edit right before tagging.
+
 After the tag push, watch the deploy with one blocking background call rather
 than polling. `gh run watch` requires an explicit run ID when non-interactive —
 without one it fails instantly with a usage error that's easy to mistake for a
