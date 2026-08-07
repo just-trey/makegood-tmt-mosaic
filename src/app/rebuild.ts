@@ -263,6 +263,12 @@ function poseAssemblyForDisplay(): void {
 async function rebuildAssemblyScene(): Promise<void> {
   newModelGroup(state.stlRefMesh);
 
+  // BEFORE the no-artwork branch below, not after it. A part whose shape follows the artwork has
+  // to be rebuilt when the artwork goes away, and that is exactly the case that branch returns
+  // early for — so removing the last image left the hubcap still cut to its silhouette, with
+  // nothing on screen to explain why.
+  if (generatedPartsNeedRebuild()) await asmRebuildGeneratedParts({ schedule: false });
+
   // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
   if (!state.parsed) {
     renderRawAssemblyParts();
@@ -285,11 +291,6 @@ async function rebuildAssemblyScene(): Promise<void> {
   // build.
   syncActiveArtworkPlacement();
 
-  // A part whose shape follows the artwork has to be rebuilt when the artwork changes, and the
-  // rebuild is the one place that runs for every way that can happen — a load, a re-trace, a
-  // removal, a restored session. Guarded by a signature so it is a no-op the rest of the time;
-  // `schedule: false` because scheduling another rebuild from inside one would never settle.
-  if (generatedPartsNeedRebuild()) await asmRebuildGeneratedParts({ schedule: false });
   // Every instance whose source still resolves, each carrying its own placement and zone binding.
   // With one unbound instance — every flow that exists until the panel can add a second — this is
   // exactly the single global placement the build used to take.

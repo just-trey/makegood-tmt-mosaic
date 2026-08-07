@@ -405,6 +405,29 @@ export const HUBCAP_SILHOUETTE_MISSES_CLIPS =
   'That shape doesn’t cover the hubcap’s mounting clips, so it stays round — make it bigger, or ' +
   'use artwork whose middle is filled in.';
 
+/**
+ * More than one design loaded with the toggle on.
+ *
+ * Refused rather than unioned. Two designs make one outline of two islands, and the second one is
+ * as likely to be a stray speck as a deliberate second shape — either way the part comes off the
+ * plate in pieces. There is also no sensible answer to "which design's scale sizes the part".
+ */
+export const HUBCAP_SILHOUETTE_TOO_MANY =
+  'A hubcap cut to shape can only follow one design — remove the others, or turn "Cut to artwork ' +
+  'shape" off.';
+
+/**
+ * The image had no transparent background, so its silhouette is its own rectangle.
+ *
+ * Detected from the outline rather than the pixels: a shape that fills its bounding box IS a
+ * rectangle, whatever produced it. A deliberately rectangular logo trips this too, which is why
+ * it says what happened rather than refusing — a rectangular hubcap is a legitimate thing to
+ * want, and a JPEG dropped in by mistake is the far more likely reading.
+ */
+export const HUBCAP_SILHOUETTE_NO_TRANSPARENCY =
+  'This image has no transparent background, so the hubcap came out as its rectangle. Export it ' +
+  'as a PNG with the background removed to cut it to the artwork’s real shape.';
+
 export const HUBCAP_SILHOUETTE_THIN_DETAIL =
   'Some of this shape is thinner than 1mm, which is about one nozzle wide — those parts will be ' +
   'fragile. Simplifying the artwork or making the hubcap bigger will thicken them.';

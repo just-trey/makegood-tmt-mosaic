@@ -9,6 +9,8 @@ import {
   HUBCAP_MIN_FEATURE_MM,
   HUBCAP_SILHOUETTE_MISSES_CLIPS,
   HUBCAP_SILHOUETTE_NO_ARTWORK,
+  HUBCAP_SILHOUETTE_NO_TRANSPARENCY,
+  HUBCAP_SILHOUETTE_TOO_MANY,
   HUBCAP_SILHOUETTE_THIN_DETAIL,
   buildHubcapBody,
   hubcapPlacement,
@@ -20,6 +22,8 @@ import { getManifold } from '../geometry/manifold';
 import {
   clipCoverage,
   fitOutline,
+  outlineArea,
+  outlineBounds,
   narrowFeatureArea,
   silhouetteFromShapes,
 } from '../geometry/hubcapOutline';
@@ -286,7 +290,7 @@ export function currentAssemblyKind(): AssemblyKind | null {
  */
 export function fillModeOffered(): boolean {
   if (state.shapeKind !== 'assembly') return false;
-  return !currentAssemblyKind()?.withholdFill;
+  return !fillWithheld();
 }
 
 /**
@@ -296,7 +300,11 @@ export function fillModeOffered(): boolean {
  * round-trip out to a disc and back.
  */
 export function fillWithheld(): boolean {
-  return !!currentAssemblyKind()?.withholdFill;
+  if (currentAssemblyKind()?.withholdFill) return true;
+  // Cutting the part to the artwork's own outline and then repeating that artwork across it tiles
+  // a shape with copies of itself. Withheld rather than merely unoffered, for the reason the doc
+  // above gives: it would misbehave, so it is worth rewriting a mode already chosen.
+  return state.hubcapSilhouette && !!currentAssemblyKind()?.buildParam;
 }
 
 /**
@@ -331,6 +339,10 @@ export async function hubcapShapeFromState(): Promise<{
   const circle: HubcapShape = { kind: 'circle', diameterMm: state.hubcapDiameterMm };
   if (!state.hubcapSilhouette) return { shape: circle };
 
+  // One design only. Two make an outline of two islands, and there is no answer to which one's
+  // scale sizes the part.
+  if (state.artworks.length > 1) return { shape: circle, warning: HUBCAP_SILHOUETTE_TOO_MANY };
+
   const shapes = state.sources.flatMap((s) => s.parsed?.shapes ?? []);
   if (!shapes.length) return { shape: circle, warning: HUBCAP_SILHOUETTE_NO_ARTWORK };
 
@@ -353,6 +365,14 @@ export async function hubcapShapeFromState(): Promise<{
   const covered = clipCoverage(outline, HUBCAP_CLIP_FACE_INNER_R_MM, HUBCAP_CLIP_FACE_OUTER_R_MM);
   if (covered < HUBCAP_MIN_CLIP_COVERAGE)
     return { shape: circle, warning: HUBCAP_SILHOUETTE_MISSES_CLIPS };
+
+  // An outline that fills its own bounding box is a rectangle, which on a raster means the image
+  // had no transparency to cut around. Said rather than refused: a rectangular hubcap is a
+  // legitimate thing to want, and this is the far more likely reading of it.
+  const [bx0, bz0, bx1, bz1] = outlineBounds(outline);
+  const boxArea = (bx1 - bx0) * (bz1 - bz0);
+  if (boxArea > 0 && outlineArea(outline) / boxArea > 0.98)
+    return { shape: { kind: 'silhouette', outline }, warning: HUBCAP_SILHOUETTE_NO_TRANSPARENCY };
 
   // Printability, not correctness: a 0.5mm spike is a valid solid and one nozzle of plastic.
   const narrow = narrowFeatureArea(wasm, outline, HUBCAP_MIN_FEATURE_MM);

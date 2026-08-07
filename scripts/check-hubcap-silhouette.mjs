@@ -76,6 +76,74 @@ try {
     }
     await page.close();
   }
+  // The four things the maintainer hit while driving it.
+  {
+    const { page, errors } = await newPage(browser, { viewport: { width: 1440, height: 900 } });
+    await page.goto(`http://localhost:${PORT}/?kind=hubcap`);
+    await page.waitForFunction(
+      () => (document.querySelector('#stat-tris')?.textContent || '') !== '0 tris',
+      null,
+      { timeout: 90_000 },
+    );
+    const warns = () => page.evaluate(() => window.__mosaic.warnings());
+    const has = async (frag) => (await warns()).some((w) => w.includes(frag));
+
+    console.log('\n=== an opaque image is its own rectangle');
+    await page.setInputFiles('#svg-input', 'stubs/mario.webp');
+    await page.waitForSelector('#artwork-list .artwork-row', { timeout: 120_000 });
+    await settle(page, 'artwork');
+    await page.check('#p-asm-silhouette');
+    await settle(page, 'silhouette');
+    if (!(await has('no transparent background'))) {
+      console.log('   !! no warning for an image with no transparency');
+      failed++;
+    } else console.log('  warned, as it should');
+
+    console.log('\n=== Fill is withheld while cutting to shape');
+    const modeOpts = await page.$$eval('#artwork-list .artwork-mode option', (o) =>
+      o.map((x) => x.value),
+    );
+    console.log(`  modes offered: ${modeOpts.join(', ') || '(no mode control)'}`);
+    if (modeOpts.includes('fill')) {
+      console.log('   !! Fill still offered');
+      failed++;
+    }
+
+    console.log('\n=== a second design is refused');
+    await page.setInputFiles('#svg-input', 'stubs/mario.png');
+    await page.waitForFunction(
+      () => document.querySelectorAll('#artwork-list .artwork-row').length >= 2,
+      null,
+      { timeout: 120_000 },
+    );
+    await settle(page, 'second artwork');
+    if (!(await has('can only follow one design'))) {
+      console.log('   !! a second design was allowed');
+      failed++;
+    } else console.log('  refused, as it should');
+
+    console.log('\n=== removing the artwork puts the hubcap back');
+    const cut = await page.$eval('#stat-tris', (e) => e.textContent);
+    await page.evaluate(() => {
+      document
+        .querySelectorAll(
+          '#artwork-list .artwork-row .artwork-remove, #artwork-list .artwork-row [data-act="remove"]',
+        )
+        .forEach((b) => b.click());
+    });
+    await settle(page, 'removed');
+    const bare = await page.$eval('#stat-tris', (e) => e.textContent);
+    console.log(`  tris ${cut} -> ${bare}`);
+    if (cut === bare) {
+      console.log('   !! the part did not go back to a circle');
+      failed++;
+    }
+    if (errors.length) {
+      errors.forEach((e) => console.log(`   !! console: ${e}`));
+      failed += errors.length;
+    }
+    await page.close();
+  }
 } finally {
   await browser?.close();
   preview.stop();

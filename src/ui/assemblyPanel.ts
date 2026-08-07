@@ -15,7 +15,7 @@ import {
 } from '../assembly/parts';
 import { getPrinter } from '../export/printers';
 import { HUBCAP_WHEEL_DIAMETER_MM } from '../geometry/hubcap';
-import { availableZones } from '../state/artwork';
+import { availableZones, clampArtworkModes } from '../state/artwork';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
 import { $ } from './dom';
@@ -150,9 +150,14 @@ export function renderBuildParamSize(): void {
   const w = maxX - minX;
   const d = maxZ - minZ;
   el.style.display = '';
-  el.textContent =
-    `Actual size ${w.toFixed(1)} × ${d.toFixed(1)} mm` +
-    ` — reaches ${(reach * 2).toFixed(0)}mm across the ${HUBCAP_WHEEL_DIAMETER_MM}mm wheel`;
+  el.innerHTML =
+    `<b>Actual size ${w.toFixed(1)} × ${d.toFixed(1)} mm</b>` +
+    ` — ${(reach * 2).toFixed(0)}mm across, on a ${HUBCAP_WHEEL_DIAMETER_MM}mm wheel`;
+
+  // The unit hint beside the field says "mm", which stops being the useful thing to say the
+  // moment the number in the field is only one of the part's two dimensions.
+  const unit = $('#asm-buildparam-unit');
+  if (unit) unit.textContent = kind.buildParam && state.hubcapSilhouette ? 'longest side' : 'mm';
 }
 
 /**
@@ -229,6 +234,12 @@ export async function applyHubcapSilhouette(on: boolean): Promise<void> {
   if (on === state.hubcapSilhouette) return;
   state.hubcapSilhouette = on;
   const kind = currentAssemblyKind();
+  // Fill is withheld while the part follows the artwork, so a Fill already chosen has to be
+  // rewritten here — the same clamp a kind that withholds Fill outright applies on a part switch.
+  // The list has to be re-rendered too: clamping rewrites the stored mode, but the dropdown's
+  // options were built when the toggle was off and still offer the mode that is now withheld.
+  clampArtworkModes();
+  renderArtworkList();
   syncBuildParamControl();
   syncTemplateLink();
   await asmRebuildGeneratedParts();

@@ -343,6 +343,7 @@ function generatedShapeSignature(): string {
     // the silhouette is sized by the scale multiplier too, so dragging the gizmo has to rebuild
     // the part and not just re-cut it
     state.hubcapSilhouette ? state.scalePct : 0,
+    state.artworks.length,
     state.sources.length,
     state.sources.map((src) => src.parsed?.shapes.length ?? 0).join(','),
   ].join('|');
