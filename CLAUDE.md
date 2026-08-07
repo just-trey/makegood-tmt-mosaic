@@ -28,6 +28,33 @@ found a real bug introduced by the previous round's fix; the second was caught
 on code a live run had already reported clean. Reviewing after the push means
 announcing green and then withdrawing it.
 
+**That is two passes, not a loop.** A third round is a signal to stop and
+reassess, not to keep going. A reviewer looking hard at a large diff will
+always return something, so "it found a real thing" stops being a reason to
+continue — what matters is _what kind_ of thing. Ask where the findings are
+landing:
+
+- **Wrong output** — a bad number, a wrong pose, a warning that doesn't fire.
+  Fix it, and the re-review is earned.
+- **Arguable defaults** — a margin, a fallback, which of two defensible
+  behaviors to pick. That is taste, and another round will generate more of
+  it indefinitely.
+
+PR #147 is the worked example. Round 1 found four real defects in the original
+code and round 2 a genuine latent bug. Round 3 then returned four more, but one
+was introduced by round 2's own fix, two were judgment calls, and the fix
+invented a constant to satisfy a reviewer rather than a measurement. All three
+rounds were "real findings"; only the first two were worth the churn. Note
+where the churn concentrated: `suggestTowerPos`, a _suggestion_ that already
+warns whenever it is unsure, while the numbers that decide whether a print
+succeeds — the verified plate constants — had been stable and live-verified
+since the commit that introduced them.
+
+If a third round still looks necessary, that is usually the diff being too big
+rather than the code being unsound. Split it, or take the remaining concern to
+its own PR against real evidence — a live run, a real print — instead of
+another review pass.
+
 ## Git workflow
 
 - `main` is protected: PRs required, the CI check must pass, no direct
