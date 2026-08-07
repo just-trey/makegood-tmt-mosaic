@@ -27,19 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   instead of reporting the mismatch as though one of the app's own meshes had
   drifted.
 
-### Fixed
-
-- The prime tower is now positioned on plates that don't carry a verified
-  position, instead of being left to the slicer's own default — which, for a
-  part the export had just centred on the plate, could put the tower straight
-  through it. Affects flat-plate exports and any part whose placement didn't
-  verify; parts with a baked tower position are unchanged.
-- The suggested tower position is also now the corner it claims to be. It was
-  worked out as the centre of a corner-inset square but written into the file as
-  the tower's front-left corner, so the tower landed half its own width up and
-  right of the space that had been checked as free — into the part on a near
-  corner, and off the edge of the bed on a far one.
-
 - **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP (and a
   GIF or BMP) as well
   as an SVG — drop in a logo, a child's drawing or a photo and it's quantized
@@ -219,6 +206,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   separately-verified pose.
 
 ### Fixed
+
+- The prime tower is now positioned on plates that don't carry a verified
+  position, instead of being left to the slicer's own default — which, for a
+  part the export had just centred on the plate, could put the tower straight
+  through it. Affects flat-plate exports and any part whose placement didn't
+  verify; parts with a baked tower position are unchanged.
+- The suggested tower position is also now the corner it claims to be. It was
+  worked out as the centre of a corner-inset square but written into the file as
+  the tower's front-left corner, so the tower landed half its own width up and
+  right of the space that had been checked as free — into the part on a near
+  corner, and off the edge of the bed on a far one. It now keeps clear of the
+  bed edge, prefers a corner away from the front-left nozzle-wipe exclusion, and
+  when a part leaves no corner free it writes no position at all rather than one
+  it has already measured as colliding.
 
 - Parts in the 3D view were flat-shaded, so every curved surface showed the
   facets it is built from — banding across the chair's seat and back, and

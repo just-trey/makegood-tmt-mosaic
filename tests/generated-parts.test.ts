@@ -109,6 +109,7 @@ beforeEach(() => {
   state.printerId = 'snapmaker-u1'; // 270x270 — a bed with a verified arrangement
   onAssemblyPartsChanged(() => {});
   vi.mocked(alertDialog).mockClear().mockResolvedValue(undefined);
+  vi.mocked(track).mockClear();
 });
 
 afterEach(() => {
@@ -278,7 +279,7 @@ describe('asmRebuildGeneratedParts', () => {
       throw new Error('boolean engine gave up');
     });
 
-    await expect(asmRebuildGeneratedParts()).resolves.toBeUndefined();
+    await expect(asmRebuildGeneratedParts()).resolves.toBe(false);
 
     expect(alertDialog).toHaveBeenCalledWith(expect.stringContaining('boolean engine gave up'));
     expect(alertDialog).toHaveBeenCalledWith(expect.stringContaining('still the previous size'));
@@ -292,18 +293,21 @@ describe('the diameter stays inside what the selected printer can print', () => 
     // with no build parameter is selected. Without a clamp on the way back in, this route kept a
     // 320mm disc alive onto a 256mm bed: set it big on the H2D, leave the kind, change printer,
     // come back.
+    // each bed's ceiling keeps PLATE_EDGE_MARGIN_MM of clearance on both sides
+    const h2dMax = 320 - 10;
+    const x1cMax = 256 - 10;
     state.printerId = 'bambu-h2d'; // 350x320
-    await applyBuildParam(320);
-    expect(state.hubcapDiameterMm).toBe(320);
+    await applyBuildParam(999);
+    expect(state.hubcapDiameterMm).toBe(h2dMax);
 
     state.assembly.kindId = 'wheel'; // no buildParam — the printer handler is a no-op here
     state.printerId = 'bambu-x1c'; // 256x256
     await clampBuildParamToPrinter();
-    expect(state.hubcapDiameterMm).toBe(320); // nothing has caught it yet, by design
+    expect(state.hubcapDiameterMm).toBe(h2dMax); // nothing has caught it yet, by design
 
     state.assembly.kindId = 'hubcap';
     syncAssemblyKindControls();
-    await vi.waitFor(() => expect(state.hubcapDiameterMm).toBe(256));
+    await vi.waitFor(() => expect(state.hubcapDiameterMm).toBe(x1cMax));
   });
 
   it('reports the size that was built, not the one that was typed', async () => {
@@ -311,10 +315,10 @@ describe('the diameter stays inside what the selected printer can print', () => 
 
     await applyBuildParam(9999);
 
-    expect(state.hubcapDiameterMm).toBe(256);
+    expect(state.hubcapDiameterMm).toBe(246); // 256 less the edge clearance
     expect(track).toHaveBeenCalledWith(
       'build_param_changed',
-      expect.objectContaining({ value: 256 }),
+      expect.objectContaining({ value: 246 }),
     );
   });
 
@@ -324,7 +328,7 @@ describe('the diameter stays inside what the selected printer can print', () => 
 
     const input = document.querySelector('#p-asm-buildparam') as HTMLInputElement;
     expect(document.querySelector('#asm-buildparam-label')!.textContent).toBe('Hubcap diameter');
-    expect(Number(input.max)).toBe(256); // the plate, not an invented constant
+    expect(Number(input.max)).toBe(246); // the plate less its edge clearance
     expect(Number(input.min)).toBeCloseTo(32.09, 1);
     // `any`, or `min` becomes the step base and the default lands off-grid as :invalid
     expect(input.step).toBe('any');
@@ -362,6 +366,36 @@ describe('the diameter stays inside what the selected printer can print', () => 
 
     expect(input.value).toBe(String(HUBCAP_DEFAULT_DIAMETER_MM));
     expect(state.hubcapDiameterMm).toBe(HUBCAP_DEFAULT_DIAMETER_MM);
+  });
+
+  it('leaves clearance to the bed edge rather than ending exactly on it', async () => {
+    // The ceiling used to be the plate exactly, so a disc could touch both edges and pass every
+    // downstream check — the overhang warning allows 0.5mm, which a part 0.03mm inside slips under.
+    state.printerId = 'bambu-h2d'; // 350x320
+
+    await applyBuildParam(999);
+
+    expect(state.hubcapDiameterMm).toBeLessThan(320);
+    const input = document.querySelector('#p-asm-buildparam') as HTMLInputElement;
+    expect(Number(input.max)).toBeLessThan(320);
+  });
+
+  it('puts the size back when the rebuild fails, so it still describes the mesh', async () => {
+    // The parameter is what the rest of the app reads to DESCRIBE the built mesh. Left at a size
+    // nothing was built at, the verified-plate lookup would pin a 250mm disc at the arrangement
+    // checked for 220mm, and the template would be re-issued at a size that does not exist.
+    state.printerId = 'snapmaker-u1';
+    state.hubcapDiameterMm = 250;
+    state.assembly.parts = [generatedPart()];
+    hubcapRole.buildMesh = vi.fn(async () => {
+      throw new Error('boolean engine gave up');
+    });
+
+    await applyBuildParam(200);
+
+    expect(state.hubcapDiameterMm).toBe(250);
+    // and nothing was reported for a build that never happened
+    expect(track).not.toHaveBeenCalledWith('build_param_changed', expect.anything());
   });
 
   it('says nothing when the value did not move', async () => {
@@ -514,6 +548,63 @@ describe('a bed-specific plate position in the exporter', () => {
     expect(y + TOWER).toBeLessThanOrEqual(printer.plate.d);
     // and it did pick the far corner, so this really exercised that branch
     expect(x).toBeGreaterThan(printer.plate.w / 2);
+  });
+
+  it('keeps the suggested tower off the plate edge', async () => {
+    // Flush in the corner is a position no bed can honour: the front-left of a Bambu plate carries
+    // the nozzle-wipe exclusion, and nothing prints right up to a border. (0, 0) passed every
+    // other check here — on the plate, not at the centre, clear of the part.
+    const { blob } = await build3MFCombined(materials, [part({ plateHint: undefined })], {
+      printer: getPrinter('bambu-x1c'),
+    });
+
+    const p = await proj(blob);
+    expect(Number((p.wipe_tower_x as string[])[0])).toBeGreaterThanOrEqual(20);
+    expect(Number((p.wipe_tower_y as string[])[0])).toBeGreaterThanOrEqual(20);
+  });
+
+  it('leaves the excluded front-left corner for last', async () => {
+    // Every corner is equally free for a small centred part, and `reduce` keeps the earlier
+    // candidate on a tie — so ordering front-left last is what keeps the tower out of the
+    // nozzle-wipe exclusion without costing a suggestion anywhere.
+    const { blob } = await build3MFCombined(materials, [part({ plateHint: undefined })], {
+      printer: getPrinter('bambu-h2d'), // 350x320, roomy enough that corners are genuinely free
+    });
+
+    const p = await proj(blob);
+    const x = Number((p.wipe_tower_x as string[])[0]);
+    const y = Number((p.wipe_tower_y as string[])[0]);
+    expect(x).toBeGreaterThan(350 / 2);
+    expect(y).toBeGreaterThan(320 / 2);
+  });
+
+  it('writes no tower position at all when every corner is blocked', async () => {
+    // Pinning the least-bad corner would make the file assert a placement the exporter has just
+    // measured as colliding. The warning already says to move it; leaving the key out lets the
+    // slicer apply its own printer-aware default instead of our known-bad one.
+    const wide = new Float32Array([
+      0, 0, 0, 240, 0, 0, 240, 0, 240, 0, 0, 0, 240, 0, 240, 0, 0, 240,
+    ]);
+    const { blob, warnings } = await build3MFCombined(
+      materials,
+      [
+        {
+          name: 'Wide',
+          nsign: 1,
+          bodySoup: wide,
+          subs: [
+            { name: 'Body', matIndex: 0, soup: wide },
+            { name: 'Red', matIndex: 1, soup: wide },
+          ],
+        },
+      ],
+      { printer: getPrinter('bambu-x1c') },
+    );
+
+    const p = await proj(blob);
+    expect(warnings.join(' ')).toContain('move the tower in your slicer');
+    expect(p.wipe_tower_x).toBeUndefined();
+    expect(p.wipe_tower_y).toBeUndefined();
   });
 
   it('writes a baked project setting and declares it an override', async () => {

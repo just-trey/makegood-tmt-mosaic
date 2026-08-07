@@ -1,4 +1,4 @@
-import type { AssemblyPart } from '../types';
+import type { AssemblyKind, AssemblyPart } from '../types';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { asmKindCanAutoLoad, currentAssemblyKind, currentVariantId } from '../assembly/kinds';
@@ -85,10 +85,9 @@ export function syncBuildParamControl(): void {
   const param = currentAssemblyKind()?.buildParam;
   row.style.display = param ? '' : 'none';
   if (!param) return;
-  const plate = getPrinter(state.printerId).plate;
   label.textContent = param.label;
   input.min = String(round2(param.minMm));
-  input.max = String(round2(Math.min(param.maxMm ?? Infinity, plate.w, plate.d)));
+  input.max = String(round2(buildParamMax(param)));
   // `any`, not a fixed step: `min` is the step base, so any real step would put the valid values
   // on a grid offset by a measured constant (32.09mm), so round diameters land between two of
   // them — the field reports :invalid and the spinner walks x.09, x.59. A diameter is a
@@ -99,6 +98,27 @@ export function syncBuildParamControl(): void {
 }
 
 const round2 = (v: number): number => Number(v.toFixed(2));
+
+/**
+ * Clearance kept between a generated part and the edge of the bed.
+ *
+ * Without it the ceiling is the plate exactly, so a 320mm disc on a 320mm bed touches both edges
+ * and every downstream check waves it through — the overhang warning allows 0.5mm, which is float
+ * slop rather than clearance, and a part 0.03mm inside the border slips under it silently. No bed
+ * is usable to its border anyway: brims, bed-exclusion zones and the nozzle's own reach all live
+ * in the last few millimetres. A round number and a usability margin, not a measured one.
+ */
+const PLATE_EDGE_MARGIN_MM = 5;
+
+/** The largest this parameter may go on the current printer. */
+function buildParamMax(param: NonNullable<AssemblyKind['buildParam']>): number {
+  const plate = getPrinter(state.printerId).plate;
+  return Math.min(
+    param.maxMm ?? Infinity,
+    plate.w - 2 * PLATE_EDGE_MARGIN_MM,
+    plate.d - 2 * PLATE_EDGE_MARGIN_MM,
+  );
+}
 
 /**
  * Commit an edit to the kind's build parameter: clamp to the control's own bounds, then rebuild
@@ -146,16 +166,22 @@ export async function clampBuildParamToPrinter(): Promise<void> {
 async function commitBuildParam(raw: number): Promise<number | undefined> {
   const param = currentAssemblyKind()?.buildParam;
   if (!param) return undefined;
-  const plate = getPrinter(state.printerId).plate;
-  const max = Math.min(param.maxMm ?? Infinity, plate.w, plate.d);
-  const next = Math.min(max, Math.max(param.minMm, raw));
-  if (next === state[param.id]) return undefined;
+  const next = Math.min(buildParamMax(param), Math.max(param.minMm, raw));
+  const previous = state[param.id];
+  if (next === previous) return undefined;
   state[param.id] = next;
   // show the clamped value and re-issue the template before the rebuild, not after it
   syncBuildParamControl();
   syncTemplateLink();
-  await asmRebuildGeneratedParts();
-  return next;
+  if (await asmRebuildGeneratedParts()) return next;
+  // Put it back. The mesh in the scene is still the previous size, and this value is what the
+  // rest of the app uses to *describe* that mesh: the verified-plate lookup would pin a 250mm
+  // disc at the arrangement checked for 220mm — off the plate, tower inside the part — and the
+  // template would be re-issued at a size nothing was built at.
+  state[param.id] = previous;
+  syncBuildParamControl();
+  syncTemplateLink();
+  return undefined;
 }
 
 /**

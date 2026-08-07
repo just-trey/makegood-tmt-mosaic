@@ -316,22 +316,28 @@ async function asmAdoptMesh(part: AssemblyPart, positions: Float32Array): Promis
  * control would already be showing the new size while the part in the scene, and in any export,
  * was still the old mesh. Saying nothing there is worse than the failure.
  */
-export async function asmRebuildGeneratedParts(): Promise<void> {
+export async function asmRebuildGeneratedParts(): Promise<boolean> {
   const kind = currentAssemblyKind();
   const parts = state.assembly.parts.filter((p) => {
     const role = kind?.roles.find((r) => r.id === p.roleId);
     return role?.buildMesh && p.assetPositions;
   });
-  if (!parts.length) return;
+  if (!parts.length) return true;
   beginWork();
   try {
     for (const part of parts) await asmAdoptMesh(part, part.assetPositions!);
+    return true;
   } catch (e) {
     console.error(e);
     await alertDialog(
       `Could not rebuild "${kind?.name ?? 'the part'}" at the size you asked for: ` +
         `${(e as Error).message}. The part on screen is still the previous size.`,
     );
+    // Reported rather than swallowed: the caller has already stored the new parameter, and the
+    // mesh in the scene is still built from the old one. Anything reading the parameter to
+    // describe the mesh -- the verified-plate lookup, the 1:1 template -- would be describing a
+    // part that does not exist, so the caller has to be able to put the value back.
+    return false;
   } finally {
     endWork();
   }

@@ -31,8 +31,12 @@ const TARGETS = [
   { printerId: 'snapmaker-u1', label: 'snapmaker', bed: [270, 270] },
   { printerId: 'bambu-h2d', label: 'h2d', bed: [350, 320] },
 ];
-// the size the app loads with, one well under it, and one at the 256 bed's limit
-const DIAMETERS = [220, 180, 250];
+// The size the app loads with, one well under it, and one above the verified 220mm so the
+// unverified fallback gets exercised. 240 rather than 250: the diameter is capped at the plate
+// less PLATE_EDGE_MARGIN_MM on each side, so 250 no longer survives on a 256mm bed.
+const DIAMETERS = [220, 180, 240];
+/** Matches the app's own ceiling, so the skip below agrees with what the control will allow. */
+const PLATE_EDGE_MARGIN_MM = 5;
 
 /** Three broad bands — enough filaments that a tower is actually printed and sized realistically. */
 const TEST_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60">
@@ -116,7 +120,7 @@ try {
 
   for (const { printerId, label, bed } of TARGETS) {
     for (const diameter of DIAMETERS) {
-      if (diameter > Math.min(...bed)) {
+      if (diameter > Math.min(...bed) - 2 * PLATE_EDGE_MARGIN_MM) {
         console.log(
           `\n=== ${label} / ${diameter}mm — skipped, wider than the ${bed.join('x')} bed`,
         );
@@ -208,7 +212,25 @@ try {
       const shouldUseVerified = !!v && diameter <= VERIFIED_DIAMETER;
       const at = s.items[0];
       const t0 = s.plates[0]?.tower;
+      // A plate whose every corner is blocked writes no wipe_tower key at all now, rather than
+      // pinning a position the exporter knows collides — so an absent tower is a real outcome and
+      // has to come with the warning that explains it.
+      const noTower = !Number.isFinite(t0?.x);
+      if (noTower) {
+        const warned = (await page.evaluate(() => window.__mosaic.warnings())).some((w) =>
+          w.includes('move the tower in your slicer'),
+        );
+        console.log(`  no tower position written (every corner blocked), warned: ${warned}`);
+        if (!warned) {
+          console.log('   !! no tower position and no warning either');
+          failed++;
+        }
+      }
       if (shouldUseVerified) {
+        if (noTower) {
+          console.log('   !! a verified plate must carry its verified tower');
+          failed++;
+        }
         const off = Math.hypot(at.x - v.part.x, at.y - v.part.y);
         const toff = Math.hypot(t0.x - v.tower.x, t0.y - v.tower.y);
         console.log(
@@ -243,10 +265,15 @@ try {
         const centred = Math.hypot(at.x - s.bedW / 2, at.y - s.bedD / 2);
         console.log(
           `  computed plate (nothing verified here): part (${at.x.toFixed(3)}, ${at.y.toFixed(3)})` +
-            `, tower (${t0.x.toFixed(3)}, ${t0.y.toFixed(3)})`,
+            `, tower ${noTower ? 'not written' : `(${t0.x.toFixed(3)}, ${t0.y.toFixed(3)})`}`,
         );
         if (centred > 0.5) {
           console.log(`   !! expected the part centred, it is ${centred.toFixed(2)}mm off`);
+          failed++;
+        }
+        // when a tower IS written on an unverified plate, it must still be a usable corner
+        if (!noTower && (t0.x < 20 || t0.y < 20)) {
+          console.log(`   !! tower at (${t0.x}, ${t0.y}) is against the bed edge`);
           failed++;
         }
       }
@@ -257,12 +284,19 @@ try {
             `tower at (${p.tower.x?.toFixed(1)}, ${p.tower.y?.toFixed(1)}); ` +
             `a corner fits a ${fits.toFixed(1)}mm square tower`,
         );
-        if (!(p.tower.x >= 0 && p.tower.x <= s.bedW && p.tower.y >= 0 && p.tower.y <= s.bedD)) {
+        if (
+          Number.isFinite(p.tower.x) &&
+          !(p.tower.x >= 0 && p.tower.x <= s.bedW && p.tower.y >= 0 && p.tower.y <= s.bedD)
+        ) {
           console.log('   !! tower is off the bed');
           failed++;
         }
         // the tower must not have been parked on the plate centre, i.e. through the part
-        if (Math.abs(p.tower.x - s.bedW / 2) < 1 && Math.abs(p.tower.y - s.bedD / 2) < 1) {
+        if (
+          Number.isFinite(p.tower.x) &&
+          Math.abs(p.tower.x - s.bedW / 2) < 1 &&
+          Math.abs(p.tower.y - s.bedD / 2) < 1
+        ) {
           console.log('   !! tower is at the plate centre — straight through the disc');
           failed++;
         }

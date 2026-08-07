@@ -534,7 +534,7 @@ export async function build3MFCombined(
    * straight through the part. Insets the tower's nominal footprint into whichever plate corner
    * the parts intrude on least.
    */
-  function suggestTowerPos(items: Placed[]): { x: number; y: number } {
+  function suggestTowerPos(items: Placed[]): { x: number; y: number; clear: boolean } {
     const TOWER = 60; // nominal prime-tower footprint; the slicer sizes the real one per filament count
     // `wipe_tower_x/y` is the tower's FRONT-LEFT CORNER, not its centre — settled against two
     // reference projects a human positioned by hand (see HUBCAP_PLATE). So every position in here
@@ -558,13 +558,25 @@ export async function build3MFCombined(
           Math.max(pl.ty! + pl.cy - pl.d / 2, c.y);
         return sum + Math.max(0, ox) * Math.max(0, oy);
       }, 0);
-    // Flush into each corner, which is the footprint the centred version was already scoring
-    // (0..60 and so on) — only the coordinate written out was wrong, so the ranking is unchanged.
+    // Inset from the plate edge rather than flush against it, and try the front-left corner LAST.
+    //
+    // A tower at (0, 0) is a position no plate can honour: the front-left of a Bambu bed carries
+    // the nozzle-wipe exclusion (roughly 18x28mm), and no bed is usable right to its border. The
+    // ordering matters more than the inset, though — `reduce` below keeps the earlier candidate on
+    // a tie, so front-left is only chosen when it is strictly freer than all three alternatives,
+    // which for a part centred on the plate it never is.
+    //
+    // 20mm rather than something larger because the margin is not free. Measured against a disc
+    // centred on each bed: on the 256 and 270 plates every corner is blocked even flush, so the
+    // inset costs nothing there; on the 350x320 it is the difference between suggesting the free
+    // back corner and suggesting nothing at all. Bigger would have bought no safety and lost that.
+    const EDGE = 20;
+    const far = (span: number) => Math.max(EDGE, span - TOWER - EDGE);
     const corners = [
-      { x: 0, y: 0 },
-      { x: plateW - TOWER, y: 0 },
-      { x: 0, y: plateD - TOWER },
-      { x: plateW - TOWER, y: plateD - TOWER },
+      { x: far(plateW), y: far(plateD) }, // back-right
+      { x: EDGE, y: far(plateD) }, // back-left
+      { x: far(plateW), y: EDGE }, // front-right
+      { x: EDGE, y: EDGE }, // front-left, the excluded one — last resort
     ];
     const best = corners.reduce((a, b) => (overlap(b) < overlap(a) ? b : a));
     // Still a starting point for the human pass rather than a promise of clearance: the real tower
@@ -574,18 +586,24 @@ export async function build3MFCombined(
     // filament prints no tower at all (the caster plate, which carries no artwork), so whatever
     // this returns for it is never used and saying anything about it would be noise.
     const needsTower = new Set(items.flatMap((pl) => pl.part.subs.map((s) => s.matIndex))).size > 1;
-    if (needsTower && overlap(best) > 0)
+    const clear = overlap(best) === 0;
+    if (needsTower && !clear)
       warnings.push(
         `The prime tower on the plate holding ${items.map((pl) => `"${pl.part.name}"`).join(', ')} ` +
           `has no verified position, and every corner of the ${plateW}×${plateD}mm plate overlaps ` +
           `a part, so it was parked at (${best.x.toFixed(0)}, ${best.y.toFixed(0)}) — ` +
           `move the tower in your slicer.`,
       );
-    return best;
+    return { ...best, clear };
   }
 
   const useHints = placed.some((pl) => pl.part.plateHint != null);
-  const plates: { row: Placed[]; wipeTower?: { x: number; y: number } }[] = [];
+  const plates: {
+    row: Placed[];
+    wipeTower?: { x: number; y: number };
+    /** true when the position is only the least-bad corner, all of which a part overlaps */
+    towerBlocked?: boolean;
+  }[] = [];
   if (useHints) {
     // group by plateHint (ascending); parts without a hint each open their own plate
     const groups = new Map<number, Placed[]>();
@@ -629,10 +647,13 @@ export async function build3MFCombined(
       );
       const delta =
         anchor && (anchor.part.primeTowerDeltaByPlate?.[bedKey] ?? anchor.part.primeTowerDelta);
-      plate.wipeTower =
-        anchor && delta
-          ? { x: anchor.tx! + delta.x, y: anchor.ty! + delta.y }
-          : suggestTowerPos(plate.row);
+      if (anchor && delta) {
+        plate.wipeTower = { x: anchor.tx! + delta.x, y: anchor.ty! + delta.y };
+      } else {
+        const { clear, ...pos } = suggestTowerPos(plate.row);
+        plate.wipeTower = pos;
+        plate.towerBlocked = !clear;
+      }
     });
   } else {
     plates.forEach((plate) => {
@@ -648,7 +669,9 @@ export async function build3MFCombined(
       // wipe_tower_x/y at all, leaving the slicer on its own preset default — for a part this
       // branch has just centered on the plate, that default is very likely through it. Reachable
       // for any part with no plateHint, which is every part whose placement didn't verify.
-      plate.wipeTower = suggestTowerPos(plate.row);
+      const { clear, ...pos } = suggestTowerPos(plate.row);
+      plate.wipeTower = pos;
+      plate.towerBlocked = !clear;
     });
   }
   // Fitting on the plate and being *put* on it are different claims: the size check above only
@@ -824,7 +847,14 @@ ${items.join('\n')}
       bambuProjectSettings(
         materials,
         printer,
-        plates.map((p) => p.wipeTower),
+        // Write nothing at all when NO plate has a position worth asserting. A blocked plate's
+        // best corner is still overlapped by a part, and pinning it would make the file state a
+        // tower placement the exporter has just measured as colliding — the warning already says
+        // to move it, and leaving the key out lets the slicer apply its own printer-aware default
+        // instead. Only when every plate is blocked, since these keys are per-plate arrays and
+        // there is no way to say "no opinion" for one entry: a mixed project still writes each
+        // plate's best corner, which beats the plate-centre fallback below.
+        plates.every((p) => p.towerBlocked) ? undefined : plates.map((p) => p.wipeTower),
         // Project settings are global to the file, so the parts' baked overrides are merged rather
         // than kept per plate. Nothing ships two parts that set the same key to different values,
         // and one that did would be a plate-level claim that can't be honored anyway.
