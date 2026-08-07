@@ -1,3 +1,4 @@
+import type { SVGShape } from '../types';
 import type { ManifoldAPI } from './manifold';
 
 /**
@@ -172,5 +173,49 @@ export function narrowFeatureArea(wasm: ManifoldAPI, rings: Outline, widthMm: nu
     }
   } finally {
     cs.delete();
+  }
+}
+
+/**
+ * The silhouette of loaded artwork: every shape merged into one outline.
+ *
+ * This is what makes the hubcap the shape of the picture on it. The artwork and the part are the
+ * same object — a character-shaped hubcap is that shape *because* the artwork is that character —
+ * so the outline is read off the artwork already loaded rather than uploaded a second time and
+ * kept in sync with it.
+ *
+ * Shape by shape, then unioned, rather than throwing every loop in at once: a shape's own loops
+ * are outer-and-holes and only mean the right thing under an even-odd read, while two *different*
+ * shapes overlapping have to merge rather than cancel. Handing the lot to one even-odd pass would
+ * punch a hole wherever two colours overlap — which, in artwork drawn as stacked layers, is most
+ * of it.
+ *
+ * Y in artwork space is Z in the part's ground plane; the caller scales and centres with
+ * `fitOutline`.
+ */
+export function silhouetteFromShapes(wasm: ManifoldAPI, shapes: SVGShape[]): Outline {
+  const regions = shapes
+    .map((s) => s.loops.filter((l) => l.length >= 3))
+    .filter((loops) => loops.length)
+    .map(
+      (loops) =>
+        new wasm.CrossSection(
+          loops.map((l) => l.map((p) => [p.x, p.y] as [number, number])),
+          'EvenOdd',
+        ),
+    );
+  if (!regions.length) return [];
+  try {
+    let merged = regions[0];
+    const intermediates: (typeof merged)[] = [];
+    for (let i = 1; i < regions.length; i++) {
+      merged = merged.add(regions[i]);
+      intermediates.push(merged);
+    }
+    const rings = merged.toPolygons().map((r) => r.map(([x, z]) => ({ x, z })));
+    intermediates.forEach((m) => m.delete());
+    return rings;
+  } finally {
+    regions.forEach((r) => r.delete());
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getManifold } from '../src/geometry/manifold';
+import type { SVGShape } from '../src/types';
 import {
   coversClipDisc,
   fitOutline,
@@ -8,6 +9,7 @@ import {
   outlineBounds,
   outlineContains,
   ringArea,
+  silhouetteFromShapes,
   type Outline,
 } from '../src/geometry/hubcapOutline';
 import { HUBCAP_CLIP_FACE_OUTER_R_MM } from '../src/geometry/hubcap';
@@ -153,5 +155,66 @@ describe('features too narrow to print', () => {
     const narrow = narrowFeatureArea(wasm, bar, 6);
     expect(wide).toBeLessThan(narrow);
     expect(narrow).toBeCloseTo(outlineArea(bar), 0); // nothing in a 4mm bar is 6mm wide
+  }, 30000);
+});
+
+describe('the silhouette of loaded artwork', () => {
+  /** A square in artwork space (x, y), as one shape of the given colour. */
+  const square = (w: number, cx = 0, cy = 0, fill = '#000'): SVGShape => ({
+    fill,
+    order: 0,
+    loops: [
+      [
+        { x: cx - w / 2, y: cy - w / 2 },
+        { x: cx + w / 2, y: cy - w / 2 },
+        { x: cx + w / 2, y: cy + w / 2 },
+        { x: cx - w / 2, y: cy + w / 2 },
+      ],
+    ],
+  });
+
+  it('merges overlapping colours instead of cancelling them', async () => {
+    const wasm = await getManifold();
+    // Artwork drawn as stacked layers overlaps almost everywhere. Feeding every loop to one
+    // even-odd pass would punch a hole through each overlap; the union has to fill it.
+    const overlapping = [square(40, -10), square(40, 10, 0, '#f00')];
+
+    const rings = silhouetteFromShapes(wasm, overlapping);
+
+    expect(outlineArea(rings)).toBeCloseTo(40 * 40 + 20 * 40, 0); // union, not xor
+    expect(outlineContains(rings, 0, 0)).toBe(true); // the overlap is solid
+  }, 30000);
+
+  it('keeps a shape’s own hole a hole', async () => {
+    const wasm = await getManifold();
+    // circle() builds part-space points (x, z); artwork space is (x, y)
+    const toArt = (r: ReturnType<typeof circle>) => r.map((p) => ({ x: p.x, y: p.z }));
+    const ring: SVGShape = {
+      fill: '#000',
+      order: 0,
+      loops: [toArt(circle(50)), toArt(circle(20))],
+    };
+
+    const rings = silhouetteFromShapes(wasm, [ring]);
+
+    expect(outlineContains(rings, 35, 0)).toBe(true);
+    expect(outlineContains(rings, 0, 0)).toBe(false);
+  }, 30000);
+
+  it('joins separate shapes into one outline the part can be cut to', async () => {
+    const wasm = await getManifold();
+    const apart = [square(20, -60), square(20, 60)];
+
+    const rings = silhouetteFromShapes(wasm, apart);
+
+    // two islands: a real outcome, and what the clip check exists to refuse
+    expect(outlineArea(rings)).toBeCloseTo(800, 0);
+    expect(coversClipDisc(rings, HUBCAP_CLIP_FACE_OUTER_R_MM)).toBe(false);
+  }, 30000);
+
+  it('gives nothing back for artwork with no usable loops', async () => {
+    const wasm = await getManifold();
+    expect(silhouetteFromShapes(wasm, [])).toEqual([]);
+    expect(silhouetteFromShapes(wasm, [{ fill: '#000', order: 0, loops: [] }])).toEqual([]);
   }, 30000);
 });
