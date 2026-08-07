@@ -14,6 +14,7 @@ import {
   switchChairVariant,
 } from '../assembly/parts';
 import { getPrinter } from '../export/printers';
+import { HUBCAP_WHEEL_DIAMETER_MM } from '../geometry/hubcap';
 import { availableZones } from '../state/artwork';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
@@ -104,6 +105,55 @@ export function syncBuildParamControl(): void {
 }
 
 const round2 = (v: number): number => Number(v.toFixed(2));
+
+/**
+ * The part's real footprint, in mm, under the size control.
+ *
+ * Measured off the built mesh rather than recomputed from the outline, so it cannot disagree with
+ * the thing you actually get. It exists because the size control stops describing the part the
+ * moment the shape stops being a circle: a hubcap cut to a tall character reads 220 in the field
+ * and is 168mm wide, and scaling with the gizmo moves both numbers without touching the field at
+ * all. Guessing the size of a part that has to fit a wheel is not a reasonable thing to ask.
+ */
+export function renderBuildParamSize(): void {
+  const el = $('#asm-buildparam-size');
+  if (!el) return;
+  const kind = currentAssemblyKind();
+  const role = kind?.roles.find((r) => r.buildMesh);
+  const part = role ? state.assembly.parts.find((p) => p.roleId === role.id && p.positions) : null;
+  if (!kind?.buildParam || !part?.positions) {
+    el.style.display = 'none';
+    return;
+  }
+  const pos = part.positions;
+  let minX = Infinity,
+    maxX = -Infinity,
+    minZ = Infinity,
+    maxZ = -Infinity,
+    reach = 0;
+  for (let i = 0; i < pos.length; i += 3) {
+    if (pos[i] < minX) minX = pos[i];
+    if (pos[i] > maxX) maxX = pos[i];
+    if (pos[i + 2] < minZ) minZ = pos[i + 2];
+    if (pos[i + 2] > maxZ) maxZ = pos[i + 2];
+    // How far the part ACTUALLY reaches from the axis, vertex by vertex — not the corner of its
+    // bounding box, which a shape need not touch. On a real silhouette the difference is 240mm
+    // against 277mm on a 280mm wheel: the bbox corner reads as nearly overhanging a part with
+    // 40mm to spare, and would have had somebody shrink something that fitted fine.
+    const r = Math.hypot(pos[i], pos[i + 2]);
+    if (r > reach) reach = r;
+  }
+  if (!Number.isFinite(minX)) {
+    el.style.display = 'none';
+    return;
+  }
+  const w = maxX - minX;
+  const d = maxZ - minZ;
+  el.style.display = '';
+  el.textContent =
+    `Actual size ${w.toFixed(1)} × ${d.toFixed(1)} mm` +
+    ` — reaches ${(reach * 2).toFixed(0)}mm across the ${HUBCAP_WHEEL_DIAMETER_MM}mm wheel`;
+}
 
 /**
  * Clearance kept between a generated part and the edge of the bed.
@@ -449,6 +499,9 @@ export function initAssemblyPanel(): void {
     // need a re-render here too.
     renderArtworkList();
     renderZoneTemplateLinks();
+    // The footprint is measured off the built mesh, so it can only be right once the part has
+    // been (re)built — which is exactly what this fires for.
+    renderBuildParamSize();
   });
   // The link's href is re-pointed per kind in syncAssemblyKindControls; bind the click once here
   // so repeated syncs don't stack handlers.

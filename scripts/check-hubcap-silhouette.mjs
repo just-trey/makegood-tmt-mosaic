@@ -47,6 +47,13 @@ try {
     await settle(page, 'silhouette on');
     const after = await page.$eval('#stat-tris', (e) => e.textContent);
 
+    const size = await page.$eval('#asm-buildparam-size', (e) => e.textContent || '');
+    console.log(`  readout: ${size}`);
+    if (!/Actual size [\d.]+ × [\d.]+ mm/.test(size)) {
+      console.log('   !! no footprint readout — the size control alone does not describe the part');
+      failed++;
+    }
+
     const warnings = await page.evaluate(() => window.__mosaic.warnings());
     const refused = warnings.some((w) => w.includes('doesn’t cover the hubcap’s mounting clips'));
     const got = refused ? 'refused' : 'silhouette';

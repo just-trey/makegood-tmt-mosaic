@@ -16,6 +16,8 @@ import {
   HUBCAP_CLIP_FACE_INNER_R_MM,
   HUBCAP_CLIP_FACE_OUTER_R_MM,
   HUBCAP_MIN_CLIP_COVERAGE,
+  HUBCAP_WHEEL_DIAMETER_MM,
+  maxSizeForWheel,
 } from '../src/geometry/hubcap';
 
 /**
@@ -66,6 +68,23 @@ describe('fitting an outline to the size the user asked for', () => {
       ],
     ];
     expect(fitOutline(flat, 220)).toEqual(flat);
+  });
+
+  it('caps a shape so its furthest point lands on the wheel rim, not past it', () => {
+    // maxSizeForWheel promises "scale to this and the outline just touches the rim". The check is
+    // to fit to exactly that and measure what the outline actually reaches — a promise about a
+    // size is worth nothing if the size it returns overhangs.
+    for (const shape of [
+      [rect(100, 100)], // square: corners reach furthest for a given longest side
+      [rect(50, 200)], // tall and narrow
+      [circle(50)], // round: longest side IS the diameter
+    ]) {
+      const cap = maxSizeForWheel(shape);
+      const fitted = fitOutline(shape, cap);
+      let far = 0;
+      for (const r of fitted) for (const p of r) far = Math.max(far, Math.hypot(p.x, p.z));
+      expect(far * 2).toBeCloseTo(HUBCAP_WHEEL_DIAMETER_MM, 1);
+    }
   });
 
   it('keeps any shape inside the wheel once its longest side is capped', () => {
