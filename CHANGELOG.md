@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A generated part says plainly when it has no pre-verified plate position,
   instead of reporting the mismatch as though one of the app's own meshes had
   drifted.
+- **Cut the hubcap to its own artwork's shape.** A new checkbox — **Cut to
+  artwork shape** — replaces the round disc with the outline of the artwork
+  already loaded on it, so a logo or a character prints as its own silhouette
+  instead of sitting inside a circle. One image drives both the picture and the
+  cutline; it needs a real transparent background and exactly one piece of
+  artwork loaded. The edge is cut square. Refused, with a named reason, when
+  the shape wouldn't fully bond to the mounting clips, when a feature is too
+  thin to hold its detail (a warning, not a refusal), when the image has no
+  transparency to cut to, or when more than one design is loaded; removing the
+  artwork or the checkbox reverts the part to a circle. Fill placement is
+  withheld while it's on — only Sticker makes sense against a shape that keeps
+  changing.
 
 - **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP (and a
   GIF or BMP) as well

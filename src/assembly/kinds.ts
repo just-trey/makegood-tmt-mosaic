@@ -123,7 +123,17 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         // The verified plate for the size currently set, when there is one — see hubcapPlacement.
         // A generated part gets no fingerprint-sealed placement, so this is how the one thing a
         // human *did* check (a specific arrangement at a specific diameter) reaches the export.
+        //
+        // That check was a ROUND disc. Once "cut to artwork shape" is on, hubcapDiameterMm is a
+        // longest-side reading of a shape that isn't a circle, and a silhouette can reach further
+        // off-axis than a circle of the same longest side does — an arrangement verified with 7mm
+        // of tower clearance on a round part is not verified for whatever shape a photo traces to.
+        // Withholding here whenever the toggle is on, rather than only when the built shape ends up
+        // a silhouette, is deliberately conservative: it also covers the moment between the toggle
+        // going on and a fallback-to-circle warning resolving, which this synchronous call has no
+        // way to look ahead to (hubcapShapeFromState needs the wasm module and runs async).
         buildPlacement: () => {
+          if (state.hubcapSilhouette) return undefined;
           const plate = getPrinter(state.printerId).plate;
           return hubcapPlacement(state.hubcapDiameterMm, `${plate.w}x${plate.d}`);
         },

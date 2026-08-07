@@ -364,3 +364,72 @@ hubcap whose clips didn't bond looks completely normal in the viewport, and
 exports to a 3MF that opens and slices without complaint. It only shows up as
 loose parts on the finished plate, which is why the check is a hard floor
 rather than advice.
+
+## Troubleshooting: "The hubcap is set to follow your artwork's shape, but no artwork is loaded"
+
+Full text: _"The hubcap is set to follow your artwork's shape, but no artwork
+is loaded — it stays round until you add one."_
+
+The **Cut to artwork shape** checkbox and the artwork on the part are the same
+object by design — there's no separate silhouette upload, so with nothing
+loaded there's nothing to cut to. The part stays a plain circle at the size
+set in **Hubcap diameter** until you add artwork; it reshapes itself the
+moment you do, with no further action needed.
+
+## Troubleshooting: "That shape doesn't cover the hubcap's mounting clips"
+
+Full text: _"That shape doesn't cover the hubcap's mounting clips, so it stays
+round — make it bigger, or use artwork whose middle is filled in."_
+
+The clips need a solid annulus under them (10.6–16.0mm out from the axis) to
+bond to, the same requirement the plain-circle floor
+(`HUBCAP_MIN_DIAMETER_MM`) enforces there. A silhouette can fail this two
+ways a circle can't: it can be too small overall, the same as the circle case,
+or it can have a hole or a thin waist that happens to pass through the clip
+ring even at a reasonable size — a ring-shaped logo, for instance. Either way
+the part falls back to a circle rather than exporting clips that bond to
+nothing; increasing the size or picking artwork that stays solid in the
+middle both fix it.
+
+## Troubleshooting: "A hubcap cut to shape can only follow one design"
+
+Full text: _"A hubcap cut to shape can only follow one design — remove the
+others, or turn 'Cut to artwork shape' off."_
+
+With two pieces of artwork loaded there's no single answer to "the shape" —
+their union is one option, but so is either one alone, and nothing says which
+was meant. Rather than guess, the part stays round and this names the fix:
+remove the extra artwork (the Artwork panel's list has a remove action per
+row), or turn the checkbox off if you meant to keep both as separate designs
+on a round part.
+
+## Troubleshooting: "This image has no transparent background, so the hubcap came out as its rectangle"
+
+Full text: _"This image has no transparent background, so the hubcap came out
+as its rectangle. Export it as a PNG with the background removed to cut it to
+the artwork's real shape."_
+
+This isn't a refusal — a rectangular hubcap is a legitimate thing to want, so
+the part builds. It's a check for the far more likely case: a WebP or a
+flattened PNG that lost its alpha channel on the way here, where what looked
+like a character cut out on a transparent background is actually opaque all
+the way to its bounding box, and the "silhouette" is just that box. If a
+non-rectangular shape was the goal, re-export the source image as a PNG with
+the background actually removed (not just displayed as transparent in an
+editor that doesn't preserve alpha on export) and reload it.
+
+## Troubleshooting: "Some of this shape is thinner than 1mm"
+
+Full text: _"Some of this shape is thinner than 1mm, which is about one
+nozzle wide — those parts will be fragile. Simplifying the artwork or making
+the hubcap bigger will thicken them."_
+
+Unlike the other silhouette warnings, this one doesn't fall back to a circle
+— the part builds at the shape and size you set, because a thin spike still
+extrudes into a valid solid. It's a printability notice, not a geometry
+error: a 0.5mm-wide sliver is one nozzle-width of plastic standing 3mm tall,
+which is likely to snap off in handling or not adhere well during printing.
+Fine detail like hair spikes or thin limbs on a character silhouette are the
+usual cause. Making the hubcap bigger thickens every feature proportionally,
+since the whole outline scales together, or simplify the source artwork to
+remove the thin part.

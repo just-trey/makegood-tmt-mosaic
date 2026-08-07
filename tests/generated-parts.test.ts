@@ -202,6 +202,19 @@ describe('the hubcap role’s own hooks', () => {
     expect(hubcapRole.buildPlacement!()).toBeUndefined();
   });
 
+  it('withholds the plate for a silhouette too, even at a verified diameter number', () => {
+    // The verified arrangement was checked with a round disc. Once the part is cut to a
+    // silhouette, hubcapDiameterMm is a longest-side reading of a shape that isn't round — the
+    // clearance a circle of that size was checked at says nothing about what a traced photo
+    // reaches on its off-axis corners.
+    state.hubcapDiameterMm = HUBCAP_VERIFIED_DIAMETER_MM;
+    state.hubcapSilhouette = true;
+
+    expect(hubcapRole.buildPlacement!()).toBeUndefined();
+
+    state.hubcapSilhouette = false;
+  });
+
   it('turns a disc that missed the clips into a warning the user sees', async () => {
     // The geometry of that case is hubcap.test.ts's; what this covers is the role's own mapping —
     // components > 1 has to become a message, or the part exports as loose pieces in silence.

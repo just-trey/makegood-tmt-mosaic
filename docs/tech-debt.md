@@ -1087,6 +1087,15 @@ What that leaves open, in the order it is likely to bite:
   size, so a 250mm hubcap on a 270mm bed is reachable and unverified. On the
   256mm bed the verified clearance is only 7mm, so this is not a case where the
   existing numbers could be stretched a little.
+- **A hubcap cut to its artwork's shape never gets the verified plate, at any
+  size.** `hubcapPlacement` is withheld outright once "Cut to artwork shape"
+  is on ([src/assembly/kinds.ts](../src/assembly/kinds.ts)), because
+  `HUBCAP_PLATE` was checked against a round disc and a silhouette can reach
+  further off-axis than a circle of the same longest-side reading. There is no
+  obvious way to close this the way the two items above close — a verified
+  arrangement would need to be re-checked per silhouette shape, which isn't a
+  fixed set the way bed sizes are, so it likely stays computed-and-flagged
+  rather than becoming baked.
 
 Closing either is the same job and needs no code: export at the size and
 printer in question (`scripts/export-hubcap-examples.mjs` produces the files),
