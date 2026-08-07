@@ -68,6 +68,14 @@ export interface AppState {
    * state alongside the other things a rebuild reads, not in the panel that edits it.
    */
   hubcapDiameterMm: number;
+  /**
+   * Cut the hubcap to the silhouette of the artwork on it, instead of leaving it a circle.
+   *
+   * The shape and the artwork are the same object, so this is a toggle rather than a second
+   * upload — see silhouetteFromShapes. Off, `hubcapDiameterMm` is the circle's diameter; on, it
+   * is the silhouette's longest side. Either way it is how big the part is.
+   */
+  hubcapSilhouette: boolean;
   assembly: {
     kindId: string | null;
     /** chosen hardware variant for a kind with `variants` (chair Standard/Kit); null otherwise */
@@ -123,6 +131,7 @@ export const state: AppState = {
 
   asmRadius: 138,
   hubcapDiameterMm: HUBCAP_DEFAULT_DIAMETER_MM,
+  hubcapSilhouette: false,
   assembly: { kindId: null, variantId: null, parts: [], nextPartId: 1, library: [] },
 
   baseFilamentId: null,

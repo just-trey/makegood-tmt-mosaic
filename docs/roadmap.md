@@ -1,18 +1,5 @@
 # Roadmap ideas (not built)
 
-- Build the hubcap's outline from a user-supplied **silhouette** — a transparent
-  PNG/WebP or an STL — instead of only a circle, so a hubcap can be the shape of
-  a logo or a character. The generator
-  ([src/geometry/hubcap.ts](../src/geometry/hubcap.ts)) already takes the
-  diameter as the circle case of exactly this, and the pieces exist:
-  `parseRasterImage` already treats sub-threshold alpha as background, and
-  `traceLabelMap` returns the contours. Two checks are the actual work, and
-  neither is optional: a **minimum feature width**, because the 1mm chamfer
-  insets the outline by 1mm and eats anything thinner than about 2mm; and
-  **clip containment**, since the silhouette has to cover the clip tops
-  (r 10.6–16.0mm) or the clips bond to nothing — `HubcapBody.components` already
-  detects that case, so the check is about refusing it up front with a message
-  rather than discovering it after the boolean.
 - Snap a traced image's palette to the owned-filament list
   ([public/filaments.json](../public/filaments.json)) instead of to colors
   derived from the image, so an image's regions are filaments the user actually
@@ -46,3 +33,8 @@
   session-autosave work already landing (that recovers _your_ session; this
   is for sharing a finished setup); and a way to edit the owned-filament
   palette (`public/filaments.json`) without a code-adjacent JSON edit.
+- Deferred, not this PR: on a hubcap cut to its artwork's shape, have artwork
+  touching the outer edge cut the full 3mm through, while interior artwork
+  stays at the normal per-color recess depth — matching how `wheel-hub-cap`
+  already cuts through at its edge, but as a per-region rule rather than a
+  kind-wide flag.

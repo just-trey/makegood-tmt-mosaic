@@ -14,7 +14,8 @@ import {
   switchChairVariant,
 } from '../assembly/parts';
 import { getPrinter } from '../export/printers';
-import { availableZones } from '../state/artwork';
+import { HUBCAP_WHEEL_DIAMETER_MM } from '../geometry/hubcap';
+import { availableZones, clampArtworkModes } from '../state/artwork';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
 import { $ } from './dom';
@@ -84,6 +85,12 @@ export function syncBuildParamControl(): void {
   if (!row || !input || !label) return;
   const param = currentAssemblyKind()?.buildParam;
   row.style.display = param ? '' : 'none';
+  // The silhouette toggle rides with the size control: both are "what shape is this part", and
+  // only a kind that generates its own mesh has either.
+  const silRow = $('#asm-silhouette-row');
+  const silInput = $<HTMLInputElement>('#p-asm-silhouette');
+  if (silRow) silRow.style.display = param ? '' : 'none';
+  if (silInput) silInput.checked = state.hubcapSilhouette;
   if (!param) return;
   label.textContent = param.label;
   input.min = String(round2(param.minMm));
@@ -98,6 +105,60 @@ export function syncBuildParamControl(): void {
 }
 
 const round2 = (v: number): number => Number(v.toFixed(2));
+
+/**
+ * The part's real footprint, in mm, under the size control.
+ *
+ * Measured off the built mesh rather than recomputed from the outline, so it cannot disagree with
+ * the thing you actually get. It exists because the size control stops describing the part the
+ * moment the shape stops being a circle: a hubcap cut to a tall character reads 220 in the field
+ * and is 168mm wide, and scaling with the gizmo moves both numbers without touching the field at
+ * all. Guessing the size of a part that has to fit a wheel is not a reasonable thing to ask.
+ */
+export function renderBuildParamSize(): void {
+  const el = $('#asm-buildparam-size');
+  if (!el) return;
+  const kind = currentAssemblyKind();
+  const role = kind?.roles.find((r) => r.buildMesh);
+  const part = role ? state.assembly.parts.find((p) => p.roleId === role.id && p.positions) : null;
+  if (!kind?.buildParam || !part?.positions) {
+    el.style.display = 'none';
+    return;
+  }
+  const pos = part.positions;
+  let minX = Infinity,
+    maxX = -Infinity,
+    minZ = Infinity,
+    maxZ = -Infinity,
+    reach = 0;
+  for (let i = 0; i < pos.length; i += 3) {
+    if (pos[i] < minX) minX = pos[i];
+    if (pos[i] > maxX) maxX = pos[i];
+    if (pos[i + 2] < minZ) minZ = pos[i + 2];
+    if (pos[i + 2] > maxZ) maxZ = pos[i + 2];
+    // How far the part ACTUALLY reaches from the axis, vertex by vertex — not the corner of its
+    // bounding box, which a shape need not touch. On a real silhouette the difference is 240mm
+    // against 277mm on a 280mm wheel: the bbox corner reads as nearly overhanging a part with
+    // 40mm to spare, and would have had somebody shrink something that fitted fine.
+    const r = Math.hypot(pos[i], pos[i + 2]);
+    if (r > reach) reach = r;
+  }
+  if (!Number.isFinite(minX)) {
+    el.style.display = 'none';
+    return;
+  }
+  const w = maxX - minX;
+  const d = maxZ - minZ;
+  el.style.display = '';
+  el.innerHTML =
+    `<b>Actual size ${w.toFixed(1)} × ${d.toFixed(1)} mm</b>` +
+    ` — ${(reach * 2).toFixed(0)}mm across, on a ${HUBCAP_WHEEL_DIAMETER_MM}mm wheel`;
+
+  // The unit hint beside the field says "mm", which stops being the useful thing to say the
+  // moment the number in the field is only one of the part's two dimensions.
+  const unit = $('#asm-buildparam-unit');
+  if (unit) unit.textContent = kind.buildParam && state.hubcapSilhouette ? 'longest side' : 'mm';
+}
 
 /**
  * Clearance kept between a generated part and the edge of the bed.
@@ -160,6 +221,29 @@ export async function clampBuildParamToPrinter(): Promise<void> {
   const param = currentAssemblyKind()?.buildParam;
   if (param) await commitBuildParam(state[param.id]);
   syncBuildParamControl();
+}
+
+/**
+ * Turn the silhouette toggle on or off and rebuild the part around it.
+ *
+ * Its own entry point rather than a branch of applyBuildParam: this changes what the shape IS
+ * rather than how big it is, and it has no value to clamp. The rebuild is the same one, because
+ * the part's mesh depends on it exactly as it depends on the size.
+ */
+export async function applyHubcapSilhouette(on: boolean): Promise<void> {
+  if (on === state.hubcapSilhouette) return;
+  state.hubcapSilhouette = on;
+  const kind = currentAssemblyKind();
+  // Fill is withheld while the part follows the artwork, so a Fill already chosen has to be
+  // rewritten here — the same clamp a kind that withholds Fill outright applies on a part switch.
+  // The list has to be re-rendered too: clamping rewrites the stored mode, but the dropdown's
+  // options were built when the toggle was off and still offer the mode that is now withheld.
+  clampArtworkModes();
+  renderArtworkList();
+  syncBuildParamControl();
+  syncTemplateLink();
+  await asmRebuildGeneratedParts();
+  if (kind) track('hubcap_silhouette_toggled', { kind: kind.id, on });
 }
 
 /** Clamp, store and regenerate. Returns the committed value, or undefined if nothing moved. */
@@ -426,6 +510,15 @@ export function initAssemblyPanel(): void {
     // need a re-render here too.
     renderArtworkList();
     renderZoneTemplateLinks();
+    // The footprint is measured off the built mesh, so it can only be right once the part has
+    // been (re)built — which is exactly what this fires for.
+    renderBuildParamSize();
+    // And so is the generated template, for the same reason: a hubcap cut to its artwork is drawn
+    // from the outline the build produced. Re-issuing it only where the shape's INPUTS change
+    // (the toggle, the diameter) misses every route that changes the outline without touching
+    // them — Scale, Rotate, a flip, an offset, a re-trace — and left a disc template on a
+    // silhouette part.
+    syncTemplateLink();
   });
   // The link's href is re-pointed per kind in syncAssemblyKindControls; bind the click once here
   // so repeated syncs don't stack handlers.

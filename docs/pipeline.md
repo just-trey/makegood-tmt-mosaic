@@ -271,6 +271,87 @@ Two things that look cosmetic are not:
   the only thing that catches it, and Manifold would otherwise read the part as
   its own complement.
 
+**The disc is a circle by default, but can be cut to the shape of its own
+artwork instead.** `hubcapShapeFromState`
+([src/assembly/kinds.ts](../src/assembly/kinds.ts)) is the seam: with the
+**Cut to artwork shape** checkbox off, or with no artwork loaded, or with more
+than one piece of artwork loaded, it returns the circle; otherwise it reads the
+outline straight off the loaded artwork's own shapes
+(`silhouetteFromShapes`, [src/geometry/hubcapOutline.ts](../src/geometry/hubcapOutline.ts))
+and hands that to `buildHubcapBody` in place of `hubcapDiscSoup`. There is
+deliberately no second upload for the shape — the picture and the cutline are
+the same object, which is also why only one piece of artwork is allowed at a
+time: two would make "the shape" ambiguous. The edge is cut square, not
+chamfered — a chamfer insets by 1mm on top of an already-thin outline, which is
+what `narrowFeatureArea` warns about below.
+
+The outline is measured, not trusted blindly, before it becomes a part:
+
+- `clipCoverage` samples the clips' bonding annulus on a polar grid and refuses
+  (falling back to the circle) below 90% covered, catching a silhouette that
+  would leave the clips floating.
+- An outline whose area is within 2% of its own bounding box is flagged as
+  probably opaque — a common mistake with a WebP or a flattened PNG that lost
+  its alpha channel, since without transparency the "silhouette" is just the
+  image's rectangle.
+- `narrowFeatureArea` measures how much of the outline sits in features
+  narrower than 1mm (a morphological open: erode then dilate, area that
+  doesn't come back is area too thin to print reliably) and warns by name
+  rather than refusing, since a thin spike still extrudes into a valid, if
+  fragile, solid.
+
+**The outline is placed by the same transform as the cut, not by a parallel
+rule meant to match it.** `hubcapShapeFromState` builds an `OutlinePlacement`
+from `designAnchor` and `designMmPerUnit` — the two helpers the cut itself
+uses — and `placeArtworkPoint` applies them in the same order
+`ZoneMapper.placer` does: scale about the design anchor, mirror each axis,
+rotate about the design centre, then translate. So scale, rotation and both
+flips all reshape the part, and the part and the picture cannot disagree by
+construction.
+
+**Offset is the one placement input that is derived rather than read.** The
+outline centres itself on the mounting axis and the artwork's offset is solved
+to put the picture on it. This is not a simplification but a correctness
+requirement: `ZoneMapper.placer` finishes with `+ faceCx`, the design face's
+own bbox centre, and for a silhouette that face _is_ the outline being placed —
+so every offset moved the surface it was being measured against, and no value
+made the two agree. Centring makes `faceCx` zero by construction, which leaves
+one consistent answer. It also matches what the control means: moving artwork
+relative to a part that _is_ that artwork isn't a request with a meaning.
+
+Two rules of thumb sit inside that. Both axes normally negate — artwork space
+is y-down while the part's ground plane is not (Z), and the design face points
++Y and is viewed from above, so its own frame reads mirrored (X). And the
+anchor is the document _canvas_, not the traced content: fitting the outline to
+its own content bounding box while the artwork was scaled off the canvas is
+exactly how the two drifted apart, and a padded PNG — a 300×450 subject on a
+512×512 sheet — printed the picture about 12% small and offset.
+
+Sizing an artwork-shaped part also has to defeat the app's normal
+auto-fit-to-largest-design-face logic, which would otherwise use the shape
+being fit as the reference for its own fit. `generatedDesignFaceOverride`
+substitutes a fixed square sized from the diameter control, read identically by
+the build (`src/geometry/assembly.ts`) and the placement gizmo
+(`src/scene/faceFrame.ts`) so the two never disagree about scale.
+
+The wheel limit is a second factor, and it deliberately does **not** ride on
+the design face. Nothing may overhang the 280mm wheel
+(`HUBCAP_WHEEL_DIAMETER_MM`), and a shape's corners reach further than its
+longest side, so the check is a radius about the mounting axis rather than a
+maximum "size": the factor is `min(1, R / outlineReach)` — exact, not searched,
+because the outline is centred on the axis so every point's distance scales
+with it — and `scaleOutlineAbout` applies it. `generatedFitFactor` then feeds
+the same number to the artwork through `DesignScaleContext.generatedFit`, which
+`designMmPerUnit` multiplies into **every** branch it can return from.
+
+That last part is the whole reason it is a separate field. The cap was folded
+into the design face first, and `designMmPerUnit` returns `userUnitMM *
+scaleMult` before it ever consults the face — so for any SVG declaring an
+absolute mm size, which includes every design template this app hands out, the
+cap silently applied to the part and not to the picture, and the warning
+claimed both had shrunk. A cap on the part alone leaves the outer band of every
+colour region hanging off the edge it was cut into.
+
 **Export placement is baked from a verified reference 3MF, never computed or
 read at runtime.** Once a part's real-world print pose has been checked in the
 slicer (a reference project file the user hand-verified — rotation, plate

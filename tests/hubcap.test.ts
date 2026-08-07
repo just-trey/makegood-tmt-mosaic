@@ -231,7 +231,7 @@ describe('the verified plate arrangement', () => {
 describe('hubcap body = disc union clips', () => {
   it('fuses into exactly one solid', async () => {
     const clips = await readMesh(clipsPath);
-    const body = await buildHubcapBody(REF.diameter, clips);
+    const body = await buildHubcapBody({ kind: 'circle', diameterMm: REF.diameter }, clips);
     // The disc's underside and the clips' top faces are exactly coincident, which is the case a
     // soup concat gets wrong: it looks identical in the viewport and exports without complaint,
     // but leaves two solids with a buried skin between them.
@@ -244,17 +244,23 @@ describe('hubcap body = disc union clips', () => {
     const clips = await readMesh(clipsPath);
     // the failure the floor exists to prevent: a disc that misses the clip tops entirely leaves
     // five loose bodies, which still exports and still looks like a hubcap on screen
-    const tooSmall = await buildHubcapBody(2 * HUBCAP_CLIP_FACE_INNER_R_MM - 2, clips);
+    const tooSmall = await buildHubcapBody(
+      { kind: 'circle', diameterMm: 2 * HUBCAP_CLIP_FACE_INNER_R_MM - 2 },
+      clips,
+    );
     expect(tooSmall.components).toBe(5);
     // at the clamp floor the clip tops are fully covered
-    const atFloor = await buildHubcapBody(HUBCAP_MIN_DIAMETER_MM, clips);
+    const atFloor = await buildHubcapBody(
+      { kind: 'circle', diameterMm: HUBCAP_MIN_DIAMETER_MM },
+      clips,
+    );
     expect(atFloor.components).toBe(1);
     expect(HUBCAP_MIN_DIAMETER_MM).toBeGreaterThan(2 * HUBCAP_CLIP_FACE_INNER_R_MM);
   }, 30000);
 
   it('keeps the clips and the design face intact through the union', async () => {
     const clips = await readMesh(clipsPath);
-    const body = await buildHubcapBody(REF.diameter, clips);
+    const body = await buildHubcapBody({ kind: 'circle', diameterMm: REF.diameter }, clips);
     const { min, max } = bounds(body.positions);
     // clips set the floor, the design face the ceiling
     expect(min[1]).toBeCloseTo(19.0828, 2);

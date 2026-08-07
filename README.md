@@ -155,7 +155,10 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   the tower parked in the freest corner, and says so — check both in your
   slicer. Because the part is generated, this can't be a fingerprint-sealed pose
   the way the fixed parts have; it's an arrangement verified at one size, which
-  is why it stops applying above that size.
+  is why it stops applying above that size. Cutting the hubcap to its artwork's
+  shape (**Cut to artwork shape**) always uses the computed centred placement —
+  the verified arrangement was checked with a round disc, and a silhouette can
+  reach further off-axis than a circle of the same nominal size does.
 - Parts the reference sets to manual tree support arrive without the painted
   enforcers; paint them yourself or switch to auto support.
 - The caster mounts can't carry artwork — see

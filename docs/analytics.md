@@ -160,6 +160,14 @@ Fired when the user declines the restore-session banner ("Start fresh").
 - **Where:** [src/ui/restoreBanner.ts](../src/ui/restoreBanner.ts) — `#btn-restore-dismiss` click handler.
 - **Props:** none.
 
+### `hubcap_silhouette_toggled`
+
+Fired when the user flips the hubcap's **Cut to artwork shape** checkbox,
+either direction.
+
+- **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `applyHubcapSilhouette`, called from the `#p-asm-silhouette` change handler in `initPartPanel`.
+- **Props:** `{ kind: string }` (`state.assembly.kindId`, always `hubcap` today but kept consistent with `build_param_changed`), `on: boolean`.
+
 ## Future / not yet wired
 
 Candidates for a later pass, roughly in order of likely value. Follow the same

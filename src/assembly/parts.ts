@@ -273,7 +273,11 @@ export async function asmLoadPartBuffer(
  * For a role that builds its own mesh (AssemblyRole.buildMesh), `positions` is the *asset*, and
  * the built result is what the part actually keeps.
  */
-async function asmAdoptMesh(part: AssemblyPart, positions: Float32Array): Promise<void> {
+async function asmAdoptMesh(
+  part: AssemblyPart,
+  positions: Float32Array,
+  opts: { schedule?: boolean } = {},
+): Promise<void> {
   const role = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId);
   // A dropped file REPLACES the part, on a generated role as much as any other — running the
   // builder over it would hand back the user's mesh with a generated disc fused onto it, which is
@@ -304,28 +308,104 @@ async function asmAdoptMesh(part: AssemblyPart, positions: Float32Array): Promis
   // view ended up fitted to whichever subset had finished.
   requestFrame();
   notifyPartsChanged();
-  scheduleRebuild();
+  // Skipped when a rebuild is already the caller — otherwise regenerating a part *during* a
+  // rebuild queues another one, and a part whose shape follows the artwork would do that on
+  // every single pass.
+  if (opts.schedule !== false) scheduleRebuild();
 }
 
 /**
- * Re-run every generated part's builder — for when a build parameter (the hubcap's diameter)
- * changes. Rebuilds from the cached asset, so no part is re-fetched.
+ * A stable per-object id for a parsed artwork, so the signature below can say "this is a different
+ * parse" without comparing contents.
+ *
+ * `parsed` is treated as immutable once parsed (regions.ts memoises on it), so a re-trace produces
+ * a new object and a mere re-render does not — which makes identity exactly the right test. A
+ * WeakMap because the ids must not keep a discarded parse alive.
+ */
+const parsedIds = new WeakMap<object, number>();
+let nextParsedId = 1;
+function parsedId(parsed: object | null | undefined): number {
+  if (!parsed) return 0;
+  let id = parsedIds.get(parsed);
+  if (id === undefined) parsedIds.set(parsed, (id = nextParsedId++));
+  return id;
+}
+
+/**
+ * What a generated part's shape currently depends on, as a string.
+ *
+ * The hubcap's silhouette follows the artwork, so its mesh has to be rebuilt whenever the artwork
+ * changes — and "the artwork changed" happens through a load, a re-trace, a removal, a restored
+ * session and a zone rebinding, which is too many places to hook one at a time. The rebuild runs
+ * for all of them, so it asks this instead, and rebuilds only when the answer moved.
+ *
+ * Identity rather than shape COUNT, which is what this compared first and is not the same test:
+ * re-quantizing an image at a new Detail setting usually lands on the same number of colours, so
+ * the count held still while the outline underneath it changed, and the part stayed cut to the
+ * previous trace while the picture on it updated.
+ *
+ * The placement terms are here for the same reason: the silhouette is placed by the artwork's own
+ * scale, rotation, flips and offset (see hubcapShapeFromState), so each of them changes the SHAPE
+ * of the part and not just where the cut lands on it.
+ */
+function generatedShapeSignature(): string {
+  const kind = currentAssemblyKind();
+  if (!kind?.roles.some((r) => r.buildMesh)) return '';
+  const sil = state.hubcapSilhouette;
+  const art = state.artworks[0];
+  return [
+    sil ? 'sil' : 'circle',
+    state.hubcapDiameterMm,
+    state.artworks.length,
+    state.sources.length,
+    state.sources.map((src) => parsedId(src.parsed)).join(','),
+    sil ? parsedId(state.parsed) : 0,
+    // every one of these moves the outline, not just the artwork on it
+    sil ? (art?.scalePct ?? state.scalePct) : 0,
+    sil ? (art?.rotationDeg ?? state.rotationDeg) : 0,
+    sil ? (art?.offsetU ?? state.offsetX) : 0,
+    sil ? (art?.offsetV ?? state.offsetY) : 0,
+    sil ? `${art?.flipX ?? state.flipX}${art?.flipY ?? state.flipY}` : '',
+  ].join('|');
+}
+
+let lastGeneratedSignature: string | null = null;
+
+/** Whether a generated part's inputs have moved since it was last built. */
+export function generatedPartsNeedRebuild(): boolean {
+  return generatedShapeSignature() !== lastGeneratedSignature;
+}
+
+/**
+ * Re-run every generated part's builder — for when a build parameter (the hubcap's diameter) or
+ * the artwork its shape follows changes. Rebuilds from the cached asset, so no part is re-fetched.
  *
  * Reports a failure the same way the load path does rather than letting it reject. The caller
  * fires this off with `void`, so an unhandled rejection would be invisible — and the state and the
  * control would already be showing the new size while the part in the scene, and in any export,
  * was still the old mesh. Saying nothing there is worse than the failure.
  */
-export async function asmRebuildGeneratedParts(): Promise<boolean> {
+export async function asmRebuildGeneratedParts(
+  opts: { schedule?: boolean } = {},
+): Promise<boolean> {
   const kind = currentAssemblyKind();
   const parts = state.assembly.parts.filter((p) => {
     const role = kind?.roles.find((r) => r.id === p.roleId);
     return role?.buildMesh && p.assetPositions;
   });
-  if (!parts.length) return true;
+  // Read before the build, stored only after one that worked: the inputs can't move mid-await
+  // (this is all one task), and recording them up front marked a FAILED rebuild as done. The
+  // rebuild caller has nothing to put back, so the part kept its stale mesh and was never retried
+  // — the signature said it was already current.
+  const signature = generatedShapeSignature();
+  if (!parts.length) {
+    lastGeneratedSignature = signature;
+    return true;
+  }
   beginWork();
   try {
-    for (const part of parts) await asmAdoptMesh(part, part.assetPositions!);
+    for (const part of parts) await asmAdoptMesh(part, part.assetPositions!, opts);
+    lastGeneratedSignature = signature;
     return true;
   } catch (e) {
     console.error(e);

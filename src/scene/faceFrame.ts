@@ -4,6 +4,7 @@ import { currentBaseParams } from '../state/store';
 import { currentAssemblyKind } from '../assembly/kinds';
 import { primaryZoneMapper, zoneMappersFor } from '../geometry/zoneMappers';
 import { designAnchor, designMmPerUnit, memoLargestDesignFace } from '../geometry/assembly';
+import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
 import type { ZoneFrame, ZoneMapper } from '../geometry/zones';
 import { activeArtworkInstance } from '../state/artwork';
 import type { AssemblyPart } from '../types';
@@ -209,7 +210,8 @@ function assemblyFrame(): FaceFrame | null {
   const mmPerUnit = designMmPerUnit(state.parsed!, scaleMult, anchor.r, {
     isRect,
     radius: state.asmRadius || 138,
-    designFace: memoLargestDesignFace(parts),
+    designFace: () => generatedDesignFaceOverride() ?? memoLargestDesignFace(parts)(),
+    generatedFit: generatedFitFactor,
   });
 
   // The cut is anchored on the *document*, so it lands wherever the drawn content sits relative to

@@ -49,6 +49,8 @@ export interface PersistedSession {
   asmRadius: number;
   /** Optional: sessions written before the hubcap kind existed have no value for it. */
   hubcapDiameterMm?: number;
+  /** Optional for the same reason, and separately for sessions predating the silhouette toggle. */
+  hubcapSilhouette?: boolean;
   assembly: { kindId: string | null; variantId: string | null };
   baseFilamentId: string | null;
   autoMergeLevel: number;
@@ -139,6 +141,7 @@ function snapshotSession(): PersistedSession {
     printerId: state.printerId,
     asmRadius: state.asmRadius,
     hubcapDiameterMm: state.hubcapDiameterMm,
+    hubcapSilhouette: state.hubcapSilhouette,
     assembly: { kindId: state.assembly.kindId, variantId: state.assembly.variantId },
     baseFilamentId: state.baseFilamentId,
     autoMergeLevel: state.autoMergeLevel,
@@ -387,6 +390,10 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       Math.max(HUBCAP_MIN_DIAMETER_MM, session.hubcapDiameterMm),
     );
   }
+  // No clamp to match: the shape checks all run at rebuild, and every one of them falls back to a
+  // circle with a message rather than to something unprintable.
+  if (typeof session.hubcapSilhouette === 'boolean')
+    state.hubcapSilhouette = session.hubcapSilhouette;
   state.baseFilamentId = session.baseFilamentId;
   state.autoMergeLevel = session.autoMergeLevel;
   state.baseColorKey = session.baseColorKey;

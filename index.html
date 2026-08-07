@@ -117,6 +117,24 @@
               verified: it exports centred with the tower in the freest corner and tells you so.
               Check both in your slicer before printing.
             </p>
+            <p>
+              <b>Cut to artwork shape</b> replaces the round disc with the outline of the artwork
+              already loaded on it — the picture and the part become the same shape, so a character
+              or a logo prints as its own silhouette instead of sitting inside a circle. It needs
+              exactly one piece of artwork loaded (remove extras first) with a real transparent
+              background, since that transparency is what defines the cutline; a fully opaque image
+              has no edge to cut to. Only Sticker placement is offered while this is on — Fill has
+              nothing meaningful to repeat across a shape that keeps changing. Turn it off, or
+              remove the artwork, and the part reverts to a plain circle.
+            </p>
+            <p>
+              While it's on, the Fit controls reshape the part as well as the picture: Scale,
+              Rotate, the flips and Offset all move the two together, because they are the same
+              object. Re-download the design template after any of them — it's drawn to the
+              silhouette, not to a disc. Nothing may overhang the 280&nbsp;mm wheel, so a shape that
+              would is scaled down until it fits, artwork included, and says so rather than leaving
+              the size control looking broken.
+            </p>
           </section>
 
           <section class="help-sec" id="h-artwork">
@@ -478,7 +496,19 @@
               <div class="field">
                 <input type="number" id="p-asm-buildparam" step="0.5" />
               </div>
-              <span class="hint">mm</span>
+              <span class="hint" id="asm-buildparam-unit">mm</span>
+            </div>
+            <div
+              class="hint"
+              id="asm-buildparam-size"
+              style="display: none; margin-top: 2px; color: var(--text)"
+            ></div>
+            <div class="row" id="asm-silhouette-row" style="margin-top: 6px; display: none">
+              <label for="p-asm-silhouette">Cut to artwork shape</label>
+              <div class="field">
+                <input type="checkbox" id="p-asm-silhouette" />
+              </div>
+              <span class="hint">follow the outline</span>
             </div>
             <div class="hint">
               Pockets are cut into each part's real mesh — load an SVG below to see it on the part.
