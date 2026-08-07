@@ -382,6 +382,16 @@ export function maxSizeForWheel(outline: Outline): number {
  */
 export const HUBCAP_MIN_FEATURE_MM = 1;
 
+/**
+ * How much of the clips' bonding face a silhouette has to cover.
+ *
+ * Generous on purpose. The failure worth refusing is a clip over a hole or off the shape, which
+ * loses most of the face; a shape that nicks the rim loses a percent or two and still bonds
+ * across the rest. An earlier version demanded every sample on the outer radius and refused a
+ * real silhouette over one sample in sixty-four.
+ */
+export const HUBCAP_MIN_CLIP_COVERAGE = 0.9;
+
 /** Silhouette asked for with nothing loaded to take one from. */
 export const HUBCAP_SILHOUETTE_NO_ARTWORK =
   'The hubcap is set to follow your artwork’s shape, but no artwork is loaded — it stays round ' +

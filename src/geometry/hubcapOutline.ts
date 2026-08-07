@@ -117,21 +117,33 @@ export function outlineContains(rings: Outline, x: number, z: number): boolean {
 }
 
 /**
- * Whether the outline fully covers a disc of `radiusMm` centred on the axis — which is the
- * question "will the mounting clips actually bond to this?"
+ * How much of the clips' bonding face lands on material, as a fraction of its area.
  *
- * Sampled on a ring at that radius plus the centre, rather than tested analytically: the clips
- * present an annulus, and what matters is that no part of it falls in a hole or outside the
- * shape. 64 samples puts them ~1.6mm apart at the clip radius, finer than any feature a traced
- * silhouette holds at this scale.
+ * The clips present an annulus (their top faces, see HUBCAP_CLIP_FACE_*_R_MM) and what decides
+ * whether they hold is how much of it is backed by disc. Sampled over the annulus on a polar grid
+ * rather than tested analytically, because the outline is a traced polygon with holes and the
+ * question is "how much", not "does any edge cross".
+ *
+ * Measuring area rather than probing the outer rim, which is what this did first and got wrong in
+ * the direction that matters: a single 1-in-64 nick at the extreme radius refused a real
+ * silhouette whose clips were otherwise entirely supported. What has to be caught is a clip over
+ * a HOLE or off the shape — a large loss — not a shape that grazes the rim.
  */
-export function coversClipDisc(rings: Outline, radiusMm: number, samples = 64): boolean {
-  if (!outlineContains(rings, 0, 0)) return false;
-  for (let i = 0; i < samples; i++) {
-    const t = (i / samples) * Math.PI * 2;
-    if (!outlineContains(rings, radiusMm * Math.cos(t), radiusMm * Math.sin(t))) return false;
+export function clipCoverage(rings: Outline, innerR: number, outerR: number): number {
+  const RINGS = 12;
+  const STEPS = 96;
+  let on = 0;
+  let total = 0;
+  for (let i = 0; i < RINGS; i++) {
+    // area-weighted: an outer ring covers more of the annulus than an inner one
+    const r = innerR + ((i + 0.5) / RINGS) * (outerR - innerR);
+    for (let j = 0; j < STEPS; j++) {
+      const t = (j / STEPS) * Math.PI * 2;
+      total += r;
+      if (outlineContains(rings, r * Math.cos(t), r * Math.sin(t))) on += r;
+    }
   }
-  return true;
+  return total > 0 ? on / total : 0;
 }
 
 /**

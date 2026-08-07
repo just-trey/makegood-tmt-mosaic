@@ -50,6 +50,7 @@ import {
   type TileGrid,
 } from './patterns';
 import { overlappingDesignPairs, type PlacedDesign } from './designOverlap';
+import { generatedDesignFaceOverride } from '../assembly/kinds';
 import { noticeBuild, warnBuild } from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
@@ -467,7 +468,9 @@ export async function buildAssemblyGeometry(
   const scaleCtx: DesignScaleContext = {
     isRect,
     radius,
-    designFace: memoLargestDesignFace(parts),
+    // The gizmo builds this same context from the same helper — a frame drawn around a different
+    // size than the cut used encloses empty face, which is what designAnchor's comment warns of.
+    designFace: () => generatedDesignFaceOverride() ?? memoLargestDesignFace(parts)(),
   };
   const mmPerUnitOf = (
     parsed: ParsedSVG,

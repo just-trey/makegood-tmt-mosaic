@@ -1,7 +1,9 @@
 import type { AssemblyKind, AssemblyRole } from '../types';
 import { state } from '../state/store';
 import {
+  HUBCAP_CLIP_FACE_INNER_R_MM,
   HUBCAP_CLIP_FACE_OUTER_R_MM,
+  HUBCAP_MIN_CLIP_COVERAGE,
   HUBCAP_DISCONNECTED_WARNING,
   HUBCAP_MIN_DIAMETER_MM,
   HUBCAP_MIN_FEATURE_MM,
@@ -16,7 +18,7 @@ import {
 } from '../geometry/hubcap';
 import { getManifold } from '../geometry/manifold';
 import {
-  coversClipDisc,
+  clipCoverage,
   fitOutline,
   narrowFeatureArea,
   silhouetteFromShapes,
@@ -336,14 +338,20 @@ export async function hubcapShapeFromState(): Promise<{
   const raw = silhouetteFromShapes(wasm, shapes);
   if (!raw.length) return { shape: circle, warning: HUBCAP_SILHOUETTE_NO_ARTWORK };
 
-  // The size control means "longest side" in both modes, but a silhouette also has to fit the
-  // wheel it mounts on, and its corners reach further than its longest side does.
-  const size = Math.min(state.hubcapDiameterMm, maxSizeForWheel(raw));
+  // Sized exactly as the artwork on it is: the base size the user set, times the same scale
+  // multiplier the placement applies (generatedDesignFaceOverride feeds that side the matching
+  // box). Scaling with the gizmo therefore resizes the part, which is the point — the shape and
+  // the picture are one object and one drag moves both.
+  const scaled = state.hubcapDiameterMm * (state.scalePct / 100);
+  // A silhouette also has to fit the wheel it mounts on, and a shape's corners reach further
+  // than its longest side does.
+  const size = Math.min(scaled, maxSizeForWheel(raw));
   const outline = fitOutline(raw, size);
 
   // The one hard gate. A shape that misses the clips exports, looks like a hubcap, and comes off
   // the plate in pieces — so it is refused up front rather than discovered after the boolean.
-  if (!coversClipDisc(outline, HUBCAP_CLIP_FACE_OUTER_R_MM))
+  const covered = clipCoverage(outline, HUBCAP_CLIP_FACE_INNER_R_MM, HUBCAP_CLIP_FACE_OUTER_R_MM);
+  if (covered < HUBCAP_MIN_CLIP_COVERAGE)
     return { shape: circle, warning: HUBCAP_SILHOUETTE_MISSES_CLIPS };
 
   // Printability, not correctness: a 0.5mm spike is a valid solid and one nozzle of plastic.
@@ -352,4 +360,25 @@ export async function hubcapShapeFromState(): Promise<{
     shape: { kind: 'silhouette', outline },
     warning: narrow > 1 ? HUBCAP_SILHOUETTE_THIN_DETAIL : undefined,
   };
+}
+
+/**
+ * The box a no-declared-size artwork is fitted into, when the part's own shape follows it.
+ *
+ * Normally `designMmPerUnit` fits such an artwork to the largest design face — but with the
+ * silhouette toggle on, that face IS the artwork, and an artwork sized from a face sized from the
+ * artwork has no fixed point. It showed up as the part and the picture on it coming out at two
+ * different sizes.
+ *
+ * A square of the size the user asked for breaks it: meet-fit puts the artwork's longer axis on
+ * that side, which is the same "longest side is the size" rule the silhouette itself uses, so the
+ * shape and the picture agree by construction — and scaling the artwork scales both, because the
+ * scale multiplier applies to this exactly as it applies to a real face.
+ *
+ * Null whenever the toggle is off, which leaves every other kind on the face it always used.
+ */
+export function generatedDesignFaceOverride(): { w: number; h: number } | null {
+  const kind = currentAssemblyKind();
+  if (!kind?.buildParam || !state.hubcapSilhouette) return null;
+  return { w: state.hubcapDiameterMm, h: state.hubcapDiameterMm };
 }

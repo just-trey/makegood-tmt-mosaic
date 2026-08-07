@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getManifold } from '../src/geometry/manifold';
 import type { SVGShape } from '../src/types';
 import {
-  coversClipDisc,
+  clipCoverage,
   fitOutline,
   narrowFeatureArea,
   outlineArea,
@@ -12,7 +12,11 @@ import {
   silhouetteFromShapes,
   type Outline,
 } from '../src/geometry/hubcapOutline';
-import { HUBCAP_CLIP_FACE_OUTER_R_MM } from '../src/geometry/hubcap';
+import {
+  HUBCAP_CLIP_FACE_INNER_R_MM,
+  HUBCAP_CLIP_FACE_OUTER_R_MM,
+  HUBCAP_MIN_CLIP_COVERAGE,
+} from '../src/geometry/hubcap';
 
 /**
  * The measurements a user-supplied silhouette has to pass before it can be a hubcap.
@@ -101,25 +105,37 @@ describe('area and containment', () => {
 });
 
 describe('will the mounting clips bond to this shape', () => {
-  const R = HUBCAP_CLIP_FACE_OUTER_R_MM;
+  const IN = HUBCAP_CLIP_FACE_INNER_R_MM;
+  const OUT = HUBCAP_CLIP_FACE_OUTER_R_MM;
+  const cov = (o: Outline) => clipCoverage(o, IN, OUT);
 
-  it('accepts a shape that covers the clip annulus', () => {
-    expect(coversClipDisc([circle(R + 5)], R)).toBe(true);
+  it('fully backs a shape comfortably bigger than the clips', () => {
+    expect(cov([circle(OUT + 5)])).toBeCloseTo(1, 2);
   });
 
-  it('refuses a shape smaller than the clips', () => {
-    expect(coversClipDisc([circle(R - 2)], R)).toBe(false);
+  it('reports almost nothing for a shape smaller than the clips', () => {
+    expect(cov([circle(IN - 2)])).toBeLessThan(0.05);
   });
 
-  it('refuses a ring, however big — the clips land in its hole', () => {
+  it('reports nothing for a ring, however big — the clips land in its hole', () => {
     // The case no real test image has and the one that matters: a logo with an open centre passes
     // every size and area check and still bonds to nothing.
-    expect(coversClipDisc([circle(120), circle(R + 5)], R)).toBe(false);
+    expect(cov([circle(120), circle(OUT + 5)])).toBeLessThan(0.05);
+    expect(cov([circle(120), circle(OUT + 5)])).toBeLessThan(HUBCAP_MIN_CLIP_COVERAGE);
   });
 
-  it('refuses a shape that covers the centre but not all of the annulus', () => {
-    // a tall narrow bar through the middle: contains the origin, misses the clips left and right
-    expect(coversClipDisc([rect(6, 200)], R)).toBe(false);
+  it('reports a partial for a bar that crosses the centre but misses the sides', () => {
+    const c = cov([rect(6, 200)]);
+    expect(c).toBeGreaterThan(0);
+    expect(c).toBeLessThan(HUBCAP_MIN_CLIP_COVERAGE);
+  });
+
+  it('tolerates a nick at the rim, which refusing on one sample did not', () => {
+    // The regression: probing only the outer radius refused a real silhouette over 1 sample in 64
+    // while its clips were otherwise entirely supported. A small bite out of the rim has to stay
+    // acceptable; a clip over a hole must not.
+    const nicked: Outline = [circle(OUT + 5), circle(1.2, 24, OUT, 0)];
+    expect(cov(nicked)).toBeGreaterThan(HUBCAP_MIN_CLIP_COVERAGE);
   });
 });
 
@@ -209,7 +225,9 @@ describe('the silhouette of loaded artwork', () => {
 
     // two islands: a real outcome, and what the clip check exists to refuse
     expect(outlineArea(rings)).toBeCloseTo(800, 0);
-    expect(coversClipDisc(rings, HUBCAP_CLIP_FACE_OUTER_R_MM)).toBe(false);
+    expect(
+      clipCoverage(rings, HUBCAP_CLIP_FACE_INNER_R_MM, HUBCAP_CLIP_FACE_OUTER_R_MM),
+    ).toBeLessThan(HUBCAP_MIN_CLIP_COVERAGE);
   }, 30000);
 
   it('flips both axes, so the part is neither upside down nor mirrored', async () => {
