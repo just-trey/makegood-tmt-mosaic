@@ -43,3 +43,28 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # A git tag ships the site (the trigger above) but is not a GitHub Release.
+  # This mints the Release from the tag's CHANGELOG section, so the tag push
+  # stays the single go-live action and the Releases page can't drift behind the
+  # tags again (it did: releases stopped at v0.2.1 while tags reached v0.6.0).
+  # Gated on `build` so a Release is never published for a tag that fails tests.
+  # Only fires for real tag pushes -- a manual workflow_dispatch redeploy makes
+  # no Release. Backfilling existing tags is backfill-releases.yml.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub Release from CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/changelog-extract.mjs "$GITHUB_REF_NAME" > release-notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            --verify-tag
