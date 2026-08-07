@@ -190,8 +190,13 @@ export function narrowFeatureArea(wasm: ManifoldAPI, rings: Outline, widthMm: nu
  * punch a hole wherever two colours overlap — which, in artwork drawn as stacked layers, is most
  * of it.
  *
- * Y in artwork space is Z in the part's ground plane; the caller scales and centres with
- * `fitOutline`.
+ * Artwork Y is NEGATED into part Z. Artwork space is y-down (SVG's convention, and the raster
+ * decoder's), the part's ground plane is not, and the cut path corrects for exactly this —
+ * `DesignPlacement.zMul` is documented as "-1 (base SVG y-down -> viewport correction)". Mapping
+ * y straight to z instead builds the part upside down relative to the artwork printed on it,
+ * which looks like a plausible shape right up until you compare the two.
+ *
+ * The caller scales and centres with `fitOutline`.
  */
 export function silhouetteFromShapes(wasm: ManifoldAPI, shapes: SVGShape[]): Outline {
   const regions = shapes
@@ -200,7 +205,7 @@ export function silhouetteFromShapes(wasm: ManifoldAPI, shapes: SVGShape[]): Out
     .map(
       (loops) =>
         new wasm.CrossSection(
-          loops.map((l) => l.map((p) => [p.x, p.y] as [number, number])),
+          loops.map((l) => l.map((p) => [p.x, -p.y] as [number, number])),
           'EvenOdd',
         ),
     );

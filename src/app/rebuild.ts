@@ -12,6 +12,7 @@ import {
   type ArtworkBuildInput,
 } from '../geometry/assembly';
 import { currentAssemblyKind } from '../assembly/kinds';
+import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
 import {
   frameModelIfPending,
   getModelGroup,
@@ -283,6 +284,12 @@ async function rebuildAssemblyScene(): Promise<void> {
   // through it rather than the legacy fields, without changing what value actually reaches the
   // build.
   syncActiveArtworkPlacement();
+
+  // A part whose shape follows the artwork has to be rebuilt when the artwork changes, and the
+  // rebuild is the one place that runs for every way that can happen — a load, a re-trace, a
+  // removal, a restored session. Guarded by a signature so it is a no-op the rest of the time;
+  // `schedule: false` because scheduling another rebuild from inside one would never settle.
+  if (generatedPartsNeedRebuild()) await asmRebuildGeneratedParts({ schedule: false });
   // Every instance whose source still resolves, each carrying its own placement and zone binding.
   // With one unbound instance — every flow that exists until the panel can add a second — this is
   // exactly the single global placement the build used to take.

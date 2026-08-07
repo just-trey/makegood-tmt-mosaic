@@ -84,6 +84,12 @@ export function syncBuildParamControl(): void {
   if (!row || !input || !label) return;
   const param = currentAssemblyKind()?.buildParam;
   row.style.display = param ? '' : 'none';
+  // The silhouette toggle rides with the size control: both are "what shape is this part", and
+  // only a kind that generates its own mesh has either.
+  const silRow = $('#asm-silhouette-row');
+  const silInput = $<HTMLInputElement>('#p-asm-silhouette');
+  if (silRow) silRow.style.display = param ? '' : 'none';
+  if (silInput) silInput.checked = state.hubcapSilhouette;
   if (!param) return;
   label.textContent = param.label;
   input.min = String(round2(param.minMm));
@@ -160,6 +166,23 @@ export async function clampBuildParamToPrinter(): Promise<void> {
   const param = currentAssemblyKind()?.buildParam;
   if (param) await commitBuildParam(state[param.id]);
   syncBuildParamControl();
+}
+
+/**
+ * Turn the silhouette toggle on or off and rebuild the part around it.
+ *
+ * Its own entry point rather than a branch of applyBuildParam: this changes what the shape IS
+ * rather than how big it is, and it has no value to clamp. The rebuild is the same one, because
+ * the part's mesh depends on it exactly as it depends on the size.
+ */
+export async function applyHubcapSilhouette(on: boolean): Promise<void> {
+  if (on === state.hubcapSilhouette) return;
+  state.hubcapSilhouette = on;
+  const kind = currentAssemblyKind();
+  syncBuildParamControl();
+  syncTemplateLink();
+  await asmRebuildGeneratedParts();
+  if (kind) track('hubcap_silhouette_toggled', { kind: kind.id, on });
 }
 
 /** Clamp, store and regenerate. Returns the committed value, or undefined if nothing moved. */

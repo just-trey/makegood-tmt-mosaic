@@ -273,7 +273,11 @@ export async function asmLoadPartBuffer(
  * For a role that builds its own mesh (AssemblyRole.buildMesh), `positions` is the *asset*, and
  * the built result is what the part actually keeps.
  */
-async function asmAdoptMesh(part: AssemblyPart, positions: Float32Array): Promise<void> {
+async function asmAdoptMesh(
+  part: AssemblyPart,
+  positions: Float32Array,
+  opts: { schedule?: boolean } = {},
+): Promise<void> {
   const role = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId);
   // A dropped file REPLACES the part, on a generated role as much as any other — running the
   // builder over it would hand back the user's mesh with a generated disc fused onto it, which is
@@ -304,7 +308,10 @@ async function asmAdoptMesh(part: AssemblyPart, positions: Float32Array): Promis
   // view ended up fitted to whichever subset had finished.
   requestFrame();
   notifyPartsChanged();
-  scheduleRebuild();
+  // Skipped when a rebuild is already the caller — otherwise regenerating a part *during* a
+  // rebuild queues another one, and a part whose shape follows the artwork would do that on
+  // every single pass.
+  if (opts.schedule !== false) scheduleRebuild();
 }
 
 /**
@@ -316,16 +323,51 @@ async function asmAdoptMesh(part: AssemblyPart, positions: Float32Array): Promis
  * control would already be showing the new size while the part in the scene, and in any export,
  * was still the old mesh. Saying nothing there is worse than the failure.
  */
-export async function asmRebuildGeneratedParts(): Promise<boolean> {
+/**
+ * What a generated part's shape currently depends on, as a string.
+ *
+ * The hubcap's silhouette follows the artwork, so its mesh has to be rebuilt whenever the artwork
+ * changes — and "the artwork changed" happens through a load, a re-trace, a removal, a restored
+ * session and a zone rebinding, which is too many places to hook one at a time. The rebuild runs
+ * for all of them, so it asks this instead, and rebuilds only when the answer moved.
+ *
+ * Shape identity rather than contents: `parsed` is treated as immutable once parsed (regions.ts
+ * memoises on it), so a re-trace produces a new object and a mere re-render does not.
+ */
+function generatedShapeSignature(): string {
+  const kind = currentAssemblyKind();
+  if (!kind?.roles.some((r) => r.buildMesh)) return '';
+  return [
+    state.hubcapSilhouette ? 'sil' : 'circle',
+    state.hubcapDiameterMm,
+    state.sources.length,
+    state.sources.map((src) => src.parsed?.shapes.length ?? 0).join(','),
+  ].join('|');
+}
+
+let lastGeneratedSignature: string | null = null;
+
+/** Whether a generated part's inputs have moved since it was last built. */
+export function generatedPartsNeedRebuild(): boolean {
+  return generatedShapeSignature() !== lastGeneratedSignature;
+}
+
+export async function asmRebuildGeneratedParts(
+  opts: { schedule?: boolean } = {},
+): Promise<boolean> {
   const kind = currentAssemblyKind();
   const parts = state.assembly.parts.filter((p) => {
     const role = kind?.roles.find((r) => r.id === p.roleId);
     return role?.buildMesh && p.assetPositions;
   });
-  if (!parts.length) return true;
+  if (!parts.length) {
+    lastGeneratedSignature = generatedShapeSignature();
+    return true;
+  }
+  lastGeneratedSignature = generatedShapeSignature();
   beginWork();
   try {
-    for (const part of parts) await asmAdoptMesh(part, part.assetPositions!);
+    for (const part of parts) await asmAdoptMesh(part, part.assetPositions!, opts);
     return true;
   } catch (e) {
     console.error(e);

@@ -1,5 +1,13 @@
 import { HUBCAP_PLATE } from '../export/threemf';
-import { getManifold, soupToManifold, manifoldIsValid, manifoldToMeshes } from './manifold';
+import { outlineBounds, type Outline } from './hubcapOutline';
+import { shapeToFeature } from './regions';
+import {
+  extrudeRegionToSoup,
+  getManifold,
+  manifoldIsValid,
+  manifoldToMeshes,
+  soupToManifold,
+} from './manifold';
 
 /**
  * The hubcap is the app's first *generated* part: only its four mounting clips ship as a baked
@@ -285,12 +293,39 @@ export interface HubcapBody {
  * than one. `components` is reported rather than asserted so the caller can say something useful —
  * an outline that doesn't reach the clips is a user error, not a bug.
  */
+/**
+ * What the disc is cut to: a plain circle, or the silhouette of the artwork on it.
+ *
+ * The two build differently on purpose. A circle reproduces the reference part, chamfered edge
+ * and all. A silhouette is cut FLAT — square edges — which makes it a plain prism on the outline,
+ * so it goes through `extrudeRegionToSoup` rather than through a second chamfer builder that
+ * would have to loft between an outline and an erosion of it.
+ */
+export type HubcapShape =
+  { kind: 'circle'; diameterMm: number } | { kind: 'silhouette'; outline: Outline };
+
+/** The disc alone, in the part's native frame, for either kind of shape. */
+function hubcapDiscFor(shape: HubcapShape): Float32Array {
+  if (shape.kind === 'circle') return hubcapDiscSoup(shape.diameterMm);
+  const feature = shapeToFeature({
+    fill: '',
+    order: 0,
+    // artwork/outline space is (x, z) here; the extruder speaks turf features keyed (x, y)
+    loops: shape.outline.map((r) => r.map((p) => ({ x: p.x, y: p.z }))),
+  });
+  const soup = feature
+    ? extrudeRegionToSoup(feature, HUBCAP_FACE_Y, HUBCAP_THICKNESS_MM, 0, 1)
+    : null;
+  if (!soup) throw new Error('the silhouette enclosed no area to cut the hubcap from');
+  return soup;
+}
+
 export async function buildHubcapBody(
-  diameterMm: number,
+  shape: HubcapShape,
   clipsSoup: Float32Array,
 ): Promise<HubcapBody> {
   const wasm = await getManifold();
-  const disc = soupToManifold(wasm, hubcapDiscSoup(diameterMm));
+  const disc = soupToManifold(wasm, hubcapDiscFor(shape));
   const clips = soupToManifold(wasm, clipsSoup);
   try {
     if (!manifoldIsValid(disc)) throw new Error('generated hubcap disc is not a closed solid');
@@ -311,3 +346,55 @@ export async function buildHubcapBody(
     clips.delete();
   }
 }
+
+/**
+ * How big a silhouette may be before it stops fitting the wheel it mounts on.
+ *
+ * The wheel is round and 280mm across, so what has to fit inside that circle is the outline's
+ * furthest CORNER, not its longest side — a square at 280mm on a side reaches r=198 and would
+ * overhang the rim by 58mm. So the cap is derived per shape: scale the longest side up until the
+ * furthest point sits on the rim, and no further.
+ */
+export const HUBCAP_WHEEL_DIAMETER_MM = 280;
+
+export function maxSizeForWheel(outline: Outline): number {
+  const [x0, z0, x1, z1] = outlineBounds(outline);
+  const longest = Math.max(x1 - x0, z1 - z0);
+  if (!(longest > 0)) return HUBCAP_WHEEL_DIAMETER_MM;
+  // furthest point from the axis once the outline is centred on its own bounds
+  const cx = (x0 + x1) / 2;
+  const cz = (z0 + z1) / 2;
+  let far = 0;
+  for (const r of outline)
+    for (const p of r) {
+      const d = Math.hypot(p.x - cx, p.z - cz);
+      if (d > far) far = d;
+    }
+  if (!(far > 0)) return HUBCAP_WHEEL_DIAMETER_MM;
+  // at longest = L the outline reaches `far`; it may reach at most the wheel's radius
+  return (longest * (HUBCAP_WHEEL_DIAMETER_MM / 2)) / far;
+}
+
+/**
+ * Narrower than this and a feature is one nozzle-width of plastic standing the disc's full 3mm.
+ * A printability threshold, not a geometric one — 1mm is comfortably over a 0.4mm nozzle while
+ * still catching the hair-thin strokes a traced cartoon leaves behind.
+ */
+export const HUBCAP_MIN_FEATURE_MM = 1;
+
+/** Silhouette asked for with nothing loaded to take one from. */
+export const HUBCAP_SILHOUETTE_NO_ARTWORK =
+  'The hubcap is set to follow your artwork’s shape, but no artwork is loaded — it stays round ' +
+  'until you add one.';
+
+/**
+ * The refusal. Carries no numbers so it can be retracted and re-raised on every rebuild (see
+ * AssemblyPart.buildWarning), and the size that caused it is in the control beside it.
+ */
+export const HUBCAP_SILHOUETTE_MISSES_CLIPS =
+  'That shape doesn’t cover the hubcap’s mounting clips, so it stays round — make it bigger, or ' +
+  'use artwork whose middle is filled in.';
+
+export const HUBCAP_SILHOUETTE_THIN_DETAIL =
+  'Some of this shape is thinner than 1mm, which is about one nozzle wide — those parts will be ' +
+  'fragile. Simplifying the artwork or making the hubcap bigger will thicken them.';

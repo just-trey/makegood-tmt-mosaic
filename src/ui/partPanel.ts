@@ -12,6 +12,7 @@ import { renderArtworkList } from './artworkListPanel';
 import { renderPatternPicker } from './artworkPanel';
 import {
   applyBuildParam,
+  applyHubcapSilhouette,
   renderAssemblyPartList,
   renderAssemblyRoleControls,
   syncAssemblyKindControls,
@@ -332,6 +333,9 @@ export function initPartPanel(): void {
   // keystroke would queue a boolean for each digit typed.
   input('#p-asm-buildparam').addEventListener('change', () => {
     void applyBuildParam(numVal('#p-asm-buildparam', NaN));
+  });
+  input('#p-asm-silhouette').addEventListener('change', (e) => {
+    void applyHubcapSilhouette((e.target as HTMLInputElement).checked);
   });
 
   // STL reference upload

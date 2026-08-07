@@ -1,12 +1,26 @@
 import type { AssemblyKind, AssemblyRole } from '../types';
 import { state } from '../state/store';
 import {
+  HUBCAP_CLIP_FACE_OUTER_R_MM,
   HUBCAP_DISCONNECTED_WARNING,
   HUBCAP_MIN_DIAMETER_MM,
+  HUBCAP_MIN_FEATURE_MM,
+  HUBCAP_SILHOUETTE_MISSES_CLIPS,
+  HUBCAP_SILHOUETTE_NO_ARTWORK,
+  HUBCAP_SILHOUETTE_THIN_DETAIL,
   buildHubcapBody,
   hubcapPlacement,
   hubcapTemplateSvg,
+  maxSizeForWheel,
+  type HubcapShape,
 } from '../geometry/hubcap';
+import { getManifold } from '../geometry/manifold';
+import {
+  coversClipDisc,
+  fitOutline,
+  narrowFeatureArea,
+  silhouetteFromShapes,
+} from '../geometry/hubcapOutline';
 import { getPrinter } from '../export/printers';
 
 /**
@@ -108,11 +122,15 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
           return hubcapPlacement(state.hubcapDiameterMm, `${plate.w}x${plate.d}`);
         },
         buildMesh: async (asset) => {
-          const built = await buildHubcapBody(state.hubcapDiameterMm, asset);
+          const shape = await hubcapShapeFromState();
+          const built = await buildHubcapBody(shape.shape, asset);
           return {
             positions: built.positions,
             vertices: built.vertices,
-            warning: built.components > 1 ? HUBCAP_DISCONNECTED_WARNING : undefined,
+            // The generator's own complaint wins: "your silhouette misses the clips" says what to
+            // do about it, where "the disc came out in five pieces" only says what happened.
+            warning:
+              shape.warning ?? (built.components > 1 ? HUBCAP_DISCONNECTED_WARNING : undefined),
           };
         },
       },
@@ -290,4 +308,48 @@ export function asmKindCanAutoLoad(kind: AssemblyKind | null): boolean {
     const partId = roleLibraryPartId(r, variantId);
     return !partId || !!state.assembly.library.find((e) => e.id === partId);
   });
+}
+
+/**
+ * The shape the hubcap should be cut to right now, plus anything the user needs told about it.
+ *
+ * Lives here rather than in src/geometry/ because it is the one place that reads *state* — which
+ * artwork is loaded, what size was asked for, whether the silhouette toggle is on. The geometry
+ * modules stay pure and testable; this is the seam where the app's current situation becomes a
+ * shape.
+ *
+ * Every refusal falls back to the circle rather than to nothing. A hubcap that is round when you
+ * expected a character, with a line saying why, is a part you can still print and a problem you
+ * can still fix; an empty scene is neither.
+ */
+export async function hubcapShapeFromState(): Promise<{
+  shape: HubcapShape;
+  warning?: string;
+}> {
+  const circle: HubcapShape = { kind: 'circle', diameterMm: state.hubcapDiameterMm };
+  if (!state.hubcapSilhouette) return { shape: circle };
+
+  const shapes = state.sources.flatMap((s) => s.parsed?.shapes ?? []);
+  if (!shapes.length) return { shape: circle, warning: HUBCAP_SILHOUETTE_NO_ARTWORK };
+
+  const wasm = await getManifold();
+  const raw = silhouetteFromShapes(wasm, shapes);
+  if (!raw.length) return { shape: circle, warning: HUBCAP_SILHOUETTE_NO_ARTWORK };
+
+  // The size control means "longest side" in both modes, but a silhouette also has to fit the
+  // wheel it mounts on, and its corners reach further than its longest side does.
+  const size = Math.min(state.hubcapDiameterMm, maxSizeForWheel(raw));
+  const outline = fitOutline(raw, size);
+
+  // The one hard gate. A shape that misses the clips exports, looks like a hubcap, and comes off
+  // the plate in pieces — so it is refused up front rather than discovered after the boolean.
+  if (!coversClipDisc(outline, HUBCAP_CLIP_FACE_OUTER_R_MM))
+    return { shape: circle, warning: HUBCAP_SILHOUETTE_MISSES_CLIPS };
+
+  // Printability, not correctness: a 0.5mm spike is a valid solid and one nozzle of plastic.
+  const narrow = narrowFeatureArea(wasm, outline, HUBCAP_MIN_FEATURE_MM);
+  return {
+    shape: { kind: 'silhouette', outline },
+    warning: narrow > 1 ? HUBCAP_SILHOUETTE_THIN_DETAIL : undefined,
+  };
 }
