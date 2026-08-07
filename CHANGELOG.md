@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   part the export had just centred on the plate, could put the tower straight
   through it. Affects flat-plate exports and any part whose placement didn't
   verify; parts with a baked tower position are unchanged.
+- The suggested tower position is also now the corner it claims to be. It was
+  worked out as the centre of a corner-inset square but written into the file as
+  the tower's front-left corner, so the tower landed half its own width up and
+  right of the space that had been checked as free — into the part on a near
+  corner, and off the edge of the bed on a far one.
 
 - **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP (and a
   GIF or BMP) as well

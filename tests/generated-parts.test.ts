@@ -19,6 +19,12 @@ import {
   onAssemblyPartsChanged,
 } from '../src/assembly/parts';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
+import {
+  applyBuildParam,
+  clampBuildParamToPrinter,
+  syncAssemblyKindControls,
+} from '../src/ui/assemblyPanel';
+import { track } from '../src/analytics/track';
 import { build3MFCombined, type ExportPart } from '../src/export/threemf';
 import { getPrinter } from '../src/export/printers';
 import {
@@ -70,7 +76,31 @@ function generatedPart(over: Partial<AssemblyPart> = {}): AssemblyPart {
   return p;
 }
 
+/**
+ * The left panel's markup, enough of it for the functions under test to do their work.
+ *
+ * Without this they hit their `if (!row || !input) return` guards and every assertion below passes
+ * against a function that did nothing — the control's own clamping and re-issuing is most of what
+ * these tests are about.
+ */
+function mountPanel(): void {
+  document.body.innerHTML = `
+    <div id="asm-radius-row"></div>
+    <div id="asm-buildparam-row"><label id="asm-buildparam-label"></label>
+      <input type="number" id="p-asm-buildparam" /></div>
+    <div id="asm-template-row"><a id="asm-template-link"></a></div>
+    <div id="asm-zone-template-row"><span id="asm-zone-template-links"></span></div>
+    <div id="asm-variant-row"><span id="asm-variant-controls"></span></div>
+    <div id="assembly-part-list"></div>
+    <div id="asm-role-controls"></div>
+  `;
+  // jsdom implements neither, and syncTemplateLink revokes the previous URL on every call
+  URL.createObjectURL = vi.fn(() => 'blob:hubcap-template');
+  URL.revokeObjectURL = vi.fn();
+}
+
 beforeEach(() => {
+  mountPanel();
   state.shapeKind = 'assembly';
   state.assembly.kindId = 'hubcap';
   state.assembly.parts = [];
@@ -256,6 +286,94 @@ describe('asmRebuildGeneratedParts', () => {
   });
 });
 
+describe('the diameter stays inside what the selected printer can print', () => {
+  it('re-clamps when the kind becomes active again, not only on printer change', async () => {
+    // The printer handler reads whichever kind is active *then*, so it does nothing while a kind
+    // with no build parameter is selected. Without a clamp on the way back in, this route kept a
+    // 320mm disc alive onto a 256mm bed: set it big on the H2D, leave the kind, change printer,
+    // come back.
+    state.printerId = 'bambu-h2d'; // 350x320
+    await applyBuildParam(320);
+    expect(state.hubcapDiameterMm).toBe(320);
+
+    state.assembly.kindId = 'wheel'; // no buildParam — the printer handler is a no-op here
+    state.printerId = 'bambu-x1c'; // 256x256
+    await clampBuildParamToPrinter();
+    expect(state.hubcapDiameterMm).toBe(320); // nothing has caught it yet, by design
+
+    state.assembly.kindId = 'hubcap';
+    syncAssemblyKindControls();
+    await vi.waitFor(() => expect(state.hubcapDiameterMm).toBe(256));
+  });
+
+  it('reports the size that was built, not the one that was typed', async () => {
+    state.printerId = 'bambu-x1c';
+
+    await applyBuildParam(9999);
+
+    expect(state.hubcapDiameterMm).toBe(256);
+    expect(track).toHaveBeenCalledWith(
+      'build_param_changed',
+      expect.objectContaining({ value: 256 }),
+    );
+  });
+
+  it('renders the control against the kind and the selected printer', () => {
+    state.printerId = 'bambu-x1c'; // 256x256
+    syncAssemblyKindControls();
+
+    const input = document.querySelector('#p-asm-buildparam') as HTMLInputElement;
+    expect(document.querySelector('#asm-buildparam-label')!.textContent).toBe('Hubcap diameter');
+    expect(Number(input.max)).toBe(256); // the plate, not an invented constant
+    expect(Number(input.min)).toBeCloseTo(32.09, 1);
+    // `any`, or `min` becomes the step base and the default lands off-grid as :invalid
+    expect(input.step).toBe('any');
+    expect(document.querySelector<HTMLElement>('#asm-buildparam-row')!.style.display).not.toBe(
+      'none',
+    );
+  });
+
+  it('hides the control for a kind that has no build parameter', () => {
+    state.assembly.kindId = 'wheel';
+    syncAssemblyKindControls();
+
+    expect(document.querySelector<HTMLElement>('#asm-buildparam-row')!.style.display).toBe('none');
+  });
+
+  it('re-issues the generated template whenever the size changes', async () => {
+    syncAssemblyKindControls();
+    vi.mocked(URL.createObjectURL).mockClear();
+
+    await applyBuildParam(180);
+
+    // a generated template is true-to-size only for the size it was built at
+    expect(URL.createObjectURL).toHaveBeenCalled();
+    const svg = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+    expect(await svg.text()).toContain('178mm'); // 180 less the 1mm chamfer each side
+  });
+
+  it('puts the live value back when the field is left empty', async () => {
+    state.hubcapDiameterMm = HUBCAP_DEFAULT_DIAMETER_MM;
+    syncAssemblyKindControls();
+    const input = document.querySelector('#p-asm-buildparam') as HTMLInputElement;
+    input.value = '';
+
+    await applyBuildParam(NaN);
+
+    expect(input.value).toBe(String(HUBCAP_DEFAULT_DIAMETER_MM));
+    expect(state.hubcapDiameterMm).toBe(HUBCAP_DEFAULT_DIAMETER_MM);
+  });
+
+  it('says nothing when the value did not move', async () => {
+    state.hubcapDiameterMm = HUBCAP_DEFAULT_DIAMETER_MM;
+    vi.mocked(track).mockClear();
+
+    await applyBuildParam(HUBCAP_DEFAULT_DIAMETER_MM);
+
+    expect(track).not.toHaveBeenCalled();
+  });
+});
+
 describe('a bed-specific plate position in the exporter', () => {
   const soup = new Float32Array([0, 0, 0, 20, 0, 0, 20, 0, 20, 0, 0, 0, 20, 0, 20, 0, 0, 20]);
   const materials = [
@@ -331,6 +449,71 @@ describe('a bed-specific plate position in the exporter', () => {
     const p = await proj(blob);
     expect(Number((p.wipe_tower_x as string[])[0])).toBeCloseTo(27.5488, 2);
     expect(Number((p.wipe_tower_y as string[])[0])).toBeCloseTo(27.8477, 2);
+  });
+
+  it('suggests a tower that lands on the plate and clear of a centred part', async () => {
+    // wipe_tower_x/y is the tower's front-left corner, so the suggestion has to BE a corner. When
+    // it was a centre, a part centred on the plate got a tower at 30..90 — inside it — and the far
+    // corners resolved to 226..286, off a 256mm plate entirely. Both without a word.
+    const TOWER = 60;
+    for (const printerId of ['bambu-x1c', 'snapmaker-u1', 'bambu-h2d']) {
+      const printer = getPrinter(printerId);
+      const { blob } = await build3MFCombined(materials, [part({ plateHint: undefined })], {
+        printer,
+      });
+      const p = await proj(blob);
+      const x = Number((p.wipe_tower_x as string[])[0]);
+      const y = Number((p.wipe_tower_y as string[])[0]);
+
+      // the whole nominal footprint has to be on the bed, corner to corner
+      expect(x, `${printerId} tower x`).toBeGreaterThanOrEqual(0);
+      expect(y, `${printerId} tower y`).toBeGreaterThanOrEqual(0);
+      expect(x + TOWER, `${printerId} tower right edge`).toBeLessThanOrEqual(printer.plate.w);
+      expect(y + TOWER, `${printerId} tower far edge`).toBeLessThanOrEqual(printer.plate.d);
+
+      // and clear of the 20mm part sitting on the plate centre
+      const pc = { x: printer.plate.w / 2, y: printer.plate.d / 2 };
+      const clearOnX = x + TOWER <= pc.x - 10 || x >= pc.x + 10;
+      const clearOnY = y + TOWER <= pc.y - 10 || y >= pc.y + 10;
+      expect(clearOnX || clearOnY, `${printerId} tower overlaps the centred part`).toBe(true);
+    }
+  });
+
+  it('keeps a far-corner suggestion on the plate', async () => {
+    // The case a centred, small part cannot reach: put a part over the near corner so the FAR one
+    // wins. Scored as a centre and emitted as a corner, the far corner resolved to plateW − 30,
+    // which with a 60mm tower runs 30mm off the back of the bed. The near corner hides this —
+    // it is wrong by the same +30 but still lands on the plate.
+    const TOWER = 60;
+    const big = new Float32Array([
+      0, 0, 0, 100, 0, 0, 100, 0, 100, 0, 0, 0, 100, 0, 100, 0, 0, 100,
+    ]);
+    const printer = getPrinter('bambu-x1c'); // 256x256
+    const { blob } = await build3MFCombined(
+      materials,
+      [
+        {
+          name: 'Corner hog',
+          nsign: 1,
+          bodySoup: big,
+          subs: [
+            { name: 'Body', matIndex: 0, soup: big },
+            { name: 'Red', matIndex: 1, soup: big },
+          ],
+          plateHint: 1,
+          fixedPos: { x: 0, y: 0 }, // occupies 0..100 in both axes
+        },
+      ],
+      { printer },
+    );
+
+    const p = await proj(blob);
+    const x = Number((p.wipe_tower_x as string[])[0]);
+    const y = Number((p.wipe_tower_y as string[])[0]);
+    expect(x + TOWER).toBeLessThanOrEqual(printer.plate.w);
+    expect(y + TOWER).toBeLessThanOrEqual(printer.plate.d);
+    // and it did pick the far corner, so this really exercised that branch
+    expect(x).toBeGreaterThan(printer.plate.w / 2);
   });
 
   it('writes a baked project setting and declares it an override', async () => {

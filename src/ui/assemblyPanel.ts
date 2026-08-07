@@ -26,7 +26,15 @@ export function syncAssemblyKindControls(): void {
   if (radiusRow) radiusRow.style.display = kind?.designFit === 'rect' ? 'none' : '';
 
   syncTemplateLink();
+  // Render synchronously, then correct. Leaving the render to the clamp alone deferred it by a
+  // microtask (the clamp awaits a rebuild), so the panel briefly showed the previous kind's
+  // control — the rest of this function is synchronous and the ordering should not depend on it.
   syncBuildParamControl();
+  // Re-clamp on the way in, not just on printer change: that handler reads the kind that is
+  // active *then*, so it does nothing while a kind without a build parameter is selected. Set a
+  // 320mm hubcap on the H2D, switch to the wheel, switch to the X1C, switch back, and the
+  // diameter survived every step that could have caught it — a 320mm disc on a 256mm bed.
+  void clampBuildParamToPrinter();
   renderAssemblyVariantControls();
   renderZoneTemplateLinks();
 }
@@ -103,9 +111,18 @@ const round2 = (v: number): number => Number(v.toFixed(2));
 export async function applyBuildParam(raw: number): Promise<void> {
   const kind = currentAssemblyKind();
   const param = kind?.buildParam;
-  if (param && Number.isFinite(raw) && (await commitBuildParam(raw))) {
-    track('build_param_changed', { kind: kind!.id, param: param.id, value: Math.round(raw) });
-    return;
+  if (param && Number.isFinite(raw)) {
+    const committed = await commitBuildParam(raw);
+    if (committed !== undefined) {
+      // the value that was BUILT, not the one that was typed: a typed 9999 clamps to the plate,
+      // and reporting the 9999 would put a size nothing was ever generated at into the catalog
+      track('build_param_changed', {
+        kind: kind.id,
+        param: param.id,
+        value: Math.round(committed),
+      });
+      return;
+    }
   }
   // nothing changed, or the field was left empty/garbage — put the live value back
   syncBuildParamControl();
@@ -125,20 +142,20 @@ export async function clampBuildParamToPrinter(): Promise<void> {
   syncBuildParamControl();
 }
 
-/** Clamp, store and regenerate. Returns whether the value actually moved. */
-async function commitBuildParam(raw: number): Promise<boolean> {
+/** Clamp, store and regenerate. Returns the committed value, or undefined if nothing moved. */
+async function commitBuildParam(raw: number): Promise<number | undefined> {
   const param = currentAssemblyKind()?.buildParam;
-  if (!param) return false;
+  if (!param) return undefined;
   const plate = getPrinter(state.printerId).plate;
   const max = Math.min(param.maxMm ?? Infinity, plate.w, plate.d);
   const next = Math.min(max, Math.max(param.minMm, raw));
-  if (next === state[param.id]) return false;
+  if (next === state[param.id]) return undefined;
   state[param.id] = next;
   // show the clamped value and re-issue the template before the rebuild, not after it
   syncBuildParamControl();
   syncTemplateLink();
   await asmRebuildGeneratedParts();
-  return true;
+  return next;
 }
 
 /**

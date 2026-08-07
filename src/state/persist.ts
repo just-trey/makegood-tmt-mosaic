@@ -10,6 +10,7 @@ import {
 } from './artwork';
 import { ASSEMBLY_KINDS } from '../assembly/kinds';
 import { HUBCAP_MIN_DIAMETER_MM } from '../geometry/hubcap';
+import { getPrinter } from '../export/printers';
 import { asmLoadFullAssembly } from '../assembly/parts';
 import { parseSVGDocument } from '../svg/parse';
 
@@ -372,12 +373,20 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.printerId = session.printerId;
   state.asmRadius = session.asmRadius;
   // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
-  // Floored on the way in as well: the control clamps, but a stored value doesn't come through the
-  // control, and below the floor the disc misses its mounting clips entirely — see
-  // HUBCAP_MIN_DIAMETER_MM. Not ceilinged, because the upper bound is the *printer's* plate and
-  // that is re-clamped when the printer is known (clampBuildParamToPrinter).
-  if (typeof session.hubcapDiameterMm === 'number' && Number.isFinite(session.hubcapDiameterMm))
-    state.hubcapDiameterMm = Math.max(HUBCAP_MIN_DIAMETER_MM, session.hubcapDiameterMm);
+  //
+  // Clamped at BOTH ends here, against the printer restored on the line above. A stored value
+  // never comes through the control that normally bounds it: below the floor the disc misses its
+  // mounting clips entirely, and above the plate it is a part the machine cannot print. An earlier
+  // version of this only floored, on the grounds that the ceiling would be re-applied once the
+  // printer was known — but no restore path calls that, so a session saved on a big bed came back
+  // oversized on a small one.
+  if (typeof session.hubcapDiameterMm === 'number' && Number.isFinite(session.hubcapDiameterMm)) {
+    const plate = getPrinter(state.printerId).plate;
+    state.hubcapDiameterMm = Math.min(
+      Math.min(plate.w, plate.d),
+      Math.max(HUBCAP_MIN_DIAMETER_MM, session.hubcapDiameterMm),
+    );
+  }
   state.baseFilamentId = session.baseFilamentId;
   state.autoMergeLevel = session.autoMergeLevel;
   state.baseColorKey = session.baseColorKey;

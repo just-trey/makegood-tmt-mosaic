@@ -536,7 +536,13 @@ export async function build3MFCombined(
    */
   function suggestTowerPos(items: Placed[]): { x: number; y: number } {
     const TOWER = 60; // nominal prime-tower footprint; the slicer sizes the real one per filament count
-    const half = TOWER / 2;
+    // `wipe_tower_x/y` is the tower's FRONT-LEFT CORNER, not its centre — settled against two
+    // reference projects a human positioned by hand (see HUBCAP_PLATE). So every position in here
+    // is a corner, and the footprint it scores runs from it, not around it. Scoring a centred box
+    // and returning its centre put the emitted tower half a tower up and right of the space that
+    // had been checked as free: on a 256mm plate the near corner became 30..90 (into a part that
+    // had just been centred there) and the far corner 226..286, off the plate entirely.
+    //
     // Scoring each axis on its own picks a corner neither axis objects to but a part still
     // occupies: "most room to the left" and "most room to the front" can meet inside the very
     // part they were measuring around. Score whole corners instead, against each part's own
@@ -545,26 +551,28 @@ export async function build3MFCombined(
     const overlap = (c: { x: number; y: number }) =>
       items.reduce((sum, pl) => {
         const ox =
-          Math.min(pl.tx! + pl.cx + pl.w / 2, c.x + half) -
-          Math.max(pl.tx! + pl.cx - pl.w / 2, c.x - half);
+          Math.min(pl.tx! + pl.cx + pl.w / 2, c.x + TOWER) -
+          Math.max(pl.tx! + pl.cx - pl.w / 2, c.x);
         const oy =
-          Math.min(pl.ty! + pl.cy + pl.d / 2, c.y + half) -
-          Math.max(pl.ty! + pl.cy - pl.d / 2, c.y - half);
+          Math.min(pl.ty! + pl.cy + pl.d / 2, c.y + TOWER) -
+          Math.max(pl.ty! + pl.cy - pl.d / 2, c.y);
         return sum + Math.max(0, ox) * Math.max(0, oy);
       }, 0);
+    // Flush into each corner, which is the footprint the centred version was already scoring
+    // (0..60 and so on) — only the coordinate written out was wrong, so the ranking is unchanged.
     const corners = [
-      { x: half, y: half },
-      { x: plateW - half, y: half },
-      { x: half, y: plateD - half },
-      { x: plateW - half, y: plateD - half },
+      { x: 0, y: 0 },
+      { x: plateW - TOWER, y: 0 },
+      { x: 0, y: plateD - TOWER },
+      { x: plateW - TOWER, y: plateD - TOWER },
     ];
     const best = corners.reduce((a, b) => (overlap(b) < overlap(a) ? b : a));
-    // Whether wipe_tower_x/y names the tower's center or its origin corner isn't pinned down, so
-    // the footprint here (centered, matching the inset) is one of two readings — near enough to
-    // rank corners, not near enough to promise clearance. A crowded plate gets a warning rather
-    // than a position that quietly prints through a part. A plate down to one filament prints no
-    // tower at all (the caster plate, which carries no artwork), so whatever this returns for it
-    // is never used and saying anything about it would be noise.
+    // Still a starting point for the human pass rather than a promise of clearance: the real tower
+    // is sized by the slicer per filament count, so TOWER is nominal, and a part's own footprint
+    // here is its bounding box — which over-reports a round part's occupancy. A crowded plate gets
+    // a warning rather than a position that quietly prints through a part. A plate down to one
+    // filament prints no tower at all (the caster plate, which carries no artwork), so whatever
+    // this returns for it is never used and saying anything about it would be noise.
     const needsTower = new Set(items.flatMap((pl) => pl.part.subs.map((s) => s.matIndex))).size > 1;
     if (needsTower && overlap(best) > 0)
       warnings.push(
