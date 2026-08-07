@@ -212,31 +212,33 @@ describe('the silhouette of loaded artwork', () => {
     expect(coversClipDisc(rings, HUBCAP_CLIP_FACE_OUTER_R_MM)).toBe(false);
   }, 30000);
 
-  it('flips artwork Y into part Z, so the part is not upside down', async () => {
+  it('flips both axes, so the part is neither upside down nor mirrored', async () => {
     const wasm = await getManifold();
     // Artwork space is y-down; the part's ground plane is not, and the cut path already corrects
     // for it (DesignPlacement.zMul). A shape sitting high in the artwork has to come out high on
     // the part. Mapping y straight through builds a plausible-looking shape that is inverted
     // relative to the picture printed on it.
-    const high: SVGShape = {
+    // a marker off to one corner, so each axis is checked independently
+    const corner: SVGShape = {
       fill: '#000',
       order: 0,
       loops: [
         [
-          { x: -10, y: -100 },
-          { x: 10, y: -100 },
-          { x: 10, y: -80 },
-          { x: -10, y: -80 },
+          { x: 40, y: -100 },
+          { x: 60, y: -100 },
+          { x: 60, y: -80 },
+          { x: 40, y: -80 },
         ],
       ],
     };
 
-    const rings = silhouetteFromShapes(wasm, [high]);
+    const [x0, z0, x1, z1] = outlineBounds(silhouetteFromShapes(wasm, [corner]));
 
-    // artwork y = -100..-80 (high on screen) must land at positive z, not negative
-    const [, z0, , z1] = outlineBounds(rings);
-    expect(z0).toBeGreaterThan(0);
-    expect(z1).toBeGreaterThan(z0);
+    // artwork (+x, -y) is right-and-high on screen; the part frame reads it left-and-high
+    expect(x1).toBeLessThan(0); // X mirrored — caught as "horizontally flipped"
+    expect(z0).toBeGreaterThan(0); // Y flipped — caught as "upside down"
+    expect(x1 - x0).toBeCloseTo(20, 6);
+    expect(z1 - z0).toBeCloseTo(20, 6);
   }, 30000);
 
   it('gives nothing back for artwork with no usable loops', async () => {

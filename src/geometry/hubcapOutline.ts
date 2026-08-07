@@ -190,11 +190,18 @@ export function narrowFeatureArea(wasm: ManifoldAPI, rings: Outline, widthMm: nu
  * punch a hole wherever two colours overlap — which, in artwork drawn as stacked layers, is most
  * of it.
  *
- * Artwork Y is NEGATED into part Z. Artwork space is y-down (SVG's convention, and the raster
- * decoder's), the part's ground plane is not, and the cut path corrects for exactly this —
- * `DesignPlacement.zMul` is documented as "-1 (base SVG y-down -> viewport correction)". Mapping
- * y straight to z instead builds the part upside down relative to the artwork printed on it,
- * which looks like a plausible shape right up until you compare the two.
+ * **Both artwork axes are negated into the part's frame.** Artwork space is y-down (SVG's
+ * convention, and the raster decoder's) and the part's ground plane is not, so Y flips —
+ * `DesignPlacement.zMul` on the cut path is documented as "-1 (base SVG y-down -> viewport
+ * correction)". X flips as well because the design face points +Y and is *seen from above*: a
+ * surface's own frame reads mirrored from the side you look at it, which is what the cut path's
+ * face basis (src/scene/faceFrame.ts) resolves and what this, building the part before any face
+ * exists to ask, has to state as a constant. It is a constant safely: preferFaceNormal pins this
+ * kind's design face to +Y.
+ *
+ * Getting either one wrong produces a shape that looks entirely plausible on its own and is
+ * only wrong next to the picture printed on it — the two were caught one at a time, from
+ * screenshots, as "upside down" and then as "mirrored".
  *
  * The caller scales and centres with `fitOutline`.
  */
@@ -205,7 +212,7 @@ export function silhouetteFromShapes(wasm: ManifoldAPI, shapes: SVGShape[]): Out
     .map(
       (loops) =>
         new wasm.CrossSection(
-          loops.map((l) => l.map((p) => [p.x, -p.y] as [number, number])),
+          loops.map((l) => l.map((p) => [-p.x, -p.y] as [number, number])),
           'EvenOdd',
         ),
     );
