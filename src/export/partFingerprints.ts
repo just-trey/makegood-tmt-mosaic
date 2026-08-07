@@ -31,6 +31,7 @@ export const PART_FINGERPRINTS: Record<string, { triangleCount: number; bboxHash
   'chair-wing-left': { triangleCount: 37820, bboxHash: '24c53044' },
   'chair-wing-right': { triangleCount: 29822, bboxHash: '00aa6d07' },
   footrest: { triangleCount: 10772, bboxHash: 'c4dcb701' },
+  'hubcap-clips': { triangleCount: 8144, bboxHash: '43159c23' },
   'wheel-half': { triangleCount: 17968, bboxHash: 'ff17faa8' },
   'wheel-hub-cap': { triangleCount: 8994, bboxHash: 'f2bbf403' },
 };

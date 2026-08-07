@@ -9,6 +9,8 @@ import {
   setArtworkZone,
 } from './artwork';
 import { ASSEMBLY_KINDS } from '../assembly/kinds';
+import { HUBCAP_MIN_DIAMETER_MM } from '../geometry/hubcap';
+import { getPrinter } from '../export/printers';
 import { asmLoadFullAssembly } from '../assembly/parts';
 import { parseSVGDocument } from '../svg/parse';
 
@@ -45,6 +47,8 @@ export interface PersistedSession {
   recessBg: boolean;
   printerId: string;
   asmRadius: number;
+  /** Optional: sessions written before the hubcap kind existed have no value for it. */
+  hubcapDiameterMm?: number;
   assembly: { kindId: string | null; variantId: string | null };
   baseFilamentId: string | null;
   autoMergeLevel: number;
@@ -134,6 +138,7 @@ function snapshotSession(): PersistedSession {
     recessBg: state.recessBg,
     printerId: state.printerId,
     asmRadius: state.asmRadius,
+    hubcapDiameterMm: state.hubcapDiameterMm,
     assembly: { kindId: state.assembly.kindId, variantId: state.assembly.variantId },
     baseFilamentId: state.baseFilamentId,
     autoMergeLevel: state.autoMergeLevel,
@@ -367,6 +372,21 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.recessBg = session.recessBg;
   state.printerId = session.printerId;
   state.asmRadius = session.asmRadius;
+  // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
+  //
+  // Clamped at BOTH ends here, against the printer restored on the line above. A stored value
+  // never comes through the control that normally bounds it: below the floor the disc misses its
+  // mounting clips entirely, and above the plate it is a part the machine cannot print. An earlier
+  // version of this only floored, on the grounds that the ceiling would be re-applied once the
+  // printer was known — but no restore path calls that, so a session saved on a big bed came back
+  // oversized on a small one.
+  if (typeof session.hubcapDiameterMm === 'number' && Number.isFinite(session.hubcapDiameterMm)) {
+    const plate = getPrinter(state.printerId).plate;
+    state.hubcapDiameterMm = Math.min(
+      Math.min(plate.w, plate.d),
+      Math.max(HUBCAP_MIN_DIAMETER_MM, session.hubcapDiameterMm),
+    );
+  }
   state.baseFilamentId = session.baseFilamentId;
   state.autoMergeLevel = session.autoMergeLevel;
   state.baseColorKey = session.baseColorKey;

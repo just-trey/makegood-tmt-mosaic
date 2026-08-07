@@ -1,4 +1,4 @@
-import type { AssemblyPart } from '../types';
+import type { AssemblyKind, AssemblyPart } from '../types';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { asmKindCanAutoLoad, currentAssemblyKind, currentVariantId } from '../assembly/kinds';
@@ -8,10 +8,12 @@ import {
   asmAddRolePart,
   asmLoadFullAssembly,
   asmLoadPartFile,
+  asmRebuildGeneratedParts,
   asmRemovePart,
   onAssemblyPartsChanged,
   switchChairVariant,
 } from '../assembly/parts';
+import { getPrinter } from '../export/printers';
 import { availableZones } from '../state/artwork';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
@@ -23,16 +25,163 @@ export function syncAssemblyKindControls(): void {
   const radiusRow = $('#asm-radius-row');
   if (radiusRow) radiusRow.style.display = kind?.designFit === 'rect' ? 'none' : '';
 
-  // Design template download — per-kind, so it follows the part selection.
-  const tplRow = $('#asm-template-row');
-  const tplLink = $<HTMLAnchorElement>('#asm-template-link');
-  if (tplRow && tplLink) {
-    tplRow.style.display = kind?.templateFile ? '' : 'none';
-    if (kind?.templateFile) tplLink.href = `templates/${kind.templateFile}`;
-  }
-
+  syncTemplateLink();
+  // Render synchronously, then correct. Leaving the render to the clamp alone deferred it by a
+  // microtask (the clamp awaits a rebuild), so the panel briefly showed the previous kind's
+  // control — the rest of this function is synchronous and the ordering should not depend on it.
+  syncBuildParamControl();
+  // Re-clamp on the way in, not just on printer change: that handler reads the kind that is
+  // active *then*, so it does nothing while a kind without a build parameter is selected. Set a
+  // 320mm hubcap on the H2D, switch to the wheel, switch to the X1C, switch back, and the
+  // diameter survived every step that could have caught it — a 320mm disc on a 256mm bed.
+  void clampBuildParamToPrinter();
   renderAssemblyVariantControls();
   renderZoneTemplateLinks();
+}
+
+/**
+ * Point the per-kind template download at the current template.
+ *
+ * Its own function, and called from the build-parameter path as well as on kind switch, because a
+ * generated template is only true-to-size for the size it was built at: leaving it to the kind
+ * switch alone meant changing the hubcap from 220mm to 180mm still handed out the 220mm
+ * drawing — a 1:1 template that is silently the wrong 1:1.
+ */
+function syncTemplateLink(): void {
+  const kind = currentAssemblyKind();
+  const tplRow = $('#asm-template-row');
+  const tplLink = $<HTMLAnchorElement>('#asm-template-link');
+  if (!tplRow || !tplLink) return;
+  const built = kind?.buildTemplate;
+  tplRow.style.display = built || kind?.templateFile ? '' : 'none';
+  if (built) tplLink.href = templateObjectUrl(built());
+  else if (kind?.templateFile) tplLink.href = `templates/${kind.templateFile}`;
+  if (built || kind?.templateFile) tplLink.download = `${kind!.id}-template.svg`;
+}
+
+/**
+ * Blob URL for a generated template, replacing the previous one. Revoked rather than left to the
+ * GC: this is re-run on every kind switch and every diameter edit, so the leak would be unbounded
+ * over a long session.
+ */
+let lastTemplateUrl: string | null = null;
+function templateObjectUrl(svg: string): string {
+  if (lastTemplateUrl) URL.revokeObjectURL(lastTemplateUrl);
+  lastTemplateUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  return lastTemplateUrl;
+}
+
+/**
+ * The kind's numeric build parameter, if it has one (AssemblyKind.buildParam) — the hubcap's disc
+ * diameter today. The upper bound is the selected printer's plate rather than a constant: a disc
+ * that doesn't fit the bed isn't a part, and letting someone dial past it only to be told at
+ * export time is the slower way to find out.
+ */
+export function syncBuildParamControl(): void {
+  const row = $('#asm-buildparam-row');
+  const input = $<HTMLInputElement>('#p-asm-buildparam');
+  const label = $('#asm-buildparam-label');
+  if (!row || !input || !label) return;
+  const param = currentAssemblyKind()?.buildParam;
+  row.style.display = param ? '' : 'none';
+  if (!param) return;
+  label.textContent = param.label;
+  input.min = String(round2(param.minMm));
+  input.max = String(round2(buildParamMax(param)));
+  // `any`, not a fixed step: `min` is the step base, so any real step would put the valid values
+  // on a grid offset by a measured constant (32.09mm), so round diameters land between two of
+  // them — the field reports :invalid and the spinner walks x.09, x.59. A diameter is a
+  // continuous measurement and shouldn't be quantized to make the widget tidy; arrows still step
+  // by 1mm.
+  input.step = 'any';
+  input.value = String(round2(state[param.id]));
+}
+
+const round2 = (v: number): number => Number(v.toFixed(2));
+
+/**
+ * Clearance kept between a generated part and the edge of the bed.
+ *
+ * Without it the ceiling is the plate exactly, so a 320mm disc on a 320mm bed touches both edges
+ * and every downstream check waves it through — the overhang warning allows 0.5mm, which is float
+ * slop rather than clearance, and a part 0.03mm inside the border slips under it silently. No bed
+ * is usable to its border anyway: brims, bed-exclusion zones and the nozzle's own reach all live
+ * in the last few millimetres. A round number and a usability margin, not a measured one.
+ */
+const PLATE_EDGE_MARGIN_MM = 5;
+
+/** The largest this parameter may go on the current printer. */
+function buildParamMax(param: NonNullable<AssemblyKind['buildParam']>): number {
+  const plate = getPrinter(state.printerId).plate;
+  return Math.min(
+    param.maxMm ?? Infinity,
+    plate.w - 2 * PLATE_EDGE_MARGIN_MM,
+    plate.d - 2 * PLATE_EDGE_MARGIN_MM,
+  );
+}
+
+/**
+ * Commit an edit to the kind's build parameter: clamp to the control's own bounds, then rebuild
+ * the generated parts from their cached assets.
+ *
+ * Clamping here rather than trusting the input's min/max because a typed value bypasses them —
+ * and out of range means a disc that misses its clips or overhangs the bed, both of which slice
+ * into something that looks fine on screen.
+ */
+export async function applyBuildParam(raw: number): Promise<void> {
+  const kind = currentAssemblyKind();
+  const param = kind?.buildParam;
+  if (param && Number.isFinite(raw)) {
+    const committed = await commitBuildParam(raw);
+    if (committed !== undefined) {
+      // the value that was BUILT, not the one that was typed: a typed 9999 clamps to the plate,
+      // and reporting the 9999 would put a size nothing was ever generated at into the catalog
+      track('build_param_changed', {
+        kind: kind.id,
+        param: param.id,
+        value: Math.round(committed),
+      });
+      return;
+    }
+  }
+  // nothing changed, or the field was left empty/garbage — put the live value back
+  syncBuildParamControl();
+}
+
+/**
+ * Re-clamp the build parameter against the *current* printer and regenerate if that moved it.
+ *
+ * Called when the printer changes: the plate is the parameter's upper bound, so switching to a
+ * smaller bed can leave a disc wider than the machine can print. Separate from applyBuildParam
+ * because this is not the user editing the value — per docs/analytics.md, events fire on real
+ * user intent, not on state the app corrected on their behalf.
+ */
+export async function clampBuildParamToPrinter(): Promise<void> {
+  const param = currentAssemblyKind()?.buildParam;
+  if (param) await commitBuildParam(state[param.id]);
+  syncBuildParamControl();
+}
+
+/** Clamp, store and regenerate. Returns the committed value, or undefined if nothing moved. */
+async function commitBuildParam(raw: number): Promise<number | undefined> {
+  const param = currentAssemblyKind()?.buildParam;
+  if (!param) return undefined;
+  const next = Math.min(buildParamMax(param), Math.max(param.minMm, raw));
+  const previous = state[param.id];
+  if (next === previous) return undefined;
+  state[param.id] = next;
+  // show the clamped value and re-issue the template before the rebuild, not after it
+  syncBuildParamControl();
+  syncTemplateLink();
+  if (await asmRebuildGeneratedParts()) return next;
+  // Put it back. The mesh in the scene is still the previous size, and this value is what the
+  // rest of the app uses to *describe* that mesh: the verified-plate lookup would pin a 250mm
+  // disc at the arrangement checked for 220mm — off the plate, tower inside the part — and the
+  // template would be re-issued at a size nothing was built at.
+  state[param.id] = previous;
+  syncBuildParamControl();
+  syncTemplateLink();
+  return undefined;
 }
 
 /**

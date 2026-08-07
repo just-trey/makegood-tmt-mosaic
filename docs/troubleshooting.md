@@ -332,3 +332,35 @@ there and an impossible one for an image; that is why they are two separate
 messages. There is no way to give a raster image an exact real-world size on
 load — use the Part section's design template to check the fit visually, and
 `Scale`/`Offset` to place it.
+
+## Troubleshooting: "The hubcap disc is too small to reach its mounting clips"
+
+Full text: _"The hubcap disc is too small to reach its mounting clips — they
+would print as four loose pieces. Increase the diameter."_
+
+Unlike every other part, the hubcap is generated rather than loaded: only its
+four mounting clips ship as a mesh, and the disc that carries them is built at
+whatever **Hubcap diameter** is set. Those two bodies meet on one flat plane
+and share no volume, so the disc has to actually cover the clips' top faces —
+an annulus from 10.6mm to 16.0mm out from the axis — for the result to be a
+single printable solid. Below about 21mm across, the disc lands entirely
+inside that annulus, touches nothing, and the part is five separate bodies
+that would come off the plate loose.
+
+This is why the diameter has a floor of about 32mm: the size at which the disc
+fully covers those faces, rather than the smaller size at which it merely
+grazes them. The control clamps to it, so **you shouldn't be able to reach
+this message by typing a number** — if you see it, the diameter came from
+somewhere that bypassed the control, most likely a restored session saved by a
+different or hand-edited build.
+
+The fix is the one the message gives: raise the diameter. Anything from the
+floor upward bonds across the whole clip face. Nothing is silently discarded
+in the meantime — the warning stays up until the part regenerates at a size
+that works, and it retracts on its own once it does.
+
+Worth knowing that the failure this prevents is invisible from the app: a
+hubcap whose clips didn't bond looks completely normal in the viewport, and
+exports to a 3MF that opens and slices without complaint. It only shows up as
+loose parts on the finished plate, which is why the check is a hard floor
+rather than advice.

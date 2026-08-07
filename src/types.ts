@@ -221,6 +221,20 @@ export interface AssemblyPart {
   /** which stl/parts.json entry this part was loaded from; absent for a drag-and-drop upload */
   libraryPartId?: string;
   /**
+   * The library asset exactly as it was fetched, for a role whose mesh is *built* from that asset
+   * rather than being it (see AssemblyRole.buildMesh). Kept so changing a build parameter can
+   * regenerate the part without another round trip to the network, and so `positions` stays free
+   * to hold the generated result like any other part's mesh.
+   */
+  assetPositions?: Float32Array;
+  /**
+   * The warning the last buildMesh raised, if any — retracted before the next rebuild so that
+   * fixing the parameter that caused it also clears it. Generation warnings are standing facts
+   * (nothing re-derives them per rebuild, so clearBuildWarnings doesn't apply), but they are
+   * standing facts the user can act on, which is exactly what dismissNotice is for.
+   */
+  buildWarning?: string;
+  /**
    * True when the *current* mesh came from a user drag-and-drop rather than the parts library.
    * Not derivable from `libraryPartId`: dropping a file onto a role that already auto-loaded its
    * library part deliberately leaves that id in place (attachBakedZones still needs it to find the
@@ -294,6 +308,36 @@ export interface AssemblyRole {
    * biggest flat face isn't the design face (e.g. the footrest's flat back outsizes its seat).
    */
   preferFaceNormal?: [number, number, number];
+  /**
+   * Builds this role's mesh from its library asset plus whatever the user has set, instead of the
+   * asset being the part. The hubcap is the one such role: only its four mounting clips ship as a
+   * mesh, and the disc they carry is generated at the requested diameter and unioned on.
+   *
+   * A function on the role rather than a flag the loader switches on, so that nothing in
+   * src/assembly/ has to know a hubcap exists — the loader's rule is just "if the role can build
+   * its own mesh, let it". Re-run by asmRebuildGeneratedParts when a parameter changes.
+   */
+  buildMesh?: (asset: Float32Array) => Promise<GeneratedMesh>;
+  /**
+   * The verified plate placement for this role's *current* build parameters, or undefined when
+   * nothing was verified for them.
+   *
+   * Generated parts can't use the fingerprint seal every other part's placement hangs off — their
+   * mesh varies by design, so it never matches. What can still be verified is a specific
+   * arrangement at a specific size, and this is how the role says which. Returning undefined is a
+   * real answer: it means the export should fall back to computing a position and saying so.
+   *
+   * Typed loosely because the placement shape lives in src/export/; the caller narrows it.
+   */
+  buildPlacement?: () => Record<string, unknown> | undefined;
+}
+
+/** What an AssemblyRole.buildMesh returns: the part's mesh, plus anything the user should know. */
+export interface GeneratedMesh {
+  positions: Float32Array;
+  vertices?: Float32Array;
+  /** Surfaced to the user as-is; the generator knows why its output is off, the loader doesn't. */
+  warning?: string;
 }
 
 /**
@@ -332,6 +376,25 @@ export interface AssemblyKind {
    * without one just doesn't show the link.
    */
   templateFile?: string;
+  /**
+   * Builds the template instead of serving a file, for a kind whose parts are generated and so
+   * have no one true size. Takes precedence over `templateFile`. Returns SVG text.
+   */
+  buildTemplate?: () => string;
+  /**
+   * A numeric build parameter this kind exposes to the user (the hubcap's disc diameter).
+   *
+   * Declared as data so the panel can render the control without knowing which kind it belongs
+   * to — the same reason `designFit` and `templateFile` are data. `id` is the `state` key the
+   * control writes, typed to the keys that actually exist so a rename can't silently detach it.
+   */
+  buildParam?: {
+    id: 'hubcapDiameterMm';
+    label: string;
+    minMm: number;
+    /** Upper bound beyond the printer's plate, when the part has one of its own. */
+    maxMm?: number;
+  };
   /**
    * Mutually-exclusive hardware variants of this assembly (the chair is all-Standard or all-Kit,
    * never mixed). When set, `state.assembly.variantId` holds the choice and roles with a

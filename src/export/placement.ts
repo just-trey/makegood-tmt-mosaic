@@ -1,4 +1,5 @@
 import type { AssemblyPart } from '../types';
+import { currentAssemblyKind } from '../assembly/kinds';
 import { meshFingerprint } from '../geometry/zoneCharts';
 import { PART_FINGERPRINTS } from './partFingerprints';
 import {
@@ -20,9 +21,11 @@ export type PartPlacement = Pick<
   | 'rotZdeg'
   | 'plateR'
   | 'fixedPos'
+  | 'fixedPosByPlate'
   | 'primeTowerDelta'
   | 'primeTowerDeltaByPlate'
   | 'objectSettings'
+  | 'projectSettings'
 >;
 
 /**
@@ -74,7 +77,17 @@ export const PLACEMENT: Record<string, PartPlacement> = {
  *     Nothing was withheld and nothing changed, so the caller says nothing.
  */
 export type PlacementReason =
-  'unknown-part' | 'mesh-mismatch' | 'unverified-upload' | 'no-baked-placement';
+  | 'unknown-part'
+  | 'mesh-mismatch'
+  | 'unverified-upload'
+  | 'no-baked-placement'
+  /**
+   * The part's mesh was *generated* (AssemblyRole.buildMesh), so no baked pose can exist for it:
+   * a seal pins one exact mesh, and this one is built to vary. Its own category because the
+   * fingerprint failing here means nothing has gone wrong — without it a generated part reports
+   * 'mesh-mismatch', whose documented meaning is that our own assets have drifted.
+   */
+  | 'generated-part';
 
 export type PlacementResolution =
   /** `key` is the id the lookup actually used — worth reporting, since a rename is what breaks it */
@@ -91,6 +104,20 @@ export type PlacementResolution =
  */
 export function resolvePlacement(part: AssemblyPart): PlacementResolution {
   const key = part.libraryPartId ?? part.roleId;
+  // Checked before anything else: a generated part's mesh is built to vary, so it can never match
+  // a seal, and every reason below would be reporting a failure that hasn't happened. The signal
+  // is `assetPositions` — set only when the loader handed the fetched asset to a role's buildMesh.
+  //
+  // Such a part can still have a *verified* plate, just not one a fingerprint can vouch for: a
+  // human checks one arrangement at one size, and the role's buildPlacement says whether the
+  // current build parameters are inside what was checked. When they aren't it returns undefined
+  // and this reports 'generated-part', exactly as before.
+  if (part.assetPositions) {
+    const role = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId);
+    const built = role?.buildPlacement?.() as PartPlacement | undefined;
+    if (built) return { placement: { plateHint: 1, ...built }, verified: true, key };
+    return { placement: undefined, verified: false, reason: 'generated-part', key };
+  }
   const placement = PLACEMENT[key];
   // A missing seal for a real PLACEMENT key can't ship (tests/placement.test.ts pins the two
   // tables together), and an unsealed constant is exactly what this guard exists to distrust — so
@@ -153,6 +180,14 @@ export function placementNotice(
       return {
         message: `Part "${partName}" doesn't match the mesh its verified print placement was baked against, ${tail}`,
         level: 'warn',
+      };
+    // Nothing was withheld and nothing drifted — this part has no fixed mesh to verify a pose
+    // against, by design. An info, for the same reason 'unverified-upload' is one: it reports a
+    // supported situation, and warning about it would erode the two reasons above that are defects.
+    case 'generated-part':
+      return {
+        message: `Part "${partName}" is generated to the size you chose, so no pre-verified print placement applies, ${tail}`,
+        level: 'info',
       };
   }
 }

@@ -1,9 +1,18 @@
 # Roadmap ideas (not built)
 
-- Hubcap assembly kind for the wheel **(requested directly by a volunteer,
-  2026-08-05 — treat as higher priority than the ideas below)**: a
-  standalone part, not dependent on the quarter-wheel work below — own STL,
-  own baked export placement per the [add-part skill](../.claude/skills/add-part).
+- Build the hubcap's outline from a user-supplied **silhouette** — a transparent
+  PNG/WebP or an STL — instead of only a circle, so a hubcap can be the shape of
+  a logo or a character. The generator
+  ([src/geometry/hubcap.ts](../src/geometry/hubcap.ts)) already takes the
+  diameter as the circle case of exactly this, and the pieces exist:
+  `parseRasterImage` already treats sub-threshold alpha as background, and
+  `traceLabelMap` returns the contours. Two checks are the actual work, and
+  neither is optional: a **minimum feature width**, because the 1mm chamfer
+  insets the outline by 1mm and eats anything thinner than about 2mm; and
+  **clip containment**, since the silhouette has to cover the clip tops
+  (r 10.6–16.0mm) or the clips bond to nothing — `HubcapBody.components` already
+  detects that case, so the check is about refusing it up front with a message
+  rather than discovering it after the boolean.
 - Snap a traced image's palette to the owned-filament list
   ([public/filaments.json](../public/filaments.json)) instead of to colors
   derived from the image, so an image's regions are filaments the user actually

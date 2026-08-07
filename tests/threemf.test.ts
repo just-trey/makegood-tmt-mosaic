@@ -135,10 +135,14 @@ describe('multi-plate world layout', () => {
     const x = Number(proj.wipe_tower_x[0]);
     const y = Number(proj.wipe_tower_y[0]);
     expect(Math.hypot(x - printer.plate.w / 2, y - printer.plate.d / 2)).toBeGreaterThan(50);
-    expect(x).toBeGreaterThan(0);
-    expect(x).toBeLessThan(printer.plate.w);
-    expect(y).toBeGreaterThan(0);
-    expect(y).toBeLessThan(printer.plate.d);
+    // The position is the tower's FRONT-LEFT CORNER, so a corner flush with the plate origin is
+    // 0, not an inset half-width — what matters is that the whole nominal footprint is on the bed.
+    // These read `> 0` while the suggestion was computed as a centre and written as a corner.
+    const TOWER = 60;
+    expect(x).toBeGreaterThanOrEqual(0);
+    expect(y).toBeGreaterThanOrEqual(0);
+    expect(x + TOWER).toBeLessThanOrEqual(printer.plate.w);
+    expect(y + TOWER).toBeLessThanOrEqual(printer.plate.d);
   });
 
   it('warns when two parts share a plate with no verified position between them', async () => {
@@ -177,16 +181,23 @@ describe('multi-plate world layout', () => {
   ];
 
   // Two parts in an L: every corner is inside their combined bounding box, but the notch between
-  // them is free. Choosing the insets per axis lands on (226, 226), inside the top-right part.
+  // them is free. Choosing the insets per axis lands in the top-right part instead.
   it('puts the suggested tower in a corner no part occupies, not one only the axes agree on', async () => {
+    const printer = getPrinter('bambu-x1c');
     const { blob, warnings } = await build3MFCombined(
       twoMaterials,
       [box('L', 110, 236, 10, 10), box('R', 110, 110, 136, 136)],
-      { printer: getPrinter('bambu-x1c') },
+      { printer },
     );
     const proj = await projectSettings(blob);
-    expect(Number(proj.wipe_tower_x[0])).toBeGreaterThan(196);
-    expect(Number(proj.wipe_tower_y[0])).toBeLessThan(60);
+    const TOWER = 60;
+    const x = Number(proj.wipe_tower_x[0]);
+    const y = Number(proj.wipe_tower_y[0]);
+    // the free notch is the front-right corner: right half, front edge. The figures moved by half
+    // a tower when the suggestion stopped being a centre written out as a corner.
+    expect(x).toBeGreaterThanOrEqual(printer.plate.w / 2);
+    expect(x + TOWER).toBeLessThanOrEqual(printer.plate.w);
+    expect(y + TOWER).toBeLessThan(printer.plate.d / 2);
     expect(warnings.join(' ')).not.toContain('move the tower');
   });
 

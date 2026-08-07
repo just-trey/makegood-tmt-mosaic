@@ -55,9 +55,9 @@ build time, so the deployed app has no runtime CDN dependencies. The Google
 Fonts stylesheet is the only external request.
 
 The app opens on the wheel. `?kind=` opens it on a given assembly kind instead
-— `?kind=chair-body`, `?kind=footrest` — so a link can point at the part being
-discussed, and a script driving the app can skip building a part it doesn't
-want. An unknown or absent value opens the wheel, as before.
+— `?kind=chair-body`, `?kind=footrest`, `?kind=hubcap` — so a link can point at
+the part being discussed, and a script driving the app can skip building a part
+it doesn't want. An unknown or absent value opens the wheel, as before.
 
 ## Deployment
 
@@ -148,6 +148,14 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - The chair body's prime-tower positions are verified on 270mm and 256mm beds
   only; other bed sizes inherit the 270mm positions untested — see
   [docs/tech-debt.md](docs/tech-debt.md).
+- The hubcap's plate is verified up to 220mm on 256mm and 270mm beds only.
+  Within that it exports at a hand-checked position with the prime tower placed
+  clear of it (7mm of clearance on a 256mm bed, 19mm on a 270mm one). Larger
+  than 220mm, or on any other bed, nothing was verified: it exports centred with
+  the tower parked in the freest corner, and says so — check both in your
+  slicer. Because the part is generated, this can't be a fingerprint-sealed pose
+  the way the fixed parts have; it's an arrangement verified at one size, which
+  is why it stops applying above that size.
 - Parts the reference sets to manual tree support arrive without the painted
   enforcers; paint them yourself or switch to auto support.
 - The caster mounts can't carry artwork — see

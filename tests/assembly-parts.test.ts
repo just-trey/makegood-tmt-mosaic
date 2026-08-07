@@ -21,6 +21,7 @@ import {
   maybeAutoLoadAssembly,
   onAssemblyPartsChanged,
 } from '../src/assembly/parts';
+import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 import { state } from '../src/state/store';
 import { alertDialog, confirmDialog } from '../src/ui/dialogs';
 import { scheduleRebuild } from '../src/app/scheduler';
@@ -342,6 +343,51 @@ describe('asmLoadPartFile', () => {
     expect(alertDialog).toHaveBeenCalledWith(expect.stringMatching(/use \.stl or \.3mf/));
     // the flag is still set — a part-way failure leaves whatever mesh state it reached
     expect(part.meshFromUpload).toBe(true);
+  });
+});
+
+describe('a role that builds its own mesh (AssemblyRole.buildMesh)', () => {
+  /** Stand-in generator: ignores the asset and hands back a fixed one-triangle mesh. */
+  const builtMesh = () => new Float32Array([0, 0, 0, 5, 0, 0, 0, 5, 0]);
+  const hubcapRole = () => ASSEMBLY_KINDS.find((k) => k.id === 'hubcap')!.roles[0];
+  let buildMesh: ReturnType<typeof vi.fn>;
+  let real: AssemblyRole['buildMesh'];
+
+  beforeEach(() => {
+    buildMesh = vi.fn().mockResolvedValue({ positions: builtMesh() });
+    state.assembly.kindId = 'hubcap';
+    // Stand the real hubcap role's builder down for a stub: this is about the loader's contract
+    // with buildMesh, not about the hubcap generator, which tests/hubcap.test.ts covers directly.
+    real = hubcapRole().buildMesh;
+    hubcapRole().buildMesh = buildMesh as unknown as AssemblyRole['buildMesh'];
+  });
+  afterEach(() => {
+    hubcapRole().buildMesh = real;
+  });
+
+  it('keeps what the builder returns, and the fetched asset alongside it', async () => {
+    const part = asmCreateRolePart(hubcapRole());
+
+    await asmLoadPartBuffer(part, twoFacedMesh(), 'clips.stl');
+
+    expect(buildMesh).toHaveBeenCalledTimes(1);
+    expect(part.positions).toEqual(builtMesh());
+    // kept so a parameter change can regenerate without re-fetching, and so export placement can
+    // tell a generated part from a drifted asset
+    expect(part.assetPositions).toBeInstanceOf(Float32Array);
+    expect(part.assetPositions).not.toEqual(part.positions);
+  });
+
+  it('lets a dropped file replace the part instead of feeding it to the builder', async () => {
+    const part = asmCreateRolePart(hubcapRole());
+
+    await asmLoadPartFile(part, new File([twoFacedMesh()], 'mine.stl'));
+
+    // running the builder here would hand back the user's mesh with a generated disc fused on
+    expect(buildMesh).not.toHaveBeenCalled();
+    expect(part.meshFromUpload).toBe(true);
+    // cleared, so resolvePlacement reports the upload it is rather than a generated part
+    expect(part.assetPositions).toBeUndefined();
   });
 });
 

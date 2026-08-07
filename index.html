@@ -102,6 +102,21 @@
               list — switching reloads only the pieces that actually differ between versions,
               confirming first if you've already customized one of them.
             </p>
+            <p>
+              <b>Hubcap diameter</b> appears for the Hubcap, which is built to the size you ask for
+              rather than being a fixed mesh — the four mounting clips stay put and the disc around
+              them grows or shrinks, keeping its 1&nbsp;mm chamfered edge. It's capped at your
+              printer's bed, so switching to a smaller machine may bring the number down with it,
+              and it won't go below the size that still covers the clips. Re-download the design
+              template after changing it: the template is drawn to whatever size is set.
+            </p>
+            <p>
+              Its plate has been checked by hand up to 220&nbsp;mm on 256&nbsp;mm and 270&nbsp;mm
+              beds — at those sizes the export puts the part and the prime tower where a real print
+              proved they both fit. Go bigger than that, or use another bed, and nothing has been
+              verified: it exports centred with the tower in the freest corner and tells you so.
+              Check both in your slicer before printing.
+            </p>
           </section>
 
           <section class="help-sec" id="h-artwork">
@@ -455,6 +470,13 @@
               <label for="p-asm-radius">Design radius</label>
               <div class="field">
                 <input type="number" id="p-asm-radius" value="138" step="0.5" />
+              </div>
+              <span class="hint">mm</span>
+            </div>
+            <div class="row" id="asm-buildparam-row" style="margin-top: 8px; display: none">
+              <label for="p-asm-buildparam" id="asm-buildparam-label">Hubcap diameter</label>
+              <div class="field">
+                <input type="number" id="p-asm-buildparam" step="0.5" />
               </div>
               <span class="hint">mm</span>
             </div>

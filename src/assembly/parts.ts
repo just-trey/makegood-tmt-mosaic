@@ -12,7 +12,7 @@ import {
   load3MF,
 } from '../geometry/meshparts';
 import { fingerprintMatches, loadZonesSidecar, reconstructChart } from '../geometry/zoneCharts';
-import { warn } from '../warnings';
+import { dismissNotice, warn } from '../warnings';
 import { track } from '../analytics/track';
 import { alertDialog, confirmDialog } from '../ui/dialogs';
 import {
@@ -261,6 +261,37 @@ export async function asmLoadPartBuffer(
   } else {
     throw new Error('Unsupported file type — use .stl or .3mf');
   }
+  await asmAdoptMesh(part, positions);
+}
+
+/**
+ * Take a mesh as the part's geometry: detect its faces, pick a design face, attach baked zones,
+ * and get the scene moving. Shared by the file loader above and by generated parts, so the two
+ * can't drift — the ordering at the end of this function is load-bearing and was got wrong once
+ * already (see the requestFrame comment).
+ *
+ * For a role that builds its own mesh (AssemblyRole.buildMesh), `positions` is the *asset*, and
+ * the built result is what the part actually keeps.
+ */
+async function asmAdoptMesh(part: AssemblyPart, positions: Float32Array): Promise<void> {
+  const role = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId);
+  // A dropped file REPLACES the part, on a generated role as much as any other — running the
+  // builder over it would hand back the user's mesh with a generated disc fused onto it, which is
+  // not what dropping in a mesh means anywhere else in the app. Clearing assetPositions also keeps
+  // resolvePlacement reporting it as the upload it is rather than as a generated part.
+  if (role?.buildMesh && !part.meshFromUpload) {
+    part.assetPositions = positions;
+    const built = await role.buildMesh(positions);
+    positions = built.positions;
+    part.vertices = built.vertices;
+    if (part.buildWarning) dismissNotice(part.buildWarning);
+    part.buildWarning = built.warning;
+    if (built.warning) warn(built.warning);
+  } else if (part.meshFromUpload) {
+    part.assetPositions = undefined;
+    if (part.buildWarning) dismissNotice(part.buildWarning);
+    part.buildWarning = undefined;
+  }
   part.positions = positions;
   part.patches = detectFlatPatches(positions);
   part.patchIdx = defaultPatchIdx(part); // largest-area patch, or the role's preferred face
@@ -274,6 +305,42 @@ export async function asmLoadPartBuffer(
   requestFrame();
   notifyPartsChanged();
   scheduleRebuild();
+}
+
+/**
+ * Re-run every generated part's builder — for when a build parameter (the hubcap's diameter)
+ * changes. Rebuilds from the cached asset, so no part is re-fetched.
+ *
+ * Reports a failure the same way the load path does rather than letting it reject. The caller
+ * fires this off with `void`, so an unhandled rejection would be invisible — and the state and the
+ * control would already be showing the new size while the part in the scene, and in any export,
+ * was still the old mesh. Saying nothing there is worse than the failure.
+ */
+export async function asmRebuildGeneratedParts(): Promise<boolean> {
+  const kind = currentAssemblyKind();
+  const parts = state.assembly.parts.filter((p) => {
+    const role = kind?.roles.find((r) => r.id === p.roleId);
+    return role?.buildMesh && p.assetPositions;
+  });
+  if (!parts.length) return true;
+  beginWork();
+  try {
+    for (const part of parts) await asmAdoptMesh(part, part.assetPositions!);
+    return true;
+  } catch (e) {
+    console.error(e);
+    await alertDialog(
+      `Could not rebuild "${kind?.name ?? 'the part'}" at the size you asked for: ` +
+        `${(e as Error).message}. The part on screen is still the previous size.`,
+    );
+    // Reported rather than swallowed: the caller has already stored the new parameter, and the
+    // mesh in the scene is still built from the old one. Anything reading the parameter to
+    // describe the mesh -- the verified-plate lookup, the 1:1 template -- would be describing a
+    // part that does not exist, so the caller has to be able to put the value back.
+    return false;
+  } finally {
+    endWork();
+  }
 }
 
 /**

@@ -11,6 +11,7 @@ import {
 import { placementNotice, resolvePlacement } from '../export/placement';
 import { zoneCoverage } from '../state/artwork';
 import { getPrinter } from '../export/printers';
+import { clampBuildParamToPrinter } from './assemblyPanel';
 import { refreshSlotCountCapacity } from './colorList';
 import { refreshSlotBudgetNotice } from './slotBudget';
 import { meshToSTLBytes, soupFromObject } from '../export/stl';
@@ -270,9 +271,12 @@ async function guardExport(btn: HTMLButtonElement, run: () => Promise<void>): Pr
 export function initExportPanel(): void {
   $<HTMLSelectElement>('#p-printer').addEventListener('change', (e) => {
     state.printerId = (e.target as HTMLSelectElement).value;
-    // Doesn't affect geometry, so nothing schedules a rebuild for it — the one state change that
-    // needs its own explicit autosave trigger rather than piggybacking on rebuildCurrent()'s, and
-    // the one that needs its own slot-count redraw rather than picking one up from a rebuild.
+    // Affects geometry only through a kind whose build parameter is bounded by the plate (the
+    // hubcap's diameter) — clampBuildParamToPrinter regenerates in that one case and is a no-op
+    // otherwise. Beyond that this is still the one state change that needs its own explicit
+    // autosave trigger rather than piggybacking on rebuildCurrent()'s, and its own slot-count
+    // redraw rather than picking one up from a rebuild.
+    void clampBuildParamToPrinter();
     // re-posts the slot-budget pill against the new printer's numbers as well as redrawing the line
     refreshSlotCountCapacity();
     renderWarnings();

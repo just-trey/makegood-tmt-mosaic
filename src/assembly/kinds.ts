@@ -1,5 +1,13 @@
 import type { AssemblyKind, AssemblyRole } from '../types';
 import { state } from '../state/store';
+import {
+  HUBCAP_DISCONNECTED_WARNING,
+  HUBCAP_MIN_DIAMETER_MM,
+  buildHubcapBody,
+  hubcapPlacement,
+  hubcapTemplateSvg,
+} from '../geometry/hubcap';
+import { getPrinter } from '../export/printers';
 
 /**
  * An assembly is a fixed, small set of part *roles* (e.g. a wheel is exactly Top + Cap, where
@@ -55,6 +63,58 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         // the flat back of the shell outsizes the seat face by area, so patch auto-detect
         // needs a nudge toward the +Y-facing (up, seat-side) patch instead of the largest one.
         preferFaceNormal: [0, 1, 0],
+      },
+    ],
+  },
+  {
+    id: 'hubcap',
+    name: 'Hubcap',
+    // 1:1 mm, auto-centered on the face — NOT the wheel's circle/Design-radius model, even though
+    // today's disc is a circle. designFit is fixed per kind and can't switch per part, and a
+    // Design radius stops meaning anything as soon as the outline is a user-supplied silhouette
+    // rather than a circle. Choosing rect now is what keeps that from being a breaking change.
+    designFit: 'rect',
+    // Built, not fetched: a static file would be true-to-size at one diameter and wrong at every
+    // other. See hubcapTemplateSvg.
+    buildTemplate: () => hubcapTemplateSvg(state.hubcapDiameterMm),
+    buildParam: {
+      id: 'hubcapDiameterMm',
+      label: 'Hubcap diameter',
+      // below this the disc stops covering the clip tops it has to bond to
+      minMm: HUBCAP_MIN_DIAMETER_MM,
+    },
+    roles: [
+      {
+        id: 'hubcap',
+        name: 'Hubcap',
+        // The library asset is the four mounting clips ALONE; buildMesh generates the disc they
+        // carry at state.hubcapDiameterMm and unions it on. So this part's mesh is never the file
+        // that was fetched — see AssemblyRole.buildMesh.
+        libraryPartId: 'hubcap-clips',
+        allowRotatedCopies: false,
+        // The disc's underside (a full circle) outsizes its top face (inset 1mm by the chamfer),
+        // so the largest patch is the BACK of the part and auto-detect lands there. The shipped
+        // wheel-hub-cap needs no such nudge — on that part the top face wins — so this can't be
+        // inferred from the small cap.
+        preferFaceNormal: [0, 1, 0],
+        // Deliberately no cutThrough, unlike wheel-hub-cap: that part pierces its 3mm shell, and
+        // this one has an identical 3mm shell, so the difference is a choice and not an omission.
+        // A recess keeps a 220mm disc rigid, and inherits the 1mm state.globalDepth default.
+        // The verified plate for the size currently set, when there is one — see hubcapPlacement.
+        // A generated part gets no fingerprint-sealed placement, so this is how the one thing a
+        // human *did* check (a specific arrangement at a specific diameter) reaches the export.
+        buildPlacement: () => {
+          const plate = getPrinter(state.printerId).plate;
+          return hubcapPlacement(state.hubcapDiameterMm, `${plate.w}x${plate.d}`);
+        },
+        buildMesh: async (asset) => {
+          const built = await buildHubcapBody(state.hubcapDiameterMm, asset);
+          return {
+            positions: built.positions,
+            vertices: built.vertices,
+            warning: built.components > 1 ? HUBCAP_DISCONNECTED_WARNING : undefined,
+          };
+        },
       },
     ],
   },
