@@ -2,7 +2,12 @@ import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { AssemblyBuild } from '../types';
 import { baseColorHex, currentBaseParams, state } from '../state/store';
-import { availableZones, syncActiveArtworkPlacement, zoneCoverage } from '../state/artwork';
+import {
+  activeArtworkInstance,
+  availableZones,
+  syncActiveArtworkPlacement,
+  zoneCoverage,
+} from '../state/artwork';
 import { noticeBuild } from '../warnings';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
@@ -11,7 +16,7 @@ import {
   buildAssemblyGeometry,
   type ArtworkBuildInput,
 } from '../geometry/assembly';
-import { currentAssemblyKind } from '../assembly/kinds';
+import { currentAssemblyKind, hubcapSilhouetteOffset } from '../assembly/kinds';
 import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
 import {
   frameModelIfPending,
@@ -276,6 +281,22 @@ async function rebuildAssemblyScene(): Promise<void> {
   // early for — so removing the last image left the hubcap still cut to its silhouette, with
   // nothing on screen to explain why.
   if (generatedPartsNeedRebuild()) await asmRebuildGeneratedParts({ schedule: false });
+
+  // A part cut to its own artwork centres itself on its mounting axis, and the artwork's offset is
+  // then solved for rather than chosen — moving the picture relative to a part that IS the picture
+  // isn't a meaningful request, and honouring one can't be made consistent anyway (the cut adds the
+  // design face's own centre, which for a silhouette is the thing being offset). Written back to
+  // both the instance and the legacy globals so the Fit sliders show what is actually in force.
+  const silOff = hubcapSilhouetteOffset();
+  if (silOff) {
+    state.offsetX = silOff.x;
+    state.offsetY = silOff.z;
+    const active = activeArtworkInstance();
+    if (active) {
+      active.offsetU = silOff.x;
+      active.offsetV = silOff.z;
+    }
+  }
 
   // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
   if (!state.parsed) {

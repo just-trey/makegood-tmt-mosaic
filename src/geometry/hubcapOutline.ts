@@ -82,44 +82,21 @@ export function outlineReach(rings: Outline): number {
 }
 
 /**
- * Shrink an outline toward the design's own offset point by `k`.
+ * Scale an outline by `k` about a fixed point.
  *
- * Scaling about the offset rather than about the axis is what keeps this equivalent to having
- * built the outline with `mmPerUnit * k` in the first place — the placement applies the offset
- * *after* the scale, so the offset is the one point that doesn't move when mmPerUnit changes.
- * That equivalence is the whole reason the caller can hand the same `k` to the artwork's design
- * face and get a picture that still matches the shape.
+ * The caller shrinks about the mounting axis, where the outline has already been centred, and that
+ * is what keeps this equivalent to having built it with `mmPerUnit * k` in the first place — the
+ * placement scales before the translation that centred it, so the centre is the one point that
+ * doesn't move when mmPerUnit changes. That equivalence is the whole reason the same `k` can be
+ * handed to the artwork and still produce a picture that matches the shape.
+ *
+ * There was a bisecting `fitFactorForRadius` here, needed because a user-set offset made the
+ * reach `|off + k(p - off)|` — convex in k, not a division. It went when the offset became derived
+ * rather than chosen (see hubcapShapeFromState): about the axis, every point's distance scales by
+ * exactly k, so the caller's cap is one ratio.
  */
 export function scaleOutlineAbout(rings: Outline, ox: number, oz: number, k: number): Outline {
   return rings.map((r) => r.map((p) => ({ x: ox + (p.x - ox) * k, z: oz + (p.z - oz) * k })));
-}
-
-/**
- * The largest `k` for which the outline still fits a circle of `maxR` about the axis, or null if
- * no amount of shrinking gets it there.
- *
- * Bisected rather than solved: with a nonzero offset the reach is `|off + k(p - off)|` maximised
- * over the outline, which is convex in k but not something a single division answers. Twenty
- * halvings land well inside a print tolerance, and this runs once per rebuild.
- */
-export function fitFactorForRadius(
-  rings: Outline,
-  ox: number,
-  oz: number,
-  maxR: number,
-): number | null {
-  if (outlineReach(rings) <= maxR) return 1;
-  // Shrinking collapses the shape onto its offset point, so if that point is already outside the
-  // circle there is no k that helps and the caller has to say so instead of scaling to nothing.
-  if (Math.hypot(ox, oz) >= maxR) return null;
-  let lo = 0,
-    hi = 1;
-  for (let i = 0; i < 20; i++) {
-    const mid = (lo + hi) / 2;
-    if (outlineReach(scaleOutlineAbout(rings, ox, oz, mid)) <= maxR) lo = mid;
-    else hi = mid;
-  }
-  return lo;
 }
 
 /** Signed area of one ring. Summed over an outline's rings, holes cancel against their boundary. */

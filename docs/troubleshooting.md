@@ -437,17 +437,6 @@ control appearing to stop working, which is why it says so rather than doing it
 silently. Lowering the diameter or the artwork's Scale until this clears puts
 you back in control of the size.
 
-## Troubleshooting: "The artwork is offset too far to sit on the wheel"
-
-Full text: _"The artwork is offset too far to sit on the wheel, so the hubcap
-stays round. Bring it back toward the centre with Offset."_
-
-Scaling a shape down collapses it toward the point it is offset to, so if that
-point is itself off the wheel, no amount of shrinking brings the shape back —
-it would just become a speck in the wrong place. The part stays a circle
-instead. Reduce the artwork's Offset until the design sits over the wheel
-again.
-
 ## Troubleshooting: "Some of this shape is thinner than 1mm"
 
 Full text: _"Some of this shape is thinner than 1mm, which is about one

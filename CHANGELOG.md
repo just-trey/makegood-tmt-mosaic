@@ -32,12 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   instead of sitting inside a circle. One image drives both the picture and the
   cutline; it needs a real transparent background and exactly one piece of
   artwork loaded. The edge is cut square. The shape follows the artwork's own
-  scale, rotation, flips and offset, so the two stay the same object, and the
-  design template is drawn to the silhouette rather than to a disc. Refused,
+  scale, rotation and flips, so the two stay the same object, and the design
+  template is drawn to the silhouette rather than to a disc. Offset does
+  nothing while it's on: the part centres on its mounting clips and the picture
+  centres on the part, since moving artwork relative to a part that _is_ that
+  artwork has no meaning. Refused,
   with a named reason, when the shape wouldn't fully bond to the mounting
   clips, when a feature is too thin to hold its detail (a warning, not a
-  refusal), when the image has no transparency to cut to, when it's offset off
-  the wheel entirely, or when more than one design is loaded; removing the
+  refusal), when the image has no transparency to cut to, or when more than one
+  design is loaded; removing the
   artwork or the checkbox reverts the part to a circle. A shape bigger than the
   280mm wheel is scaled down to fit — artwork and all, so the picture stays on
   the part — and says that it did. Fill placement is withheld while it's on:

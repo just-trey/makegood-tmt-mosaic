@@ -22,10 +22,18 @@ import {
 import {
   ASSEMBLY_KINDS,
   generatedDesignFaceOverride,
+  generatedFitFactor,
   hubcapShapeFromState,
+  hubcapSilhouetteOffset,
 } from '../src/assembly/kinds';
 import { designAnchor, designMmPerUnit } from '../src/geometry/assembly';
-import { outlineBounds, outlineReach } from '../src/geometry/hubcapOutline';
+import {
+  outlineBounds,
+  outlineContains,
+  outlineReach,
+  placeArtworkPoint,
+  type OutlinePt,
+} from '../src/geometry/hubcapOutline';
 import {
   applyBuildParam,
   clampBuildParamToPrinter,
@@ -41,8 +49,8 @@ import {
 } from '../src/export/placement';
 import {
   HUBCAP_DEFAULT_DIAMETER_MM,
+  HUBCAP_DISCONNECTED_WARNING,
   HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL,
-  HUBCAP_SILHOUETTE_OFF_WHEEL,
   HUBCAP_VERIFIED_DIAMETER_MM,
   HUBCAP_WHEEL_DIAMETER_MM,
 } from '../src/geometry/hubcap';
@@ -358,6 +366,96 @@ describe('asmRebuildGeneratedParts', () => {
   });
 });
 
+describe('which warning a generated hubcap raises', () => {
+  it('reports loose pieces over anything cosmetic, when both are true', async () => {
+    // These co-occur, which is the whole point: clipCoverage samples only the clip annulus, so a
+    // detached island elsewhere passes it and the shape gets reported as merely thin — while the
+    // part comes off the plate in pieces. `shape.warning ?? …` dropped the severe one whenever the
+    // mild one existed. Built with the real clips asset and the real builder, because the
+    // component count has to come from an actual boolean.
+    const clips = await readMesh(resolve(REPO, 'public/stl/hubcap-clips.3mf'));
+    state.hubcapSilhouette = true;
+    state.hubcapDiameterMm = 220;
+    state.scalePct = 100;
+    state.offsetX = 0;
+    state.offsetY = 0;
+    state.rotationDeg = 0;
+    state.flipX = false;
+    state.flipY = false;
+
+    // a blob over the clips, plus a detached hair-thin bar well away from it
+    const canvas = { w: 512, h: 512 };
+    const parsed = {
+      shapes: [
+        {
+          fill: '#000',
+          order: 0,
+          // big enough that it still covers the clips after the outline centres on its own bbox,
+          // which the detached bar below drags sideways
+          loops: [
+            [
+              { x: 106, y: 106 },
+              { x: 406, y: 106 },
+              { x: 406, y: 406 },
+              { x: 106, y: 406 },
+            ],
+          ],
+        },
+        {
+          fill: '#111',
+          order: 1,
+          loops: [
+            [
+              { x: 460, y: 240 },
+              { x: 461, y: 240 },
+              { x: 461, y: 280 },
+              { x: 460, y: 280 },
+            ],
+          ],
+        },
+      ],
+      bbox: { minX: 106, minY: 106, maxX: 461, maxY: 406 },
+      rawSVGCircle: null,
+      userUnitMM: null,
+      viewBox: canvas,
+      canvas,
+      origin: 'raster',
+    } as unknown as ParsedSVG;
+    state.sources = [{ id: 's1', kind: 'raster', name: 'a.png', parsed, svgText: '' }];
+    state.parsed = parsed;
+    state.artworks = [
+      {
+        id: 'a1',
+        sourceId: 's1',
+        zone: null,
+        offsetU: 0,
+        offsetV: 0,
+        scalePct: 100,
+        rotationDeg: 0,
+        flipX: false,
+        flipY: false,
+        mode: 'sticker',
+      } as unknown as (typeof state.artworks)[number],
+    ];
+    state.activeArtworkId = 'a1';
+
+    const shape = await hubcapShapeFromState();
+    expect(shape.shape.kind).toBe('silhouette');
+    // the fixture has to actually trip a cosmetic warning, or this proves nothing
+    expect(shape.warning).toBeDefined();
+    expect(shape.warning).not.toBe(HUBCAP_DISCONNECTED_WARNING);
+
+    const out = await hubcapRole.buildMesh!(clips as Float32Array);
+
+    expect(out.warning).toBe(HUBCAP_DISCONNECTED_WARNING);
+
+    state.hubcapSilhouette = false;
+    state.sources = [];
+    state.artworks = [];
+    state.parsed = null;
+  }, 60000);
+});
+
 describe('the diameter stays inside what the selected printer can print', () => {
   it('re-clamps when the kind becomes active again, not only on printer change', async () => {
     // The printer handler reads whichever kind is active *then*, so it does nothing while a kind
@@ -543,6 +641,7 @@ describe('the silhouette and the artwork on it are one shape', () => {
       isRect: true,
       radius: 0,
       designFace: () => generatedDesignFaceOverride(),
+      generatedFit: generatedFitFactor,
     });
 
   beforeEach(() => {
@@ -617,14 +716,19 @@ describe('the silhouette and the artwork on it are one shape', () => {
     expect(x1 - x0).toBeCloseTo(500 * cutMmPerUnit(parsed, 3), 1);
   }, 30000);
 
-  it('reverts to a circle rather than shrinking to a speck, offset off the wheel', async () => {
-    const parsed = parsedWith(square(100));
-    loadArtwork(parsed, { offsetU: 400, offsetV: 0 });
+  it('ignores a user offset entirely — the part centres on its clips', () => {
+    // Offset is derived, not read: moving the picture relative to a part that IS the picture is
+    // not meaningful, and honouring it cannot be made consistent because the cut finishes with the
+    // design face's own centre, which for a silhouette is the thing being offset.
+    const parsed = parsedWith(square(300));
+    loadArtwork(parsed, { offsetU: 40, offsetV: -25 });
 
-    const { shape, warning } = await hubcapShapeFromState();
-
-    expect(shape.kind).toBe('circle');
-    expect(warning).toBe(HUBCAP_SILHOUETTE_OFF_WHEEL);
+    return hubcapShapeFromState().then(({ shape }) => {
+      if (shape.kind !== 'silhouette') throw new Error('expected a silhouette');
+      const [x0, z0, x1, z1] = outlineBounds(shape.outline);
+      expect((x0 + x1) / 2).toBeCloseTo(0, 6);
+      expect((z0 + z1) / 2).toBeCloseTo(0, 6);
+    });
   }, 30000);
 
   it('draws the template for the silhouette, not for a disc that is not there', async () => {
@@ -640,29 +744,46 @@ describe('the silhouette and the artwork on it are one shape', () => {
   }, 30000);
 
   it('mirrors on each flip the same way the cut does', async () => {
-    // Flips reshape the part, not just the picture on it. An off-centre marker is the only fixture
-    // that catches this — a symmetric one comes out identical either way and proves nothing.
-    // covers the sheet's centre — so the clips still bond — but reaches much further right of it
-    const lopsided = [
-      { x: 216, y: 216 },
-      { x: 460, y: 216 },
-      { x: 460, y: 296 },
-      { x: 216, y: 296 },
+    // A block with an arm off one side. Two properties this fixture needs and a rectangle hasn't:
+    // its bbox centre must be solid (the part centres on its clips, so the clips land there), and
+    // it must be asymmetric about that centre or a mirror is undetectable.
+    const armed = [
+      { x: 200, y: 200 },
+      { x: 400, y: 200 },
+      { x: 400, y: 280 },
+      { x: 560, y: 280 },
+      { x: 560, y: 320 },
+      { x: 400, y: 320 },
+      { x: 400, y: 400 },
+      { x: 200, y: 400 },
     ];
-    const parsed = parsedWith(lopsided);
-    loadArtwork(parsed);
-    const plain = await hubcapShapeFromState();
-    if (plain.shape.kind !== 'silhouette') throw new Error('expected a silhouette');
-    const before = outlineBounds(plain.shape.outline);
+    const parsed = parsedWith(armed);
 
-    loadArtwork(parsed, { flipX: true });
-    const flipped = await hubcapShapeFromState();
-    if (flipped.shape.kind !== 'silhouette') throw new Error('expected a silhouette');
-    const after = outlineBounds(flipped.shape.outline);
+    // Which side of the axis the material sits on. Bounds can't answer it — centring makes them
+    // symmetric by construction — so measure area either side on a grid.
+    const bias = async (over: Partial<ArtworkInstance>): Promise<number> => {
+      loadArtwork(parsed, over);
+      const { shape } = await hubcapShapeFromState();
+      if (shape.kind !== 'silhouette') throw new Error('expected a silhouette');
+      const [x0, z0, x1, z1] = outlineBounds(shape.outline);
+      let right = 0;
+      let left = 0;
+      for (let i = 0; i < 80; i++)
+        for (let j = 0; j < 80; j++) {
+          const x = x0 + ((i + 0.5) / 80) * (x1 - x0);
+          const z = z0 + ((j + 0.5) / 80) * (z1 - z0);
+          if (!outlineContains(shape.outline, x, z)) continue;
+          if (x > 0) right++;
+          else left++;
+        }
+      return right - left;
+    };
 
-    // the design face is seen mirrored, so the long side lands at -x until the user flips it back
-    expect(Math.abs(before[0])).toBeGreaterThan(before[2]);
-    expect(after[2]).toBeGreaterThan(Math.abs(after[0]));
+    const plainBias = await bias({});
+    const flippedBias = await bias({ flipX: true });
+
+    expect(plainBias).not.toBe(0);
+    expect(Math.sign(plainBias)).toBe(-Math.sign(flippedBias));
   }, 30000);
 
   it('falls back to the global placement when no instance exists', async () => {
@@ -680,6 +801,143 @@ describe('the silhouette and the artwork on it are one shape', () => {
 
     const [x0, , x1] = outlineBounds(shape.outline);
     expect(x1 - x0).toBeCloseTo(300 * cutMmPerUnit(parsed, 0.5), 1);
+  }, 30000);
+
+  /**
+   * The invariant, over the awkward cases rather than one example.
+   *
+   * Every earlier test here compared bbox SIZES, which is why two ways of defeating the shared
+   * transform survived a review round: an SVG declaring an absolute mm size returns from
+   * designMmPerUnit before the design face is consulted (so the wheel cap never reached it), and
+   * the cut ends with `+ faceCx`, the design face's own centre, which for a silhouette is the
+   * outline being placed. Both put the picture off the shape while every size assertion passed.
+   *
+   * So: place the artwork exactly as the CUT will, and require every point to land on the part.
+   */
+  const cutPlacedPoints = (parsed: ParsedSVG, art: Partial<ArtworkInstance>): OutlinePt[] => {
+    const a = state.artworks[0]!;
+    const anchor = designAnchor(parsed, true);
+    const mmPerUnit = cutMmPerUnit(parsed, (art.scalePct ?? 100) / 100);
+    return parsed.shapes[0].loops[0].map((p) =>
+      placeArtworkPoint(p.x, p.y, {
+        cx: anchor.cx,
+        cy: anchor.cy,
+        mmPerUnit,
+        xMul: a.flipX ? 1 : -1,
+        zMul: a.flipY ? 1 : -1,
+        rotationDeg: a.rotationDeg,
+        offX: a.offsetU,
+        offZ: a.offsetV,
+      }),
+    );
+  };
+
+  const FIXTURES: {
+    why: string;
+    canvas?: { w: number; h: number };
+    mm?: number;
+    art?: Partial<ArtworkInstance>;
+  }[] = [
+    { why: 'subject centred on its sheet', art: {} },
+    { why: 'subject off-centre on its sheet', art: {} },
+    { why: 'declares an absolute mm size', mm: 0.5 },
+    // big enough that the wheel cap engages: the cap rides on generatedFit, and this is the branch
+    // that returns before the design face is ever consulted
+    { why: 'declares an absolute mm size past the wheel', mm: 1.5 },
+    { why: 'rotated', art: { rotationDeg: 37 } },
+    { why: 'mirrored horizontally', art: { flipX: true } },
+    { why: 'mirrored vertically', art: { flipY: true } },
+    { why: 'scaled up past the wheel', art: { scalePct: 400 } },
+    { why: 'scaled down', art: { scalePct: 60 } },
+    { why: 'offset by the user', art: { offsetU: 30, offsetV: -18 } },
+  ];
+
+  it.each(FIXTURES)(
+    'the picture lands on the part — $why',
+    async (f) => {
+      const content =
+        f.why === 'subject off-centre on its sheet' ? square(260, 330, 300) : square(300);
+      const parsed = parsedWith(content);
+      if (f.mm != null) (parsed as { userUnitMM?: number | null }).userUnitMM = f.mm;
+      loadArtwork(parsed, f.art);
+
+      const { shape } = await hubcapShapeFromState();
+      if (shape.kind !== 'silhouette') throw new Error(`expected a silhouette for "${f.why}"`);
+      // the rebuild applies the derived offset; do the same so the cut is placed as it really is
+      const off = hubcapSilhouetteOffset()!;
+      state.artworks[0].offsetU = off.x;
+      state.artworks[0].offsetV = off.z;
+
+      // The cut finishes with `+ faceCx`, the design face's bbox centre. It contributes nothing only
+      // because the outline centres itself on the mounting axis — assert that rather than assume it,
+      // since a non-zero centre is exactly how the picture slid off the shape before.
+      const [cx0, cz0, cx1, cz1] = outlineBounds(shape.outline);
+      expect((cx0 + cx1) / 2).toBeCloseTo(0, 6);
+      expect((cz0 + cz1) / 2).toBeCloseTo(0, 6);
+
+      // Pulled 2% toward the axis before testing. The artwork's own vertices are the part's edge, so
+      // testing them raw asks an even-odd ray cast about points exactly on the boundary, where it is
+      // undefined. 2% is far tighter than anything this has caught — the drifts were 12% and worse.
+      for (const p of cutPlacedPoints(parsed, f.art ?? {})) {
+        const x = p.x * 0.98;
+        const z = p.z * 0.98;
+        expect(
+          outlineContains(shape.outline, x, z),
+          `${f.why}: cut point (${x.toFixed(1)}, ${z.toFixed(1)}) fell outside the part`,
+        ).toBe(true);
+      }
+    },
+    30000,
+  );
+
+  it('draws the template mirrored, the way every baked template is', async () => {
+    // scripts/gen-templates.mjs maps part->template as `bboxCx - (x - faceCx)` — both axes negate,
+    // because a template is looked at from the side artwork is applied from. Emitting `x - x0`
+    // instead is a 180-degree rotation: invisible on a disc or any symmetric shape, and wrong on
+    // exactly the asymmetric silhouettes this feature is for. Only discovered after someone has
+    // drawn on one and loaded it back, so it has to be pinned here.
+    const armed = [
+      { x: 200, y: 200 },
+      { x: 400, y: 200 },
+      { x: 400, y: 280 },
+      { x: 560, y: 280 },
+      { x: 560, y: 320 },
+      { x: 400, y: 320 },
+      { x: 400, y: 400 },
+      { x: 200, y: 400 },
+    ];
+    const parsed = parsedWith(armed);
+    loadArtwork(parsed);
+    const { shape } = await hubcapShapeFromState();
+    if (shape.kind !== 'silhouette') throw new Error('expected a silhouette');
+
+    const [x0, z0, x1, z1] = outlineBounds(shape.outline);
+    // the part's own furthest-back vertex, whose two candidate mappings differ in BOTH coordinates
+    let tip = { x: 0, z: -Infinity };
+    for (const r of shape.outline) for (const p of r) if (p.z > tip.z) tip = { x: p.x, z: p.z };
+    const round2 = (v: number): number => Number(v.toFixed(2));
+    const mirrored = `${round2(x1 - tip.x)},${round2(z1 - tip.z)}`;
+    const naive = `${round2(tip.x - x0)},${round2(tip.z - z0)}`;
+    expect(mirrored).not.toBe(naive); // the fixture actually discriminates
+
+    const svg = hubcapKind.buildTemplate!();
+    expect(svg).toContain(mirrored);
+    expect(svg).not.toContain(naive);
+  }, 30000);
+
+  it('gives a fallback circle its own face, not the diameter it was asked for', async () => {
+    // A disc's design face is 2mm smaller than its diameter — the chamfer. Reporting the diameter
+    // here auto-fits artwork about 1% oversized, onto the bevel, where it gets cut away. Keying on
+    // the toggle alone did exactly that for every case that asks for a silhouette and gets a disc.
+    const parsed = parsedWith(square(300));
+    loadArtwork(parsed);
+    state.artworks.push({ ...state.artworks[0], id: 'a2' });
+
+    const { shape } = await hubcapShapeFromState();
+
+    expect(shape.kind).toBe('circle');
+    expect(generatedDesignFaceOverride()).toBeNull();
+    expect(generatedFitFactor()).toBe(1);
   }, 30000);
 
   it('goes back to the disc template once the silhouette is off', async () => {

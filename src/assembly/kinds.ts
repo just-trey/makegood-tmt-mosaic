@@ -11,7 +11,6 @@ import {
   HUBCAP_SILHOUETTE_MISSES_CLIPS,
   HUBCAP_SILHOUETTE_NO_ARTWORK,
   HUBCAP_SILHOUETTE_NO_TRANSPARENCY,
-  HUBCAP_SILHOUETTE_OFF_WHEEL,
   HUBCAP_SILHOUETTE_TOO_MANY,
   HUBCAP_SILHOUETTE_THIN_DETAIL,
   HUBCAP_WHEEL_DIAMETER_MM,
@@ -23,8 +22,8 @@ import {
 import { getManifold } from '../geometry/manifold';
 import {
   clipCoverage,
-  fitFactorForRadius,
   outlineArea,
+  outlineReach,
   outlineBounds,
   narrowFeatureArea,
   scaleOutlineAbout,
@@ -148,10 +147,17 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
           return {
             positions: built.positions,
             vertices: built.vertices,
-            // The generator's own complaint wins: "your silhouette misses the clips" says what to
-            // do about it, where "the disc came out in five pieces" only says what happened.
+            // Loose pieces wins over everything, because it is the only one of these that comes
+            // off the plate broken. It used to lose: `shape.warning ?? …` dropped it whenever the
+            // shape ALSO had something cosmetic to say, and the two co-occur — clipCoverage only
+            // samples the clip annulus, so a detached island elsewhere passes it and can be
+            // reported as merely thin, or as capped to the wheel, while the part falls apart.
             warning:
-              shape.warning ?? (built.components > 1 ? HUBCAP_DISCONNECTED_WARNING : undefined),
+              built.components > 1
+                ? HUBCAP_DISCONNECTED_WARNING
+                : // Otherwise the generator's own complaint: "your silhouette misses the clips"
+                  // says what to do about it, where a component count only says what happened.
+                  shape.warning,
           };
         },
       },
@@ -355,6 +361,7 @@ export async function hubcapShapeFromState(): Promise<{
   const round = (warning?: string): { shape: HubcapShape; warning?: string } => {
     lastSilhouetteFit = 1;
     lastBuiltOutline = null;
+    silhouetteOffset = null;
     return { shape: circle, warning };
   };
   if (!state.hubcapSilhouette) return round();
@@ -375,6 +382,14 @@ export async function hubcapShapeFromState(): Promise<{
   // apart, since one measured the traced content and the other the document canvas. designFace is
   // passed explicitly rather than through generatedDesignFaceOverride because the override reports
   // the wheel-capped size derived *below*, and reading it here would be circular.
+  //
+  // **Offset is deliberately zero here, and is then derived rather than read.** With the part cut
+  // to the artwork, moving the artwork relative to it is not a meaningful thing to ask for — and
+  // trying to honour it cannot be made consistent: the cut's own placer finishes with
+  // `+ faceCx`, the design face's bbox centre, which for a silhouette IS the outline being
+  // placed. Every offset therefore moved the face it was being measured against. So the part
+  // centres on its mounting axis and the artwork's offset is solved for below to put the picture
+  // on it.
   const scaleMult = (art?.scalePct ?? state.scalePct) / 100;
   const anchor = designAnchor(parsed, true);
   const pl: OutlinePlacement = {
@@ -390,20 +405,33 @@ export async function hubcapShapeFromState(): Promise<{
     xMul: (art?.flipX ?? state.flipX) ? 1 : -1,
     zMul: (art?.flipY ?? state.flipY) ? 1 : -1,
     rotationDeg: art?.rotationDeg ?? state.rotationDeg,
-    offX: art?.offsetU ?? state.offsetX,
-    offZ: art?.offsetV ?? state.offsetY,
+    offX: 0,
+    offZ: 0,
   };
 
   const wasm = await getManifold();
-  const placed = silhouetteFromShapes(wasm, shapes, pl);
-  if (!placed.length) return round(HUBCAP_SILHOUETTE_NO_ARTWORK);
+  const raw = silhouetteFromShapes(wasm, shapes, pl);
+  if (!raw.length) return round(HUBCAP_SILHOUETTE_NO_ARTWORK);
+
+  // Centre the shape on the mounting axis, so the clips sit in the middle of it and the cut's
+  // `faceCx` is zero by construction rather than by luck.
+  const [rx0, rz0, rx1, rz1] = outlineBounds(raw);
+  const mx = (rx0 + rx1) / 2;
+  const mz = (rz0 + rz1) / 2;
+  const placed = raw.map((r) => r.map((p) => ({ x: p.x - mx, z: p.z - mz })));
 
   // Nothing may overhang the wheel it mounts on. Shrinking the whole placement rather than
-  // clamping a "size" number, so the same factor can be handed to the artwork's design face and
-  // the picture stays exactly on the shape cut for it.
-  const fit = fitFactorForRadius(placed, pl.offX, pl.offZ, HUBCAP_WHEEL_DIAMETER_MM / 2);
-  if (fit === null) return round(HUBCAP_SILHOUETTE_OFF_WHEEL);
-  const outline = fit < 1 ? scaleOutlineAbout(placed, pl.offX, pl.offZ, fit) : placed;
+  // clamping a "size" number, so the same factor can be handed to the artwork and the picture
+  // stays exactly on the shape cut for it. A plain ratio, not a search: the shape is centred on
+  // the axis now, so every point's distance from it scales by exactly k.
+  const reach = outlineReach(placed);
+  const fit = reach > 0 ? Math.min(1, HUBCAP_WHEEL_DIAMETER_MM / 2 / reach) : 1;
+  const outline = fit < 1 ? scaleOutlineAbout(placed, 0, 0, fit) : placed;
+
+  // Solve the artwork's offset so the picture lands on the shape. The cut computes
+  // `T(p)*fit + off + faceCx`, and faceCx is 0 because the outline above is centred, while the
+  // outline itself is `(T(p) - m)*fit`. Equal exactly when off = -m*fit.
+  silhouetteOffset = { x: -mx * fit, z: -mz * fit };
 
   // The one hard gate. A shape that misses the clips exports, looks like a hubcap, and comes off
   // the plate in pieces — so it is refused up front rather than discovered after the boolean.
@@ -444,6 +472,18 @@ export async function hubcapShapeFromState(): Promise<{
  */
 let lastSilhouetteFit = 1;
 let lastBuiltOutline: HubcapShape | null = null;
+let silhouetteOffset: { x: number; z: number } | null = null;
+
+/**
+ * The artwork offset that puts the picture on the silhouette, or null when the part isn't one.
+ *
+ * Derived, never read from the user: see the note in hubcapShapeFromState. The rebuild applies
+ * this to the active instance and to the legacy globals right after regenerating, so the Fit
+ * sliders show the value actually in force rather than one that gets quietly overruled.
+ */
+export function hubcapSilhouetteOffset(): { x: number; z: number } | null {
+  return state.hubcapSilhouette && lastBuiltOutline ? silhouetteOffset : null;
+}
 
 /**
  * The shape the hubcap template should be drawn for: whatever the part currently is.
@@ -471,15 +511,29 @@ export function hubcapTemplateShape(): HubcapShape {
  * picture agree by construction — and scaling the artwork scales both, because the scale
  * multiplier applies to this exactly as it applies to a real face.
  *
- * The wheel cap is folded in for the same reason. When the outline had to shrink to clear the rim,
- * the artwork has to shrink with it; a cap applied to the part alone left the picture at the
- * uncapped size, with the outer band of every colour region hanging off the edge of the part.
+ * The wheel cap is NOT folded in here — it rides on `generatedFitFactor` below, because it has to
+ * apply on every one of designMmPerUnit's branches and this face is consulted on only one of them.
  *
- * Null whenever the toggle is off, which leaves every other kind on the face it always used.
+ * Null whenever the toggle is off, and equally once the shape has fallen back to a circle: the
+ * disc's own face is 2mm smaller than its diameter (the chamfer), so reporting the diameter here
+ * auto-fits artwork about 1% oversized, onto the bevel where it gets cut away. `lastBuiltOutline`
+ * is what distinguishes "cut to shape" from "asked for it and got a circle".
  */
 export function generatedDesignFaceOverride(): { w: number; h: number } | null {
   const kind = currentAssemblyKind();
-  if (!kind?.buildParam || !state.hubcapSilhouette) return null;
-  const d = state.hubcapDiameterMm * lastSilhouetteFit;
-  return { w: d, h: d };
+  if (!kind?.buildParam || !state.hubcapSilhouette || !lastBuiltOutline) return null;
+  return { w: state.hubcapDiameterMm, h: state.hubcapDiameterMm };
+}
+
+/**
+ * How much the wheel cap shrank the generated part, for the artwork to follow.
+ *
+ * Separate from the face above so it survives every sizing branch — an SVG declaring an absolute
+ * mm size never consults the face at all, and folding the cap in there made it a silent no-op for
+ * exactly the files this app hands out as design templates.
+ */
+export function generatedFitFactor(): number {
+  const kind = currentAssemblyKind();
+  if (!kind?.buildParam || !state.hubcapSilhouette || !lastBuiltOutline) return 1;
+  return lastSilhouetteFit;
 }

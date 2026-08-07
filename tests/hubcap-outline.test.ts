@@ -3,7 +3,6 @@ import { getManifold } from '../src/geometry/manifold';
 import type { SVGShape } from '../src/types';
 import {
   clipCoverage,
-  fitFactorForRadius,
   narrowFeatureArea,
   outlineArea,
   outlineBounds,
@@ -92,62 +91,51 @@ describe('placing an artwork point on the part', () => {
 });
 
 describe('keeping the shape inside the wheel', () => {
+  /** What the caller does: centre on the axis, then cap by one ratio. */
+  const capped = (rings: Outline, maxR = HUBCAP_WHEEL_DIAMETER_MM / 2): Outline => {
+    const reach = outlineReach(rings);
+    const k = reach > 0 ? Math.min(1, maxR / reach) : 1;
+    return scaleOutlineAbout(rings, 0, 0, k);
+  };
+
   it('leaves a shape that already fits completely alone', () => {
-    expect(fitFactorForRadius([circle(50)], 0, 0, 140)).toBe(1);
+    const small = [circle(50)];
+    expect(capped(small)).toEqual(small);
   });
 
   it('shrinks an oversized shape to exactly the rim', () => {
-    const big = [circle(300)];
-    const k = fitFactorForRadius(big, 0, 0, 140)!;
-
-    expect(outlineReach(scaleOutlineAbout(big, 0, 0, k))).toBeCloseTo(140, 1);
+    expect(outlineReach(capped([circle(300)]))).toBeCloseTo(HUBCAP_WHEEL_DIAMETER_MM / 2, 6);
   });
 
   it("catches a square's corners, which reach further than its longest side", () => {
     // A square 280mm on a side reaches r=198 and would overhang by 58mm. Capping on the longest
     // side alone — which an earlier version did — passes this shape straight through.
     const square = [rect(280, 280)];
-    expect(outlineReach(square)).toBeGreaterThan(140);
+    expect(outlineReach(square)).toBeGreaterThan(HUBCAP_WHEEL_DIAMETER_MM / 2);
 
-    const k = fitFactorForRadius(square, 0, 0, 140)!;
-    expect(outlineReach(scaleOutlineAbout(square, 0, 0, k))).toBeCloseTo(140, 1);
-    expect(k).toBeLessThan(1);
+    expect(outlineReach(capped(square))).toBeCloseTo(HUBCAP_WHEEL_DIAMETER_MM / 2, 6);
   });
 
-  it('shrinks toward the offset, so the result matches a smaller mmPerUnit exactly', () => {
-    // The equivalence the design-face override depends on: shrinking the placed outline by k has
-    // to equal having placed it with mmPerUnit*k, or the part and the picture come out different
-    // sizes the moment the cap engages.
+  it('scaling by k equals having placed it with mmPerUnit * k', () => {
+    // The equivalence everything downstream depends on: the same k is handed to the artwork, so if
+    // shrinking the built outline is not the same as building it smaller, the part and the picture
+    // come out different sizes the moment the cap engages.
     const pts = [
       { x: 10, y: 0 },
       { x: 0, y: 40 },
       { x: -30, y: -20 },
     ];
-    const pl = plain({ mmPerUnit: 4, offX: 12, offZ: -7, rotationDeg: 33 });
+    const pl = plain({ mmPerUnit: 4, rotationDeg: 33 });
     const placed = [pts.map((p) => placeArtworkPoint(p.x, p.y, pl))];
     const k = 0.6;
 
-    const shrunk = scaleOutlineAbout(placed, pl.offX, pl.offZ, k);
+    const shrunk = scaleOutlineAbout(placed, 0, 0, k);
     const rebuilt = [pts.map((p) => placeArtworkPoint(p.x, p.y, { ...pl, mmPerUnit: 4 * k }))];
 
     shrunk[0].forEach((p, i) => {
       expect(p.x).toBeCloseTo(rebuilt[0][i].x, 6);
       expect(p.z).toBeCloseTo(rebuilt[0][i].z, 6);
     });
-  });
-
-  it('refuses when the offset alone is off the wheel, rather than scaling to nothing', () => {
-    // Shrinking collapses the shape onto its offset point, so no k rescues a design pushed past
-    // the rim — returning a tiny k would produce a speck of a part instead of saying so.
-    expect(fitFactorForRadius([circle(10, 64, 200, 0)], 200, 0, 140)).toBeNull();
-  });
-
-  it('honours the wheel diameter the rest of the app uses', () => {
-    const k = fitFactorForRadius([rect(500, 500)], 0, 0, HUBCAP_WHEEL_DIAMETER_MM / 2)!;
-    expect(outlineReach(scaleOutlineAbout([rect(500, 500)], 0, 0, k)) * 2).toBeCloseTo(
-      HUBCAP_WHEEL_DIAMETER_MM,
-      0,
-    );
   });
 });
 

@@ -266,8 +266,15 @@ export function hubcapTemplateSvg(shape: HubcapShape): string {
     const w = round2(x1 - x0);
     const h = round2(z1 - z0);
     // A silhouette is cut square, with no chamfer to inset — the whole outline is design face.
+    //
+    // BOTH axes negate, matching what scripts/gen-templates.mjs bakes for every shipped template
+    // (`bboxCx - (x - faceCx)`): a template is drawn to be looked at from the side artwork is
+    // applied from, which is the mirror of the part's own frame. Emitting `p.x - x0` instead reads
+    // as a 180° rotation — invisible on the disc and on any symmetric silhouette, wrong on exactly
+    // the asymmetric shapes this feature exists for, and only discoverable after someone has drawn
+    // on it and loaded it back.
     const d = shape.outline
-      .map((r) => 'M ' + r.map((p) => `${round2(p.x - x0)},${round2(p.z - z0)}`).join(' L ') + ' Z')
+      .map((r) => 'M ' + r.map((p) => `${round2(x1 - p.x)},${round2(z1 - p.z)}`).join(' L ') + ' Z')
       .join(' ');
     return `<svg xmlns="http://www.w3.org/2000/svg"
      width="${w}mm" height="${h}mm" viewBox="0 0 ${w} ${h}">
@@ -444,11 +451,6 @@ export const HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL =
   'This shape was too big for the wheel, so it was scaled down to fit — the hubcap and the ' +
   'artwork on it are both smaller than the size you set. Reduce the size or the scale to take ' +
   'control of it yourself.';
-
-/** Offset so far off-axis that no amount of shrinking brings the shape back over the wheel. */
-export const HUBCAP_SILHOUETTE_OFF_WHEEL =
-  'The artwork is offset too far to sit on the wheel, so the hubcap stays round. Bring it back ' +
-  'toward the centre with Offset.';
 
 export const HUBCAP_SILHOUETTE_THIN_DETAIL =
   'Some of this shape is thinner than 1mm, which is about one nozzle wide — those parts will be ' +

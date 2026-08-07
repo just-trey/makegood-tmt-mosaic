@@ -50,7 +50,7 @@ import {
   type TileGrid,
 } from './patterns';
 import { overlappingDesignPairs, type PlacedDesign } from './designOverlap';
-import { generatedDesignFaceOverride } from '../assembly/kinds';
+import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
 import { noticeBuild, warnBuild } from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
@@ -259,6 +259,16 @@ export interface DesignScaleContext {
   radius: number;
   /** lazy `memoLargestDesignFace(parts)` — only read on the no-declared-size rect branch */
   designFace: () => { w: number; h: number } | null;
+  /**
+   * Extra shrink a *generated* part had to apply to its own shape, which the artwork has to follow.
+   * 1 (or absent) for every ordinary part.
+   *
+   * Separate from `designFace` because it has to survive every branch below, and `designFace` does
+   * not: an SVG that declares an absolute mm size returns before the face is ever consulted. The
+   * hubcap's wheel cap was folded into the face at first and was silently a no-op for exactly those
+   * files — which includes this app's own design templates, the one artwork we ship people.
+   */
+  generatedFit?: () => number;
 }
 
 /**
@@ -289,8 +299,10 @@ export function designMmPerUnit(
   forceRect = false,
   notice: (msg: string) => void = () => {},
 ): number {
-  if (!ctx.isRect && !forceRect) return (ctx.radius / anchorR) * scaleMult;
-  if (parsed.userUnitMM != null) return parsed.userUnitMM * scaleMult;
+  // Applied to every branch below, deliberately: see DesignScaleContext.generatedFit.
+  const fit = ctx.generatedFit?.() ?? 1;
+  if (!ctx.isRect && !forceRect) return (ctx.radius / anchorR) * scaleMult * fit;
+  if (parsed.userUnitMM != null) return parsed.userUnitMM * scaleMult * fit;
   const vb = parsed.viewBox;
   const designFace = ctx.designFace();
   if (designFace && vb && vb.w > 0 && vb.h > 0) {
@@ -302,13 +314,13 @@ export function designMmPerUnit(
         ? 'This image has no real-world size, so it was auto-fit to the part face. Use Scale to fine-tune.'
         : 'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
     );
-    return Math.min(designFace.w / vb.w, designFace.h / vb.h) * scaleMult;
+    return Math.min(designFace.w / vb.w, designFace.h / vb.h) * scaleMult * fit;
   }
   if (designFace)
     notice(
       'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
     );
-  return scaleMult;
+  return scaleMult * fit;
 }
 
 /** The design's content bounding box, placed: a convex quad in the zone's own 2D design space. */
@@ -471,6 +483,7 @@ export async function buildAssemblyGeometry(
     // The gizmo builds this same context from the same helper — a frame drawn around a different
     // size than the cut used encloses empty face, which is what designAnchor's comment warns of.
     designFace: () => generatedDesignFaceOverride() ?? memoLargestDesignFace(parts)(),
+    generatedFit: generatedFitFactor,
   };
   const mmPerUnitOf = (
     parsed: ParsedSVG,

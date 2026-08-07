@@ -305,9 +305,19 @@ rule meant to match it.** `hubcapShapeFromState` builds an `OutlinePlacement`
 from `designAnchor` and `designMmPerUnit` — the two helpers the cut itself
 uses — and `placeArtworkPoint` applies them in the same order
 `ZoneMapper.placer` does: scale about the design anchor, mirror each axis,
-rotate about the design centre, then translate by the millimetre offset. So
-scale, rotation, both flips and the offset all reshape the part, and the part
-and the picture cannot disagree by construction.
+rotate about the design centre, then translate. So scale, rotation and both
+flips all reshape the part, and the part and the picture cannot disagree by
+construction.
+
+**Offset is the one placement input that is derived rather than read.** The
+outline centres itself on the mounting axis and the artwork's offset is solved
+to put the picture on it. This is not a simplification but a correctness
+requirement: `ZoneMapper.placer` finishes with `+ faceCx`, the design face's
+own bbox centre, and for a silhouette that face _is_ the outline being placed —
+so every offset moved the surface it was being measured against, and no value
+made the two agree. Centring makes `faceCx` zero by construction, which leaves
+one consistent answer. It also matches what the control means: moving artwork
+relative to a part that _is_ that artwork isn't a request with a meaning.
 
 Two rules of thumb sit inside that. Both axes normally negate — artwork space
 is y-down while the part's ground plane is not (Z), and the design face points
@@ -324,18 +334,23 @@ substitutes a fixed square sized from the diameter control, read identically by
 the build (`src/geometry/assembly.ts`) and the placement gizmo
 (`src/scene/faceFrame.ts`) so the two never disagree about scale.
 
-The wheel limit rides on that same override. Nothing may overhang the 280mm
-wheel (`HUBCAP_WHEEL_DIAMETER_MM`), and a shape's corners reach further than
-its longest side, so the check is a radius about the mounting axis rather than
-a maximum "size": `fitFactorForRadius` bisects for the largest factor that
-still clears the rim, `scaleOutlineAbout` applies it about the design's offset
-point — the one point a change in `mmPerUnit` leaves fixed, which is what makes
-shrinking the placed outline identical to having placed it smaller — and the
-override multiplies the design face by the same factor so the artwork comes
-down with the part. A cap applied to the part alone left the outer band of
-every colour region hanging off the edge it was cut into. An offset so far out
-that no factor rescues the shape is refused instead, since shrinking would
-collapse it onto a point that is itself off the wheel.
+The wheel limit is a second factor, and it deliberately does **not** ride on
+the design face. Nothing may overhang the 280mm wheel
+(`HUBCAP_WHEEL_DIAMETER_MM`), and a shape's corners reach further than its
+longest side, so the check is a radius about the mounting axis rather than a
+maximum "size": the factor is `min(1, R / outlineReach)` — exact, not searched,
+because the outline is centred on the axis so every point's distance scales
+with it — and `scaleOutlineAbout` applies it. `generatedFitFactor` then feeds
+the same number to the artwork through `DesignScaleContext.generatedFit`, which
+`designMmPerUnit` multiplies into **every** branch it can return from.
+
+That last part is the whole reason it is a separate field. The cap was folded
+into the design face first, and `designMmPerUnit` returns `userUnitMM *
+scaleMult` before it ever consults the face — so for any SVG declaring an
+absolute mm size, which includes every design template this app hands out, the
+cap silently applied to the part and not to the picture, and the warning
+claimed both had shrunk. A cap on the part alone leaves the outer band of every
+colour region hanging off the edge it was cut into.
 
 **Export placement is baked from a verified reference 3MF, never computed or
 read at runtime.** Once a part's real-world print pose has been checked in the
