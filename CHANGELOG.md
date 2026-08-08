@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   panel adds that Flip H and Flip V are mirrors rather than rotations: artwork
   that imported upside down wants Rotation, since mirroring it would leave the
   text reversed.
+- The Help dialog now closes when you press the browser's Back button after
+  following one of its own section links. It used to stay on screen over an app
+  you had already navigated back to.
 
 ### Changed
 
