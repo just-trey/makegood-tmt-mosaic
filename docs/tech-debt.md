@@ -82,6 +82,85 @@ it would take: state what the rule actually means ("no further decorative colour
 viewport grid is a repeating texture, not a blend") rather than changing the count — the number
 is the wrong thing to fix here, the sentence is.
 
+A related question this section does not settle: the header's full-width rainbow gradient.
+`design-system/README.md` reserves the rainbow language for makegood.design and says the tool uses
+no gradients but the app mark. Recorded in [ui-conventions.md](ui-conventions.md) as a brand call
+rather than a bug — it needs a decision on what the tool's header is allowed to be, not a fix.
+
+## Selection is communicated by tinting, in an app whose whole subject is color
+
+Conventions 19–21 of [ui-conventions.md](ui-conventions.md). `--accent-primary` is blue
+(`#6d93ff`); blue is also a filament a user owns and frequently the color of the artwork being
+placed. The placement frame is drawn in accent blue over that artwork, so "this is selected" and
+"this region prints blue" are the same signal. The general rule the conventions state: selection
+reads as outline, contrast against dimmed surroundings, or a neutral-luminance treatment — never
+as an accent hue laid over the thing selected. Two neighbours of the same rule: greyed-back
+excluded geometry must not look like geometry printing in grey, and any meaning-carrying overlay
+(hidden-surface hatching, warning highlight) has to be distinguishable by pattern or motion rather
+than hue alone.
+
+Not measured in this repo. Asserted by the rubric against a current wheel screenshot, and carried
+here from that file's conflicts table rather than from an audit — the `system` lens has not been
+pointed at it. What closing it would take: decide the selection treatment first (outline plus
+dimmed surroundings is the conventions' own suggestion), then apply it wherever selection is drawn
+— the placement frame is the known instance, not necessarily the only one.
+
+## Filaments are presented as an unlabelled swatch grid, and the slot count only appears in a failure
+
+Conventions 16–18 of [ui-conventions.md](ui-conventions.md). "Body / blank color" is a 14-swatch
+grid with no numbering; an AMS presents filaments as numbered slots, which is the vocabulary the
+audience already has. Separately, the number of slots a design is currently spending is visible
+only inside the AMS-capacity warning — the user learns the cost at the moment it has already
+become a problem, rather than while there is still a cheap decision to make.
+
+This is the presentation half of a mismatch whose other half is already tracked under "Auto-merge
+is a similarity control; the user's actual constraint is a slot count" — that section covers what
+the control _does_, this one covers whether the cost is legible while designing. Closing it means
+a persistent slot count against the selected printer's capacity, shown during design rather than
+on failure, and numbering the swatches. The count is already computed for the capacity check, so
+this is presentation over data the app has in hand. A third convention in the same group — that
+the owned-filament palette be editable in the app rather than by hand-editing
+`public/filaments.json` — is already carried as a roadmap item.
+
+## The body-color help text tells the user to act in a different panel
+
+Convention 4 of [ui-conventions.md](ui-conventions.md), which states that no control's
+explanation may reference a control in another panel: if it must, the model is wrong and the
+layout should change rather than the copy grow. The live instance: "Body / blank color … To print
+an artwork color as the body instead, use '→ base' (or drag it onto the Base row) in Colors
+detected further down."
+
+Not measured; carried from the rubric's conflicts table. The copy is a symptom, so the fix is not
+a rewrite — closing it means putting base assignment where the body color is chosen, or accepting
+that these are one decision presented in two places. Worth settling alongside the swatch-grid item
+above, since both are about the same panel.
+
+## The AMS-capacity pill states three remedies at once
+
+Convention 3 of [ui-conventions.md](ui-conventions.md): a warning states one problem and one
+primary remedy, with alternatives in help rather than in the pill. The capacity warning currently
+carries three remedies across three lines of prose.
+
+Not measured; carried from the rubric's conflicts table. Smallest item in this group — closing it
+is choosing which remedy is primary and moving the rest into the help dialog. Note that
+[troubleshooting.md](troubleshooting.md) keeps one section per user-visible warning string, so
+changing this pill's text means updating that section too.
+
+## The placement frame's angle is unrelated to the face it acts on, and it shares the viewport with a second affordance
+
+Conventions 13–14 of [ui-conventions.md](ui-conventions.md): a gizmo is aligned to the frame of
+the thing it acts on, and only one manipulation affordance is offered at a time. Both are
+reported broken — the placement frame renders at an angle with no relation to the part face, and
+corner handles compete with an axis handle for the same drag.
+
+Not measured, and the one item in this group where that matters most: an arbitrary gizmo angle is
+either a genuine frame bug in the placement math or a rendering choice, and those close very
+differently. Establishing which comes before any fix — it touches placement, so treat it as
+geometry work rather than UI. The competing-affordances half is separable and is a UI decision.
+This is also the item most likely to overlap the already-tracked "Zone picking has no occlusion
+test," since all three are about the viewport not behaving like the direct-manipulation surface it
+looks like.
+
 ## The browser-driven checks are only fast if Chromium finds a real GPU, and on WSL2 it does not find one by itself
 
 Falling back to SwiftShader costs

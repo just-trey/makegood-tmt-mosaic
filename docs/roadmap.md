@@ -23,7 +23,15 @@
   2026-08-02). Depends on fixing the zone-picking occlusion gap in
   [docs/tech-debt.md](tech-debt.md) first — clicking a visible surface has to
   reliably hit the zone behind it, not a farther one, before this is safe to
-  build.
+  build. This is also conventions 9 and 15 of
+  [ui-conventions.md](ui-conventions.md) ("order follows the task, and the task
+  starts with _where_, not _what_"; "files are dropped onto the thing they apply
+  to"), whose conflicts table notes that today's `+zone` repeats one design onto
+  another surface _after_ loading it — a different data model, not a relabel.
+- Per-kind part icons, if they happen, are rendered from the part mesh —
+  thumbnails are in-system, hand-authored SVG glyphs are ruled out by the design
+  system and by convention 32 of [ui-conventions.md](ui-conventions.md). Noted
+  because an earlier plan proposed the glyph version.
 - Power-user tooling for repeat volunteers, all independently raised by the
   maker-workflow review (2026-08-02): undo/redo over color merges, base
   assignment, depth and placement; keyboard shortcuts (`Ctrl/Cmd+E` to
