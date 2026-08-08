@@ -142,20 +142,18 @@ The failure mode here is adding. The standing complaint is features nobody needs
 
 ---
 
-## Conflicts found between this file and the current app
+## Conflicts between this file and the current app
 
-Recorded so they are decided rather than discovered. None are fixed.
+The conflicts this file was written against are **not listed here**. Open known-wrong behavior
+lives in [tech-debt.md](tech-debt.md), one section per item, and unbuilt work lives in
+[roadmap.md](roadmap.md) — a rubric that also carries its own findings list drifts from those two
+the first time one of them is fixed.
 
-| #      | Conflict                                                                                                                                                                                           |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 19     | The placement frame is accent blue, drawn over artwork that is often blue. Live in the current wheel screenshot.                                                                                   |
-| 16, 17 | "Body / blank color" is a 14-swatch unlabelled grid. AMS slots appear only in the capacity warning.                                                                                                |
-| 4      | The body-color help text instructs the user to act in a different panel ("Colors detected further down").                                                                                          |
-| 3      | The AMS-capacity pill carries three remedies in three lines.                                                                                                                                       |
-| 9, 15  | `+zone` repeats one design onto another surface _after_ loading it. The intended model is a design per zone, chosen surface-first. Different data model, not a relabel.                            |
-| 13, 14 | The placement frame renders at an angle unrelated to the part face, and shares the viewport with a second axis affordance.                                                                         |
-| 32     | The plan's per-kind icon item proposes hand-authored glyphs, which the design system rules out. Render from the part mesh instead.                                                                 |
-| —      | The header carries a full-width rainbow gradient. The design system reserves the rainbow language for makegood.design and says the tool uses no gradients but the app mark. Brand call, not a bug. |
+Those sections cite convention numbers, so `grep -rn 'ui-conventions' docs/` is the index. When
+this file landed, conventions 3, 4, 13–14, 16–18 and 19–21 had open conflicts, 9/15 described a
+data-model change already tracked as a roadmap item, and 32 constrained an unbuilt one. None were
+fixed. None were measured by an audit either — they were asserted against a screenshot, which is
+why the tech-debt sections say so rather than presenting them as measurements.
 
 ## Using this as a review rubric
 
