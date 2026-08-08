@@ -72,8 +72,8 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 14px;
-  padding: 32px;
+  gap: var(--space-section);
+  padding: var(--space-panel);
   background: var(--bg);
   color: var(--text);
 }
@@ -108,8 +108,10 @@ header {
   grid-column: 1/3;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 20px;
+  gap: var(--space-row);
+  /* 20px sits between --space-section and --space-panel; --space-panel would read airier
+     than today, so this rounds down. See DECISIONS-NEEDED.md. */
+  padding: 0 var(--space-section);
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
@@ -126,7 +128,7 @@ header .version-tag {
   color: var(--text-dim);
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 1px 7px;
+  padding: var(--space-hair) var(--space-row);
   text-decoration: none;
 }
 header .version-tag:hover {
@@ -135,7 +137,7 @@ header .version-tag:hover {
 }
 header .sub {
   color: var(--text-dim);
-  margin-left: 2px;
+  margin-left: var(--space-hair);
 }
 header .spacer {
   flex: 1;
@@ -144,7 +146,7 @@ header .stat {
   font-family: var(--mono);
   font-size: var(--text-meta);
   color: var(--text-dim);
-  margin-left: 14px;
+  margin-left: var(--space-section);
 }
 
 .icon-btn {
@@ -227,7 +229,9 @@ header .stat {
   border-radius: var(--radius-lg);
   background: var(--panel);
   color: var(--text);
-  padding: 20px;
+  /* 20px sits between --space-section and --space-panel; --space-panel would read airier
+     than today, so this rounds down. See DECISIONS-NEEDED.md. */
+  padding: var(--space-section);
   width: min(380px, 90vw);
   box-shadow: 0 24px 48px rgba(4, 6, 14, 0.45);
 }
@@ -235,20 +239,20 @@ header .stat {
   background: rgba(4, 6, 14, 0.55);
 }
 #confirm-dialog p {
-  margin: 0 0 18px;
+  margin: 0 0 var(--space-section);
   line-height: 1.55;
   color: var(--text);
 }
 .confirm-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-row);
 }
 .help-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: var(--space-row);
+  padding: var(--space-section);
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
@@ -279,8 +283,8 @@ header .stat {
 .help-toc {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 12px 16px;
+  gap: var(--space-tight);
+  padding: var(--space-section);
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
@@ -291,7 +295,7 @@ header .stat {
   text-decoration: none;
   border: 1px solid var(--line);
   border-radius: var(--radius-2xl);
-  padding: 3px 8px;
+  padding: var(--space-hair) var(--space-row);
   background: var(--panel-2);
 }
 .help-toc a:hover {
@@ -303,7 +307,7 @@ header .stat {
   overflow-y: auto;
 }
 .help-sec {
-  padding: 16px;
+  padding: var(--space-section);
   border-bottom: 1px solid var(--line);
   scroll-margin-top: 8px;
 }
@@ -323,12 +327,12 @@ header .stat {
 .help-sec h3 {
   font-family: var(--heading);
   font-size: var(--text-emphasis);
-  margin: 3px 0 6px;
+  margin: var(--space-hair) 0 var(--space-tight);
 }
 .help-sec p {
   color: var(--text-dim);
   line-height: 1.55;
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-row);
 }
 .help-sec p:last-child {
   margin-bottom: 0;
@@ -338,7 +342,7 @@ header .stat {
   background: var(--panel);
   border-right: 1px solid var(--line);
   overflow-y: auto;
-  padding: 14px;
+  padding: var(--space-section);
 }
 #right {
   position: relative;
@@ -361,7 +365,7 @@ header .stat {
   font-size: var(--text-meta);
   color: var(--text-dim);
   background: rgba(12, 18, 32, 0.72);
-  padding: 6px 10px;
+  padding: var(--space-tight) var(--space-row);
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
   pointer-events: none;
@@ -376,7 +380,7 @@ header .stat {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-tight);
   pointer-events: none;
 }
 .warn-pill {
@@ -384,12 +388,12 @@ header .stat {
   background: var(--danger-wash);
   border: 1px solid var(--danger-border);
   color: var(--danger-text);
-  padding: 6px 10px;
+  padding: var(--space-tight) var(--space-row);
   border-radius: var(--radius-lg);
   max-width: 520px;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-row);
 }
 .warn-pill.info {
   background: var(--accent-wash);
@@ -424,7 +428,7 @@ header .stat {
   background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--text-dim);
-  padding: 4px 8px;
+  padding: var(--space-tight) var(--space-row);
   border-radius: var(--radius-lg);
   cursor: pointer;
 }
@@ -434,7 +438,7 @@ header .stat {
 }
 
 details.sec {
-  margin-bottom: 18px;
+  margin-bottom: var(--space-section);
 }
 details.sec > summary {
   font-family: var(--heading);
@@ -442,11 +446,11 @@ details.sec > summary {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-dim);
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--space-row) 0;
   font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-tight);
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -475,8 +479,8 @@ details.sec > summary::after {
 .row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 7px;
+  gap: var(--space-row);
+  margin-bottom: var(--space-row);
 }
 .row label {
   flex: 0 0 auto;
@@ -493,7 +497,7 @@ select {
   background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--text);
-  padding: 5px 7px;
+  padding: var(--space-tight) var(--space-row);
   border-radius: var(--radius-md);
   font-family: var(--mono);
   font-size: var(--text-meta);
@@ -519,7 +523,7 @@ input[type='range'] {
 .field.pair {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-row);
   min-width: 0;
 }
 .field.pair input[type='range'] {
@@ -533,13 +537,13 @@ input[type='range'] {
 }
 .asm-variant-options {
   display: flex;
-  gap: 14px;
+  gap: var(--space-section);
   align-items: center;
 }
 .asm-variant-options .variant-option {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-tight);
   min-width: 0;
   color: var(--text);
   cursor: pointer;
@@ -557,7 +561,7 @@ input[type='checkbox'] {
   background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--text);
-  padding: 7px 10px;
+  padding: var(--space-row);
   border-radius: var(--radius-lg);
   cursor: pointer;
   font-family: var(--sans);
@@ -576,7 +580,7 @@ input[type='checkbox'] {
   filter: brightness(1.08);
 }
 .btn.small {
-  padding: 3px 8px;
+  padding: var(--space-hair) var(--space-row);
 }
 .btn.full {
   width: 100%;
@@ -587,18 +591,18 @@ input[type='checkbox'] {
 }
 .btn-row {
   display: flex;
-  gap: 6px;
+  gap: var(--space-tight);
 }
 
 .restore-banner {
   background: var(--accent-wash);
   border: 1px solid var(--accent);
   border-radius: var(--radius-lg);
-  padding: 10px;
-  margin-bottom: 14px;
+  padding: var(--space-row);
+  margin-bottom: var(--space-section);
 }
 .restore-banner p {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-row);
   color: var(--text);
   line-height: 1.4;
 }
@@ -606,7 +610,7 @@ input[type='checkbox'] {
 #dropzone {
   border: 1.5px dashed var(--line);
   border-radius: var(--radius-2xl);
-  padding: 18px 10px;
+  padding: var(--space-section) var(--space-row);
   text-align: center;
   color: var(--text-dim);
   cursor: pointer;
@@ -622,21 +626,21 @@ input[type='checkbox'] {
   color: var(--text);
   font-family: var(--mono);
   font-size: var(--text-meta);
-  margin-top: 4px;
+  margin-top: var(--space-tight);
   word-break: break-all;
 }
 
 .artwork-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
+  gap: var(--space-tight);
+  margin-top: var(--space-row);
 }
 .artwork-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
+  gap: var(--space-row);
+  padding: var(--space-tight) var(--space-row);
   border: 1px solid var(--line);
   border-radius: var(--radius-2xl);
   /* a zoned part's row carries name + mode + zone + "+zone" + × — more than the panel width fits,
@@ -662,7 +666,7 @@ input[type='checkbox'] {
 }
 .artwork-row .artwork-zone,
 .artwork-row .artwork-mode {
-  padding: 2px 4px;
+  padding: var(--space-hair) var(--space-tight);
   max-width: 90px;
 }
 .artwork-row .artwork-zone-badge {
@@ -675,15 +679,15 @@ input[type='checkbox'] {
 .artwork-raster {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: -2px 0 2px 10px;
-  padding: 4px 8px;
+  gap: var(--space-hair);
+  margin: calc(var(--space-hair) * -1) 0 var(--space-hair) var(--space-row);
+  padding: var(--space-tight) var(--space-row);
   border-left: 2px solid var(--line);
 }
 .artwork-raster .row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-row);
   margin: 0;
 }
 .artwork-raster label {
@@ -698,14 +702,14 @@ input[type='checkbox'] {
   font-family: var(--mono);
   font-size: var(--text-meta);
   color: var(--text-dim);
-  padding-left: 2px;
+  padding-left: var(--space-hair);
 }
 
 .pattern-picker {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--space-tight);
+  margin-top: var(--space-row);
 }
 .pattern-swatch {
   width: 40px;
@@ -731,12 +735,12 @@ input[type='checkbox'] {
 .shape-picker {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--space-row);
+  margin-bottom: var(--space-row);
 }
 .shape-picker select {
   flex: 1;
-  padding: 8px 8px;
+  padding: var(--space-row);
   font-size: var(--text-body);
   font-family: var(--sans);
 }
@@ -770,13 +774,13 @@ input[type='checkbox'] {
 .color-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-tight);
 }
 .color-row {
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: 7px 8px;
+  padding: var(--space-row);
   transition:
     border-color 0.1s,
     opacity 0.1s;
@@ -796,14 +800,14 @@ input[type='checkbox'] {
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: 8px 10px;
-  margin-bottom: 8px;
+  padding: var(--space-row);
+  margin-bottom: var(--space-row);
 }
 .asm-sum-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 2px 0;
+  gap: var(--space-row);
+  padding: var(--space-hair) 0;
   color: var(--text);
 }
 .asm-sum-row .ok {
@@ -813,14 +817,14 @@ input[type='checkbox'] {
   text-align: center;
 }
 .asm-adv {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-row);
 }
 .asm-adv > summary {
   cursor: pointer;
   color: var(--text-dim);
   list-style: none;
   user-select: none;
-  padding: 2px 0;
+  padding: var(--space-hair) 0;
 }
 .asm-adv > summary::before {
   content: '▸ ';
@@ -831,7 +835,7 @@ input[type='checkbox'] {
 .color-row .top {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-row);
 }
 .swatch {
   width: 16px;
@@ -854,8 +858,8 @@ input[type='checkbox'] {
 .color-row .depth-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--space-tight);
+  margin-top: var(--space-tight);
 }
 .color-row .depth-row input {
   width: 76px;
@@ -883,7 +887,7 @@ input[type='checkbox'] {
 .color-row .depth-reset {
   min-width: 24px;
   height: 24px;
-  padding: 0 6px;
+  padding: 0 var(--space-tight);
   /* glyph-as-icon, sized optically off the text scale — see design-system/README.md's
      iconography rule. 1.1em of the inherited 12px body renders ~13px, matching today. */
   font-size: 1.1em;
@@ -903,16 +907,16 @@ input[type='checkbox'] {
 .color-row .merge-row {
   display: flex;
   align-items: center;
-  margin-top: 6px;
+  margin-top: var(--space-tight);
 }
 .color-row .merge-row select {
   width: auto;
   max-width: 160px;
-  padding: 3px 5px;
+  padding: var(--space-hair) var(--space-tight);
 }
 .empty-hint {
   color: var(--text-dim);
-  padding: 10px 2px;
+  padding: var(--space-row) var(--space-hair);
   line-height: 1.5;
 }
 
@@ -920,7 +924,7 @@ input[type='checkbox'] {
   font-family: var(--mono);
   font-size: var(--text-meta);
   color: var(--accent-2);
-  margin-top: 6px;
+  margin-top: var(--space-tight);
 }
 /* needs more than one AMS unit, but the printer can still do it — a note, not an error. Full-
    strength text plus weight, so it reads as *more* marked than the resting teal rather than less. */
@@ -935,14 +939,14 @@ input[type='checkbox'] {
 .base-color-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-tight);
   flex: 1;
 }
 .base-color-swatches {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 2px;
+  gap: var(--space-tight);
+  margin-bottom: var(--space-hair);
 }
 .base-swatch {
   width: 20px;
@@ -964,7 +968,7 @@ input[type='checkbox'] {
   position: relative;
   height: 13px;
   color: var(--text-dim);
-  margin: 2px 0 8px;
+  margin: var(--space-hair) 0 var(--space-row);
 }
 .auto-merge-labels span {
   position: absolute;
@@ -994,8 +998,8 @@ input[type='checkbox'] {
 .merge-members {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
-  margin-top: 6px;
+  gap: var(--space-hair);
+  margin-top: var(--space-tight);
 }
 .member-swatch {
   position: relative;
@@ -1045,7 +1049,7 @@ input[type='checkbox'] {
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-row);
   color: var(--text-dim);
   z-index: 5;
 }
@@ -1078,7 +1082,7 @@ input[type='checkbox'] {
 .hint {
   color: var(--text-dim);
   line-height: 1.5;
-  margin-top: 4px;
+  margin-top: var(--space-tight);
 }
 a {
   color: var(--accent);
