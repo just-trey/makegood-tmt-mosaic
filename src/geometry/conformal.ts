@@ -12,6 +12,7 @@ import {
 } from './manifold';
 import {
   rotatePointY,
+  type CutRegion,
   type CutterOptions,
   type DesignPlacement,
   type FillExtent,
@@ -458,8 +459,13 @@ export class ConformalZoneMapper implements ZoneMapper {
     return bb.maxX > bb.minX && bb.maxY > bb.minY ? bb : null;
   }
 
-  resolveCutDepth(depthSetting: number): number {
-    return depthSetting;
+  /**
+   * Always the setting, in one piece. A conformal zone has no cut-through mode and no edge rule:
+   * its "boundary" is where this part's share of a chart ends, which is a seam against the
+   * neighbouring printed piece, not an outer wall anyone sees.
+   */
+  resolveCutRegions(feat: PolyFeature, depthSetting: number): CutRegion[] {
+    return [{ feat, depth: depthSetting }];
   }
 
   buildCutter(

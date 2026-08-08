@@ -45,6 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   280mm wheel is scaled down to fit — artwork and all, so the picture stays on
   the part — and says that it did. Fill placement is withheld while it's on:
   only Sticker makes sense against a shape that keeps changing.
+- **Artwork at the edge of a cut-to-shape hubcap now cuts the full 3mm through,
+  while interior artwork stays at its normal recess depth.** Cutting the disc to
+  your picture and then recessing the picture 1mm into a 3mm shell left the
+  outline itself — the whole point of the shape — as a 2mm band of base color,
+  visible from every angle but straight on. Any color region that reaches the
+  outline is now taken the shell's full thickness, so the rim prints in that
+  color; regions in the middle of the part are untouched and still recess at
+  their depth setting. The app names the colors this applied to. It overrides a
+  depth set by hand at the edge only, and applies to no other part: a round
+  hubcap's rim is chamfered, so its design face is inset from the edge and
+  cutting through wouldn't put the color on the rim. It covers the shape's
+  outside edge only — a silhouette that encloses a hole keeps a base-color rim
+  around that hole, see [docs/tech-debt.md](docs/tech-debt.md).
 
 - **Raster artwork.** The Artwork dropzone now takes a PNG, JPG or WebP (and a
   GIF or BMP) as well

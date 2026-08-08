@@ -1,7 +1,57 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { FlatZoneMapper, implicitZoneFor, type DesignPlacement } from '../src/geometry/zones';
-import type { AssemblyPart } from '../src/types';
+import { getManifold } from '../src/geometry/manifold';
+import type { AssemblyPart, PolyFeature } from '../src/types';
+
+/** An axis-aligned rectangle as a turf polygon feature, in the face's own X/Z mm frame. */
+function square(x0: number, y0: number, x1: number, y1: number): PolyFeature {
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [x0, y0],
+          [x1, y0],
+          [x1, y1],
+          [x0, y1],
+          [x0, y0],
+        ],
+      ],
+    },
+  } as PolyFeature;
+}
+
+/** Several disjoint polygons as one feature, the way a traced color's regions arrive. */
+function multi(polys: PolyFeature[]): PolyFeature {
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'MultiPolygon',
+      coordinates: polys.map((p) => p.geometry.coordinates),
+    },
+  } as PolyFeature;
+}
+
+/** Planar shoelace area (mm²) — turf.area is geodesic and meaningless on these coordinates. */
+function area(feat: PolyFeature): number {
+  const g = feat.geometry;
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  let total = 0;
+  for (const rings of polys as number[][][][]) {
+    for (let ri = 0; ri < rings.length; ri++) {
+      const r = rings[ri];
+      let a = 0;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++)
+        a += r[j][0] * r[i][1] - r[i][0] * r[j][1];
+      total += ri === 0 ? Math.abs(a) / 2 : -Math.abs(a) / 2;
+    }
+  }
+  return total;
+}
 
 function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   const geo = new THREE.BoxGeometry(40, 10, 40).toNonIndexed();
@@ -228,14 +278,165 @@ describe('FlatZoneMapper surface geometry', () => {
     expect(new FlatZoneMapper(boxPart({ boundaryLoop: null }), [], false).fillExtent()).toBeNull();
   });
 
-  it('resolveCutDepth passes through, unless the zone is cut-through', () => {
-    expect(new FlatZoneMapper(boxPart(), [], false).resolveCutDepth(2)).toBe(2);
+  it('resolveCutRegions passes through, unless the zone is cut-through', () => {
+    const feat = square(-10, -10, 10, 10);
+    const plain = new FlatZoneMapper(boxPart(), [], false).resolveCutRegions(feat, 2);
+    expect(plain).toEqual([{ feat, depth: 2 }]);
     const through = new FlatZoneMapper(
       boxPart({ cutThrough: true, cutThroughDepth: 3 }),
       [],
       false,
     );
-    expect(through.resolveCutDepth(2)).toBe(3);
+    // The whole region, at the part's through-depth — and NOT flagged `edge`: that flag drives the
+    // edge-rule notice, and the wheel cap has cut this way since it shipped.
+    expect(through.resolveCutRegions(feat, 2)).toEqual([{ feat, depth: 3 }]);
+  });
+
+  it('resolveCutRegions ignores the edge rule without the boolean engine', () => {
+    // The gizmo builds mappers with wasm: null and never cuts. Splitting is the only thing that
+    // needs the engine, so a null one must fall back to the plain recess rather than throw.
+    const feat = square(-10, -10, 10, 10);
+    const m = new FlatZoneMapper(boxPart({ edgeCutThroughDepth: 3 }), [], false, null);
+    expect(m.resolveCutRegions(feat, 1)).toEqual([{ feat, depth: 1 }]);
+  });
+
+  it('splits edge-touching regions from interior ones under an edge rule', async () => {
+    const wasm = await getManifold();
+    // The box's design face spans [-20, 20]²: one region flush against the +X wall, one island
+    // well inside it, handed over as a single two-polygon feature the way a traced color arrives.
+    const touching = square(10, -5, 20, 5);
+    const inside = square(-5, -5, 5, 5);
+    const both = multi([touching, inside]);
+    const m = new FlatZoneMapper(boxPart({ edgeCutThroughDepth: 3 }), [], false, wasm);
+    const regions = m.resolveCutRegions(both, 1);
+
+    expect(regions).toHaveLength(2);
+    const edge = regions.find((r) => r.edge);
+    const interior = regions.find((r) => !r.edge);
+    expect(edge?.depth).toBe(3);
+    expect(interior?.depth).toBe(1);
+    // Whole polygons, never a sub-band: the edge slice is the touching square entire (100mm²),
+    // not the 0.1mm strip along the wall it shares with the boundary.
+    expect(area(edge!.feat)).toBeCloseTo(100, 5);
+    expect(area(interior!.feat)).toBeCloseTo(100, 5);
+  });
+
+  it('leaves a wholly-interior region alone under an edge rule', async () => {
+    const wasm = await getManifold();
+    const feat = square(-5, -5, 5, 5);
+    const m = new FlatZoneMapper(boxPart({ edgeCutThroughDepth: 3 }), [], false, wasm);
+    const regions = m.resolveCutRegions(feat, 1);
+    expect(regions).toEqual([{ feat, depth: 1 }]);
+  });
+
+  it('catches a region crossing a concave face’s inner edge', async () => {
+    const wasm = await getManifold();
+    // An L-shaped face: the [0,20]² quadrant is missing. This is the case the bbox prefilter
+    // cannot answer — the region sits well inside the face's *bounding box* while still crossing
+    // its edge — and it is the shape every real silhouette has (a cross, a character). Without the
+    // boolean fallback behind the segment-grid prefilter, this comes out interior and its edge
+    // prints in base color.
+    const L: number[][] = [
+      [-20, 10, -20],
+      [20, 10, -20],
+      [20, 10, 0],
+      [0, 10, 0],
+      [0, 10, 20],
+      [-20, 10, 20],
+    ];
+    const straddling = square(-8, -8, 2, 2); // crosses the notch's inner corner at (0, 0)
+    const m = new FlatZoneMapper(
+      boxPart({ edgeCutThroughDepth: 3, boundaryLoop: L }),
+      [],
+      false,
+      wasm,
+    );
+    const regions = m.resolveCutRegions(straddling, 1);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].edge).toBe(true);
+    expect(regions[0].depth).toBe(3);
+
+    // …and one tucked into the L's arm, away from every edge, still stays a recess.
+    const tucked = square(-15, -15, -8, -8);
+    const inner = m.resolveCutRegions(tucked, 1);
+    expect(inner).toEqual([{ feat: tucked, depth: 1 }]);
+  });
+
+  it('catches a large region sharing only a short stretch of the outline', async () => {
+    const wasm = await getManifold();
+    // The bug a relative area threshold produced, and the reason the threshold is absolute now.
+    // The erosion removes 0.1mm × contact-length, which has nothing to do with the region's area —
+    // so `kept < area * 0.999` got *harder* to trip the bigger the region grew. Here: a 15×15mm
+    // block whose corner is clipped by the face's diagonal wall, touching over ~1.4mm. It loses
+    // ~0.14mm² of 220mm², which the old test read as "lost nothing" and cut as a recess, leaving a
+    // base-color band on exactly the rim the rule exists to color.
+    //
+    // The contact must be away from a bbox extreme or the bbox prefilter answers first and the
+    // area test never runs — which is why the original tests missed this entirely. The numbers are
+    // chosen so the two thresholds actually disagree: 43246mm² of region losing 0.85mm² to the
+    // erosion needed 43.2mm² under the relative rule, and needs 0.005mm² under the absolute one.
+    // A hubcap-sized face, since the failure only bites once the region is large.
+    const chamfered: number[][] = [
+      [-110, 10, -110],
+      [110, 10, -110],
+      [110, 10, 100],
+      [100, 10, 110],
+      [-110, 10, 110],
+    ];
+    const m = new FlatZoneMapper(
+      boxPart({ edgeCutThroughDepth: 3, boundaryLoop: chamfered }),
+      [],
+      false,
+      wasm,
+    );
+    // A big block already clipped to that face: its own corner is the face's chamfer, so it shares
+    // exactly the 8.5mm stretch between (108, 102) and (102, 108) with the outline.
+    const block = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-100, -100],
+            [108, -100],
+            [108, 102],
+            [102, 108],
+            [-100, 108],
+            [-100, -100],
+          ],
+        ],
+      },
+    } as PolyFeature;
+    const regions = m.resolveCutRegions(block, 1);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].edge).toBe(true);
+    expect(regions[0].depth).toBe(3);
+  });
+
+  it('does not fire the edge rule on an unclipped region', async () => {
+    const wasm = await getManifold();
+    // safeIntersect hands the region back UNCLIPPED when the clipper fails. Unclipped means it
+    // reaches past the boundary everywhere, which this rule would read as "all of it is on the
+    // outer wall" and cut the whole color 3mm through — a hole where the pre-rule behavior was
+    // merely an oversized recess. The recess is the safe direction, so the flag turns the rule off.
+    const huge = square(-500, -500, 500, 500);
+    const m = new FlatZoneMapper(boxPart({ edgeCutThroughDepth: 3 }), [], false, wasm);
+    expect(m.resolveCutRegions(huge, 1, { clipped: false })).toEqual([{ feat: huge, depth: 1 }]);
+    // …and with the clip having succeeded, the same region is genuinely all-edge.
+    expect(m.resolveCutRegions(huge, 1)[0].edge).toBe(true);
+  });
+
+  it('takes an all-edge region entirely through', async () => {
+    const wasm = await getManifold();
+    // Artwork covering the whole face — the single-color silhouette case. Every polygon touches,
+    // so there is no interior slice at all and nothing is left cutting at the setting.
+    const feat = square(-20, -20, 20, 20);
+    const m = new FlatZoneMapper(boxPart({ edgeCutThroughDepth: 3 }), [], false, wasm);
+    const regions = m.resolveCutRegions(feat, 1);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].depth).toBe(3);
+    expect(regions[0].edge).toBe(true);
   });
 
   it('frameAt anchors at the face plane with the right axes', () => {

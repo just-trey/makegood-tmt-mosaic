@@ -120,8 +120,8 @@ How the geometry actually works — read this before touching `src/geometry/` or
    lazy-loaded) ([src/geometry/assembly.ts](../src/geometry/assembly.ts)).
    Depth is bounded only at the shallow end here — raised to the same 0.2 mm
    floor, with a warning naming the raised _setting_ rather than a cut depth,
-   since resolveCutDepth is free to ignore it (a cutThrough part takes its hole
-   the whole way through regardless). The too-deep end is not checked at all —
+   since `resolveCutRegions` is free to ignore it (a cutThrough part takes its
+   hole the whole way through regardless). The too-deep end is not checked at all —
    a part's wall thickness varies across it and nothing measures it, so a pocket
    deeper than the wall in one spot exports as a part with a hole through it and
    no warning. Only the extreme case surfaces, where the cut leaves the part
@@ -351,6 +351,52 @@ absolute mm size, which includes every design template this app hands out, the
 cap silently applied to the part and not to the picture, and the warning
 claimed both had shrunk. A cap on the part alone leaves the outer band of every
 colour region hanging off the edge it was cut into.
+
+**Artwork touching the outline cuts the shell's full thickness; interior
+artwork stays a recess.** Cutting the disc to the picture and then recessing
+that picture 1mm into a 3mm shell leaves the outline itself — the whole point of
+the shape — as a 2mm band of base colour, visible from any angle but straight
+on. So regions that reach the design-face boundary are cut the full
+`HUBCAP_THICKNESS_MM` instead.
+
+This is per **region**, not per part, which is what distinguishes it from
+`wheel-hub-cap`'s kind-wide `cutThrough`: on a 220mm disc the interior detail
+should stay a recess, and only the rim wants piercing. The plumbing:
+
+- The generator declares it. `buildMesh` returns
+  `GeneratedMesh.edgeCutThroughDepth`, and only for a **silhouette** — that
+  shape is cut flat (square edges), so its design face _is_ its outline and
+  "touching the boundary" means "standing on the part's real outer wall". The
+  circle is chamfered, its face inset 1mm from the rim, so the same cut would
+  still leave a base-colour ring; it declares nothing. Reading the shape that
+  was actually built, rather than `state.hubcapSilhouette`, covers every
+  fallback-to-circle path for free.
+- `ZoneMapper.resolveCutRegions` splits on it, returning one entry per depth
+  with the slice of the region cut at it. Nothing upstream learns what a hubcap
+  is; `buildAssemblyGeometry` extrudes whatever it is handed, and the slices
+  land in the same per-colour list the multi-zone case already unions.
+- The split is by **whole connected polygon**
+  ([src/geometry/edgeRegions.ts](../src/geometry/edgeRegions.ts)): a region
+  straddling the boundary goes through entire. Cutting only the strip near the
+  edge would leave a 3mm trench running through the middle of a colour. The
+  boundary is eroded with Manifold's `CrossSection.offset` — _not_ `turf.buffer`,
+  which is geodesic and would read millimetres as degrees.
+- A colour can be split across both depths at once, so the thin-depth note asks
+  whether **any** slice was cut at the setting. Saying "too thin to show up"
+  about a 3mm through-cut is the falsehood that gate exists to prevent.
+- The touch test compares lost area against an **absolute** floor, not a
+  fraction of the region. The erosion removes `tol × contact-length`, which has
+  nothing to do with the region's size, so a relative threshold got harder to
+  trip the larger the region grew — a 43000mm² block sharing 8mm of the outline
+  read as interior. See `MIN_TOUCH_AREA_MM2`.
+- The split only fires on a region that really was clipped to the boundary.
+  `safeIntersectChecked` reports a clipper fallback, because an unclipped region
+  overruns the boundary everywhere and would be read as entirely edge — turning
+  a too-big recess into a hole through the part.
+
+The face this all measures against is a **single** boundary loop, so a
+silhouette enclosing a hole keeps a base-colour rim around it; the ring set that
+would fix it is in [tech-debt.md](tech-debt.md).
 
 **Export placement is baked from a verified reference 3MF, never computed or
 read at runtime.** Once a part's real-world print pose has been checked in the

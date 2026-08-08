@@ -270,8 +270,15 @@ describe('boundary', () => {
     expect(ring).toContainEqual([ARC_U, H]);
   });
 
-  it('passes the depth setting through unchanged', () => {
-    expect(mapper.resolveCutDepth(2.5)).toBe(2.5);
+  it('passes the depth setting through unchanged, in one piece', () => {
+    // A conformal zone has no cut-through mode and no edge rule: its boundary is a seam against
+    // the neighbouring printed piece, not an outer wall, so it never splits a region.
+    const feat = {
+      type: 'Feature',
+      properties: {},
+      geometry: mapper.boundary()!.geometry,
+    } as never;
+    expect(mapper.resolveCutRegions(feat, 2.5)).toEqual([{ feat, depth: 2.5 }]);
   });
 
   it('fillExtent is the chart UV bbox a fill tiles over', () => {

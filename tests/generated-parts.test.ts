@@ -448,11 +448,45 @@ describe('which warning a generated hubcap raises', () => {
     const out = await hubcapRole.buildMesh!(clips as Float32Array);
 
     expect(out.warning).toBe(HUBCAP_DISCONNECTED_WARNING);
+    // A silhouette is cut flat, so its design face IS its outline and artwork reaching that
+    // boundary is standing on the part's real outer wall — declare the shell's full 3mm.
+    expect(out.edgeCutThroughDepth).toBe(3);
 
     state.hubcapSilhouette = false;
     state.sources = [];
     state.artworks = [];
     state.parsed = null;
+  }, 60000);
+
+  it('declares no edge rule on a round disc', async () => {
+    // The circle is chamfered: its design face is inset 1mm from the rim, so a through-cut at the
+    // face boundary would still leave a base-color ring and the rule would be a lie. The rule is
+    // read off the shape that got BUILT, so every fallback-to-circle path is covered by this too
+    // — including asking for a silhouette and not getting one.
+    const clips = await readMesh(resolve(REPO, 'public/stl/hubcap-clips.3mf'));
+    state.hubcapSilhouette = false;
+    state.hubcapDiameterMm = 220;
+
+    const out = await hubcapRole.buildMesh!(clips as Float32Array);
+    expect(out.edgeCutThroughDepth).toBeUndefined();
+  }, 60000);
+
+  it('drops the edge rule when a silhouette falls back to a circle', async () => {
+    // The toggle is on, but two artworks make an outline of two islands with no answer to which
+    // one sizes the part, so hubcapShapeFromState rounds. A part left carrying the rule here would
+    // through-cut the rim of a plain disc.
+    const clips = await readMesh(resolve(REPO, 'public/stl/hubcap-clips.3mf'));
+    state.hubcapSilhouette = true;
+    state.hubcapDiameterMm = 220;
+    state.artworks = [{ id: 'a1' }, { id: 'a2' }] as unknown as typeof state.artworks;
+
+    const shape = await hubcapShapeFromState();
+    expect(shape.shape.kind).toBe('circle');
+    const out = await hubcapRole.buildMesh!(clips as Float32Array);
+    expect(out.edgeCutThroughDepth).toBeUndefined();
+
+    state.hubcapSilhouette = false;
+    state.artworks = [];
   }, 60000);
 });
 

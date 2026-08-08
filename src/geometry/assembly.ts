@@ -3,6 +3,7 @@ import type { Position } from 'geojson';
 import {
   MIN_CUT_DEPTH_MM,
   depthDiffers,
+  edgeCutThroughNotice,
   regionLabel,
   requestedDepth,
   subLayerDepth,
@@ -25,6 +26,7 @@ import {
   computeNetRegionsByColor,
   planarArea,
   safeIntersect,
+  safeIntersectChecked,
   safeUnion,
   YIELD_BUDGET_MS,
   yieldToBrowser,
@@ -39,7 +41,13 @@ import {
   soupToManifold,
   type ManifoldSolid,
 } from './manifold';
-import { faceXZBBox, OVERSHOOT_MM, type DesignPlacement, type ZoneMapper } from './zones';
+import {
+  faceXZBBox,
+  OVERSHOOT_MM,
+  type CutRegion,
+  type DesignPlacement,
+  type ZoneMapper,
+} from './zones';
 import { zoneMappersFor } from './zoneMappers';
 import { FILL_REFINE_MM } from './conformal';
 import {
@@ -560,6 +568,11 @@ export async function buildAssemblyGeometry(
   };
 
   const partOutputs: AssemblyPartOutput[] = [];
+  // Colors that had regions taken the full thickness by a part's edge rule, and the depth they
+  // were taken at. Collected across every part and said once at the end rather than per part:
+  // this is one fact about the design ("your artwork reaches the rim"), and a color can sit on
+  // more than one part. Map, not Set, so the notice can state the actual depth.
+  const edgeCutColors = new Map<string, number>();
   let viewSign = 1,
     viewSignSet = false; // Y direction of the first real part's design face
   for (const part of parts) {
@@ -595,6 +608,9 @@ export async function buildAssemblyGeometry(
     // One color can now be cut on several zones of the same part, so each color collects a list
     // of solids that is unioned before the body/inlay booleans.
     const colorPrisms: Record<number, ManifoldSolid[]> = {};
+    // Staged edge-rule colors for this part; merged into edgeCutColors only where the part
+    // succeeds. See `keep` below.
+    const partEdgeColors = new Map<string, number>();
     // Extracted to a plain function (rather than inlined in the loop below) purely so its
     // early `return`s mean "skip this color" without fighting the surrounding for-loop/await.
     const buildColorPrism = async (
@@ -617,8 +633,15 @@ export async function buildAssemblyGeometry(
         : source;
       if (!tiled) return;
       let feat: PolyFeature | null = mapFeatureCoords(tiled, place);
+      // Whether the region really is bounded by the face. On a clipper failure safeIntersect hands
+      // back the region *unclipped*, and the edge rule reads "reaches past the face boundary" as
+      // "stands on the part's outer wall" — so an unclipped region would read as all-edge and be
+      // cut clean through instead of recessed. Tracked rather than assumed; see the mapper.
+      let clipped = true;
       if (boundaryPoly) {
-        feat = safeIntersect(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
+        const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
+        feat = r.feat;
+        clipped = r.clipped;
         if (!feat) return;
       }
       const requested = requestedDepth(colorSettings, globalDepth, c.key);
@@ -635,7 +658,15 @@ export async function buildAssemblyGeometry(
       // than one per part carrying the color.
       const depthSetting = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
       const label = regionLabel(c.hex, c.isMerge, c.members.length);
-      const depth = mapper.resolveCutDepth(depthSetting);
+      // One entry per depth this zone wants used, each carrying the slice of the region cut at it
+      // — usually just one. A part with an edge rule (a hubcap cut to its artwork's shape) splits
+      // the region into the polygons standing on its outer wall, cut its full thickness, and the
+      // rest, cut at the setting. The mapper owns that decision; this loop just extrudes what it
+      // is handed.
+      const regions = mapper.resolveCutRegions(feat, depthSetting, {
+        label: `color ${label}`,
+        clipped,
+      });
       if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depthSetting));
       // Unlike the warning above — which describes the setting, and is true wherever the color
       // lands — this one predicts what the recess will look like printed, so it must not be said
@@ -646,49 +677,73 @@ export async function buildAssemblyGeometry(
       // Warnings dedupe by message, so gating per-part says the right thing when a color sits on
       // several: the note appears if any part cuts at the setting, and stays silent if none do.
       //
+      // `some`, because a split color is cut at two depths at once: the interior slice still takes
+      // the setting and still deserves the note, while the edge slice does not — saying "too thin
+      // to show up" about a 3 mm through-cut is exactly the falsehood this gate exists to prevent.
+      //
       // noticeBuild, not warnBuild: the depth is honored, not overridden. Promoting it was
       // proposed and rejected — see thinDepthNotice in depth.ts.
-      else if (subLayerDepth(depthSetting) && !depthDiffers(depth, depthSetting))
+      else if (
+        subLayerDepth(depthSetting) &&
+        regions.some((r) => !depthDiffers(r.depth, depthSetting))
+      )
         noticeBuild(thinDepthNotice(label, depthSetting));
       // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
       // step); the snap tolerance is a property of the bake, so both modes take the same one.
       const cutterOpts = grid ? { refineMM: FILL_REFINE_MM } : undefined;
-      const soup = mapper.buildCutter(feat, depth, OVERSHOOT_MM, cutterOpts);
-      if (!soup || !soup.length) {
+      // Each slice becomes its own prism. They land in the same colorPrisms[ci] list the multi-zone
+      // case already fills, so the union below welds them back into one solid per color — a split
+      // region needs no handling downstream of here.
+      // The edge notice promises the rim prints in this color, so it is staged per *part* and only
+      // merged into the build-wide map once this part actually emits inlays. Every way the part can
+      // still fail after this point — the per-color union, the body difference — returns early
+      // without merging, so the promise can't outlive the geometry backing it. Recording straight
+      // into the build-wide map put "the rim prints in that color" next to "exporting it uncut".
+      const keep = (man: ManifoldSolid, region: CutRegion): void => {
+        (colorPrisms[ci] ||= []).push(man);
+        if (region.edge) partEdgeColors.set(label, region.depth);
+      };
+      for (const region of regions) {
+        const soup = mapper.buildCutter(region.feat, region.depth, OVERSHOOT_MM, cutterOpts);
+        if (soup && soup.length) {
+          try {
+            const man = soupToManifold(wasm, soup);
+            if (!manifoldIsValid(man)) throw new Error('empty manifold');
+            keep(man, region);
+            continue;
+          } catch {
+            /* retry below with self-intersections repaired */
+          }
+          // Clipping dense/overlapping line-work to the part boundary can leave the region
+          // self-touching in a way turf doesn't flag as invalid but Manifold rejects as
+          // non-watertight — repair it with Manifold's own 2D boolean engine and retry once
+          // before giving up.
+          try {
+            const repaired = repairSelfIntersections(wasm, region.feat);
+            const soup2 =
+              repaired && mapper.buildCutter(repaired, region.depth, OVERSHOOT_MM, cutterOpts);
+            if (soup2 && soup2.length) {
+              const man2 = soupToManifold(wasm, soup2);
+              if (manifoldIsValid(man2)) {
+                keep(man2, region);
+                continue;
+              }
+            }
+          } catch {
+            /* fall through to warn */
+          }
+        }
         // The artwork overlapped this zone (it survived the boundary clip) but no cutter came out.
         // On a conformal zone that means the warp found no surface under part of the region —
         // usually a baked boundary claiming more area than the chart actually covers; on a flat
         // one, a region too degenerate to extrude. Same user-facing outcome as a cutter that
-        // fails to become a solid below, so it shares that message (warnings dedupe by text);
-        // staying silent would drop the color from the part with no explanation at all.
+        // fails to become a solid, so they share this message (warnings dedupe by text); staying
+        // silent would drop the color from the part with no explanation at all.
+        //
+        // `continue`, not `return`: a color split across two depths must not lose its interior
+        // recess because the edge slice failed to extrude, or the other way round.
         warnBuild(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
-        return;
       }
-      try {
-        const man = soupToManifold(wasm, soup);
-        if (!manifoldIsValid(man)) throw new Error('empty manifold');
-        (colorPrisms[ci] ||= []).push(man);
-        return;
-      } catch {
-        /* retry below with self-intersections repaired */
-      }
-      // Clipping dense/overlapping line-work to the part boundary can leave the region
-      // self-touching in a way turf doesn't flag as invalid but Manifold rejects as non-watertight
-      // — repair it with Manifold's own 2D boolean engine and retry once before giving up.
-      try {
-        const repaired = repairSelfIntersections(wasm, feat);
-        const soup2 = repaired && mapper.buildCutter(repaired, depth, OVERSHOOT_MM, cutterOpts);
-        if (soup2 && soup2.length) {
-          const man2 = soupToManifold(wasm, soup2);
-          if (manifoldIsValid(man2)) {
-            (colorPrisms[ci] ||= []).push(man2);
-            return;
-          }
-        }
-      } catch {
-        /* fall through to warn */
-      }
-      warnBuild(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
     };
     // Which artworks land on a given zone: those bound to it by id, plus any unbound one. An
     // unbound artwork is the single-zone case (wheel, footrest) and goes wherever the part offers
@@ -889,8 +944,23 @@ export async function buildAssemblyGeometry(
     owned.forEach(manifoldDelete);
     manifoldDelete(partMan);
 
+    // The part shipped with its inlays, so anything the edge rule did to it is now true of the
+    // export and can be said. Merged rather than assigned: a color can reach the edge on one part
+    // and not another, and the notice is one line about the design.
+    for (const [l, d] of partEdgeColors) edgeCutColors.set(l, d);
+
     partOutputs.push({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed });
     finishPart();
   }
+  // Once, after every part: one notice naming every color the edge rule took the full way through.
+  // Grouped by the depth cut, which is a single value in practice (one part has the rule) but is
+  // per-part in the model, so grouping keeps the message honest if a second such part ever lands.
+  const byEdgeDepth = new Map<number, string[]>();
+  for (const [label, depth] of edgeCutColors) {
+    const at = byEdgeDepth.get(depth);
+    if (at) at.push(label);
+    else byEdgeDepth.set(depth, [label]);
+  }
+  for (const [depth, labels] of byEdgeDepth) noticeBuild(edgeCutThroughNotice(labels, depth));
   return { partOutputs, palette, viewSign, detectedColors, baseAssigned };
 }

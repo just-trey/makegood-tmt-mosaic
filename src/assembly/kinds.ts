@@ -13,6 +13,7 @@ import {
   HUBCAP_SILHOUETTE_NO_TRANSPARENCY,
   HUBCAP_SILHOUETTE_TOO_MANY,
   HUBCAP_SILHOUETTE_THIN_DETAIL,
+  HUBCAP_THICKNESS_MM,
   HUBCAP_WHEEL_DIAMETER_MM,
   buildHubcapBody,
   hubcapPlacement,
@@ -121,9 +122,12 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         // wheel-hub-cap needs no such nudge — on that part the top face wins — so this can't be
         // inferred from the small cap.
         preferFaceNormal: [0, 1, 0],
-        // Deliberately no cutThrough, unlike wheel-hub-cap: that part pierces its 3mm shell, and
-        // this one has an identical 3mm shell, so the difference is a choice and not an omission.
-        // A recess keeps a 220mm disc rigid, and inherits the 1mm state.globalDepth default.
+        // Deliberately no cutThrough, unlike wheel-hub-cap: that part pierces its 3mm shell for
+        // every color, and this one has an identical 3mm shell, so the difference is a choice and
+        // not an omission. A recess keeps a 220mm disc rigid, and inherits the 1mm
+        // state.globalDepth default. The edge of a silhouette is the one place that isn't true —
+        // see GeneratedMesh.edgeCutThroughDepth in buildMesh below, which is per-region rather
+        // than kind-wide precisely so the interior stays a recess.
         // The verified plate for the size currently set, when there is one — see hubcapPlacement.
         // A generated part gets no fingerprint-sealed placement, so this is how the one thing a
         // human *did* check (a specific arrangement at a specific diameter) reaches the export.
@@ -147,6 +151,15 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
           return {
             positions: built.positions,
             vertices: built.vertices,
+            // Only a silhouette. It is cut FLAT (see HubcapShape) so its design face IS its
+            // outline, and a region touching that boundary is one standing on the part's real
+            // outer wall — cutting it the shell's full 3mm puts the rim in the artwork's color
+            // instead of leaving 2mm of base color around the picture. The circle is chamfered:
+            // its face is inset 1mm from the rim, so the same cut would still leave a base-color
+            // ring and the rule would be a lie. Reading shape.shape rather than
+            // state.hubcapSilhouette also covers every fallback-to-circle path for free.
+            edgeCutThroughDepth:
+              shape.shape.kind === 'silhouette' ? HUBCAP_THICKNESS_MM : undefined,
             // Loose pieces wins over everything, because it is the only one of these that comes
             // off the plate broken. It used to lose: `shape.warning ?? …` dropped it whenever the
             // shape ALSO had something cosmetic to say, and the two co-occur — clipCoverage only

@@ -88,6 +88,34 @@ export function thinDepthNotice(label: string, depth: number): string {
 }
 
 /**
+ * The note for colours whose regions reach the part's outer edge and were cut its full thickness
+ * instead of their recess depth.
+ *
+ * **ℹ, not ⚠, and that is a considered call against the rule thinDepthNotice sets out.** By that
+ * rule — the icon tracks "did the app change your number?" — this is a ⚠: the setting *was*
+ * overridden at the edge. It stays an ℹ for two reasons. The setting is still honoured on the same
+ * colour's interior regions, so it was narrowed rather than discarded. And this fires on the
+ * ordinary path — every hubcap cut to its artwork's shape with artwork reaching the rim — where a
+ * ⚠ about the part working as designed is exactly what makes the two real ⚠s stop being read.
+ *
+ * It names the colors rather than just describing the rule, because that is what makes it
+ * checkable: someone who set a depth deliberately can see whether their color was one of them.
+ *
+ * What would change the answer: reports of people finding a through-cut where they wanted a
+ * recess. The fix then is a way to opt a color out, not a louder icon.
+ */
+export function edgeCutThroughNotice(labels: string[], depth: number): string {
+  const one = labels.length === 1;
+  const which = labels.map((l) => `"${l}"`).join(', ');
+  return (
+    `${one ? 'Color' : 'Colors'} ${which} ${one ? 'reaches' : 'reach'} the part's outer edge, so ` +
+    `${one ? 'that region cuts' : 'those regions cut'} the full ${depth.toFixed(2)} mm through — the rim ` +
+    `prints in ${one ? 'that color' : 'those colors'} instead of the base color. Interior regions ` +
+    `still cut at their recess depth.`
+  );
+}
+
+/**
  * The depth a region was *asked* to cut at, before any clamp.
  *
  * A stored `0` is a real answer, not a missing one: `|| globalDepth` read it as unset and

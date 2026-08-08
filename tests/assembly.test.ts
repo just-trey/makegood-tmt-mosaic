@@ -103,6 +103,32 @@ function twoColorSquaresParsed(): ParsedSVG {
 }
 
 /**
+ * Two colors placed against a 40mm-square design face at `radius: 20` (mmPerUnit 1, centred on
+ * (20, 20)): red is a tall bar flush against one wall of the face, blue a small island in the
+ * middle. Exactly the shape of the edge-rule question — one color reaching the part's outer edge,
+ * one not — with the two on separate palette slots so their inlays can be measured apart.
+ */
+function edgeAndInteriorParsed(): ParsedSVG {
+  const rect = (x0: number, y0: number, x1: number, y1: number) => [
+    [
+      { x: x0, y: y0 },
+      { x: x1, y: y0 },
+      { x: x1, y: y1 },
+      { x: x0, y: y1 },
+      { x: x0, y: y0 },
+    ],
+  ];
+  return {
+    shapes: [
+      { fill: '#ff0000', loops: rect(0, 0, 10, 40), order: 0 },
+      { fill: '#0000ff', loops: rect(15, 15, 25, 25), order: 1 },
+    ],
+    bbox: { minX: 0, minY: 0, maxX: 40, maxY: 40 },
+    rawSVGCircle: { cx: 20, cy: 20, r: 20 },
+  };
+}
+
+/**
  * The single-artwork shorthand: placement fields are accepted flat, as the build itself took them
  * before artwork instances existed, and folded into one unbound artwork. Pass `artworks` instead
  * to place several.
@@ -960,5 +986,119 @@ describe('buildAssemblyGeometry depth labels and thin cuts', () => {
     );
 
     expect(WARNINGS.filter((w) => w.message.includes('thinner than the usual'))).toHaveLength(1);
+  });
+});
+
+describe('buildAssemblyGeometry edge-cut-through rule', () => {
+  beforeEach(() => clearWarnings());
+
+  /** A part's inlay for a given color. By hex, because palette order is not the document's. */
+  const inlayFor = (
+    built: NonNullable<Awaited<ReturnType<typeof buildAssemblyGeometry>>>,
+    hex: string,
+  ): Float32Array => {
+    const ci = built.palette.findIndex((p) => p.hex === hex);
+    const soup = built.partOutputs[0].inlaySoups[ci];
+    expect(soup).toBeDefined();
+    return soup;
+  };
+
+  /** The build shared by most of these: red flush against the face wall, blue in the middle. */
+  const edgeInput = (over: BaseOverrides = {}) =>
+    baseInput({
+      parsed: edgeAndInteriorParsed(),
+      radius: 20,
+      parts: [boxPart({ edgeCutThroughDepth: 3 })],
+      ...over,
+    });
+
+  it(
+    'cuts an edge-touching color through and leaves an interior one recessed',
+    { timeout: 30000 },
+    async () => {
+      // The whole feature. Without it a hubcap cut to its artwork's shape has the picture recessed
+      // 1mm into a 3mm shell, so the outline it was cut to reads as base-color plastic from the
+      // side — which is the one thing cutting it to shape was for.
+      const built = (await buildAssemblyGeometry(edgeInput()))!;
+      const red = yRange(inlayFor(built, '#ff0000'));
+      const blue = yRange(inlayFor(built, '#0000ff'));
+      // face is at y=10; red took the part's 3mm edge depth, blue the 2mm globalDepth
+      expect(red.max).toBeCloseTo(10, 4);
+      expect(red.max - red.min).toBeCloseTo(3, 4);
+      expect(blue.max - blue.min).toBeCloseTo(2, 4);
+      // and each landed where it was drawn: red flush with the face wall, blue an inner island
+      expect(xzRange(inlayFor(built, '#ff0000')).maxX).toBeCloseTo(20, 4);
+      expect(xzRange(inlayFor(built, '#0000ff')).maxX).toBeCloseTo(5, 4);
+    },
+  );
+
+  it('names the through-cut colors and not the interior one', { timeout: 30000 }, async () => {
+    await buildAssemblyGeometry(edgeInput());
+    const note = WARNINGS.find((w) => w.message.includes("the part's outer edge"));
+    expect(note).toBeDefined();
+    expect(note!.level).toBe('info'); // see edgeCutThroughNotice — challenged and kept as ℹ
+    expect(note!.message).toContain('"#ff0000"');
+    expect(note!.message).not.toContain('#0000ff');
+    expect(note!.message).toContain('3.00 mm');
+  });
+
+  it('says nothing at all when no artwork reaches the edge', { timeout: 30000 }, async () => {
+    // The notice must not fire on every silhouette build regardless of where the artwork sits,
+    // or it stops carrying information.
+    await buildAssemblyGeometry(baseInput({ parts: [boxPart({ edgeCutThroughDepth: 3 })] }));
+    expect(WARNINGS.filter((w) => w.message.includes("the part's outer edge"))).toEqual([]);
+  });
+
+  it('is inert on a part with no edge rule', { timeout: 30000 }, async () => {
+    // Same artwork, plain part: the regression guard for every shipped kind. Red must go back to
+    // the 2mm recess it has always been cut at.
+    const built = (await buildAssemblyGeometry(edgeInput({ parts: [boxPart()] })))!;
+    const red = yRange(inlayFor(built, '#ff0000'));
+    expect(red.max - red.min).toBeCloseTo(2, 4);
+    expect(WARNINGS.filter((w) => w.message.includes("the part's outer edge"))).toEqual([]);
+  });
+
+  it('overrides an explicit per-color depth at the edge only', { timeout: 30000 }, async () => {
+    // The decision recorded in the plan: edge wins, and the notice names the color so someone who
+    // set a depth deliberately can see it happened. Red is entirely at the edge here, so its 0.5mm
+    // setting is fully replaced — and the thin-depth note must not also fire about a 3mm hole.
+    await buildAssemblyGeometry(edgeInput({ colorSettings: { 'asm:#ff0000': { depth: 0.12 } } }));
+    const note = WARNINGS.find((w) => w.message.includes("the part's outer edge"));
+    expect(note!.message).toContain('"#ff0000"');
+    expect(WARNINGS.filter((w) => w.message.includes('thinner than the usual'))).toEqual([]);
+  });
+
+  it(
+    'still notes a thin depth for the interior half of a split color',
+    { timeout: 30000 },
+    async () => {
+      // One color with regions on both sides of the rule. The edge slice is cut 3mm and must not
+      // be described as too thin to print; the interior slice really is cut at 0.12mm and must
+      // still be — this is the invariant the cutThrough gate above was written to protect,
+      // re-asked for a color that is cut at two depths at once rather than one.
+      const parsed = edgeAndInteriorParsed();
+      parsed.shapes[1].fill = '#ff0000'; // fold the interior island into the edge color
+      await buildAssemblyGeometry(
+        edgeInput({ parsed, colorSettings: { 'asm:#ff0000': { depth: 0.12 } } }),
+      );
+      expect(WARNINGS.filter((w) => w.message.includes('thinner than the usual'))).toHaveLength(1);
+      expect(WARNINGS.some((w) => w.message.includes("the part's outer edge"))).toBe(true);
+    },
+  );
+
+  it('keeps both slices of a split color in one inlay', { timeout: 30000 }, async () => {
+    // The two prisms land in the same colorPrisms[ci] list and get unioned, so a split color
+    // still exports as one inlay solid rather than losing whichever slice was built second.
+    const parsed = edgeAndInteriorParsed();
+    parsed.shapes[1].fill = '#ff0000';
+    const built = (await buildAssemblyGeometry(edgeInput({ parsed })))!;
+    const soup = built.partOutputs[0].inlaySoups[0];
+    expect(soup).toBeDefined();
+    const r = yRange(soup);
+    expect(r.max).toBeCloseTo(10, 4);
+    expect(r.min).toBeCloseTo(7, 4); // the deeper (edge) slice sets the floor
+    const xz = xzRange(soup);
+    expect(xz.maxX).toBeCloseTo(20, 4); // the edge bar, flush with the face wall
+    expect(xz.minX).toBeCloseTo(-5, 4); // and the interior island, still present
   });
 });

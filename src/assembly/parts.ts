@@ -213,6 +213,7 @@ export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPa
     loaded: src.loaded,
     cutThrough: src.cutThrough,
     cutThroughDepth: src.cutThroughDepth,
+    edgeCutThroughDepth: src.edgeCutThroughDepth,
   };
   state.assembly.parts.push(dup);
   notifyPartsChanged();
@@ -288,11 +289,16 @@ async function asmAdoptMesh(
     const built = await role.buildMesh(positions);
     positions = built.positions;
     part.vertices = built.vertices;
+    // Assigned unconditionally, including when the generator returns undefined: the rule belongs
+    // to the mesh currently on the part, so a rebuild that falls back to a plain circle has to
+    // clear the rule the previous silhouette set rather than leave it standing.
+    part.edgeCutThroughDepth = built.edgeCutThroughDepth;
     if (part.buildWarning) dismissNotice(part.buildWarning);
     part.buildWarning = built.warning;
     if (built.warning) warn(built.warning);
   } else if (part.meshFromUpload) {
     part.assetPositions = undefined;
+    part.edgeCutThroughDepth = undefined;
     if (part.buildWarning) dismissNotice(part.buildWarning);
     part.buildWarning = undefined;
   }

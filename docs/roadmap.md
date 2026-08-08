@@ -33,8 +33,3 @@
   session-autosave work already landing (that recovers _your_ session; this
   is for sharing a finished setup); and a way to edit the owned-filament
   palette (`public/filaments.json`) without a code-adjacent JSON edit.
-- Deferred, not this PR: on a hubcap cut to its artwork's shape, have artwork
-  touching the outer edge cut the full 3mm through, while interior artwork
-  stays at the normal per-color recess depth — matching how `wheel-hub-cap`
-  already cuts through at its edge, but as a per-region rule rather than a
-  kind-wide flag.
