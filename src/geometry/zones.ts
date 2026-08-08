@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import * as turf from '@turf/turf';
 import type { AssemblyPart, PolyFeature } from '../types';
-import { extrudeRegionToSoup } from './manifold';
+import { extrudeRegionToSoup, type ManifoldAPI } from './manifold';
+import { EDGE_TOUCH_TOL_MM, erodeBoundary, splitAtBoundary } from './edgeRegions';
 
 /** How far each cutter pokes above the face so the pocket opens cleanly at the surface. */
 export const OVERSHOOT_MM = 0.5;
@@ -92,6 +93,30 @@ export interface CutterOptions {
   refineMM?: number;
 }
 
+/**
+ * One slice of a color's region and the depth it is cut at. `edge` marks a slice that took a
+ * part's edge-cut-through depth instead of the setting, so the caller can say which colors that
+ * happened to without re-deriving the rule.
+ */
+export interface CutRegion {
+  feat: PolyFeature;
+  depth: number;
+  edge?: boolean;
+}
+
+/** What `resolveCutRegions` needs to know about the region it is being handed. */
+export interface CutRegionOptions {
+  /** names the color in any warning the split raises */
+  label?: string;
+  /**
+   * Whether `feat` really was clipped to this zone's boundary. False when the clipper failed and
+   * the caller is passing the region through unclipped — in which case "reaches past the boundary"
+   * stops meaning "stands on the part's outer wall" and the edge rule must not fire. Defaults to
+   * true, which is what every non-clipping caller (and every test) is entitled to assume.
+   */
+  clipped?: boolean;
+}
+
 /** World-space frame of a zone at a given in-plane (u, v), for the on-face gizmo. */
 export interface ZoneFrame {
   /** design-center position in the part's native model space (before the model-group grid lift) */
@@ -135,8 +160,17 @@ export interface ZoneMapper {
   boundary(): PolyFeature | null;
   /** area a fill-mode artwork tiles across, in the zone's 2D design space; null when unknown */
   fillExtent(): FillExtent | null;
-  /** the actual cut depth for a color: pass-through, unless a cut-through zone overrides it */
-  resolveCutDepth(depthSetting: number): number;
+  /**
+   * How a color's placed, already-clipped region actually gets cut: one entry per depth the zone
+   * wants used, each carrying the slice of the region cut at it. Usually a single pass-through
+   * entry; a cut-through zone replaces the depth, and a zone with an edge rule splits the region
+   * into the polygons standing on its outer wall and the rest.
+   *
+   * The mapper answers with regions rather than a bare depth so nothing upstream has to know which
+   * kind of zone it is holding — the caller extrudes whatever it is handed. Returning an empty
+   * array is not a thing any mapper does: a region always gets cut somehow.
+   */
+  resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[];
   /** build the cutter geometry from a placed+clipped 2D feature */
   buildCutter(
     feat: PolyFeature,
@@ -175,6 +209,9 @@ export class FlatZoneMapper implements ZoneMapper {
     private readonly part: AssemblyPart,
     parts: AssemblyPart[],
     isRect: boolean,
+    // Only the edge-region split needs it, and only the build path takes that route — the gizmo
+    // builds mappers to read frameAt() and passes null, exactly as ConformalZoneMapper allows.
+    private readonly wasm: ManifoldAPI | null = null,
   ) {
     const nrm = asmPartFaceNormal(part, parts);
     this.faceNormal = nrm;
@@ -282,8 +319,47 @@ export class FlatZoneMapper implements ZoneMapper {
     return depth;
   }
 
-  resolveCutDepth(depthSetting: number): number {
-    return this.part.cutThrough ? this.throughDepth() : depthSetting;
+  /**
+   * The eroded design face, computed once per part and shared by every color on it — the erosion
+   * is a Manifold offset over the whole boundary and would otherwise run per color per artwork.
+   * `null` is a real answer (a face thinner than the tolerance); `undefined` is "not asked yet".
+   */
+  private erodedCache: PolyFeature | null | undefined;
+
+  private eroded(boundary: PolyFeature): PolyFeature | null {
+    if (this.erodedCache !== undefined) return this.erodedCache;
+    return (this.erodedCache = this.wasm
+      ? erodeBoundary(this.wasm, boundary, EDGE_TOUCH_TOL_MM)
+      : null);
+  }
+
+  resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[] {
+    // A cut-through part takes its hole the whole way through for every color, so there is no
+    // edge to distinguish — and it has no clip boundary to measure one against either. Not
+    // flagged `edge`: that flag drives a notice about the *edge rule*, and saying it here would
+    // announce a new behavior on the wheel cap, which has cut this way since it shipped.
+    if (this.part.cutThrough) return [{ feat, depth: this.throughDepth() }];
+    const edgeDepth = this.part.edgeCutThroughDepth;
+    const boundary = this.boundary();
+    if (edgeDepth == null || !boundary) return [{ feat, depth: depthSetting }];
+    // An unclipped region (the caller's clip failed) reaches past the boundary everywhere, which
+    // this rule would read as "all of it stands on the outer wall" and cut the whole color through
+    // — a hole where the old behavior was merely an oversized recess. Recess is the safe
+    // direction, and it is what the part did before this rule existed.
+    if (opts?.clipped === false) return [{ feat, depth: depthSetting }];
+    // No wasm means no erosion, and erodeBoundary's own null means the face vanished under the
+    // tolerance. The first should treat everything as interior (the gizmo path, which never cuts);
+    // the second should treat everything as edge. eroded() returns null for both, so guard the
+    // wasm case here rather than conflating them inside splitAtBoundary.
+    if (!this.wasm) return [{ feat, depth: depthSetting }];
+    const { edge, interior } = splitAtBoundary(feat, this.eroded(boundary), opts?.label);
+    const out: CutRegion[] = [];
+    if (edge) out.push({ feat: edge, depth: edgeDepth, edge: true });
+    if (interior) out.push({ feat: interior, depth: depthSetting });
+    // Both null means the split lost the region outright, which it has no way to do — every
+    // polygon lands in exactly one bucket. Falling back to the unsplit region keeps a bug here
+    // from silently deleting a color from the part.
+    return out.length ? out : [{ feat, depth: depthSetting }];
   }
 
   buildCutter(feat: PolyFeature, depth: number, overshoot: number): Float32Array | null {
@@ -342,6 +418,7 @@ export function implicitZoneFor(
   part: AssemblyPart,
   parts: AssemblyPart[],
   isRect: boolean,
+  wasm: ManifoldAPI | null = null,
 ): ZoneMapper {
-  return new FlatZoneMapper(part, parts, isRect);
+  return new FlatZoneMapper(part, parts, isRect, wasm);
 }

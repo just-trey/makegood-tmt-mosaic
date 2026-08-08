@@ -1110,3 +1110,47 @@ Worth knowing why this can't be solved once and for all the way the fixed parts
 were: a generated part has no stable mesh to seal a pose against, so every
 arrangement is only ever verified for the parameters it was checked at. More
 entries narrow the gap; they don't close the category.
+
+## A design face keeps only one boundary loop, so a silhouette's inner rim is not an edge
+
+`applyAsmPatchChoice` ([src/assembly/parts.ts:503](../src/assembly/parts.ts)) sorts the
+loops `extractPatchBoundary` found and keeps exactly one:
+
+```ts
+loops.sort((a, b) => b.length - a.length);
+part.boundaryLoop = loops[0] || null;
+```
+
+That was harmless while `boundaryLoop` only had to clip artwork to roughly the right
+patch. The edge-cut-through rule gave it a second job — deciding which regions stand on
+the part's outer wall — and a single loop can't answer it for a face with holes.
+
+**What it costs.** A hubcap cut to a holed silhouette (a letter "O", a doughnut, a
+character with an enclosed gap) has an inner rim that is just as much an outer wall as
+the outside is, and artwork touching it is cut as a recess instead of through. The result
+is a base-colour band around the hole while the outside rim prints correctly — the exact
+defect the rule exists to remove, on part of the same part. Nothing warns, because from
+the rule's point of view those regions genuinely don't reach the boundary it was given.
+
+**A second, older hazard now load-bearing.** The sort key is _vertex count_, not area or
+containment. An intricate cut-out can carry more vertices than the outline enclosing it,
+in which case `loops[0]` is a hole and the clip runs against it — artwork clipped to the
+inside of the gap rather than to the face. That has been reachable since the flat mapper
+shipped; the edge rule now reads the same field, so it would also invert which regions
+are called edges.
+
+**Why it wasn't fixed with the rule.** Making `boundaryLoop` a loop _set_ with proper
+outer/hole nesting is not a local change: `boundary()`, `faceXZBBox`, `fillExtent`,
+zone-picking and the on-face gizmo all read it, and all of them currently assume one ring
+— so the change lands on every shipped part's clip and fill behaviour, not just the
+hubcap's. That is a bigger and riskier diff than the feature it would be riding along
+with, and it wants its own live verification on the wheel and footrest.
+
+**What closing it takes.** Give the patch a `boundaryLoops: number[][][]` resolved by
+containment depth (the same rule `shapeToFeature` already uses for SVG rings — see
+[src/geometry/regions.ts](../src/geometry/regions.ts)), build `boundary()` as a polygon
+with holes, and keep `boundaryLoop` as the outer ring for the callers that only want a
+bbox. Then erode the whole thing, which makes every hole's rim an edge for free —
+`erodeBoundary` and `splitAtBoundary` already take multi-ring features and need no
+change. Verify on a doughnut-shaped silhouette (inner rim prints in the artwork's colour)
+and on the wheel and footrest (clip and fill unchanged).

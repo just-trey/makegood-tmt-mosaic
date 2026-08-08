@@ -23,7 +23,7 @@ export function zoneMappersFor(
   isRect: boolean,
   wasm: ManifoldAPI | null,
 ): ZoneMapper[] {
-  if (!part.zones) return [implicitZoneFor(part, parts, isRect)];
+  if (!part.zones) return [implicitZoneFor(part, parts, isRect, wasm)];
   // A baked zone always carries its chart (the sidecar loader only attaches resolved ones), so a
   // chartless entry means the chart failed to reconstruct — skip it rather than silently cutting
   // that zone's artwork onto the part's unrelated flat patch.

@@ -159,6 +159,14 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   shape (**Cut to artwork shape**) always uses the computed centred placement —
   the verified arrangement was checked with a round disc, and a silhouette can
   reach further off-axis than a circle of the same nominal size does.
+- On a hubcap **cut to artwork shape**, colors reaching the outline are always
+  cut the disc's full 3mm so the rim prints in them; there is no way to opt one
+  back to a recess short of scaling the artwork clear of the edge. The app names
+  the colors it did this to. This covers the shape's **outside** edge only — if
+  your silhouette encloses a hole (a letter "O", a doughnut), the rim around
+  that hole still prints in the base color. See
+  [docs/tech-debt.md](docs/tech-debt.md) and
+  [docs/troubleshooting.md](docs/troubleshooting.md).
 - Parts the reference sets to manual tree support arrive without the painted
   enforcers; paint them yourself or switch to auto support.
 - The caster mounts can't carry artwork — see

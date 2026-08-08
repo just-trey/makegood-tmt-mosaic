@@ -452,3 +452,54 @@ Fine detail like hair spikes or thin limbs on a character silhouette are the
 usual cause. Making the hubcap bigger thickens every feature proportionally,
 since the whole outline scales together, or simplify the source artwork to
 remove the thin part.
+
+## Troubleshooting: "… reaches the part's outer edge, so that region cuts the full 3.00 mm through"
+
+A note, not a problem — it describes what a hubcap **cut to your artwork's
+shape** does on purpose.
+
+The disc is a 3 mm shell. Normally a color is recessed into it at its depth
+setting (1 mm by default), which leaves base-color plastic underneath. That is
+right for artwork sitting in the middle of the part, and wrong for artwork at
+the very edge: the outline is the whole reason the part was cut to your shape,
+and a recess would leave it as a 2 mm band of base color that you see from
+every angle except straight on. So any region that reaches the outline is cut
+the full 3 mm instead, and the rim prints in that color.
+
+- **It names the colors it did this to.** A color's _interior_ regions still
+  cut at its recess depth — only the ones touching the edge go through. A color
+  with regions in both places appears in the note and is cut both ways.
+- **It overrides a depth you set yourself, at the edge only.** If you typed a
+  depth for one of the named colors, that number still applies to its interior
+  regions; its edge regions are cut through regardless. This is why the note
+  lists the colors rather than just describing the rule.
+- **It only appears on a hubcap following your artwork's shape.** Turn "Cut to
+  artwork shape" off and every color goes back to a plain recess. A round
+  hubcap never does this: its rim is chamfered, so the design face is inset
+  1 mm from the edge and cutting through wouldn't put your color on the rim
+  anyway.
+- **It is not the same as the wheel's cap**, which cuts _every_ color through
+  because the whole part is built that way. This rule is per region.
+- **It applies to the shape's outside edge only.** If your silhouette encloses a
+  hole — a letter "O", a doughnut, a character with a gap through it — the rim
+  around that hole is still cut as a recess and prints in the base color. Known
+  limitation, recorded in [tech-debt.md](tech-debt.md).
+- **If you wanted a recess at the edge**, there is no way to opt out today.
+  Moving the artwork in from the outline (Scale slightly below 100%) keeps
+  every region clear of the edge, at the cost of a base-color rim.
+
+## Troubleshooting: "Couldn't tell whether … reaches the part's outer edge"
+
+The clipper failed while working out whether one color region touched the
+part's outline, so that region was cut as a normal recess rather than through.
+Everything else on the part is unaffected.
+
+This is the safe direction to fail in — a recess is the behavior every part had
+before the edge rule existed, and it prints; a through-cut where one wasn't
+wanted would be a hole. The visible symptom is one color's edge stopping short
+of the rim while others reach it, which is why it says so rather than staying
+quiet.
+
+Same underlying cause as the "Boolean union/subtraction failed" warnings above:
+dense or self-touching line-work that the 2D clipper can't resolve. Simplifying
+that color's regions, or nudging Scale slightly, usually clears it.

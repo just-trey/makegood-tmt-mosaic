@@ -276,6 +276,20 @@ export interface AssemblyPart {
    * breach into it. Undefined falls back to piercing the part's full vertical extent.
    */
   cutThroughDepth?: number;
+  /**
+   * Cut depth (mm) for the artwork regions that *touch this part's design-face boundary*, while
+   * every interior region keeps its per-color recess depth. Undefined means no such rule.
+   *
+   * The per-region counterpart to cutThrough, which is kind-wide: a hubcap cut to its artwork's
+   * shape wants its outline in the artwork's color the whole way down — otherwise the one thing
+   * cutting it to shape achieved is a 2mm band of base color around the picture — while its
+   * interior detail still wants to be a recess on a 220mm disc.
+   *
+   * Set from GeneratedMesh.edgeCutThroughDepth at adopt time, not from the role at create time:
+   * whether it applies depends on what the generator actually built (a silhouette, not the
+   * circle it falls back to), which isn't known until it runs.
+   */
+  edgeCutThroughDepth?: number;
 }
 
 export interface AssemblyRole {
@@ -338,6 +352,13 @@ export interface GeneratedMesh {
   vertices?: Float32Array;
   /** Surfaced to the user as-is; the generator knows why its output is off, the loader doesn't. */
   warning?: string;
+  /**
+   * See AssemblyPart.edgeCutThroughDepth. Declared by the generator because only it knows the
+   * shape it just made — a flat square-edged prism on the artwork's outline, where "touching the
+   * design-face boundary" and "reaching the part's real outer wall" are the same thing. On a
+   * chamfered disc they are not, so it returns undefined there.
+   */
+  edgeCutThroughDepth?: number;
 }
 
 /**

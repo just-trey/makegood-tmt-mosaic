@@ -244,7 +244,7 @@ export function planarArea(f: PolyFeature | null): number {
  * precision — 1e-10 mm is far below anything a printer can express, so retries are
  * geometrically free.
  */
-function boolOpWithRetry(
+export function boolOpWithRetry(
   fn: (a: PolyFeature, b: PolyFeature) => PolyFeature | null,
   a: PolyFeature,
   b: PolyFeature,
@@ -316,15 +316,33 @@ export function safeIntersect(
   b: PolyFeature | null,
   label?: string,
 ): PolyFeature | null {
+  return safeIntersectChecked(a, b, label).feat;
+}
+
+/**
+ * `safeIntersect`, but saying whether the clip actually happened.
+ *
+ * The fallback returns the region **unclipped**, which callers that only read `feat` cannot
+ * distinguish from a successful clip. That mattered once the edge-cut-through rule started reading
+ * "this polygon reaches past the face boundary" as "this polygon stands on the part's outer wall":
+ * an unclipped region reaches past it everywhere, so a clipper failure turned a slightly oversized
+ * recess into a hole cut clean through the part. Callers whose behavior depends on the input
+ * really being bounded by the face ask for the flag.
+ */
+export function safeIntersectChecked(
+  a: PolyFeature | null,
+  b: PolyFeature | null,
+  label?: string,
+): { feat: PolyFeature | null; clipped: boolean } {
   a = cleanFeature(a);
   b = cleanFeature(b);
-  if (!a || !b) return null;
+  if (!a || !b) return { feat: null, clipped: false };
   const r = boolOpWithRetry((x, y) => turf.intersect(x, y) as PolyFeature | null, a, b);
-  if (r.ok) return r.val ?? null;
+  if (r.ok) return { feat: r.val ?? null, clipped: true };
   warnBool(
     `Clipping color region to the part face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
   );
-  return a;
+  return { feat: a, clipped: false };
 }
 
 /** How long a boolean pass runs before yielding a frame to the browser. */
