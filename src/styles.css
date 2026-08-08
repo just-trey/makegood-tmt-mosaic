@@ -28,7 +28,8 @@
   --text-body: 12px; /* everything else: control labels, inputs, buttons, help prose */
   --text-emphasis: 16px; /* the one size above body. Empty states, dialog titles. Rare. */
   --text-display: 20px; /* wordmark only */
-  --space-hair: 2px; /* optical nudge only — not a gap between things */
+  --space-hair: 2px; /* optical correction inside a control: swatch-grid gaps,
+                       badge insets. Never rhythm between rows — that is --space-row up. */
   --space-tight: 4px; /* inside a control: label-to-input, icon-to-text */
   --space-row: 8px; /* between rows within a panel */
   --space-section: 16px; /* between labelled groups inside a panel */
@@ -1083,6 +1084,12 @@ input[type='checkbox'] {
   color: var(--text-dim);
   line-height: 1.5;
   margin-top: var(--space-tight);
+}
+/* Help-panel prose inlines the odd literal value — an SVG attribute, a filename — as <code>.
+   Same mono rule as everywhere else: a value the user might copy, not decorative text. Without
+   this it falls back to the browser's UA monospace, not IBM Plex Mono. */
+code {
+  font-family: var(--mono);
 }
 a {
   color: var(--accent);

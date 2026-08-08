@@ -96,7 +96,8 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 **Spacing / radius / borders**
 
 - Five tokens — see `tokens/spacing.css`:
-  - `--space-hair` (2px) — optical nudge only, not a gap between things.
+  - `--space-hair` (2px) — optical correction inside a control: swatch-grid gaps, badge
+    insets. Never rhythm between rows — that is `--space-row` up.
   - `--space-tight` (4px) — inside a control: label-to-input, icon-to-text.
   - `--space-row` (8px) — between rows within a panel.
   - `--space-section` (16px) — between labelled groups inside a panel.
