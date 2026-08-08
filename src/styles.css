@@ -110,8 +110,9 @@ header {
   display: flex;
   align-items: center;
   gap: var(--space-row);
-  /* 20px sits between --space-section and --space-panel; --space-panel would read airier
-     than today, so this rounds down. See DECISIONS-NEEDED.md. */
+  /* 20px sits exactly between --space-section (16) and --space-panel (24), with no step of its
+     own. --space-panel reads airier than this has ever looked, so — same rule as everywhere
+     else in this scale — it rounds down rather than up. */
   padding: 0 var(--space-section);
   background: var(--panel);
   border-bottom: 1px solid var(--line);
@@ -230,8 +231,9 @@ header .stat {
   border-radius: var(--radius-lg);
   background: var(--panel);
   color: var(--text);
-  /* 20px sits between --space-section and --space-panel; --space-panel would read airier
-     than today, so this rounds down. See DECISIONS-NEEDED.md. */
+  /* 20px sits exactly between --space-section (16) and --space-panel (24), with no step of its
+     own. --space-panel reads airier than this has ever looked, so — same rule as everywhere
+     else in this scale — it rounds down rather than up. */
   padding: var(--space-section);
   width: min(380px, 90vw);
   box-shadow: 0 24px 48px rgba(4, 6, 14, 0.45);
@@ -999,6 +1001,8 @@ input[type='checkbox'] {
 .merge-members {
   display: flex;
   flex-wrap: wrap;
+  /* 3px sits exactly between --space-hair (2) and --space-tight (4). Same rule as the 20px
+     paddings elsewhere in this file: rounds down, not up — compact is correct here. */
   gap: var(--space-hair);
   margin-top: var(--space-tight);
 }

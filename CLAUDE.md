@@ -135,6 +135,23 @@ Where writing goes — pick one, don't split a topic across two:
   Only keep a closed item here when it is still load-bearing for something
   open — an entry in a list whose own conclusion is that an audit is owed, say.
 
+- **DECISIONS-NEEDED.md** — a per-run inbox, never a document. An agent that
+  hits something it cannot decide appends an entry with enough context to
+  answer in one line, skips the item, and continues rather than blocking.
+
+  Before the branch merges the file drains to empty and is deleted. Every
+  entry ends up in one of three places:
+
+  - **Resolved** — the answer becomes a comment next to the code it
+    constrains, where someone changing that line will actually see it.
+  - **Promoted** — it was a finding, not a decision. It goes to
+    `tech-debt.md` or `roadmap.md`.
+  - **Still open** — then the branch is not done. An unresolved entry is a
+    blocker, not a footnote.
+
+  A file called "decisions needed" surviving on `main` means the decisions
+  weren't needed.
+
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** — one section per
   user-visible warning string.
 - **[docs/roadmap.md](docs/roadmap.md)** — ideas not yet built.

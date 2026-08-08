@@ -231,8 +231,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   side: `design-system/tokens/typography.css` and `tokens/spacing.css` renamed to the same five
   tokens each, `--font-heading/--font-sans/--font-mono` renamed to match the app's
   `--heading/--sans/--mono`, and every reference across the component specs, guideline pages and
-  the screen mockup updated with it. See [DECISIONS-NEEDED.md](DECISIONS-NEEDED.md) for the
-  handful of values that didn't fit either five-step scale cleanly.
+  the screen mockup updated with it. The handful of values that didn't fit either five-step
+  scale cleanly are resolved as comments next to the code they constrain (`src/styles.css`'s
+  icon-glyph and 20px/3px-rounding rules) or promoted to
+  [docs/tech-debt.md](docs/tech-debt.md) (the assembly-part dropzone's unconverted radius).
 - **Fill is no longer offered on the chair body**, and the built-in pattern
   strip is hidden there with it. Repeating a design across one of the chair's
   five zones took over a minute and a half to recut, "All zones" ran past

@@ -408,6 +408,9 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
           `<option value="${i}" ${i === part.patchIdx ? 'selected' : ''}>#${i + 1}: area ${p.area.toFixed(0)}mm² (normal ${p.normal.map((v) => v.toFixed(2)).join(',')})</option>`,
       )
       .join('');
+    // The dropzone below hardcodes border-radius:6px, matching no --radius-* token (the scale
+    // tops out at --radius-2xl, 3px) — see docs/tech-debt.md's "assembly-part dropzone radius"
+    // entry before touching this without also picking the right token.
     row.innerHTML = `
       <div class="top"><div class="hex">${part.name}</div></div>
       <div style="border:1.5px dashed var(--line);border-radius:6px;padding:var(--space-row);text-align:center;color:var(--text-dim);cursor:pointer;" data-asm-drop>
