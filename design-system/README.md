@@ -75,17 +75,35 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 
 **Typography**
 
-- Sans stack (system sans) for UI chrome/labels/copy.
-- Monospace (IBM Plex Mono in the mockup) for every numeric/technical value — mm inputs, hex
-  codes, triangle counts. This split is a firm rule: mono = a value the user might copy or
-  that came from computed geometry; sans = everything else.
-- Base size 13px. Never below 10.5px (uppercase section labels only, with letter-spacing).
-- Heading font: Outfit (mockup only used it for the "Mosaic" wordmark + Panel section labels).
+- Inter (sans, a real webfont — 9 faces load, not a system-sans fallback) for UI
+  chrome/labels/copy.
+- IBM Plex Mono (also a real loaded webfont, not mockup-only) for every numeric/technical
+  value — mm inputs, hex codes, triangle counts. This split is a firm rule: mono = a value the
+  user might copy or that came from computed geometry; sans = everything else.
+- Five tokens, whole pixels, named by role — see `tokens/typography.css`:
+  - `--text-label` (11px) — uppercase section labels, tracked. Only size below body.
+  - `--text-meta` (11px, **mono only**) — tris counts, hex, filenames, HUD, version. Shares its
+    numeric value with `--text-label` on purpose and is not merged into it: mono at 11px
+    optically matches sans at 12px, so the two diverge the moment body size moves.
+  - `--text-body` (12px) — everything else: control labels, inputs, buttons, help prose. Also
+    the document root size.
+  - `--text-emphasis` (16px) — the one size above body. Empty states, dialog titles. Rare.
+  - `--text-display` (20px) — wordmark only.
+- A handful of glyphs used as icons (▸ disclosure, × dismiss, ↺ reset) are sized in `em` against
+  their inherited text context instead of a token — see Iconography below.
+- Heading font: Outfit, for the "Mosaic" wordmark + Panel section labels.
 
 **Spacing / radius / borders**
 
-- Compact paddings (5–8px), tight row gaps (6–8px) — this is a tool, not a marketing surface.
-  Don't loosen into typical marketing whitespace.
+- Five tokens — see `tokens/spacing.css`:
+  - `--space-hair` (2px) — optical correction inside a control: swatch-grid gaps, badge
+    insets. Never rhythm between rows — that is `--space-row` up.
+  - `--space-tight` (4px) — inside a control: label-to-input, icon-to-text.
+  - `--space-row` (8px) — between rows within a panel.
+  - `--space-section` (16px) — between labelled groups inside a panel.
+  - `--space-panel` (24px) — between panels.
+- Compact by default — this is a tool, not a marketing surface. Don't loosen into typical
+  marketing whitespace; a conversion that reads airier than today picked the wrong step.
 - 1px hairline borders everywhere (`--line`), no shadows.
 - Sharp, near-square corners (`--radius-*` = 0–3px, industrial/blueprint feel): inputs 1px,
   buttons/rows/thumbnails 2px, dropzones 3px, swatches square (0px). See `tokens/spacing.css`.
@@ -123,17 +141,18 @@ type, spacing/radius, brand mark) and open directly in a browser.
 - **Purpose**: load an SVG, pick a base part, fit and merge detected colors into recess
   depths, export an STL set.
 - **Layout**: CSS grid, `340px 1fr` columns × `64px 1fr` rows. Header spans both columns.
-  Left sidebar (`#left`) is `var(--panel)`, scrollable, 14px padding, holds six
-  stacked `Panel` sections in order: Artwork, Base part, Artwork fit, Depth, Colors detected,
+  Left sidebar (`#left`) is `var(--panel)`, scrollable, `--space-section` (16px) padding, holds
+  six stacked `Panel` sections in order: Artwork, Base part, Artwork fit, Depth, Colors detected,
   Export. Right side (`#right`) is the 3D viewport — `var(--viewport)` with a faint
   24px grid background, a HUD readout (top-left, monospace), a warning pill (bottom, full
   width), and a loading overlay (covers viewport when busy).
-- **Header**: MakeGood logo (34px tall) + "TMT Mosaic" wordmark (Outfit, 18px/600) + a version
-  tag linking the changelog + subtitle ("for the MakeGood TMT · SVG or image → multicolor recess
-  geometry") + two right-aligned monospace stat readouts (triangle count, color count) + a
-  circular "?" help button. The stats are plain `<span class="stat">` — mono, 11px, `--text-dim`,
-  no border or fill and no per-stat tone. `preview.html` draws them as bordered two-tone badges
-  instead; that is mockup-only, and the `Badge` spec it implies was deleted (see Fidelity).
+- **Header**: MakeGood logo (34px tall) + "TMT Mosaic" wordmark (Outfit, `--text-display`
+  20px/600) + a version tag linking the changelog + subtitle ("for the MakeGood TMT · SVG or
+  image → multicolor recess geometry") + two right-aligned monospace stat readouts (triangle
+  count, color count) + a circular "?" help button. The stats are plain `<span class="stat">` —
+  mono, `--text-meta` (11px), `--text-dim`, no border or fill and no per-stat tone. `preview.html`
+  draws them as bordered two-tone badges instead; that is mockup-only, and the `Badge` spec it
+  implies was deleted (see Fidelity).
 - **Panel: Artwork** — Dropzone + "Load sample artwork" button (small, full width) + hint text
   about flat-color-only support.
 - **Panel: Base part** — a native `<select>` (`#shape-kind`) holding one option per visible
@@ -167,10 +186,16 @@ type, spacing/radius, brand mark) and open directly in a browser.
 No icon font or SVG icon set — text labels carry the UI, and the mark is the real MakeGood
 logo PNG in the header. A handful of inline glyphs are load-bearing and count as the
 exceptions: `⠿` (ColorRow drag grip), `×` (dismiss / remove), `↻` (reload assembly), `↺`
-(reset depth), `⚠`/`ℹ` (warning tone prefixes). Don't introduce an icon library without
-checking with the team first. If a future
-screen needs icons, standardize on one CDN set (e.g. Lucide) and document it as an addition
-here — don't hand-draw SVG icons.
+(reset depth), `⚠`/`ℹ` (warning tone prefixes), `▸`/`▾` (section disclosure). Don't introduce
+an icon library without checking with the team first. If a future screen needs icons,
+standardize on one CDN set (e.g. Lucide) and document it as an addition here — don't hand-draw
+SVG icons.
+
+Five of these glyphs (`▸`, the two `×` dismiss/close glyphs, `↺`, the member-swatch `×`) are
+sized in `em` against their inherited text context rather than a `--text-*` token: an icon's
+size is optical, relative to the text beside it, which `em` expresses and a fixed token cannot —
+and it means they never need re-tuning when body size moves. They are deliberately off the
+5-step type scale; a system audit should read that as intended, not as drift.
 
 ## Assets
 
@@ -191,8 +216,10 @@ here — don't hand-draw SVG icons.
   the note at the top of the file before treating any control in it as current
 - `assets/makegood-logo.png` — logo asset
 - `guidelines/` — foundation specimen pages (color, type, spacing/radius, brand mark) for
-  quick visual reference. All ten load the declared font families; they render in Outfit /
-  Inter / IBM Plex Mono, not in a fallback.
+  quick visual reference. Nine of ten load the declared font families and render in Outfit /
+  Inter / IBM Plex Mono, not in a fallback. The exception is `brand-makegood-site.html`: it
+  sets `font-family: sans-serif` and applies none of the three, deliberately — it documents
+  makegood.design, a different brand with its own typography, not a Mosaic component specimen.
 
 ## Not in scope
 

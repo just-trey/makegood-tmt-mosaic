@@ -342,7 +342,7 @@ export function renderAssemblyRoleControls(): void {
 
   // Library reachable: the assembly auto-loads on select, so all we need here is a reload.
   if (asmKindCanAutoLoad(kind)) {
-    box.innerHTML = `<div class="btn-row" style="margin-bottom:8px;"><button class="btn small" data-load-full>↻ Reload assembly</button></div>`;
+    box.innerHTML = `<div class="btn-row" style="margin-bottom:var(--space-row);"><button class="btn small" data-load-full>↻ Reload assembly</button></div>`;
     const b = box.querySelector('[data-load-full]');
     if (b) b.addEventListener('click', () => void asmLoadFullAssembly());
     return;
@@ -362,8 +362,8 @@ export function renderAssemblyRoleControls(): void {
       );
   });
   box.innerHTML = buttons.length
-    ? `<div class="hint" style="margin-bottom:6px;">The parts library isn't reachable, so add parts manually:</div><div class="btn-row" style="flex-wrap:wrap;margin-bottom:8px;">${buttons.join('')}</div>`
-    : `<div class="hint" style="margin-bottom:8px;">All roles for this assembly are filled.</div>`;
+    ? `<div class="hint" style="margin-bottom:var(--space-tight);">The parts library isn't reachable, so add parts manually:</div><div class="btn-row" style="flex-wrap:wrap;margin-bottom:var(--space-row);">${buttons.join('')}</div>`
+    : `<div class="hint" style="margin-bottom:var(--space-row);">All roles for this assembly are filled.</div>`;
   box.querySelectorAll<HTMLElement>('[data-role-add]').forEach((btn) =>
     btn.addEventListener('click', () => {
       const role = kind.roles.find((r) => r.id === btn.dataset.roleAdd);
@@ -386,7 +386,7 @@ export function renderAssemblyRoleControls(): void {
 function buildAsmPartRow(part: AssemblyPart): HTMLElement {
   const row = document.createElement('div');
   row.className = 'color-row';
-  row.style.marginBottom = '8px';
+  row.style.marginBottom = 'var(--space-row)';
   if (part.isDuplicateOf) {
     const src = state.assembly.parts.find((p) => p.id === part.isDuplicateOf);
     row.innerHTML = `
@@ -395,7 +395,7 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
       <div class="depth-row"><label>pivot X</label><input type="number" step="0.1" value="${part.pivotX}" data-asm="pivotX" style="width:56px;" aria-label="Pivot X for ${part.name}"></div>
       <div class="depth-row"><label>pivot Z</label><input type="number" step="0.1" value="${part.pivotZ}" data-asm="pivotZ" style="width:56px;" aria-label="Pivot Z for ${part.name}"></div>
       <div class="depth-row"><label>angle°</label><input type="number" step="1" value="${part.angleDeg}" data-asm="angleDeg" style="width:56px;" aria-label="Rotation angle for ${part.name}"></div>
-      <button class="btn small" data-asm-remove style="margin-top:6px;" aria-label="Remove ${part.name}">Remove</button>
+      <button class="btn small" data-asm-remove style="margin-top:var(--space-tight);" aria-label="Remove ${part.name}">Remove</button>
     `;
   } else {
     const statusText = part.loaded
@@ -408,15 +408,18 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
           `<option value="${i}" ${i === part.patchIdx ? 'selected' : ''}>#${i + 1}: area ${p.area.toFixed(0)}mm² (normal ${p.normal.map((v) => v.toFixed(2)).join(',')})</option>`,
       )
       .join('');
+    // The dropzone below hardcodes border-radius:6px, matching no --radius-* token (the scale
+    // tops out at --radius-2xl, 3px) — see docs/tech-debt.md's "assembly-part dropzone radius"
+    // entry before touching this without also picking the right token.
     row.innerHTML = `
       <div class="top"><div class="hex">${part.name}</div></div>
-      <div style="border:1.5px dashed var(--line);border-radius:6px;padding:8px;text-align:center;font-size:11px;color:var(--text-dim);cursor:pointer;" data-asm-drop>
+      <div style="border:1.5px dashed var(--line);border-radius:6px;padding:var(--space-row);text-align:center;color:var(--text-dim);cursor:pointer;" data-asm-drop>
         Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file aria-label="Upload STL/3MF for ${part.name}">
       </div>
-      <div class="hint" style="margin-top:4px;">${statusText}</div>
+      <div class="hint" style="margin-top:var(--space-tight);">${statusText}</div>
       ${part.patches ? `<div class="depth-row"><label>face</label><select data-asm="patchIdx" style="flex:1;" aria-label="Design face for ${part.name}">${patchOptions}</select></div>` : ''}
       <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;" aria-label="Base thickness for ${part.name}"><span class="hint">mm of material behind the face this replaces</span></div>
-      <div class="btn-row" style="margin-top:6px;">
+      <div class="btn-row" style="margin-top:var(--space-tight);">
         <button class="btn small" data-asm-remove aria-label="Remove ${part.name}">Remove</button>
       </div>
     `;
@@ -490,7 +493,7 @@ export function renderAssemblyPartList(): void {
       }),
     );
     const inner = document.createElement('div');
-    inner.style.marginTop = '8px';
+    inner.style.marginTop = 'var(--space-row)';
     parts.forEach((p) => inner.appendChild(buildAsmPartRow(p)));
     det.appendChild(inner);
     box.appendChild(det);

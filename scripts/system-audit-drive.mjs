@@ -40,33 +40,27 @@ const DESIGN_TOKENS = {
     '--danger-text',
   ],
   spacing: [
-    '--space-1',
-    '--space-2',
-    '--space-3',
-    '--space-4',
-    '--space-5',
-    '--space-6',
-    '--space-7',
-    '--space-8',
-    '--space-9',
+    '--space-hair',
+    '--space-tight',
+    '--space-row',
+    '--space-section',
+    '--space-panel',
     '--radius-sm',
     '--radius-md',
     '--radius-lg',
-    '--radius-xl',
     '--radius-2xl',
     '--border-width',
     '--transition-fast',
   ],
   typography: [
-    '--font-heading',
-    '--font-sans',
-    '--font-mono',
-    '--text-xs',
-    '--text-sm',
-    '--text-sm-plus',
-    '--text-md',
-    '--text-base',
-    '--text-lg',
+    '--heading',
+    '--sans',
+    '--mono',
+    '--text-label',
+    '--text-meta',
+    '--text-body',
+    '--text-emphasis',
+    '--text-display',
     '--weight-regular',
     '--weight-semibold',
     '--weight-bold',
@@ -75,14 +69,12 @@ const DESIGN_TOKENS = {
     '--leading-normal',
   ],
 };
-// The app declares these under different names than the design-system token files use — see
-// the report's Adoption section. Mapping resolved here so the same census script measures both
-// vocabularies without hand-editing this file every run.
-const APP_TOKEN_ALIASES = {
-  '--font-heading': '--heading',
-  '--font-sans': '--sans',
-  '--font-mono': '--mono',
-};
+// chore/type-and-spacing-tokens (see docs/system-audit.md's "Design system version changed")
+// renamed --font-heading/--font-sans/--font-mono to --heading/--sans/--mono — name-identical to
+// the app's own declarations now, which is what closed the indirection this alias layer used to
+// paper over. Kept empty, not deleted: a future rename could reopen the same gap, and an empty
+// object costs nothing while a missing mechanism has to be rebuilt from scratch.
+const APP_TOKEN_ALIASES = {};
 
 // A 6-flat-color SVG. 6 colors + 1 body = 7 slots needed: > 4 (bambu-x1c's per-unit) triggers
 // the 'multi-unit' info pill on the default printer with no extra step, and > 4 (snapmaker-u1's

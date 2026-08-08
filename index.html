@@ -439,11 +439,10 @@
               style="
                 border: 1.5px dashed var(--line);
                 border-radius: var(--radius-2xl);
-                padding: 14px 8px;
+                padding: var(--space-section) var(--space-row);
                 text-align: center;
                 color: var(--text-dim);
                 cursor: pointer;
-                font-size: 12px;
               "
             >
               Drop base STL for reference<br /><span class="fname" id="stl-fname"></span>
@@ -455,7 +454,7 @@
                 style="display: none"
               />
             </div>
-            <div class="row" style="margin-top: 8px">
+            <div class="row" style="margin-top: var(--space-row)">
               <label for="p-facez">Face Z</label>
               <div class="field"><input type="number" id="p-facez" value="0" step="0.1" /></div>
               <button class="btn small" id="btn-autoz">Auto (top)</button>
@@ -487,20 +486,28 @@
           </div>
 
           <div id="shape-params-assembly" style="display: none">
-            <div class="row" id="asm-variant-row" style="display: none; margin-bottom: 8px">
+            <div
+              class="row"
+              id="asm-variant-row"
+              style="display: none; margin-bottom: var(--space-row)"
+            >
               <label>Version</label>
               <div class="field asm-variant-options" id="asm-variant-options"></div>
             </div>
-            <div id="assembly-role-controls" style="margin-bottom: 8px"></div>
+            <div id="assembly-role-controls" style="margin-bottom: var(--space-row)"></div>
             <div id="assembly-part-list"></div>
-            <div class="row" id="asm-radius-row" style="margin-top: 8px">
+            <div class="row" id="asm-radius-row" style="margin-top: var(--space-row)">
               <label for="p-asm-radius">Design radius</label>
               <div class="field">
                 <input type="number" id="p-asm-radius" value="138" step="0.5" />
               </div>
               <span class="hint">mm</span>
             </div>
-            <div class="row" id="asm-buildparam-row" style="margin-top: 8px; display: none">
+            <div
+              class="row"
+              id="asm-buildparam-row"
+              style="margin-top: var(--space-row); display: none"
+            >
               <label for="p-asm-buildparam" id="asm-buildparam-label">Hubcap diameter</label>
               <div class="field">
                 <input type="number" id="p-asm-buildparam" step="0.5" />
@@ -510,9 +517,13 @@
             <div
               class="hint"
               id="asm-buildparam-size"
-              style="display: none; margin-top: 2px; color: var(--text)"
+              style="display: none; margin-top: var(--space-hair); color: var(--text)"
             ></div>
-            <div class="row" id="asm-silhouette-row" style="margin-top: 6px; display: none">
+            <div
+              class="row"
+              id="asm-silhouette-row"
+              style="margin-top: var(--space-tight); display: none"
+            >
               <label for="p-asm-silhouette">Cut to artwork shape</label>
               <div class="field">
                 <input type="checkbox" id="p-asm-silhouette" />
@@ -533,7 +544,7 @@
             </div>
           </div>
 
-          <div class="row" style="margin-top: 8px; align-items: flex-start">
+          <div class="row" style="margin-top: var(--space-row); align-items: flex-start">
             <label>Body / blank color</label>
             <div class="field base-color-group">
               <div class="base-color-swatches" id="base-color-swatches"></div>
@@ -559,7 +570,7 @@
               style="display: none"
             />
           </div>
-          <div class="btn-row" style="margin-top: 8px">
+          <div class="btn-row" style="margin-top: var(--space-row)">
             <button class="btn small" id="btn-sample" style="flex: 1">Load sample artwork</button>
           </div>
           <div id="pattern-picker" class="pattern-picker" style="display: none"></div>
@@ -662,11 +673,14 @@
           </div>
           <div class="row">
             <label>Mirror</label>
-            <div class="field" style="flex: 0; gap: 12px; justify-content: flex-end">
-              <label style="display: flex; align-items: center; gap: 4px"
+            <div
+              class="field"
+              style="flex: 0; gap: var(--space-section); justify-content: flex-end"
+            >
+              <label style="display: flex; align-items: center; gap: var(--space-tight)"
                 ><input type="checkbox" id="p-flip-x" /> Flip H</label
               >
-              <label style="display: flex; align-items: center; gap: 4px"
+              <label style="display: flex; align-items: center; gap: var(--space-tight)"
                 ><input type="checkbox" id="p-flip-y" /> Flip V</label
               >
             </div>
@@ -742,7 +756,12 @@
             </div>
           </div>
           <button class="btn primary full" id="btn-export" disabled>Export print-ready 3MF</button>
-          <button class="btn small full" id="btn-export-stl" disabled style="margin-top: 6px">
+          <button
+            class="btn small full"
+            id="btn-export-stl"
+            disabled
+            style="margin-top: var(--space-tight)"
+          >
             Export STL set (.zip)
           </button>
           <div class="hint" id="export-hint">

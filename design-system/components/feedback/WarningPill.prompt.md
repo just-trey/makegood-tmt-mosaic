@@ -28,5 +28,5 @@ Every pill is individually dismissable. When more than one is showing, a "clear 
 appears above the stack. The container is `pointer-events: none` so the viewport stays
 draggable behind the pills; each pill restores `pointer-events: auto` for itself.
 
-`max-width: 520px`, `font-size: 11.5px`, `--radius-lg` corners, long strings wrap on
-`word-break`.
+`max-width: 520px`, inherits body text size (`--text-body`, 12px — it sets no `font-size` of
+its own), `--radius-lg` corners, long strings wrap on `word-break`.

@@ -11,19 +11,19 @@
       body {
         margin: 0;
         background: var(--panel);
-        padding: 16px;
+        padding: var(--space-section);
         box-sizing: border-box;
-        font-family: var(--font-mono);
-        font-size: 10px;
+        font-family: var(--mono);
+        font-size: var(--text-meta);
         color: var(--text-dim);
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: var(--space-section);
       }
       .row {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: var(--space-row);
       }
       .bar {
         background: var(--accent);
@@ -40,26 +40,26 @@
   </head>
   <body>
     <div class="row">
-      <div class="bar" style="width: 4px"></div>
-      4
+      <div class="bar" style="width: var(--space-hair)"></div>
+      2 · hair — optical nudge only
     </div>
     <div class="row">
-      <div class="bar" style="width: 8px"></div>
-      8
+      <div class="bar" style="width: var(--space-tight)"></div>
+      4 · tight — inside a control: label-to-input, icon-to-text
     </div>
     <div class="row">
-      <div class="bar" style="width: 14px"></div>
-      14
+      <div class="bar" style="width: var(--space-row)"></div>
+      8 · row — between rows within a panel
     </div>
     <div class="row">
-      <div class="bar" style="width: 18px"></div>
-      18
+      <div class="bar" style="width: var(--space-section)"></div>
+      16 · section — between labelled groups inside a panel
     </div>
     <div class="row">
-      <div class="bar" style="width: 24px"></div>
-      24
+      <div class="bar" style="width: var(--space-panel)"></div>
+      24 · panel — between panels
     </div>
-    <div class="row" style="gap: 16px">
+    <div class="row" style="gap: var(--space-section)">
       <div class="rad" style="border-radius: 4px"></div>
       <div class="rad" style="border-radius: 6px"></div>
       <div class="rad" style="border-radius: 8px"></div>
