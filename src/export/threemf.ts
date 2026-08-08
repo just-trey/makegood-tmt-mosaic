@@ -299,6 +299,16 @@ export const FOOTREST_PLATE_R = [
 // Held relative (via ExportPart.primeTowerDelta) so it lands in the same empty diagonal corner the
 // 45°-rotated part leaves open, on every printer.
 export const FOOTREST_PRIME_TOWER_DELTA = { x: 29.808863, y: 41.857863 };
+/**
+ * Per-object slicer overrides for the footrest, from the same verified reference: support off,
+ * because the 45° standing pose is what makes it printable without any (see FOOTREST_PLATE_R).
+ * Brim is off globally rather than per object — see `brim_type` in bambuProjectSettings.
+ *
+ * Exported so [tests/threemf.test.ts](../../tests/threemf.test.ts) builds its footrest from this
+ * value instead of retyping it. A hand-copied duplicate there would keep passing after this one
+ * changed, which is the opposite of what the assertion is for.
+ */
+export const FOOTREST_OBJECT_SETTINGS: Record<string, string> = { enable_support: '0' };
 
 /**
  * Hubcap plate placement, baked from two reference projects the maintainer verified in the slicer

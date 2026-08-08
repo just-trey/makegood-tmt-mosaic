@@ -6,6 +6,7 @@ import {
   rotXthenZ,
   soupToIndexed,
   xmlEscape,
+  FOOTREST_OBJECT_SETTINGS,
   FOOTREST_PLATE_R,
   FOOTREST_PRIME_TOWER_DELTA,
   type ExportPart,
@@ -432,7 +433,7 @@ describe('build3MFCombined footrest placement', () => {
       plateHint: 1,
       plateR: FOOTREST_PLATE_R,
       primeTowerDelta: FOOTREST_PRIME_TOWER_DELTA,
-      objectSettings: { enable_support: '0' },
+      objectSettings: FOOTREST_OBJECT_SETTINGS,
     };
   }
 

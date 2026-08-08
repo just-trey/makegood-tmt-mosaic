@@ -1079,14 +1079,6 @@ per-part constants and belong as data on the `AssemblyKind` / role
 definition, matching the "one array entry" goal in
 [src/assembly/kinds.ts](../src/assembly/kinds.ts).
 
-## The footrest's `objectSettings` literal is duplicated
-
-The literal (`brim_type: 'no_brim'`, `enable_support: '0'`) is duplicated between the export path in
-[src/export/placement.ts](../src/export/placement.ts) and its assertion in
-[tests/threemf.test.ts](../tests/threemf.test.ts). Extract a shared
-`FOOTREST_OBJECT_SETTINGS` constant so the test verifies the real value
-instead of a hand-copied duplicate that can silently drift.
-
 ## The footrest's baked `FOOTREST_PLATE_R` is redundant
 
 It's redundant with the general
