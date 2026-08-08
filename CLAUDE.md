@@ -110,6 +110,23 @@ Where writing goes — pick one, don't split a topic across two:
   success measure; read this before filing or acting on UX/workflow findings.
 - **[docs/pipeline.md](docs/pipeline.md)** — how the geometry actually works;
   read this before touching `src/geometry/` or `src/export/`.
+- **[docs/ui-conventions.md](docs/ui-conventions.md)** — the numbered behavior
+  rubric for anything user-facing. Findings against it cite convention numbers,
+  not prose. It **verifies** a specific change against a fixed bar; it does not
+  discover problems nobody knew about — that is `maker-workflow-review` and the
+  `review-gauntlet` lenses, which it does not replace. Recurring review findings
+  graduate into conventions; the conventions then stop them recurring. Behavior
+  only — `design-system/` owns the visual language.
+- **`design-system/`** — color, type, spacing, radius, states, and the component
+  specs. Authoritative on _look_; silent on _model_.
+- **[docs/system-audit.md](docs/system-audit.md)** — generated, not authored. The
+  `system` lens of `/review-gauntlet` overwrites it every run and its header pins
+  the commit, viewport and drive script behind it. Don't hand-edit it, and don't
+  cite it for a measurement it doesn't contain — a manually added claim is
+  indistinguishable from a measured one, which is the failure the file exists to
+  prevent. To change what it says, run the lens.
+- **[docs/analytics.md](docs/analytics.md)** — the event catalog; one of the four
+  docs `ship-it` checks for drift.
 - **[docs/tech-debt.md](docs/tech-debt.md)** — **open** deferred work and
   known-wrong behavior. One `##` section per item, stating what was measured,
   why it was deferred, and what closing it would take. This is where the
