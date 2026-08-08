@@ -410,7 +410,7 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
       .join('');
     row.innerHTML = `
       <div class="top"><div class="hex">${part.name}</div></div>
-      <div style="border:1.5px dashed var(--line);border-radius:6px;padding:8px;text-align:center;font-size:11px;color:var(--text-dim);cursor:pointer;" data-asm-drop>
+      <div style="border:1.5px dashed var(--line);border-radius:6px;padding:8px;text-align:center;color:var(--text-dim);cursor:pointer;" data-asm-drop>
         Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file aria-label="Upload STL/3MF for ${part.name}">
       </div>
       <div class="hint" style="margin-top:4px;">${statusText}</div>
