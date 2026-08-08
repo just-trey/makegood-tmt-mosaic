@@ -87,23 +87,33 @@ A related question this section does not settle: the header's full-width rainbow
 no gradients but the app mark. Recorded in [ui-conventions.md](ui-conventions.md) as a brand call
 rather than a bug — it needs a decision on what the tool's header is allowed to be, not a fix.
 
-## Selection is communicated by tinting, in an app whose whole subject is color
+## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
 
-Conventions 19–21 of [ui-conventions.md](ui-conventions.md). `--accent-primary` is blue
-(`#6d93ff`); blue is also a filament a user owns and frequently the color of the artwork being
-placed. The placement frame is drawn in accent blue over that artwork, so "this is selected" and
-"this region prints blue" are the same signal. The general rule the conventions state: selection
-reads as outline, contrast against dimmed surroundings, or a neutral-luminance treatment — never
-as an accent hue laid over the thing selected. Two neighbours of the same rule: greyed-back
-excluded geometry must not look like geometry printing in grey, and any meaning-carrying overlay
-(hidden-surface hatching, warning highlight) has to be distinguishable by pattern or motion rather
-than hue alone.
+The viewport half of this is closed: the placement frame no longer draws in accent blue, it is a
+`--text` outline with `--bg` corner handles, and the before/after against a blue design is what
+settled it. What that fix explicitly did **not** cover is the rest of the sentence the section used
+to carry — "apply it wherever selection is drawn, the placement frame is the known instance, not
+necessarily the only one." Three places in `src/styles.css` still say "selected" with the accent:
 
-Not measured in this repo. Asserted by the rubric against a current wheel screenshot, and carried
-here from that file's conflicts table rather than from an audit — the `system` lens has not been
-pointed at it. What closing it would take: decide the selection treatment first (outline plus
-dimmed surroundings is the conventions' own suggestion), then apply it wherever selection is drawn
-— the placement frame is the known instance, not necessarily the only one.
+- `.artwork-row.active` — `border-color: var(--accent)` plus `--accent-wash`.
+- `.base-swatch.selected` — `outline: 2px solid var(--accent)`, and this is the sharp one: the
+  thing being outlined **is a filament swatch**, so a blue ring around a blue filament is exactly
+  the collision convention 19 names, in the one list where it matters most.
+- `.auto-merge-labels span.active` — `color: var(--accent-2)`.
+
+Not measured; these are read off the stylesheet, not off a screenshot. Closing it means the same
+decision applied in a DOM context, where the tools differ from the viewport's (an outline offset,
+a weight change, a checkmark) and where the accent may well be fine for a row that carries no
+color of its own. Settle the swatch first.
+
+**Two neighbours of the same rule, both still open.** Convention 20: greyed-back excluded geometry
+must not look like geometry printing in grey — untested either way, and the body renders `#b9c0c6`,
+which is a grey somebody prints in. Convention 21: a meaning-carrying overlay has to be
+distinguishable from artwork by pattern or motion rather than hue alone, and the placement frame's
+off-surface warning state is still hue alone (amber `0xe0a33a`, which matches no token). That one
+was deliberately left as it was — it is a warning rather than a selection, the comment on it
+defends the choice against a desaturated alternative, and changing a warning colour was outside
+the change that closed the selection half.
 
 One instance is already closed: the part thumbnail's silhouette (`src/ui/shapeThumb.ts`) was
 painted in `--accent` and is now `--text-dim`. Worth knowing for the rest of this section, because

@@ -46,9 +46,39 @@ let drag: DragState | null = null;
 // fires no rebuild) without recomputing the whole frame every mouse-move.
 let currentFrame: FaceFrame | null = null;
 
-const FRAME_COLOR = 0x4ea1ff;
-const HANDLE_COLOR = 0x4ea1ff;
-const ROTATE_COLOR = 0x54d98c;
+/**
+ * Read a design token as a three.js colour.
+ *
+ * The gizmo is chrome drawn into the viewport, so its colours are the app's, not the scene's —
+ * taking them from the same custom properties the panels use means there is one value, not a hex
+ * copied into TypeScript that drifts when the palette moves. Falls back when there is no
+ * stylesheet (jsdom), where nothing is rendered anyway.
+ */
+function tokenColor(name: string, fallback: number): number {
+  const raw =
+    typeof getComputedStyle === 'function'
+      ? getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+      : '';
+  return raw ? new THREE.Color(raw).getHex() : fallback;
+}
+
+/**
+ * Selection is drawn as a light outline with dark corner handles, and deliberately in no accent
+ * hue at all — conventions 19 and 21 of docs/ui-conventions.md.
+ *
+ * The frame used to be accent blue, over artwork that is frequently also blue, so "this is
+ * selected" and "this region prints blue" were the same signal in an app whose entire subject is
+ * which colour goes where. Any single flat colour has that problem, because every colour is
+ * somebody's filament — so the treatment is the *pair*: `--text` near-white against `--bg`
+ * near-black. No filament is both at once, and whichever half loses contrast against the artwork
+ * underneath, the other one has it. Measured against the default body `#b9c0c6`: `--bg` is 9.7:1,
+ * `--text` 1.7:1; against black artwork those swap.
+ *
+ * Both are tokens the app already declares — nothing new was added to the palette for this.
+ */
+let FRAME_COLOR = 0xf5f7fb;
+let HANDLE_COLOR = 0x0c1220;
+let ROTATE_COLOR = 0xf5f7fb;
 /**
  * Frame colour once the design center has left the surface — see FaceFrame.offSurfaceMM. Amber
  * rather than a muted grey: the parts render grey, so a desaturated "inactive" frame is the one
@@ -104,6 +134,12 @@ function overlayGeometry(pointCount: number): THREE.BufferGeometry {
 }
 
 export function initDesignGizmo(): void {
+  // Resolved here rather than at module scope so the stylesheet is certainly applied by the time
+  // the custom properties are read.
+  FRAME_COLOR = tokenColor('--text', FRAME_COLOR);
+  HANDLE_COLOR = tokenColor('--bg', HANDLE_COLOR);
+  ROTATE_COLOR = tokenColor('--text', ROTATE_COLOR);
+
   overlay = new THREE.Group();
   overlay.renderOrder = 999; // draw on top of the model
   overlay.visible = false;
@@ -292,9 +328,16 @@ function drawOverlay(frame: FaceFrame, pose: OverlayPose): void {
   // the exact distance changes nothing.
   const offMM =
     dU === 0 && dV === 0 ? frame.offSurfaceMM : frame.offSurfaceAt(dU, dV, OFF_SURFACE_TOL_MM);
-  const color = offMM > OFF_SURFACE_TOL_MM ? OFF_SURFACE_COLOR : FRAME_COLOR;
-  (frameLine.material as THREE.LineBasicMaterial).color.setHex(color);
-  for (const h of cornerHandles) (h.material as THREE.MeshBasicMaterial).color.setHex(color);
+  const off = offMM > OFF_SURFACE_TOL_MM;
+  // Resting state keeps the light-line/dark-handle pair (see FRAME_COLOR). The off-surface state
+  // drops it and takes both: that is a warning rather than a selection, and it wants to read as
+  // one thing gone wrong, not as a frame with a second colour in it.
+  (frameLine.material as THREE.LineBasicMaterial).color.setHex(
+    off ? OFF_SURFACE_COLOR : FRAME_COLOR,
+  );
+  for (const h of cornerHandles) {
+    (h.material as THREE.MeshBasicMaterial).color.setHex(off ? OFF_SURFACE_COLOR : HANDLE_COLOR);
+  }
 
   // The overlay is written straight into its buffers here, bypassing everything in viewport.ts that
   // would otherwise mark the frame dirty. On a heavy model a drag deliberately does NOT rebuild
