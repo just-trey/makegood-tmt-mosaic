@@ -1,40 +1,71 @@
-<!-- @dsCard group="Brand" viewport="700x140" subtitle="No logo file provided — app mark is a conic-gradient swatch from source" name="Mark" -->
+<!-- @dsCard group="Brand" viewport="700x200" subtitle="Real logo asset + wordmark; the app's one gradient is the header accent stripe" name="Mark" -->
 <!doctype html>
 <html>
   <head>
     <link rel="stylesheet" href="../styles.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <style>
       body {
         margin: 0;
-        background: var(--surface-panel);
-        padding: 16px;
+        background: var(--panel);
+        padding: 0;
         box-sizing: border-box;
         font-family: var(--font-sans);
-        color: var(--text-primary);
+        color: var(--text);
+      }
+      .accent-stripe {
+        height: 3px;
+        background: linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488);
+      }
+      .header {
         display: flex;
         align-items: center;
         gap: 10px;
+        padding: 16px;
+      }
+      .divider {
+        width: 1px;
+        height: 22px;
+        background: var(--line);
+      }
+      .note {
+        padding: 0 16px 16px;
+        color: var(--text-dim);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .note code {
+        font-family: var(--font-mono);
       }
     </style>
   </head>
   <body>
-    <div
-      style="
-        width: 20px;
-        height: 20px;
-        border-radius: 4px;
-        background: conic-gradient(
-          from 45deg,
-          var(--accent-primary),
-          var(--accent-secondary),
-          #b063d9,
-          var(--accent-primary)
-        );
-      "
-    ></div>
-    <h1 style="font-size: 14px; font-weight: 600; margin: 0; letter-spacing: 0.2px">TMT Mosaic</h1>
-    <span style="color: var(--text-secondary); font-size: 11px"
-      >for MakeGood TMT · SVG → multicolor recess geometry</span
-    >
+    <div class="accent-stripe"></div>
+    <div class="header">
+      <img src="../assets/makegood-logo.png" alt="MakeGood" style="height: 34px; width: auto" />
+      <div class="divider"></div>
+      <h1 style="font-family: var(--font-heading); font-size: 18px; font-weight: 600; margin: 0">
+        Mosaic
+      </h1>
+      <span style="color: var(--text-dim); font-size: 11px"
+        >for MakeGood TMT · SVG → multicolor recess geometry</span
+      >
+    </div>
+    <p class="note">
+      The mark is the real MakeGood logo asset (<code>assets/makegood-logo.png</code>), 34px tall in
+      the header, followed by a hairline divider and the "Mosaic" wordmark in Outfit 18px/600. There
+      is no conic-gradient swatch — an earlier version of this page showed one, and the app has
+      never had it.
+    </p>
+    <p class="note">
+      The app renders exactly one gradient: the 3px <code>.accent-stripe</code> above, a
+      <code>linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488)</code> spanning the full window width
+      above the header. Those three colors have no token identity — they appear nowhere else in the
+      app and in none of the token files. Left as literals here because this page describes what
+      ships; tokenizing them is a change to the app, not to the record of it.
+    </p>
   </body>
 </html>

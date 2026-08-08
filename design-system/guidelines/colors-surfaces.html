@@ -3,13 +3,17 @@
 <html>
   <head>
     <link rel="stylesheet" href="../styles.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <style>
       body {
         margin: 0;
-        background: var(--surface-canvas);
+        background: var(--bg);
         font-family: var(--font-mono);
         font-size: 11px;
-        color: var(--text-secondary);
+        color: var(--text-dim);
         padding: 16px;
         box-sizing: border-box;
         display: flex;
@@ -19,7 +23,7 @@
         flex: 1;
         height: 90px;
         border-radius: 6px;
-        border: 1px solid var(--border-default);
+        border: 1px solid var(--line);
         display: flex;
         align-items: flex-end;
         padding: 8px;
@@ -27,9 +31,9 @@
     </style>
   </head>
   <body>
-    <div class="sw" style="background: var(--surface-canvas)">--surface-canvas</div>
-    <div class="sw" style="background: var(--surface-panel)">--surface-panel</div>
-    <div class="sw" style="background: var(--surface-panel-2)">--surface-panel-2</div>
-    <div class="sw" style="background: var(--surface-viewport)">--surface-viewport</div>
+    <div class="sw" style="background: var(--bg)">--bg</div>
+    <div class="sw" style="background: var(--panel)">--panel</div>
+    <div class="sw" style="background: var(--panel-2)">--panel-2</div>
+    <div class="sw" style="background: var(--viewport)">--viewport</div>
   </body>
 </html>

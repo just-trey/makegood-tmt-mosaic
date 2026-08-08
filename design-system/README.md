@@ -5,29 +5,45 @@
 This is the component library and visual language for **Mosaic**, the internal tool that
 converts a flat-color SVG into per-color recess geometry for multicolor 3D printing (one STL
 per color + base plate, for Bambu Studio/AMS). It supports MakeGood's open-source Toddler
-Mobility Trainer (TMT) project. The system was reverse-engineered from the real Mosaic app
-(a single-file `index.html`) and formalized into reusable, documented components.
+Mobility Trainer (TMT) project. The system was reverse-engineered from an early single-file
+`index.html` version of the app. The app has since been restructured into TypeScript modules
+under `src/` on Vite, and this bundle has been corrected against the running app rather than
+against that snapshot — see [docs/system-audit.md](../docs/system-audit.md).
 
 ## About the design files
 
 Everything in this bundle is a **design reference**, not production code to import as-is:
 
-- `components/**/*.jsx` are close-to-final React implementations meant to be **ported into
-  the target codebase's existing environment** (whatever framework/build setup
-  makegood-tmt-mosaic actually uses), adapting to its conventions (state management, file
-  layout, existing utilities) rather than copy-pasted wholesale.
+- `components/**/*.prompt.md` are the written specs — purpose, structure, states, usage
+  notes. These are the component contract. Read the spec, build it in whatever the app
+  already uses.
 - `ui_kits/mosaic/preview.html` is a full recreation of the Mosaic left-panel + viewport
-  screen, built from the components below, matching the real app's layout. Treat it as the
-  layout/behavior spec for that screen, not as shippable markup.
-- CSS custom properties in `tokens/*.css` are the canonical design tokens — port these into
-  whatever the codebase uses for global styles/theme (CSS vars are portable as-is if the
-  codebase serves plain CSS).
+  screen. Treat it as the layout spec for that screen — grid, panel order, header
+  composition, spacing — not as shippable markup, and read the note at the top of the file:
+  three of its controls no longer match the shipped app.
+- CSS custom properties in `tokens/*.css` are the canonical design tokens. `tokens/colors.css`
+  declares the same names the app declares in `src/styles.css`, so the two are one vocabulary
+  rather than two that happen to share hex values.
+
+**Removed, deliberately — do not rebuild.** This bundle used to carry `components/**/*.jsx`
+React implementations, matching `*.d.ts` prop contracts, and `*.card.html` specimen harnesses
+that rendered them. All were deleted: the app is vanilla TypeScript on Vite and can never
+import a React component, the harnesses depended on a `_ds_bundle.js` that was never in the
+repo (so they had rendered blank for their whole life), and two of the components specified
+UI the app has never had. They were vestigial from the day they landed. If you find yourself
+wanting them back, you want the `.prompt.md` spec instead.
 
 ## Fidelity
 
-**High-fidelity.** Every component here has a direct counterpart already in the real
-makegood-tmt-mosaic source (`index.html`) — colors, spacing, type, and states were lifted
-from its inline `<style>` block and DOM, not invented. Recreate pixel-perfectly.
+**Every component documented here has a live counterpart in the app**, verified against real
+computed style rather than assumed. Colors, spacing, type and states were lifted from the app,
+not invented — recreate them exactly.
+
+That claim used to be made about two components the app never had (`SegmentedControl`, a
+five-shape base-part picker; `ThumbnailSelect`, a thumbnail part library). Both specs were
+deleted rather than kept as aspirations, because a spec that describes UI the app doesn't have
+is worse than no spec: a developer reading it builds the wrong thing confidently. See
+[docs/system-audit.md](../docs/system-audit.md) for how the gap was measured.
 
 ## Design tokens
 
@@ -42,7 +58,10 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 - Accent primary (blue, primary actions/focus): `#6d93ff`
 - Accent secondary (cyan, sparse highlight): `#5eead4`
 - Danger (warnings only): `#f9438a`
-- No gradients except one conic-gradient app mark in the header.
+- Exactly one gradient: the 3px `.accent-stripe` across the top of the window,
+  `linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488)`. Those three colors have no token
+  identity anywhere — literals in `src/styles.css`, absent from every token file. There is no
+  conic gradient; the app mark is the real logo PNG. Add no further gradients.
 
 **Typography**
 
@@ -57,7 +76,7 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 
 - Compact paddings (5–8px), tight row gaps (6–8px) — this is a tool, not a marketing surface.
   Don't loosen into typical marketing whitespace.
-- 1px hairline borders everywhere (`--border-default`), no shadows.
+- 1px hairline borders everywhere (`--line`), no shadows.
 - Sharp, near-square corners (`--radius-*` = 0–3px, industrial/blueprint feel): inputs 1px,
   buttons/rows/thumbnails 2px, dropzones 3px, swatches square (0px). See `tokens/spacing.css`.
 
@@ -73,33 +92,30 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 
 ## Components
 
-Each component in `components/<category>/` ships three files — use all three:
-
-- `Name.jsx` — reference implementation (props, markup, inline styles using the CSS vars above)
-- `Name.d.ts` — prop types/contract
-- `Name.prompt.md` — written spec (purpose, states, usage notes) — read this first per component
+Each component in `components/<category>/` is one file: `Name.prompt.md`, the written spec —
+purpose, structure, states, usage notes.
 
 Categories:
 
-- **forms/** — Button, TextInput, Select, ThumbnailSelect, Checkbox, Slider, SegmentedControl
+- **forms/** — Button, TextInput, Select, Checkbox, Slider
 - **layout/** — Panel (repeating uppercase-label + hairline-rule sidebar section shell — not a
   bordered card)
 - **feedback/** — WarningPill, Badge, LoadingOverlay
 - **misc/** — Dropzone, ColorRow
 
-`*.card.html` files per category are visual specimen sheets (all states/variants side by side)
-— open in a browser to see every state without wiring up the real app.
+There are no per-category specimen sheets. `guidelines/*.html` cover the foundations (color,
+type, spacing/radius, brand mark) and open directly in a browser.
 
 ## Screens
 
 ### Mosaic — main tool screen (`ui_kits/mosaic/preview.html`)
 
-- **Purpose**: load an SVG, configure a base part (disc/rect/round rect/STL ref/assembly),
-  fit and merge detected colors into recess depths, export an STL set.
+- **Purpose**: load an SVG, pick a base part, fit and merge detected colors into recess
+  depths, export an STL set.
 - **Layout**: CSS grid, `340px 1fr` columns × `64px 1fr` rows. Header spans both columns.
-  Left sidebar (`#left`) is `var(--surface-panel)`, scrollable, 14px padding, holds six
+  Left sidebar (`#left`) is `var(--panel)`, scrollable, 14px padding, holds six
   stacked `Panel` sections in order: Artwork, Base part, Artwork fit, Depth, Colors detected,
-  Export. Right side (`#right`) is the 3D viewport — `var(--surface-viewport)` with a faint
+  Export. Right side (`#right`) is the 3D viewport — `var(--viewport)` with a faint
   24px grid background, a HUD readout (top-left, monospace), a warning pill (bottom, full
   width), and a loading overlay (covers viewport when busy).
 - **Header**: MakeGood logo (34px tall) + divider + "Mosaic" wordmark (Outfit, 18px/600) +
@@ -107,38 +123,39 @@ Categories:
   (triangle count, color count — amber tone for the color count).
 - **Panel: Artwork** — Dropzone + "Load sample artwork" button (small, full width) + hint text
   about flat-color-only support.
-- **Panel: Base part** — SegmentedControl (Disc/Rect/Round rect/STL ref/Assembly). Disc shows
-  Diameter/Thickness number inputs (mm). Assembly shows a hint line + two ThumbnailSelect
-  dropdowns (Top, Cap) each with a 3D-thumbnail placeholder + STL filename meta + a
-  "+ Add rotated copy of Top" button.
+- **Panel: Base part** — a native `<select>` (`#shape-kind`) holding one option per visible
+  assembly kind, by name, plus "Disc (reference)" last. Disc shows Diameter/Thickness number
+  inputs (mm). Assembly shows a "↻ Reload assembly" button, a "+ Add {role}" button per role,
+  and a row per part with a drop target and a `<select>` for face index. Rect, round rect and
+  STL-reference modes exist in the code but are deliberately unreachable — they are never
+  written into the dropdown, so do not spec UI for them.
 - **Panel: Artwork fit** — Margin and Scale sliders with live `%` value labels + "Reset to
   auto-fit" button.
 - **Panel: Depth** — Default depth number input (mm) + "Recess bg too" checkbox.
-- **Panel: Colors detected** — conditional "Merge selected into one recess" button (only shown
-  when ≥1 color row is checked) + stacked ColorRow list (swatch, hex, area %, per-row depth
-  input) + hint text.
+- **Panel: Colors detected** — a stacked ColorRow list (drag grip, swatch, hex, area %,
+  "Merge with…" select, per-row depth input) + hint text. There is no bulk-select checkbox and
+  no "Merge selected" button; merging is per-row. See `ColorRow.prompt.md`.
 - **Panel: Export** — primary full-width "Export STL set (.zip)" button (triggers the loading
   overlay for ~900ms in the mockup) + hint text.
 
 ## Interactions
 
-- Dropzone: drag-over toggles a teal border/text/background state; drop calls `onFiles`.
-- ThumbnailSelect: click toggles an absolutely-positioned dropdown list (max-height 220px,
-  scrollable); each option shows a thumbnail + label + meta; selecting closes the dropdown.
-  Rows highlight with the teal wash on hover.
-  a
-- SegmentedControl: single-select row of equal-width buttons; active segment gets a teal
-  border + teal wash background + teal text.
-- ColorRow: optional checkbox (bulk-select for merging) + swatch + hex (mono) + area% + a
-  depth number input.
+- Dropzone: drag-over turns border, text and background to accent blue; drop hands over the
+  files.
+- ColorRow: drag the grip onto another row to merge, or use the row's "Merge with…" select for
+  the same operation by keyboard. A merged row shows member swatches, each removable. Swatch,
+  hex (mono), area %, and a depth number input.
 - Buttons/inputs: see hover/focus/disabled states under Design tokens → States above.
 - Loading overlay: full-viewport dim (rgba(13,15,17,.85)) + spinner (0.8s linear rotate) +
   label text; blocks interaction with the viewport while visible.
 
 ## Iconography & imagery
 
-None. No icon font or SVG icon set — text labels and a single conic-gradient swatch serve as
-the mark. Don't introduce an icon library without checking with the team first. If a future
+No icon font or SVG icon set — text labels carry the UI, and the mark is the real MakeGood
+logo PNG in the header. A handful of inline glyphs are load-bearing and count as the
+exceptions: `⠿` (ColorRow drag grip), `×` (dismiss / remove), `↻` (reload assembly), `↺`
+(reset depth), `⚠`/`ℹ` (warning tone prefixes). Don't introduce an icon library without
+checking with the team first. If a future
 screen needs icons, standardize on one CDN set (e.g. Lucide) and document it as an addition
 here — don't hand-draw SVG icons.
 
@@ -156,11 +173,13 @@ here — don't hand-draw SVG icons.
 ## Files in this bundle
 
 - `styles.css` + `tokens/` — root stylesheet and CSS custom properties (colors, type, spacing)
-- `components/` — per-component `.jsx` + `.d.ts` + `.prompt.md`, plus `*.card.html` specimens
-- `ui_kits/mosaic/preview.html` — full screen recreation (open directly in a browser)
+- `components/` — one `.prompt.md` spec per component
+- `ui_kits/mosaic/preview.html` — full screen recreation (open directly in a browser); read
+  the note at the top of the file before treating any control in it as current
 - `assets/makegood-logo.png` — logo asset
 - `guidelines/` — foundation specimen pages (color, type, spacing/radius, brand mark) for
-  quick visual reference
+  quick visual reference. All ten load the declared font families; they render in Outfit /
+  Inter / IBM Plex Mono, not in a fallback.
 
 ## Not in scope
 

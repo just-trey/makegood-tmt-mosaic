@@ -78,9 +78,10 @@ which a center-based check would wrongly reject.
 
 They are absent from
 [scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json)'s
-part list — the other eleven pieces are all in it — on the call recorded in
-[docs/chair-body-plan.md](../docs/chair-body-plan.md) that "caster mounts and
-wheel mounts are structural-only". That call was already revised for half of
+part list — the other eleven pieces are all in it — on the chair body plan's
+call that "caster mounts and wheel mounts are structural-only". (That plan was
+deleted once the chair shipped; it is in git history.) That call was already
+revised for half of
 it: the wheel mounts now carry `left`, `right`, and `seat`. The casters are
 decoratable too (10,395 mm² of flat upward face at y = 120, the same in both
 variants), so this is worth revisiting.
@@ -222,9 +223,9 @@ so.
    ([scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json)).
    The `front` zone's charts cover `storage-*`, `handle-*` and `seat-back-*`
    and **no wing at all**, so the forward-facing fender face falls outside
-   every zone and takes no artwork. Note
-   [chair-body-plan.md](chair-body-plan.md) records dropping the planned
-   separate `wing-left`/`wing-right` zones as unnecessary, on the finding that
+   every zone and takes no artwork. Note that the chair body plan (deleted once
+   the chair shipped; in git history) dropped the planned separate
+   `wing-left`/`wing-right` zones as unnecessary, on the finding that
    seeding on the fender reaches the same triangles as seeding on the storage
    side — true for the flank, but that reasoning never covered the front face.
    Closing it is either a wider `front`, a raised `left`/`right`
