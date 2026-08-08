@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: Pre-PR gate for this repo — runs the five CI gates locally, then checks the four docs that drift silently (CHANGELOG, README, in-app help panel, analytics catalog) against the actual diff, and watches CI without polling. Use before opening or updating a PR, or when asked "is this ready to push / ready for a PR".
+description: Pre-PR gate for this repo — checks DECISIONS-NEEDED.md is drained, runs the five CI gates locally, then checks the four docs that drift silently (CHANGELOG, README, in-app help panel, analytics catalog) against the actual diff, and watches CI without polling. Use before opening or updating a PR, or when asked "is this ready to push / ready for a PR".
 model: sonnet
 ---
 
@@ -9,6 +9,26 @@ model: sonnet
 The five gates below are exactly what `.github/workflows/ci.yml` runs, and `main`
 is protected — a red gate blocks merge. Running them locally is cheaper than a
 round trip through GitHub.
+
+## 0. Any open decisions first
+
+```bash
+test -s DECISIONS-NEEDED.md && { echo "DECISIONS-NEEDED.md has open entries — not done yet."; cat DECISIONS-NEEDED.md; }
+```
+
+If that prints anything, the branch is not done — this is CLAUDE.md's own rule
+for the file, not a suggestion: "an unresolved entry is a blocker, not a
+footnote." Writing an entry down (per whatever task told you to append one
+rather than pick a winner) is step one, not the whole job — it still owes one
+of the three outcomes CLAUDE.md lists (resolved into a code comment, promoted
+to `tech-debt.md`/`roadmap.md`, or genuinely still open, in which case stop
+here and say so instead of continuing to gates/push). Don't run the rest of
+this skill, and don't open or update the PR, until the file is gone.
+
+This check is mechanical on purpose, not a step to eyeball: it's easy to
+complete the one decision a task named and move straight on to shipping
+without registering that "I wrote the entry" and "the branch is done" are
+different claims.
 
 ## 1. Run the gates
 
