@@ -1,7 +1,7 @@
 import './styles.css';
 import { initViewport, modelNdcExtent } from './scene/viewport';
 import { initDesignGizmo } from './scene/designGizmo';
-import { initZonePicking } from './scene/zonePick';
+import { initZonePicking, zoneIdAtNdc } from './scene/zonePick';
 import { setRebuildCostHint, setRebuildHandler } from './app/scheduler';
 import { estimateRebuildSlow, rebuildCurrent } from './app/rebuild';
 import { loadFilaments } from './state/filaments';
@@ -35,9 +35,15 @@ import { WARNINGS } from './warnings';
       whenIdle: typeof whenIdle;
       warnings: () => string[];
       modelNdcExtent: typeof modelNdcExtent;
+      zoneIdAtNdc: typeof zoneIdAtNdc;
     };
   }
-).__mosaic = { whenIdle, warnings: () => WARNINGS.map((w) => w.message), modelNdcExtent };
+).__mosaic = {
+  whenIdle,
+  warnings: () => WARNINGS.map((w) => w.message),
+  modelNdcExtent,
+  zoneIdAtNdc,
+};
 
 $('#app-version').textContent =
   `v${getAppVersion(typeof __APP_VERSION__ === 'undefined' ? undefined : __APP_VERSION__)}`;

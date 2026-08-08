@@ -164,9 +164,9 @@ Not measured, and the one item in this group where that matters most: an arbitra
 either a genuine frame bug in the placement math or a rendering choice, and those close very
 differently. Establishing which comes before any fix — it touches placement, so treat it as
 geometry work rather than UI. The competing-affordances half is separable and is a UI decision.
-This is also the item most likely to overlap the already-tracked "Zone picking has no occlusion
-test," since all three are about the viewport not behaving like the direct-manipulation surface it
-looks like.
+This is the last of the group that made the viewport not behave like the direct-manipulation
+surface it looks like; the other one, "Zone picking has no occlusion test," is closed
+(`scripts/check-zone-occlusion.mjs` is what keeps it closed).
 
 ## The browser-driven checks are only fast if Chromium finds a real GPU, and on WSL2 it does not find one by itself
 
@@ -408,9 +408,9 @@ so.
 Longer-standing defects against the same two features, each with its own
 section below: "Artwork can't wrap unbroken from one flank around the back to
 the other" (three measured dead ends), "The chair's zone sidecar is 1.7 MB
-raw", "The caster mounts have no design zone", "Zone picking has no occlusion
-test", "Zebra + Fill still loses one color on Handle (left)", and "Turf's tile
-union has a vertex ceiling, and nothing enforces it at runtime".
+raw", "The caster mounts have no design zone", "Zebra + Fill still loses one
+color on Handle (left)", and "Turf's tile union has a vertex ceiling, and
+nothing enforces it at runtime".
 
 **Infrastructure left behind by the hide, deliberately kept.** `AssemblyKind.hidden`
 still works, `renderShapeKindOptions()` still lists a hidden kind while it is
@@ -866,22 +866,6 @@ merged zone 26% and 60% of the two handles' claims. Every shipped claim
 matches its triangulation within 0.3%, so it does not affect the current
 bake; classifying by winding sign instead is the fix if a future zone ever
 trips it.
-
-## Zone picking has no occlusion test
-
-([src/scene/zonePick.ts](../src/scene/zonePick.ts)) — it raycasts only the
-invisible chart meshes (three.js 0.160's `intersectObject` ignores
-`visible`, which is what makes picking work at all), but the real bodies
-aren't in the target list, so clicking a handle in front of a zone selects
-the zone behind it. Fix: raycast the visible parts too and reject a zone hit
-farther than the nearest solid hit. Gets worse as zones multiply — the chair
-went from 4 to 5 with the full-coverage re-author.
-
-This is a prerequisite for the roadmap idea of making zones clickable
-_before_ artwork exists (see [docs/roadmap.md](roadmap.md)) — that flow puts
-zone-picking in front of a first-time user instead of behind a load-then-
-rebind step, so a wrong occlusion pick there is a first impression, not a
-power-user edge case. Fix this before building that.
 
 ## A Fill under a sticker overlaps just like two stickers do, and isn't checked
 
