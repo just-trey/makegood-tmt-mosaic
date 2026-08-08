@@ -169,12 +169,13 @@ many hangs the tab, so the app refuses rather than freezing. **Raise Scale**
 until the count comes down — a larger tile is also usually what you wanted, a
 pattern at 5% reads as texture rather than as a pattern.
 
-**"This design has no repeat size, so there is no tile to fill … with."**
-The file declares no drawing area to repeat: a zero-width or zero-height
-viewBox. There is nothing to tile. **Re-export from your drawing tool with a
-document size set** — in Inkscape, Document Properties → resize to content or
-to a fixed size; in Illustrator, Save As SVG with the artboard as the export
-area.
+**"… measures zero in one direction, so there is no tile to repeat across …"**
+The drawing itself has no extent one way — every filled shape lies on a single
+line — in a file that also declares no usable `viewBox` to fall back on. (A
+missing or zero `viewBox` alone does _not_ cause this: the app then measures the
+tile from the artwork's own bounding box.) There is nothing to repeat. **Use a
+design with both width and height.** Such a file would also cut nothing, so if
+you see this the design is not printable either way.
 
 **"The placement … has collapsed to no width or no height."** The design's
 placement on the surface maps its whole tile onto a line or a point, so there

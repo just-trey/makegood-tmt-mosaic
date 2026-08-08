@@ -355,35 +355,43 @@ function placedBBoxQuad(parsed: ParsedSVG, place: (pt: number[]) => number[]): n
  * Every branch ends the same way — a single copy was placed — because that is what actually
  * happened to their part, and it is the same in all four.
  */
-export function fillRefusalMessage(partName: string, reason: TileRefusal | undefined): string {
+export function fillRefusalMessage(
+  designName: string,
+  partName: string,
+  reason: TileRefusal | undefined,
+): string {
   const placed = 'Only one copy was placed.';
+  const design = `"${designName}"`;
   switch (reason) {
     case 'too-many-tiles':
       return (
-        `This design is too small to fill "${partName}" — it would take more than ` +
+        `${design} is too small to fill "${partName}" — it would take more than ` +
         `${MAX_FILL_TILES} tiles. ${placed} Raise Scale to fill the surface with fewer, larger ` +
         'tiles.'
       );
+    // Not a missing viewBox: tileCellOf falls back to the artwork's own bounding box whenever the
+    // viewBox isn't positive in both axes, so reaching here means the DRAWING has no extent in one
+    // direction — every filled shape colinear, in a file with no usable viewBox either.
     case 'no-tile-size':
       return (
-        `This design has no repeat size, so there is no tile to fill "${partName}" with. ` +
-        `${placed} Re-export it from your drawing tool with a document size set.`
+        `${design} measures zero in one direction, so there is no tile to repeat across ` +
+        `"${partName}". ${placed} Use a design with both width and height.`
       );
     case 'not-invertible':
       return (
-        `The placement of this design on "${partName}" has collapsed to no width or no height, so ` +
+        `The placement of ${design} on "${partName}" has collapsed to no width or no height, so ` +
         `its tiles can't be worked out. ${placed} Use "Reset to auto-fit" to put it back.`
       );
     case 'not-affine':
       return (
-        `"${partName}" curves too much for a design to tile evenly across it. ${placed} Place ` +
+        `"${partName}" curves too much for ${design} to tile evenly across it. ${placed} Place ` +
         'separate designs on this surface instead of filling it.'
       );
     // Only reachable if a future refusal path forgets to name itself. Says so rather than
     // guessing a cause, since guessing wrong is the thing this function exists to stop.
     default:
       return (
-        `This design couldn't be tiled across "${partName}", for a reason the app didn't record. ` +
+        `${design} couldn't be tiled across "${partName}", for a reason the app didn't record. ` +
         `${placed} Please report this.`
       );
   }
@@ -831,7 +839,14 @@ export async function buildAssemblyGeometry(
           } else {
             const refusal: { reason?: TileRefusal } = {};
             grid = tileCoverage(place, tileCells[ai], extent, refusal);
-            if (!grid) warnBuild(fillRefusalMessage(part.name, refusal.reason));
+            // Named per design, not just per part: a part can carry several, both remedies write
+            // fit state that only reaches the ACTIVE one, and warnings dedupe on the exact string
+            // — so without the name two designs failing the same way on one part become one pill
+            // pointing at neither.
+            if (!grid)
+              warnBuild(
+                fillRefusalMessage(artworks[ai].name || 'design', part.name, refusal.reason),
+              );
           }
         }
         for (let ci = 0; ci < palette.length; ci++) {
