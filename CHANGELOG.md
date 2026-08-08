@@ -24,9 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   renderer, so a click on a handle or a storage box in front of another surface
   selected the surface behind it. Measured on the chair across four viewpoints:
   33 of the sampled points that showed bare body — no design surface visible at
-  all — still selected one. Now none do. `scripts/check-zone-occlusion.mjs` is
-  the check, and it reads the answer out of the rendered picture rather than out
-  of the same raycast it is testing.
+  all — still selected one. Now none do. `npm run check:zone-occlusion` is the
+  check, and it reads the answer out of the rendered picture rather than out of
+  the same raycast it is testing.
 
 ### Changed
 

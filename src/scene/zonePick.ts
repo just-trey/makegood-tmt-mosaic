@@ -68,9 +68,23 @@ function pickAtNdc(ndc: THREE.Vector2): PickTarget | null {
   if (limit > 0) {
     // Capping `far` at the chart is not just an early-out: it lets three's per-mesh bounding-sphere
     // test discard whole parts sitting behind the click, which on the chair is most of them.
-    raycaster.far = limit;
-    const covered = raycaster.intersectObject(getModelGroup(), true).length > 0;
-    raycaster.far = Infinity;
+    //
+    // What that costs, since onPointerMove runs this on every hover. Measured on the chair
+    // (368,330 tris, no artwork), 400 random points, MOSAIC_GPU=1: median 0.30ms either way — the
+    // cast below only runs where a chart was hit at all, 81 of the 400 — and p95 0.80 -> 5.5ms,
+    // worst 1.3 -> 9.5ms. The worst case is inside one 60fps frame, so this stayed a plain raycast
+    // rather than acquiring a BVH. Re-measure before adding a part with more triangles than the
+    // chair.
+    //
+    // The raycaster is a module singleton, so the cap has to come off even if the cast throws —
+    // otherwise every later pick silently finds nothing for the rest of the session.
+    let covered: boolean;
+    try {
+      raycaster.far = limit;
+      covered = raycaster.intersectObject(getModelGroup(), true).length > 0;
+    } finally {
+      raycaster.far = Infinity;
+    }
     if (covered) return null;
   }
   return targets.find((t) => t.mesh === hits[0].object) ?? null;

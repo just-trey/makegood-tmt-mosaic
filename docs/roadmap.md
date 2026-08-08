@@ -21,10 +21,10 @@
   the back" is one click before any file is chosen, instead of today's
   load-a-design-then-rebind-it-to-a-zone order (`vision`-lens review,
   2026-08-02). The occlusion gap this used to depend on is closed — a click no
-  longer reaches a zone behind whatever is in front of it, and
-  `scripts/check-zone-occlusion.mjs` is what keeps that true, so a wrong pick
-  here would be a caught regression rather than a first impression. This is also
-  conventions 9 and 15 of
+  longer reaches a zone behind whatever is in front of it.
+  `npm run check:zone-occlusion` re-measures it, but nothing runs that
+  automatically (it needs a browser and ~12 min), so re-run it by hand here.
+  This is also conventions 9 and 15 of
   [ui-conventions.md](ui-conventions.md) ("order follows the task, and the task
   starts with _where_, not _what_"; "files are dropped onto the thing they apply
   to"), whose conflicts table notes that today's `+zone` repeats one design onto

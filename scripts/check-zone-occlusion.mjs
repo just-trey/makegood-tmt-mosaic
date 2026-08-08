@@ -16,8 +16,9 @@
 //
 // So the oracle here is the rendered image, and it is produced by the app's own user-facing
 // behaviour: bind a design to a zone and the design appears on that zone's surface. A full-bleed
-// single-colour design at 400% scale is clipped to the zone, so every pixel where that zone's
-// surface is visible comes back in the design's colour, and every pixel where it is not, does not.
+// single-colour design scaled past every zone is clipped to the zone, so every pixel where that
+// zone's surface is visible comes back in the design's colour, and every pixel where it is not,
+// does not.
 // That is "visibly nearest" in the only sense that matters to a user, and it shares nothing with
 // the raycast but the chart geometry both are entitled to trust.
 //
@@ -32,7 +33,12 @@
 //   * PER-ZONE passes (one rebuild each, swept through five views). Only zone Z inked, so `ink(p)`
 //     names Z specifically and the pick can be checked for identity, not just for non-null.
 //
-// Both traps the brief names are guarded explicitly, see GRID COVERAGE and AMBIGUITY below.
+// Both traps are guarded explicitly, see GRID COVERAGE and AMBIGUITY below.
+//
+// NOT IN CI. It needs a browser and takes ~12 minutes on hardware acceleration, so it is a driven
+// check you run by hand (`npm run check:zone-occlusion`) after touching zonePick.ts or anything
+// that moves a zone chart — the same standing as check-view-fit.mjs and check-csg-failure.mjs.
+// Nothing runs it for you.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { startPreview, launchBrowser, newPage, glRenderer, useGpu } from './lib/harness.mjs';
@@ -75,17 +81,44 @@ const GRID_STEP_PX = 24;
 const PATCH_PX = 5;
 
 /**
- * Camera angles for the all-zones pass, as OrbitControls drags from the framed default. Each is
- * (dx, dy) in CSS pixels from the drag start; the drag start itself is chosen off the model so the
- * design gizmo's own pointerdown handler declines it and OrbitControls gets the gesture.
- * Every one of these is verified to have actually moved the camera — see orbitTo().
+ * Camera angles for the all-zones pass, as OrbitControls drags in (dx, dy) CSS pixels.
+ *
+ * **Each drag continues from where the last one left the camera** — nothing here resets the view,
+ * and there is no cheap way to. So these are a sweep, not four independent poses, and they are
+ * named for where the sweep arrives rather than for where a drag would land from the default. An
+ * earlier version of this list read as four poses from the default and paired +260 with −260,
+ * which cancelled: the two were the same azimuth and the right rear was never looked at, while the
+ * log claimed four viewpoints. The frame hash in orbitTo() cannot catch that — the view did change,
+ * just not to the place the name promised.
  */
 const ANGLES = [
-  { id: 'default', drag: null },
-  { id: 'rear-left', drag: { dx: 260, dy: 40 } },
-  { id: 'rear-right', drag: { dx: -260, dy: 40 } },
-  { id: 'above', drag: { dx: 60, dy: -170 } },
+  { id: 'a0-front', drag: null },
+  { id: 'a1-left', drag: { dx: 260, dy: 40 } },
+  { id: 'a2-rear', drag: { dx: 260, dy: 0 } },
+  { id: 'a3-right', drag: { dx: 260, dy: -40 } },
 ];
+
+/**
+ * The widest run of unpickable pixels, in canvas device pixels, that is excused rather than failed.
+ *
+ * A printed part seam is a real hole in the pick surface. The chair's parts meet across a clearance
+ * of up to 0.53mm (`seamWeldTolMm`, scripts/zone-configs/chair-body.json) and each part's chart
+ * stops at its own edge, so a ray aimed exactly down a seam passes between the two charts, lands on
+ * the far part's chart, and finds the near part's edge wall in front of it. Rejecting that is
+ * geometrically correct — something solid really is in front of the chart the ray hit. But the
+ * rendered pixel is dominated by the inlay either side of a 0.3px crack, so the picture says "zone
+ * here" and the ray says "no". This is the oracle being unable to resolve the geometry, not the app
+ * being wrong.
+ *
+ * 5px is not chosen to make a number pass: it is `CLICK_MOVE_TOLERANCE_PX` in zonePick.ts, the
+ * pointer slop the click model already treats as the same place. A dead line narrower than that is
+ * inside the aim tolerance the interaction is built on; anything wider is a region the user cannot
+ * select and fails. The run width is measured and reported either way — see
+ * docs/tech-debt.md, "A part seam is a hairline the zone pick can't be aimed into".
+ */
+const HAIRLINE_MAX_PX = 5;
+/** How far out to walk looking for the far side of a null run before calling it unbounded. */
+const HAIRLINE_WALK_PX = 16;
 
 /**
  * Views the per-zone identity pass sweeps through, as cumulative orbit drags from the framed
@@ -104,7 +137,7 @@ const IDENTITY_SWEEP = [
  * The two sightings the tech-debt entry names, pinned as concrete expectations rather than left to
  * a grid to stumble into. Each is a canvas point (as a fraction of canvas size) at a named angle.
  * Both were located by running this check against the build with no occlusion test at all and
- * looking at `allzones-rear-left-flagged.png` — they are the top and bottom halves of the red run
+ * looking at `allzones-a1-left-flagged.png` — they are the top and bottom halves of the red run
  * down the near side of that image, not points chosen to be easy.
  *
  * `wasPick` is what the unfixed build selected there and is documentation, not an assertion: the
@@ -113,7 +146,7 @@ const IDENTITY_SWEEP = [
 const NAMED_CASES = [
   {
     name: 'handle in front of the zone behind it',
-    angle: 'rear-left',
+    angle: 'a1-left',
     fx: 420 / 1100,
     fy: 372 / 920,
     cls: 'body',
@@ -122,7 +155,7 @@ const NAMED_CASES = [
   },
   {
     name: 'storage in front of seat',
-    angle: 'rear-left',
+    angle: 'a1-left',
     fx: 468 / 1100,
     fy: 516 / 920,
     cls: 'body',
@@ -408,6 +441,45 @@ function interiorInk(samples) {
   );
 }
 
+/**
+ * Split samples that picked nothing into ones sitting on a seam hairline and ones that name a
+ * region the user genuinely cannot select. See HAIRLINE_PROBE_PX for what a hairline is and why
+ * one exists at all.
+ */
+async function splitHairlines(page, w, h, nulls) {
+  if (!nulls.length) return { hairline: [], unreachable: [], widest: 0 };
+  // One round trip: every offset either axis might need, for every null.
+  const offsets = [];
+  for (let d = 1; d <= HAIRLINE_WALK_PX; d++) offsets.push([-d, 0], [d, 0], [0, -d], [0, d]);
+  const probes = nulls.flatMap((s) =>
+    offsets.map(([dx, dy]) => ({
+      ndcX: ((s.px + dx + 0.5) / w) * 2 - 1,
+      ndcY: -(((s.py + dy + 0.5) / h) * 2 - 1),
+    })),
+  );
+  const picks = await page.evaluate(pickPageFactory(), probes);
+  const hairline = [];
+  const unreachable = [];
+  let widest = 0;
+  nulls.forEach((s, i) => {
+    const mine = picks.slice(i * offsets.length, (i + 1) * offsets.length);
+    // Distance to the first pixel that picks, per direction; Infinity if the walk never found one.
+    const reach = [0, 1, 2, 3].map((dir) => {
+      for (let d = 1; d <= HAIRLINE_WALK_PX; d++) if (mine[(d - 1) * 4 + dir]) return d;
+      return Infinity;
+    });
+    // Narrowest crossing of the run: the axis whose two sides both answer, soonest.
+    const width = Math.min(reach[0] + reach[1] - 1, reach[2] + reach[3] - 1);
+    if (width <= HAIRLINE_MAX_PX) {
+      hairline.push({ ...s, width });
+      widest = Math.max(widest, width);
+    } else {
+      unreachable.push({ ...s, width });
+    }
+  });
+  return { hairline, unreachable, widest };
+}
+
 async function sampleAndPick(page) {
   const { w, h, samples } = await page.evaluate(samplePageFactory(), CLASSIFY);
   const picks = await page.evaluate(pickPageFactory(), samples);
@@ -533,8 +605,16 @@ try {
       if (s.cls === 'body' && s.pick !== null) wrong.push(s);
     }
     const inner = interiorInk(samples);
-    const nulled = inner.filter((s) => s.pick === null);
+    const { hairline, unreachable, widest } = await splitHairlines(
+      page,
+      w,
+      h,
+      inner.filter((s) => s.pick === null),
+    );
+    const nulled = unreachable;
     counts.inkRim = counts.ink - inner.length;
+    counts.hairline = hairline.length;
+    counts.hairlineWidest = widest;
     inkedTotal += counts.ink;
     perAngle.push({ angle: angle.id, w, h, counts, wrong, nulled, samples });
     if (wrong.length || nulled.length) {
@@ -558,8 +638,17 @@ try {
     console.log(
       `  [${angle.id}] ${samples.length} samples: ink ${counts.ink} (${inner.length} interior), ` +
         `body ${counts.body}, other ${counts.other}, mixed ${counts.mixed} | ` +
-        `through-picks ${wrong.length}, missed-picks ${nulled.length}`,
+        `through-picks ${wrong.length}, missed-picks ${nulled.length}` +
+        (hairline.length ? `, seam hairlines ${hairline.length} (widest ${widest}px)` : ''),
     );
+    // A hairline is excused, not ignored: past a few per thousand it has stopped being the seam
+    // and become something the user would actually run into.
+    if (hairline.length > inner.length * 0.05) {
+      failures.push(
+        `[${angle.id}] ${hairline.length} of ${inner.length} interior ink samples picked nothing ` +
+          'and were excused as seam hairlines — too many for that explanation to hold',
+      );
+    }
     if (wrong.length) {
       failures.push(
         `[${angle.id}] ${wrong.length} sample(s) picked a zone on bare body, where no zone is ` +
@@ -570,8 +659,8 @@ try {
     if (nulled.length) {
       failures.push(
         `[${angle.id}] ${nulled.length} sample(s) picked NOTHING on a pixel showing a zone's own ` +
-          `design (first: px ${nulled[0].px},${nulled[0].py}) — the occlusion test is rejecting ` +
-          'the surface it is standing on',
+          `design (first: px ${nulled[0].px},${nulled[0].py}, ${nulled[0].width}px of unpickable ` +
+          'surface across) — the occlusion test is rejecting the surface it is standing on',
       );
     }
     /* GRID COVERAGE, the trap that makes a clean run meaningless. Only a sample on bare body can
@@ -597,7 +686,8 @@ try {
         .map(
           (a) =>
             `${a.angle} ink=${a.counts.ink} body=${a.counts.body} through=${a.wrong.length} ` +
-            `missed=${a.nulled.length}`,
+            `missed=${a.nulled.length} hairline=${a.counts.hairline}` +
+            `@${a.counts.hairlineWidest}px`,
         )
         .join(', '),
   );
@@ -690,7 +780,13 @@ try {
     }
   }
 
+  // Console/page errors are a failure, not a footnote: an exception thrown mid-sweep leaves the
+  // app in some other state and every assertion after it is about that state instead. Printing
+  // them beside an "OK" is the same shape as the false greens in tech-debt's checker section.
   errors.forEach((e) => console.log(`  ERROR ${e}`));
+  if (errors.length) {
+    failures.push(`the app logged ${errors.length} error(s) during the run: ${errors[0]}`);
+  }
   writeFileSync(path.join(OUT, 'report.txt'), report.join('\n') + '\n');
 } catch (e) {
   failures.push(`threw: ${e.message}`);

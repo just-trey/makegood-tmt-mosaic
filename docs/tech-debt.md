@@ -166,7 +166,7 @@ differently. Establishing which comes before any fix — it touches placement, s
 geometry work rather than UI. The competing-affordances half is separable and is a UI decision.
 This is the last of the group that made the viewport not behave like the direct-manipulation
 surface it looks like; the other one, "Zone picking has no occlusion test," is closed
-(`scripts/check-zone-occlusion.mjs` is what keeps it closed).
+(`npm run check:zone-occlusion` re-measures it — by hand, it is not in CI).
 
 ## The browser-driven checks are only fast if Chromium finds a real GPU, and on WSL2 it does not find one by itself
 
@@ -866,6 +866,29 @@ merged zone 26% and 60% of the two handles' claims. Every shipped claim
 matches its triangulation within 0.3%, so it does not affect the current
 bake; classifying by winding sign instead is the fix if a future zone ever
 trips it.
+
+## A part seam is a hairline the zone pick can't be aimed into
+
+Introduced by the occlusion test in [src/scene/zonePick.ts](../src/scene/zonePick.ts), and the
+price of it. Each part's zone chart stops at that part's own edge, and the chair's parts meet
+across a printed clearance of up to 0.530mm (`seamWeldTolMm`,
+[scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json)). A ray aimed
+exactly down a seam therefore passes _between_ the two charts, lands on the far part's chart, and
+finds the near part's edge wall in front of it — so the pick is correctly rejected, on a surface
+that renders as continuous. The result is a thin dead line along every seam.
+
+Measured 2026-08-08 by `npm run check:zone-occlusion` on the chair, `MOSAIC_GPU=1`, ANGLE D3D12
+(RTX 2060), 1748-sample grid at four viewpoints: **one** sample, at the centreline seam of the
+back panel, **3 px** of unpickable width. Nothing at the other three viewpoints. That check
+excuses a run up to `CLICK_MOVE_TOLERANCE_PX` (5px, the pointer slop the click model already
+treats as the same place) and fails anything wider, reporting the measured width either way — so
+this getting worse is a failing check, not a silent drift.
+
+Not worth fixing at 3px, and the two ways to would both cost more than they buy: widening
+`OCCLUSION_TOL_MM` past the seam clearance would also stop a genuinely adjacent part from
+occluding anything, and closing the gap in the pick surface means welding the charts across seams
+at runtime, which is the bake's job and would re-open the injectivity questions the zone split
+exists to avoid. Revisit if a future part's clearance is large enough to make the line visible.
 
 ## A Fill under a sticker overlaps just like two stickers do, and isn't checked
 
