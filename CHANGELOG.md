@@ -214,6 +214,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Typography and spacing now run on tokens.** The app never declared a single `--text-*` or
+  `--space-*` custom property — 50 font-size rules and 97 padding/margin/gap rules hardcoded
+  their own px values, independently of each other and of `design-system/tokens/`, which had
+  inventoried those same values and called the inventory a scale. `src/styles.css` now declares
+  five type tokens (`--text-label/meta/body/emphasis/display`) and five spacing tokens
+  (`--space-hair/tight/row/section/panel`), used everywhere both applied — deleting the rule
+  outright where a structural fix (root size, form-control inheritance) made it redundant. Two
+  real bugs surfaced doing this: `.close-btn`, `.warn-dismiss` and `.warn-clear-all` were
+  silently rendering in Arial instead of Inter (form controls don't inherit typography by
+  default, and nothing had set theirs), and `<code>` in the help panel was rendering in the
+  browser's default monospace instead of IBM Plex Mono. Both fixed. Verified by walking every
+  panel and driven app state, and by `scripts/check-type-scale.mjs`
+  (`npm run check:type-scale`), a re-runnable script asserting zero hardcoded px survives and
+  every computed font-size across the app is one of the five declared values. Design-system
+  side: `design-system/tokens/typography.css` and `tokens/spacing.css` renamed to the same five
+  tokens each, `--font-heading/--font-sans/--font-mono` renamed to match the app's
+  `--heading/--sans/--mono`, and every reference across the component specs, guideline pages and
+  the screen mockup updated with it. See [DECISIONS-NEEDED.md](DECISIONS-NEEDED.md) for the
+  handful of values that didn't fit either five-step scale cleanly.
 - **Fill is no longer offered on the chair body**, and the built-in pattern
   strip is hidden there with it. Repeating a design across one of the chair's
   five zones took over a minute and a half to recut, "All zones" ran past

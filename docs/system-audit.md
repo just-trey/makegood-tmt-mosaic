@@ -292,3 +292,39 @@ on 26 elements (all `<input type="checkbox">`/`.base-swatch` buttons with no tex
 on 6 `<input type="range">` elements (native UA default on the outer element; the visually painted
 track is a pseudo-element `getComputedStyle` on the host element doesn't see). Neither is reported
 as a finding above; both are recorded here so a future run doesn't have to re-chase them.
+
+## Update — chore/type-and-spacing-tokens
+
+This branch (three commits, after `f2cdd3f`) is the "separate branch" Findings 5 and 7 point to.
+Leaving the report body above untouched — it is a dated measurement, not a living doc — and
+recording what closed and what didn't:
+
+- **Finding 2 closed.** `.close-btn`, `.warn-dismiss` and `.warn-clear-all` render in Inter now.
+  `button, input, select, textarea { font: inherit }` closes the whole class, not just these three.
+- **Finding 7 closed.** The type scale is real now: `src/styles.css` declares five `--text-*`
+  tokens and every font-size rule in the app resolves to one of them (five, plus five `em`-sized
+  icon glyphs — see `DECISIONS-NEEDED.md`). `--text-lg`'s fiction and the 21%-of-rendered-text
+  drift this finding measured don't exist under the new scale; there's nothing left to be fiction
+  or drift against.
+- **Finding 11 closed.** `design-system/README.md` now says nine of ten guideline specimens load
+  the declared fonts, naming `brand-makegood-site.html` as the deliberate exception, instead of
+  claiming all ten.
+- **Finding 8 (⁠`--radius-xl`) closed, but not by the mechanism this report expected.** Not
+  "given a real declaration" — dropped from `tokens/spacing.css` entirely, since it was a
+  value-duplicate of `--radius-lg` (both 2px) even inside that file. Radius values themselves are
+  untouched; only the redundant token name is gone.
+- **Finding 5 partially — do not read the numbers below as "adoption tripled."** Its core claim
+  was **inherited = 0**: the app never `@import`s `design-system/tokens/*.css`, so every token
+  name that matched was co-declaration, not a link. This branch moves `--text-*` and `--space-*`
+  from UNSET to co-declared (following the same rename pattern the colors already used before
+  this branch), which takes the co-declared count from 20 toward roughly 30 — real, but still
+  **inherited = 0**. GOVERNS would require the app to `@import` the token files, and that decision
+  has not been made on this branch.
+- **Findings 1, 3, 4, 6, 10 — untouched, deliberately.** None are type or spacing findings. Logged
+  in [DECISIONS-NEEDED.md](../DECISIONS-NEEDED.md) for whichever pass owns them next, rather than
+  folded into this one.
+- **The unexplained 6px `border-radius` (Border-radius census, above) likely has a source now** —
+  not fixed, since radius is out of this branch's scope, but named:
+  [src/ui/assemblyPanel.ts:413](../src/ui/assemblyPanel.ts#L413)'s inline
+  `border-radius:6px` on the assembly-part STL/3MF dropzone matches no radius token and is very
+  plausibly what this census caught. See `DECISIONS-NEEDED.md`.

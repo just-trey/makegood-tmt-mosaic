@@ -199,7 +199,7 @@ sharp-cornered, WCAG AA contrast. Tokens live in
 [design-system/tokens/](design-system/tokens/) (the spec) and are mirrored in
 [src/styles.css](src/styles.css) (the shipped copy) — update both when tokens
 change. Everything else under [design-system/](design-system/) is
-**reference only** (specimen pages and React component examples); none of it
+**reference only** (specimen pages and component prompt specs); none of it
 is imported by the app. Two other brand themes in the tokens folder
 (3d-mobility.org, makegood.design marketing) are not used by this tool.
 
