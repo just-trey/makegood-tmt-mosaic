@@ -2,73 +2,71 @@
 //
 // Loads the built app, walks it through every state the audit needs (initial load, artwork
 // loaded, both AMS-slot warning tiers, help dialog open, confirm dialog open, hover/focus/
-// disabled states), and dumps everything the report's tables are built from to a JSON file:
-// resolved custom-property values, the distinct rendered values for each scale property, a
-// census of var()-vs-literal declarations in the app's own stylesheet, and per-component
-// snapshots (computed style + outerHTML) for the states above.
+// disabled states, a narrow-viewport pass), and dumps everything the report's tables are built
+// from to a JSON file: resolved custom-property values, the distinct rendered values for each
+// scale property, a census of var()-vs-literal declarations in the app's own stylesheet, and
+// per-component snapshots (computed style + outerHTML) for the states above.
 //
 // Usage:
 //   npm run build && MOSAIC_GPU=1 node scripts/system-audit-drive.mjs [outFile]
 //
 // Re-run this unchanged to regenerate the same measurements; a diff in its own content hash
-// (recorded in the report header) means a later run walked a different sequence and its
-// state-sensitive (†) rows are not comparable to this one's.
-import { writeFileSync } from 'node:fs';
+// (recorded in the report header) means a later run walked a different drive sequence and its
+// state-sensitive (†) rows are not comparable to this one's. A token rename no longer moves this
+// file's hash (see DESIGN_TOKENS below) — a hash diff now means the sequence changed, which is
+// the only thing this clause was ever trying to signal.
+//
+// chore/harden-audit-drive (see docs/system-audit.md, Findings 1 and 9): extended the run replayed
+// for the report at commit 5f8192b (content hash `d5a3d954…`) with two changes, so that report's
+// hash no longer matches this file and its state-sensitive (†) rows are not comparable to this
+// run's — (1) DESIGN_TOKENS below is now parsed from design-system/tokens/*.css at run time
+// instead of a hardcoded copy, so a token rename can no longer leave this script's census stale
+// (Finding 1); (2) added the narrowNotice state, a resize to <=899px that render-confirms
+// --space-panel, the one token no state at the fixed 1440px viewport ever reached (Finding 9).
+import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { startPreview, launchBrowser, glRenderer, useGpu } from './lib/harness.mjs';
 
 const OUT = process.argv[2] || 'system-audit-drive-output.json';
 const PORT = 4174; // don't collide with an interactive `npm run preview` on 4173
 const VIEWPORT = { width: 1440, height: 960 };
+// Same width check-type-scale.mjs uses for its narrow pass — keep the two scripts aligned on the
+// states they drive so a future change to one doesn't quietly leave the other's coverage behind.
+const NARROW_VIEWPORT = { width: 800, height: 700 };
 
-const DESIGN_TOKENS = {
-  colors: [
-    '--bg',
-    '--panel',
-    '--panel-2',
-    '--viewport',
-    '--line',
-    '--text',
-    '--text-dim',
-    '--accent',
-    '--accent-2',
-    '--danger',
-    '--on-accent',
-    '--accent-wash',
-    '--accent-glow',
-    '--danger-wash',
-    '--danger-border',
-    '--danger-text',
-  ],
-  spacing: [
-    '--space-hair',
-    '--space-tight',
-    '--space-row',
-    '--space-section',
-    '--space-panel',
-    '--radius-sm',
-    '--radius-md',
-    '--radius-lg',
-    '--radius-2xl',
-    '--border-width',
-    '--transition-fast',
-  ],
-  typography: [
-    '--heading',
-    '--sans',
-    '--mono',
-    '--text-label',
-    '--text-meta',
-    '--text-body',
-    '--text-emphasis',
-    '--text-display',
-    '--weight-regular',
-    '--weight-semibold',
-    '--weight-bold',
-    '--tracking-label',
-    '--leading-tight',
-    '--leading-normal',
-  ],
-};
+/**
+ * Parse the declared custom-property names out of the design system's own token files, rather
+ * than keeping a second, hardcoded copy of its vocabulary in this script. A hardcoded copy is
+ * exactly the defect this lens exists to detect: PR #153 renamed the type/spacing tokens and the
+ * previous literal here silently went on querying the 36 retired names, finding them all
+ * correctly UNSET, and never asking about the 10 that replaced them (docs/system-audit.md,
+ * Finding 1). Deriving the list means a rename can't invalidate this script again, and it stops
+ * moving this file's content hash — so the replay-hash rule and correctness no longer pull
+ * against each other.
+ *
+ * Explicit file list, not a `tokens/*.css` glob: the same three files src/styles.css imports
+ * (colors.css, spacing.css, typography.css). tokens/colors-3dmobility.css and
+ * tokens/colors-makegood*.css are other projects' reference palettes (--3dmob-/--mg-/--mgd-
+ * prefixed), imported by nothing in this app, and out of scope for Mosaic.
+ */
+const TOKEN_FILES = ['colors.css', 'spacing.css', 'typography.css'];
+
+function readDesignTokens() {
+  const tokensDir = fileURLToPath(new URL('../design-system/tokens/', import.meta.url));
+  const tokens = {};
+  for (const file of TOKEN_FILES) {
+    const group = file.replace(/\.css$/, '');
+    const css = readFileSync(`${tokensDir}${file}`, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const names = [...new Set([...css.matchAll(/^\s*(--[A-Za-z0-9_-]+)\s*:/gm)].map((m) => m[1]))];
+    if (names.length === 0) {
+      throw new Error(`readDesignTokens: found no custom properties in ${file}`);
+    }
+    tokens[group] = names;
+  }
+  return tokens;
+}
+
+const DESIGN_TOKENS = readDesignTokens();
 // chore/type-and-spacing-tokens (see docs/system-audit.md's "Design system version changed")
 // renamed --font-heading/--font-sans/--font-mono to --heading/--sans/--mono — name-identical to
 // the app's own declarations now, which is what closed the indirection this alias layer used to
@@ -402,6 +400,28 @@ async function main() {
       };
     }
 
+    // ---- Narrow viewport, <=899px -- #narrow-notice replaces #app entirely (Finding 9) ----------
+    // Render-confirms --space-panel, whose only consumer is #narrow-notice's own padding — no
+    // state above this one ever reaches it, since #narrow-notice sits outside #app and only shows
+    // under this media query. Restored before finalUnion so no later state measures at the wrong
+    // width; not wrapped in try/finally, matching check-type-scale.mjs's own narrow pass — a throw
+    // here aborts the run before writeFileSync, so there's no partial-output state to guard.
+    //
+    // Deliberately not scaleCensus() here: it walks `#app *`, and #app is display:none at this
+    // width while #narrow-notice sits outside it — the census would just re-tally the 1440px DOM
+    // and confirm nothing (same ancestor-display:none gotcha as the #p-diameter note above).
+    await page.setViewportSize(NARROW_VIEWPORT);
+    await page.waitForTimeout(200);
+    result.states.narrowNotice = {
+      viewport: NARROW_VIEWPORT,
+      notice: await elementSnapshot(page, '#narrow-notice'),
+      heading: await elementSnapshot(page, '#narrow-notice h1'),
+      body: await elementSnapshot(page, '#narrow-notice p'),
+      appHidden: await page.$eval('#app', (el) => getComputedStyle(el).display),
+    };
+    await page.setViewportSize(VIEWPORT);
+    await page.evaluate(() => window.__mosaic.whenIdle());
+
     // ---- Final: full-page scale census with everything that opened this run in the DOM ---------
     result.states.finalUnion = {
       scale: await scaleCensus(page),
@@ -433,6 +453,7 @@ async function main() {
     await preview.stop();
   }
 
+  console.log(`[system-audit-drive] states driven: ${Object.keys(result.states).join(', ')}`);
   writeFileSync(OUT, JSON.stringify(result, null, 2));
   console.log(`[system-audit-drive] wrote ${OUT}`);
 }

@@ -335,3 +335,23 @@ That branch addresses Finding 1 / the Adoption row above: `src/styles.css` now `
 inherited should move off 0 and co-declared should drop accordingly on the next audit run. Not
 re-measured here — this note is a pointer for the next run to verify, not a hand-edit of the
 numbers themselves.
+
+## Update — chore/harden-audit-drive
+
+That branch closes Findings 1 and 9 in tooling rather than in a fresh measurement, and extends
+`scripts/system-audit-drive.mjs` beyond the sequence this report's header names (content hash
+`d5a3d954…`, "unchanged from the prior run") — so its hash no longer matches this report's, and
+this run's `†` rows are not comparable to whatever the script produces next.
+
+- **Finding 1** — `DESIGN_TOKENS` is now parsed from `design-system/tokens/*.css` at run time
+  instead of kept as a hardcoded copy, so a future rename can't leave the script's own census
+  stale the way this report's top finding described. Not a live drift as of this update: PR #153's
+  final commit already brought the old literal to the current 41 names before this branch started.
+- **Finding 9** — the script now drives a `narrowNotice` state (resize to ≤899px, matching
+  `scripts/check-type-scale.mjs`'s own narrow pass) that render-confirms `--space-panel` via
+  `#narrow-notice`'s computed padding, closing the one gap this report flagged as source-confirmed
+  but not render-confirmed.
+
+Not re-measured here — the next full run of this lens should replay the extended script, record it
+as extended (not unchanged) in the Measurement conditions table, and treat this run's
+state-sensitive rows as incomparable rather than diffing against them.
