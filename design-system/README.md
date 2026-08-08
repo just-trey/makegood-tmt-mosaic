@@ -39,11 +39,21 @@ wanting them back, you want the `.prompt.md` spec instead.
 computed style rather than assumed. Colors, spacing, type and states were lifted from the app,
 not invented — recreate them exactly.
 
-That claim used to be made about two components the app never had (`SegmentedControl`, a
-five-shape base-part picker; `ThumbnailSelect`, a thumbnail part library). Both specs were
-deleted rather than kept as aspirations, because a spec that describes UI the app doesn't have
-is worse than no spec: a developer reading it builds the wrong thing confidently. See
-[docs/system-audit.md](../docs/system-audit.md) for how the gap was measured.
+Holding that claim has cost three specs so far, each deleted rather than kept as an aspiration,
+because a spec that describes UI the app doesn't have is worse than no spec: a developer reading
+it builds the wrong thing confidently.
+
+- `SegmentedControl` — a five-shape base-part picker. The app renders a native `<select>`.
+- `ThumbnailSelect` — a thumbnail part library. The app has no such control.
+- `Badge` — a bordered monospace status readout with an accent/amber `tone` variant, claimed for
+  the header's triangle and color counts. Those render as plain `<span class="stat">` sharing one
+  rule (mono, 11px, `--text-dim`): no border, no fill, no tone distinction, and no "amber"
+  anywhere in `src/styles.css`. The one element in the app actually classed `badge` is the 8px
+  pulsing dot on the help button — a different component doing a different job.
+
+The first two were caught in the pass that wrote this section; `Badge` survived it and was caught
+by the next audit. See [docs/system-audit.md](../docs/system-audit.md) for how each gap was
+measured.
 
 ## Design tokens
 
@@ -100,7 +110,7 @@ Categories:
 - **forms/** — Button, TextInput, Select, Checkbox, Slider
 - **layout/** — Panel (repeating uppercase-label + hairline-rule sidebar section shell — not a
   bordered card)
-- **feedback/** — WarningPill, Badge, LoadingOverlay
+- **feedback/** — WarningPill, LoadingOverlay
 - **misc/** — Dropzone, ColorRow
 
 There are no per-category specimen sheets. `guidelines/*.html` cover the foundations (color,
@@ -118,9 +128,12 @@ type, spacing/radius, brand mark) and open directly in a browser.
   Export. Right side (`#right`) is the 3D viewport — `var(--viewport)` with a faint
   24px grid background, a HUD readout (top-left, monospace), a warning pill (bottom, full
   width), and a loading overlay (covers viewport when busy).
-- **Header**: MakeGood logo (34px tall) + divider + "Mosaic" wordmark (Outfit, 18px/600) +
-  subtitle ("for MakeGood TMT · SVG → multicolor recess geometry") + two right-aligned Badges
-  (triangle count, color count — amber tone for the color count).
+- **Header**: MakeGood logo (34px tall) + "TMT Mosaic" wordmark (Outfit, 18px/600) + a version
+  tag linking the changelog + subtitle ("for the MakeGood TMT · SVG or image → multicolor recess
+  geometry") + two right-aligned monospace stat readouts (triangle count, color count) + a
+  circular "?" help button. The stats are plain `<span class="stat">` — mono, 11px, `--text-dim`,
+  no border or fill and no per-stat tone. `preview.html` draws them as bordered two-tone badges
+  instead; that is mockup-only, and the `Badge` spec it implies was deleted (see Fidelity).
 - **Panel: Artwork** — Dropzone + "Load sample artwork" button (small, full width) + hint text
   about flat-color-only support.
 - **Panel: Base part** — a native `<select>` (`#shape-kind`) holding one option per visible
