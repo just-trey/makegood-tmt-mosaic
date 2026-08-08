@@ -1,43 +1,15 @@
+@import '../design-system/tokens/colors.css';
+@import '../design-system/tokens/spacing.css';
+@import '../design-system/tokens/typography.css';
+
 :root {
   /* Mosaic v3 design tokens — MakeGood navy/blue palette (WCAG AA), sharp corners.
-     Spec source: design-system/tokens/*.css */
-  --bg: #0c1220;
-  --panel: #141b30;
-  --panel-2: #1c2440;
-  --line: #2b3457;
-  --text: #f5f7fb;
-  --text-dim: #aab3cf;
-  --accent: #6d93ff;
-  --accent-2: #5eead4;
-  --danger: #f9438a;
-  --on-accent: #071022;
-  --viewport: #070a13;
-  --accent-wash: rgba(109, 147, 255, 0.1);
-  --accent-glow: rgba(109, 147, 255, 0.06);
-  --danger-wash: rgba(249, 67, 138, 0.12);
-  --danger-border: rgba(249, 67, 138, 0.4);
-  --danger-text: #ffb3d1;
+     Spec source: design-system/tokens/*.css, imported above. Everything that matched the
+     design system's declared value was deleted from here; these two remain because their
+     value differs from the design system's (wider font-family fallback chains) and picking a
+     winner is a taste call, not this branch's to make — see DECISIONS-NEEDED.md. */
   --mono: 'IBM Plex Mono', 'SF Mono', 'Consolas', 'Menlo', monospace;
   --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --heading: 'Outfit', -apple-system, 'Segoe UI', sans-serif;
-  /* --text-label and --text-meta share a value on purpose, and are not merged into one token:
-     label is sans and tracked, meta is mono, and mono at 11px optically matches sans at 12px —
-     they diverge the moment body size moves. */
-  --text-label: 11px; /* uppercase section labels, tracked. Only size below body. */
-  --text-meta: 11px; /* MONO ONLY: tris counts, hex, filenames, HUD, version. */
-  --text-body: 12px; /* everything else: control labels, inputs, buttons, help prose */
-  --text-emphasis: 16px; /* the one size above body. Empty states, dialog titles. Rare. */
-  --text-display: 20px; /* wordmark only */
-  --space-hair: 2px; /* optical correction inside a control: swatch-grid gaps,
-                       badge insets. Never rhythm between rows — that is --space-row up. */
-  --space-tight: 4px; /* inside a control: label-to-input, icon-to-text */
-  --space-row: 8px; /* between rows within a panel */
-  --space-section: 16px; /* between labelled groups inside a panel */
-  --space-panel: 24px; /* between panels */
-  --radius-sm: 0px;
-  --radius-md: 1px;
-  --radius-lg: 2px;
-  --radius-2xl: 3px;
 }
 * {
   box-sizing: border-box;
