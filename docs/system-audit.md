@@ -327,3 +327,11 @@ delta is not adoption tripling, and the replayed audit script's own token list n
 before its raw numbers can be trusted again). The full prior text is preserved in git history
 (`git log -- docs/system-audit.md`), not inline here, per this lens's own instruction to overwrite
 rather than accumulate.
+
+## Update — feat/import-design-tokens
+
+That branch addresses Finding 1 / the Adoption row above: `src/styles.css` now `@import`s
+`design-system/tokens/{colors,spacing,typography}.css` instead of redeclaring the same names, so
+inherited should move off 0 and co-declared should drop accordingly on the next audit run. Not
+re-measured here — this note is a pointer for the next run to verify, not a hand-edit of the
+numbers themselves.

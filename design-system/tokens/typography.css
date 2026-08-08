@@ -1,8 +1,13 @@
 :root {
   /* Outfit for headings, Inter for body/labels, IBM Plex Mono for values/data */
   --heading: 'Outfit', -apple-system, 'Segoe UI', sans-serif;
-  --sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  /* system-ui / ui-monospace resolve to the platform's own UI font (San Francisco on macOS,
+     Segoe UI on Windows, Roboto on Android/ChromeOS) and its monospace counterpart (SF Mono,
+     Consolas), so one keyword replaces the whole per-platform fallback list and can't go stale
+     as platforms change. Neither this file's prior chain nor the app's wider one (which this
+     branch also carried) was a considered decision — see PR #154. */
+  --sans: 'Inter', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
 
   /* --text-label and --text-meta share a value on purpose, and are not merged into one token:
      label is sans and tracked, meta is mono, and mono at 11px optically matches sans at 12px —
