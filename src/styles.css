@@ -1,16 +1,9 @@
+/* Mosaic v3 design tokens — MakeGood navy/blue palette (WCAG AA), sharp corners.
+   Spec source: design-system/tokens/*.css, imported below. No app-side redeclaration remains —
+   every token the app uses matches the design system's own value. */
 @import '../design-system/tokens/colors.css';
 @import '../design-system/tokens/spacing.css';
 @import '../design-system/tokens/typography.css';
-
-:root {
-  /* Mosaic v3 design tokens — MakeGood navy/blue palette (WCAG AA), sharp corners.
-     Spec source: design-system/tokens/*.css, imported above. Everything that matched the
-     design system's declared value was deleted from here; these two remain because their
-     value differs from the design system's (wider font-family fallback chains) and picking a
-     winner is a taste call, not this branch's to make — see DECISIONS-NEEDED.md. */
-  --mono: 'IBM Plex Mono', 'SF Mono', 'Consolas', 'Menlo', monospace;
-  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
 * {
   box-sizing: border-box;
 }
