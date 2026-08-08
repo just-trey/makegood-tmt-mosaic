@@ -380,11 +380,23 @@ export function renderAssemblyRoleControls(): void {
 }
 
 /**
- * Full editable controls for one part (drop zone, face pick, base thickness / pivot+angle,
- * remove). Kept behind an "Advanced" disclosure in the common auto-load case, but still the
- * primary upload UI when the library isn't reachable.
+ * Full editable controls for one part (face pick, base thickness / pivot+angle, remove), plus the
+ * STL/3MF drop target when `canSwapMesh` — which is only where the parts library isn't reachable
+ * and the user has no other way to get a part in.
+ *
+ * **The drop target is deliberately absent from the auto-load case.** Dropping a file onto a role
+ * that already holds its library part replaces the mesh while keeping the role, and every piece of
+ * verified export placement is keyed to the mesh: `resolvePlacement`
+ * ([src/export/placement.ts](../export/placement.ts)) fingerprints the loaded geometry against
+ * `PART_FINGERPRINTS` and withholds the hand-checked plate position, rotation and prime tower the
+ * moment it doesn't match. The part still exports, at a computed position nobody has opened in a
+ * slicer. That is a real escape hatch when there is no library to fall back on, and an invitation
+ * to quietly lose the verified placement when there is.
  */
-function buildAsmPartRow(part: AssemblyPart): HTMLElement {
+function buildAsmPartRow(
+  part: AssemblyPart,
+  { canSwapMesh }: { canSwapMesh: boolean },
+): HTMLElement {
   const row = document.createElement('div');
   row.className = 'color-row';
   row.style.marginBottom = 'var(--space-row)';
@@ -412,11 +424,14 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
     // The dropzone below hardcodes border-radius:6px, matching no --radius-* token (the scale
     // tops out at --radius-2xl, 3px) — see docs/tech-debt.md's "assembly-part dropzone radius"
     // entry before touching this without also picking the right token.
+    const dropzone = canSwapMesh
+      ? `<div style="border:1.5px dashed var(--line);border-radius:6px;padding:var(--space-row);text-align:center;color:var(--text-dim);cursor:pointer;" data-asm-drop>
+        Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file aria-label="Upload STL/3MF for ${part.name}">
+      </div>`
+      : '';
     row.innerHTML = `
       <div class="top"><div class="hex">${part.name}</div></div>
-      <div style="border:1.5px dashed var(--line);border-radius:6px;padding:var(--space-row);text-align:center;color:var(--text-dim);cursor:pointer;" data-asm-drop>
-        Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file aria-label="Upload STL/3MF for ${part.name}">
-      </div>
+      ${dropzone}
       <div class="hint" style="margin-top:var(--space-tight);">${statusText}</div>
       ${part.patches ? `<div class="depth-row"><label>face</label><select data-asm="patchIdx" style="flex:1;" aria-label="Design face for ${part.name}">${patchOptions}</select></div>` : ''}
       <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;" aria-label="Base thickness for ${part.name}"><span class="hint">mm of material behind the face this replaces</span></div>
@@ -495,14 +510,14 @@ export function renderAssemblyPartList(): void {
     );
     const inner = document.createElement('div');
     inner.style.marginTop = 'var(--space-row)';
-    parts.forEach((p) => inner.appendChild(buildAsmPartRow(p)));
+    parts.forEach((p) => inner.appendChild(buildAsmPartRow(p, { canSwapMesh: false })));
     det.appendChild(inner);
     box.appendChild(det);
     return;
   }
 
   // Manual case: the full editable rows, since parts must be dragged in by hand.
-  parts.forEach((p) => box.appendChild(buildAsmPartRow(p)));
+  parts.forEach((p) => box.appendChild(buildAsmPartRow(p, { canSwapMesh: true })));
 }
 
 export function initAssemblyPanel(): void {
