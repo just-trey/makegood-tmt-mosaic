@@ -6,6 +6,7 @@ import {
   buildAssemblyGeometry,
   designAnchor,
   designMmPerUnit,
+  fillRefusalMessage,
   memoLargestDesignFace,
   rotatePointY,
   type ArtworkBuildInput,
@@ -644,6 +645,44 @@ describe('buildAssemblyGeometry', () => {
       expect((b.minZ + b.maxZ) / 2).toBeCloseTo((a.minZ + a.maxZ) / 2, 3);
     },
   );
+});
+
+describe('fillRefusalMessage', () => {
+  // docs/ui-conventions.md 2 and 3: name something the user can act on, one problem and one
+  // primary remedy. One message for four causes advised raising Scale for all of them.
+  const reasons = ['too-many-tiles', 'no-tile-size', 'not-invertible', 'not-affine'] as const;
+
+  it('gives every cause its own wording, naming the part', () => {
+    const msgs = reasons.map((r) => fillRefusalMessage('Handle (left)', r));
+    expect(new Set(msgs).size).toBe(reasons.length);
+    msgs.forEach((m) => expect(m).toContain('Handle (left)'));
+  });
+
+  it('offers "Raise Scale" only where scaling up is what fixes it', () => {
+    const scaled = reasons.filter((r) => /Raise Scale/.test(fillRefusalMessage('P', r)));
+    expect(scaled).toEqual(['too-many-tiles']);
+  });
+
+  it('states one remedy per message, not a list', () => {
+    for (const r of reasons) {
+      const m = fillRefusalMessage('P', r);
+      // The three phrasings the old single message stacked up: it named a scale change, a mode
+      // change and a move at once. Any one message offering two of them is back to a remedy list.
+      const offers = [
+        /Raise Scale/,
+        /Reset to auto-fit/,
+        /Place separate designs/,
+        /Re-export/,
+      ].filter((re) => re.test(m)).length;
+      expect(offers).toBe(1);
+    }
+  });
+
+  it('says so rather than guessing when no cause was recorded', () => {
+    const m = fillRefusalMessage('P', undefined);
+    expect(m).not.toMatch(/Raise Scale/);
+    expect(m).toContain("didn't record");
+  });
 });
 
 describe('fill mode', () => {

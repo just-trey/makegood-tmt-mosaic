@@ -944,13 +944,6 @@ seed offset in hand, while the placed quad is computed later in the assembly
 build. Either thread the zone's placer back to load time, or move the cascade
 into the build and let it adjust a placement it can actually measure.
 
-## One warning covers three different failures
-
-([src/geometry/assembly.ts](../src/geometry/assembly.ts)) — "Raise Scale to
-fill the surface" is the advice whether `tileCoverage` refused on tile
-count, non-invertibility, or non-affinity. It is right for the first and
-misleading for the other two. Split the message per cause.
-
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
 A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):

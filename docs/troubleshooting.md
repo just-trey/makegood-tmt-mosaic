@@ -155,6 +155,41 @@ workflow. That combination has the same overlapping-inlay problem where the
 sticker's colors differ from the pattern's; it is a known gap, also in
 [tech-debt.md](tech-debt.md).
 
+## Troubleshooting: Fill warnings — "Only one copy was placed"
+
+Fill repeats one design across a whole surface. When it can't work out how to
+repeat it, it falls back to placing the design once and says why. There are
+four reasons, and only the first is fixed by changing Scale — the wording tells
+you which one you have.
+
+**"This design is too small to fill … — it would take more than 1024 tiles."**
+The commonest one. A pattern scaled far down against a large surface (a 5%
+pattern on a chair panel) needs tens of thousands of copies, and unioning that
+many hangs the tab, so the app refuses rather than freezing. **Raise Scale**
+until the count comes down — a larger tile is also usually what you wanted, a
+pattern at 5% reads as texture rather than as a pattern.
+
+**"This design has no repeat size, so there is no tile to fill … with."**
+The file declares no drawing area to repeat: a zero-width or zero-height
+viewBox. There is nothing to tile. **Re-export from your drawing tool with a
+document size set** — in Inkscape, Document Properties → resize to content or
+to a fixed size; in Illustrator, Save As SVG with the artboard as the export
+area.
+
+**"The placement … has collapsed to no width or no height."** The design's
+placement on the surface maps its whole tile onto a line or a point, so there
+is no grid to lay. This is a placement gone wrong rather than a file problem.
+**Use "Reset to auto-fit"** in the Artwork fit panel.
+
+**"… curves too much for a design to tile evenly across it."** The surface's
+mapping isn't flat enough for a repeating grid to stay a grid on it — copies
+would land in the wrong places rather than slightly off. No shipped part does
+this today. **Place separate designs on the surface** (Sticker mode, one per
+area) instead of filling it.
+
+A fifth wording, "for a reason the app didn't record", means a refusal path
+reached the user without naming itself. That is a bug — please report it.
+
 ## Troubleshooting: "Depth for … was set to … mm" warnings (flat mode)
 
 The flat shape modes cut every recess into a plate of one fixed thickness. A

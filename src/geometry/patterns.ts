@@ -34,6 +34,20 @@ export interface TileGrid {
 }
 
 /**
+ * Why a fill couldn't be tiled. Four separate failures used to reach one `null`, and the caller
+ * told the user to raise Scale for all of them — advice that is right for exactly one.
+ */
+export type TileRefusal =
+  /** The design declares no repeat size: a zero-width or zero-height tile cell. */
+  | 'no-tile-size'
+  /** The placement collapses — it maps the whole tile to a line or a point, so it can't be inverted. */
+  | 'not-invertible'
+  /** The surface mapping isn't affine, so a grid laid out in SVG space wouldn't land as a grid. */
+  | 'not-affine'
+  /** The design is small enough against the surface to need more than MAX_FILL_TILES copies. */
+  | 'too-many-tiles';
+
+/**
  * The tile offsets that cover `extent` once placed, computed by inverting the placement.
  *
  * Tiling happens in SVG user space, *before* the placement is applied: every `placer()` is a pure
@@ -45,14 +59,25 @@ export interface TileGrid {
  * reaches in from outside).
  *
  * Returns null when the map isn't invertible, isn't affine (a future non-affine mapper would make
- * the whole grid wrong rather than slightly off), or when the fill needs more than MAX_FILL_TILES.
+ * the whole grid wrong rather than slightly off), when the design has no repeat size at all, or
+ * when the fill needs more than MAX_FILL_TILES.
+ *
+ * `refusal`, when passed, is filled in with which of those it was. It is an out-parameter rather
+ * than a richer return type so a caller that only wants "can this be tiled?" keeps the plain
+ * `TileGrid | null` answer; the one caller that reports to a user needs the reason, because the
+ * four have nothing in common to say about them.
  */
 export function tileCoverage(
   place: (pt: number[]) => number[],
   cell: TileCell,
   extent: FillExtent,
+  refusal?: { reason?: TileRefusal },
 ): TileGrid | null {
-  if (!(cell.w > 0) || !(cell.h > 0)) return null;
+  const refuse = (reason: TileRefusal): null => {
+    if (refusal) refusal.reason = reason;
+    return null;
+  };
+  if (!(cell.w > 0) || !(cell.h > 0)) return refuse('no-tile-size');
   const p00 = place([cell.x, cell.y]);
   const pu = place([cell.x + cell.w, cell.y]);
   const pv = place([cell.x, cell.y + cell.h]);
@@ -62,7 +87,7 @@ export function tileCoverage(
   const bx = pv[0] - p00[0],
     by = pv[1] - p00[1];
   const det = ax * by - ay * bx;
-  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return refuse('not-invertible');
 
   // The grid is only valid because `place` is affine; probe a few interior/corner points against
   // what the linear map predicts rather than trusting that. The corner alone misses curvature
@@ -79,7 +104,7 @@ export function tileCoverage(
       Math.abs(q[0] - (p00[0] + s * ax + t * bx)) > tol ||
       Math.abs(q[1] - (p00[1] + s * ay + t * by)) > tol
     )
-      return null;
+      return refuse('not-affine');
   }
 
   let minI = Infinity,
@@ -96,7 +121,7 @@ export function tileCoverage(
       dy = Y - p00[1];
     const i = (by * dx - bx * dy) / det;
     const j = (ax * dy - ay * dx) / det;
-    if (!Number.isFinite(i) || !Number.isFinite(j)) return null;
+    if (!Number.isFinite(i) || !Number.isFinite(j)) return refuse('not-invertible');
     if (i < minI) minI = i;
     if (i > maxI) maxI = i;
     if (j < minJ) minJ = j;
@@ -107,7 +132,12 @@ export function tileCoverage(
   const j0 = Math.floor(minJ) - 1,
     j1 = Math.floor(maxJ) + 1;
   const count = (i1 - i0 + 1) * (j1 - j0 + 1);
-  if (!Number.isFinite(count) || count <= 0 || count > MAX_FILL_TILES) return null;
+  // The non-finite/non-positive half is unreachable today (i1 >= i0 always, and the indices were
+  // range-checked above) but is not folded into the tile-count case: they get opposite advice, and
+  // "raise Scale" against a broken index range would be the exact wrong-cause problem this split
+  // exists to remove.
+  if (!Number.isFinite(count) || count <= 0) return refuse('not-invertible');
+  if (count > MAX_FILL_TILES) return refuse('too-many-tiles');
   return { i0, i1, j0, j1, pitchX: cell.w, pitchY: cell.h, count };
 }
 

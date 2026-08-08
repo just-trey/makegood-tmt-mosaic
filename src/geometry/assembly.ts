@@ -56,6 +56,7 @@ import {
   tileFeature,
   type TileCell,
   type TileGrid,
+  type TileRefusal,
 } from './patterns';
 import { overlappingDesignPairs, type PlacedDesign } from './designOverlap';
 import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
@@ -340,6 +341,52 @@ function placedBBoxQuad(parsed: ParsedSVG, place: (pt: number[]) => number[]): n
     [b.maxX, b.maxY],
     [b.minX, b.maxY],
   ].map(place);
+}
+
+/**
+ * What to tell the user when a Fill couldn't be repeated across a part, per cause.
+ *
+ * There are four ways `tileCoverage` refuses and they used to share one message, which told
+ * everybody to raise Scale. That is the remedy for exactly one of them; on the others it is advice
+ * that cannot work, offered instead of the thing that would. Conventions 2 and 3 of
+ * docs/ui-conventions.md: name something the user can act on, and state one problem with one
+ * primary remedy.
+ *
+ * Every branch ends the same way — a single copy was placed — because that is what actually
+ * happened to their part, and it is the same in all four.
+ */
+export function fillRefusalMessage(partName: string, reason: TileRefusal | undefined): string {
+  const placed = 'Only one copy was placed.';
+  switch (reason) {
+    case 'too-many-tiles':
+      return (
+        `This design is too small to fill "${partName}" — it would take more than ` +
+        `${MAX_FILL_TILES} tiles. ${placed} Raise Scale to fill the surface with fewer, larger ` +
+        'tiles.'
+      );
+    case 'no-tile-size':
+      return (
+        `This design has no repeat size, so there is no tile to fill "${partName}" with. ` +
+        `${placed} Re-export it from your drawing tool with a document size set.`
+      );
+    case 'not-invertible':
+      return (
+        `The placement of this design on "${partName}" has collapsed to no width or no height, so ` +
+        `its tiles can't be worked out. ${placed} Use "Reset to auto-fit" to put it back.`
+      );
+    case 'not-affine':
+      return (
+        `"${partName}" curves too much for a design to tile evenly across it. ${placed} Place ` +
+        'separate designs on this surface instead of filling it.'
+      );
+    // Only reachable if a future refusal path forgets to name itself. Says so rather than
+    // guessing a cause, since guessing wrong is the thing this function exists to stop.
+    default:
+      return (
+        `This design couldn't be tiled across "${partName}", for a reason the app didn't record. ` +
+        `${placed} Please report this.`
+      );
+  }
 }
 
 /**
@@ -782,11 +829,9 @@ export async function buildAssemblyGeometry(
               `Couldn't measure the fill area on "${part.name}" — placing a single copy of the artwork instead.`,
             );
           } else {
-            grid = tileCoverage(place, tileCells[ai], extent);
-            if (!grid)
-              warnBuild(
-                `Filling "${part.name}" would take more than ${MAX_FILL_TILES} tiles at this scale — placing a single copy instead. Raise Scale to fill the surface.`,
-              );
+            const refusal: { reason?: TileRefusal } = {};
+            grid = tileCoverage(place, tileCells[ai], extent, refusal);
+            if (!grid) warnBuild(fillRefusalMessage(part.name, refusal.reason));
           }
         }
         for (let ci = 0; ci < palette.length; ci++) {
