@@ -11,17 +11,19 @@
       body {
         margin: 0;
         background: var(--panel);
-        padding: 16px;
+        padding: var(--space-section);
         box-sizing: border-box;
-        font-family: var(--font-sans);
+        font-family: var(--sans);
       }
     </style>
   </head>
   <body>
-    <div style="color: var(--text); font-size: 16px; margin-bottom: 8px">
+    <div
+      style="color: var(--text); font-size: var(--text-emphasis); margin-bottom: var(--space-row)"
+    >
       --text — Rebuilding geometry…
     </div>
-    <div style="color: var(--text-dim); font-size: 16px">
+    <div style="color: var(--text-dim); font-size: var(--text-emphasis)">
       --text-dim — Check two or more colors above
     </div>
   </body>

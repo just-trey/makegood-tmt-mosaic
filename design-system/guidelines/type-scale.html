@@ -1,4 +1,4 @@
-<!-- @dsCard group="Type" viewport="700x220" subtitle="Text sizes in use, sans family" name="Type scale" -->
+<!-- @dsCard group="Type" viewport="700x260" subtitle="Text sizes in use, sans family" name="Type scale" -->
 <!doctype html>
 <html>
   <head>
@@ -11,29 +11,45 @@
       body {
         margin: 0;
         background: var(--panel);
-        padding: 16px;
+        padding: var(--space-section);
         box-sizing: border-box;
-        font-family: var(--font-sans);
+        font-family: var(--sans);
         color: var(--text);
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: var(--space-tight);
       }
       span {
         color: var(--text-dim);
-        font-family: var(--font-mono);
-        font-size: 10px;
-        margin-right: 8px;
+        font-family: var(--mono);
+        font-size: var(--text-meta);
+        margin-right: var(--space-row);
       }
     </style>
   </head>
   <body>
-    <div><span>14 / lg</span>Mosaic — panel header</div>
-    <div><span>13 / base</span>Default body copy</div>
-    <div><span>12 / md</span>Field labels, buttons</div>
-    <div><span>11 / sm</span>Hints, hex values</div>
-    <div style="text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700">
-      <span>10.5 / xs</span>SECTION LABEL
+    <div style="font-family: var(--heading); font-size: var(--text-display); font-weight: 600">
+      <span>20 / display</span>Mosaic — wordmark only
+    </div>
+    <div style="font-family: var(--heading); font-size: var(--text-emphasis)">
+      <span>16 / emphasis</span>Dialog titles, empty states — the one size above body, used rarely
+    </div>
+    <div style="font-size: var(--text-body)">
+      <span>12 / body</span>Everything else: control labels, inputs, buttons, help prose
+    </div>
+    <div
+      style="
+        font-family: var(--heading);
+        font-size: var(--text-label);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+      "
+    >
+      <span>11 / label</span>SECTION LABEL — only size below body
+    </div>
+    <div style="font-family: var(--mono); font-size: var(--text-meta)">
+      <span>11 / meta</span>Mono only — tris counts, hex, filenames, HUD, version
     </div>
   </body>
 </html>

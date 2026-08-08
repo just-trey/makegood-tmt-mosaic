@@ -1,19 +1,14 @@
 :root {
-  --space-1: 4px;
-  --space-2: 6px;
-  --space-3: 8px;
-  --space-4: 10px;
-  --space-5: 12px;
-  --space-6: 14px;
-  --space-7: 16px;
-  --space-8: 18px;
-  --space-9: 24px;
+  --space-hair: 2px; /* optical nudge only — not a gap between things */
+  --space-tight: 4px; /* inside a control: label-to-input, icon-to-text */
+  --space-row: 8px; /* between rows within a panel */
+  --space-section: 16px; /* between labelled groups inside a panel */
+  --space-panel: 24px; /* between panels */
 
   /* sharper, near-square corners — industrial/blueprint feel over default soft-rounded UI */
   --radius-sm: 0px;
   --radius-md: 1px;
   --radius-lg: 2px;
-  --radius-xl: 2px;
   --radius-2xl: 3px;
 
   --border-width: 1px;

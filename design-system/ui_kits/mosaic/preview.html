@@ -41,8 +41,8 @@
         margin: 0;
         background: var(--bg);
         color: var(--text);
-        font-family: var(--font-sans);
-        font-size: var(--text-base);
+        font-family: var(--sans);
+        font-size: var(--text-body);
       }
       #app {
         display: grid;
@@ -54,8 +54,8 @@
         grid-column: 1/3;
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 0 20px;
+        gap: var(--space-row);
+        padding: 0 var(--space-section);
         background: var(--panel);
         border-bottom: 1px solid var(--line);
       }
@@ -63,7 +63,7 @@
         background: var(--panel);
         border-right: 1px solid var(--line);
         overflow-y: auto;
-        padding: 14px;
+        padding: var(--space-section);
       }
       #right {
         position: relative;
@@ -78,11 +78,11 @@
         position: absolute;
         top: 12px;
         left: 12px;
-        font-family: var(--font-mono);
-        font-size: 11px;
+        font-family: var(--mono);
+        font-size: var(--text-meta);
         color: var(--text-dim);
         background: rgba(20, 23, 26, 0.6);
-        padding: 6px 10px;
+        padding: var(--space-tight) var(--space-row);
         border-radius: 6px;
         border: 1px solid var(--line);
         line-height: 1.5;
@@ -95,9 +95,8 @@
       }
       .hint {
         color: var(--text-dim);
-        font-size: 11px;
         line-height: 1.5;
-        margin-top: 4px;
+        margin-top: var(--space-tight);
       }
       a {
         color: var(--accent);
@@ -132,8 +131,8 @@
           alignItems: 'center',
           justifyContent: 'center',
           gap: 6,
-          fontFamily: 'var(--font-sans)',
-          fontSize: size === 'small' ? 'var(--text-sm)' : 'var(--text-md)',
+          fontFamily: 'var(--sans)',
+          fontSize: 'var(--text-body)',
           fontWeight: isPrimary ? 'var(--weight-semibold)' : 'var(--weight-regular)',
           padding: size === 'small' ? '3px 8px' : '7px 10px',
           borderRadius: 'var(--radius-lg)',
@@ -171,10 +170,10 @@
           background: 'var(--panel-2)',
           border: '1px solid var(--line)',
           color: 'var(--text)',
-          padding: '5px 7px',
+          padding: 'var(--space-tight) var(--space-row)',
           borderRadius: 'var(--radius-md)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 'var(--text-md)',
+          fontFamily: 'var(--mono)',
+          fontSize: 'var(--text-meta)',
           outline: 'none',
           opacity: disabled ? 0.4 : 1,
         };
@@ -199,8 +198,8 @@
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
-              fontFamily: 'var(--font-sans)',
-              fontSize: 'var(--text-md)',
+              fontFamily: 'var(--sans)',
+              fontSize: 'var(--text-body)',
               color: 'var(--text)',
               cursor: disabled ? 'not-allowed' : 'pointer',
               opacity: disabled ? 0.4 : 1,
@@ -234,8 +233,8 @@
               'span',
               {
                 style: {
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 'var(--text-sm)',
+                  fontFamily: 'var(--mono)',
+                  fontSize: 'var(--text-meta)',
                   color: 'var(--text-dim)',
                   minWidth: 32,
                   textAlign: 'right',
@@ -258,14 +257,14 @@
                 onClick: () => onChange && onChange(opt.value),
                 style: {
                   flex: 1,
-                  padding: '7px 4px',
-                  fontSize: 'var(--text-sm)',
+                  padding: 'var(--space-row) var(--space-tight)',
+                  fontSize: 'var(--text-body)',
                   borderRadius: 'var(--radius-lg)',
                   border: '1px solid ' + (active ? 'var(--accent)' : 'var(--line)'),
                   background: active ? 'var(--accent-wash)' : 'var(--panel-2)',
                   color: active ? 'var(--accent)' : 'var(--text-dim)',
                   cursor: 'pointer',
-                  fontFamily: 'var(--font-sans)',
+                  fontFamily: 'var(--sans)',
                 },
               },
               opt.label,
@@ -276,19 +275,19 @@
       function Panel({ title, children }) {
         return e(
           'section',
-          { style: { marginBottom: 'var(--space-8)' } },
+          { style: { marginBottom: 'var(--space-section)' } },
           title &&
             e(
               'h2',
               {
                 style: {
-                  fontSize: 'var(--text-xs)',
+                  fontSize: 'var(--text-label)',
                   textTransform: 'uppercase',
                   letterSpacing: 'var(--tracking-label)',
                   color: 'var(--text-dim)',
-                  margin: '0 0 var(--space-3) 0',
+                  margin: '0 0 var(--space-row) 0',
                   fontWeight: 'var(--weight-bold)',
-                  fontFamily: 'var(--font-heading)',
+                  fontFamily: 'var(--heading)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
@@ -308,10 +307,10 @@
               background: 'var(--danger-wash)',
               border: '1px solid var(--danger-border)',
               color: 'var(--danger-text)',
-              padding: '6px 10px',
+              padding: 'var(--space-tight) var(--space-row)',
               borderRadius: 'var(--radius-lg)',
-              fontSize: 'var(--text-sm-plus)',
-              fontFamily: 'var(--font-sans)',
+              fontSize: 'var(--text-body)',
+              fontFamily: 'var(--sans)',
               maxWidth: 520,
             },
           },
@@ -323,8 +322,8 @@
           'span',
           {
             style: {
-              fontFamily: 'var(--font-mono)',
-              fontSize: 'var(--text-sm)',
+              fontFamily: 'var(--mono)',
+              fontSize: 'var(--text-meta)',
               color: tone === 'accent' ? 'var(--accent-2)' : 'var(--text-dim)',
             },
           },
@@ -345,9 +344,9 @@
               justifyContent: 'center',
               flexDirection: 'column',
               gap: 10,
-              fontSize: 'var(--text-md)',
+              fontSize: 'var(--text-body)',
               color: 'var(--text-dim)',
-              fontFamily: 'var(--font-sans)',
+              fontFamily: 'var(--sans)',
               zIndex: 5,
             },
           },
@@ -383,13 +382,13 @@
             style: {
               border: '1.5px dashed ' + (drag ? 'var(--accent)' : 'var(--line)'),
               borderRadius: 'var(--radius-2xl)',
-              padding: '18px 10px',
+              padding: 'var(--space-section) var(--space-row)',
               textAlign: 'center',
               color: drag ? 'var(--accent)' : 'var(--text-dim)',
               background: drag ? 'var(--accent-glow)' : 'transparent',
               cursor: 'pointer',
-              fontSize: 'var(--text-md)',
-              fontFamily: 'var(--font-sans)',
+              fontSize: 'var(--text-body)',
+              fontFamily: 'var(--sans)',
               transition: 'var(--transition-fast)',
             },
           },
@@ -403,8 +402,8 @@
             style: {
               background: 'var(--panel-2)',
               border: '1px solid var(--line)',
-              borderRadius: 'var(--radius-xl)',
-              padding: '7px 8px',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'var(--space-row)',
             },
           },
           e(
@@ -431,8 +430,8 @@
               'span',
               {
                 style: {
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 'var(--text-sm)',
+                  fontFamily: 'var(--mono)',
+                  fontSize: 'var(--text-meta)',
                   color: 'var(--text-dim)',
                 },
               },
@@ -444,8 +443,8 @@
                 {
                   style: {
                     marginLeft: 'auto',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 'var(--text-xs)',
+                    fontFamily: 'var(--mono)',
+                    fontSize: 'var(--text-meta)',
                     color: 'var(--text-dim)',
                   },
                 },
@@ -458,7 +457,7 @@
               { style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 } },
               e(
                 'label',
-                { style: { color: 'var(--text-dim)', fontSize: 'var(--text-sm)' } },
+                { style: { color: 'var(--text-dim)', fontSize: 'var(--text-body)' } },
                 'depth',
               ),
               e('input', {
@@ -472,10 +471,10 @@
                   background: 'var(--panel)',
                   border: '1px solid var(--line)',
                   color: 'var(--text)',
-                  padding: '5px 7px',
+                  padding: 'var(--space-tight) var(--space-row)',
                   borderRadius: 'var(--radius-md)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 'var(--text-md)',
+                  fontFamily: 'var(--mono)',
+                  fontSize: 'var(--text-meta)',
                   outline: 'none',
                 },
               }),
@@ -487,7 +486,7 @@
         const current = options.find((o) => o.value === value);
         return e(
           'div',
-          { style: { position: 'relative', fontFamily: 'var(--font-sans)' } },
+          { style: { position: 'relative', fontFamily: 'var(--sans)' } },
           e(
             'button',
             {
@@ -501,7 +500,7 @@
                 background: 'var(--panel-2)',
                 border: '1px solid ' + (open ? 'var(--accent)' : 'var(--line)'),
                 color: 'var(--text)',
-                padding: '5px 7px',
+                padding: 'var(--space-tight) var(--space-row)',
                 borderRadius: 'var(--radius-md)',
                 cursor: 'pointer',
               },
@@ -532,7 +531,7 @@
                   ),
                   e(
                     'span',
-                    { style: { fontFamily: 'var(--font-mono)', fontSize: 'var(--text-md)' } },
+                    { style: { fontFamily: 'var(--mono)', fontSize: 'var(--text-meta)' } },
                     current.label,
                   ),
                 )
@@ -540,8 +539,8 @@
                   'span',
                   {
                     style: {
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 'var(--text-md)',
+                      fontFamily: 'var(--mono)',
+                      fontSize: 'var(--text-meta)',
                       color: 'var(--text-dim)',
                     },
                   },
@@ -553,7 +552,7 @@
                 style: {
                   marginLeft: 'auto',
                   color: 'var(--text-dim)',
-                  fontSize: 'var(--text-sm)',
+                  fontSize: 'var(--text-body)',
                 },
               },
               '▾',
@@ -593,7 +592,7 @@
                       display: 'flex',
                       alignItems: 'center',
                       gap: 8,
-                      padding: '6px 7px',
+                      padding: 'var(--space-tight) var(--space-row)',
                       cursor: 'pointer',
                     },
                   },
@@ -624,8 +623,8 @@
                       'span',
                       {
                         style: {
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 'var(--text-md)',
+                          fontFamily: 'var(--mono)',
+                          fontSize: 'var(--text-meta)',
                           color: 'var(--text)',
                         },
                       },
@@ -636,8 +635,8 @@
                         'span',
                         {
                           style: {
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: 'var(--text-xs)',
+                            fontFamily: 'var(--mono)',
+                            fontSize: 'var(--text-meta)',
                             color: 'var(--text-dim)',
                           },
                         },
@@ -694,7 +693,7 @@
                   fontWeight: 600,
                   margin: 0,
                   letterSpacing: 0.2,
-                  fontFamily: 'var(--font-heading)',
+                  fontFamily: 'var(--heading)',
                 },
               },
               'TMT Mosaic',

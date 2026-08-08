@@ -1,15 +1,17 @@
 :root {
   /* Outfit for headings, Inter for body/labels, IBM Plex Mono for values/data */
-  --font-heading: 'Outfit', -apple-system, 'Segoe UI', sans-serif;
-  --font-sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  --heading: 'Outfit', -apple-system, 'Segoe UI', sans-serif;
+  --sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
 
-  --text-xs: 10.5px;
-  --text-sm: 11px;
-  --text-sm-plus: 11.5px;
-  --text-md: 12px;
-  --text-base: 13px;
-  --text-lg: 14px;
+  /* --text-label and --text-meta share a value on purpose, and are not merged into one token:
+     label is sans and tracked, meta is mono, and mono at 11px optically matches sans at 12px —
+     they diverge the moment body size moves. */
+  --text-label: 11px; /* uppercase section labels, tracked. Only size below body. */
+  --text-meta: 11px; /* MONO ONLY: tris counts, hex, filenames, HUD, version. */
+  --text-body: 12px; /* everything else: control labels, inputs, buttons, help prose */
+  --text-emphasis: 16px; /* the one size above body. Empty states, dialog titles. Rare. */
+  --text-display: 20px; /* wordmark only */
 
   --weight-regular: 400;
   --weight-semibold: 600;
