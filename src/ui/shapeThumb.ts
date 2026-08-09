@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { state } from '../state/store';
 import { currentAssemblyKind, currentVariantId } from '../assembly/kinds';
-import { assemblyViewDir, displayQuaternionFor } from '../scene/displayFrame';
+import { displayQuaternionFor } from '../scene/displayFrame';
+import type { AssemblyKind } from '../types';
 import { $ } from './dom';
 
 /**
@@ -51,6 +52,25 @@ export function thumbPixelSizes(ratio: number = dpr()): { out: number; buffer: n
 /** Fraction of the box the silhouette's longer axis fills, leaving the glyphs' own optical margin. */
 const FILL = 0.86;
 /**
+ * The thumbnail's camera, as an angle around and above the part's front. One fixed pair for every
+ * kind, which is what keeps four thumbnails comparable to each other rather than four separately
+ * flattering portraits — and is why every CAD tool's part thumbnails look alike.
+ *
+ * It is deliberately not the angle the viewport opens at, which it used to be. That view is nearly
+ * face-on to a plate kind's design face (21° off it), and face-on is exactly the view that cannot
+ * distinguish a 60mm-thick wheel from a 3mm hubcap: the outline is the same circle, and the depth
+ * range across it is dominated by the view's own tilt, so there is nothing left for shading to
+ * shade. Measured on the shipped thumbnails, the two silhouettes overlapped to within 4.5%. From
+ * 45°/30° — 52° off the face — a cylinder and a disc are unmistakable, and the same 4.5% becomes
+ * 13.2%, a number the live check can hold a bar against (scripts/check-part-thumbnails.mjs).
+ *
+ * The alternative on the table was shading by surface normal instead of by depth. It was not the
+ * fix: the two parts had the same *outline*, and no shading model changes an outline. Angle was
+ * the only lever that could.
+ */
+const THUMB_AZIMUTH_RAD = (45 * Math.PI) / 180;
+const THUMB_ELEVATION_RAD = (30 * Math.PI) / 180;
+/**
  * How dark the farthest surface goes, as a fraction of the accent. The shading has to read as form
  * without dropping the silhouette's contrast against the `--panel-2` tile behind it. Sampled off
  * the rendered thumbnails: nearest 5.2:1, farthest 3.4:1. (The 2.5:1 a review measured before this
@@ -84,6 +104,29 @@ let cacheKey: string | null = null;
 let cacheCanvas: HTMLCanvasElement | null = null;
 
 /**
+ * Target → camera for the thumbnail: the fixed three-quarter angle above, applied to whichever way
+ * the kind's front points once `displayQuaternionFor` has posed it.
+ *
+ * "A single fixed angle" has to mean fixed *relative to the part*, because the two families of
+ * kind are already posed by different conventions and neither is negotiable here: a kind with a
+ * displayFrame has been turned so its front faces −Y, while a plate-like kind is posed by the
+ * "design face is a Y-plane" rule and its camera side is +Y (scene/displayFrame.ts). One world
+ * vector for both would show one family its front and the other its back — the hub face of the
+ * wheel, say, seen from behind. Same angle off the front for everyone is the thing that makes four
+ * thumbnails read as one set.
+ */
+export function thumbViewDir(kind: AssemblyKind | null | undefined): THREE.Vector3 {
+  const front = new THREE.Vector3(0, kind?.displayFrame ? -1 : 1, 0);
+  const up = new THREE.Vector3(0, 0, 1);
+  const side = new THREE.Vector3().crossVectors(up, front);
+  return front
+    .multiplyScalar(Math.cos(THUMB_ELEVATION_RAD) * Math.cos(THUMB_AZIMUTH_RAD))
+    .addScaledVector(side, Math.cos(THUMB_ELEVATION_RAD) * Math.sin(THUMB_AZIMUTH_RAD))
+    .addScaledVector(up, Math.sin(THUMB_ELEVATION_RAD))
+    .normalize();
+}
+
+/**
  * World matrix for one part, matching what `asmPartTransformGroup` builds in the viewport: a
  * duplicate is pivot-rotated into its real position, a primary is left alone. Without this the
  * wheel's two Top halves would draw on top of each other and the silhouette would be a lie about
@@ -109,11 +152,9 @@ export function partMatrix(
  * a blue blob, and the shading is what makes the seat read as a seat. It costs one comparison per
  * covered pixel.
  *
- * What it does NOT do, measured on the shipped thumbnails: separate the wheel from the hubcap.
- * Both are discs seen nearly face-on, so their depth range is dominated by the view's own tilt
- * rather than by any feature, and the hub boss and the mounting clips are a few millimetres
- * against a 220–280mm diameter — under a pixel of gradient. Telling those two apart needs surface
- * normals, not depth. See docs/tech-debt.md.
+ * Depth needs a view with depth in it to be worth anything: face-on to a disc the whole range came
+ * from the view's own tilt, which is why the wheel and the hubcap used to be the same picture. The
+ * three-quarter camera above is what gives this something to shade.
  *
  * At thumbnail scale almost every triangle of a real part covers less than a pixel, so this is
  * effectively a point plot per triangle and the whole chair (368k) is a few milliseconds. The few
@@ -169,8 +210,7 @@ function fillTriangle(
 }
 
 /**
- * The current assembly's silhouette as a canvas, from the same viewpoint the viewport opens at, or
- * null when no part has a mesh yet.
+ * The current assembly's silhouette as a canvas, or null when no part has a mesh yet.
  *
  * Orthographic rather than perspective on purpose: this is an icon at 30px, and a perspective
  * projection at that size buys nothing but a slight keystone on the chair.
@@ -181,7 +221,7 @@ function renderSilhouette(): HTMLCanvasElement | null {
   if (!kind || !parts.length) return null;
 
   const q = displayQuaternionFor(kind);
-  const dir = assemblyViewDir(kind, 1).normalize();
+  const dir = thumbViewDir(kind);
   // The camera's own basis, same construction as fitDistance() in viewport.ts, so the thumbnail is
   // the view the part opens at rather than a second, differently-derived angle.
   const worldUp = new THREE.Vector3(0, 0, 1);

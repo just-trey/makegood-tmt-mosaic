@@ -32,24 +32,6 @@ What closing it would take: decide whether 6px is a deliberate one-off (in which
 its own token or a documented exception, the way the five icon glyphs got one) or a mistake that
 should be `--radius-2xl`, then fix the one line.
 
-## The wheel and the hubcap have the same part thumbnail
-
-The thumbnail beside the Part dropdown is rendered from the loaded mesh
-([src/ui/shapeThumb.ts](../src/ui/shapeThumb.ts)) at the viewpoint the viewport opens at, which
-fixed three of the four kinds showing one hand-drawn rectangle. It does not separate the wheel
-from the hubcap: both are discs seen nearly face-on, so the outline is the same circle, and the
-depth shading that gives the chair its form is dominated by the view's own tilt — the hub boss and
-the four mounting clips are a few millimetres against a 220–280mm diameter, under a pixel of
-gradient at 30px. Confirmed by looking at the rendered thumbnails, not inferred from the code, and
-still true after the silhouette's contrast against its tile was fixed from 2.5:1 to 5.2:1 (the
-colour was being written in linear space) — so this is a shape problem, not a legibility one.
-
-They are genuinely similar parts (one bolts onto the other), so this is mild. Closing it means
-shading by surface normal rather than by depth — a dot product per triangle against a fixed light,
-which the same rasterizer could carry — or opening the thumbnail at a per-kind angle instead of the
-viewport's. Prefer the first: a second authored angle per kind is one more piece of data to keep
-true to the mesh, which is exactly what the glyphs were.
-
 ## Three component specs call the accent color "teal"; it's blue
 
 `Button.prompt.md` ("high-emphasis 'primary' (teal fill)", and again under Variants: "`primary`

@@ -20,6 +20,28 @@ const DPR = 1.5;
 /** One fast kind is re-measured at these, so the rule reads as a rule and not as a lucky constant. */
 const DPR_SWEEP = [1, 2];
 const SWEEP_KIND = 'hubcap';
+/**
+ * The pair this check exists for: a thick cylinder and a thin disc that bolts onto it. Face-on
+ * they were the same circle. Named explicitly and given its own line because it is the pair a
+ * four-way average would let slide — the chair differs from everything, and that alone would
+ * carry a summary number over any bar worth setting.
+ */
+const MATTERS = ['wheel', 'hubcap'];
+/**
+ * How much of the silhouette two kinds must differ over, as symmetric difference / union.
+ *
+ * Set from the measurements, and the numbers are worth keeping because the margin is not large.
+ * Face-on, the wheel and the hubcap came in at 4.5% — the same circle, and the tech-debt item this
+ * check closed. From the three-quarter camera they are 13.2%, which is a cylinder against a disc
+ * and reads as one. The nearest pair of properly different parts, footrest vs hubcap, is 19.5%.
+ *
+ * So 10% is above the failure by 5.5 points and below the worst honest pass by 3.2. It is a low
+ * bar on purpose: the wheel and the hubcap are the same diameter and one bolts onto the other, so
+ * a bar set where two *unrelated* parts land would be asserting something untrue about them. If a
+ * re-pack ever drops a pair under it, the answer is to look at the two thumbnails, not to move
+ * this number.
+ */
+const MIN_DIFF = 0.1;
 
 /**
  * Wait for the kind to finish arriving: the app's own idle counter, then the triangle readout
@@ -109,6 +131,30 @@ function diffFraction(a, b) {
   return n / (a.length / 4);
 }
 
+/**
+ * Fraction of the box where the two silhouettes don't overlap — the symmetric difference of their
+ * coverage masks, over the area either one covers.
+ *
+ * This, not diffFraction, is the number that answers "do these read as the same object". Measured
+ * before this check had it: the face-on wheel and hubcap differ in 60.2% of their *pixels* while
+ * being the same circle, because the depth gradient across a disc is not the same for a 60mm-thick
+ * one as for a 3mm one and almost every covered pixel shifts a little. A pixel diff therefore
+ * passes for two thumbnails a user cannot tell apart, which is the failure this file replaced.
+ * Outline is what a 30px picture communicates, so outline is what gets the bar.
+ */
+function maskDiff(a, b) {
+  if (a.length !== b.length) return 1;
+  let differ = 0,
+    union = 0;
+  for (let i = 3; i < a.length; i += 4) {
+    const inA = a[i] > 127,
+      inB = b[i] > 127;
+    if (inA || inB) union++;
+    if (inA !== inB) differ++;
+  }
+  return union ? differ / union : 0;
+}
+
 let failed = 0;
 const fail = (msg) => {
   console.log(`   !! ${msg}`);
@@ -182,6 +228,31 @@ try {
 
 if (shots.size !== KINDS.length)
   fail(`only ${shots.size} of ${KINDS.length} kinds produced a thumbnail`);
+
+// Every pair, not an average over the four. The thumbnail's job is to tell the user which part
+// they have; a set where three kinds differ wildly and two are the same circle fails at that for
+// the two, and any four-way summary hides it behind the three.
+console.log('\n— every pair of kinds: how much of the silhouette, and of the pixels, differs');
+const ids = [...shots.keys()];
+for (let i = 0; i < ids.length; i++) {
+  for (let j = i + 1; j < ids.length; j++) {
+    const [a, b] = [ids[i], ids[j]];
+    const f = diffFraction(shots.get(a).px, shots.get(b).px);
+    const m = maskDiff(shots.get(a).px, shots.get(b).px);
+    const marked = MATTERS.includes(a) && MATTERS.includes(b);
+    console.log(
+      `  ${a} vs ${b}: ${(m * 100).toFixed(1)}% of the silhouette, ${(f * 100).toFixed(1)}% of ` +
+        `pixels${marked ? '   <- the pair this change is for' : ''}`,
+    );
+    if (f === 0) fail(`asm:${a} and asm:${b} are the same image`);
+    if (m < MIN_DIFF) {
+      fail(
+        `asm:${a} and asm:${b} have the same outline to ${(m * 100).toFixed(1)}% — under the ` +
+          `${(MIN_DIFF * 100).toFixed(0)}% bar, so the thumbnail does not tell them apart`,
+      );
+    }
+  }
+}
 
 console.log(failed ? `\nFAILED (${failed})` : '\nOK');
 process.exit(failed ? 1 : 0);

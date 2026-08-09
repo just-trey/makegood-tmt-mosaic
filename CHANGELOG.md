@@ -12,10 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **The thumbnail beside the Part dropdown is now the part.** It was one of a
   few hand-drawn glyphs chosen by how artwork is fitted rather than by what the
   part looks like, so the footrest, the hubcap and the chair all showed the same
-  rectangle. It is now drawn from the loaded mesh, at the angle the viewport
-  opens at, so it is right for every part and stays right when a part is
-  re-packed. The wheel and the hubcap still look alike — both are discs seen
-  face-on; see [docs/tech-debt.md](docs/tech-debt.md).
+  rectangle. It is now drawn from the loaded mesh, so it is right for every part
+  and stays right when a part is re-packed. Every part is shown from the same
+  three-quarter angle, the way a CAD tool shows a part thumbnail: seen face-on
+  the wheel and the hubcap were both just a circle, and from the side one is
+  visibly a thick wheel and the other a thin cap. It is also drawn at your
+  display's real pixel density, so it is no longer soft on a scaled display.
 
 ### Added
 

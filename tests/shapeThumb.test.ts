@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
+import * as THREE from 'three';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 // jsdom has no 2D canvas, so renderSilhouette() can't run here — everything below is either a
 // pure helper or a guard that returns before the first getContext() call. The rasterizer's own
 // output is checked by looking at it (stubs/thumbs/), which is the only way a 30px picture can be.
-import { partMatrix, thumbKey, refreshShapeThumb, thumbPixelSizes } from '../src/ui/shapeThumb';
+import {
+  partMatrix,
+  thumbKey,
+  refreshShapeThumb,
+  thumbPixelSizes,
+  thumbViewDir,
+} from '../src/ui/shapeThumb';
 import { state } from '../src/state/store';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 import type { AssemblyPart } from '../src/types';
@@ -63,6 +70,40 @@ describe('partMatrix', () => {
     const e = m.elements;
     const x = e[0] * 5 + e[12];
     expect(x).toBeCloseTo(5, 6); // the pivot itself is the fixed point
+  });
+});
+
+describe('thumbViewDir', () => {
+  const angleTo = (a: THREE.Vector3, b: THREE.Vector3) => (a.angleTo(b) * 180) / Math.PI;
+
+  // The whole point of the angle. Face-on — which is where the viewport's opening view sits, 21°
+  // off a plate kind's design face — a thick wheel and a thin hubcap are the same circle and no
+  // amount of shading separates them, because a flat-on disc has no depth range to shade.
+  it('looks well off the design face, so a disc shows its thickness', () => {
+    const plate = thumbViewDir({} as unknown as Parameters<typeof thumbViewDir>[0]);
+    expect(angleTo(plate, new THREE.Vector3(0, 1, 0))).toBeCloseTo(52.2, 1);
+  });
+
+  it('is the same angle off the front for every kind, so the thumbnails compare', () => {
+    // The two families are posed by different conventions — a displayFrame kind faces −Y, a
+    // plate-like kind's camera side is +Y — so equal angles off the front is what "one fixed
+    // camera" can mean here. One world vector for both would show one family its back.
+    const withFrame = ASSEMBLY_KINDS.find((k) => k.displayFrame)!;
+    const without = ASSEMBLY_KINDS.find((k) => !k.displayFrame)!;
+    expect(angleTo(thumbViewDir(withFrame), new THREE.Vector3(0, -1, 0))).toBeCloseTo(
+      angleTo(thumbViewDir(without), new THREE.Vector3(0, 1, 0)),
+      6,
+    );
+  });
+
+  it('rises above the part rather than sitting level with it', () => {
+    for (const kind of ASSEMBLY_KINDS) {
+      expect(thumbViewDir(kind).z).toBeCloseTo(Math.sin(Math.PI / 6), 6);
+    }
+  });
+
+  it('is a unit vector, so the depth range it projects onto is in millimetres', () => {
+    for (const kind of ASSEMBLY_KINDS) expect(thumbViewDir(kind).length()).toBeCloseTo(1, 6);
   });
 });
 
