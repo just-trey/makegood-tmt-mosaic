@@ -166,6 +166,11 @@ Where writing goes — pick one, don't split a topic across two:
   - **Still open** — then the branch is not done. An unresolved entry is a
     blocker, not a footnote.
 
+  A finding is promoted; a decision — something only a human can settle, where
+  the agent has no basis to pick — stays in the file. If the file drains to
+  empty because everything was promoted, check that nothing needing a human
+  went with it.
+
   A file called "decisions needed" surviving on `main` means the decisions
   weren't needed.
 
