@@ -5,7 +5,7 @@ import { clearBaseColor, DEFAULT_BASE_COLOR, state } from '../state/store';
 import { getFilaments } from '../state/filaments';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
-import { ASSEMBLY_KINDS, currentAssemblyKind } from '../assembly/kinds';
+import { ASSEMBLY_KINDS } from '../assembly/kinds';
 import { maybeAutoLoadAssembly } from '../assembly/parts';
 import { clampArtworkModes, clearArtworkZoneBindings } from '../state/artwork';
 import { renderArtworkList } from './artworkListPanel';
@@ -18,18 +18,22 @@ import {
   syncAssemblyKindControls,
 } from './assemblyPanel';
 import { updateOffsetSliderRanges } from './fitPanel';
+import { refreshShapeThumb } from './shapeThumb';
 import { $, input, numVal } from './dom';
 import { track } from '../analytics/track';
 import { confirmDialog } from './dialogs';
 
-// Tiny SVG thumbnails shown next to the shape dropdown.
+/**
+ * Thumbnails for the flat primitive modes, which have no mesh to draw from until they are built —
+ * their shape IS the glyph, so a circle and a rectangle are descriptions rather than icons.
+ * Assembly kinds are not in here: their thumbnail is rendered from the part's own mesh (see
+ * ui/shapeThumb.ts), because there is no honest glyph for "the chair".
+ */
 const SHAPE_THUMBS: Record<string, string> = {
   disc: '<svg viewBox="0 0 32 32"><circle class="fill" cx="16" cy="16" r="12"/></svg>',
   rect: '<svg viewBox="0 0 32 32"><rect class="fill" x="4" y="8" width="24" height="16" rx="1"/></svg>',
   round:
     '<svg viewBox="0 0 32 32"><rect class="fill" x="4" y="8" width="24" height="16" rx="5"/></svg>',
-  assembly:
-    '<svg viewBox="0 0 32 32"><circle class="fill" cx="16" cy="16" r="12"/><circle class="line" cx="16" cy="16" r="4.5"/><line class="line" x1="16" y1="4" x2="16" y2="9"/><line class="line" x1="16" y1="23" x2="16" y2="28"/><line class="line" x1="4" y1="16" x2="9" y2="16"/><line class="line" x1="23" y1="16" x2="28" y2="16"/></svg>',
   stl: '<svg viewBox="0 0 32 32"><path class="line" d="M16 4 L28 11 L28 21 L16 28 L4 21 L4 11 Z"/><path class="line" d="M4 11 L16 18 L28 11 M16 18 L16 28"/></svg>',
 };
 
@@ -51,12 +55,13 @@ export function refreshShapeParamInputs(): void {
 }
 
 function setShapeThumb(kind: string): void {
+  if (kind === 'assembly') {
+    // Rendered from the loaded mesh, and re-rendered as parts arrive (see initPartPanel).
+    refreshShapeThumb();
+    return;
+  }
   const el = $('#shape-thumb');
-  if (!el) return;
-  // The assembly glyph is the wheel's spoked disc; a rect-fit part (footrest) shows the plain
-  // rectangle glyph instead so the thumbnail matches the part's real shape.
-  const key = kind === 'assembly' && currentAssemblyKind()?.designFit === 'rect' ? 'rect' : kind;
-  el.innerHTML = SHAPE_THUMBS[key] || '';
+  if (el) el.innerHTML = SHAPE_THUMBS[kind] || '';
 }
 
 /**

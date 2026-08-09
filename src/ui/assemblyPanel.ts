@@ -18,6 +18,7 @@ import { HUBCAP_WHEEL_DIAMETER_MM } from '../geometry/hubcap';
 import { availableZones, clampArtworkModes } from '../state/artwork';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
+import { refreshShapeThumb } from './shapeThumb';
 import { $ } from './dom';
 
 /** Show/hide controls that only apply to certain assembly kinds (Design radius is wheel-only). */
@@ -508,6 +509,9 @@ export function initAssemblyPanel(): void {
   onAssemblyPartsChanged(() => {
     renderAssemblyRoleControls();
     renderAssemblyPartList();
+    // The part thumbnail is the loaded mesh's own silhouette, so it can only be drawn once the
+    // mesh is here — and re-drawn when a variant swap replaces one.
+    refreshShapeThumb();
     // Zone charts resolve asynchronously as parts load, so the list's per-instance zone dropdown
     // and the per-zone template links (both empty until availableZones() has something to offer)
     // need a re-render here too.
