@@ -63,22 +63,32 @@ function tokenColor(name: string, fallback: number): number {
 }
 
 /**
- * Selection is drawn as a light outline with dark corner handles, and deliberately in no accent
- * hue at all — conventions 19 and 21 of docs/ui-conventions.md.
+ * Selection is a light outline, in no accent hue at all — convention 19 of
+ * docs/ui-conventions.md. The frame used to be accent blue, over artwork that is frequently also
+ * blue, so "this is selected" and "this region prints blue" were the same signal in an app whose
+ * entire subject is which colour goes where.
  *
- * The frame used to be accent blue, over artwork that is frequently also blue, so "this is
- * selected" and "this region prints blue" were the same signal in an app whose entire subject is
- * which colour goes where. Any single flat colour has that problem, because every colour is
- * somebody's filament — so the treatment is the *pair*: `--text` near-white against `--bg`
- * near-black. No filament is both at once, and whichever half loses contrast against the artwork
- * underneath, the other one has it. Measured against the default body `#b9c0c6`: `--bg` is 9.7:1,
- * `--text` 1.7:1; against black artwork those swap.
+ * **A dark/light pair was tried first and measured worse.** The idea was `--text` line against
+ * `--bg` corner handles, on the reasoning that no filament is both at once so one half would
+ * always have contrast. It does not hold, because the two are not over the same thing: the line
+ * crosses the artwork, while the handles sit at the design's corners, which for a fitted design
+ * are usually just *off* the part and over the viewport. Sampled from the rendered frames, `--bg`
+ * handles against the `#05070d` stage measured **1.06:1** — less visible than the system's own
+ * disabled state, on a live drag target. Light throughout is worse nowhere and much better there.
  *
- * Both are tokens the app already declares — nothing new was added to the palette for this.
+ * What that leaves open, and it is real: `--text` over the default body `#b9c0c6` is **1.50:1**,
+ * so the frame is faint where it crosses a light part or a light design. Convention 19 offers
+ * three mechanisms and this uses one of them; the one that would fix this case is "contrast
+ * against dimmed surroundings", which is a change to the model's materials rather than the
+ * gizmo's. Written up in docs/tech-debt.md rather than guessed at here.
+ *
+ * The rotate handle keeps a hue of its own. That is not selection — it is one control among
+ * several, and convention 14 wants the manipulation affordances telling themselves apart. It was
+ * `0x54d98c`, a green matching no token; `--accent-2` is the real one nearest it.
  */
 let FRAME_COLOR = 0xf5f7fb;
-let HANDLE_COLOR = 0x0c1220;
-let ROTATE_COLOR = 0xf5f7fb;
+let HANDLE_COLOR = 0xf5f7fb;
+let ROTATE_COLOR = 0x5eead4;
 /**
  * Frame colour once the design center has left the surface — see FaceFrame.offSurfaceMM. Amber
  * rather than a muted grey: the parts render grey, so a desaturated "inactive" frame is the one
@@ -137,8 +147,8 @@ export function initDesignGizmo(): void {
   // Resolved here rather than at module scope so the stylesheet is certainly applied by the time
   // the custom properties are read.
   FRAME_COLOR = tokenColor('--text', FRAME_COLOR);
-  HANDLE_COLOR = tokenColor('--bg', HANDLE_COLOR);
-  ROTATE_COLOR = tokenColor('--text', ROTATE_COLOR);
+  HANDLE_COLOR = tokenColor('--text', HANDLE_COLOR);
+  ROTATE_COLOR = tokenColor('--accent-2', ROTATE_COLOR);
 
   overlay = new THREE.Group();
   overlay.renderOrder = 999; // draw on top of the model

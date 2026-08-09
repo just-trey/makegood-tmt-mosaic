@@ -101,8 +101,11 @@ constraint is structural rather than a token value.
 
 19. **Selection is never communicated by tinting the selected thing an accent hue.** Selection
     reads as outline, contrast against dimmed surroundings, or a neutral-luminance treatment.
-    `--accent-primary` is blue; blue is a filament a user owns; the current placement frame is
-    accent blue drawn over artwork that is frequently also blue.
+    `--accent-primary` is blue; blue is a filament a user owns. The worked example used to be the
+    placement frame, which was accent blue drawn over artwork that is frequently also blue; it is
+    a `--text` outline now. Note which of the three mechanisms that used — an outline alone is
+    only as good as its luminance against what it crosses, and over a light part it measures
+    1.50:1. Dimming the surroundings is the mechanism that does not depend on the artwork.
 20. Excluded or unselected geometry greys back — and grey must not simultaneously be a
     selectable filament presentation, or "not printing here" and "printing in grey" look alike.
 21. Any overlay carrying meaning (hidden-surface hatching, warning highlight) is distinguishable
