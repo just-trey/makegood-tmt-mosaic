@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   of them — right for one, and advice that cannot work for the other three.
   Each now names the design, the part, its own cause and its own remedy: too
   small to tile (raise Scale), a design with no extent one way (use one with
-  both), a collapsed placement (reset to auto-fit), and a surface too curved to
+  both), a collapsed placement (reset to auto-fit), and a part too curved to
   tile (place separate designs). Naming the design matters where a part carries
   more than one, since both remedies act on whichever is selected. See
   [docs/troubleshooting.md](docs/troubleshooting.md).

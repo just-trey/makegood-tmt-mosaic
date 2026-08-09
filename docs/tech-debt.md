@@ -944,6 +944,23 @@ seed offset in hand, while the placed quad is computed later in the assembly
 build. Either thread the zone's placer back to load time, or move the cascade
 into the build and let it adjust a placement it can actually measure.
 
+## The app says "surface" where its own vocabulary says "zone"
+
+Convention 1 of [ui-conventions.md](ui-conventions.md) is one term per concept, and its table is
+explicit: say `zone`, not `surface, region, face, area`. The app says `surface` in at least four
+user-visible places — the zone-coverage notice ("N of M surfaces have artwork", `src/app/rebuild.ts`),
+the per-zone template links in the Part panel ("Design templates (one per surface)"), the artwork
+panel's hint ("On a part with more than one design surface…"), and until this run the fill-refusal
+warning ("Raise Scale to fill the surface").
+
+Caught by a conventions review of the shipped screenshots, which cited the table. Not fixed
+piecemeal on purpose: correcting one message while the other three say `surface` makes convention 1
+_worse_, since the user then meets both words for one thing rather than one wrong word
+consistently. Closing it is a single pass over every user-visible string plus the help dialog,
+deciding once — and worth checking which way round: `zone` is the term the vocabulary table picks,
+but `surface` is the one the app has actually been teaching users, and the table is the newer
+document.
+
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
 A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):

@@ -677,6 +677,9 @@ describe('fillRefusalMessage', () => {
         /Place separate designs/,
         /Use a design with/,
       ].filter((re) => re.test(m)).length;
+      // Convention 1: one term per concept. "tile" is the repeated thing; "copy" was a second
+      // word for it in the same sentence pair.
+      expect(m).not.toMatch(/\bcop(y|ies)\b/);
       expect(offers).toBe(1);
     }
   });

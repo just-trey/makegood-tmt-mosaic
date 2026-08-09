@@ -360,14 +360,16 @@ export function fillRefusalMessage(
   partName: string,
   reason: TileRefusal | undefined,
 ): string {
-  const placed = 'Only one copy was placed.';
+  // One word for the repeated thing, throughout: "tile". Saying "copy" in the same breath is two
+  // terms for one concept inside a single message (convention 1). Second person, since this is UI
+  // copy and the README's voice rules ask for it.
+  const placed = 'You have one tile instead.';
   const design = `"${designName}"`;
   switch (reason) {
     case 'too-many-tiles':
       return (
         `${design} is too small to fill "${partName}" — it would take more than ` +
-        `${MAX_FILL_TILES} tiles. ${placed} Raise Scale to fill the surface with fewer, larger ` +
-        'tiles.'
+        `${MAX_FILL_TILES} tiles. ${placed} Raise Scale to fill it with fewer, larger tiles.`
       );
     // Not a missing viewBox: tileCellOf falls back to the artwork's own bounding box whenever the
     // viewBox isn't positive in both axes, so reaching here means the DRAWING has no extent in one
@@ -385,7 +387,7 @@ export function fillRefusalMessage(
     case 'not-affine':
       return (
         `"${partName}" curves too much for ${design} to tile evenly across it. ${placed} Place ` +
-        'separate designs on this surface instead of filling it.'
+        'separate designs on it instead of filling it.'
       );
     // Only reachable if a future refusal path forgets to name itself. Says so rather than
     // guessing a cause, since guessing wrong is the thing this function exists to stop.

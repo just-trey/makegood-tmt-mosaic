@@ -155,21 +155,23 @@ workflow. That combination has the same overlapping-inlay problem where the
 sticker's colors differ from the pattern's; it is a known gap, also in
 [tech-debt.md](tech-debt.md).
 
-## Troubleshooting: Fill warnings — "Only one copy was placed"
+## Troubleshooting: Fill warnings — "You have one tile instead"
 
-Fill repeats one design across a whole surface. When it can't work out how to
+Fill repeats one design across a whole zone. When it can't work out how to
 repeat it, it falls back to placing the design once and says why. There are
 four reasons, and only the first is fixed by changing Scale — the wording tells
-you which one you have.
+you which one you have. One `###` per warning string below.
 
-**"This design is too small to fill … — it would take more than 1024 tiles."**
+### "… is too small to fill … — it would take more than 1024 tiles."
+
 The commonest one. A pattern scaled far down against a large surface (a 5%
 pattern on a chair panel) needs tens of thousands of copies, and unioning that
 many hangs the tab, so the app refuses rather than freezing. **Raise Scale**
 until the count comes down — a larger tile is also usually what you wanted, a
 pattern at 5% reads as texture rather than as a pattern.
 
-**"… measures zero in one direction, so there is no tile to repeat across …"**
+### "… measures zero in one direction, so there is no tile to repeat across …"
+
 The drawing itself has no extent one way — every filled shape lies on a single
 line — in a file that also declares no usable `viewBox` to fall back on. (A
 missing or zero `viewBox` alone does _not_ cause this: the app then measures the
@@ -177,19 +179,23 @@ tile from the artwork's own bounding box.) There is nothing to repeat. **Use a
 design with both width and height.** Such a file would also cut nothing, so if
 you see this the design is not printable either way.
 
-**"The placement … has collapsed to no width or no height."** The design's
-placement on the surface maps its whole tile onto a line or a point, so there
+### "The placement … has collapsed to no width or no height."
+
+The design's placement on the surface maps its whole tile onto a line or a point, so there
 is no grid to lay. This is a placement gone wrong rather than a file problem.
 **Use "Reset to auto-fit"** in the Artwork fit panel.
 
-**"… curves too much for a design to tile evenly across it."** The surface's
-mapping isn't flat enough for a repeating grid to stay a grid on it — copies
-would land in the wrong places rather than slightly off. No shipped part does
-this today. **Place separate designs on the surface** (Sticker mode, one per
-area) instead of filling it.
+### "… curves too much for … to tile evenly across it."
 
-A fifth wording, "for a reason the app didn't record", means a refusal path
-reached the user without naming itself. That is a bug — please report it.
+The surface's mapping isn't flat enough for a repeating grid to stay a grid on it — copies
+would land in the wrong places rather than slightly off. No shipped part does
+this today. **Place separate designs on it** (Sticker mode, one per area) instead of
+filling it.
+
+### "… for a reason the app didn't record"
+
+A refusal path reached the user without naming itself. That is a bug in the app,
+not in your design — please report it.
 
 ## Troubleshooting: "Depth for … was set to … mm" warnings (flat mode)
 
