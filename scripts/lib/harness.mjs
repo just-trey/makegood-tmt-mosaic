@@ -208,8 +208,13 @@ async function assertGpuActive(browser, page) {
  * (export-chair-examples.mjs: one page per printer/variant combination) doesn't pay for a fresh
  * browser process each time.
  */
-export async function newPage(browser, { viewport = { width: 1280, height: 1000 } } = {}) {
-  const page = await browser.newPage({ viewport });
+export async function newPage(
+  browser,
+  { viewport = { width: 1280, height: 1000 }, deviceScaleFactor } = {},
+) {
+  // Headless Chromium is devicePixelRatio 1 unless asked otherwise, so anything that sizes a
+  // canvas backing store off dpr is untested by default — the maintainer's own display is 1.5.
+  const page = await browser.newPage({ viewport, deviceScaleFactor });
   const errors = [];
   page.on('console', (m) => {
     if (m.type() !== 'error') return;

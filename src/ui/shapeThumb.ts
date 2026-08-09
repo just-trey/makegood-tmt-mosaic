@@ -20,10 +20,34 @@ import { $ } from './dom';
 const THUMB_CSS_PX = 30;
 /**
  * Supersampling factor for the silhouette mask before it is scaled into the box. Rasterizing at
- * the final size gives a hard-edged, visibly stepped outline at 30px; 4x costs a 120px buffer and
- * a browser downscale, and is what makes the edge read as a part rather than as pixel art.
+ * the final size gives a hard-edged, visibly stepped outline at 30px; 4x costs a browser downscale
+ * and is what makes the edge read as a part rather than as pixel art.
+ *
+ * It multiplies the *device* pixel size, not the CSS one. Sized off CSS px it was a real 4x only
+ * on a 1x display: at devicePixelRatio 1.5 the same 120px buffer landed on a 45px backing store,
+ * a 2.67x downscale, and the extra softness that buys is the whole difference — the backing store
+ * itself was never undersized (45 = 30 x 1.5, drawn 1:1), so interpolation was not the problem.
  */
 const SUPERSAMPLE = 4;
+/**
+ * Device pixels per CSS pixel, for both the backing store and the buffer above. Unclamped: the
+ * cost is a Float32Array of (30 x dpr x 4)^2 that is cached on `thumbKey()`, 129600 entries even
+ * at dpr 3, and clamping it is the same undersized-backing-store bug this comment describes,
+ * just moved to a rarer display.
+ */
+const dpr = (): number => (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1;
+
+/**
+ * The two pixel sizes a render uses: the canvas backing store, and the mask buffer behind it.
+ *
+ * Exported so both can be asserted without a 2D canvas — the live check
+ * (scripts/check-part-thumbnails.mjs) can read the backing store off the real page, but the
+ * buffer is internal, and it is the size this whole path is about.
+ */
+export function thumbPixelSizes(ratio: number = dpr()): { out: number; buffer: number } {
+  const out = Math.round(THUMB_CSS_PX * ratio);
+  return { out, buffer: out * SUPERSAMPLE };
+}
 /** Fraction of the box the silhouette's longer axis fills, leaving the glyphs' own optical margin. */
 const FILL = 0.86;
 /**
@@ -166,7 +190,7 @@ function renderSilhouette(): HTMLCanvasElement | null {
   right.normalize();
   const up = new THREE.Vector3().crossVectors(dir, right).normalize();
 
-  const px = THUMB_CSS_PX * SUPERSAMPLE;
+  const { out: outPx, buffer: px } = thumbPixelSizes();
   const pts: Float32Array[] = [];
   let minU = Infinity,
     maxU = -Infinity,
@@ -263,17 +287,16 @@ function renderSilhouette(): HTMLCanvasElement | null {
   }
   bctx.putImageData(img, 0, 0);
 
-  const dpr = Math.min(devicePixelRatio || 1, 2);
   const out = document.createElement('canvas');
-  out.width = Math.round(THUMB_CSS_PX * dpr);
-  out.height = Math.round(THUMB_CSS_PX * dpr);
+  out.width = outPx;
+  out.height = outPx;
   out.style.width = `${THUMB_CSS_PX}px`;
   out.style.height = `${THUMB_CSS_PX}px`;
   const octx = out.getContext('2d');
   if (!octx) return null;
   octx.imageSmoothingEnabled = true;
   octx.imageSmoothingQuality = 'high';
-  octx.drawImage(big, 0, 0, out.width, out.height);
+  octx.drawImage(big, 0, 0, outPx, outPx);
   return out;
 }
 

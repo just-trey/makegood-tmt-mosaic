@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 // jsdom has no 2D canvas, so renderSilhouette() can't run here — everything below is either a
 // pure helper or a guard that returns before the first getContext() call. The rasterizer's own
 // output is checked by looking at it (stubs/thumbs/), which is the only way a 30px picture can be.
-import { partMatrix, thumbKey, refreshShapeThumb } from '../src/ui/shapeThumb';
+import { partMatrix, thumbKey, refreshShapeThumb, thumbPixelSizes } from '../src/ui/shapeThumb';
 import { state } from '../src/state/store';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 import type { AssemblyPart } from '../src/types';
@@ -63,6 +63,32 @@ describe('partMatrix', () => {
     const e = m.elements;
     const x = e[0] * 5 + e[12];
     expect(x).toBeCloseTo(5, 6); // the pivot itself is the fixed point
+  });
+});
+
+describe('thumbPixelSizes', () => {
+  // The backing store half of this is also asserted on the running app
+  // (scripts/check-part-thumbnails.mjs); the buffer is internal, so here is the only place it can
+  // be pinned. Both were wrong in the same direction before: the buffer was a fixed 120px whatever
+  // the display, so the 4x supersample it is sized for became 2.67x at dpr 1.5 — a softer edge
+  // than a 1x display gets, which is backwards.
+  it('sizes the backing store in device pixels, so it is drawn 1:1', () => {
+    expect(thumbPixelSizes(1).out).toBe(30);
+    expect(thumbPixelSizes(1.5).out).toBe(45);
+    expect(thumbPixelSizes(2).out).toBe(60);
+  });
+
+  it('keeps the supersample a true 4x of the device pixels at every ratio', () => {
+    for (const ratio of [1, 1.25, 1.5, 2, 3]) {
+      const { out, buffer } = thumbPixelSizes(ratio);
+      expect(buffer / out).toBe(4);
+    }
+  });
+
+  // Clamping dpr is the undersized-backing-store bug wearing a hat: a 3x display would get 60
+  // device pixels stretched across 90. The cost of not clamping is a 360px mask buffer, cached.
+  it('does not clamp the ratio', () => {
+    expect(thumbPixelSizes(3)).toEqual({ out: 90, buffer: 360 });
   });
 });
 
