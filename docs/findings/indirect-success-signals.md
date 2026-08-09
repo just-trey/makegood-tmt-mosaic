@@ -257,6 +257,24 @@ build`.
 
 ---
 
+## Added after the fact: the audit's own first pass
+
+Two of the reports written the same day as this one were themselves instances, and both are in
+here because they were caught rather than because they were avoided:
+
+- **The seam-sliver hunt's first pass recorded only a warning count.** A check that cannot fail if
+  nothing is being built. It was rerun recording triangle counts per configuration, plus a third
+  pass forcing a real warning through `?csgfault` to prove the detector was live at all — see
+  [seam-sliver-sighting.md](seam-sliver-sighting.md). Had it been reported as written, "22
+  configurations, no sighting" would have been a sentence with nothing behind it.
+- **The occlusion check's coverage guard compared ink at two design scales** and asserted the
+  larger added nothing. "The ink stopped growing" and "nothing I did reached the app" are the same
+  observation. It runs three scales now and fails if the smallest doesn't ink visibly less, which
+  is the falsifiable half.
+
+Neither was found by being careful. The first was found by writing the sentence "no warnings were
+raised" and noticing it did not say what had been built; the second by writing this page.
+
 ## The one structural thing
 
 Six of the ten findings are in `scripts/smoke.mjs` and `scripts/lib/harness.mjs`, and four of those
