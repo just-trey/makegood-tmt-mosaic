@@ -871,8 +871,11 @@ trips it.
 
 Introduced by the occlusion test in [src/scene/zonePick.ts](../src/scene/zonePick.ts), and the
 price of it. Each part's zone chart stops at that part's own edge, and the chair's parts meet
-across a printed clearance of up to 0.530mm (`seamWeldTolMm`,
-[scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json)). A ray aimed
+across a printed clearance whose widest measured value is 0.530mm — the chair's real seat-centre to
+seat-back gap, recorded in the `_note` of
+[scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json). Not
+`seamWeldTolMm`, which is **0.6**: that is the tolerance picked to clear the gap, and anyone sizing
+a bound against the wrong one of the two gets it wrong by 70 microns. A ray aimed
 exactly down a seam therefore passes _between_ the two charts, lands on the far part's chart, and
 finds the near part's edge wall in front of it — so the pick is correctly rejected, on a surface
 that renders as continuous. The result is a thin dead line along every seam.

@@ -101,8 +101,10 @@ const ANGLES = [
 /**
  * The widest run of unpickable pixels, in canvas device pixels, that is excused rather than failed.
  *
- * A printed part seam is a real hole in the pick surface. The chair's parts meet across a clearance
- * of up to 0.53mm (`seamWeldTolMm`, scripts/zone-configs/chair-body.json) and each part's chart
+ * A printed part seam is a real hole in the pick surface. The chair's widest measured contact gap
+ * is 0.530mm (scripts/lib/zonebake.mjs and the `_note` in scripts/zone-configs/chair-body.json —
+ * `seamWeldTolMm` is 0.6, the tolerance chosen to clear that gap, not the gap itself) and each
+ * part's chart
  * stops at its own edge, so a ray aimed exactly down a seam passes between the two charts, lands on
  * the far part's chart, and finds the near part's edge wall in front of it. Rejecting that is
  * geometrically correct — something solid really is in front of the chart the ray hit. But the
@@ -443,7 +445,7 @@ function interiorInk(samples) {
 
 /**
  * Split samples that picked nothing into ones sitting on a seam hairline and ones that name a
- * region the user genuinely cannot select. See HAIRLINE_PROBE_PX for what a hairline is and why
+ * region the user genuinely cannot select. See `HAIRLINE_MAX_PX` for what a hairline is and why
  * one exists at all.
  */
 async function splitHairlines(page, w, h, nulls) {
