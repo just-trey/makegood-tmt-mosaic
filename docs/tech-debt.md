@@ -40,7 +40,9 @@ fixed three of the four kinds showing one hand-drawn rectangle. It does not sepa
 from the hubcap: both are discs seen nearly face-on, so the outline is the same circle, and the
 depth shading that gives the chair its form is dominated by the view's own tilt — the hub boss and
 the four mounting clips are a few millimetres against a 220–280mm diameter, under a pixel of
-gradient at 30px. Confirmed by looking at the rendered thumbnails, not inferred from the code.
+gradient at 30px. Confirmed by looking at the rendered thumbnails, not inferred from the code, and
+still true after the silhouette's contrast against its tile was fixed from 2.5:1 to 5.2:1 (the
+colour was being written in linear space) — so this is a shape problem, not a legibility one.
 
 They are genuinely similar parts (one bolts onto the other), so this is mild. Closing it means
 shading by surface normal rather than by depth — a dot product per triangle against a fixed light,

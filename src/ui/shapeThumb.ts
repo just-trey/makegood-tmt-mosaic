@@ -26,14 +26,26 @@ const THUMB_CSS_PX = 30;
 const SUPERSAMPLE = 4;
 /** Fraction of the box the silhouette's longer axis fills, leaving the glyphs' own optical margin. */
 const FILL = 0.86;
-/** How dark the farthest surface goes, as a fraction of the accent. Below ~0.4 it reads as a hole. */
-const NEAR_FAR_FLOOR = 0.45;
+/**
+ * How dark the farthest surface goes, as a fraction of the accent. The shading has to read as form
+ * without dropping the silhouette's contrast against the `--panel-2` tile behind it. Sampled off
+ * the rendered thumbnails: nearest 5.2:1, farthest 3.4:1. (The 2.5:1 a review measured before this
+ * was the linear/sRGB bug below, not this constant — the whole silhouette was too dark, gradient
+ * and all.)
+ */
+const NEAR_FAR_FLOOR = 0.7;
 
-/** Cache key: what the silhouette actually depends on. */
-function thumbKey(): string | null {
+/**
+ * Cache key: what the silhouette actually depends on.
+ *
+ * Filters on the same condition renderSilhouette() does, `positions && loaded`, and that pairing
+ * is load-bearing — parts.ts sets `positions` before `loaded` across an await, so a key that
+ * counted a part the render skips could cache a thumbnail that never updates again.
+ */
+export function thumbKey(): string | null {
   const kind = currentAssemblyKind();
   if (!kind) return null;
-  const loaded = state.assembly.parts.filter((p) => p.positions);
+  const loaded = state.assembly.parts.filter((p) => p.positions && p.loaded);
   if (!loaded.length) return null;
   return [
     kind.id,
@@ -53,7 +65,12 @@ let cacheCanvas: HTMLCanvasElement | null = null;
  * wheel's two Top halves would draw on top of each other and the silhouette would be a lie about
  * a part the user is looking at.
  */
-function partMatrix(pivotX: number, pivotZ: number, angleDeg: number, dup: boolean): THREE.Matrix4 {
+export function partMatrix(
+  pivotX: number,
+  pivotZ: number,
+  angleDeg: number,
+  dup: boolean,
+): THREE.Matrix4 {
   if (!dup) return new THREE.Matrix4();
   return new THREE.Matrix4()
     .makeTranslation(pivotX, 0, pivotZ)
@@ -210,20 +227,33 @@ function renderSilhouette(): HTMLCanvasElement | null {
   }
 
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
-  const rgb = new THREE.Color(accent || '#6d93ff');
   const big = document.createElement('canvas');
   big.width = px;
   big.height = px;
   const bctx = big.getContext('2d');
   if (!bctx) return null;
   const img = bctx.createImageData(px, px);
-  const r8 = Math.round(rgb.r * 255),
-    g8 = Math.round(rgb.g * 255),
-    b8 = Math.round(rgb.b * 255);
+  // Read the accent back through the 2D context rather than through THREE.Color. THREE converts
+  // sRGB to linear on construction (three >= r155 colour management), which is right for a
+  // material and wrong for ImageData: `--accent` #6d93ff came out as rgb(39,74,254) — darker and
+  // far more saturated than the token, and 2.5:1 against the tile instead of the 5.6:1 the token
+  // itself gets. Assigning to fillStyle also normalises any CSS colour form to #rrggbb.
+  bctx.fillStyle = accent || '#6d93ff';
+  const hex = String(bctx.fillStyle);
+  const r8 = parseInt(hex.slice(1, 3), 16),
+    g8 = parseInt(hex.slice(3, 5), 16),
+    b8 = parseInt(hex.slice(5, 7), 16);
   // Depth to brightness, nearest at full accent and farthest at NEAR_FAR_FLOOR of it. One hue
   // throughout, so the thumbnail still reads as accent chrome rather than as a tiny render.
   const spanZ = maxZ - minZ || 1;
   for (let i = 0; i < depth.length; i++) {
+    // Uncovered pixels stay transparent but keep the accent RGB. Leaving them at 0,0,0 makes the
+    // browser's downscale blend every edge toward black, which darkens and over-saturates the
+    // whole silhouette — sampled off the rendered thumbnail at #2546f1 against an accent of
+    // #6d93ff, and only 2.3:1 against the tile behind it.
+    img.data[i * 4] = r8;
+    img.data[i * 4 + 1] = g8;
+    img.data[i * 4 + 2] = b8;
     if (depth[i] === -Infinity) continue;
     const t = NEAR_FAR_FLOOR + (1 - NEAR_FAR_FLOOR) * ((depth[i] - minZ) / spanZ);
     img.data[i * 4] = Math.round(r8 * t);
@@ -256,11 +286,11 @@ function renderSilhouette(): HTMLCanvasElement | null {
 export function refreshShapeThumb(): void {
   const el = $('#shape-thumb');
   if (!el) return;
-  if (state.shapeKind !== 'assembly') {
-    el.innerHTML = '';
-    cacheKey = null;
-    return;
-  }
+  // Not our box to touch outside assembly mode: the flat kinds keep their glyph, which
+  // setShapeThumb has already painted. Clearing here instead emptied it whenever a part finished
+  // loading after the user had switched away — start a 13-part chair, pick Disc, and the next
+  // per-part notification wiped the disc.
+  if (state.shapeKind !== 'assembly') return;
   const key = thumbKey();
   if (!key) {
     el.innerHTML = '';
