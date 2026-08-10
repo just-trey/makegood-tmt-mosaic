@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The thumbnail beside the Part dropdown is now the part.** It was one of a
+  few hand-drawn glyphs chosen by how artwork is fitted rather than by what the
+  part looks like, so the footrest, the hubcap and the chair all showed the same
+  rectangle. It is now drawn from the loaded mesh, so it is right for every part
+  and stays right when a part is re-packed. Every part is shown from the same
+  three-quarter angle, the way a CAD tool shows a part thumbnail: seen face-on
+  the wheel and the hubcap were both just a circle, and from the side one is
+  visibly a thick wheel and the other a thin cap. It is also drawn at your
+  display's real pixel density and given a defined edge, so it is no longer
+  soft on a scaled display. It is drawn in a neutral rather than the accent
+  blue, which is reserved for showing what's selected — and which was also the
+  dimmer of the two against the tile behind it.
+
 ### Added
 
 - **Hubcap part, built to the size you choose.** A new part in the dropdown,

@@ -723,7 +723,8 @@ input[type='checkbox'] {
   align-items: center;
   justify-content: center;
 }
-.shape-thumb svg {
+.shape-thumb svg,
+.shape-thumb canvas {
   width: 30px;
   height: 30px;
   display: block;
