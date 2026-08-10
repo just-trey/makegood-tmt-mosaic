@@ -105,14 +105,12 @@ pointed at it. What closing it would take: decide the selection treatment first 
 dimmed surroundings is the conventions' own suggestion), then apply it wherever selection is drawn
 — the placement frame is the known instance, not necessarily the only one.
 
-A second candidate, flagged rather than fixed while rendering the part thumbnail from the part's
-own mesh (`src/ui/shapeThumb.ts`): the silhouette is painted entirely in `--accent`, depth-shaded
-between 70% and 100% of it, which is the same hue this section says selection must not use. The
-counter-argument is that the thumbnail is chrome describing the part rather than a selection
-affordance, and one hue throughout is what keeps a 30px picture reading as an icon instead of a
-tiny render — so it may not be an instance of this problem at all. Deciding that is the same
-"decide the treatment first" step above; if the answer is "not accent", the fix is a neutral fill
-(`--text-2` or panel-relative grey) in the same function that reads `--accent` today.
+One instance is already closed: the part thumbnail's silhouette (`src/ui/shapeThumb.ts`) was
+painted in `--accent` and is now `--text-dim`. Worth knowing for the rest of this section, because
+the two considerations pointed the same way rather than trading off — measured off the rendered
+pixels, the neutral is also the more legible fill (7.3:1 nearest against the accent's 5.3:1), and
+the accent's farthest shaded surface was 2.9:1 on the hubcap, under WCAG's 3:1 non-text minimum.
+Don't assume the remaining instances cost legibility to fix.
 
 ## Filaments are presented as an unlabelled swatch grid, and the slot count only appears in a failure
 

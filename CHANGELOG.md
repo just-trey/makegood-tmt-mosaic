@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the wheel and the hubcap were both just a circle, and from the side one is
   visibly a thick wheel and the other a thin cap. It is also drawn at your
   display's real pixel density and given a defined edge, so it is no longer
-  soft on a scaled display.
+  soft on a scaled display. It is drawn in a neutral rather than the accent
+  blue, which is reserved for showing what's selected — and which was also the
+  dimmer of the two against the tile behind it.
 
 ### Added
 

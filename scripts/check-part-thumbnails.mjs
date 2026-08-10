@@ -52,6 +52,8 @@ const MIN_DIFF = 0.1;
  * narrowed it). Anything above 1.0 here means a ramped boundary is back.
  */
 const MAX_EDGE = 1.0;
+/** WCAG's non-text contrast minimum. The silhouette is a picture, so this is the applicable bar. */
+const MIN_CONTRAST = 3;
 
 /**
  * Wait for the kind to finish arriving: the app's own idle counter, then the triangle readout
@@ -113,8 +115,47 @@ async function readThumb(page) {
       h: c.height,
       px: Array.from(ctx.getImageData(0, 0, c.width, c.height).data),
       tris: document.querySelector('#stat-tris')?.textContent || '',
+      // The tile the silhouette is read against, resolved by the browser so the contrast numbers
+      // below are against what is actually painted rather than against a token name.
+      tile: (() => {
+        const probe = document.createElement('canvas').getContext('2d');
+        probe.fillStyle = getComputedStyle(box).backgroundColor;
+        const h = String(probe.fillStyle);
+        return [1, 3, 5].map((o) => parseInt(h.slice(o, o + 2), 16));
+      })(),
     };
   });
+}
+
+/**
+ * WCAG contrast between the silhouette's brightest and dimmest covered pixels and the tile behind
+ * them, sampled off the rendered thumbnail rather than computed from the token.
+ *
+ * Sampling is the point: the last two colour bugs here were both invisible to a reading of the
+ * token. The accent was written through THREE.Color and arrived in linear space (2.5:1 where the
+ * token gets 5.6:1), and uncovered pixels left at 0,0,0 dragged every downscaled edge toward black
+ * (2.3:1). Both would have passed any check that trusted the CSS value.
+ */
+const lum = (r, g, b) => {
+  const c = [r, g, b].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+
+function contrastRange(px, tile) {
+  const bg = lum(...tile);
+  let lo = Infinity,
+    hi = -Infinity;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] < 128) continue;
+    const l = lum(px[i], px[i + 1], px[i + 2]);
+    if (l < lo) lo = l;
+    if (l > hi) hi = l;
+  }
+  return hi < 0 ? null : { near: ratio(hi, bg), far: ratio(lo, bg) };
 }
 
 /**
@@ -236,10 +277,21 @@ try {
         );
       }
       t.edge = boundaryGradient(t.px, t.w, t.h);
+      t.contrast = contrastRange(t.px, t.tile);
       console.log(
         `asm:${kind}  ${t.tris}  tile ${t.tileW}px  canvas ${t.cssW}x${t.cssH} CSS  ` +
-          `backing ${t.w}x${t.h}  dpr ${t.dpr}  boundary ${t.edge.toFixed(2)}px`,
+          `backing ${t.w}x${t.h}  dpr ${t.dpr}  boundary ${t.edge.toFixed(2)}px  ` +
+          `contrast ${t.contrast.near.toFixed(1)}:1 near / ${t.contrast.far.toFixed(1)}:1 far`,
       );
+      // The silhouette is a picture, not text, so 3:1 (WCAG non-text contrast) is the bar the
+      // farthest-away surface has to clear — it is the dimmest thing on screen that still has to
+      // read as part of the shape.
+      if (t.contrast.far < MIN_CONTRAST) {
+        fail(
+          `asm:${kind}: farthest surface is ${t.contrast.far.toFixed(2)}:1 against its tile, ` +
+            `under the ${MIN_CONTRAST}:1 bar`,
+        );
+      }
       if (t.edge > MAX_EDGE) {
         fail(
           `asm:${kind}: boundary resolves over ${t.edge.toFixed(2)} device px, over the ` +

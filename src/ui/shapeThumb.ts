@@ -55,6 +55,28 @@ export function thumbPixelSizes(ratio: number = dpr()): { out: number; buffer: n
 /** Fraction of the box the silhouette's longer axis fills, leaving the glyphs' own optical margin. */
 const FILL = 0.86;
 /**
+ * The token the silhouette is painted in, and the hex to fall back to if it ever reads empty.
+ *
+ * Neutral, not `--accent`, and that is a decision rather than a default. Convention 19 of
+ * docs/ui-conventions.md reserves the accent hue for selection, on the grounds that blue is also a
+ * filament a user owns — and this thumbnail sits beside the Part dropdown, where an accent-filled
+ * picture of the part reads as "this one is selected" rather than as "this is the part". The
+ * counter-argument (it is chrome describing the part, not a selection affordance) was put to the
+ * maintainer with the alternative and lost; accent stays reserved for actual selection.
+ *
+ * It is also the more legible of the two, which was not the expected result. Both were measured
+ * off the rendered pixels against the `--panel-2` tile, same camera and same edge treatment:
+ *
+ *   --text-dim  7.3:1 nearest (every kind), 3.9-4.6:1 farthest
+ *   --accent    5.3:1 nearest, 2.9-3.5:1 farthest
+ *
+ * The accent's farthest surface on the hubcap is 2.9:1 — under WCAG's 3:1 non-text minimum, on
+ * two of six measurements. So the rule and the measurement agree here rather than trading off.
+ * The live check re-measures every run and holds the 3:1 bar (scripts/check-part-thumbnails.mjs).
+ */
+const THUMB_TOKEN = '--text-dim';
+const THUMB_FALLBACK = '#aab3cf';
+/**
  * The thumbnail's camera, as an angle around and above the part's front. One fixed pair for every
  * kind, which is what keeps four thumbnails comparable to each other rather than four separately
  * flattering portraits — and is why every CAD tool's part thumbnails look alike.
@@ -74,11 +96,15 @@ const FILL = 0.86;
 const THUMB_AZIMUTH_RAD = (45 * Math.PI) / 180;
 const THUMB_ELEVATION_RAD = (30 * Math.PI) / 180;
 /**
- * How dark the farthest surface goes, as a fraction of the accent. The shading has to read as form
- * without dropping the silhouette's contrast against the `--panel-2` tile behind it. Sampled off
- * the rendered thumbnails: nearest 5.2:1, farthest 3.4:1. (The 2.5:1 a review measured before this
- * was the linear/sRGB bug below, not this constant — the whole silhouette was too dark, gradient
- * and all.)
+ * How dark the farthest surface goes, as a fraction of THUMB_TOKEN. The shading has to read as
+ * form without dropping the silhouette's contrast against the `--panel-2` tile behind it. Sampled
+ * off the rendered thumbnails: nearest 7.3:1, farthest 3.9-4.6:1 depending on how much depth the
+ * kind spans. (The 2.5:1 a review once measured was the linear/sRGB bug below, not this constant —
+ * the whole silhouette was too dark, gradient and all.)
+ *
+ * 0.7 has headroom against the 3:1 floor now but did not on the accent it was tuned against, where
+ * the hubcap's farthest surface came out at 2.9:1. Lowering it costs contrast at the far end
+ * first, so the live check is the thing to re-run if it ever moves.
  */
 const NEAR_FAR_FLOOR = 0.7;
 
@@ -293,30 +319,30 @@ function renderSilhouette(): HTMLCanvasElement | null {
     }
   }
 
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const fill = getComputedStyle(document.documentElement).getPropertyValue(THUMB_TOKEN).trim();
   const big = document.createElement('canvas');
   big.width = px;
   big.height = px;
   const bctx = big.getContext('2d');
   if (!bctx) return null;
   const img = bctx.createImageData(px, px);
-  // Read the accent back through the 2D context rather than through THREE.Color. THREE converts
+  // Read the token back through the 2D context rather than through THREE.Color. THREE converts
   // sRGB to linear on construction (three >= r155 colour management), which is right for a
-  // material and wrong for ImageData: `--accent` #6d93ff came out as rgb(39,74,254) — darker and
-  // far more saturated than the token, and 2.5:1 against the tile instead of the 5.6:1 the token
-  // itself gets. Assigning to fillStyle also normalises any CSS colour form to #rrggbb.
-  bctx.fillStyle = accent || '#6d93ff';
+  // material and wrong for ImageData: the accent this used to draw in came out as rgb(39,74,254)
+  // against a token of #6d93ff — darker and far more saturated, and 2.5:1 against the tile instead
+  // of 5.6:1. Assigning to fillStyle also normalises any CSS colour form to #rrggbb.
+  bctx.fillStyle = fill || THUMB_FALLBACK;
   const hex = String(bctx.fillStyle);
   const r8 = parseInt(hex.slice(1, 3), 16),
     g8 = parseInt(hex.slice(3, 5), 16),
     b8 = parseInt(hex.slice(5, 7), 16);
-  // Depth to brightness, nearest at full accent and farthest at NEAR_FAR_FLOOR of it. One hue
-  // throughout, so the thumbnail still reads as accent chrome rather than as a tiny render.
+  // Depth to brightness, nearest at the full token and farthest at NEAR_FAR_FLOOR of it. One hue
+  // throughout, so the thumbnail still reads as chrome rather than as a tiny render.
   const spanZ = maxZ - minZ || 1;
   for (let i = 0; i < depth.length; i++) {
-    // Uncovered pixels stay transparent but keep the accent RGB. Leaving them at 0,0,0 makes the
+    // Uncovered pixels stay transparent but keep the fill RGB. Leaving them at 0,0,0 makes the
     // browser's downscale blend every edge toward black, which darkens and over-saturates the
-    // whole silhouette — sampled off the rendered thumbnail at #2546f1 against an accent of
+    // whole silhouette — measured back when this drew in the accent, at #2546f1 against a token of
     // #6d93ff, and only 2.3:1 against the tile behind it.
     img.data[i * 4] = r8;
     img.data[i * 4 + 1] = g8;
