@@ -42,6 +42,16 @@ const MATTERS = ['wheel', 'hubcap'];
  * this number.
  */
 const MIN_DIFF = 0.1;
+/**
+ * Widest the boundary may ramp, in device pixels.
+ *
+ * 1.0 is not a tuned threshold — it is the floor. The boundary is decided on the device grid with
+ * binary alpha, so no pixel is ever partially covered and every crossing is exactly one pixel
+ * wide. The measurement was 2.13 / 2.03 / 2.08 / 2.04 across the four kinds beforehand (and 2.14
+ * at dpr 1, 2.09 at dpr 2 — the ramp is the downscale filter's footprint, so more samples never
+ * narrowed it). Anything above 1.0 here means a ramped boundary is back.
+ */
+const MAX_EDGE = 1.0;
 
 /**
  * Wait for the kind to finish arriving: the app's own idle counter, then the triangle readout
@@ -105,6 +115,39 @@ async function readThumb(page) {
       tris: document.querySelector('#stat-tris')?.textContent || '',
     };
   });
+}
+
+/**
+ * Mean width, in device pixels, of the alpha ramp across the silhouette's boundary.
+ *
+ * This is the number that says "sharp" or "blobby", so it is the number reported. A boundary that
+ * goes from opaque straight to transparent between two neighbouring device pixels measures 1. Two
+ * intermediate pixels of partial alpha measure 3, which is the blur a small mark reads as soft.
+ *
+ * Measured along rows and columns both: every scanline is reduced to the positions where it is
+ * definitely inside (alpha >= 230) or definitely outside (<= 25), and each adjacent inside/outside
+ * pair contributes the gap between them. A diagonal edge reads up to sqrt(2) wider than an
+ * axis-aligned one, which is why this is only ever compared against another run of itself.
+ */
+const OPAQUE = 230;
+const CLEAR = 25;
+function boundaryGradient(px, w, h) {
+  const gaps = [];
+  const scan = (steps, lines, at) => {
+    for (let l = 0; l < lines; l++) {
+      let prev = null;
+      for (let s = 0; s < steps; s++) {
+        const a = px[at(l, s) * 4 + 3];
+        const side = a >= OPAQUE ? 'in' : a <= CLEAR ? 'out' : null;
+        if (!side) continue;
+        if (prev && prev.side !== side) gaps.push(s - prev.s);
+        prev = { side, s };
+      }
+    }
+  };
+  scan(w, h, (y, x) => y * w + x);
+  scan(h, w, (x, y) => y * w + x);
+  return gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0;
 }
 
 /**
@@ -192,10 +235,17 @@ try {
             `${(drift * 100).toFixed(1)}% of pixels) — the capture was mid-load`,
         );
       }
+      t.edge = boundaryGradient(t.px, t.w, t.h);
       console.log(
         `asm:${kind}  ${t.tris}  tile ${t.tileW}px  canvas ${t.cssW}x${t.cssH} CSS  ` +
-          `backing ${t.w}x${t.h}  dpr ${t.dpr}`,
+          `backing ${t.w}x${t.h}  dpr ${t.dpr}  boundary ${t.edge.toFixed(2)}px`,
       );
+      if (t.edge > MAX_EDGE) {
+        fail(
+          `asm:${kind}: boundary resolves over ${t.edge.toFixed(2)} device px, over the ` +
+            `${MAX_EDGE} bar — the silhouette reads soft`,
+        );
+      }
       // The rule, stated the way it has to hold on any display: the backing store is the canvas's
       // own CSS box in device pixels. Asserted against what the page measures, not against the
       // constant in the source — reading THUMB_CSS_PX back would only prove the file compiled.

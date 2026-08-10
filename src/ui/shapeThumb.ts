@@ -20,9 +20,12 @@ import { $ } from './dom';
 /** Rendered box in CSS px — matches what the SVG glyphs occupied inside `.shape-thumb`. */
 const THUMB_CSS_PX = 30;
 /**
- * Supersampling factor for the silhouette mask before it is scaled into the box. Rasterizing at
- * the final size gives a hard-edged, visibly stepped outline at 30px; 4x costs a browser downscale
- * and is what makes the edge read as a part rather than as pixel art.
+ * Supersampling factor for the silhouette mask before it is scaled into the box.
+ *
+ * What it buys is the *interior*: the depth shading across a form arrives as a smooth gradient
+ * rather than as one flat value per device pixel. It no longer sets the boundary — drawEdge()
+ * resolves that on the device grid, because a downscaled boundary ramps over roughly two device
+ * pixels whatever the sample count.
  *
  * It multiplies the *device* pixel size, not the CSS one. Sized off CSS px it was a real 4x only
  * on a 1x display: at devicePixelRatio 1.5 the same 120px buffer landed on a 45px backing store,
@@ -337,7 +340,76 @@ function renderSilhouette(): HTMLCanvasElement | null {
   octx.imageSmoothingEnabled = true;
   octx.imageSmoothingQuality = 'high';
   octx.drawImage(big, 0, 0, outPx, outPx);
+  drawEdge(octx, depth, px, outPx, r8, g8, b8);
   return out;
+}
+
+/**
+ * Resolve the silhouette's boundary onto the device grid and outline it, over the downscaled fill.
+ *
+ * The fill has to come through a supersampled buffer — that is what gives the interior its smooth
+ * depth shading — but a boundary that arrives the same way is a ramp of partial alpha whatever the
+ * sample count, because it is the downscale filter's footprint and not the sampling that sets its
+ * width. Measured on the shipped thumbnails, it ramped over 2.1 device pixels at every ratio,
+ * which is the softness: at 30px a mark reads as sharp when its boundary is defined, which is why
+ * icons are outlined.
+ *
+ * So the boundary is decided here at device resolution, from the same supersamples the fill was
+ * averaged from: a device pixel is in when half its samples are covered, and the outermost ring of
+ * in-pixels is painted at full accent. Alpha is binary, so the transition is one pixel wide by
+ * construction rather than by tuning.
+ *
+ * The tradeoff is real and was the reason the supersample went in: a binary boundary steps where a
+ * ramped one blends. What makes it acceptable here is that only the boundary is binary — the
+ * shaded interior still arrives through the 4x downscale — so the steps are a 1px contour on a
+ * smooth form rather than the whole silhouette rendered as pixel art.
+ */
+function drawEdge(
+  ctx: CanvasRenderingContext2D,
+  depth: Float32Array,
+  px: number,
+  outPx: number,
+  r8: number,
+  g8: number,
+  b8: number,
+): void {
+  const cov = new Uint8Array(outPx * outPx);
+  const half = (SUPERSAMPLE * SUPERSAMPLE) / 2;
+  for (let y = 0; y < outPx; y++) {
+    for (let x = 0; x < outPx; x++) {
+      let n = 0;
+      for (let sy = 0; sy < SUPERSAMPLE; sy++) {
+        const row = (y * SUPERSAMPLE + sy) * px + x * SUPERSAMPLE;
+        for (let sx = 0; sx < SUPERSAMPLE; sx++) if (depth[row + sx] !== -Infinity) n++;
+      }
+      cov[y * outPx + x] = n >= half ? 1 : 0;
+    }
+  }
+  // Out of bounds counts as outside, so a silhouette running off the edge of the box is still
+  // outlined along it rather than left open.
+  const inside = (x: number, y: number): boolean =>
+    x >= 0 && y >= 0 && x < outPx && y < outPx && cov[y * outPx + x] === 1;
+
+  const img = ctx.getImageData(0, 0, outPx, outPx);
+  for (let y = 0; y < outPx; y++) {
+    for (let x = 0; x < outPx; x++) {
+      const i = (y * outPx + x) * 4;
+      if (!inside(x, y)) {
+        // Clearing the fill's own ramp is what makes the outline the boundary. Left in place it
+        // still reads as a soft halo outside a hard line, which is not sharper than the ramp — it
+        // is the ramp with a line drawn on it.
+        img.data[i + 3] = 0;
+        continue;
+      }
+      img.data[i + 3] = 255;
+      if (!inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1) || !inside(x, y + 1)) {
+        img.data[i] = r8;
+        img.data[i + 1] = g8;
+        img.data[i + 2] = b8;
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
 }
 
 /**

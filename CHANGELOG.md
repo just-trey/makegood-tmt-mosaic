@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   three-quarter angle, the way a CAD tool shows a part thumbnail: seen face-on
   the wheel and the hubcap were both just a circle, and from the side one is
   visibly a thick wheel and the other a thin cap. It is also drawn at your
-  display's real pixel density, so it is no longer soft on a scaled display.
+  display's real pixel density and given a defined edge, so it is no longer
+  soft on a scaled display.
 
 ### Added
 
