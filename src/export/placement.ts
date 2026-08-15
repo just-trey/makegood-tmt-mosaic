@@ -8,6 +8,7 @@ import {
   WHEEL_CAP_ROT_DEG,
   WHEEL_CAP_POS,
   WHEEL_PRIME_TOWER_DELTA,
+  FOOTREST_OBJECT_SETTINGS,
   FOOTREST_PLATE_R,
   FOOTREST_PRIME_TOWER_DELTA,
   type ExportPart,
@@ -57,7 +58,7 @@ export const PLACEMENT: Record<string, PartPlacement> = {
     plateHint: 1,
     plateR: FOOTREST_PLATE_R,
     primeTowerDelta: FOOTREST_PRIME_TOWER_DELTA,
-    objectSettings: { enable_support: '0' },
+    objectSettings: FOOTREST_OBJECT_SETTINGS,
   },
   ...CHAIR_PLACEMENT,
 };

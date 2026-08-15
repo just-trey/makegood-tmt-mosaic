@@ -55,8 +55,9 @@ export interface ExportPart {
    * with no key uses primeTowerDelta. */
   primeTowerDeltaByPlate?: Record<string, { x: number; y: number }>;
   /** Per-object Bambu print overrides written into model_settings.config as
-   * <metadata key value/> on this part's object (e.g. { brim_type: 'no_brim', enable_support: '0' }
-   * for the footrest). Baked from the part's reference 3MF; general per-part settings mechanism. */
+   * <metadata key value/> on this part's object (the footrest's are FOOTREST_OBJECT_SETTINGS;
+   * the chair's handles ask for a brim). Baked from the part's reference 3MF; general per-part
+   * settings mechanism. */
   objectSettings?: Record<string, string>;
   /** Project-wide Bambu settings this part's verified plate depends on, merged into
    * project_settings.config (e.g. `prime_tower_width` — the hubcap's tower clearance is only true
@@ -299,6 +300,16 @@ export const FOOTREST_PLATE_R = [
 // Held relative (via ExportPart.primeTowerDelta) so it lands in the same empty diagonal corner the
 // 45°-rotated part leaves open, on every printer.
 export const FOOTREST_PRIME_TOWER_DELTA = { x: 29.808863, y: 41.857863 };
+/**
+ * Per-object slicer overrides for the footrest, from the same verified reference: support off,
+ * because the 45° standing pose is what makes it printable without any (see FOOTREST_PLATE_R).
+ * Brim is off globally rather than per object — see `brim_type` in bambuProjectSettings.
+ *
+ * Exported so [tests/threemf.test.ts](../../tests/threemf.test.ts) builds its footrest from this
+ * value instead of retyping it. A hand-copied duplicate there would keep passing after this one
+ * changed, which is the opposite of what the assertion is for.
+ */
+export const FOOTREST_OBJECT_SETTINGS: Record<string, string> = { enable_support: '0' };
 
 /**
  * Hubcap plate placement, baked from two reference projects the maintainer verified in the slicer
@@ -797,8 +808,8 @@ ${items.join('\n')}
     cfg.push(`  <object id="${pl.cid}">`);
     cfg.push(`    <metadata key="name" value="${xmlEscape(pl.part.name)}"/>`);
     cfg.push(`    <metadata key="extruder" value="1"/>`);
-    // Per-part print overrides (support off / no brim on the footrest, etc.) — object-level
-    // metadata Bambu applies on top of the global project settings.
+    // Per-part print overrides (support off on the footrest, a brim on the chair's handles) —
+    // object-level metadata Bambu applies on top of the global project settings.
     for (const [key, value] of Object.entries(pl.part.objectSettings ?? {}))
       cfg.push(`    <metadata key="${xmlEscape(key)}" value="${xmlEscape(value)}"/>`);
     for (const s of pl.subs!) {

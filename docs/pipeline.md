@@ -419,9 +419,17 @@ onto the part's `ExportPart` by `resolvePlacement` in
   offset **relative to** the anchor part's own final position rather than an
   absolute coordinate, so the same relative layout reproduces on every plate
   size (`WHEEL_PRIME_TOWER_DELTA`, `FOOTREST_PRIME_TOWER_DELTA`).
-- `objectSettings` — per-part Bambu print overrides (e.g.
-  `{ brim_type: 'no_brim', enable_support: '0' }` on the footrest), written
-  into `model_settings.config` on top of the project-wide settings.
+- `objectSettings` — per-part Bambu print overrides, written into
+  `model_settings.config` on top of the project-wide settings. The footrest's
+  are `FOOTREST_OBJECT_SETTINGS` (`src/export/threemf.ts`); read the constant
+  rather than a copy of its value, which is what this line used to be. The
+  footrest's carry support only — brim is off project-wide via `brim_type` in
+  `bambuProjectSettings`, so adding a footrest brim override would be a second,
+  divergent source for a setting its verified reference sets once. Other parts
+  do override it where their own reference did: the chair's two handles set
+  `brim_type: 'outer_only'` with a `brim_width` (`src/export/chairPlacement.ts`),
+  which is a deliberate per-part exception to the project-wide default, not a
+  duplicate of it.
 
 Those constants are only handed back for a mesh matching the fingerprint they
 were verified against, which means **a generated part can never be vouched for
