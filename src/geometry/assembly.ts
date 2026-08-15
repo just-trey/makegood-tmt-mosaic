@@ -355,15 +355,22 @@ function placedBBoxQuad(parsed: ParsedSVG, place: (pt: number[]) => number[]): n
  * Every branch ends the same way — a single copy was placed — because that is what actually
  * happened to their part, and it is the same in all four.
  */
+/**
+ * One word for the repeated thing, throughout: "tile". Saying "copy" in the same breath is two
+ * terms for one concept inside a single message (convention 1). Second person, since this is UI
+ * copy and the README's voice rules ask for it.
+ *
+ * Shared rather than retyped because every fill fallback ends this way, including the
+ * extent-missing one that doesn't route through the refusal switch below.
+ */
+const FILL_FELL_BACK_TO_ONE_TILE = 'You have one tile instead.';
+
 export function fillRefusalMessage(
   designName: string,
   partName: string,
   reason: TileRefusal | undefined,
 ): string {
-  // One word for the repeated thing, throughout: "tile". Saying "copy" in the same breath is two
-  // terms for one concept inside a single message (convention 1). Second person, since this is UI
-  // copy and the README's voice rules ask for it.
-  const placed = 'You have one tile instead.';
+  const placed = FILL_FELL_BACK_TO_ONE_TILE;
   const design = `"${designName}"`;
   switch (reason) {
     case 'too-many-tiles':
@@ -837,7 +844,7 @@ export async function buildAssemblyGeometry(
           if (!extent) {
             warnBuild(
               `Couldn't measure the area to fill on "${part.name}", so "${artworks[ai].name || 'design'}" ` +
-                `can't be tiled across it. You have one tile instead. Please report this.`,
+                `can't be tiled across it. ${FILL_FELL_BACK_TO_ONE_TILE} Please report this.`,
             );
           } else {
             const refusal: { reason?: TileRefusal } = {};

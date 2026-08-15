@@ -219,12 +219,12 @@
             </p>
             <p>
               On an assembly part, each row also switches between <strong>Sticker</strong> and
-              <strong>Fill</strong>. Sticker places one copy of the design. Fill repeats it across
-              the whole surface — one repeat per SVG document, so a tileable design whose edges line
-              up comes out seamless. Scale sets how big each repeat is and Offset shifts the whole
-              pattern; at very small scales the fill is refused (with a warning) rather than run to
-              a halt. Colors still pool across every design in the scene, so a black pattern shares
-              its filament slot with black artwork elsewhere.
+              <strong>Fill</strong>. Sticker places the design once. Fill repeats it across the
+              whole part as tiles — one tile per SVG document, so a tileable design whose edges line
+              up comes out seamless. Scale sets how big each tile is and Offset shifts the whole
+              pattern; when a fill can't be tiled the app says why and leaves you one tile, rather
+              than running to a halt. Colors still pool across every design in the scene, so a black
+              pattern shares its filament slot with black artwork elsewhere.
             </p>
             <p>
               The chair body doesn't offer Fill for now — a single zone took over a minute and a

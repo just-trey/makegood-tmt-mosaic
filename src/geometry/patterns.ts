@@ -19,6 +19,10 @@ export interface TileCell {
  * Refuse to fill beyond this many tiles. A pattern scaled down far enough (5% on a chair panel)
  * would otherwise ask turf for tens of thousands of unions and hang the tab; the user sees a
  * warning and one tile instead.
+ *
+ * The number reaches the user twice: interpolated into the refusal message, and written out in
+ * docs/troubleshooting.md's heading for that message, which quotes the string as a reader would
+ * search for it. Change this and that heading is silently wrong — update it in the same commit.
  */
 export const MAX_FILL_TILES = 1024;
 
