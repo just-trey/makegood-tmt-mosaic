@@ -35,6 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   blue, which is reserved for showing what's selected — and which was also the
   dimmer of the two against the tile behind it.
 
+### Removed
+
+- **The "Drop STL/3MF here" target is gone from parts that loaded themselves.**
+  Dropping a file there replaced the mesh but kept the role, and every piece of
+  hand-verified export placement — plate, rotation, position, prime tower — is
+  keyed to the mesh, so the part silently fell back to a computed position
+  nobody had opened in a slicer. It is still there where the parts library isn't
+  reachable and dragging a file in is the only way to get a part at all. The
+  Advanced per-part face and alignment controls are untouched.
+
 ### Added
 
 - **Hubcap part, built to the size you choose.** A new part in the dropdown,
