@@ -152,9 +152,13 @@ Where writing goes — pick one, don't split a topic across two:
   Only keep a closed item here when it is still load-bearing for something
   open — an entry in a list whose own conclusion is that an audit is owed, say.
 
-- **`docs/findings/`** — one dated report per driven investigation: what was
-  measured or hunted, on which commit and machine, and what came back —
-  including the null results, which are the ones nobody else can reconstruct.
+- **`docs/findings/`** — one dated report per driven investigation, or per work
+  run that measured its way through several: what was measured or hunted, on
+  which commit and machine, and what came back — including the null results and
+  the wrong turns, which are the parts nobody else can reconstruct. A run report
+  earns its place here for the second of those: `main` keeps the conclusions in
+  code and CHANGELOG, and only the report says which of them were nearly
+  something else.
   A report is pinned to its run and never edited to stay current; when it
   changes what an open item claims, the pointer goes _from_ that item in
   `tech-debt.md` _to_ the report, and the item stays the thing you read first.
