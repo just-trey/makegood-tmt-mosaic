@@ -168,6 +168,14 @@ Where writing goes — pick one, don't split a topic across two:
   `roadmap.md`, or a convention — a cycle file is the record of the review,
   not the work list it produced.
 
+- **`docs/spikes/`** — one write-up per throwaway prototype: what was built to
+  answer a question, what it answered, and what it could not reach. The code is
+  thrown away and the write-up is the deliverable, so nothing here describes
+  shipped behaviour and nothing is built from it directly. A spike that turns
+  out to have found a defect promotes it out — the finding belongs in
+  `tech-debt.md` or `roadmap.md`, where someone will meet it again; a write-up
+  nobody re-reads is not a work list.
+
 - **DECISIONS-NEEDED.md** — a per-run inbox, never a document. An agent that
   hits something it cannot decide appends an entry with enough context to
   answer in one line, skips the item, and continues rather than blocking.

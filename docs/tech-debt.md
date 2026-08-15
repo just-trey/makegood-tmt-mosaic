@@ -1318,3 +1318,26 @@ bbox. Then erode the whole thing, which makes every hole's rim an edge for free 
 `erodeBoundary` and `splitAtBoundary` already take multi-ring features and need no
 change. Verify on a doughnut-shaped silhouette (inner rim prints in the artwork's colour)
 and on the wheel and footrest (clip and fill unchanged).
+
+## Convention 31 prescribes React files the design system deleted on purpose
+
+[ui-conventions.md](ui-conventions.md)'s convention 31 says a change needing a
+component the system lacks "proposes it as an addition — `Name.jsx`,
+`Name.d.ts`, `Name.prompt.md`". `design-system/README.md`'s Fidelity section
+says the `.jsx` and `.d.ts` files were deleted from the bundle permanently,
+because the app is vanilla TypeScript on Vite and can never import a React
+component. So the convention asks for an artifact set the design system
+forbids.
+
+The same Fidelity section also says, unconditionally, "Every component
+documented here has a live counterpart in the app" — which filing any proposal
+at all makes false. `docs/spikes/zone-first-selection.md` hit both halves at
+once when it proposed `ZoneListRow` and `FilamentSlotStrip`; titling those
+PROPOSED is a patch over the contradiction, not a resolution.
+
+**What closing it takes.** Decide where proposals live — a
+`components/proposed/` directory, or a Fidelity paragraph defining the tier as
+distinct from documented components — and then drop convention 31's
+`Name.jsx, Name.d.ts` clause, which is prescribing files this repo removed
+deliberately. Both documents are authoritative in their own domain, so this
+needs one edit to each rather than a reading that reconciles them.
