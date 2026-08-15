@@ -460,14 +460,6 @@ Two more things worth knowing before touching this:
   A blanket weld plus `computeVertexNormals()` was measured and rejected — it
   melted the embossed logo on the storage box; see `CREASE_ANGLE_RAD`.
 
-## The help dialog's open state doesn't track browser back-navigation
-
-Opening Help, clicking a table-of-contents anchor (`#h-export` etc.), then
-pressing the browser Back button returns the URL to `/` but leaves the
-`<dialog>` open — cosmetic, not functional (`edge-cases`-lens review,
-2026-08-02). Low priority; fix would be a `popstate` listener that closes
-the dialog when the hash it opened on disappears.
-
 ## Region computation is O(n²·len) per path
 
 ([regions.ts:357](../src/geometry/regions.ts#L357), `shapes.map(shapeToFeature)`,
