@@ -300,6 +300,13 @@ needs the accumulator-or-worker fix and the "Handle (left)" color loss below.
 Sticker on the chair is unaffected and was measured at 19.5s for a full
 five-zone rebuild on the same box, which is why only Fill was withheld.
 
+**Don't quote that 19.5s without saying at what design size.** It used a design
+covering the zones;
+[docs/findings/zone-rebuild-cost.md](findings/zone-rebuild-cost.md) reproduces it
+at 400% (17.0s) and measures an ordinary auto-fit sticker on all five zones at
+4.0s — a 5x spread on the same path. What is paid for is pocket area, not
+surfaces touched.
+
 ## The long assembly-mode rebuild has no cancel, and until session persistence lands the only escape destroys the work
 
 `#loading-overlay` (the "Rebuilding geometry…" curtain, `src/ui/overlay.ts`)
@@ -747,6 +754,14 @@ were never cleared per rebuild, also since fixed. So the seam remnant is still
 real geometry and still reaches `buildCutter`, but **no warning has actually
 been traced to it**. Confirm one before spending the fix on it.
 
+A deliberate hunt on 2026-08-08 failed to produce a sighting —
+[docs/findings/seam-sliver-sighting.md](findings/seam-sliver-sighting.md), 18
+checkerboard configurations across three cell densities, two scales and
+sub-millimetre offsets, then a finer rotated pass recording triangle and color
+counts so "no warnings" is a statement about a build that demonstrably ran. Zero
+cut-solid warnings throughout. That is not proof the remnant can't warn, but it
+is the cheap attempts already spent — read it before repeating them.
+
 ## Artwork can't wrap unbroken from one flank around the back to the other, and three ways of fixing it are measured dead ends
 
 The chair carries `left`, `right` and `back` as three zones, so a design
@@ -1032,20 +1047,27 @@ exactly this kind of quiet wrong answer. The gap is not rigor. It is that code
 gets reviewed and the things that check the code get trusted, so a checker that
 under-verifies is the last place anyone looks.
 
-No systematic audit has been done, but the first deliberate look paid: four of
+The first deliberate look paid: four of
 the five were found by tripping over them, and the fifth came from grepping the
 repo for every other `gh run`/`gh pr checks` invocation right after #125 landed.
 That took minutes and turned up a worse instance than the one that prompted it —
-a false green from the wrong commit, on the go-live action. Treat that as
-evidence the remaining audit is worth doing, not as evidence it's now done.
+a false green from the wrong commit, on the go-live action.
 
-Closing this means walking every place a success signal is derived indirectly
-and either asserting the property itself or making the ambiguous case fail
-loudly. Known starting points, none currently established as wrong:
-`waitForServer()` accepts any HTTP 200 on the port as "our preview is
-up"; `startPreview({ reuse: true })` deliberately trusts the caller about which
-build is listening, and nothing verifies it; smoke's opening wait treats a
-non-zero `#stat-tris` as "the right thing loaded".
+**The systematic audit was walked on 2026-08-08** —
+[docs/findings/indirect-success-signals.md](findings/indirect-success-signals.md),
+covering `scripts/`, `scripts/lib/`, `.github/workflows/`, `.husky/`, the five
+gates, the coverage floors and the `gh` waits in `.claude/skills/`. It found ten
+more instances (two confirmed by measurement, the rest by reading) and four
+things that looked like instances and held. The three starting points named
+here are all in it: `waitForServer()` and `startPreview({ reuse: true })` stand
+as written, and smoke's opening wait is finding 5. **Nothing in that report is
+fixed** — it is a survey, so this section stays open and its list of instances
+now lives there rather than growing here.
+
+Closing this still means walking every place a success signal is derived
+indirectly and either asserting the property itself or making the ambiguous case
+fail loudly. The report ranks its findings by how much rests on them, which is
+the order to take them in.
 
 ## Per-part export placement is a lookup table in [src/export/placement.ts](../src/export/placement.ts), not part of the part definition
 
