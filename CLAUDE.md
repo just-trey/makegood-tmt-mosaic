@@ -152,6 +152,14 @@ Where writing goes — pick one, don't split a topic across two:
   Only keep a closed item here when it is still load-bearing for something
   open — an entry in a list whose own conclusion is that an audit is owed, say.
 
+- **`docs/findings/`** — one dated report per driven investigation: what was
+  measured or hunted, on which commit and machine, and what came back —
+  including the null results, which are the ones nobody else can reconstruct.
+  A report is pinned to its run and never edited to stay current; when it
+  changes what an open item claims, the pointer goes _from_ that item in
+  `tech-debt.md` _to_ the report, and the item stays the thing you read first.
+  `tech-debt.md` says what is owed; a finding says what was seen.
+
 - **DECISIONS-NEEDED.md** — a per-run inbox, never a document. An agent that
   hits something it cannot decide appends an entry with enough context to
   answer in one line, skips the item, and continues rather than blocking.
