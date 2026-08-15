@@ -2,3 +2,8 @@ dist/
 node_modules/
 .smoke-out/
 package-lock.json
+
+# Per-developer Claude Code settings. Untracked and globally gitignored, so CI never sees it —
+# but prettier walks the working tree, so without this line `npm run format:check` fails locally
+# for anyone who has one, on every branch, while passing in CI.
+.claude/settings.local.json
