@@ -164,9 +164,9 @@ Not measured, and the one item in this group where that matters most: an arbitra
 either a genuine frame bug in the placement math or a rendering choice, and those close very
 differently. Establishing which comes before any fix — it touches placement, so treat it as
 geometry work rather than UI. The competing-affordances half is separable and is a UI decision.
-This is also the item most likely to overlap the already-tracked "Zone picking has no occlusion
-test," since all three are about the viewport not behaving like the direct-manipulation surface it
-looks like.
+This is the last of the group that made the viewport not behave like the direct-manipulation
+surface it looks like; the other one, "Zone picking has no occlusion test," is closed
+(`npm run check:zone-occlusion` re-measures it — by hand, it is not in CI).
 
 ## The browser-driven checks are only fast if Chromium finds a real GPU, and on WSL2 it does not find one by itself
 
@@ -408,9 +408,9 @@ so.
 Longer-standing defects against the same two features, each with its own
 section below: "Artwork can't wrap unbroken from one flank around the back to
 the other" (three measured dead ends), "The chair's zone sidecar is 1.7 MB
-raw", "The caster mounts have no design zone", "Zone picking has no occlusion
-test", "Zebra + Fill still loses one color on Handle (left)", and "Turf's tile
-union has a vertex ceiling, and nothing enforces it at runtime".
+raw", "The caster mounts have no design zone", "Zebra + Fill still loses one
+color on Handle (left)", and "Turf's tile union has a vertex ceiling, and
+nothing enforces it at runtime".
 
 **Infrastructure left behind by the hide, deliberately kept.** `AssemblyKind.hidden`
 still works, `renderShapeKindOptions()` still lists a hidden kind while it is
@@ -867,21 +867,31 @@ matches its triangulation within 0.3%, so it does not affect the current
 bake; classifying by winding sign instead is the fix if a future zone ever
 trips it.
 
-## Zone picking has no occlusion test
+## A part seam is a hairline the zone pick can't be aimed into
 
-([src/scene/zonePick.ts](../src/scene/zonePick.ts)) — it raycasts only the
-invisible chart meshes (three.js 0.160's `intersectObject` ignores
-`visible`, which is what makes picking work at all), but the real bodies
-aren't in the target list, so clicking a handle in front of a zone selects
-the zone behind it. Fix: raycast the visible parts too and reject a zone hit
-farther than the nearest solid hit. Gets worse as zones multiply — the chair
-went from 4 to 5 with the full-coverage re-author.
+Introduced by the occlusion test in [src/scene/zonePick.ts](../src/scene/zonePick.ts), and the
+price of it. Each part's zone chart stops at that part's own edge, and the chair's parts meet
+across a printed clearance whose widest measured value is 0.530mm — the chair's real seat-centre to
+seat-back gap, recorded in the `_note` of
+[scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json). Not
+`seamWeldTolMm`, which is **0.6**: that is the tolerance picked to clear the gap, and anyone sizing
+a bound against the wrong one of the two gets it wrong by 70 microns. A ray aimed
+exactly down a seam therefore passes _between_ the two charts, lands on the far part's chart, and
+finds the near part's edge wall in front of it — so the pick is correctly rejected, on a surface
+that renders as continuous. The result is a thin dead line along every seam.
 
-This is a prerequisite for the roadmap idea of making zones clickable
-_before_ artwork exists (see [docs/roadmap.md](roadmap.md)) — that flow puts
-zone-picking in front of a first-time user instead of behind a load-then-
-rebind step, so a wrong occlusion pick there is a first impression, not a
-power-user edge case. Fix this before building that.
+Measured 2026-08-08 by `npm run check:zone-occlusion` on the chair, `MOSAIC_GPU=1`, ANGLE D3D12
+(RTX 2060), 1748-sample grid at four viewpoints: **one** sample, at the centreline seam of the
+back panel, **3 px** of unpickable width. Nothing at the other three viewpoints. That check
+excuses a run up to `CLICK_MOVE_TOLERANCE_PX` (5px, the pointer slop the click model already
+treats as the same place) and fails anything wider, reporting the measured width either way — so
+this getting worse is a failing check, not a silent drift.
+
+Not worth fixing at 3px, and the two ways to would both cost more than they buy: widening
+`OCCLUSION_TOL_MM` past the seam clearance would also stop a genuinely adjacent part from
+occluding anything, and closing the gap in the pick surface means welding the charts across seams
+at runtime, which is the bake's job and would re-open the injectivity questions the zone split
+exists to avoid. Revisit if a future part's clearance is large enough to make the line visible.
 
 ## A Fill under a sticker overlaps just like two stickers do, and isn't checked
 

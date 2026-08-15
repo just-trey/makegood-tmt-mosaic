@@ -7,6 +7,7 @@ import {
   addSceneOverlay,
   getCamera,
   getDomElement,
+  getModelGroup,
   pointerToNDC,
   syncToModelGroup,
 } from './viewport';
@@ -17,6 +18,19 @@ import { track } from '../analytics/track';
 
 /** Pointer movement (px) below which a pointerdown→pointerup pair reads as a click, not a drag. */
 const CLICK_MOVE_TOLERANCE_PX = 5;
+
+/**
+ * How far in front of a zone chart a solid surface has to be before it counts as covering it.
+ *
+ * A chart's `positions3` are copied straight out of its part's own vertex buffer
+ * ([zoneCharts.ts](../geometry/zoneCharts.ts)), so before any cut the chart triangles and the
+ * body triangles under them are the same float32 values through the same world matrix — they tie
+ * exactly. After a cut they are Manifold's output for the same surface, which moves a vertex by
+ * at most that engine's own tolerance (~1e-4 mm on a part this size). 0.05 mm covers both with
+ * room to spare and is an eighth of a nozzle width, so it cannot hide an overlap anyone could
+ * print, let alone see.
+ */
+const OCCLUSION_TOL_MM = 0.05;
 
 interface PickTarget {
   mesh: THREE.Mesh;
@@ -37,15 +51,59 @@ let downPos: { x: number; y: number } | null = null;
 let downPointerId: number | null = null;
 let downSuppressed = false;
 
-function pick(e: PointerEvent): PickTarget | null {
+function pickAtNdc(ndc: THREE.Vector2): PickTarget | null {
   if (!targets.length) return null;
-  raycaster.setFromCamera(pointerToNDC(e), getCamera());
+  raycaster.setFromCamera(ndc, getCamera());
   const hits = raycaster.intersectObjects(
     targets.map((t) => t.mesh),
     false,
   );
   if (!hits.length) return null;
+  // Convention 12, "picking hits what is visible": the chart meshes above are invisible and the
+  // real bodies are not in that list, so on their own they answer "is there a zone anywhere along
+  // this ray", not "is there a zone under the cursor". Anything solid in front of the nearest
+  // chart hit means the user clicked that instead. Only the nearest chart needs testing — every
+  // other hit is farther, so whatever covers this one covers those too.
+  const limit = hits[0].distance - OCCLUSION_TOL_MM;
+  if (limit > 0) {
+    // Capping `far` at the chart is not just an early-out: it lets three's per-mesh bounding-sphere
+    // test discard whole parts sitting behind the click, which on the chair is most of them.
+    //
+    // What that costs, since onPointerMove runs this on every hover. Measured on the chair
+    // (368,330 tris, no artwork), 400 random points, MOSAIC_GPU=1: median 0.30ms either way — the
+    // cast below only runs where a chart was hit at all, 81 of the 400 — and p95 0.80 -> 5.5ms,
+    // worst 1.3 -> 9.5ms. The worst case is inside one 60fps frame, so this stayed a plain raycast
+    // rather than acquiring a BVH. Re-measure before adding a part with more triangles than the
+    // chair.
+    //
+    // The raycaster is a module singleton, so the cap has to come off even if the cast throws —
+    // otherwise every later pick silently finds nothing for the rest of the session.
+    let covered: boolean;
+    try {
+      raycaster.far = limit;
+      covered = raycaster.intersectObject(getModelGroup(), true).length > 0;
+    } finally {
+      raycaster.far = Infinity;
+    }
+    if (covered) return null;
+  }
   return targets.find((t) => t.mesh === hits[0].object) ?? null;
+}
+
+function pick(e: PointerEvent): PickTarget | null {
+  return pickAtNdc(pointerToNDC(e));
+}
+
+/**
+ * The zone a click at this normalized-device-coordinate point would select, by the same path the
+ * click itself takes. Exposed on `window.__mosaic` for
+ * [scripts/check-zone-occlusion.mjs](../../scripts/check-zone-occlusion.mjs): a real click also
+ * binds artwork and schedules a rebuild, so asking the question through one costs a rebuild per
+ * sample and the check needs hundreds. That script drives real clicks too, on the two named cases,
+ * so the two paths are checked against each other rather than this one being trusted alone.
+ */
+export function zoneIdAtNdc(x: number, y: number): string | null {
+  return pickAtNdc(new THREE.Vector2(x, y))?.zoneId ?? null;
 }
 
 function onPointerDown(e: PointerEvent): void {
@@ -122,7 +180,10 @@ export function refreshZonePickMeshes(): void {
       geo.setAttribute('position', new THREE.BufferAttribute(zone.chart.positions3, 3));
       geo.setIndex(new THREE.BufferAttribute(zone.chart.triangles, 1));
       const mesh = new THREE.Mesh(geo, pickMaterial!);
-      mesh.visible = false; // picking target only — never rendered
+      // Picking target only — never rendered. It stays hittable because three.js 0.160's
+      // intersectObject ignores `visible`; that is what makes this work at all, and also why
+      // pickAtNdc has to ask the model group separately whether anything is in front of it.
+      mesh.visible = false;
       xf.add(mesh);
       targets.push({ mesh, zoneId: zone.id });
       any = true;

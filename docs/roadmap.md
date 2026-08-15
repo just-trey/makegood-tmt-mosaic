@@ -20,10 +20,11 @@
   selectable surfaces on the model from the moment it loads, so "put this on
   the back" is one click before any file is chosen, instead of today's
   load-a-design-then-rebind-it-to-a-zone order (`vision`-lens review,
-  2026-08-02). Depends on fixing the zone-picking occlusion gap in
-  [docs/tech-debt.md](tech-debt.md) first — clicking a visible surface has to
-  reliably hit the zone behind it, not a farther one, before this is safe to
-  build. This is also conventions 9 and 15 of
+  2026-08-02). The occlusion gap this used to depend on is closed — a click no
+  longer reaches a zone behind whatever is in front of it.
+  `npm run check:zone-occlusion` re-measures it, but nothing runs that
+  automatically (it needs a browser and ~12 min), so re-run it by hand here.
+  This is also conventions 9 and 15 of
   [ui-conventions.md](ui-conventions.md) ("order follows the task, and the task
   starts with _where_, not _what_"; "files are dropped onto the thing they apply
   to"), whose conflicts table notes that today's `+zone` repeats one design onto

@@ -12,6 +12,8 @@ const sceneOverlays: THREE.Object3D[] = [];
 let ndc = new THREE.Vector2(0, 0);
 /** Replaced per test — initZonePicking() adds listeners, and they would otherwise accumulate. */
 let domElement = document.createElement('canvas');
+/** The visible model. Empty unless a test puts a solid in front of (or behind) the chart. */
+let modelGroup = new THREE.Group();
 
 vi.mock('../src/scene/viewport', () => ({
   addSceneOverlay: vi.fn((o: THREE.Object3D) => {
@@ -19,6 +21,7 @@ vi.mock('../src/scene/viewport', () => ({
   }),
   getCamera: vi.fn(() => camera),
   getDomElement: vi.fn(() => domElement),
+  getModelGroup: vi.fn(() => modelGroup),
   pointerToNDC: vi.fn(() => ndc),
   syncToModelGroup: vi.fn(),
   requestFrame: vi.fn(),
@@ -32,7 +35,7 @@ vi.mock('../src/ui/artworkListPanel', () => ({ renderArtworkList: vi.fn() }));
 vi.mock('../src/ui/fitPanel', () => ({ refreshFitInputsFromState: vi.fn() }));
 vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 
-import { initZonePicking, refreshZonePickMeshes } from '../src/scene/zonePick';
+import { initZonePicking, refreshZonePickMeshes, zoneIdAtNdc } from '../src/scene/zonePick';
 import { isGizmoDragging } from '../src/scene/designGizmo';
 import { scheduleRebuild } from '../src/app/scheduler';
 import { track } from '../src/analytics/track';
@@ -93,8 +96,24 @@ function clickAt(fromX = 0, fromY = 0, toX = fromX, toY = fromY, pointerId = 1):
 
 const boundZone = (): string | null => state.artworks[0]?.zone?.zoneId ?? null;
 
+/**
+ * Put a 60x60mm slab into the visible model at `z`, spanning the chart in x/y. The camera looks
+ * down -Z from z = +100, so a positive z is between the eye and the chart at z = 0.
+ */
+function solidAt(z: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(60, 60),
+    new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+  );
+  mesh.position.z = z;
+  modelGroup.add(mesh);
+  modelGroup.updateMatrixWorld(true);
+  return mesh;
+}
+
 beforeEach(() => {
   domElement = document.createElement('canvas');
+  modelGroup = new THREE.Group();
   sceneOverlays.length = 0;
   ndc = new THREE.Vector2(0, 0);
   camera.position.set(0, 0, 100);
@@ -317,6 +336,48 @@ describe('picking a zone in the viewport', () => {
     expect(scheduleRebuild).not.toHaveBeenCalled();
   });
 
+  // ui-conventions.md convention 12, "picking hits what is visible".
+  it('ignores a zone hidden behind a part in front of it', () => {
+    solidAt(50);
+
+    clickAt(10, 10);
+
+    expect(boundZone()).toBeNull();
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('still picks a zone whose own body is coincident with its chart', () => {
+    // The normal case, and the one the tolerance exists for: every chart lies exactly on the
+    // surface of the part it was baked from, so the two tie and the zone must survive.
+    solidAt(0);
+
+    clickAt(10, 10);
+
+    expect(boundZone()).toBe('front');
+  });
+
+  it('is not fooled by solid geometry behind the zone', () => {
+    solidAt(-50);
+
+    clickAt(10, 10);
+
+    expect(boundZone()).toBe('front');
+  });
+
+  it('picks the near zone rather than rejecting it when two zones stack', () => {
+    // Two charts along the same ray with nothing solid in front: the nearer one wins, and the
+    // farther one must not be mistaken for something covering it.
+    const near = zone('front');
+    const far = zone('back');
+    for (let i = 2; i < far.chart!.positions3.length; i += 3) far.chart!.positions3[i] = -30;
+    state.assembly.parts = [part({ zones: [near, far] })];
+    refreshZonePickMeshes();
+
+    clickAt(10, 10);
+
+    expect(boundZone()).toBe('front');
+  });
+
   it('retargets an artwork that is already bound elsewhere', () => {
     state.assembly.parts = [part({ zones: [zone('front')] })];
     refreshZonePickMeshes();
@@ -331,6 +392,31 @@ describe('picking a zone in the viewport', () => {
   });
 });
 
+describe('zoneIdAtNdc', () => {
+  // The hook scripts/check-zone-occlusion.mjs drives. It has to answer the same question a click
+  // does, or that check is measuring something the user never touches.
+  beforeEach(() => {
+    initZonePicking();
+    refreshZonePickMeshes();
+  });
+
+  it('answers with the zone a click at the same point would bind', () => {
+    expect(zoneIdAtNdc(0, 0)).toBe('front');
+  });
+
+  it('answers null off the model', () => {
+    expect(zoneIdAtNdc(0.95, 0.95)).toBeNull();
+  });
+
+  it('answers null where a part covers the zone, exactly as a click there does', () => {
+    solidAt(50);
+
+    expect(zoneIdAtNdc(0, 0)).toBeNull();
+    clickAt(10, 10);
+    expect(boundZone()).toBeNull();
+  });
+});
+
 describe('the clickability cursor hint', () => {
   beforeEach(() => {
     initZonePicking();
@@ -342,6 +428,14 @@ describe('the clickability cursor hint', () => {
     domElement.dispatchEvent(new PointerEvent('pointermove', { buttons: 0 }));
 
     expect(domElement.style.cursor).toBe('pointer');
+  });
+
+  it('offers no pointer over a zone that is covered by a part in front of it', () => {
+    solidAt(50);
+
+    domElement.dispatchEvent(new PointerEvent('pointermove', { buttons: 0 }));
+
+    expect(domElement.style.cursor).toBe('');
   });
 
   it('clears when hovering nothing', () => {
