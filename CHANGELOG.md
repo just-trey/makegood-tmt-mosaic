@@ -51,6 +51,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   tile (place separate designs). Naming the design matters where a part carries
   more than one, since both remedies act on whichever is selected. See
   [docs/troubleshooting.md](docs/troubleshooting.md).
+- **The selection frame in the 3D view is no longer accent blue.** It was drawn
+  in the same blue the app uses for its own controls, over artwork that is
+  frequently also blue — so "this is selected" and "this region prints blue"
+  looked alike in an app whose whole subject is which colour goes where. The
+  frame and its corner handles are now white. The rotate handle changes too: it
+  was a green matching no colour in the palette and is now the palette's cyan,
+  still telling itself apart from the scale handles. Nothing about the frame's
+  shape or how you drag it changed. The frame is still faint where it crosses a
+  light part — see [docs/tech-debt.md](docs/tech-debt.md).
 
 ### Removed
 
