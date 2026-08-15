@@ -12,8 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **The Help panel and the Fit hint now mention Flip V.** Both explained Flip H
   and stopped there, so the checkbox next to it was the one control in the Fit
   section nothing described — easy to read as decorative, or as doing the same
-  thing as its neighbour. Both now say it mirrors top-to-bottom, for artwork
-  that came in upside down.
+  thing as its neighbour. Both now say it mirrors top-to-bottom, and the Help
+  panel adds that Flip H and Flip V are mirrors rather than rotations: artwork
+  that imported upside down wants Rotation, since mirroring it would leave the
+  text reversed.
 
 ### Changed
 
