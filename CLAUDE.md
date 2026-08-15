@@ -160,6 +160,14 @@ Where writing goes — pick one, don't split a topic across two:
   `tech-debt.md` _to_ the report, and the item stays the thing you read first.
   `tech-debt.md` says what is owed; a finding says what was seen.
 
+- **`docs/review-cycles/`** — one dated file per `/review-cycle` run, written by
+  the skill, not by hand. Each pins the frozen build it judged and the slate of
+  lenses it ran, and the next cycle grades itself against the last one, so an
+  old cycle is evidence of what was true then and is never edited to stay
+  current. Findings that survive adjudication leave here for `tech-debt.md`,
+  `roadmap.md`, or a convention — a cycle file is the record of the review,
+  not the work list it produced.
+
 - **DECISIONS-NEEDED.md** — a per-run inbox, never a document. An agent that
   hits something it cannot decide appends an entry with enough context to
   answer in one line, skips the item, and continues rather than blocking.
