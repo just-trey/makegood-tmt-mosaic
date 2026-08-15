@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Help panel and the Fit hint now mention Flip V.** Both explained Flip H
+  and stopped there, so the checkbox next to it was the one control in the Fit
+  section nothing described — easy to read as decorative, or as doing the same
+  thing as its neighbour. Both now say it mirrors top-to-bottom, for artwork
+  that came in upside down.
+
 ### Changed
 
 - **The thumbnail beside the Part dropdown is now the part.** It was one of a
