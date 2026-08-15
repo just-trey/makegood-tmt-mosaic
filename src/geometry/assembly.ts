@@ -836,7 +836,8 @@ export async function buildAssemblyGeometry(
           const extent = mapper.fillExtent();
           if (!extent) {
             warnBuild(
-              `Couldn't measure the fill area on "${part.name}" — placing a single copy of the artwork instead.`,
+              `Couldn't measure the area to fill on "${part.name}", so "${artworks[ai].name || 'design'}" ` +
+                `can't be tiled across it. You have one tile instead. Please report this.`,
             );
           } else {
             const refusal: { reason?: TileRefusal } = {};
@@ -844,7 +845,9 @@ export async function buildAssemblyGeometry(
             // Named per design, not just per part: a part can carry several, both remedies write
             // fit state that only reaches the ACTIVE one, and warnings dedupe on the exact string
             // — so without the name two designs failing the same way on one part become one pill
-            // pointing at neither.
+            // pointing at neither. Two placements of the SAME design still collapse into one pill,
+            // since they share a name; distinguishing those needs the counted phrasing
+            // warnOverlappingDesigns uses ("Two placements of …"), which nothing asks for yet.
             if (!grid)
               warnBuild(
                 fillRefusalMessage(artworks[ai].name || 'design', part.name, refusal.reason),
