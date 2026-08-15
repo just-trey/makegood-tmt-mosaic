@@ -55,8 +55,9 @@ export interface ExportPart {
    * with no key uses primeTowerDelta. */
   primeTowerDeltaByPlate?: Record<string, { x: number; y: number }>;
   /** Per-object Bambu print overrides written into model_settings.config as
-   * <metadata key value/> on this part's object (e.g. { brim_type: 'no_brim', enable_support: '0' }
-   * for the footrest). Baked from the part's reference 3MF; general per-part settings mechanism. */
+   * <metadata key value/> on this part's object (the footrest's are FOOTREST_OBJECT_SETTINGS;
+   * the chair's handles ask for a brim). Baked from the part's reference 3MF; general per-part
+   * settings mechanism. */
   objectSettings?: Record<string, string>;
   /** Project-wide Bambu settings this part's verified plate depends on, merged into
    * project_settings.config (e.g. `prime_tower_width` — the hubcap's tower clearance is only true
