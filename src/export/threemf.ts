@@ -807,8 +807,8 @@ ${items.join('\n')}
     cfg.push(`  <object id="${pl.cid}">`);
     cfg.push(`    <metadata key="name" value="${xmlEscape(pl.part.name)}"/>`);
     cfg.push(`    <metadata key="extruder" value="1"/>`);
-    // Per-part print overrides (support off / no brim on the footrest, etc.) — object-level
-    // metadata Bambu applies on top of the global project settings.
+    // Per-part print overrides (support off on the footrest, a brim on the chair's handles) —
+    // object-level metadata Bambu applies on top of the global project settings.
     for (const [key, value] of Object.entries(pl.part.objectSettings ?? {}))
       cfg.push(`    <metadata key="${xmlEscape(key)}" value="${xmlEscape(value)}"/>`);
     for (const s of pl.subs!) {
