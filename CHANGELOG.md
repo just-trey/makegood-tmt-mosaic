@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   soft on a scaled display. It is drawn in a neutral rather than the accent
   blue, which is reserved for showing what's selected — and which was also the
   dimmer of the two against the tile behind it.
+- **A Fill that couldn't be repeated across a surface now says why.** One
+  message covered four different failures and told you to raise Scale for all
+  of them — right for one, and advice that cannot work for the other three.
+  Each now names the design, the part, its own cause and its own remedy: too
+  small to tile (raise Scale), a design with no extent one way (use one with
+  both), a collapsed placement (reset to auto-fit), and a part too curved to
+  tile (place separate designs). Naming the design matters where a part carries
+  more than one, since both remedies act on whichever is selected. See
+  [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ### Removed
 

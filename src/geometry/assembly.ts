@@ -56,6 +56,7 @@ import {
   tileFeature,
   type TileCell,
   type TileGrid,
+  type TileRefusal,
 } from './patterns';
 import { overlappingDesignPairs, type PlacedDesign } from './designOverlap';
 import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
@@ -340,6 +341,69 @@ function placedBBoxQuad(parsed: ParsedSVG, place: (pt: number[]) => number[]): n
     [b.maxX, b.maxY],
     [b.minX, b.maxY],
   ].map(place);
+}
+
+/**
+ * What to tell the user when a Fill couldn't be repeated across a part, per cause.
+ *
+ * There are four ways `tileCoverage` refuses and they used to share one message, which told
+ * everybody to raise Scale. That is the remedy for exactly one of them; on the others it is advice
+ * that cannot work, offered instead of the thing that would. Conventions 2 and 3 of
+ * docs/ui-conventions.md: name something the user can act on, and state one problem with one
+ * primary remedy.
+ *
+ * Every branch ends the same way — a single copy was placed — because that is what actually
+ * happened to their part, and it is the same in all four.
+ */
+/**
+ * One word for the repeated thing, throughout: "tile". Saying "copy" in the same breath is two
+ * terms for one concept inside a single message (convention 1). Second person, since this is UI
+ * copy and the README's voice rules ask for it.
+ *
+ * Shared rather than retyped because every fill fallback ends this way, including the
+ * extent-missing one that doesn't route through the refusal switch below.
+ */
+const FILL_FELL_BACK_TO_ONE_TILE = 'You have one tile instead.';
+
+export function fillRefusalMessage(
+  designName: string,
+  partName: string,
+  reason: TileRefusal | undefined,
+): string {
+  const placed = FILL_FELL_BACK_TO_ONE_TILE;
+  const design = `"${designName}"`;
+  switch (reason) {
+    case 'too-many-tiles':
+      return (
+        `${design} is too small to fill "${partName}" — it would take more than ` +
+        `${MAX_FILL_TILES} tiles. ${placed} Raise Scale to fill it with fewer, larger tiles.`
+      );
+    // Not a missing viewBox: tileCellOf falls back to the artwork's own bounding box whenever the
+    // viewBox isn't positive in both axes, so reaching here means the DRAWING has no extent in one
+    // direction — every filled shape colinear, in a file with no usable viewBox either.
+    case 'no-tile-size':
+      return (
+        `${design} measures zero in one direction, so there is no tile to repeat across ` +
+        `"${partName}". ${placed} Use a design with both width and height.`
+      );
+    case 'not-invertible':
+      return (
+        `The placement of ${design} on "${partName}" has collapsed to no width or no height, so ` +
+        `its tiles can't be worked out. ${placed} Use "Reset to auto-fit" to put it back.`
+      );
+    case 'not-affine':
+      return (
+        `"${partName}" curves too much for ${design} to tile evenly across it. ${placed} Place ` +
+        'separate designs on it instead of filling it.'
+      );
+    // Only reachable if a future refusal path forgets to name itself. Says so rather than
+    // guessing a cause, since guessing wrong is the thing this function exists to stop.
+    default:
+      return (
+        `${design} couldn't be tiled across "${partName}", for a reason the app didn't record. ` +
+        `${placed} Please report this.`
+      );
+  }
 }
 
 /**
@@ -779,13 +843,21 @@ export async function buildAssemblyGeometry(
           const extent = mapper.fillExtent();
           if (!extent) {
             warnBuild(
-              `Couldn't measure the fill area on "${part.name}" — placing a single copy of the artwork instead.`,
+              `Couldn't measure the area to fill on "${part.name}", so "${artworks[ai].name || 'design'}" ` +
+                `can't be tiled across it. ${FILL_FELL_BACK_TO_ONE_TILE} Please report this.`,
             );
           } else {
-            grid = tileCoverage(place, tileCells[ai], extent);
+            const refusal: { reason?: TileRefusal } = {};
+            grid = tileCoverage(place, tileCells[ai], extent, refusal);
+            // Named per design, not just per part: a part can carry several, both remedies write
+            // fit state that only reaches the ACTIVE one, and warnings dedupe on the exact string
+            // — so without the name two designs failing the same way on one part become one pill
+            // pointing at neither. Two placements of the SAME design still collapse into one pill,
+            // since they share a name; distinguishing those needs the counted phrasing
+            // warnOverlappingDesigns uses ("Two placements of …"), which nothing asks for yet.
             if (!grid)
               warnBuild(
-                `Filling "${part.name}" would take more than ${MAX_FILL_TILES} tiles at this scale — placing a single copy instead. Raise Scale to fill the surface.`,
+                fillRefusalMessage(artworks[ai].name || 'design', part.name, refusal.reason),
               );
           }
         }

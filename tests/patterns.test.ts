@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_FILL_TILES, tileCoverage, tileFeature, type TileGrid } from '../src/geometry/patterns';
+import {
+  MAX_FILL_TILES,
+  tileCoverage,
+  tileFeature,
+  type TileGrid,
+  type TileRefusal,
+} from '../src/geometry/patterns';
 import { mapFeatureCoords } from '../src/geometry/manifold';
 import { planarArea, safeIntersect } from '../src/geometry/regions';
 import type { PolyFeature } from '../src/types';
@@ -96,6 +102,40 @@ describe('tileCoverage', () => {
   it('refuses a non-affine placement rather than laying a wrong grid', () => {
     const bent = (pt: number[]): number[] => [pt[0], pt[1] + pt[0] * pt[0] * 0.01];
     expect(tileCoverage(bent, CELL, { minX: 0, minY: 0, maxX: 30, maxY: 30 })).toBeNull();
+  });
+
+  // The four refusals share one return value and used to share one message. Whoever reports them
+  // needs to tell them apart, so each one has to name itself.
+  it('says which of the four refusals it was', () => {
+    const reasonFor = (
+      place: (pt: number[]) => number[],
+      cell: typeof CELL,
+      extent: { minX: number; minY: number; maxX: number; maxY: number },
+    ): TileRefusal | undefined => {
+      const out: { reason?: TileRefusal } = {};
+      expect(tileCoverage(place, cell, extent, out)).toBeNull();
+      return out.reason;
+    };
+    const wide = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+    expect(reasonFor((pt) => pt, { x: 0, y: 0, w: 0, h: 10 }, wide)).toBe('no-tile-size');
+    expect(reasonFor(() => [0, 0], CELL, wide)).toBe('not-invertible');
+    expect(
+      reasonFor((pt) => [pt[0], pt[1] + pt[0] * pt[0] * 0.01], CELL, {
+        minX: 0,
+        minY: 0,
+        maxX: 30,
+        maxY: 30,
+      }),
+    ).toBe('not-affine');
+    expect(reasonFor((pt) => pt, { x: 0, y: 0, w: 0.5, h: 0.5 }, wide)).toBe('too-many-tiles');
+  });
+
+  it('leaves the reason untouched when the fill tiles fine', () => {
+    const out: { reason?: TileRefusal } = {};
+    expect(
+      tileCoverage((pt) => pt, CELL, { minX: 0, minY: 0, maxX: 30, maxY: 30 }, out),
+    ).not.toBeNull();
+    expect(out.reason).toBeUndefined();
   });
 });
 

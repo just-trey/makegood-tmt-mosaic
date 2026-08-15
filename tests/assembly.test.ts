@@ -6,6 +6,7 @@ import {
   buildAssemblyGeometry,
   designAnchor,
   designMmPerUnit,
+  fillRefusalMessage,
   memoLargestDesignFace,
   rotatePointY,
   type ArtworkBuildInput,
@@ -644,6 +645,57 @@ describe('buildAssemblyGeometry', () => {
       expect((b.minZ + b.maxZ) / 2).toBeCloseTo((a.minZ + a.maxZ) / 2, 3);
     },
   );
+});
+
+describe('fillRefusalMessage', () => {
+  // docs/ui-conventions.md 2 and 3: name something the user can act on, one problem and one
+  // primary remedy. One message for four causes advised raising Scale for all of them.
+  const reasons = ['too-many-tiles', 'no-tile-size', 'not-invertible', 'not-affine'] as const;
+
+  it('gives every cause its own wording, naming the part', () => {
+    const msgs = reasons.map((r) => fillRefusalMessage('zebra.svg', 'Handle (left)', r));
+    expect(new Set(msgs).size).toBe(reasons.length);
+    msgs.forEach((m) => expect(m).toContain('Handle (left)'));
+    // Both remedies write fit state that only reaches the active design, so a pill that names
+    // only the part sends the user to change the wrong one.
+    msgs.forEach((m) => expect(m).toContain('zebra.svg'));
+  });
+
+  it('offers "Raise Scale" only where scaling up is what fixes it', () => {
+    const scaled = reasons.filter((r) => /Raise Scale/.test(fillRefusalMessage('d.svg', 'P', r)));
+    expect(scaled).toEqual(['too-many-tiles']);
+  });
+
+  it('states one remedy per message, not a list', () => {
+    for (const r of reasons) {
+      const m = fillRefusalMessage('d.svg', 'P', r);
+      // One remedy each, and every cause has to carry one — a message with none is a report
+      // rather than something the user can act on (convention 2).
+      const offers = [
+        /Raise Scale/,
+        /Reset to auto-fit/,
+        /Place separate designs/,
+        /Use a design with/,
+      ].filter((re) => re.test(m)).length;
+      // Convention 1: one term per concept. "tile" is the repeated thing; "copy" was a second
+      // word for it in the same sentence pair.
+      expect(m).not.toMatch(/\bcop(y|ies)\b/);
+      expect(offers).toBe(1);
+    }
+  });
+
+  it('tells two designs failing the same way on one part apart', () => {
+    // warnings.ts dedupes on the exact string, so these have to differ or the second is swallowed.
+    expect(fillRefusalMessage('a.svg', 'Top', 'too-many-tiles')).not.toBe(
+      fillRefusalMessage('b.svg', 'Top', 'too-many-tiles'),
+    );
+  });
+
+  it('says so rather than guessing when no cause was recorded', () => {
+    const m = fillRefusalMessage('d.svg', 'P', undefined);
+    expect(m).not.toMatch(/Raise Scale/);
+    expect(m).toContain("didn't record");
+  });
 });
 
 describe('fill mode', () => {
