@@ -339,9 +339,10 @@ function drawOverlay(frame: FaceFrame, pose: OverlayPose): void {
   const offMM =
     dU === 0 && dV === 0 ? frame.offSurfaceMM : frame.offSurfaceAt(dU, dV, OFF_SURFACE_TOL_MM);
   const off = offMM > OFF_SURFACE_TOL_MM;
-  // Resting state keeps the light-line/dark-handle pair (see FRAME_COLOR). The off-surface state
-  // drops it and takes both: that is a warning rather than a selection, and it wants to read as
-  // one thing gone wrong, not as a frame with a second colour in it.
+  // Line and handles move together, in both states: at rest they are both `--text` (see
+  // FRAME_COLOR), and off-surface they both take amber — that is a warning rather than a
+  // selection, and it wants to read as one thing gone wrong, not as a frame with a second colour
+  // in it.
   (frameLine.material as THREE.LineBasicMaterial).color.setHex(
     off ? OFF_SURFACE_COLOR : FRAME_COLOR,
   );
