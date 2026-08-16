@@ -337,6 +337,31 @@ describe('cross-part welding and seams', () => {
     expect(baked.templates[0].svg).toContain('<polyline');
   });
 
+  // The sheet tells the artist "the app clips artwork to exactly this outline", so it has to be
+  // drawn from the per-part clip regions. Drawn from the whole-zone lobes instead it disagreed:
+  // chained across a stitched seam those fan into spikes (48 lobes on the chair's left flank), and
+  // all five chair sheets shipped showing wedges of surface that does not exist next to white gaps
+  // over surface that does.
+  it('draws the grey silhouette from the clip regions', () => {
+    const d = /<path d="([^"]+)"/.exec(baked.templates[0].svg)![1];
+    const subpaths = d
+      .split('M')
+      .slice(1)
+      .map((sp) =>
+        sp
+          .replace(/Z\s*$/, '')
+          .split('L')
+          .map((p) => p.trim().split(/\s+/).map(Number)),
+      );
+    const loops = zone.charts.flatMap(
+      (c: { subRegions: { outer: number[][]; holes: number[][][] }[] }) =>
+        c.subRegions.flatMap((r) => [r.outer, ...r.holes]),
+    );
+    expect(subpaths).toHaveLength(loops.length);
+    const area = (ls: number[][][]) => ls.reduce((s, l) => s + Math.abs(loopArea(l)), 0);
+    expect(area(subpaths) / area(loops)).toBeCloseTo(1, 3);
+  });
+
   // The seam line says where the artwork gets split; the labels say which physical piece each side
   // ends up on, which is what decides whether putting a face across the join is a good idea.
   it('names the printed part on each side of the seam', () => {

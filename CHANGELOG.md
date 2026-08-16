@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The chair's five design zone templates now show the real printable
+  surface.** Each sheet was drawn from the whole-zone outline, which frays into
+  spikes wherever it crosses a printed-part seam: 48 separate pieces on the left
+  side alone. Sheets showed grey wedges over surface that is not there, beside
+  white gaps over surface that is. They are now drawn from the same per-part
+  regions the app clips artwork to, so the sheet matches what actually cuts.
+  Templates only: the baked zone data is unchanged, so nothing about the 3D
+  preview or the export moved.
 - **The Help panel and the Fit hint now mention Flip V.** Both explained Flip H
   and stopped, leaving the checkbox beside it undescribed. Both now say it
   mirrors top-to-bottom, and Help adds that Flip H/V are mirrors, not rotations:
