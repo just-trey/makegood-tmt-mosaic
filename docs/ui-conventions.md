@@ -62,6 +62,9 @@ adjectives, second person for UI copy) still apply; this is the term list.
    Help that explains a _mechanism_ (how zones and designs relate) belongs in the help dialog,
    and needing it in-panel means the mechanism isn't legible.
 
+4–6 decide _where_ an explanation goes and _whether_ it should exist. **Plain language (33–36
+below) decides how it is written**, and applies wherever it lands.
+
 ## Layout and disclosure
 
 7. The left sidebar holds the current context, not every context. A section that cannot act on
@@ -142,6 +145,53 @@ The failure mode here is adding. The standing complaint is features nobody needs
 32. Icons follow the system's existing rule: no hand-drawn SVG icon set. Where a part needs to
     be identified visually, a thumbnail rendered from the part is in-system; a hand-authored
     glyph is not.
+
+## Plain language
+
+Applies to every user-facing string: help dialog, panel copy, labels, warnings, notices, errors.
+Not to `docs/`, which are working notes, or to code comments.
+
+The audience is hobbyist printer owners and MakeGood volunteers, not CAD users
+([audience.md](audience.md)). Copy that needs CAD literacy to read is the same defect as a feature
+that needs CAD literacy to use, and it fails the same success measure.
+
+**The bar**: a maker who has never opened a 3D modeling tool can act on the sentence without
+looking anything up. Not "sounds simple" — _can act on it_.
+
+This does not contradict the design system's voice rule (precise, technical, units and specifics
+over adjectives). The two govern different things:
+
+33. **Plain words, real numbers.** Plainness governs vocabulary and sentence shape. The design
+    system governs the specifics inside them, and it still wins there. Dropping `0.2mm` to sound
+    friendlier violates this convention. So does keeping `clamped to the layer floor` to sound
+    precise. Say what happened in words the reader already owns, then give the number.
+34. **Name the thing on screen, not the step inside.** A user has a part, a color, a recess, a
+    file. They do not have a solid, a boolean, a mesh operation or a build stage. Convention 2
+    says this for warnings; 34 is the same rule over every string.
+35. **A term that can't be avoided is defined at first use, in a few plain words, once.** If it
+    cannot be defined in a few plain words, it is the wrong term.
+
+The vocabulary table at the top settles which of two ordinary words to use. This one settles terms
+that are not ordinary at all. Both columns are quoted from shipped copy, not invented pairs.
+
+| Say                                     | Not                                | Shipping today in           |
+| --------------------------------------- | ---------------------------------- | --------------------------- |
+| reduced to flat colors                  | quantized                          | Artwork hint, help dialog   |
+| near-identical copies of one color      | near-identical export artifacts    | help dialog                 |
+| colors that fade into each other        | shading ramps                      | help dialog                 |
+| the color most of the group is          | the dominant member                | help dialog, `colorList.ts` |
+| the box around it                       | its bounding box                   | help dialog                 |
+| angled edge                             | chamfered edge                     | help dialog                 |
+| draws the edges back around each color  | traces the result back to outlines | help dialog                 |
+| a design whose edges line up when tiled | a tileable design                  | help dialog                 |
+| Rebuilding the part…                    | Rebuilding geometry…               | `scheduler.ts` overlay      |
+| Couldn't cut the recess into <part>     | Couldn't build the cut solid       | assembly CSG warnings       |
+
+36. Numbers a user cannot act on are diagnostics, not copy, and live behind a disclosure that says
+    so. `face detected: normal (0.00, 1.00, 0.00), plane offset 24.25mm, 104-pt boundary` is
+    correctly placed (it sits under "Advanced: per-part face & alignment") and correctly worded
+    for what it is. Reading it as a convention-33 violation is a misread; moving it out from
+    behind that disclosure would be the violation.
 
 ---
 

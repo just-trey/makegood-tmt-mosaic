@@ -79,8 +79,14 @@ backed by real evidence: a live run, a real print, not another review pass.
   weaken it to make something compile.
 - Comments: see [Comments](#comments) below.
 - UI copy follows [docs/ui-conventions.md](docs/ui-conventions.md)
-  (vocabulary table, conventions 1-6) and the same sentence rules as docs:
-  short, no em dashes.
+  (vocabulary table, conventions 1-6, plain language 33-36) and the same
+  sentence rules as docs: short, no em dashes.
+- **Plain language is the bar for every user-facing string**: a maker who has
+  never opened a 3D modeling tool can act on it without looking anything up.
+  Plain words, real numbers: say it in words the reader owns, then give the
+  number. Never drop a measurement to sound friendlier. The jargon table in
+  conventions 33-36 carries the substitutions, and `ship-it` step 2b checks
+  them.
 - **Before changing what a shared value means** (`colorSettings`, a depth, a
   placement), open every reader of it, not just the one you are editing.
   - Changing it at one call site and reasoning only about that site caused
