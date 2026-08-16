@@ -138,11 +138,11 @@ type, spacing/radius, brand mark) and open directly in a browser.
 
 ### Mosaic — main tool screen (`ui_kits/mosaic/preview.html`)
 
-- **Purpose**: load an SVG, pick a base part, fit and merge detected colors into recess
-  depths, export an STL set.
+- **Purpose**: load an SVG, pick a part, fit and merge detected colors into recess
+  depths, export a print-ready 3MF.
 - **Layout**: CSS grid, `340px 1fr` columns × `64px 1fr` rows. Header spans both columns.
   Left sidebar (`#left`) is `var(--panel)`, scrollable, `--space-section` (16px) padding, holds
-  six stacked `Panel` sections in order: Artwork, Base part, Artwork fit, Depth, Colors detected,
+  six stacked `Panel` sections in order: Part, Artwork, Artwork fit, Depth, Colors detected,
   Export. Right side (`#right`) is the 3D viewport — `var(--viewport)` with a faint
   24px grid background, a HUD readout (top-left, monospace), a warning pill (bottom, full
   width), and a loading overlay (covers viewport when busy).
@@ -153,22 +153,23 @@ type, spacing/radius, brand mark) and open directly in a browser.
   mono, `--text-meta` (11px), `--text-dim`, no border or fill and no per-stat tone. `preview.html`
   draws them as bordered two-tone badges instead; that is mockup-only, and the `Badge` spec it
   implies was deleted (see Fidelity).
-- **Panel: Artwork** — Dropzone + "Load sample artwork" button (small, full width) + hint text
-  about flat-color-only support.
-- **Panel: Base part** — a native `<select>` (`#shape-kind`) holding one option per visible
+- **Panel: Part** — a native `<select>` (`#shape-kind`) holding one option per visible
   assembly kind, by name, plus "Disc (reference)" last. Disc shows Diameter/Thickness number
   inputs (mm). Assembly shows a "↻ Reload assembly" button, a "+ Add {role}" button per role,
   and a row per part with a drop target and a `<select>` for face index. Rect, round rect and
   STL-reference modes exist in the code but are deliberately unreachable — they are never
   written into the dropdown, so do not spec UI for them.
+- **Panel: Artwork** — Dropzone + "Load sample artwork" button (small, full width) + hint text
+  about flat-color-only support.
 - **Panel: Artwork fit** — Margin and Scale sliders with live `%` value labels + "Reset to
   auto-fit" button.
 - **Panel: Depth** — Default depth number input (mm) + "Recess bg too" checkbox.
 - **Panel: Colors detected** — a stacked ColorRow list (drag grip, swatch, hex, area %,
   "Merge with…" select, per-row depth input) + hint text. There is no bulk-select checkbox and
   no "Merge selected" button; merging is per-row. See `ColorRow.prompt.md`.
-- **Panel: Export** — primary full-width "Export STL set (.zip)" button (triggers the loading
-  overlay for ~900ms in the mockup) + hint text.
+- **Panel: Export** — primary full-width "Export print-ready 3MF" button (`#btn-export`, triggers
+  the loading overlay for ~900ms in the mockup) + a small full-width "Export STL set (.zip)"
+  button below it (`#btn-export-stl`, the fallback for other slicers) + hint text.
 
 ## Interactions
 
