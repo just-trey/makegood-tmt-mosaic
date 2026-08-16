@@ -53,11 +53,10 @@ export function loopToRing(loop: Loop, forceCCW?: boolean): Ring | null {
  * Build a turf (Multi)Polygon feature for one SVG shape (one <path> etc., possibly multiple
  * subpaths).
  *
- * Hole-vs-solid is resolved by geometric nesting depth (containment), not winding-direction
- * sign. SVG supports two fill rules: "nonzero" (authoring tools conventionally wind holes
- * opposite their exterior) and "evenodd" (a hole can legally share its exterior's winding —
- * common from Affinity Designer/Illustrator). Containment depth (odd nesting depth = hole,
- * even = solid island) gives the correct answer for both fill rules on any well-formed path.
+ * Hole-vs-solid is resolved by geometric nesting depth, not winding sign. SVG has two fill rules:
+ * "nonzero", where tools conventionally wind holes opposite their exterior, and "evenodd", where a
+ * hole can legally share its exterior's winding (common from Affinity Designer/Illustrator).
+ * Containment depth (odd = hole, even = solid island) is correct for both on any well-formed path.
  */
 export function shapeToFeature(shape: SVGShape): PolyFeature | null {
   const rings = shape.loops
@@ -82,23 +81,20 @@ export function shapeToFeature(shape: SVGShape): PolyFeature | null {
   /**
    * The point used to ask "is this ring inside that one".
    *
-   * A ring lies wholly inside or wholly outside any other ring of the same shape — they never
-   * cross — so in exact arithmetic any point of it answers for all of it. The one case that
-   * doesn't work is a probe sitting exactly *on* the other ring, where an even-odd ray cast is
-   * undefined; and a shape's rings do meet, at isolated points, all the time.
+   * Rings of one shape never cross, so in exact arithmetic any point of a ring answers for all of
+   * it. The exception is a probe sitting exactly *on* the other ring, where an even-odd ray cast
+   * is undefined, and a shape's rings do meet at isolated points all the time.
    *
-   * The first vertex is the worst possible choice there, and systematically so for traced artwork:
-   * `spliceChains` (raster/trace.ts) rotates every ring to start on a chain boundary, and a chain
-   * boundary is a junction — precisely a point where another ring passes through. Measured on a
-   * 28x28 three-way fixture, a 13-unit hole read as "outside" its own component on `raw[0]` alone
-   * (25 of its other 26 vertices, and all 26 edge midpoints, read inside), so it was emitted as a
-   * solid island rather than a hole: the component painted over its own cavity and swallowed the
-   * differently-coloured region living in it.
+   * The first vertex is the worst choice, systematically so for traced artwork: `spliceChains`
+   * (raster/trace.ts) rotates every ring to start on a chain boundary, which is a junction, so
+   * precisely where another ring passes through. Measured on a 28x28 three-way fixture, a 13-unit
+   * hole read as "outside" its own component on `raw[0]` alone, while 25 of its other 26 vertices
+   * and all 26 edge midpoints read inside. It was emitted as a solid island, painting over its own
+   * cavity and swallowing the differently-coloured region in it.
    *
-   * An edge midpoint fixes it because coincidence there needs the two rings to share a whole
-   * segment, not just a point — which the crack graph cannot produce (a component's outer ring and
-   * its hole rings are always different chains) and which was already broken for the vertex probe
-   * anyway. Computed once per ring, so this costs nothing in the quadratic loop below.
+   * An edge midpoint fixes it: coincidence there needs the rings to share a whole segment, which
+   * the crack graph cannot produce (a component's outer and hole rings are always different
+   * chains). Computed once per ring, so it costs nothing in the quadratic loop below.
    */
   const probeOf = (raw: Loop) => ({ x: (raw[0].x + raw[1].x) / 2, y: (raw[0].y + raw[1].y) / 2 });
 
@@ -215,10 +211,10 @@ export function cleanFeature(f: PolyFeature | null): PolyFeature | null {
 }
 
 /**
- * Planar shoelace area of a feature (exterior minus holes, per polygon). turf.area is geodesic —
- * it treats coordinates as lon/lat degrees, and SVG/mm coordinates far outside ±90° wrap its
- * spherical trig into garbage (including negative per-polygon areas) on real artwork. Every area
- * ratio and dominant-member comparison in the pipeline must use this instead.
+ * Planar shoelace area of a feature (exterior minus holes, per polygon). turf.area is geodesic: it
+ * reads coordinates as lon/lat degrees, and SVG/mm coordinates far outside ±90° wrap its spherical
+ * trig into garbage, including negative per-polygon areas, on real artwork. Every area ratio and
+ * dominant-member comparison in the pipeline must use this instead.
  */
 export function planarArea(f: PolyFeature | null): number {
   if (!f || !f.geometry) return 0;
@@ -238,11 +234,10 @@ export function planarArea(f: PolyFeature | null): number {
 }
 
 /**
- * Turf 6.5's bundled polygon-clipping recurses without bound when two inputs share edges whose
- * coordinates differ only at ~1e-14 (exactly what circle arcs vs. star-boundary regions
- * produce). Quantizing collapses those phantom distinctions, so on failure retry at decreasing
- * precision — 1e-10 mm is far below anything a printer can express, so retries are
- * geometrically free.
+ * Turf 6.5's bundled polygon-clipping recurses without bound when two inputs share edges differing
+ * only at ~1e-14, exactly what circle arcs against star-boundary regions produce. Quantizing
+ * collapses those phantom distinctions, so on failure retry at decreasing precision. 1e-10 mm is
+ * far below anything a printer can express, so retries are geometrically free.
  */
 export function boolOpWithRetry(
   fn: (a: PolyFeature, b: PolyFeature) => PolyFeature | null,
@@ -268,7 +263,7 @@ export function boolOpWithRetry(
 /**
  * Diagnostics from the boolean helpers, tee'd into the memoized pass's record (if one is running)
  * on the way to the warning list. computeNetRegionsByColor's result is cached across rebuilds, so
- * a cache hit has to replay them — see the cache-hit branch below.
+ * a cache hit has to replay them (see the cache-hit branch below).
  */
 let boolDiagnostics: string[] | null = null;
 
@@ -322,12 +317,11 @@ export function safeIntersect(
 /**
  * `safeIntersect`, but saying whether the clip actually happened.
  *
- * The fallback returns the region **unclipped**, which callers that only read `feat` cannot
- * distinguish from a successful clip. That mattered once the edge-cut-through rule started reading
- * "this polygon reaches past the face boundary" as "this polygon stands on the part's outer wall":
- * an unclipped region reaches past it everywhere, so a clipper failure turned a slightly oversized
- * recess into a hole cut clean through the part. Callers whose behavior depends on the input
- * really being bounded by the face ask for the flag.
+ * The fallback returns the region **unclipped**, indistinguishable from a successful clip to a
+ * caller that only reads `feat`. That matters to the edge-cut-through rule, which reads "reaches
+ * past the face boundary" as "stands on the part's outer wall": an unclipped region reaches past
+ * everywhere, so a clipper failure turned an oversized recess into a hole clean through the part.
+ * Callers depending on the input really being bounded by the face ask for the flag.
  */
 export function safeIntersectChecked(
   a: PolyFeature | null,
@@ -348,17 +342,17 @@ export function safeIntersectChecked(
 /** How long a boolean pass runs before yielding a frame to the browser. */
 export const YIELD_BUDGET_MS = 30;
 
-/** A macrotask yield (setTimeout, not a microtask) so the browser can repaint the progress
- * curtain between chunks — microtasks/Promise.resolve() would not unblock rendering. */
+/** A macrotask yield (setTimeout, not a microtask) so the browser can repaint the progress curtain
+ * between chunks. Promise.resolve() would not unblock rendering. */
 export function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve));
 }
 
 /**
- * Union a list of features via balanced pairwise merging (pairs, then pairs of pairs), yielding
- * to the browser on a time budget and reporting progress. A left-fold accumulation re-processes
- * the ever-growing accumulator on every step; the tree does the same math in O(log n) levels and
- * benchmarks 2–4x faster on dense designs. safeUnion's fallback semantics are preserved per merge.
+ * Union a list of features by balanced pairwise merging (pairs, then pairs of pairs), yielding on
+ * a time budget and reporting progress. A left fold re-processes the ever-growing accumulator
+ * every step; the tree does the same math in O(log n) levels and benchmarks 2-4x faster on dense
+ * designs. safeUnion's fallback semantics are preserved per merge.
  */
 export async function unionAllCooperative(
   features: (PolyFeature | null)[],
@@ -396,15 +390,12 @@ export async function unionAllCooperative(
  * (later elements occlude earlier ones).
  *
  * Visibility is f minus the accumulated union of everything painted above it. Subtracting each
- * later element individually (with a bbox pre-filter) is algebraically identical and looked
- * attractive, but benchmarked ~2x SLOWER on real artwork — full-canvas backgrounds and lineart
- * overlap everything, so the filter rarely prunes and the pairwise diffs multiply. The
- * accumulator stays.
+ * later element individually with a bbox pre-filter is algebraically identical but benchmarked ~2x
+ * SLOWER on real artwork: full-canvas backgrounds and lineart overlap everything, so the filter
+ * rarely prunes and the pairwise diffs multiply. The accumulator stays.
  *
- * This is the dominant cost of a rebuild (all the polygon booleans), so it runs cooperatively:
- * after every ~YIELD_BUDGET_MS of work it yields a frame and reports progress, keeping the tab
- * responsive and the "Rebuilding…" curtain live instead of freezing the main thread on a dense
- * SVG. See src/progress.ts and the scheduler.
+ * The dominant cost of a rebuild, so it runs cooperatively: every ~YIELD_BUDGET_MS it yields a
+ * frame and reports progress, keeping the tab responsive on a dense SVG. See src/progress.ts.
  */
 let regionsCacheKey: SVGShape[] | null = null;
 let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
@@ -416,13 +407,12 @@ export async function computeNetRegionsByColor(
 ): Promise<{
   byColor: Record<string, PolyFeature>;
 }> {
-  // `shapes` (ParsedSVG.shapes) is only ever assigned fresh from a parse and never mutated in
-  // place, so identity is a safe cache key — this is the dominant cost of a rebuild, and
-  // depth/fit/margin/color tweaks don't touch `shapes` at all.
+  // `shapes` (ParsedSVG.shapes) is always assigned fresh from a parse and never mutated in place,
+  // so identity is a safe cache key. Depth/fit/margin/color tweaks don't touch it at all.
   if (shapes === regionsCacheKey && regionsCacheVal) {
-    // The cached regions may be degraded ones a failed boolean fell back to. No op re-runs on a
-    // hit, so replay what the computing pass reported: the warnings are build-scoped and the
-    // rebuild that's now using these regions cleared them, and the degradation is still on screen.
+    // Cached regions may be degraded ones a failed boolean fell back to. No op re-runs on a hit,
+    // so replay what the computing pass reported: warnings are build-scoped, the rebuild now using
+    // these regions cleared them, and the degradation is still on screen.
     for (const m of regionsCacheDiagnostics) warnBuild(m);
     onProgress(1);
     return regionsCacheVal;
@@ -464,11 +454,11 @@ export async function computeNetRegionsByColor(
 }
 
 /**
- * Auto-merge slider stops. Index = slider value, 0 is "off". Thresholds are CIE76 ΔE cutoffs
- * measured against the stubs/ sample artwork (see the plan doc): Slight dedupes near-identical
- * export/anti-aliasing artifacts (pappa.svg's near-duplicate reds sit at ΔE 0.4) without
- * touching real color differences (snoopy.svg's closest pair is ΔE 91.7); Medium starts banding
- * intentional shading ramps; Strong collapses toward hue families.
+ * Auto-merge slider stops. Index = slider value, 0 is "off". CIE76 ΔE cutoffs measured against the
+ * stubs/ sample artwork. Slight dedupes near-identical export/anti-aliasing artifacts (pappa.svg's
+ * near-duplicate reds sit at ΔE 0.4) without touching real differences (snoopy.svg's closest pair
+ * is ΔE 91.7). Medium starts banding intentional shading ramps; Strong collapses toward hue
+ * families.
  */
 export const AUTO_MERGE_LEVELS = [
   { label: 'None', threshold: 0 },
@@ -480,9 +470,9 @@ export const AUTO_MERGE_LEVELS = [
 export interface ApplyColorMergesOptions {
   /** index into AUTO_MERGE_LEVELS; 0 or omitted = no auto-merge */
   autoMergeLevel?: number;
-  /** raw hexes assigned to the base material — excluded from regions entirely */
+  /** raw hexes assigned to the base material; excluded from regions entirely */
   baseColors?: string[];
-  /** raw hexes the user explicitly pulled out of a group — pinned as singletons */
+  /** raw hexes the user explicitly pulled out of a group; pinned as singletons */
   keptApart?: string[];
 }
 
@@ -510,15 +500,13 @@ class UnionFind {
 }
 
 /**
- * Resolve raw per-color regions into the final list of "regions to cut": base-assigned colors
- * are excluded outright, then manual merge groups and the auto-merge slider's ΔE clusters are
- * unioned together (either link fuses a pair), then `keptApart` pins are split back out as
- * singletons. Everything downstream (depth, geometry, export) treats a merged group exactly
- * like a normal color, keyed by a stable group id instead of a hex.
+ * Resolve raw per-color regions into the regions to cut. Base-assigned colors are excluded, then
+ * manual merge groups and the auto-merge slider's ΔE clusters are unioned (either link fuses a
+ * pair), then `keptApart` pins split back out as singletons. Everything downstream treats a merged
+ * group like a normal color, keyed by a stable group id instead of a hex.
  *
- * Auto-clusters are computed live from `byColor` on every call rather than persisted, which is
- * what makes the slider fully reversible: dragging it down re-splits colors instead of leaving
- * them stuck together.
+ * Auto-clusters are computed live from `byColor` per call, never persisted, which is what makes
+ * the slider reversible: dragging it down re-splits colors instead of leaving them stuck.
  */
 export function applyColorMerges(
   byColor: Record<string, PolyFeature>,
@@ -571,7 +559,7 @@ export function applyColorMerges(
       feat = feat ? safeUnion(feat, byColor[h]) : byColor[h];
     });
     if (!feat) return;
-    // The merged slot prints as a real artwork color, not a blended average — the dominant
+    // The merged slot prints as a real artwork color, never a blended average: the dominant
     // (largest-area) member's exact hex.
     const dominant = members
       .slice()

@@ -20,31 +20,28 @@ export interface SVGShape {
 }
 
 export interface ParsedSVG {
-  /** Treated as immutable once parsed — regions.ts memoizes computeNetRegionsByColor on its identity. */
+  /** Immutable once parsed: regions.ts memoizes computeNetRegionsByColor on its identity. */
   shapes: SVGShape[];
   bbox: { minX: number; minY: number; maxX: number; maxY: number };
-  /** Largest <circle> in the document — assembly mode's design-boundary anchor. */
+  /** Largest <circle> in the document, assembly mode's design-boundary anchor. */
   rawSVGCircle: { cx: number; cy: number; r: number } | null;
   /**
-   * Millimeters per SVG user (viewBox) unit, derived from the document's physical width/height.
-   * Only rect assembly placement uses it — to map artwork 1:1 in mm regardless of the file's
-   * internal coordinate resolution; null when the SVG declares no absolute size. Wheel mode
-   * (which scales off the design circle) ignores it.
+   * Millimeters per SVG user (viewBox) unit, from the document's physical width/height. Only rect
+   * assembly placement reads it, to map artwork 1:1 in mm whatever the file's internal resolution.
+   * Null when the SVG declares no absolute size. Wheel mode scales off the design circle instead.
    */
   userUnitMM?: number | null;
   /**
-   * The document's viewBox extent in user units (null when it declares no viewBox). Rect
-   * placement uses it as a last resort when `userUnitMM` is null: an editor that dropped the
-   * physical size (e.g. Affinity exporting `width="100%"`) still keeps the viewBox, so fitting
-   * it to the part face recovers the intended scale.
+   * The viewBox extent in user units, null when the document declares no viewBox. Rect placement's
+   * last resort when `userUnitMM` is null: an editor that dropped the physical size (Affinity
+   * exporting `width="100%"`) still keeps the viewBox, so fitting it to the face recovers scale.
    */
   viewBox?: { w: number; h: number } | null;
   /**
-   * The document's own canvas in user units, origin at (0,0) — the viewBox extent when it declares
-   * one, else the declared physical width/height at the same 96dpi `userUnitMM` assumes for a
-   * viewBox-less file. Rect placement anchors artwork on this rather than on the drawn content, so
-   * a design positioned within its sheet keeps that position on the part. Null when the file
-   * declares neither, leaving nothing but the content to anchor on.
+   * The document's canvas in user units, origin at (0,0): the viewBox extent when declared, else
+   * the physical width/height at the same 96dpi `userUnitMM` assumes. Rect placement anchors on
+   * this, not the drawn content, so a design positioned within its sheet keeps that position.
+   * Null when the file declares neither, leaving only the content to anchor on.
    *
    * Distinct from `viewBox`, which stays the viewBox alone because the scale fallback and the fill
    * tile cell both mean specifically that.
@@ -52,10 +49,8 @@ export interface ParsedSVG {
   canvas?: { w: number; h: number } | null;
   /**
    * Which producer built this. Absent means the SVG parser, so existing callers read as before.
-   *
-   * Only the user-facing sizing/anchor advice in assembly.ts reads it, and only because that advice
-   * has to be actionable: telling someone to set their document size in millimetres is the right fix
-   * for an SVG and an impossible one for a PNG.
+   * Only assembly.ts's sizing/anchor advice reads it, because that advice must be actionable:
+   * "set your document size in millimetres" is the right fix for an SVG and impossible for a PNG.
    */
   origin?: 'svg' | 'raster';
 }
@@ -86,7 +81,7 @@ export interface FitTransform {
   cy: number;
   /** ±1 horizontal multiplier (−1 = user mirror) */
   xMul: number;
-  /** ±1 vertical multiplier: base −1 (SVG y-down → plate y-up), flipped again by the user toggle */
+  /** ±1 vertical multiplier: base −1 (SVG y-down to plate y-up), flipped again by the user toggle */
   yMul: number;
   /** sin/cos of the design rotation, applied after scale/mirror and before offset */
   rotSin: number;
@@ -119,25 +114,22 @@ export interface FlatPatch {
 }
 
 /**
- * A design zone on a part: one baked UV chart the artwork maps into, letting a part carry more
- * than one design surface (and eventually wrap artwork around edges). Populated by the zone bake
- * pipeline (see the chair-body plan). A part with no zones uses an implicit flat zone derived
- * from its chosen patch — see `implicitZoneFor` in geometry/zones.ts. Kept minimal here; the
- * runtime chart + mapper detail lives in geometry/zones.ts.
+ * A design zone on a part: one baked UV chart the artwork maps into, letting a part carry several
+ * design surfaces (and eventually wrap artwork around edges). Populated by the zone bake pipeline.
+ * A part with no zones uses an implicit flat zone from its chosen patch (`implicitZoneFor` in
+ * geometry/zones.ts), which also holds the runtime chart and mapper detail.
  */
 export interface DesignZone {
   id: string;
   name: string;
   /**
    * The baked UV chart this zone's artwork wraps onto, reconstructed against the part's loaded
-   * mesh (see geometry/zoneCharts.ts). Present on a conformal zone; absent means the zone is cut
-   * with the flat projection instead.
+   * mesh (see geometry/zoneCharts.ts). Present on a conformal zone; absent means flat projection.
    */
   chart?: ConformalChart;
   /**
-   * Filename of this zone's true-to-size design template in `public/templates/` — the per-zone
-   * counterpart to `AssemblyKind.templateFile` for a kind whose parts each carry more than one
-   * design surface, so each surface needs its own template rather than one for the whole kind.
+   * Filename of this zone's true-to-size template in `public/templates/`: the per-zone counterpart
+   * to `AssemblyKind.templateFile`, for a kind whose parts each carry several design surfaces.
    */
   templateFile?: string;
 }
@@ -151,15 +143,15 @@ export interface ZoneRef {
 /**
  * What a raster source keeps so its palette can be recomputed without re-reading the file.
  *
- * The decoded pixels are the expensive, async, DOM-bound part of loading an image; the Colors and
- * Detail sliders re-run only the quantize/trace stages over them. At the working resolution that is
- * at most ~1MB per loaded image, against three.js, the Manifold WASM and a 1.7MB zone sidecar.
+ * Decoding pixels is the expensive, async, DOM-bound part of loading an image; the Colors and
+ * Detail sliders re-run only quantize/trace over them. At the working resolution that is at most
+ * ~1MB per image, against three.js, the Manifold WASM and a 1.7MB zone sidecar.
  */
 export interface RasterState {
   image: { data: Uint8ClampedArray; w: number; h: number };
   colors: number;
   detail: number;
-  /** The palette the current `parsed` was built with — can be shorter than `colors` asked for. */
+  /** The palette the current `parsed` was built with; can be shorter than `colors` asked for. */
   palette: string[];
   regions: number;
 }
@@ -175,24 +167,22 @@ export interface DesignSource {
   name: string;
   parsed: ParsedSVG;
   /**
-   * The raw SVG text `parsed` came from. Kept alongside it (not just derived) because `ParsedSVG`
-   * is a one-way parse — session persistence re-derives `parsed` from this on restore via
-   * `parseSVGDocument()` rather than trying to serialize the parsed form itself, which regions.ts
-   * also memoizes on object identity (see the note on `ParsedSVG`).
+   * The raw SVG text `parsed` came from, kept rather than derived because `ParsedSVG` is a one-way
+   * parse. Session persistence re-derives `parsed` from this via `parseSVGDocument()` instead of
+   * serializing the parsed form, which regions.ts also memoizes on object identity.
    *
-   * Empty for a raster source, whose `parsed` comes from pixels rather than text and so cannot be
-   * re-derived this way — those are skipped by session persistence entirely.
+   * Empty for a raster source, whose `parsed` comes from pixels and cannot be re-derived this way.
+   * Session persistence skips those entirely.
    */
   svgText: string;
   raster?: RasterState;
 }
 
 /**
- * One placement of a DesignSource onto a zone — the unit the on-face gizmo and fit sliders
- * ultimately target. `zone: null` means the part's single implicit zone (every part has exactly
- * one today; see `implicitZoneFor` in geometry/zones.ts). Multiple instances per source/zone will
- * become reachable once the artwork list panel (Phase 2b) exists; today there is always exactly
- * one, auto-created alongside its source.
+ * One placement of a DesignSource onto a zone: what the on-face gizmo and fit sliders target.
+ * `zone: null` means the part's single implicit zone (see `implicitZoneFor` in geometry/zones.ts).
+ * Multiple instances per source/zone become reachable once the artwork list panel exists; today
+ * there is always exactly one, auto-created alongside its source.
  */
 export interface ArtworkInstance {
   id: string;
@@ -214,48 +204,45 @@ export interface AssemblyPart {
   positions: Float32Array | null;
   /**
    * The packed mesh's unique vertex list (file order, xyz interleaved) when the part came from a
-   * 3MF — what a baked zone chart's vertex indices address. Absent for an STL upload, which has
-   * no packed vertex order to index into.
+   * 3MF: what a baked zone chart's vertex indices address. Absent for an STL upload, which has no
+   * packed vertex order to index into.
    */
   vertices?: Float32Array;
   /** which stl/parts.json entry this part was loaded from; absent for a drag-and-drop upload */
   libraryPartId?: string;
   /**
-   * The library asset exactly as it was fetched, for a role whose mesh is *built* from that asset
-   * rather than being it (see AssemblyRole.buildMesh). Kept so changing a build parameter can
-   * regenerate the part without another round trip to the network, and so `positions` stays free
-   * to hold the generated result like any other part's mesh.
+   * The library asset as fetched, for a role whose mesh is *built* from that asset rather than
+   * being it (see AssemblyRole.buildMesh). Kept so a changed build parameter can regenerate the
+   * part without another network round trip, leaving `positions` free to hold the result.
    */
   assetPositions?: Float32Array;
   /**
-   * The warning the last buildMesh raised, if any — retracted before the next rebuild so that
-   * fixing the parameter that caused it also clears it. Generation warnings are standing facts
-   * (nothing re-derives them per rebuild, so clearBuildWarnings doesn't apply), but they are
-   * standing facts the user can act on, which is exactly what dismissNotice is for.
+   * The warning the last buildMesh raised, retracted before the next rebuild so fixing the
+   * parameter also clears it. Generation warnings are standing facts (nothing re-derives them per
+   * rebuild, so clearBuildWarnings doesn't apply) that the user can act on, which is what
+   * dismissNotice is for.
    */
   buildWarning?: string;
   /**
-   * True when the *current* mesh came from a user drag-and-drop rather than the parts library.
-   * Not derivable from `libraryPartId`: dropping a file onto a role that already auto-loaded its
-   * library part deliberately leaves that id in place (attachBakedZones still needs it to find the
-   * kind's baked charts), so the id alone can't say where the loaded geometry came from. Export
-   * placement reads this to tell "our asset drifted", a repo defect, from "the user brought their
-   * own mesh", which is supported — see resolvePlacement in src/export/placement.ts.
+   * True when the *current* mesh came from a drag-and-drop rather than the parts library. Not
+   * derivable from `libraryPartId`: dropping onto a role that already auto-loaded its library part
+   * deliberately leaves that id in place, since attachBakedZones needs it to find the kind's baked
+   * charts. Export placement reads this to tell "our asset drifted", a repo defect, from "the user
+   * brought their own mesh", which is supported. See resolvePlacement in src/export/placement.ts.
    */
   meshFromUpload?: boolean;
-  /** part geometry minus the design face — preview context only */
+  /** part geometry minus the design face; preview context only */
   restPositions?: Float32Array;
   patches: FlatPatch[] | null;
   patchIdx: number;
   boundaryLoop: number[][] | null;
   patchNormal?: number[];
   /**
-   * Baked design zones for a part of a kind that ships a zone sidecar (`AssemblyKind.zonesFile`).
+   * Baked design zones for a part of a kind shipping a zone sidecar (`AssemblyKind.zonesFile`).
    * Undefined means no sidecar applies, so the part uses one implicit flat zone from its chosen
-   * patch — the single-design-face behavior every part had before conformal zones. An *empty*
-   * array is meaningful and different: the sidecar loaded but bakes no zone onto this piece
-   * (e.g. the chair's caster mounts), so it takes no artwork at all rather than falling back to
-   * stamping its largest flat patch.
+   * patch (the pre-conformal behavior). An *empty* array means something different: the sidecar
+   * loaded but bakes no zone onto this piece (the chair's caster mounts), so it takes no artwork
+   * at all rather than falling back to stamping its largest flat patch.
    */
   zones?: DesignZone[];
   topZ: number;
@@ -271,23 +258,22 @@ export interface AssemblyPart {
    */
   cutThrough: boolean;
   /**
-   * Fixed cut depth (mm) for a cutThrough part, measured straight down from the face plane —
-   * e.g. the cap's shell is only 3mm thick above its mounting boss, so cutting deeper would
-   * breach into it. Undefined falls back to piercing the part's full vertical extent.
+   * Fixed cut depth (mm) for a cutThrough part, straight down from the face plane. The cap's shell
+   * is only 3mm thick above its mounting boss, so cutting deeper breaches into it. Undefined
+   * pierces the part's full vertical extent.
    */
   cutThroughDepth?: number;
   /**
-   * Cut depth (mm) for the artwork regions that *touch this part's design-face boundary*, while
-   * every interior region keeps its per-color recess depth. Undefined means no such rule.
+   * Cut depth (mm) for artwork regions *touching this part's design-face boundary*; interior
+   * regions keep their per-color recess depth. Undefined means no such rule.
    *
-   * The per-region counterpart to cutThrough, which is kind-wide: a hubcap cut to its artwork's
-   * shape wants its outline in the artwork's color the whole way down — otherwise the one thing
-   * cutting it to shape achieved is a 2mm band of base color around the picture — while its
-   * interior detail still wants to be a recess on a 220mm disc.
+   * The per-region counterpart to the kind-wide cutThrough. A hubcap cut to its artwork's shape
+   * wants its outline in the artwork's color the whole way down, or cutting it to shape only
+   * achieves a 2mm band of base color around the picture. Its interior detail still wants a recess.
    *
    * Set from GeneratedMesh.edgeCutThroughDepth at adopt time, not from the role at create time:
-   * whether it applies depends on what the generator actually built (a silhouette, not the
-   * circle it falls back to), which isn't known until it runs.
+   * whether it applies depends on what the generator built (a silhouette, not the circle it falls
+   * back to), which isn't known until it runs.
    */
   edgeCutThroughDepth?: number;
 }
@@ -297,10 +283,9 @@ export interface AssemblyRole {
   name: string;
   libraryPartId?: string;
   /**
-   * Variant-dependent library part: for a role whose physical piece differs by hardware variant
-   * (the chair's caster mounts come in Standard and Kit), maps each `AssemblyKind.variants` id to
-   * the library part loaded for that variant. Takes precedence over `libraryPartId`; resolved via
-   * `roleLibraryPartId(role, variantId)`.
+   * Variant-dependent library part, for a role whose physical piece differs by hardware variant
+   * (the chair's caster mounts come in Standard and Kit). Maps each `AssemblyKind.variants` id to
+   * its library part. Takes precedence over `libraryPartId`; resolved by `roleLibraryPartId`.
    */
   libraryPartIdByVariant?: Record<string, string>;
   allowRotatedCopies: boolean;
@@ -308,8 +293,8 @@ export interface AssemblyRole {
   copies?: number;
   copyDefaults?: { pivotX: number; pivotZ: number; angleDeg: number };
   /**
-   * Display name for a rotated copy of this role, e.g. a wheel's second Top half is
-   * physically the Bottom half — falls back to "<role name> (rotated copy)" if unset.
+   * Display name for a rotated copy: a wheel's second Top half is physically the Bottom half.
+   * Falls back to "<role name> (rotated copy)".
    */
   copyName?: string;
   /** parts of this role get a through-cut (see AssemblyPart.cutThrough) instead of a recess */
@@ -317,29 +302,29 @@ export interface AssemblyRole {
   /** see AssemblyPart.cutThroughDepth */
   cutThroughDepth?: number;
   /**
-   * Preferred design face as a unit normal. When set, the loader defaults to the largest-area
-   * detected patch pointing this way instead of the overall largest patch — needed when a part's
-   * biggest flat face isn't the design face (e.g. the footrest's flat back outsizes its seat).
+   * Preferred design face as a unit normal. The loader then defaults to the largest-area patch
+   * pointing this way instead of the overall largest, needed when a part's biggest flat face isn't
+   * its design face (the footrest's flat back outsizes its seat).
    */
   preferFaceNormal?: [number, number, number];
   /**
-   * Builds this role's mesh from its library asset plus whatever the user has set, instead of the
-   * asset being the part. The hubcap is the one such role: only its four mounting clips ship as a
-   * mesh, and the disc they carry is generated at the requested diameter and unioned on.
+   * Builds this role's mesh from its library asset plus the user's settings, instead of the asset
+   * being the part. The hubcap is the one such role: only its four mounting clips ship as a mesh,
+   * and the disc they carry is generated at the requested diameter and unioned on.
    *
-   * A function on the role rather than a flag the loader switches on, so that nothing in
-   * src/assembly/ has to know a hubcap exists — the loader's rule is just "if the role can build
-   * its own mesh, let it". Re-run by asmRebuildGeneratedParts when a parameter changes.
+   * A function on the role, not a flag the loader switches on, so nothing in src/assembly/ has to
+   * know a hubcap exists: the loader's rule is "if the role can build its own mesh, let it".
+   * Re-run by asmRebuildGeneratedParts when a parameter changes.
    */
   buildMesh?: (asset: Float32Array) => Promise<GeneratedMesh>;
   /**
-   * The verified plate placement for this role's *current* build parameters, or undefined when
+   * The verified plate placement for this role's *current* build parameters, undefined when
    * nothing was verified for them.
    *
-   * Generated parts can't use the fingerprint seal every other part's placement hangs off — their
-   * mesh varies by design, so it never matches. What can still be verified is a specific
-   * arrangement at a specific size, and this is how the role says which. Returning undefined is a
-   * real answer: it means the export should fall back to computing a position and saying so.
+   * Generated parts can't use the fingerprint seal every other placement hangs off: their mesh
+   * varies by design, so it never matches. What can be verified is a specific arrangement at a
+   * specific size, and this is how the role says which. Undefined is a real answer, meaning the
+   * export should compute a position and say so.
    *
    * Typed loosely because the placement shape lives in src/export/; the caller narrows it.
    */
@@ -354,9 +339,9 @@ export interface GeneratedMesh {
   warning?: string;
   /**
    * See AssemblyPart.edgeCutThroughDepth. Declared by the generator because only it knows the
-   * shape it just made — a flat square-edged prism on the artwork's outline, where "touching the
-   * design-face boundary" and "reaching the part's real outer wall" are the same thing. On a
-   * chamfered disc they are not, so it returns undefined there.
+   * shape it made: on a flat square-edged prism cut to the artwork's outline, "touching the
+   * design-face boundary" and "reaching the part's outer wall" are the same thing. On a chamfered
+   * disc they are not, so it returns undefined there.
    */
   edgeCutThroughDepth?: number;
 }
@@ -365,14 +350,13 @@ export interface GeneratedMesh {
  * How an assembly is posed in the *viewport*, in native part coordinates: `up` renders as world
  * up, `front` faces the default camera.
  *
- * Needed because the app has one implicit part-frame convention — "the design face is a Y-plane"
- * — which doubles as a display pose for a plate-like kind (the wheel and footrest stand up facing
- * the camera for free). A 3D body has no single design face, so it is packed in its CAD frame
- * instead and that convention misreads it: the chair's CAD up is +Y, which the Z-up scene renders
- * horizontal, laying it on its back.
+ * The app's implicit part-frame convention, "the design face is a Y-plane", doubles as a display
+ * pose for a plate-like kind (the wheel and footrest stand up facing the camera for free). A 3D
+ * body has no single design face, so it is packed in its CAD frame and that convention misreads
+ * it: the chair's CAD up is +Y, which the Z-up scene renders horizontal, laying it on its back.
  *
- * Display only. Part meshes, the cut pipeline, the baked zone charts and export plate placement
- * all keep native coordinates. Per the add-part skill the viewport pose and the plate pose are
+ * Display only. Part meshes, the cut pipeline, baked zone charts and export plate placement all
+ * keep native coordinates. Per the add-part skill the viewport pose and plate pose are
  * deliberately different; this is a third frame, not a unification of them.
  */
 export interface DisplayFrame {
@@ -386,28 +370,27 @@ export interface AssemblyKind {
   roles: AssemblyRole[];
   /**
    * How SVG artwork maps onto the design face. 'wheel' (default) anchors on the design's circle
-   * and scales by Design radius — right for the round wheel. 'rect' maps the SVG 1:1 in mm and
+   * and scales by Design radius, right for the round wheel. 'rect' maps the SVG 1:1 in mm and
    * centers on the detected face, for rectangular parts like the footrest where a radius control
    * is meaningless.
    */
   designFit?: 'wheel' | 'rect';
   /**
-   * Filename of this kind's true-to-size design template in `public/templates/`, offered as a
-   * download in the Part panel. Templates are generated by `scripts/gen-templates.mjs`; a kind
-   * without one just doesn't show the link.
+   * Filename of this kind's true-to-size template in `public/templates/`, offered as a download in
+   * the Part panel. Generated by `scripts/gen-templates.mjs`; a kind without one shows no link.
    */
   templateFile?: string;
   /**
-   * Builds the template instead of serving a file, for a kind whose parts are generated and so
-   * have no one true size. Takes precedence over `templateFile`. Returns SVG text.
+   * Builds the template instead of serving a file, for a kind whose parts are generated and have
+   * no one true size. Takes precedence over `templateFile`. Returns SVG text.
    */
   buildTemplate?: () => string;
   /**
    * A numeric build parameter this kind exposes to the user (the hubcap's disc diameter).
    *
-   * Declared as data so the panel can render the control without knowing which kind it belongs
-   * to — the same reason `designFit` and `templateFile` are data. `id` is the `state` key the
-   * control writes, typed to the keys that actually exist so a rename can't silently detach it.
+   * Data, not code, so the panel renders the control without knowing which kind it belongs to,
+   * same as `designFit` and `templateFile`. `id` is the `state` key the control writes, typed to
+   * the keys that exist so a rename can't silently detach it.
    */
   buildParam?: {
     id: 'hubcapDiameterMm';
@@ -418,33 +401,32 @@ export interface AssemblyKind {
   };
   /**
    * Mutually-exclusive hardware variants of this assembly (the chair is all-Standard or all-Kit,
-   * never mixed). When set, `state.assembly.variantId` holds the choice and roles with a
+   * never mixed). `state.assembly.variantId` holds the choice and roles with a
    * `libraryPartIdByVariant` load the matching piece. The first entry is the default.
    */
   variants?: { id: string; name: string }[];
   /**
-   * Filename of this kind's design-zone sidecar in `public/stl/` (baked by
-   * `scripts/bake-zones.mjs`). Present on multi-face kinds whose parts carry baked conformal
-   * charts instead of a single implicit flat zone; absent kinds use the flat path.
+   * Filename of this kind's design-zone sidecar in `public/stl/`, baked by
+   * `scripts/bake-zones.mjs`. Present on multi-face kinds whose parts carry baked conformal charts
+   * instead of a single implicit flat zone; kinds without one use the flat path.
    */
   zonesFile?: string;
   /**
    * Viewport pose for this kind. Omitted for kinds already packed design-face-up (the wheel and
-   * footrest), which render correctly with no transform at all.
+   * footrest), which render correctly with no transform.
    */
   displayFrame?: DisplayFrame;
   /**
-   * Kept in ASSEMBLY_KINDS (and fully functional) but left out of the Part dropdown — for a
-   * part that isn't ready to offer to users yet.
+   * Kept in ASSEMBLY_KINDS and fully functional, but left out of the Part dropdown: for a part not
+   * ready to offer to users yet.
    */
   hidden?: boolean;
   /**
-   * Fill mode (and with it the built-in pattern strip, which exists to be tiled) is not offered on
-   * this kind — for a part where repeating a design across a zone is implemented but not yet fit to
-   * put in front of a user. Sticker placement is unaffected.
+   * Withholds Fill mode (and the built-in pattern strip, which exists to be tiled) on this kind,
+   * where tiling works but isn't fit to put in front of a user. Sticker placement is unaffected.
    *
    * Set on the chair body: `docs/tech-debt.md` measures one zone in Fill at 93.6s and "All zones"
-   * at over 900s with no cancel, and records `Zebra + Fill` losing a color on "Handle (left)" —
+   * at over 900s with no cancel, and records `Zebra + Fill` losing a color on "Handle (left)",
    * which prints that part without its black. Clear this flag once those close.
    */
   withholdFill?: boolean;
@@ -488,19 +470,17 @@ export interface AssemblyPartOutput {
   bodySoup: Float32Array;
   inlaySoups: Record<number, Float32Array>;
   /**
-   * Manifold's native indexing, kept alongside the scene soup so 3MF export can emit
-   * vertices/triangles directly instead of re-welding the soup. Absent on fallback parts
-   * that never went through a boolean (export re-indexes their soup instead).
+   * Manifold's native indexing, kept beside the scene soup so 3MF export emits vertices/triangles
+   * directly instead of re-welding. Absent on fallback parts that never went through a boolean.
    *
    * Export is the only consumer. The scene mesh is built from `bodySoup`/`inlaySoups` and
-   * re-derives its own weld for shading — see the tech-debt section on that; it is a known
-   * duplication, not an oversight of this field.
+   * re-derives its own weld for shading: a known duplication (see tech-debt.md), not an oversight.
    */
   bodyIndexed?: IndexedMesh;
   inlayIndexed?: Record<number, IndexedMesh>;
 }
 
-/** One raw detected artwork color before any merge/base resolution — feeds the base-color picker. */
+/** One raw detected artwork color before merge/base resolution; feeds the base-color picker. */
 export interface DetectedColor {
   hex: string;
   areaPct: number;
@@ -509,7 +489,7 @@ export interface DetectedColor {
 export interface AssemblyBuild {
   partOutputs: AssemblyPartOutput[];
   palette: AssemblyPaletteEntry[];
-  /** Y direction of the first primary part's design face — the camera opens from this side. */
+  /** Y direction of the first primary part's design face; the camera opens from this side. */
   viewSign: number;
   /** every raw fill color detected, independent of current merge/base settings */
   detectedColors: DetectedColor[];

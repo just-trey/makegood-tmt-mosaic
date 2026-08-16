@@ -4,342 +4,299 @@ One section per user-visible warning string.
 
 ## Troubleshooting: "Boolean union/subtraction failed" warnings
 
-Turf's polygon booleans can throw on a specific color's geometry — almost
-always a self-intersecting path in the source SVG. The warning names the hex
-color involved.
+The polygon maths failed on one colour's shape. The warning names the colour.
+It is almost always a **self-intersecting path** in the source SVG.
 
-What the app already does automatically: every loop is deduplicated of
-near-identical floating-point vertices before it reaches Turf (the most common
-cause is two flattened curve segments meeting at a seam that differs by a
-fraction of a unit), degenerate slivers are scrubbed from boolean outputs, and
-failed operations retry at reduced coordinate precision. If a warning still
-appears:
+The app already tries to fix this: near-duplicate points are removed before the
+maths runs (usually two curve segments meeting at a seam a fraction of a unit
+apart), zero-width slivers are scrubbed from the results, and failures retry at
+lower precision. If the warning still appears:
 
-- **That region falls back to its pre-boolean shape** — geometry still
-  exports, but the region may overlap its neighbor slightly instead of having
-  the overlap cut out.
-- The real fix is cleaning the path at the source. In Illustrator or
-  Inkscape: select the offending color's path and run **Path → Union** on it —
-  the standard way to force a self-intersecting path back into a simple one.
-- Common sources: strokes converted to fill outlines (sharp miter joins),
-  leftover boolean results from the design tool, hand-edited paths with
-  crossed segments.
+- **That region falls back to its uncut shape.** It still exports, but may
+  overlap its neighbour slightly instead of having the overlap removed.
+- **The real fix is at the source.** In Illustrator or Inkscape, select that
+  colour's path and run **Path → Union**.
+- Common causes: strokes converted to outlines (sharp mitre joins), leftover
+  boolean results from the design tool, hand-edited paths with crossed segments.
 
-**In Fill mode, don't trust the "self-intersecting path" part of the message.**
-Fill unions one copy of the design per tile, and Turf 6.5 also fails on sheer
-size — somewhere around 800k vertices in one operation — with the identical
-warning. A design that unions cleanly as a Sticker but fails once repeated
-across a chair zone (143 tiles of a 60mm pattern) is hitting the size limit,
-not a bad path, and running Path → Union on it will change nothing. The tell
-is that the failures arrive per-part in a batch rather than on one color, and
-that the finished model carries visibly _less_ geometry than it should — the
-fallback shape is coarser, so parts of the surface come out blank. The fix is
-to simplify the design (fewer, larger shapes) or use Sticker mode. Measured
-numbers and what closing it properly would take are in
-[tech-debt.md](tech-debt.md) — "Turf's tile union has a vertex ceiling".
+**In Fill mode, don't trust the "self-intersecting path" part.** Fill unions one
+copy of the design per tile, and the polygon library also fails on sheer size,
+around 800k points in one operation, with the identical warning. A design that
+unions cleanly as a Sticker but fails once repeated across a chair zone (143
+tiles of a 60mm pattern) has hit the size limit, not a bad path, and Path →
+Union will change nothing.
+
+The tell: failures arrive per-part in a batch rather than on one colour, and the
+model carries visibly _less_ geometry than it should, so parts of the surface
+come out blank. Fix by simplifying the design (fewer, larger shapes) or using
+Sticker. Numbers in [tech-debt.md](tech-debt.md), "Turf's tile union has a
+vertex ceiling".
 
 ## Troubleshooting: "Couldn't build the cut solid" warnings (assembly mode)
 
-Assembly mode clips each color's region to the part's face boundary, then
-extrudes it into a 3D pocket. Dense or detailed line-work (fine outlines,
-small highlight shapes) can come out of that clip touching itself at a point
-without Turf treating it as invalid — but Manifold's boolean engine rejects
-the resulting mesh as non-watertight when building the pocket. The app
-automatically repairs this (via Manifold's own 2D boolean engine, offsetting
-the region by a hair and back to break the exact-touching topology) and
-retries before giving up. If the warning still appears, that color's pocket
-was skipped on that part — same source fix as above (clean the path in
-Illustrator/Inkscape) usually resolves it.
+Assembly mode clips each colour's region to the part's face, then extrudes it
+into a 3D pocket. Dense line-work can come out of that clip touching itself at a
+point: valid to the 2D maths, but not a sealed solid to the 3D engine. The app
+repairs it automatically via Manifold's own 2D boolean engine, offsetting the
+region by a hair and back to break the exact-touching topology, and retries
+once. If the warning survives, that
+colour's pocket was skipped on that part, and the same source fix as above
+usually resolves it.
 
-The 3D boolean pass can also fail later, past a single color's pocket. Each
-of those failures degrades to something a slicer can print rather than a
-malformed file, and the warning tells you which outcome you got — worth
-reading before printing, because two of them mean the part carries less
-artwork than you designed:
+**The 3D pass can also fail later.** Each failure degrades to something a slicer
+can print rather than a broken file, and the warning tells you which outcome you
+got. Two of them mean the part carries less artwork than you designed:
 
-- **"Couldn't combine the cut solids for color … on …"** — that one color is
-  dropped from that part. Every other color still cuts normally.
-- **"… exporting it uncut"**, or **"Boolean cut failed on part … — exporting
-  it uncut and without inlays"** — that part ships with no artwork at all. It
-  is still a valid printable part, just a blank one, so don't print it
-  expecting the design.
-- **"Couldn't fit the inlay for color … — its pocket is cut into the body but
-  will print as an empty recess"** — the recess is cut but nothing fills it,
-  so that color prints as a bare cavity.
-- **"Part … has no geometry to export — its pocket cut went all the way
-  through …"** — the boolean _succeeded_ but produced zero geometry: a
-  pocket's depth reached (or exceeded) the part's wall thickness at that
-  point, cutting clean through instead of leaving a floor. That part is
-  dropped from the export entirely rather than shipping a hollow shell.
+| Warning                                                                                                  | What you get                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Couldn't combine the cut solids for color … on …"                                                       | That one colour is dropped from that part. Every other colour cuts normally.                                                                                                    |
+| "… exporting it uncut", or "Boolean cut failed on part … — exporting it uncut and without inlays"        | That part ships with **no artwork at all**. Still printable, just blank, so don't print it expecting the design.                                                                |
+| "Couldn't fit the inlay for color … — its pocket is cut into the body but will print as an empty recess" | The recess is cut but nothing fills it, so that colour prints as a bare cavity.                                                                                                 |
+| "Part … has no geometry to export — its pocket cut went all the way through …"                           | The cut succeeded but left nothing: a pocket reached the part's wall thickness and went clean through. The part is dropped from the export rather than shipping a hollow shell. |
 
-These are Manifold 3D boolean failures rather than the 2D clip problem above,
-so path-cleaning is less reliably the fix; if one reproduces, the part mesh
-and the amount of fine detail landing on it are both worth suspecting. What
-these are _not_ is silent: before this handling existed, the same failures
-either aborted the whole rebuild (blank viewport) or shipped the uncut body
-alongside inlay solids occupying the same volume, which a slicer resolves
-arbitrarily.
+These are 3D failures rather than the 2D clip problem above, so path-cleaning is
+less reliably the fix. Suspect the part mesh and the amount of fine detail
+landing on it. What they are _not_ is silent: before this handling existed, the
+same failures either blanked the viewport or shipped an uncut body alongside
+inlays occupying the same space, which a slicer resolves arbitrarily.
 
 ## Troubleshooting: "N AMS slots needed, but … tops out at M" warnings
 
-The design needs more filament slots than the selected printer can address in
-a single print. The count is one per cut color or merged group, plus one for
-the body itself, and it's the same number the line under the color list shows.
-Unlike most warnings here this one isn't a geometry problem — the 3MF is
-correct and still exports; it just can't be printed in one pass on that
-machine.
+The design needs more filament slots than the printer can address in one print.
+The count is one per cut colour or merged group, plus one for the body, and it
+matches the line under the colour list.
 
-Which printer you have decides whether this is even reachable. Every AMS /
-toolchanger unit holds 4 slots, but the Bambus daisy-chain: up to 16 on the
-X1C / P1S / A1, and 25 on an H2D (24 across chained AMS units plus an external
-spool on its second nozzle). The Snapmaker U1's 4 built-in toolheads don't
-chain, so on that printer this warning appears the moment a design needs a
-fifth slot. Past one unit but within the printer's maximum you get a quieter
-note instead, saying the same thing without calling it an error — printable,
-but not on one AMS.
+**This is not a geometry problem.** The 3MF is correct and still exports; it
+just can't print in one pass on that machine.
+
+Your printer decides whether this is reachable at all. Every AMS or toolchanger
+unit holds 4 slots, but the Bambus chain: up to 16 on the X1C, P1S and A1, and
+25 on an H2D (24 across chained units plus an external spool on its second
+nozzle). The Snapmaker U1's 4 built-in toolheads don't chain, so there this
+warning appears the moment a design needs a fifth slot. Past one unit but within
+the printer's maximum you get a quieter note instead: printable, but not on one
+AMS.
 
 To get the count down:
 
-- **Merge two colors** — drag one color row onto another, or use that row's
-  "Merge with…" dropdown. The group prints in its dominant member's color.
-- **Print a color in the body** — "→ base" on a row moves it out of the cut
-  colors entirely, so it stops costing a slot.
-- **Auto-merge** raises the similarity threshold, which may or may not help:
-  it merges colors that look alike rather than hitting a target count, and on
-  the one real 7-color volunteer SVG measured so far only `Strong` moved the
-  count at all, and only by one. See
-  [tech-debt.md](tech-debt.md) — "Auto-merge is a similarity control".
+- **Merge two colours.** Drag one colour row onto another, or use that row's
+  "Merge with…" dropdown. The group prints in its dominant member's colour.
+- **Print a colour in the body.** "→ base" on a row moves it out of the cut
+  colours, so it stops costing a slot.
+- **Auto-merge** raises the similarity threshold, which may or may not help: it
+  merges colours that look alike rather than hitting a target count. On the one
+  real 7-colour volunteer SVG measured so far, only `Strong` moved the count,
+  and only by one. See [tech-debt.md](tech-debt.md), "Auto-merge is a similarity
+  control".
 
-Exporting anyway is supported and sometimes what you want: a single-AMS owner
+Exporting anyway is supported, and sometimes what you want: a single-AMS owner
 can print the file with manual filament swaps at the slicer's colour-change
 pauses.
 
 ## Troubleshooting: "Designs … overlap on the same surface" warnings
 
-Two designs placed on one surface are cut independently. The body takes the
-union of their pockets and looks right in the preview, but each color's inlay
-is built as (part ∩ that color's pocket) — so where two designs of _different_
-colors cross, the exported file carries two inlay solids occupying the same
-volume, and the slicer picks between them however it likes. That is the same
-failure mode as the uncut-body case above, arrived at from placement rather
-than from a boolean failure, and it is invisible until the file is opened.
+Two designs on one surface are cut independently. The body takes the union of
+their pockets and looks right in the preview, but each colour's inlay is only
+where the part and that colour's pocket overlap. So where two designs of
+_different_ colours cross, the exported file carries two inlay solids in the
+same space and the slicer picks between them however it likes. Invisible until
+the file is opened.
 
-The warning names both designs by filename ("Two placements of …" when they
-are two copies of the same file). Fixes, any of which clears it:
+The warning names both designs by filename ("Two placements of …" when they are
+two copies of one file). Any of these clears it:
 
-- **Move one of them** — drag it on the face, or use Offset X/Y. The
-  warning clears once they cover less than a tenth of each other.
-- **Scale one down** so it fits in a gap in the other.
-- **Put them on different surfaces**, on a part that has more than one: pick
-  a different zone in the artwork row's dropdown.
-- **Remove one** with the × on its row, if it was loaded by accident.
+- **Move one.** Drag it on the face, or use Offset X/Y. The warning clears once
+  they cover less than a tenth of each other.
+- **Scale one down** so it fits a gap in the other.
+- **Put them on different surfaces**, on a part that has more than one.
+- **Remove one** with the × on its row.
 
 A little overlap is deliberately not flagged: designs placed side by side
-routinely share a millimetre or two of empty bounding box, and warning about
-that would make the pill worth ignoring.
+routinely share a millimetre or two of empty bounding box.
 
-**It compares rectangles, so it can warn about designs that don't really
-touch.** The check uses each design's bounding box, not its artwork — so a
-logo centered inside a frame, or a caption inside a border, reads as fully
-covered even though the recesses never meet and the export is fine. If that
-is what you have, the warning is a false alarm and the file is safe to print;
-there is no way to clear the pill short of moving the inner design off-center.
-Recorded in [tech-debt.md](tech-debt.md) with what an exact check would cost.
+**It compares rectangles, so it can warn about designs that don't really touch.**
+The check uses each design's bounding box, not its artwork, so a logo centred
+inside a frame reads as fully covered even though the recesses never meet and
+the export is fine. That is a false alarm and the file is safe to print. There
+is no way to clear it short of moving the inner design off-centre. Recorded in
+[tech-debt.md](tech-debt.md) with what an exact check would cost.
 
-Two designs both set to **Fill** on the same surface always warn, and get
-their own message: a fill repeats across the whole surface, so the second one
-lands on the first everywhere. Moving or rescaling cannot clear that one —
-switch one to Sticker, put it on another surface, or remove it. A fill _under_
-a sticker is not flagged: a pattern background with a design on top is a real
-workflow. That combination has the same overlapping-inlay problem where the
-sticker's colors differ from the pattern's; it is a known gap, also in
+**Two designs both set to Fill always warn**, with their own message: a fill
+repeats across the whole surface, so the second lands on the first everywhere.
+Moving or rescaling cannot clear it. Switch one to Sticker, move it to another
+surface, or remove it.
+
+A fill _under_ a sticker is not flagged, because a pattern background with a
+design on top is a real workflow. It has the same overlapping-inlay problem
+where the sticker's colours differ from the pattern's. Known gap, also in
 [tech-debt.md](tech-debt.md).
 
 ## Troubleshooting: Fill warnings — "You have one tile instead"
 
-Fill repeats one design across a whole part. When it can't work out how to
-repeat it, it falls back to placing the design once and says why. Only the
-first reason below is fixed by changing Scale — the wording tells you which one
-you have, and the last two mean a bug rather than anything wrong with your
-design. One `###` per warning string.
+Fill repeats one design across a whole part. When it can't work out how, it
+places the design once and says why. Only the first reason below is fixed by
+changing Scale; the last two mean a bug rather than a problem with your design.
 
 ### "… is too small to fill … — it would take more than 1024 tiles."
 
-The commonest one. A pattern scaled far down against a large part (a 5%
-pattern on a chair panel) needs tens of thousands of copies, and unioning that
-many hangs the tab, so the app refuses rather than freezing. **Raise Scale**
-until the count comes down — a larger tile is also usually what you wanted, a
-pattern at 5% reads as texture rather than as a pattern.
+The commonest one. A pattern scaled far down against a large part (5% on a chair
+panel) needs tens of thousands of copies, which would hang the tab, so the app
+refuses instead of freezing.
+
+**Raise Scale** until the count comes down. A larger tile is usually what you
+wanted anyway: a pattern at 5% reads as texture, not as a pattern.
 
 ### "… measures zero in one direction, so there is no tile to repeat across …"
 
-The drawing itself has no extent one way — every filled shape lies on a single
-line — in a file that also declares no usable `viewBox` to fall back on. (A
-missing or zero `viewBox` alone does _not_ cause this: the app then measures the
-tile from the artwork's own bounding box.) There is nothing to repeat. **Use a
-design with both width and height.** Such a file would also cut nothing, so if
-you see this the design is not printable either way.
+The drawing has no extent one way (every filled shape sits on a single line) in
+a file that also declares no usable `viewBox` to fall back on. A missing or zero
+`viewBox` alone does _not_ cause this; the app then measures the tile from the
+artwork's own bounding box.
+
+**Use a design with both width and height.** Such a file would cut nothing
+either way, so it isn't printable as it stands.
 
 ### "The placement … has collapsed to no width or no height."
 
-The design's placement on the part maps its whole tile onto a line or a point, so there
-is no grid to lay. This is a placement gone wrong rather than a file problem.
-**Use "Reset to auto-fit"** in the Artwork fit panel.
+The placement maps the whole tile onto a line or a point, so there is no grid to
+lay. A placement problem, not a file problem. **Use "Reset to auto-fit"** in the
+Artwork fit panel.
 
 ### "… curves too much for … to tile evenly across it."
 
-The part's mapping isn't flat enough for a repeating grid to stay a grid on it — copies
-would land in the wrong places rather than slightly off. No shipped part does
-this today. **Place separate designs on it** (Sticker mode, one per area) instead of
-filling it.
+The part's surface isn't flat enough for a repeating grid to stay a grid, so
+copies would land in the wrong places rather than slightly off. No shipped part
+does this today. **Place separate designs on it** in Sticker mode instead.
 
 ### "Couldn't measure the area to fill on … so … can't be tiled across it"
 
-The part's own design area measured as having no width or no height, so there is
-no region for the tiles to cover. Nothing about your design causes this — it
-means the part's geometry reached the fill path in a state it shouldn't. That is
-a bug in the app; **please report it**, naming the part.
+The part's design area measured as having no width or no height, so there is
+nothing for tiles to cover. Nothing about your design causes this: the part's
+geometry reached the fill path in a state it shouldn't. **A bug; please report
+it**, naming the part.
 
 ### "… for a reason the app didn't record"
 
-A refusal path reached the user without naming itself. That is a bug in the app,
-not in your design — please report it.
+A refusal reached you without naming itself. A bug in the app, not your design.
+Please report it.
 
 ## Troubleshooting: "Depth for … was set to … mm" warnings (flat mode)
 
 The flat shape modes cut every recess into a plate of one fixed thickness. A
-recess that reached the back of the plate would cut clean through it — a hole
-where a colored inset should be — so no depth is allowed past the thickness
-less the 0.05 mm floor left under the deepest recess (3.95 mm on a 4 mm plate).
-This warning means one of your depths was past that and the recess was cut at
-the deepest the plate can take instead.
+recess reaching the back would cut clean through, so no depth is allowed past
+the thickness less a 0.05 mm floor (3.95 mm on a 4 mm plate). One of your depths
+was past that, and the recess was cut at the deepest the plate allows.
 
-- **The file is still valid and printable** — the depth actually cut is the
-  last number in the message. Nothing is dropped; only the depth differs from
-  what you typed.
-- Fix it from either end: lower that region's depth, or raise **Thickness** in
-  the Part section so the depth you want fits.
-- The name in the message is the color list row, worded exactly as that row
-  labels itself: a hex for a plain color, "Merged (N)" for a merged group, and
-  "Background" for the background recess row.
-- A region with no depth of its own uses the global **Depth** field, so a
-  global depth larger than the plate warns for every region at once — raise
-  the thickness or lower the global depth rather than editing rows one by one.
-  A row carrying its own depth is highlighted and has a "↺" button beside it;
-  that button, or clearing the field, puts the row back under the global. If
-  the global **Depth** field seems to move nothing, those are the rows to look
-  at.
+- **The file is still valid and printable.** The depth actually cut is the last
+  number in the message. Nothing is dropped; only the depth differs.
+- Fix from either end: lower that region's depth, or raise **Thickness** in the
+  Part section.
+- The name in the message is the colour list row, worded as that row labels
+  itself: a hex, "Merged (N)", or "Background".
+- A region with no depth of its own uses the global **Depth**, so a global depth
+  larger than the plate warns for every region at once. Raise the thickness or
+  lower the global rather than editing rows one by one.
+- A row carrying its own depth is highlighted and has a "↺" beside it. That
+  button, or clearing the field, returns it to the global. **If the global Depth
+  field seems to do nothing, those are the rows to look at.**
 
-Assembly mode has the same hazard at the deep end but catches it later and
-words it differently, because there the wall thickness varies across the part
-and the cut-through only shows up once the boolean has run: see "Part … has no
-geometry to export" above.
+Assembly mode has the same hazard but catches it later and words it differently,
+because wall thickness varies across the part: see "Part … has no geometry to
+export" above.
 
 ## Troubleshooting: "Depth for … is … thinner than the usual 0.20 mm print layer"
 
-A quiet note, not an error, and it appears in both modes. The recess is cut
-exactly as deep as you asked — nothing is clamped and nothing is dropped — but
-it is shallower than one layer at the default 0.2 mm layer height, so on a
-standard profile the slicer has no layer to put it in and it prints as bare
-body.
+A quiet note, not an error, in both modes. The recess is cut exactly as deep as
+you asked, nothing clamped and nothing dropped, but it is shallower than one
+layer at the default 0.2 mm layer height. On a standard profile the slicer has
+no layer to put it in, so it prints as bare body.
 
-- **If your profile uses a finer layer height** (0.08–0.12 mm is common for
-  detail work), this is fine and the recess will print. The note has no way to
-  read your slicer settings, so it can't tell.
-- **If you are on a standard 0.2 mm profile**, raise the depth to at least
-  0.2 mm or the color won't appear.
-- A depth of exactly 0 or less is a different case: that cuts nothing at all
-  whatever the profile, so it gets raised to 0.2 mm and warns rather than
-  being noted.
-- **It won't appear for a color that only lands on a cut-through part** (the
-  wheel's cap). Such a part ignores the depth setting and takes its hole the
-  whole way through, so the recess prints whatever your layer height is, and
-  the note would be predicting a problem that can't happen. If the same color
-  is also on a part that does cut to depth, the note still appears — it is
-  about that part.
+- **On a finer layer height** (0.08-0.12 mm is common for detail work) this is
+  fine and the recess will print. The note can't read your slicer settings.
+- **On a standard 0.2 mm profile**, raise the depth to at least 0.2 mm or the
+  colour won't appear.
+- Exactly 0 or less is a different case: it cuts nothing at any profile, so it
+  is raised to 0.2 mm and warns rather than being noted.
+- **It won't appear for a colour that only lands on a cut-through part** (the
+  wheel's cap), which ignores the depth setting and holes the whole way
+  through: the recess prints whatever your layer height is, so the note would
+  be predicting a problem that can't happen. If the same colour is also on a
+  part that cuts to depth, the note appears, and it is about that part.
 
 ## Troubleshooting: "Depth for … is not a depth that can cut" warnings
 
-A depth of zero or less cuts no pocket at all — a request that says nothing
-about what was actually wanted. Both modes raise it to 0.20 mm, one typical
-layer, and name the color and both numbers. In assembly mode this used to drop
-the color from the part silently: no recess, no inlay, no message, just a part
-missing one of its colors.
+Zero or less cuts no pocket at all, and says nothing about what was wanted. Both
+modes raise it to 0.20 mm, one typical layer, naming the colour and both
+numbers. In assembly mode this used to drop the colour silently: no recess, no
+inlay, no message.
 
-- **Nothing is dropped** — the color cuts, just shallowly. That matters beyond
-  tidiness: a color cut nowhere gets no row in the color list, which would take
-  away the very depth field this warning tells you to correct.
-- The message reports the depth it **raised the setting to**, not the depth
-  each part cut. What a part does with a depth is up to the part: the wheel's
-  cap is cut all the way through whatever you set, so no single number would be
-  true of every part.
-- If you meant to remove the color, use "→ base" on its row to print it in the
-  body instead; if you meant to cut it, give it a real depth.
-- One warning per color, not per part: depth is a per-color setting, so a
-  global **Depth** of 0 reports each affected color once however many parts
+- **Nothing is dropped.** The colour cuts, just shallowly. That matters: a
+  colour cut nowhere gets no row in the colour list, which would remove the very
+  depth field this warning tells you to correct.
+- **The number is the setting it raised, not what each part cut.** What a part
+  does with a depth is up to the part; the wheel's cap holes through whatever
+  you set, so no single number is true of every part.
+- To remove the colour, use "→ base" on its row. To cut it, give it a real
+  depth.
+- One warning per colour, not per part: depth is a per-colour setting, so a
+  global **Depth** of 0 reports each affected colour once however many parts
   carry it.
-- Assembly mode bounds only the shallow end. There is no upper limit and no
-  check against the wall, which varies across a part — a depth deeper than the
-  wall in one spot cuts a hole through it and exports silently. "Part … has no
-  geometry to export" only appears when the cut consumed the _whole_ part, so
-  its absence is not a report that the depth was safe.
+- **Assembly mode bounds only the shallow end.** There is no upper limit and no
+  check against the wall, which varies across a part, so a depth deeper than the
+  wall in one spot cuts a hole and exports silently. "Part … has no geometry to
+  export" only fires when the cut consumed the _whole_ part, so its absence is
+  not a report that the depth was safe.
 
 ## Troubleshooting: "TMT Mosaic couldn't save this session — leaving now loses it" warnings
 
-The app autosaves your session (design, placement, colors, depths) to the
-browser's local storage after every change, and offers it back the next time
-you open the app. Reloading or closing the tab normally shows nothing at all
-— the browser's own "leave site?" prompt only appears when that autosave
-itself failed, right before the page would actually unload.
+The app autosaves your session (design, placement, colours, depths) to browser
+storage after every change and offers it back next time. Reloading normally
+shows nothing; the browser's "leave site?" prompt appears only when that
+autosave failed.
 
-The browser controls the prompt's exact wording (it ignores the app's text
-and substitutes its own generic copy in most browsers), so what you see may
-not match the string above verbatim.
+The browser controls the prompt's wording and substitutes its own generic copy
+in most cases, so what you see may not match the string above.
 
-- **The session isn't lost yet, but leaving now would lose it.** Export a 3MF
-  or the STL set before closing the tab to keep the work regardless.
-- Common causes: the session grew past the app's own size ceiling (a lot of
-  large SVG artwork), the browser's storage quota for this site is full, or
-  you're in a private/incognito window where storage is disabled or
-  cleared on close.
-- Freeing space (closing other tabs on the same site, or clearing old site
-  data) and reloading — the autosave runs again on the next change.
+- **The session isn't lost yet, but leaving now would lose it.** Export a 3MF or
+  the STL set before closing the tab.
+- Common causes: the session grew past the app's size ceiling (a lot of large
+  SVG artwork), the browser's storage quota for this site is full, or you are in
+  a private window where storage is disabled.
+- Free space (close other tabs on this site, clear old site data) and reload.
+  The autosave runs again on the next change.
 
 ## Troubleshooting: "Some detail in … was too fine to print…"
 
 Full text: _"Some detail in "yourfile.png" was too fine to print and was merged
 into its surroundings. Lower Colors, or lower Detail, for a cleaner result."_
 
-The notice names the image, so with several images loaded each gets its own —
-and re-tracing one at a setting that no longer needs capping retracts only
-that one.
+**An informational notice, not a failure.** The image loaded and cut normally.
 
-An informational notice, not a failure — the image loaded and cut normally.
-It appears when tracing a raster image produced more separate regions than
-`MAX_COMPONENTS` ([src/raster/trace.ts](../src/raster/trace.ts)) allows, so
-the despeckle floor was raised to exactly the size that fits and the image
-re-traced. Without that cap, a busy photograph would hand the region pipeline
-thousands of speckle islands and freeze the tab for tens of seconds (the cost
-is measured in [tech-debt.md](tech-debt.md)).
+Tracing produced more separate regions than `MAX_COMPONENTS`
+([trace.ts](../src/raster/trace.ts)) allows, so the speckle floor was raised to
+exactly the size that fits and the image re-traced. Without that cap a busy
+photograph hands thousands of speckle islands downstream and freezes the tab for
+tens of seconds (cost measured in [tech-debt.md](tech-debt.md)).
 
-What it means in practice: features below the new floor were absorbed into
-whichever color surrounds them. Nothing was dropped or left as a hole, and the
-regions still tile the image exactly — but fine texture is gone. That is
-usually the right answer anyway, since detail near that size is below what a
-0.4mm nozzle can express.
+In practice: features below the new floor were absorbed into whichever colour
+surrounds them. Nothing was dropped or left as a hole, and the regions still
+tile the image exactly, but fine texture is gone. That is usually right anyway,
+since detail near that size is below what a 0.4mm nozzle can express.
 
-To get a result you're happier with:
+The notice names the image, so each loaded image gets its own, and re-tracing
+one at a setting that no longer needs capping retracts only that one.
 
-- **Lower Colors.** Most of the time this is the real fix. Fewer palette
-  entries means fewer boundaries, which means far fewer islands — a photo at
-  4 colors reads much better as a print than the same photo at 12.
-- **Lower Detail.** Detail runs the other way round from what the name
-  suggests here: it sets how small a speck survives, so _lowering_ it raises
-  the floor and merges the fine stuff deliberately instead of letting the cap
-  do it. Raising Detail quarters the floor and makes this notice more likely,
-  not less.
-- **Crop or simplify the source** before loading. A busy background the design
-  doesn't need is what usually blows the budget.
+To get a result you are happier with:
+
+- **Lower Colors.** Usually the real fix. Fewer palette entries means fewer
+  boundaries and far fewer islands; a photo at 4 colours prints much better than
+  the same photo at 12.
+- **Lower Detail.** It runs the opposite way to what the name suggests: it sets
+  how small a speck survives, so _lowering_ it raises the floor and merges the
+  fine stuff deliberately. Raising Detail quarters the floor and makes this
+  notice more likely.
+- **Crop or simplify the source.** A busy background the design doesn't need is
+  what usually blows the budget.
 
 ## Troubleshooting: "This image could not be decoded…"
 
@@ -347,73 +304,64 @@ Full text: _"This image could not be decoded — the browser cannot read this
 format, or the file is damaged. PNG, JPG and WebP always work; TIFF never
 does. Re-export it as a PNG."_
 
-The file was recognised as a raster image from its leading bytes, but the
-browser's own image decoder refused it. TMT Mosaic does not carry decoders of
-its own — it hands the file to the browser — so the supported set is whatever
-the browser supports.
+The file was recognised as an image from its leading bytes, but the browser's
+decoder refused it. The app carries no decoders of its own, so the supported set
+is whatever your browser supports.
 
 - **PNG, JPG and WebP** work everywhere.
-- **GIF and BMP** work in practice, and are accepted for exactly that reason.
-- **TIFF** is never decodable in a browser, however the file was produced.
-  Re-export as PNG from whatever made it.
-- A truncated or partly-downloaded file lands here too. Re-download it and try
-  again before blaming the format.
+- **GIF and BMP** work in practice, and are accepted for that reason.
+- **TIFF** is never decodable in a browser. Re-export as PNG.
+- A truncated or part-downloaded file lands here too. Re-download before
+  blaming the format.
 
-An SVG never reaches this message: the format is sniffed from the file's first
-bytes, so vector artwork goes to the SVG parser and only raster formats come
-here. That split is also what stops a dropped image from failing with "SVG
-could not be parsed — check the file is valid XML", which is true but useless
-about a file that was never XML.
+An SVG never reaches this message: format is sniffed from the first bytes, so
+vector artwork goes to the SVG parser. That split is what stops a dropped image
+failing with "SVG could not be parsed — check the file is valid XML", true but
+useless about a file that was never XML.
 
 ## Troubleshooting: "This image has no real-world size…"
 
 Full text: _"This image has no real-world size, so it was auto-fit to the part
 face. Use Scale to fine-tune."_
 
-Expected on every raster image, and safe to ignore unless the size is wrong.
-A PNG or JPG carries no trustworthy physical dimensions — the DPI tags in
-consumer files are almost always a meaningless 72 or 96, and honoring one
-would size a phone photo at well over a metre — so the image is fitted to the
-part's design face instead and `Scale` adjusts from there.
+**Expected on every raster image, and safe to ignore unless the size is wrong.**
+A PNG or JPG carries no trustworthy physical size: the DPI tags in consumer
+files are almost always a meaningless 72 or 96, and honouring one would size a
+phone photo at over a metre. The image is fitted to the part's design face and
+`Scale` adjusts from there.
 
 The SVG counterpart of this notice ("This SVG has no absolute width/height in
-mm…") asks you to set the document size in millimeters, which is the right fix
-there and an impossible one for an image; that is why they are two separate
-messages. There is no way to give a raster image an exact real-world size on
-load — use the Part section's design template to check the fit visually, and
-`Scale`/`Offset` to place it.
+mm…") asks you to set the document size in millimetres, which is right there
+and impossible for an image; hence two messages. There is
+no way to give an image an exact real-world size on load. Use the Part section's
+design template to check the fit, and `Scale`/`Offset` to place it.
 
 ## Troubleshooting: "The hubcap disc is too small to reach its mounting clips"
 
 Full text: _"The hubcap disc is too small to reach its mounting clips — they
 would print as four loose pieces. Increase the diameter."_
 
-Unlike every other part, the hubcap is generated rather than loaded: only its
-four mounting clips ship as a mesh, and the disc that carries them is built at
-whatever **Hubcap diameter** is set. Those two bodies meet on one flat plane
-and share no volume, so the disc has to actually cover the clips' top faces —
-an annulus from 10.6mm to 16.0mm out from the axis — for the result to be a
-single printable solid. Below about 21mm across, the disc lands entirely
-inside that annulus, touches nothing, and the part is five separate bodies
-that would come off the plate loose.
+The hubcap is generated rather than loaded: only its four clips ship as a mesh,
+and the disc is built at whatever **Hubcap diameter** is set. The two bodies meet
+on one flat plane and share no volume, so the disc must cover the clips' top
+faces (a ring from 10.6mm to 16.0mm out from the axis) to be one printable
+solid. Below about 21mm across the disc sits inside that ring, touches nothing,
+and the part is five loose pieces.
 
-This is why the diameter has a floor of about 32mm: the size at which the disc
-fully covers those faces, rather than the smaller size at which it merely
-grazes them. The control clamps to it, so **you shouldn't be able to reach
-this message by typing a number** — if you see it, the diameter came from
-somewhere that bypassed the control, most likely a restored session saved by a
-different or hand-edited build.
+That is why the diameter floor is about 32mm: the size at which the disc fully
+covers those faces, not the smaller size at which it grazes them. The control
+clamps to it, so **you shouldn't be able to reach this message by typing a
+number.** If you see it, the diameter bypassed the control, most likely a
+restored session from a different or hand-edited build.
 
-The fix is the one the message gives: raise the diameter. Anything from the
-floor upward bonds across the whole clip face. Nothing is silently discarded
-in the meantime — the warning stays up until the part regenerates at a size
-that works, and it retracts on its own once it does.
+The fix is the one the message gives: raise the diameter. Nothing is silently
+discarded meanwhile; the warning stays until the part regenerates at a working
+size, then retracts on its own.
 
-Worth knowing that the failure this prevents is invisible from the app: a
-hubcap whose clips didn't bond looks completely normal in the viewport, and
-exports to a 3MF that opens and slices without complaint. It only shows up as
-loose parts on the finished plate, which is why the check is a hard floor
-rather than advice.
+**The failure it prevents is invisible from the app.** A hubcap whose clips
+didn't bond looks normal in the viewport and exports a 3MF that slices without
+complaint. It only shows up as loose parts on the finished plate, which is why
+this is a hard floor rather than advice.
 
 ## Troubleshooting: "The hubcap is set to follow your artwork's shape, but no artwork is loaded"
 
@@ -421,37 +369,34 @@ Full text: _"The hubcap is set to follow your artwork's shape, but no artwork
 is loaded — it stays round until you add one."_
 
 The **Cut to artwork shape** checkbox and the artwork on the part are the same
-object by design — there's no separate silhouette upload, so with nothing
-loaded there's nothing to cut to. The part stays a plain circle at the size
-set in **Hubcap diameter** until you add artwork; it reshapes itself the
-moment you do, with no further action needed.
+object by design: there is no separate silhouette upload, so with nothing loaded
+there is nothing to cut to. The part stays a plain circle at the **Hubcap
+diameter** size and reshapes the moment you add artwork.
 
 ## Troubleshooting: "That shape doesn't cover the hubcap's mounting clips"
 
 Full text: _"That shape doesn't cover the hubcap's mounting clips, so it stays
 round — make it bigger, or use artwork whose middle is filled in."_
 
-The clips need a solid annulus under them (10.6–16.0mm out from the axis) to
-bond to, the same requirement the plain-circle floor
-(`HUBCAP_MIN_DIAMETER_MM`) enforces there. A silhouette can fail this two
-ways a circle can't: it can be too small overall, the same as the circle case,
-or it can have a hole or a thin waist that happens to pass through the clip
-ring even at a reasonable size — a ring-shaped logo, for instance. Either way
-the part falls back to a circle rather than exporting clips that bond to
-nothing; increasing the size or picking artwork that stays solid in the
-middle both fix it.
+The clips need solid material under them, in a ring 10.6-16.0mm out from the
+axis: the same requirement the plain-circle floor (`HUBCAP_MIN_DIAMETER_MM`)
+enforces. A silhouette can fail it two ways a circle can't. It can be too small
+overall, or it can have a hole or thin waist passing through the clip ring even
+at a reasonable size, such as a ring-shaped logo.
+
+Either way the part falls back to a circle rather than exporting clips bonded to
+nothing. Increasing the size, or picking artwork that stays solid in the middle,
+both fix it.
 
 ## Troubleshooting: "A hubcap cut to shape can only follow one design"
 
 Full text: _"A hubcap cut to shape can only follow one design — remove the
 others, or turn 'Cut to artwork shape' off."_
 
-With two pieces of artwork loaded there's no single answer to "the shape" —
-their union is one option, but so is either one alone, and nothing says which
-was meant. Rather than guess, the part stays round and this names the fix:
-remove the extra artwork (the Artwork panel's list has a remove action per
-row), or turn the checkbox off if you meant to keep both as separate designs
-on a round part.
+With two designs loaded there is no single answer to "the shape": their union is
+one option, either one alone is another, and nothing says which was meant.
+Rather than guess, the part stays round. Remove the extra artwork with the ×
+on its row, or turn the checkbox off to keep both as designs on a round part.
 
 ## Troubleshooting: "This image has no transparent background, so the hubcap came out as its rectangle"
 
@@ -459,14 +404,14 @@ Full text: _"This image has no transparent background, so the hubcap came out
 as its rectangle. Export it as a PNG with the background removed to cut it to
 the artwork's real shape."_
 
-This isn't a refusal — a rectangular hubcap is a legitimate thing to want, so
-the part builds. It's a check for the far more likely case: a WebP or a
-flattened PNG that lost its alpha channel on the way here, where what looked
-like a character cut out on a transparent background is actually opaque all
-the way to its bounding box, and the "silhouette" is just that box. If a
-non-rectangular shape was the goal, re-export the source image as a PNG with
-the background actually removed (not just displayed as transparent in an
-editor that doesn't preserve alpha on export) and reload it.
+**Not a refusal.** A rectangular hubcap is a legitimate thing to want, so the
+part builds. This checks for the more likely case: a WebP or flattened PNG that
+lost its transparency, where what looked like a cut-out character is actually
+opaque to its bounding box, so the "silhouette" is that box.
+
+If you wanted a non-rectangular shape, re-export the source as a PNG with the
+background actually removed, not just displayed as transparent in an editor that
+drops transparency on export.
 
 ## Troubleshooting: "This shape was too big for the wheel, so it was scaled down to fit"
 
@@ -476,16 +421,14 @@ the size or the scale to take control of it yourself."_
 
 Nothing may overhang the wheel the hubcap mounts on, which is 280mm across. A
 silhouette can exceed that while its **Hubcap diameter** reading looks fine,
-because that number describes the longest side and a shape's corners reach
-further than its longest side does — a square 280mm on a side reaches 198mm
-from the axis and would hang 58mm past the rim.
+because that number is the longest side and a shape's corners reach further: a
+square 280mm on a side reaches 198mm from the axis and hangs 58mm past the rim.
 
 Rather than refusing, the whole placement is scaled down until it clears, and
 the artwork is scaled by exactly the same factor so the picture still lands on
-the shape cut for it. The visible symptom without this message is the size
-control appearing to stop working, which is why it says so rather than doing it
-silently. Lowering the diameter or the artwork's Scale until this clears puts
-you back in control of the size.
+the shape cut for it. Without this message the symptom is the size control
+appearing to stop working. Lowering the diameter or the artwork's Scale until it
+clears puts you back in control.
 
 ## Troubleshooting: "Some of this shape is thinner than 1mm"
 
@@ -493,63 +436,60 @@ Full text: _"Some of this shape is thinner than 1mm, which is about one
 nozzle wide — those parts will be fragile. Simplifying the artwork or making
 the hubcap bigger will thicken them."_
 
-Unlike the other silhouette warnings, this one doesn't fall back to a circle
-— the part builds at the shape and size you set, because a thin spike still
-extrudes into a valid solid. It's a printability notice, not a geometry
-error: a 0.5mm-wide sliver is one nozzle-width of plastic standing 3mm tall,
-which is likely to snap off in handling or not adhere well during printing.
-Fine detail like hair spikes or thin limbs on a character silhouette are the
-usual cause. Making the hubcap bigger thickens every feature proportionally,
-since the whole outline scales together, or simplify the source artwork to
-remove the thin part.
+Unlike the other silhouette warnings this one does **not** fall back to a
+circle. The part builds at the shape and size you set, because a thin spike
+still makes a valid solid.
+
+A printability notice, not a geometry error: a 0.5mm sliver is one nozzle-width
+of plastic standing 3mm tall, likely to snap off in handling or not adhere while
+printing. Hair spikes and thin limbs on a character are the usual cause.
+
+Making the hubcap bigger thickens every feature proportionally, since the whole
+outline scales together. Or simplify the source artwork.
 
 ## Troubleshooting: "… reaches the part's outer edge, so that region cuts the full 3.00 mm through"
 
-A note, not a problem — it describes what a hubcap **cut to your artwork's
+**A note, not a problem.** It describes what a hubcap **cut to your artwork's
 shape** does on purpose.
 
-The disc is a 3 mm shell. Normally a color is recessed into it at its depth
-setting (1 mm by default), which leaves base-color plastic underneath. That is
-right for artwork sitting in the middle of the part, and wrong for artwork at
-the very edge: the outline is the whole reason the part was cut to your shape,
-and a recess would leave it as a 2 mm band of base color that you see from
-every angle except straight on. So any region that reaches the outline is cut
-the full 3 mm instead, and the rim prints in that color.
+The disc is a 3 mm shell. Normally a colour is recessed into it at its depth
+setting (1 mm by default), leaving base-colour plastic underneath. That is right
+for artwork in the middle of the part and wrong for artwork at the very edge:
+the outline is the whole reason the part was cut to your shape, and a recess
+would leave it as a 2 mm band of base colour visible from every angle except
+straight on. So any region reaching the outline is cut the full 3 mm, and the
+rim prints in that colour.
 
-- **It names the colors it did this to.** A color's _interior_ regions still
-  cut at its recess depth — only the ones touching the edge go through. A color
-  with regions in both places appears in the note and is cut both ways.
-- **It overrides a depth you set yourself, at the edge only.** If you typed a
-  depth for one of the named colors, that number still applies to its interior
-  regions; its edge regions are cut through regardless. This is why the note
-  lists the colors rather than just describing the rule.
-- **It only appears on a hubcap following your artwork's shape.** Turn "Cut to
-  artwork shape" off and every color goes back to a plain recess. A round
-  hubcap never does this: its rim is chamfered, so the design face is inset
-  1 mm from the edge and cutting through wouldn't put your color on the rim
-  anyway.
-- **It is not the same as the wheel's cap**, which cuts _every_ color through
-  because the whole part is built that way. This rule is per region.
-- **It applies to the shape's outside edge only.** If your silhouette encloses a
-  hole — a letter "O", a doughnut, a character with a gap through it — the rim
-  around that hole is still cut as a recess and prints in the base color. Known
-  limitation, recorded in [tech-debt.md](tech-debt.md).
-- **If you wanted a recess at the edge**, there is no way to opt out today.
-  Moving the artwork in from the outline (Scale slightly below 100%) keeps
-  every region clear of the edge, at the cost of a base-color rim.
+- **It names the colours it did this to.** A colour's _interior_ regions still
+  cut at its recess depth; only those touching the edge go through. A colour
+  with regions in both places is cut both ways.
+- **It overrides a depth you set, at the edge only.** A depth you typed still
+  applies to interior regions. That is why the note lists colours rather than
+  just describing the rule.
+- **Only on a hubcap following your artwork's shape.** Turn "Cut to artwork
+  shape" off and every colour goes back to a plain recess. A round hubcap never
+  does this: its rim is chamfered, so the design face is inset 1 mm and cutting
+  through wouldn't reach the rim anyway.
+- **Not the same as the wheel's cap**, which cuts _every_ colour through because
+  the whole part is built that way. This rule is per region.
+- **Outside edge only.** If your silhouette encloses a hole (a letter "O", a
+  doughnut) the rim around that hole is still a recess and prints in the base
+  colour. Known limitation, in [tech-debt.md](tech-debt.md).
+- **No way to opt out today.** Moving the artwork in from the outline (Scale
+  slightly below 100%) keeps every region clear of the edge, at the cost of a
+  base-colour rim.
 
 ## Troubleshooting: "Couldn't tell whether … reaches the part's outer edge"
 
-The clipper failed while working out whether one color region touched the
+The clip step failed while working out whether one colour region touched the
 part's outline, so that region was cut as a normal recess rather than through.
 Everything else on the part is unaffected.
 
-This is the safe direction to fail in — a recess is the behavior every part had
-before the edge rule existed, and it prints; a through-cut where one wasn't
-wanted would be a hole. The visible symptom is one color's edge stopping short
-of the rim while others reach it, which is why it says so rather than staying
-quiet.
+**This is the safe direction to fail in.** A recess is what every part did before
+the edge rule existed, and it prints; a through-cut where one wasn't wanted
+would be a hole. The visible symptom is one colour's edge stopping short of the
+rim while others reach it, which is why it says so rather than staying quiet.
 
-Same underlying cause as the "Boolean union/subtraction failed" warnings above:
-dense or self-touching line-work that the 2D clipper can't resolve. Simplifying
-that color's regions, or nudging Scale slightly, usually clears it.
+Same cause as the "Boolean union/subtraction failed" warnings above: dense or
+self-touching line-work the 2D maths can't resolve. Simplifying that colour's
+regions, or nudging Scale, usually clears it.
