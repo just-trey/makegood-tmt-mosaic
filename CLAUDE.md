@@ -78,6 +78,9 @@ backed by real evidence: a live run, a real print, not another review pass.
 - TypeScript `strict` is on (see [tsconfig.json](tsconfig.json)). Don't
   weaken it to make something compile.
 - Comments: see [Comments](#comments) below.
+- UI copy follows [docs/ui-conventions.md](docs/ui-conventions.md)
+  (vocabulary table, conventions 1-6) and the same sentence rules as docs:
+  short, no em dashes.
 - **Before changing what a shared value means** (`colorSettings`, a depth, a
   placement), open every reader of it, not just the one you are editing.
   - Changing it at one call site and reasoning only about that site caused
