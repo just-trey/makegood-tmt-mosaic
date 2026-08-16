@@ -55,7 +55,7 @@ body {
 #narrow-notice p {
   max-width: 340px;
   color: var(--text-dim);
-  line-height: 1.55;
+  line-height: var(--leading-prose);
   margin: 0;
 }
 @media (max-width: 899px) {
@@ -85,7 +85,7 @@ header {
 header h1 {
   font-family: var(--heading);
   font-size: var(--text-display);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin: 0;
   letter-spacing: 0.2px;
 }
@@ -125,15 +125,15 @@ header .stat {
   background: var(--panel-2);
   color: var(--text-dim);
   font-family: var(--heading);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   transition:
-    border-color 0.12s,
-    color 0.12s;
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 .icon-btn:hover {
   border-color: var(--accent);
@@ -208,7 +208,7 @@ header .stat {
 }
 #confirm-dialog p {
   margin: 0 0 var(--space-section);
-  line-height: 1.55;
+  line-height: var(--leading-prose);
   color: var(--text);
 }
 .confirm-actions {
@@ -241,7 +241,7 @@ header .stat {
   /* glyph-as-icon, sized optically off the text scale — see design-system/README.md's
      iconography rule. 1.25em of the inherited 12px body renders ~15px, matching today. */
   font-size: 1.25em;
-  line-height: 1;
+  line-height: var(--leading-none);
   padding: 0;
 }
 .close-btn:hover {
@@ -299,7 +299,7 @@ header .stat {
 }
 .help-sec p {
   color: var(--text-dim);
-  line-height: 1.55;
+  line-height: var(--leading-prose);
   margin: 0 0 var(--space-row);
 }
 .help-sec p:last-child {
@@ -337,7 +337,7 @@ header .stat {
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
   pointer-events: none;
-  line-height: 1.5;
+  line-height: var(--leading-normal);
 }
 #warnings {
   position: absolute;
@@ -382,7 +382,7 @@ header .stat {
   /* glyph-as-icon, sized optically off the text scale — see design-system/README.md's
      iconography rule. 1.1em of the inherited 12px body renders ~13px, matching today. */
   font-size: 1.1em;
-  line-height: 1;
+  line-height: var(--leading-none);
   padding: 0;
   opacity: 0.65;
 }
@@ -412,10 +412,10 @@ details.sec > summary {
   font-family: var(--heading);
   font-size: var(--text-label);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   color: var(--text-dim);
   margin: 0 0 var(--space-row) 0;
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   display: flex;
   align-items: center;
   gap: var(--space-tight);
@@ -533,7 +533,7 @@ input[type='checkbox'] {
   border-radius: var(--radius-lg);
   cursor: pointer;
   font-family: var(--sans);
-  transition: border-color 0.12s;
+  transition: border-color var(--transition-fast);
 }
 .btn:hover {
   border-color: var(--accent);
@@ -542,7 +542,7 @@ input[type='checkbox'] {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--on-accent);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .btn.primary:hover {
   filter: brightness(1.08);
@@ -572,7 +572,7 @@ input[type='checkbox'] {
 .restore-banner p {
   margin: 0 0 var(--space-row);
   color: var(--text);
-  line-height: 1.4;
+  line-height: var(--leading-prose);
 }
 
 #dropzone {
@@ -582,7 +582,7 @@ input[type='checkbox'] {
   text-align: center;
   color: var(--text-dim);
   cursor: pointer;
-  transition: 0.12s;
+  transition: var(--transition-fast);
 }
 #dropzone:hover,
 #dropzone.drag {
@@ -781,7 +781,7 @@ input[type='checkbox'] {
 }
 .asm-sum-row .ok {
   color: var(--accent);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   width: 12px;
   text-align: center;
 }
@@ -810,7 +810,7 @@ input[type='checkbox'] {
   width: 16px;
   height: 16px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--swatch-line);
   flex: 0 0 auto;
 }
 .color-row .hex {
@@ -860,7 +860,7 @@ input[type='checkbox'] {
   /* glyph-as-icon, sized optically off the text scale — see design-system/README.md's
      iconography rule. 1.1em of the inherited 12px body renders ~13px, matching today. */
   font-size: 1.1em;
-  line-height: 1;
+  line-height: var(--leading-none);
 }
 .color-row .preset {
   color: var(--text-dim);
@@ -868,7 +868,7 @@ input[type='checkbox'] {
 }
 .drag-grip {
   color: var(--text-dim);
-  line-height: 1;
+  line-height: var(--leading-none);
   cursor: grab;
   user-select: none;
   flex: 0 0 auto;
@@ -886,7 +886,7 @@ input[type='checkbox'] {
 .empty-hint {
   color: var(--text-dim);
   padding: var(--space-row) var(--space-hair);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
 }
 
 .slot-count {
@@ -899,7 +899,7 @@ input[type='checkbox'] {
    strength text plus weight, so it reads as *more* marked than the resting teal rather than less. */
 .slot-count.multi-unit {
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .slot-count.over-capacity {
   color: var(--danger-text);
@@ -961,7 +961,7 @@ input[type='checkbox'] {
 }
 .auto-merge-labels span.active {
   color: var(--accent-2);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .merge-members {
@@ -977,7 +977,7 @@ input[type='checkbox'] {
   width: 14px;
   height: 14px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--swatch-line);
   padding: 0;
   cursor: pointer;
 }
@@ -1052,7 +1052,7 @@ input[type='checkbox'] {
 
 .hint {
   color: var(--text-dim);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
   margin-top: var(--space-tight);
 }
 /* Help-panel prose inlines the odd literal value — an SVG attribute, a filename — as <code>.

@@ -97,6 +97,14 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 - A handful of glyphs used as icons (▸ disclosure, × dismiss, ↺ reset) are sized in `em` against
   their inherited text context instead of a token — see Iconography below.
 - Heading font: Outfit, for the "Mosaic" wordmark + Panel section labels.
+- Weight is `--weight-regular` (400), `--weight-semibold` (600) or `--weight-bold` (700). Nothing
+  else renders.
+- Tracking: `--tracking-label` (0.08em) on the uppercase Panel labels. Nowhere else.
+- Leading, three roles by what a block is for, not by how tight it looks:
+  - `--leading-none` (1) — glyph-as-icon buttons, where the glyph is the box.
+  - `--leading-normal` (1.5) — UI text: hints, empty states, the viewport HUD.
+  - `--leading-prose` (1.55) — paragraphs meant to be read: help sections, dialogs, the narrow
+    notice.
 
 **Spacing / radius / borders**
 
@@ -109,7 +117,12 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
   - `--space-panel` (24px) — between panels.
 - Compact by default — this is a tool, not a marketing surface. Don't loosen into typical
   marketing whitespace; a conversion that reads airier than today picked the wrong step.
-- 1px hairline borders everywhere (`--line`), no shadows.
+- 1px hairline borders everywhere (`--line`), no shadows. There is deliberately no
+  `--border-width` token: the width is fixed by this rule, so a token buys nothing, and the three
+  exceptions (1.5px badge ring, 1.5px dashed dropzone, 2px spinner) are each their own decision.
+- Swatches are the one border exception, and they use `--swatch-line` (translucent white), not
+  `--line`. A swatch outlines a filament colour the user picked, and a dark navy hairline vanishes
+  against a dark swatch.
 - Sharp, near-square corners (`--radius-*` = 0–3px, industrial/blueprint feel): inputs 1px,
   buttons/rows/thumbnails 2px, dropzones 3px, swatches square (0px). See `tokens/spacing.css`.
 
@@ -120,8 +133,10 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 - Focus: border turns solid blue. No glow/outline ring.
 - Disabled: opacity 0.4, `cursor: not-allowed`. Never grayscale recoloring.
 - Drag-over (dropzone): border + text turn blue, faint blue wash fills background.
-- Transitions: 0.12s border-color/filter only. No page transitions, no spring/bounce easing
-  anywhere.
+- Transitions: `--transition-fast` (0.12s) for border-color, color and filter, which is every
+  hover and focus state above. Opacity and transform fades run 0.1–0.15s and stay literals: they
+  are per-element feel rather than a scale, and three sites do not make one. No page transitions,
+  and no spring or bounce easing anywhere.
 
 ## Components
 

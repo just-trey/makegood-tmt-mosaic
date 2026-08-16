@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The session-restore banner's copy is set at the same leading as every other
+  paragraph in the app.** It was the only one at 1.4 rather than 1.55, with no
+  stated reason. This is the one visible change in a pass that otherwise moved
+  hardcoded CSS values onto the design tokens that already carried them (weight,
+  tracking, transition duration, swatch outline). Everything else is
+  byte-identical in what it renders: the audit's full-page census of every
+  rendered font size, weight, radius and colour is unchanged, and `var()`
+  adoption went from 80.0% to 84.5%.
 - **Panel explainer text is shorter, and mechanism help has moved to Help.** The
   Colors detected hint packed six mechanisms into 96 words, and the Body colour
   hint explained itself by pointing at two controls in another panel. Both are
