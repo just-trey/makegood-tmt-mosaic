@@ -109,8 +109,8 @@ export function setShapeKind(kind: ShapeKind): void {
   $('#btn-export-stl').style.display = kind === 'assembly' ? 'none' : 'block';
   $('#export-hint').innerHTML =
     kind === 'assembly'
-      ? 'Exports a Bambu Studio project 3MF: parts spread across build plates, recesses pre-assigned to filament slots.'
-      : '3MF is print-ready for Bambu Studio with colors pre-assigned to filament slots; the STL set is the fallback for other slicers.';
+      ? 'Exports a Bambu Studio project 3MF. Parts are spread across build plates, with colors pre-assigned to filament slots.'
+      : 'The 3MF is print-ready for Bambu Studio, OrcaSlicer, or Snapmaker Orca, with colors pre-assigned to filament slots. The STL set is the fallback for other slicers.';
   setShapeThumb(kind);
   updateOffsetSliderRanges();
   requestFrame();

@@ -171,6 +171,43 @@ a rewrite — closing it means putting base assignment where the body color is c
 that these are one decision presented in two places. Worth settling alongside the swatch-grid item
 above, since both are about the same panel.
 
+**The quoted sentence is gone** as of the copy-tightening pass; the hint is now "The body color
+used when no artwork color is grouped into the base." That removed the pointer, not the split. The
+item stays open, and the live instance is now the layout rather than a sentence to grep for.
+
+## Depth's default is overridden from a different panel
+
+Convention 4 again, one panel down. The Depth panel sets a default; the per-color overrides that
+beat it live in Colors detected, and a color carrying one is highlighted only there. The hint used
+to say "override per-color below", which is the same cross-panel pointer as the body-color item
+above; it now says "Individual colors can override it" and names nothing.
+
+Smaller than the body-color case, and the same shape: the help dialog still has to explain that
+changing the Depth field can appear to do nothing because some rows opted out. Closing it means
+showing the override state where the default is set, not adding the sentence back.
+
+## Colors detected needs a paragraph of prose because none of its mechanisms are visible
+
+Convention 5 of [ui-conventions.md](ui-conventions.md): prose in a panel is a symptom, and a panel
+needing several sentences to explain what its controls do to each other is describing a
+relationship that should be visible instead. This is the rubric's own worked example.
+
+Measured before the copy-tightening pass: the hint ran 96 words and carried six mechanisms.
+
+| Mechanism                                                     | Why copy was carrying it                           |
+| ------------------------------------------------------------- | -------------------------------------------------- |
+| Drag one row onto another to merge                            | Drag targets are not indicated                     |
+| The ⠿ grip marks what is draggable                            | A glyph that has to be named in prose              |
+| The "Merge with…" dropdown does the same thing                | Two paths to one result, neither obviously primary |
+| A merged group shares one depth                               | Not shown on the group                             |
+| A merged group prints in its dominant member's color          | Not shown on the group                             |
+| "→ base" replaces the base, dragging onto Base row adds to it | Two gestures, opposite semantics, same target      |
+
+The hint is now two sentences and the detail lives in the help dialog, which is where mechanism
+belongs (convention 6). That is the copy fix and it is done. What remains is the reason the copy
+existed: closing this means making the affordances legible, in particular the last row — an
+asymmetry between two gestures on the same target is not something help text can rescue.
+
 ## The AMS-capacity pill states three remedies at once
 
 Convention 3 of [ui-conventions.md](ui-conventions.md): a warning states one problem and one
@@ -988,9 +1025,11 @@ into the build and let it adjust a placement it can actually measure.
 Convention 1 of [ui-conventions.md](ui-conventions.md) is one term per concept, and its table is
 explicit: say `zone`, not `surface, region, face, area`. The app says `surface` in at least four
 user-visible places — the zone-coverage notice ("N of M surfaces have artwork", `src/app/rebuild.ts`),
-the per-zone template links in the Part panel ("Design templates (one per surface)"), the artwork
-panel's hint ("On a part with more than one design surface…"), and until this run the fill-refusal
-warning ("Raise Scale to fill the surface").
+the per-zone template links in the Part panel ("Design templates (one per surface)"), the help
+dialog ("Some parts have more than one design surface…"), and until this run the fill-refusal
+warning ("Raise Scale to fill the surface"). The Artwork panel hint that used to be the fourth site
+lost its zone sentence in the copy-tightening pass, which removes one instance without changing the
+count of places the word appears.
 
 Caught by a conventions review of the shipped screenshots, which cited the table. Not fixed
 piecemeal on purpose: correcting one message while the other three say `surface` makes convention 1
@@ -999,6 +1038,29 @@ consistently. Closing it is a single pass over every user-visible string plus th
 deciding once — and worth checking which way round: `zone` is the term the vocabulary table picks,
 but `surface` is the one the app has actually been teaching users, and the table is the newer
 document.
+
+## "AMS slot", "filament slot", "filament" and "color" all name one thing
+
+Convention 1 again, the sibling of the `surface`/`zone` item above and deferred for the same
+reason. The rubric calls this out by name: "Today 'color', 'filament' and 'AMS slot' all name the
+same thing in different places." The vocabulary table picks `filament`, and `slot (numbered)` for
+the position it sits in.
+
+Counted during the copy-tightening pass, across the sites that are user-visible:
+
+| Says            | Where                                                                 |
+| --------------- | --------------------------------------------------------------------- |
+| "AMS slot"      | help dialog, the slot-count line, the capacity pill (`slotBudget.ts`) |
+| "filament slot" | the Export hints, `partPanel.ts`                                      |
+| "filament"      | the Auto-merge help ("collapse shading ramps toward fewer filaments") |
+| "color"         | the panel heading "Colors detected", every row label                  |
+
+Left alone deliberately. That pass covered explainer copy only, so the pill and the slot-count line
+were out of scope; changing the help dialog alone would have made the user meet two words for one
+thing instead of one inconsistent set. Same conclusion as the `surface`/`zone` item: closing it is
+one pass over labels, help and warning strings together, deciding once. Note the same caveat too —
+`AMS slot` is the term the printer's own UI uses and the one the app has been teaching, while
+`filament` is what the newer table picks.
 
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
