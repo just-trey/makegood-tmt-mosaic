@@ -79,8 +79,19 @@ backed by real evidence: a live run, a real print, not another review pass.
   weaken it to make something compile.
 - Comments: see [Comments](#comments) below.
 - UI copy follows [docs/ui-conventions.md](docs/ui-conventions.md)
-  (vocabulary table, conventions 1-6) and the same sentence rules as docs:
-  short, no em dashes.
+  (vocabulary table, conventions 1-6, plain language 33-37) and the same
+  sentence rules as docs: short, no em dashes.
+- **Plain language is the bar for every user-facing string, and it is not a
+  reading-age rule.** The reader runs a slicer daily. The line is their
+  vocabulary against ours: if a word appears in Bambu Studio's UI or a
+  Printables thread it is free (filament, layer height, prime tower, tileable),
+  and if it is ours it goes (quantize, boolean, cut solid, viewBox).
+  - Their words, real numbers. Never drop a measurement to sound friendlier.
+  - Never explain a word they already own. That is where rambling starts.
+  - Removing jargon must not make the sentence longer. If the plain version
+    runs long, cut the explanation instead of padding the word.
+  - The jargon table in conventions 33-37 carries the substitutions, and
+    `ship-it` step 2b checks them.
 - **Before changing what a shared value means** (`colorSettings`, a depth, a
   placement), open every reader of it, not just the one you are editing.
   - Changing it at one call site and reasoning only about that site caused
