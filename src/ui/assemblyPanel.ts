@@ -421,11 +421,11 @@ function buildAsmPartRow(
           `<option value="${i}" ${i === part.patchIdx ? 'selected' : ''}>#${i + 1}: area ${p.area.toFixed(0)}mm² (normal ${p.normal.map((v) => v.toFixed(2)).join(',')})</option>`,
       )
       .join('');
-    // The dropzone below hardcodes border-radius:6px, matching no --radius-* token (the scale
-    // tops out at --radius-2xl, 3px) — see docs/tech-debt.md's "assembly-part dropzone radius"
-    // entry before touching this without also picking the right token.
+    // --radius-2xl is the dropzone step (design-system/README.md: "dropzones 3px"), same as
+    // #dropzone. Styling here is an inline style in a template string, so a sweep over
+    // styles.css does not reach it — this one sat at the pre-v3 6px for that reason.
     const dropzone = canSwapMesh
-      ? `<div style="border:1.5px dashed var(--line);border-radius:6px;padding:var(--space-row);text-align:center;color:var(--text-dim);cursor:pointer;" data-asm-drop>
+      ? `<div style="border:1.5px dashed var(--line);border-radius:var(--radius-2xl);padding:var(--space-row);text-align:center;color:var(--text-dim);cursor:pointer;" data-asm-drop>
         Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file aria-label="Upload STL/3MF for ${part.name}">
       </div>`
       : '';
