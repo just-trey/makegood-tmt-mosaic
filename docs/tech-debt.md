@@ -21,34 +21,69 @@ scope of the edit, not that what left was finished.
 
 ## The assembly-part dropzone's radius matches no token
 
-[src/ui/assemblyPanel.ts:413](../src/ui/assemblyPanel.ts#L413)'s inline STL/3MF drop target
+[src/ui/assemblyPanel.ts:428](../src/ui/assemblyPanel.ts#L428)'s inline STL/3MF drop target
 hardcodes `border-radius:6px`. The radius scale (`tokens/spacing.css`) tops out at
 `--radius-2xl`, 3px — 6px matches no step on it, doubled or otherwise. Found while converting
 this same line's `padding` and font-size to tokens (`chore/type-and-spacing-tokens`); left alone
-because radius was explicitly out of that branch's scope. Very likely the source of a prior
-`docs/system-audit.md` run's "border-radius = 6px, source not conclusively identified" census
-row (2–6 elements, all this one row's dropzone across however many assembly parts are loaded).
+because radius was explicitly out of that branch's scope.
+
+**It no longer renders in any shipped kind, and the census row it used to be blamed for is gone.**
+PR #166 put the drop target behind `canSwapMesh`, which is true only where the parts library is
+unreachable. Every shipped kind (Wheel, Footrest, Hubcap, Chair body) auto-loads from the library,
+so the `/review-gauntlet system` run at `3288f6a` found **0** elements at 6px, against 2–6 on
+earlier runs. Don't read that zero as a fix: the literal is unchanged, and the fallback path still
+renders it wherever the library is missing.
+
 What closing it would take: decide whether 6px is a deliberate one-off (in which case it needs
 its own token or a documented exception, the way the five icon glyphs got one) or a mistake that
 should be `--radius-2xl`, then fix the one line.
 
-## "Exactly one gradient" undercounts by two
+## What the header stripe is allowed to borrow from the makegood.design brand
 
-`design-system/README.md`: "Exactly one gradient: the 3px `.accent-stripe` across the top of the
-window… Add no further gradients." `src/styles.css` has three `linear-gradient()` declarations:
-the documented stripe (line 106) plus two more forming `#right`'s faint 24px grid backdrop (lines
-355–356, `linear-gradient(var(--accent-glow) 1px, transparent 1px)` on both axes). The grid lines
-read as a repeating texture rather than a color blend, which is plausibly what the rule means to
-exclude — but the rule as written doesn't say that, so it's contradicted by the file two inches
-below it. Confirmed unchanged across two independent `/review-gauntlet system` runs. What closing
-it would take: state what the rule actually means ("no further decorative colour blends; the
-viewport grid is a repeating texture, not a blend") rather than changing the count — the number
-is the wrong thing to fix here, the sentence is.
+A maintainer decision, not a bug, and deliberately kept open. Nothing renders wrong today.
 
-A related question this section does not settle: the header's full-width rainbow gradient.
-`design-system/README.md` reserves the rainbow language for makegood.design and says the tool uses
-no gradients but the app mark. Recorded in [ui-conventions.md](ui-conventions.md) as a brand call
-rather than a bug — it needs a decision on what the tool's header is allowed to be, not a fix.
+`.accent-stripe` ([src/styles.css:71](../src/styles.css#L71)) is the 3px rule across the top of the
+window: `linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488)`, purple to indigo to teal.
+
+**It is a near-copy of makegood.design's banner gradient, off by about one shade step.**
+
+| Stop | Brand (`--mg-banner-*`) | App stripe |
+| ---- | ----------------------- | ---------- |
+| from | `#7e22ce` (purple-700)  | `#7c3aed`  |
+| via  | `#4338ca` (indigo-700)  | `#4c5fd7`  |
+| to   | `#0f766e` (teal-700)    | `#0d9488`  |
+
+Same three hues, same order. The middle stop matches no standard step in either palette.
+
+**The framing that makes this decidable: the tool already borrows the brand's whole palette.**
+`tokens/colors-makegood-dark.css` and the app's own `tokens/colors.css` agree on nine hexes exactly
+(table in `design-system/README.md`'s "Not in scope" section). So the question is not whether the
+tool may borrow from the marketing brand. It does, completely. The stripe is the one borrow that is
+visible and unreconciled.
+
+**The one input needed to close it**, which only the maintainer can supply: is the lightening a
+deliberate adjustment for the dark navy UI, or drift from a copy-paste? Each answer picks its own
+fix, and all three cost about the same:
+
+| If the intent was      | Closing it means                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| Match the brand banner | adopt the `--mg-banner-*` values                                                    |
+| Mosaic's own variant   | declare `--stripe-from`/`via`/`to` in `tokens/colors.css`, saying why it sits light |
+| Stop borrowing         | restyle in `--accent` / `--accent-2` and drop the brand reference                   |
+
+Scope is four sites in every case: the two declarations ([src/styles.css:71](../src/styles.css#L71),
+`design-system/guidelines/brand-mark.html`'s own `.accent-stripe`) and the two places the hexes are
+quoted in prose (`design-system/README.md`'s Colors section, and `brand-mark.html`'s closing note).
+
+Leave the three colors as literals until this is settled. Tokenising them now would make the
+current values look decided.
+
+**Three dead ends, checked so they are not re-checked.** The stripe is not the MakeGood rainbow:
+that is a separate seven-stop warm ramp (`--mg-rainbow-1..7`) used only by
+`guidelines/brand-makegood-site.html`. `design-system/README.md` does not forbid this stripe; it
+sanctions it by name and hex, and its "app mark" phrase belongs to a clause about there being no
+conic gradient. And [ui-conventions.md](ui-conventions.md) holds no record of this question: it has
+nothing on the header, stripe, brand, or rainbow.
 
 ## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
 

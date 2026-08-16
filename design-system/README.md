@@ -18,12 +18,13 @@ Everything in this bundle is a **design reference**, not production code to impo
   notes. These are the component contract. Read the spec, build it in whatever the app
   already uses.
 - `ui_kits/mosaic/preview.html` is a full recreation of the Mosaic left-panel + viewport
-  screen. Treat it as the layout spec for that screen — grid, panel order, header
-  composition, spacing — not as shippable markup, and read the note at the top of the file:
-  three of its controls no longer match the shipped app.
-- CSS custom properties in `tokens/*.css` are the canonical design tokens. `tokens/colors.css`
-  declares the same names the app declares in `src/styles.css`, so the two are one vocabulary
-  rather than two that happen to share hex values.
+  screen. Treat it as the layout spec for that screen (grid, header composition, spacing), not
+  as shippable markup, and read the note at the top of the file: five things in it no longer
+  match the shipped app, panel order among them.
+- CSS custom properties in `tokens/*.css` are the canonical design tokens, and the app
+  **imports** them: `src/styles.css` opens with `@import` of `tokens/colors.css`,
+  `tokens/spacing.css` and `tokens/typography.css` and declares no custom property of its own.
+  The two cannot drift apart, because there is only one declaration of each name.
 
 **Removed, deliberately — do not rebuild.** This bundle used to carry `components/**/*.jsx`
 React implementations, matching `*.d.ts` prop contracts, and `*.card.html` specimen harnesses
@@ -68,10 +69,14 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 - Accent primary (blue, primary actions/focus): `#6d93ff`
 - Accent secondary (cyan, sparse highlight): `#5eead4`
 - Danger (warnings only): `#f9438a`
-- Exactly one gradient: the 3px `.accent-stripe` across the top of the window,
-  `linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488)`. Those three colors have no token
-  identity anywhere — literals in `src/styles.css`, absent from every token file. There is no
-  conic gradient; the app mark is the real logo PNG. Add no further gradients.
+- Exactly one gradient is used as **colour**: the 3px `.accent-stripe` across the top of the
+  window, `linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488)`. Those three colors have no token
+  identity anywhere: literals in `src/styles.css`, absent from every token file. There is no
+  conic gradient; the app mark is the real logo PNG. **Add no further colour blends.**
+- The rule bars blends, not the `linear-gradient()` function. `#right`'s viewport backdrop uses
+  two more, one per axis, each a 1px `--accent-glow` line against transparent on a 24px tile.
+  That is a texture built from hairlines, not a blend between colours, and it is the one
+  sanctioned exception. Counting declarations gives three; counting blends gives one.
 
 **Typography**
 
@@ -232,5 +237,24 @@ and it means they never need re-tuning when body size moves. They are deliberate
 
 Two further, distinct visual languages were referenced but not built out: a cooler
 Tailwind/shadcn "ocean-blue" forum app (3d-mobility.org) and a warm rainbow-gradient nonprofit
-marketing site (makegood.design). Their token files are in `tokens/colors-3dmobility.css` and
-`tokens/colors-makegood.css` for reference only — do not use them for the Mosaic tool itself.
+marketing site (makegood.design). Their token files are `tokens/colors-3dmobility.css` and
+`tokens/colors-makegood.css`, for reference only. Do not use either for the Mosaic tool itself.
+
+**`tokens/colors-makegood-dark.css` is not one of those two, and this rule does not apply to it.**
+It is makegood.design's dark palette, re-tuned for WCAG AA, and it is the direct source of Mosaic's
+own: nine of its entries are the app's colors verbatim, name-for-name.
+
+| `colors-makegood-dark.css` | `colors.css` | Value     |
+| -------------------------- | ------------ | --------- |
+| `--mgd-bg`                 | `--bg`       | `#0c1220` |
+| `--mgd-surface`            | `--panel`    | `#141b30` |
+| `--mgd-surface-2`          | `--panel-2`  | `#1c2440` |
+| `--mgd-border`             | `--line`     | `#2b3457` |
+| `--mgd-text-primary`       | `--text`     | `#f5f7fb` |
+| `--mgd-text-secondary`     | `--text-dim` | `#aab3cf` |
+| `--mgd-accent-blue`        | `--accent`   | `#6d93ff` |
+| `--mgd-accent-cyan`        | `--accent-2` | `#5eead4` |
+| `--mgd-accent-pink`        | `--danger`   | `#f9438a` |
+
+Read it as the provenance of the palette, not as a foreign one to keep out. Changing a color in
+one and not the other is what puts them out of step.
