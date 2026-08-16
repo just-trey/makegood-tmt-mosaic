@@ -19,53 +19,6 @@ survives as its own section; only the closed part goes. Checking that the diff
 removed only the lines you meant to remove is _not_ this check: it confirms the
 scope of the edit, not that what left was finished.
 
-## What the header stripe is allowed to borrow from the makegood.design brand
-
-A maintainer decision, not a bug, and deliberately kept open. Nothing renders wrong today.
-
-`.accent-stripe` ([src/styles.css:71](../src/styles.css#L71)) is the 3px rule across the top of the
-window: `linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488)`, purple to indigo to teal.
-
-**It is a near-copy of makegood.design's banner gradient, off by about one shade step.**
-
-| Stop | Brand (`--mg-banner-*`) | App stripe |
-| ---- | ----------------------- | ---------- |
-| from | `#7e22ce` (purple-700)  | `#7c3aed`  |
-| via  | `#4338ca` (indigo-700)  | `#4c5fd7`  |
-| to   | `#0f766e` (teal-700)    | `#0d9488`  |
-
-Same three hues, same order. The middle stop matches no standard step in either palette.
-
-**The framing that makes this decidable: the tool already borrows the brand's whole palette.**
-`tokens/colors-makegood-dark.css` and the app's own `tokens/colors.css` agree on nine hexes exactly
-(table in `design-system/README.md`'s "Not in scope" section). So the question is not whether the
-tool may borrow from the marketing brand. It does, completely. The stripe is the one borrow that is
-visible and unreconciled.
-
-**The one input needed to close it**, which only the maintainer can supply: is the lightening a
-deliberate adjustment for the dark navy UI, or drift from a copy-paste? Each answer picks its own
-fix, and all three cost about the same:
-
-| If the intent was      | Closing it means                                                                    |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| Match the brand banner | adopt the `--mg-banner-*` values                                                    |
-| Mosaic's own variant   | declare `--stripe-from`/`via`/`to` in `tokens/colors.css`, saying why it sits light |
-| Stop borrowing         | restyle in `--accent` / `--accent-2` and drop the brand reference                   |
-
-Scope is four sites in every case: the two declarations ([src/styles.css:71](../src/styles.css#L71),
-`design-system/guidelines/brand-mark.html`'s own `.accent-stripe`) and the two places the hexes are
-quoted in prose (`design-system/README.md`'s Colors section, and `brand-mark.html`'s closing note).
-
-Leave the three colors as literals until this is settled. Tokenising them now would make the
-current values look decided.
-
-**Three dead ends, checked so they are not re-checked.** The stripe is not the MakeGood rainbow:
-that is a separate seven-stop warm ramp (`--mg-rainbow-1..7`) used only by
-`guidelines/brand-makegood-site.html`. `design-system/README.md` does not forbid this stripe; it
-sanctions it by name and hex, and its "app mark" phrase belongs to a clause about there being no
-conic gradient. And [ui-conventions.md](ui-conventions.md) holds no record of this question: it has
-nothing on the header, stripe, brand, or rainbow.
-
 ## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
 
 The viewport half of this is closed **for the accent-hue problem specifically**: the placement

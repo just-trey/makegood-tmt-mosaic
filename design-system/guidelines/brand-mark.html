@@ -20,8 +20,8 @@
         color: var(--text);
       }
       .accent-stripe {
-        height: 3px;
-        background: linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488);
+        height: 8px;
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
       }
       .header {
         display: flex;
@@ -64,11 +64,11 @@
       never had it.
     </p>
     <p class="note">
-      The app renders exactly one gradient: the 3px <code>.accent-stripe</code> above, a
-      <code>linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488)</code> spanning the full window width
-      above the header. Those three colors have no token identity — they appear nowhere else in the
-      app and in none of the token files. Left as literals here because this page describes what
-      ships; tokenizing them is a change to the app, not to the record of it.
+      The app renders exactly one colour blend: the 8px <code>.accent-stripe</code> above, a
+      <code>linear-gradient(90deg, var(--accent), var(--accent-2))</code> spanning the full window
+      width. It is drawn twice, once above the header and once along the bottom of the window, from
+      the same rule. Both stops are tokens, so the stripe cannot drift from the palette the rest of
+      the app is built on.
     </p>
   </body>
 </html>
