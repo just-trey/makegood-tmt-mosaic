@@ -21,19 +21,13 @@ scope of the edit, not that what left was finished.
 
 ## The assembly-part dropzone's radius matches no token
 
-[src/ui/assemblyPanel.ts:428](../src/ui/assemblyPanel.ts#L428)'s inline STL/3MF drop target
+[src/ui/assemblyPanel.ts:413](../src/ui/assemblyPanel.ts#L413)'s inline STL/3MF drop target
 hardcodes `border-radius:6px`. The radius scale (`tokens/spacing.css`) tops out at
 `--radius-2xl`, 3px — 6px matches no step on it, doubled or otherwise. Found while converting
 this same line's `padding` and font-size to tokens (`chore/type-and-spacing-tokens`); left alone
-because radius was explicitly out of that branch's scope.
-
-**It no longer renders in any shipped kind, and the census row it used to be blamed for is gone.**
-PR #166 put the drop target behind `canSwapMesh`, which is true only where the parts library is
-unreachable. Every shipped kind (Wheel, Footrest, Hubcap, Chair body) auto-loads from the library,
-so the `/review-gauntlet system` run at `3288f6a` found **0** elements at 6px, against 2–6 on
-earlier runs. Don't read that zero as a fix: the literal is unchanged, and the fallback path still
-renders it wherever the library is missing.
-
+because radius was explicitly out of that branch's scope. Very likely the source of a prior
+`docs/system-audit.md` run's "border-radius = 6px, source not conclusively identified" census
+row (2–6 elements, all this one row's dropzone across however many assembly parts are loaded).
 What closing it would take: decide whether 6px is a deliberate one-off (in which case it needs
 its own token or a documented exception, the way the five icon glyphs got one) or a mistake that
 should be `--radius-2xl`, then fix the one line.
