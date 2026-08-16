@@ -12,7 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **The Help panel and the Fit hint now mention Flip V.** Both explained Flip H
   and stopped, leaving the checkbox beside it undescribed. Both now say it
   mirrors top-to-bottom, and Help adds that Flip H/V are mirrors, not rotations:
-  artwork that imported upside down wants Rotation.
+  artwork that imported upside down wants Rotation. The assembly-mode Fit hint
+  is a separate string and was still missing it; it now matches.
+- **The Export hint no longer drops two slicers on flat parts.** The markup
+  named Bambu Studio, OrcaSlicer and Snapmaker Orca, then a script overwrote it
+  with Bambu Studio alone, so the other two were never seen. Both now agree.
 - The Help dialog now closes when you press Back after following one of its own
   section links. It used to stay on screen over an app you had navigated away
   from.
@@ -25,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Panel explainer text is shorter, and mechanism help has moved to Help.** The
+  Colors detected hint packed six mechanisms into 96 words, and the Body colour
+  hint explained itself by pointing at two controls in another panel. Both are
+  now one or two sentences; Help already carried the detail. The Artwork hint
+  drops its Sticker/Fill and "+zone" paragraphs for the same reason. Nothing was
+  removed from Help. See [docs/tech-debt.md](docs/tech-debt.md) for the model
+  problems the copy was covering for.
+- **The Help dialog is rewritten to the docs sentence rules.** Same eight
+  sections, same facts, same verified numbers. 38 em dashes and 57 sentences
+  over 20 words are gone; the longest sentence went from 50 words to 21.
 - **The thumbnail beside the Part dropdown is now the part.** It was one of a
   few hand-drawn glyphs chosen by how artwork is fitted rather than by what the
   part looks like, so the footrest, hubcap and chair all showed the same

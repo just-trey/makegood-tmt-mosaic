@@ -404,7 +404,7 @@ function buildAsmPartRow(
     const src = state.assembly.parts.find((p) => p.id === part.isDuplicateOf);
     row.innerHTML = `
       <div class="top"><div class="hex">${part.name}</div></div>
-      <div class="hint">Reuses ${src ? src.name : '?'}'s geometry, rotated into position for design-fitting purposes. Exported cut is re-oriented back to this part's native (unrotated) print orientation.</div>
+      <div class="hint">Reuses ${src ? src.name : '?'}'s geometry, rotated into place for fitting. The exported cut is rotated back to this part's own print orientation.</div>
       <div class="depth-row"><label>pivot X</label><input type="number" step="0.1" value="${part.pivotX}" data-asm="pivotX" style="width:56px;" aria-label="Pivot X for ${part.name}"></div>
       <div class="depth-row"><label>pivot Z</label><input type="number" step="0.1" value="${part.pivotZ}" data-asm="pivotZ" style="width:56px;" aria-label="Pivot Z for ${part.name}"></div>
       <div class="depth-row"><label>angle°</label><input type="number" step="1" value="${part.angleDeg}" data-asm="angleDeg" style="width:56px;" aria-label="Rotation angle for ${part.name}"></div>

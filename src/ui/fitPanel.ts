@@ -58,8 +58,8 @@ export function updateOffsetSliderRanges(): void {
   const fitHint = document.getElementById('p-fit-hint');
   if (fitHint)
     fitHint.textContent = isAssembly
-      ? 'Scale multiplies the design (over 100% bleeds past the part face). Flip H mirrors the artwork left-to-right (fixes text that reads backwards).'
-      : 'Margin sets the auto-fit border; Scale multiplies on top (over 100% bleeds past the edge). Flip H mirrors the artwork left-to-right (fixes text that reads backwards).';
+      ? 'Scale multiplies the artwork; over 100% bleeds past the part face. Flip H mirrors it left to right, which fixes text that reads backwards. Flip V mirrors it top to bottom.'
+      : 'Margin sets the auto-fit border. Scale multiplies on top; over 100% bleeds past the edge. Flip H mirrors the artwork left to right, which fixes text that reads backwards. Flip V mirrors it top to bottom.';
 
   let w: number, h: number;
   if (state.shapeKind === 'assembly') {
