@@ -25,7 +25,6 @@ import {
   applyColorMerges,
   computeNetRegionsByColor,
   planarArea,
-  safeIntersect,
   safeIntersectChecked,
   safeUnion,
   YIELD_BUDGET_MS,
