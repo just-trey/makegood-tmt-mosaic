@@ -986,7 +986,7 @@ const shortPartName = (partId, kindId) => {
  * face across the join. Labels sit on each part's largest sub-region only — the small islands are
  * usually too thin to hold text.
  */
-export function zoneTemplateSVG(zone, kindId, chartBBox, regions) {
+export function zoneTemplateSVG(zone, kindId, chartBBox) {
   // Canvas = the FULL chart UV bbox, not the simplified boundary's — the runtime centers artwork
   // on the chart bbox, and simplification can shave up to SIMPLIFY_TOL_MM off an extreme point,
   // which would quietly de-center every template by half that.
@@ -996,11 +996,11 @@ export function zoneTemplateSVG(zone, kindId, chartBBox, regions) {
   const H = up01(chartBBox.maxV);
   const pt = ([u, v]) => [round(u, 2), round(H - v, 2)];
   const toD = (pts) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ') + ' Z';
-  // Every lobe of the zone, not just the one `boundary`/`holes` describes — a pinched zone has
-  // several, and a template drawing only the largest would hide real design surface.
-  const silhouette = regions?.length
-    ? regions.flatMap((r) => [r.outer, ...r.holes])
-    : [zone.boundary, ...(zone.holes || [])];
+  // The per-part subRegions, the same loops the runtime clips artwork to, so the sheet shows what
+  // will actually cut. The whole-zone lobes are display-only: chained across a stitched seam they
+  // fan into spikes (48 of them on the chair's left flank), drawing surface that is not there and
+  // hiding surface that is.
+  const silhouette = zone.charts.flatMap((c) => c.subRegions.flatMap((r) => [r.outer, ...r.holes]));
   const d = silhouette.map((loop) => toD(loop.map(pt))).join(' ');
   const seams = (zone.seams || [])
     .map(
@@ -1387,7 +1387,7 @@ export function bakeZones(config, parts, log = () => {}) {
     zones.push(zone);
     templates.push({
       file: zone.templateFile,
-      svg: zoneTemplateSVG(zone, config.kindId, { maxU, maxV }, zoneRegions),
+      svg: zoneTemplateSVG(zone, config.kindId, { maxU, maxV }),
     });
     log(
       `zone "${zone.id}": ${zoneTris.length} tris across ${charts.length} part(s), ` +
