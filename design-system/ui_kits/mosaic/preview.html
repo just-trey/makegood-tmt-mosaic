@@ -1,18 +1,21 @@
 <!--
-  LAYOUT SPEC ONLY — three controls below no longer match the shipped app.
+  LAYOUT SPEC ONLY — five things below no longer match the shipped app.
 
-  This page is still the reference for the main screen's *layout*: the grid, the panel order,
-  the header composition, the spacing. Those are accurate.
+  This page is still the reference for the main screen's *layout*: the grid, the header
+  composition, the spacing. Those are accurate.
 
-  Three interactions in it are not, and were removed from the written specs rather than
+  Five things in it are not, and were removed from the written specs rather than
   reconciled here (rebuilding a 1000-line React mockup was out of scope for that pass):
 
-    1. Base part renders a SegmentedControl (Disc/Rect/Round rect/STL ref/Assembly). The app
+    1. Part renders a SegmentedControl (Disc/Rect/Round rect/STL ref/Assembly). The app
        renders a native <select> with five different options — the assembly kinds plus Disc.
     2. Assembly roles render two ThumbnailSelect dropdowns. The app has a reload button,
        "+ Add {role}" buttons, and a drop-zone row per part.
     3. Colors detected renders a "Merge selected into one recess" button over checkbox rows.
        The app merges per-row, via a drag grip or a "Merge with…" select.
+    4. Panels run Artwork first, then Part. The app puts Part first.
+    5. Export renders one primary button. The app has a primary "Export print-ready 3MF"
+       plus a small "Export STL set (.zip)" below it.
 
   See docs/system-audit.md for the measurements behind each.
 -->
@@ -734,7 +737,7 @@
             ),
             e(
               Panel,
-              { title: 'Base part' },
+              { title: 'Part' },
               e(
                 'div',
                 { style: { marginBottom: 8 } },
@@ -985,12 +988,14 @@
                     setTimeout(() => setBusy(false), 900);
                   },
                 },
-                'Export STL set (.zip)',
+                'Export print-ready 3MF',
               ),
               e(
                 'div',
                 { className: 'hint' },
-                'One STL per color, plus base.stl for the uncut plate.',
+                'The 3MF is print-ready for Bambu Studio, OrcaSlicer, or Snapmaker Orca, with ' +
+                  'colors pre-assigned to filament slots. The STL set is the fallback for other ' +
+                  'slicers.',
               ),
             ),
           ),

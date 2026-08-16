@@ -32,43 +32,6 @@ What closing it would take: decide whether 6px is a deliberate one-off (in which
 its own token or a documented exception, the way the five icon glyphs got one) or a mistake that
 should be `--radius-2xl`, then fix the one line.
 
-## Three component specs call the accent color "teal"; it's blue
-
-`Button.prompt.md` ("high-emphasis 'primary' (teal fill)", and again under Variants: "`primary`
-(solid teal, dark text)"), `Checkbox.prompt.md` ("teal accent"), and `Dropzone.prompt.md`
-("lights up teal on drag-over") all describe the accent color as teal.
-`design-system/README.md` itself states the real value correctly — "Accent primary (blue,
-primary actions/focus): `#6d93ff`" — and computed style confirms it live: the primary Export
-button's `backgroundColor`, the dropzone's drag-over `borderColor`, and a focused input's border
-all resolve to `rgb(109, 147, 255)` (`#6d93ff`, blue). `--accent-2` (`#5eead4`) is the actual
-teal — used elsewhere in the app (a `src/styles.css` comment on `.slot-count` even calls it "the
-resting teal") but on none of these three components. Not from this repo's own measurement —
-caught by the `system` lens of `/review-gauntlet`, confirmed unchanged across two independent
-runs (`docs/system-audit.md`, both under commit `f2cdd3f` and again under `5f8192b`). What
-closing it would take: three word-swaps, "teal" → "blue" (or "accent," since the token name
-already carries the color), in the three files above.
-
-## `design-system/README.md`'s Screens section (and `preview.html` mirroring it) names the wrong panel and the wrong primary Export action
-
-Two related drifts in the same section, both live-reconfirmed by two independent
-`/review-gauntlet system` runs:
-
-- The panel list ("stacked `Panel` sections in order: Artwork, **Base part**, Artwork fit,
-  Depth, Colors detected, Export") and the `- **Panel: Base part**` heading both still say "Base
-  part." The live sidebar's own `<summary>` text is "Part" (`index.html`, confirmed via computed
-  `panelTitles` census: `['Part', 'Artwork', 'Artwork fit', 'Depth', 'Colors detected',
-'Export']`). `ui_kits/mosaic/preview.html` mirrors the same stale name (`title: 'Base part'`).
-- `- **Panel: Export** — primary full-width "Export STL set (.zip)" button` has the wrong button.
-  Live, `#btn-export` (`class="btn primary full"`) reads "Export print-ready 3MF"; "Export STL
-  set (.zip)" is `#btn-export-stl` (`class="btn small full"`, not `primary`). Same reversal in
-  `preview.html`'s own Export panel.
-
-Neither is from this branch's own measurement — the `system` lens caught both, unchanged, across
-runs at commit `f2cdd3f` and again at `5f8192b`. What closing it would take: rewrite the one
-paragraph in `design-system/README.md`'s Screens section (panel name + which button is primary),
-and the matching two lines in `preview.html` (`title: 'Base part'`, `'Export STL set (.zip)'`
-under `variant: 'primary'`).
-
 ## "Exactly one gradient" undercounts by two
 
 `design-system/README.md`: "Exactly one gradient: the 3px `.accent-stripe` across the top of the
