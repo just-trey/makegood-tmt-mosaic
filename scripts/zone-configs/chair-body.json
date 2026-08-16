@@ -9,7 +9,11 @@
     "app has no part for it, so a zone must never grow onto it.",
     "The angles below are the measured knee of coverage against stretch, not round numbers —",
     "'back' at 55deg wraps around the U onto both handles' inner faces and unwraps at 20x, at",
-    "35deg it is 962cm2 across 6 parts at 1.13x. Re-check the bake log after changing any of them."
+    "35deg it is 962cm2 across 6 parts at 1.13x. Re-check the bake log after changing any of them.",
+    "The wing seeds must sit ON the fender's forward face: the face's area centroid hangs in air",
+    "inside the arch and seeds a 14-triangle sheet hidden in it. At 40deg each wing zone is",
+    "100cm2 at 1.016x and shares no triangle with 'left'/'right'; at 50deg it reaches 128cm2 but",
+    "claims 2 triangles 'left'/'right' already own, cutting the same artwork twice at the join."
   ],
   "seamWeldTolMm": 0.6,
   "parts": [
@@ -63,6 +67,20 @@
       "seedPoint": [0, 230, -361],
       "maxAngleDeg": 50,
       "up": [0, 0, -1]
+    },
+    {
+      "id": "wing-left",
+      "name": "Left fender",
+      "seedPoint": [157.4, 110.3, -7.4],
+      "maxAngleDeg": 40,
+      "up": [0, 1, 0]
+    },
+    {
+      "id": "wing-right",
+      "name": "Right fender",
+      "seedPoint": [-157.4, 110.3, -7.4],
+      "maxAngleDeg": 40,
+      "up": [0, 1, 0]
     }
   ]
 }
