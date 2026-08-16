@@ -122,19 +122,22 @@ compared per zone and both designs are named in a warning
 ([designOverlap.ts](../src/geometry/designOverlap.ts)).
 
 **Design zones: a part can carry more than one design surface.** Baked ahead of
-time by `scripts/bake-zones.mjs`. The chair body has five (left, right, front,
-back, seat). Each is a true-scale flat map of its surface (a UV chart) that
+time by `scripts/bake-zones.mjs`. The chair body has seven (left, right, front,
+back, seat, wing-left, wing-right). Each is a true-scale flat map of its
+surface (a UV chart) that
 artwork wraps onto **conformally**: a sticker follows the surface around a
 rounded edge the way real vinyl would
 ([conformal.ts](../src/geometry/conformal.ts)).
 
 - A zone spans the printed parts under it rather than stopping at a part edge.
+  (The fender zones happen to live on one part each: the wing's forward face
+  never reaches a seam.)
 - Artwork laid across a seam is split, cut into each part separately, and
   exported under that part's object.
 - Target a zone from the Artwork list's per-row dropdown, or by clicking the
   surface in the 3D view.
 
-**Artwork can't cross between zones, and the split into five is load-bearing.**
+**Artwork can't cross between zones, and the split into seven is load-bearing.**
 A zone's spread of surface directions must stay tight enough that flattening
 doesn't fold the surface onto itself, which `flipped == 0` does not check:
 merging left/back/right into one chart makes it fold onto itself over 4.85% of

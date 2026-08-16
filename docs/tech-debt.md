@@ -282,7 +282,7 @@ casters — in which case the 1.008 mm gap it protects is the gap _to_ them,
 and raising `seamWeldTolMm` past it would grow a neighbouring zone onto them
 as intended — or there really is an unshipped brace inside that same volume
 and the note stands as written. Resolve that against the CAD assembly before
-touching the tolerance, because it is the tolerance the existing five zones'
+touching the tolerance, because it is the tolerance the existing seven zones'
 measured coverage was tuned against; changing it re-bakes all of them.
 
 ## Rebuild performance needs ongoing work — this is a heavy application
@@ -400,39 +400,25 @@ summary card reading the same `getLastAssemblyBuild()` /
 already has in hand; it's a presentation layer on data that already exists,
 not a new computation.
 
-## Three open defects in the chair / pattern-library workflow
+## Two open defects in the chair / pattern-library workflow
 
 Named by the maintainer on 2026-08-05 as the reasons both features were briefly
 withheld from the UI (PR #133, since undone — both are offered again). Four were
 named; the viewport one ("jagged edges, and they cut off") turned out to be two
 unrelated one-file bugs and is fixed and gone from this list — camera fit in
-#139, flat shading in #140. **The remaining three are not fixed**; only the
-hiding was undone. They are graded against the shipped data below: the report is
-the maintainer's, the diagnosis is not, and where the cause is confirmed it says
+#139, flat shading in #140. A third, the fender front taking no artwork, closed
+with the reinstated `wing-left`/`wing-right` zones (the knee numbers live in
+the config `_note`). **The remaining two are not fixed**; only the hiding was
+undone. They are graded against the shipped data below: the report is the
+maintainer's, the diagnosis is not, and where the cause is confirmed it says
 so.
 
-1. **The front of the fender gets no coverage — confirmed.** The wings (the
-   "fenders") are reached only by `left` and `right`, which seed on the flank
-   at `maxAngleDeg: 45`
-   ([scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json)).
-   The `front` zone's charts cover `storage-*`, `handle-*` and `seat-back-*`
-   and **no wing at all**, so the forward-facing fender face falls outside
-   every zone and takes no artwork. Note that the chair body plan (deleted once
-   the chair shipped; in git history) dropped the planned separate
-   `wing-left`/`wing-right` zones as unnecessary, on the finding that
-   seeding on the fender reaches the same triangles as seeding on the storage
-   side — true for the flank, but that reasoning never covered the front face.
-   Closing it is either a wider `front`, a raised `left`/`right`
-   `maxAngleDeg`, or reinstating the dropped wing zones; all three re-bake and
-   re-tune every zone against the coverage-vs-stretch knee the `_note` warns
-   about.
-
-2. **Dead zones still need defining — open.** It is written up in
+1. **Dead zones still need defining — open.** It is written up in
    [roadmap.md](roadmap.md) ("Dead zones: mark the parts of a design zone that
    are hidden by an adjacent part"). Without it a design placed across a joint
    spends filament changes on surface nobody sees.
 
-3. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
+2. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
    outline.** Every shipped template in `public/templates/` is a pure `L`
    polyline with no curve commands: the zone boundary is traced along mesh
    triangle edges and emitted vertex-for-vertex. So a template's outline is as

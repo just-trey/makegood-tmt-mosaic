@@ -183,7 +183,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     designFit: 'rect',
     withholdFill: true,
     // The chair is packed in its CAD frame (up is +Y, the front where the wings/footrest sit is
-    // +Z), not design-face-up like the wheel and footrest — a body with five design surfaces has
+    // +Z), not design-face-up like the wheel and footrest — a body with seven design surfaces has
     // no single face to point at the camera. Without this the Z-up viewport renders CAD +Y
     // horizontal and the chair lies on its back. Verified against the shipped meshes: wings and
     // casters are lowest in Y (15, 92), handles and seat back highest (562); wings sit at z ≈ −4

@@ -55,7 +55,7 @@ const regionPolygon = (r: { outer: number[][]; holes: number[][][] }): PolyFeatu
   turf.polygon([closed(r.outer), ...r.holes.map(closed)]) as PolyFeature;
 
 describe('chair zone sidecar', () => {
-  it('is the chair-body sidecar with the five shipped zones', () => {
+  it('is the chair-body sidecar with the seven shipped zones', () => {
     expect(sidecar.kindId).toBe('chair-body');
     expect(sidecar.zones.map((z) => z.id).sort()).toEqual([
       'back',
@@ -63,6 +63,8 @@ describe('chair zone sidecar', () => {
       'left',
       'right',
       'seat',
+      'wing-left',
+      'wing-right',
     ]);
   });
 
@@ -124,10 +126,12 @@ describe('chart reconstruction', () => {
     }
   });
 
-  // Every shipped zone now spans printed parts, which is the whole point of the seam weld — so the
-  // per-part clip regions must PARTITION the zone: each part's share strictly smaller than the
+  // Every zone but the fenders spans printed parts, which is the whole point of the seam weld — so
+  // the per-part clip regions must PARTITION the zone: each part's share strictly smaller than the
   // whole, no part overlapping another, and the shares together covering the zone. A part whose
-  // share crept past its own triangles would cut artwork into a neighbour it doesn't own.
+  // share crept past its own triangles would cut artwork into a neighbour it doesn't own. The
+  // fender zones live on one part (the wing's forward face never reaches a seam), so for them the
+  // partition is the single chart covering the zone.
   it('splits each zone into per-part clip regions that together cover it', () => {
     // Reference area straight off the baked UV triangles — independent of the loops under test, so
     // "the regions add up" can't be true by construction.
@@ -142,7 +146,8 @@ describe('chart reconstruction', () => {
     };
 
     for (const z of sidecar.zones) {
-      expect(z.charts.length, z.id).toBeGreaterThan(1);
+      const singlePart = z.id === 'wing-left' || z.id === 'wing-right';
+      expect(z.charts.length, z.id).toBeGreaterThan(singlePart ? 0 : 1);
       let sum = 0;
       let uvArea = 0;
       for (const c of z.charts) {
@@ -274,7 +279,7 @@ describe('reconstructed charts drive the conformal mapper on real geometry', () 
     return turf.polygon([ring]) as PolyFeature;
   };
 
-  it.each(['left', 'right', 'back', 'seat'])(
+  it.each(['left', 'right', 'back', 'seat', 'wing-left', 'wing-right'])(
     'zone %s: frameAt lands on the part and a warped cutter is watertight',
     (zoneId) => {
       const z = sidecar.zones.find((zz) => zz.id === zoneId)!;

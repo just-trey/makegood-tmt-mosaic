@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **The chair's fenders can take artwork on their front face.** Two new design
+  zones, Left fender and Right fender (44.6 x 242.4mm each), cover the forward
+  face of each wing from the bottom edge up over the curve of the arch. The
+  face was previously outside every zone: the side zones stop at the flank, and
+  the front zone never reached the wings. Each fender zone comes with its own
+  true-size template.
+
 ### Fixed
 
 - **The chair's five design zone templates now show the real printable

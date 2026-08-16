@@ -16,7 +16,7 @@
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind.
 - A full parent-handle assembly kind.
-- Surface-first zone picking: show the chair's five design zones as
+- Surface-first zone picking: show the chair's seven design zones as
   selectable surfaces on the model from the moment it loads, so "put this on
   the back" is one click before any file is chosen, instead of today's
   load-a-design-then-rebind-it-to-a-zone order (`vision`-lens review,
