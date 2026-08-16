@@ -84,19 +84,28 @@ Only if the diff adds or changes a **user-facing string**: help dialog, panel
 copy, a label, a warning, a notice, an error. Skip it entirely otherwise, and
 say you did.
 
-For each changed string, check conventions 33–36 of
+**The test for every word**: would it appear in Bambu Studio's or Orca's UI, or
+in a Printables comment thread? If yes it is free, leave it. If no it is ours,
+replace it. This is not a reading-age check: the reader runs a slicer daily, and
+writing down to them fails just as hard as jargon does.
+
+For each changed string, check conventions 33–37 of
 [docs/ui-conventions.md](../../../docs/ui-conventions.md):
 
-- **33** — plain words, real numbers. Every number that was there is still
-  there, and no word needs a CAD background to read.
+- **33** — their words, real numbers. Every number that was there is still
+  there, and no word is one only a CAD user would have.
 - **34** — it names what is on screen (a part, a color, a recess, a file), not
   the step inside (a solid, a boolean, a build stage).
-- **35** — any unavoidable term is defined at first use, in a few plain words.
-- **36** — a diagnostic the user cannot act on is behind a disclosure that says
+- **35** — it does not stop to explain a word they already own, and any
+  unavoidable term of ours is defined at first use in a few plain words.
+- **36** — the rewrite is not longer than what it replaced. If it is, cut the
+  explanation rather than padding the word. Check this one by counting.
+- **37** — a diagnostic the user cannot act on is behind a disclosure that says
   so, and is exempt from 33.
 
 The jargon table in that section is the reference for the substitutions. If a
-string needs a term that isn't in it, add the row.
+string needs a term that isn't in it, add the row, and make the replacement obey
+36 before you do.
 
 **This is a copy check, not a rewrite pass.** It gates what the diff introduces.
 The existing copy that already fails is a tracked tech-debt item, and widening

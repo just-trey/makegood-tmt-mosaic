@@ -62,7 +62,7 @@ adjectives, second person for UI copy) still apply; this is the term list.
    Help that explains a _mechanism_ (how zones and designs relate) belongs in the help dialog,
    and needing it in-panel means the mechanism isn't legible.
 
-4–6 decide _where_ an explanation goes and _whether_ it should exist. **Plain language (33–36
+4–6 decide _where_ an explanation goes and _whether_ it should exist. **Plain language (33–37
 below) decides how it is written**, and applies wherever it lands.
 
 ## Layout and disclosure
@@ -151,43 +151,59 @@ The failure mode here is adding. The standing complaint is features nobody needs
 Applies to every user-facing string: help dialog, panel copy, labels, warnings, notices, errors.
 Not to `docs/`, which are working notes, or to code comments.
 
-The audience is hobbyist printer owners and MakeGood volunteers, not CAD users
-([audience.md](audience.md)). Copy that needs CAD literacy to read is the same defect as a feature
-that needs CAD literacy to use, and it fails the same success measure.
+**This is not a reading-age rule.** The reader is a maker who runs a slicer daily. Writing down to
+them is its own failure, and the usual symptom is length: a sentence that stops to explain a word
+they have used a hundred times. The audience is technical. It is technical in _printing_, not in
+CAD ([audience.md](audience.md)).
 
-**The bar**: a maker who has never opened a 3D modeling tool can act on the sentence without
-looking anything up. Not "sounds simple" — _can act on it_.
+So the line is not simple versus technical. It is **their vocabulary versus ours**.
+
+**The test**: would this word appear in Bambu Studio's or Orca's UI, or in a Printables comment
+thread? If yes, it is free, use it. If no, it is ours and it has to go.
+
+| Free, they own it                                                              | Ours, replace it                                            |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| filament, AMS slot, layer height, bed, plate, prime tower, seam, infill, purge | quantize, boolean, cut solid, mesh operation, build stage   |
+| 3MF, STL, SVG, mm, gradient, trace, tile, bounding box                         | viewBox, normal, plane offset, chart, LSCM, patch, manifold |
 
 This does not contradict the design system's voice rule (precise, technical, units and specifics
 over adjectives). The two govern different things:
 
-33. **Plain words, real numbers.** Plainness governs vocabulary and sentence shape. The design
-    system governs the specifics inside them, and it still wins there. Dropping `0.2mm` to sound
+33. **Their words, real numbers.** This governs vocabulary and sentence shape. The design system
+    governs the specifics inside them, and it still wins there. Dropping `0.2mm` to sound
     friendlier violates this convention. So does keeping `clamped to the layer floor` to sound
     precise. Say what happened in words the reader already owns, then give the number.
 34. **Name the thing on screen, not the step inside.** A user has a part, a color, a recess, a
     file. They do not have a solid, a boolean, a mesh operation or a build stage. Convention 2
     says this for warnings; 34 is the same rule over every string.
-35. **A term that can't be avoided is defined at first use, in a few plain words, once.** If it
-    cannot be defined in a few plain words, it is the wrong term.
+35. **Never explain a word they already own.** Defining `filament` or `layer height` reads as
+    condescension, and it is where the rambling starts. The counterpart holds for the other
+    column: a term of ours that cannot be avoided is defined at first use, in a few plain words,
+    once. If it cannot be defined in a few plain words, it is the wrong term.
+36. **Removing jargon must not make the sentence longer.** A one-word replacement, or fewer words
+    than before. If the plain version runs longer, the sentence was carrying an explanation it
+    did not need, and the fix is to cut the explanation rather than to pad the word. This is the
+    rule that keeps 33 from turning help text into a lecture.
 
 The vocabulary table at the top settles which of two ordinary words to use. This one settles terms
-that are not ordinary at all. Both columns are quoted from shipped copy, not invented pairs.
+that are not ordinary at all. Both columns are quoted from shipped copy, not invented pairs, and
+every row obeys 36: the replacement is shorter than or the same length as what it replaces.
 
-| Say                                     | Not                                | Shipping today in           |
-| --------------------------------------- | ---------------------------------- | --------------------------- |
-| reduced to flat colors                  | quantized                          | Artwork hint, help dialog   |
-| near-identical copies of one color      | near-identical export artifacts    | help dialog                 |
-| colors that fade into each other        | shading ramps                      | help dialog                 |
-| the color most of the group is          | the dominant member                | help dialog, `colorList.ts` |
-| the box around it                       | its bounding box                   | help dialog                 |
-| angled edge                             | chamfered edge                     | help dialog                 |
-| draws the edges back around each color  | traces the result back to outlines | help dialog                 |
-| a design whose edges line up when tiled | a tileable design                  | help dialog                 |
-| Rebuilding the part…                    | Rebuilding geometry…               | `scheduler.ts` overlay      |
-| Couldn't cut the recess into <part>     | Couldn't build the cut solid       | assembly CSG warnings       |
+| Say                                 | Not                                | Shipping today in           |
+| ----------------------------------- | ---------------------------------- | --------------------------- |
+| reduced to flat colors              | quantized                          | Artwork hint, help dialog   |
+| near-identical copies               | near-identical export artifacts    | help dialog                 |
+| gradients                           | shading ramps                      | help dialog                 |
+| the group's main color              | the dominant member                | help dialog, `colorList.ts` |
+| angled edge                         | chamfered edge                     | help dialog                 |
+| traces the edges                    | traces the result back to outlines | help dialog                 |
+| Rebuilding the part…                | Rebuilding geometry…               | `scheduler.ts` overlay      |
+| Couldn't cut the recess into <part> | Couldn't build the cut solid       | assembly CSG warnings       |
 
-36. Numbers a user cannot act on are diagnostics, not copy, and live behind a disclosure that says
+Two terms were on this table and came off it. `tileable` and `bounding box` are both free by the
+test above, and both replacements ran longer, which is 36. Leave them alone.
+
+37. Numbers a user cannot act on are diagnostics, not copy, and live behind a disclosure that says
     so. `face detected: normal (0.00, 1.00, 0.00), plane offset 24.25mm, 104-pt boundary` is
     correctly placed (it sits under "Advanced: per-part face & alignment") and correctly worded
     for what it is. Reading it as a convention-33 violation is a misread; moving it out from

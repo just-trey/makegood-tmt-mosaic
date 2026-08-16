@@ -210,21 +210,26 @@ asymmetry between two gestures on the same target is not something help text can
 
 ## User-facing copy is written for someone who has opened a CAD tool
 
-Conventions 33–36 of [ui-conventions.md](ui-conventions.md), added after a copy pass found the
-problem was register rather than length. The bar those conventions set: a maker who has never
-opened a 3D modeling tool can act on the sentence without looking anything up.
+Conventions 33–37 of [ui-conventions.md](ui-conventions.md), added after a copy pass found the
+problem was register rather than length. The bar those conventions set: the reader runs a slicer
+daily, so a word that appears in Bambu Studio's UI or a Printables thread is free, and a word that
+is ours is not.
 
 Counted across the help dialog, panel hints and warning strings, on the commit that added the
 conventions. The table in convention 33's section is the full list with its replacements; the shape
 of it is:
 
-| Where                 | State                                                                                                                                        |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Help dialog           | Worst affected. `quantized`, `export artifacts`, `shading ramps`, `dominant member`, `bounding box`, `chamfered edge`, `tileable`, `viewBox` |
-| Panel hints           | One instance (`quantized`), inherited from the same sentence in Help                                                                         |
-| Warnings/notices      | Mostly already plain. Convention 2 did that work when the strings were rewritten to name a filament and a part                               |
-| Assembly CSG warnings | The exception: `Couldn't build the cut solid`, `Boolean union/subtraction failed`. Already open as convention-2 violations                   |
-| Advanced face readout | Not a violation. Convention 36 covers it: a diagnostic behind a disclosure that says so                                                      |
+| Where                 | State                                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Help dialog           | Worst affected. `quantized`, `export artifacts`, `shading ramps`, `dominant member`, `chamfered edge`, `viewBox`           |
+| Panel hints           | One instance (`quantized`), inherited from the same sentence in Help                                                       |
+| Warnings/notices      | Mostly already plain. Convention 2 did that work when the strings were rewritten to name a filament and a part             |
+| Assembly CSG warnings | The exception: `Couldn't build the cut solid`, `Boolean union/subtraction failed`. Already open as convention-2 violations |
+| Advanced face readout | Not a violation. Convention 37 covers it: a diagnostic behind a disclosure that says so                                    |
+
+`tileable` and `bounding box` were counted as violations in the first draft of this section and are
+not. Both pass the slicer test, and both plain replacements ran longer, which convention 36
+forbids. Closing this item must not "fix" them.
 
 The useful finding is the third row. "Rewrite all user-facing copy" sounds like it lands
 everywhere, and it does not: convention 2 already dragged the warnings into the user's words, so
