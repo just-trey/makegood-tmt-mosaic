@@ -1,6 +1,6 @@
 ---
 name: run-app
-description: Launch the app for manual or headless verification — dev server for interactive use, or a headless Playwright page for screenshots/driving it from a script. Use before claiming a UI or geometry change works, or when a reviewer skill needs to observe real app behavior.
+description: Launch the app for manual or headless verification: dev server for interactive use, or a headless Playwright page for screenshots/driving it from a script. Use before claiming a UI or geometry change works, or when a reviewer skill needs to observe real app behavior.
 model: sonnet
 ---
 
@@ -12,32 +12,30 @@ model: sonnet
 npm run dev
 ```
 
-Vite, no pinned port — it picks the first free one starting at 5173 and prints
-the URL it landed on. Don't assume 5173; read the printed line. `?kind=` opens
-the app on a given assembly kind directly (`?kind=chair-body`, `?kind=footrest`)
-instead of the wheel picker, useful when you already know what you're checking.
+Vite picks the first free port from 5173 and prints the URL. **Don't assume
+5173; read the printed line.** `?kind=` opens a given assembly kind directly
+(`?kind=chair-body`, `?kind=footrest`) instead of the wheel.
 
-This is the **dev** server, and it is the one that cannot go stale: it
-transforms modules per request and hot-reloads, so a long-running one is still
-serving current source days later. A dev server you didn't start is somebody's
-working session — leave it alone, and don't cite its age as evidence of
-anything. Everything below about staleness concerns `vite preview`, which is a
-different program serving a different directory; don't call that one "the
-preview server" too.
+**The dev server cannot go stale.** It transforms modules per request and
+hot-reloads, so a long-running one still serves current source days later. A dev
+server you didn't start is somebody's working session: leave it alone, and don't
+cite its age as evidence of anything.
+
+Everything below about staleness concerns `vite preview`, a different program
+serving a different directory. Don't call that one "the preview server" too.
 
 ## Headless, for screenshots or a driven check
 
-Drive it headless. On a headless Linux/WSL2 box there is no display, so it's
-the only option — don't burn a cycle trying to launch headed there. If
-Playwright isn't set up yet, `npx playwright install chromium-headless-shell`
-once (on the maintainer's box it already is; see memory
+On a headless Linux or WSL2 box there is no display, so headless is the only
+option. If Playwright isn't set up, run `npx playwright install
+chromium-headless-shell` once (already done on the maintainer's box; see memory
 `wsl-dev-environment.md`).
 
-**Driven runs default to software rendering, which is slow.** Headless
-Chromium falls back to SwiftShader — roughly 300ms/frame, which also caps
-`requestAnimationFrame` near 2.5fps and stretches anything frame-paced. On a
-WSL2 box with GPU passthrough, driving the chair end-to-end was measured at
-**~104s** software versus **~12s** on hardware.
+**Driven runs default to software rendering, which is slow.** Headless Chromium
+falls back to SwiftShader at roughly 300ms/frame, which caps
+`requestAnimationFrame` near 2.5fps and stretches anything frame-paced. Driving
+the chair end-to-end was measured at **~104s** software against **~12s** on
+hardware.
 
 `MOSAIC_GPU=1` opts into the hardware path:
 
@@ -45,71 +43,66 @@ WSL2 box with GPU passthrough, driving the chair end-to-end was measured at
 npm run build && MOSAIC_GPU=1 node scripts/export-chair-examples.mjs
 ```
 
-**The `npm run build &&` is not optional** — see "Stale builds" below. Every
+**The `npm run build &&` is not optional.** See "Stale builds" below. Every
 driven script needs it; only `npm run smoke` builds on your behalf.
 
-`launchBrowser()` in [scripts/lib/harness.mjs](../../../scripts/lib/harness.mjs)
-reads it and adds the ANGLE + `GALLIUM_DRIVER=d3d12` flags that select the GPU,
-so it applies to any script built on the harness — which is all of them.
+`launchBrowser()` in [harness.mjs](../../../scripts/lib/harness.mjs) reads the
+flag and adds the ANGLE and `GALLIUM_DRIVER=d3d12` flags that select the GPU, so
+it applies to any script built on the harness, which is all of them.
 
 **Whether it helps depends on the machine, and the flag tells you which you
-have.** The selection flags are specific to WSL2's d3d12 passthrough
-(`/dev/dxg` plus Mesa in `/usr/lib/wsl/lib`); on a different OS or a box
-without passthrough there may be nothing to select. Asking for hardware and
-not getting it is a deliberate hard error rather than a silent slow run: the
-harness reads the GL renderer string once per browser and refuses to continue
-if it names SwiftShader or llvmpipe. So trying it is safe and self-verifying —
-either it runs and prints `GPU: ANGLE (…)`, or it stops immediately and tells
-you it fell back.
+have.** Those flags are specific to WSL2's d3d12 passthrough (`/dev/dxg` plus
+Mesa in `/usr/lib/wsl/lib`); elsewhere there may be nothing to select. Asking
+for hardware and not getting it is a deliberate hard error, not a silent slow
+run: the harness reads the GL renderer string once per browser and refuses to
+continue if it names SwiftShader or llvmpipe. So trying it is self-verifying.
+Either it prints `GPU: ANGLE (…)`, or it stops and tells you it fell back.
 
 **Omitting the flag is always correct.** Everything works software-rendered,
-just slower — that is the path CI takes, since the Playwright container has no
-GPU at all. Leave it off if you're unsure, if the error above fires, or if
-you're specifically reproducing CI. Full background:
-[docs/tech-debt.md](../../../docs/tech-debt.md).
+just slower, and that is the path CI takes since its Playwright container has no
+GPU. Leave it off if you are unsure, if the error above fires, or if you are
+reproducing CI. Background in [tech-debt.md](../../../docs/tech-debt.md).
 
-Don't invent the launch/wait-for-server shape — copy it from
-[scripts/export-chair-examples.mjs](../../../scripts/export-chair-examples.mjs),
-which drives the real app end-to-end (load a part, bind artwork, export) and is
-the maintained reference for this. Its wait-for-idle helper (`settled()`) is
-itself worth reading before writing a new wait condition: `#btn-export` staying
-enabled is not a signal that a rebuild has finished — it stays enabled from the
-_previous_ build while the next one is scheduled and running. Wait for the
-`#loading-overlay` rebuild curtain to rise and fall instead.
+**Don't invent the launch and wait-for-server shape.** Copy it from
+[export-chair-examples.mjs](../../../scripts/export-chair-examples.mjs), which
+drives the real app end to end (load a part, bind artwork, export) and is the
+maintained reference.
 
-The underlying browser plumbing (`startPreview`, `launchBrowser`, `newPage`) is
-factored out in
-[scripts/lib/harness.mjs](../../../scripts/lib/harness.mjs) — reuse it rather
-than re-deriving a Playwright launch. It also filters out the
-`cloudflareinsights.com` CORS noise that shows up on localhost, so console-error
-assertions built on it don't need to special-case that themselves.
+Read its `settled()` helper before writing a new wait condition. **`#btn-export`
+staying enabled is not a signal that a rebuild finished**: it stays enabled from
+the _previous_ build while the next is scheduled and running. Wait for the
+`#loading-overlay` curtain to rise and fall instead.
 
-**Stale builds — the failure this repo actually keeps hitting:**
+The browser plumbing (`startPreview`, `launchBrowser`, `newPage`) is factored
+out in [harness.mjs](../../../scripts/lib/harness.mjs); reuse it rather than
+re-deriving a Playwright launch. It also filters the `cloudflareinsights.com`
+CORS noise that appears on localhost, so console-error assertions built on it
+need no special case.
 
-`vite preview` serves `dist/` as a static snapshot. It never rebuilds. So if
-you edit a file and re-run a driven check without building, the run drives the
-_previous_ build: the app loads, the check passes, the screenshots look right,
-and every number describes code that is no longer on disk. Nothing about it
-looks wrong from the browser side. This needs no leftover process to happen —
-a freshly spawned, correctly started preview serves stale bytes just as
-happily, which is why "kill the old server and retry" doesn't fix it.
+## Stale builds, the failure this repo keeps hitting
 
-`startPreview()` now refuses to start when anything under `src/`, `public/`,
-`index.html` or `vite.config.ts` is newer than `dist/index.html`, and names
-what was stale. If you see that error, run `npm run build` — don't reach for
-`allowStaleDist: true` unless you specifically mean to drive the older build.
+`vite preview` serves `dist/` as a static snapshot and never rebuilds. Edit a
+file, re-run a driven check without building, and the run drives the _previous_
+build: the app loads, the check passes, the screenshots look right, and every
+number describes code no longer on disk.
 
-**Ports, don't conflate them:**
+**This needs no leftover process.** A freshly spawned, correctly started preview
+serves stale bytes just as happily, which is why "kill the old server and retry"
+doesn't fix it.
 
-- `npm run preview` (and `startPreview()`'s default) serves the production
-  build on **4173** with `--strictPort` — it refuses to start if that port is
-  already taken rather than silently picking another, on purpose: a leftover
-  preview from an earlier run would otherwise answer requests with a stale
-  build.
-- `export-chair-examples.mjs` runs its own preview on **4174**, specifically so
-  it can run alongside an interactive `npm run preview` on 4173 without
-  colliding.
+`startPreview()` refuses to start when anything under `src/`, `public/`,
+`index.html` or `vite.config.ts` is newer than `dist/index.html`, and names what
+was stale. Run `npm run build`. Don't reach for `allowStaleDist: true` unless
+you specifically mean to drive the older build.
 
-If you're writing a new driven check, prefer 4174 or another free port over
-4173 unless you specifically want to reuse an already-running preview
-(`startPreview({ reuse: true })`).
+## Ports, don't conflate them
+
+- **4173**: `npm run preview` and `startPreview()`'s default, serving the
+  production build with `--strictPort`. It refuses to start if the port is taken
+  rather than silently picking another, because a leftover preview would
+  otherwise answer with a stale build.
+- **4174**: `export-chair-examples.mjs` runs its own preview here, so it can run
+  alongside an interactive preview on 4173.
+
+Writing a new driven check? Prefer 4174 or another free port over 4173, unless
+you specifically want to reuse a running preview (`startPreview({ reuse: true })`).

@@ -27,7 +27,8 @@ export const EDGE_TOUCH_TOL_MM = 0.1;
  * backwards: a 6350 mm² region flush against a 110 mm-radius outline over a 6.5 mm arc loses
  * 0.65 mm² and needs 6.35 mm² to register, so it came out "interior" and printed a base-colour
  * band along exactly the rim this rule exists to colour. Caught in review; `tests/zones.test.ts`
- * pins it.
+ * pins it. A second measurement of the same failure: a 43000 mm² block sharing 8 mm of the
+ * outline also read as interior.
  *
  * The value is `EDGE_TOUCH_TOL_MM × 0.05 mm` — a contact one twentieth of a millimetre long, far
  * below anything a nozzle resolves, so shorter contacts are corner touches rather than rims. That
