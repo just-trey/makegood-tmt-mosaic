@@ -7,351 +7,310 @@ screenshot.
 
 ## Measurement conditions
 
-|                                    |                                                                                                                                                                                                                                                                                         |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App commit (SHA)                   | `5f8192b18d7ffa9db1b823901f25ddd521066576` (branch `chore/type-and-spacing-tokens`, PR #153)                                                                                                                                                                                            |
-| Design system version              | same commit — `design-system/` lives in this repo, no separate SHA. **This branch renamed the design system's own token files** (`tokens/typography.css`, `tokens/spacing.css`) — see "Design system version changed" below before reading any row against the prior run as a diff.     |
-| Viewport                           | 1440 × 960, device pixel ratio 1                                                                                                                                                                                                                                                        |
-| Renderer                           | ANGLE (D3D12, NVIDIA GeForce RTX 2060) — hardware, not software fallback (`MOSAIC_GPU=1`, confirmed via the harness's own refuse-on-software-renderer check)                                                                                                                            |
-| Drive script                       | [`scripts/system-audit-drive.mjs`](../scripts/system-audit-drive.mjs), content hash `d5a3d9543e06ae7a` (sha256, first 16 hex) — **unchanged** from the prior run (`git diff main -- scripts/system-audit-drive.mjs` is empty), replayed exactly as committed, not modified for this run |
-| Console/page errors during the run | none                                                                                                                                                                                                                                                                                    |
+|                                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| App commit (SHA)                   | `3288f6a287fc9172d420d2ce977b510c917433d9` (`main`, PR #181)                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Design system version              | same commit — `design-system/` lives in this repo, no separate SHA. Token vocabulary unchanged since the last full run (`5f8192b`, still 41 names across `colors.css`/`spacing.css`/`typography.css`), so every token-census row below is a direct diff, not void.                                                                                                                                                                                           |
+| Viewport                           | 1440 × 960, device pixel ratio 1                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Renderer                           | ANGLE (D3D12, NVIDIA GeForce RTX 2060) — hardware, not software fallback (`MOSAIC_GPU=1`, confirmed via the harness's own refuse-on-software-renderer check)                                                                                                                                                                                                                                                                                                 |
+| Drive script                       | [`scripts/system-audit-drive.mjs`](../scripts/system-audit-drive.mjs), content hash `2b952a34c0ef25da` (sha256, first 16 hex) — this is the "hardened" script (PR #156: derives `DESIGN_TOKENS` from `design-system/tokens/*.css` at run time, drives a narrow-viewport pass). Its hash does not match the prior full report's (`d5a3d954…`), so every `†` row below is a fresh baseline, not a diff against `5f8192b` — see "State coverage changed" below. |
+| Console/page errors during the run | none                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
-**States measured** (identical to the prior run's, by construction — same script, same sequence):
-initial load (default-selected shape kind, an assembly kind — currently "Wheel (Top ×2 + Cap)");
-help dialog open; 6-color artwork loaded (Colors detected populated, default printer's
-"multi-unit" info pill live); printer switched to Snapmaker U1 (its "over-max" warn pill live);
-confirm dialog open (triggered by switching shape kind with artwork loaded); a hover pass (default
-button, dropzone), a focus pass (text input), and a real `dragover` dispatch (dropzone) layered on
-the states above.
+**States measured**: initial load (default-selected shape kind, an assembly kind — currently
+"Wheel (Top ×2 + Cap)"); help dialog open; 6-color artwork loaded (Colors detected populated,
+default printer's "multi-unit" info pill live); printer switched to Snapmaker U1 (its "over-max"
+warn pill live); confirm dialog open (triggered by switching shape kind with artwork loaded); a
+hover pass (default button, dropzone), a focus pass (text input), a real `dragover` dispatch
+(dropzone), and a narrow-viewport pass (≤899px, `#narrow-notice`) — layered on the states above.
 
-**States _not_ reached this run** — identical list to the prior run's, for the identical reason
-(same script): the loading-overlay's `visible` moment mid-rebuild; ColorRow's `.dragging` /
-`.drop-target` mid-drag states; a populated Base row and a merged color group (`.member-swatch`,
-`.swatch.pinned`); the primary Button variant's `:hover`; the depth-override `.overridden` input
-state and its `↺` reset button; `.base-swatch`'s `:hover`; a native `<select>`'s open dropdown.
+**States _not_ reached this run**: the loading-overlay's `visible` moment mid-rebuild; ColorRow's
+`.dragging` / `.drop-target` mid-drag states; a populated Base row and a merged color group
+(`.member-swatch`, `.swatch.pinned`); the primary Button variant's `:hover`; the depth-override
+`.overridden` input state and its `↺` reset button; `.base-swatch`'s `:hover`; a native `<select>`'s
+open dropdown; the assembly-part manual drop target (see Finding 6 below — no reachable state
+renders it with any shipped kind).
 
-One state gap is new to this run's scope, not the prior run's: **the narrow/mobile notice
-(`#narrow-notice`, `≤899px`)**. This branch's `--space-panel` token has exactly one consumer in
-the whole app (`#narrow-notice { padding: var(--space-panel); }`), and `#narrow-notice` sits
-outside `#app` in the DOM, shown only under a `max-width: 899px` media query. At this run's fixed
-1440px viewport it is never visited by any state above, so `--space-panel` is source-confirmed as
-real and used, but not confirmed as _rendering_ by anything this run measured. Noted here, not
-folded into the drive script (out of scope for a replay-unchanged run) — a future revision of the
-script should add a resize pass if this token's rendering needs confirming directly.
+### State coverage changed since the last full report — `†` rows are a fresh baseline
 
-Two supplementary, ad hoc checks (not the committed drive script, so not subject to its hash
-guarantee) fill gaps the drive script has never covered in either run and are cited explicitly
-where used: a font-family-in-use check across all 10 `guidelines/*.html` files plus
-`ui_kits/mosaic/preview.html` (`scaleCensus()` in the drive script never visits those files), and a
-`padding`/`margin`/`gap` census on the running app (`scaleCensus()` only tallies `fontSize`,
-`fontWeight`, `borderRadius`, `color`, `backgroundColor` — it has never included spacing
-properties, in this run or the last). Also cited as corroborating, non-authoritative context: this
-branch's own `scripts/check-type-scale.mjs`, which reaches two states this run's replay of
-`system-audit-drive.mjs` cannot (a merged color group, the narrow viewport) and independently
-confirms the font-size findings below — its PASS is not treated as this report's evidence per the
-task's own instruction, only as corroboration.
+The last full report (`5f8192b`) was itself measured against an earlier version of this same
+script (hash `d5a3d954…`) that did not yet drive the narrow-viewport pass — that gap was closed by
+PR #156 after that report shipped, and this run is the first full measurement to replay the
+extended script. Per this lens's own rule, a changed drive-script hash means every `†`
+(state-sensitive) row is **incomparable to `5f8192b`**, not a diff against it. Concretely this run
+newly confirms `--space-panel` render-live (closing that report's Finding 9) and reaches one more
+documented state (the narrow/mobile notice) than `5f8192b` did. This report is the new baseline for
+`†` rows; a future run replaying this same script hash (`2b952a34c0ef25da`) can diff against it
+directly.
 
-### Design system version changed — read every renamed-token row as void, not as a diff
-
-The prior report (commit `026a9cf`, before `f2cdd3f`) measured against a design system that
-declared `--space-1`…`--space-9`, `--text-xs`/`sm`/`sm-plus`/`md`/`base`/`lg`, and
-`--font-heading`/`--font-sans`/`--font-mono`. This branch renamed those declarations —
-`design-system/tokens/typography.css` and `tokens/spacing.css` now declare `--text-label`/`meta`/
-`body`/`emphasis`/`display`, `--space-hair`/`tight`/`row`/`section`/`panel`, and `--heading`/
-`--sans`/`--mono` (name-identical to the app's own, closing the alias indirection that used to
-exist between them). **The committed drive script's `DESIGN_TOKENS` constant was not updated for
-this rename** (its own header comment says to replay it unchanged, and it wasn't touched by this
-branch — `git diff` confirms). Replayed as committed, `resolveTokens()` still queries the _retired_
-36 names, correctly finds them all UNSET (they no longer exist under those names anywhere), and
-never asks about the 10 names that replaced them — so the script's own raw token-resolution numbers
-this run are **not usable as this run's Adoption census**; they measure a vocabulary the design
-system no longer declares.
-
-The Adoption section below therefore reports two numbers side by side: the replayed script's raw
-output (for the record, since replaying unmodified is the instruction), and an independently
-computed census against the design system's **actual currently-declared** token names (read
-directly from `design-system/tokens/*.css` and cross-checked against `src/styles.css`'s `:root`
-block, both open files, not a script). Per this lens's own rule ("when the system itself changed
-between runs, every row moved for that reason: say so, and treat the comparison as void rather than
-reporting a diff") — **the jump from the prior run's 43% to this run's 80% co-declared is not
-adoption improving 37 points; it is two different scales being measured, and the branch's own
-`DECISIONS-NEEDED.md` says exactly this ("do not read the numbers below as adoption tripled").**
-Restated here because it is the single easiest way this lens itself gets misread.
+Two supplementary, ad hoc checks (not the committed drive script) are cited where used: a source
+grep for every `var(--danger` and `linear-gradient(` usage site in `src/styles.css` (confirming the
+danger-reserved-for-warnings and gradient-count semantic rules), and `git log -S`/`git diff` against
+specific commits to establish whether a change closed a finding or only narrowed where it renders.
 
 ## Verdict
 
-**Describes, with real gaps — narrower gaps than last time, but the same shape of gap.** Five
-findings from the prior run are independently reconfirmed closed this run: the type scale is real
-now (0% fiction, 0% undocumented drift — Finding 7), all three buttons that fell back to the
-browser's UI font now render Inter (Finding 2), the duplicate `--radius-xl` token is gone rather
-than merely fixed (Finding 8), the `brand-makegood-site.html` font exception is now stated in both
-`README.md` and the page's own header comment (Finding 11), and `Badge` remains fiction-free
-(closed before this branch, in `f2cdd3f`; reconfirmed: 10/10 declared components have a live
-counterpart). The `var()`-vs-literal adoption rate for scale-relevant CSS rose from 62.4% to 80% —
-a real, name-agnostic, structurally comparable improvement.
+**Governs the token layer for the first time. Still merely describes three long-standing spec/copy
+gaps, unchanged across three consecutive runs.**
 
-But `GOVERNS` is not warranted: **inherited is still 0.** The app never `@import`s
-`design-system/tokens/*.css`; every token that resolves does so because `src/styles.css`
-independently redeclares the same name and value, which is agreement today with nothing structural
-to catch tomorrow's drift — exactly the state the prior report described, just with more tokens
-now sharing a name. And six of the ten prior findings this branch didn't touch are still live,
-unchanged, reconfirmed fresh this run: the accent color's own name is still contradicted in three
-component specs, the Export panel's documented primary action is still backwards in two places,
-`preview.html`'s own staleness disclosure still undercounts itself, `ColorRow.prompt.md`'s sample
-markup still collides with an unrelated class, "exactly one gradient" is still contradicted by
-three, and `Slider.prompt.md` still undersells the shipped component. One new gap surfaced by this
-branch's own scope: `--weight-*`, `--tracking-label`, `--leading-*`, `--border-width`, and
-`--transition-fast` — 8 of the 41 currently-declared tokens — are fully UNSET, in the same
-"co-declared or nothing" pattern this branch just fixed for two other scales, left untouched.
+The headline structural change: **every one of the 41 declared design tokens now resolves via
+inheritance, not co-declaration.** `src/styles.css` `@import`s `design-system/tokens/{colors,
+spacing,typography}.css` directly (PR #154, landed since the last full report) and contains **zero**
+local `--name: value` declarations — confirmed by grep across the whole file, not sampled. That is
+qualitatively different from the last two runs' story: adoption rose from 43% to 80% to now
+**100%**, but this time the number means what it used to only claim to mean. A co-declared token
+(the prior state, for 80% of them) is agreement today with nothing to catch tomorrow's drift; an
+inherited one structurally can't diverge without the change happening in the shared file, where it
+is visible to every consumer. This closes the top-ranked finding of both prior reports outright, not
+by narrowing it.
+
+Three findings named "unchanged" across `f2cdd3f` and `5f8192b` are now closed by PR #181, landed
+the same day as this run: the accent color is called "blue" everywhere it's named (was "teal" in
+three component specs), the Export panel's documented primary button matches the live one ("Export
+print-ready 3MF"), and the sidebar's first panel is named "Part" everywhere (was "Base part" in two
+places). `preview.html`'s own staleness disclosure was rewritten alongside the fix rather than left
+to drift further — it now names 5 divergences instead of undercounting at 3.
+
+`GOVERNS` is still not warranted for the whole system: three findings first named at `f2cdd3f` are
+**still open, unchanged for a third consecutive run** — `ColorRow.prompt.md`'s sample markup still
+collides with an unrelated `.row` class, "exactly one gradient" is still contradicted by two grid
+gradients two inches below the claim in the same file, and `Slider.prompt.md` still undersells the
+shipped component as read-only. And the token win is narrower than "100% resolving" makes it sound:
+of the 8 tokens that were UNSET in the last report (`--weight-*`, `--tracking-label`,
+`--leading-*`, `--border-width`, `--transition-fast`), all 8 now resolve, but the CSS rules that
+should reference them by name still hardcode the same literals they did last run — 7 `font-weight`
+sites, 4 `transition` sites, 2 `border` sites. The token layer moved from "unset" to "inherited but
+still not referenced" for this cluster, which is real progress but not adoption in the sense the
+headline number implies.
 
 ## Findings, ranked by impact
 
-1. **True current token adoption is 80% co-declared / 0% inherited — but the replayed drive
-   script's own token census cannot see 10 of the 15 tokens this branch touched, because its
-   token-name list wasn't updated for the rename.** See "Design system version changed" above for
-   the full mechanism. Consequence for future runs: the raw output of `resolveTokens()` in
-   `system-audit-drive.mjs` should not be trusted as an Adoption census again until its
-   `DESIGN_TOKENS` constant is updated to the current names (`--space-hair`…`--space-panel`,
-   `--text-label`…`--text-display`, `--heading`/`--sans`/`--mono`) — otherwise every future replay
-   silently undercounts exactly the tokens the most recent rename touched, the same failure mode
-   this lens exists to catch, now happening inside its own tooling.
+1. **Token resolution reached 100% inherited, 0% co-declared — a structural change, not a bigger
+   number on the same measurement.** `src/styles.css` `@import`s all three token files
+   (`design-system/tokens/{colors,spacing,typography}.css`) and declares no custom property of its
+   own anywhere (`grep -n '^\s*--[a-zA-Z0-9-]*\s*:' src/styles.css` returns nothing). All 41
+   declared tokens resolve on `document.documentElement`. Landed in PR #154
+   ("Import design-system tokens instead of redeclaring them"), not measured by name in either
+   prior report (both predate it). This is the top-ranked finding from both prior reports, closed.
 
-2. **The accent color's own name is still contradicted inside the system.** Unchanged from the
-   prior run, reconfirmed fresh: `design-system/README.md` states the primary accent correctly
-   ("blue (primary actions/focus): `#6d93ff`"). `Button.prompt.md` ("high-emphasis 'primary' (teal
-   fill)"), `Checkbox.prompt.md` ("teal accent"), and `Dropzone.prompt.md` ("lights up teal on
-   drag-over") still call the identical, computed-verified color "teal." Live computed style this
-   run: primary Export button `backgroundColor` `rgb(109, 147, 255)` (`#6d93ff`, blue); dropzone
-   drag-over `borderColor`/`color` the same blue; focused text input border the same blue.
-   `--accent-2` (`#5eead4`, the actual teal) exists and is used elsewhere (a styles.css comment on
-   `.slot-count` even calls it "the resting teal") but never on any of these three components.
+2. **8 tokens that resolved nowhere last run now resolve everywhere — but the CSS that should use
+   them still hardcodes the literal it always did.** `--weight-regular`/`semibold`/`bold`,
+   `--tracking-label`, `--leading-tight`/`normal`, `--border-width`, `--transition-fast` are no
+   longer UNSET (closed by the same `@import`). Live this run: `font-weight: 600` or `700` as a
+   bare literal at 7 sites (`src/styles.css:88,128,418,545,784,902,964`) where
+   `var(--weight-semibold)`/`var(--weight-bold)` now exist and resolve; `transition: …0.12s` as a
+   literal at 4 sites (`:134-136` two-in-one declaration, `:536`, `:585`) where
+   `var(--transition-fast)` exists; `border: 1px solid …` as a literal at 2 sites (`.swatch`,
+   `.member-swatch`) where `var(--border-width)` exists. Unchanged counts from the last report —
+   this cluster's usage layer wasn't touched by PR #154/#156, only its resolution layer was.
 
-3. **The Export panel's documented primary action is still the wrong one.** `README.md`'s Screens
-   section and `preview.html` (`'Export STL set (.zip)'` on `variant: 'primary'`) both still
-   describe the full-width primary button as the STL zip. Live this run, `#btn-export` (class `btn
-primary full`) reads "Export print-ready 3MF"; "Export STL set (.zip)" is `#btn-export-stl`
-   (class `btn small full`, no `primary`). Unchanged from the prior run.
+3. **`ColorRow.prompt.md`'s own example still uses a class name that collides with something else.**
+   Unchanged for a third run. Its sample markup wraps the row in `<div class="row">…</div>`; the
+   live component's real outer class is `.color-row` (confirmed in `src/ui/colorList.ts`, live
+   `outerHTML` this run: `<div class="color-row" data-hexes="#2e9e4f">`), and `.row` is a distinct,
+   unrelated pattern used throughout the app's Panel forms.
 
-4. **`preview.html` still discloses only 3 stale controls; the same 2 it omitted last time are
-   still omitted.** Its panel title still reads "Base part" (live app: "Part", confirmed via this
-   run's `panelTitles` census: `['Part', 'Artwork', 'Artwork fit', 'Depth', 'Colors detected',
-'Export']`). Its primary Export button is still "Export STL set (.zip)" (same defect as Finding
-   3, independently present in the mockup). The file's own disclaimer still lists three items, not
-   five.
+4. **"Exactly one gradient" still underclaims by two.** Unchanged for a third run.
+   `design-system/README.md`: "Exactly one gradient…Add no further gradients." `src/styles.css`
+   still has three `linear-gradient()` declarations: the documented `.accent-stripe` (line 71 this
+   run) plus two more forming `#right`'s grid backdrop (lines 320–321,
+   `linear-gradient(var(--accent-glow) 1px, transparent 1px)` on both axes).
 
-5. **`ColorRow.prompt.md`'s own example still uses a class name that collides with something
-   else.** Its sample markup still wraps the row in `<div class="row">…</div>`; the live
-   component's real outer class is `.color-row` (confirmed in `src/ui/colorList.ts`), and `.row` is
-   still a distinct, unrelated pattern used throughout the app's Panel forms. Unchanged.
+5. **`Slider.prompt.md` still undersells the real component.** Unchanged for a third run. Its JSX
+   (`valueLabel={scale + '%'}`) implies a static, read-only readout; the live implementation pairs
+   the range input with a genuinely editable, two-way-synced number input (`src/ui/fitPanel.ts`'s
+   `syncPair`).
 
-6. **"Exactly one gradient" still underclaims by two.** `README.md`: "Exactly one gradient…Add no
-   further gradients." `src/styles.css` still has three `linear-gradient()` declarations: the
-   documented `.accent-stripe` (line 106) plus two more forming `#right`'s grid backdrop (lines
-   353–354, `linear-gradient(var(--accent-glow) 1px, transparent 1px)` on both axes). Unchanged.
+6. **The assembly-part dropzone's hardcoded `border-radius:6px` is unchanged in source, but PR #166
+   (landed the day before this run, unrelated to design-system work) confined its rendering to a
+   fallback path no shipped kind reaches.** `docs/tech-debt.md`'s open section on this still frames
+   the drift as reachable via "however many assembly parts are loaded," and cites a prior
+   `system-audit.md` run's 6-element census row as "very likely" its source — that framing is now
+   stale. `buildAsmPartRow`'s dropzone only renders when `canSwapMesh: true`, which since PR #166
+   is true only when the parts library is unreachable (`asmKindCanAutoLoad(kind)` false); every
+   shipped kind (Wheel, Footrest, Hubcap, Chair body) auto-loads from the library, so this run's
+   full-page census found **0** elements at 6px, down from the prior report's 6, across every state
+   this run drove including all four shipped kinds' default view. The source literal is unchanged
+   (`src/ui/assemblyPanel.ts:428`) — this is a reachability narrowing PR #166 verified deliberately
+   ("0 drop targets... on the auto-load chair"), not a token fix, and not something this lens's own
+   run can take credit for. Worth a one-line update to the tech-debt section so it doesn't cite a
+   census row this run no longer reproduces.
 
-7. **8 of the 41 currently-declared tokens are fully UNSET, in the same pattern this branch just
-   closed for two other scales — untouched, deliberately per `DECISIONS-NEEDED.md`, but now the
-   largest remaining gap in the token layer.** `--weight-regular`/`--weight-semibold`/`--weight-bold`,
-   `--tracking-label`, `--leading-tight`, `--leading-normal`, `--border-width`, and
-   `--transition-fast` have no property under those names anywhere in `src/styles.css`. Concretely:
-   7 separate rules hardcode `font-weight: 600` or `700` as a literal where `var(--weight-semibold)`/
-   `var(--weight-bold)` exist to reference; 4 separate declarations hardcode `0.12s` where
-   `var(--transition-fast)` exists; 2 rules hardcode `border: 1px solid …` where
-   `var(--border-width)` exists. None of these are new to this branch — they were already UNSET in
-   the prior run — but the prior run's Finding 5 folded them into one 57%-UNSET number alongside the
-   type/spacing tokens this branch has now fixed, so closing those makes this the only remaining
-   UNSET cluster, worth naming on its own rather than let it hide inside a average that no longer
-   applies.
+7. **A newly added, explicitly-proposed component spec cites a bug in `src/styles.css` that has
+   never existed there.** `ZoneListRow.prompt.md` (new since the last report, marked "PROPOSED, not
+   built" throughout — correctly excluded from the fiction count, see Confirmed accurate) states in
+   an aside: "there is no `--font-mono` token. `src/styles.css:1091` references `var(--font-mono)`,
+   which is declared nowhere." `git log -S"font-mono" -- src/styles.css` across all reachable
+   history returns nothing — that string has never appeared in this file. Live this run, all 13
+   `font-family: var(--mono)` sites resolve to `"IBM Plex Mono", ui-monospace, monospace` correctly
+   (see Confirmed accurate, mono/sans split). The claim likely conflates the deleted
+   `zone-first-selection` spike prototype's own throwaway CSS with the real stylesheet. Low impact —
+   it's an aside inside a file that already declares itself non-authoritative — but worth a
+   one-line correction since a future reader could otherwise go looking for a bug that isn't there.
 
-8. **`Slider.prompt.md` still undersells the real component.** Its JSX
-   (`valueLabel={scale + '%'}`) implies a static, read-only readout; the live implementation
-   (`src/ui/fitPanel.ts`'s `syncPair('#p-margin', '#p-margin-num', …)`) pairs the range input with a
-   genuinely editable, two-way-synced number input. Unchanged.
-
-9. **`--space-panel` (24px) is real but unconfirmed by anything this run's viewport reaches.** Its
-   only consumer in `src/styles.css` is `#narrow-notice { padding: var(--space-panel); }` — the
-   ≤899px mobile notice, a state neither this run's nor the prior run's drive script visits at
-   1440px. Source-confirmed as used (not fiction), but the one declared spacing step this report
-   cannot independently confirm renders anywhere.
+8. **`design-system/README.md`'s own Fidelity section describes the token relationship one notch
+   weaker than it now is.** "`tokens/colors.css` declares the same names the app declares in
+   `src/styles.css`, so the two are one vocabulary" describes co-declaration (two independent
+   declarations, agreeing today). Since PR #154, the app declares nothing — it imports the system's
+   own file — which is the stronger, inheritance relationship Finding 1 above measures. This is a
+   doc that undersells its own current state rather than overselling it, and costs nothing today,
+   but is worth a word-swap ("imports" for "declares") the next time this section is touched, so the
+   README doesn't read as a weaker claim than what PR #154 actually shipped.
 
 ## Confirmed closed this run (independently reconfirmed, not taken on the branch's own word)
 
-- **Font-size scale (prior Finding 7).** Rendered, unioned across every state this run measured,
-  excluding the branch's own documented `em`-sized icon glyphs: exactly `{11px, 12px, 16px, 20px}`
-  — the full declared scale (`--text-label`/`--text-meta` share 11px on purpose), 0 fiction, 0
-  undocumented drift. The two off-scale sizes this run did render (`13.2px` on `.warn-dismiss`/
-  `.color-row .depth-reset`, `15px` on `.close-btn`) match `DECISIONS-NEEDED.md`'s stated `em`
-  computations exactly and are the branch's own declared exception, not drift. Corroborated by
-  `scripts/check-type-scale.mjs` (context only): 0 literal `font-size` px outside token
-  declarations, 0 font-family violations across 14 `--text-meta` sites, and the same `{11, 12, 16,
-20}px` union confirmed across 7 states including two this run's replay cannot reach (merged color
-  group, narrow viewport).
-- **Button font fallback (prior Finding 2).** `.close-btn`, `.warn-dismiss`, `.warn-clear-all` all
-  resolve `fontFamily: "Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif"`
-  live this run (previously `Arial`). `button, input, select, textarea { font: inherit }` at the
-  top of `src/styles.css` is the fix.
-- **`--radius-xl` (prior Finding 8).** No longer declared anywhere — `tokens/spacing.css` now
-  defines only `--radius-sm`/`md`/`lg`/`2xl`. Nothing left to be a value-duplicate of `--radius-lg`.
-- **`brand-makegood-site.html` font exception (prior Finding 11).** Both `design-system/README.md`
-  ("The exception is `brand-makegood-site.html`…deliberately") and the page's own header comment
-  ("Deliberately outside the UI type/spacing scale…") now state it. Independently reconfirmed via a
-  supplementary font-family-in-use check across all 11 specimen files: 10/11 use at least one of
-  Inter/Outfit/IBM Plex Mono on a real rendered element; `brand-makegood-site.html` uses none of the
-  three (confirmed: `font-family: sans-serif` throughout, Google-Fonts `<link>` present but nothing
-  in the page's own rules ever selects those families).
-- **Badge fiction (prior Finding 1, closed before this branch in `f2cdd3f`).** `design-system/
-components/**/*.prompt.md` is 10 files; none is `Badge`. All 10 have a live counterpart confirmed
-  this run (Button, Checkbox, Select, Slider, TextInput, Panel, WarningPill, LoadingOverlay,
-  Dropzone, ColorRow — each snapshotted at least once above).
+- **Token adoption (prior Finding 1, both runs).** See Verdict and Finding 1 above — 100%
+  inherited, 0% co-declared, 0% UNSET.
+- **Accent color naming (prior Finding 2, unchanged across `f2cdd3f` and `5f8192b`).**
+  `Button.prompt.md`, `Checkbox.prompt.md`, `Dropzone.prompt.md` now all say "blue"; live computed
+  style this run confirms blue on all three: primary Export button `backgroundColor rgb(109, 147,
+255)`, checkbox `accent-color: var(--accent)` (source-confirmed, `src/styles.css:485,520,522`),
+  dropzone drag-over `borderColor rgb(109, 147, 255)`.
+- **Export panel primary action (prior Finding 3, unchanged across two runs).**
+  `design-system/README.md` and `preview.html` now both name `#btn-export` ("Export print-ready
+  3MF") as primary and `#btn-export-stl` ("Export STL set (.zip)") as the small secondary below it.
+  Live this run: `#btn-export` is `class="btn primary full"`, text "Export print-ready 3MF";
+  `#btn-export-stl` is `class="btn small full"`, text "Export STL set (.zip)". Matches.
+- **Panel name and order (part of prior Finding 3/4, unchanged across two runs).** Live
+  `panelTitles` census this run: `['Part', 'Artwork', 'Artwork fit', 'Depth', 'Colors detected',
+'Export']` — "Part" first, matching `design-system/README.md`'s corrected panel list and
+  `Panel.prompt.md`'s corrected example list.
+- **`preview.html`'s staleness disclosure (prior Finding 4, unchanged across two runs).** Now lists
+  5 known divergences (was 3): the two new ones are the panel order (Part first, not Artwork) and
+  the two-button Export panel — both independently confirmed live above.
+- **`--space-panel` render-confirmed (prior Finding 9, `5f8192b`).** PR #156 added the
+  narrow-viewport pass this run replayed: at ≤899px, `#narrow-notice`'s computed `padding` is
+  `24px`, matching the token's declared value exactly.
 
 ## Confirmed accurate (checked, not just assumed)
 
-- **WarningPill** — both tones computed-style-verified fresh this run, triggered live (not
-  simulated): info tone `backgroundColor rgba(109, 147, 255, 0.1)` / `borderColor rgb(109, 147,
-255)` / `color rgb(170, 179, 207)`; danger tone `backgroundColor rgba(249, 67, 138, 0.12)` /
-  `borderColor rgba(249, 67, 138, 0.4)` / `color rgb(255, 179, 209)` — matches
-  `WarningPill.prompt.md`'s table exactly on both.
+- **The two new component specs are correctly self-flagged as proposals, not fiction.**
+  `FilamentSlotStrip.prompt.md` and `ZoneListRow.prompt.md` are new since the last report, both
+  titled "PROPOSED, not built" in their first line, both explicit that they describe a prototype
+  spike (`zone-first-selection`) rather than shipped UI. Neither has a live counterpart, and neither
+  should — they're excluded from the "components with a live counterpart" denominator (still 10/10
+  for the specs that claim to be live) rather than counted as the "spec describing UI the app
+  doesn't have" failure `design-system/README.md`'s own Fidelity section warns against.
+- **Font-size scale.** Rendered, unioned across every scale-census state this run measured (initial,
+  help dialog open, final): exactly `{11px, 12px, 16px, 20px}` — the full declared scale, 0
+  fiction, 0 undocumented drift. `13.2px` (`.warn-dismiss`/`.color-row .depth-reset`) and `15px`
+  (`.close-btn`) are the branch's own documented `em`-sized icon exceptions, not drift.
+- **Font-weight scale.** `{400, 600, 700}` rendered, matching all 3 declared values, 0 fiction, 0
+  drift.
+- **`--radius-xl` stays gone.** `tokens/spacing.css` still declares only `--radius-sm`/`md`/`lg`/
+  `2xl`; nothing to be a value-duplicate of `--radius-lg`.
 - **The mono/sans split** ("mono = a value the user might copy or that came from computed
-  geometry") — held with no exceptions found this run: hex codes, the depth `mm` input, the
-  tri/color stat counts, the slot-count line, and the help dialog's TOC links all resolve to the
-  IBM Plex Mono stack; labels, hints, panel summaries, and every button resolve to Inter. Corroborated
-  by `check-type-scale.mjs`'s independent `--text-meta`→mono check: 0 violations across 14 sites.
-- **Danger red stays reserved for warnings/invalid state.** Live grep of every `var(--danger`
-  usage site in `src/styles.css`: `input[type=number].invalid` and `.slot-count.over-capacity` only
-  — no decorative use found.
-- **Panel, TextInput, Select, LoadingOverlay, Checkbox** specs match their live counterparts
-  structurally and in computed style this run (uppercase-label-plus-hairline shell; mono numeric
-  fields; select styled identically to TextInput; overlay dim + spinner + label behind a
-  `position:relative` host).
-- **Hover, focus, and drag-over transitions** work as specified, measured past the 0.12s CSS
-  transition (not synchronously): `.btn:hover`/`#dropzone:hover`/`input:focus` border-color →
-  `--accent`; `#dropzone`'s drag-over state turns border, text, and a faint wash to the same accent
-  blue, matching `Dropzone.prompt.md`.
+  geometry") — held with no exceptions found this run: hex codes (`.hex`), the slot-count line
+  (`#slot-count`), the "Merge with…" select, the help dialog's TOC links, and the depth `mm` input
+  all resolve to `"IBM Plex Mono", ui-monospace, monospace`; panel labels, warning pills, and the
+  help dialog's headings (`Outfit` — the heading token, not mono/sans at all) resolve correctly for
+  their role. All 13 `font-family: var(--mono)` sites in `src/styles.css` are live and correct (see
+  Finding 7 — the one design-system doc claiming a break in this rule is itself wrong).
+- **Danger stays reserved for warnings/invalid state.** Live grep of every `var(--danger` usage site
+  in `src/styles.css`: `.warn-pill`'s base (info variant overrides it), `input[type=number].invalid`,
+  and `.slot-count.over-capacity` only — no decorative use found. Live computed style confirms both
+  `WarningPill` tones match `WarningPill.prompt.md`'s table: info `backgroundColor rgba(109, 147,
+255, 0.1)`, danger `backgroundColor rgba(249, 67, 138, 0.12)`.
+- **Swatches render square (0px radius), per `design-system/README.md`'s spacing section.** Live
+  `.swatch` computed `borderRadius: 0px` this run.
+- **Panel, TextInput, Select, LoadingOverlay, Checkbox, WarningPill** specs match their live
+  counterparts structurally and in computed style this run (uppercase-label-plus-hairline shell;
+  mono numeric/select fields at `--radius-md` 1px; overlay dim + `position:relative` host).
+- **Hover, focus, and drag-over states** work as specified: `.btn:hover`/`#dropzone:hover`/
+  `input:focus` border-color → `--accent`; the confirm dialog's OK button matches `Button`'s primary
+  spec (`backgroundColor rgb(109, 147, 255)`, `fontWeight 600`).
+- **Specimen font-loading (unchanged since last report — no diff in `design-system/guidelines/` or
+  `preview.html` since `5f8192b`, confirmed via `git diff --stat`).** 10/11 specimen files use a
+  real loaded font family; `brand-makegood-site.html` remains the documented exception.
 
 ## Measurements
 
 ### Structural
 
-Diff this block between runs to see whether conformance moved. Rows marked `†` are state-sensitive
-— see the header for which states this run covered before treating a `†` difference as drift
-rather than incomparable coverage. Rows marked `‡‡` compare a scale the design system itself
-renamed between runs — read as **void**, not diff, per "Design system version changed" above.
+Diff this block against the last full report (`5f8192b`) to see whether conformance moved. Rows
+marked `†` are state-sensitive — this run's drive-script hash differs from that report's (see "State
+coverage changed" above), so treat `†` rows as a fresh baseline, not a diff, until a future run
+replays this run's hash.
 
-| Metric                                                                                               | This run (`5f8192b`)                                                                                      | Prior run (`026a9cf`, for reference)         |
-| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| Tokens declared (all 3 files, current names) ‡‡                                                      | 41                                                                                                        | 47                                           |
-| Tokens resolving under declared name (current names, computed independently — see header) ‡‡         | 33 (80%)                                                                                                  | 20 (43%)                                     |
-| — inherited (via `@import`)                                                                          | 0                                                                                                         | 0                                            |
-| — co-declared (independent, matching value)                                                          | 33                                                                                                        | 20                                           |
-| Tokens UNSET under declared name ‡‡                                                                  | 8 (19.5%)                                                                                                 | 27 (57%)                                     |
-| — of which, value-equivalent under a different app-side name                                         | 0 (the rename eliminated this class — `--heading`/`--sans`/`--mono` are now name-identical on both sides) | 3                                            |
-| Replayed drive script's own raw token census (stale vocabulary — for the record only, see Finding 1) | 23 / 47 resolving under the _retired_ names                                                               | n/a (same vocabulary as declared then)       |
-| Scale-relevant declarations using `var()` in `src/styles.css`§                                       | 160                                                                                                       | 141                                          |
-| Scale-relevant declarations using a literal                                                          | 40                                                                                                        | 85                                           |
-| var() adoption rate (scale-relevant declarations, name-agnostic — real, comparable)                  | 80.0%                                                                                                     | 62.4%                                        |
-| Components with a live counterpart                                                                   | 10 / 10                                                                                                   | 10 / 11                                      |
-| Components that are fiction (no live counterpart)                                                    | 0 / 10                                                                                                    | 1 / 11 (Badge)                               |
-| Font-size scale entries rendering nowhere (fiction) †                                                | 0 / 4 distinct px values (5 named tokens, 2 share a value)                                                | 1 / 6 (`--text-lg`)                          |
-| Font-size values rendered that the scale doesn't contain, undocumented (drift) †                     | 0                                                                                                         | 6 distinct                                   |
-| Font-size values rendered that the scale doesn't contain, documented icon exception †                | 2 distinct (`13.2px`, `15px`) — matches `DECISIONS-NEEDED.md` exactly                                     | n/a (exception didn't exist yet)             |
-| Font-weight scale entries rendering nowhere                                                          | 0 / 3                                                                                                     | 0 / 3                                        |
-| Font-weight values rendered outside the scale                                                        | 0                                                                                                         | 0                                            |
-| Border-radius named steps duplicating another step's value (system-internal)                         | 0 (`--radius-xl` deleted, not merely fixed)                                                               | 1 (`--radius-xl` = `--radius-lg`)            |
-| Specimen files (10 guidelines + preview.html) confirmed loading every font family they use           | 10 / 11                                                                                                   | 9 / 10 (preview.html not separately counted) |
-| Documented component states confirmed live this run †                                                | 9                                                                                                         | 9                                            |
-| Documented component states not reached this run (see header) †                                      | 9 (8 unchanged + narrow/mobile notice, new to this run's scope)                                           | 8                                            |
-| Semantic rules checked                                                                               | 4 (mono/sans split, danger-for-warnings-only, accent color naming, gradient count)                        | 4                                            |
-| Semantic rules holding as documented                                                                 | 2 (mono/sans split, danger-for-warnings-only)                                                             | 2                                            |
-| Semantic rules contradicted by the system's own docs                                                 | 2 (accent color name, gradient count)                                                                     | 2                                            |
+| Metric                                                                                           | This run (`3288f6a`)                                                               | Prior full run (`5f8192b`)       |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------- |
+| Tokens declared (all 3 files)                                                                    | 41                                                                                 | 41                               |
+| Tokens resolving under declared name                                                             | 41 (100%)                                                                          | 33 (80%)                         |
+| — inherited (via `@import`)                                                                      | 41 (100%)                                                                          | 0                                |
+| — co-declared (independent, matching value)                                                      | 0                                                                                  | 33                               |
+| Tokens UNSET under declared name                                                                 | 0                                                                                  | 8 (19.5%)                        |
+| Scale-relevant declarations using `var()` in `src/styles.css`§                                   | 160                                                                                | 160                              |
+| Scale-relevant declarations using a literal                                                      | 40                                                                                 | 40                               |
+| var() adoption rate (scale-relevant declarations)                                                | 80.0% (unchanged)                                                                  | 80.0%                            |
+| — of which, the referenced token now resolves but the site still hardcodes a literal (Finding 2) | 13 sites (7 `font-weight`, 4 `transition`, 2 `border`)                             | same 13 sites, tokens then UNSET |
+| Components with a live counterpart                                                               | 10 / 10                                                                            | 10 / 10                          |
+| Components that are fiction (no live counterpart)                                                | 0 / 10                                                                             | 0 / 10                           |
+| Components explicitly marked proposed (excluded from the above, correctly)                       | 2 / 2 self-flagged, 0 live (by design)                                             | 0 (didn't exist yet)             |
+| Font-size scale entries rendering nowhere (fiction) †                                            | 0 / 4 distinct px values (5 named tokens, 2 share a value)                         | 0 / 4                            |
+| Font-size values rendered outside the scale, undocumented (drift) †                              | 0                                                                                  | 0                                |
+| Font-size values rendered outside the scale, documented icon exception †                         | 2 distinct (`13.2px`, `15px`)                                                      | 2 distinct                       |
+| Font-weight scale entries rendering nowhere                                                      | 0 / 3                                                                              | 0 / 3                            |
+| Font-weight values rendered outside the scale                                                    | 0                                                                                  | 0                                |
+| Border-radius named steps duplicating another step's value (system-internal)                     | 0 (`--radius-xl` still gone)                                                       | 0                                |
+| Specimen files (10 guidelines + preview.html) confirmed loading every font they use              | 10 / 11 (unchanged — no diff in these files since `5f8192b`)                       | 10 / 11                          |
+| Documented component states confirmed live this run †                                            | 10 (9 unchanged + narrow/mobile notice, newly driven by PR #156's extended script) | 9                                |
+| Documented component states not reached this run (see header) †                                  | 8 (unchanged list, narrow notice moved to "confirmed" above)                       | 9                                |
+| Semantic rules checked                                                                           | 4 (mono/sans split, danger-for-warnings-only, accent color naming, gradient count) | 4                                |
+| Semantic rules holding as documented                                                             | 3 (mono/sans split, danger-for-warnings-only, accent color naming — newly closed)  | 2                                |
+| Semantic rules contradicted by the system's own docs                                             | 1 (gradient count)                                                                 | 2                                |
 
 § `font-size`, `font-weight`, `border-radius`, `color`, `background`/`background-color`,
 `border`/`border-color` — the properties Scale Adherence and Adoption both depend on. Raw
-declaration count in the app's own bundled stylesheet, not the app's full stylesheet — mechanism is
-identical code across both runs (name-agnostic `val.includes('var(')` check), so this row is a real
-comparison, not void.
+declaration count in the app's own bundled stylesheet. Identical mechanism and identical count to
+`5f8192b` — PR #154/#156/#181 touched the top-of-file `@import` block and doc/copy text, not any of
+the 200 scale-relevant declarations counted here, so this row is a genuine "unchanged," not a stale
+census.
 
 ### Incidental
 
-Per-element counts. These move with the DOM (which panels are open, what artwork is loaded, window
-size) independent of any real conformance change — sized here to show how much evidence backs each
-structural row above, not tracked as its own trend. Expected to churn between runs.
+Per-element counts, unioned across the three states this run's `scaleCensus()` was called in
+(initial load, help dialog open, final state with artwork loaded and the confirm/narrow passes
+behind it). These move with the DOM (which panels are open, what artwork is loaded, window size)
+independent of any real conformance change — sized here to show how much evidence backs each
+structural row above, not tracked as its own trend. Expected to churn between runs; an element
+visible across more than one of the three states is counted once per state it appeared in, not
+once overall.
 
-| Metric                                                                                              | Value                                                                                                                                                                                                                                                 |
-| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Elements checked in the full-page scale census (`#app *`)                                           | ~830–1400 (varies by state; artwork-loaded states add ~7 color rows)                                                                                                                                                                                  |
-| Distinct rendered font-size values (union of all states)                                            | 6 (`12, 11, 16, 20, 15, 13.2`px — 4 on-scale, 2 documented icon exceptions)                                                                                                                                                                           |
-| Distinct rendered font-weight values                                                                | 3 (`400, 700, 600`)                                                                                                                                                                                                                                   |
-| Distinct rendered border-radius values (excl. `50%` circles)                                        | 5 (`1, 2, 3, 6, 10`px)                                                                                                                                                                                                                                |
-| Distinct rendered text colors (`color`)                                                             | 9 (5–6 map to real tokens; remainder are native-control UA defaults on textless elements — checkboxes, range inputs — verified false leads, not findings)                                                                                             |
-| Distinct rendered background colors                                                                 | 27 (most are single/few-occurrence artwork swatch fills reflecting the loaded 6-color SVG, not app chrome)                                                                                                                                            |
-| Font-size = 12px (`--text-body`)                                                                    | 1082 elements                                                                                                                                                                                                                                         |
-| Font-size = 11px (`--text-label` / `--text-meta`)                                                   | 290 elements                                                                                                                                                                                                                                          |
-| Font-size = 16px (`--text-emphasis`)                                                                | 27 elements                                                                                                                                                                                                                                           |
-| Font-size = 20px (`--text-display`)                                                                 | 3 elements                                                                                                                                                                                                                                            |
-| Font-size = 15px (documented icon exception, `.close-btn`)                                          | 3 elements                                                                                                                                                                                                                                            |
-| Font-size = 13.2px (documented icon exception, `.warn-dismiss`/`.depth-reset`)                      | 2 elements                                                                                                                                                                                                                                            |
-| Font-weight = 400                                                                                   | 1274 elements                                                                                                                                                                                                                                         |
-| Font-weight = 700                                                                                   | 117 elements                                                                                                                                                                                                                                          |
-| Font-weight = 600                                                                                   | 16 elements                                                                                                                                                                                                                                           |
-| Border-radius = 1px (`--radius-md`)                                                                 | 119 elements                                                                                                                                                                                                                                          |
-| Border-radius = 2px (`--radius-lg`)                                                                 | 80 elements                                                                                                                                                                                                                                           |
-| Border-radius = 3px (`--radius-2xl`)                                                                | 31 elements                                                                                                                                                                                                                                           |
-| Border-radius = 50% (circles, not on the linear scale)                                              | 12 elements                                                                                                                                                                                                                                           |
-| Border-radius = 6px (drift — inline literal, `src/ui/assemblyPanel.ts:413`)                         | 6 elements                                                                                                                                                                                                                                            |
-| Border-radius = 10px (drift — `.version-tag`, literal)                                              | 3 elements                                                                                                                                                                                                                                            |
-| Scale-relevant literal declarations, by kind (of 40 total)                                          | 7 `font-weight` literals, 4 `border-image`/`border-width`/`border-color: currentcolor` (shorthand-reset serialization, not a real gap), 2 `border: 1px solid …` literals, remainder are one-off backgrounds/gradients/radii not on any declared scale |
-| Buttons found rendering in the browser UA font instead of Inter                                     | 0 (was 3: `.close-btn`, `.warn-dismiss`, `.warn-clear-all` — see Confirmed closed)                                                                                                                                                                    |
-| Rendered `padding`/`margin`/`gap` values, app-authored (supplementary census, not the drive script) | `{2, 4, 8, 16}px` — all 4 non-`--space-panel` steps, 0 undocumented drift once native-control UA defaults (`<option>` internal padding/gap, checkbox default margins — `1px, 3px, 5.5px, 6px`) are excluded as false leads                            |
+| Metric                                                                                             | Value                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Distinct rendered font-size values (union of 3 states)                                             | 6 (`12, 11, 16, 20, 15, 13.2`px — 4 on-scale, 2 documented icon exceptions)                                                                                                                                                                                      |
+| Distinct rendered font-weight values                                                               | 3 (`400, 700, 600`)                                                                                                                                                                                                                                              |
+| Distinct rendered border-radius values (excl. `50%` circles)                                       | 4 (`1, 2, 3, 10`px — down from `5f8192b`'s 5; the 6px assembly-dropzone value didn't render this run, see Finding 6, not a fixed token)                                                                                                                          |
+| Distinct rendered text colors (`color`)                                                            | 8 (5–6 map to real tokens; remainder are native-control UA defaults on textless elements — buttons, range inputs — verified false leads)                                                                                                                         |
+| Distinct rendered background colors                                                                | 27 (most are single/few-occurrence artwork swatch fills reflecting the loaded 6-color SVG, not app chrome)                                                                                                                                                       |
+| Font-size = 12px (`--text-body`)                                                                   | 1040 element-states                                                                                                                                                                                                                                              |
+| Font-size = 11px (`--text-label` / `--text-meta`)                                                  | 290 element-states                                                                                                                                                                                                                                               |
+| Font-size = 16px (`--text-emphasis`)                                                               | 27 element-states                                                                                                                                                                                                                                                |
+| Font-size = 20px (`--text-display`)                                                                | 3 element-states                                                                                                                                                                                                                                                 |
+| Font-size = 15px (documented icon exception, `.close-btn`)                                         | 3 element-states                                                                                                                                                                                                                                                 |
+| Font-size = 13.2px (documented icon exception, `.warn-dismiss`/`.depth-reset`)                     | 2 element-states                                                                                                                                                                                                                                                 |
+| Font-weight = 400                                                                                  | 1244 element-states                                                                                                                                                                                                                                              |
+| Font-weight = 700                                                                                  | 105 element-states                                                                                                                                                                                                                                               |
+| Font-weight = 600                                                                                  | 16 element-states                                                                                                                                                                                                                                                |
+| Border-radius = 1px (`--radius-md`)                                                                | 119 elements                                                                                                                                                                                                                                                     |
+| Border-radius = 2px (`--radius-lg`)                                                                | 80 elements                                                                                                                                                                                                                                                      |
+| Border-radius = 3px (`--radius-2xl`)                                                               | 31 elements                                                                                                                                                                                                                                                      |
+| Border-radius = 50% (circles, not on the linear scale)                                             | 12 elements                                                                                                                                                                                                                                                      |
+| Border-radius = 10px (drift — `.version-tag`, literal)                                             | 3 elements                                                                                                                                                                                                                                                       |
+| Border-radius = 6px (assembly dropzone, source-confirmed, not rendered)                            | 0 elements this run — see Finding 6; confirmed present in source at `src/ui/assemblyPanel.ts:428`, unreachable via any shipped kind's default view                                                                                                               |
+| Scale-relevant literal declarations, by kind (of 40 total)                                         | 7 `font-weight` literals, 4 `transition …0.12s` literals, 2 `border: 1px solid …` literals, remainder one-off backgrounds/gradients/radii not on any declared scale, plus shorthand-reset serialization artifacts (`border-image: initial` etc., not a real gap) |
+| Buttons found rendering in the browser UA font instead of Inter                                    | 0                                                                                                                                                                                                                                                                |
+| `checkbox`/`input[type=range]` native-UA-default false leads excluded from the color/border census | `color: rgb(0, 0, 0)` on `<button class="base-swatch">` (no app `color` rule set on it), `borderColor rgb(157, 150, 142)` on range inputs — traced to source, no matching app rule, excluded as drift                                                            |
 
 ## Method note
 
 Computed-style census cannot distinguish a `0px` (or otherwise UA-default-matching) value that was
 deliberately set from one nothing ever set — both read identically. This still affects
 `--radius-sm` (used by `.swatch`/`.base-swatch`/`.member-swatch`, confirmed by source read, not by
-computed-style census, which can't tell it apart from "unset"). The same class of false lead
-recurred this run in the supplementary spacing census: `<option>` elements' internal
-`padding-bottom`/`gap` (`1px`, `5.5px`, `6px`) and native checkboxes' default `margin-top`/`-bottom`
-(`3px`) are Chromium UA defaults the app's CSS never touches, not app-authored spacing decisions —
-traced to source (`<option>`, `input[type=checkbox]` selectors, no matching rule in
-`src/styles.css`) and excluded rather than reported as drift.
+computed-style census, which can't tell it apart from "unset"; `.swatch`'s `borderRadius: 0px` this
+run is consistent with the token but not distinguishable from a default by the census alone).
 
-## Update — chore/type-and-spacing-tokens
-
-This report **is** the measurement of that branch (commit `5f8192b`, the branch's own HEAD). The
-prior "Update" section that lived at the end of this file (added by the branch's own commits,
-self-reporting what it believed it had closed) is superseded by this report, which independently
-re-measured every one of its claims rather than taking them on the branch's word — see "Confirmed
-closed this run" above for what was verified to actually hold, and Findings 1 and 7 for the two
-places a naive reading of the branch's own claim would have been wrong (the token-count "43%→80%"
-delta is not adoption tripling, and the replayed audit script's own token list needs updating
-before its raw numbers can be trusted again). The full prior text is preserved in git history
-(`git log -- docs/system-audit.md`), not inline here, per this lens's own instruction to overwrite
-rather than accumulate.
-
-## Update — feat/import-design-tokens
-
-That branch addresses Finding 1 / the Adoption row above: `src/styles.css` now `@import`s
-`design-system/tokens/{colors,spacing,typography}.css` instead of redeclaring the same names, so
-inherited should move off 0 and co-declared should drop accordingly on the next audit run. Not
-re-measured here — this note is a pointer for the next run to verify, not a hand-edit of the
-numbers themselves.
-
-## Update — chore/harden-audit-drive
-
-That branch closes Findings 1 and 9 in tooling rather than in a fresh measurement, and extends
-`scripts/system-audit-drive.mjs` beyond the sequence this report's header names (content hash
-`d5a3d954…`, "unchanged from the prior run") — so its hash no longer matches this report's, and
-this run's `†` rows are not comparable to whatever the script produces next.
-
-- **Finding 1** — `DESIGN_TOKENS` is now parsed from `design-system/tokens/*.css` at run time
-  instead of kept as a hardcoded copy, so a future rename can't leave the script's own census
-  stale the way this report's top finding described. Not a live drift as of this update: PR #153's
-  final commit already brought the old literal to the current 41 names before this branch started.
-- **Finding 9** — the script now drives a `narrowNotice` state (resize to ≤899px, matching
-  `scripts/check-type-scale.mjs`'s own narrow pass) that render-confirms `--space-panel` via
-  `#narrow-notice`'s computed padding, closing the one gap this report flagged as source-confirmed
-  but not render-confirmed.
-
-Not re-measured here — the next full run of this lens should replay the extended script, record it
-as extended (not unchanged) in the Measurement conditions table, and treat this run's
-state-sensitive rows as incomparable rather than diffing against them.
+`scaleCensus()` also can't tell "this value doesn't render because nothing renders in that state"
+apart from "this value doesn't render because it doesn't exist" — the border-radius = 6px row this
+run is exactly that ambiguity resolved by source-reading and `git log`, not by the census alone (see
+Finding 6). A structural row that goes to zero is worth checking against source before reporting it
+as a fix.
