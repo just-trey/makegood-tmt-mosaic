@@ -207,6 +207,12 @@ and it means they never need re-tuning when body size moves. They are deliberate
   limitations.
 - No emoji, no marketing fluff. Copy favors units and specifics (mm, %, tris) over adjectives.
 - Second person for UI copy ("Drop an SVG here…"), first person for docs/changelog prose.
+- **"Technical" here means technical in printing, not in CAD.** For any user-facing string,
+  conventions 33–37 of `docs/ui-conventions.md` decide which technical words are free: one from a
+  slicer's UI is (filament, layer height, prime tower), one from ours is not (quantize, boolean,
+  cut solid, viewBox). Those conventions do not override the three rules above. "Units and
+  specifics over adjectives" still governs the numbers inside the sentence: never drop a
+  measurement to sound friendlier.
 
 ## Files in this bundle
 

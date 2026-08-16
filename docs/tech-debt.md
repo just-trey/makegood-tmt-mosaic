@@ -231,6 +231,22 @@ of it is:
 not. Both pass the slicer test, and both plain replacements ran longer, which convention 36
 forbids. Closing this item must not "fix" them.
 
+**Method, when this is closed: rewrite by sentence purpose, not by word.** Conventions 33–37 verify
+one string. They do not say how to rework a document, and word-for-word substitution is how a copy
+pass makes things worse: it keeps the sentence that was built around the jargon and pads it. For
+each paragraph, ask what the reader needs to _do_, then write that sentence fresh. The jargon goes
+as a side effect, and the result comes out shorter, so 36 is satisfied instead of fought.
+
+The `h-artwork` quantization paragraph is the worked example:
+
+| Approach   | Result                                                                                                                                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| By word    | "…so it gets reduced to flat colors. The app picks a palette, snaps every pixel to it, and traces the edges." Jargon gone, still explaining a step the reader cannot act on.                                      |
+| By purpose | "Photos work. The app reduces the image to flat colors and traces the edges. Two sliders on its row set how many colors and how much detail." Shorter, and the palette/snap step is dropped rather than reworded. |
+
+Five rows of convention 33's jargon table were written by substitution in the first draft and had
+to be fixed before it merged. That is the failure this method exists to prevent.
+
 The useful finding is the third row. "Rewrite all user-facing copy" sounds like it lands
 everywhere, and it does not: convention 2 already dragged the warnings into the user's words, so
 the remaining work is concentrated in the help dialog. Closing this is one pass over the help
