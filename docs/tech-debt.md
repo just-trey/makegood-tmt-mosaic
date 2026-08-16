@@ -208,51 +208,45 @@ belongs (convention 6). That is the copy fix and it is done. What remains is the
 existed: closing this means making the affordances legible, in particular the last row — an
 asymmetry between two gestures on the same target is not something help text can rescue.
 
-## User-facing copy is written for someone who has opened a CAD tool
+## The CSG warnings still name an internal step, and three items depend on the wording
 
-Conventions 33–37 of [ui-conventions.md](ui-conventions.md), added after a copy pass found the
-problem was register rather than length. The bar those conventions set: the reader runs a slicer
-daily, so a word that appears in Bambu Studio's UI or a Printables thread is free, and a word that
-is ours is not.
+Convention 2 of [ui-conventions.md](ui-conventions.md), and its worked example verbatim:
+`Couldn't build the cut solid for color #0a0a0a on Handle (left)`. Conventions 33–37 say the same
+thing for every string. `cut solid` and `Boolean union/subtraction failed` are ours, not a slicer's.
 
-Counted across the help dialog, panel hints and warning strings, on the commit that added the
-conventions. The table in convention 33's section is the full list with its replacements; the shape
-of it is:
+**Nothing else is left of the copy problem.** The help dialog and panel hints were reworked against
+33–37 and are done. The other warnings were already plain: convention 2 did that work when they
+were rewritten to name a filament and a part. These two strings are the exception because they were
+never reworded.
 
-| Where                 | State                                                                                                                      |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Help dialog           | Worst affected. `quantized`, `export artifacts`, `shading ramps`, `dominant member`, `chamfered edge`, `viewBox`           |
-| Panel hints           | One instance (`quantized`), inherited from the same sentence in Help                                                       |
-| Warnings/notices      | Mostly already plain. Convention 2 did that work when the strings were rewritten to name a filament and a part             |
-| Assembly CSG warnings | The exception: `Couldn't build the cut solid`, `Boolean union/subtraction failed`. Already open as convention-2 violations |
-| Advanced face readout | Not a violation. Convention 37 covers it: a diagnostic behind a disclosure that says so                                    |
+Rewording them is not a copy edit, which is why it is its own item:
 
-`tileable` and `bounding box` were counted as violations in the first draft of this section and are
-not. Both pass the slicer test, and both plain replacements ran longer, which convention 36
-forbids. Closing this item must not "fix" them.
+| Depends on the current wording                                           | What it needs                                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| [troubleshooting.md](troubleshooting.md), one section per warning string | Two section headings move in lockstep                              |
+| "A seam sliver warns as if artwork were lost"                            | Cites the string as indistinguishable from a real failure          |
+| "Zebra + Fill still loses one color on Handle (left)"                    | Quotes it as the observed symptom                                  |
+| "Turf's tile union has a vertex ceiling"                                 | Quotes `Boolean union failed …` and notes it names the wrong cause |
 
-**Method, when this is closed: rewrite by sentence purpose, not by word.** Conventions 33–37 verify
-one string. They do not say how to rework a document, and word-for-word substitution is how a copy
-pass makes things worse: it keeps the sentence that was built around the jargon and pads it. For
-each paragraph, ask what the reader needs to _do_, then write that sentence fresh. The jargon goes
-as a side effect, and the result comes out shorter, so 36 is satisfied instead of fought.
+The last row is the reason to do these together rather than as wording alone: that item already
+records the message naming a cause that isn't true. A rewrite that fixes the register and leaves
+the wrong cause in place spends the change and keeps the defect.
 
-The `h-artwork` quantization paragraph is the worked example:
+**Method, established on the help-dialog pass: rewrite by sentence purpose, not by word.**
+Conventions 33–37 verify one string. They do not say how to rework a document, and word-for-word
+substitution is how a copy pass makes things worse: it keeps the sentence that was built around the
+jargon and pads it. Ask what the reader needs to _do_, then write that fresh. Measured on the help
+dialog: 2362 words to 2327, longest sentence unchanged at 21, no paragraph or section lost.
 
-| Approach   | Result                                                                                                                                                                                                            |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| By word    | "…so it gets reduced to flat colors. The app picks a palette, snaps every pixel to it, and traces the edges." Jargon gone, still explaining a step the reader cannot act on.                                      |
-| By purpose | "Photos work. The app reduces the image to flat colors and traces the edges. Two sliders on its row set how many colors and how much detail." Shorter, and the palette/snap step is dropped rather than reworded. |
+Two traps the help-dialog pass hit, both worth not repeating. Five rows of convention 33's jargon
+table were written by substitution and had to be fixed before they merged. And two rewrites there
+merged sentences while removing a term, pushing the longest from 21 words to 28, which is
+convention 36 failing in the exact place it was written to guard. **Count after rewriting, don't
+judge by eye.**
 
-Five rows of convention 33's jargon table were written by substitution in the first draft and had
-to be fixed before it merged. That is the failure this method exists to prevent.
-
-The useful finding is the third row. "Rewrite all user-facing copy" sounds like it lands
-everywhere, and it does not: convention 2 already dragged the warnings into the user's words, so
-the remaining work is concentrated in the help dialog. Closing this is one pass over the help
-dialog plus the two CSG strings, and the CSG pair should go with their existing convention-2 item
-rather than being fixed twice. Note [troubleshooting.md](troubleshooting.md) keeps one section per
-user-visible warning string, so any warning reworded here moves its section heading in lockstep.
+`tileable` and `bounding box` were counted as violations in the first draft of this item and are
+not. Both pass the slicer test, and both plain replacements ran longer. Closing this must not
+"fix" them.
 
 ## The AMS-capacity pill states three remedies at once
 

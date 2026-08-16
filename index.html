@@ -104,7 +104,7 @@
             <p>
               <b>Hubcap diameter</b> appears for the Hubcap. It is built to the size you ask for,
               instead of being a fixed mesh. The four mounting clips stay put. The disc around them
-              grows or shrinks, keeping its 1&nbsp;mm chamfered edge. The number is capped at your
+              grows or shrinks, keeping its 1&nbsp;mm angled edge. The number is capped at your
               printer's bed, so switching to a smaller machine may bring it down. It won't go below
               the size that still covers the clips. Re-download the design template after changing
               it: the template is drawn to whatever size is set.
@@ -160,11 +160,9 @@
               fit controls.
             </p>
             <p>
-              An image has no flat fills to read, so it gets quantized into them. The app picks a
-              palette from the image, snaps every pixel to it, and traces the result back to
-              outlines. Photos work. Smoothing and speckle removal are tuned automatically from how
-              detailed the image is. A photo gets a heavier hand than a logo, without you saying
-              which is which. A transparent background stays transparent and cuts nothing.
+              Photos work. An image has no flat colors to read, so the app reduces it to some and
+              traces the edges. Smoothing is set from the image's own detail, so a photo gets a
+              heavier hand than a logo. A transparent background cuts nothing.
             </p>
             <p>
               A loaded image gets two sliders on its row. <strong>Colors</strong> is how many flat
@@ -176,16 +174,14 @@
             </p>
             <p>
               Colors and Auto-merge do different jobs and don't fight. Colors decides which regions
-              exist. Auto-merge decides which of them share an AMS slot. An image's palette comes
-              out already separated past the "Slight" setting, so that default has nothing left to
-              do on one.
+              exist. Auto-merge decides which of them share an AMS slot. An image's colors come out
+              far enough apart that the "Slight" default has nothing left to do on one.
             </p>
             <p>
               For an assembly part, design over the template you downloaded in the Part section, so
-              the size is right. Some editors drop the document's millimeter size on export
-              (Affinity writes <code>width="100%"</code>). The app then scales the document's
-              viewBox to fit the part face. Set your editor document to millimeters to keep it
-              exact.
+              the size is right. Set your editor document to millimeters. Some editors drop the mm
+              size on export (Affinity writes <code>width="100%"</code>). The app then scales the
+              drawing to fit the part face.
             </p>
             <p>
               The thumbnail strip below the dropzone is a small built-in library of tileable
@@ -278,26 +274,26 @@
             <div class="help-step">Left panel · Colors detected</div>
             <h3>Merging into AMS slots</h3>
             <p>
-              The <b>Auto-merge</b> slider collapses visually similar colors automatically. None
-              turns it off. Slight (the default) dedupes near-identical export artifacts. Medium and
-              Strong collapse shading ramps toward fewer filaments. It is fully reversible: drag the
-              slider back down and colors pull apart again. Click a merged color's "×" to pull just
-              that one out, leaving the rest of the group alone.
+              The <b>Auto-merge</b> slider groups colors that look alike. None turns it off. Slight
+              (the default) catches near-identical copies of one color. Medium and Strong pull
+              gradients down to fewer filaments. It is fully reversible: drag the slider back down
+              and colors pull apart again. Click a merged color's "×" to pull just that one out,
+              leaving the rest of the group alone.
             </p>
             <p>
               You can also merge by hand. Drag one color onto another to combine them into a single
               AMS slot, sharing one depth. The ⠿ grip marks what's draggable. If dragging isn't
               convenient, pick the other color from that row's "Merge with…" dropdown instead. Both
-              do the same thing. A merged slot prints in its dominant member's real color, not a
-              blended average. To split a group back up, click its members' "×" swatches. Each
-              pulled color stays out until you re-merge it.
+              do the same thing. A merged slot prints in the group's main color, not a blended
+              average. To split a group back up, click its members' "×" swatches. Each pulled color
+              stays out until you re-merge it.
             </p>
             <p>
               The <b>Base</b> row pinned at the top is a slot too. It prints as the body instead of
               being cut as a recess. "→ base" on a color, or on a whole merged group, makes it the
               base. It swaps out whatever was there. To combine several colors into the base
               instead, drag them onto the Base row. The row shows every color you've grouped in, and
-              always prints its dominant member's color. Click a base color's "×" to send it back to
+              always prints the group's main color. Click a base color's "×" to send it back to
               being cut. Empty the base and the body falls back to the Body / blank color picker in
               Part.
             </p>
@@ -575,7 +571,7 @@
           <div id="artwork-list" class="artwork-list" style="display: none"></div>
           <div class="hint">
             SVG: flat, distinct fill colors only. Gradients and patterns are flagged and skipped.
-            PNG/JPG: quantized into flat color regions. Set Colors and Detail on the loaded row.
+            PNG/JPG: reduced to flat colors. Set Colors and Detail on the loaded row.
           </div>
         </details>
 

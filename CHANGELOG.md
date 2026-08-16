@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **The Help dialog is rewritten to the docs sentence rules.** Same eight
   sections, same facts, same verified numbers. 38 em dashes and 57 sentences
   over 20 words are gone; the longest sentence went from 50 words to 21.
+- **Help and panel text no longer uses words you would only have from CAD.**
+  "Quantized", "export artifacts", "shading ramps", "dominant member",
+  "chamfered edge" and "viewBox" are gone, replaced by what they mean.
+  Slicer words stay: filament, layer height and tileable are words you already
+  use. Every measurement is unchanged.
 - **The thumbnail beside the Part dropdown is now the part.** It was one of a
   few hand-drawn glyphs chosen by how artwork is fitted rather than by what the
   part looks like, so the footrest, hubcap and chair all showed the same
