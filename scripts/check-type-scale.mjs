@@ -4,8 +4,8 @@
 //
 // Four checks:
 //   1. Zero `font-size:` with a literal px value, outside the token declaration blocks.
-//   2. Zero `padding:`/`margin:`/`gap:` with a literal px value, same exemption, plus 1px
-//      hairline borders (a --border-width value, not a --space-* one).
+//   2. Zero `padding:`/`margin:`/`gap:` with a literal px value, same exemption. Border widths
+//      are not spacing and are out of scope for this check.
 //   3. Every element whose rule reads var(--text-meta) resolves to a mono font-family — and the
 //      inverse, the check that would have caught the Arial bug: zero elements anywhere resolve
 //      to a font-family outside {Inter, Outfit, IBM Plex Mono}.
@@ -104,10 +104,10 @@ function listFiles() {
 
 // font-size: allowed only as var(...), em/rem (the five named icon glyphs), or 0/unitless.
 const FONT_SIZE_PX_RE = /font-size\s*[:=]\s*['"]?[0-9.]+px/g;
-// padding/margin/gap: allowed only as var(...), 0, or auto. One exception granted app-wide: a
-// literal 1px on a *border* property is a --border-width value, not spacing — but our property
-// regex already only matches padding/margin/gap/row-gap/column-gap, so a border declaration never
-// enters this check to begin with; no extra carve-out needed.
+// padding/margin/gap: allowed only as var(...), 0, or auto. A literal 1px on a *border* property
+// is a width, not spacing, and is deliberately not policed here — the property regex only matches
+// padding/margin/gap/row-gap/column-gap, so a border declaration never enters this check to begin
+// with; no extra carve-out needed.
 //
 // The leading (?<![\w-]) is load-bearing: without it "margin" also matches inside
 // "scroll-margin-top" (a position property, out of scope per the plan) and "gap" inside nothing

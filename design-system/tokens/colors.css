@@ -25,4 +25,10 @@
   --danger-wash: rgba(249, 67, 138, 0.12);
   --danger-border: rgba(249, 67, 138, 0.4);
   --danger-text: #ffb3d1;
+
+  /* Outline for a swatch, which sits on a filament colour the user picked, not on a panel.
+     Deliberately not --line (#2b3457): a dark navy hairline disappears against a dark swatch,
+     which is the collision convention 19 exists to prevent, in the one list where it matters
+     most. Translucent white reads against any fill. */
+  --swatch-line: rgba(255, 255, 255, 0.15);
 }

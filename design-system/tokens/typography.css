@@ -18,11 +18,19 @@
   --text-emphasis: 16px; /* the one size above body. Empty states, dialog titles. Rare. */
   --text-display: 20px; /* wordmark only */
 
+  /* --weight-regular is referenced by no rule and should stay that way: 400 is the initial value,
+     so it renders on most of the app without anything declaring it. It names the baseline of the
+     scale rather than marking a gap. */
   --weight-regular: 400;
   --weight-semibold: 600;
   --weight-bold: 700;
 
   --tracking-label: 0.08em;
-  --leading-tight: 1.2;
-  --leading-normal: 1.5;
+
+  /* Three roles, matching what the app renders. There is deliberately no --leading-tight: its
+     1.2 rendered nowhere for as long as the token existed, which made it a scale entry no
+     reviewer could enforce. Set these from what a block is for, not from how tight it looks. */
+  --leading-none: 1; /* glyph-as-icon buttons: the glyph is the box, no leading wanted */
+  --leading-normal: 1.5; /* UI text: hints, empty states, the viewport HUD */
+  --leading-prose: 1.55; /* paragraphs meant to be read: help sections, dialogs, the narrow notice */
 }

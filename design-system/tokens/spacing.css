@@ -12,6 +12,8 @@
   --radius-lg: 2px;
   --radius-2xl: 3px;
 
-  --border-width: 1px;
+  /* No --border-width. Borders are 1px everywhere by rule (see the README), so a token buys no
+     flexibility, and the three deliberate exceptions (1.5px badge ring, 1.5px dashed dropzone,
+     2px spinner) would each need their own anyway. */
   --transition-fast: 0.12s;
 }

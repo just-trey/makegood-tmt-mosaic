@@ -19,19 +19,6 @@ survives as its own section; only the closed part goes. Checking that the diff
 removed only the lines you meant to remove is _not_ this check: it confirms the
 scope of the edit, not that what left was finished.
 
-## The assembly-part dropzone's radius matches no token
-
-[src/ui/assemblyPanel.ts:413](../src/ui/assemblyPanel.ts#L413)'s inline STL/3MF drop target
-hardcodes `border-radius:6px`. The radius scale (`tokens/spacing.css`) tops out at
-`--radius-2xl`, 3px — 6px matches no step on it, doubled or otherwise. Found while converting
-this same line's `padding` and font-size to tokens (`chore/type-and-spacing-tokens`); left alone
-because radius was explicitly out of that branch's scope. Very likely the source of a prior
-`docs/system-audit.md` run's "border-radius = 6px, source not conclusively identified" census
-row (2–6 elements, all this one row's dropzone across however many assembly parts are loaded).
-What closing it would take: decide whether 6px is a deliberate one-off (in which case it needs
-its own token or a documented exception, the way the five icon glyphs got one) or a mistake that
-should be `--radius-2xl`, then fix the one line.
-
 ## What the header stripe is allowed to borrow from the makegood.design brand
 
 A maintainer decision, not a bug, and deliberately kept open. Nothing renders wrong today.
