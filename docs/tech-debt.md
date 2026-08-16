@@ -32,23 +32,52 @@ What closing it would take: decide whether 6px is a deliberate one-off (in which
 its own token or a documented exception, the way the five icon glyphs got one) or a mistake that
 should be `--radius-2xl`, then fix the one line.
 
-## "Exactly one gradient" undercounts by two
+## What the header stripe is allowed to borrow from the makegood.design brand
 
-`design-system/README.md`: "Exactly one gradient: the 3px `.accent-stripe` across the top of the
-window… Add no further gradients." `src/styles.css` has three `linear-gradient()` declarations:
-the documented stripe (line 106) plus two more forming `#right`'s faint 24px grid backdrop (lines
-355–356, `linear-gradient(var(--accent-glow) 1px, transparent 1px)` on both axes). The grid lines
-read as a repeating texture rather than a color blend, which is plausibly what the rule means to
-exclude — but the rule as written doesn't say that, so it's contradicted by the file two inches
-below it. Confirmed unchanged across two independent `/review-gauntlet system` runs. What closing
-it would take: state what the rule actually means ("no further decorative colour blends; the
-viewport grid is a repeating texture, not a blend") rather than changing the count — the number
-is the wrong thing to fix here, the sentence is.
+A maintainer decision, not a bug, and deliberately kept open. Nothing renders wrong today.
 
-A related question this section does not settle: the header's full-width rainbow gradient.
-`design-system/README.md` reserves the rainbow language for makegood.design and says the tool uses
-no gradients but the app mark. Recorded in [ui-conventions.md](ui-conventions.md) as a brand call
-rather than a bug — it needs a decision on what the tool's header is allowed to be, not a fix.
+`.accent-stripe` ([src/styles.css:71](../src/styles.css#L71)) is the 3px rule across the top of the
+window: `linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488)`, purple to indigo to teal.
+
+**It is a near-copy of makegood.design's banner gradient, off by about one shade step.**
+
+| Stop | Brand (`--mg-banner-*`) | App stripe |
+| ---- | ----------------------- | ---------- |
+| from | `#7e22ce` (purple-700)  | `#7c3aed`  |
+| via  | `#4338ca` (indigo-700)  | `#4c5fd7`  |
+| to   | `#0f766e` (teal-700)    | `#0d9488`  |
+
+Same three hues, same order. The middle stop matches no standard step in either palette.
+
+**The framing that makes this decidable: the tool already borrows the brand's whole palette.**
+`tokens/colors-makegood-dark.css` and the app's own `tokens/colors.css` agree on nine hexes exactly
+(table in `design-system/README.md`'s "Not in scope" section). So the question is not whether the
+tool may borrow from the marketing brand. It does, completely. The stripe is the one borrow that is
+visible and unreconciled.
+
+**The one input needed to close it**, which only the maintainer can supply: is the lightening a
+deliberate adjustment for the dark navy UI, or drift from a copy-paste? Each answer picks its own
+fix, and all three cost about the same:
+
+| If the intent was      | Closing it means                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| Match the brand banner | adopt the `--mg-banner-*` values                                                    |
+| Mosaic's own variant   | declare `--stripe-from`/`via`/`to` in `tokens/colors.css`, saying why it sits light |
+| Stop borrowing         | restyle in `--accent` / `--accent-2` and drop the brand reference                   |
+
+Scope is four sites in every case: the two declarations ([src/styles.css:71](../src/styles.css#L71),
+`design-system/guidelines/brand-mark.html`'s own `.accent-stripe`) and the two places the hexes are
+quoted in prose (`design-system/README.md`'s Colors section, and `brand-mark.html`'s closing note).
+
+Leave the three colors as literals until this is settled. Tokenising them now would make the
+current values look decided.
+
+**Three dead ends, checked so they are not re-checked.** The stripe is not the MakeGood rainbow:
+that is a separate seven-stop warm ramp (`--mg-rainbow-1..7`) used only by
+`guidelines/brand-makegood-site.html`. `design-system/README.md` does not forbid this stripe; it
+sanctions it by name and hex, and its "app mark" phrase belongs to a clause about there being no
+conic gradient. And [ui-conventions.md](ui-conventions.md) holds no record of this question: it has
+nothing on the header, stripe, brand, or rainbow.
 
 ## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
 

@@ -82,8 +82,8 @@ whole point rather than a layout preference: in the prototype the rows sat under
 the fifth was clipped by the panel edge, which puts the _where_ step below the _what_ step and
 inverts convention 9 while the component itself satisfies it.
 
-**One gap found while writing this, unrelated to the component:** there is no `--font-mono` token.
-`src/styles.css:1091` references `var(--font-mono)`, which is declared nowhere, so that rule falls
-back to the UA monospace rather than IBM Plex Mono — and the README states the mono/sans split is a
-firm rule. The prototype's CSS copied the same reference and inherited the same silent fallback.
-Worth a separate look; it is not this component's to fix.
+**Use `var(--mono)` for the slot text.** The spike prototype's own CSS referenced a `--font-mono`
+that is declared nowhere and silently fell back to the UA monospace. That was the prototype's bug
+and never the app's: `src/styles.css` has no `--font-mono` reference in any revision, and all 13 of
+its mono sites use `var(--mono)` and resolve to IBM Plex Mono. Don't copy the prototype's spelling
+when building this.
