@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The accent stripe is drawn in the app's own two accent colors.** The bands
+  across the top and bottom of the window ran purple to indigo to teal, three
+  colors that appeared nowhere else in the app and in none of the token files.
+  They were a near-copy of makegood.design's banner gradient. Both bands now run
+  blue to cyan, `--accent` to `--accent-2`, so the stripe can't drift from the
+  palette the rest of the app uses.
 - **The assembly part drop target has the same corners as every other dropzone.**
   It rendered at 6px against the 3px the design system states and the Artwork
   dropzone uses. 6px was the app-wide radius before the v3 redesign moved

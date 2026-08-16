@@ -69,10 +69,11 @@ See `tokens/colors.css`, `tokens/typography.css`, `tokens/spacing.css` (imported
 - Accent primary (blue, primary actions/focus): `#6d93ff`
 - Accent secondary (cyan, sparse highlight): `#5eead4`
 - Danger (warnings only): `#f9438a`
-- Exactly one gradient is used as **colour**: the 3px `.accent-stripe` across the top of the
-  window, `linear-gradient(90deg, #7c3aed, #4c5fd7, #0d9488)`. Those three colors have no token
-  identity anywhere: literals in `src/styles.css`, absent from every token file. There is no
-  conic gradient; the app mark is the real logo PNG. **Add no further colour blends.**
+- Exactly one gradient is used as **colour**: the 8px `.accent-stripe`,
+  `linear-gradient(90deg, var(--accent), var(--accent-2))`. One rule, drawn twice, once above the
+  header and once along the bottom of the window. Both stops are tokens, so it cannot drift from
+  the palette. There is no conic gradient; the app mark is the real logo PNG.
+  **Add no further colour blends.**
 - The rule bars blends, not the `linear-gradient()` function. `#right`'s viewport backdrop uses
   two more, one per axis, each a 1px `--accent-glow` line against transparent on a 24px tile.
   That is a texture built from hairlines, not a blend between colours, and it is the one
