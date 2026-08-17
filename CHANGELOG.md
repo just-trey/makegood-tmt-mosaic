@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The Depth panel says when colors are ignoring the default.** Typing in
+  Default depth could appear to do nothing, because a color with its own depth
+  keeps it, and the only sign of that was a highlight on a row in another panel.
+  It now reads "2 colors use their own depth" beside the field, with a
+  "Reset all" that puts them back. The checkbox hint no longer says "override
+  below", which was pointing at that other panel instead of showing the state.
 - **The Export panel says what you are about to get.** Above the button: how
   many parts, how many plates, and a swatch per filament, with the parts listed
   plate by plate. Exporting the chair produces a 34 MB, 11-plate, 13-object,

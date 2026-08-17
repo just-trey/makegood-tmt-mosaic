@@ -94,17 +94,6 @@ above, since both are about the same panel.
 used when no artwork color is grouped into the base." That removed the pointer, not the split. The
 item stays open, and the live instance is now the layout rather than a sentence to grep for.
 
-## Depth's default is overridden from a different panel
-
-Convention 4 again, one panel down. The Depth panel sets a default; the per-color overrides that
-beat it live in Colors detected, and a color carrying one is highlighted only there. The hint used
-to say "override per-color below", which is the same cross-panel pointer as the body-color item
-above; it now says "Individual colors can override it" and names nothing.
-
-Smaller than the body-color case, and the same shape: the help dialog still has to explain that
-changing the Depth field can appear to do nothing because some rows opted out. Closing it means
-showing the override state where the default is set, not adding the sentence back.
-
 ## Colors detected needs a paragraph of prose because none of its mechanisms are visible
 
 Convention 5 of [ui-conventions.md](ui-conventions.md): prose in a panel is a symptom, and a panel

@@ -1100,3 +1100,20 @@ a {
   color: var(--text-dim);
   line-height: var(--leading-normal);
 }
+
+/* The colors ignoring Default depth, stated beside the field that sets it. In the panel flow, not
+   a tooltip: it answers "why did typing here do nothing" at the moment the question arises. */
+/* Author `display` beats the UA sheet's [hidden] rule, so the hidden state needs saying here or
+   an empty flex row keeps its margin and leaves a gap under the field. */
+.depth-overrides[hidden] {
+  display: none;
+}
+.depth-overrides {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-row);
+  margin-top: var(--space-tight);
+  font-size: var(--text-label);
+  color: var(--text-dim);
+}

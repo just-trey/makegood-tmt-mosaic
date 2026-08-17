@@ -5,6 +5,7 @@ import { nearestFilamentName } from '../state/filaments';
 import { getPrinter } from '../export/printers';
 import { refreshSlotBudgetNotice, slotTier } from './slotBudget';
 import { $, $all } from './dom';
+import { refreshDepthOverrides } from './depthPanel';
 
 export interface ColorListEntry {
   color: string;
@@ -258,6 +259,7 @@ export function renderColorList(
     lastSlotsNeeded = 0;
     lastRawColorCount = 0;
     renderSlotCount();
+    refreshDepthOverrides([]);
     $('#stat-colors').textContent = '0 colors';
     $('#stat-colors').style.display = 'none';
     return;
@@ -456,6 +458,11 @@ export function renderColorList(
   lastSlotsNeeded = cutColors + 1;
   lastRawColorCount = opts.rawColorCount ?? cutColors;
   renderSlotCount();
+  // Reported from the rows actually on screen, so the Depth panel can only ever name overrides the
+  // user can see and clear.
+  refreshDepthOverrides(
+    rows.filter((c) => Number.isFinite(state.colorSettings[c.key]?.depth)).map((c) => c.key),
+  );
   $('#stat-colors').textContent = `${cutColors} color${cutColors === 1 ? '' : 's'}`;
   $('#stat-colors').style.display = '';
 }
