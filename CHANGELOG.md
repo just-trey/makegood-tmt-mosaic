@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   colors that fell off. Found by the 2026-08-16 maker ease-of-use review.
 - The colors chip above the list says "1 color" instead of "1 colors". The
   slot line beside it already did.
+- **A recessed background counts as a color, so the slot line adds up again.**
+  With "Recess bg too" on, the background prints in its own color and takes a
+  slot, but the line counted only the colors found in your artwork: it read
+  "3 colors → 5 AMS slots needed" beside a "4 colors" chip, showing the body's
+  "+1" as an unexplained +2. Flat shapes only, and only with that box ticked.
+  Help now says the recessed background takes a slot.
 - **The sample artwork now fits a single AMS unit.** The badge was 4 colors
   plus the body, 5 slots, so on the default printer the demo's first act was
   a capacity pill saying it needed more than one AMS unit. It is now 3 colors

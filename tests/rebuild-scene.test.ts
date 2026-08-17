@@ -302,6 +302,27 @@ describe('flat mode with artwork', () => {
     expect(meta).toMatchObject({ rawColorCount: 3 });
   });
 
+  it('counts the background recess as a color, since it prints and costs a slot', async () => {
+    // it is not in detectedColors: the app adds it, the artwork doesn't carry it. Left out, the
+    // slot line disagreed with the colors chip beside it and showed the body's "+1" as +2.
+    vi.mocked(buildGeometry).mockResolvedValue(
+      flatBuild({
+        colorMeshes: [
+          colorMesh('#ff0000', 60),
+          { ...colorMesh('#cfd6dc', 40), isBackground: true },
+        ],
+        detectedColors: [{ hex: '#ff0000', areaPct: 60 }],
+      }),
+    );
+
+    await rebuildCurrent();
+
+    const [entries, meta] = vi.mocked(renderColorList).mock.calls.at(-1)!;
+    // 2 rows -> 3 slots with the body, and the left of the arrow now agrees with the chip
+    expect(entries).toHaveLength(2);
+    expect(meta).toMatchObject({ rawColorCount: 2 });
+  });
+
   it('adds a base row and syncs the dominant member the build picked', async () => {
     state.baseColorKey = '#ee0000'; // a stale guess from addToBase
     state.baseColorMembers = ['#ee0000', '#ff0000'];

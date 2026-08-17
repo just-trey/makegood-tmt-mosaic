@@ -153,22 +153,23 @@ try {
   const readout = await page.textContent('.artwork-raster .raster-readout');
   const traced = parseInt(readout, 10);
   if (!(traced >= 2)) errors.push(`PNG traced no usable palette (readout: ${readout})`);
-  // #stat-colors counts cut regions — the traced palette plus the Background row — so it is not
-  // the tracer's count and never equals it here. #slot-count's leading "N colors →" is, when the
-  // two differ (colorList.ts). Both only update when the color list re-renders, which lands after
-  // the raster readout does, so wait for it rather than reading the previous design's numbers.
-  const paletteCount = (slot, stat) => {
-    const m = /^\s*(\d+)\s+colors\s+→/.exec(slot || '');
-    return m ? parseInt(m[1], 10) : parseInt(stat || '', 10);
-  };
+  // Count the artwork's own rows rather than reading either summary number. Both of those count
+  // the Background row this step has switched on, so neither equals the tracer's palette, and
+  // inferring one from a summary string is what tied this check to a particular meaning of the
+  // word "colors" (it broke when the slot line started counting the recess). The rows are the
+  // property being asserted: every traced colour reached the list. They only appear once the
+  // color list re-renders, which lands after the raster readout, so wait rather than reading the
+  // previous design's.
+  const artworkRows = () =>
+    page.$$eval('#color-list .color-row:not(.is-base) .hex', (ns) =>
+      ns.map((n) => n.textContent).filter((t) => t !== 'Background'),
+    );
   await page
     .waitForFunction(
-      (n) => {
-        const slot = document.querySelector('#slot-count')?.textContent || '';
-        const stat = document.querySelector('#stat-colors')?.textContent || '';
-        const m = /^\s*(\d+)\s+colors\s+→/.exec(slot);
-        return (m ? parseInt(m[1], 10) : parseInt(stat, 10)) === n;
-      },
+      (n) =>
+        [...document.querySelectorAll('#color-list .color-row:not(.is-base) .hex')].filter(
+          (e) => e.textContent !== 'Background',
+        ).length === n,
       traced,
       { timeout: 120_000 },
     )
@@ -176,9 +177,11 @@ try {
   const slotText = await page.textContent('#slot-count');
   const statColors = await page.textContent('#stat-colors');
   console.log('   traced:', readout, '| slots:', slotText, '| header:', statColors);
-  const shown = paletteCount(slotText, statColors);
+  const shown = (await artworkRows()).length;
   if (shown !== traced)
-    errors.push(`traced ${traced} colors but the color list shows ${shown} ("${slotText}")`);
+    errors.push(
+      `traced ${traced} colors but the color list shows ${shown} artwork rows ("${slotText}")`,
+    );
   await sleep(800);
   await page.screenshot({ path: path.join(OUT, '6-raster-artwork.png') });
 
