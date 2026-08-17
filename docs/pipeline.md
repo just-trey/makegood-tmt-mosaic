@@ -164,6 +164,14 @@ rounded edge the way real vinyl would
 - A zone spans the printed parts under it rather than stopping at a part edge.
   (The fender zones happen to live on one part each: the wing's forward face
   never reaches a seam.)
+- Surface hidden by another part once assembled (wheels, cushions) is baked
+  as per-chart `deadRegions`: the config's `covers` file marks the covering
+  bodies, a bake pass tests each zone triangle for a cover along its normal,
+  and the visible region grown by `bleedMm` (20) is subtracted back so artwork
+  still runs past the visible edge. The runtime subtracts dead regions from
+  the artwork clip; the viewport and templates draw them hatched. Constants
+  and their measurements: `COVER_RAY_MM` in
+  [zonebake.mjs](../scripts/lib/zonebake.mjs).
 - Artwork laid across a seam is split, cut into each part separately, and
   exported under that part's object.
 - Target a zone from the Artwork list's per-row dropdown, or by clicking the

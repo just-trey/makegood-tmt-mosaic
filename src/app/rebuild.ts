@@ -18,6 +18,7 @@ import {
   shippedColorIndices,
   type ArtworkBuildInput,
 } from '../geometry/assembly';
+import { ConformalZoneMapper } from '../geometry/conformal';
 import { currentAssemblyKind, hubcapSilhouetteOffset } from '../assembly/kinds';
 import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
 import {
@@ -28,7 +29,7 @@ import {
   setPreferredViewDir,
 } from '../scene/viewport';
 import { assemblyViewDir, displayQuaternionFor } from '../scene/displayFrame';
-import { refreshGizmo } from '../scene/designGizmo';
+import { refreshGizmo, tokenColor } from '../scene/designGizmo';
 import { refreshZonePickMeshes } from '../scene/zonePick';
 import { renderColorList, type ColorListEntry } from '../ui/colorList';
 import { renderBaseColorSwatches } from '../ui/partPanel';
@@ -279,6 +280,78 @@ async function rebuildScene(): Promise<void> {
   frameModelIfPending();
 }
 
+/** Diagonal stripes in the app accent, one stripe per tile: the tile maps to 8mm of surface. */
+let hatchTexture: THREE.CanvasTexture | null = null;
+function hiddenSurfaceMaterial(): THREE.MeshBasicMaterial {
+  const accent = new THREE.Color(tokenColor('--accent', 0x6d93ff));
+  if (!hatchTexture) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    // jsdom has no 2D canvas; a plain translucent tint is the same signal minus the stripes
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 64, 64);
+      ctx.strokeStyle = `#${accent.getHexString()}`;
+      ctx.lineWidth = 12;
+      for (const x of [-64, 0, 64]) {
+        ctx.beginPath();
+        ctx.moveTo(x, 64);
+        ctx.lineTo(x + 64, 0);
+        ctx.stroke();
+      }
+      hatchTexture = new THREE.CanvasTexture(c);
+      hatchTexture.wrapS = hatchTexture.wrapT = THREE.RepeatWrapping;
+    }
+  }
+  return new THREE.MeshBasicMaterial({
+    ...(hatchTexture ? { map: hatchTexture } : { color: accent }),
+    transparent: true,
+    opacity: 0.7,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+// The warp (triangulate, subdivide, per-vertex surface lookup) is static per chart, but every
+// rebuild disposes scene geometry (newModelGroup), so what is cached is the computed arrays and
+// a fresh BufferGeometry is built from them each time. Keyed by the chart object: charts live as
+// long as the loaded part they came from.
+const overlayCache = new WeakMap<object, { positions: Float32Array; uv: Float32Array } | null>();
+
+/**
+ * Hatch each zone's hidden surface (chart deadRegions) onto the part, floating just off the
+ * mesh. Drawn in both render paths so the "artwork stops here" line is visible before anything
+ * is placed, not discovered after a cut comes out trimmed.
+ */
+function addHiddenSurfaceOverlays(
+  xf: ReturnType<typeof asmPartTransformGroup>,
+  part: (typeof state.assembly.parts)[number],
+): void {
+  if (!part.zones?.length) return;
+  for (const z of part.zones) {
+    if (!z.chart?.deadRegions?.length) continue;
+    let overlay = overlayCache.get(z.chart);
+    if (overlay === undefined) {
+      overlay = new ConformalZoneMapper(null, z.chart).deadOverlayMesh();
+      overlayCache.set(z.chart, overlay);
+    }
+    if (!overlay) continue;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(overlay.positions.slice(), 3));
+    // stripes every 8mm of surface
+    const uv = overlay.uv.map((x) => x / 8);
+    geo.setAttribute('uv', new THREE.BufferAttribute(Float32Array.from(uv), 2));
+    const mesh = new THREE.Mesh(geo, hiddenSurfaceMaterial());
+    // Invisible to every raycast. It floats 0.4mm proud of the surface, which zone picking's
+    // occlusion test (OCCLUSION_TOL_MM = 0.05) reads as a solid part covering the chart. Measured
+    // over a 61x61 viewport grid on the chair: without this the seat drops from 50 pickable
+    // points to 17 and the front zone from 111 to 74, so a click on hatched surface mostly
+    // selects nothing instead of its zone.
+    mesh.raycast = () => {};
+    xf.add(mesh);
+  }
+}
+
 /**
  * Show the bare loaded parts (no cuts) so the wheel is visible as soon as it loads, before any
  * artwork is applied — otherwise selecting the assembly leaves the viewport empty until an SVG
@@ -299,6 +372,7 @@ function renderRawAssemblyParts(): void {
     modelGroup.add(xf.outer);
     const soup = Float32Array.from(part.positions);
     xf.add(new THREE.Mesh(bufferGeometryFromTris(soup, part.indexed), rawMat));
+    addHiddenSurfaceOverlays(xf, part);
     tris += part.positions.length / 9;
   });
   $('#stat-tris').textContent = Math.round(tris) + ' tris';
@@ -500,6 +574,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     // output because `bodyIndexed` is also what 3MF export writes, and this must not change what
     // an uncut part exports.
     xf.add(new THREE.Mesh(bufferGeometryFromTris(bodySoup, bodyIndexed ?? part.indexed), baseMat));
+    addHiddenSurfaceOverlays(xf, part);
     tris += bodySoup.length / 9;
     Object.entries(inlaySoups).forEach(([ci, soup]) => {
       const hex = built.palette[+ci].hex;

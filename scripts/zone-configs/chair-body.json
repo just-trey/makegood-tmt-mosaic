@@ -20,6 +20,11 @@
     "claims 2 triangles 'left'/'right' already own, cutting the same artwork twice at the join."
   ],
   "seamWeldTolMm": 0.6,
+  "covers": {
+    "file": "stubs/dead-zones.3mf",
+    "referenceColor": "#F768E6FF",
+    "bleedMm": 20
+  },
   "parts": [
     { "libraryPartId": "chair-storage-left", "file": "public/stl/chair-storage-left.3mf" },
     { "libraryPartId": "chair-storage-right", "file": "public/stl/chair-storage-right.3mf" },

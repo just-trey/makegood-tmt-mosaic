@@ -117,6 +117,36 @@ they do _not_ cover:
 `maxAngleDeg` stops it rather than until the part runs out. Retune the angles in
 the same change.
 
+### covers: what other parts hide
+
+Optional. Marks the surface that covering parts (wheels, cushions) hide once
+the kind is assembled, so it takes no artwork and no filament changes:
+
+```json
+"covers": {
+  "file": "stubs/dead-zones.3mf",
+  "referenceColor": "#F768E6FF",
+  "bleedMm": 20
+}
+```
+
+- `file` is a whole-assembly CAD export holding the kind's own parts in one
+  color (`referenceColor`) and every covering body in any other. Bodies carry
+  no usable names, so color is the only distinction. The file may sit in
+  `stubs/` (untracked); the bake **hard-fails without it** rather than
+  silently baking a sidecar with nothing hidden.
+- The export's frame need not match the bake frame: the reference bodies are
+  matched to the config parts by bounding box and the transform is solved from
+  their consensus, refused above 1mm residual.
+- A zone triangle is hidden when a cover sits within `COVER_RAY_MM` straight
+  out along its normal (measured constant, see zonebake.mjs).
+- `bleedMm` keeps artwork running that far past the visible edge into the
+  hidden area, so a slightly shifted cover never reveals blank plastic.
+- Output: per-chart `deadRegions` in the sidecar (schema 3), subtracted from
+  the artwork clip at runtime, drawn hatched on templates and in the viewport.
+- The bake log prints `dead <area>mm²` per zone. A zone whose surface faces
+  away from every cover correctly reports 0.
+
 ## 2. Run it
 
 ```bash
