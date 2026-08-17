@@ -1,4 +1,4 @@
-An inline banner stacked over the viewport, used for recoverable issues ("Boolean subtraction failed for color #e8a13a…").
+An inline banner stacked over the viewport, used for recoverable issues ("Couldn't trim the overlap for color #e8a13a…").
 
 Rendered by [src/ui/warningsView.ts](../../../src/ui/warningsView.ts) as plain DOM, not a component.
 

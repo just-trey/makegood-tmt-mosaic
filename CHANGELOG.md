@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A cut warning no longer claims a color is missing when it is only partly
+  missing.** The per-region warning is raised per region and the build carries
+  on, so a color split across two depths keeps the slice that did cut. The
+  warning now names the color and the part and stops there.
+- **The unreadable-mesh warning named the wrong problem.** It said to check the
+  mesh was watertight, which is a different failure with its own warning five
+  lines away, and it never mentioned that the part is left out of the export
+  entirely. It now says that.
 - **The app no longer tells Snapmaker owners about their AMS.** The U1 feeds
   from a built-in 4-head toolchanger and has no AMS, but with it selected the
   slot line's tooltip read "Fits a single 4-slot AMS unit" and the capacity
@@ -82,6 +90,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The cut warnings say what happened to your print, not what happened inside
+  the app.** `Couldn't build the cut solid for color #0a0a0a on Handle (left)`
+  is now `Couldn't cut color #0a0a0a into "Handle (left)"`, and `Boolean union
+failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
+  longer than the string it replaced. The merge warning also stopped guessing:
+  it used to blame "a self-intersecting path in the source SVG", the common
+  cause but not the only one, since a design repeated across a large zone can
+  simply be too big. It names no cause now and troubleshooting carries both.
 - **The accent stripe is drawn in the app's own two accent colors.** The bands
   across the top and bottom of the window ran purple to indigo to teal, three
   colors that appeared nowhere else in the app and in none of the token files.

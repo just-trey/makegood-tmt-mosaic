@@ -135,7 +135,7 @@ describe('every built-in pattern tiles seamlessly', () => {
  * Vertex count is a shipping constraint, not a nicety. Fill mode unions one copy of the pattern
  * per tile, and turf 6.5's polygon clipping starts failing somewhere around 800k vertices in a
  * single operation — at which point it doesn't throw, it drops tiles, so the surface comes out
- * partly blank with only a "likely a self-intersecting path" warning to go on.
+ * partly blank with only a "Couldn't merge the shapes" warning to go on, which names no cause.
  *
  * Zebra shipped at 13.6k vertices per tile, which is 1.9M across the 143 tiles a 60mm pattern
  * needs to cover a chair zone: straight past the limit. Marching squares is why — it emits a

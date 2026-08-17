@@ -127,46 +127,6 @@ belongs (convention 6). That is the copy fix and it is done. What remains is the
 existed: closing this means making the affordances legible, in particular the last row — an
 asymmetry between two gestures on the same target is not something help text can rescue.
 
-## The CSG warnings still name an internal step, and three items depend on the wording
-
-Convention 2 of [ui-conventions.md](ui-conventions.md), and its worked example verbatim:
-`Couldn't build the cut solid for color #0a0a0a on Handle (left)`. Conventions 33–37 say the same
-thing for every string. `cut solid` and `Boolean union/subtraction failed` are ours, not a slicer's.
-
-**Nothing else is left of the copy problem.** The help dialog and panel hints were reworked against
-33–37 and are done. The other warnings were already plain: convention 2 did that work when they
-were rewritten to name a filament and a part. These two strings are the exception because they were
-never reworded.
-
-Rewording them is not a copy edit, which is why it is its own item:
-
-| Depends on the current wording                                           | What it needs                                                      |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| [troubleshooting.md](troubleshooting.md), one section per warning string | Two section headings move in lockstep                              |
-| "A seam sliver warns as if artwork were lost"                            | Cites the string as indistinguishable from a real failure          |
-| "Zebra + Fill still loses one color on Handle (left)"                    | Quotes it as the observed symptom                                  |
-| "Turf's tile union has a vertex ceiling"                                 | Quotes `Boolean union failed …` and notes it names the wrong cause |
-
-The last row is the reason to do these together rather than as wording alone: that item already
-records the message naming a cause that isn't true. A rewrite that fixes the register and leaves
-the wrong cause in place spends the change and keeps the defect.
-
-**Method, established on the help-dialog pass: rewrite by sentence purpose, not by word.**
-Conventions 33–37 verify one string. They do not say how to rework a document, and word-for-word
-substitution is how a copy pass makes things worse: it keeps the sentence that was built around the
-jargon and pads it. Ask what the reader needs to _do_, then write that fresh. Measured on the help
-dialog: 2362 words to 2327, longest sentence unchanged at 21, no paragraph or section lost.
-
-Two traps the help-dialog pass hit, both worth not repeating. Five rows of convention 33's jargon
-table were written by substitution and had to be fixed before they merged. And two rewrites there
-merged sentences while removing a term, pushing the longest from 21 words to 28, which is
-convention 36 failing in the exact place it was written to guard. **Count after rewriting, don't
-judge by eye.**
-
-`tileable` and `bounding box` were counted as violations in the first draft of this item and are
-not. Both pass the slicer test, and both plain replacements ran longer. Closing this must not
-"fix" them.
-
 ## The AMS-capacity pill states three remedies at once
 
 Convention 3 of [ui-conventions.md](ui-conventions.md): a warning states one problem and one
@@ -613,9 +573,9 @@ Where two parts' claims on
 a zone overlap, clipping a color to one part's `subRegions` can leave a
 remnant a fraction of a millimetre wide. It survives the turf clip, then
 yields no cutter, and
-[src/geometry/assembly.ts](../src/geometry/assembly.ts) reports "Couldn't build
-the cut solid for color … on …" — alarming, and indistinguishable from the
-real failure it shares a message with. The overlaps are inherent to per-part
+[src/geometry/assembly.ts](../src/geometry/assembly.ts) reports "Couldn't cut
+color … into …. It won't print there." — alarming, and indistinguishable from
+the real failure it shares a message with. The overlaps are inherent to per-part
 clipping and small — measured across the shipped bake, 23 overlapping part
 pairs, all seam-sharing, worst 29.85 mm² on a 124,500 mm² zone (a ~0.15 mm
 ribbon), and `tests/chair-zones.test.ts` holds them under 0.05% of zone area.
@@ -975,13 +935,13 @@ comes off, not before the next release. The defect below is unchanged.
 Left over after the vertex-count fix below, measured on `MOSAIC_GPU=1`
 production build, 2026-08-03: zebra in Fill mode on the chair's Left side
 settles clean apart from a single
-`Couldn't build the cut solid for color #0a0a0a on "Handle (left)"` — so that
-part prints without the black, per the handling described in
+`Couldn't cut color #0a0a0a into "Handle (left)"` (the wording at the time named
+the cut solid) — so that part prints without the black, per the handling described in
 [troubleshooting.md](troubleshooting.md).
 
 This is not a regression from the thinning, but the thinning is what exposed
 it. On the old asset the same part failed _earlier_, at the 2D union
-(`Boolean union failed for color #0a0a0a on Handle (left)`), and fell back to
+(now `Couldn't merge the shapes for color #0a0a0a on Handle (left)`), and fell back to
 the unmerged shape — a coarser input that the 3D boolean then swallowed
 without complaint. With the union succeeding, the full-detail pattern reaches
 Manifold and that is where it now fails. Net it is 8 union failures across 4
@@ -1001,9 +961,11 @@ Measured 2026-08-03 while fixing the bundled zebra pattern. Fill mode unions
 one copy of the pattern per tile, and `@turf/turf` 6.5's polygon clipping
 starts failing somewhere around **800k vertices in a single operation**. It
 does not throw at that point — it drops tiles, and the only surface signal is
-`Boolean union failed … (likely a self-intersecting path in the source SVG)`,
-which names the wrong cause: the paths were fine, there were simply too many
-of them.
+`Couldn't merge the shapes …`. That message used to assert a cause it could not
+know ("likely a self-intersecting path in the source SVG"), which was wrong here:
+the paths were fine, there were simply too many of them. It is now cause-neutral
+and [troubleshooting.md](troubleshooting.md) carries both causes, so what is left
+open is that nothing tells the user _which_ one they hit.
 
 The numbers that made it concrete, zebra in Fill mode on one chair zone
 (`MOSAIC_GPU=1` production build):

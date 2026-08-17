@@ -2,10 +2,12 @@
 
 One section per user-visible warning string.
 
-## Troubleshooting: "Boolean union/subtraction failed" warnings
+## Troubleshooting: "Couldn't merge the shapes" / "Couldn't trim the overlap" warnings
 
 The polygon maths failed on one colour's shape. The warning names the colour.
-It is almost always a **self-intersecting path** in the source SVG.
+There are two causes and the warning does not guess between them: a
+**self-intersecting path** in the source SVG (much the commoner one), or sheer
+size in Fill mode (below).
 
 The app already tries to fix this: near-duplicate points are removed before the
 maths runs (usually two curve segments meeting at a seam a fraction of a unit
@@ -19,9 +21,9 @@ lower precision. If the warning still appears:
 - Common causes: strokes converted to outlines (sharp mitre joins), leftover
   boolean results from the design tool, hand-edited paths with crossed segments.
 
-**In Fill mode, don't trust the "self-intersecting path" part.** Fill unions one
-copy of the design per tile, and the polygon library also fails on sheer size,
-around 800k points in one operation, with the identical warning. A design that
+**In Fill mode, suspect size before the path.** Fill merges one copy of the
+design per tile, and the polygon library also fails on sheer size, around 800k
+points in one operation, with the identical warning. A design that
 unions cleanly as a Sticker but fails once repeated across a chair zone (143
 tiles of a 60mm pattern) has hit the size limit, not a bad path, and Path →
 Union will change nothing.
@@ -32,16 +34,21 @@ come out blank. Fix by simplifying the design (fewer, larger shapes) or using
 Sticker. Numbers in [tech-debt.md](tech-debt.md), "Turf's tile union has a
 vertex ceiling".
 
-## Troubleshooting: "Couldn't build the cut solid" warnings (assembly mode)
+## Troubleshooting: "Couldn't cut color … into …" warnings (assembly mode)
 
 Assembly mode clips each colour's region to the part's face, then extrudes it
 into a 3D pocket. Dense line-work can come out of that clip touching itself at a
 point: valid to the 2D maths, but not a sealed solid to the 3D engine. The app
 repairs it automatically via Manifold's own 2D boolean engine, offsetting the
 region by a hair and back to break the exact-touching topology, and retries
-once. If the warning survives, that
-colour's pocket was skipped on that part, and the same source fix as above
-usually resolves it.
+once. If the warning survives, that pocket was skipped, and the same source fix
+as above usually resolves it.
+
+**How much of the colour you lose depends on the colour.** The warning is raised
+per region, not per colour, and the build carries on with the rest. A colour
+split across two depths keeps the slice that did extrude, so it can come out
+partly cut. That is why the warning names no outcome: check the part in the
+preview rather than assuming the colour is gone.
 
 **The 3D pass can also fail later.** Each failure degrades to something a slicer
 can print rather than a broken file, and the warning tells you which outcome you
@@ -49,8 +56,8 @@ got. Two of them mean the part carries less artwork than you designed:
 
 | Warning                                                                                                  | What you get                                                                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Couldn't combine the cut solids for color … on …"                                                       | That one colour is dropped from that part. Every other colour cuts normally.                                                                                                    |
-| "… exporting it uncut", or "Boolean cut failed on part … — exporting it uncut and without inlays"        | That part ships with **no artwork at all**. Still printable, just blank, so don't print it expecting the design.                                                                |
+| "Couldn't merge color … on …"                                                                            | That one colour is dropped from that part. Every other colour cuts normally.                                                                                                    |
+| "Couldn't merge the recesses on …", or "Couldn't cut the recesses into …"                                | That part ships with **no artwork at all**. Still printable, just blank, so don't print it expecting the design.                                                                |
 | "Couldn't fit the inlay for color … — its pocket is cut into the body but will print as an empty recess" | The recess is cut but nothing fills it, so that colour prints as a bare cavity.                                                                                                 |
 | "Part … has no geometry to export — its pocket cut went all the way through …"                           | The cut succeeded but left nothing: a pocket reached the part's wall thickness and went clean through. The part is dropped from the export rather than shipping a hollow shell. |
 
@@ -512,6 +519,6 @@ the edge rule existed, and it prints; a through-cut where one wasn't wanted
 would be a hole. The visible symptom is one colour's edge stopping short of the
 rim while others reach it, which is why it says so rather than staying quiet.
 
-Same cause as the "Boolean union/subtraction failed" warnings above: dense or
+Same cause as the "Couldn't merge the shapes" warnings above: dense or
 self-touching line-work the 2D maths can't resolve. Simplifying that colour's
 regions, or nudging Scale, usually clears it.

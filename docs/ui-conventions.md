@@ -206,16 +206,16 @@ The vocabulary table at the top settles which of two ordinary words to use. This
 that are not ordinary at all. Both columns are quoted from shipped copy, not invented pairs, and
 every row obeys 36: the replacement is shorter than or the same length as what it replaces.
 
-| Say                                 | Not                                | Shipping today in           |
-| ----------------------------------- | ---------------------------------- | --------------------------- |
-| reduced to flat colors              | quantized                          | Artwork hint, help dialog   |
-| near-identical copies               | near-identical export artifacts    | help dialog                 |
-| gradients                           | shading ramps                      | help dialog                 |
-| the group's main color              | the dominant member                | help dialog, `colorList.ts` |
-| angled edge                         | chamfered edge                     | help dialog                 |
-| traces the edges                    | traces the result back to outlines | help dialog                 |
-| Rebuilding the part…                | Rebuilding geometry…               | `scheduler.ts` overlay      |
-| Couldn't cut the recess into <part> | Couldn't build the cut solid       | assembly CSG warnings       |
+| Say                                  | Not                                | Shipping today in           |
+| ------------------------------------ | ---------------------------------- | --------------------------- |
+| reduced to flat colors               | quantized                          | Artwork hint, help dialog   |
+| near-identical copies                | near-identical export artifacts    | help dialog                 |
+| gradients                            | shading ramps                      | help dialog                 |
+| the group's main color               | the dominant member                | help dialog, `colorList.ts` |
+| angled edge                          | chamfered edge                     | help dialog                 |
+| traces the edges                     | traces the result back to outlines | help dialog                 |
+| Rebuilding the part…                 | Rebuilding geometry…               | `scheduler.ts` overlay      |
+| Couldn't cut color <hex> into <part> | Couldn't build the cut solid       | assembly CSG warnings       |
 
 Two terms were on this table and came off it. `tileable` and `bounding box` are both free by the
 test above, and both replacements ran longer, which is 36. Leave them alone.
@@ -225,6 +225,26 @@ test above, and both replacements ran longer, which is 36. Leave them alone.
     correctly placed (it sits under "Advanced: per-part face & alignment") and correctly worded
     for what it is. Reading it as a convention-33 violation is a misread; moving it out from
     behind that disclosure would be the violation.
+
+### How to run a copy pass against 33-37
+
+The conventions above verify one string. They do not say how to rework a set of them, and
+word-for-word substitution is how a copy pass makes things worse: it keeps the sentence that was
+built around the jargon and pads it.
+
+- **Rewrite by sentence purpose, not by word.** Ask what the reader needs to _do_, then write that
+  fresh. Measured on the help-dialog pass: 2362 words to 2327, longest sentence unchanged at 21,
+  no paragraph or section lost.
+- **Count after rewriting, don't judge by eye.** Two rewrites on that pass merged sentences while
+  removing a term and pushed the longest from 21 words to 28, which is convention 36 failing in
+  the exact place it was written to guard. Count words excluding standalone punctuation: an em
+  dash is not a word, and the CSG-warning pass initially read three strings as over-length because
+  of it.
+- **Watch for the substitution reflex in the table itself.** Five rows of the jargon table above
+  were written by substitution on that pass and had to be fixed before they merged.
+- **Some of ours are theirs.** `tileable` and `bounding box` were both counted as violations in a
+  draft and are not: both pass the slicer test, and both plain replacements ran longer. A copy
+  pass must not "fix" them.
 
 ---
 
