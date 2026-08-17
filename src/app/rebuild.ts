@@ -205,7 +205,12 @@ async function rebuildScene(): Promise<void> {
     // scheduleRebuild here, this just mirrors what the build already computed
     state.baseColorKey = built.baseAssigned.hex;
   }
-  renderColorList(listEntries, { rawColorCount: built.detectedColors.length });
+  // The background recess is a colour the app adds rather than one found in the artwork, so
+  // detectedColors doesn't carry it. It still prints, and still costs a slot, so leaving it out
+  // made the line read "3 colors -> 5 AMS slots" beside a "4 colors" chip: two numbers for one
+  // word, and a +2 where the help dialog promises the body's +1.
+  const bgColors = built.colorMeshes.filter((c) => c.isBackground).length;
+  renderColorList(listEntries, { rawColorCount: built.detectedColors.length + bgColors });
   renderBaseColorSwatches();
   renderWarnings();
   setExportEnabled(true);
