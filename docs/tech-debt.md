@@ -21,27 +21,18 @@ scope of the edit, not that what left was finished.
 
 ## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
 
-The viewport half of this is closed **for the accent-hue problem specifically**: the placement
-frame no longer draws in accent blue, it is a `--text` outline, and the before/after against a blue
-design is what settled it. Two things it does not settle, both measured off the rendered frames
-rather than argued:
+The viewport half is closed. The frame and its handles are `--text`, and every measurement behind
+that (the dark/light pair that lost at 1.06:1, and the `--text`-over-light-body case still open at
+1.50:1) is on `FRAME_COLOR` in [src/scene/designGizmo.ts](../src/scene/designGizmo.ts), where
+someone changing the colour will meet it.
 
-- **`--text` over the default body `#b9c0c6` is 1.50:1.** The frame is faint wherever it crosses a
-  light part or a light design. Convention 19 names three mechanisms — outline, contrast against
-  dimmed surroundings, neutral luminance — and the fix used the first alone, which is only ever as
-  good as its luminance against whatever it happens to cross. **Dimming the unselected surroundings
-  is the one that does not depend on the artwork**, and it is also what convention 20 asks for on
-  its own account, so the two close together. It was not attempted here because it is a change to
-  the model's materials in an app whose subject is showing true colour, and that is a decision, not
-  a tweak: how much dim, and only while something is selected?
-- A dark/light pair (`--text` line, `--bg` handles) was tried first on the reasoning that one half
-  would always have contrast, and **measured worse**: the handles sit at the design's corners,
-  which are usually off the part and over the `#05070d` stage, where `--bg` is **1.06:1** — less
-  visible than the system's own disabled state, on a live drag target. Recorded so it isn't
-  re-derived. The handles are `--text` now.
+**The fix used one of convention 19's three mechanisms, and the unused one closes two items at
+once.** Dimming the unselected surroundings is the only mechanism that doesn't depend on what the
+artwork happens to be, and it is what convention 20 below asks for on its own account. Not
+attempted: it changes the model's materials in an app whose subject is showing true colour, so
+"how much dim, and only while something is selected?" is a decision, not a tweak.
 
-What the fix explicitly did **not** cover is the rest of the sentence the section used to carry — "apply it wherever selection is drawn, the placement frame is the known instance, not
-necessarily the only one." Three places in `src/styles.css` still say "selected" with the accent:
+Three places in `src/styles.css` still say "selected" with the accent:
 
 - `.artwork-row.active` — `border-color: var(--accent)` plus `--accent-wash`.
 - `.base-swatch.selected` — `outline: 2px solid var(--accent)`, and this is the sharp one: the
@@ -59,19 +50,15 @@ must not look like geometry printing in grey — untested either way, and the bo
 which is a grey somebody prints in. Convention 21: a meaning-carrying overlay has to be
 distinguishable from artwork by pattern or motion rather than hue alone, and the placement frame's
 off-surface warning state is still hue alone (amber `0xe0a33a`, which matches no token). That one
-was deliberately left as it was — it is a warning rather than a selection, the comment on it
-defends the choice against a desaturated alternative, and changing a warning colour was outside
-the change that closed the selection half. A conventions review of the shipped screenshots called
-it independently, and added the sharper version of the point: with the resting frame now `--text`
-and the off-surface frame still amber, **the app has two different frame treatments in the same
-widget**, one on-token and one not.
+is deliberately as it is: it is a warning rather than a selection, and the comment on it defends
+the choice against a desaturated alternative. The sharper version of the point, from a conventions
+review of the shipped screenshots: with the resting frame `--text` and the off-surface frame
+amber, **the app has two different frame treatments in the same widget**, one on-token and one not.
 
-One instance is already closed: the part thumbnail's silhouette (`src/ui/shapeThumb.ts`) was
-painted in `--accent` and is now `--text-dim`. Worth knowing for the rest of this section, because
-the two considerations pointed the same way rather than trading off — measured off the rendered
-pixels, the neutral is also the more legible fill (7.3:1 nearest against the accent's 5.3:1), and
-the accent's farthest shaded surface was 2.9:1 on the hubcap, under WCAG's 3:1 non-text minimum.
-Don't assume the remaining instances cost legibility to fix.
+**Legibility is not the thing to trade against here.** On the one instance already converted (the
+part thumbnail, `src/ui/shapeThumb.ts`), the neutral measured _more_ legible than the accent it
+replaced: 7.3:1 against 5.3:1, where the accent's farthest shaded surface was 2.9:1, under WCAG's
+3:1 non-text minimum. Don't assume the remaining instances cost legibility to fix.
 
 ## Filaments are presented as an unlabelled swatch grid, and the slot count only appears in a failure
 
@@ -412,16 +399,9 @@ not a new computation.
 
 ## Two open defects in the chair / pattern-library workflow
 
-Named by the maintainer on 2026-08-05 as the reasons both features were briefly
-withheld from the UI (PR #133, since undone — both are offered again). Four were
-named; the viewport one ("jagged edges, and they cut off") turned out to be two
-unrelated one-file bugs and is fixed and gone from this list — camera fit in
-#139, flat shading in #140. A third, the fender front taking no artwork, closed
-with the reinstated `wing-left`/`wing-right` zones (the knee numbers live in
-the config `_note`). **The remaining two are not fixed**; only the hiding was
-undone. They are graded against the shipped data below: the report is the
-maintainer's, the diagnosis is not, and where the cause is confirmed it says
-so.
+Two of four defects the maintainer named on 2026-08-05; the other two are fixed.
+Both features are offered in the UI again. The report is the maintainer's, the
+diagnosis is not, and where the cause is confirmed it says so.
 
 1. **Dead zones still need defining — open.** It is written up in
    [roadmap.md](roadmap.md) ("Dead zones: mark the parts of a design zone that
@@ -439,23 +419,11 @@ so.
    clips to. Note the repo already has curve fitting for the raster tracer
    (`src/raster/curve.ts`); nothing equivalent runs on a zone boundary.
 
-Longer-standing defects against the same two features, each with its own
-section below: "Artwork can't wrap unbroken from one flank around the back to
-the other" (three measured dead ends), "The chair's zone sidecar is 1.7 MB
-raw", "The caster mounts have no design zone", "Zebra + Fill still loses one
-color on Handle (left)", and "Turf's tile union has a vertex ceiling, and
-nothing enforces it at runtime".
-
-**Infrastructure left behind by the hide, deliberately kept.** `AssemblyKind.hidden`
-still works, `renderShapeKindOptions()` still lists a hidden kind while it is
-the selected one (so `?kind=` can reach one without the select rendering
-blank), and `savedSessionIsOnHiddenKind()` in
-[src/state/persist.ts](../src/state/persist.ts) still stops the empty-snapshot
-clear from silently deleting a saved session on a hidden part. Nothing is
-hidden today, so `tests/persist-hidden-kind.test.ts` marks a kind hidden for
-the duration of a test rather than looking for one — driving it off whatever
-happens to carry `hidden` is what made it go quiet the moment the chair was
-unhidden.
+The `AssemblyKind.hidden` machinery is kept working although nothing ships
+hidden; the reasons are on `renderShapeKindOptions` in
+[src/ui/partPanel.ts](../src/ui/partPanel.ts), `savedSessionIsOnHiddenKind` in
+[src/state/persist.ts](../src/state/persist.ts), and at the top of
+`tests/persist-hidden-kind.test.ts`.
 
 ## The display meshes re-derive a vertex weld the build already did
 
@@ -569,23 +537,9 @@ measure works out to about `side/2` for a square, which has to clear 4 at the de
 so corners survive from roughly nine pixels a side upward and round below that. A feature a few
 pixels across therefore comes back a few percent smaller. That part is cosmetic and unchanged.
 
-**A more serious failure existed and is fixed, 2026-08-04.** The straightness cone carries half a
-pixel of slack at each bound, and for a feature thin enough — a one-pixel-wide stroke turning a
-corner, a shallow diagonal, a zigzag, a single-pixel checkerboard cell — the whole boundary can stay
-inside that slack and read as one straight run. The fitted polygon then collapses under three
-points, and the ring was dropped outright: a 2:1 diagonal stroke lost 93 of its 95 segments, a
-zigzag lost half its length, and the 4x4 checkerboard fixture lost about a third of its area. This
-was not shrinkage, it was deletion, and the closed-chain-only guard in
-[curve.ts](../src/raster/curve.ts) (`MIN_AREA_RATIO`, 0.85 — restores a 30x1 bar to exactly its pixel
-area) never saw it, since none of these are closed chains.
-
-`unfitCollapsedChains` in [trace.ts](../src/raster/trace.ts) closes it at the right grain: it checks
-area per **component**, which is the smallest thing that has one, then drops back to lattice points
-per **chain**, which is the thing shared between two components — unfitting only the starved side
-would desync a boundary from its neighbour and open exactly the sliver the shared-chain design
-exists to prevent. Re-measured after the fix: the diagonal, the zigzag, and the checkerboard all
-recover their exact pixel area (`tests/raster-trace.test.ts` pins the checkerboard case at 16.000,
-not the ~third-short figure this entry used to cite).
+A worse failure in the same machinery, thin features being deleted outright rather than shrunk, is
+closed by `unfitCollapsedChains`; its reasoning is on that function in
+[trace.ts](../src/raster/trace.ts).
 
 **What is not fixed, and can't be from this angle:** two components can still overlap by up to one
 working pixel. Chains are byte-identical on the two sides of the boundary they're shared between,
