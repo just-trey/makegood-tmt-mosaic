@@ -2,7 +2,7 @@ import { clearBuildWarnings, warnBuild } from '../warnings';
 import { renderWarnings } from '../ui/warningsView';
 import { hideOverlay, showOverlay, updateOverlay } from '../ui/overlay';
 import { setProgressSink } from '../progress';
-import { beginWork, endWork } from './idle';
+import { beginWork, endWork, noteRebuildDone } from './idle';
 
 let handler: () => void | Promise<void> = () => {};
 let costHint: () => boolean = () => false;
@@ -93,6 +93,10 @@ async function runNow(): Promise<void> {
     renderWarnings();
   } finally {
     lastRebuildMs = performance.now() - t0;
+    // In the finally, so a rebuild that threw still counts: a drive script asking "did a rebuild
+    // happen" must get yes for a failed one, or it waits out a timeout and reports the failure as
+    // "nothing was scheduled".
+    noteRebuildDone();
     if (showsOverlay) {
       setProgressSink(null);
       hideOverlay();

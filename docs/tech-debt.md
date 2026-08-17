@@ -895,16 +895,39 @@ a false green from the wrong commit, on the go-live action.
 covering `scripts/`, `scripts/lib/`, `.github/workflows/`, `.husky/`, the five
 gates, the coverage floors and the `gh` waits in `.claude/skills/`. It found ten
 more instances (two confirmed by measurement, the rest by reading) and four
-things that looked like instances and held. The three starting points named
-here are all in it: `waitForServer()` and `startPreview({ reuse: true })` stand
-as written, and smoke's opening wait is finding 5. **Nothing in that report is
-fixed** — it is a survey, so this section stays open and its list of instances
-now lives there rather than growing here.
+things that looked like instances and held. The report is pinned to its run and
+is not edited as items close, so the state of each lives here:
 
-Closing this still means walking every place a success signal is derived
-indirectly and either asserting the property itself or making the ambiguous case
-fail loudly. The report ranks its findings by how much rests on them, which is
-the order to take them in.
+| #   | Finding                                                            | State                                                                                                                                                                                                                                                                  |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | smoke's four "export button is enabled" waits                      | **Closed.** All four use `afterRebuild()`                                                                                                                                                                                                                              |
+| 2   | `settledAfterRebuild()` can't tell "finished" from "never started" | **Closed for smoke.** `rebuildsSoFar()` (src/app/idle.ts) counts completed rebuilds; `afterRebuild(page, action)` reads it before the action, which is the only moment it means anything. Bare `settledAfterRebuild()` now says out loud that it is not asserting this |
+| 3   | fixed sleeps before every screenshot                               | **Closed.** Gone; `shot()` and the real rebuild wait replace them                                                                                                                                                                                                      |
+| 4   | nothing in CI looks inside the exported file                       | Open                                                                                                                                                                                                                                                                   |
+| 5   | smoke's opening wait doesn't check which part loaded               | **Closed.** Asserts `#shape-kind.value`                                                                                                                                                                                                                                |
+| 6   | `waitForServer()` accepts any HTTP 200                             | **Closed.** Compares the served bytes against `dist/index.html`                                                                                                                                                                                                        |
+| 7   | `startPreview({ reuse: true })` trusts the caller                  | **Closed** by 6, which turns the caller's promise into a measurement                                                                                                                                                                                                   |
+| 8   | auto-accepted confirms are unobservable                            | **Closed.** `page.confirmsAccepted()` counts them                                                                                                                                                                                                                      |
+| 9   | two checks match a warning string literally                        | Open                                                                                                                                                                                                                                                                   |
+| 10  | `TILES_PER_CHAIR_ZONE = 143`                                       | Accepted, with the 2.6x margin in hand                                                                                                                                                                                                                                 |
+
+**An eleventh, found on 2026-08-16 while shipping the prune PR: a false red.**
+`npm run smoke` failed once locally and once in CI on
+`[console] Failed to load resource: the server responded with a status of 404 ()`
+with every step passing, no URL in the message, and no reproduction in nine
+further runs with a `response`/`requestfailed` listener attached logging every
+status >= 400. Ruled out: the Umami beacon, which is only injected when
+`UMAMI_WEBSITE_ID` is set and neither CI nor the dev box sets it. Same family,
+inverted: a gate that fails on noise it cannot name trains everyone to re-run
+rather than look, which is how a real failure gets waved through. The console
+handler now records the URL alongside the message, so the next occurrence names
+itself.
+
+Every drive script uses `afterRebuild()` now, so no call site is left on the
+baseline-less path; `settledAfterRebuild()` keeps that path for a caller with its
+own baseline, and says out loud when it has neither.
+
+What is left: findings 4 and 9.
 
 ## Per-part export placement is a lookup table in [src/export/placement.ts](../src/export/placement.ts), not part of the part definition
 

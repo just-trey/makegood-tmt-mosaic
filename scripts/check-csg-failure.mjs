@@ -15,12 +15,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
-import {
-  startPreview,
-  launchBrowser,
-  newPage,
-  settledAfterRebuild as settled,
-} from './lib/harness.mjs';
+import { startPreview, launchBrowser, newPage, afterRebuild } from './lib/harness.mjs';
 
 const OUT = process.argv[2] || 'stubs/csg-failure';
 mkdirSync(OUT, { recursive: true });
@@ -219,13 +214,14 @@ try {
     );
 
     for (let i = 0; i < c.artworks; i++) {
-      await page.setInputFiles('#svg-input', svgPaths[i]);
-      await page.waitForFunction(
-        (n) => document.querySelectorAll('#artwork-list .artwork-row').length >= n,
-        i + 1,
-        { timeout: 120_000 },
-      );
-      await settled(page);
+      await afterRebuild(page, async () => {
+        await page.setInputFiles('#svg-input', svgPaths[i]);
+        await page.waitForFunction(
+          (n) => document.querySelectorAll('#artwork-list .artwork-row').length >= n,
+          i + 1,
+          { timeout: 120_000 },
+        );
+      });
     }
 
     const [dl] = await Promise.all([

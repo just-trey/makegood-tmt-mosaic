@@ -14,13 +14,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
-import {
-  startPreview,
-  launchBrowser,
-  newPage,
-  settle,
-  settledAfterRebuild as settledExportable,
-} from './lib/harness.mjs';
+import { startPreview, launchBrowser, newPage, settle, afterRebuild } from './lib/harness.mjs';
 
 const OUT = process.argv[2] || 'stubs/hubcap-exports';
 mkdirSync(OUT, { recursive: true });
@@ -194,9 +188,10 @@ try {
       }
 
       console.log('  loading 3-color artwork…');
-      await page.setInputFiles('#svg-input', svgPath);
-      await page.waitForSelector('#artwork-list .artwork-row', { timeout: 120_000 });
-      await settledExportable(page);
+      await afterRebuild(page, async () => {
+        await page.setInputFiles('#svg-input', svgPath);
+        await page.waitForSelector('#artwork-list .artwork-row', { timeout: 120_000 });
+      });
 
       const file = path.join(OUT, `hubcap-${label}-${String(diameter).replace('.', '_')}mm.3mf`);
       const dl = page.waitForEvent('download', { timeout: 180_000 });
