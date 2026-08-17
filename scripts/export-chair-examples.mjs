@@ -20,12 +20,7 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
-import {
-  startPreview,
-  launchBrowser,
-  newPage,
-  settledAfterRebuild as settled,
-} from './lib/harness.mjs';
+import { startPreview, launchBrowser, newPage, afterRebuild } from './lib/harness.mjs';
 
 const OUT = process.argv[2] || 'stubs';
 mkdirSync(OUT, { recursive: true });
@@ -154,16 +149,18 @@ try {
       await allPartsLoaded();
 
       console.log('  loading the 3-color test artwork (all zones, fill)…');
-      await page.setInputFiles('#svg-input', svgPath);
-      await page.waitForSelector('#artwork-list .artwork-row', { timeout: 120_000 });
-      await settled(page);
+      await afterRebuild(page, async () => {
+        await page.setInputFiles('#svg-input', svgPath);
+        await page.waitForSelector('#artwork-list .artwork-row', { timeout: 120_000 });
+      });
       // A freshly loaded design binds to the FIRST zone, not all of them, so it has to be moved to
       // "All zones" (the empty-valued option) explicitly. Leaving the default sends every part
       // outside that one zone out body-colored, which reads as a successful export right up until
       // you open it and find ten single-filament plates with no tower to place.
-      await page.selectOption('#artwork-list .artwork-row .artwork-zone', '');
-      await page.selectOption('#artwork-list .artwork-row .artwork-mode', 'fill');
-      await settled(page);
+      await afterRebuild(page, async () => {
+        await page.selectOption('#artwork-list .artwork-row .artwork-zone', '');
+        await page.selectOption('#artwork-list .artwork-row .artwork-mode', 'fill');
+      });
 
       const bound = await page.$eval('#artwork-list .artwork-row', (r) => ({
         zone: r.querySelector('.artwork-zone')?.value,

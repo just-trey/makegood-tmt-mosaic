@@ -22,7 +22,7 @@ import { initRestoreBanner } from './ui/restoreBanner';
 import { initBeforeUnloadGuard } from './state/persist';
 import { $ } from './ui/dom';
 import { getAppVersion } from './version';
-import { whenIdle } from './app/idle';
+import { rebuildsSoFar, whenIdle } from './app/idle';
 import { WARNINGS } from './warnings';
 
 // Not DEV-gated: the drive scripts hit vite-preview output (built, not dev), where
@@ -33,6 +33,7 @@ import { WARNINGS } from './warnings';
   window as unknown as {
     __mosaic: {
       whenIdle: typeof whenIdle;
+      rebuildsSoFar: typeof rebuildsSoFar;
       warnings: () => string[];
       modelNdcExtent: typeof modelNdcExtent;
       zoneIdAtNdc: typeof zoneIdAtNdc;
@@ -40,6 +41,7 @@ import { WARNINGS } from './warnings';
   }
 ).__mosaic = {
   whenIdle,
+  rebuildsSoFar,
   warnings: () => WARNINGS.map((w) => w.message),
   modelNdcExtent,
   zoneIdAtNdc,

@@ -28,3 +28,21 @@ export function whenIdle(): Promise<void> {
   if (outstanding === 0) return Promise.resolve();
   return new Promise((resolve) => waiters.push(resolve));
 }
+
+let rebuilds = 0;
+
+/**
+ * Bumped once per completed rebuild, for drive scripts only.
+ *
+ * `whenIdle()` answers "is anything in flight", which cannot distinguish "the rebuild I triggered
+ * has finished" from "nothing was ever triggered" — the second is where a driven check asserts
+ * against the previous state and reports a pass. Reading this before an action and again after
+ * makes that difference observable rather than a 30-second wait that looks like a slow rebuild.
+ */
+export function noteRebuildDone(): void {
+  rebuilds++;
+}
+
+export function rebuildsSoFar(): number {
+  return rebuilds;
+}

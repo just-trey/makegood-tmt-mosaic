@@ -5,7 +5,7 @@
  * whenIdle() bridge both have sharp edges that must not exist in N copies and drift.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -21,16 +21,35 @@ const IGNORE_HOSTS = ['cloudflareinsights.com'];
 const isIgnored = (text, url) =>
   IGNORE_HOSTS.some((h) => (text && text.includes(h)) || (url && url.includes(h)));
 
+/**
+ * Wait until *our* preview is answering, not until something is.
+ *
+ * A bare `res.ok` accepts anything listening on the port, which is the one place a foreign server
+ * and a stale build look identical — and this repo has been bitten by the stale-build half twice.
+ * Comparing the served bytes against `dist/index.html` on disk turns "someone is listening" into
+ * "our build is being served", which is the property every driven check actually rests on.
+ */
 async function waitForServer(url, tries, intervalMs) {
+  const want = readFileSync(path.join(REPO, 'dist/index.html'), 'utf8');
+  let sawForeign = false;
   for (let i = 0; i < tries; i++) {
     try {
-      if ((await fetch(url)).ok) return;
+      const res = await fetch(url);
+      if (res.ok) {
+        if ((await res.text()) === want) return;
+        sawForeign = true;
+      }
     } catch {
       /* not up yet */
     }
     await sleep(intervalMs);
   }
-  throw new Error('preview server never came up');
+  throw new Error(
+    sawForeign
+      ? `something is serving ${url} but it is not this repo's dist/index.html — a foreign ` +
+          `server, or a preview of a different build, is on that port`
+      : 'preview server never came up',
+  );
 }
 
 // Build inputs, for the staleness check below. public/ is in here because the STLs and the
@@ -101,6 +120,15 @@ export async function startPreview({ port = 4173, reuse = false, allowStaleDist 
     .catch(() => false);
   if (already) {
     if (!reuse) throw new Error(`port ${port} is already serving something — pick another port`);
+    // `reuse` used to rest on the caller's word about which build was listening. It now rests on
+    // a measurement: a reused server that is not serving this dist/ fails here rather than
+    // silently supplying every later result.
+    const served = await fetch(`http://localhost:${port}/`).then((r) => r.text());
+    if (served !== readFileSync(path.join(REPO, 'dist/index.html'), 'utf8'))
+      throw new Error(
+        `port ${port} is serving something other than this repo's dist/index.html — reuse would ` +
+          `drive a different build`,
+      );
     return { stop() {} };
   }
   const server = spawn(`npx vite preview --port ${port} --strictPort`, {
@@ -226,7 +254,11 @@ export async function newPage(
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
     if (isIgnored(m.text(), m.location()?.url)) return;
-    errors.push('[console] ' + m.text());
+    // With the URL: a bare "Failed to load resource: … 404" names neither the resource nor the
+    // origin, and one such line failed smoke twice in 2026-08 without ever reproducing under a
+    // request listener. An error a gate rejects on has to say what it was.
+    const url = m.location()?.url;
+    errors.push('[console] ' + m.text() + (url ? ` (${url})` : ''));
   });
   page.on('pageerror', (e) => {
     if (isIgnored(e.message)) return;
@@ -238,10 +270,21 @@ export async function newPage(
   // will clear the currently loaded ones" prompt. Selecting a kind then leaves the modal open and
   // the OLD kind selected, and the script goes on driving the wheel while its log says "chair".
   // Auto-accept it the same way, by clicking its OK button whenever it opens.
+  //
+  // Counted, not just accepted: "no confirmation was needed" and "one appeared and was silently
+  // clicked away" are otherwise the same observation, so no script can assert that a destructive
+  // action *did* warn, nor notice that one stopped warning. `page.confirmsAccepted()` below makes
+  // that observable. Establishing the 2026-08-08 review's "switching part shape carries artwork
+  // across with no confirmation" needed a run with this hook removed entirely; with the count it
+  // is a normal assertion.
   await page.addInitScript(() => {
+    window.__confirmsAccepted ??= 0;
     const accept = () => {
       const d = document.querySelector('#confirm-dialog');
-      if (d && d.open) document.querySelector('#confirm-ok')?.click();
+      if (d && d.open) {
+        window.__confirmsAccepted++;
+        document.querySelector('#confirm-ok')?.click();
+      }
     };
     const watch = () =>
       new MutationObserver(accept).observe(document.body, {
@@ -253,6 +296,7 @@ export async function newPage(
     else document.addEventListener('DOMContentLoaded', watch);
   });
   await assertGpuActive(browser, page);
+  page.confirmsAccepted = () => page.evaluate(() => window.__confirmsAccepted ?? 0);
   return { page, errors };
 }
 
@@ -276,7 +320,7 @@ export { useGpu };
  * build actually expose the hook — vite-preview output does, since it's not
  * import.meta.env.DEV-gated.
  */
-export async function settle(page, label, timeoutMs = 120_000) {
+export async function settle(page, label, timeoutMs = 120_000, { quiet = false } = {}) {
   const t0 = Date.now();
   const idle = page.evaluate(() => {
     const w = /** @type {any} */ (window);
@@ -298,7 +342,7 @@ export async function settle(page, label, timeoutMs = 120_000) {
   } finally {
     clearTimeout(timer);
   }
-  console.log(`   settled: ${label} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+  if (!quiet) console.log(`   settled: ${label} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 }
 
 /**
@@ -307,27 +351,103 @@ export async function settle(page, label, timeoutMs = 120_000) {
  * `#btn-export` alone is not that signal: it stays enabled from the *previous* build while the
  * next one is scheduled and running, so waiting on it returns immediately and exports stale
  * geometry — which is how a run produced files carrying the design's initial single-zone sticker
- * placement instead of the all-zones fill that had been selected. An assembly rebuild always
- * raises the "Rebuilding geometry…" curtain, so wait for it to come up (past scheduler.ts's
- * debounce) and go back down, then confirm the export button.
+ * placement instead of the all-zones fill that had been selected.
  *
- * settle() above is the same idea through the app's own idle counter; this one reads nothing but
- * the DOM, so it needs no cooperation from the build. Use either, but not a private copy of this:
- * the two scripts that wanted it had already drifted to different rebuild timeouts.
+ * The curtain is not that signal either. "The curtain never came up" and "no rebuild was ever
+ * scheduled" are the same DOM observation, so waiting on it and swallowing the timeout is how a
+ * caller ends up asserting against the previous state and passing. Measured before this was fixed,
+ * calling this after doing nothing at all returned success after 30009ms, which reads as a slow
+ * rebuild rather than a missing one, and cost two runs' debugging while check-zone-occlusion.mjs
+ * was being written.
+ *
+ * **`rebuildsSoFar()` (src/app/idle.ts) is the authority here, and it is checked first.** It is
+ * bumped once per completed rebuild, including one that threw. Waiting on it directly is what
+ * makes "no rebuild ran" a distinct, accurate failure instead of a downstream Playwright timeout,
+ * and it costs nothing when the caller's own wait already sat out the rebuild — the old ordering
+ * burned the curtain's full 30s timeout on exactly that case, which added ~30s to every smoke run.
+ *
+ * The curtain and the export button are still waited on afterwards, because the counter is bumped
+ * in the scheduler's `finally` *before* the overlay is hidden, so the UI trails it by a frame.
+ *
+ * **The baseline has to be read before the action, which is why afterRebuild() below exists.**
+ * Reading it here is too late whenever the caller put a `waitForSelector` in between: that already
+ * waits the rebuild out, so the count has moved before this is entered.
  */
-export async function settledAfterRebuild(page, { rebuildTimeoutMs = 900_000 } = {}) {
-  const overlay = (visible) =>
-    page.waitForFunction(
-      (want) => (document.querySelector('#loading-overlay')?.style.display === 'flex') === want,
-      visible,
-      { timeout: visible ? 30_000 : rebuildTimeoutMs },
+export async function settledAfterRebuild(page, { rebuildTimeoutMs = 900_000, since } = {}) {
+  if (since == null)
+    throw new Error(
+      'settledAfterRebuild needs a `since` baseline read before the action, or it cannot tell ' +
+        '"the rebuild finished" from "no rebuild ran". Use afterRebuild(page, action).',
     );
-  // If the curtain has already been and gone we're past it; don't hang waiting to see it rise.
-  await overlay(true).catch(() => {});
-  await overlay(false);
+  // Three causes, three messages. Collapsing them is the exact defect this function exists to
+  // remove: a missing hook is a broken harness and a destroyed context is a crashed page, and
+  // reporting either as "no rebuild ran" sends the reader somewhere else entirely.
+  await page
+    .waitForFunction(
+      (n) => {
+        const f = window.__mosaic?.rebuildsSoFar;
+        if (typeof f !== 'function') throw new Error('__mosaic.rebuildsSoFar missing');
+        return f() > n;
+      },
+      since,
+      { timeout: rebuildTimeoutMs },
+    )
+    .catch((e) => {
+      if (/rebuildsSoFar missing/.test(e.message))
+        throw new Error(
+          'window.__mosaic.rebuildsSoFar() is missing, so no driven check can tell whether a ' +
+            'rebuild ran. Serving a build older than the counter, or main.ts stopped exposing it.',
+        );
+      if (!/Timeout .* exceeded/i.test(e.message)) throw e; // a crash, not a missing rebuild
+      throw new Error(
+        `no rebuild ran within ${rebuildTimeoutMs}ms. The action scheduled nothing, so every ` +
+          'assertion after this point is about the PREVIOUS state.',
+      );
+    });
+  // The counter bumps once per pass, and the scheduler starts a queued `dirty` follow-up before
+  // releasing the current pass's idle reservation (see runNow) — so the counter alone can return
+  // mid-way through a second pass. whenIdle() is the app's own signal that no pass is outstanding,
+  // and it is maintained precisely so that handoff shows no zero-width gap.
+  await settle(page, 'rebuild follow-up', rebuildTimeoutMs, { quiet: true });
+  // The curtain is hidden after the counter bumps, so the UI trails it by a frame. Same budget as
+  // the rebuild itself: a `dirty` follow-up can re-raise it, and the caller asked for that budget.
+  await page.waitForFunction(
+    () => document.querySelector('#loading-overlay')?.style.display !== 'flex',
+    null,
+    { timeout: rebuildTimeoutMs },
+  );
   await page.waitForFunction(() => !document.querySelector('#btn-export')?.disabled, null, {
     timeout: 120_000,
   });
+}
+
+/** The app's completed-rebuild count, or null on a build that predates it. */
+export async function rebuildCount(page) {
+  return page.evaluate(() => window.__mosaic?.rebuildsSoFar?.() ?? null);
+}
+
+/**
+ * Run `action`, then block until the rebuild it triggered has finished — and fail if it triggered
+ * none.
+ *
+ * This is settledAfterRebuild() with the baseline read at the only moment it is meaningful: before
+ * the action. Taking the action as an argument is what makes that correct by construction rather
+ * than by the caller remembering.
+ *
+ * Measured on the wheel: a real rebuild returns in ~0.6s, and a no-op action throws after exactly
+ * `rebuildTimeoutMs` with the accurate message. Only the failing path is slow, which is the right
+ * way round: the ordering this replaced spent the curtain's full 30s timeout on every *successful*
+ * call whose action had already waited the rebuild out, and that alone was ~90s of a smoke run.
+ */
+export async function afterRebuild(page, action, opts = {}) {
+  const since = await rebuildCount(page);
+  if (since === null)
+    throw new Error(
+      'window.__mosaic.rebuildsSoFar() is missing, so this run cannot tell whether an action ' +
+        'triggered a rebuild. The served build predates the counter — rebuild dist/.',
+    );
+  await action();
+  return settledAfterRebuild(page, { ...opts, since });
 }
 
 /**
