@@ -331,7 +331,7 @@ export const HUBCAP_PLATE: Record<
  *     if it fits, else opening a new plate.
  *
  * A part still overhanging its plate is reported via `warnings`, never assumed safe.
- * materials: index 0 = body/base, then one per palette color.
+ * materials: index 0 = body/base, then one per color that actually ships.
  */
 export async function build3MFCombined(
   materials: ExportMaterial[],

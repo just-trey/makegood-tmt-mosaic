@@ -88,12 +88,13 @@ describe('renderColorList — slot count line', () => {
     expect(slotLine().classList.contains('multi-unit')).toBe(false);
   });
 
-  it('reports the caller’s slot count when it exceeds the visible row count', () => {
-    // assembly mode: a palette color with no inlay area anywhere is dropped from the list but
-    // still ships as a 3MF material, so the export needs a slot the rows don't account for
-    renderColorList([entry('#ff0000')], { rawColorCount: 2, slotsNeeded: 3 });
+  it('counts slots off the visible rows even when more colors were detected', () => {
+    // assembly mode: a palette color with no inlay area anywhere is dropped from the list AND from
+    // the export's materials (exportPanel.ts), so the rows are the slot count: a phantom color
+    // must not cost a slot in the line while printing nothing
+    renderColorList([entry('#ff0000')], { rawColorCount: 2 });
 
-    expect(slotLine().textContent).toBe('2 colors → 3 AMS slots needed');
+    expect(slotLine().textContent).toBe('2 colors → 2 AMS slots needed');
   });
 
   it('posts the slot-budget pill as the list renders, not only at export time', () => {
@@ -129,10 +130,19 @@ describe('renderColorList — slot count line', () => {
     expect(WARNINGS).toEqual([]);
   });
 
-  it('says "1 color", not "1 colors"', () => {
+  it('says "1 color", not "1 colors", in both the line and the chip', () => {
     renderColorList([entry('#ff0000')], { rawColorCount: 1 });
 
     expect(slotLine().textContent).toBe('1 color → 2 AMS slots needed');
+    expect(document.querySelector('#stat-colors')!.textContent).toBe('1 color');
+  });
+
+  it('keeps the chip plural for every other count', () => {
+    renderColorList(colors(2), { rawColorCount: 2 });
+    expect(document.querySelector('#stat-colors')!.textContent).toBe('2 colors');
+
+    renderColorList(null);
+    expect(document.querySelector('#stat-colors')!.textContent).toBe('0 colors');
   });
 
   it('drops the previous list’s slot count when the colors go away', () => {

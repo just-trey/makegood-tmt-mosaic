@@ -18,6 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A color scaled or dragged off the part no longer costs an AMS slot.** In
+  assembly mode, a color whose regions all fell outside the design face
+  vanished from the color list but still shipped as a filament in the exported
+  3MF and still counted in the slot line and the AMS-capacity check: a
+  7-color file with 2 colors off the wheel asked for 7 filaments, 2 of which
+  printed nothing. The export now writes only colors that actually cut an
+  inlay somewhere, every counter agrees with it, and a warning names the
+  colors that fell off. Found by the 2026-08-16 maker ease-of-use review.
+- The colors chip above the list says "1 color" instead of "1 colors". The
+  slot line beside it already did.
+- **The sample artwork now fits a single AMS unit.** The badge was 4 colors
+  plus the body, 5 slots, so on the default printer the demo's first act was
+  a capacity pill saying it needed more than one AMS unit. It is now 3 colors
+  plus the body: the inner disc is gone and a ring that never traced (a
+  stroke with no fill) went with it.
+
 - **The chair's five design zone templates now show the real printable
   surface.** Each sheet was drawn from the whole-zone outline, which frays into
   spikes wherever it crosses a printed-part seam: 48 separate pieces on the left

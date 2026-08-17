@@ -29,6 +29,15 @@
   starts with _where_, not _what_"; "files are dropped onto the thing they apply
   to"), whose conflicts table notes that today's `+zone` repeats one design onto
   another surface _after_ loading it — a different data model, not a relabel.
+- Turn the camera to the zone a design just bound to (maker ease-of-use review,
+  2026-08-16, [findings report](findings/2026-08-16-maker-ease-review.md)): on
+  the chair a fresh design binds to "Left side", which faces away from the
+  default camera, so first sight of your artwork is an edge-on sliver, and
+  switching zones rebuilds for ~3s and shows an unchanged grey chair. The
+  coverage pill names the zone but nothing shows it; a first-timer who hasn't
+  found orbit can't tell whether anything worked. Cheapest fix is a camera turn
+  on bind. Surface-first picking (above) is the fuller answer, but this doesn't
+  need to wait for it.
 - Power-user tooling for repeat volunteers, all independently raised by the
   maker-workflow review (2026-08-02): undo/redo over color merges, base
   assignment, depth and placement; keyboard shortcuts (`Ctrl/Cmd+E` to

@@ -299,7 +299,7 @@ describe('flat mode with artwork', () => {
 
     const [entries, meta] = vi.mocked(renderColorList).mock.calls.at(-1)!;
     expect(entries!.map((e) => e.color)).toEqual(['#ff0000', '#00ff00']);
-    expect(meta).toMatchObject({ rawColorCount: 3, slotsNeeded: 3 }); // Body + 2 colors
+    expect(meta).toMatchObject({ rawColorCount: 3 });
   });
 
   it('adds a base row and syncs the dominant member the build picked', async () => {
@@ -436,7 +436,9 @@ describe('assembly mode with artwork', () => {
     expect(entries![1].areaPct).toBeCloseTo(25, 6);
   });
 
-  it('counts the whole palette for the slot budget, not just colors with inlay area', async () => {
+  it('drops a palette color with no inlay area anywhere, so it costs no AMS slot', async () => {
+    // the export drops the same color from its materials (exportPanel.ts), so the visible rows
+    // are the slot count
     vi.mocked(buildAssemblyGeometry).mockResolvedValue(
       assemblyBuild({
         partOutputs: [
@@ -453,7 +455,29 @@ describe('assembly mode with artwork', () => {
 
     const [entries, meta] = vi.mocked(renderColorList).mock.calls.at(-1)!;
     expect(entries).toHaveLength(1); // only one color actually cut anything
-    expect(meta).toMatchObject({ slotsNeeded: 3 }); // Body + both palette entries
+    expect(meta).not.toHaveProperty('slotsNeeded');
+  });
+
+  it('does not count an inlay whose only part was consumed by its own cut', async () => {
+    // the export drops a part with an empty bodySoup, inlays and all, so a color living only
+    // there ships no filament and must not get a row or a slot
+    vi.mocked(buildAssemblyGeometry).mockResolvedValue(
+      assemblyBuild({
+        partOutputs: [
+          { part: asmPart(), bodySoup: new Float32Array(0), inlaySoups: { 0: tri(1) } },
+          { part: asmPart({ id: 2 }), bodySoup: tri(), inlaySoups: { 1: tri(1) } },
+        ] as AssemblyBuild['partOutputs'],
+        palette: [
+          { hex: '#ff0000', key: '#ff0000', members: ['#ff0000'], isMerge: false },
+          { hex: '#00ff00', key: '#00ff00', members: ['#00ff00'], isMerge: false },
+        ],
+      }),
+    );
+
+    await rebuildCurrent();
+
+    const [entries] = vi.mocked(renderColorList).mock.calls.at(-1)!;
+    expect(entries!.map((e) => e.color)).toEqual(['#00ff00']);
   });
 
   it('keeps the bare parts on screen when the build fails, rather than emptying the viewport', async () => {

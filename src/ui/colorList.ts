@@ -250,7 +250,7 @@ function wireDepthReset(list: HTMLElement): void {
 
 export function renderColorList(
   colorMeshes: ColorListEntry[] | null,
-  opts: { rawColorCount?: number; slotsNeeded?: number } = {},
+  opts: { rawColorCount?: number } = {},
 ): void {
   const list = $('#color-list');
   if (!colorMeshes || !colorMeshes.length) {
@@ -448,15 +448,15 @@ export function renderColorList(
   // both export paths — see exportPanel.ts), on top of every cut color/group listed below the Base
   // row. The colors stat stays rows.length — it counts cut regions, not filament slots.
   //
-  // slotsNeeded is passed explicitly because rows.length isn't always the export's material count:
-  // in assembly mode a palette color whose inlay fits on no part is dropped from this list
-  // (rebuild.ts skips area === 0) yet still ships as a 3MF material. Reporting fewer slots than the
-  // export warns about is the worse failure, so the caller's number wins where it has one.
+  // rows.length + 1 matches the export's material count in both modes: flat mode never emits a
+  // color mesh without geometry, and assembly mode derives rows and materials from one predicate
+  // (shippedColorIndices in geometry/assembly.ts). Export still re-checks the pill against its
+  // own material count as the authoritative last word.
   const cutColors = rows.length;
-  lastSlotsNeeded = opts.slotsNeeded ?? cutColors + 1;
+  lastSlotsNeeded = cutColors + 1;
   lastRawColorCount = opts.rawColorCount ?? cutColors;
   renderSlotCount();
-  $('#stat-colors').textContent = cutColors + ' colors';
+  $('#stat-colors').textContent = `${cutColors} color${cutColors === 1 ? '' : 's'}`;
   $('#stat-colors').style.display = '';
 }
 

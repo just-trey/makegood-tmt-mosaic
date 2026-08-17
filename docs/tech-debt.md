@@ -206,6 +206,12 @@ This is the last of the group that made the viewport not behave like the direct-
 surface it looks like; the other one, "Zone picking has no occlusion test," is closed
 (`npm run check:zone-occlusion` re-measures it — by hand, it is not in CI).
 
+**Still unmeasured after the 2026-08-16 run, and that run recorded a way to get it wrong**
+([findings report](findings/2026-08-16-maker-ease-review.md)): a skewed frame across the wheel
+read as this bug and was not. It was the frame correctly enclosing an anchor the largest-circle
+heuristic had hijacked (its own section below). A skewed-looking frame is evidence of the anchor,
+not of the angle, until the anchor is ruled out.
+
 ## The browser-driven checks are only fast if Chromium finds a real GPU, and on WSL2 it does not find one by itself
 
 Falling back to SwiftShader costs
@@ -348,8 +354,9 @@ surfaces touched.
 ## The long assembly-mode rebuild has no cancel, and until session persistence lands the only escape destroys the work
 
 `#loading-overlay` (the "Rebuilding geometry…" curtain, `src/ui/overlay.ts`)
-has no cancel or back control at any point in the 405.6s / >900s runs
-measured above (the 405.6s figure is itself superseded — see the note just
+has no cancel or back control at any point (overlay DOM captured mid-rebuild
+on 2026-08-16 is a spinner plus the text, nothing else) in the 405.6s
+/ >900s runs measured above (the 405.6s figure is itself superseded — see the note just
 above this section — but the argument holds at the re-measured 93.6s too:
 a rebuild that long with no cancel is still the problem) — a user who starts
 the wrong rebuild (wrong pattern, wrong zone scope) has to wait it out. Today the only way to interrupt it is a
@@ -372,7 +379,8 @@ The slider (`None`/`Slight`/`Medium`/`Strong` — `src/ui/colorList.ts`,
 `initColorListPanel`) walks a ΔE similarity threshold, merging colors that
 look alike. Measured against a real 7-color volunteer SVG on the chair,
 2026-08-02: `None` → 7 AMS slots, `Slight` (the default) → 7, `Medium` → 7,
-`Strong` → 6. The audience's actual question — per
+`Strong` → 6. Second data point, 2026-08-16, a 7-color test SVG on the wheel:
+`None` 8, `Slight` 7, `Medium` 7, `Strong` 7. The audience's actual question — per
 [docs/audience.md](audience.md) — is "I have a 4-slot AMS Lite, make this
 fit," a target-count constraint, not a similarity tolerance. The near-term
 fix landing now (see the plan that added this section) reconciles the
@@ -390,7 +398,9 @@ than done alongside the reconciliation warning.
 Confirmed on the chair, 2026-08-02: "Export print-ready 3MF" produced a
 35.8 MB, 11-plate, 13-object, 5-filament file with zero on-screen summary
 before or after — the app's state is byte-for-byte identical pre- and
-post-export. That's a multi-day, multi-kilogram print represented as a
+post-export. Re-confirmed 2026-08-16: 0.8s, 34.0 MB, 11 plates, left-panel
+text byte-identical before and after; the post-export coverage warning is the
+only feedback. That's a multi-day, multi-kilogram print represented as a
 single unlabeled button. The zone-coverage warning and AMS-capacity check
 landing now (see the plan that added this section) surface two of the
 numbers that matter at export time, but not the full picture — plate count,
@@ -1402,3 +1412,31 @@ distinct from documented components — and then drop convention 31's
 `Name.jsx, Name.d.ts` clause, which is prescribing files this repo removed
 deliberately. Both documents are authoritative in their own domain, so this
 needs one edit to each rather than a reading that reconciles them.
+
+## The largest `<circle>` in a wheel design silently becomes its boundary marker
+
+`designAnchor` ([src/geometry/assembly.ts](../src/geometry/assembly.ts)) anchors
+wheel-fit artwork on the SVG's largest `<circle>`, assuming it is a template's
+boundary marker. On artwork not drawn over a template, any decorative circle
+wins.
+
+Measured 2026-08-16, commit e0ed92c
+([findings report](findings/2026-08-16-maker-ease-review.md)):
+
+- 7-color SVG, four r=18 decorative circles at the corners. The first (a red
+  dot at 30,30) was scaled to the full 276mm face and centred on the hub. The
+  other three landed ~300mm off the face and vanished.
+- Control: the same shapes as `<path>` arcs load correctly, all 7 colors, sane
+  auto-fit.
+- The warning is inverted. The no-circle case, which behaves well (bbox
+  auto-center), posts a notice. The hijack case says nothing.
+- Null result: declaring `width="100mm" height="100mm"` changes nothing. Unit
+  handling is not involved.
+
+Why it matters for this audience: kid-oriented clipart is full of circles
+(suns, balloons, eyes, polka dots), and the failure is silent and looks
+bizarre. Closing it: the parser comment
+([src/svg/parse.ts](../src/svg/parse.ts)) already notes real boundary markers
+are commonly `fill="none"`. Use that as the discriminator (a filled circle is
+artwork), and turn the warning the right way round: say something when a
+circle is used as the anchor, not when one is absent.

@@ -7,7 +7,8 @@ vi.mock('../src/app/rebuild', () => ({
   getLastAssemblyBuild: vi.fn(),
   getLastBuild: vi.fn(),
 }));
-vi.mock('../src/geometry/assembly', () => ({
+vi.mock('../src/geometry/assembly', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/geometry/assembly')>()),
   asmPartFaceNormal: vi.fn(() => null),
 }));
 vi.mock('../src/export/threemf', () => ({
@@ -133,9 +134,13 @@ function paletteOf(n: number): { hex: string; key: string; members: string[]; is
   });
 }
 
+const inlayTri = (): Float32Array => Float32Array.from([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+
 function buildWithPalette(n: number): void {
+  // every palette color carries an inlay: a color with none is dropped from the materials
+  const inlaySoups = Object.fromEntries(Array.from({ length: n }, (_, i) => [i, inlayTri()]));
   vi.mocked(getLastAssemblyBuild).mockReturnValue({
-    partOutputs: [partOutput()],
+    partOutputs: [partOutput({ inlaySoups })],
     palette: paletteOf(n),
     viewSign: 1,
     detectedColors: [],
@@ -152,7 +157,8 @@ describe('exportPrintReady3MF — AMS slot budget', () => {
     );
 
   // the tiers themselves are tests/slotBudget.test.ts's job; what matters here is that the export
-  // path feeds it the *export's* material count (body + every palette entry), not the color list's
+  // path feeds it the *export's* material count (body + every palette color that actually cut an
+  // inlay somewhere), not the color list's
   it('posts the pill against the export’s own material count', async () => {
     buildWithPalette(4); // + the body's own slot = 5, past one unit's 4
 
@@ -172,5 +178,74 @@ describe('exportPrintReady3MF — AMS slot budget', () => {
     await exportPrintReady3MF();
 
     expect(slotNotices()).toEqual([]);
+  });
+});
+
+describe('exportPrintReady3MF — palette colors with no inlay on any part', () => {
+  it('drops them from the materials and remaps the remaining inlays', async () => {
+    // the phantom-slot defect: a color clipped off every part shipped as a filament_colour entry
+    // nothing referenced, so the exported project asked for filaments that print nothing
+    vi.mocked(getLastAssemblyBuild).mockReturnValue({
+      partOutputs: [partOutput({ inlaySoups: { 1: inlayTri() } })],
+      palette: paletteOf(3), // colors 0 and 2 never landed anywhere
+      viewSign: 1,
+      detectedColors: [],
+      baseAssigned: null,
+    });
+
+    await exportPrintReady3MF();
+
+    const [materials, exportedParts] = vi.mocked(build3MFCombined).mock.calls[0];
+    expect(materials).toHaveLength(2); // Body + the one color with an inlay
+    expect(materials[1].color).toBe('#000001');
+    const subs = exportedParts[0].subs;
+    expect(subs.map((s) => s.matIndex)).toEqual([0, 1]); // Body, then the one real inlay
+  });
+
+  it('drops a color whose only inlay sits on a part the export excludes', async () => {
+    // a part consumed by its own cut is dropped with its inlays, so a color living only there
+    // must not become a material either
+    vi.mocked(getLastAssemblyBuild).mockReturnValue({
+      partOutputs: [
+        partOutput({ bodySoup: new Float32Array(0), inlaySoups: { 0: inlayTri() } }),
+        partOutput({ inlaySoups: { 1: inlayTri() } }),
+      ],
+      palette: paletteOf(2),
+      viewSign: 1,
+      detectedColors: [],
+      baseAssigned: null,
+    });
+
+    await exportPrintReady3MF();
+
+    const [materials] = vi.mocked(build3MFCombined).mock.calls[0];
+    expect(materials).toHaveLength(2); // Body + the surviving part's color
+    expect(materials[1].color).toBe('#000001');
+  });
+
+  it('does not count them toward the AMS slot pill', async () => {
+    vi.mocked(getPrinter).mockReturnValue({
+      label: 'Test Printer',
+      amsSlotsPerUnit: 4,
+      amsSlotsMax: 16,
+    } as ReturnType<typeof getPrinter>);
+    // 6 palette colors, only 2 with inlays: 3 materials with the body, well inside one unit
+    vi.mocked(getLastAssemblyBuild).mockReturnValue({
+      partOutputs: [partOutput({ inlaySoups: { 0: inlayTri(), 3: inlayTri() } })],
+      palette: paletteOf(6),
+      viewSign: 1,
+      detectedColors: [],
+      baseAssigned: null,
+    });
+
+    await exportPrintReady3MF();
+
+    expect(
+      WARNINGS.filter(
+        (w) =>
+          w.message.endsWith(SLOT_MULTI_UNIT_NOTICE_SUFFIX) ||
+          w.message.endsWith(SLOT_OVER_MAX_WARNING_SUFFIX),
+      ),
+    ).toEqual([]);
   });
 });
