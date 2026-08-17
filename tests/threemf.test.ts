@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import {
   build3MFCombined,
+  groupByPlateHint,
+  partsCarryPlateHints,
   plateColumns,
   rotXthenZ,
   soupToIndexed,
@@ -65,6 +67,42 @@ describe('rotXthenZ', () => {
     expect(out[0]).toBeCloseTo(0, 10);
     expect(out[1]).toBeCloseTo(0, 10);
     expect(out[2]).toBeCloseTo(-1, 10);
+  });
+});
+
+describe('groupByPlateHint', () => {
+  // Shared by build3MFCombined and the pre-export summary, which promises the plate count the
+  // export will produce. Two implementations of this rule would let the panel lie about a
+  // multi-day print, so the rule is pinned here rather than in either caller.
+  const names = (groups: { n: string }[][]) => groups.map((g) => g.map((x) => x.n));
+
+  it('groups by hint, ascending', () => {
+    const items = [
+      { n: 'a', h: 2 },
+      { n: 'b', h: 1 },
+      { n: 'c', h: 2 },
+    ];
+    expect(names(groupByPlateHint(items, (i) => i.h))).toEqual([['b'], ['a', 'c']]);
+  });
+
+  it('gives every unhinted part its own plate, after the hinted ones', () => {
+    const items = [
+      { n: 'loose1', h: undefined },
+      { n: 'pinned', h: 1 },
+      { n: 'loose2', h: undefined },
+    ];
+    expect(names(groupByPlateHint(items, (i) => i.h))).toEqual([
+      ['pinned'],
+      ['loose1'],
+      ['loose2'],
+    ]);
+  });
+
+  it('knows when plate layout is determined by hints at all', () => {
+    expect(partsCarryPlateHints([{ plateHint: 1 }, {}])).toBe(true);
+    // Without a hint the greedy packer decides from real footprints, so no caller may state a
+    // plate count before the geometry is placed.
+    expect(partsCarryPlateHints([{}, {}])).toBe(false);
   });
 });
 

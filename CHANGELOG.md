@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The Export panel says what you are about to get.** Above the button: how
+  many parts, how many plates, and a swatch per filament, with the parts listed
+  plate by plate. Exporting the chair produces a 34 MB, 11-plate, 13-object,
+  5-filament file, and until now the panel said nothing about that either before
+  or after; the only feedback was the download itself. It follows the build on
+  screen, so a color change or a merge updates it before you commit. The plate
+  count appears where the part's plates are pinned, which covers the chair, the
+  wheel and the footrest; a hubcap cut to artwork shape, or on a bed with no
+  verified arrangement, is packed at export time and shows parts and filaments
+  only.
 - **The chair's fenders can take artwork on their front face.** Two new design
   zones, Left fender and Right fender (44.6 x 242.4mm each), cover the forward
   face of each wing from the bottom edge up over the curve of the arch. The

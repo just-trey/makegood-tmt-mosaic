@@ -104,6 +104,32 @@ export function fmtCoord(v: number): string {
 }
 
 /**
+ * Group parts onto plates by their `plateHint`, ascending; anything unhinted opens its own plate.
+ *
+ * Shared with the pre-export summary (src/ui/exportPanel.ts), which has to state the plate count
+ * the export will actually produce. A private copy there would be a second implementation of the
+ * one rule a user reads before committing to a multi-day print, and the two would drift.
+ *
+ * Only the hinted branch. Greedy packing needs real footprints, so a caller that wants a count
+ * before the meshes are placed has to check `partsCarryPlateHints` first and say nothing when it
+ * is false.
+ */
+export function groupByPlateHint<T>(items: T[], hintOf: (item: T) => number | undefined): T[][] {
+  const groups = new Map<number, T[]>();
+  let auto = 1e6;
+  items.forEach((it) => {
+    const h = hintOf(it) ?? auto++;
+    (groups.get(h) || groups.set(h, []).get(h)!).push(it);
+  });
+  return [...groups.keys()].sort((a, b) => a - b).map((h) => groups.get(h)!);
+}
+
+/** Whether plate layout is determined by hints, and so knowable without placing any geometry. */
+export function partsCarryPlateHints(parts: { plateHint?: number }[]): boolean {
+  return parts.some((p) => p.plateHint != null);
+}
+
+/**
  * Columns of logical build plates the slicer lays a project out in: Bambu's own
  * PartPlateList::compute_colum_count, `ceil(sqrt(n))` written the long way. Plates form a
  * square-ish grid, not a row. A 4-plate project is 2x2, a 12-plate one 4x3, both confirmed against
@@ -585,14 +611,7 @@ export async function build3MFCombined(
     towerBlocked?: boolean;
   }[] = [];
   if (useHints) {
-    // group by plateHint (ascending); parts without a hint each open their own plate
-    const groups = new Map<number, Placed[]>();
-    let auto = 1e6;
-    placed.forEach((pl) => {
-      const h = pl.part.plateHint ?? auto++;
-      (groups.get(h) || groups.set(h, []).get(h)!).push(pl);
-    });
-    [...groups.keys()].sort((a, b) => a - b).forEach((h) => plates.push({ row: groups.get(h)! }));
+    groupByPlateHint(placed, (pl) => pl.part.plateHint).forEach((row) => plates.push({ row }));
   } else {
     // greedy plate packing: biggest footprints claim plates first, small parts
     // slot into an existing plate's row when there's room

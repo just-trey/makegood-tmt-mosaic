@@ -323,23 +323,6 @@ threshold, or adding one alongside it. Needs real artwork to tune against,
 not just the one measured sample — that's the reason it's deferred rather
 than done alongside the reconciliation warning.
 
-## The export button doesn't say what it's about to produce
-
-Confirmed on the chair, 2026-08-02: "Export print-ready 3MF" produced a
-35.8 MB, 11-plate, 13-object, 5-filament file with zero on-screen summary
-before or after — the app's state is byte-for-byte identical pre- and
-post-export. Re-confirmed 2026-08-16: 0.8s, 34.0 MB, 11 plates, left-panel
-text byte-identical before and after; the post-export coverage warning is the
-only feedback. That's a multi-day, multi-kilogram print represented as a
-single unlabeled button. The zone-coverage warning and AMS-capacity check
-landing now (see the plan that added this section) surface two of the
-numbers that matter at export time, but not the full picture — plate count,
-per-plate part list, filament colors. Closing this means a pre-export
-summary card reading the same `getLastAssemblyBuild()` /
-`built.partOutputs` data `exportPrintReady3MF` (`src/ui/exportPanel.ts`)
-already has in hand; it's a presentation layer on data that already exists,
-not a new computation.
-
 ## Two open defects in the chair / pattern-library workflow
 
 Two of four defects the maintainer named on 2026-08-05; the other two are fixed.
