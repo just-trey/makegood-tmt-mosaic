@@ -1,7 +1,12 @@
 // Drive the real app: load an image on the hubcap, tick "cut to artwork shape", and check the
 // part actually becomes that shape — and says the right thing when it can't.
 //
-// Usage: npm run build && MOSAIC_GPU=1 node scripts/check-hubcap-silhouette.mjs
+// Usage: npm run build && MOSAIC_GPU=1 npx vite-node scripts/check-hubcap-silhouette.mjs
+//
+// vite-node, not node: this imports the refusal message from src/ rather than retyping it (see
+// REFUSAL below), and that is the whole point — a retyped copy goes stale the moment the message
+// is reworded, and a stale copy reads as "the app did not refuse", which is a PASS for every case
+// that expects a silhouette.
 import path from 'node:path';
 import { startPreview, launchBrowser, newPage, settle } from './lib/harness.mjs';
 
@@ -18,6 +23,12 @@ const CASES = [
 ];
 
 let failed = 0;
+// The app's own string, imported rather than retyped. A substring copy cannot be made safe by
+// counting matches: if the message is reworded, the cases that expect a refusal fail on the
+// expect-vs-got comparison anyway, while every case expecting a silhouette quietly passes without
+// the refusal ever being checked. Importing removes the staleness instead of trying to detect it.
+const { HUBCAP_SILHOUETTE_MISSES_CLIPS: REFUSAL } = await import('../src/geometry/hubcap.ts');
+
 const preview = await startPreview({ port: PORT });
 let browser;
 try {
@@ -55,7 +66,7 @@ try {
     }
 
     const warnings = await page.evaluate(() => window.__mosaic.warnings());
-    const refused = warnings.some((w) => w.includes('doesn’t cover the hubcap’s mounting clips'));
+    const refused = warnings.some((w) => w.includes(REFUSAL));
     const got = refused ? 'refused' : 'silhouette';
     console.log(`  tris ${before} -> ${after}   result: ${got}`);
     warnings

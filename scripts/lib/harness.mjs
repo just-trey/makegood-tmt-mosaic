@@ -14,10 +14,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-// Third-party analytics beacons report to a cross-origin endpoint bound to the production
-// hostname, so on localhost they CORS-fail by design — filter their console/network noise out
-// of every script's error collection, not just smoke.mjs's.
-const IGNORE_HOSTS = ['cloudflareinsights.com'];
+// Hosts the app does not control. Their failures are real, but they are not this repo's, and a
+// gate that goes red on someone else's CDN teaches everyone to re-run instead of look.
+//
+// - cloudflareinsights: analytics beacons bound to the production hostname, so on localhost they
+//   CORS-fail by design.
+// - fonts.gstatic / fonts.googleapis: index.html loads Outfit, Inter and IBM Plex Mono from Google
+//   Fonts at runtime. A woff2 404 here failed smoke twice and check-csg-failure once in August
+//   with no reproduction, because the error named neither a URL nor an origin. It is cosmetic to
+//   the app (`display=swap` renders in the fallback face) but it made two gates flaky. That the
+//   app fetches fonts over the network at all is its own question, in docs/tech-debt.md.
+const IGNORE_HOSTS = ['cloudflareinsights.com', 'fonts.gstatic.com', 'fonts.googleapis.com'];
 const isIgnored = (text, url) =>
   IGNORE_HOSTS.some((h) => (text && text.includes(h)) || (url && url.includes(h)));
 

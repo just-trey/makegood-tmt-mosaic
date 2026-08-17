@@ -12,10 +12,10 @@
 //
 // Usage:
 //   npm run build && node scripts/check-csg-failure.mjs [outDir]
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import JSZip from 'jszip';
 import { startPreview, launchBrowser, newPage, afterRebuild } from './lib/harness.mjs';
+import { partSummaries } from './lib/threemf.mjs';
 
 const OUT = process.argv[2] || 'stubs/csg-failure';
 mkdirSync(OUT, { recursive: true });
@@ -134,55 +134,6 @@ const CASES = [
   },
 ];
 
-/**
- * Body/inlay counts per exported part -- the .mjs twin of tests/lib/threemf.ts, plus the body's
- * triangle count.
- *
- * The triangle count is what separates "cut, recess left empty" from "exported uncut": both ship
- * one body and no inlays, so counts alone can't tell the intersection branch from the difference
- * branch, and a bug collapsing one into the other would pass unnoticed. A cut body carries the
- * pocket walls; an uncut one is the original part mesh.
- */
-async function partSummaries(file) {
-  const zip = await JSZip.loadAsync(readFileSync(file));
-  const model = await zip.file('3D/3dmodel.model').async('string');
-  const cfg = await zip.file('Metadata/model_settings.config').async('string');
-
-  const extruderOf = new Map();
-  for (const [, id, body] of cfg.matchAll(/<part id="(\d+)"[^>]*>([\s\S]*?)<\/part>/g)) {
-    const m = /<metadata key="extruder" value="(\d+)"\/>/.exec(body);
-    if (m) extruderOf.set(id, +m[1]);
-  }
-  const trisOf = new Map();
-  for (const [, id, mesh] of model.matchAll(
-    /<object id="(\d+)"[^>]*>\s*<mesh>([\s\S]*?)<\/mesh>/g,
-  )) {
-    trisOf.set(id, [...mesh.matchAll(/<triangle /g)].length);
-  }
-  return [
-    ...model.matchAll(
-      /<object id="\d+" name="([^"]*)" type="model">\s*<components>([\s\S]*?)<\/components>/g,
-    ),
-  ].map(([, name, components]) => {
-    const ids = [...components.matchAll(/objectid="(\d+)"/g)].map(([, id]) => id);
-    // Same rule as the twin: a sub-object the config never names is the bug itself, not an inlay
-    // and not a nothing. Scoring it as neither would let a regression that drops config entries
-    // report zero inlays -- i.e. pass the "no overlapping uncut-body + inlay pair" check while
-    // shipping exactly that pair.
-    for (const id of ids) {
-      if (extruderOf.get(id) === undefined)
-        throw new Error(`sub-object ${id} of "${name}" has no model_settings.config entry`);
-    }
-    const bodyIds = ids.filter((id) => extruderOf.get(id) === 1);
-    return {
-      name,
-      bodyCount: bodyIds.length,
-      inlayCount: ids.filter((id) => extruderOf.get(id) !== 1).length,
-      bodyTris: bodyIds.reduce((n, id) => n + (trisOf.get(id) ?? 0), 0),
-    };
-  });
-}
-
 // Distinct filenames on purpose: re-selecting the same path on the same <input type="file"> fires
 // no second change event, so a second artwork row never appears and the wait below hangs.
 const svgPaths = [1, 2].map((n) => {
@@ -193,6 +144,7 @@ const svgPaths = [1, 2].map((n) => {
 
 let browser;
 let failures = 0;
+let pageErrors = 0;
 const baselines = new Map();
 const preview = await startPreview({ port: PORT });
 try {
@@ -315,15 +267,22 @@ try {
     } else {
       console.log('  OK');
     }
+    // Counted apart from the checks. A page error is a real failure, but rolling it into
+    // "N check(s) FAILED" says a degradation assertion was wrong when it wasn't, and sends the
+    // reader to the geometry instead of the console. This exact conflation cost a debugging pass:
+    // a run reported "1 check(s) FAILED" with every case printing OK.
     errors.forEach((e) => {
       console.log(`  ERROR ${e}`);
-      failures++;
+      pageErrors++;
     });
     await page.close();
   }
 
-  console.log(failures ? `\n${failures} check(s) FAILED.` : '\nAll CSG failure branches OK.');
-  if (failures) process.exitCode = 1;
+  const parts = [];
+  if (failures) parts.push(`${failures} check(s) FAILED`);
+  if (pageErrors) parts.push(`${pageErrors} console/page error(s)`);
+  console.log(parts.length ? `\n${parts.join(', ')}.` : '\nAll CSG failure branches OK.');
+  if (failures || pageErrors) process.exitCode = 1;
 } catch (e) {
   console.error('FAILED:', e.message);
   process.exitCode = 1;

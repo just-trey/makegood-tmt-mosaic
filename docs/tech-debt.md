@@ -903,12 +903,12 @@ is not edited as items close, so the state of each lives here:
 | 1   | smoke's four "export button is enabled" waits                      | **Closed.** All four use `afterRebuild()`                                                                                                                                                                                                                              |
 | 2   | `settledAfterRebuild()` can't tell "finished" from "never started" | **Closed for smoke.** `rebuildsSoFar()` (src/app/idle.ts) counts completed rebuilds; `afterRebuild(page, action)` reads it before the action, which is the only moment it means anything. Bare `settledAfterRebuild()` now says out loud that it is not asserting this |
 | 3   | fixed sleeps before every screenshot                               | **Closed.** Gone; `shot()` and the real rebuild wait replace them                                                                                                                                                                                                      |
-| 4   | nothing in CI looks inside the exported file                       | Open                                                                                                                                                                                                                                                                   |
+| 4   | nothing in CI looks inside the exported file                       | **Closed.** smoke reads part, body, inlay, plate and filament counts out of all three downloads via `scripts/lib/threemf.mjs`; verified against every damaged export `?csgfault` produces                                                                              |
 | 5   | smoke's opening wait doesn't check which part loaded               | **Closed.** Asserts `#shape-kind.value`                                                                                                                                                                                                                                |
 | 6   | `waitForServer()` accepts any HTTP 200                             | **Closed.** Compares the served bytes against `dist/index.html`                                                                                                                                                                                                        |
 | 7   | `startPreview({ reuse: true })` trusts the caller                  | **Closed** by 6, which turns the caller's promise into a measurement                                                                                                                                                                                                   |
 | 8   | auto-accepted confirms are unobservable                            | **Closed.** `page.confirmsAccepted()` counts them                                                                                                                                                                                                                      |
-| 9   | two checks match a warning string literally                        | Open                                                                                                                                                                                                                                                                   |
+| 9   | two checks match a warning string literally                        | **Closed.** `check-csg-failure` already failed loudly per case; `check-hubcap-silhouette` now imports `HUBCAP_SILHOUETTE_MISSES_CLIPS` instead of retyping it, so a reword moves both together and cannot go stale (it runs under `vite-node` for that)                |
 | 10  | `TILES_PER_CHAIR_ZONE = 143`                                       | Accepted, with the 2.6x margin in hand                                                                                                                                                                                                                                 |
 
 **An eleventh, found on 2026-08-16 while shipping the prune PR: a false red.**
@@ -923,11 +923,36 @@ rather than look, which is how a real failure gets waved through. The console
 handler now records the URL alongside the message, so the next occurrence names
 itself.
 
+**Cause found, 2026-08-17: `https://fonts.gstatic.com/s/outfit/…woff2`.** The
+URL the console handler started recording named it on the next occurrence.
+`index.html` loads Outfit, Inter and IBM Plex Mono from Google Fonts at runtime,
+so every driven check depended on Google's CDN, and an intermittent 404 there
+failed the gate. Both hosts are in `IGNORE_HOSTS` now. The app itself is
+unaffected (`display=swap` renders the fallback face), which is exactly why this
+took three sightings to catch: nothing looked wrong except the gate.
+
+**That the app fetches its fonts over the network is a separate open question.**
+Not a defect today, and deliberately not fixed here: self-hosting the three
+families is a `design-system/` change with its own weight budget, and the
+audience question is whether a volunteer running this in a workshop with no
+connection should see the intended headings. Measured cost of leaving it: two
+gates went flaky for a fortnight and nobody could name why.
+
+**Seen once more on 2026-08-17, in `check-csg-failure.mjs`, and it cost a
+debugging pass for a second reason.** That script counted a console error into
+the same tally as a failed degradation assertion, so a run printed
+`1 check(s) FAILED` while every case printed `OK`, pointing the reader at the
+geometry for a problem in the console. The two are counted and reported
+separately now. Frequency so far is about 1 run in 7 across both scripts, still
+with no reproduction under a request listener.
+
 Every drive script uses `afterRebuild()` now, so no call site is left on the
 baseline-less path; `settledAfterRebuild()` keeps that path for a caller with its
 own baseline, and says out loud when it has neither.
 
-What is left: findings 4 and 9.
+Every finding in that report is now closed or accepted. What the section still
+stands for is the habit rather than the list: a checker is the last place anyone
+looks, so the property it asserts has to be the property it names.
 
 ## Per-part export placement is a lookup table in [src/export/placement.ts](../src/export/placement.ts), not part of the part definition
 

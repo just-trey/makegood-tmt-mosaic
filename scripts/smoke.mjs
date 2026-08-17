@@ -1,9 +1,11 @@
 // End-to-end smoke test: serves dist/ with vite preview, drives the app in headless
 // Chromium, and exercises assembly auto-load -> sample SVG -> CSG build -> 3MF export,
 // then flat (disc) mode -> rebuild -> STL zip export, then a PNG through the raster path.
-import { mkdirSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import JSZip from 'jszip';
 import path from 'node:path';
 import { startPreview, launchPage, afterRebuild, settle } from './lib/harness.mjs';
+import { partSummaries, plateSummary } from './lib/threemf.mjs';
 import { encodePNG } from './lib/png.mjs';
 
 const OUT = process.argv[2] || '.';
@@ -92,7 +94,30 @@ try {
   ]);
   const f3mf = path.join(OUT, dl.suggestedFilename());
   await dl.saveAs(f3mf);
-  console.log('   saved', dl.suggestedFilename(), statSync(f3mf).size, 'bytes');
+  // Look inside it. A download event fires for an export that wrote one empty plate, dropped
+  // every inlay, or lost the filament table, and `size` goes into a log nobody diffs.
+  const asm = await partSummaries(f3mf);
+  const plates = await plateSummary(f3mf);
+  console.log(
+    `   saved ${dl.suggestedFilename()} ${statSync(f3mf).size} bytes — ${asm.length} parts, ` +
+      `${plates.plates.length} plate(s), ${plates.filaments} filaments`,
+  );
+  if (asm.length !== 3) errors.push(`assembly 3MF has ${asm.length} parts, expected the wheel's 3`);
+  for (const p of asm) {
+    if (p.bodyCount !== 1) errors.push(`"${p.name}" exported ${p.bodyCount} bodies, expected 1`);
+    if (p.inlayCount < 1) errors.push(`"${p.name}" exported no inlays, so it prints uncoloured`);
+    if (p.bodyTris < 1) errors.push(`"${p.name}" exported an empty body mesh`);
+  }
+  if (plates.filaments < 2)
+    errors.push(`assembly 3MF maps ${plates.filaments} filament(s); a multicolor export needs 2+`);
+  // The plate list is the half a part-level check cannot see: an export that wrote one empty
+  // plate, or dropped a plate's objects, still ships three well-formed parts.
+  if (!plates.plates.length) errors.push('assembly 3MF has no plates');
+  plates.plates.forEach((pl, i) => {
+    if (!pl.parts.length) errors.push(`assembly 3MF plate ${i + 1} is empty`);
+  });
+  if (plates.items !== asm.length)
+    errors.push(`assembly 3MF has ${plates.items} build items for ${asm.length} parts`);
 
   console.log('5. switching to disc (flat) mode…');
   await afterRebuild(page, () => page.selectOption('#shape-kind', 'disc'), {
@@ -135,14 +160,31 @@ try {
   ]);
   const fplate = path.join(OUT, 'flat-' + dl2.suggestedFilename());
   await dl2.saveAs(fplate);
-  console.log('   saved', dl2.suggestedFilename(), statSync(fplate).size, 'bytes');
+  const flat = await partSummaries(fplate);
+  console.log(
+    `   saved ${dl2.suggestedFilename()} ${statSync(fplate).size} bytes — ` +
+      `${flat.length} object(s), ${flat[0]?.inlayCount ?? 0} inlays`,
+  );
+  if (flat.length !== 1) errors.push(`flat 3MF has ${flat.length} objects, expected 1`);
+  if ((flat[0]?.inlayCount ?? 0) < 2)
+    errors.push(
+      `flat 3MF carries ${flat[0]?.inlayCount ?? 0} colour plugs, expected one per colour`,
+    );
   const [dl3] = await Promise.all([
     page.waitForEvent('download', { timeout: 120_000 }),
     page.click('#btn-export-stl'),
   ]);
   const fzip = path.join(OUT, dl3.suggestedFilename());
   await dl3.saveAs(fzip);
-  console.log('   saved', dl3.suggestedFilename(), statSync(fzip).size, 'bytes');
+  const zipped = Object.keys((await JSZip.loadAsync(readFileSync(fzip))).files);
+  console.log(
+    `   saved ${dl3.suggestedFilename()} ${statSync(fzip).size} bytes — ${zipped.length} entries`,
+  );
+  if (!zipped.some((n) => /base\.stl$/i.test(n)))
+    errors.push(`STL zip has no base.stl (entries: ${zipped.join(', ') || 'none'})`);
+  const stls = zipped.filter((n) => /\.stl$/i.test(n)).length;
+  if (stls < 3)
+    errors.push(`STL zip has ${stls} .stl entries, expected base.stl plus one per colour`);
 
   console.log('8. loading a PNG as artwork (browser decode + quantize + trace)…');
   // Three flat bands, so the trace has an unambiguous answer to check against.
