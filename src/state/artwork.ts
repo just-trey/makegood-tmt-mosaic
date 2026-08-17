@@ -434,7 +434,7 @@ export function availableZones(): { zoneId: string; name: string; templateFile?:
 
 /**
  * How many of the assembly's design zones currently carry at least one artwork instance, out of
- * how many the part offers — the number behind the chair's "N of M surfaces have artwork" notice
+ * how many the part offers — the number behind the chair's "N of M zones have artwork" notice
  * and the pre-export coverage check. An instance with `zone: null` ("All zones") counts every zone
  * covered, since that's what it actually cuts onto. `{ total: 0, ... }` outside assembly mode or on
  * a single/no-zone kind, where there's nothing to reconcile.

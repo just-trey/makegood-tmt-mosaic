@@ -433,7 +433,7 @@ function buildAsmPartRow(
       <div class="top"><div class="hex">${part.name}</div></div>
       ${dropzone}
       <div class="hint" style="margin-top:var(--space-tight);">${statusText}</div>
-      ${part.patches ? `<div class="depth-row"><label>face</label><select data-asm="patchIdx" style="flex:1;" aria-label="Design face for ${part.name}">${patchOptions}</select></div>` : ''}
+      ${part.patches ? `<div class="depth-row"><label>design face</label><select data-asm="patchIdx" style="flex:1;" aria-label="Design face for ${part.name}">${patchOptions}</select></div>` : ''}
       <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;" aria-label="Base thickness for ${part.name}"><span class="hint">mm of material behind the face this replaces</span></div>
       <div class="btn-row" style="margin-top:var(--space-tight);">
         <button class="btn small" data-asm-remove aria-label="Remove ${part.name}">Remove</button>

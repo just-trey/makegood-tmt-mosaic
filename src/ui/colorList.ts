@@ -479,7 +479,7 @@ function renderSlotCount(): void {
   // makes the relationship self-explanatory every time, not just after a merge changes the count.
   el.textContent =
     `${lastRawColorCount} color${lastRawColorCount === 1 ? '' : 's'} → ` +
-    `${lastSlotsNeeded} AMS slot${lastSlotsNeeded === 1 ? '' : 's'} needed`;
+    `${lastSlotsNeeded} slot${lastSlotsNeeded === 1 ? '' : 's'} needed`;
   // Same slotTier() the pill above is posted from, so the line's color and the pill can't disagree
   const printer = getPrinter(state.printerId);
   const tier = slotTier(lastSlotsNeeded, printer);
@@ -487,14 +487,15 @@ function renderSlotCount(): void {
   el.classList.toggle('multi-unit', tier === 'multi-unit');
   el.title =
     tier === 'over-max'
-      ? `More than the ${printer.amsSlotsMax} slots this printer can print in one go.`
+      ? `More than the ${printer.slotsMax} slots this printer can print in one go.`
       : tier === 'multi-unit'
-        ? `More than the ${printer.amsSlotsPerUnit} slots in a single AMS unit — printable, but ` +
-          `needs more than one unit (up to ${printer.amsSlotsMax}) or manual filament swaps.`
-        : `Fits a single ${printer.amsSlotsPerUnit}-slot AMS unit.`;
+        ? `More than the ${printer.slotsPerUnit} slots in a single ${printer.unitLabel} — ` +
+          `printable, but needs another one (up to ${printer.slotsMax} slots) or manual ` +
+          `filament swaps.`
+        : `Fits a single ${printer.slotsPerUnit}-slot ${printer.unitLabel}.`;
 }
 
-/** Redraw the slot-count line against the current printer's AMS capacity — the counterpart to
+/** Redraw the slot-count line against the selected printer's slot capacity — the counterpart to
  * refreshAutoMergeControl() etc. for this control. Needed because changing the printer picker
  * doesn't schedule a rebuild (it doesn't affect geometry), so nothing else would refresh this. */
 export function refreshSlotCountCapacity(): void {

@@ -38,12 +38,19 @@ adjectives, second person for UI copy) still apply; this is the term list.
 | slot (numbered) | index, channel number                                   |
 | body color      | blank color                                             |
 | part            | mesh (except where a raw uploaded STL genuinely is one) |
-| zone            | surface, region, face, area                             |
+| zone            | surface, region, area                                   |
+| design face     | surface, face                                           |
 | design          | artwork, image, graphic                                 |
 | Export 3MF      | Generate, Build, Create output                          |
 
-1. One term per concept across UI labels, help text, warnings, errors, README. Today "color",
-   "filament" and "AMS slot" all name the same thing in different places.
+1. One term per concept across UI labels, help text, warnings, errors, README. Three concepts
+   that used to blur together, now settled: a **color** is what the artwork has, a **filament** is
+   what prints it, and a **slot** is the numbered position it sits in. Likewise a **zone** is one
+   of several named design areas on a part that has them, and a **design face** is the single area
+   on a part with one. `surface` names none of these and appears in no user-facing string.
+   **Vendor names are not category names**: `AMS` is Bambu's, and the Snapmaker U1 feeds from a
+   built-in toolchanger, so any string naming the hardware reads it off the selected printer
+   (`Printer.unitLabel`) rather than hardcoding one.
 2. A warning names something the user can act on, in the user's words. "Couldn't build the cut
    solid for color #0a0a0a on Handle (left)" names an internal step. Its user-facing form is
    about a filament and a part.
@@ -71,7 +78,7 @@ below) decides how it is written**, and applies wherever it lands.
    the current selection is collapsed or absent, not open and inert.
 8. Nothing that acts on a selection appears when there is no selection. Disabled with a reason,
    or gone.
-9. Order follows the task, and the task starts with _where_, not _what_. Choosing a surface
+9. Order follows the task, and the task starts with _where_, not _what_. Choosing a zone
    precedes choosing a file.
 
 ## Selection and direct manipulation
@@ -89,10 +96,11 @@ below) decides how it is written**, and applies wherever it lands.
 
 ## Filaments
 
-16. Filaments are presented as numbered slots with swatches, the way an AMS is — not as an
-    unlabelled paint-picker grid.
+16. Filaments are presented as numbered slots with swatches, the way the printer's own filament
+    list is — not as an unlabelled paint-picker grid.
 17. The slot count currently being spent is visible **while designing**, against the selected
-    printer's capacity. Today the AMS concept appears only inside a failure message.
+    printer's capacity. The line under the color list does this; what is still missing is the
+    numbering on the swatches themselves (16).
 18. The owned-filament palette is editable in the app. Editing `public/filaments.json` is not a
     UI.
 
@@ -165,10 +173,15 @@ So the line is not simple versus technical. It is **their vocabulary versus ours
 **The test**: would this word appear in Bambu Studio's or Orca's UI, or in a Printables comment
 thread? If yes, it is free, use it. If no, it is ours and it has to go.
 
-| Free, they own it                                                              | Ours, replace it                                            |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| filament, AMS slot, layer height, bed, plate, prime tower, seam, infill, purge | quantize, boolean, cut solid, mesh operation, build stage   |
-| 3MF, STL, SVG, mm, gradient, trace, tile, bounding box                         | viewBox, normal, plane offset, chart, LSCM, patch, manifold |
+| Free, they own it                                                          | Ours, replace it                                            |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| filament, slot, layer height, bed, plate, prime tower, seam, infill, purge | quantize, boolean, cut solid, mesh operation, build stage   |
+| 3MF, STL, SVG, mm, gradient, trace, tile, bounding box                     | viewBox, normal, plane offset, chart, LSCM, patch, manifold |
+
+**A word they own can still be the wrong word.** `AMS` passes the test above for a Bambu owner and
+fails it for a Snapmaker one, whose U1 feeds from a built-in toolchanger and has no AMS to speak
+of. That is why it left the free column: a vendor's name for its hardware is read off the selected
+printer (`Printer.unitLabel`, convention 1), never written into a string.
 
 This does not contradict the design system's voice rule (precise, technical, units and specifics
 over adjectives). The two govern different things:

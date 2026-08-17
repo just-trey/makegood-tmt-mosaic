@@ -5,7 +5,12 @@ import type { ColorListEntry } from '../src/ui/colorList';
 vi.mock('../src/app/scheduler', () => ({ scheduleRebuild: vi.fn() }));
 vi.mock('../src/state/filaments', () => ({ nearestFilamentName: vi.fn(() => 'Generic PETG') }));
 vi.mock('../src/export/printers', () => ({
-  getPrinter: vi.fn(() => ({ label: 'Test Printer', amsSlotsPerUnit: 4, amsSlotsMax: 16 })),
+  getPrinter: vi.fn(() => ({
+    label: 'Test Printer',
+    slotsPerUnit: 4,
+    slotsMax: 16,
+    unitLabel: 'AMS unit',
+  })),
   DEFAULT_PRINTER_ID: 'p1',
 }));
 
@@ -32,8 +37,9 @@ const slotLine = (): HTMLElement => document.querySelector<HTMLElement>('#slot-c
 beforeEach(() => {
   vi.mocked(getPrinter).mockReturnValue({
     label: 'Test Printer',
-    amsSlotsPerUnit: 4,
-    amsSlotsMax: 16,
+    slotsPerUnit: 4,
+    slotsMax: 16,
+    unitLabel: 'AMS unit',
   } as ReturnType<typeof getPrinter>);
   document.body.innerHTML =
     '<div id="color-list"></div><div id="slot-count"></div><div id="stat-colors"></div>';
@@ -47,27 +53,27 @@ describe('renderColorList — slot count line', () => {
   const colors = (n: number): ColorListEntry[] =>
     Array.from({ length: n }, (_, i) => entry(`#00000${i}`));
 
-  it('counts one AMS slot per cut color plus one for the body', () => {
+  it('counts one filament slot per cut color plus one for the body', () => {
     renderColorList(colors(2), { rawColorCount: 2 });
 
-    expect(slotLine().textContent).toBe('2 colors → 3 AMS slots needed');
+    expect(slotLine().textContent).toBe('2 colors → 3 slots needed');
     expect(slotLine().classList.contains('multi-unit')).toBe(false);
     expect(slotLine().classList.contains('over-capacity')).toBe(false);
   });
 
-  it('notes, but does not flag, a count past one AMS unit the printer can still reach', () => {
+  it('notes, but does not flag, a count past one unit the printer can still reach', () => {
     renderColorList(colors(4), { rawColorCount: 4 }); // 5 slots: > 4 per unit, <= 16 max
 
-    expect(slotLine().textContent).toBe('4 colors → 5 AMS slots needed');
+    expect(slotLine().textContent).toBe('4 colors → 5 slots needed');
     expect(slotLine().classList.contains('multi-unit')).toBe(true);
     expect(slotLine().classList.contains('over-capacity')).toBe(false);
-    expect(slotLine().title).toContain('needs more than one unit');
+    expect(slotLine().title).toContain('needs another one');
   });
 
   it('flags the line only past what the printer can print in one go', () => {
     renderColorList(colors(16), { rawColorCount: 16 }); // 17 slots, past the 16 max
 
-    expect(slotLine().textContent).toBe('16 colors → 17 AMS slots needed');
+    expect(slotLine().textContent).toBe('16 colors → 17 slots needed');
     expect(slotLine().classList.contains('over-capacity')).toBe(true);
     expect(slotLine().classList.contains('multi-unit')).toBe(false);
   });
@@ -75,8 +81,9 @@ describe('renderColorList — slot count line', () => {
   it('goes straight from fine to flagged on a printer that cannot chain units', () => {
     vi.mocked(getPrinter).mockReturnValue({
       label: 'Snapmaker-like',
-      amsSlotsPerUnit: 4,
-      amsSlotsMax: 4,
+      slotsPerUnit: 4,
+      slotsMax: 4,
+      unitLabel: 'toolchanger',
     } as ReturnType<typeof getPrinter>);
 
     renderColorList(colors(3), { rawColorCount: 3 }); // 4 slots — exactly full
@@ -94,14 +101,14 @@ describe('renderColorList — slot count line', () => {
     // must not cost a slot in the line while printing nothing
     renderColorList([entry('#ff0000')], { rawColorCount: 2 });
 
-    expect(slotLine().textContent).toBe('2 colors → 2 AMS slots needed');
+    expect(slotLine().textContent).toBe('2 colors → 2 slots needed');
   });
 
   it('posts the slot-budget pill as the list renders, not only at export time', () => {
     renderColorList(colors(4), { rawColorCount: 4 }); // 5 slots, past one unit
 
     expect(WARNINGS.map((w) => w.message)).toContainEqual(
-      expect.stringContaining('5 AMS slots needed'),
+      expect.stringContaining('5 filament slots needed'),
     );
   });
 
@@ -111,8 +118,9 @@ describe('renderColorList — slot count line', () => {
 
     vi.mocked(getPrinter).mockReturnValue({
       label: 'Snapmaker-like',
-      amsSlotsPerUnit: 4,
-      amsSlotsMax: 4,
+      slotsPerUnit: 4,
+      slotsMax: 4,
+      unitLabel: 'toolchanger',
     } as ReturnType<typeof getPrinter>);
     refreshSlotCountCapacity();
 
@@ -133,7 +141,7 @@ describe('renderColorList — slot count line', () => {
   it('says "1 color", not "1 colors", in both the line and the chip', () => {
     renderColorList([entry('#ff0000')], { rawColorCount: 1 });
 
-    expect(slotLine().textContent).toBe('1 color → 2 AMS slots needed');
+    expect(slotLine().textContent).toBe('1 color → 2 slots needed');
     expect(document.querySelector('#stat-colors')!.textContent).toBe('1 color');
   });
 

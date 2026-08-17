@@ -839,48 +839,6 @@ seed offset in hand, while the placed quad is computed later in the assembly
 build. Either thread the zone's placer back to load time, or move the cascade
 into the build and let it adjust a placement it can actually measure.
 
-## The app says "surface" where its own vocabulary says "zone"
-
-Convention 1 of [ui-conventions.md](ui-conventions.md) is one term per concept, and its table is
-explicit: say `zone`, not `surface, region, face, area`. The app says `surface` in at least four
-user-visible places — the zone-coverage notice ("N of M surfaces have artwork", `src/app/rebuild.ts`),
-the per-zone template links in the Part panel ("Design templates (one per surface)"), the help
-dialog ("Some parts have more than one design surface…"), and until this run the fill-refusal
-warning ("Raise Scale to fill the surface"). The Artwork panel hint that used to be the fourth site
-lost its zone sentence in the copy-tightening pass, which removes one instance without changing the
-count of places the word appears.
-
-Caught by a conventions review of the shipped screenshots, which cited the table. Not fixed
-piecemeal on purpose: correcting one message while the other three say `surface` makes convention 1
-_worse_, since the user then meets both words for one thing rather than one wrong word
-consistently. Closing it is a single pass over every user-visible string plus the help dialog,
-deciding once — and worth checking which way round: `zone` is the term the vocabulary table picks,
-but `surface` is the one the app has actually been teaching users, and the table is the newer
-document.
-
-## "AMS slot", "filament slot", "filament" and "color" all name one thing
-
-Convention 1 again, the sibling of the `surface`/`zone` item above and deferred for the same
-reason. The rubric calls this out by name: "Today 'color', 'filament' and 'AMS slot' all name the
-same thing in different places." The vocabulary table picks `filament`, and `slot (numbered)` for
-the position it sits in.
-
-Counted during the copy-tightening pass, across the sites that are user-visible:
-
-| Says            | Where                                                                 |
-| --------------- | --------------------------------------------------------------------- |
-| "AMS slot"      | help dialog, the slot-count line, the capacity pill (`slotBudget.ts`) |
-| "filament slot" | the Export hints, `partPanel.ts`                                      |
-| "filament"      | the Auto-merge help ("collapse shading ramps toward fewer filaments") |
-| "color"         | the panel heading "Colors detected", every row label                  |
-
-Left alone deliberately. That pass covered explainer copy only, so the pill and the slot-count line
-were out of scope; changing the help dialog alone would have made the user meet two words for one
-thing instead of one inconsistent set. Same conclusion as the `surface`/`zone` item: closing it is
-one pass over labels, help and warning strings together, deciding once. Note the same caveat too —
-`AMS slot` is the term the printer's own UI uses and the one the app has been teaching, while
-`filament` is what the newer table picks.
-
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
 A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):

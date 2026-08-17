@@ -3,7 +3,7 @@ import { getPrinter, type Printer } from '../export/printers';
 import { WARNINGS, warn, notice } from '../warnings';
 
 /**
- * How a slot count sits against the selected printer. Three tiers, not two, because one AMS unit
+ * How a slot count sits against the selected printer. Three tiers, not two, because one unit
  * is a budget rather than a capacity: most volunteers have exactly one, so passing 4 is worth
  * saying — but the Bambus chain up to 16 (25 on an H2D across both nozzles), and calling a 6-slot
  * design an error on a printer that prints it fine would be the tool inventing a limit. Only the
@@ -13,8 +13,8 @@ import { WARNINGS, warn, notice } from '../warnings';
 export type SlotTier = 'fits' | 'multi-unit' | 'over-max';
 
 export function slotTier(slotsNeeded: number, printer: Printer): SlotTier {
-  if (slotsNeeded > printer.amsSlotsMax) return 'over-max';
-  if (slotsNeeded > printer.amsSlotsPerUnit) return 'multi-unit';
+  if (slotsNeeded > printer.slotsMax) return 'over-max';
+  if (slotsNeeded > printer.slotsPerUnit) return 'multi-unit';
   return 'fits';
 }
 
@@ -50,8 +50,8 @@ function slotBudgetMessage(
     return {
       level: 'warn',
       message:
-        `${slotsNeeded} AMS slots needed, but ${printer.label} tops out at ` +
-        `${printer.amsSlotsMax} in a single print. Either ${howToReduce} ` +
+        `${slotsNeeded} filament slots needed, but ${printer.label} tops out at ` +
+        `${printer.slotsMax} in a single print. Either ${howToReduce} ` +
         SLOT_OVER_MAX_WARNING_SUFFIX,
     };
   }
@@ -59,9 +59,9 @@ function slotBudgetMessage(
     return {
       level: 'info',
       message:
-        `${slotsNeeded} AMS slots needed — more than the ${printer.amsSlotsPerUnit} in a single ` +
-        `AMS unit. ${printer.label} supports up to ${printer.amsSlotsMax} across daisy-chained ` +
-        `units; with one unit, ${howToReduce}, ` +
+        `${slotsNeeded} filament slots needed — more than the ${printer.slotsPerUnit} in a ` +
+        `single ${printer.unitLabel}. ${printer.label} supports up to ${printer.slotsMax} ` +
+        `across daisy-chained units; with one ${printer.unitLabel}, ${howToReduce}, ` +
         SLOT_MULTI_UNIT_NOTICE_SUFFIX,
     };
   }

@@ -1058,7 +1058,7 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
   ${xmlEscape(zone.name)} design zone template (${kindId}) — true-to-size at 1:1 mm (${W} x ${H}mm).
-  The grey shape is the zone's unwrapped printable surface; the app clips artwork to exactly this
+  The grey shape is the zone's unwrapped printable area; the app clips artwork to exactly this
   outline and wraps it back onto the 3D part. Load it at Scale 100%, Offset 0/0 and it lands
   centered on the zone without adjustment. Gaps punched in the grey are real holes.
 

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/export/printers', () => ({
-  getPrinter: vi.fn(() => ({ label: 'Test Printer', amsSlotsPerUnit: 4, amsSlotsMax: 16 })),
+  getPrinter: vi.fn(() => ({
+    label: 'Test Printer',
+    slotsPerUnit: 4,
+    slotsMax: 16,
+    unitLabel: 'AMS unit',
+  })),
   DEFAULT_PRINTER_ID: 'p1',
 }));
 
@@ -14,8 +19,18 @@ import {
 import { getPrinter, type Printer } from '../src/export/printers';
 import { WARNINGS, clearWarnings, clearBuildWarnings } from '../src/warnings';
 
-const chaining = { label: 'Test Printer', amsSlotsPerUnit: 4, amsSlotsMax: 16 } as Printer;
-const fixed = { label: 'Snapmaker-like', amsSlotsPerUnit: 4, amsSlotsMax: 4 } as Printer;
+const chaining = {
+  label: 'Test Printer',
+  slotsPerUnit: 4,
+  slotsMax: 16,
+  unitLabel: 'AMS unit',
+} as Printer;
+const fixed = {
+  label: 'Snapmaker-like',
+  slotsPerUnit: 4,
+  slotsMax: 4,
+  unitLabel: 'toolchanger',
+} as Printer;
 
 const notices = (): { message: string; level: string }[] =>
   WARNINGS.filter(
@@ -65,7 +80,7 @@ describe('refreshSlotBudgetNotice', () => {
 
     expect(notices()).toHaveLength(1);
     expect(notices()[0].level).toBe('info');
-    expect(notices()[0].message).toContain('5 AMS slots needed');
+    expect(notices()[0].message).toContain('5 filament slots needed');
     expect(notices()[0].message).toContain('up to 16');
   });
 
@@ -158,7 +173,7 @@ describe('refreshSlotBudgetNotice — dismissal', () => {
     refreshSlotBudgetNotice(6);
 
     expect(notices()).toHaveLength(1);
-    expect(notices()[0].message).toContain('6 AMS slots needed');
+    expect(notices()[0].message).toContain('6 filament slots needed');
   });
 
   it('comes back when the printer changes, even at the same count', () => {

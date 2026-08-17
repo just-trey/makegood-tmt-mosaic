@@ -19,7 +19,12 @@ vi.mock('../src/export/placement', () => ({
   placementNotice: vi.fn(() => null),
 }));
 vi.mock('../src/export/printers', () => ({
-  getPrinter: vi.fn(() => ({ label: 'Test Printer', amsSlotsPerUnit: 4, amsSlotsMax: 16 })),
+  getPrinter: vi.fn(() => ({
+    label: 'Test Printer',
+    slotsPerUnit: 4,
+    slotsMax: 16,
+    unitLabel: 'AMS unit',
+  })),
   DEFAULT_PRINTER_ID: 'p1',
 }));
 vi.mock('../src/ui/overlay', () => ({
@@ -93,8 +98,9 @@ beforeEach(() => {
   clearWarnings();
   vi.mocked(getPrinter).mockReturnValue({
     label: 'Test Printer',
-    amsSlotsPerUnit: 4,
-    amsSlotsMax: 16,
+    slotsPerUnit: 4,
+    slotsMax: 16,
+    unitLabel: 'AMS unit',
   } as ReturnType<typeof getPrinter>);
   document.body.innerHTML = '<div id="warnings"></div>';
   state.shapeKind = 'assembly';
@@ -148,7 +154,7 @@ function buildWithPalette(n: number): void {
   });
 }
 
-describe('exportPrintReady3MF — AMS slot budget', () => {
+describe('exportPrintReady3MF — filament slot budget', () => {
   const slotNotices = (): { message: string; level: string }[] =>
     WARNINGS.filter(
       (w) =>
@@ -166,7 +172,7 @@ describe('exportPrintReady3MF — AMS slot budget', () => {
 
     expect(slotNotices()).toHaveLength(1);
     expect(slotNotices()[0].level).toBe('info');
-    expect(slotNotices()[0].message).toContain('5 AMS slots needed');
+    expect(slotNotices()[0].message).toContain('5 filament slots needed');
   });
 
   it('re-evaluates rather than leaving the previous export’s pill up', async () => {
@@ -223,11 +229,12 @@ describe('exportPrintReady3MF — palette colors with no inlay on any part', () 
     expect(materials[1].color).toBe('#000001');
   });
 
-  it('does not count them toward the AMS slot pill', async () => {
+  it('does not count them toward the filament slot pill', async () => {
     vi.mocked(getPrinter).mockReturnValue({
       label: 'Test Printer',
-      amsSlotsPerUnit: 4,
-      amsSlotsMax: 16,
+      slotsPerUnit: 4,
+      slotsMax: 16,
+      unitLabel: 'AMS unit',
     } as ReturnType<typeof getPrinter>);
     // 6 palette colors, only 2 with inlays: 3 materials with the body, well inside one unit
     vi.mocked(getLastAssemblyBuild).mockReturnValue({

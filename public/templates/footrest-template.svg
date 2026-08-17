@@ -13,7 +13,7 @@
   grey); FRONT is the curved-lip edge. If your finished design prints mirrored
   front-to-back, toggle "Flip V" in the Fit panel.
 
-  Grey = printable surface. The gaps punched in it (the four mounting slots) are
+  Grey = printable design face. The gaps punched in it (the four mounting slots) are
   real holes — nothing prints there, so keep artwork clear of them. All blue text
   is guide labels (ignored by the cut pipeline); no need to delete before export.
 -->

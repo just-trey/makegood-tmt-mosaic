@@ -457,7 +457,7 @@ describe('assembly mode with artwork', () => {
     expect(entries![1].areaPct).toBeCloseTo(25, 6);
   });
 
-  it('drops a palette color with no inlay area anywhere, so it costs no AMS slot', async () => {
+  it('drops a palette color with no inlay area anywhere, so it costs no filament slot', async () => {
     // the export drops the same color from its materials (exportPanel.ts), so the visible rows
     // are the slot count
     vi.mocked(buildAssemblyGeometry).mockResolvedValue(
@@ -564,7 +564,7 @@ describe('the display pose', () => {
   });
 });
 
-describe('the blank-surface notice', () => {
+describe('the blank-zone notice', () => {
   beforeEach(() => {
     state.shapeKind = 'assembly';
     state.assembly.kindId = 'chair-body';
@@ -577,7 +577,7 @@ describe('the blank-surface notice', () => {
       zones: zoneIds.map((z) => ({ id: z, name: z, chart: undefined })),
     });
 
-  it('warns when a multi-surface part has surfaces nobody has covered', async () => {
+  it('warns when a multi-zone part has zones nobody has covered', async () => {
     state.assembly.parts = [zoned(1, ['front', 'back', 'seat'])];
     state.sources = [{ id: 's1', name: 'a.svg' } as unknown as (typeof state.sources)[number]];
     state.artworks = [
@@ -599,10 +599,10 @@ describe('the blank-surface notice', () => {
 
     const msg = WARNINGS.map((w) => w.message).join('\n');
     expect(msg).toContain('Placed on "front"');
-    expect(msg).toContain('2 of 3 surfaces still blank');
+    expect(msg).toContain('2 of 3 zones still blank');
   });
 
-  it('says nothing when every surface is covered', async () => {
+  it('says nothing when every zone is covered', async () => {
     state.assembly.parts = [zoned(1, ['front'])];
     state.artworks = [
       {
@@ -624,7 +624,7 @@ describe('the blank-surface notice', () => {
     expect(WARNINGS.map((w) => w.message).join('\n')).not.toContain('still blank');
   });
 
-  it('says nothing for a single-surface part, where there is no choice to surface', async () => {
+  it('says nothing for a single-zone part, where there is no choice to make', async () => {
     state.assembly.parts = [asmPart()];
 
     await rebuildCurrent();

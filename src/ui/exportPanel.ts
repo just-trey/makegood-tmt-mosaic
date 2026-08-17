@@ -75,8 +75,8 @@ function warnIfIncompleteZoneCoverage(): void {
   const { total, covered } = zoneCoverage();
   if (total > 1 && covered < total) {
     warn(
-      `Exporting with artwork on ${covered} of ${total} surfaces — ${total - covered} ` +
-        (total - covered === 1 ? 'surface ' : 'surfaces ') +
+      `Exporting with artwork on ${covered} of ${total} zones — ${total - covered} ` +
+        (total - covered === 1 ? 'zone ' : 'zones ') +
         COVERAGE_WARNING_SUFFIX,
     );
   }
