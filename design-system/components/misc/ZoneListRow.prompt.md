@@ -13,7 +13,7 @@ Written against the throwaway prototype in `spike/zone-first-selection`
 
 ## Purpose
 
-One design surface of the current part, listed whether or not anything is on it. The row is how a
+One design zone of the current part, listed whether or not anything is on it. The row is how a
 user answers "where does this go?" before choosing a file — convention 9, "order follows the task,
 and the task starts with _where_, not _what_."
 
@@ -23,7 +23,7 @@ dropping there assigns there, with no rebinding step afterwards."
 
 ## Structure
 
-A single row, full panel width, in surface order as the part declares it:
+A single row, full panel width, in zone order as the part declares it:
 
 ```
 [ Left side                                     badge.svg ]
@@ -37,7 +37,7 @@ A single row, full panel width, in surface order as the part declares it:
 
 Nothing else. In particular **no thumbnail and no per-row controls**: a row that carries a mode
 select, a zone select and a remove button is `ColorRow`, and the reason this component is being
-proposed at all is that the surface list should be the thing you scan, not the thing you operate.
+proposed at all is that the zone list should be the thing you scan, not the thing you operate.
 
 ## States
 
@@ -52,7 +52,7 @@ proposed at all is that the surface list should be the thing you scan, not the t
 **Selected is deliberately not an accent tint**, and this is the one place this spec argues with
 the app as it stands. `.artwork-row.active` uses `border-color: var(--accent)` with
 `--accent-wash`; convention 19 says selection is never an accent hue laid over the thing selected,
-and a surface row's whole subject is which colour goes on that surface. `--text` weight against
+and a zone row's whole subject is which colour goes on that zone. `--text` weight against
 `--panel-2` reads as selection without spending a hue. The placement frame in the viewport was
 moved off accent for the same reason in this run — the two should match, since convention 11 says
 selection is visible in both the viewport and its list row.
@@ -60,11 +60,11 @@ selection is visible in both the viewport and its list row.
 ## Behaviour
 
 - **Click selects; clicking the selected row deselects it** (convention 11).
-- **Selection is two-way with the viewport** (convention 11): picking the surface in the 3D view
-  selects this row, and selecting this row highlights that surface and puts the placement frame on
+- **Selection is two-way with the viewport** (convention 11): picking the zone in the 3D view
+  selects this row, and selecting this row highlights that zone and puts the placement frame on
   it.
-- **Hover highlights the surface in the viewport** before any click commits (convention 10).
-- **Dropping a file on the row binds it to that surface**, with no rebinding step (convention 15).
+- **Hover highlights the zone in the viewport** before any click commits (convention 10).
+- **Dropping a file on the row binds it to that zone**, with no rebinding step (convention 15).
 
 ## Tokens
 

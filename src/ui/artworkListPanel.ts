@@ -52,7 +52,7 @@ export function renderArtworkList(): void {
       ${zones.length ? '<span class="artwork-zone-badge"></span>' : ''}
       ${
         canFill
-          ? '<select class="artwork-mode" title="Place one copy of this design, or repeat it across the whole surface" aria-label="Placement mode: Sticker or Fill"></select>'
+          ? '<select class="artwork-mode" title="Place one copy of this design, or repeat it across the whole design face" aria-label="Placement mode: Sticker or Fill"></select>'
           : ''
       }
       ${zones.length ? '<select class="artwork-zone" aria-label="Target zone"></select>' : ''}

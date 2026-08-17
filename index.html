@@ -64,8 +64,8 @@
             <h3>The five-minute version</h3>
             <p>
               Pick a part shape, then drop in an SVG or a photo. Each flat color becomes its own
-              recessed region. Export a 3MF and it arrives pre-mapped to AMS slots. Open it in Bambu
-              Studio, OrcaSlicer, or Snapmaker Orca and print.
+              recessed region. Export a 3MF and it arrives pre-mapped to filament slots. Open it in
+              Bambu Studio, OrcaSlicer, or Snapmaker Orca and print.
             </p>
             <p>
               Your session autosaves as you go. Reload or close the tab, and you'll be offered a
@@ -174,8 +174,8 @@
             </p>
             <p>
               Colors and Auto-merge do different jobs and don't fight. Colors decides which regions
-              exist. Auto-merge decides which of them share an AMS slot. An image's colors come out
-              far enough apart that the "Slight" default has nothing left to do on one.
+              exist. Auto-merge decides which of them share a filament slot. An image's colors come
+              out far enough apart that the "Slight" default has nothing left to do on one.
             </p>
             <p>
               For an assembly part, design over the template you downloaded in the Part section, so
@@ -186,9 +186,9 @@
             <p>
               The thumbnail strip below the dropzone is a small built-in library of tileable
               patterns (Cow, Dalmatian, Zebra, Tiger). Click one to load it like an uploaded SVG. On
-              an assembly part it defaults to Fill. A pattern exists to repeat across a surface, not
-              to sit as a single sticker. The strip is hidden on the chair body, which doesn't
-              currently offer Fill (see below).
+              an assembly part it defaults to Fill. A pattern exists to repeat across a whole design
+              face, not to sit as a single sticker. The strip is hidden on the chair body, which
+              doesn't currently offer Fill (see below).
             </p>
             <p>
               Each design you load appears as a named row below the dropzone. Click × to remove it.
@@ -196,21 +196,21 @@
               edit whichever row is active.
             </p>
             <p>
-              A design loaded onto a surface that already has one starts stepped slightly across and
+              A design loaded onto a zone that already has one starts stepped slightly across and
               down, so it isn't hidden underneath. They still overlap, and a warning names both
               until you move, rescale or separate them. Two recesses cut into the same spot export
               as two inlays claiming the same space. A slicer resolves that however it likes. It
               won't stop you exporting. Two designs both set to Fill always warn, and moving them
-              can't help. Switch one to Sticker, or put it on another surface. The check compares
-              each design's bounding box. Something nested neatly inside another, a logo inside a
-              frame, can trip it even though the recesses never meet.
+              can't help. Switch one to Sticker, or put it on another zone. The check compares each
+              design's bounding box. Something nested neatly inside another, a logo inside a frame,
+              can trip it even though the recesses never meet.
             </p>
             <p>
-              Some parts have more than one design surface, like the chair body. Each row then gets
-              a zone dropdown to pick which surface that design lands on. A new design starts on the
+              Some parts have more than one design zone, like the chair body. Each row then gets a
+              zone dropdown to pick which zone that design lands on. A new design starts on the
               first zone. Switch it with the dropdown, or use "+zone" to place the same design a
-              second time on another surface. "All zones" stamps it onto every surface at once,
-              which is slower on the chair: it recuts all seven.
+              second time on another zone. "All zones" stamps it onto every zone at once, which is
+              slower on the chair: it recuts all seven.
             </p>
             <p>
               On an assembly part, each row also switches between <strong>Sticker</strong> and
@@ -219,7 +219,7 @@
               comes out seamless. Scale sets how big each tile is, and Offset shifts the whole
               pattern. When a fill can't be tiled, the app says why and leaves you one tile rather
               than running to a halt. Colors still pool across every design in the scene. A black
-              pattern shares its AMS slot with black artwork elsewhere.
+              pattern shares its filament slot with black artwork elsewhere.
             </p>
             <p>
               The chair body doesn't offer Fill for now. A single zone took over a minute and a half
@@ -245,11 +245,11 @@
             <p>
               You can also grab the artwork directly in the 3D view. Drag inside the selection frame
               to move it, drag a corner handle to scale, or drag the green handle to rotate. The
-              sliders track the drag, and the drag tracks the sliders. The frame follows the
-              surface, so on a curved part it curves too. If it turns amber, the design's center has
-              moved off the design surface. Part of the artwork won't be cut. On a part with more
-              than one design surface, click a surface away from the selection frame. That binds the
-              active design to it, the same thing the zone dropdown in the Artwork list does.
+              sliders track the drag, and the drag tracks the sliders. The frame follows the design
+              face, so on a curved part it curves too. If it turns amber, the design's center has
+              moved off that face. Part of the artwork won't be cut. On a part with more than one
+              design zone, click a zone away from the selection frame. That binds the active design
+              to it, the same thing the zone dropdown in the Artwork list does.
             </p>
           </section>
 
@@ -260,10 +260,10 @@
               Depth is measured down from the top face. Set a default for all colors, then override
               individual ones in Colors detected for fine detail work. Check "Recess bg too" to cut
               the background as well, instead of leaving it flush. It then prints as its own color
-              and takes an AMS slot. A color with its own depth is highlighted in the list. Its "↺"
-              button puts it back under this default. If changing this field seems to do nothing,
-              those rows are why. On a flat shape, a depth the plate can't hold is cut at the
-              nearest depth it can. A warning says which color, and what was actually cut. Raise
+              and takes a filament slot. A color with its own depth is highlighted in the list. Its
+              "↺" button puts it back under this default. If changing this field seems to do
+              nothing, those rows are why. On a flat shape, a depth the plate can't hold is cut at
+              the nearest depth it can. A warning says which color, and what was actually cut. Raise
               Thickness in Part if you want it deeper. A depth of 0 cuts nothing at all, so it is
               raised to 0.2mm. A depth below 0.2mm is cut exactly as asked. A note says it needs a
               layer height finer than the usual 0.2mm. To stop cutting a color entirely, use "→
@@ -273,7 +273,7 @@
 
           <section class="help-sec" id="h-colors">
             <div class="help-step">Left panel · Colors detected</div>
-            <h3>Merging into AMS slots</h3>
+            <h3>Merging into filament slots</h3>
             <p>
               The <b>Auto-merge</b> slider groups colors that look alike. None turns it off. Slight
               (the default) catches near-identical copies of one color. Medium and Strong pull
@@ -283,7 +283,7 @@
             </p>
             <p>
               You can also merge by hand. Drag one color onto another to combine them into a single
-              AMS slot, sharing one depth. The ⠿ grip marks what's draggable. If dragging isn't
+              filament slot, sharing one depth. The ⠿ grip marks what's draggable. If dragging isn't
               convenient, pick the other color from that row's "Merge with…" dropdown instead. Both
               do the same thing. A merged slot prints in the group's main color, not a blended
               average. To split a group back up, click its members' "×" swatches. Each pulled color
@@ -299,8 +299,8 @@
               Part.
             </p>
             <p>
-              The line below the color list ("N colors → M AMS slots needed") always counts the
-              body's own slot. That is the "+1" you see even before anything is merged. Every AMS or
+              The line below the color list ("N colors → M slots needed") always counts the body's
+              own slot. That is the "+1" you see even before anything is merged. Every AMS or
               toolchanger unit holds 4. Past 4, the line stands out and a pill appears saying you'll
               need a second unit or manual filament swaps. The Bambus daisy-chain up to 16, or 25 on
               an H2D across both nozzles. The Snapmaker U1's 4 toolheads are a hard ceiling. Only
@@ -536,7 +536,7 @@
               your artwork.
             </div>
             <div class="hint" id="asm-zone-template-row" style="display: none">
-              Design templates (one per surface):
+              Design templates (one per zone):
               <span id="asm-zone-template-links" class="zone-template-links"></span>
             </div>
           </div>
@@ -720,13 +720,13 @@
           <div class="color-list" id="color-list">
             <div class="empty-hint">
               Load artwork to detect color regions. Each flat color becomes its own recess in its
-              own AMS slot.
+              own filament slot.
             </div>
           </div>
           <div class="slot-count" id="slot-count"></div>
           <div class="hint">
-            <b>Auto-merge</b> groups near-identical colors into one AMS slot. Drag one color onto
-            another to merge them by hand.
+            <b>Auto-merge</b> groups near-identical colors into one filament slot. Drag one color
+            onto another to merge them by hand.
           </div>
         </details>
 

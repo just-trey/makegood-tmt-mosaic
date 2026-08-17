@@ -16,17 +16,25 @@ export interface Printer {
   bedType: string;
   /** printer_variant / nozzle_diameter — only Snapmaker Orca's preset system keys off this. */
   variant?: string;
-  /** Filament slots in a *single* AMS/toolchanger unit — 4 for every entry here: Bambu's original
-   * AMS, AMS Lite, and AMS 2 Pro are all 4-slot units, and the U1's built-in toolchanger has 4
-   * heads. This is the number most users are actually budgeting against, since one unit is the
-   * common setup — but it is not a ceiling, which is what amsSlotsMax is for. */
-  amsSlotsPerUnit: number;
+  /** Filament slots in a *single* unit — 4 for every entry here: Bambu's original AMS, AMS Lite,
+   * and AMS 2 Pro are all 4-slot units, and the U1's built-in toolchanger has 4 heads. This is the
+   * number most users are actually budgeting against, since one unit is the common setup — but it
+   * is not a ceiling, which is what slotsMax is for. */
+  slotsPerUnit: number;
   /** Most slots this printer can address in one print, across daisy-chained units. Above
-   * amsSlotsPerUnit and at or below this, a design is printable but needs hardware beyond the
+   * slotsPerUnit and at or below this, a design is printable but needs hardware beyond the
    * single unit; above this it can't be printed in one go on this machine at all. The app has no
    * way to know how many units a given user owns, so the two numbers drive two different messages
    * rather than one hard capacity claim. */
-  amsSlotsMax: number;
+  slotsMax: number;
+  /**
+   * What this printer's multi-material hardware is called, for user-facing copy.
+   *
+   * "AMS" is Bambu's brand, not a category: the U1 feeds from a built-in toolchanger and its owner
+   * has no AMS to add a unit to. Naming it per printer is the only way a capacity message can be
+   * true on all three, and every string that would otherwise hardcode "AMS" reads this instead.
+   */
+  unitLabel: string;
 }
 
 export const PRINTERS: Printer[] = [
@@ -38,10 +46,11 @@ export const PRINTERS: Printer[] = [
     printId: '0.20mm Standard @BBL X1C',
     filamentId: 'Generic PETG',
     bedType: 'Textured PEI Plate',
-    amsSlotsPerUnit: 4,
+    slotsPerUnit: 4,
     // up to 4 AMS units daisy-chained. The A1's own AMS Lite is 4 slots and doesn't chain, but the
     // A1 can drive the regular AMS now, so 16 holds for all three printers this entry covers.
-    amsSlotsMax: 16,
+    slotsMax: 16,
+    unitLabel: 'AMS unit',
   },
   {
     id: 'bambu-h2d',
@@ -51,10 +60,11 @@ export const PRINTERS: Printer[] = [
     printId: '0.20mm Standard @BBL H2D',
     filamentId: 'Generic PETG',
     bedType: 'Textured PEI Plate',
-    amsSlotsPerUnit: 4,
+    slotsPerUnit: 4,
     // the outlier: dual nozzles let it reach 24 AMS slots (4 × 4-slot AMS 2 Pro + 8 × single-spool
     // AMS HT) plus one external spool on the second nozzle
-    amsSlotsMax: 25,
+    slotsMax: 25,
+    unitLabel: 'AMS unit',
   },
   {
     id: 'snapmaker-u1',
@@ -65,9 +75,10 @@ export const PRINTERS: Printer[] = [
     filamentId: 'Generic PETG',
     bedType: 'Textured PEI Plate',
     variant: '0.4',
-    amsSlotsPerUnit: 4,
+    slotsPerUnit: 4,
     // a genuine hard ceiling, unlike the Bambus: the 4 toolheads are built in and nothing chains
-    amsSlotsMax: 4,
+    slotsMax: 4,
+    unitLabel: 'toolchanger',
   },
 ];
 

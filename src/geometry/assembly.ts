@@ -377,13 +377,13 @@ export function fillRefusalMessage(
 }
 
 /**
- * Name both designs when two of them land on top of each other on one surface.
+ * Name both designs when two of them land on top of each other.
  *
  * Nothing downstream notices: cutters are built per design, the body's union looks perfect, and
  * the two inlay solids only meet in the exported file, where a slicer picks between them
- * arbitrarily. This is the one place that sees both placements against the same surface.
+ * arbitrarily. This is the one place that sees both placements against the same zone.
  *
- * Per zone, not per part: a zone spanning several printed parts is one surface, and warnings
+ * Per zone, not per part: a zone spanning several printed parts is one design area, and warnings
  * dedupe by message, so a pair overlapping on every part of it says so once.
  */
 function warnOverlappingDesigns(placed: PlacedDesign[]): void {
@@ -393,15 +393,16 @@ function warnOverlappingDesigns(placed: PlacedDesign[]): void {
       a.name === b.name ? `Two placements of "${a.name}"` : `Designs "${a.name}" and "${b.name}"`;
     warnBuild(
       both
-        ? // Moving or rescaling a fill can't help (it repeats across the whole surface by
-          // definition), so this case names only the things that actually clear it.
-          `${subject} are both set to Fill on the same surface. A fill repeats across the whole` +
-            ' surface, so the second one lands on the first everywhere: where their colors differ,' +
-            ' the export will carry two inlays claiming the same space. Switch one to Sticker,' +
-            ' move it to another surface, or remove it.'
+        ? // No move or rescale remedy, deliberately: a fill repeats across the whole face by
+          // definition, and Fill is only offered on kinds with no zones (chair-body is the only
+          // zoned kind and it sets withholdFill), so there is nowhere to move one to either.
+          // This names only what actually clears it.
+          `${subject} are both set to Fill, so they cover each other completely. Where their` +
+            ' colors differ the export will carry two inlays claiming the same space. Switch one' +
+            ' to Sticker, or remove it.'
         : // Bounding boxes, not the artwork itself (see designOverlap.ts). "may", not "will": a
           // logo inside another design's frame trips this while the recesses never touch.
-          `${subject} overlap on the same surface — where they cross, their recesses cut into` +
+          `${subject} overlap — where they cross, their recesses cut into` +
             ' each other and the export may carry two inlays claiming the same space. Move,' +
             ' rescale, or rotate one of them. Compared as rectangles, so designs that nest' +
             ' inside each other cleanly can trip this.',

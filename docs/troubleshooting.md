@@ -60,7 +60,7 @@ landing on it. What they are _not_ is silent: before this handling existed, the
 same failures either blanked the viewport or shipped an uncut body alongside
 inlays occupying the same space, which a slicer resolves arbitrarily.
 
-## Troubleshooting: "N AMS slots needed, but … tops out at M" warnings
+## Troubleshooting: "N filament slots needed, but … tops out at M" warnings
 
 The design needs more filament slots than the printer can address in one print.
 The count is one per cut colour or merged group, plus one for the body, and it
@@ -93,9 +93,9 @@ Exporting anyway is supported, and sometimes what you want: a single-AMS owner
 can print the file with manual filament swaps at the slicer's colour-change
 pauses.
 
-## Troubleshooting: "Designs … overlap on the same surface" warnings
+## Troubleshooting: "Designs … overlap" warnings
 
-Two designs on one surface are cut independently. The body takes the union of
+Two designs in one place are cut independently. The body takes the union of
 their pockets and looks right in the preview, but each colour's inlay is only
 where the part and that colour's pocket overlap. So where two designs of
 _different_ colours cross, the exported file carries two inlay solids in the
@@ -108,7 +108,7 @@ two copies of one file). Any of these clears it:
 - **Move one.** Drag it on the face, or use Offset X/Y. The warning clears once
   they cover less than a tenth of each other.
 - **Scale one down** so it fits a gap in the other.
-- **Put them on different surfaces**, on a part that has more than one.
+- **Put them on different zones**, on a part that has more than one.
 - **Remove one** with the × on its row.
 
 A little overlap is deliberately not flagged: designs placed side by side
@@ -122,9 +122,9 @@ is no way to clear it short of moving the inner design off-centre. Recorded in
 [tech-debt.md](tech-debt.md) with what an exact check would cost.
 
 **Two designs both set to Fill always warn**, with their own message: a fill
-repeats across the whole surface, so the second lands on the first everywhere.
-Moving or rescaling cannot clear it. Switch one to Sticker, move it to another
-surface, or remove it.
+repeats across everything it covers, so the second lands on the first
+everywhere. Moving or rescaling cannot clear it. Switch one to Sticker, move it
+elsewhere, or remove it.
 
 A fill _under_ a sticker is not flagged, because a pattern background with a
 design on top is a real workflow. It has the same overlapping-inlay problem
@@ -426,7 +426,7 @@ whose shapes all sit outside it cuts nothing anywhere. The usual causes are a
 high Scale (at 400% only the middle of a design still fits) or a large offset
 from dragging the design.
 
-The named colors are dropped from the color list, the AMS slot count, and the
+The named colors are dropped from the color list, the filament slot count, and the
 exported 3MF's filament list: they cost nothing, they just don't print.
 Bringing the design back (lower Scale, or drag it toward the face) restores
 them, and their rows and slots come back with them.

@@ -60,7 +60,7 @@ dropdown.
 ### `artwork_mode_changed`
 
 Fired when the user switches an artwork row between placing one copy and
-repeating the design across the whole surface.
+repeating the design across the whole design face.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-mode` change handler in `renderArtworkList`.
 - **Props:** `{ mode: string }` (`'sticker'` or `'fill'`)
@@ -92,7 +92,7 @@ Fired when the user changes the part-shape mode.
 
 Fired when the user downloads an assembly kind's design template from the Part
 panel — either the single per-kind template, or (for a part with more than
-one design surface, like the chair body) one of the per-zone templates.
+one design zone, like the chair body) one of the per-zone templates.
 
 - **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `#asm-template-link` click handler in `initAssemblyPanel`, and the per-zone link handlers in `renderZoneTemplateLinks`.
 - **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`), plus `zone: string` (the zone id) on a per-zone download

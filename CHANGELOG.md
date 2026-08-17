@@ -18,10 +18,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- **A color scaled or dragged off the part no longer costs an AMS slot.** In
+- **The app no longer tells Snapmaker owners about their AMS.** The U1 feeds
+  from a built-in 4-head toolchanger and has no AMS, but with it selected the
+  slot line's tooltip read "Fits a single 4-slot AMS unit" and the capacity
+  warning counted "AMS slots". Every string naming the hardware now reads it off
+  the selected printer, so the U1 says toolchanger and the Bambus still say AMS
+  unit.
+- **One word per concept, across every string.** The app used "surface" for two
+  different things (a **zone**, one of several named design areas on a part like
+  the chair body, and the **design face**, the single area on a part with one),
+  and spread "AMS slot", "filament slot", "filament" and "color" over what is
+  really three things: the color your artwork has, the filament that prints it,
+  and the numbered slot it sits in. "surface" is gone, the slot line reads
+  "3 colors → 4 slots needed", and warnings, help and the templates link all
+  agree.
+- **A color scaled or dragged off the part no longer costs a filament slot.** In
   assembly mode, a color whose regions all fell outside the design face
   vanished from the color list but still shipped as a filament in the exported
-  3MF and still counted in the slot line and the AMS-capacity check: a
+  3MF and still counted in the slot line and the capacity check: a
   7-color file with 2 colors off the wheel asked for 7 filaments, 2 of which
   printed nothing. The export now writes only colors that actually cut an
   inlay somewhere, every counter agrees with it, and a warning names the
@@ -31,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **A recessed background counts as a color, so the slot line adds up again.**
   With "Recess bg too" on, the background prints in its own color and takes a
   slot, but the line counted only the colors found in your artwork: it read
-  "3 colors → 5 AMS slots needed" beside a "4 colors" chip, showing the body's
+  "3 colors → 5 slots needed" beside a "4 colors" chip, showing the body's
   "+1" as an unexplained +2. Flat shapes only, and only with that box ticked.
   Help now says the recessed background takes a slot.
 - **The sample artwork now fits a single AMS unit.** The badge was 4 colors
@@ -59,11 +73,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The Help dialog now closes when you press Back after following one of its own
   section links. It used to stay on screen over an app you had navigated away
   from.
-- **Clicking a design surface in the 3D view now hits the one you can see.**
-  Picking tested only the design surfaces, which are invisible to the renderer,
-  so a click on a handle or storage box in front of another surface selected the
+- **Clicking a design zone in the 3D view now hits the one you can see.**
+  Picking tested only the design zones, which are invisible to the renderer,
+  so a click on a handle or storage box in front of another zone selected the
   one behind it. Measured on the chair across four viewpoints: 33 sampled points
-  showing bare body still selected a surface. Now none do.
+  showing bare body still selected a zone. Now none do.
   `npm run check:zone-occlusion` is the check.
 
 ### Changed

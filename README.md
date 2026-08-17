@@ -93,7 +93,7 @@ contents, or other personal data are ever sent. See
 4. **Cut**: flat-plate mode stacks flat slabs (pure 2D, no CSG); assembly mode
    extrudes each region into a prism and booleans it into the part mesh with
    [Manifold](https://github.com/elalish/manifold) (WASM CSG). Parts with more
-   than one design surface (**design zones**, e.g. the chair body) wrap
+   than one **design zone** (e.g. the chair body) wrap
    artwork **conformally** onto a baked UV chart per zone, split across
    printed part seams as needed.
 5. **Export** a Bambu Studio project 3MF — named parts, per-part filament
@@ -138,11 +138,11 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   the Colors slider and Auto-merge to get down to the slots you own.
 - Detail below the printable floor is merged into its surroundings rather than
   cut, and a very busy image says so instead of tracing thousands of specks.
-- Fill (repeat the design across a surface) is assembly-mode only, and is not
+- Fill (repeat the design across the design face) is assembly-mode only, and is not
   offered on the chair body — it was too slow to sit through and dropped a color
   on one part. The pattern strip is hidden there for the same reason; Sticker
   placement works normally. See [docs/tech-debt.md](docs/tech-debt.md).
-- Two designs placed over each other on one surface are warned about by name,
+- Two designs placed over each other are warned about by name,
   not resolved for you — their recesses still both get cut. A Fill underneath
   a sticker isn't checked at all; see [docs/tech-debt.md](docs/tech-debt.md).
 - The chair body's prime-tower positions are verified on 270mm and 256mm beds

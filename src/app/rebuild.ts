@@ -373,9 +373,9 @@ async function rebuildAssemblyScene(): Promise<void> {
     const where =
       boundNames.length === 1
         ? `Placed on "${boundNames[0]}"`
-        : `${zoneCovered} of ${zoneTotal} surfaces have artwork`;
+        : `${zoneCovered} of ${zoneTotal} zones have artwork`;
     noticeBuild(
-      `${where} — ${blank} of ${zoneTotal} surface${zoneTotal === 1 ? '' : 's'} still blank. Add more from the zone dropdown, or pick "All zones" to cover every surface.`,
+      `${where} — ${blank} of ${zoneTotal} zone${zoneTotal === 1 ? '' : 's'} still blank. Add more from the zone dropdown, or pick "All zones" to cover every zone.`,
     );
   }
   const built = await buildAssemblyGeometry({

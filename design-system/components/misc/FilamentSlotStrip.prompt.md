@@ -6,7 +6,9 @@
 
 ## Purpose
 
-What the design is spending, in the vocabulary the audience already has: **numbered AMS slots**.
+What the design is spending, in the vocabulary the audience already has: **numbered filament
+slots**. Not "AMS slots": that is Bambu's name for its hardware and the Snapmaker U1 has a
+toolchanger instead (convention 1).
 
 Conventions 16 and 17. Today the owned-filament palette is a 14-swatch grid with no numbering, and
 the number of slots a design is using appears only inside the capacity warning — so the user learns
@@ -15,7 +17,7 @@ to make. `docs/audience.md`: these are people who "know what AMS / AMS Lite is a
 slot works", budgeting a scarce resource.
 
 The strip is proposed alongside the zone-first work rather than on its own because that work makes
-the question louder: five surfaces each with their own design is five chances to add a colour, and
+the question louder: five zones each with their own design is five chances to add a colour, and
 the total is the thing nobody is watching.
 
 ## Structure

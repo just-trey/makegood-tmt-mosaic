@@ -448,7 +448,7 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
     sidecar = await loadZonesSidecar(zonesFile);
   } catch (e) {
     warn(
-      `Couldn't load the design zones for "${part.name}" (${zonesFile}: ${(e as Error).message}) — it will load without design surfaces.`,
+      `Couldn't load the design zones for "${part.name}" (${zonesFile}: ${(e as Error).message}) — it will load without design zones.`,
     );
     // Zoneless, not sidecar-less: leaving this undefined would fall back to the implicit flat zone
     // and stamp the artwork orthographically onto the part's largest flat patch.
@@ -466,7 +466,7 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
   // One fingerprint check for the part, not one per chart — it rescans every vertex.
   if (!fingerprintMatches(sidecar, partId, vertices, triCount)) {
     warn(
-      `Part "${part.name}" doesn't match the mesh its design zones were baked against, so its artwork surfaces are unavailable. Re-run the zone bake for this part.`,
+      `Part "${part.name}" doesn't match the mesh its design zones were baked against, so its design zones are unavailable. Re-run the zone bake for this part.`,
     );
     return;
   }
