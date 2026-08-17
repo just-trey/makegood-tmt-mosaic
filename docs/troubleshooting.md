@@ -81,8 +81,8 @@ unit holds 4 slots, but the Bambus chain: up to 16 on the X1C, P1S and A1, and
 25 on an H2D (24 across chained units plus an external spool on its second
 nozzle). The Snapmaker U1's 4 built-in toolheads don't chain, so there this
 warning appears the moment a design needs a fifth slot. Past one unit but within
-the printer's maximum you get a quieter note instead: printable, but not on one
-AMS.
+the printer's maximum you get a quieter note instead, saying the design prints
+across more units.
 
 To get the count down:
 

@@ -90,6 +90,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The capacity pill states one way out instead of three.** It read `5 filament
+slots needed, but … tops out at 4 in a single print. Either drag one color row
+onto another to merge them, or "→ base" to print one in the body (auto-merge
+alone may not be enough).` It now reads `… tops out at 4 in a single print. To
+fit, drag one color row onto another to merge them.` Printing a color in the
+  body, and swapping filament mid-print, are in Help, which is where a list of
+  alternatives belongs. The quieter note you get when a design needs more than
+  one unit but still fits the printer keeps saying so, since "this still prints"
+  is the reason it is a note and not a warning; it lost the same two extra
+  remedies. Its hover text lost an em dash with them.
 - **The cut warnings say what happened to your print, not what happened inside
   the app.** `Couldn't build the cut solid for color #0a0a0a on Handle (left)`
   is now `Couldn't cut color #0a0a0a into "Handle (left)"`, and `Boolean union

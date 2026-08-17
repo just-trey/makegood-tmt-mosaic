@@ -489,8 +489,8 @@ function renderSlotCount(): void {
     tier === 'over-max'
       ? `More than the ${printer.slotsMax} slots this printer can print in one go.`
       : tier === 'multi-unit'
-        ? `More than the ${printer.slotsPerUnit} slots in a single ${printer.unitLabel} — ` +
-          `printable, but needs another one (up to ${printer.slotsMax} slots) or manual ` +
+        ? `More than the ${printer.slotsPerUnit} slots in a single ${printer.unitLabel}. ` +
+          `Printable, but needs another one (up to ${printer.slotsMax} slots) or manual ` +
           `filament swaps.`
         : `Fits a single ${printer.slotsPerUnit}-slot ${printer.unitLabel}.`;
 }

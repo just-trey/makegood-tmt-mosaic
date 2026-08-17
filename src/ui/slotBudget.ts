@@ -18,17 +18,17 @@ export function slotTier(slotsNeeded: number, printer: Printer): SlotTier {
   return 'fits';
 }
 
-// suffixes of the two messages below — same clear-before-reporting pattern as
-// PLACEMENT_WARNING_SUFFIXES in exportPanel.ts, and pinned by tests/slotBudget.test.ts so a reword
-// can't silently stop them clearing and leave both tiers' pills stacked
-export const SLOT_MULTI_UNIT_NOTICE_SUFFIX = 'or swap filament manually mid-print.';
-export const SLOT_OVER_MAX_WARNING_SUFFIX = '(auto-merge alone may not be enough).';
+// The primary remedy both tiers end with, and the handle clearSlotBudgetNotices uses to find a
+// posted pill — same clear-before-reporting pattern as PLACEMENT_WARNING_SUFFIXES in
+// exportPanel.ts, and pinned by tests/slotBudget.test.ts so a reword can't silently stop them
+// clearing and leave both tiers' pills stacked. One constant rather than one per tier: convention
+// 3 gives each message a single primary remedy and it is the same remedy, so two would encode a
+// distinction that no longer exists.
+export const SLOT_PILL_SUFFIX = 'drag one color row onto another to merge them.';
 
 export function clearSlotBudgetNotices(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
-    const m = WARNINGS[i].message;
-    if (m.endsWith(SLOT_MULTI_UNIT_NOTICE_SUFFIX) || m.endsWith(SLOT_OVER_MAX_WARNING_SUFFIX))
-      WARNINGS.splice(i, 1);
+    if (WARNINGS[i].message.endsWith(SLOT_PILL_SUFFIX)) WARNINGS.splice(i, 1);
   }
 }
 
@@ -38,31 +38,43 @@ function slotBudgetMessage(
   if (!slotsNeeded) return null;
   const printer = getPrinter(state.printerId);
   const tier = slotTier(slotsNeeded, printer);
-  // Both messages name the controls that actually collapse slots, and both hedge auto-merge on
-  // purpose: it walks a similarity threshold, not a target count, and against the one real 7-color
-  // volunteer SVG measured so far it moved 7 slots to 6, and only at Strong (see docs/tech-debt.md,
-  // "Auto-merge is a similarity control"). Merging two rows by hand, or printing one in the body,
-  // is the reliable way down — leading with auto-merge would send people to the control least
+  // One problem, one primary remedy (convention 3). The alternatives the pill used to list, "→
+  // base" and manual mid-print swaps, are in the help dialog's "Merging into filament slots"
+  // section, which is where convention 6 puts a mechanism.
+  //
+  // The multi-unit tier keeps its "prints up to N" clause even though that reads like a second
+  // remedy. It is not one: it is the reassurance that makes this tier `info` rather than `warn`
+  // (see slotTier above, "calling a 6-slot design an error on a printer that prints it fine would
+  // be the tool inventing a limit"). Cutting it leaves an info-level pill that only offers to take
+  // colors away.
+  //
+  // "in one print", not "across more units": how a printer reaches slotsMax differs per machine,
+  // and the H2D's 25th slot is an external spool on its second nozzle rather than another chained
+  // unit (see printers.ts). slotsMax is defined as what it can address in one print, so that is
+  // the only phrasing true of all three.
+  //
+  // Hand-merging is the primary on purpose, and auto-merge is deliberately not named: it walks a
+  // similarity threshold rather than a target count, and against the one real 7-color volunteer
+  // SVG measured so far it moved 7 slots to 6, and only at Strong (see docs/tech-debt.md,
+  // "Auto-merge is a similarity control"). Leading with it would send people to the control least
   // likely to work.
-  const howToReduce =
-    'drag one color row onto another to merge them, or "→ base" to print one in the body';
   if (tier === 'over-max') {
     return {
       level: 'warn',
       message:
         `${slotsNeeded} filament slots needed, but ${printer.label} tops out at ` +
-        `${printer.slotsMax} in a single print. Either ${howToReduce} ` +
-        SLOT_OVER_MAX_WARNING_SUFFIX,
+        `${printer.slotsMax} in a single print. To fit, ` +
+        SLOT_PILL_SUFFIX,
     };
   }
   if (tier === 'multi-unit') {
     return {
       level: 'info',
       message:
-        `${slotsNeeded} filament slots needed — more than the ${printer.slotsPerUnit} in a ` +
-        `single ${printer.unitLabel}. ${printer.label} supports up to ${printer.slotsMax} ` +
-        `across daisy-chained units; with one ${printer.unitLabel}, ${howToReduce}, ` +
-        SLOT_MULTI_UNIT_NOTICE_SUFFIX,
+        `${slotsNeeded} filament slots needed, more than the ${printer.slotsPerUnit} in a ` +
+        `single ${printer.unitLabel}. ${printer.label} prints up to ${printer.slotsMax} in one ` +
+        `print. To fit a single ${printer.unitLabel}, ` +
+        SLOT_PILL_SUFFIX,
     };
   }
   return null;
