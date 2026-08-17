@@ -4,13 +4,9 @@
     <meta charset="UTF-8" />
     <title>TMT Mosaic — Multicolor Inlay Generator</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Fonts come from Google at runtime, and that is a decision rather than an oversight
-         (maintainer, 2026-08-17). The trade accepted: a machine with no connection renders the
-         fallback faces, since display=swap never blocks paint. Do not "fix" it by self-hosting
-         without raising the weight budget question first. It is not free either way, and it cost
-         something once already: an intermittent woff2 404 failed the smoke and CSG gates for a
-         fortnight before anyone could name it, which is why both hosts are in IGNORE_HOSTS in
-         scripts/lib/harness.mjs. -->
+    <!-- Fetching these from Google is a decision, not an oversight (maintainer, 2026-08-17): a
+         machine with no connection gets the fallback faces, since display=swap never blocks
+         paint. Self-hosting is a weight-budget question, not a free fix. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

@@ -3,6 +3,19 @@
  * (smoke.mjs, export-chair-examples.mjs, and ad-hoc drive scripts). One implementation on
  * purpose, matching the rationale in mesh.mjs: the process-group server kill and the
  * whenIdle() bridge both have sharp edges that must not exist in N copies and drift.
+ *
+ * **The failure mode this file is shaped around: a success signal derived from something
+ * adjacent to the property asserted, where the ambiguous case is indistinguishable from a real
+ * pass at the point of use.** Not a weak check, which announces itself. These announce a pass. An
+ * audit of every checker in the repo found ten instances
+ * (docs/findings/indirect-success-signals.md, 2026-08-08), all since closed, and the ones that
+ * bit hardest are still visible as the guards below: assertFreshDist, the leftover-port refusal,
+ * the dist/index.html byte comparison in waitForServer, assertGpuActive's refusal to run
+ * software-rendered, the rebuild counter behind afterRebuild, and the confirm tally in newPage.
+ *
+ * So when adding a wait or a check here, the question is not "does this pass when things are
+ * fine". It is **what else passes it** — and the answer has to be nothing you would want to know
+ * about. Drive the failing case before believing the passing one.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';

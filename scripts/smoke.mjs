@@ -154,6 +154,11 @@ try {
   await page.screenshot({ path: path.join(OUT, '5-bg-depth.png') });
 
   console.log('7. exporting flat 3MF + STL zip…');
+  // Read at export time, not reused from step 5: step 6 ticked "Recess bg too", which adds the
+  // Background row, so the count that matters here is not the one logged above. `:not(.is-base)`
+  // because the pinned Base row is a control rather than a colour that cuts — measured, since
+  // counting every row gave 5 against the export's 4 plugs.
+  const cutRows = await page.locator('#color-list .color-row:not(.is-base)').count();
   const [dl2] = await Promise.all([
     page.waitForEvent('download', { timeout: 120_000 }),
     page.click('#btn-export'),
@@ -166,9 +171,11 @@ try {
       `${flat.length} object(s), ${flat[0]?.inlayCount ?? 0} inlays`,
   );
   if (flat.length !== 1) errors.push(`flat 3MF has ${flat.length} objects, expected 1`);
-  if ((flat[0]?.inlayCount ?? 0) < 2)
+  // Against the row count, not a floor: `>= 2` passes an export that dropped every colour but
+  // one, which is the regression this exists to catch.
+  if ((flat[0]?.inlayCount ?? 0) !== cutRows)
     errors.push(
-      `flat 3MF carries ${flat[0]?.inlayCount ?? 0} colour plugs, expected one per colour`,
+      `flat 3MF carries ${flat[0]?.inlayCount ?? 0} colour plugs for ${cutRows} colour rows`,
     );
   const [dl3] = await Promise.all([
     page.waitForEvent('download', { timeout: 120_000 }),
@@ -183,8 +190,10 @@ try {
   if (!zipped.some((n) => /base\.stl$/i.test(n)))
     errors.push(`STL zip has no base.stl (entries: ${zipped.join(', ') || 'none'})`);
   const stls = zipped.filter((n) => /\.stl$/i.test(n)).length;
-  if (stls < 3)
-    errors.push(`STL zip has ${stls} .stl entries, expected base.stl plus one per colour`);
+  if (stls !== cutRows + 1)
+    errors.push(
+      `STL zip has ${stls} .stl entries, expected base.stl plus one per ${cutRows} colours`,
+    );
 
   console.log('8. loading a PNG as artwork (browser decode + quantize + trace)…');
   // Three flat bands, so the trace has an unambiguous answer to check against.
