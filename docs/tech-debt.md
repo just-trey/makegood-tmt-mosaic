@@ -19,6 +19,56 @@ survives as its own section; only the closed part goes. Checking that the diff
 removed only the lines you meant to remove is _not_ this check: it confirms the
 scope of the edit, not that what left was finished.
 
+## check:zone-occlusion reads hidden surface as "no zone here" and reports four false failures
+
+`scripts/check-zone-occlusion.mjs` classifies a pixel by whether the inked zone
+color shows there: ink means the zone is visible, no ink means bare body. A
+click landing on a zone where no ink shows is reported as a through-pick.
+
+Dead zones add a third state that classifier has no name for: the zone is
+present and correctly pickable, but the surface is hidden once assembled, so it
+takes no artwork and shows no ink.
+
+Measured 2026-08-16, chair, `MOSAIC_GPU=1`, before and after the dead-zone bake:
+
+| Run                   | Failures | New ones                                                          |
+| --------------------- | -------- | ----------------------------------------------------------------- |
+| `main` (fenders only) | 3        | a0-front "too few bare-body samples", wing-left/right no ink      |
+| dead zones            | 7        | 4 x "picked a zone on bare body" (38/21/1/8 samples), seat no ink |
+
+- The pick itself is right: the zone is there, and the hatch overlay says why
+  artwork will not appear. Only the check's model is stale.
+- The numbers corroborate the mechanism: `main` had just 96 bare-body samples
+  at a0-front ("too few for the assertion to mean anything"); with hidden
+  surface unlinked there are enough that the complaint becomes through-picks.
+- `seat` produces no interior ink sample from any angle because 43,539mm² of
+  its ~56,600mm² is hidden, leaving only the front lip inked.
+- Closing it: teach the sweep to read each chart's `deadRegions`, and expect
+  "zone pickable, no ink" over them rather than counting it a through-pick.
+- Not in CI (nothing runs this script), so it blocks nothing today. It is the
+  only automated guard on convention 12, which is why it is worth repairing
+  rather than deleting.
+- `wing-left`/`wing-right` never producing an ink sample predates this and
+  came in with the fender zones: the sweep's angles never see enough of a
+  fender to sample one.
+
+## The chair's Seat zone is mostly hidden surface, so an auto-fit design lands on the cushion
+
+Measured 2026-08-16: 43,539mm² of the Seat zone's ~56,600mm² is covered by the
+seat cushion, leaving the front lip. Auto-fit centers on the zone's UV bbox,
+which is under the cushion, so a design dropped on Seat with no adjustment cuts
+almost nothing and prints as a sliver on the lip.
+
+- Working as designed: the pan really is under the cushion, and not spending
+  filament changes there is the point of the feature.
+- The hatch overlay and the hatched template explain it, so it is legible
+  rather than silent, and the design can be moved by hand onto the lip.
+- Closing it: anchor auto-fit placement on the visible region (the chart's
+  claim minus its `deadRegions`) rather than the whole zone bbox. Listed in
+  [roadmap.md](roadmap.md).
+- Deferred out of this change because it moves placement for every zone on
+  every kind, which is a bigger blast radius than the clip itself.
+
 ## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
 
 The viewport half is closed. The frame and its handles are `--text`, and every measurement behind
@@ -375,18 +425,13 @@ summary card reading the same `getLastAssemblyBuild()` /
 already has in hand; it's a presentation layer on data that already exists,
 not a new computation.
 
-## Two open defects in the chair / pattern-library workflow
+## One open defect in the chair / pattern-library workflow
 
-Two of four defects the maintainer named on 2026-08-05; the other two are fixed.
-Both features are offered in the UI again. The report is the maintainer's, the
-diagnosis is not, and where the cause is confirmed it says so.
+The last of four defects the maintainer named on 2026-08-05; the other three are
+fixed. Both features are offered in the UI again. The report is the
+maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
 
-1. **Dead zones still need defining — open.** It is written up in
-   [roadmap.md](roadmap.md) ("Dead zones: mark the parts of a design zone that
-   are hidden by an adjacent part"). Without it a design placed across a joint
-   spends filament changes on surface nobody sees.
-
-2. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
+1. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
    outline.** Every shipped template in `public/templates/` is a pure `L`
    polyline with no curve commands: the zone boundary is traced along mesh
    triangle edges and emitted vertex-for-vertex. So a template's outline is as

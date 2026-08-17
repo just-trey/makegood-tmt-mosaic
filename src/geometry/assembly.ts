@@ -652,6 +652,14 @@ export async function buildAssemblyGeometry(
     ): Promise<void> => {
       const source = featuresByColor[ci][ai];
       if (!source) return;
+      // An empty MultiPolygon is a real clip that admits nothing: every bit of surface this chart
+      // owns is hidden once assembled. Checked before tiling, which would otherwise pay a full
+      // fill's cost per color to produce regions that are all discarded.
+      if (
+        boundaryPoly?.geometry.type === 'MultiPolygon' &&
+        !boundaryPoly.geometry.coordinates.length
+      )
+        return;
       // Fill: repeat the regions across the grid *in SVG space*, before placement, so tiles
       // inherit the placement's rotation/scale/offset and seam-straddling copies overlap where the
       // union can weld them.

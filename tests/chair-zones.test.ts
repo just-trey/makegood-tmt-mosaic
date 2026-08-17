@@ -261,6 +261,88 @@ describe('chart reconstruction', () => {
   });
 });
 
+// The covers file marks the wheels and cushions; the bake turns what they hide into per-chart
+// deadRegions. These pin the shipped shape of that data and the runtime clip subtraction.
+describe('hidden surface (deadRegions)', () => {
+  const deadArea = (c: (typeof sidecar.zones)[number]['charts'][number]): number =>
+    (c.deadRegions ?? []).reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+
+  it('lands where the covers sit: wheels and cushions, not the back or the fenders', () => {
+    const zoneDead = new Map(
+      sidecar.zones.map((z) => [z.id, z.charts.reduce((s, c) => s + deadArea(c), 0)]),
+    );
+    // wheel over each flank's mount, cushion over the seat, backrest cushion over `front`
+    expect(zoneDead.get('left')!).toBeGreaterThan(500);
+    expect(zoneDead.get('right')!).toBeGreaterThan(500);
+    expect(zoneDead.get('seat')!).toBeGreaterThan(10000);
+    expect(zoneDead.get('front')!).toBeGreaterThan(5000);
+    // the back faces away from every cover, and nothing sits in front of a fender
+    expect(zoneDead.get('back')).toBe(0);
+    expect(zoneDead.get('wing-left')).toBe(0);
+    expect(zoneDead.get('wing-right')).toBe(0);
+  });
+
+  it('every dead region stays inside its own chart’s claim', () => {
+    // Dead regions are cut against the chart's exact triangle union; the claim is the same
+    // surface after 0.2mm loop simplification, so their edges disagree by thin ribbons. 25mm²
+    // covers a 0.2mm ribbon along a 100mm+ boundary; a dead region genuinely reaching past its
+    // chart would exceed this by the area of whatever it grabbed.
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        if (!c.deadRegions?.length) continue;
+        const claim = c.subRegions.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+        expect(deadArea(c), `${z.id}/${c.libraryPartId}`).toBeLessThan(claim + 25);
+      }
+  });
+
+  it('boundary() hands the cutter the claim minus the hidden surface', () => {
+    const z = sidecar.zones.find((zz) => zz.id === 'seat')!;
+    const c = z.charts.find((ch) => ch.libraryPartId === 'chair-seat-center')!;
+    expect(deadArea(c)).toBeGreaterThan(0);
+    const m = partMesh.get(c.libraryPartId)!;
+    const mapper = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices));
+    const claim = c.subRegions.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+    expect(Math.abs(planarArea(mapper.deadArea()!))).toBeCloseTo(deadArea(c), 1);
+    // subtraction shrinks the clip by about the dead area; a few mm² of difference dust is the
+    // same simplified-vs-exact edge disagreement as above
+    expect(Math.abs(planarArea(mapper.boundary()!) - (claim - deadArea(c)))).toBeLessThan(5);
+  });
+
+  it('a chart without the field means nothing is hidden, not an error', () => {
+    const z = sidecar.zones.find((zz) => zz.id === 'seat')!;
+    const c = z.charts.find((ch) => ch.libraryPartId === 'chair-seat-center')!;
+    const m = partMesh.get(c.libraryPartId)!;
+    const stripped = { ...c };
+    delete stripped.deadRegions;
+    const mapper = new ConformalZoneMapper(null, reconstructChart(z, stripped, m.vertices));
+    expect(mapper.deadArea()).toBeNull();
+    const claim = c.subRegions.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+    expect(planarArea(mapper.boundary()!)).toBeCloseTo(claim, 0);
+  });
+
+  it('the viewport overlay mesh sits on the part, a hair above the surface', () => {
+    const z = sidecar.zones.find((zz) => zz.id === 'seat')!;
+    const c = z.charts.find((ch) => ch.libraryPartId === 'chair-seat-center')!;
+    const m = partMesh.get(c.libraryPartId)!;
+    const mapper = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices));
+    const overlay = mapper.deadOverlayMesh()!;
+    expect(overlay.positions.length).toBeGreaterThan(0);
+    expect(overlay.positions.length / 3).toBe(overlay.uv.length / 2);
+    const mn = [Infinity, Infinity, Infinity];
+    const mx = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < m.vertices.length; i += 3)
+      for (let k = 0; k < 3; k++) {
+        mn[k] = Math.min(mn[k], m.vertices[i + k]);
+        mx[k] = Math.max(mx[k], m.vertices[i + k]);
+      }
+    for (let i = 0; i < overlay.positions.length; i += 3)
+      for (let k = 0; k < 3; k++) {
+        expect(overlay.positions[i + k]).toBeGreaterThanOrEqual(mn[k] - 1);
+        expect(overlay.positions[i + k]).toBeLessThanOrEqual(mx[k] + 1);
+      }
+  });
+});
+
 describe('reconstructed charts drive the conformal mapper on real geometry', () => {
   let wasm: ManifoldAPI;
   beforeAll(async () => {

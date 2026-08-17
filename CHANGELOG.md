@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The chair no longer spends filament changes on surface the wheels and
+  cushions hide.** The parts of a design surface that another part covers once
+  the chair is assembled are now marked at bake time and cut out of the
+  artwork. Artwork still runs about 20mm past the visible edge, so a slightly
+  shifted wheel or cushion never reveals blank plastic. The hidden areas show
+  crosshatched in the 3D view before any artwork is placed, and hatched on the
+  printable templates, so the cut is never a surprise.
 - **The chair's fenders can take artwork on their front face.** Two new design
   zones, Left fender and Right fender (44.6 x 242.4mm each), cover the forward
   face of each wing from the bottom edge up over the curve of the arch. The
