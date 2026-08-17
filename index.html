@@ -263,14 +263,14 @@
               Depth is measured down from the top face. Set a default for all colors, then override
               individual ones in Colors detected for fine detail work. Check "Recess bg too" to cut
               the background as well, instead of leaving it flush. It then prints as its own color
-              and takes a filament slot. A color with its own depth is highlighted in the list. Its
-              "↺" button puts it back under this default. If changing this field seems to do
-              nothing, those rows are why. On a flat shape, a depth the plate can't hold is cut at
-              the nearest depth it can. A warning says which color, and what was actually cut. Raise
-              Thickness in Part if you want it deeper. A depth of 0 cuts nothing at all, so it is
-              raised to 0.2mm. A depth below 0.2mm is cut exactly as asked. A note says it needs a
-              layer height finer than the usual 0.2mm. To stop cutting a color entirely, use "→
-              base" on its row to print it in the body instead.
+              and takes a filament slot. A color with its own depth is highlighted in the list, and
+              the Depth panel says how many are doing it, with a "Reset all" to put them back. Its
+              "↺" button does the same for one row. On a flat shape, a depth the plate can't hold is
+              cut at the nearest depth it can. A warning says which color, and what was actually
+              cut. Raise Thickness in Part if you want it deeper. A depth of 0 cuts nothing at all,
+              so it is raised to 0.2mm. A depth below 0.2mm is cut exactly as asked. A note says it
+              needs a layer height finer than the usual 0.2mm. To stop cutting a color entirely, use
+              "→ base" on its row to print it in the body instead.
             </p>
           </section>
 
@@ -709,11 +709,12 @@
             </div>
             <span class="hint">mm</span>
           </div>
+          <div class="depth-overrides" id="depth-overrides" hidden></div>
           <div class="row">
             <label for="p-recess-bg">Recess bg too</label>
             <div class="field" style="flex: 0"><input type="checkbox" id="p-recess-bg" /></div>
             <span class="hint" id="bg-depth-hint" style="display: none"
-              >uses default depth, override below</span
+              >uses the default depth</span
             >
           </div>
           <div class="hint">
