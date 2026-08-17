@@ -199,28 +199,6 @@ read as this bug and was not. It was the frame correctly enclosing an anchor the
 heuristic had hijacked (its own section below). A skewed-looking frame is evidence of the anchor,
 not of the angle, until the anchor is ruled out.
 
-## The browser-driven checks are only fast if Chromium finds a real GPU, and on WSL2 it does not find one by itself
-
-Falling back to SwiftShader costs
-roughly 300ms per frame, which also caps `requestAnimationFrame` near 2.5fps
-and so stretches anything frame-paced. Driving the chair end-to-end takes
-**~104s** software versus **~12s** with hardware acceleration, on the same
-machine. The hardware is reachable — `/dev/dxg` plus Mesa's d3d12 gallium
-driver in `/usr/lib/wsl/lib` — but selecting it needs
-`GALLIUM_DRIVER=d3d12` in the environment _and_ `--use-gl=angle
---use-angle=gl-egl` on the command line;
-`MESA_LOADER_DRIVER_OVERRIDE` alone silently leaves you on llvmpipe, which is
-also software. [scripts/lib/harness.mjs](../scripts/lib/harness.mjs) does this
-behind `MOSAIC_GPU=1`, opt-in rather than automatic because CI's Playwright
-container has no GPU at all. Asking for it and not getting it is an error,
-not a slow run: with the flag set, the harness reads the GL renderer string
-once per browser, prints it, and refuses to continue if it names SwiftShader
-or llvmpipe — a silent fall back to software is exactly what made this hard
-to diagnose the first time.
-What's left: nothing required, but the flags are Chromium/WSL-specific and
-will need revisiting if either the container image or the WSL graphics stack
-changes.
-
 ## The chair's prime-tower positions have only been verified on one bed size
 
 All of its export placement — plate assignment, rotation, position,
@@ -462,55 +440,6 @@ Two more things worth knowing before touching this:
   A blanket weld plus `computeVertexNormals()` was measured and rejected — it
   melted the embossed logo on the storage box; see `CREASE_ANGLE_RAD`.
 
-## Region computation is O(n²·len) per path
-
-([regions.ts:357](../src/geometry/regions.ts#L357), `shapes.map(shapeToFeature)`,
-before the first yield) — `shapeToFeature`'s containment-depth resolution
-tests every subpath ring against every other ring with a point-in-polygon
-scan. Benchmarked against production/sample SVGs
-([scripts/bench-shape-to-feature.ts](../scripts/bench-shape-to-feature.ts)):
-worst real-world case measured 5.88 ms (`public/patterns/zebra.svg`, a
-single 69-subpath path), an order of magnitude under the 30 ms yield
-budget — not a live issue on any file currently in use. Risk case is a
-dense Illustrator export (hundreds of subpaths in one `<path>`, e.g.
-fur/stipple line art) that no current sample exercises. Revisit if/when
-such a file is actually encountered, rather than guessing a threshold now.
-A separate, far more extreme case — thousands of nested rings or `<g>`
-elements deep enough to overflow the JS call stack — fails with a named
-"unusually deeply nested" error instead of a raw stack-overflow message,
-but still isn't depth-limited; see `shapeToFeature` and `walk` in
-[regions.ts](../src/geometry/regions.ts) and [parse.ts](../src/svg/parse.ts).
-
-**Raster tracing is the first producer that could plausibly hit this**, and is
-held off it by the despeckle floor rather than by luck. Measured with
-[scripts/bench-raster.ts](../scripts/bench-raster.ts) at 512px, 8 colors: the
-worst single shape carries ~23 rings and costs ~5 ms, against zebra's 69/5.88 ms
-— so grouping shapes per color, which piles every ring of one color into one
-shape, stays comfortably inside the budget. `MAX_COMPONENTS` (800,
-[trace.ts](../src/raster/trace.ts)) is what guarantees it: exceed it and the
-floor is raised to exactly the area that fits and the image re-traced. If that
-cap is ever raised or the floor lowered, re-run the bench — this is the number
-that keeps the quadratic term small, and the failure mode is a frozen tab, since
-`shapes.map(shapeToFeature)` runs before the first yield.
-
-## Raster shape granularity was settled by measurement, and the losing option is still reachable
-
-Traced components can be grouped one shape per color or one per connected
-component ([`ShapeGranularity`](../src/raster/parse.ts)), and the two costs pull
-opposite ways: per-color risks `shapeToFeature`'s O(rings²·len) _within_ a shape,
-per-component multiplies the paint-order boolean pass by shape count. Measured
-(`scripts/bench-raster.ts`, 512px photographic source): per-color ~830 ms total
-against per-component ~1590 ms, the difference almost entirely in the boolean
-pass (136 ms vs 1055 ms). Per-color ships.
-
-Worth knowing for anyone revisiting it: traced regions are **disjoint by
-construction**, so every `safeDiff` in that pass is provably a no-op. A
-`disjoint` fast path on `computeNetRegionsByColor` would collapse it to array
-concatenation and make per-component viable — and would also cut the per-color
-path's 136 ms. It was left unbuilt because the measurement above says nothing
-needs it: at 8 shapes the pass is not where the time goes. Build it only if the
-component cap is ever raised enough to change that.
-
 ## The raster photo-vs-flat-art thresholds are shaped right but calibrated against synthetic images
 
 `FLAT_EDGE_DENSITY` / `PHOTO_EDGE_DENSITY` in
@@ -529,38 +458,6 @@ gradient-heavy illustration. Confirm the flat and photo clusters are separated b
 a gap and put the endpoints inside it. A screenshot landing on the photo side
 would be the bug to watch for. If the clusters overlap, the statistic itself is
 wrong and wants replacing rather than retuning.
-
-## Curve fitting rounds small corners, and two components can overlap by up to a working pixel
-
-Fitting rounds a corner it doesn't judge sharp, and "sharp" is scale-dependent: Potrace's corner
-measure works out to about `side/2` for a square, which has to clear 4 at the default `alphaMax`,
-so corners survive from roughly nine pixels a side upward and round below that. A feature a few
-pixels across therefore comes back a few percent smaller. That part is cosmetic and unchanged.
-
-A worse failure in the same machinery, thin features being deleted outright rather than shrunk, is
-closed by `unfitCollapsedChains`; its reasoning is on that function in
-[trace.ts](../src/raster/trace.ts).
-
-**What is not fixed, and can't be from this angle:** two components can still overlap by up to one
-working pixel. Chains are byte-identical on the two sides of the boundary they're shared between,
-but nothing bounds how far a fitted chain strays from the lattice path it replaces, so it can sweep
-across a third region it shares no chain with. Re-measured over 3000 random label grids after the
-above fix: worst overlap is still 1.000000 unit², unchanged — `unfitCollapsedChains` catches area
-loss, not this. Downstream it's absorbed: paint order in `computeNetRegionsByColor` subtracts
-cross-colour overlap outright, and two components of one colour land in the same shape and get
-unioned. `tests/raster-trace.test.ts` pins the bound rather than asserting zero.
-
-A bound on chain deviation was tried and rejected: it cannot be set. A 45° staircase's lattice
-corners sit 0.707px off their own chord and a 3:1 staircase's sit 0.949px off, both legitimate, while
-the chains that misbehave measure about 0.97 — there is no threshold separating them.
-
-How much the remaining overlap matters in practice: on the 512px photograph path a one-pixel overlap
-is 0.54mm, at or under the nozzle width. Flat art now works at 1024px, which _halves_ that to
-0.27mm, comfortably under a 0.4mm nozzle — the point at which this stops being a fidelity question at
-all. Closing it properly means a fit that never strays from the lattice path by more than the
-adjacent regions can tolerate, most likely by recognising digital straight segments (the arithmetic
-characterisation) instead of Potrace's cone, which does not have the half-pixel slack that causes
-this. Worth doing only if it shows up as a visible artifact in practice; measure before building.
 
 ## Colors is the one trace control still fixed, and no single value suits real artwork
 
@@ -624,8 +521,8 @@ means — 1.0 is the long-standing Potrace default, `4/3` is where the corner te
 anything, and a quarter-pixel flattening tolerance is well inside what the 0.4mm nozzle can
 express — and then checked on the synthetic bench sources plus a single real one (a 1588x1176
 flat-art cartoon, kept in the gitignored `stubs/`, so not reproducible from a clean checkout).
-That is the same weakness the edge-density thresholds have, one section down: the shape is right,
-the numbers have not been swept.
+That is the same weakness the edge-density thresholds have (their own section above): the shape is
+right, the numbers have not been swept.
 
 Closing it: sweep `alphaMax` across 0.8–1.334 and `flatness` across 0.1–0.6 on a corpus with
 known-correct answers — a logo whose corners are genuinely square, a scanned drawing, a photo —
@@ -997,20 +894,12 @@ scrubbing, precision-truncation retries) target 6.5's exact
 polygon-clipping bugs, and 6.5's package typings don't resolve under
 modern TypeScript, hence the shim in [src/turf.d.ts](../src/turf.d.ts).
 
-## Nothing benchmarks the geometry hot path on demand
-
-The 5–10x figure above came from a one-off harness built for that upgrade
-attempt and not kept. So the pin that decision produced is enforced by prose
-and a `package.json` exact version — re-measuring it, or measuring anything
-else on the union-accumulation path, means rebuilding the harness first.
-
-Deliberately not built: a standing `bench-geometry` script would only be
-exercised by an active turf upgrade, and there isn't one. The cost of writing
-it now is real and the cost of re-deriving it later is roughly the same, so
-this waits until a turf upgrade becomes live work — at which point it is step
-one, not an afterthought. Closing it means a repeatable script over that hot
-path at a few shape counts, with the 6.5.0 numbers above as the baseline to
-beat.
+**Nothing re-measures this on demand.** The 5–10x figure came from a one-off harness built for
+that attempt and not kept, so the pin is enforced by prose and an exact `package.json` version. A
+standing `bench-geometry` script is deliberately not built: it would only ever be exercised by an
+active turf upgrade, and writing it now costs about what re-deriving it later costs. When an
+upgrade becomes live work it is step one rather than an afterthought, over the
+union-accumulation path at a few shape counts, with the numbers above as the baseline to beat.
 
 ## The export-placement seal proves a mesh hasn't changed, not that anyone re-verified it
 
@@ -1104,81 +993,20 @@ per-part constants and belong as data on the `AssemblyKind` / role
 definition, matching the "one array entry" goal in
 [src/assembly/kinds.ts](../src/assembly/kinds.ts).
 
-## The footrest's baked `FOOTREST_PLATE_R` is redundant
+## Real malformed input never reaches the CSG failure branches
 
-It's redundant with the general
-`rotXthenZ(-90 * nsign, angleDeg)` path for `nsign: 0` + `rotZdeg: -45`
-(see [src/export/threemf.ts](../src/export/threemf.ts)). It's kept as an
-explicit full 3×3 for now because it generalizes to a future part with a
-genuinely tilted reference pose that the axis-aligned path can't express —
-revisit if that part never materializes.
+Every branch is now driven against the real Manifold engine:
+[src/geometry/csgFault.ts](../src/geometry/csgFault.ts) arms a forced failure from the URL
+(`?csgfault=difference`, `?csgfault=color-union:1`) at the five points where a real one
+originates, and [scripts/check-csg-failure.mjs](../scripts/check-csg-failure.mjs) drives the app
+through each, exports a real 3MF, and asserts the degradation that reaches the file against an
+undamaged baseline. Run it with `npm run build && node scripts/check-csg-failure.mjs`; the
+`debug-csg-failure` skill is the walkthrough, and that script carries the first run's measured
+numbers.
 
-## Rect placement derives one artwork scale from the largest face across all parts
-
-([src/geometry/assembly.ts](../src/geometry/assembly.ts),
-`buildAssemblyGeometry`) while `placeOnPart` honors each part's _own_ face
-center. Harmless today — the only rect kind (footrest) has a single face —
-but a future rect assembly mixing face sizes would scale artwork for the
-biggest face and then center that same oversized artwork on the smaller
-ones, where the face clip would crop it. Fix when such a part ships: either
-scale per-part, or make the reference face an explicit choice on the
-`AssemblyKind` rather than "whichever is largest". Note the resolver
-(`designMmPerUnit`) now has two callers — the build and the on-face gizmo,
-which shares it precisely so the selection frame matches the cut — so a fix
-has to keep them agreeing rather than change one.
-
-## The CSG failure branches are proven against forced faults, not against a real malformed mesh
-
-**Kept although the forced-fault half is closed**, for two reasons the
-delete-on-close rule at the top allows: the untested half below is real open
-work, and the baseline table is what
-[scripts/check-csg-failure.mjs](../scripts/check-csg-failure.mjs) and the
-`debug-csg-failure` skill assert against — those numbers are the reference, not
-a record of a finished job.
-
-The forced-fault half was open because the `CSG failure handling` tests in
-[tests/assembly.test.ts](../tests/assembly.test.ts) drive every branch with a
-mocked `Manifold.union` / `.difference` / `.intersection` — they pin what the
-handler emits, but nobody had watched a branch fire against the real engine in
-the running app.
-
-[src/geometry/csgFault.ts](../src/geometry/csgFault.ts) now arms a forced
-failure from the URL (`?csgfault=difference`, `?csgfault=color-union:1`) at the
-five points where a real one originates, and
-[scripts/check-csg-failure.mjs](../scripts/check-csg-failure.mjs) drives the
-app through each, exports a real 3MF, and asserts the degradation that reaches
-the file against an undamaged baseline. Run it with
-`npm run build && node scripts/check-csg-failure.mjs`; the `debug-csg-failure`
-skill is the walkthrough.
-
-First full run (wheel, two-color SVG) — all five branches confirmed degrading as
-documented. The body triangle counts are the measurement worth keeping, because
-they are what distinguishes the two outcomes that otherwise look identical in
-the file (one body, no inlays):
-
-| Fault                       | Total inlays | Body triangles         |
-| --------------------------- | ------------ | ---------------------- |
-| none (baseline, 1 artwork)  | 4            | 45,214                 |
-| `color-union:1` (2 artwork) | 3 (of 4)     | —                      |
-| `part-union`                | 2 (of 4)     | 45,166 — **Cap** uncut |
-| `difference`                | 0            | 44,930 — **uncut**     |
-| `body-mesh`                 | 0            | 44,930 — **uncut**     |
-| `intersection`              | 0            | 45,214 — **still cut** |
-
-`intersection` matching the baseline exactly is the point: its pocket really is
-cut and only the fill failed, which is the "prints as an empty recess" outcome
-in [troubleshooting.md](troubleshooting.md). A change that collapsed it into the
-export-uncut path would show up here as 44,930 and nowhere else.
-
-`part-union` damaging one part rather than all three is also the point, and the
-reason its check is per-part: the part-wide merge only runs on a part carrying
-two or more colors, and on this artwork that is the Cap alone. Top and Bottom
-come out identical to the baseline, which is the property worth asserting —
-the failure stayed inside the part it happened on.
-
-Not covered: the fault points force the _handler_ to run, so they prove the
-degradation and the cleanup, not that Manifold fails on any particular real
-mesh. Genuinely malformed input is still the untested half.
+What that does not prove: the fault points force the _handler_ to run, so they establish the
+degradation and the cleanup, not that Manifold fails on any particular real mesh. Genuinely
+malformed input is still untested, and there is no fixture for it.
 
 ## Zebra + Fill still loses one color on "Handle (left)"
 
@@ -1343,29 +1171,6 @@ bbox. Then erode the whole thing, which makes every hole's rim an edge for free 
 `erodeBoundary` and `splitAtBoundary` already take multi-ring features and need no
 change. Verify on a doughnut-shaped silhouette (inner rim prints in the artwork's colour)
 and on the wheel and footrest (clip and fill unchanged).
-
-## Convention 31 prescribes React files the design system deleted on purpose
-
-[ui-conventions.md](ui-conventions.md)'s convention 31 says a change needing a
-component the system lacks "proposes it as an addition — `Name.jsx`,
-`Name.d.ts`, `Name.prompt.md`". `design-system/README.md`'s Fidelity section
-says the `.jsx` and `.d.ts` files were deleted from the bundle permanently,
-because the app is vanilla TypeScript on Vite and can never import a React
-component. So the convention asks for an artifact set the design system
-forbids.
-
-The same Fidelity section also says, unconditionally, "Every component
-documented here has a live counterpart in the app" — which filing any proposal
-at all makes false. `docs/spikes/zone-first-selection.md` hit both halves at
-once when it proposed `ZoneListRow` and `FilamentSlotStrip`; titling those
-PROPOSED is a patch over the contradiction, not a resolution.
-
-**What closing it takes.** Decide where proposals live — a
-`components/proposed/` directory, or a Fidelity paragraph defining the tier as
-distinct from documented components — and then drop convention 31's
-`Name.jsx, Name.d.ts` clause, which is prescribing files this repo removed
-deliberately. Both documents are authoritative in their own domain, so this
-needs one edit to each rather than a reading that reconciles them.
 
 ## The largest `<circle>` in a wheel design silently becomes its boundary marker
 

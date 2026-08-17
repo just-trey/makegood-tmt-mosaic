@@ -167,7 +167,7 @@ describe('traceLabelMap', () => {
     // island. This exact total is the fix under test, not an incidental pass — it used to come up
     // about a third short of 16 before that guard existed.
     // What `toBeNull()` below verifies is a property of this fixture, not a general guarantee — the
-    // general statement is the sliver bound in docs/tech-debt.md, and reading this as the tracer's
+    // general statement is the sliver bound asserted further down, and reading this as the tracer's
     // guarantee is what let a hole-swallowing bug sit undetected on fixtures with more nesting than
     // a 4x4 has.
     const feats = components.map((c) => featureOf(c.loops));
@@ -219,9 +219,22 @@ describe('traceLabelMap', () => {
    * fixtures, not of the tracer. Two things break it in general, both understood and both bounded:
    * a fitted chain may stray up to about a pixel from the lattice path it replaces (Potrace's
    * straightness cone carries that slack by design), and a thin feature bounded by junctions can
-   * lose its ring entirely so a neighbour covers the gap — see docs/tech-debt.md. So what has to
-   * hold generally is that any overlap stays *sliver*-sized: one working pixel, which at the 1024px
-   * flat-art size is 0.27mm across the wheel, well under a 0.4mm nozzle.
+   * lose its ring entirely so a neighbour covers the gap (the second is closed by
+   * unfitCollapsedChains). So what has to hold generally is that any overlap stays *sliver*-sized:
+   * one working pixel, which at the 1024px flat-art size is 0.27mm across the wheel, well under a
+   * 0.4mm nozzle.
+   *
+   * The first is not closable from this angle, and the obvious fix was measured and rejected: a
+   * bound on how far a fitted chain may stray cannot be set. A 45° staircase's lattice corners sit
+   * 0.707px off their own chord and a 3:1 staircase's sit 0.949px off, both legitimate, while the
+   * chains that misbehave measure about 0.97. No threshold separates them. Re-measured over 3000
+   * random label grids after unfitCollapsedChains landed: worst overlap still 1.000000 unit²,
+   * unchanged, because that function catches area loss rather than this. Downstream it is absorbed
+   * anyway (paint order in computeNetRegionsByColor subtracts cross-colour overlap outright, and
+   * two components of one colour land in the same shape and get unioned), which is why this pins
+   * the bound instead of asserting zero. Closing it properly means recognising digital straight
+   * segments, the arithmetic characterisation, instead of Potrace's cone, which does not carry the
+   * half-pixel slack. Worth doing only if it ever shows up as a visible artifact.
    *
    * The bound is what caught a real defect: a hole ring starting on a junction read as "outside"
    * its own component and was emitted as a solid island, so the component painted over its cavity

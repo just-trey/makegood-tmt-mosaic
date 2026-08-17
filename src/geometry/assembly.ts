@@ -216,6 +216,16 @@ export function designAnchor(
  * Only a *loaded* part has a face to measure. Counting one still fetching would drop callers to
  * the 1:1 branch and report a size its own load immediately contradicts. Lazy because only the
  * no-mm-size case needs it; the wheel path never pays for the scan.
+ *
+ * Known limit, harmless today: this is one scale for the whole assembly, taken from the largest
+ * face, while `placeOnPart` honors each part's *own* face center. The only rect kind (the
+ * footrest) has a single face, so the two never disagree. A future rect assembly mixing face sizes
+ * would scale artwork for the biggest face and then center that same oversized artwork on the
+ * smaller ones, where the face clip would crop it. Fix when such a part ships, either by scaling
+ * per part or by making the reference face an explicit choice on the AssemblyKind rather than
+ * "whichever is largest". Whatever it becomes has to keep `designMmPerUnit`'s two callers (the
+ * build and the on-face gizmo) agreeing, since that sharing is what makes the selection frame
+ * match the cut.
  */
 export function memoLargestDesignFace(
   parts: AssemblyPart[],

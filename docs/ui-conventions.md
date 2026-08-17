@@ -139,9 +139,13 @@ The failure mode here is adding. The standing complaint is features nobody needs
 
 ## Extending the design system
 
-31. A change needing a component the system does not have proposes it as an addition —
-    `Name.jsx`, `Name.d.ts`, `Name.prompt.md` — rather than inventing markup inline. Known gaps:
-    zone list row, filament slot strip, viewport selection state, gizmo treatment.
+31. A change needing a component the system does not have proposes it as an addition, a
+    `Name.prompt.md` titled `PROPOSED, not built`, rather than inventing markup inline. A spec is
+    the whole proposal: `design-system/README.md` deleted the `.jsx` and `.d.ts` files
+    permanently, so asking for them here would prescribe files that bundle forbids. The proposed
+    tier is defined in that README's Fidelity section and sits outside its live-counterpart
+    claim. Known gaps: zone list row and filament slot strip (both filed), viewport selection
+    state, gizmo treatment.
 32. Icons follow the system's existing rule: no hand-drawn SVG icon set. Where a part needs to
     be identified visually, a thumbnail rendered from the part is in-system; a hand-authored
     glyph is not.

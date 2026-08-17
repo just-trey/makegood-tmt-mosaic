@@ -75,7 +75,8 @@ const ALPHA_MAX_LIMIT = 4 / 3;
 /**
  * Flatness floor and ceiling, in pixels. The floor is what stops full-right Detail from turning a
  * sub-pixel sampling tolerance into a point-count explosion: ring length is what `shapeToFeature`
- * is quadratic in (docs/tech-debt.md), so this bound is a performance guard, not a taste one.
+ * is quadratic in (see its note in src/geometry/regions.ts), so this bound is a performance guard,
+ * not a taste one.
  */
 const FLATNESS_MIN = 0.1;
 const FLATNESS_MAX = 2;

@@ -61,7 +61,8 @@ Either it prints `GPU: ANGLE (…)`, or it stops and tells you it fell back.
 **Omitting the flag is always correct.** Everything works software-rendered,
 just slower, and that is the path CI takes since its Playwright container has no
 GPU. Leave it off if you are unsure, if the error above fires, or if you are
-reproducing CI. Background in [tech-debt.md](../../../docs/tech-debt.md).
+reproducing CI. Background on the flags, and what software rendering costs, is
+on `GPU_ARGS` in [harness.mjs](../../../scripts/lib/harness.mjs).
 
 **Don't invent the launch and wait-for-server shape.** Copy it from
 [export-chair-examples.mjs](../../../scripts/export-chair-examples.mjs), which

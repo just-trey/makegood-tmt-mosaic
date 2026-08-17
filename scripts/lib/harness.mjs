@@ -140,9 +140,16 @@ export async function startPreview({ port = 4173, reuse = false, allowStaleDist 
  * up on its own, and neither does Mesa: it defaults to llvmpipe (also software). `GALLIUM_DRIVER`
  * is what actually selects it; `MESA_LOADER_DRIVER_OVERRIDE` alone does not.
  *
+ * What software costs, measured on this box: ~300ms per frame, which also caps
+ * requestAnimationFrame near 2.5fps and so stretches anything frame-paced. Driving the chair
+ * end-to-end takes ~104s software against ~12s with hardware acceleration.
+ *
  * Opt-in via MOSAIC_GPU=1, never automatic: CI runs in the Playwright container with no GPU at
  * all, where forcing these would at best fall back and at worst fail to start a context. When it
  * is set, assertGpuActive() below refuses to let a run continue on a software renderer.
+ *
+ * These flags are Chromium/WSL-specific; revisit if either the CI container image or the WSL
+ * graphics stack changes.
  */
 const GPU_ARGS = [
   '--use-gl=angle',

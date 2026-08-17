@@ -101,8 +101,8 @@ It asserts against a measured baseline rather than literals, which is what makes
 the interesting distinction possible: `intersection` and `difference` both ship
 one body and zero inlays, so **body triangle count** is the only thing in the
 file separating "pocket cut, recess empty" from "exported uncut". Baseline
-numbers and the first full run are in
-[tech-debt.md](../../../docs/tech-debt.md).
+numbers and the first full run are in the `CASES` docstring in
+[check-csg-failure.mjs](../../../scripts/check-csg-failure.mjs).
 
 **What this does not cover:** the faults force the handler to run, so they prove
 the degradation and the WASM cleanup, not that Manifold fails on any particular

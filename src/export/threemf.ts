@@ -245,6 +245,11 @@ const ASSEMBLY_REF_PLATE = { w: 256, d: 256 };
 // face-down tilt. NO fixedPos: the reference translation (135.329137, 135.329137) is just the
 // Snapmaker U1's 270x270 bed center and isn't portable, so the footrest centers on whatever plate
 // (placeHintedGroup's no-fixedPos branch). The z lift is recovered as -minZ (rest-on-plate).
+//
+// Redundant with the general rotXthenZ(-90 * nsign, angleDeg) path for nsign: 0 + rotZdeg: -45,
+// and kept as an explicit full 3x3 anyway: it generalizes to a future part whose verified
+// reference pose is genuinely tilted, which the axis-aligned path cannot express. Collapse it into
+// rotZdeg if that part never materializes.
 export const FOOTREST_PLATE_R = [
   [0.707106781, -0.707106781, 0],
   [0.707106781, 0.707106781, 0],
