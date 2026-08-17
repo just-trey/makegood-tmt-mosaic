@@ -127,16 +127,21 @@ belongs (convention 6). That is the copy fix and it is done. What remains is the
 existed: closing this means making the affordances legible, in particular the last row — an
 asymmetry between two gestures on the same target is not something help text can rescue.
 
-## The AMS-capacity pill states three remedies at once
+## User-facing strings still use em dashes, which CLAUDE.md bars
 
-Convention 3 of [ui-conventions.md](ui-conventions.md): a warning states one problem and one
-primary remedy, with alternatives in help rather than in the pill. The capacity warning currently
-carries three remedies across three lines of prose.
+CLAUDE.md's code conventions say UI copy follows "the same sentence rules as docs: short, no em
+dashes". Counted 2026-08-16 with a comment-stripping tokenizer over `src/**/*.ts` (a grep first
+gave 35, which was wrong: it missed literals on lines that also carry a trailing comment, and
+block-comment interiors were not the problem): **57 lines carry an em dash inside a string
+literal**, plus 2 in the help dialog markup. That 57 is an upper bound on the copy problem, since
+it counts every literal rather than only the ones a user reads. Mostly `title=` tooltips in
+[src/ui/colorList.ts](../src/ui/colorList.ts), where the dash joins a clause that would read fine
+as a second sentence.
 
-Not measured; carried from the rubric's conflicts table. Smallest item in this group — closing it
-is choosing which remedy is primary and moving the rest into the help dialog. Note that
-[troubleshooting.md](troubleshooting.md) keeps one section per user-visible warning string, so
-changing this pill's text means updating that section too.
+Not a defect a user can hit, which is why it is deferred rather than fixed alongside the warning
+rewrites that found it: those passes replaced the dash wherever they touched a string, so the
+count only falls as copy is otherwise reworked. Closing it is one mechanical pass, and the trap is
+convention 36: splitting a clause into a sentence must not add words. Count after, do not eyeball.
 
 ## The placement frame's angle is unrelated to the face it acts on, and it shares the viewport with a second affordance
 

@@ -10,12 +10,7 @@ vi.mock('../src/export/printers', () => ({
   DEFAULT_PRINTER_ID: 'p1',
 }));
 
-import {
-  refreshSlotBudgetNotice,
-  slotTier,
-  SLOT_MULTI_UNIT_NOTICE_SUFFIX,
-  SLOT_OVER_MAX_WARNING_SUFFIX,
-} from '../src/ui/slotBudget';
+import { refreshSlotBudgetNotice, slotTier, SLOT_PILL_SUFFIX } from '../src/ui/slotBudget';
 import { getPrinter, type Printer } from '../src/export/printers';
 import { WARNINGS, clearWarnings, clearBuildWarnings } from '../src/warnings';
 
@@ -33,11 +28,7 @@ const fixed = {
 } as Printer;
 
 const notices = (): { message: string; level: string }[] =>
-  WARNINGS.filter(
-    (w) =>
-      w.message.endsWith(SLOT_MULTI_UNIT_NOTICE_SUFFIX) ||
-      w.message.endsWith(SLOT_OVER_MAX_WARNING_SUFFIX),
-  );
+  WARNINGS.filter((w) => w.message.endsWith(SLOT_PILL_SUFFIX));
 
 beforeEach(() => {
   clearWarnings();
@@ -81,6 +72,10 @@ describe('refreshSlotBudgetNotice', () => {
     expect(notices()).toHaveLength(1);
     expect(notices()[0].level).toBe('info');
     expect(notices()[0].message).toContain('5 filament slots needed');
+    // Both halves matter for an info-level pill: the single-unit limit is the problem, and the
+    // printer's real maximum is the reassurance that keeps this out of `warn`. Dropping the
+    // second leaves an info that only offers to take colors away.
+    expect(notices()[0].message).toContain('more than the 4 in a single AMS unit');
     expect(notices()[0].message).toContain('up to 16');
   });
 
@@ -137,21 +132,36 @@ describe('refreshSlotBudgetNotice', () => {
     expect(notices()).toHaveLength(1);
   });
 
+  // Convention 3: one problem, one primary remedy. The alternatives ("→ base", a second unit,
+  // manual swaps) moved to the help dialog, so the pill must NOT list them, and auto-merge stays
+  // unnamed because it is the control least likely to actually get under the limit.
   it.each([
     ['multi-unit', 5, chaining],
     ['over-max', 5, fixed],
-  ])('names merging and "→ base", not just auto-merge, in the %s message', (_l, slots, printer) => {
+  ])('states one remedy, hand-merging, in the %s message', (_l, slots, printer) => {
     vi.mocked(getPrinter).mockReturnValue(printer as Printer);
 
     refreshSlotBudgetNotice(slots as number);
 
-    expect(notices()[0].message).toContain('drag one color row onto another');
-    expect(notices()[0].message).toContain('→ base');
+    const m = notices()[0].message;
+    expect(m).toContain('drag one color row onto another');
+    expect(m).not.toContain('→ base');
+    expect(m).not.toContain('auto-merge');
+    expect(m).not.toContain('swap filament');
   });
 
-  it('keeps the two suffixes distinct so neither clears the other', () => {
-    expect(SLOT_MULTI_UNIT_NOTICE_SUFFIX.endsWith(SLOT_OVER_MAX_WARNING_SUFFIX)).toBe(false);
-    expect(SLOT_OVER_MAX_WARNING_SUFFIX.endsWith(SLOT_MULTI_UNIT_NOTICE_SUFFIX)).toBe(false);
+  it('ends both tiers with the suffix clearSlotBudgetNotices matches', () => {
+    for (const [slots, printer] of [
+      [5, chaining],
+      [5, fixed],
+    ] as const) {
+      vi.mocked(getPrinter).mockReturnValue(printer as Printer);
+      refreshSlotBudgetNotice(slots);
+      // The length check is the half that catches the stacking regression: a suffix that stopped
+      // matching would leave the previous tier's pill posted alongside the new one.
+      expect(notices()).toHaveLength(1);
+      expect(notices()[0].message.endsWith(SLOT_PILL_SUFFIX)).toBe(true);
+    }
   });
 });
 

@@ -55,7 +55,8 @@ adjectives, second person for UI copy) still apply; this is the term list.
    solid for color #0a0a0a on Handle (left)" names an internal step. Its user-facing form is
    about a filament and a part.
 3. A warning states one problem and one primary remedy. Alternatives belong in help, not in the
-   pill. The current AMS-capacity pill offers three remedies in three lines of prose.
+   pill. The capacity pill was the worked violation, carrying three remedies across three lines
+   of prose; it now names hand-merging alone and the rest live in the help dialog.
 
 ## Explaining itself
 
