@@ -799,11 +799,102 @@ describe('fill mode', () => {
       expect(r.maxX - r.minX).toBeCloseTo(0.2, 3); // the lone 4mm square at 5%
     },
   );
+});
 
-  it('a circle-less fill skips the wheel auto-center notice', { timeout: 60000 }, async () => {
-    clearWarnings();
-    await buildAssemblyGeometry(baseInput({ parsed: tileParsed(), mode: 'fill' }));
-    expect(WARNINGS.filter((w) => /no <circle>/.test(w.message))).toEqual([]);
+describe('designAnchor', () => {
+  const parsedWith = (
+    circle: { cx: number; cy: number; r: number } | null,
+    shapes: { x: number; y: number; w: number; h: number }[],
+  ) => {
+    const loops = shapes.map((s) => [
+      [
+        { x: s.x, y: s.y },
+        { x: s.x + s.w, y: s.y },
+        { x: s.x + s.w, y: s.y + s.h },
+        { x: s.x, y: s.y + s.h },
+        { x: s.x, y: s.y },
+      ],
+    ]);
+    const pts = loops.flat(2);
+    return {
+      shapes: loops.map((l, i) => ({ fill: `#00000${i}`, loops: l, order: i })),
+      bbox: {
+        minX: Math.min(...pts.map((p) => p.x)),
+        minY: Math.min(...pts.map((p) => p.y)),
+        maxX: Math.max(...pts.map((p) => p.x)),
+        maxY: Math.max(...pts.map((p) => p.y)),
+      },
+      rawSVGCircle: circle,
+      origin: 'svg',
+    } as unknown as Parameters<typeof designAnchor>[0];
+  };
+  const run = (parsed: Parameters<typeof designAnchor>[0]) => {
+    const notes: string[] = [];
+    const anchor = designAnchor(parsed, false, (m) => notes.push(m));
+    return { anchor, notes };
+  };
+
+  it('anchors on a circle that encloses the drawing', () => {
+    // The template shape: a boundary circle with everything inside it.
+    const { anchor, notes } = run(
+      parsedWith({ cx: 50, cy: 50, r: 60 }, [{ x: 20, y: 20, w: 60, h: 60 }]),
+    );
+    expect(anchor).toEqual({ cx: 50, cy: 50, r: 60 });
+    expect(notes).toEqual([]);
+  });
+
+  it('ignores a decorative circle that encloses nothing, and stays quiet', () => {
+    // The reported failure: clipart with a corner dot. Anchoring on it put the dot on the full
+    // face and threw the rest of the design clear of the part.
+    const { anchor, notes } = run(
+      parsedWith({ cx: 10, cy: 10, r: 5 }, [
+        { x: 0, y: 0, w: 100, h: 100 },
+        { x: 20, y: 20, w: 10, h: 10 },
+        { x: 60, y: 60, w: 10, h: 10 },
+      ]),
+    );
+    expect(anchor).toEqual({ cx: 50, cy: 50, r: 50 });
+    expect(notes).toEqual([]);
+  });
+
+  it('says so when a boundary circle held most of the drawing and lost some', () => {
+    // A template with one stray mark left outside it. Without the notice the design silently
+    // drops to the bbox fit, which on a real template is a fraction of the intended size.
+    const { anchor, notes } = run(
+      parsedWith({ cx: 50, cy: 50, r: 50 }, [
+        { x: 20, y: 20, w: 20, h: 20 },
+        { x: 55, y: 55, w: 20, h: 20 },
+        { x: 40, y: 40, w: 10, h: 10 },
+        { x: 900, y: 900, w: 2, h: 2 },
+      ]),
+    );
+    expect(anchor.r).toBeGreaterThan(400); // fitted by the overall bbox, not the circle
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatch(/falls outside/i);
+  });
+
+  it('stays quiet when what fell outside is a drawing, not a stray', () => {
+    // A circle beside real content is not a boundary something escaped, it is just a circle. The
+    // plain bbox fit is the right answer there and needs no comment.
+    const { notes } = run(
+      parsedWith({ cx: 50, cy: 50, r: 50 }, [
+        { x: 20, y: 20, w: 20, h: 20 },
+        { x: 400, y: 400, w: 200, h: 200 },
+      ]),
+    );
+    expect(notes).toEqual([]);
+  });
+
+  it('does not let the marker circle vouch for itself', () => {
+    // With no other shape inside it, a circle holds nothing, however large it is.
+    const { notes } = run(parsedWith({ cx: 50, cy: 50, r: 50 }, [{ x: 400, y: 400, w: 4, h: 4 }]));
+    expect(notes).toEqual([]);
+  });
+
+  it('says nothing when the design has no circle at all', () => {
+    const { anchor, notes } = run(parsedWith(null, [{ x: 0, y: 0, w: 100, h: 100 }]));
+    expect(anchor).toEqual({ cx: 50, cy: 50, r: 50 });
+    expect(notes).toEqual([]);
   });
 });
 

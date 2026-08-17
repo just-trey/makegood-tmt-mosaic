@@ -175,9 +175,92 @@ export function canvasAnchor(parsed: ParsedSVG): { cx: number; cy: number; r: nu
 }
 
 /**
- * Design anchor, per artwork: the SVG's largest <circle> (its intended outer boundary), else a
- * pseudo-circle on the artwork bbox so circle-less SVGs auto-center rather than refuse to build.
- * Rect parts anchor on the document canvas (see canvasAnchor) and skip the wheel notice.
+ * Whether a `<circle>` is the boundary marker a design template draws, or just part of the
+ * drawing.
+ *
+ * Taking the largest circle unconditionally made any decorative one the boundary, and
+ * kid-oriented clipart is full of them: a 7-colour file with four r=18 corner dots had the first
+ * dot scaled to the full 276mm face and the other three thrown clear of the part, silently
+ * (docs/findings/2026-08-16-maker-ease-review.md). A template's marker is the circle the rest of
+ * the drawing sits inside, so that is what is tested.
+ *
+ * **Compared as bounding boxes, not "are the artwork's corners inside the circle".** No circle
+ * contains the corners of its own bounding square, so the strict form rejects the very templates
+ * this exists to serve: public/templates/wheel-cover-circle.svg is an r=140 disc whose own bbox
+ * corners sit 198 units from its centre.
+ *
+ * Not by fill, the other obvious discriminator, which is backwards here. Markers are often
+ * `fill="none"`, but that template's boundary is a *filled* disc and its only unfilled circle is
+ * the small centre-cap reference ring, so filtering on fill picks the ring and blows every
+ * template-drawn design up by 7.6x.
+ */
+function enclosesArtwork(
+  circle: { cx: number; cy: number; r: number },
+  bbox: { minX: number; minY: number; maxX: number; maxY: number },
+): boolean {
+  // Slack for a template whose artwork is drawn right up to, or a hair over, the rim. Relative to
+  // the radius so it means the same at any document scale.
+  const slack = circle.r * 0.02;
+  return (
+    circle.cx - circle.r - slack <= bbox.minX &&
+    circle.cy - circle.r - slack <= bbox.minY &&
+    circle.cx + circle.r + slack >= bbox.maxX &&
+    circle.cy + circle.r + slack >= bbox.maxY
+  );
+}
+
+/**
+ * A circle rejected as the boundary that still looks like it was meant to be one: it holds some
+ * of the drawing, and what escaped is small enough to be a stray rather than half the design.
+ *
+ * Without this, one stray mark outside a template's circle silently drops the design to the bbox
+ * fit, which on a real template is a fraction of the intended size and off-centre with it.
+ *
+ * **Size of the escapers, not a share of the shape count.** Counting was the first attempt and
+ * cannot work: the canonical case is a template plus one stray, which once the marker itself is
+ * excluded is exactly one shape in and one out, and no majority rule calls that a boundary. What
+ * actually separates the two is what got out. A stray is a dot or a leftover speck; a circle
+ * sitting beside a real drawing has something big outside it, and there the plain bbox fit is the
+ * right answer and worth no comment.
+ */
+function looksLikeAnEscapedBoundary(
+  circle: { cx: number; cy: number; r: number },
+  parsed: ParsedSVG,
+): boolean {
+  const dist = (p: { x: number; y: number }) => Math.hypot(p.x - circle.cx, p.y - circle.cy);
+  // The marker is not part of what it holds. Counting its own body lets a decorative filled circle
+  // qualify on itself alone.
+  const isTheCircle = (sh: (typeof parsed.shapes)[number]) =>
+    sh.loops.every((l) => l.every((p) => Math.abs(dist(p) - circle.r) <= circle.r * 0.02));
+  const others = parsed.shapes.filter((sh) => !isTheCircle(sh));
+  const held = others.filter((sh) =>
+    sh.loops.every((l) => l.every((p) => dist(p) <= circle.r * 1.02)),
+  );
+  if (!held.length || held.length === others.length) return false;
+  const escaped = others.filter((sh) => !held.includes(sh));
+  // A fifth of the circle's diameter: comfortably bigger than any stray speck, comfortably
+  // smaller than a drawing someone meant to place outside.
+  const strayLimit = circle.r * 0.4;
+  return escaped.every((sh) => {
+    const pts = sh.loops.flat();
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    return (
+      Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) <= strayLimit
+    );
+  });
+}
+
+/**
+ * Design anchor, per artwork: the SVG's <circle> when it encloses the drawing (a template's
+ * intended outer boundary), else a pseudo-circle on the artwork bbox so circle-less SVGs
+ * auto-center rather than refuse to build. Rect parts anchor on the document canvas (see
+ * canvasAnchor).
+ *
+ * **Silent on both of those**, because both behave. The notice fires only where the result would
+ * otherwise be inexplicable: a circle that held most of the drawing and lost some of it. The old
+ * message had this exactly backwards, announcing the plain bbox fit on every circle-less load
+ * while the hijack said nothing.
  *
  * Shared with the gizmo (src/scene/faceFrame.ts): a frame drawn around an anchor the build didn't
  * use encloses empty face. The gizmo passes no `notice`, since it re-resolves this on every
@@ -186,10 +269,19 @@ export function canvasAnchor(parsed: ParsedSVG): { cx: number; cy: number; r: nu
 export function designAnchor(
   parsed: ParsedSVG,
   isRect: boolean,
-  notice: (msg: string) => void = () => {},
+  notice?: (msg: string) => void,
 ): { cx: number; cy: number; r: number } {
-  const existing = isRect ? null : parsed.rawSVGCircle;
-  if (existing) return existing;
+  const circle = isRect ? null : parsed.rawSVGCircle;
+  if (circle && enclosesArtwork(circle, parsed.bbox)) return circle;
+  // `notice &&` first, deliberately: the scan below walks every vertex of the artwork, and the
+  // gizmo (src/scene/faceFrame.ts) re-resolves this on every refresh and every pointerdown with
+  // no notice sink, so a slider drag would pay for a result that is thrown away.
+  if (notice && circle && looksLikeAnEscapedBoundary(circle, parsed))
+    notice(
+      'This SVG has a circle around most of the artwork, but some of it falls outside. The ' +
+        'design was fitted by its overall size instead, so it may print smaller than the ' +
+        'template intends. Remove any stray marks outside the circle.',
+    );
   // A raster anchors on its frame on every kind, wheel included, and says nothing: an image cannot
   // contain a boundary circle, so the notice below would ask every image for the impossible.
   const isRaster = parsed.origin === 'raster';
@@ -197,11 +289,11 @@ export function designAnchor(
     const canvas = canvasAnchor(parsed);
     if (canvas) return canvas;
   }
+  // No notice on this branch. It is the well-behaved one: the artwork is centred on its own
+  // bounding box, which is what a file not drawn over a template wants. Saying so on every such
+  // load was the warning pointing the wrong way, since the case that could surprise, and did, was
+  // the other one.
   const bbox = parsed.bbox;
-  if (!isRect && !isRaster)
-    notice(
-      'This SVG has no <circle> marking the design boundary — the artwork was auto-centered on the hub using its bounding box. Use Design radius / Scale / Offset to adjust the fit.',
-    );
   return {
     cx: (bbox.minX + bbox.maxX) / 2,
     cy: (bbox.minY + bbox.maxY) / 2,

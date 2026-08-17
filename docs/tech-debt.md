@@ -1030,31 +1030,3 @@ bbox. Then erode the whole thing, which makes every hole's rim an edge for free 
 `erodeBoundary` and `splitAtBoundary` already take multi-ring features and need no
 change. Verify on a doughnut-shaped silhouette (inner rim prints in the artwork's colour)
 and on the wheel and footrest (clip and fill unchanged).
-
-## The largest `<circle>` in a wheel design silently becomes its boundary marker
-
-`designAnchor` ([src/geometry/assembly.ts](../src/geometry/assembly.ts)) anchors
-wheel-fit artwork on the SVG's largest `<circle>`, assuming it is a template's
-boundary marker. On artwork not drawn over a template, any decorative circle
-wins.
-
-Measured 2026-08-16, commit e0ed92c
-([findings report](findings/2026-08-16-maker-ease-review.md)):
-
-- 7-color SVG, four r=18 decorative circles at the corners. The first (a red
-  dot at 30,30) was scaled to the full 276mm face and centred on the hub. The
-  other three landed ~300mm off the face and vanished.
-- Control: the same shapes as `<path>` arcs load correctly, all 7 colors, sane
-  auto-fit.
-- The warning is inverted. The no-circle case, which behaves well (bbox
-  auto-center), posts a notice. The hijack case says nothing.
-- Null result: declaring `width="100mm" height="100mm"` changes nothing. Unit
-  handling is not involved.
-
-Why it matters for this audience: kid-oriented clipart is full of circles
-(suns, balloons, eyes, polka dots), and the failure is silent and looks
-bizarre. Closing it: the parser comment
-([src/svg/parse.ts](../src/svg/parse.ts)) already notes real boundary markers
-are commonly `fill="none"`. Use that as the discriminator (a filled circle is
-artwork), and turn the warning the right way round: say something when a
-circle is used as the anchor, not when one is absent.

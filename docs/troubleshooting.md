@@ -442,6 +442,33 @@ If a color should be partly on the face but this fires anyway, check where the
 design is anchored. An SVG with no `<circle>` boundary marker is auto-centered
 on its bounding box, which a stray decorative element can move.
 
+## Troubleshooting: "This SVG has a circle around most of the artwork, but some of it falls outside"
+
+A design template marks its boundary with a circle drawn around everything, and on a
+round part the app sizes your artwork to that circle. This says the circle is
+there but something in the file sits outside it, so the circle was not used and
+the design was fitted by its overall size instead.
+
+**The usual cause is a stray filled shape**: a dot parked off to one side, a
+leftover filled rectangle, a stray copy of something. It has to be filled to
+count. The app ignores stroke-only objects everywhere, so a loose guide line or
+an unfilled outline is not what tripped this.
+
+**It moves the design as well as shrinking it.** The fallback centres on the
+whole drawing, stray included, so the artwork comes out both smaller and
+off-centre. Scale alone will not put it back; use Offset X/Y too, or remove the
+stray and let the circle do its job.
+
+- **Find what is outside the circle** and delete it. In Inkscape or Illustrator,
+  select all and compare the selection bounds against the template outline.
+- **Or set the fit by hand** with Design radius / Scale / Offset.
+
+**A circle that holds little or none of your drawing says nothing**, and is not
+used either. That is ordinary decoration, and clipart is full of it: suns,
+balloons, eyes, polka dots. Before this rule existed the largest such circle
+became the boundary, so a corner dot could be blown up to the whole face while
+the rest of the design was thrown off the part in silence.
+
 ## Troubleshooting: "This shape was too big for the wheel, so it was scaled down to fit"
 
 Full text: _"This shape was too big for the wheel, so it was scaled down to fit —
