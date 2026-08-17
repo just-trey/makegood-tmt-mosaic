@@ -1,8 +1,19 @@
-# FilamentSlotStrip — PROPOSED, not built
+# FilamentSlotStrip — PROPOSED, and its numbering half is now settled against
 
 **Status: a proposal, not a spec of anything that exists.** Same standing as `ZoneListRow.prompt.md`
-— see the note at the top of that file. Named as a known gap by convention 31 of
-`docs/ui-conventions.md`.
+— see the note at the top of that file.
+
+**Do not build the numbered part.** Convention 16 settles against showing a slot number per colour,
+and the reason is measured rather than aesthetic: the colour list orders by area so a row can be
+found, the export assigns slots in palette order, and the two disagree. A four-colour file whose
+rows read blue, red, green, yellow exported them as slots 3, 4, 2, 5, so a strip numbering by
+position would name slots the file does not use, and a maker loading their AMS from it would load
+the wrong spools. The reasoning is on the sort in `src/ui/colorList.ts`.
+
+**And the gap it was filed against is half closed.** The slot count is a live line under the colour
+list, and the Export panel states the filament count before the button is pressed (convention 24).
+What is left of the original complaint is that a filament's _name_ is nowhere on screen, which does
+not need a numbered strip to fix.
 
 ## Purpose
 
@@ -10,11 +21,10 @@ What the design is spending, in the vocabulary the audience already has: **numbe
 slots**. Not "AMS slots": that is Bambu's name for its hardware and the Snapmaker U1 has a
 toolchanger instead (convention 1).
 
-Conventions 16 and 17. Today the owned-filament palette is a 14-swatch grid with no numbering, and
-the number of slots a design is using appears only inside the capacity warning — so the user learns
-the cost at the moment it has become a problem, rather than while there is still a cheap decision
-to make. `docs/audience.md`: these are people who "know what AMS / AMS Lite is and how a filament
-slot works", budgeting a scarce resource.
+Written when the slot count appeared only inside the capacity warning, so the user learned the cost
+at the moment it had become a problem. That half is live now, on the line under the colour list.
+`docs/audience.md`: these are people who "know what AMS / AMS Lite is and how a filament slot
+works", budgeting a scarce resource.
 
 The strip is proposed alongside the zone-first work rather than on its own because that work makes
 the question louder: five zones each with their own design is five chances to add a colour, and

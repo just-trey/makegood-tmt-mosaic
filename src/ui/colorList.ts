@@ -268,6 +268,16 @@ export function renderColorList(
   wireDepthReset(list);
   const baseEntry = colorMeshes.find((c) => c.isBase) || null;
   const rows = colorMeshes.filter((c) => !c.isBase);
+  // Biggest colour first, which is how someone finds the row they want to edit.
+  //
+  // Not the filament-slot order, and not labelled with slot numbers. This is the measurement
+  // behind convention 16's exception: the export assigns materials in palette order while this
+  // list sorts by area, and they genuinely disagree. A four-colour file whose rows read blue, red,
+  // green, yellow exported them as slots 3, 4, 2, 5. Numbering rows by position would print a
+  // number the file does not use, and a maker loading their AMS from it would load the wrong
+  // spools; sorting by slot instead would fix the numbers by removing the ordering people navigate
+  // with. Maintainer's call, 2026-08-17: ship neither. The slot *count* is on the line below,
+  // which is the number a decision turns on.
   rows.sort((a, b) => b.areaPct - a.areaPct);
   if (baseEntry) renderBaseRow(list, baseEntry);
   else renderEmptyBaseRow(list);

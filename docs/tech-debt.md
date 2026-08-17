@@ -60,22 +60,28 @@ part thumbnail, `src/ui/shapeThumb.ts`), the neutral measured _more_ legible tha
 replaced: 7.3:1 against 5.3:1, where the accent's farthest shaded surface was 2.9:1, under WCAG's
 3:1 non-text minimum. Don't assume the remaining instances cost legibility to fix.
 
-## Filaments are presented as an unlabelled swatch grid, and the slot count only appears in a failure
+## A filament's name is nowhere on screen, only its hex
 
-Conventions 16–18 of [ui-conventions.md](ui-conventions.md). "Body / blank color" is a 14-swatch
-grid with no numbering; an AMS presents filaments as numbered slots, which is the vocabulary the
-audience already has. Separately, the number of slots a design is currently spending is visible
-only inside the AMS-capacity warning — the user learns the cost at the moment it has already
-become a problem, rather than while there is still a cheap decision to make.
+Convention 16 asks for swatches carrying their filament name. No surface does it:
 
-This is the presentation half of a mismatch whose other half is already tracked under "Auto-merge
-is a similarity control; the user's actual constraint is a slot count" — that section covers what
-the control _does_, this one covers whether the cost is legible while designing. Closing it means
-a persistent slot count against the selected printer's capacity, shown during design rather than
-on failure, and numbering the swatches. The count is already computed for the capacity check, so
-this is presentation over data the app has in hand. A third convention in the same group — that
-the owned-filament palette be editable in the app rather than by hand-editing
-`public/filaments.json` — is already carried as a roadmap item.
+| Where                          | Shows                  | Name available?                                            |
+| ------------------------------ | ---------------------- | ---------------------------------------------------------- |
+| Colors detected rows           | the raw hex, `#1e5fa8` | `title` on nothing; the row has no name at all             |
+| Body / blank color swatch grid | colour only            | `title` and `aria-label` only, so hover or a screen reader |
+| Export summary, exported 3MF   | the name               | already resolved via `nearestFilamentName`                 |
+
+So the app knows the name everywhere it writes a file and shows it nowhere the user is choosing.
+A volunteer matching rows to spools reads hex codes off a screen and colours off a shelf.
+
+This is the surviving half of the section that closed when the slot count went live and slot
+numbering was settled against (convention 16's exception, reasoned on the sort in
+[src/ui/colorList.ts](../src/ui/colorList.ts)). Deleting it whole was wrong and a review caught it:
+the count complaint closed, this one never did.
+
+Closing it: `nearestFilamentName` ([src/state/filaments.ts](../src/state/filaments.ts)) is the same
+lookup the export already uses, so this is presentation over a resolved value, not new matching.
+The open questions are what to show when a colour is far from anything owned, and whether the hex
+stays alongside the name (it is what a user pastes back into Illustrator, so probably yes).
 
 ## The body-color help text tells the user to act in a different panel
 
