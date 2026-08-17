@@ -325,6 +325,15 @@
               or Snapmaker Orca with colors pre-assigned to filament slots. The STL set is a
               per-color .zip fallback for slicers that don't read pre-mapped 3MF color data.
             </p>
+            <p>
+              The box above the button says what you are about to get: how many parts, how many
+              plates, and a swatch per filament, with the parts listed plate by plate. It follows
+              the design on screen, so a color change or a merge updates it before you commit. The
+              chair is 13 parts across 11 plates, which is a multi-day print, and that is worth
+              seeing before the download starts rather than after. Parts whose plates are not pinned
+              in advance, a hubcap cut to artwork shape for instance, are arranged as the file is
+              written, so those show parts and filaments without a plate count.
+            </p>
           </section>
 
           <section class="help-sec" id="h-about">
@@ -748,6 +757,7 @@
               </select>
             </div>
           </div>
+          <div class="export-summary" id="export-summary" hidden></div>
           <button class="btn primary full" id="btn-export" disabled>Export print-ready 3MF</button>
           <button
             class="btn small full"

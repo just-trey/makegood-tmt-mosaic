@@ -4,6 +4,8 @@ import { getLastAssemblyBuild, getLastBuild } from '../app/rebuild';
 import { asmPartFaceNormal, shippedColorIndices } from '../geometry/assembly';
 import {
   build3MFCombined,
+  groupByPlateHint,
+  partsCarryPlateHints,
   type ExportMaterial,
   type ExportPart,
   type ExportSub,
@@ -59,6 +61,149 @@ function clearStalePlacementNotices(): void {
 const COVERAGE_WARNING_SUFFIX = 'will print body-colored with no design.';
 
 /**
+ * What the export will contain, stated before the button is pressed (convention 24).
+ *
+ * The measured gap: exporting the chair produced a 34 MB, 11-plate, 13-object, 5-filament file
+ * with the left panel byte-identical before and after. That is a multi-day, multi-kilogram print
+ * behind an unlabelled button.
+ *
+ * Reads the build the viewport is already showing, so it costs a lookup rather than a pass over
+ * geometry, and it is the same data `exportPrintReady3MF` writes: the same kept parts, the same
+ * shipped colours, the same `resolvePlacement` and the same plate-grouping rule.
+ *
+ * Plates are stated only when hints determine them. The greedy packer needs real footprints, and a
+ * number this panel guessed would be worse than no number on the one readout a volunteer checks
+ * before committing a spool.
+ */
+export function renderExportSummary(): void {
+  const el = document.querySelector<HTMLElement>('#export-summary');
+  if (!el) return;
+  // Tied to the button it describes, rather than to the last build: neither rebuild path clears
+  // `lastBuild` when the artwork is removed, so reading the build alone left "13 parts · 11
+  // plates" sitting beside an export button that same rebuild had just disabled.
+  if ($<HTMLButtonElement>('#btn-export').disabled) {
+    el.hidden = true;
+    return;
+  }
+  const rows: string[] = [];
+
+  if (state.shapeKind === 'assembly') {
+    const built = getLastAssemblyBuild();
+    const kept = built ? keptPartOutputs(built) : [];
+    if (!kept.length) {
+      el.hidden = true;
+      return;
+    }
+    const shipped = shippedColorIndices(kept);
+    const filaments = [
+      { name: 'Body', hex: baseColorHex() },
+      ...built!.palette.flatMap((p, ci) =>
+        shipped.has(ci) ? [{ name: nearestFilamentName(p.hex), hex: p.hex }] : [],
+      ),
+    ];
+    const hinted = platePlan(kept).map((h) => ({ name: h.part.name, plateHint: h.plateHint }));
+    rows.push(`${kept.length} part${kept.length === 1 ? '' : 's'}`);
+    if (partsCarryPlateHints(hinted)) {
+      const plates = groupByPlateHint(hinted, (h) => h.plateHint);
+      rows.push(`${plates.length} plate${plates.length === 1 ? '' : 's'}`);
+      el.dataset.plates = plates.map((pl) => pl.map((h) => h.name).join(', ')).join(' | ');
+    } else {
+      delete el.dataset.plates;
+    }
+    rows.push(`${filaments.length} filament${filaments.length === 1 ? '' : 's'}`);
+    el.innerHTML =
+      `<div class="export-summary-line">${rows.join(' · ')}</div>` +
+      `<div class="export-summary-swatches">${filaments
+        .map(
+          (f) =>
+            `<span class="export-summary-swatch" style="background:${f.hex}" title="${f.name}"></span>`,
+        )
+        .join('')}</div>` +
+      (el.dataset.plates
+        ? `<div class="export-summary-plates">${el.dataset.plates
+            .split(' | ')
+            .map((p, i) => `Plate ${i + 1}: ${p}`)
+            .join('<br>')}</div>`
+        : '');
+    el.hidden = false;
+    return;
+  }
+
+  const built = getLastBuild();
+  if (!built) {
+    el.hidden = true;
+    return;
+  }
+  const filaments = [
+    { name: 'Body', hex: baseColorHex() },
+    ...built.colorMeshes.map((c) => ({
+      name: c.isBackground ? 'Background' : nearestFilamentName(c.color),
+      hex: c.color,
+    })),
+  ];
+  el.innerHTML =
+    `<div class="export-summary-line">1 plate · ${filaments.length} filament${
+      filaments.length === 1 ? '' : 's'
+    }</div>` +
+    `<div class="export-summary-swatches">${filaments
+      .map(
+        (f) =>
+          `<span class="export-summary-swatch" style="background:${f.hex}" title="${f.name}"></span>`,
+      )
+      .join('')}</div>`;
+  el.hidden = false;
+}
+
+/**
+ * Which plate each part is pinned to: the baked placement's hint, except the wheel's rotated
+ * duplicate halves, which are the same mesh again and each claim the next plate after the
+ * primary's.
+ *
+ * One implementation, used by the export and by the summary that promises what the export will do.
+ * The counter is why this cannot be a pure per-part lookup, and why a copy in the summary would
+ * have been a second rule rather than the same one.
+ */
+function platePlan(kept: { part: Parameters<typeof resolvePlacement>[0] }[]): {
+  part: Parameters<typeof resolvePlacement>[0];
+  resolution: ReturnType<typeof resolvePlacement>;
+  plateHint?: number;
+}[] {
+  let nextHalfPlate = 2;
+  // The resolution rides along because resolvePlacement fingerprints the part mesh, an O(vertices)
+  // scan. This runs on every rebuild for the summary; without returning it the export would pay
+  // for a second pass per part on top.
+  return kept.map(({ part }) => {
+    const resolution = resolvePlacement(part);
+    const baked = resolution.verified ? resolution.placement.plateHint : undefined;
+    const isDuplicateHalf = part.roleId === 'wheel-half' && part.isDuplicateOf != null;
+    return { part, resolution, plateHint: isDuplicateHalf ? nextHalfPlate++ : baked };
+  });
+}
+
+/**
+ * The part outputs that will actually reach the file: one whose pocket cut consumed the whole part
+ * has no body left to export.
+ *
+ * Shared with the pre-export summary below, which must count the same parts the export will write.
+ * `report` is how the export raises this as a warning and the summary stays silent — the summary
+ * runs on every rebuild, and a pill posted from a passive readout would arrive with no action
+ * behind it.
+ */
+function keptPartOutputs(
+  built: NonNullable<ReturnType<typeof getLastAssemblyBuild>>,
+  report?: (msg: string) => void,
+): typeof built.partOutputs {
+  return built.partOutputs.filter((o) => {
+    if (o.bodySoup.length) return true;
+    report?.(
+      `Part "${o.part.name}" has no geometry to export — its pocket cut went all the way ` +
+        `through, likely because its depth exceeds the wall thickness there.`,
+    );
+    return false;
+  });
+}
+
+/**
  * The last guardrail before an incomplete-coverage chair export downloads: rebuild.ts already
  * surfaces this as an info pill the whole time it's true, but that pill is easy to have scrolled
  * past by the time the user reaches Export. Escalated to warn() here rather than notice() because
@@ -92,14 +237,7 @@ export async function exportPrintReady3MF(): Promise<void> {
     clearStalePlacementNotices();
     warnIfIncompleteZoneCoverage();
     const palette = built.palette;
-    const kept = built.partOutputs.filter((o) => {
-      if (o.bodySoup.length) return true;
-      warn(
-        `Part "${o.part.name}" has no geometry to export — its pocket cut went all the way ` +
-          `through, likely because its depth exceeds the wall thickness there.`,
-      );
-      return false;
-    });
+    const kept = keptPartOutputs(built, (msg) => warn(msg));
     // Only palette colors with an inlay on some exported part become materials. A color whose
     // regions all fell off the parts would otherwise ship as a filament nothing references,
     // costing the user an AMS slot that prints nothing (the build warns naming such colors).
@@ -111,11 +249,11 @@ export async function exportPrintReady3MF(): Promise<void> {
       matIndexByColor.set(ci, materials.length);
       materials.push({ name: nearestFilamentName(p.hex), color: p.hex });
     });
-    // Plate layout comes from PLACEMENT above — verified constants, not computed. The wheel's
-    // primary "top" half + "cap" share plate 1; each rotated-duplicate "top" (the wheel's other
-    // half) claims the next plate after that, which is the counter here.
-    let nextHalfPlate = 2;
-    parts = kept.map(({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }) => {
+    // Plate layout comes from PLACEMENT — verified constants, not computed. platePlan applies it,
+    // and the pre-export summary reads the same plan so the two cannot disagree about what the
+    // file will contain.
+    const plan = platePlan(kept);
+    parts = kept.map(({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }, i) => {
       const nrm = asmPartFaceNormal(part, state.assembly.parts);
       const nsign = nrm && nrm[1] < 0 ? -1 : 1;
       const subs: ExportSub[] = [
@@ -129,7 +267,7 @@ export async function exportPrintReady3MF(): Promise<void> {
           indexed: inlayIndexed?.[+ci],
         });
       });
-      const resolution = resolvePlacement(part);
+      const { resolution } = plan[i];
       const note = placementNotice(part.name, resolution);
       if (note) (note.level === 'warn' ? warn : notice)(note.message);
       return {
@@ -138,11 +276,7 @@ export async function exportPrintReady3MF(): Promise<void> {
         bodySoup,
         subs,
         ...(resolution.verified ? resolution.placement : {}),
-        // the wheel's rotated duplicate halves are the one placement that can't be a constant:
-        // each copy is the same mesh again and claims its own plate after the primary's.
-        ...(part.roleId === 'wheel-half' && part.isDuplicateOf != null
-          ? { plateHint: nextHalfPlate++ }
-          : {}),
+        ...(plan[i].plateHint != null ? { plateHint: plan[i].plateHint } : {}),
       };
     });
     fname = `mosaic-${state.assembly.kindId}.3mf`;
@@ -286,6 +420,7 @@ export function initExportPanel(): void {
     void clampBuildParamToPrinter();
     // re-posts the slot-budget pill against the new printer's numbers as well as redrawing the line
     refreshSlotCountCapacity();
+    renderExportSummary();
     renderWarnings();
     schedulePersist();
   });

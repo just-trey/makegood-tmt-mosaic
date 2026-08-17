@@ -1066,3 +1066,37 @@ code {
 a {
   color: var(--accent);
 }
+
+/* What the export will contain, above the button that produces it (ui-conventions 24). Sits in
+   the panel flow rather than in a dialog: it has to be readable while deciding, not after. */
+.export-summary {
+  margin-bottom: var(--space-tight);
+  padding: var(--space-tight);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+.export-summary-line {
+  font-size: var(--text-body);
+  color: var(--text);
+}
+.export-summary-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-hair);
+  margin-top: var(--space-tight);
+}
+.export-summary-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-lg);
+  /* --swatch-line, not --line: these sit on a filament colour the user picked, and a dark navy
+     hairline disappears against a dark swatch (see the token's own note). */
+  border: 1px solid var(--swatch-line);
+}
+.export-summary-plates {
+  margin-top: var(--space-tight);
+  font-size: var(--text-label);
+  color: var(--text-dim);
+  line-height: var(--leading-normal);
+}
