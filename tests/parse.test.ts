@@ -94,7 +94,7 @@ describe('parseSVGDocument', () => {
     expect(loop).toHaveLength(4);
   });
 
-  it('reports the largest circle for assembly-mode anchoring', () => {
+  it('reports the largest circle, leaving the anchor decision to designAnchor', () => {
     const out = parseSVGDocument(
       svg(
         '<circle cx="1" cy="1" r="2" fill="#ff0000"/>' +

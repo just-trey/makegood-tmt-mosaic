@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A decorative circle in your artwork no longer hijacks the whole design.** On
+  a wheel the app sizes artwork to the circle a design template draws around its
+  boundary, and it was taking the largest circle in the file whatever it was. A
+  7-color drawing with four small dots in the corners had the first dot blown up
+  to the full 276mm face and the other three thrown clear off the part, with
+  nothing said. Kid-oriented clipart is full of circles (suns, balloons, eyes,
+  polka dots), so this was easy to hit and looked bizarre. A circle is only used
+  as the boundary now if the rest of the drawing sits inside it.
+- **The message about it pointed the wrong way.** A design with no circle, which
+  is the case that behaves well, got a notice; a design whose scale was being set
+  by a circle got nothing. Now it says so when a circle sets the scale, and is
+  quiet when your artwork is simply centered on the part.
 - **A cut warning no longer claims a color is missing when it is only partly
   missing.** The per-region warning is raised per region and the build carries
   on, so a color split across two depths keeps the slice that did cut. The
