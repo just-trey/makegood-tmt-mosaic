@@ -97,11 +97,16 @@ below) decides how it is written**, and applies wherever it lands.
 
 ## Filaments
 
-16. Filaments are presented as numbered slots with swatches, the way the printer's own filament
-    list is — not as an unlabelled paint-picker grid.
+16. Filaments are presented as swatches carrying their filament name, not as an anonymous
+    paint-picker grid. **Slot numbers are the exception, and settled against**: the colour list is
+    ordered by area so people can find a row, while the file assigns slots in palette order, and a
+    row numbered by its position would name a slot the export does not use. A number a maker loads
+    their AMS from has to be the file's or not exist. The reasoning is on the sort in
+    `src/ui/colorList.ts`; the slot _count_ is on the line below the list, which is the number a
+    decision actually turns on.
 17. The slot count currently being spent is visible **while designing**, against the selected
-    printer's capacity. The line under the color list does this; what is still missing is the
-    numbering on the swatches themselves (16).
+    printer's capacity, and the Export panel says what the file will contain before the button is
+    pressed (24). Both are live.
 18. The owned-filament palette is editable in the app. Editing `public/filaments.json` is not a
     UI.
 
@@ -153,8 +158,9 @@ The failure mode here is adding. The standing complaint is features nobody needs
     the whole proposal: `design-system/README.md` deleted the `.jsx` and `.d.ts` files
     permanently, so asking for them here would prescribe files that bundle forbids. The proposed
     tier is defined in that README's Fidelity section and sits outside its live-counterpart
-    claim. Known gaps: zone list row and filament slot strip (both filed), viewport selection
-    state, gizmo treatment.
+    claim. Known gaps: zone list row (filed), viewport selection state, gizmo treatment. The
+    filament slot strip is also filed, but its numbering half is settled against by 16, so read
+    that file's own header before building from it.
 32. Icons follow the system's existing rule: no hand-drawn SVG icon set. Where a part needs to
     be identified visually, a thumbnail rendered from the part is in-system; a hand-authored
     glyph is not.
