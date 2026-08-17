@@ -22,7 +22,10 @@ export function refreshDepthControls(): void {
  * colors no longer in the artwork until the next prune: a count including those would name
  * overrides the user cannot see.
  */
+let namedOverrides: string[] = [];
+
 export function refreshDepthOverrides(overriddenKeys: string[]): void {
+  namedOverrides = overriddenKeys.slice();
   const box = document.querySelector<HTMLElement>('#depth-overrides');
   if (!box) return;
   const n = overriddenKeys.length;
@@ -39,31 +42,68 @@ export function refreshDepthOverrides(overriddenKeys: string[]): void {
 
 export function initDepthPanel(): void {
   const overrides = $('#depth-overrides');
-  // Bound once on the container, not on the button: refreshDepthOverrides replaces innerHTML on
-  // every rebuild, and a listener on the button itself is detached mid-gesture by the very rebuild
-  // a pending depth edit schedules, so the click never lands.
+  // The same gesture contract as the per-row "↺" (wireDepthReset in colorList.ts). This one is
+  // bulk and unundoable, so it needs every guard that one has, not fewer.
+  //
+  // Delegated to the container rather than bound to the button: refreshDepthOverrides replaces
+  // innerHTML on every rebuild, and the rebuild a pending depth edit schedules detaches the button
+  // mid-gesture, so a listener on the button itself never fires.
+  const resetBtn = (e: Event): HTMLElement | null => {
+    const btn = (e.target as HTMLElement | null)?.closest?.(
+      '#depth-reset-all',
+    ) as HTMLElement | null;
+    // Primary button only, or the press that opens a context menu wipes every override, with the
+    // menu drawn over the change and nothing to undo it.
+    return !btn || (e as MouseEvent).button > 0 ? null : btn;
+  };
+  let pressed = false;
+  let mouseHandled = false;
+
+  const clearAll = () => {
+    // Commit any half-typed depth first, in this same tick. The mousedown guard below only defers
+    // that field's blur-`change`; without this it fires *after* the clear and re-stores the very
+    // override being removed. Measured: typing 3.5 then clicking Reset all left 3.5 in place.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && focused.classList.contains('depth-input'))
+      focused.blur();
+    // Only what the readout named. state.colorSettings can also hold keys this count never
+    // included: flat-mode entries that survive a switch to an assembly kind, and colors the
+    // shipped filter dropped. Clearing those would make the button do more than it says.
+    namedOverrides.forEach((k) => delete state.colorSettings[k]);
+    scheduleRebuild();
+  };
+
   overrides.addEventListener('mousedown', (e) => {
-    if (!(e.target as HTMLElement).closest('#depth-reset-all')) return;
-    // Same guard as the per-row "↺" (see wireDepthReset in colorList.ts): hold the depth field's
-    // blur-`change` off until the press completes, or it re-stores the override this is clearing
-    // and schedules the rebuild that replaces this button.
+    pressed = !!resetBtn(e);
+    if (!pressed) return;
     e.preventDefault();
     e.stopPropagation();
   });
   overrides.addEventListener('mouseup', (e) => {
-    if (!(e.target as HTMLElement).closest('#depth-reset-all')) return;
-    // Commit any half-typed depth first, in this same tick, then clear. The mousedown guard above
-    // only defers that field's blur-`change`; without this it fires *after* the clear and re-stores
-    // the very override the user just asked to remove. Measured: typing 3.5 and clicking Reset all
-    // left 3.5 in place. Same reason and same fix as the per-row "↺" in colorList.ts.
-    const focused = document.activeElement;
-    if (focused instanceof HTMLInputElement && focused.classList.contains('depth-input'))
-      focused.blur();
-    // Every entry, read now rather than from a snapshot taken at render time: a depth typed
-    // between the two would not be in that snapshot and would survive. Clearing a stale key costs
-    // nothing, since the next prune would drop it anyway.
-    Object.keys(state.colorSettings).forEach((k) => delete state.colorSettings[k]);
-    scheduleRebuild();
+    const started = pressed;
+    pressed = false;
+    mouseHandled = true;
+    // Press must have started on the button: otherwise a mousedown on the label, dragged onto it
+    // and released, fires the wipe.
+    if (!resetBtn(e) || !started) return;
+    e.stopPropagation();
+    clearAll();
+  });
+  // A release anywhere else never reaches the listener above, which would leave `pressed` naming an
+  // abandoned press for the next unrelated gesture that happens to end on the button.
+  document.addEventListener('mouseup', () => {
+    pressed = false;
+  });
+  overrides.addEventListener('click', (e) => {
+    // Enter and Space dispatch only `click`, so without this the button is dead to the keyboard.
+    // A real mouseup already decided the pointer case one listener above; the synthetic click that
+    // follows it must not decide again.
+    if (mouseHandled) {
+      mouseHandled = false;
+      return;
+    }
+    if (!resetBtn(e)) return;
+    clearAll();
   });
 
   input('#p-depth').addEventListener('input', () => {
