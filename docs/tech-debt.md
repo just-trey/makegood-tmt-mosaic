@@ -931,13 +931,6 @@ failed the gate. Both hosts are in `IGNORE_HOSTS` now. The app itself is
 unaffected (`display=swap` renders the fallback face), which is exactly why this
 took three sightings to catch: nothing looked wrong except the gate.
 
-**That the app fetches its fonts over the network is a separate open question.**
-Not a defect today, and deliberately not fixed here: self-hosting the three
-families is a `design-system/` change with its own weight budget, and the
-audience question is whether a volunteer running this in a workshop with no
-connection should see the intended headings. Measured cost of leaving it: two
-gates went flaky for a fortnight and nobody could name why.
-
 **Seen once more on 2026-08-17, in `check-csg-failure.mjs`, and it cost a
 debugging pass for a second reason.** That script counted a console error into
 the same tally as a failed degradation assertion, so a run printed

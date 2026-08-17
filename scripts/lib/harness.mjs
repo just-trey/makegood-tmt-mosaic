@@ -22,8 +22,9 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 // - fonts.gstatic / fonts.googleapis: index.html loads Outfit, Inter and IBM Plex Mono from Google
 //   Fonts at runtime. A woff2 404 here failed smoke twice and check-csg-failure once in August
 //   with no reproduction, because the error named neither a URL nor an origin. It is cosmetic to
-//   the app (`display=swap` renders in the fallback face) but it made two gates flaky. That the
-//   app fetches fonts over the network at all is its own question, in docs/tech-debt.md.
+//   the app (`display=swap` renders in the fallback face) but it made two gates flaky. Fetching
+//   them from Google is a settled decision rather than an oversight; the reasoning is on the
+//   <link> in index.html.
 const IGNORE_HOSTS = ['cloudflareinsights.com', 'fonts.gstatic.com', 'fonts.googleapis.com'];
 const isIgnored = (text, url) =>
   IGNORE_HOSTS.some((h) => (text && text.includes(h)) || (url && url.includes(h)));
