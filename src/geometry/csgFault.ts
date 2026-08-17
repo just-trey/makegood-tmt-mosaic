@@ -4,10 +4,10 @@ import { warn } from '../warnings';
  * Forced failures for the CSG degradation branches in assembly.ts, armed from the URL:
  * `?csgfault=difference`, `?csgfault=intersection:1`.
  *
- * Those branches have only ever run under vitest with Manifold's booleans replaced by spies
- * (tests/assembly.test.ts, "CSG failure handling") — never in the real app against the real
- * engine, which is the gap docs/tech-debt.md records. A spy proves the code path; it can't show
- * what a slicer opens afterwards, and that is the half that matters here.
+ * Those branches otherwise only run under vitest with Manifold's booleans replaced by spies
+ * (tests/assembly.test.ts, "CSG failure handling"), never in the real app against the real engine.
+ * A spy proves the code path; it can't show what a slicer opens afterwards, and that is the half
+ * that matters here. scripts/check-csg-failure.mjs is what drives these and asserts the result.
  *
  * Deliberately **not** `import.meta.env.DEV`-gated, for the same reason `window.__mosaic` isn't
  * (src/main.ts): the drive scripts verify `vite preview` output, which is a production build, so

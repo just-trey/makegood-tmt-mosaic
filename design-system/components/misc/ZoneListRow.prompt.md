@@ -1,13 +1,11 @@
 # ZoneListRow — PROPOSED, not built
 
-**Status: a proposal, not a spec of anything that exists.** Filed in `misc/` alongside `ColorRow`,
+**Status: a proposal, not a spec of anything that exists.** The proposed tier is defined in
+`design-system/README.md`'s Fidelity section, which excludes these files from its live-counterpart
+claim; convention 31 of `docs/ui-conventions.md` is what requires filing one instead of inventing
+markup inline, and it names `zone list row` as a known gap. Filed in `misc/` alongside `ColorRow`,
 which is the same kind of thing; `layout/` holds the Panel section shell, and a review of the first
-draft rightly said a row is not one. Every other file in
-`components/` describes UI the app has, and `design-system/README.md` is explicit that a spec
-describing UI the app doesn't have is worse than no spec — three have been deleted for it. This one
-carries the status in its title so it cannot be mistaken for the others, and it exists because
-convention 31 of `docs/ui-conventions.md` says a change needing a component the system lacks
-proposes it rather than inventing markup inline. It names `zone list row` as a known gap.
+draft rightly said a row is not one.
 
 Written against the throwaway prototype in `spike/zone-first-selection`
 (`src/ui/zoneListPanel.spike.ts`) and the design note in `docs/spikes/zone-first-selection.md`.

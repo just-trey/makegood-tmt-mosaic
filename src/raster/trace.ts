@@ -5,9 +5,11 @@ import { fitChain } from './curve';
 
 /**
  * Ceiling on traced components. Exceeding it raises the despeckle floor and re-runs rather than
- * handing the region pipeline a shape count it will choke on — see the O(n²·len) note in
- * docs/tech-debt.md. Deliberately a component cap rather than a point cap: components are what
- * drive ring count, and ring count is what `shapeToFeature` is quadratic in.
+ * handing the region pipeline a shape count it will choke on — see the complexity note on
+ * `shapeToFeature` in src/geometry/regions.ts, which this cap is what keeps small. Deliberately a
+ * component cap rather than a point cap: components are what drive ring count, and ring count is
+ * what `shapeToFeature` is quadratic in. Raising it means re-running
+ * scripts/bench-raster.ts and scripts/bench-shape-to-feature.ts.
  */
 export const MAX_COMPONENTS = 800;
 
@@ -265,8 +267,9 @@ function unfitCollapsedChains(
  *
  * What it does *not* buy is that a region never crosses one it shares no chain with. Nothing bounds
  * how far a fitted chain strays from the lattice path it replaces, so it can sweep over a third
- * region a pixel away; measured, that is worth up to one working pixel of overlap. See
- * docs/tech-debt.md — the bound, why it can't be tightened, and what absorbs it downstream.
+ * region a pixel away; measured, that is worth up to one working pixel of overlap. The bound,
+ * why it can't be tightened, and what absorbs it downstream are on the "keeps any overlap between
+ * components down to a sliver" test in tests/raster-trace.test.ts, which pins it.
  */
 function buildChains(labels: Int16Array, w: number, h: number, params: TraceParams): ChainSet {
   const stride = w + 1;

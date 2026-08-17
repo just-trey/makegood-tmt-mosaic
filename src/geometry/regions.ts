@@ -57,6 +57,23 @@ export function loopToRing(loop: Loop, forceCCW?: boolean): Ring | null {
  * "nonzero", where tools conventionally wind holes opposite their exterior, and "evenodd", where a
  * hole can legally share its exterior's winding (common from Affinity Designer/Illustrator).
  * Containment depth (odd = hole, even = solid island) is correct for both on any well-formed path.
+ *
+ * That depth resolution is O(rings²·len): every subpath ring is point-in-polygon tested against
+ * every other. Not a live issue on anything in use, and benchmarked rather than assumed
+ * (scripts/bench-shape-to-feature.ts): the worst real file measured 5.88ms, public/patterns/
+ * zebra.svg, a single 69-subpath path, an order of magnitude under the 30ms yield budget. It
+ * matters more than that number suggests because the caller maps this over every shape *before*
+ * the first yield, so the failure mode is a frozen tab rather than a slow one. The untested risk
+ * is a dense Illustrator export, hundreds of subpaths in one <path> (fur, stipple line art), which
+ * no current sample exercises; measure such a file rather than guessing a threshold now.
+ *
+ * Raster tracing is the first producer that could plausibly reach it, and is held off by the
+ * despeckle floor rather than by luck. MAX_COMPONENTS (src/raster/trace.ts) is what guarantees it:
+ * re-run the bench if that cap is raised or the floor lowered.
+ *
+ * Separately, thousands of nested rings or <g> elements deep enough to overflow the JS call stack
+ * fail with a named "unusually deeply nested" error instead of a raw stack-overflow message, but
+ * neither this nor `walk` in src/svg/parse.ts is actually depth-limited.
  */
 export function shapeToFeature(shape: SVGShape): PolyFeature | null {
   const rings = shape.loops
@@ -396,6 +413,12 @@ export async function unionAllCooperative(
  *
  * The dominant cost of a rebuild, so it runs cooperatively: every ~YIELD_BUDGET_MS it yields a
  * frame and reports progress, keeping the tab responsive on a dense SVG. See src/progress.ts.
+ *
+ * Unbuilt on purpose: a `disjoint` fast path. Raster-traced regions are disjoint by construction,
+ * so every safeDiff here is provably a no-op and the whole pass collapses to array concatenation.
+ * It would make per-component raster granularity viable and cut the per-color path's 136ms too,
+ * but at the 8 shades that path actually produces the pass is not where the time goes. Build it
+ * only if MAX_COMPONENTS (src/raster/trace.ts) is ever raised enough to change that.
  */
 let regionsCacheKey: SVGShape[] | null = null;
 let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;

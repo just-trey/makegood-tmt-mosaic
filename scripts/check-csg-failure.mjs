@@ -5,7 +5,10 @@
 // .intersection replaced by spies -- so what they prove is that the handler runs, not that the
 // engine, the viewport and the exporter survive it. This drives the running app with
 // ?csgfault=<point> (src/geometry/csgFault.ts), exports a real 3MF, and asserts the degradation
-// that reaches the file. That is the gap docs/tech-debt.md records.
+// that reaches the file.
+//
+// What stays untested either way is genuinely malformed mesh input: forcing a fault proves the
+// handler, not that Manifold rejects any particular real mesh. See docs/tech-debt.md.
 //
 // Usage:
 //   npm run build && node scripts/check-csg-failure.mjs [outDir]
@@ -57,6 +60,22 @@ const tris = (parts) => parts.reduce((n, s) => n + s.bodyTris, 0);
  *
  * The rest need one artwork only -- the test SVG has two colors, so the body cut and the per-color
  * inlay loop both run for real on every part.
+ *
+ * First full run (wheel, the two-color SVG above), all five branches confirmed degrading as
+ * documented. Body triangle counts are the measurement worth keeping, because they are what
+ * distinguishes the two outcomes that otherwise look identical in the file (one body, no inlays):
+ *
+ *   fault                       total inlays   body triangles
+ *   none (baseline, 1 artwork)  4              45,214
+ *   color-union:1 (2 artwork)   3 of 4         --
+ *   part-union                  2 of 4         45,166  Cap uncut
+ *   difference                  0              44,930  uncut
+ *   body-mesh                   0              44,930  uncut
+ *   intersection                0              45,214  still cut
+ *
+ * `intersection` matching the baseline exactly is the point: its pocket really is cut and only the
+ * fill failed, which is the "prints as an empty recess" outcome in docs/troubleshooting.md. A
+ * change collapsing it into the export-uncut path would show up here as 44,930 and nowhere else.
  */
 const CASES = [
   {

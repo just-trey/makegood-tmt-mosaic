@@ -47,8 +47,9 @@ whole chains, so both sides splice identical points. **Don't fit per region**:
 pins the fit, and trace.ts carries the reasoning.
 
 It does not stop a region crossing one it shares no chain with, worth up to one
-working pixel of overlap. Paint order absorbs it; measured in
-[tech-debt.md](tech-debt.md).
+working pixel of overlap. Paint order absorbs it; the bound is measured and
+pinned by the "keeps any overlap between components down to a sliver" test in
+`tests/raster-trace.test.ts`.
 
 ### 2. Work out what each colour actually shows
 

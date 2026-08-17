@@ -394,6 +394,13 @@ const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi 
  * (alpha at or above alphaMax) keeps the corner, a shallow one becomes a cubic through it. Open
  * chains additionally emit the two half-segments at their pinned ends, so the output still starts
  * and finishes exactly on the junction points.
+ *
+ * Known and accepted: "sharp" is scale-dependent, so small corners round off. The corner measure
+ * works out to about side/2 for a square, which has to clear 4 at the default alphaMax, so corners
+ * survive from roughly nine pixels a side upward and round below that. A feature a few pixels
+ * across therefore comes back a few percent smaller. Cosmetic, and it is the shrinking half of
+ * this; the deletion half (a thin feature losing its ring outright) is closed by
+ * unfitCollapsedChains in trace.ts.
  */
 function smooth(v: Pt[], closed: boolean, params: CurveParams): Pt[] {
   const m = v.length;

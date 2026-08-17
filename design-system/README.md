@@ -40,6 +40,16 @@ wanting them back, you want the `.prompt.md` spec instead.
 computed style rather than assumed. Colors, spacing, type and states were lifted from the app,
 not invented — recreate them exactly.
 
+**One exception, and it is a tier rather than a leak: a proposal.** Convention 31 of
+[docs/ui-conventions.md](../docs/ui-conventions.md) requires a change needing a component the
+system lacks to file a spec instead of inventing markup inline, so proposals have to live
+somewhere. They are `Name.prompt.md` files titled `PROPOSED, not built`, they carry the status in
+their first line, and the claim above does not cover them: they describe UI the app does not have,
+which is the point. `ZoneListRow` and `FilamentSlotStrip` are the two on file. A proposal graduates
+by being built and then re-verified against real computed style like any other spec, or it is
+deleted. What is barred is the middle state the three deletions below were about: an aspirational
+spec presented as a description.
+
 Holding that claim has cost three specs so far, each deleted rather than kept as an aspiration,
 because a spec that describes UI the app doesn't have is worse than no spec: a developer reading
 it builds the wrong thing confidently.
