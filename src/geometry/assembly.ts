@@ -766,7 +766,7 @@ export async function buildAssemblyGeometry(
         // `continue`, not `return`: a color split across two depths must not lose its interior
         // recess because the edge slice failed to extrude, or the other way round.
         landedColors.add(ci);
-        warnBuild(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
+        warnBuild(`Couldn't cut color ${c.hex} into "${part.name}".`);
       }
     };
     // Artworks landing on a zone: those bound to it by id, plus any unbound one. Unbound is the
@@ -849,7 +849,7 @@ export async function buildAssemblyGeometry(
         // color rather than losing the whole part's cut.
         landedColors.add(+ci);
         warnBuild(
-          `Couldn't combine the cut solids for color ${palette[+ci].hex} on "${part.name}".`,
+          `Couldn't merge color ${palette[+ci].hex} on "${part.name}". It won't print there.`,
         );
         continue;
       }
@@ -870,7 +870,7 @@ export async function buildAssemblyGeometry(
       partMan = soupToManifold(wasm, part.positions);
     } catch {
       prismEntries.forEach(([pci]) => landedColors.add(pci));
-      warnBuild(`Part "${part.name}" mesh couldn't be read by the boolean engine.`);
+      warnBuild(`Couldn't read "${part.name}", so it is not exported.`);
       owned.forEach(manifoldDelete);
       finishPart();
       continue;
@@ -901,7 +901,7 @@ export async function buildAssemblyGeometry(
       // Nothing to cut with. Same escape as the non-watertight branch above: export the untouched
       // body rather than risk a half-cut/half-inlaid pair that would overlap.
       prismEntries.forEach(([pci]) => landedColors.add(pci));
-      warnBuild(`Couldn't combine this part's cut solids on "${part.name}" — exporting it uncut.`);
+      warnBuild(`Couldn't merge the recesses on "${part.name}". It exports with no artwork.`);
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
       manifoldDelete(partMan);
       owned.forEach(manifoldDelete);
@@ -938,8 +938,8 @@ export async function buildAssemblyGeometry(
       // arbitrarily. Export uncut and inlay-less instead.
       prismEntries.forEach(([pci]) => landedColors.add(pci));
       warnBuild(
-        `Boolean cut failed on part "${part.name}" — exporting it uncut and without inlays ` +
-          `(a half-done cut/inlay pair would overlap in the export).`,
+        `Couldn't cut the recesses into "${part.name}". It exports with no artwork. ` +
+          `Cutting halfway would leave two colors claiming the same space.`,
       );
       partOutputs.push({ part, bodySoup, inlaySoups: {} });
       owned.forEach(manifoldDelete);

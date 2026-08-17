@@ -94,7 +94,7 @@ const CASES = [
     point: 'color-union:1',
     artworks: 2,
     expect: 'exactly one color dropped; every other color on every part still cut',
-    warn: /couldn't combine the cut solids/i,
+    warn: /couldn't merge color/i,
     warnCount: 1,
     check: (parts, base) =>
       parts.every((s) => s.bodyCount === 1) && total(parts) === base.inlays - 1,
@@ -103,7 +103,7 @@ const CASES = [
     point: 'part-union',
     artworks: 1,
     expect: 'multi-color parts exported uncut and inlay-less; single-color parts untouched',
-    warn: /couldn't combine this part's cut solids/i,
+    warn: /couldn't merge the recesses/i,
     check: (parts, base) =>
       // Vacuous unless some part actually merged two prisms — otherwise nothing was forced at all.
       parts.some((s) => base.part(s).inlayCount > 1) &&
@@ -118,14 +118,14 @@ const CASES = [
     point: 'difference',
     artworks: 1,
     expect: 'every part exported uncut and inlay-less (no overlapping pair)',
-    warn: /boolean cut failed/i,
+    warn: /couldn't cut the recesses/i,
     check: (parts, base) => total(parts) === 0 && tris(parts) < base.tris,
   },
   {
     point: 'body-mesh',
     artworks: 1,
     expect: 'same as difference, but the freed-handle path ran',
-    warn: /boolean cut failed/i,
+    warn: /couldn't cut the recesses/i,
     check: (parts, base) => total(parts) === 0 && tris(parts) < base.tris,
   },
   {

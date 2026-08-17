@@ -582,7 +582,7 @@ try {
    * zone — an un-inked pixel with a chart right behind it, indistinguishable from an occlusion
    * failure. Read the app's own warnings rather than inferring it from the picture. */
   const buildWarnings = await page.evaluate(() => window.__mosaic.warnings());
-  const cutFailures = buildWarnings.filter((w) => /cut solid|Boolean|inlay/i.test(w));
+  const cutFailures = buildWarnings.filter((w) => /couldn't (cut|merge|read|trim)|inlay/i.test(w));
   if (cutFailures.length) {
     failures.push(
       `the ink pass warned about ${cutFailures.length} failed cut(s) — an uncut part leaves bare ` +

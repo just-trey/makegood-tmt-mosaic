@@ -372,8 +372,7 @@ describe('buildAssemblyGeometry', () => {
 
           expect(
             WARNINGS.some(
-              (w) =>
-                /couldn't combine the cut solids/i.test(w.message) && /#ff0000/.test(w.message),
+              (w) => /couldn't merge color/i.test(w.message) && /#ff0000/.test(w.message),
             ),
           ).toBe(true);
 
@@ -422,8 +421,8 @@ describe('buildAssemblyGeometry', () => {
           expect(
             WARNINGS.some(
               (w) =>
-                /boolean cut failed/i.test(w.message) &&
-                /uncut and without inlays/i.test(w.message),
+                /couldn't cut the recesses/i.test(w.message) &&
+                /exports with no artwork/i.test(w.message),
             ),
           ).toBe(true);
 

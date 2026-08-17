@@ -301,7 +301,7 @@ export function safeUnion(
   const r = boolOpWithRetry((x, y) => turf.union(x, y) as PolyFeature | null, a, b);
   if (r.ok) return r.val ?? null;
   warnBool(
-    `Boolean union failed${label ? ` for ${label}` : ''} (likely a self-intersecting path in the source SVG) — using the unmerged shape as a fallback, so this region may be missing part of its area.`,
+    `Couldn't merge the shapes${label ? ` for ${label}` : ''}. They are used unmerged, so this region may be missing part of its area.`,
   );
   return a;
 }
@@ -318,7 +318,7 @@ export function safeDiff(
   const r = boolOpWithRetry((x, y) => turf.difference(x, y) as PolyFeature | null, a, b);
   if (r.ok) return r.val ?? null;
   warnBool(
-    `Boolean subtraction failed${label ? ` for ${label}` : ''} (likely a self-intersecting path in the source SVG) — that region may overlap its neighbor instead of having the overlap cut out.`,
+    `Couldn't trim the overlap${label ? ` for ${label}` : ''}. That region may overlap its neighbor instead of being trimmed back.`,
   );
   return a;
 }

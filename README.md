@@ -188,7 +188,7 @@ Full detail on any of these: [docs/pipeline.md](docs/pipeline.md) and
 
 ## Troubleshooting
 
-Seeing a "Boolean union/subtraction failed" or "Couldn't build the cut solid"
+Seeing a "Couldn't merge the shapes" or "Couldn't cut color … into …"
 warning? **[docs/troubleshooting.md](docs/troubleshooting.md)** has one
 section per warning string, what it means, and how to fix it.
 

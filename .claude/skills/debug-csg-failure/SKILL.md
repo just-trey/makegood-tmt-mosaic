@@ -1,6 +1,6 @@
 ---
 name: debug-csg-failure
-description: Investigate an assembly-mode CSG failure (a "Couldn't build/combine the cut solid", "Boolean cut failed", or "Couldn't fit the inlay" warning) and force any of those branches against the real Manifold engine with ?csgfault to check what actually ships. Use when one of those warnings is reported, or after changing anything in the assembly cut/inlay path.
+description: Investigate an assembly-mode CSG failure (a "Couldn't cut … into …", "Couldn't merge …", or "Couldn't fit the inlay" warning) and force any of those branches against the real Manifold engine with ?csgfault to check what actually ships. Use when one of those warnings is reported, or after changing anything in the assembly cut/inlay path.
 model: opus
 ---
 
@@ -22,7 +22,7 @@ outcome from code.
 
 Two strings look alike and aren't:
 
-- **"Couldn't build the cut solid for color …"** is the 2D-to-3D step, not a
+- **"Couldn't cut color … into …"** is the 2D-to-3D step, not a
   boolean between solids. It fires when the clipped region won't extrude into a
   sealed prism. The app already retries once with the region repaired, so a
   warning that survives is usually a genuinely bad path in the SVG.
@@ -32,14 +32,18 @@ Two strings look alike and aren't:
   despite sitting in the same family. It is `fillExtent()` returning nothing,
   and it degrades to a single copy of the artwork. Don't chase it into Manifold.
 
-**Counting `Couldn't …` sites in
-[assembly.ts](../../../src/geometry/assembly.ts) will mislead you in both
-directions.** Six strings, but only **three** are Manifold boolean branches: the
-per-colour merge, the part-wide merge, the inlay intersection. The other three
-are the two extrude attempts and the fill measure. Meanwhile the fourth boolean
-branch, the body difference, doesn't use the word at all ("Boolean cut failed on
-part …"), and nor do two more failure branches: the part mesh being unreadable,
-and the part not being watertight.
+**Almost every branch opens with `Couldn't` (the watertight check at
+[assembly.ts](../../../src/geometry/assembly.ts) is the exception: "Part … isn't
+a watertight/manifold mesh"), so counting those sites in
+[assembly.ts](../../../src/geometry/assembly.ts) tells you nothing about which
+are Manifold.** Only **four** are boolean branches: the per-colour merge
+("Couldn't merge color …"), the part-wide merge ("Couldn't merge the recesses
+on …"), the body difference ("Couldn't cut the recesses into …") and the inlay
+intersection ("Couldn't fit the inlay …"). The rest are the two extrude attempts
+("Couldn't cut color … into …"), the fill measure, the part mesh being
+unreadable ("Couldn't read …") and the part not being watertight. The wording
+distinguishes cut-one-colour from merge-many; it does not distinguish 2D from
+3D, so map the string to a branch here rather than guessing from the verb.
 
 ## Force a branch against the real engine
 

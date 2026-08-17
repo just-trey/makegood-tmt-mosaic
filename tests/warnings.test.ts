@@ -40,7 +40,7 @@ describe('clearBuildWarnings', () => {
   });
 
   it('a superseded build warning never reappears once the next build clears it', () => {
-    warnBuild('Couldn\'t build the cut solid for color #1e5fa8 on "Seat back (bottom)".');
+    warnBuild('Couldn\'t cut color #1e5fa8 into "Seat back (bottom)". It won\'t print there.');
     clearBuildWarnings(); // the next rebuild starts
     // ...and this time that color's cutter built fine, so nothing re-warns it.
     expect(WARNINGS).toHaveLength(0);

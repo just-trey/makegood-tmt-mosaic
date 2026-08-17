@@ -39,21 +39,21 @@ describe('computeNetRegionsByColor cache + degraded-boolean warnings', () => {
 
   it('warns when a boolean falls back', async () => {
     await computeNetRegionsByColor(overlappingShapes());
-    expect(messages().some((m) => m.startsWith('Boolean subtraction failed'))).toBe(true);
+    expect(messages().some((m) => m.startsWith("Couldn't trim the overlap"))).toBe(true);
     expect(WARNINGS.every((w) => w.build)).toBe(true);
   });
 
   it('replays the warning on a cache hit, so a later rebuild still reports the degraded regions', async () => {
     const shapes = overlappingShapes();
     const first = await computeNetRegionsByColor(shapes);
-    expect(messages().some((m) => m.startsWith('Boolean subtraction failed'))).toBe(true);
+    expect(messages().some((m) => m.startsWith("Couldn't trim the overlap"))).toBe(true);
 
     clearBuildWarnings(); // the next rebuild starts (a slider nudge — same shapes, cache hit)
     expect(WARNINGS).toHaveLength(0);
 
     const second = await computeNetRegionsByColor(shapes);
     expect(second).toBe(first); // no recompute, so nothing re-ran to re-warn on its own
-    expect(messages().some((m) => m.startsWith('Boolean subtraction failed'))).toBe(true);
+    expect(messages().some((m) => m.startsWith("Couldn't trim the overlap"))).toBe(true);
   });
 
   it('does not replay a previous artwork’s warnings once new shapes are computed', async () => {
