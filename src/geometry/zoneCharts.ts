@@ -27,6 +27,13 @@ export interface SidecarChart {
    * A part's slice can be several disjoint islands, hence a list.
    */
   subRegions: { outer: number[][]; holes: number[][][] }[];
+  /**
+   * Surface of this chart another part hides once assembled (wheels, cushions), already shrunk by
+   * the config's bleed so artwork still runs past the visible edge. Subtracted from the artwork
+   * clip and shown shaded. Absent on kinds baked without a covers file: absent and empty both
+   * mean "nothing is hidden".
+   */
+  deadRegions?: { outer: number[][]; holes: number[][][] }[];
 }
 
 export interface SidecarZone {
@@ -55,9 +62,11 @@ export interface SidecarZone {
  * *geometry* pairing; this guards the *format*, so a visitor holding a cached schema-1 sidecar
  * (whose charts carry `subBoundary` rather than `subRegions`, and whose zones have no `uvBounds`)
  * can't be paired with newer code that would read its per-part clip region as absent and clip every
- * part to the whole zone.
+ * part to the whole zone. Schema 3 adds `deadRegions`: a cached schema-2 sidecar read by this code
+ * would silently report "nothing is hidden" on a kind whose bake says otherwise, the same class of
+ * failure, so it takes the same hard refusal.
  */
-export const SIDECAR_SCHEMA = 2;
+export const SIDECAR_SCHEMA = 3;
 
 export interface ZoneSidecar {
   schema: number;
@@ -140,6 +149,7 @@ export function reconstructChart(
     boundary: zone.boundary,
     holes: zone.holes,
     subRegions: chart.subRegions,
+    deadRegions: chart.deadRegions,
     zoneBounds: zone.uvBounds,
   };
 }

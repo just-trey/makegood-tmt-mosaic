@@ -109,6 +109,243 @@ export async function read3MFIndexed(buf) {
 }
 
 /**
+ * Reads every mesh object out of a multi-body 3MF along with its material color, resolved
+ * through pid -> m:colorgroup -> m:color. The covers file (a whole-assembly CAD export) tells
+ * its bodies apart only by color: every body is named the same and carries no part id.
+ */
+export async function read3MFObjectsByColor(buf) {
+  const zip = await JSZip.loadAsync(buf);
+  const model = zip.file('3D/3dmodel.model');
+  if (!model) throw new Error('not a valid 3MF: missing 3D/3dmodel.model');
+  const xml = await model.async('string');
+  const XA = [/\bx="([^"]*)"/, /\by="([^"]*)"/, /\bz="([^"]*)"/];
+  const TA = [/\bv1="([^"]*)"/, /\bv2="([^"]*)"/, /\bv3="([^"]*)"/];
+  const attrs = (tag, res) => res.map((r) => +(tag.match(r)?.[1] ?? NaN));
+  const colorOf = new Map();
+  for (const m of xml.matchAll(/<m:colorgroup id="(\d+)">\s*<m:color color="(#[0-9A-Fa-f]+)"/g))
+    colorOf.set(m[1], m[2].toUpperCase());
+  // Vertices are read in each object's local frame. A file whose build items or components carry
+  // their own transforms would collapse every body toward its origin, and a coincidental bbox
+  // match could then register the covers somewhere wrong without tripping the residual check, so
+  // such files are refused outright rather than mis-read.
+  if (/<(item|component)\b[^>]*\btransform="/.test(xml))
+    throw new Error(
+      'covers file places its bodies with 3MF transforms, which this reader does not apply: ' +
+        're-export it with all transforms applied to the mesh coordinates',
+    );
+  const objects = [];
+  for (const om of xml.matchAll(/<object\b([^>]*)>([\s\S]*?)<\/object>/g)) {
+    const pid = om[1].match(/\bpid="(\d+)"/)?.[1];
+    const verts = [];
+    const tris = [];
+    for (const v of om[2].matchAll(/<vertex\b[^>]*>/g)) verts.push(attrs(v[0], XA));
+    for (const t of om[2].matchAll(/<triangle\b[^>]*>/g)) tris.push(attrs(t[0], TA));
+    if (tris.length) objects.push({ color: colorOf.get(pid ?? '') ?? null, verts, tris });
+  }
+  return objects;
+}
+
+const REGISTER_DIM_TOL_MM = 1.5;
+const REGISTER_RESIDUAL_MM = 1;
+
+/**
+ * Registers the covers file's frame against the bake frame and returns the cover meshes
+ * transformed into it. A CAD export lands in its own axes (the chair's covers file is y-up where
+ * the bake frame is z-forward), so the reference bodies (the kind's own parts, re-exported in the
+ * same file) anchor the transform: each config part is matched to a reference body by bbox
+ * dimensions, and the translation every matched pair agrees on picks the rotation. Mirrored part
+ * pairs share dimensions, which is why single-pair matching is not enough: wrong pairings
+ * disagree on the translation and lose the vote.
+ *
+ * Known limit: a part set that is symmetric as a WHOLE (the chair's left/right pairs plus
+ * centered singles) also matches its own mirror rotation with the same count and residual, and
+ * this cannot tell them apart. Harmless while the covers are symmetric too; a kind with an
+ * asymmetric cover needs an asymmetric reference body in the file to break the tie.
+ */
+export function registerCovers(config, parts, objects) {
+  const refColor = config.covers.referenceColor.toUpperCase();
+  const refs = objects.filter((o) => o.color === refColor);
+  const coverObjs = objects.filter((o) => o.color !== refColor);
+  if (!refs.length || !coverObjs.length)
+    throw new Error(
+      `covers file has ${refs.length} reference bodies and ${coverObjs.length} covers: ` +
+        `check covers.referenceColor (${config.covers.referenceColor})`,
+    );
+  const bboxOf = (verts) => {
+    const mn = [Infinity, Infinity, Infinity];
+    const mx = [-Infinity, -Infinity, -Infinity];
+    for (const v of verts)
+      for (let k = 0; k < 3; k++) {
+        if (v[k] < mn[k]) mn[k] = v[k];
+        if (v[k] > mx[k]) mx[k] = v[k];
+      }
+    return { mn, mx, dims: [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]] };
+  };
+  const partBB = parts.map((p) => bboxOf(p.verts));
+  const rotations = [];
+  for (const p of [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0],
+  ])
+    for (const s0 of [1, -1])
+      for (const s1 of [1, -1])
+        for (const s2 of [1, -1]) {
+          const R = [
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0],
+          ];
+          R[0][p[0]] = s0;
+          R[1][p[1]] = s1;
+          R[2][p[2]] = s2;
+          const det =
+            R[0][0] * (R[1][1] * R[2][2] - R[1][2] * R[2][1]) -
+            R[0][1] * (R[1][0] * R[2][2] - R[1][2] * R[2][0]) +
+            R[0][2] * (R[1][0] * R[2][1] - R[1][1] * R[2][0]);
+          if (det > 0) rotations.push(R);
+        }
+  const apply = (R, v) => [
+    R[0][0] * v[0] + R[0][1] * v[1] + R[0][2] * v[2],
+    R[1][0] * v[0] + R[1][1] * v[1] + R[1][2] * v[2],
+    R[2][0] * v[0] + R[2][1] * v[1] + R[2][2] * v[2],
+  ];
+  let best = null;
+  for (const R of rotations) {
+    const refBB = refs.map((r) => bboxOf(r.verts.map((v) => apply(R, v))));
+    // Candidate translations clustered by distance to a running mean, not a fixed mm grid: a
+    // consensus straddling a grid boundary would split into two half-sized votes and fail a
+    // registration whose true residual is far under the limit.
+    const clusters = [];
+    for (let pi = 0; pi < parts.length; pi++)
+      for (let ri = 0; ri < refs.length; ri++) {
+        if (partBB[pi].dims.some((d, k) => Math.abs(d - refBB[ri].dims[k]) >= REGISTER_DIM_TOL_MM))
+          continue;
+        const t = partBB[pi].mn.map((x, k) => x - refBB[ri].mn[k]);
+        let c = clusters.find((cl) => cl.mean.every((x, k) => Math.abs(x - t[k]) <= 1));
+        if (!c) clusters.push((c = { mean: [...t], list: [] }));
+        c.list.push({ pi, t });
+        for (let k = 0; k < 3; k++)
+          c.mean[k] = c.list.reduce((s, e) => s + e.t[k], 0) / c.list.length;
+      }
+    for (const { list } of clusters) {
+      const matched = new Set(list.map((e) => e.pi)).size;
+      const T = [0, 1, 2].map((k) => list.reduce((s, e) => s + e.t[k], 0) / list.length);
+      const residual = Math.max(
+        ...list.map((e) => Math.max(...e.t.map((x, k) => Math.abs(x - T[k])))),
+      );
+      if (!best || matched > best.matched || (matched === best.matched && residual < best.residual))
+        best = { R, T, matched, residual };
+    }
+  }
+  if (!best || best.matched < parts.length)
+    throw new Error(
+      `covers file registration failed: only ${best?.matched ?? 0} of ${parts.length} parts ` +
+        `matched a reference body, so the covers file does not contain this assembly`,
+    );
+  if (best.residual > REGISTER_RESIDUAL_MM)
+    throw new Error(
+      `covers file registration failed: matched parts disagree on the transform by ` +
+        `${best.residual.toFixed(3)}mm (limit ${REGISTER_RESIDUAL_MM}mm)`,
+    );
+  const xform = (v) => apply(best.R, v).map((x, k) => x + best.T[k]);
+  return {
+    covers: coverObjs.map((c) => ({ verts: c.verts.map(xform), tris: c.tris })),
+    matched: best.matched,
+    residual: best.residual,
+  };
+}
+
+/**
+ * Occlusion range (mm) for dead-surface classification: a zone triangle is covered when a cover
+ * mesh lies within this distance straight out along its normal. Measured on the chair's covers
+ * file (2026-08-16): the seat and back cushions sit in true contact (hits at 0-2mm), the wheel
+ * disc stands 3-10mm off the mounts, and recessed mount surface behind the wheel reads up to
+ * ~20mm. The 30-60mm band beyond is fender-arch interior that no zone contains, which is what
+ * this cap exists to leave out.
+ */
+export const COVER_RAY_MM = 25;
+/**
+ * Dead islands under this (mm²) are dropped. Deliberately looser than MIN_ISLAND_AREA_MM2:
+ * dropping a dead sliver only means a speck of hidden surface still takes artwork, the safe
+ * direction, where dropping a clip-region island deletes design surface.
+ */
+const MIN_DEAD_AREA_MM2 = 15;
+
+const CELL_MM = 8;
+
+function coverGrid(cover) {
+  const grid = new Map();
+  cover.tris.forEach((t, ti) => {
+    const vs = t.map((i) => cover.verts[i]);
+    const mn = [0, 1, 2].map((k) => Math.floor(Math.min(...vs.map((v) => v[k])) / CELL_MM));
+    const mx = [0, 1, 2].map((k) => Math.floor(Math.max(...vs.map((v) => v[k])) / CELL_MM));
+    for (let i = mn[0]; i <= mx[0]; i++)
+      for (let j = mn[1]; j <= mx[1]; j++)
+        for (let k = mn[2]; k <= mx[2]; k++) {
+          const key = `${i},${j},${k}`;
+          if (!grid.has(key)) grid.set(key, []);
+          grid.get(key).push(ti);
+        }
+  });
+  return grid;
+}
+
+function rayTriDist(p, dir, a, b, c) {
+  const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const h = [
+    dir[1] * e2[2] - dir[2] * e2[1],
+    dir[2] * e2[0] - dir[0] * e2[2],
+    dir[0] * e2[1] - dir[1] * e2[0],
+  ];
+  const det = e1[0] * h[0] + e1[1] * h[1] + e1[2] * h[2];
+  if (Math.abs(det) < 1e-9) return Infinity;
+  const inv = 1 / det;
+  const s = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
+  const u = (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]) * inv;
+  if (u < 0 || u > 1) return Infinity;
+  const q = [s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]];
+  const v = (dir[0] * q[0] + dir[1] * q[1] + dir[2] * q[2]) * inv;
+  if (v < 0 || u + v > 1) return Infinity;
+  const t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv;
+  return t > 1e-6 ? t : Infinity;
+}
+
+/** Whether any cover lies within COVER_RAY_MM of `p` along `dir`, via each cover's cell grid. */
+function coverOccludes(grids, p, dir) {
+  for (const { cover, grid } of grids) {
+    let hit = Infinity;
+    const seen = new Set();
+    for (let s = 0; s <= COVER_RAY_MM + CELL_MM; s += CELL_MM * 0.9) {
+      const q = [p[0] + dir[0] * s, p[1] + dir[1] * s, p[2] + dir[2] * s];
+      for (let di = -1; di <= 1; di++)
+        for (let dj = -1; dj <= 1; dj++)
+          for (let dk = -1; dk <= 1; dk++) {
+            const key = `${Math.floor(q[0] / CELL_MM) + di},${Math.floor(q[1] / CELL_MM) + dj},${
+              Math.floor(q[2] / CELL_MM) + dk
+            }`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const cell = grid.get(key);
+            if (!cell) continue;
+            for (const ti of cell) {
+              const [a, b, c] = cover.tris[ti].map((x) => cover.verts[x]);
+              const d = rayTriDist(p, dir, a, b, c);
+              if (d < hit) hit = d;
+            }
+          }
+      if (hit < s) break;
+    }
+    if (hit <= COVER_RAY_MM) return true;
+  }
+  return false;
+}
+
+/**
  * Merge the parts into one indexed surface. Coincident vertices (within tolMm, across or within
  * parts) share one global index so triangle adjacency crosses printed-part seams. Buckets are
  * tol-sized cells with a 27-neighbour search, so two matching vertices can never be split by
@@ -1002,6 +1239,22 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
   // hiding surface that is.
   const silhouette = zone.charts.flatMap((c) => c.subRegions.flatMap((r) => [r.outer, ...r.holes]));
   const d = silhouette.map((loop) => toD(loop.map(pt))).join(' ');
+  // Hatched overlay: surface another part hides once the chair is assembled (deadRegions). The
+  // artist sees where artwork stops before spending detail there. Fill style carries the meaning,
+  // same ink as every other guide mark.
+  const deadLoops = zone.charts.flatMap((c) =>
+    (c.deadRegions ?? []).flatMap((r) => [r.outer, ...r.holes]),
+  );
+  const deadD = deadLoops.map((loop) => toD(loop.map(pt))).join(' ');
+  const deadDefs = deadD
+    ? `\n  <defs>\n    <pattern id="hidden" width="4" height="4" patternUnits="userSpaceOnUse">\n` +
+      `      <path d="M-1 1 L1 -1 M0 4 L4 0 M3 5 L5 3" stroke="${ACCENT}" stroke-width="0.5" ` +
+      `stroke-opacity="0.45"/>\n    </pattern>\n  </defs>`
+    : '';
+  const deadPath = deadD
+    ? `\n  <path d="${deadD}" fill="url(#hidden)" fill-rule="evenodd" stroke="${ACCENT}" ` +
+      `stroke-width="0.3" stroke-opacity="0.5"/>`
+    : '';
   const seams = (zone.seams || [])
     .map(
       (line) =>
@@ -1048,12 +1301,20 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
   const legend = [
     zone.seams?.length ? 'dashed = printed-part seam' : '',
     partLabels ? 'labels name the printed part' : '',
+    deadD ? 'hatched = hidden once assembled' : '',
   ]
     .filter(Boolean)
     .join('; ');
+  // Shrunk to fit the sheet rather than wrapped: a second line would drop out of the header band
+  // the part labels dodge, and land on top of one. Three clauses at full size run 320mm, which is
+  // wider than every chair template.
+  const legendSize = Math.min(
+    LABEL_SIZE,
+    (W * 0.96) / Math.max(1, legend.length * LABEL_ADVANCE_EM),
+  );
   const seamNote = legend
     ? `\n  <text x="${W / 2}" y="${Math.min(H - 4, 24)}" text-anchor="middle" ` +
-      `font-family="sans-serif" font-size="${LABEL_SIZE}" fill="${ACCENT}">${legend}</text>`
+      `font-family="sans-serif" font-size="${round(legendSize, 2)}" fill="${ACCENT}">${legend}</text>`
     : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
@@ -1065,8 +1326,8 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
   GENERATED by scripts/bake-zones.mjs - do not hand-edit; re-run the bake to regenerate.
 -->
 <svg width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}" version="1.1"
-     xmlns="http://www.w3.org/2000/svg">
-  <path d="${d}" fill="${GRAY}" fill-rule="evenodd" />
+     xmlns="http://www.w3.org/2000/svg">${deadDefs}
+  <path d="${d}" fill="${GRAY}" fill-rule="evenodd" />${deadPath}
 ${seams}
 ${partLabels}
   <text x="${W / 2}" y="${Math.min(H - 4, 12)}" text-anchor="middle" font-family="sans-serif"
@@ -1124,6 +1385,17 @@ function validateConfig(config) {
     !(config.seamWeldTolMm > (config.weldTolMm ?? WELD_TOL_MM))
   )
     throw new Error('seamWeldTolMm must be larger than weldTolMm to stitch anything');
+  if (config.covers !== undefined) {
+    const c = config.covers;
+    if (typeof c.file !== 'string' || !c.file)
+      throw new Error('covers needs a file path (the whole-assembly export with the cover bodies)');
+    if (!(c.bleedMm >= 0 && c.bleedMm <= 100))
+      throw new Error('covers.bleedMm must be between 0 and 100mm');
+    if (!/^#[0-9A-Fa-f]{6,8}$/.test(c.referenceColor ?? ''))
+      throw new Error(
+        'covers.referenceColor must be a hex color (the color of the parts themselves)',
+      );
+  }
   const ids = new Set();
   for (const z of config.zones) {
     if (!z.id || !z.name) throw new Error('every zone needs an id and a name');
@@ -1139,14 +1411,24 @@ function validateConfig(config) {
 /**
  * The whole bake, in memory: parts is [{ libraryPartId, verts: [x,y,z][], tris: [i,j,k][] }] in
  * packed-file index order and the assembled pose. Returns { sidecar, templates, warnings }.
+ *
+ * When the config declares `covers`, opts must carry `covers` (the registerCovers output, in the
+ * bake frame) and `wasm` (a Manifold instance for the 2D bleed offset). Requiring them rather
+ * than skipping is deliberate: a bake that silently ran without the covers file would emit a
+ * sidecar with no dead surface at all, and nothing downstream could tell.
  */
-export function bakeZones(config, parts, log = () => {}) {
+export function bakeZones(config, parts, log = () => {}, opts = {}) {
   validateConfig(config);
   if (
     parts.length !== config.parts.length ||
     parts.some((p, i) => p.libraryPartId !== config.parts[i].libraryPartId)
   )
     throw new Error('parts array does not match config.parts (same ids, same order, required)');
+  if (config.covers && !(opts.covers && opts.wasm))
+    throw new Error('config declares covers but the bake was given no cover meshes / Manifold');
+  const coverGrids = config.covers
+    ? opts.covers.map((cover) => ({ cover, grid: coverGrid(cover) }))
+    : null;
   const warnings = [];
   const weld = weldParts(parts, config.weldTolMm ?? WELD_TOL_MM, config.seamWeldTolMm ?? 0);
   const triGeom = weld.tris.map((t) => triNormalArea(weld.verts, t));
@@ -1229,6 +1511,35 @@ export function bakeZones(config, parts, log = () => {}) {
     const holes = zoneRegions[0].holes.map((pts) => ({ pts }));
     const roundLoop = (pts) => pts.map((p) => [round(p[0], 3), round(p[1], 3)]);
 
+    // Dead surface: what the covers hide, minus a bleed strip so artwork runs past the visible
+    // edge and a slightly shifted cover never reveals blank plastic. The bleed is a dilation of
+    // the VISIBLE region, not an erosion of the covered one: erosion would also pull the dead
+    // region off the zone's own outer boundary, resurrecting a band of hidden surface that has
+    // no visible artwork to continue. Every region here is unioned straight from UV triangles:
+    // the zone-level boundary loops are the display-only outline that fans into spikes across
+    // stitched seams, and a visible region derived from them eats real dead surface.
+    const triRing = (zt) => zt.map((z) => uvOf(z));
+    let deadCS = null;
+    if (coverGrids) {
+      const coveredZ = [];
+      zoneTris.forEach((ti, k) => {
+        const t = weld.tris[ti];
+        const c = [0, 1, 2].map(
+          (a) => (weld.verts[t.v[0]][a] + weld.verts[t.v[1]][a] + weld.verts[t.v[2]][a]) / 3,
+        );
+        if (coverOccludes(coverGrids, c, triGeom[ti].normal)) coveredZ.push(zTris[k]);
+      });
+      if (coveredZ.length) {
+        const wasm = opts.wasm;
+        const zoneCS = new wasm.CrossSection(zTris.map(triRing), 'NonZero');
+        const covCS = new wasm.CrossSection(coveredZ.map(triRing), 'NonZero');
+        const visible = zoneCS.subtract(covCS);
+        const grown = visible.offset(config.covers.bleedMm, 'Miter', 2, 16);
+        deadCS = covCS.subtract(grown);
+        for (const cs of [zoneCS, covCS, visible, grown]) cs.delete();
+      }
+    }
+
     // per-part charts: everything indexed part-locally so the runtime can pair a chart with its
     // packed mesh without re-welding
     const byPart = new Map();
@@ -1295,15 +1606,38 @@ export function bakeZones(config, parts, log = () => {}) {
           `zone "${zoneCfg.id}": part "${parts[pi].libraryPartId}" contributes triangles but no ` +
             `usable boundary loop — cannot build its clip region`,
         );
-      charts.push({
+      const chart = {
         libraryPartId: parts[pi].libraryPartId,
         tris,
         verts: cVerts,
         uv: cUV,
         chartTris,
         subRegions,
-      });
+      };
+      if (coverGrids) {
+        chart.deadRegions = [];
+        if (deadCS) {
+          const chartCS = new opts.wasm.CrossSection(
+            list.map((e) => triRing(e.zTri)),
+            'NonZero',
+          );
+          const cut = deadCS.intersect(chartCS);
+          const rings = cut.toPolygons().map((ring) => ring.map(([x, y]) => [x, y]));
+          cut.delete();
+          chartCS.delete();
+          chart.deadRegions = classifyRegions(rings)
+            .filter((r) => Math.abs(loopArea(r.outer)) >= MIN_DEAD_AREA_MM2)
+            .map((r) => ({
+              outer: roundLoop(simplifyLoop(r.outer, simplifyTol)),
+              holes: r.holes
+                .filter((h) => Math.abs(loopArea(h)) >= minHoleArea)
+                .map((h) => roundLoop(simplifyLoop(h, simplifyTol))),
+            }));
+        }
+      }
+      charts.push(chart);
     }
+    if (deadCS) deadCS.delete();
 
     // Seams: where one printed part's share of the zone ends against another's.
     //
@@ -1389,11 +1723,26 @@ export function bakeZones(config, parts, log = () => {}) {
       file: zone.templateFile,
       svg: zoneTemplateSVG(zone, config.kindId, { maxU, maxV }),
     });
+    const deadArea = coverGrids
+      ? charts.reduce(
+          (s, c) =>
+            s +
+            (c.deadRegions ?? []).reduce(
+              (t, r) =>
+                t +
+                Math.abs(loopArea(r.outer)) -
+                r.holes.reduce((h, l) => h + Math.abs(loopArea(l)), 0),
+              0,
+            ),
+          0,
+        )
+      : 0;
     log(
       `zone "${zone.id}": ${zoneTris.length} tris across ${charts.length} part(s), ` +
         `${zoneRegions.length} lobe(s), ${zone.holes.length} hole(s), ${seams.length} seam(s), ` +
         `stretch max ${zone.distortion.max} mean ${zone.distortion.mean}, ` +
-        `scale ${stats.scale.toFixed(5)}`,
+        `scale ${stats.scale.toFixed(5)}` +
+        (coverGrids ? `, dead ${deadArea.toFixed(0)}mm²` : ''),
     );
   }
 
@@ -1401,7 +1750,8 @@ export function bakeZones(config, parts, log = () => {}) {
   config.parts.forEach((p, pi) => {
     meshes[p.libraryPartId] = meshFingerprint(parts[pi]);
   });
-  // Sidecar schema 2 (charts carry `subRegions`); independent of the zone *config* schema checked
-  // in validateConfig, which is still 1. Must match SIDECAR_SCHEMA in src/geometry/zoneCharts.ts.
-  return { sidecar: { schema: 2, kindId: config.kindId, meshes, zones }, templates, warnings };
+  // Sidecar schema 3 (charts may carry `deadRegions` beside `subRegions`); independent of the
+  // zone *config* schema checked in validateConfig, which is still 1. Must match SIDECAR_SCHEMA
+  // in src/geometry/zoneCharts.ts.
+  return { sidecar: { schema: 3, kindId: config.kindId, meshes, zones }, templates, warnings };
 }

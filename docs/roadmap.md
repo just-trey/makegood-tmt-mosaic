@@ -4,15 +4,11 @@
   ([public/filaments.json](../public/filaments.json)) instead of to colors
   derived from the image, so an image's regions are filaments the user actually
   has and the AMS slot count is settled before export rather than after.
-- Dead zones **(named 2026-08-05 as one of four open defects in the chair
-  workflow — see [tech-debt.md](tech-debt.md))**: mark the parts of a
-  design zone that are hidden by an adjacent
-  part — joints, overlaps, undersides — where a filament change buys nothing.
-  A design placed across one wastes color changes on surface nobody sees.
-  Shape: a bake step that casts each zone triangle outward, tests occlusion
-  against every other part, and emits a `deadRegions` UV polygon set that the
-  runtime subtracts from the clip region and the template draws hatched, so
-  the artist can see where not to put detail.
+- Center auto-fit on the visible part of a zone, not its whole bbox. With the
+  chair's hidden surface now clipped, an auto-fit design on Seat lands mostly
+  on covered surface and prints as a sliver on the front lip. The overlay
+  explains it, but placing straight onto the visible region would be the
+  better default.
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind.
 - A full parent-handle assembly kind.

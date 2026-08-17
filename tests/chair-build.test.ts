@@ -309,38 +309,71 @@ describe('conformal build on the real chair', () => {
 });
 
 /**
- * A spot in the zone guaranteed to be on real design surface: the bbox centre of the largest
- * sub-region any of its parts contributes, with the placement offsets that put a design's centre
- * there. Offset 0/0 puts the design at the zone's UV centre, which on a zone with holes and several
- * lobes is not necessarily over any surface at all — a small design there catches slivers or
- * nothing, which is a property of the chair, not a bug.
+ * A spot in the zone guaranteed to be on real, VISIBLE design surface: the most interior point of
+ * the largest sub-region after the hidden surface (deadRegions) is honoured, with the placement
+ * offsets that put a design's centre there. Offset 0/0 puts the design at the zone's UV centre,
+ * which on a zone with holes and several lobes is not necessarily over any surface at all (and on
+ * the seat it is under the cushion, where artwork is deliberately clipped away). Found by a coarse
+ * grid scan scored by distance to the nearest boundary (region edge, hole, or dead region).
  */
 function zoneTarget(zoneId: string): { partId: string; offX: number; offZ: number } {
   const zone = sidecar.zones.find((z) => z.id === zoneId)!;
-  let best: { partId: string; outer: number[][]; area: number } | null = null;
-  const area = (r: number[][]): number => {
-    let a = 0;
-    for (let i = 0; i < r.length; i++) {
-      const p = r[i],
-        q = r[(i + 1) % r.length];
-      a += p[0] * q[1] - q[0] * p[1];
+  const inRing = (p: number[], ring: number[][]): boolean => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i],
+        b = ring[j];
+      if (
+        a[1] > p[1] !== b[1] > p[1] &&
+        p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]
+      )
+        inside = !inside;
     }
-    return Math.abs(a / 2);
+    return inside;
   };
+  const edgeDist = (p: number[], ring: number[][]): number => {
+    let best = Infinity;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i],
+        b = ring[(i + 1) % ring.length];
+      const dx = b[0] - a[0],
+        dy = b[1] - a[1];
+      const l2 = dx * dx + dy * dy;
+      const t =
+        l2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+      best = Math.min(best, Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)));
+    }
+    return best;
+  };
+  let best: { partId: string; p: number[]; score: number } | null = null;
   for (const ch of zone.charts)
     for (const r of ch.subRegions) {
-      const a = area(r.outer);
-      if (!best || a > best.area) best = { partId: ch.libraryPartId, outer: r.outer, area: a };
+      const xs = r.outer.map((p) => p[0]);
+      const ys = r.outer.map((p) => p[1]);
+      const [minX, maxX, minY, maxY] = [
+        Math.min(...xs),
+        Math.max(...xs),
+        Math.min(...ys),
+        Math.max(...ys),
+      ];
+      const dead = ch.deadRegions ?? [];
+      for (let gi = 1; gi < 24; gi++)
+        for (let gj = 1; gj < 24; gj++) {
+          const p = [minX + ((maxX - minX) * gi) / 24, minY + ((maxY - minY) * gj) / 24];
+          if (!inRing(p, r.outer)) continue;
+          if (r.holes.some((h) => inRing(p, h))) continue;
+          if (dead.some((d) => inRing(p, d.outer) && !d.holes.some((h) => inRing(p, h)))) continue;
+          let score = edgeDist(p, r.outer);
+          for (const h of r.holes) score = Math.min(score, edgeDist(p, h));
+          for (const d of dead) score = Math.min(score, edgeDist(p, d.outer));
+          if (!best || score > best.score) best = { partId: ch.libraryPartId, p, score };
+        }
     }
-  const xs = best!.outer.map((p) => p[0]);
-  const ys = best!.outer.map((p) => p[1]);
-  const cu = (Math.min(...xs) + Math.max(...xs)) / 2;
-  const cv = (Math.min(...ys) + Math.max(...ys)) / 2;
   // placer(): uv = designCentred + (offX, offZ) + zone bbox centre
   return {
     partId: best!.partId,
-    offX: cu - zone.uvBounds.maxU / 2,
-    offZ: cv - zone.uvBounds.maxV / 2,
+    offX: best!.p[0] - zone.uvBounds.maxU / 2,
+    offZ: best!.p[1] - zone.uvBounds.maxV / 2,
   };
 }
 

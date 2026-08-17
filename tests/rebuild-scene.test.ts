@@ -40,6 +40,7 @@ vi.mock('../src/state/persist', () => ({ schedulePersist: vi.fn() }));
 vi.mock('../src/scene/designGizmo', () => ({
   refreshGizmo: vi.fn(),
   isGizmoDragging: () => false,
+  tokenColor: (_name: string, fallback: number) => fallback,
 }));
 vi.mock('../src/scene/zonePick', () => ({ refreshZonePickMeshes: vi.fn() }));
 vi.mock('../src/assembly/parts', async (importOriginal) => ({
@@ -405,6 +406,103 @@ describe('assembly mode with no artwork yet', () => {
     await rebuildCurrent();
 
     expect(setPreferredViewDir).toHaveBeenCalledWith(expect.anything());
+  });
+});
+
+describe('hidden-surface overlay (deadRegions)', () => {
+  // A hand-built flat chart: a 20x20mm square whose UV equals its xz footprint, with a 12x12mm
+  // dead patch in the middle, enough for the overlay warp to have real surface to land on.
+  function flatChart(withDead: boolean) {
+    return {
+      positions3: new Float32Array([0, 0, 0, 20, 0, 0, 20, 0, 20, 0, 0, 20]),
+      uv: new Float32Array([0, 0, 20, 0, 20, 20, 0, 20]),
+      triangles: new Uint32Array([0, 1, 2, 0, 2, 3]),
+      normalSign: 1 as const,
+      boundary: [
+        [0, 0],
+        [20, 0],
+        [20, 20],
+        [0, 20],
+      ],
+      subRegions: [
+        {
+          outer: [
+            [0, 0],
+            [20, 0],
+            [20, 20],
+            [0, 20],
+          ],
+          holes: [],
+        },
+      ],
+      ...(withDead
+        ? {
+            deadRegions: [
+              {
+                outer: [
+                  [4, 4],
+                  [16, 4],
+                  [16, 16],
+                  [4, 16],
+                ],
+                holes: [],
+              },
+            ],
+          }
+        : {}),
+      zoneBounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
+    };
+  }
+  const zonedPart = (withDead: boolean): AssemblyPart =>
+    asmPart({ zones: [{ id: 'z', name: 'Zone', chart: flatChart(withDead) }] } as never);
+  const sceneMeshes = (): THREE.Mesh[] => {
+    const meshes: THREE.Mesh[] = [];
+    modelGroup.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+    });
+    return meshes;
+  };
+
+  beforeEach(() => {
+    state.shapeKind = 'assembly';
+    state.assembly.kindId = 'wheel';
+  });
+
+  it('hatches the hidden surface on the bare parts, before any artwork exists', async () => {
+    state.assembly.parts = [zonedPart(true)];
+
+    await rebuildCurrent();
+
+    const meshes = sceneMeshes();
+    expect(meshes).toHaveLength(2);
+    const overlay = meshes.find((m) => (m.material as THREE.Material).transparent)!;
+    expect(overlay).toBeTruthy();
+    expect(overlay.geometry.getAttribute('position').count).toBeGreaterThan(0);
+    // per-vertex UV drives the stripe texture
+    expect(overlay.geometry.getAttribute('uv').count).toBe(
+      overlay.geometry.getAttribute('position').count,
+    );
+  });
+
+  it('draws it again on the cut result, and adds nothing when nothing is hidden', async () => {
+    const part = zonedPart(true);
+    state.assembly.parts = [part];
+    state.parsed = parsedSquare();
+    vi.mocked(buildAssemblyGeometry).mockResolvedValue(
+      assemblyBuild({ partOutputs: [{ part, bodySoup: tri(), inlaySoups: { 0: tri(1) } }] }),
+    );
+
+    await rebuildCurrent();
+
+    const withOverlay = sceneMeshes().filter(
+      (m) => (m.material as THREE.Material).transparent,
+    ).length;
+    expect(withOverlay).toBeGreaterThan(0);
+
+    state.assembly.parts = [zonedPart(false)];
+    state.parsed = null;
+    await rebuildCurrent();
+    expect(sceneMeshes()).toHaveLength(1);
   });
 });
 

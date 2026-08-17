@@ -18,7 +18,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { bakeZones, read3MFIndexed } from './lib/zonebake.mjs';
+import {
+  bakeZones,
+  read3MFIndexed,
+  read3MFObjectsByColor,
+  registerCovers,
+} from './lib/zonebake.mjs';
+import { getManifold } from '../src/geometry/manifold.ts';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -51,9 +57,37 @@ for (const p of config.parts ?? []) {
   console.log(`  loaded      ${p.file}: ${mesh.verts.length} vertices, ${mesh.tris.length} tris`);
 }
 
+const opts = {};
+if (config.covers) {
+  const file = path.resolve(REPO, config.covers.file);
+  if (!fs.existsSync(file))
+    die(
+      `${config.covers.file} not found.\n  This is the whole-assembly export marking the parts ` +
+        `that cover this kind's design surface; it lives outside the repo (stubs/ is gitignored). ` +
+        `Without it the bake cannot tell which surface is hidden.`,
+    );
+  let objects;
+  try {
+    objects = await read3MFObjectsByColor(fs.readFileSync(file));
+  } catch (e) {
+    die(`could not read covers file ${config.covers.file}: ${e.message}`);
+  }
+  try {
+    const reg = registerCovers(config, parts, objects);
+    opts.covers = reg.covers;
+    console.log(
+      `  covers      ${config.covers.file}: ${reg.covers.length} cover bodies, ` +
+        `registered against ${reg.matched} parts (residual ${reg.residual.toFixed(3)}mm)`,
+    );
+  } catch (e) {
+    die(e.message);
+  }
+  opts.wasm = await getManifold();
+}
+
 let result;
 try {
-  result = bakeZones(config, parts, (msg) => console.log(`  ${msg}`));
+  result = bakeZones(config, parts, (msg) => console.log(`  ${msg}`), opts);
 } catch (e) {
   die(e.message);
 }
