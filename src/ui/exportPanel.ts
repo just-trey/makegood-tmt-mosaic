@@ -1,7 +1,7 @@
 import { baseColorHex, state } from '../state/store';
 import { nearestFilamentName } from '../state/filaments';
 import { getLastAssemblyBuild, getLastBuild } from '../app/rebuild';
-import { asmPartFaceNormal } from '../geometry/assembly';
+import { asmPartFaceNormal, shippedColorIndices } from '../geometry/assembly';
 import {
   build3MFCombined,
   type ExportMaterial,
@@ -92,52 +92,59 @@ export async function exportPrintReady3MF(): Promise<void> {
     clearStalePlacementNotices();
     warnIfIncompleteZoneCoverage();
     const palette = built.palette;
-    materials = [{ name: 'Body', color: bodyColor }].concat(
-      palette.map((p) => ({ name: nearestFilamentName(p.hex), color: p.hex })),
-    );
+    const kept = built.partOutputs.filter((o) => {
+      if (o.bodySoup.length) return true;
+      warn(
+        `Part "${o.part.name}" has no geometry to export — its pocket cut went all the way ` +
+          `through, likely because its depth exceeds the wall thickness there.`,
+      );
+      return false;
+    });
+    // Only palette colors with an inlay on some exported part become materials. A color whose
+    // regions all fell off the parts would otherwise ship as a filament nothing references,
+    // costing the user an AMS slot that prints nothing (the build warns naming such colors).
+    const shipped = shippedColorIndices(kept);
+    const matIndexByColor = new Map<number, number>();
+    materials = [{ name: 'Body', color: bodyColor }];
+    palette.forEach((p, ci) => {
+      if (!shipped.has(ci)) return;
+      matIndexByColor.set(ci, materials.length);
+      materials.push({ name: nearestFilamentName(p.hex), color: p.hex });
+    });
     // Plate layout comes from PLACEMENT above — verified constants, not computed. The wheel's
     // primary "top" half + "cap" share plate 1; each rotated-duplicate "top" (the wheel's other
     // half) claims the next plate after that, which is the counter here.
     let nextHalfPlate = 2;
-    parts = built.partOutputs
-      .filter((o) => {
-        if (o.bodySoup.length) return true;
-        warn(
-          `Part "${o.part.name}" has no geometry to export — its pocket cut went all the way ` +
-            `through, likely because its depth exceeds the wall thickness there.`,
-        );
-        return false;
-      })
-      .map(({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }) => {
-        const nrm = asmPartFaceNormal(part, state.assembly.parts);
-        const nsign = nrm && nrm[1] < 0 ? -1 : 1;
-        const subs: ExportSub[] = [
-          { name: 'Body', matIndex: 0, soup: bodySoup, indexed: bodyIndexed },
-        ];
-        Object.entries(inlaySoups).forEach(([ci, soup]) => {
-          subs.push({
-            name: nearestFilamentName(palette[+ci].hex),
-            matIndex: +ci + 1,
-            soup,
-            indexed: inlayIndexed?.[+ci],
-          });
+    parts = kept.map(({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }) => {
+      const nrm = asmPartFaceNormal(part, state.assembly.parts);
+      const nsign = nrm && nrm[1] < 0 ? -1 : 1;
+      const subs: ExportSub[] = [
+        { name: 'Body', matIndex: 0, soup: bodySoup, indexed: bodyIndexed },
+      ];
+      Object.entries(inlaySoups).forEach(([ci, soup]) => {
+        subs.push({
+          name: nearestFilamentName(palette[+ci].hex),
+          matIndex: matIndexByColor.get(+ci)!,
+          soup,
+          indexed: inlayIndexed?.[+ci],
         });
-        const resolution = resolvePlacement(part);
-        const note = placementNotice(part.name, resolution);
-        if (note) (note.level === 'warn' ? warn : notice)(note.message);
-        return {
-          name: part.name,
-          nsign,
-          bodySoup,
-          subs,
-          ...(resolution.verified ? resolution.placement : {}),
-          // the wheel's rotated duplicate halves are the one placement that can't be a constant:
-          // each copy is the same mesh again and claims its own plate after the primary's.
-          ...(part.roleId === 'wheel-half' && part.isDuplicateOf != null
-            ? { plateHint: nextHalfPlate++ }
-            : {}),
-        };
       });
+      const resolution = resolvePlacement(part);
+      const note = placementNotice(part.name, resolution);
+      if (note) (note.level === 'warn' ? warn : notice)(note.message);
+      return {
+        name: part.name,
+        nsign,
+        bodySoup,
+        subs,
+        ...(resolution.verified ? resolution.placement : {}),
+        // the wheel's rotated duplicate halves are the one placement that can't be a constant:
+        // each copy is the same mesh again and claims its own plate after the primary's.
+        ...(part.roleId === 'wheel-half' && part.isDuplicateOf != null
+          ? { plateHint: nextHalfPlate++ }
+          : {}),
+      };
+    });
     fname = `mosaic-${state.assembly.kindId}.3mf`;
   } else {
     const built = getLastBuild();

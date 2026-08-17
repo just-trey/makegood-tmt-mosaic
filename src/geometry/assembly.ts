@@ -587,6 +587,12 @@ export async function buildAssemblyGeometry(
   // per part: it is one fact about the design, and a color can sit on several parts. Map, not Set,
   // so the notice can state the actual depth.
   const edgeCutColors = new Map<string, number>();
+  // Palette indices known to have reached some design surface: a survived boundary clip, a
+  // produced inlay (a cut-through zone has no clip boundary, its boolean bounds the cut), or any
+  // CSG failure involving the color, so a color lost to a broken boolean is never also told to
+  // move. Only colors that provably reached nothing get the off-part warning at the end.
+  const landedColors = new Set<number>();
+  let anyPlacements = false;
   let viewSign = 1,
     viewSignSet = false; // Y direction of the first real part's design face
   for (const part of parts) {
@@ -654,6 +660,10 @@ export async function buildAssemblyGeometry(
         feat = r.feat;
         clipped = r.clipped;
         if (!feat) return;
+        // Only a real clip proves the color reached this face. A cut-through zone has no clip
+        // boundary (its boolean against the mesh is what bounds the cut), so there a color counts
+        // as landed only when that boolean yields an inlay, in the intersection loop below.
+        landedColors.add(ci);
       }
       const requested = requestedDepth(colorSettings, globalDepth, c.key);
       // A depth at or below zero cuts nothing and used to drop the color silently, deleting its
@@ -744,6 +754,7 @@ export async function buildAssemblyGeometry(
         //
         // `continue`, not `return`: a color split across two depths must not lose its interior
         // recess because the edge slice failed to extrude, or the other way round.
+        landedColors.add(ci);
         warnBuild(`Couldn't build the cut solid for color ${c.hex} on "${part.name}".`);
       }
     };
@@ -770,6 +781,7 @@ export async function buildAssemblyGeometry(
         );
       const boundaryPoly = mapper.boundary();
       for (const ai of zoneWork[zi]) {
+        anyPlacements = true;
         const place = mapper.placer(placements[ai]);
         // One grid per (zone, artwork): every color of a fill repeats identically, so the
         // inverted-placement coverage math runs once, not per palette slot. A fill that can't be
@@ -824,6 +836,7 @@ export async function buildAssemblyGeometry(
       } catch {
         // This color's cutters (different zones, same part) couldn't be merged. Drop just this
         // color rather than losing the whole part's cut.
+        landedColors.add(+ci);
         warnBuild(
           `Couldn't combine the cut solids for color ${palette[+ci].hex} on "${part.name}".`,
         );
@@ -845,12 +858,14 @@ export async function buildAssemblyGeometry(
     try {
       partMan = soupToManifold(wasm, part.positions);
     } catch {
+      prismEntries.forEach(([pci]) => landedColors.add(pci));
       warnBuild(`Part "${part.name}" mesh couldn't be read by the boolean engine.`);
       owned.forEach(manifoldDelete);
       finishPart();
       continue;
     }
     if (!manifoldIsValid(partMan)) {
+      prismEntries.forEach(([pci]) => landedColors.add(pci));
       warnBuild(
         `Part "${part.name}" isn't a watertight/manifold mesh, so it can't be cut cleanly — repair it (close holes, fix flipped faces) and retry. Exporting it uncut for now.`,
       );
@@ -874,6 +889,7 @@ export async function buildAssemblyGeometry(
     } catch {
       // Nothing to cut with. Same escape as the non-watertight branch above: export the untouched
       // body rather than risk a half-cut/half-inlaid pair that would overlap.
+      prismEntries.forEach(([pci]) => landedColors.add(pci));
       warnBuild(`Couldn't combine this part's cut solids on "${part.name}" — exporting it uncut.`);
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
       manifoldDelete(partMan);
@@ -909,6 +925,7 @@ export async function buildAssemblyGeometry(
       // Body and inlays come from the same boolean pass. If the cut failed, building inlays anyway
       // ships an uncut body plus inlay solids in the same volume, which a slicer resolves
       // arbitrarily. Export uncut and inlay-less instead.
+      prismEntries.forEach(([pci]) => landedColors.add(pci));
       warnBuild(
         `Boolean cut failed on part "${part.name}" — exporting it uncut and without inlays ` +
           `(a half-done cut/inlay pair would overlap in the export).`,
@@ -932,11 +949,13 @@ export async function buildAssemblyGeometry(
         if (soup.length) {
           inlaySoups[ci] = soup;
           inlayIndexed[ci] = indexed;
+          landedColors.add(ci);
         }
       } catch {
         // Unlike the body-cut failure above, exporting uncut can't undo this: the body's pocket
         // for this color is already cut, and redoing that difference is the expensive half. Name
         // the color and say the recess ships empty, so the warning is actionable.
+        landedColors.add(ci);
         warnBuild(
           `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}" — its pocket ` +
             `is cut into the body but will print as an empty recess.`,
@@ -967,5 +986,39 @@ export async function buildAssemblyGeometry(
     else byEdgeDepth.set(depth, [label]);
   }
   for (const [depth, labels] of byEdgeDepth) noticeBuild(edgeCutThroughNotice(labels, depth));
+  // Gated on anyPlacements so a build with no design surfaces at all doesn't call every color
+  // missing. See landedColors above for what counts as landed.
+  if (anyPlacements) {
+    const missed = palette
+      .map((c, ci) =>
+        landedColors.has(ci) ? null : regionLabel(c.hex, c.isMerge, c.members.length),
+      )
+      .filter((l): l is string => l !== null);
+    if (missed.length === 1)
+      warnBuild(
+        `"${missed[0]}" lands entirely off the part and won't print. ` +
+          `Lower Scale or move the design to bring it back.`,
+      );
+    else if (missed.length)
+      warnBuild(
+        `${missed.length} colors land entirely off the part and won't print: ` +
+          `${missed.map((l) => `"${l}"`).join(', ')}. Lower Scale or move the design to bring them back.`,
+      );
+  }
   return { partOutputs, palette, viewSign, detectedColors, baseAssigned };
+}
+
+/**
+ * Palette indices that actually ship: an inlay on a part that still has a body to export (a part
+ * whose cut consumed it whole is dropped at export, inlays and all). The one predicate behind the
+ * export's material list, the color list's rows, and the slot count. Three sites each deriving
+ * their own version of this is how a color came to cost an AMS slot while printing nothing.
+ */
+export function shippedColorIndices(partOutputs: AssemblyPartOutput[]): Set<number> {
+  const shipped = new Set<number>();
+  for (const o of partOutputs) {
+    if (!o.bodySoup.length) continue;
+    for (const ci of Object.keys(o.inlaySoups)) shipped.add(+ci);
+  }
+  return shipped;
 }

@@ -248,6 +248,28 @@ describe('buildAssemblyGeometry', () => {
     expect(part.bodySoup).toEqual(Float32Array.from(part.part.positions!));
   });
 
+  it(
+    'warns naming a color whose artwork lands entirely off the part',
+    { timeout: 30000 },
+    async () => {
+      clearWarnings();
+      await buildAssemblyGeometry(baseInput({ offX: 1000, offZ: 1000 }));
+
+      expect(WARNINGS.map((w) => w.message)).toContainEqual(
+        expect.stringContaining(`"#ff0000" lands entirely off the part and won't print`),
+      );
+    },
+  );
+
+  it('stays quiet about off-part colors when every color landed', { timeout: 30000 }, async () => {
+    clearWarnings();
+    await buildAssemblyGeometry(baseInput());
+
+    expect(WARNINGS.map((w) => w.message)).not.toContainEqual(
+      expect.stringContaining('lands entirely off the part'),
+    );
+  });
+
   describe('CSG failure handling', () => {
     // The in-memory assertions below stop one layer above the file that ships, and the bug these
     // branches exist for was an export bug — an uncut body shipping alongside inlay solids in the

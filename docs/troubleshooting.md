@@ -413,6 +413,28 @@ If you wanted a non-rectangular shape, re-export the source as a PNG with the
 background actually removed, not just displayed as transparent in an editor that
 drops transparency on export.
 
+## Troubleshooting: "… lands entirely off the part and won't print"
+
+Full text, one color: _"\"#ff0000\" lands entirely off the part and won't
+print. Lower Scale or move the design to bring it back."_ Several colors:
+_"4 colors land entirely off the part and won't print: "#101010", "#e07020",
+"#f5d020", "#c1272d". Lower Scale or move the design to bring them back."_
+A merged group is named the way its row is: _"Merged (3)"_.
+
+Assembly mode only. Artwork is clipped to the part's design face, so a color
+whose shapes all sit outside it cuts nothing anywhere. The usual causes are a
+high Scale (at 400% only the middle of a design still fits) or a large offset
+from dragging the design.
+
+The named colors are dropped from the color list, the AMS slot count, and the
+exported 3MF's filament list: they cost nothing, they just don't print.
+Bringing the design back (lower Scale, or drag it toward the face) restores
+them, and their rows and slots come back with them.
+
+If a color should be partly on the face but this fires anyway, check where the
+design is anchored. An SVG with no `<circle>` boundary marker is auto-centered
+on its bounding box, which a stray decorative element can move.
+
 ## Troubleshooting: "This shape was too big for the wheel, so it was scaled down to fit"
 
 Full text: _"This shape was too big for the wheel, so it was scaled down to fit —

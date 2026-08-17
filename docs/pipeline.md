@@ -164,6 +164,13 @@ without warnings: named parts, per-part filament slots, multi-plate placement
 ([printers.ts](../src/export/printers.ts)) picks the plate size and profile
 names, so one writer resolves in Bambu Studio, OrcaSlicer and Snapmaker Orca.
 
+**Only colours that cut something become filaments.** A colour whose regions
+all fall off the design face, or that lands solely on a part the cut consumed,
+is written to neither the material list nor the colour list, so it can't cost an
+AMS slot while printing nothing. `shippedColorIndices`
+([assembly.ts](../src/geometry/assembly.ts)) is the one predicate behind both,
+and the build warns naming any colour that reached no part at all.
+
 **Placement is taken from verified reference files, not computed.** Wheel
 exports pin the Top half and Cap to plate 1 and each rotated duplicate to its
 own plate, at a fixed rotation and position; the prime tower is a fixed offset

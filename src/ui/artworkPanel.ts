@@ -17,12 +17,12 @@ import { $, input } from './dom';
 import { track } from '../analytics/track';
 import { alertDialog } from './dialogs';
 
+// 3 colors on purpose: with the body that is 4 AMS slots, exactly one AMS unit, so the app's own
+// demo never opens on a capacity pill. The big centred circle doubles as the design anchor.
 const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
   <circle cx="100" cy="100" r="95" fill="#1e5fa8"/>
   <path d="M100 20 L118 72 L174 72 L128 104 L146 158 L100 124 L54 158 L72 104 L26 72 L82 72 Z" fill="#f5d020"/>
-  <circle cx="100" cy="100" r="34" fill="#f4f4f2"/>
-  <circle cx="100" cy="100" r="34" fill="none" stroke="#0a0a0a" stroke-width="4"/>
-  <circle cx="100" cy="100" r="12" fill="#c1272d"/>
+  <circle cx="100" cy="100" r="16" fill="#c1272d"/>
 </svg>`;
 
 /** Shared tail of every load path: settle the palette, refresh the panels, rebuild. */

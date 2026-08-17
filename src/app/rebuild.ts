@@ -14,6 +14,7 @@ import {
   asmPartFaceNormal,
   asmPartTransformGroup,
   buildAssemblyGeometry,
+  shippedColorIndices,
   type ArtworkBuildInput,
 } from '../geometry/assembly';
 import { currentAssemblyKind, hubcapSilhouetteOffset } from '../assembly/kinds';
@@ -204,11 +205,7 @@ async function rebuildScene(): Promise<void> {
     // scheduleRebuild here, this just mirrors what the build already computed
     state.baseColorKey = built.baseAssigned.hex;
   }
-  renderColorList(listEntries, {
-    rawColorCount: built.detectedColors.length,
-    // matches exportPrintReady3MF's flat-mode materials: Body + every colorMesh
-    slotsNeeded: built.colorMeshes.length + 1,
-  });
+  renderColorList(listEntries, { rawColorCount: built.detectedColors.length });
   renderBaseColorSwatches();
   renderWarnings();
   setExportEnabled(true);
@@ -435,22 +432,24 @@ async function rebuildAssemblyScene(): Promise<void> {
     });
   });
 
-  // aggregate color list across the whole assembly (one shared design/palette)
+  // aggregate color list across the whole assembly (one shared design/palette), keeping exactly
+  // the colors the export will write as materials so the rows, the slot count, and the file agree
+  const shipped = shippedColorIndices(built.partOutputs);
   const colorListEntries: ColorListEntry[] = [];
   built.palette.forEach((c, ci) => {
+    if (!shipped.has(ci)) return;
     let area = 0;
-    built.partOutputs.forEach(({ inlaySoups }) => {
-      if (inlaySoups[ci]) area += inlaySoups[ci].length / 9;
+    built.partOutputs.forEach(({ bodySoup, inlaySoups }) => {
+      if (bodySoup.length && inlaySoups[ci]) area += inlaySoups[ci].length / 9;
     });
-    if (area > 0)
-      colorListEntries.push({
-        color: c.hex,
-        key: c.key,
-        members: c.members,
-        isMergeGroup: c.isMerge,
-        areaPct: area,
-        isBackground: false,
-      });
+    colorListEntries.push({
+      color: c.hex,
+      key: c.key,
+      members: c.members,
+      isMergeGroup: c.isMerge,
+      areaPct: area,
+      isBackground: false,
+    });
   });
   const totalArea = colorListEntries.reduce((s, c) => s + c.areaPct, 0) || 1;
   colorListEntries.forEach((c) => {
@@ -476,12 +475,7 @@ async function rebuildAssemblyScene(): Promise<void> {
 
   poseAssemblyForDisplay();
   $('#stat-tris').textContent = Math.round(tris) + ' tris';
-  renderColorList(colorListEntries, {
-    rawColorCount: built.detectedColors.length,
-    // matches exportPrintReady3MF's assembly-mode materials: Body + the whole palette, including
-    // any color the list above skipped for having no inlay area on any part
-    slotsNeeded: built.palette.length + 1,
-  });
+  renderColorList(colorListEntries, { rawColorCount: built.detectedColors.length });
   renderBaseColorSwatches();
   renderWarnings();
   $<HTMLButtonElement>('#btn-export').disabled = built.partOutputs.length === 0;
