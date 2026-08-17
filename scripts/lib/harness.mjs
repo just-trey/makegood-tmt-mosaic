@@ -3,6 +3,19 @@
  * (smoke.mjs, export-chair-examples.mjs, and ad-hoc drive scripts). One implementation on
  * purpose, matching the rationale in mesh.mjs: the process-group server kill and the
  * whenIdle() bridge both have sharp edges that must not exist in N copies and drift.
+ *
+ * **The failure mode this file is shaped around: a success signal derived from something
+ * adjacent to the property asserted, where the ambiguous case is indistinguishable from a real
+ * pass at the point of use.** Not a weak check, which announces itself. These announce a pass. An
+ * audit of every checker in the repo found ten instances
+ * (docs/findings/indirect-success-signals.md, 2026-08-08), all since closed, and the ones that
+ * bit hardest are still visible as the guards below: assertFreshDist, the leftover-port refusal,
+ * the dist/index.html byte comparison in waitForServer, assertGpuActive's refusal to run
+ * software-rendered, the rebuild counter behind afterRebuild, and the confirm tally in newPage.
+ *
+ * So when adding a wait or a check here, the question is not "does this pass when things are
+ * fine". It is **what else passes it** — and the answer has to be nothing you would want to know
+ * about. Drive the failing case before believing the passing one.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -14,10 +27,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-// Third-party analytics beacons report to a cross-origin endpoint bound to the production
-// hostname, so on localhost they CORS-fail by design — filter their console/network noise out
-// of every script's error collection, not just smoke.mjs's.
-const IGNORE_HOSTS = ['cloudflareinsights.com'];
+// Hosts the app does not control. Their failures are real, but they are not this repo's, and a
+// gate that goes red on someone else's CDN teaches everyone to re-run instead of look.
+//
+// - cloudflareinsights: analytics beacons bound to the production hostname, so on localhost they
+//   CORS-fail by design.
+// - fonts.gstatic / fonts.googleapis: index.html loads Outfit, Inter and IBM Plex Mono from Google
+//   Fonts at runtime. A woff2 404 here failed smoke twice and check-csg-failure once in August
+//   with no reproduction, because the error named neither a URL nor an origin. It is cosmetic to
+//   the app (`display=swap` renders in the fallback face) but it made two gates flaky. Fetching
+//   them from Google is a settled decision rather than an oversight; the reasoning is on the
+//   <link> in index.html.
+const IGNORE_HOSTS = ['cloudflareinsights.com', 'fonts.gstatic.com', 'fonts.googleapis.com'];
 const isIgnored = (text, url) =>
   IGNORE_HOSTS.some((h) => (text && text.includes(h)) || (url && url.includes(h)));
 

@@ -8,9 +8,8 @@
 // The oracle, and why it is not a second copy of the code under test
 // ---------------------------------------------------------------------------
 //
-// docs/tech-debt.md, "The things that check the code get audited less than the code they check":
-// the shape to avoid is a success signal derived from something adjacent to the property being
-// asserted. A check that answers "which zone is visible at this pixel?" by raycasting the chart
+// The shape to avoid (see the header of scripts/lib/harness.mjs): a success signal derived from
+// something adjacent to the property being asserted. A check that answers "which zone is visible at this pixel?" by raycasting the chart
 // meshes cannot fail when the raycast is what is wrong — it would agree with zonePick.ts by
 // construction, including about the bug.
 //
