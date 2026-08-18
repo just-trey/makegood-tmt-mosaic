@@ -62,6 +62,7 @@ import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kin
 import { noticeBuild, warnBuild } from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
+import { throwIfCancelled } from '../cancel';
 
 // The zone layer owns these now; re-exported so importers keep their '../geometry/assembly' paths.
 export { asmPartFaceNormal, faceXZBBox, rotatePointY, OVERSHOOT_MM } from './zones';
@@ -700,6 +701,12 @@ export async function buildAssemblyGeometry(
     viewSignSet = false; // Y direction of the first real part's design face
   for (const part of parts) {
     if (!part.loaded || !part.boundaryLoop || !part.positions) continue;
+    // The one safe point in this build: the previous part's solids are freed and this one's are
+    // not allocated yet. Inside a part, `owned` and `partMan` are released per branch with no
+    // outer finally, so throwing there would leak WASM the user could accumulate by cancelling
+    // repeatedly. Cancel latency is therefore one part, which on the chair is seconds against the
+    // minutes this exists to escape.
+    throwIfCancelled();
 
     // Every design surface this part takes artwork on: one implicit flat zone for an ordinary
     // part, or a sidecar kind's baked conformal charts (possibly none, for a structural piece).

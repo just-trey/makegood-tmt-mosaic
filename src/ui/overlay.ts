@@ -1,7 +1,20 @@
 import { $ } from './dom';
+import { cancelRequested, requestCancel } from '../cancel';
 
-export function showOverlay(text: string): void {
+/**
+ * The "Rebuilding geometry…" curtain.
+ *
+ * It carries a Cancel because a rebuild here can run for minutes: the chair with a pattern in Fill
+ * measured 93.6s for one zone and did not finish inside 900s across five. Without it the only way
+ * out was a reload, which until session restore landed took every setting with it.
+ */
+export function showOverlay(text: string, { cancellable = false } = {}): void {
   $('#loading-text').textContent = text;
+  // Hidden unless the thing behind the curtain actually checks for a cancel. The same curtain
+  // covers exports and part loads (exportPanel.ts, assembly/parts.ts), and neither calls
+  // throwIfCancelled, so a button there would latch to "Cancelling…" and change nothing.
+  $('#loading-cancel').hidden = !cancellable;
+  setCancelState(false);
   $('#loading-overlay').style.display = 'flex';
 }
 
@@ -12,4 +25,23 @@ export function updateOverlay(text: string): void {
 
 export function hideOverlay(): void {
   $('#loading-overlay').style.display = 'none';
+}
+
+/**
+ * Cancel is acknowledged immediately and takes effect at the next safe point, which in an assembly
+ * build is the end of the current part. Saying "Cancelling…" is the difference between a button
+ * that looks broken for a few seconds and one that is visibly working.
+ */
+function setCancelState(pending: boolean): void {
+  const btn = $<HTMLButtonElement>('#loading-cancel');
+  btn.disabled = pending;
+  btn.textContent = pending ? 'Cancelling…' : 'Cancel';
+}
+
+export function initOverlay(): void {
+  $('#loading-cancel').addEventListener('click', () => {
+    if (cancelRequested()) return;
+    requestCancel();
+    setCancelState(true);
+  });
 }

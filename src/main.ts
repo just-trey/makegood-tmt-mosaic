@@ -17,6 +17,7 @@ import { initDepthPanel } from './ui/depthPanel';
 import { initArtworkPanel, renderPatternPicker } from './ui/artworkPanel';
 import { initExportPanel } from './ui/exportPanel';
 import { initHelpPanel } from './ui/helpPanel';
+import { initOverlay } from './ui/overlay';
 import { initConfirmDialog } from './ui/dialogs';
 import { initRestoreBanner } from './ui/restoreBanner';
 import { initBeforeUnloadGuard } from './state/persist';
@@ -66,6 +67,7 @@ initDepthPanel();
 initArtworkPanel();
 initExportPanel();
 initHelpPanel();
+initOverlay();
 initConfirmDialog();
 initBeforeUnloadGuard();
 
