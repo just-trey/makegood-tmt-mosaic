@@ -3,6 +3,8 @@ import { renderWarnings } from '../ui/warningsView';
 import { hideOverlay, showOverlay, updateOverlay } from '../ui/overlay';
 import { setProgressSink } from '../progress';
 import { beginWork, endWork, noteRebuildDone } from './idle';
+import { armCancel, cancelHonoured } from '../cancel';
+import { state } from '../state/store';
 
 let handler: () => void | Promise<void> = () => {};
 let costHint: () => boolean = () => false;
@@ -66,6 +68,7 @@ async function runNow(): Promise<void> {
   }
   running = true;
   beginWork();
+  armCancel();
   // Fresh diagnostics for this attempt — a warning from whatever the last rebuild's inputs were
   // (a different zone binding, an artwork that's since been swapped) can't outlive it and still
   // show once this one lands. Standing facts (WARNINGS proper) aren't touched.
@@ -73,7 +76,11 @@ async function runNow(): Promise<void> {
   const showsOverlay = isRebuildLikelySlow();
   const t0 = performance.now();
   if (showsOverlay) {
-    showOverlay('Rebuilding geometry…');
+    // Assembly only. That is where the minutes are (the tech-debt this closes measured 93.6s for
+    // one chair zone), and it is the only path with a safe abort point: the flat path's
+    // cooperative union is shared with Fill's tiling, which runs inside the per-part body holding
+    // Manifold solids, so a check there would leak on exactly the slow case the button is for.
+    showOverlay('Rebuilding geometry…', { cancellable: state.shapeKind === 'assembly' });
     // The rebuild reports progress as it chunks through the boolean pass; show it as a live
     // percentage, and once it's dragged on a while add a "hang tight" so it reads as working.
     setProgressSink((fraction) => {
@@ -102,6 +109,22 @@ async function runNow(): Promise<void> {
       hideOverlay();
     }
     running = false;
+    // A cancel that actually landed drops the queued pass too. Without this, touching a panel
+    // mid-rebuild leaves `dirty` set and the follow-up starts the moment the cancel does, so the
+    // button looks broken: the curtain returns immediately with the work the user just stopped.
+    //
+    // `cancelHonoured`, not `cancelRequested`: a press that arrives after the last safe point
+    // aborts nothing, so the build has completed and rendered, and dropping its follow-up would
+    // leave the panels and the saved session ahead of the geometry that exports.
+    if (cancelHonoured()) {
+      dirty = false;
+      // And the armed debounce: an edit typed inside its window never set `dirty`, so clearing
+      // that alone leaves the timer to fire and restart the rebuild that was just stopped.
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+    }
     // Start the follow-up pass (which does its own beginWork()) before releasing this pass's
     // reservation, so a dirty rebuild never lets the outstanding count touch zero in between —
     // a whenIdle() waiter must not see a zero-width gap that isn't really idle.

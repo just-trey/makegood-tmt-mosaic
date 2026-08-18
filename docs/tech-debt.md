@@ -276,27 +276,35 @@ at 400% (17.0s) and measures an ordinary auto-fit sticker on all five zones at
 4.0s — a 5x spread on the same path. What is paid for is pocket area, not
 surfaces touched.
 
-## The long assembly-mode rebuild has no cancel, and until session persistence lands the only escape destroys the work
+## Cancelling a rebuild waits for the current part, and flat rebuilds cannot be cancelled at all
 
-`#loading-overlay` (the "Rebuilding geometry…" curtain, `src/ui/overlay.ts`)
-has no cancel or back control at any point (overlay DOM captured mid-rebuild
-on 2026-08-16 is a spinner plus the text, nothing else) in the 405.6s
-/ >900s runs measured above (the 405.6s figure is itself superseded — see the note just
-above this section — but the argument holds at the re-measured 93.6s too:
-a rebuild that long with no cancel is still the problem) — a user who starts
-the wrong rebuild (wrong pattern, wrong zone scope) has to wait it out. Today the only way to interrupt it is a
-reload, which — until the session-durability fix lands (tracked as work,
-not tech debt; see the plan that added this section) — erases every setting
-in the session. That combination is what turns "this is slow" into "this
-tool lost my afternoon" for the vision-lens review that measured it.
-Persistence removes the second half (a reload becomes recoverable instead of
-catastrophic) but not the first: there is still no way to abort a running
-rebuild and get the UI back without waiting or losing the in-flight state.
-Closing this needs either an `AbortController` threaded through the
-CSG/triangulation pipeline (`src/geometry/assembly.ts`,
-`src/app/rebuild.ts`) or moving the pipeline off the main thread so a cancel
-can just discard the worker — the same Web Worker move already listed above
-as a lead for the flat-mode case would likely serve both.
+Measured on the chair, 2026-08-17, `MOSAIC_GPU=1`: a dense 676-circle design took **79.1s** to
+rebuild, and Cancel returned the UI at **23.7s**. The 55s saved is the point; what follows is what
+that design bought.
+
+**One check, at the top of the part loop** in `buildAssemblyGeometry`
+([src/geometry/assembly.ts](../src/geometry/assembly.ts)). That is the only place in that loop
+where nothing is owned: `owned` and `partMan` are Manifold solids freed by hand on each branch,
+with no outer try/finally around the per-part body. Three cancels in a row held the heap flat at
+177.0 MB.
+
+Three consequences, all open:
+
+- **Latency is one part.** 23.7s of 79.1s above.
+- **A single-part assembly cannot be cancelled**, nor can a press that lands during the last part.
+  The button sits at "Cancelling…" for the rest of the build.
+- **Flat rebuilds are not offered a Cancel.** The obvious place to check, `unionAllCooperative`
+  ([regions.ts](../src/geometry/regions.ts)), is shared with Fill's tiling, which runs _inside_ the
+  per-part body holding Manifold solids. A check there leaks on the Fill case the button exists
+  for. Flat rebuilds measured 1.8-4s on 169 paths, so this costs little today; the dense
+  135-path case is ~13s.
+
+Closing all three is one job: give the per-part loop body a `finally` that releases what it holds.
+The frees are spread across the branches and would have to become idempotent first, so a `finally`
+could call them without double-freeing. Then the existing yield points become safe cancellation
+points, latency drops to the yield budget, and the flat path can check too. Worth doing when
+someone is already in that code; not worth a delicate refactor of the CSG memory management on its
+own.
 
 ## Auto-merge is a similarity control; the user's actual constraint is a slot count
 

@@ -326,6 +326,14 @@
               per-color .zip fallback for slicers that don't read pre-mapped 3MF color data.
             </p>
             <p>
+              A long rebuild on a multi-part shape shows a curtain with a Cancel button. It takes
+              effect when the part being cut finishes rather than instantly, so the button reads
+              "Cancelling…" for a moment; on a heavy chair design that is seconds against a minute
+              or more of waiting. The parts go back to showing uncut, and Export switches off until
+              you build again. Your settings are untouched, and still saved, which reloading the
+              page never was. Flat shapes rebuild in seconds, so they get no Cancel.
+            </p>
+            <p>
               The box above the button says what you are about to get: how many parts, how many
               plates, and a swatch per filament, with the parts listed plate by plate. It follows
               the design on screen, so a color change or a merge updates it before you commit. The
@@ -782,6 +790,7 @@
         <div id="loading-overlay">
           <div class="spinner"></div>
           <div id="loading-text">Rebuilding geometry…</div>
+          <button type="button" class="btn small" id="loading-cancel">Cancel</button>
         </div>
       </div>
       <div class="accent-stripe"></div>

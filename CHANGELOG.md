@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A long rebuild can be cancelled.** The "Rebuilding geometry…" curtain carries
+  a Cancel button on multi-part shapes like the wheel and the chair. Before,
+  starting the wrong rebuild meant waiting it out or reloading the page, and
+  reloading used to take every setting with it. Measured on a dense design: a 79
+  second rebuild returned the app at 23.7 seconds. It is not instant, because it
+  takes effect when the part being cut finishes, and the button says
+  "Cancelling…" while that happens. The stage goes back to showing the uncut
+  parts, since the cut it was part-way through is what you stopped, and Export
+  switches off until you build again. Your settings are untouched and still
+  saved, which a page reload never managed. Flat shapes rebuild in seconds and
+  are not offered a Cancel.
 - **The Depth panel says when colors are ignoring the default.** Typing in
   Default depth could appear to do nothing, because a color with its own depth
   keeps it, and the only sign of that was a highlight on a row in another panel.

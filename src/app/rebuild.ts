@@ -8,7 +8,7 @@ import {
   syncActiveArtworkPlacement,
   zoneCoverage,
 } from '../state/artwork';
-import { noticeBuild } from '../warnings';
+import { clearBuildWarnings, noticeBuild } from '../warnings';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
   asmPartFaceNormal,
@@ -35,6 +35,7 @@ import { renderWarnings } from '../ui/warningsView';
 import { schedulePersist } from '../state/persist';
 import { $ } from '../ui/dom';
 import { renderExportSummary } from '../ui/exportPanel';
+import { RebuildCancelled } from '../cancel';
 
 let lastBuild: FlatBuild | null = null;
 let lastAssemblyBuild: AssemblyBuild | null = null;
@@ -130,6 +131,27 @@ export async function rebuildCurrent(): Promise<void> {
   schedulePersist();
 }
 
+/**
+ * Run a build, returning null if the user cancelled it.
+ *
+ * Caught here rather than in the scheduler so the rest of rebuildCurrent still runs: its tail
+ * carries the only schedulePersist outside export, and skipping that left a cancelled rebuild's
+ * change unsaved, which is the loss this button exists to prevent. Null then takes the same path a
+ * refused build does, which is a state the app already knows how to be in.
+ */
+async function catchCancel<T>(run: () => Promise<T | null>): Promise<T | null> {
+  try {
+    return await run();
+  } catch (e) {
+    if (!(e instanceof RebuildCancelled)) throw e;
+    // Drop what the aborted build had already said. Its per-part diagnostics ("isn't watertight",
+    // "couldn't merge color …") describe parts that were never finished, and leaving them up puts
+    // failure pills in front of someone who pressed Cancel.
+    clearBuildWarnings();
+    return null;
+  }
+}
+
 async function rebuildScene(): Promise<void> {
   setPreferredViewDir(null); // flat mode: keep the user's current view direction when re-framing
   const modelGroup = newModelGroup(state.stlRefMesh);
@@ -166,22 +188,38 @@ async function rebuildScene(): Promise<void> {
   }
 
   if (!baseParams) return;
-  const built = await buildGeometry({
-    parsed: state.parsed,
-    colorSettings: state.colorSettings,
-    baseParams,
-    shapeKind: state.shapeKind,
-    globalDepth: state.globalDepth,
-    recessBg: state.recessBg,
-    mergeGroups: state.mergeGroups,
-    baseColorHex: baseColorHex(),
-    autoMergeLevel: state.autoMergeLevel,
-    baseColorKey: state.baseColorKey,
-    baseColorMembers: state.baseColorMembers,
-    keptApart: state.keptApart,
-  });
+  // Captured before the closure: the null check above cannot narrow `state.parsed` inside a
+  // callback, since nothing stops the state changing between here and the call.
+  const parsed = state.parsed;
+  const built = await catchCancel(() =>
+    buildGeometry({
+      parsed,
+      colorSettings: state.colorSettings,
+      baseParams,
+      shapeKind: state.shapeKind,
+      globalDepth: state.globalDepth,
+      recessBg: state.recessBg,
+      mergeGroups: state.mergeGroups,
+      baseColorHex: baseColorHex(),
+      autoMergeLevel: state.autoMergeLevel,
+      baseColorKey: state.baseColorKey,
+      baseColorMembers: state.baseColorMembers,
+      keptApart: state.keptApart,
+    }),
+  );
   lastBuild = built;
-  if (!built) return;
+  // Refused: leave the panels describing nothing rather than the previous build, whose meshes
+  // newModelGroup() has already removed. Flat rebuilds are not cancellable (see scheduler.ts), so
+  // this is the pre-existing refusal path, not a cancel.
+  if (!built) {
+    renderColorList(null);
+    renderWarnings();
+    updateTriStat();
+    setExportEnabled(false);
+    refreshModelShadows();
+    frameModelIfPending();
+    return;
+  }
 
   modelGroup.add(built.baseGroup);
   built.colorMeshes.forEach((c) => modelGroup.add(c.mesh));
@@ -383,19 +421,27 @@ async function rebuildAssemblyScene(): Promise<void> {
       `${where} — ${blank} of ${zoneTotal} zone${zoneTotal === 1 ? '' : 's'} still blank. Add more from the zone dropdown, or pick "All zones" to cover every zone.`,
     );
   }
-  const built = await buildAssemblyGeometry({
-    artworks,
-    parts: state.assembly.parts,
-    mergeGroups: state.mergeGroups,
-    colorSettings: state.colorSettings,
-    globalDepth: state.globalDepth,
-    radius: state.asmRadius,
-    designFit: currentAssemblyKind()?.designFit,
-    autoMergeLevel: state.autoMergeLevel,
-    baseColorKey: state.baseColorKey,
-    baseColorMembers: state.baseColorMembers,
-    keptApart: state.keptApart,
-  });
+  // A cancel is caught here, not left to the scheduler, and lands on the `!built` path below.
+  // Letting it escape skipped the tail of rebuildCurrent — including the one schedulePersist call
+  // outside export, so a cancelled rebuild left the autosave stale and lost the change on reload,
+  // which is the failure this button exists to prevent. It also left the stage blank, because
+  // newModelGroup() has already torn the old meshes down by this point, and left #btn-export
+  // enabled over the previous build's geometry.
+  const built = await catchCancel(() =>
+    buildAssemblyGeometry({
+      artworks,
+      parts: state.assembly.parts,
+      mergeGroups: state.mergeGroups,
+      colorSettings: state.colorSettings,
+      globalDepth: state.globalDepth,
+      radius: state.asmRadius,
+      designFit: currentAssemblyKind()?.designFit,
+      autoMergeLevel: state.autoMergeLevel,
+      baseColorKey: state.baseColorKey,
+      baseColorMembers: state.baseColorMembers,
+      keptApart: state.keptApart,
+    }),
+  );
   lastAssemblyBuild = built;
   const modelGroup = getModelGroup();
   if (!built) {
