@@ -497,36 +497,24 @@ derivation. Closing it means threading the resolved mm-per-unit
 (`designMmPerUnit`, [assembly.ts](../src/geometry/assembly.ts)) back into the
 raster stage, which today runs strictly before placement is known.
 
-## A loaded image is not part of the saved session
+## Restoring a session re-traces every loaded image
 
-Session restore rebuilds each source by re-parsing its saved SVG text
-([persist.ts](../src/state/persist.ts)), and an image has none — it came from
-pixels. Persisting the pixels instead was measured and rejected: one decoded
-512px image is ~1 MB before JSON encoding, against a `MAX_BYTES` ceiling of 4 MB
-for the whole session, so two or three images would blow it and take the SVG
-half of the session down with them. Flat art now decodes at 1024px, four times
-the pixels, so a single one would fill that ceiling on its own — the case
-against persisting them got stronger, not weaker.
+Session restore used to do no image work at all, because images were not saved. They are now, as
+the working copy re-encoded to PNG, so restore has to run quantize and trace over each one before
+the app is usable. On a 512px photograph that stage measured ~830ms
+([bench-raster.ts](../scripts/bench-raster.ts)); the round trip on a 96px test image is
+imperceptible. Several photographs in one session would add up.
 
-So a raster source and its placements are skipped on save. Consequences worth
-knowing before changing this:
+It happens inside the overlay the restore already shows, so it reads as a slower restore rather
+than a hang. Closing it means caching the traced result alongside the pixels, which is a much
+larger payload (the parsed regions, not a PNG) and would put the 4MB `MAX_BYTES` ceiling back in
+play, so this is a deliberate trade rather than an oversight.
 
-- A session whose _only_ design is an image saves nothing at all and offers no
-  restore banner. It must not save an empty-but-valid session instead: the
-  banner shows for anything that parses, and would offer to restore "the Disc"
-  with no designs. `saveSession()` decides this from the snapshot, not from
-  `hasLoadedWork()` — the two deliberately disagree here.
-- That same session reports a _failed_ save to the beforeunload guard, which is
-  what makes leaving the tab prompt. This is the one case where the guard fires
-  without a storage error, and it is correct: the work really is unrecoverable.
-- A mixed SVG + image session saves and restores the SVG half silently, losing
-  the image with no prompt. Warning on it would mean nagging on every mixed
-  session, so it is documented in the README instead.
-
-Closing it means storing the encoded source file (the original PNG bytes, not
-the decoded pixels) plus the Colors/Detail settings, and re-running decode +
-quantize + trace on restore — cheaper to store, but it moves a multi-second
-raster stage into the restore path, which today does no image work at all.
+Sizes behind the choice, measured 2026-08-17 in this app: raw RGBA at 1024x1024 is 4.0MB, which is
+the whole session budget. The same pixels as PNG are **24KB** for flat art and **703KB** for a
+photograph; as WebP q92, 4KB and 108KB. PNG ships because it is lossless: a lossy copy would shift
+colours before the quantizer sees them, and the design could come back with a palette, and so a
+filament list, the user never chose.
 
 ## The chair's zone sidecar is 1.7 MB raw / 638 KB gzipped
 

@@ -1,3 +1,4 @@
+import type { RasterImage } from './raster/types';
 import type { Feature, MultiPolygon, Polygon } from 'geojson';
 import type { ConformalChart } from './geometry/conformal';
 
@@ -148,7 +149,12 @@ export interface ZoneRef {
  * ~1MB per image, against three.js, the Manifold WASM and a 1.7MB zone sidecar.
  */
 export interface RasterState {
-  image: { data: Uint8ClampedArray; w: number; h: number };
+  /**
+   * The working image, `RasterImage` rather than a bare pixel buffer so `edgeDensity` rides with
+   * it: that statistic is measured at a fixed reference size and cannot be re-derived from these
+   * pixels, and session restore has to put it back or every threshold hanging off it moves.
+   */
+  image: RasterImage;
   colors: number;
   detail: number;
   /** The palette the current `parsed` was built with; can be shorter than `colors` asked for. */
@@ -172,7 +178,7 @@ export interface DesignSource {
    * serializing the parsed form, which regions.ts also memoizes on object identity.
    *
    * Empty for a raster source, whose `parsed` comes from pixels and cannot be re-derived this way.
-   * Session persistence skips those entirely.
+   * Session persistence stores those pixels re-encoded instead, and re-traces them on restore.
    */
   svgText: string;
   raster?: RasterState;
