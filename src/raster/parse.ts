@@ -134,3 +134,26 @@ export function parseRasterImage(
     capped,
   };
 }
+
+/**
+ * The capped notice, named for the image it is about.
+ *
+ * Per image rather than one shared string, because notices dedupe by message and the list panel
+ * retracts this one by exact text: with a single message, re-quantizing an *uncapped* image pulled
+ * down a still-true notice belonging to a different, capped one. The filename is what tells the two
+ * apart in the pill, too, once more than one image is loaded.
+ *
+ * Both suggestions lower the component count. Detail is the counter-intuitive one: `autoParams`
+ * scales the despeckle floor by 4^((50-detail)/50), so *raising* Detail quarters the floor and lets
+ * through four times the specks — the opposite of what this notice is asking for.
+ *
+ * Lives here rather than in the panel that first showed it because session restore re-traces and
+ * has to say the same thing: a design that comes back simplified with nothing said reads as the
+ * app having quietly changed it.
+ */
+export function rasterCappedMessage(name: string): string {
+  return (
+    `Some detail in "${name}" was too fine to print and was merged into its surroundings. ` +
+    'Lower Colors, or lower Detail, for a cleaner result.'
+  );
+}

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A loaded image now survives a reload.** Sessions saved SVG artwork and threw
+  images away, so reloading with a photo or a PNG open meant re-dropping it, and
+  a session whose only design was an image saved nothing at all. The image is
+  kept as the working copy the tracer used, re-encoded, which is small enough to
+  fit: a photograph is about 700 KB against the 4 MB a whole session gets, where
+  the raw pixels were 4 MB on their own. Restoring re-traces it, so it takes a
+  moment on a photograph. The colors come back exactly as they were, because the
+  copy is lossless.
 - **A long rebuild can be cancelled.** The "Rebuilding geometry…" curtain carries
   a Cancel button on multi-part shapes like the wheel and the chair. Before,
   starting the wrong rebuild meant waiting it out or reloading the page, and

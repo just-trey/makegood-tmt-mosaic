@@ -18,7 +18,8 @@ vi.mock('../src/state/patterns', () => ({
   getPatterns: () => [{ id: 'cow', name: 'Cow', file: 'cow.svg' }],
 }));
 
-import { applyParsedSVG, applyPattern, rasterCappedMessage } from '../src/ui/artworkPanel';
+import { applyParsedSVG, applyPattern } from '../src/ui/artworkPanel';
+import { rasterCappedMessage } from '../src/raster/parse';
 import { state } from '../src/state/store';
 import { autoParams } from '../src/raster/stats';
 import { notice, dismissNotice, clearWarnings, WARNINGS } from '../src/warnings';

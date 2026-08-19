@@ -7,6 +7,7 @@ import { beginWork, endWork } from '../app/idle';
 import { requestFrame } from '../scene/viewport';
 import { parseSVGDocument } from '../svg/parse';
 import { decodeImageFile, isRasterBuffer } from '../raster/decode';
+import { rasterCappedMessage } from '../raster/parse';
 import { parseRasterImage } from '../raster/parse';
 import { DETAIL_DEFAULT } from '../raster/stats';
 import { clearWarnings, notice, warn } from '../warnings';
@@ -119,25 +120,6 @@ export function renderPatternPicker(): void {
  * audience cannot actually make. The Colors slider goes to 16 for anyone who wants it. */
 const DEFAULT_RASTER_COLORS = 6;
 
-/**
- * The capped notice, named for the image it is about.
- *
- * Per image rather than one shared string, because notices dedupe by message and the list panel
- * retracts this one by exact text: with a single message, re-quantizing an *uncapped* image pulled
- * down a still-true notice belonging to a different, capped one. The filename is what tells the two
- * apart in the pill, too, once more than one image is loaded.
- *
- * Both suggestions lower the component count. Detail is the counter-intuitive one: `autoParams`
- * scales the despeckle floor by 4^((50-detail)/50), so *raising* Detail quarters the floor and lets
- * through four times the specks — the opposite of what this notice is asking for.
- */
-export function rasterCappedMessage(name: string): string {
-  return (
-    `Some detail in "${name}" was too fine to print and was merged into its surroundings. ` +
-    'Lower Colors, or lower Detail, for a cleaner result.'
-  );
-}
-
 function reportLoadFailure(fname: string, message: string): void {
   clearWarnings();
   warn(message);
@@ -161,8 +143,8 @@ async function applyRasterFile(file: File): Promise<void> {
     const opts = { colors: DEFAULT_RASTER_COLORS, detail: DETAIL_DEFAULT };
     // Decode and trace before touching state, for the same reason applyParsedSVG parses first.
     const result = parseRasterImage(image, opts);
-    // No svgText: an image's source of truth is its pixels, and session persistence skips these
-    // sources rather than trying to round-trip a megabyte of them (see state/persist.ts).
+    // No svgText: an image's source of truth is its pixels. Session persistence round-trips those
+    // separately, as the working copy re-encoded to PNG (see raster/store.ts).
     loadArtworkSource(result.parsed, file.name, 'raster', 'sticker', '', {
       image,
       ...opts,

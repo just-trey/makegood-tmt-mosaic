@@ -12,7 +12,7 @@ import {
 } from '../state/artwork';
 import { fillModeOffered } from '../assembly/kinds';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
-import { rasterCappedMessage } from './artworkPanel';
+import { rasterCappedMessage } from '../raster/parse';
 import { dismissNotice, notice } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { scheduleRebuild } from '../app/scheduler';

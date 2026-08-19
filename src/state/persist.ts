@@ -13,6 +13,10 @@ import { HUBCAP_MIN_DIAMETER_MM } from '../geometry/hubcap';
 import { getPrinter } from '../export/printers';
 import { asmLoadFullAssembly } from '../assembly/parts';
 import { parseSVGDocument } from '../svg/parse';
+import { decodeWorkingImage, encodeWorkingImage } from '../raster/store';
+import { parseRasterImage, rasterCappedMessage } from '../raster/parse';
+import { notice, warn } from '../warnings';
+import type { RasterImage } from '../raster/types';
 
 const STORAGE_KEY = 'tmt-mosaic:session:v1';
 const SCHEMA_VERSION = 1;
@@ -21,7 +25,54 @@ const SCHEMA_VERSION = 1;
  * dense/multi-design session storing raw SVG text should still have a hard ceiling. */
 const MAX_BYTES = 4_000_000;
 
-type PersistedSource = Pick<DesignSource, 'id' | 'kind' | 'name' | 'svgText'>;
+/**
+ * How much of a session all its images together may take, as data-URL characters.
+ *
+ * Measured re-encodes: flat art at 1024px is ~24KB of PNG, a photograph at 512px ~703KB, and a
+ * data URL is base64, so about a third larger again — one photograph lands near 950,000
+ * characters. A per-image cap alone is not enough: four photographs each pass it and together push
+ * the JSON past MAX_BYTES, at which point saveSession writes nothing and the SVG half of the
+ * session, which saved fine before images were persisted at all, is lost with them.
+ *
+ * So images are admitted in order until the budget is spent, and the rest drop out the way an
+ * unencodable one does, with the unload prompt to say so. 2.5M of the 4M leaves the SVG sources,
+ * placements and settings room they will not realistically exceed.
+ */
+const MAX_IMAGE_CHARS_TOTAL = 2_500_000;
+
+/**
+ * Last encode per source, keyed on the pixel buffer it came from.
+ *
+ * Every debounced autosave runs snapshotSession, and beforeunload runs it again synchronously.
+ * Re-encoding a 512px photograph to PNG on each of those is main-thread work for a result that
+ * cannot have changed: the working pixels are replaced wholesale when the Colors or Detail sliders
+ * re-run, never mutated in place, so buffer identity is a sound key.
+ */
+const pngCache = new WeakMap<Uint8ClampedArray, string>();
+
+function encodedPng(image: RasterImage): string | null {
+  const hit = pngCache.get(image.data);
+  if (hit !== undefined) return hit;
+  const png = encodeWorkingImage(image);
+  // Only a success is remembered. A failure can be transient (an allocation that lost a race), and
+  // caching it would drop that image from every later save for the rest of the session.
+  if (png) pngCache.set(image.data, png);
+  return png;
+}
+
+type PersistedSource = Pick<DesignSource, 'id' | 'kind' | 'name' | 'svgText'> & {
+  /**
+   * A raster source's working image, re-encoded as a PNG data URL, plus what the trace needs to
+   * reproduce the same result from it. Absent on an SVG source, and on a raster session saved
+   * before this existed.
+   *
+   * `edgeDensity` travels with the pixels because it cannot be re-derived from them: the same
+   * image measures flatter the larger it is decoded, so re-measuring the working image would move
+   * the flat-vs-photo thresholds and every blur and despeckle strength hanging off them (see
+   * RasterImage in raster/types.ts).
+   */
+  raster?: { png: string; colors: number; detail: number; edgeDensity?: number };
+};
 /** `zone` isn't persisted directly — `AssemblyPart.id` is a fresh per-session counter
  * (asmCreateRolePart), so a saved `partId` can't mean anything after a reload. Only `zoneId`
  * (the zone's stable string id from the zone sidecar) survives; the restore path re-resolves it
@@ -104,7 +155,7 @@ export function initBeforeUnloadGuard(): void {
     e.preventDefault();
     e.returnValue = lastSaveFailed
       ? "TMT Mosaic couldn't save this session — leaving now loses it."
-      : 'TMT Mosaic saved this session, but an image cannot be saved — leaving now means ' +
+      : 'TMT Mosaic saved this session, but an image could not be saved — leaving now means ' +
         're-dropping it.';
   });
   // beforeunload is skipped outright on mobile backgrounding and bfcache eviction, so this is the
@@ -115,7 +166,30 @@ export function initBeforeUnloadGuard(): void {
 }
 
 function snapshotSession(): PersistedSession {
-  const persistedSources = state.sources.filter((s) => !s.raster);
+  // Encoded first, because a source whose image will not encode has to be left out exactly as
+  // every image used to be: its instances dropped with it, or restore rebuilds placements pointing
+  // at a source that is not there.
+  const rasterPayloads = new Map<string, NonNullable<PersistedSource['raster']>>();
+  let imageChars = 0;
+  for (const s of state.sources) {
+    // `!s.raster.image` is not reachable from the app, which always loads pixels with the source,
+    // but a malformed source must drop out of the save rather than throw and take the session
+    // with it — snapshotSession runs outside saveSession's try.
+    if (!s.raster?.image) continue;
+    const png = encodedPng(s.raster.image);
+    // Over budget, this image is left out rather than the whole save failing. The data URL is
+    // already base64, so its length is what it costs in the JSON.
+    if (png && imageChars + png.length <= MAX_IMAGE_CHARS_TOTAL) {
+      imageChars += png.length;
+      rasterPayloads.set(s.id, {
+        png,
+        colors: s.raster.colors,
+        detail: s.raster.detail,
+        edgeDensity: s.raster.image.edgeDensity,
+      });
+    }
+  }
+  const persistedSources = state.sources.filter((s) => !s.raster || rasterPayloads.has(s.id));
   const persistedIds = new Set(persistedSources.map((s) => s.id));
   const persistedArtworks = state.artworks.filter((a) => persistedIds.has(a.sourceId));
   const persistedActiveId = persistedArtworks.some((a) => a.id === state.activeArtworkId)
@@ -151,16 +225,17 @@ function snapshotSession(): PersistedSession {
     colorSettings: state.colorSettings,
     explicitDepths: true,
     keptApart: state.keptApart,
-    // A raster source is skipped, not persisted: restore re-derives `parsed` by re-parsing
-    // `svgText`, and an image has none — it came from pixels. Storing the pixels instead is not an
-    // option either, since one decoded image is ~1MB before JSON encoding against a MAX_BYTES of
-    // 4MB. Its instances go with it, or restore would rebuild placements pointing at a source that
-    // no longer exists. The user re-drops the image; everything else about the session survives.
+    // An SVG source restores by re-parsing `svgText`. A raster source has none — it came from
+    // pixels — so it carries its working image re-encoded as PNG, which restore decodes and
+    // re-traces. Raw pixels were rejected here and still are: 1024x1024 RGBA is 4.0MB against a
+    // MAX_BYTES of 4MB, while the same pixels as PNG measure 24KB for flat art and 703KB for a
+    // photograph (see raster/store.ts for why PNG and why the working image).
     sources: persistedSources.map((s) => ({
       id: s.id,
       kind: s.kind,
       name: s.name,
       svgText: s.svgText,
+      ...(rasterPayloads.has(s.id) ? { raster: rasterPayloads.get(s.id) } : {}),
     })),
     artworks: persistedArtworks.map(({ zone, ...rest }) => ({
       ...rest,
@@ -226,13 +301,15 @@ export function saveSession(): void {
   // fresh" actually stays fresh, and so removing the last artwork instance doesn't leave a stale
   // save behind either.
   //
-  // Judged on the snapshot rather than on hasLoadedWork(), because the two disagree for a session
-  // whose only design is an image: snapshotSession() skips raster sources, so that session is
-  // "work is loaded" but "nothing persistable came out of it". Storing it would offer a restore
-  // banner that brings back nothing — and, worse, report a clean save to the unload guard, which
-  // takes that to mean the work is recoverable when the only way back is to re-drop the image.
+  // Judged on the snapshot rather than on hasLoadedWork(). The two used to disagree for a session
+  // whose only design was an image, because snapshotSession() skipped raster sources; they agree
+  // now that those round-trip, and the snapshot is still the honest thing to judge, since it is
+  // what actually reaches storage.
   const session = snapshotSession();
-  lastSaveDropped = state.sources.some((s) => s.raster);
+  // Any image that did not make it, not only the case where every one failed: with two images and
+  // one refusal the second and all its placements would otherwise be dropped in silence.
+  const savedRasterIds = new Set(session.sources.filter((s) => s.raster).map((s) => s.id));
+  lastSaveDropped = state.sources.some((s) => s.raster && !savedRasterIds.has(s.id));
   if (!session.artworks.length) {
     if (!savedSessionIsOnHiddenKind()) clearSavedSession();
     lastSaveFailed = hasLoadedWork();
@@ -402,10 +479,49 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.colorSettings = restoredColorSettings(session);
   state.keptApart = session.keptApart;
 
-  const sources: DesignSource[] = session.sources.map((s) => ({
-    ...s,
-    parsed: parseSVGDocument(s.svgText),
-  }));
+  // A raster source is decoded and re-traced; an SVG one is re-parsed. Both are rebuilt before any
+  // state is touched, matching the rest of this function and applyRasterFile: a source that fails
+  // to come back must not leave a half-restored session behind.
+  //
+  // This is the one place restore does real image work, and it is the cost of the feature: on a
+  // 512px photograph the quantize and trace measured ~830ms. It runs inside the same overlay the
+  // restore already shows.
+  const sources: DesignSource[] = [];
+  const lostSources = new Set<string>();
+  for (const s of session.sources) {
+    if (!s.raster) {
+      sources.push({ ...s, raster: undefined, parsed: parseSVGDocument(s.svgText) });
+      continue;
+    }
+    // Per image, not per session. A decode or trace that throws must cost that one design, not the
+    // restore: the banner treats a rejected restore as a dead session and calls clearSavedSession,
+    // so letting this escape would destroy the SVG designs alongside it, permanently. The save
+    // path already degrades per image; this is the matching half.
+    try {
+      const image = await decodeWorkingImage(s.raster.png);
+      // Put back the statistic that cannot be re-measured from these pixels (see PersistedSource).
+      if (s.raster.edgeDensity !== undefined) image.edgeDensity = s.raster.edgeDensity;
+      const opts = { colors: s.raster.colors, detail: s.raster.detail };
+      const result = parseRasterImage(image, opts);
+      // The same notice the first load gave. Without it a design that comes back simplified looks
+      // like the app quietly changed it.
+      if (result.capped) notice(rasterCappedMessage(s.name));
+      sources.push({
+        id: s.id,
+        kind: s.kind,
+        name: s.name,
+        svgText: '',
+        parsed: result.parsed,
+        raster: { image, ...opts, palette: result.palette, regions: result.componentCount },
+      });
+    } catch {
+      lostSources.add(s.id);
+      warn(
+        `"${s.name}" could not be restored from the saved session — load the image again to put ` +
+          `it back. Everything else in the session was restored.`,
+      );
+    }
+  }
 
   const kind =
     session.shapeKind === 'assembly' && session.assembly.kindId
@@ -422,24 +538,35 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     state.shapeKind = session.shapeKind === 'assembly' ? 'disc' : session.shapeKind;
   }
 
-  const artworks: ArtworkInstance[] = session.artworks.map((a) => ({
-    id: a.id,
-    sourceId: a.sourceId,
-    zone: null,
-    offsetU: a.offsetU,
-    offsetV: a.offsetV,
-    scalePct: a.scalePct,
-    rotationDeg: a.rotationDeg,
-    flipX: a.flipX,
-    flipY: a.flipY,
-    // Clamped, not trusted: a session saved before its kind withheld Fill (or before the flag
-    // existed) still carries 'fill', and restoring it verbatim would walk straight into the path
-    // the flag keeps users out of. Runs after the kind is set above, so it clamps against the
-    // part actually being restored.
-    mode: allowedArtworkMode(a.mode),
-  }));
+  // Instances of a source that could not be rebuilt go with it, or the placement points at
+  // nothing and every later lookup by sourceId returns undefined. The active selection is
+  // re-pointed below for the same reason: left on a dead id, setActiveArtwork returns early and
+  // the app comes back with no parsed design and Export off, while the artwork that DID restore
+  // sits in state unselected.
+  const artworks: ArtworkInstance[] = session.artworks
+    .filter((a) => !lostSources.has(a.sourceId))
+    .map((a) => ({
+      id: a.id,
+      sourceId: a.sourceId,
+      zone: null,
+      offsetU: a.offsetU,
+      offsetV: a.offsetV,
+      scalePct: a.scalePct,
+      rotationDeg: a.rotationDeg,
+      flipX: a.flipX,
+      flipY: a.flipY,
+      // Clamped, not trusted: a session saved before its kind withheld Fill (or before the flag
+      // existed) still carries 'fill', and restoring it verbatim would walk straight into the path
+      // the flag keeps users out of. Runs after the kind is set above, so it clamps against the
+      // part actually being restored.
+      mode: allowedArtworkMode(a.mode),
+    }));
   restoreArtworkPool(sources, artworks);
   session.artworks.forEach((a) => setArtworkZone(a.id, a.zoneId));
-  setActiveArtwork(session.activeArtworkId);
+  setActiveArtwork(
+    artworks.some((a) => a.id === session.activeArtworkId)
+      ? session.activeArtworkId
+      : (artworks[0]?.id ?? null),
+  );
   pruneSettingsToPalette();
 }
