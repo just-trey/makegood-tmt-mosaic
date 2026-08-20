@@ -391,28 +391,56 @@ Two more things worth knowing before touching this:
   A blanket weld plus `computeVertexNormals()` was measured and rejected — it
   melted the embossed logo on the storage box; see `CREASE_ANGLE_RAD`.
 
-## The raster photo-vs-flat-art thresholds are shaped right but calibrated against synthetic images
+## The raster edge-density reading depends on how big the file is
 
-**Measured**: [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). The clusters overlap, but on n=1 photograph, so the statistic is not
-yet condemned. The separable result is that a source under 512px is pushed toward photo treatment
-by its size alone: the same two-color zebra reads 0.63 at 128px and 0.18 at 512px.
+**Measured**: [2026-08-19 photo cluster](findings/2026-08-19-raster-photo-cluster.md), revising
+result 1 of
+[2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). The
+original heading of this section, and its worry that the endpoints were placed against synthetic
+sources, is answered. What replaced it is narrower and is a real defect.
 
-`FLAT_EDGE_DENSITY` / `PHOTO_EDGE_DENSITY` in
-[src/raster/stats.ts](../src/raster/stats.ts) (0.12 and 0.45) decide how much
-blur and despeckling an image gets, interpolating between so nothing falls off a
-cliff. The statistic is sound — flat art puts its transitions on thin outlines
-around large constant fields, a photograph has one nearly everywhere, and
-`tests/raster-parse.test.ts` pins that separation — but the two endpoints were
-placed from procedurally generated sources, not from a corpus of real files.
+`measureImage().edgeDensity` counts the share of pixels that differ from a neighbour, and that
+share depends on the size the image is measured at. `MEASURE_EDGE` caps rather than resamples, so
+a source under 512px is measured at its own size and reads higher for it.
 
-Closing it: record `measureImage().edgeDensity` for a real set — the shipped
-`public/patterns/*.svg` and `public/assets/makegood-logo.png` rasterized, several
-phone photos, one quality-40 JPEG (block artifacts must not read as flat), and
-the genuinely hard middle: a UI screenshot, a scanned crayon drawing, a
-gradient-heavy illustration. Confirm the flat and photo clusters are separated by
-a gap and put the endpoints inside it. A screenshot landing on the photo side
-would be the bug to watch for. If the clusters overlap, the statistic itself is
-wrong and wants replacing rather than retuning.
+| Source                                        | Measured         | Reads                                 |
+| --------------------------------------------- | ---------------- | ------------------------------------- |
+| `public/patterns/zebra.svg` exported at 128px | 0.6324           | photo                                 |
+| the same file exported at 256px               | 0.3661           | photo                                 |
+| the same file exported at 384px               | 0.2430           | flat, and this is where it flips      |
+| the same file at 512px and above              | 0.1823 to 0.2086 | flat, a noisy band and not one number |
+| `red-sox-logo`, a real 300px logo             | 0.2531           | flat, 0.03 from the cutoff            |
+
+Two flat colours at every size. Only the export resolution changed.
+
+The `sizes` bench mode shows the same effect from the other direction, on the measurement rather
+than the file: `mario` reads 0.433 (photo) measured at 256 and 0.253 (flat) at 512. That rung is
+diagnostic rather than shipping, since `mario` is always worked at 1024, but it isolates the
+measurement size from the file size.
+
+**Closing it**: derive the reading from something size-independent, or measure at a fixed size the
+source is always resampled _to_ rather than capped at. The second is the smaller change and would
+alter what every existing threshold means, so it wants its own measurement pass.
+
+### What is settled, and does not need redoing
+
+- The clusters separate. Flat art tops out at 0.2532, the six added photographs run 0.2905 to
+  0.9189, and `PHOTO_RESOLUTION_CUTOFF` (0.285) sits inside that gap.
+- **Six of seven photographs. Not seven.** The bench prints `gap (all) -0.0770`, because the
+  corpus's one real photograph is a balloon against a clear sky at 0.1762, inside the flat band.
+  Its content genuinely is flat art and flat-art treatment is right for it, but the overlap is
+  real and the report argues the exclusion rather than hiding it.
+- The screenshot reads flat (0.1692), which was the named bug to watch for.
+- The statistic is not a candidate for replacement. It scores busy photographs high, decisively:
+  gravel 0.9189, brick 0.7185.
+
+### Still unmeasured
+
+Where volunteer uploads land. Six of the seven photographs are CC-licensed Commons files, which is
+sound for asking whether the statistic _can_ score a busy photograph high and is not a sample of
+what this app receives. `FLAT_EDGE_DENSITY` (0.12) and `PHOTO_EDGE_DENSITY` (0.45) are untested by
+that run, which exercised only the midpoint. Flat art reaching 0.2532 is mild evidence against the
+flat endpoint.
 
 ## Colors is the one trace control still fixed, and no single value suits real artwork
 
