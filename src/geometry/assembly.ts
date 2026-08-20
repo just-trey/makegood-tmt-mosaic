@@ -36,6 +36,7 @@ import {
   manifoldIsValid,
   manifoldToMeshes,
   mapFeatureCoords,
+  REPAIR_ERODE_MM,
   repairSelfIntersections,
   soupToManifold,
   type ManifoldSolid,
@@ -832,7 +833,13 @@ export async function buildAssemblyGeometry(
         if (soup && soup.length) {
           try {
             const man = soupToManifold(wasm, soup);
-            if (!manifoldIsValid(man)) throw new Error('empty manifold');
+            // Freed rather than dropped: an un-watertight soup comes back as an *empty* solid
+            // rather than a throw, so this is the common path here, and a discarded solid is WASM
+            // memory that never reaches `owned`. The ladder below can discard one per rung.
+            if (!manifoldIsValid(man)) {
+              manifoldDelete(man);
+              throw new Error('empty manifold');
+            }
             keep(man, region);
             continue;
           } catch {
@@ -840,21 +847,43 @@ export async function buildAssemblyGeometry(
           }
           // Clipping dense line-work to the part boundary can leave the region self-touching:
           // valid to turf, non-watertight to Manifold. Repair with Manifold's own 2D boolean
-          // engine and retry once before giving up.
-          try {
-            const repaired = repairSelfIntersections(wasm, region.feat);
-            const soup2 =
-              repaired && mapper.buildCutter(repaired, region.depth, OVERSHOOT_MM, cutterOpts);
-            if (soup2 && soup2.length) {
-              const man2 = soupToManifold(wasm, soup2);
-              if (manifoldIsValid(man2)) {
-                keep(man2, region);
-                continue;
+          // engine and retry, widening the erode when the narrow one does not clear it.
+          //
+          // The ladder is the fix for a real failure rather than defensive retrying: a gravel
+          // photograph on the wheel put eleven regions through here, and one of them needed the
+          // wider distance. Ordered smallest first so a region that repairs at 0.01mm never pays
+          // the extra geometry loss, and it stops well inside what a nozzle can resolve.
+          //
+          // An edge slice stands on the part's outer wall and `keep` records it in
+          // `partEdgeColors` as "the rim prints in this color". Eroding it pulls it off that rim
+          // and leaves a rind of body material, so the wider rungs are withheld there: an edge
+          // slice gets the original single attempt and warns exactly as it did before.
+          let repairedOk = false;
+          const rungs = region.edge ? REPAIR_ERODE_MM.slice(0, 1) : REPAIR_ERODE_MM;
+          // No notice when a wider rung is used. An inward offset of `e` removes only what is
+          // thinner than `2e`, so the 0.05mm rung cannot touch anything wider than a quarter of a
+          // 0.4mm nozzle: nothing printable is at stake. An earlier version raised one, and its
+          // test could never be false because an erode is monotone, so it fired on every
+          // escalation. See docs/findings/2026-08-20-extrude-repair-erode.md.
+          for (const erodeMm of rungs) {
+            try {
+              const repaired = repairSelfIntersections(wasm, region.feat, erodeMm);
+              const soup2 =
+                repaired && mapper.buildCutter(repaired, region.depth, OVERSHOOT_MM, cutterOpts);
+              if (soup2 && soup2.length) {
+                const man2 = soupToManifold(wasm, soup2);
+                if (manifoldIsValid(man2)) {
+                  keep(man2, region);
+                  repairedOk = true;
+                  break;
+                }
+                manifoldDelete(man2);
               }
+            } catch {
+              /* try the next distance, then warn */
             }
-          } catch {
-            /* fall through to warn */
           }
+          if (repairedOk) continue;
         }
         // The artwork survived the boundary clip but no cutter came out. On a conformal zone the
         // warp found no surface under part of the region (usually a baked boundary claiming more

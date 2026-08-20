@@ -53,6 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A busy photograph no longer loses a color on the part.** Dropping a detailed
+  image on the wheel could raise "Couldn't cut color … into …", and that color
+  went missing from that part. Behind it, the repair the app already runs on
+  fiddly artwork only tried one setting and gave up. It now tries a second,
+  slightly stronger one. On the photograph that turned this up, eleven regions
+  needed repairing, ten came back with the first setting and one needed the
+  second. The stronger setting trims 0.05mm off the edge of the artwork, an
+  eighth of a 0.4mm nozzle, and can only drop detail thinner than 0.1mm, which is
+  a quarter of a nozzle and could never have printed.
 - **A decorative circle in your artwork no longer hijacks the whole design.** On
   a wheel the app sizes artwork to the circle a design template draws around its
   boundary, and it was taking the largest circle in the file whatever it was. A

@@ -1,5 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { getManifold, repairSelfIntersections, type ManifoldAPI } from '../src/geometry/manifold';
+import {
+  getManifold,
+  repairSelfIntersections,
+  REPAIR_ERODE_MM,
+  type ManifoldAPI,
+} from '../src/geometry/manifold';
 import type { PolyFeature } from '../src/types';
 
 /** Local, like the module-local alias in manifold.ts — a ring is a list of [x, y]. */
@@ -177,6 +182,60 @@ describe('repairSelfIntersections', () => {
 
     expect(ringsOf(out)).toHaveLength(1);
     expect(signedArea(ringsOf(out)[0])).toBeGreaterThan(390);
+  });
+});
+
+describe('the erode ladder', () => {
+  // One fixed distance was not enough. On a gravel photograph traced onto the wheel, eleven regions
+  // failed the first extrude; 0.01mm repaired ten and the eleventh needed 0.05mm. Two near-identical
+  // regions on opposite halves of the same wheel landed on opposite sides of that line. These pin
+  // the parts of that fix a future edit could undo without any test noticing.
+
+  it('actually offsets by the distance it is given, at the rungs that ship', () => {
+    // Asserted on the real rungs, not on two arbitrary distances: with 0.01 vs 0.5 the ladder
+    // could collapse to [0.01, 0.010001] and this would still pass while the escalation stopped
+    // working. This is also the bug that hid in an earlier measurement of the fix, where the
+    // parameter was accepted and ignored and four distances reported identical area.
+    const areaAt = (mm: number) => totalArea(repairSelfIntersections(wasm, polygon([BOWTIE]), mm)!);
+
+    const rungs = REPAIR_ERODE_MM.map(areaAt);
+
+    for (let i = 1; i < rungs.length; i++) {
+      expect(rungs[i]).toBeLessThan(rungs[i - 1]);
+    }
+  });
+
+  it('walks the ladder narrowest first, so a region never pays for erosion it did not need', () => {
+    expect(REPAIR_ERODE_MM.length).toBeGreaterThan(1);
+    for (let i = 1; i < REPAIR_ERODE_MM.length; i++) {
+      expect(REPAIR_ERODE_MM[i]).toBeGreaterThan(REPAIR_ERODE_MM[i - 1]);
+    }
+  });
+
+  it('steps far enough that the wider rung can clear what the narrow one cannot', () => {
+    // Strictly increasing is not enough: [0.01, 0.010001] satisfies every other assertion here
+    // while the escalation does nothing. On the region that prompted this, 0.02mm (twice the
+    // narrow rung) still failed and 0.05mm cleared it, so anything at or under 2x is measured to
+    // be too small a step.
+    for (let i = 1; i < REPAIR_ERODE_MM.length; i++) {
+      expect(REPAIR_ERODE_MM[i] / REPAIR_ERODE_MM[i - 1]).toBeGreaterThan(2);
+    }
+  });
+
+  it('stops inside what a nozzle can resolve', () => {
+    // The widest rung is a repair, not a redesign. Half a 0.4mm nozzle is where an erode stops
+    // breaking a coincidence and starts visibly shrinking the recess: 0.25mm also clears the gravel
+    // failure and is the value this bound exists to reject.
+    expect(Math.max(...REPAIR_ERODE_MM)).toBeLessThan(0.2);
+  });
+
+  it('defaults to the narrowest rung when no distance is given', () => {
+    const explicit = totalArea(
+      repairSelfIntersections(wasm, polygon([BOWTIE]), REPAIR_ERODE_MM[0])!,
+    );
+    const defaulted = totalArea(repairSelfIntersections(wasm, polygon([BOWTIE]))!);
+
+    expect(defaulted).toBeCloseTo(explicit, 6);
   });
 });
 
