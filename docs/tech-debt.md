@@ -393,11 +393,12 @@ Two more things worth knowing before touching this:
 
 ## The raster edge-density reading depends on how big the file is
 
-**Measured**: [2026-08-19 photo cluster](findings/2026-08-19-raster-photo-cluster.md), revising
+**Measured**: [2026-08-19 photo cluster](findings/2026-08-19-raster-photo-cluster.md) supersedes
 result 1 of
-[2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). The
-original heading of this section, and its worry that the endpoints were placed against synthetic
-sources, is answered. What replaced it is narrower and is a real defect.
+[2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). Six of
+seven photographs separate cleanly from the flat cluster and the 0.285 cutoff sits in that gap;
+the seventh, a balloon against a clear sky, stays inside the flat band. The size dependence below
+is what is left open.
 
 `measureImage().edgeDensity` counts the share of pixels that differ from a neighbour, and that
 share depends on the size the image is measured at. `MEASURE_EDGE` caps rather than resamples, so
@@ -422,18 +423,6 @@ measurement size from the file size.
 source is always resampled _to_ rather than capped at. The second is the smaller change and would
 alter what every existing threshold means, so it wants its own measurement pass.
 
-### What is settled, and does not need redoing
-
-- The clusters separate. Flat art tops out at 0.2532, the six added photographs run 0.2905 to
-  0.9189, and `PHOTO_RESOLUTION_CUTOFF` (0.285) sits inside that gap.
-- **Six of seven photographs. Not seven.** The bench prints `gap (all) -0.0770`, because the
-  corpus's one real photograph is a balloon against a clear sky at 0.1762, inside the flat band.
-  Its content genuinely is flat art and flat-art treatment is right for it, but the overlap is
-  real and the report argues the exclusion rather than hiding it.
-- The screenshot reads flat (0.1692), which was the named bug to watch for.
-- The statistic is not a candidate for replacement. It scores busy photographs high, decisively:
-  gravel 0.9189, brick 0.7185.
-
 ### Still unmeasured
 
 Where volunteer uploads land. Six of the seven photographs are CC-licensed Commons files, which is
@@ -444,11 +433,12 @@ flat endpoint.
 
 ## Colors is the one trace control still fixed, and no single value suits real artwork
 
-**Measured**: [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). The curve a knee detector would read was measured; no detector was
-built. Scored by hand it would be correct on 6 of the 8 sources whose right answer is clear, on
-a uniform one-color-per-step ladder, and both failures pick too few colors. Three traps to build around: a `MAX_COMPONENTS`-capped step reads as the strongest possible knee
-while pointing the wrong way, component count cannot see a 9x rise in point count, and the curve
-is not monotonic even uncapped.
+**Rejected, measured**: [2026-08-20 knee detector](findings/2026-08-20-knee-detector.md). Picking
+the palette size from a knee in the region-count curve is right on two of the four sources that
+have a column at their shipping size, moves with working size without a trend, and costs 3.5 to 5
+seconds. Supersedes the "6 of 8" reading in
+[2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md), which
+was hand-scored off one full-resolution curve. **The problem below is unchanged and unfixed.**
 
 Working resolution, blur and despeckle are all chosen from the image. The default palette size is
 not — it is a constant, and measured across the sample corpus (`stubs/raster test/`, 2026-08-04) no
@@ -471,21 +461,22 @@ to a desaturated entry). So the harm runs both ways, but not symmetrically: too 
 a simplification, while too many reads as a defect — halos look broken, cost filament slots, and
 multiply region count tenfold.
 
-The region count is a usable signal for choosing it automatically. Across the corpus, each step up
-in palette size multiplies regions by 1.2x-2x, except where the surplus starts landing on fringe:
-the logo's 4 -> 6 step multiplies them by 6.5x. A knee detector over that curve would pick the
-palette size the way the other three parameters are already picked, and would suit both a
-three-colour logo and a nine-colour cartoon without the user touching a slider.
+The region count looked like a usable signal for choosing it automatically, and is not: see the
+rejection above. The curve is unstable across working size, the full ladder costs seconds rather
+than the tens of milliseconds a quantize pass suggested, and the rule is right on two of the four
+sources that have a column at their shipping size.
 
-What closing it needs: a decision on where to run the search (re-quantizing at several k costs one
-quantize pass each, which the bench puts at tens of milliseconds), and a check that the knee is
-stable on photographs, where region growth is smoother and the signal weakest.
+What closing it needs is a different signal, measured. Distinct colours surviving a coarse
+quantize, or the ΔE spread of the palette, are both single-pass and neither has been looked at.
+Whatever the candidate, it has to be checked on photographs, where region growth is smoothest and
+any signal weakest, and the traces have to be **judged by eye**: region count cannot tell a cleaner
+trace from a coarser one.
 
 ## The trace parameters are calibrated against a downscale that is no longer constant
 
-**Measured**: [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). Any source between 513px and 1024px takes the compensating blur at
-downscale 1.00. Measured on `cartoon` (500x898), at the size the app ships it, the blur
-quadruples region count (99 to 414) and multiplies points by 2.8 (2557 to 7117).
+**Measured**: [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md)
+quantifies the cost; [2026-08-20 blur vs downscale](findings/2026-08-20-blur-vs-downscale.md) is an
+invalid test of the fix this section proposes. Read the second before designing another.
 
 `decode.ts` has always noted that the downscale to the working size "doubles as the first noise
 filter", and the blur/despeckle endpoints in [stats.ts](../src/raster/stats.ts) were tuned with
@@ -522,35 +513,6 @@ a fixed working size it helps exactly one and hurts or no-ops the rest.
 the untested candidate rather than a rejected one. Whatever the test, it needs raster inputs
 resampled to several sizes on disk, since no mode here can produce them, and the traces need looking
 at rather than counting: region count cannot tell a cleaner trace from a coarser one.
-
-## The curve-fit constants are reasoned, not measured against a corpus
-
-**Measured**: [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). The sweep is done and it defends what ships.
-`ALPHA_MAX_LIMIT` and its comment are both correct, verified by probing `fitChain` on a clean
-square: at 4/3 a square comes back rounded, losing 5.37% of its area. The endpoints are left
-alone, because the two corner-bearing sources disagree at the flatness that actually ships.
-The one undocumented thing is cost, not correctness: against the flat-art
-endpoint at flatness 0.1, 4/3 costs 1.90x the vertices on the 300px logo and 1.29x on the
-screenshot, so the size of that cost is content-dependent.
-
-`alphaMax` and `flatness` in [src/raster/stats.ts](../src/raster/stats.ts) replaced the old RDP
-`simplifyTol` when tracing moved to sub-pixel curve fitting. The flat-art endpoints (`alphaMax`
-1.0, `flatness` 0.25px) and photo endpoints (1.2, 0.4px) were picked from what each parameter
-means — 1.0 is the long-standing Potrace default, `4/3` is where the corner test stops rejecting
-anything, and a quarter-pixel flattening tolerance is well inside what the 0.4mm nozzle can
-express — and then checked on the synthetic bench sources plus a single real one (a 1588x1176
-flat-art cartoon, kept in the gitignored `stubs/`, so not reproducible from a clean checkout).
-That is the same weakness the edge-density thresholds have (their own section above): the shape is
-right, the numbers have not been swept.
-
-Closing it: sweep `alphaMax` across 0.8–1.334 and `flatness` across 0.1–0.6 on a corpus with
-known-correct answers — a logo whose corners are genuinely square, a scanned drawing, a photo —
-and record where corners start rounding off and where point counts start climbing without a
-visible improvement. The two failure directions are asymmetric and worth naming: too low an
-`alphaMax` gives a faceted arc, too high rounds a square logo's corners, and only the second is
-obvious in a preview. `FLATNESS_MIN` is a performance guard rather than a taste one — it stops a
-full-right Detail slider turning a sub-pixel tolerance into a ring-length explosion, which
-`shapeToFeature` is quadratic in.
 
 ## The raster despeckle floor is a fraction of image area, not a printable size
 
