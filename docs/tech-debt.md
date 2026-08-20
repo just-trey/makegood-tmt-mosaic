@@ -501,9 +501,27 @@ the file wins an entry and costs a filament slot; `tests/raster-quantize.test.ts
 
 What is still unresolved: the compensation is a constant, not a function of how much downscaling
 actually happened. A small source that is never downscaled at all gets the same one-pixel blur as a
-1588px one that was halved, and neither is the case the endpoints were tuned for. Closing it means
-deriving blur from the realised downscale ratio — the decoder knows both sizes — and re-tuning the
-flat endpoint against sources at several scales rather than the one that prompted this.
+1588px one that was halved, and neither is the case the endpoints were tuned for.
+
+**Still open, and one attempt to test it was invalid.**
+[2026-08-20 blur vs downscale](findings/2026-08-20-blur-vs-downscale.md) tried to check whether the
+benefit tracks the ratio by re-rendering vector patterns at several sizes. It cannot: the working
+size is always 1024, and a vector baked large then filtered down gives essentially the same raster
+as one baked small, so the anti-aliased fringe the compensation exists to replace is never created.
+Four of the five sources' control arms do not change at all across the ladder, and the fifth moves
+with its own base-blur flip rather than with the ratio. Read it before designing another test.
+
+A valid version needs genuinely different raster pixels per rung, one large flat-art image resampled
+the way a user's exports would be. `bench-raster.ts blur` is the harness for it.
+
+What is not in doubt, from the earlier corpus run: the constant is wrong for some artwork. It
+quadruples region count on `cartoon` at the size the app ships it, and across five vector sources at
+a fixed working size it helps exactly one and hurts or no-ops the rest.
+
+**Closing it** still means deciding what the compensation should be a function of, and the ratio is
+the untested candidate rather than a rejected one. Whatever the test, it needs raster inputs
+resampled to several sizes on disk, since no mode here can produce them, and the traces need looking
+at rather than counting: region count cannot tell a cleaner trace from a coarser one.
 
 ## The curve-fit constants are reasoned, not measured against a corpus
 
