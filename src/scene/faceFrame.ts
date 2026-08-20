@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import { state } from '../state/store';
 import { currentBaseParams } from '../state/store';
-import { currentAssemblyKind } from '../assembly/kinds';
+import { currentAssemblyKind, currentDesignScaleContext } from '../assembly/kinds';
 import { primaryZoneMapper, zoneMappersFor } from '../geometry/zoneMappers';
-import { designAnchor, designMmPerUnit, memoLargestDesignFace } from '../geometry/assembly';
-import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
+import { designAnchor, designMmPerUnit } from '../geometry/assembly';
 import type { ZoneFrame, ZoneMapper } from '../geometry/zones';
 import { activeArtworkInstance } from '../state/artwork';
 import type { AssemblyPart } from '../types';
@@ -211,12 +210,12 @@ function assemblyFrame(): FaceFrame | null {
   // nowhere near it. Pass no `notice`: this runs on every gizmo refresh.
   const scaleMult = state.scalePct / 100;
   const anchor = designAnchor(state.parsed!, isRect);
-  const mmPerUnit = designMmPerUnit(state.parsed!, scaleMult, anchor.r, {
-    isRect,
-    radius: state.asmRadius || 138,
-    designFace: () => generatedDesignFaceOverride() ?? memoLargestDesignFace(parts)(),
-    generatedFit: generatedFitFactor,
-  });
+  const mmPerUnit = designMmPerUnit(
+    state.parsed!,
+    scaleMult,
+    anchor.r,
+    currentDesignScaleContext(),
+  );
 
   // The cut is anchored on the *document*, so it lands wherever the drawn content sits relative to
   // that anchor — off-center on the face for a design drawn off-center on its sheet. The frame has

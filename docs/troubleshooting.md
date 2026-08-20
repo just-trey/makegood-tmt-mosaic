@@ -121,12 +121,11 @@ two copies of one file). Any of these clears it:
 A little overlap is deliberately not flagged: designs placed side by side
 routinely share a millimetre or two of empty bounding box.
 
-**It compares rectangles, so it can warn about designs that don't really touch.**
-The check uses each design's bounding box, not its artwork, so a logo centred
-inside a frame reads as fully covered even though the recesses never meet and
-the export is fine. That is a false alarm and the file is safe to print. There
-is no way to clear it short of moving the inner design off-centre. Recorded in
-[tech-debt.md](tech-debt.md) with what an exact check would cost.
+**It can still warn about designs that don't quite touch.** The check starts
+from each design's bounding box, then asks how much of each one's artwork
+reaches the box they share. A logo centred in a frame's empty middle no longer
+warns. Two designs whose artwork both reach the shared box without crossing
+still do, and that is a false alarm: the file is safe to print.
 
 **Two designs both set to Fill always warn**, with their own message: a fill
 repeats across everything it covers, so the second lands on the first

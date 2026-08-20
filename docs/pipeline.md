@@ -120,7 +120,11 @@ landing on the copy is mapped back into the part's own print orientation.
 **Several designs can share one surface.** Where two overlap the cut still
 happens, but their inlays would claim the same volume, so placements are
 compared per zone and both designs are named in a warning
-([designOverlap.ts](../src/geometry/designOverlap.ts)).
+([designOverlap.ts](../src/geometry/designOverlap.ts)). Placed bounding boxes
+decide first, then how much of each design's net regions reaches the box the two
+share, clipped to it. That second number bounds the real artwork-on-artwork
+overlap from above, which clears a design nested in another's hollow without
+putting a boolean on the rebuild.
 
 **Design zones: a part can carry more than one design surface.** Baked ahead of
 time by `scripts/bake-zones.mjs`. The chair body has seven (left, right, front,

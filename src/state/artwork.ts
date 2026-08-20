@@ -2,7 +2,9 @@ import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState } from '../t
 import { clearBaseColor, state } from './store';
 import { deltaE, hexToLab } from '../color';
 import { parseRasterImage } from '../raster/parse';
-import { fillWithheld } from '../assembly/kinds';
+import { currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
+import { placedFootprintMM } from '../geometry/assembly';
+import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
@@ -39,6 +41,84 @@ function sharesSurface(a: string | null, b: string | null): boolean {
 }
 
 /**
+ * The largest placed design the cascade will step the full width of.
+ *
+ * A diagonal step of `c` separates two designs needing `c` of clearance completely, while the
+ * constant step `d` leaves them covering ((c−d)/c)² of each other, which only reaches
+ * `OVERLAP_WARN_FRACTION` for c ≥ d/(1−√fraction). Below that the constant seeded a real overlap
+ * the build then said nothing about, because it fell under the warn threshold: two 10mm designs
+ * stepped 8mm apart cut 4% into each other in silence. So step the full clearance up to here, and
+ * keep the constant above it, where it is both the smaller move and a loud one.
+ *
+ * Scaling the step all the way up instead is what INSTANCE_CASCADE_MM already rejects: the wheel's
+ * default design is a 276mm circle, and a step sized to clear that throws the design off the face.
+ *
+ * What this buys is bounded, and docs/tech-debt.md carries the two cases it does not reach. Any
+ * single step has a silent band from itself up to 1.4625× itself, and one step per surface is
+ * forced (a step chosen per design puts a later small one between an earlier big one's spots). So
+ * a surface carrying anything over this size is back on the constant, and designs of opposite
+ * proportions defeat the clearance measure whatever it is set to.
+ */
+export const CASCADE_CLEAR_MAX_MM = INSTANCE_CASCADE_MM / (1 - Math.sqrt(OVERLAP_WARN_FRACTION));
+
+function cascadeStepMM(clearance: number): number {
+  return clearance > CASCADE_CLEAR_MAX_MM
+    ? INSTANCE_CASCADE_MM
+    : Math.max(INSTANCE_CASCADE_MM, clearance);
+}
+
+/** What the cascade needs to know about a design to size its step: enough to place it. */
+interface CascadeSubject {
+  parsed: ParsedSVG | null | undefined;
+  scalePct: number;
+  rotationDeg: number;
+}
+
+function footprintOf(d: CascadeSubject): { w: number; h: number } | null {
+  if (!d.parsed) return null;
+  const f = placedFootprintMM(
+    d.parsed,
+    d.scalePct / 100,
+    d.rotationDeg,
+    currentDesignScaleContext(),
+  );
+  return f.w > 0 && f.h > 0 ? f : null;
+}
+
+function subjectOf(a: ArtworkInstance): CascadeSubject {
+  return {
+    parsed: state.sources.find((s) => s.id === a.sourceId)?.parsed,
+    scalePct: a.scalePct,
+    rotationDeg: a.rotationDeg,
+  };
+}
+
+/**
+ * How far the step has to reach on this surface: the largest design already on it or arriving,
+ * measured across that design's narrower axis, which is what two copies of it need to come apart.
+ *
+ * Read off the surface rather than off the one pair being separated, deliberately. Every design on
+ * a surface steps along the same diagonal lattice, so a step sized per pair lets a later, smaller
+ * design land between two of an earlier one's lattice points and sit inside it: a 5mm design
+ * stepping 8mm past a 10mm one at 10mm ends up wholly within it. Taking the largest keeps one
+ * lattice.
+ *
+ * The narrower axis is the cheapest one to separate along, and it answers for the pair whenever
+ * the two designs are shaped alike. It does not otherwise: a 5x200 bar and a 200x5 bar both report
+ * 5, and no step derived from that will part them. See docs/tech-debt.md.
+ *
+ * Zero when no footprint is known, which falls the step back to the constant.
+ */
+function surfaceClearanceMM(zoneId: string | null, incoming: CascadeSubject): number {
+  const narrower = (f: { w: number; h: number } | null): number => (f ? Math.min(f.w, f.h) : 0);
+  let most = narrower(footprintOf(incoming));
+  for (const a of state.artworks)
+    if (sharesSurface(a.zone?.zoneId ?? null, zoneId))
+      most = Math.max(most, narrower(footprintOf(subjectOf(a))));
+  return most;
+}
+
+/**
  * The seed offset moved off any instance already placed at that exact spot on the same surface,
  * stepping diagonally until the spot is free (or `steps` runs out, so a pathological pile of
  * designs can't spin here). Returns the seed untouched when nothing is there — which is the
@@ -53,19 +133,22 @@ function cascadedOffset(
   zoneId: string | null,
   offsetU: number,
   offsetV: number,
+  incoming: CascadeSubject,
 ): { offsetU: number; offsetV: number } {
   if (state.shapeKind !== 'assembly') return { offsetU, offsetV };
-  const taken = (u: number, v: number): boolean =>
-    state.artworks.some(
+  const at = (u: number, v: number): ArtworkInstance | undefined =>
+    state.artworks.find(
       (a) =>
         sharesSurface(a.zone?.zoneId ?? null, zoneId) &&
         Math.abs(a.offsetU - u) < SAME_SPOT_MM &&
         Math.abs(a.offsetV - v) < SAME_SPOT_MM,
     );
-  for (let step = 0; step < state.artworks.length + 1; step++) {
-    const u = offsetU + INSTANCE_CASCADE_MM * step,
-      v = offsetV + INSTANCE_CASCADE_MM * step;
-    if (!taken(u, v)) return { offsetU: u, offsetV: v };
+  if (!at(offsetU, offsetV)) return { offsetU, offsetV };
+  const step = cascadeStepMM(surfaceClearanceMM(zoneId, incoming));
+  for (let i = 1; i <= state.artworks.length; i++) {
+    const u = offsetU + step * i,
+      v = offsetV + step * i;
+    if (!at(u, v)) return { offsetU: u, offsetV: v };
   }
   return { offsetU, offsetV };
 }
@@ -115,7 +198,11 @@ export function loadArtworkSource(
     id: `artwork-${nextArtworkId++}`,
     sourceId: source.id,
     zone: zoneId ? { partId: partIdForZone(zoneId), zoneId } : null,
-    ...cascadedOffset(zoneId, state.offsetX, state.offsetY),
+    ...cascadedOffset(zoneId, state.offsetX, state.offsetY, {
+      parsed,
+      scalePct: state.scalePct,
+      rotationDeg: state.rotationDeg,
+    }),
     scalePct: state.scalePct,
     rotationDeg: state.rotationDeg,
     flipX: state.flipX,
@@ -321,7 +408,11 @@ export function addInstanceForSource(sourceId: string, zoneId: string | null): A
     id: `artwork-${nextArtworkId++}`,
     sourceId,
     zone: zoneId ? { partId, zoneId } : null,
-    ...cascadedOffset(zoneId, 0, 0),
+    ...cascadedOffset(zoneId, 0, 0, {
+      parsed: state.sources.find((s) => s.id === sourceId)?.parsed,
+      scalePct: 100,
+      rotationDeg: 0,
+    }),
     scalePct: 100,
     rotationDeg: 0,
     flipX: false,

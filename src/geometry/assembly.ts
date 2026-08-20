@@ -58,7 +58,7 @@ import {
   type TileGrid,
   type TileRefusal,
 } from './patterns';
-import { overlappingDesignPairs, type PlacedDesign } from './designOverlap';
+import { overlappingDesignPairs, type InkPolygon, type PlacedDesign } from './designOverlap';
 import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
 import { noticeBuild, warnBuild } from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
@@ -100,6 +100,13 @@ export function asmPartTransformGroup(part: AssemblyPart): {
   };
 }
 
+/** A feature's polygons, whichever of the two geometry types it carries. */
+function polysOf(f: PolyFeature): Position[][][] {
+  return f.geometry.type === 'MultiPolygon'
+    ? (f.geometry.coordinates as Position[][][])
+    : [f.geometry.coordinates as Position[][]];
+}
+
 /**
  * Collect two designs' regions for one color into one feature, WITHOUT a boolean union. Feeds
  * color detection and merge grouping only, where total area is the quantity that matters.
@@ -107,10 +114,6 @@ export function asmPartTransformGroup(part: AssemblyPart): {
  * fold unrelated coordinates together and undercount every shared color.
  */
 function concatFeatures(a: PolyFeature, b: PolyFeature): PolyFeature {
-  const polysOf = (f: PolyFeature): Position[][][] =>
-    f.geometry.type === 'MultiPolygon'
-      ? (f.geometry.coordinates as Position[][][])
-      : [f.geometry.coordinates as Position[][]];
   return {
     type: 'Feature',
     properties: {},
@@ -403,6 +406,65 @@ export function designMmPerUnit(
   return scaleMult * fit;
 }
 
+/**
+ * The axis-aligned extent, in mm on the zone, of a design's content once placed.
+ *
+ * The placers add translation and mirroring on top of the scale, neither of which changes an
+ * extent, so this needs no mapper: `designMmPerUnit` and the user's rotation are the whole story.
+ * Rotation is folded in because a design turned 45° covers a bigger box than it does square on.
+ *
+ * Zero on either axis when the artwork has no extent there, or when the scale comes out
+ * non-finite (a degenerate anchor radius); callers decide what to do with that rather than being
+ * handed a NaN.
+ */
+export function placedFootprintMM(
+  parsed: ParsedSVG,
+  scaleMult: number,
+  rotationDeg: number,
+  ctx: DesignScaleContext,
+): { w: number; h: number } {
+  const mm = designMmPerUnit(parsed, scaleMult, designAnchor(parsed, ctx.isRect).r, ctx);
+  const b = parsed.bbox;
+  const w = (b.maxX - b.minX) * mm,
+    h = (b.maxY - b.minY) * mm;
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 0 || h < 0) return { w: 0, h: 0 };
+  const t = (rotationDeg * Math.PI) / 180;
+  const c = Math.abs(Math.cos(t)),
+    sn = Math.abs(Math.sin(t));
+  return { w: c * w + sn * h, h: sn * w + c * h };
+}
+
+/**
+ * The regions one design actually cuts, pushed through the zone's placer: what the overlap check
+ * consults when two placed bounding boxes alone would warn about artwork that never touches.
+ *
+ * Post-merge, post-base: these are the palette slots' features, so a color sent to the body is
+ * correctly not ink. Slots never overlap each other within one design (net regions are cut apart
+ * before they are pooled), so their areas add without double counting.
+ */
+function placedInk(
+  featuresByColor: (PolyFeature | null)[][],
+  ai: number,
+  place: (pt: number[]) => number[],
+): InkPolygon[] {
+  const out: InkPolygon[] = [];
+  for (const perArtwork of featuresByColor) {
+    const f = perArtwork[ai];
+    if (!f) continue;
+    for (const rings of polysOf(f))
+      out.push(
+        rings.map((r) => {
+          // GeoJSON rings repeat their first point; drop it so the clipper's wrap-around edge
+          // isn't a zero-length one.
+          const closed =
+            r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1];
+          return (closed ? r.slice(0, -1) : r).map((pt) => place(pt as number[]));
+        }),
+      );
+  }
+  return out;
+}
+
 /** The design's content bounding box, placed: a convex quad in the zone's own 2D design space. */
 function placedBBoxQuad(parsed: ParsedSVG, place: (pt: number[]) => number[]): number[][] {
   const b = parsed.bbox;
@@ -494,12 +556,12 @@ function warnOverlappingDesigns(placed: PlacedDesign[]): void {
           `${subject} are both set to Fill, so they cover each other completely. Where their` +
             ' colors differ the export will carry two inlays claiming the same space. Switch one' +
             ' to Sticker, or remove it.'
-        : // Bounding boxes, not the artwork itself (see designOverlap.ts). "may", not "will": a
-          // logo inside another design's frame trips this while the recesses never touch.
-          `${subject} overlap — where they cross, their recesses cut into` +
-            ' each other and the export may carry two inlays claiming the same space. Move,' +
-            ' rescale, or rotate one of them. Compared as rectangles, so designs that nest' +
-            ' inside each other cleanly can trip this.',
+        : // "may", not "will": the check bounds how much ink reaches the shared box rather than
+          // intersecting the two designs, so artwork that shares a box without touching still
+          // trips it (see designOverlap.ts).
+          `${subject} overlap. Where they cross, their recesses cut into each other and the` +
+            ' export may carry two inlays claiming the same space. Move, rescale, or rotate one' +
+            ' of them.',
     );
   }
 }
@@ -667,6 +729,13 @@ export async function buildAssemblyGeometry(
       rotationDeg: a.rotationDeg,
     };
   });
+
+  // Overlap is a property of a zone, not of a part, and the loop below walks zones once per part.
+  // Two designs sit the same way in every part of a zone: both placers add only a translation, a
+  // mirror and a rigid rotation, and add them to BOTH designs, so the fraction one covers of the
+  // other is part-invariant. The repeat therefore says nothing new (warnings dedupe by message),
+  // and skipping it is what keeps the ink transform off the per-part path.
+  const overlapCheckedZones = new Set<string>();
 
   // Per-part Manifold CSG is the heavy work (turf's is done above). Yield on the same time budget
   // flat.ts's boolean passes use, and report per-part progress so the curtain climbs.
@@ -910,14 +979,22 @@ export async function buildAssemblyGeometry(
     for (let zi = 0; zi < mappers.length; zi++) {
       const mapper = mappers[zi];
       if (!zoneWork[zi].length) continue;
-      if (zoneWork[zi].length > 1)
+      if (zoneWork[zi].length > 1 && !overlapCheckedZones.has(mapper.zoneId ?? '')) {
         warnOverlappingDesigns(
-          zoneWork[zi].map((ai) => ({
-            name: artworks[ai].name || 'design',
-            quad: placedBBoxQuad(artworks[ai].parsed, mapper.placer(placements[ai])),
-            fill: artworks[ai].mode === 'fill',
-          })),
+          zoneWork[zi].map((ai) => {
+            const place = mapper.placer(placements[ai]);
+            return {
+              name: artworks[ai].name || 'design',
+              quad: placedBBoxQuad(artworks[ai].parsed, place),
+              fill: artworks[ai].mode === 'fill',
+              ink: () => placedInk(featuresByColor, ai, place),
+            };
+          }),
         );
+        // Marked only where the check actually ran, so a part that happens to carry one design
+        // can't suppress the zone's warning for the parts that carry both.
+        overlapCheckedZones.add(mapper.zoneId ?? '');
+      }
       const boundaryPoly = mapper.boundary();
       for (const ai of zoneWork[zi]) {
         anyPlacements = true;

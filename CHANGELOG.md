@@ -53,6 +53,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The "designs overlap" warning no longer fires on a design sitting in
+  another's empty middle.** Put a logo inside a frame, or a caption inside a
+  border, and the app warned that their recesses cut into each other. They never
+  did, and nothing you could do cleared the warning short of breaking the
+  layout. It compared the two designs' rectangles, so a frame read as covering
+  everything it surrounds. It now also asks how much of each design's artwork
+  reaches the rectangle they share, and stays quiet when one of them brings
+  none. Two designs that really do cross warn exactly as before.
+- **Loading a second small design usually lands it beside the first, not half on
+  top of it.** A new design steps diagonally off one already in that spot. The
+  step was a fixed 8mm, which for a design around 10mm across left the two
+  cutting a few percent into each other, too little for the overlap warning to
+  say so. The step now grows to the size of the largest design on that surface,
+  up to 11.7mm, which sets two designs of a similar shape and size down clear of
+  each other. A surface that already carries something bigger than that, the
+  wheel's full-size design for one, still steps 8mm as before, and two designs
+  of opposite proportions can still land slightly on each other in silence.
 - **Artwork around a hole in the part now prints in your color, not the base
   color.** Two places this showed. Cut a hubcap to the shape of a picture with a
   gap in it, and the color around that gap stopped 1mm down, leaving a 2mm band

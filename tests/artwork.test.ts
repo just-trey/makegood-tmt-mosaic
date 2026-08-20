@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, beforeEach } from 'vitest';
 import {
   activeArtworkInstance,
   addInstanceForSource,
@@ -6,6 +6,7 @@ import {
   clampArtworkModes,
   clearArtwork,
   clearArtworkZoneBindings,
+  CASCADE_CLEAR_MAX_MM,
   INSTANCE_CASCADE_MM,
   loadArtworkSource,
   pruneSettingsToPalette,
@@ -16,6 +17,7 @@ import {
   syncActiveArtworkPlacement,
 } from '../src/state/artwork';
 import { state } from '../src/state/store';
+import { OVERLAP_WARN_FRACTION } from '../src/geometry/designOverlap';
 import type { AssemblyPart, ParsedSVG } from '../src/types';
 
 function fakeParsed(): ParsedSVG {
@@ -304,6 +306,71 @@ describe('stacked-instance cascade', () => {
 
     expect(everywhere.zone).toBeNull();
     expect(everywhere.offsetU).toBe(INSTANCE_CASCADE_MM);
+  });
+});
+
+// The constant step is only loud enough on a design big enough for 8mm to leave a tenth of it
+// covered. Below that it seeded an overlap the build then said nothing about, so the step scales.
+describe('cascade step against the placed design size', () => {
+  // fakeParsed is 10 SVG units wide and carries no boundary circle, so it anchors on its own bbox
+  // at r=5 and the wheel branch places it at (asmRadius / 5) * 10 mm across.
+  const placedMM = (asmRadius: number): number => asmRadius * 2;
+
+  function twoDesigns(asmRadius: number): number {
+    state.sources = [];
+    state.artworks = [];
+    state.parsed = null;
+    state.activeArtworkId = null;
+    state.offsetX = 0;
+    state.offsetY = 0;
+    state.shapeKind = 'assembly';
+    state.asmRadius = asmRadius;
+    loadArtworkSource(fakeParsed(), 'first.svg');
+    return loadArtworkSource(fakeParsed(), 'second.svg').offsetU;
+  }
+
+  afterEach(() => {
+    state.asmRadius = 138;
+  });
+
+  it('steps a 10mm design its own width, which clears it', () => {
+    expect(twoDesigns(5)).toBe(placedMM(5));
+  });
+
+  it('keeps the constant for a design the constant already warns about', () => {
+    expect(twoDesigns(20)).toBe(INSTANCE_CASCADE_MM); // 40mm across
+  });
+
+  it('never steps further than the largest design it clears', () => {
+    for (let r = 1; r <= 30; r += 0.5)
+      expect(twoDesigns(r)).toBeLessThanOrEqual(CASCADE_CLEAR_MAX_MM);
+  });
+
+  // Every design on one surface has to step along the same lattice. Sizing the step off the pair
+  // being separated instead let a smaller design land between two of a bigger one's spots.
+  it('does not park a small design inside one already cascaded past it', () => {
+    twoDesigns(5); // two 10mm designs, at 0 and at 10
+    state.offsetX = 0;
+    state.offsetY = 0;
+    state.scalePct = 50; // a 5mm third design, seeded back on the first
+    const third = loadArtworkSource(fakeParsed(), 'third.svg');
+    state.scalePct = 100;
+    // 5mm wide at 20mm out clears the 10mm design centred on 10; 8mm out would sit inside it
+    expect(third.offsetU).toBe(20);
+  });
+
+  // The check this whole change exists for: for two designs shaped alike, on a surface carrying
+  // nothing bigger, no size makes the cascade both fail to separate them AND leave them under the
+  // threshold that would warn about it. Both qualifiers are load-bearing, see docs/tech-debt.md.
+  it('leaves no size where the step neither clears nor warns', () => {
+    for (let r = 1; r <= 40; r += 0.25) {
+      const w = placedMM(r);
+      const step = twoDesigns(r);
+      const covered = (Math.max(0, w - step) / w) ** 2;
+      expect(step >= w || covered >= OVERLAP_WARN_FRACTION, `${w}mm design stepped ${step}mm`).toBe(
+        true,
+      );
+    }
   });
 });
 
