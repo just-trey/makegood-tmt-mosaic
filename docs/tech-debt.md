@@ -393,6 +393,10 @@ Two more things worth knowing before touching this:
 
 ## The raster photo-vs-flat-art thresholds are shaped right but calibrated against synthetic images
 
+**Measured**: [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). The clusters overlap, but on n=1 photograph, so the statistic is not
+yet condemned. The separable result is that a source under 512px is pushed toward photo treatment
+by its size alone: the same two-color zebra reads 0.63 at 128px and 0.18 at 512px.
+
 `FLAT_EDGE_DENSITY` / `PHOTO_EDGE_DENSITY` in
 [src/raster/stats.ts](../src/raster/stats.ts) (0.12 and 0.45) decide how much
 blur and despeckling an image gets, interpolating between so nothing falls off a
@@ -411,6 +415,12 @@ would be the bug to watch for. If the clusters overlap, the statistic itself is
 wrong and wants replacing rather than retuning.
 
 ## Colors is the one trace control still fixed, and no single value suits real artwork
+
+**Measured**: [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). The curve a knee detector would read was measured; no detector was
+built. Scored by hand it would be correct on 6 of the 8 sources whose right answer is clear, on
+a uniform one-color-per-step ladder, and both failures pick too few colors. Three traps to build around: a `MAX_COMPONENTS`-capped step reads as the strongest possible knee
+while pointing the wrong way, component count cannot see a 9x rise in point count, and the curve
+is not monotonic even uncapped.
 
 Working resolution, blur and despeckle are all chosen from the image. The default palette size is
 not — it is a constant, and measured across the sample corpus (`stubs/raster test/`, 2026-08-04) no
@@ -445,6 +455,10 @@ stable on photographs, where region growth is smoother and the signal weakest.
 
 ## The trace parameters are calibrated against a downscale that is no longer constant
 
+**Measured**: [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). Any source between 513px and 1024px takes the compensating blur at
+downscale 1.00. Measured on `cartoon` (500x898), at the size the app ships it, the blur
+quadruples region count (99 to 414) and multiplies points by 2.8 (2557 to 7117).
+
 `decode.ts` has always noted that the downscale to the working size "doubles as the first noise
 filter", and the blur/despeckle endpoints in [stats.ts](../src/raster/stats.ts) were tuned with
 that filter in place. It was doing more work than the note implies: a 1588px source averaged 3:1
@@ -464,6 +478,14 @@ deriving blur from the realised downscale ratio — the decoder knows both sizes
 flat endpoint against sources at several scales rather than the one that prompted this.
 
 ## The curve-fit constants are reasoned, not measured against a corpus
+
+**Measured**: [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). The sweep is done and it defends what ships.
+`ALPHA_MAX_LIMIT` and its comment are both correct, verified by probing `fitChain` on a clean
+square: at 4/3 a square comes back rounded, losing 5.37% of its area. The endpoints are left
+alone, because the two corner-bearing sources disagree at the flatness that actually ships.
+The one undocumented thing is cost, not correctness: against the flat-art
+endpoint at flatness 0.1, 4/3 costs 1.90x the vertices on the 300px logo and 1.29x on the
+screenshot, so the size of that cost is content-dependent.
 
 `alphaMax` and `flatness` in [src/raster/stats.ts](../src/raster/stats.ts) replaced the old RDP
 `simplifyTol` when tracing moved to sub-pixel curve fitting. The flat-art endpoints (`alphaMax`
@@ -777,6 +799,21 @@ size at load time: `cascadedOffset` runs in `state/artwork.ts` with only the
 seed offset in hand, while the placed quad is computed later in the assembly
 build. Either thread the zone's placer back to load time, or move the cascade
 into the build and let it adjust a placement it can actually measure.
+
+## `MAX_COMPONENTS` does not bound the component count it names
+
+`traceLabelMap` ([src/raster/trace.ts](../src/raster/trace.ts)) raises the despeckle floor when the
+component count exceeds `MAX_COMPONENTS` (800), then never rechecks. `red-sox-logo` at 8 colors
+returns **841 components with `capped: true`**, measured by
+[2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md).
+
+- Harmless today: it is a performance guard, and 841 against 800 costs nothing measurable.
+- Wrong as an invariant: anything that reads `MAX_COMPONENTS` as a ceiling is reading a number the
+  code does not enforce, and the `capped` flag says "a raise happened", not "the count is now under
+  the cap".
+- Closing it: loop the raise until the count is actually under, or rename the constant and the flag
+  to say what they do. The first costs a trace pass per iteration, which the bench puts at tens of
+  milliseconds on a 300px source.
 
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
