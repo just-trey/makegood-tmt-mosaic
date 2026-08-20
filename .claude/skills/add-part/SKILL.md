@@ -218,5 +218,6 @@ glance.
 ## Then
 
 Verify in the real app, not just tests: load the part, apply artwork, export,
-and unzip the 3MF to check the pose. Then run `ship-it`. This touches
-`src/geometry/` and `src/export/`, so `/code-review` is required, not optional.
+and unzip the 3MF to check the pose. Then run `ship-it`, whose step 3 runs
+`/code-review`. That is required on any diff that changes code, and a wrong
+number here ships a bad print, so expect to earn more than one round.

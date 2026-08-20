@@ -111,12 +111,42 @@ string needs a term that isn't in it, add the row, and make the replacement obey
 The existing copy that already fails is a tracked tech-debt item, and widening
 the diff to fix it is how a focused PR stops being one.
 
-## 3. Code review, if the diff earns it
+## 3. Code review
 
-If the diff touches `src/geometry/` or `src/export/`, run `/code-review` before
-opening the PR. Those are the modules where a wrong result still looks
-plausible: a mesh that cuts, a 3MF that opens, both subtly wrong. Skip it for
-docs, UI copy and other trivial changes.
+```bash
+{ git diff main...HEAD --name-only
+  git diff HEAD --name-only
+  git ls-files --others --exclude-standard; } | sort -u
+```
+
+All three lines are needed. `git diff main...HEAD` alone is **empty while the
+work is still uncommitted**, which is most of the time this skill runs, and an
+empty list reads as "purely prose" and skips the gate. That is how a 1300-line
+diff nearly shipped unreviewed on the branch that introduced this rule. The
+second line catches unstaged and staged edits, the third catches new files that
+have never been added.
+
+**If any changed path is executable, run `/code-review`.** Source, tests,
+scripts, config, build files. The only exemption is a diff that is purely
+prose: docs, CHANGELOG, comments.
+
+This is not scoped to `src/geometry/` and `src/export/` any more. It used to
+be, and the gap let a 700-line bench through unreviewed; the review that
+eventually ran found three claims in its findings report read off rows the
+shipping code never uses.
+
+Then run it **again after acting on the findings**. A fix written to close one
+complaint is exactly where a too-narrow patch lands.
+
+**How many rounds**: as many as keep returning wrong output. Stop when a round
+returns only arguable defaults, which is taste and never runs out. There is no
+cap, and there is no credit for stopping early. See CLAUDE.md's "Stop on the
+kind of finding, not on the count" for the two guards that matter more than the
+number: never invent a constant to satisfy a reviewer, and suspect the diff if
+rounds keep finding real defects.
+
+Say which round you stopped at and why, in terms of what the last round
+returned.
 
 ## 4. Push, then watch CI in one blocking call
 
