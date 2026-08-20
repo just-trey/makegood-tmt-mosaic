@@ -9,9 +9,11 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts render      edge density against export size
 //   node_modules/.bin/vite-node scripts/bench-raster.ts alpha       alphaMax against a known-square shape
 //   node_modules/.bin/vite-node scripts/bench-raster.ts sizes       edge density against measurement size
+//   node_modules/.bin/vite-node scripts/bench-raster.ts blur        compensating blur against downscale
 //
 // corpus, colors and curve read the cached corpus. scale, render and alpha bring their own source.
-// sizes takes its file list from CORPUS but decodes afresh, so it needs the files and not the cache.
+// sizes and blur take their file list from CORPUS but decode afresh, so they need the files present
+// and ignore the cache entirely.
 //
 // The synthetic mode settles a cost question: the working resolution (MAX_WORKING_EDGE) and
 // whether shapes group per color or per connected component. Procedural sources are right for it
@@ -749,6 +751,136 @@ async function modeSizes(args: string[]) {
   );
 }
 
+/**
+ * The compensating blur, on and off, at a fixed working size.
+ *
+ * **It cannot tell you whether the benefit tracks the downscale**, despite the ladder: re-rendering
+ * a vector holds the anti-aliased fringe fixed, and that fringe is the mechanism DETAIL_PASS_BLUR
+ * replaces. Doing that properly needs a raster resampled per rung, which this mode is not built for
+ * and neither is `decodeAtEdges`. See docs/findings/2026-08-20-blur-vs-downscale.md.
+ *
+ * What it does show is that the compensation's effect is a property of the artwork.
+ *
+ * `edgeDensity` and `baseBlur` are printed because the interpolated blur rounds 0 to 1 at density
+ * 0.2025, so a source near there flips between rungs and its rows are not comparable.
+ */
+async function modeBlur(args: string[]) {
+  const sizes = [1024, 1536, 2048, 3072, 4096];
+  // All five vector sources, not a subset: the sample size is the standing caveat on this
+  // measurement, and gradient-illustration is the only one that is not two flat colours.
+  const wanted = args.length
+    ? args
+    : CORPUS.filter((c) => c.file?.toLowerCase().endsWith('.svg')).map((c) => c.name);
+  writeAuthoredSources();
+  const entries = wanted.map((name) => {
+    const entry = CORPUS.find((c) => c.name === name);
+    if (!entry)
+      throw new Error(
+        `no corpus source named ${name}. Known: ${CORPUS.map((c) => c.name).join(', ')}`,
+      );
+    if (!entry.file || !entry.file.toLowerCase().endsWith('.svg'))
+      throw new Error(
+        `${name} is not a vector source. This mode re-renders artwork at several sizes to vary the ` +
+          `downscale with the content held fixed, which only a vector source allows.`,
+      );
+    if (!existsSync(path.join(REPO, entry.file)))
+      throw new Error(`${name} is missing at ${entry.file}.`);
+    return entry;
+  });
+
+  const rows: {
+    name: string;
+    source: number;
+    downscale: number;
+    edgeDensity: number;
+    reads: string;
+    baseBlur: number;
+    withComp: number;
+    componentsOff: number;
+    componentsOn: number;
+    capped: boolean;
+    change: string;
+    verdict: string;
+  }[] = [];
+  for (const size of sizes) {
+    const workingEdge = Math.min(MAX_WORKING_EDGE, size);
+    // Batched by size: one browser for every source at this rung rather than one per pair.
+    const decoded = await decodeManyAtEdges(
+      entries.map((e) => ({ file: e.file!, renderEdge: size })),
+      [MEASURE_EDGE, workingEdge],
+    );
+    entries.forEach((entry, i) => {
+      const { srcW, srcH, images } = decoded[i];
+      const { edgeDensity } = measureImage(images.get(MEASURE_EDGE)!);
+      const working = images.get(workingEdge)!;
+      const downscale = +(Math.max(srcW, srcH) / Math.max(working.w, working.h)).toFixed(2);
+      const run = (compensated: boolean) => {
+        const p = autoParams({ edgeDensity }, DETAIL_DEFAULT, compensated);
+        const r = traceWith({ ...working, edgeDensity }, entry.colors, p);
+        return { n: r.components, capped: r.capped, blur: p.blurRadius };
+      };
+      const off = run(false);
+      const on = run(true);
+      rows.push({
+        name: entry.name,
+        source: size,
+        downscale,
+        // Printed because the interpolated blur rounds 0 to 1 at density 0.2025, and a source
+        // near there flips between rungs, which makes its rows incomparable.
+        edgeDensity: +edgeDensity.toFixed(4),
+        // The photo branch never takes the compensation, so such a rung is not a comparison at
+        // all. Marked rather than dropped, so the table is never shorter than the ladder. It does
+        // not fire on any source eligible today, and its `downscale` would be wrong if it did,
+        // since a photographic source is worked at 512 rather than 1024.
+        reads: isPhotographic(edgeDensity) ? 'PHOTO (not compensated)' : 'flat',
+        baseBlur: off.blur,
+        withComp: on.blur,
+        componentsOff: off.n,
+        componentsOn: on.n,
+        // Capping collapses counts instead of trimming them, so a capped pair is not comparable
+        // and could print a meaningless "no change".
+        capped: off.capped || on.capped,
+        change: `${on.n > off.n ? '+' : ''}${(((on.n - off.n) / Math.max(1, off.n)) * 100).toFixed(0)}%`,
+        verdict: on.n < off.n ? 'helps' : on.n > off.n ? 'hurts' : 'no change',
+      });
+    });
+  }
+  rows.sort((a, b) => a.name.localeCompare(b.name) || a.source - b.source);
+  console.table(rows);
+  // Derived from the run, not asserted: a flat control arm is what disqualifies a vector ladder
+  // from answering the ratio question, and the reader has to be able to see it in their own output.
+  // Capped rows excluded: capping collapses the count rather than trimming it, so a source clipped
+  // at MAX_COMPONENTS could show a frozen arm that has nothing to do with the ladder.
+  const byName = new Map<string, number[]>();
+  for (const r of rows)
+    if (!r.capped) byName.set(r.name, [...(byName.get(r.name) ?? []), r.componentsOff]);
+  const capped = [...new Set(rows.filter((r) => r.capped).map((r) => r.name))];
+  // A partial ladder cannot support "never moves": with rungs missing to capping, a frozen arm may
+  // just be two rungs that happen to agree.
+  const complete = [...byName.entries()].filter(([, v]) => v.length === sizes.length);
+  const flat = complete.filter(([, v]) => new Set(v).size === 1).map(([n]) => n);
+  const partial = [...byName.entries()]
+    .filter(([, v]) => v.length !== sizes.length)
+    .map(([n]) => n);
+  console.log(
+    '\nControl arm (componentsOff) per source: ' +
+      [...byName.entries()].map(([n, v]) => `${n} ${v.join('/')}`).join('   '),
+  );
+  if (capped.length) console.log(`\ncapped, excluded from the check below: ${capped.join(', ')}`);
+  if (partial.length) console.log(`\nincomplete ladder, not judged: ${partial.join(', ')}`);
+  console.log(
+    !complete.length
+      ? '\nNo source has a complete ladder, so nothing was checked.'
+      : flat.length
+        ? `\n${flat.join(', ')} never move across the ladder, so for them the ratio changed in name` +
+          '\nonly and this run cannot say whether it predicts the compensation. See' +
+          '\ndocs/findings/2026-08-20-blur-vs-downscale.md.'
+        : '\nNo control arm is frozen. Necessary for reading a verdict against the ratio, and not' +
+          '\nsufficient: check the movement tracks the ladder rather than a baseBlur flip, which is' +
+          '\nwhat disqualified the vector run in the findings report.',
+  );
+}
+
 async function modeSynthetic(sizes: number[]) {
   const rows = [];
   for (const size of sizes.length ? sizes : [384, 512, 768]) {
@@ -790,6 +922,9 @@ switch (mode) {
   case 'sizes':
     await modeSizes(rest);
     break;
+  case 'blur':
+    await modeBlur(rest);
+    break;
   default: {
     // Numeric arguments keep the original invocation working, which the header and two tech-debt
     // sections quote. A non-numeric word is a typo, not a request for the synthetic bench.
@@ -798,7 +933,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, ` +
+          `sizes, blur, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));
