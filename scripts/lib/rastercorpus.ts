@@ -1,9 +1,13 @@
 /**
  * Decodes a corpus of real image files through the app's own decode path, and caches the pixels.
  *
- * A library, not a script. The corpus modes of scripts/bench-raster.ts call `loadCorpus()`, which
- * rebuilds whatever the cache is missing; `scale`, `render` and `alpha` take their own sources and
- * do not touch it. Delete `stubs/raster-corpus/` to force a full rebuild.
+ * A library, not a script. `corpus`, `colors` and `curve` in scripts/bench-raster.ts call
+ * `loadCorpus()`, which rebuilds whatever the cache is missing. `scale`, `render` and `alpha` bring
+ * their own source. `sizes` is the odd one: it reads file paths out of CORPUS but decodes afresh
+ * through `decodeAtEdges`, so it needs the files present and ignores the cache entirely.
+ *
+ * The `stock` half is fetched rather than committed: run scripts/fetch-raster-stock.mjs first.
+ * Delete `stubs/raster-corpus/` to force a full rebuild of the cache.
  *
  * Why a browser is not optional here. Everything downstream of `decodeImageFile` takes a plain
  * RasterImage and runs happily in Node, but the decode itself is `createImageBitmap` plus a canvas
@@ -29,14 +33,30 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const CACHE = path.join(REPO, 'stubs', 'raster-corpus');
 
 /**
- * `group` is the answer the corpus is being asked to check, not a description of the file. An
- * entry whose group is 'middle' is one the thresholds are allowed to get wrong today; one marked
- * 'flat' or 'photo' landing on the other side is a defect.
+ * What the file is, which is not the same as what it should read as.
+ *
+ * A 'middle' entry is allowed either answer. A 'flat' or 'photo' entry landing on the other side
+ * is a **mismatch**, and the bench prints it as one. It is deliberately not called a defect: the
+ * corpus photograph is a balloon against a clear sky, so its flat reading is a mismatch and the
+ * correct treatment at once. One standing mismatch is expected and named in the bench footer, so a
+ * second one is visible as new.
  */
 export type CorpusGroup = 'flat' | 'photo' | 'middle';
 
+/**
+ * Where a source came from, kept separate from what it is.
+ *
+ * `stock` files are CC-licensed Commons originals fetched by scripts/fetch-raster-stock.mjs. They
+ * are real photographs and fine for asking whether the statistic *can* score a busy image high.
+ * They are not a sample of what a volunteer uploads, and curated photography skews toward shallow
+ * depth of field and heavy noise reduction, both of which lower edge density. Reporting them
+ * mixed with `real` files would let that skew masquerade as a result.
+ */
+export type Provenance = 'real' | 'stock' | 'authored';
+
 export interface CorpusSource {
   name: string;
+  provenance: Provenance;
   group: CorpusGroup;
   /** Repo-relative path, or a recipe when the file is derived from another source. */
   file?: string;
@@ -67,6 +87,7 @@ export const CORPUS: CorpusSource[] = [
   // Flat art. The end of the range the thresholds must never misread.
   {
     name: 'pattern-cow',
+    provenance: 'real',
     colors: 4,
     group: 'flat',
     file: 'public/patterns/cow.svg',
@@ -75,6 +96,7 @@ export const CORPUS: CorpusSource[] = [
   },
   {
     name: 'pattern-dalmatian',
+    provenance: 'real',
     colors: 4,
     group: 'flat',
     file: 'public/patterns/dalmatian.svg',
@@ -83,6 +105,7 @@ export const CORPUS: CorpusSource[] = [
   },
   {
     name: 'pattern-zebra',
+    provenance: 'real',
     colors: 4,
     group: 'flat',
     file: 'public/patterns/zebra.svg',
@@ -91,6 +114,7 @@ export const CORPUS: CorpusSource[] = [
   },
   {
     name: 'pattern-tiger',
+    provenance: 'real',
     colors: 4,
     group: 'flat',
     file: 'public/patterns/tiger.svg',
@@ -99,6 +123,7 @@ export const CORPUS: CorpusSource[] = [
   },
   {
     name: 'makegood-logo',
+    provenance: 'real',
     colors: 3,
     group: 'flat',
     file: 'public/assets/makegood-logo.png',
@@ -106,6 +131,7 @@ export const CORPUS: CorpusSource[] = [
   },
   {
     name: 'red-sox-logo',
+    provenance: 'real',
     colors: 4,
     group: 'flat',
     file: 'stubs/raster test/Boston_Red_Sox.webp',
@@ -113,6 +139,7 @@ export const CORPUS: CorpusSource[] = [
   },
   {
     name: 'cartoon',
+    provenance: 'real',
     colors: 6,
     group: 'flat',
     file: 'stubs/raster test/cartoon cahrater.svg.webp',
@@ -120,6 +147,7 @@ export const CORPUS: CorpusSource[] = [
   },
   {
     name: 'mario',
+    provenance: 'real',
     colors: 8,
     group: 'flat',
     file: 'stubs/mario.png',
@@ -129,6 +157,7 @@ export const CORPUS: CorpusSource[] = [
   // The hard middle. Each of these is here because it could plausibly land on either side.
   {
     name: 'ui-screenshot',
+    provenance: 'real',
     colors: 6,
     group: 'middle',
     file: 'stubs/ux-review-shots/01-first-paint.png',
@@ -136,6 +165,7 @@ export const CORPUS: CorpusSource[] = [
   },
   {
     name: 'kid-drawing',
+    provenance: 'real',
     colors: 6,
     group: 'middle',
     file: 'stubs/raster test/kid-drawing.webp',
@@ -143,6 +173,7 @@ export const CORPUS: CorpusSource[] = [
   },
   {
     name: 'gradient-illustration',
+    provenance: 'authored',
     colors: 6,
     group: 'middle',
     file: 'stubs/raster-corpus/src/gradient-illustration.svg',
@@ -153,13 +184,67 @@ export const CORPUS: CorpusSource[] = [
   // the bytes of its parent, so the parent has to have been read by the time it is reached.
   {
     name: 'photo',
+    provenance: 'real',
     colors: 8,
     group: 'photo',
     file: 'stubs/raster test/photo.webp',
     note: 'the corpus photograph',
   },
+
+  // Licensed Commons photographs, fetched by scripts/fetch-raster-stock.mjs. Here to answer one
+  // narrow question the single corpus photograph cannot: can edge density score a busy photograph
+  // high at all? They cannot say where the photo cluster sits for this app's users.
+  {
+    name: 'stock-gravel',
+    provenance: 'stock',
+    colors: 8,
+    group: 'photo',
+    file: 'stubs/raster stock/gravel.jpg',
+    note: 'pure high-frequency texture, the strongest test of the statistic',
+  },
+  {
+    name: 'stock-foliage',
+    provenance: 'stock',
+    colors: 8,
+    group: 'photo',
+    file: 'stubs/raster stock/foliage.jpg',
+    note: 'busy natural scene with no flat field anywhere',
+  },
+  {
+    name: 'stock-brick',
+    provenance: 'stock',
+    colors: 8,
+    group: 'photo',
+    file: 'stubs/raster stock/brick.jpg',
+    note: 'regular mid-frequency texture',
+  },
+  {
+    name: 'stock-crowd',
+    provenance: 'stock',
+    colors: 8,
+    group: 'photo',
+    file: 'stubs/raster stock/crowd.jpg',
+    note: 'busy real scene rather than a texture',
+  },
+  {
+    name: 'stock-night',
+    provenance: 'stock',
+    colors: 8,
+    group: 'photo',
+    file: 'stubs/raster stock/night.jpg',
+    note: 'low light, sensor noise across the frame',
+  },
+  {
+    name: 'stock-bokeh-food',
+    provenance: 'stock',
+    colors: 8,
+    group: 'photo',
+    file: 'stubs/raster stock/bokeh-food.jpg',
+    note: 'shallow depth of field, most of the frame defocused',
+  },
   {
     name: 'photo-jpeg-q40',
+    provenance: 'real',
     colors: 8,
     group: 'middle',
     derive: { from: 'photo', as: 'jpeg', quality: 0.4 },
@@ -169,6 +254,7 @@ export const CORPUS: CorpusSource[] = [
 
 export interface DecodedSource {
   name: string;
+  provenance: Provenance;
   group: CorpusGroup;
   /** See CorpusSource.colors: the palette size this source is right at. */
   colors: number;
@@ -181,6 +267,8 @@ export interface DecodedSource {
   working: RasterImage;
   edgeDensity: number;
   photographic: boolean;
+  /** Group says one thing, the statistic reads the other. See CorpusGroup: not a defect claim. */
+  mismatchesGroup: boolean;
   /** Realised downscale from source to working size. 1 means the source was never shrunk. */
   downscale: number;
 }
@@ -418,10 +506,76 @@ function selected(only?: string[]): CorpusSource[] {
   return CORPUS.filter((s) => want.has(s.name));
 }
 
-async function decodeAll(only?: string[]): Promise<DecodedSource[]> {
-  const corpus = selected(only);
+/**
+ * Write the sources this file generates rather than reads.
+ *
+ * Exported because `sizes` reads the same path without going through `decodeAll`, and an
+ * `existsSync` check there would happily measure a stale render after GRADIENT_SVG changed. Two
+ * modes reporting on two different pictures is the hazard `renderEdge` was threaded through
+ * `decodeAtEdges` to close, and this is the same hazard by another route.
+ */
+export function writeAuthoredSources(): void {
   mkdirSync(path.join(CACHE, 'src'), { recursive: true });
   writeFileSync(path.join(CACHE, 'src', 'gradient-illustration.svg'), GRADIENT_SVG);
+}
+
+async function decodeAll(only?: string[]): Promise<DecodedSource[]> {
+  const asked = selected(only);
+  // Before the existence check below, not after it: the authored source's `file` is a path this
+  // module writes, so computing "missing" first classifies it as absent on a clean checkout. An
+  // unfiltered run then dropped it for one run and healed on the next, and a filtered run threw
+  // and never healed, because the throw came before the write.
+  writeAuthoredSources();
+  // Most of this corpus is not in the repo. `stubs/` is gitignored, so the stock half needs
+  // fetching and the private half (a phone photo, a scan, a screenshot) cannot be recovered at
+  // all. Only the `public/` sources and the authored SVG survive a clean checkout. So a missing
+  // file is the normal state, not an error, and taking the whole run down for one of them would
+  // make the bench unusable for anyone but this machine.
+  //
+  // Named explicitly, though, silence would be the wrong answer: that is someone asking for a
+  // specific source and getting a different one's numbers.
+  // Keyed on where the file lives, not on provenance: `real` covers both repo-tracked sources
+  // under public/ and gitignored ones under stubs/, so a missing pattern would otherwise be
+  // reported as unrecoverable when the checkout is simply incomplete.
+  const advice = (s: CorpusSource) =>
+    s.provenance === 'stock'
+      ? 'fetched, not committed: run `node scripts/fetch-raster-stock.mjs`'
+      : s.provenance === 'authored'
+        ? 'generated by this module; delete stubs/raster-corpus/ and re-run to rebuild it'
+        : s.file?.startsWith('stubs/')
+          ? 'lives in gitignored stubs/ and cannot be rebuilt from a clean checkout'
+          : 'should be committed under this path, so the checkout is incomplete';
+  const missing = asked.filter((s) => s.file && !existsSync(path.join(REPO, s.file)));
+  if (missing.length && only?.length)
+    throw new Error(
+      missing.map((s) => `${s.name} is missing at ${s.file}: ${advice(s)}.`).join('\n'),
+    );
+  // stdout, not stderr: these tables are redirected into findings reports, and a notice that the
+  // corpus is incomplete has to travel with the numbers it qualifies. On stderr it survives on a
+  // terminal and vanishes into a file, which is the case that matters.
+  if (missing.length)
+    console.log(
+      `note: skipping ${missing.length} source(s) not present: ` +
+        missing.map((s) => s.name).join(', ') +
+        `\n      ${[...new Set(missing.map(advice))].join('\n      ')}`,
+    );
+  // A derived entry is re-encoded from its parent's bytes, so a skipped parent takes its children
+  // with it. Walked to a fixed point for the same reason `selected` expands the other direction.
+  const skip = new Set(missing.map((s) => s.name));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const s of asked)
+      if (s.derive && skip.has(s.derive.from) && !skip.has(s.name)) {
+        skip.add(s.name);
+        grew = true;
+      }
+  }
+  const orphaned = asked.filter((s) => s.derive && skip.has(s.name) && !missing.includes(s));
+  if (orphaned.length)
+    console.log(
+      `      also skipping ${orphaned.map((s) => s.name).join(', ')}, derived from a skipped source`,
+    );
+  const corpus = asked.filter((s) => !skip.has(s.name));
 
   const manifestPath = path.join(CACHE, 'manifest.json');
   const cached: Record<string, ManifestEntry> = existsSync(manifestPath)
@@ -556,6 +710,7 @@ async function decodeAll(only?: string[]): Promise<DecodedSource[]> {
 
       out.push({
         name: src.name,
+        provenance: src.provenance,
         group: src.group,
         colors: src.colors,
         note: src.note,
@@ -565,6 +720,7 @@ async function decodeAll(only?: string[]): Promise<DecodedSource[]> {
         working,
         edgeDensity,
         photographic,
+        mismatchesGroup: src.group !== 'middle' && photographic !== (src.group === 'photo'),
         downscale,
       });
       manifest[src.name] = {
@@ -601,30 +757,60 @@ export const loadCorpus = decodeAll;
  * would never actually be worked at, so caching those under a source's name would put numbers in
  * the cache that no shipping path produces.
  */
-export async function decodeAtEdges(
-  file: string,
+export type EdgeDecode = { srcW: number; srcH: number; images: Map<number, RasterImage> };
+
+/**
+ * The ladder for several files, on one browser.
+ *
+ * `decodeAtEdges` launches and closes Chromium per call, which is right for a single source and
+ * wrong for a five-source table: the launches dominate, and every other multi-source path in this
+ * module already holds one browser open.
+ */
+export async function decodeManyAtEdges(
+  files: { file: string; renderEdge?: number }[],
   edges: number[],
-): Promise<{ srcW: number; srcH: number; images: Map<number, RasterImage> }> {
-  const abs = path.join(REPO, file);
-  const bytes = new Uint8Array(readFileSync(abs));
+): Promise<EdgeDecode[]> {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    const res = await page.evaluate(drawInPage, {
-      b64: Buffer.from(bytes).toString('base64'),
-      mime: MIME[path.extname(abs).toLowerCase()],
-      edges,
-      renderEdge: Math.max(...edges),
-    });
-    const images = new Map<number, RasterImage>();
-    for (const edge of edges) {
-      const d = res.draws[String(edge)];
-      images.set(edge, { w: d.w, h: d.h, data: b64ToPixels(d.b64) });
-    }
-    return { srcW: res.srcW, srcH: res.srcH, images };
+    const out: EdgeDecode[] = [];
+    for (const { file, renderEdge } of files)
+      out.push(await drawLadder(page, file, edges, renderEdge));
+    return out;
   } finally {
     await browser.close();
   }
+}
+
+async function drawLadder(
+  page: Page,
+  file: string,
+  edges: number[],
+  renderEdge?: number,
+): Promise<EdgeDecode> {
+  const bytes = new Uint8Array(readFileSync(path.join(REPO, file)));
+  const res = await page.evaluate(drawInPage, {
+    b64: Buffer.from(bytes).toString('base64'),
+    mime: MIME[path.extname(file).toLowerCase()],
+    edges,
+    // An SVG entry pins its own render size in CORPUS. Defaulting to the widest rung here would
+    // bake a vector at a size the corpus never uses, so the two tables would disagree.
+    renderEdge: renderEdge ?? Math.max(...edges),
+  });
+  const images = new Map<number, RasterImage>();
+  for (const edge of edges) {
+    const d = res.draws[String(edge)];
+    images.set(edge, { w: d.w, h: d.h, data: b64ToPixels(d.b64) });
+  }
+  return { srcW: res.srcW, srcH: res.srcH, images };
+}
+
+export async function decodeAtEdges(
+  file: string,
+  edges: number[],
+  renderEdge?: number,
+): Promise<EdgeDecode> {
+  return (await decodeManyAtEdges([{ file, renderEdge }], edges))[0];
 }
 
 /**

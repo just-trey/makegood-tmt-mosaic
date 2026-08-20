@@ -8,6 +8,10 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts scale       working size against downscale
 //   node_modules/.bin/vite-node scripts/bench-raster.ts render      edge density against export size
 //   node_modules/.bin/vite-node scripts/bench-raster.ts alpha       alphaMax against a known-square shape
+//   node_modules/.bin/vite-node scripts/bench-raster.ts sizes       edge density against measurement size
+//
+// corpus, colors and curve read the cached corpus. scale, render and alpha bring their own source.
+// sizes takes its file list from CORPUS but decodes afresh, so it needs the files and not the cache.
 //
 // The synthetic mode settles a cost question: the working resolution (MAX_WORKING_EDGE) and
 // whether shapes group per color or per connected component. Procedural sources are right for it
@@ -37,9 +41,21 @@ import { traceLabelMap } from '../src/raster/trace';
 import { fitChain } from '../src/raster/curve';
 import { autoParams, isPhotographic, measureImage, DETAIL_DEFAULT } from '../src/raster/stats';
 import { MAX_WORKING_EDGE, MEASURE_EDGE, workingSize } from '../src/raster/decode';
-import { CORPUS, loadCorpus, decodeAtEdges, renderAtEdges } from './lib/rastercorpus';
-import type { CorpusGroup, DecodedSource } from './lib/rastercorpus';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  CORPUS,
+  loadCorpus,
+  decodeAtEdges,
+  decodeManyAtEdges,
+  renderAtEdges,
+  writeAuthoredSources,
+} from './lib/rastercorpus';
+import type { CorpusGroup, DecodedSource, Provenance } from './lib/rastercorpus';
 import type { RasterImage, TraceParams } from '../src/raster/types';
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 import type { Pt, SVGShape } from '../src/types';
 
 function mulberry32(seed: number): () => number {
@@ -255,10 +271,15 @@ async function pick(names: string[]): Promise<DecodedSource[]> {
 /** Where an image lands on the flat/photo axis, and whether that matches what it is. */
 async function modeCorpus(names: string[]) {
   const sources = await pick(names);
+  // Only an unfiltered run can be short: a filter is a deliberate subset, and `loadCorpus` already
+  // throws when a named source is absent. Without this guard the line fired on every filtered run
+  // and named sources sitting on disk.
+  const absent = names.length ? [] : CORPUS.filter((c) => !sources.some((s) => s.name === c.name));
   const rows = sources.map((s) => {
     const p = autoParams({ edgeDensity: s.edgeDensity }, DETAIL_DEFAULT, ranDetailPass(s.working));
     return {
       name: s.name,
+      from: s.provenance,
       expect: s.group,
       source: `${s.srcW}x${s.srcH}`,
       working: `${s.working.w}x${s.working.h}`,
@@ -269,20 +290,40 @@ async function modeCorpus(names: string[]) {
       despeckle: +p.despeckleFrac.toFixed(5),
       alphaMax: +p.alphaMax.toFixed(3),
       flatness: +p.flatness.toFixed(3),
-      // A file whose group says flat or photo and whose measurement says the other is the defect
-      // this table exists to find. 'middle' entries are allowed either answer.
-      MISREAD: s.group !== 'middle' && s.photographic !== (s.group === 'photo') ? 'YES' : '',
+      // What the file is, against what the statistic reads. Named `mismatch` rather than
+      // `MISREAD`: a photograph of a clear sky reading flat is a mismatch and the right treatment
+      // at once, so a column that called it a defect would be permanently wrong about one row.
+      // 'middle' entries are allowed either answer and are never marked.
+      mismatch: s.mismatchesGroup ? 'yes' : '',
     };
   });
   rows.sort((a, b) => a.edgeDensity - b.edgeDensity);
   console.table(rows);
 
-  const band = (g: CorpusGroup) => {
-    const d = sources.filter((s) => s.group === g).map((s) => s.edgeDensity);
+  // Banded by provenance as well as group: pooling curated stock photography with the real files
+  // would let its skew toward defocused, denoised frames read as a property of photographs.
+  const band = (g: CorpusGroup, from?: Provenance) => {
+    const d = sources
+      .filter((s) => s.group === g && (from === undefined || s.provenance === from))
+      .map((s) => s.edgeDensity);
     return d.length ? { lo: Math.min(...d), hi: Math.max(...d), n: d.length } : null;
   };
   const flat = band('flat');
-  const photo = band('photo');
+  const photo = band('photo', 'real');
+  const stock = band('photo', 'stock');
+  const allPhoto = band('photo');
+  // Read out of the code under test. A literal here would keep asserting the old cutoff after the
+  // retune this bench exists to argue for, while the table's `reads` column used the new one.
+  const cutoff = (() => {
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (isPhotographic(mid)) hi = mid;
+      else lo = mid;
+    }
+    return hi;
+  })();
   const say = (label: string, b: ReturnType<typeof band>) =>
     b
       ? `${label} ${b.lo.toFixed(4)} .. ${b.hi.toFixed(4)} (n=${b.n})`
@@ -291,13 +332,36 @@ async function modeCorpus(names: string[]) {
     '\n' +
       say('flat cluster ', flat) +
       '\n' +
-      say('photo cluster', photo) +
+      say('photo (real) ', photo) +
       '\n' +
-      (flat && photo
-        ? `gap           ${(photo.lo - flat.hi).toFixed(4)}` +
-          (photo.lo <= flat.hi ? ' (negative: the clusters overlap)' : '')
-        : 'gap           needs both clusters'),
+      say('photo (stock)', stock) +
+      (absent.length
+        ? `\n  INCOMPLETE: ${absent.length} source(s) not present: ${absent.map((a) => a.name).join(', ')}`
+        : '') +
+      '\n' +
+      (flat && allPhoto
+        ? `gap (all)     ${(allPhoto.lo - flat.hi).toFixed(4)}` +
+          (allPhoto.lo <= flat.hi
+            ? ' (negative: at least one photograph is inside the flat band)'
+            : '')
+        : 'gap (all)     needs both clusters') +
+      (flat && stock
+        ? `\ngap (stock)   ${(stock.lo - flat.hi).toFixed(4)}` +
+          (stock.lo <= flat.hi
+            ? ' (negative: the stock band overlaps the flat band too)'
+            : ` (cutoff ${cutoff.toFixed(4)} is ${cutoff > flat.hi && cutoff < stock.lo ? 'inside' : 'OUTSIDE'} it)`)
+        : ''),
   );
+  // Named so a second one reads as new. `photo` is a balloon against a clear sky: a mismatch and
+  // the correct treatment at once, and the only one this corpus is expected to produce.
+  const flagged = sources.filter((s) => s.mismatchesGroup).map((f) => f.name);
+  if (flagged.length)
+    console.log(
+      `mismatch     ${flagged.join(', ')}` +
+        (flagged.length === 1 && flagged[0] === 'photo'
+          ? '  (expected: its content is a clear sky and genuinely flat)'
+          : '  <- unexpected, check this'),
+    );
   for (const m of sources.filter((s) => s.group === 'middle'))
     console.log(
       `middle: ${m.name} ${m.edgeDensity.toFixed(4)} reads ${m.photographic ? 'photo' : 'flat'}`,
@@ -351,10 +415,15 @@ async function modeCurve(names: string[]) {
   // Chosen for what each one knows the answer to: the screenshot is nothing but square corners,
   // the logo is letterforms against a curved sock, the pattern is curves with no corner anywhere,
   // and the scan and the photograph are where a fitted curve has the most to lose.
-  const wanted = names.length
-    ? names
-    : ['ui-screenshot', 'red-sox-logo', 'pattern-cow', 'kid-drawing', 'photo'];
-  const sources = await pick(wanted);
+  const defaults = ['ui-screenshot', 'red-sox-logo', 'pattern-cow', 'kid-drawing', 'photo'];
+  // A mode's own default list is not a user filter. Passing it as one made `loadCorpus` throw on
+  // any absent source, so `curve` hard-failed on a clean checkout while `corpus` and `colors`
+  // degraded with a notice. Load everything, then narrow to whatever actually arrived.
+  const sources = names.length
+    ? await pick(names)
+    : (await pick([])).filter((s) => defaults.includes(s.name));
+  if (!sources.length)
+    throw new Error(`none of the default sources are present: ${defaults.join(', ')}`);
   // The top rung is exactly 4/3, not 1.334. ALPHA_MAX_LIMIT is 4/3, and a rung above it measures a
   // value autoParams can never produce; the two differ in behaviour, because a vertex with
   // ddenom === 0 has alpha initialised to 4/3 and so still passes `alpha >= alphaMax` at exactly
@@ -406,7 +475,12 @@ async function modeScale(args: string[]) {
   // Blanket-8 is the trap the curve sweep already fell into once: a palette size well past what a
   // source has puts the trace into fringe specks, and the ladder then compares speck counts. When
   // the file is a corpus entry, use the size that entry records as right for it.
-  const entry = CORPUS.find((c) => c.file === file);
+  // Normalised, not compared raw: `./public/...` and `public/...` are the same file, and matching
+  // by string made the second one miss its entry, losing both the pinned renderEdge and the palette
+  // size and landing in the blanket-8 trap the comment below warns about.
+  const sameFile = (a?: string, b?: string) =>
+    a !== undefined && b !== undefined && path.normalize(a) === path.normalize(b);
+  const entry = CORPUS.find((c) => sameFile(c.file, file));
   // Rejected rather than defaulted: `Number('six') || entry?.colors` would silently fall back, and
   // what it falls back toward on an unknown file is the blanket-8 palette the comment above calls a
   // trap. A typo here would quietly produce a table measuring fringe specks.
@@ -425,7 +499,7 @@ async function modeScale(args: string[]) {
   const edges = [...new Set([256, 384, 512, 768, 1024, 1588, MEASURE_EDGE, MAX_WORKING_EDGE])].sort(
     (a, b) => a - b,
   );
-  const { srcW, srcH, images } = await decodeAtEdges(file, edges);
+  const { srcW, srcH, images } = await decodeAtEdges(file, edges, entry?.renderEdge);
   const reference = images.get(MEASURE_EDGE)!;
   const { edgeDensity } = measureImage(reference);
   // decodeImageFile only ever produces one working size for a given file: MEASURE_EDGE for a
@@ -451,7 +525,10 @@ async function modeScale(args: string[]) {
         ranDetailPass(img) === compensated;
       if (shipping) shipsMarked = true;
       rows.push({
-        workingEdge: edge,
+        // Annotated like `sizes` does: a source smaller than the rung is measured at its own size,
+        // so several rungs can be byte-identical and the table must not look like several results.
+        workingEdge:
+          Math.max(img.w, img.h) === edge ? edge : `${edge} (@${Math.max(img.w, img.h)})`,
         size: `${img.w}x${img.h}`,
         downscale,
         // What the app would actually do at this rung, so the two rows can be told apart from the
@@ -471,8 +548,12 @@ async function modeScale(args: string[]) {
   }
   console.table(rows);
   console.log(
-    `\n${file} is ${srcW}x${srcH}, edgeDensity ${edgeDensity.toFixed(4)} measured at ${MEASURE_EDGE},` +
-      ` traced at ${colors} colors.` +
+    `\n${file} is ${srcW}x${srcH}, edgeDensity ${edgeDensity.toFixed(4)} measured at ` +
+      `${Math.max(reference.w, reference.h)}` +
+      (Math.max(reference.w, reference.h) === MEASURE_EDGE
+        ? ''
+        : ` (MEASURE_EDGE is ${MEASURE_EDGE}, but nothing is upscaled)`) +
+      `, traced at ${colors} colors.` +
       '\nDETAIL_PASS_BLUR is 1, added on top of the interpolated blur whenever the working long' +
       '\nedge exceeds MEASURE_EDGE. The `ships` column marks the row the app would actually take.' +
       '\nAny source between 513 and 1024px takes it at downscale 1.00, paying back a low-pass' +
@@ -569,6 +650,105 @@ async function modeAlpha() {
   );
 }
 
+/**
+ * Edge density of the same file measured at several sizes.
+ *
+ * The size control. Stock photographs are far larger than the corpus's real files, so the flat
+ * versus photo separation had to be checked against the alternative explanation that it is an
+ * artefact of downscale ratio rather than content. It is not, and the confound runs the reassuring
+ * way: heavier downscale *lowers* density, and the largest files still score the highest.
+ *
+ * It also shows the separation is only stable because the app pins the measurement at MEASURE_EDGE.
+ * Measured elsewhere the ordering breaks: flat art reads photographic at 256.
+ */
+async function modeSizes(args: string[]) {
+  // Both decode constants forced in, for the same reason `scale` does it: the footer says
+  // MEASURE_EDGE is the deciding column, and a retune must not remove that column from the table.
+  const edges = [...new Set([256, 512, 1024, 1600, MEASURE_EDGE, MAX_WORKING_EDGE])].sort(
+    (a, b) => a - b,
+  );
+  // Regenerated before the existence check below, so an edit to GRADIENT_SVG cannot leave this
+  // mode measuring the previous render while `corpus` measures the current one. A no-op unless
+  // an authored source is named, since none is in the default list.
+  writeAuthoredSources();
+  const wanted = args.length
+    ? args
+    : ['stock-gravel', 'stock-crowd', 'stock-bokeh-food', 'photo', 'mario'];
+  // Straight from CORPUS: this mode needs a path and two labels, all of which are static, so
+  // decoding the whole corpus first would launch a browser to learn nothing.
+  const entries = wanted.map((name) => {
+    const entry = CORPUS.find((c) => c.name === name);
+    if (!entry)
+      throw new Error(
+        `no corpus source named ${name}. Known: ${CORPUS.map((c) => c.name).join(', ')}`,
+      );
+    if (!entry.file)
+      throw new Error(
+        `${name} is derived from another source and has no file of its own, so it cannot be ` +
+          `re-drawn at another size. Pick a source with a file.`,
+      );
+    // This mode bypasses the corpus loader, so it has to say how to get each kind of source back.
+    // stubs/ is gitignored, and three of the five defaults are fetched rather than committed.
+    if (!existsSync(path.join(REPO, entry.file))) {
+      // Keyed on where the file lives, not on provenance: `real` covers both repo-tracked sources
+      // under public/ and gitignored ones under stubs/, and telling someone that a committed
+      // pattern is unreproducible would send them looking for the wrong problem.
+      const how =
+        entry.provenance === 'stock'
+          ? 'run `node scripts/fetch-raster-stock.mjs` to fetch it'
+          : entry.file.startsWith('stubs/')
+            ? 'it lives in gitignored stubs/ and is not reproducible from a clean checkout'
+            : 'it should be committed under this path, so the checkout is incomplete';
+      throw new Error(`${name} is missing at ${entry.file}: ${how}.`);
+    }
+    return entry;
+  });
+
+  const decoded = await decodeManyAtEdges(
+    entries.map((e) => ({ file: e.file!, renderEdge: e.renderEdge })),
+    edges,
+  );
+  const rows: Record<string, string | number>[] = [];
+  for (const [i, entry] of entries.entries()) {
+    const { srcW, srcH, images } = decoded[i];
+    const row: Record<string, string | number> = {
+      name: entry.name,
+      from: entry.provenance,
+      is: entry.group,
+      source: `${srcW}x${srcH}`,
+    };
+    for (const e of edges) {
+      const img = images.get(e)!;
+      const d = measureImage(img).edgeDensity;
+      // The size measured, not the size asked for. `drawInPage` scales by min(1, edge / longEdge),
+      // so a small source silently repeats itself across the wider columns and the table would
+      // invite reading down a column that holds two different measurements.
+      const at = Math.max(img.w, img.h);
+      row[`@${e}`] =
+        `${d.toFixed(3)} ${isPhotographic(d) ? 'photo' : 'flat'}${at === e ? '' : ` (@${at})`}`;
+    }
+    rows.push(row);
+  }
+  console.table(rows);
+  // Derived from this run, not asserted from the default list. The footer used to state that the
+  // orderings at 256 and 512 disagree and to cite the bokeh exception, both of which came from the
+  // five default sources and stayed on screen whatever was actually measured.
+  const readAt = (r: Record<string, string | number>, e: number) =>
+    String(r[`@${e}`]).includes('photo');
+  const order = (e: number) => rows.map((r) => `${r.name}:${readAt(r, e) ? 'P' : 'f'}`).join(' ');
+  const disagree = order(256) !== order(MEASURE_EDGE);
+  console.log(
+    `\nThe app always measures at ${MEASURE_EDGE}, which is the only column that decides anything.` +
+      '\nA column heading is the size asked for; the size actually measured is in the cell, since' +
+      '\nnothing is ever upscaled.' +
+      `\n\nRegime at 256:   ${order(256)}` +
+      `\nRegime at ${MEASURE_EDGE}:   ${order(MEASURE_EDGE)}` +
+      (disagree
+        ? '\nThese disagree, which is the point: a reading is meaningless without its size.'
+        : '\nThese agree on this selection, which does not mean they always do.'),
+  );
+}
+
 async function modeSynthetic(sizes: number[]) {
   const rows = [];
   for (const size of sizes.length ? sizes : [384, 512, 768]) {
@@ -607,6 +787,9 @@ switch (mode) {
   case 'alpha':
     await modeAlpha();
     break;
+  case 'sizes':
+    await modeSizes(rest);
+    break;
   default: {
     // Numeric arguments keep the original invocation working, which the header and two tech-debt
     // sections quote. A non-numeric word is a typo, not a request for the synthetic bench.
@@ -615,6 +798,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
+          `sizes, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));
