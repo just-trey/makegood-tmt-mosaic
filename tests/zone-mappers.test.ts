@@ -29,7 +29,7 @@ function part(zones: DesignZone[] | undefined): AssemblyPart {
     positions: new Float32Array([0, 0, 0, 10, 0, 0, 10, 10, 0, 0, 0, 0, 10, 10, 0, 0, 10, 0]),
     patches: [{ normal: [0, 0, 1], offset: 0, area: 100, triIndices: [0, 1] }],
     patchIdx: 0,
-    boundaryLoop: null,
+    boundaryLoops: null,
     topZ: 0,
     baseDepth: 3,
     isDuplicateOf: null,

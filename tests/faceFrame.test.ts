@@ -81,11 +81,13 @@ function zonedPart(id: number, zoneId: string, chart: ConformalChart): AssemblyP
     patchIdx: 0,
     // faceXZBBox reads x/z of a 3D loop — a 200x200 design face, the size reference the build
     // auto-fits a viewBox to when the SVG declares no absolute mm size
-    boundaryLoop: [
-      [0, 0, 0],
-      [200, 0, 0],
-      [200, 0, 200],
-      [0, 0, 200],
+    boundaryLoops: [
+      [
+        [0, 0, 0],
+        [200, 0, 0],
+        [200, 0, 200],
+        [0, 0, 200],
+      ],
     ],
     zones: [{ id: zoneId, name: zoneId, chart }],
     topZ: 0,

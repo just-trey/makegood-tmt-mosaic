@@ -29,11 +29,13 @@ function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
     positions: Float32Array.from(geo.attributes.position.array as Float32Array),
     patches: null,
     patchIdx: 0,
-    boundaryLoop: [
-      [-20, 10, -20],
-      [20, 10, -20],
-      [20, 10, 20],
-      [-20, 10, 20],
+    boundaryLoops: [
+      [
+        [-20, 10, -20],
+        [20, 10, -20],
+        [20, 10, 20],
+        [-20, 10, 20],
+      ],
     ],
     patchNormal: [0, 1, 0],
     topZ: 10,
@@ -578,11 +580,13 @@ describe('buildAssemblyGeometry', () => {
     // a face whose bbox center is (5,5) in native X/Z — rect placement should land the artwork
     // there, not at the part origin (where wheel mode anchors).
     const part = boxPart({
-      boundaryLoop: [
-        [-5, 10, -5],
-        [15, 10, -5],
-        [15, 10, 15],
-        [-5, 10, 15],
+      boundaryLoops: [
+        [
+          [-5, 10, -5],
+          [15, 10, -5],
+          [15, 10, 15],
+          [-5, 10, 15],
+        ],
       ],
     });
     const built = (await buildAssemblyGeometry(baseInput({ designFit: 'rect', parts: [part] })))!;
@@ -997,11 +1001,13 @@ describe('shared design anchor and scale resolvers', () => {
     const small = boxPart({ id: 1 });
     const big = boxPart({
       id: 2,
-      boundaryLoop: [
-        [-50, 10, -30],
-        [50, 10, -30],
-        [50, 10, 30],
-        [-50, 10, 30],
+      boundaryLoops: [
+        [
+          [-50, 10, -30],
+          [50, 10, -30],
+          [50, 10, 30],
+          [-50, 10, 30],
+        ],
       ],
     });
     expect(memoLargestDesignFace([small, big])()).toEqual({ w: 100, h: 60 });

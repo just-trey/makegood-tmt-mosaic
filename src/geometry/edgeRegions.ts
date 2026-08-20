@@ -153,6 +153,13 @@ export function erodeBoundary(
  * exposes it. Measured on a 2000-vertex silhouette carrying 600 small islands: **1920ms per color
  * per part**, which on a busy image with eight colors is fifteen seconds added to every rebuild.
  * With this prefilter only the polygons genuinely near the outline pay a boolean.
+ *
+ * A face with many HOLES erodes them too, so their rims are grid segments and "near the boundary"
+ * stops being rare. Measured with 600 artwork polygons on a 220mm face: 13ms at no holes, 351ms at
+ * 200, 599ms at 293, per color per part. Not reachable today, and measured rather than assumed:
+ * every silhouette in the raster corpus traces to a face with at most one hole, and rebuild times
+ * are unchanged against a single-loop face. The despeckle floor and MAX_COMPONENTS are what hold
+ * it off; re-measure if either moves.
  */
 class SegmentGrid {
   private readonly cells = new Map<number, number[]>();

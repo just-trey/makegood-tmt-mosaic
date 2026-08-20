@@ -38,7 +38,7 @@ export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
     positions: null,
     patches: null,
     patchIdx: 0,
-    boundaryLoop: null,
+    boundaryLoops: null,
     topZ: 0,
     baseDepth: 3.0,
     isDuplicateOf: null,
@@ -197,7 +197,7 @@ export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPa
     meshFromUpload: src.meshFromUpload,
     patches: src.patches,
     patchIdx: src.patchIdx,
-    boundaryLoop: src.boundaryLoop,
+    boundaryLoops: src.boundaryLoops,
     restPositions: src.restPositions,
     // Conformal charts are baked in the source's native frame and (unlike the flat placer) carry
     // no inverse-rotation remap, so a *rotated* copy of a charted part would cut in the wrong
@@ -500,14 +500,26 @@ export async function asmLoadPartFile(part: AssemblyPart, file: File): Promise<v
   }
 }
 
+/** Unsigned shoelace area of a loop projected to X/Z, the plane a design face is measured in. */
+function loopXZArea(loop: number[][]): number {
+  let a = 0;
+  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++)
+    a += loop[j][0] * loop[i][2] - loop[i][0] * loop[j][2];
+  return Math.abs(a) / 2;
+}
+
 export function applyAsmPatchChoice(part: AssemblyPart): void {
   if (!part.patches || !part.patches.length || !part.positions) return;
   const patch = part.patches[part.patchIdx];
   part.topZ = patch.offset;
   part.patchNormal = patch.normal;
   const loops = extractPatchBoundary(part.positions, patch.triIndices);
-  loops.sort((a, b) => b.length - a.length);
-  part.boundaryLoop = loops[0] || null;
+  // Area, not vertex count: readers that want the face outline take loops[0], and an intricate
+  // cut-out can carry more vertices than the ring enclosing it. Sorting by size instead puts a
+  // hole after its parent always, because a hole is smaller than what contains it.
+  // scripts/gen-templates.mjs picks a part's outline by the same rule and must stay in step.
+  loops.sort((a, b) => loopXZArea(b) - loopXZArea(a));
+  part.boundaryLoops = loops.length ? loops : null;
   part.restPositions = excludeTriangles(part.positions, patch.triIndices);
 }
 

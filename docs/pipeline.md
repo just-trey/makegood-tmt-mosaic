@@ -287,12 +287,17 @@ Two more factors size the part:
   face branch at all, so folding the cap in there made it a silent no-op for
   exactly the files this app hands out as design templates.
 
-**Artwork touching the outline cuts the shell's full thickness; interior artwork
-stays a recess.** Recessing the picture 1mm into a 3mm shell would leave the
-outline as a 2mm band of base colour. This is per **region**, not per part,
-which distinguishes it from `wheel-hub-cap`'s kind-wide `cutThrough`: interior
-detail on a 220mm disc should stay a recess.
+**Artwork touching an edge of the design face cuts the shell's full thickness;
+interior artwork stays a recess.** Recessing the picture 1mm into a 3mm shell
+would leave that edge as a 2mm band of base colour. This is per **region**, not
+per part, which distinguishes it from `wheel-hub-cap`'s kind-wide `cutThrough`:
+interior detail on a 220mm disc should stay a recess.
 
+- **Every** edge, not just the outline. A face keeps all the loops of its patch
+  (`AssemblyPart.boundaryLoops`), resolved into a polygon with holes by the same
+  containment-depth rule `shapeToFeature` uses for SVG rings, so a doughnut's
+  inner rim is an edge exactly as its outside is. Eroding the holed face is what
+  gets that for free.
 - The generator declares it, via `GeneratedMesh.edgeCutThroughDepth`, and only
   for a silhouette. That shape is cut flat, so its design face _is_ its outline.
   The circle is chamfered and declares nothing.

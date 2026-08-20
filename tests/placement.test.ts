@@ -80,7 +80,7 @@ function makePart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
     positions: null,
     patches: null,
     patchIdx: 0,
-    boundaryLoop: null,
+    boundaryLoops: null,
     topZ: 0,
     baseDepth: 0,
     isDuplicateOf: null,

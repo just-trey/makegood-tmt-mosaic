@@ -412,7 +412,7 @@ function buildAsmPartRow(
     `;
   } else {
     const statusText = part.loaded
-      ? `face detected: normal (${part.patchNormal!.map((v) => v.toFixed(2)).join(', ')}), plane offset ${part.topZ.toFixed(2)}mm, ${part.boundaryLoop ? part.boundaryLoop.length : 0}-pt boundary`
+      ? `face detected: normal (${part.patchNormal!.map((v) => v.toFixed(2)).join(', ')}), plane offset ${part.topZ.toFixed(2)}mm, ${(part.boundaryLoops || []).reduce((n, l) => n + l.length, 0)}-pt boundary`
       : 'no file loaded yet';
     const patchOptions = (part.patches || [])
       .slice(0, 6)

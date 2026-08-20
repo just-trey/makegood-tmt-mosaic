@@ -330,7 +330,7 @@ export function memoLargestDesignFace(
     let found: { w: number; h: number } | null = null;
     for (const p of parts) {
       if (!p.loaded) continue;
-      const bb = faceXZBBox(p.boundaryLoop);
+      const bb = faceXZBBox(p.boundaryLoops);
       if (bb && bb.w > 0 && bb.h > 0 && (!found || bb.w * bb.h > found.w * found.h))
         found = { w: bb.w, h: bb.h };
     }
@@ -670,7 +670,7 @@ export async function buildAssemblyGeometry(
 
   // Per-part Manifold CSG is the heavy work (turf's is done above). Yield on the same time budget
   // flat.ts's boolean passes use, and report per-part progress so the curtain climbs.
-  const totalParts = parts.filter((p) => p.loaded && p.boundaryLoop && p.positions).length || 1;
+  const totalParts = parts.filter((p) => p.loaded && p.boundaryLoops && p.positions).length || 1;
   let partsDone = 0;
   let lastYield = performance.now();
   const maybeYield = async (): Promise<void> => {
@@ -701,7 +701,7 @@ export async function buildAssemblyGeometry(
   let viewSign = 1,
     viewSignSet = false; // Y direction of the first real part's design face
   for (const part of parts) {
-    if (!part.loaded || !part.boundaryLoop || !part.positions) continue;
+    if (!part.loaded || !part.boundaryLoops || !part.positions) continue;
     // The one safe point in this build: the previous part's solids are freed and this one's are
     // not allocated yet. Inside a part, `owned` and `partMan` are released per branch with no
     // outer finally, so throwing there would leak WASM the user could accumulate by cancelling

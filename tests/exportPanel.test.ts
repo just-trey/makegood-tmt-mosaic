@@ -53,11 +53,13 @@ function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
     positions: Float32Array.from(geo.attributes.position.array as Float32Array),
     patches: null,
     patchIdx: 0,
-    boundaryLoop: [
-      [-20, 10, -20],
-      [20, 10, -20],
-      [20, 10, 20],
-      [-20, 10, 20],
+    boundaryLoops: [
+      [
+        [-20, 10, -20],
+        [20, 10, -20],
+        [20, 10, 20],
+        [-20, 10, 20],
+      ],
     ],
     patchNormal: [0, 1, 0],
     topZ: 10,

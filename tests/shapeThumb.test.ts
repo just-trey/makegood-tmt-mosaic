@@ -24,7 +24,7 @@ function part(over: Partial<AssemblyPart> = {}): AssemblyPart {
     positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
     patches: null,
     patchIdx: 0,
-    boundaryLoop: null,
+    boundaryLoops: null,
     topZ: 0,
     baseDepth: 3,
     isDuplicateOf: null,
