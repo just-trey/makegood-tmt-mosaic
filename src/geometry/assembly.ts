@@ -36,6 +36,7 @@ import {
   manifoldIsValid,
   manifoldToMeshes,
   mapFeatureCoords,
+  REPAIR_ERODE_MM,
   repairSelfIntersections,
   soupToManifold,
   type ManifoldSolid,
@@ -504,11 +505,36 @@ function warnOverlappingDesigns(placed: PlacedDesign[]): void {
 }
 
 /**
+ * Planar area of a polygon feature, holes subtracted.
+ *
+ * Area rather than ring count, because breaking touching contours *raises* the count by design: a
+ * split (+1) and a deleted hair (-1) cancel, and the loss goes unreported.
+ */
+function featureArea(f: PolyFeature): number {
+  const g = f.geometry as { type: string; coordinates: number[][][] | number[][][][] };
+  const polys = (g.type === 'Polygon' ? [g.coordinates] : g.coordinates) as number[][][][];
+  let total = 0;
+  for (const poly of polys) {
+    poly.forEach((ring, i) => {
+      let a = 0;
+      for (let k = 0, n = ring.length; k < n; k++) {
+        const [x1, y1] = ring[k];
+        const [x2, y2] = ring[(k + 1) % n];
+        a += x1 * y2 - x2 * y1;
+      }
+      total += (i === 0 ? 1 : -1) * Math.abs(a / 2);
+    });
+  }
+  return total;
+}
+
+/**
  * Vector + mesh-boolean assembly build. Per part: place the SVG's per-color net regions onto the
  * part's flat face in native coordinates, extrude each to a prism, then use Manifold to (a)
  * subtract all prisms from the part mesh (the full modified body) and (b) intersect each prism
  * with the part (a flush inlay solid per color).
  */
+
 export async function buildAssemblyGeometry(
   input: AssemblyBuildInput,
 ): Promise<AssemblyBuild | null> {
@@ -832,7 +858,13 @@ export async function buildAssemblyGeometry(
         if (soup && soup.length) {
           try {
             const man = soupToManifold(wasm, soup);
-            if (!manifoldIsValid(man)) throw new Error('empty manifold');
+            // Freed rather than dropped: an un-watertight soup comes back as an *empty* solid
+            // rather than a throw, so this is the common path here, and a discarded solid is WASM
+            // memory that never reaches `owned`. The ladder below can discard one per rung.
+            if (!manifoldIsValid(man)) {
+              manifoldDelete(man);
+              throw new Error('empty manifold');
+            }
             keep(man, region);
             continue;
           } catch {
@@ -840,21 +872,65 @@ export async function buildAssemblyGeometry(
           }
           // Clipping dense line-work to the part boundary can leave the region self-touching:
           // valid to turf, non-watertight to Manifold. Repair with Manifold's own 2D boolean
-          // engine and retry once before giving up.
+          // engine and retry, widening the erode when the narrow one does not clear it.
+          //
+          // The ladder is the fix for a real failure rather than defensive retrying: a gravel
+          // photograph on the wheel put eleven regions through here, and one of them needed the
+          // wider distance. Ordered smallest first so a region that repairs at 0.01mm never pays
+          // the extra geometry loss, and it stops well inside what a nozzle can resolve.
+          //
+          // An edge slice stands on the part's outer wall and `keep` records it in
+          // `partEdgeColors` as "the rim prints in this color". Eroding it pulls it off that rim
+          // and leaves a rind of body material, so the wider rungs are withheld there: an edge
+          // slice gets the original single attempt and warns exactly as it did before.
+          let repairedOk = false;
+          const rungs = region.edge ? REPAIR_ERODE_MM.slice(0, 1) : REPAIR_ERODE_MM;
+          // Area at the narrowest rung, to tell a repair from a deletion. The wider rung erases
+          // anything thinner than twice its distance, and `repairSelfIntersections` returns null
+          // only when *every* contour vanishes: a hair on a larger same-colour blob (the shape
+          // docs/findings/seam-sliver-sighting.md measures at ~0.15mm) disappears while its parent
+          // succeeds. Escalating silently would trade a loud warning for a quiet loss, which is the
+          // worse of the two.
+          //
+          // Computed before the loop, not inside it: a throw on the narrow rung used to leave the
+          // baseline unset, which disabled the notice for the rest of that region. Unknown is
+          // carried as `null` and reported, because "the stronger repair ran and we cannot say what
+          // it cost" is still not something to keep quiet about.
+          let narrowArea: number | null = null;
           try {
-            const repaired = repairSelfIntersections(wasm, region.feat);
-            const soup2 =
-              repaired && mapper.buildCutter(repaired, region.depth, OVERSHOOT_MM, cutterOpts);
-            if (soup2 && soup2.length) {
-              const man2 = soupToManifold(wasm, soup2);
-              if (manifoldIsValid(man2)) {
-                keep(man2, region);
-                continue;
-              }
-            }
+            const narrow = repairSelfIntersections(wasm, region.feat, rungs[0]);
+            if (narrow) narrowArea = featureArea(narrow);
           } catch {
-            /* fall through to warn */
+            /* baseline unavailable; treated as unknown below */
           }
+          for (const erodeMm of rungs) {
+            try {
+              const repaired = repairSelfIntersections(wasm, region.feat, erodeMm);
+              const soup2 =
+                repaired && mapper.buildCutter(repaired, region.depth, OVERSHOOT_MM, cutterOpts);
+              if (soup2 && soup2.length) {
+                const man2 = soupToManifold(wasm, soup2);
+                if (manifoldIsValid(man2)) {
+                  keep(man2, region);
+                  repairedOk = true;
+                  const lostDetail =
+                    erodeMm !== rungs[0] &&
+                    (narrowArea === null || featureArea(repaired!) < narrowArea);
+                  if (lostDetail) {
+                    noticeBuild(
+                      `Some detail in color ${c.hex} was too fine to print and was merged into ` +
+                        `its surroundings on "${part.name}".`,
+                    );
+                  }
+                  break;
+                }
+                manifoldDelete(man2);
+              }
+            } catch {
+              /* try the next distance, then warn */
+            }
+          }
+          if (repairedOk) continue;
         }
         // The artwork survived the boundary clip but no cutter came out. On a conformal zone the
         // warp found no surface under part of the region (usually a baked boundary claiming more

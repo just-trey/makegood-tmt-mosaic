@@ -843,6 +843,25 @@ returns **841 components with `capped: true`**, measured by
   to say what they do. The first costs a trace pass per iteration, which the bench puts at tens of
   milliseconds on a 300px source.
 
+## The extrude repair never runs on a conformal zone
+
+`ConformalZoneMapper.buildCutter` absorbs an invalid prism inside `tryWarp` and returns `null`, so
+`soup` is falsy and the whole repair block in
+[assembly.ts](../src/geometry/assembly.ts) is skipped. The escalating erode ladder that fixed a
+lost color on the wheel therefore buys the chair body nothing: a flat zone gets two attempts at
+repairing a self-touching region, a conformal one gets none and goes straight to the warning.
+
+- Surfaced by the fix for "Couldn't cut color … into …" on the wheel, which is a
+  `FlatZoneMapper`. Measurements and wrong turns:
+  [2026-08-20 extrude repair erode](findings/2026-08-20-extrude-repair-erode.md).
+- The asymmetry is pre-existing and is acknowledged by the comment beside the warning, which
+  describes the conformal case as "the warp found no surface under part of the region".
+- Whether the chair body actually hits self-touching regions is **unmeasured**. The pattern library
+  and chair body are both hidden from the UI, so nobody has driven dense artwork through a
+  conformal zone to find out.
+- Closing it means either giving the conformal mapper the same retry, or establishing that its
+  null return means something different enough that a retry would be wrong.
+
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
 A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):

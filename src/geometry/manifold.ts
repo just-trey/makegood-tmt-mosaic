@@ -204,6 +204,16 @@ export function extrudeRegionToSoup(
 }
 
 /**
+ * Erode distances the repair walks, in millimetres, smallest first.
+ *
+ * One distance was not enough, and 0.05mm is where the ladder stops: it is an eighth of a 0.4mm
+ * nozzle, and past that an erode reshapes the recess instead of repairing it. It already deletes
+ * features under 0.10mm, which is why the caller reports when a wider rung costs area. Measurements
+ * and the distances that failed: docs/findings/2026-08-20-extrude-repair-erode.md.
+ */
+export const REPAIR_ERODE_MM = [0.01, 0.05] as const;
+
+/**
  * Repair a self-intersecting/pinched region (e.g. dense line-work that touches itself after
  * being clipped to a part boundary) using Manifold's own 2D boolean engine, CrossSection —
  * turf's clipper can emit such regions without throwing, but they then fail Manifold's
@@ -211,15 +221,24 @@ export function extrudeRegionToSoup(
  * resolving with a fill rule handles genuine self-crossings regardless of winding, but doesn't
  * by itself fix contours that merely *touch* (a hole pinched against its own outer boundary at a
  * single point, or two adjacent shapes sharing an edge) — THREE's earcut triangulator still
- * chokes on that exact-touching topology. A tiny inward offset-and-back (0.01mm, far below print
- * resolution) breaks those exact coincidences by construction; simplify() cleans up the sliver
- * segments the offset round-trip introduces. The cleaned contours are re-nested into proper
- * outer/hole polygons by shapeToFeature's containment-depth algorithm, which doesn't care about
- * CrossSection's own winding convention.
+ * chokes on that exact-touching topology. A small inward offset breaks those exact coincidences
+ * by construction; simplify() cleans up the sliver segments the offset introduces.
+ *
+ * The offset is inward only and never put back, and below 2 x erodeMm it deletes rather than
+ * shrinks: this returns null only when *every* contour vanishes, so a hair on a larger blob of the
+ * same colour disappears while its parent repairs. The caller compares area across rungs and says
+ * so rather than letting that pass silently.
+ *
+ * The cleaned contours are re-nested into proper outer/hole polygons by shapeToFeature's
+ * containment-depth algorithm, which doesn't care about CrossSection's own winding convention.
+ *
+ * `erodeMm` is a parameter rather than a constant because one distance does not clear every
+ * region. See REPAIR_ERODE_MM for the ladder the caller walks.
  */
 export function repairSelfIntersections(
   wasm: ManifoldAPI,
   feature: PolyFeature,
+  erodeMm: number = REPAIR_ERODE_MM[0],
 ): PolyFeature | null {
   const g = feature.geometry;
   const polys: Ring[][] =
@@ -227,15 +246,29 @@ export function repairSelfIntersections(
   const contours = polys.flat().filter((r) => r.length >= 4);
   if (!contours.length) return null;
   const cs = new wasm.CrossSection(contours as [number, number][][], 'NonZero');
-  const eroded = cs.offset(-0.01, 'Round').simplify(1e-4);
-  const cleaned = eroded.toPolygons();
-  eroded.delete();
-  cs.delete();
-  if (!cleaned.length) return null;
-  const shape: SVGShape = {
-    fill: '',
-    order: 0,
-    loops: cleaned.map((ring) => ring.map(([x, y]) => ({ x, y }))),
-  };
-  return shapeToFeature(shape);
+  // try/finally at every level, matching erodeBoundary in edgeRegions.ts: `offset` and `simplify`
+  // each return a fresh CrossSection, and the caller now runs this up to twice per failing region
+  // with a catch that treats a throw as ordinary, so a leak on the throwing path would compound.
+  try {
+    const offset = cs.offset(-erodeMm, 'Round');
+    try {
+      const eroded = offset.simplify(1e-4);
+      try {
+        const cleaned = eroded.toPolygons();
+        if (!cleaned.length) return null;
+        const shape: SVGShape = {
+          fill: '',
+          order: 0,
+          loops: cleaned.map((ring) => ring.map(([x, y]) => ({ x, y }))),
+        };
+        return shapeToFeature(shape);
+      } finally {
+        eroded.delete();
+      }
+    } finally {
+      offset.delete();
+    }
+  } finally {
+    cs.delete();
+  }
 }
