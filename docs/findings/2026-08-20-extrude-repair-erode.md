@@ -75,17 +75,38 @@ Six net regions from the gravel trace, scaled to the wheel's 276mm face:
 | 0.05mm | 1.83%     | 0                     |
 | 0.1mm  | 3.63%     | 0                     |
 
-**That table understates the risk, and a review round caught it.** An erode is a deletion below
-twice its distance, not a shrink: nothing thinner than 0.10mm survives 0.05mm. On this artwork no
-whole region vanished, but `repairSelfIntersections` returns null only when _every_ contour goes, so
-a hair on a larger blob of the same colour disappears while its parent repairs. That is exactly the
-shape [seam-sliver-sighting.md](seam-sliver-sighting.md) measures at about 0.15mm.
+**A review round said that table understates the risk, and it was right to ask.** An erode is a
+deletion below twice its distance, not a shrink: `repairSelfIntersections` returns null only when
+_every_ contour vanishes, so a hair on a larger blob of the same colour would disappear while its
+parent repaired. That is the shape [seam-sliver-sighting.md](seam-sliver-sighting.md) measures at
+about 0.15mm.
 
-Escalating silently would have traded a loud warning for a quiet loss, which is the worse of the
-two. The build now compares ring counts between rungs and says so:
+**The argument that settles it is geometric, not statistical.** An inward offset of `e` removes
+exactly those features thinner than `2e`. At the shipped 0.05mm that is 0.10mm, a quarter of a
+0.4mm nozzle. Nothing a quarter of a nozzle wide can be printed, so whatever the wider rung removes
+was never going to reach the part. That holds for any artwork, which no measurement over one
+photograph can.
 
-> Some detail in color #7d7163 was too fine to print and was merged into its surroundings on
-> "Bottom".
+**Two attempts to measure the deletion instead, and why neither is quoted above.** Both are
+recorded because the wrong turns are the useful part:
+
+- _Counting contours per colour_ gave 10→10, 47→47, 40→40, 310→310, one lost on #b29e84, and
+  321→**322** on #7d7163. But a count cannot separate a deletion from a split: the +1 could be one
+  contour splitting and another disappearing in the same step. A review round caught that the metric
+  was the very one an earlier docstring had rejected for exactly this reason.
+- _Matching contours between rungs_ by centroid containment then reported a 45.39mm² contour
+  disappearing on #2c231c, which an 0.05mm erode cannot do: removing 45mm² of material by thinning
+  0.05mm from each side would need a feature some 450mm long. The heuristic mis-assigns nested and
+  non-convex rings, leaving true parents unmatched. Discarded rather than reported.
+
+What survives is the total-area table above and the geometric bound. The extra area the wider rung
+costs (1.83% against 0.37%) is real; whether it is uniform shrink or includes whole sub-0.1mm
+contours is **not established here**, and does not need to be, because neither could print.
+
+An intermediate version of this fix raised a "some detail was too fine to print" notice when the
+wider rung was used. It was removed. A review round showed its area test could never be false, an
+erode being monotone, so it fired on every escalation regardless of whether anything was lost. A
+warning that is always true is not a warning.
 
 ## Wrong turns
 

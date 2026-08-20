@@ -207,9 +207,9 @@ export function extrudeRegionToSoup(
  * Erode distances the repair walks, in millimetres, smallest first.
  *
  * One distance was not enough, and 0.05mm is where the ladder stops: it is an eighth of a 0.4mm
- * nozzle, and past that an erode reshapes the recess instead of repairing it. It already deletes
- * features under 0.10mm, which is why the caller reports when a wider rung costs area. Measurements
- * and the distances that failed: docs/findings/2026-08-20-extrude-repair-erode.md.
+ * nozzle, and past that an erode reshapes the recess instead of repairing it. An inward offset of
+ * `e` removes only what is thinner than `2e`, so at 0.05mm nothing wider than a quarter nozzle is
+ * at stake. Distances that failed: docs/findings/2026-08-20-extrude-repair-erode.md.
  */
 export const REPAIR_ERODE_MM = [0.01, 0.05] as const;
 
@@ -225,9 +225,8 @@ export const REPAIR_ERODE_MM = [0.01, 0.05] as const;
  * by construction; simplify() cleans up the sliver segments the offset introduces.
  *
  * The offset is inward only and never put back, and below 2 x erodeMm it deletes rather than
- * shrinks: this returns null only when *every* contour vanishes, so a hair on a larger blob of the
- * same colour disappears while its parent repairs. The caller compares area across rungs and says
- * so rather than letting that pass silently.
+ * shrinks. At the distances shipped nothing printable is at stake: 2 x 0.05mm is a quarter of a
+ * 0.4mm nozzle.
  *
  * The cleaned contours are re-nested into proper outer/hole polygons by shapeToFeature's
  * containment-depth algorithm, which doesn't care about CrossSection's own winding convention.

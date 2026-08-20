@@ -505,36 +505,11 @@ function warnOverlappingDesigns(placed: PlacedDesign[]): void {
 }
 
 /**
- * Planar area of a polygon feature, holes subtracted.
- *
- * Area rather than ring count, because breaking touching contours *raises* the count by design: a
- * split (+1) and a deleted hair (-1) cancel, and the loss goes unreported.
- */
-function featureArea(f: PolyFeature): number {
-  const g = f.geometry as { type: string; coordinates: number[][][] | number[][][][] };
-  const polys = (g.type === 'Polygon' ? [g.coordinates] : g.coordinates) as number[][][][];
-  let total = 0;
-  for (const poly of polys) {
-    poly.forEach((ring, i) => {
-      let a = 0;
-      for (let k = 0, n = ring.length; k < n; k++) {
-        const [x1, y1] = ring[k];
-        const [x2, y2] = ring[(k + 1) % n];
-        a += x1 * y2 - x2 * y1;
-      }
-      total += (i === 0 ? 1 : -1) * Math.abs(a / 2);
-    });
-  }
-  return total;
-}
-
-/**
  * Vector + mesh-boolean assembly build. Per part: place the SVG's per-color net regions onto the
  * part's flat face in native coordinates, extrude each to a prism, then use Manifold to (a)
  * subtract all prisms from the part mesh (the full modified body) and (b) intersect each prism
  * with the part (a flush inlay solid per color).
  */
-
 export async function buildAssemblyGeometry(
   input: AssemblyBuildInput,
 ): Promise<AssemblyBuild | null> {
@@ -885,24 +860,11 @@ export async function buildAssemblyGeometry(
           // slice gets the original single attempt and warns exactly as it did before.
           let repairedOk = false;
           const rungs = region.edge ? REPAIR_ERODE_MM.slice(0, 1) : REPAIR_ERODE_MM;
-          // Area at the narrowest rung, to tell a repair from a deletion. The wider rung erases
-          // anything thinner than twice its distance, and `repairSelfIntersections` returns null
-          // only when *every* contour vanishes: a hair on a larger same-colour blob (the shape
-          // docs/findings/seam-sliver-sighting.md measures at ~0.15mm) disappears while its parent
-          // succeeds. Escalating silently would trade a loud warning for a quiet loss, which is the
-          // worse of the two.
-          //
-          // Computed before the loop, not inside it: a throw on the narrow rung used to leave the
-          // baseline unset, which disabled the notice for the rest of that region. Unknown is
-          // carried as `null` and reported, because "the stronger repair ran and we cannot say what
-          // it cost" is still not something to keep quiet about.
-          let narrowArea: number | null = null;
-          try {
-            const narrow = repairSelfIntersections(wasm, region.feat, rungs[0]);
-            if (narrow) narrowArea = featureArea(narrow);
-          } catch {
-            /* baseline unavailable; treated as unknown below */
-          }
+          // No notice when a wider rung is used. An inward offset of `e` removes only what is
+          // thinner than `2e`, so the 0.05mm rung cannot touch anything wider than a quarter of a
+          // 0.4mm nozzle: nothing printable is at stake. An earlier version raised one, and its
+          // test could never be false because an erode is monotone, so it fired on every
+          // escalation. See docs/findings/2026-08-20-extrude-repair-erode.md.
           for (const erodeMm of rungs) {
             try {
               const repaired = repairSelfIntersections(wasm, region.feat, erodeMm);
@@ -913,15 +875,6 @@ export async function buildAssemblyGeometry(
                 if (manifoldIsValid(man2)) {
                   keep(man2, region);
                   repairedOk = true;
-                  const lostDetail =
-                    erodeMm !== rungs[0] &&
-                    (narrowArea === null || featureArea(repaired!) < narrowArea);
-                  if (lostDetail) {
-                    noticeBuild(
-                      `Some detail in color ${c.hex} was too fine to print and was merged into ` +
-                        `its surroundings on "${part.name}".`,
-                    );
-                  }
                   break;
                 }
                 manifoldDelete(man2);
