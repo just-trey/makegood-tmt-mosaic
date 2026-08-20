@@ -115,5 +115,7 @@ real mesh. A genuinely malformed part reaching the engine is still untested.
 ## Then
 
 Verify in the app, not only through the script: arm one fault, look at the
-viewport, read the warning panel as a user would. Then run `ship-it`. This
-touches `src/geometry/`, so `/code-review` is required, not optional.
+viewport, read the warning panel as a user would. Then run `ship-it`, whose
+step 3 runs `/code-review`. That is required on any diff that changes code.
+Keep taking rounds while they return wrong output: a boolean that fails quietly
+is the whole subject here.

@@ -20,49 +20,65 @@ rebuilding the steps from memory.
 Run the `ship-it` skill. It carries the five CI gates (the same ones that
 block merge into `main`) and the four docs that drift silently.
 
-`/code-review` is **required**, not optional, when the diff touches
-`src/geometry/` or `src/export/`.
+`/code-review` is **required**, not optional, on **every PR that changes code**.
 
-### Run it twice
+The one exemption is a diff that is only prose: docs, CHANGELOG, comments. If
+it changes a line anything executes, including scripts and config, it gets
+reviewed.
+
+It used to be scoped to `src/geometry/` and `src/export/`, on a token-cost
+argument that no longer applies. That scoping had a real failure mode: a
+700-line measurement bench sat outside it, and the review that eventually ran
+found three claims in its report read off rows the shipping code never uses.
+Wrong numbers do not respect directory boundaries.
+
+### Run it twice, at least
 
 Once **before pushing**, and again **after you act on its findings**.
 
-- A fix to a geometry finding is itself a geometry change.
-- It gets written under pressure, to make one specific complaint go away.
+- A fix to a finding is itself a change, written under pressure, to make one
+  specific complaint go away.
 - That is exactly when a too-narrow patch gets bolted on.
 - PR #113: three rounds in a row, each found a real bug introduced by the
   previous round's fix. Round 2 found it in code a live run had already
   reported clean.
 - Reviewing only after the push means announcing green, then withdrawing it.
 
-### Two passes, not a loop
+### Stop on the kind of finding, not on the count
 
-A third round is a signal to stop and reassess, not to keep going.
+Keep going while rounds return wrong output. Stop when a round returns taste.
 
 A reviewer looking hard at a big diff will always return something. So "it
-found a real thing" stops being a reason to continue. What matters is _which
-kind_ of thing:
+found a real thing" is not the test. What matters is _which kind_ of thing:
 
-- **Wrong output**: a bad number, a wrong pose, a warning that never fires.
-  Fix it. The re-review is earned.
+- **Wrong output**: a bad number, a wrong pose, a warning that never fires, a
+  claim the measurement does not support. Fix it. The next round is earned.
 - **Arguable defaults**: a margin, a fallback, one of two defensible
   behaviors. That is taste. Another round produces more of it, forever.
 
-PR #147 is the worked example:
+There is no round cap. A fourth round that keeps surfacing wrong numbers is
+worth running. A second round that returns only judgment calls is where to
+stop.
 
-- Round 1 found four real defects in the original code.
-- Round 2 found a genuine latent bug.
+PR #147 is the worked example of stopping:
+
+- Round 1 found four real defects. Round 2 found a genuine latent bug.
 - Round 3 returned four more. One was introduced by round 2's own fix, two
   were judgment calls, and the fix invented a constant to satisfy a reviewer
   rather than a measurement.
-- All three rounds found "real things". Only the first two were worth it.
+- All three rounds found "real things". Only the first two were worth acting
+  on, and round 3 is where the churn started.
 - The churn landed on `suggestTowerPos`, a _suggestion_ that already warns
   when unsure. The numbers that decide whether a print succeeds (the verified
   plate constants) had been stable and live-verified since they landed.
 
-If a third round still looks necessary, the diff is usually too big rather
-than the code unsound. Split it, or take the remaining concern to its own PR
-backed by real evidence: a live run, a real print, not another review pass.
+Two guards that matter more than the count:
+
+- **Never invent a constant to satisfy a reviewer.** A number that closes a
+  finding without a measurement behind it is worse than the finding.
+- **If rounds keep finding real defects, suspect the diff.** A change that
+  needs four rounds is usually too big rather than unsound. Splitting it is
+  the fix, not another pass.
 
 ## Git workflow
 

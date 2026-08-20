@@ -75,5 +75,6 @@ coordinate, so they survive the re-centering a different bed applies.
   [tech-debt.md](../../../docs/tech-debt.md) with the newly verified bed, so the
   next reader doesn't re-derive which sizes are checked from git history.
 
-Then run `ship-it`. This touches `src/export/`, so `/code-review` is required,
-not optional.
+Then run `ship-it`, whose step 3 runs `/code-review`. That is required on any
+diff that changes code. Keep taking rounds while they return wrong numbers: a
+bad placement here is invisible until something prints.

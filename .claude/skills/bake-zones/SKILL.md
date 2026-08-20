@@ -210,4 +210,6 @@ addressing the same vertices.
 
 Verify in the app, not just the tests: load the kind, drop artwork on a zone
 that spans a seam, and check it flows across the join and cuts on both parts.
-Then run `ship-it`. This touches `src/geometry/`, so `/code-review` is required.
+Then run `ship-it`, whose step 3 runs `/code-review`. That is required on any
+diff that changes code, and a zone that unwraps wrong still looks plausible in
+the viewport, so expect to earn more than one round.
