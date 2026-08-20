@@ -63,11 +63,13 @@ function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
     positions: Float32Array.from(geo.attributes.position.array as Float32Array),
     patches: null,
     patchIdx: 0,
-    boundaryLoop: [
-      [-20, 10, -20],
-      [20, 10, -20],
-      [20, 10, 20],
-      [-20, 10, 20],
+    boundaryLoops: [
+      [
+        [-20, 10, -20],
+        [20, 10, -20],
+        [20, 10, 20],
+        [-20, 10, 20],
+      ],
     ],
     patchNormal: [0, 1, 0],
     topZ: 10,
@@ -80,6 +82,39 @@ function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
     cutThrough: false,
     ...overrides,
   };
+}
+
+/**
+ * The same box face with a 10mm square hole through the middle of it. The hole ring carries more
+ * points than the outline on purpose: that is the input that told the old vertex-count sort the
+ * hole was the face.
+ */
+function holedPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
+  const hole: number[][] = [];
+  for (let i = 0; i < 40; i++) {
+    const t = (i / 40) * 4;
+    const leg = Math.floor(t),
+      f = t - leg;
+    const c: [number, number][] = [
+      [-5 + 10 * f, -5],
+      [5, -5 + 10 * f],
+      [5 - 10 * f, 5],
+      [-5, 5 - 10 * f],
+    ];
+    hole.push([c[leg][0], 10, c[leg][1]]);
+  }
+  return boxPart({
+    boundaryLoops: [
+      [
+        [-20, 10, -20],
+        [20, 10, -20],
+        [20, 10, 20],
+        [-20, 10, 20],
+      ],
+      hole,
+    ],
+    ...overrides,
+  });
 }
 
 /** The design placement the original inline `placeOnPart` folded in — identity offsets/scale. */
@@ -109,12 +144,12 @@ function inlinePlace(
   const nsign = nrm && nrm[1] < 0 ? -1 : 1;
   let faceCx = 0,
     faceCz = 0;
-  if (isRect && part.boundaryLoop && part.boundaryLoop.length) {
+  if (isRect && part.boundaryLoops && part.boundaryLoops.length) {
     let minX = Infinity,
       maxX = -Infinity,
       minZ = Infinity,
       maxZ = -Infinity;
-    for (const q of part.boundaryLoop) {
+    for (const q of part.boundaryLoops[0]) {
       minX = Math.min(minX, q[0]);
       maxX = Math.max(maxX, q[0]);
       minZ = Math.min(minZ, q[2]);
@@ -171,11 +206,13 @@ describe('FlatZoneMapper.placer reproduces the pre-refactor placement', () => {
     {
       name: 'rect centers on an off-center face',
       part: boxPart({
-        boundaryLoop: [
-          [-5, 10, -5],
-          [15, 10, -5],
-          [15, 10, 15],
-          [-5, 10, 15],
+        boundaryLoops: [
+          [
+            [-5, 10, -5],
+            [15, 10, -5],
+            [15, 10, 15],
+            [-5, 10, 15],
+          ],
         ],
       }),
       isRect: true,
@@ -244,6 +281,29 @@ describe('FlatZoneMapper surface geometry', () => {
     expect(new FlatZoneMapper(boxPart({ cutThrough: true }), [], false).boundary()).toBeNull();
   });
 
+  it('builds the boundary as a polygon with holes when the face has them', () => {
+    // A 40mm face with a 10mm square hole in it, the shape a doughnut silhouette cuts. The hole is
+    // deliberately given more vertices than the outline: the old sort keyed on vertex count and
+    // would have taken the hole for the face.
+    const b = new FlatZoneMapper(holedPart(), [], false).boundary();
+    expect(b).not.toBeNull();
+    const rings = b!.geometry.coordinates as number[][][];
+    expect(rings).toHaveLength(2);
+    // 40² outer less the 10² hole, so the hole is subtracted rather than merely present
+    expect(area(b!)).toBeCloseTo(1600 - 100, 5);
+  });
+
+  it('measures the face bbox off the outline, never off a hole', () => {
+    // Same trap the other way round: fillExtent and the rect design center both read the face's
+    // extent, and a hole read as the face shrinks the design to a quarter of its size.
+    expect(new FlatZoneMapper(holedPart(), [], false).fillExtent()).toEqual({
+      minX: -20,
+      minY: -20,
+      maxX: 20,
+      maxY: 20,
+    });
+  });
+
   it('fillExtent is the design face bbox', () => {
     // the box's face loop spans a 40mm square, inset from nothing here
     expect(new FlatZoneMapper(boxPart(), [], false).fillExtent()).toEqual({
@@ -260,11 +320,13 @@ describe('FlatZoneMapper surface geometry', () => {
     const through = new FlatZoneMapper(
       boxPart({
         cutThrough: true,
-        boundaryLoop: [
-          [-5, 10, -5],
-          [5, 10, -5],
-          [5, 10, 5],
-          [-5, 10, 5],
+        boundaryLoops: [
+          [
+            [-5, 10, -5],
+            [5, 10, -5],
+            [5, 10, 5],
+            [-5, 10, 5],
+          ],
         ],
       }),
       [],
@@ -274,8 +336,32 @@ describe('FlatZoneMapper surface geometry', () => {
     expect(through.fillExtent()).toEqual({ minX: -20, minY: -20, maxX: 20, maxY: 20 });
   });
 
+  it('still clips when the face has no area in the plane it is cut in', () => {
+    // A sideways patch (a model exported Z-up, dropped on a part): every loop point shares one X,
+    // so the face projects to a line. A null boundary would mean "no clip" and let the cut run
+    // unbounded at an arbitrary plane, so this has to stay a clip target that keeps nothing.
+    const sideways = new FlatZoneMapper(
+      boxPart({
+        patchNormal: [1, 0, 0],
+        boundaryLoops: [
+          [
+            [5, 0, -10],
+            [5, 0, 10],
+            [5, 20, 10],
+            [5, 20, -10],
+          ],
+        ],
+      }),
+      [],
+      false,
+    );
+    const b = sideways.boundary();
+    expect(b).not.toBeNull();
+    expect(area(b!)).toBeCloseTo(0, 6);
+  });
+
   it('fillExtent is null when the part has no face loop to measure', () => {
-    expect(new FlatZoneMapper(boxPart({ boundaryLoop: null }), [], false).fillExtent()).toBeNull();
+    expect(new FlatZoneMapper(boxPart({ boundaryLoops: null }), [], false).fillExtent()).toBeNull();
   });
 
   it('resolveCutRegions passes through, unless the zone is cut-through', () => {
@@ -329,6 +415,42 @@ describe('FlatZoneMapper surface geometry', () => {
     expect(regions).toEqual([{ feat, depth: 1 }]);
   });
 
+  it('calls a region on a hole’s inner rim an edge, not an interior recess', async () => {
+    const wasm = await getManifold();
+    const m = new FlatZoneMapper(holedPart({ edgeCutThroughDepth: 3 }), [], false, wasm);
+    // Already clipped to the holed face, so it stops at the hole and shares that rim with it. A
+    // silhouette's inner rim is as much of the part's outer wall as its outline is, and cutting
+    // this as a recess is what leaves a base-color band around the hole.
+    const onRim = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-12, -12],
+            [-5, -12],
+            [-5, -5],
+            [5, -5],
+            [5, -12],
+            [12, -12],
+            [12, 12],
+            [-12, 12],
+            [-12, -12],
+          ],
+        ],
+      },
+    } as PolyFeature;
+    const regions = m.resolveCutRegions(onRim, 1);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].edge).toBe(true);
+    expect(regions[0].depth).toBe(3);
+
+    // …and one sitting between the hole and the outline, touching neither, still stays a recess.
+    const between = square(6, 6, 12, 12);
+    expect(m.resolveCutRegions(between, 1)).toEqual([{ feat: between, depth: 1 }]);
+  });
+
   it('catches a region crossing a concave face’s inner edge', async () => {
     const wasm = await getManifold();
     // An L-shaped face: the [0,20]² quadrant is missing. This is the case the bbox prefilter
@@ -346,7 +468,7 @@ describe('FlatZoneMapper surface geometry', () => {
     ];
     const straddling = square(-8, -8, 2, 2); // crosses the notch's inner corner at (0, 0)
     const m = new FlatZoneMapper(
-      boxPart({ edgeCutThroughDepth: 3, boundaryLoop: L }),
+      boxPart({ edgeCutThroughDepth: 3, boundaryLoops: [L] }),
       [],
       false,
       wasm,
@@ -384,7 +506,7 @@ describe('FlatZoneMapper surface geometry', () => {
       [-110, 10, 110],
     ];
     const m = new FlatZoneMapper(
-      boxPart({ edgeCutThroughDepth: 3, boundaryLoop: chamfered }),
+      boxPart({ edgeCutThroughDepth: 3, boundaryLoops: [chamfered] }),
       [],
       false,
       wasm,
@@ -448,11 +570,13 @@ describe('FlatZoneMapper surface geometry', () => {
     // rect: origin includes the off-center face center (5,5)
     const rect = new FlatZoneMapper(
       boxPart({
-        boundaryLoop: [
-          [-5, 10, -5],
-          [15, 10, -5],
-          [15, 10, 15],
-          [-5, 10, 15],
+        boundaryLoops: [
+          [
+            [-5, 10, -5],
+            [15, 10, -5],
+            [15, 10, 15],
+            [-5, 10, 15],
+          ],
         ],
       }),
       [],

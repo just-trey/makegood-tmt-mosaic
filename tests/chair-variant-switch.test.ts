@@ -22,7 +22,7 @@ function fakePart(id: number, roleId: string): AssemblyPart {
     positions: null,
     patches: null,
     patchIdx: 0,
-    boundaryLoop: null,
+    boundaryLoops: null,
     topZ: 0,
     baseDepth: 3,
     isDuplicateOf: null,

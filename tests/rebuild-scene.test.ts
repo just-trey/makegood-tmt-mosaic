@@ -126,7 +126,7 @@ function asmPart(over: Partial<AssemblyPart> = {}): AssemblyPart {
     positions: tri(),
     patches: [{ normal: [0, 1, 0], offset: 0, area: 100, triIndices: [0] }],
     patchIdx: 0,
-    boundaryLoop: null,
+    boundaryLoops: null,
     topZ: 0,
     baseDepth: 3,
     isDuplicateOf: null,

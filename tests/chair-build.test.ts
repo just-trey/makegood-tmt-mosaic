@@ -80,10 +80,12 @@ function chairPart(id: string, mesh: LoadedMesh, zones: DesignZone[]): AssemblyP
     zones,
     patches: null,
     patchIdx: 0,
-    boundaryLoop: [
-      [-1, 0, -1],
-      [1, 0, -1],
-      [1, 0, 1],
+    boundaryLoops: [
+      [
+        [-1, 0, -1],
+        [1, 0, -1],
+        [1, 0, 1],
+      ],
     ],
     patchNormal: [0, 1, 0],
     topZ: 0,

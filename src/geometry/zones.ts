@@ -3,6 +3,7 @@ import * as turf from '@turf/turf';
 import type { AssemblyPart, PolyFeature } from '../types';
 import { extrudeRegionToSoup, type ManifoldAPI } from './manifold';
 import { EDGE_TOUCH_TOL_MM, erodeBoundary, splitAtBoundary } from './edgeRegions';
+import { shapeToFeature } from './regions';
 
 /** How far each cutter pokes above the face so the pocket opens cleanly at the surface. */
 export const OVERSHOOT_MM = 0.5;
@@ -31,10 +32,16 @@ export function asmPartFaceNormal(part: AssemblyPart, parts: AssemblyPart[]): nu
   return null;
 }
 
-/** X/Z bounding box (mm) of a part's flat-face boundary loop; null when the loop is empty. */
+/**
+ * X/Z bounding box (mm) of a part's design face: its outline loop, which `boundaryLoops` puts
+ * first. Deliberately just that one. Holes lie inside it and would not move it, and a second,
+ * smaller island would stretch it across the gap between the two, which is not a face extent
+ * anything wants to centre or scale a design on. Null when there is no loop to measure.
+ */
 export function faceXZBBox(
-  loop: number[][] | null | undefined,
+  loops: number[][][] | null | undefined,
 ): { cx: number; cz: number; w: number; h: number } | null {
+  const loop = loops && loops[0];
   if (!loop || !loop.length) return null;
   let minX = Infinity,
     maxX = -Infinity,
@@ -223,13 +230,13 @@ export class FlatZoneMapper implements ZoneMapper {
 
     // Rect parts center the design on the detected face (its native X/Z bbox center); wheel parts
     // anchor on the hub at the origin.
-    const faceBB = isRect ? faceXZBBox(part.boundaryLoop) : null;
+    const faceBB = isRect ? faceXZBBox(part.boundaryLoops) : null;
     this.faceCx = faceBB ? faceBB.cx : 0;
     this.faceCz = faceBB ? faceBB.cz : 0;
   }
 
   // Boundary and through-depth are computed lazily and cached: the gizmo path builds a mapper only
-  // to read frameAt(), so the turf.polygon clip loop and the vertical-extent scan must not run
+  // to read frameAt(), so the boundary nesting and the vertical-extent scan must not run
   // eagerly on every refresh.
   boundary(): PolyFeature | null {
     if (this.boundaryComputed) return this.boundaryPoly;
@@ -239,16 +246,22 @@ export class FlatZoneMapper implements ZoneMapper {
     // cut-through part (e.g. a domed cap) has a design meant to span the whole curved surface,
     // not just the small flat patch used to place it, so skip the clip — the boolean subtract
     // against the real mesh is what actually bounds the cut.
-    if (!part.cutThrough && part.boundaryLoop) {
-      const bRing = part.boundaryLoop.map((p) => [p[0], p[2]]);
-      if (bRing.length >= 3) {
-        if (
-          bRing[0][0] !== bRing[bRing.length - 1][0] ||
-          bRing[0][1] !== bRing[bRing.length - 1][1]
-        )
-          bRing.push(bRing[0]);
+    if (!part.cutThrough && part.boundaryLoops) {
+      // Every loop, nested by `shapeToFeature`'s containment-depth rule rather than clipped to the
+      // outline alone: the face of a holed silhouette is a polygon with holes, and eroding that is
+      // what makes each hole's rim an edge for the cut-through rule. Reused rather than
+      // re-derived, the same round-trip `erodeBoundary` already makes.
+      const rings = part.boundaryLoops.map((l) => l.map((p) => ({ x: p[0], y: p[2] })));
+      this.boundaryPoly = shapeToFeature({ fill: '', order: 0, loops: rings });
+      // `null` from shapeToFeature means the loops enclose no X/Z area, which happens when the
+      // chosen patch faces sideways (a model exported Z-up, dropped on a part). Returning it would
+      // mean "no clip" and let the cut run unbounded at an arbitrary plane. A zero-area polygon
+      // clips every region away instead, which is what this path has always done.
+      if (!this.boundaryPoly && rings[0] && rings[0].length >= 3) {
+        const ring = rings[0].map((p) => [p.x, p.y]);
+        ring.push(ring[0]);
         try {
-          this.boundaryPoly = turf.polygon([bRing]) as PolyFeature;
+          this.boundaryPoly = turf.polygon([ring]) as PolyFeature;
         } catch {
           this.boundaryPoly = null;
         }
@@ -282,7 +295,7 @@ export class FlatZoneMapper implements ZoneMapper {
       if (maxX > minX)
         bb = { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, w: maxX - minX, h: maxZ - minZ };
     } else {
-      bb = faceXZBBox(this.part.boundaryLoop);
+      bb = faceXZBBox(this.part.boundaryLoops);
     }
     if (!bb || !(bb.w > 0) || !(bb.h > 0)) return (this.fillExtentCache = null);
     return (this.fillExtentCache = {

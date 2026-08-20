@@ -138,7 +138,11 @@ function gizmoMappers(parts: AssemblyPart[], isRect: boolean): ZoneMapper[] {
   // artwork — a structural piece (no baked zone) has nothing for the gizmo to sit on.
   const primary = parts.find(
     (p) =>
-      p.loaded && !p.isDuplicateOf && p.boundaryLoop && p.positions && (!p.zones || p.zones.length),
+      p.loaded &&
+      !p.isDuplicateOf &&
+      p.boundaryLoops &&
+      p.positions &&
+      (!p.zones || p.zones.length),
   );
   const mapper = primary ? primaryZoneMapper(primary, parts, isRect) : null;
   return mapper ? [mapper] : [];

@@ -111,7 +111,7 @@ function zonedPart(
     positions: null,
     patches: null,
     patchIdx: 0,
-    boundaryLoop: null,
+    boundaryLoops: null,
     zones: [{ id: zoneId, name: zoneName, templateFile }],
     topZ: 0,
     baseDepth: 1,

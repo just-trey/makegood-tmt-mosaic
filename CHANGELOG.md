@@ -53,6 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Artwork around a hole in the part now prints in your color, not the base
+  color.** Two places this showed. Cut a hubcap to the shape of a picture with a
+  gap in it, and the color around that gap stopped 1mm down, leaving a 2mm band
+  of base color on the inside wall, while the outside rim came out right. And on
+  the footrest, a color laid over its two mounting slots was cut across their
+  rims, shaving the rounded lip on each one. The app read a design face as a
+  single outline, so a hole in that face was invisible to it. It now keeps every
+  edge of the face, the outside and the holes alike, and treats them the same
+  way. The wheel exports byte for byte as before.
 - **A busy photograph no longer loses a color on the part.** Dropping a detailed
   image on the wheel could raise "Couldn't cut color … into …", and that color
   went missing from that part. Behind it, the repair the app already runs on

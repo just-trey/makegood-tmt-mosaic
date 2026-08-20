@@ -241,7 +241,13 @@ export interface AssemblyPart {
   restPositions?: Float32Array;
   patches: FlatPatch[] | null;
   patchIdx: number;
-  boundaryLoop: number[][] | null;
+  /**
+   * Every closed boundary loop of the chosen patch, ordered by X/Z area so the face outline is
+   * first and any hole or smaller island follows. Outer-vs-hole is resolved where the loops are
+   * used, by containment depth, never by winding or by vertex count: a hole rim is as much of the
+   * part's outer wall as the outline is, and an intricate cut-out can out-vertex what encloses it.
+   */
+  boundaryLoops: number[][][] | null;
   patchNormal?: number[];
   /**
    * Baked design zones for a part of a kind shipping a zone sidecar (`AssemblyKind.zonesFile`).

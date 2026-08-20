@@ -34,7 +34,7 @@ function part(over: Partial<AssemblyPart> = {}): AssemblyPart {
     patches: null,
     patchIdx: 0,
     patchNormal: [0, 1, 0],
-    boundaryLoop: null,
+    boundaryLoops: null,
     topZ: 24.25,
     baseDepth: 3,
     isDuplicateOf: null,

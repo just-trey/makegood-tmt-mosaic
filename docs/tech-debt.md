@@ -1025,46 +1025,41 @@ were: a generated part has no stable mesh to seal a pose against, so every
 arrangement is only ever verified for the parameters it was checked at. More
 entries narrow the gap; they don't close the category.
 
-## A design face keeps only one boundary loop, so a silhouette's inner rim is not an edge
+## A patch boundary that meets itself at a point traces as an open chain
 
-`applyAsmPatchChoice` ([src/assembly/parts.ts:503](../src/assembly/parts.ts)) sorts the
-loops `extractPatchBoundary` found and keeps exactly one:
+`extractPatchBoundary` ([src/geometry/meshparts.ts](../src/geometry/meshparts.ts)) keys its edge
+map by **vertex**. Where two boundary loops of one patch touch at a single point, one loses its
+outgoing edge, the walk runs off the end, and the truncated chain is returned as if it were a ring.
 
-```ts
-loops.sort((a, b) => b.length - a.length);
-part.boundaryLoop = loops[0] || null;
-```
+**What it costs.** `applyAsmPatchChoice` now keeps every loop and
+[zones.ts](../src/geometry/zones.ts) nests them by containment depth, so a truncated chain that
+encloses area can be read as a hole where the face is solid, or as solid face inside a real hole.
+The artwork is then clipped to the wrong shape, and on a hubcap cut to a silhouette the edge rule
+reads the wrong rims as the part's outer wall.
 
-That was harmless while `boundaryLoop` only had to clip artwork to roughly the right
-patch. The edge-cut-through rule gave it a second job — deciding which regions stand on
-the part's outer wall — and a single loop can't answer it for a face with holes.
+**Measured.** Over every packed part's first six patches, 18 of 114 contain a chain that does not
+close. All 18 are chair pieces, which take artwork through baked zones instead, plus `wheel-half`
+patch 2 (its -Y back: 7 closed chains and 99 open ones). **None of the four kinds' actual design
+faces is affected**: wheel-half patch 0, wheel-hub-cap patch 0 and footrest patch 1 are 1, 1 and 3
+loops with no open chain at all, and the exported wheel and chair are byte-identical across the
+loop-set change. So this is reachable by choosing a non-default design face, or by dropping a
+pinched mesh on a role, and not by the shipped workflow.
 
-**What it costs.** A hubcap cut to a holed silhouette (a letter "O", a doughnut, a
-character with an enclosed gap) has an inner rim that is just as much an outer wall as
-the outside is, and artwork touching it is cut as a recess instead of through. The result
-is a base-colour band around the hole while the outside rim prints correctly — the exact
-defect the rule exists to remove, on part of the same part. Nothing warns, because from
-the rule's point of view those regions genuinely don't reach the boundary it was given.
+**Why it isn't fixed here.** Two attempts were made while closing the loop-set item and both
+introduced worse bugs than the one they closed, which is what argued for splitting it out:
 
-**A second, older hazard now load-bearing.** The sort key is _vertex count_, not area or
-containment. An intricate cut-out can carry more vertices than the outline enclosing it,
-in which case `loops[0]` is a hole and the clip runs against it — artwork clipped to the
-inside of the gap rather than to the face. That has been reachable since the flat mapper
-shipped; the edge rule now reads the same field, so it would also invert which regions
-are called edges.
+- Discarding chains that do not close, marking vertices consumed as the walk goes: a chain running
+  off the end ate a genuine loop it had entered, and both were lost. Six patches returned no loops
+  at all, and `chair-seat-center` patch 0 dropped its 2101.5 mm² outline and kept a 1097.1 mm²
+  sub-loop as the face.
+- Consuming vertices only on close: a chain entering a cycle it did not start on then runs to the
+  100000-iteration guard. `chair-seat-center` patch 0 is the **default** patch, hit on every chair
+  load, and went from under 2 ms to 317 ms, emitting 1.6 M points of garbage; `wheel-half` patch 2
+  went to 2162 ms.
 
-**Why it wasn't fixed with the rule.** Making `boundaryLoop` a loop _set_ with proper
-outer/hole nesting is not a local change: `boundary()`, `faceXZBBox`, `fillExtent`,
-zone-picking and the on-face gizmo all read it, and all of them currently assume one ring
-— so the change lands on every shipped part's clip and fill behaviour, not just the
-hubcap's. That is a bigger and riskier diff than the feature it would be riding along
-with, and it wants its own live verification on the wheel and footrest.
-
-**What closing it takes.** Give the patch a `boundaryLoops: number[][][]` resolved by
-containment depth (the same rule `shapeToFeature` already uses for SVG rings — see
-[src/geometry/regions.ts](../src/geometry/regions.ts)), build `boundary()` as a polygon
-with holes, and keep `boundaryLoop` as the outer ring for the callers that only want a
-bbox. Then erode the whole thing, which makes every hole's rim an edge for free —
-`erodeBoundary` and `splitAtBoundary` already take multi-ring features and need no
-change. Verify on a doughnut-shaped silhouette (inner rim prints in the artwork's colour)
-and on the wheel and footrest (clip and fill unchanged).
+**What closing it takes.** Key the walk by directed edge rather than by vertex, so a pinch vertex
+keeps one outgoing edge per loop, and pair incoming with outgoing by angle around that vertex so
+the loops are separated the way the geometry actually runs. A per-walk visited set merged into the
+global one only on close, so a failed walk consumes nothing and cannot spin. Then decide what a
+patch with no closed ring should do: today it yields a boundary that is wrong rather than absent,
+and callers only ask whether a face was detected at all.
