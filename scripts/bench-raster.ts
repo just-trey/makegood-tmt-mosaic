@@ -10,10 +10,11 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts alpha       alphaMax against a known-square shape
 //   node_modules/.bin/vite-node scripts/bench-raster.ts sizes       edge density against measurement size
 //   node_modules/.bin/vite-node scripts/bench-raster.ts blur        compensating blur against downscale
+//   node_modules/.bin/vite-node scripts/bench-raster.ts knee        does a knee survive a cheaper image?
 //
 // corpus, colors and curve read the cached corpus. scale, render and alpha bring their own source.
-// sizes and blur take their file list from CORPUS but decode afresh, so they need the files present
-// and ignore the cache entirely.
+// sizes, blur and knee take their file list from CORPUS and decode afresh, so they need the files
+// present; knee also reads the cache for each source's carried edgeDensity.
 //
 // The synthetic mode settles a cost question: the working resolution (MAX_WORKING_EDGE) and
 // whether shapes group per color or per connected component. Procedural sources are right for it
@@ -881,6 +882,111 @@ async function modeBlur(args: string[]) {
   );
 }
 
+/**
+ * Would a knee detector reach the same answer from a cheaper, smaller copy of the image?
+ *
+ * A detector runs on every image load, and the full ladder costs seconds, so it would have to work
+ * on a smaller draw. Each rung is a real browser decode at that size, and its trace parameters are
+ * derived the way parse.ts derives them for that size, so a column is what the app would actually
+ * have produced had it worked the image there.
+ */
+async function modeKnee(args: string[]) {
+  const KS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  // Both decode constants forced in, as `scale` and `sizes` do: they are the only sizes
+  // decodeImageFile can produce, and losing one silently empties the SHIPS column.
+  const AT = [...new Set([192, 256, 384, MEASURE_EDGE, MAX_WORKING_EDGE])].sort((a, b) => a - b);
+  // Curated rather than the whole corpus: a no-arg run would otherwise decode every source,
+  // including derived ones that have no file of their own, after minutes of browser work.
+  const sources = await pick(
+    args.length
+      ? args
+      : ['pattern-cow', 'red-sox-logo', 'cartoon', 'mario', 'ui-screenshot', 'kid-drawing'],
+  );
+  for (const s of sources) {
+    const e = CORPUS.find((c) => c.name === s.name)!;
+    if (!e.file)
+      throw new Error(
+        `${s.name} is derived from another source and has no file of its own, so it cannot be ` +
+          `re-decoded at another size.`,
+      );
+  }
+
+  // Real decodes, not a resample here: the app area-averages through drawImage at high quality, and
+  // the whole question is what downsampling does to the anti-aliased fringe. Point-sampling in this
+  // file would answer a question about a different operation.
+  const decoded = await decodeManyAtEdges(
+    sources.map((s) => {
+      const e = CORPUS.find((c) => c.name === s.name)!;
+      return { file: e.file!, renderEdge: e.renderEdge };
+    }),
+    AT,
+  );
+
+  // Largest single-step jump over uncapped steps, taking the k before it. Capping collapses the
+  // count rather than trimming it, which reads as the strongest possible knee pointing the wrong way.
+  const kneeOf = (pts: { k: number; n: number; capped: boolean }[]) => {
+    let best = 0;
+    let at = -1;
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i].capped || pts[i - 1].capped) continue;
+      const g = pts[i].n / Math.max(1, pts[i - 1].n);
+      if (g > best) {
+        best = g;
+        at = i;
+      }
+    }
+    return { k: best >= 3 && at > 0 ? pts[at - 1].k : null, growth: +best.toFixed(1) };
+  };
+
+  const rows = [];
+  for (const [i, s] of sources.entries()) {
+    const { images, srcW, srcH } = decoded[i];
+    const row: Record<string, string | number> = { name: s.name, right: s.colors };
+    for (const edge of AT) {
+      const img = images.get(edge)!;
+      const at = Math.max(img.w, img.h);
+      if (at < edge) {
+        // workingSize never upscales, so a source smaller than the rung was not resampled at all
+        // and its cell would silently repeat a neighbour's.
+        row[`@${edge}`] = `n/a (source is ${srcW}x${srcH})`;
+        continue;
+      }
+      // Exactly parse.ts: edgeDensity is carried from the fixed reference draw, and the detail-pass
+      // blur is decided by this image's own long edge. Deriving it once from the full working image
+      // would hold that blur on for every smaller column and invent knees that do not ship.
+      const params = autoParams({ edgeDensity: s.edgeDensity }, DETAIL_DEFAULT, at > MEASURE_EDGE);
+      const t0 = performance.now();
+      const pts = KS.map((k) => {
+        const r = traceWith({ ...img, edgeDensity: s.edgeDensity }, k, params);
+        return { k, n: r.components, capped: r.capped };
+      });
+      const ms = performance.now() - t0;
+      const { k, growth } = kneeOf(pts);
+      // Capping collapses the count instead of trimming it, so a capped rung is not part of the
+      // curve. `cartoon` caps at 5 of 11 rungs, which a bare cell would hide.
+      const cappedAt = pts.filter((x) => x.capped).length;
+      // The size the app would really work this source at. Every other column is diagnostic, and
+      // some apply a detail-pass blur the shipping path never would.
+      // A photographic source is capped at MEASURE_EDGE, not MAX_WORKING_EDGE. Ignoring that put
+      // SHIPS on a column that also carries a detail-pass blur a photograph never receives.
+      const cap = isPhotographic(s.edgeDensity) ? MEASURE_EDGE : MAX_WORKING_EDGE;
+      const fit = workingSize(srcW, srcH, cap);
+      const ships = at === Math.max(fit.w, fit.h);
+      row[`@${edge}`] =
+        `${k ?? 'none'} (${growth}x, ${ms.toFixed(0)}ms, blur ${params.blurRadius}` +
+        `${cappedAt ? `, ${cappedAt}/${KS.length} capped` : ''})${ships ? ' SHIPS' : ''}`;
+    }
+    rows.push(row);
+  }
+  console.table(rows);
+  console.log(
+    '\nEach cell: the palette size a knee rule picks at that working size, the growth it fired on,' +
+      '\nwhat the ladder cost, the blur that size would really get, and how many rungs capped.' +
+      '\nSHIPS marks the size the app would actually work that source at; every other column is' +
+      '\ndiagnostic. `right` is what the corpus entry records.',
+  );
+}
+
 async function modeSynthetic(sizes: number[]) {
   const rows = [];
   for (const size of sizes.length ? sizes : [384, 512, 768]) {
@@ -925,6 +1031,9 @@ switch (mode) {
   case 'blur':
     await modeBlur(rest);
     break;
+  case 'knee':
+    await modeKnee(rest);
+    break;
   default: {
     // Numeric arguments keep the original invocation working, which the header and two tech-debt
     // sections quote. A non-numeric word is a typo, not a request for the synthetic bench.
@@ -933,7 +1042,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, blur, ` +
+          `sizes, blur, knee, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));
