@@ -65,6 +65,31 @@ const PHOTO_PARAMS: TraceParams = {
 };
 
 /**
+ * Nozzle width in mm: the reference for what a printer can lay down at all.
+ *
+ * A component with less area than one nozzle square cannot hold a single extrusion of any shape,
+ * so nothing this floor removes was going to print. That is deliberately the weakest claim
+ * available about a feature size, and it is why the Detail slider does not scale it: coarseness is
+ * a taste control and this is not one. Everything between one nozzle and comfortably printable
+ * stays the fractional floor's business.
+ */
+const NOZZLE_MM = 0.4;
+
+/**
+ * Despeckle floor in working pixels for a design placed at `mmPerPixel`, or 0 where the placement
+ * is unknown and the fractional floor is the only one there is.
+ *
+ * The fractional floor means the same thing at any input resolution, which is what it was chosen
+ * for, but it cannot mean anything in millimetres: the same image auto-fit to the 185mm footrest
+ * and to the smallest hubcap's 30mm face gets floors over six times apart in printed size. This is
+ * the half that does not move with the picture.
+ */
+export function printableFloorPx(mmPerPixel: number): number {
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0) return 0;
+  return Math.round((NOZZLE_MM / mmPerPixel) ** 2);
+}
+
+/**
  * Ceiling on alphaMax. Past 4/3 the corner test accepts every vertex, so a higher number doesn't
  * mean "smoother", it means "no corners survive anywhere" — a square logo comes back with rounded
  * corners. The interpolation below can't reach it, but the clamp keeps that true if the endpoints

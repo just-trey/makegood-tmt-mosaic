@@ -20,7 +20,11 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
   `RasterImage.edgeDensity` so a re-trace can't re-derive it.
 - Pixels under 50% alpha are background and cut nothing.
 - Edge density (how much of the image is colour boundary) sets blur, despeckle
-  and curve-fit strength; the Detail slider scales them. The user never picks a
+  and curve-fit strength; the Detail slider scales them. The despeckle floor is
+  then the larger of that fraction and one nozzle width at the size the design is
+  placed (`printableFloorPx`), and Detail deliberately does not scale the second.
+  Assembly kinds only: a flat plate fits the design's traced content, which does
+  not exist yet when the floor is chosen (docs/tech-debt.md). The user never picks a
   mode. Flat art also gets a one-pixel blur, but only when the 1024px pass ran
   ([stats.ts](../src/raster/stats.ts) explains both).
 - Colours are clustered in CIELAB, then forced a minimum perceptual distance

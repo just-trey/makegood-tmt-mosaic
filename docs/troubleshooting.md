@@ -300,7 +300,9 @@ To get a result you are happier with:
 - **Lower Detail.** It runs the opposite way to what the name suggests: it sets
   how small a speck survives, so _lowering_ it raises the floor and merges the
   fine stuff deliberately. Raising Detail quarters the floor and makes this
-  notice more likely.
+  notice more likely, up to the point where a nozzle width takes over: on a part,
+  the floor never goes below what the design's placed size can print, and Detail
+  does not move that half. The flat disc and plate shapes have no such bound.
 - **Crop or simplify the source.** A busy background the design doesn't need is
   what usually blows the budget.
 

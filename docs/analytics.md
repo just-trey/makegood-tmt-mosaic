@@ -28,7 +28,8 @@ Fired when artwork is loaded into the scene.
 
 Fired when the user commits a change to a loaded image's Colors or Detail
 slider — on `change` (drag release), not on every intermediate `input` tick,
-matching `fit_adjust`.
+matching `fit_adjust`. Not fired when the re-trace threw and the slider was put
+back, since nothing was committed.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — the `.raster-colors` and `.raster-detail` change handlers in `rasterControls`.
 - **Props:** `{ field: 'colors' | 'detail' }`. Deliberately not the value: it would be a per-image fingerprint of the artwork, and the rules above rule that out.

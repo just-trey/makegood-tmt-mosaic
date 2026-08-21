@@ -53,6 +53,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Detail too fine to print is dropped by how big it prints, not by how big the
+  image is.** The trace merged away anything under a share of the image, which
+  for one photo meant merging features under 8.7mm on the footrest and under
+  1.4mm on the smallest hubcap: same slider, wildly different sizes, and the app
+  had no idea which. It now knows how large the design is placed, and never keeps
+  a piece smaller than a 0.4mm nozzle can lay down. Most designs are unaffected,
+  because on the footrest and the wheel at normal sizes the old rule was already
+  the stricter one. It shows on small parts and at high Detail: the MakeGood logo
+  on a 32mm hubcap comes back with the same wordmark and 12 fewer unprintable
+  crumbs around it, 54 regions against 66. Parts only for now, not the flat disc
+  and plate shapes. The size is read when the image is traced, so if you resize the part or
+  the design a long way afterwards, nudge Colors or Detail to trace it again.
 - **An image traces to clean regions instead of a field of specks.** The step
   that merges detail too fine to print could shuffle it instead: two specks side
   by side traded colors and both stayed. A photo of gravel came back as 1251

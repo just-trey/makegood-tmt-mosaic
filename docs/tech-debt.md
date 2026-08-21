@@ -514,18 +514,76 @@ the untested candidate rather than a rejected one. Whatever the test, it needs r
 resampled to several sizes on disk, since no mode here can produce them, and the traces need looking
 at rather than counting: region count cannot tell a cleaner trace from a coarser one.
 
-## The raster despeckle floor is a fraction of image area, not a printable size
+## An empty trace says the wrong thing, and its pill never leaves
 
-[src/raster/stats.ts](../src/raster/stats.ts) expresses it as a fraction of the
-working image so it means the same thing at any input resolution — but the raster
-stage never learns how large the part is, so it cannot express the floor as the
-thing that actually matters: a feature smaller than roughly one nozzle width will
-not print however the image was scaled. At the current numbers a 512px image
-auto-fit to an 80mm face puts the photo-strength floor near 0.6mm, which is about
-right, but that is a coincidence of two independent constants rather than a
-derivation. Closing it means threading the resolved mm-per-unit
-(`designMmPerUnit`, [assembly.ts](../src/geometry/assembly.ts)) back into the
-raster stage, which today runs strictly before placement is known.
+`parseRasterImage` throws when nothing survives the despeckle floor, and the printable floor
+(2026-08-20) made that reachable from a placement rather than only from a noisy image: a
+transparent-background image of small marks on a 32mm hubcap can come back with nothing. The
+sliders no longer die on it (`artworkListPanel`'s catch puts them back), but everything the user
+then reads is off:
+
+- **The message is "try raising Detail, or use a less noisy image".** Detail cannot help when the
+  printable floor is what emptied the trace, since Detail deliberately does not scale that half.
+  Measured on a 256px confetti image at 0.05mm per pixel: it throws identically at Detail 0, 50 and 100. The remedy that works, make the part or the design bigger, is not offered.
+- **The pill it raises is a `warn()` that nothing retracts**, so it outlives the setting that
+  caused it. The capped notice next to it shows the pattern (`dismissNotice` on the next clean
+  trace), but that needs a per-source identity the message does not have: it carries no image name,
+  and adding one collides for two files of the same name.
+- **The load path and the slider path disagree**: a fresh load reports through `reportLoadFailure`,
+  which names the file in a dialog, while the slider raises an unnamed pill.
+
+Closing it means one message with the right remedies for both causes, and one identity scheme for
+retracting it. Three review rounds on this branch each produced a new defect in it, which is why it
+was cut rather than patched again.
+
+## Flat plate modes have no printable despeckle floor
+
+The floor that stops the trace keeping detail under one nozzle width
+([2026-08-20 printable floor](findings/2026-08-20-printable-floor.md)) applies on assembly kinds
+only. `rasterMmPerPixel` returns nothing in disc/rect/round/STL-plate mode, so those keep the
+fraction-of-the-image floor alone, which is what every mode had before.
+
+- **Why**: a plate fits the design's drawn content (`fitTransform` over `parsed.bbox`), and that
+  bbox does not exist until the trace has run. The pre-trace stand-in, the bounds of the opaque
+  pixels, is wrong in the damaging direction: a stray opaque speck in a corner inflates the extent,
+  shrinks mm per pixel and raises the floor over detail that would print. It was built that way and
+  cut on review rather than shipped.
+- **What it costs**: an 80mm disc at the 5% margin is a 72mm design, where the flat-art fraction is
+  already a 0.88mm floor, so the printable one is inert at Detail 50 and would bite below about
+  65mm placed at Detail 100. Small plates and scaled-down designs are the gap.
+- Closing it means an extent the trace agrees with: either trace once at the fractional floor and
+  re-trace when the printable one turns out to bind (two passes, ~830ms each on a photograph), or
+  a cheap despeckle-equivalent pass over the alpha channel before measuring.
+
+## The printable despeckle floor is fixed at the moment of the trace
+
+`rasterMmPerPixel` ([src/state/artwork.ts](../src/state/artwork.ts)) reads the placement when an
+image is traced, which is at load and again whenever Colors or Detail re-runs it. Nothing else
+re-traces, because a trace measured ~830ms on a photograph and a slider drag would fire it per
+step.
+
+**Every input to the floor can move afterwards, and Scale is the smallest of them**: hubcap
+diameter (32mm to the plate's short side, up to 270mm), the wheel's Design radius, switching
+assembly kind, and the one-click Sticker/Fill switch, which changes the scale _rule_ rather than a
+number. Scale itself only spans 25-400%. "+ add to another zone" is the quickest of all: it places
+a second instance at 100% against a trace made for a smaller one, so the largest-instance rule the
+floor was chosen by is stale the moment it lands. A hubcap cut to artwork shape adds one more: the
+floor is read before the new source is registered, so it sees the _previous_ design's silhouette
+face. And within the Scale field's 550ms typed debounce, `ArtworkInstance.scalePct` still holds the
+old value (only a rebuild syncs it), so a Detail nudge inside that window sizes the floor from the
+scale before the one just typed.
+
+- **Getting smaller after loading** leaves the older, more permissive floor: features under a
+  nozzle width survive that a fresh trace would remove. That is the pre-2026-08-20 behaviour, so it
+  is a missed improvement rather than a regression.
+- **Getting larger is the one that loses something**: detail removed at the size it was traced for
+  would print at the new size. Load onto a 32mm hubcap and raise it to 220mm and it is gone, with
+  nothing said. Only a nudge of Colors or Detail brings it back.
+- The help panel now says to nudge Colors or Detail after a big resize, which is a note in a
+  dialog, not the app noticing. Nothing in the panel that did the resizing says anything.
+- Closing it means re-tracing when the placed size moves far enough to matter, which needs the
+  debounce and the cancel path the Colors and Detail sliders already have, or a notice that says
+  the design was traced for a different size.
 
 ## Restoring a session re-traces every loaded image
 
