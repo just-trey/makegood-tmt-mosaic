@@ -176,6 +176,49 @@ function baseInput(overrides: BaseOverrides = {}): AssemblyBuildInput {
   };
 }
 
+/**
+ * A square ring: a `span`-wide outer loop with a `hole`-wide loop inside it, one colour. Anchors on
+ * its own bbox (no boundary circle), so the wheel branch places it at the Design radius.
+ */
+function frameParsed(span: number, hole: number, fill = '#ff0000'): ParsedSVG {
+  const box = (a: number, b: number): { x: number; y: number }[] => [
+    { x: a, y: a },
+    { x: b, y: a },
+    { x: b, y: b },
+    { x: a, y: b },
+    { x: a, y: a },
+  ];
+  const lo = (span - hole) / 2;
+  return {
+    shapes: [{ fill, loops: [box(0, span), box(lo, lo + hole)], order: 0 }],
+    bbox: { minX: 0, minY: 0, maxX: span, maxY: span },
+    rawSVGCircle: null,
+  };
+}
+
+/** A solid square of `span`, anchored on its own bbox. */
+function squareParsed(span: number, fill: string): ParsedSVG {
+  return {
+    shapes: [
+      {
+        fill,
+        loops: [
+          [
+            { x: 0, y: 0 },
+            { x: span, y: 0 },
+            { x: span, y: span },
+            { x: 0, y: span },
+            { x: 0, y: 0 },
+          ],
+        ],
+        order: 0,
+      },
+    ],
+    bbox: { minX: 0, minY: 0, maxX: span, maxY: span },
+    rawSVGCircle: null,
+  };
+}
+
 function yRange(soup: Float32Array): { min: number; max: number } {
   let min = Infinity,
     max = -Infinity;
@@ -1270,5 +1313,90 @@ describe('buildAssemblyGeometry edge-cut-through rule', () => {
     const xz = xzRange(soup);
     expect(xz.maxX).toBeCloseTo(20, 4); // the edge bar, flush with the face wall
     expect(xz.minX).toBeCloseTo(-5, 4); // and the interior island, still present
+  });
+});
+
+// The quads say a frame covers everything it surrounds. Only the placed ink knows it does not, and
+// the plumbing that hands it over runs on the real net regions, post-merge and post-base.
+describe('overlap warning against real placed artwork', () => {
+  // frame: 40 units wide with a 20-unit hole, anchored at r=20, so radius 10 places it 20mm across
+  // with a 10mm hole. logo: 10 units at quarter scale, placed 5mm across, inside that hole.
+  const framed = (offX: number): AssemblyBuildInput =>
+    baseInput({
+      artworks: [
+        {
+          parsed: frameParsed(40, 20),
+          zoneId: null,
+          scaleMult: 1,
+          offX: 0,
+          offZ: 0,
+          flipX: false,
+          flipY: false,
+          rotationDeg: 0,
+          mode: 'sticker',
+        },
+        {
+          parsed: squareParsed(10, '#0000ff'),
+          zoneId: null,
+          scaleMult: 0.25,
+          offX,
+          offZ: 0,
+          flipX: false,
+          flipY: false,
+          rotationDeg: 0,
+          mode: 'sticker',
+        },
+      ],
+    });
+
+  const overlapWarnings = (): string[] =>
+    WARNINGS.map((w) => w.message).filter((m) => m.includes('overlap'));
+
+  it("says nothing about a design sitting in a frame's hole", { timeout: 30000 }, async () => {
+    clearWarnings();
+    expect(await buildAssemblyGeometry(framed(0))).not.toBeNull();
+    expect(overlapWarnings()).toEqual([]);
+  });
+
+  it('warns once the same design lands on the frame itself', { timeout: 30000 }, async () => {
+    clearWarnings();
+    // 7.5mm out puts the 5mm logo across 5..10mm, which is rim: the hole ends at 5mm
+    expect(await buildAssemblyGeometry(framed(7.5))).not.toBeNull();
+    expect(overlapWarnings()).toContainEqual(expect.stringContaining('overlap.'));
+  });
+
+  // The ink comes from the palette slots, so a colour sent to the body is not ink. Filling the
+  // frame's hole with a base-assigned square must not put the pair back.
+  it('does not count a base-assigned colour as ink', { timeout: 30000 }, async () => {
+    const input = framed(0);
+    input.artworks[0] = {
+      ...input.artworks[0],
+      parsed: {
+        ...frameParsed(40, 20),
+        // the hole, filled in green and then sent to the body: green paints exactly where the logo
+        // lands, so counting it as ink would put the pair straight back
+        shapes: [
+          ...frameParsed(40, 20).shapes,
+          {
+            fill: '#00ff00',
+            loops: [
+              [
+                { x: 10, y: 10 },
+                { x: 30, y: 10 },
+                { x: 30, y: 30 },
+                { x: 10, y: 30 },
+                { x: 10, y: 10 },
+              ],
+            ],
+            order: 1,
+          },
+        ],
+      },
+    };
+    input.baseColorKey = '#00ff00';
+    input.baseColorMembers = ['#00ff00'];
+    clearWarnings();
+    expect(await buildAssemblyGeometry(input)).not.toBeNull();
+    expect(overlapWarnings()).toEqual([]);
   });
 });

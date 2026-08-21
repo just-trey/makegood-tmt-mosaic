@@ -20,6 +20,32 @@ function design(quad: number[][], name = 'a.svg', fill = false): PlacedDesign {
   return { name, quad, fill };
 }
 
+/** A design whose ink is exactly its quad: the solid-rectangle case the quads already got right. */
+function solid(quad: number[][], name = 'a.svg'): PlacedDesign {
+  return { name, quad, fill: false, ink: () => [[quad]] };
+}
+
+/**
+ * A `w`×`h` frame centered on (cx, cy): ink only in a `border`-wide rim, the rest a hole. This is
+ * the shape the quad-only check reads as fully covering whatever sits in its middle.
+ */
+function frame(
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  border: number,
+  name = 'frame.svg',
+): PlacedDesign {
+  const outer = rect(cx, cy, w, h);
+  return {
+    name,
+    quad: outer,
+    fill: false,
+    ink: () => [[outer, rect(cx, cy, w - 2 * border, h - 2 * border)]],
+  };
+}
+
 describe('convexIntersectionArea', () => {
   it('is the full area when one quad sits exactly on another', () => {
     expect(convexIntersectionArea(rect(0, 0, 10, 10), rect(0, 0, 10, 10))).toBeCloseTo(100);
@@ -153,5 +179,109 @@ describe('overlappingDesignPairs', () => {
     expect(
       overlappingDesignPairs([design(rect(0, 0, 10, 10)), design(rect(0, 0, 0, 0), 'empty.svg')]),
     ).toEqual([]);
+  });
+});
+
+// The quads alone answer "could these cut into each other". Ink answers it for the one shape that
+// makes the quad wrong in the user's favour: a design sitting in another's hollow.
+describe('overlappingDesignPairs, ink gate', () => {
+  it('leaves a logo centered in a frame alone', () => {
+    expect(
+      overlappingDesignPairs([frame(0, 0, 60, 60, 4), solid(rect(0, 0, 20, 20), 'logo.svg')]),
+    ).toEqual([]);
+  });
+
+  it('still flags a logo that crosses the frame rim', () => {
+    // the same frame, the logo moved out until it lands on the border rather than the hole
+    const pairs = overlappingDesignPairs([
+      frame(0, 0, 60, 60, 4),
+      solid(rect(28, 0, 20, 20), 'logo.svg'),
+    ]);
+    expect(pairs).toHaveLength(1);
+  });
+
+  it('still flags two solid designs on top of each other', () => {
+    const pairs = overlappingDesignPairs([
+      solid(rect(0, 0, 10, 10), 'a.svg'),
+      solid(rect(0, 0, 10, 10), 'b.svg'),
+    ]);
+    expect(pairs).toHaveLength(1);
+  });
+
+  it('leaves two frames whose rims miss each other alone', () => {
+    expect(
+      overlappingDesignPairs([
+        frame(0, 0, 60, 60, 3, 'outer.svg'),
+        frame(0, 0, 40, 40, 3, 'inner.svg'),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('flags two frames whose rims land on each other', () => {
+    const pairs = overlappingDesignPairs([
+      frame(0, 0, 60, 60, 6, 'outer.svg'),
+      frame(0, 0, 58, 58, 6, 'inner.svg'),
+    ]);
+    expect(pairs).toHaveLength(1);
+  });
+
+  it('falls back to the quads when only one design carries ink', () => {
+    const pairs = overlappingDesignPairs([
+      frame(0, 0, 60, 60, 4),
+      design(rect(0, 0, 20, 20), 'logo.svg'),
+    ]);
+    expect(pairs).toHaveLength(1);
+  });
+
+  it('never contradicts the quads: ink can only clear a pair, never raise one', () => {
+    const apart = overlappingDesignPairs([
+      solid(rect(0, 0, 10, 10), 'a.svg'),
+      solid(rect(11, 0, 10, 10), 'b.svg'),
+    ]);
+    expect(apart).toEqual([]);
+  });
+
+  it('reads a design with no ink at all as cutting nothing', () => {
+    expect(
+      overlappingDesignPairs([
+        solid(rect(0, 0, 10, 10), 'a.svg'),
+        { name: 'blank.svg', quad: rect(0, 0, 10, 10), fill: false, ink: () => [] },
+      ]),
+    ).toEqual([]);
+  });
+
+  // Ink is measured against the smaller design's ink, not its bounding box. Against the box, a
+  // design this sparse could not reach the threshold however completely it lands on another.
+  it('flags two sparse frames sitting exactly on each other', () => {
+    const pairs = overlappingDesignPairs([
+      frame(0, 0, 60, 60, 1.5, 'a.svg'),
+      frame(0, 0, 60, 60, 1.5, 'b.svg'),
+    ]);
+    expect(pairs).toHaveLength(1);
+  });
+
+  it('still clears a sparse design nested in a sparse frame', () => {
+    expect(
+      overlappingDesignPairs([
+        frame(0, 0, 60, 60, 1.5, 'outer.svg'),
+        frame(0, 0, 20, 20, 1, 'inner.svg'),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('does not consult ink for a pair the quads already cleared', () => {
+    let reads = 0;
+    const withCount = (d: PlacedDesign): PlacedDesign => ({
+      ...d,
+      ink: () => {
+        reads++;
+        return d.ink!();
+      },
+    });
+    overlappingDesignPairs([
+      withCount(solid(rect(0, 0, 10, 10), 'a.svg')),
+      withCount(solid(rect(40, 0, 10, 10), 'b.svg')),
+    ]);
+    expect(reads).toBe(0);
   });
 });

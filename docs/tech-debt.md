@@ -751,7 +751,8 @@ exists to avoid. Revisit if a future part's clearance is large enough to make th
 
 The overlap check in
 [src/geometry/designOverlap.ts](../src/geometry/designOverlap.ts) compares
-two stickers by their placed footprints, and treats two Fills on one zone as
+two stickers by their placed footprints and then by how much of each one's
+ink reaches the footprint they share, and treats two Fills on one zone as
 always overlapping. It deliberately says nothing about a Fill paired with a
 sticker, because a pattern background with a design on top is a real
 workflow and flagging it would fire on the intended use.
@@ -770,43 +771,47 @@ background yields to what sits on it. That is the behavior a user expects,
 and it makes the pairing supported instead of merely tolerated — but it is a
 per-color boolean on the fill's full tiled region, on the path already
 measured at 405s for one chair zone (see the rebuild-performance section).
-(2) Warn only where the fill's ink actually lies under the sticker, which
-needs the placed regions rather than the bounding boxes this check uses.
-Start by measuring (1) on the wheel, where the fill region is small enough
-to time honestly.
+(2) Warn only where the fill's ink actually lies under the sticker. The
+plumbing for that now exists: `placedInk` in
+[src/geometry/assembly.ts](../src/geometry/assembly.ts) hands the sticker
+comparison each design's placed cut regions. A fill's are the tiled ones, so
+this still needs the grid, and the check would have to stop skipping the
+mixed pair. Start by measuring (1) on the wheel, where the fill region is
+small enough to time honestly.
 
-## The design-overlap check compares rectangles, and the cascade step is a constant
+## The instance cascade still seeds a silent overlap in two measured cases
 
-Two limits of [src/geometry/designOverlap.ts](../src/geometry/designOverlap.ts)
-that were traded away deliberately when it landed, both worth knowing before
-trusting or extending it.
+`cascadedOffset` ([src/state/artwork.ts](../src/state/artwork.ts)) steps a new
+design diagonally off one already at that spot. The step used to be a flat 8mm;
+it now scales to the largest design on the surface, capped at
+`CASCADE_CLEAR_MAX_MM` (11.7mm, derived from `INSTANCE_CASCADE_MM` and
+`OVERLAP_WARN_FRACTION`). Where that applies, every pair on the surface lands
+clear. Two cases it does not reach, both measured:
 
-**It compares placed bounding boxes, not artwork.** So it answers "could these
-cut into each other", not "do they". A design whose ink sits inside another's
-hollow — a logo centered in a frame, a caption inside a border — reads as
-fully covered and warns, while the recesses never touch and the export is
-fine. The warning is worded to admit the approximation rather than assert the
-failure, but there is no way for the user to clear that pill short of breaking
-the composition. Making it exact means intersecting the two designs' real
-per-color regions, which is the boolean cost the check was written to stay off
-(see the rebuild-performance section); the cheap half-measure is to compare
-each design's total ink area against its bounding box and skip the pair when
-one is mostly hollow.
+| Case                                    | What happens                                                                                                                                                                                                                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anything over 11.7mm shares the surface | The step falls back to 8mm for everything on it. Two 10mm designs beside the wheel's 276mm default land 8mm apart, 4% covered, under the warn threshold                                                                                                                                  |
+| Two designs of opposite proportions     | Both measure the same across their narrow axis, so no clearance derived from that parts them. It does not take extreme shapes: an 8x11.5mm design and an 11.5x8mm one both read 8mm, step 8mm, and cross in 3.06mm², 3.3% of either. A 5x200mm bar against a 200x5mm bar crosses in 2.5% |
 
-**The cascade step is a constant and the warn threshold is a fraction, so they
-only meet above a certain design size.** Stepping a second design diagonally by
-`INSTANCE_CASCADE_MM` (8mm) leaves two w×w designs covering ((w−d)/w)² of each
-other, which crosses `OVERLAP_WARN_FRACTION` only for w ≥ d/(1−√fraction). At
-the 0.25 this shipped with that was 16mm, so the app could cascade two 12mm
-stickers into an 11% overlap and say nothing about geometry it had positioned
-itself; the threshold is 0.10 now, which moves the line to ~11.7mm. It does not
-remove it — a small enough design still gets cascaded into a silent
-sub-threshold overlap. Closing it properly needs the step to scale with the
-design's placed size rather than being a constant, which means knowing that
-size at load time: `cascadedOffset` runs in `state/artwork.ts` with only the
-seed offset in hand, while the placed quad is computed later in the assembly
-build. Either thread the zone's placer back to load time, or move the cascade
-into the build and let it adjust a placement it can actually measure.
+Neither is a regression: both behave exactly as the flat 8mm step did.
+
+**Why a bigger or smarter constant does not close it.** Any single step `s`
+leaves a silent band from `s` to `1.4625s`, since two `w`-wide designs only
+reach `OVERLAP_WARN_FRACTION` at `w >= s/(1-sqrt(fraction))`. One step per
+surface is forced: a step chosen per design puts a later small one between an
+earlier big one's lattice spots and wholly inside it (measured, and pinned by
+"does not park a small design inside one already cascaded past it" in
+`tests/artwork.test.ts`). So the band can be moved but not removed.
+
+Reading the clearance off the wider axis instead of the narrower one parts the
+opposite-proportions pair, at the cost of moving every shaped-alike pair further
+than it needs to go. It is a defensible swap, not a fix: the band above stays
+either way.
+
+**What closing it takes.** Drop the lattice. Search for the nearest free
+placement given the two designs' actual placed footprints, rather than stepping
+a fixed distance and testing for an exact-spot collision. That is a real
+placement search and wants its own change, not a wider constant.
 
 ## `MAX_COMPONENTS` does not bound the component count it names
 

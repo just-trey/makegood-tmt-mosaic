@@ -31,7 +31,12 @@ import {
   silhouetteFromShapes,
   type OutlinePlacement,
 } from '../geometry/hubcapOutline';
-import { designAnchor, designMmPerUnit } from '../geometry/assembly';
+import {
+  designAnchor,
+  designMmPerUnit,
+  memoLargestDesignFace,
+  type DesignScaleContext,
+} from '../geometry/assembly';
 import { getPrinter } from '../export/printers';
 
 /**
@@ -315,6 +320,24 @@ export function currentVariantId(): string | null {
 
 export function currentAssemblyKind(): AssemblyKind | null {
   return ASSEMBLY_KINDS.find((k) => k.id === state.assembly.kindId) || null;
+}
+
+/**
+ * What `designMmPerUnit` needs about the part currently loaded, read off live state.
+ *
+ * One definition because the gizmo (scene/faceFrame.ts) and the stacked-instance cascade
+ * (state/artwork.ts) both have to agree with the cut about how big a design is placed, and a scale
+ * restated per caller is exactly how the frame once came out several times the size of the cut.
+ * The hubcap silhouette builds its own context deliberately, and says why.
+ */
+export function currentDesignScaleContext(): DesignScaleContext {
+  return {
+    isRect: currentAssemblyKind()?.designFit === 'rect',
+    radius: state.asmRadius || 138,
+    designFace: () =>
+      generatedDesignFaceOverride() ?? memoLargestDesignFace(state.assembly.parts)(),
+    generatedFit: generatedFitFactor,
+  };
 }
 
 /**
