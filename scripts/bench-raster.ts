@@ -11,8 +11,10 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts sizes       edge density against measurement size
 //   node_modules/.bin/vite-node scripts/bench-raster.ts blur        compensating blur against downscale
 //   node_modules/.bin/vite-node scripts/bench-raster.ts knee        does a knee survive a cheaper image?
+//   node_modules/.bin/vite-node scripts/bench-raster.ts despeckle   does the despeckle floor hold?
 //
-// corpus, colors and curve read the cached corpus. scale, render and alpha bring their own source.
+// corpus, colors, curve and despeckle read the cached corpus. scale, render and alpha bring their
+// own source.
 // sizes, blur and knee take their file list from CORPUS and decode afresh, so they need the files
 // present; knee also reads the cache for each source's carried edgeDensity.
 //
@@ -40,7 +42,7 @@ import { parseRasterImage } from '../src/raster/parse';
 import type { ShapeGranularity } from '../src/raster/parse';
 import { computeNetRegionsByColor, shapeToFeature } from '../src/geometry/regions';
 import { MAX_COLORS, MIN_COLORS, quantize } from '../src/raster/quantize';
-import { traceLabelMap } from '../src/raster/trace';
+import { MAX_COMPONENTS, traceLabelMap } from '../src/raster/trace';
 import { fitChain } from '../src/raster/curve';
 import { autoParams, isPhotographic, measureImage, DETAIL_DEFAULT } from '../src/raster/stats';
 import { MAX_WORKING_EDGE, MEASURE_EDGE, workingSize } from '../src/raster/decode';
@@ -230,7 +232,7 @@ function sharpTurns(shapes: SVGShape[]): number {
 function traceWith(img: RasterImage, colors: number, params: TraceParams) {
   const t0 = performance.now();
   const map = quantize(img, colors, params.blurRadius);
-  const { components, capped } = traceLabelMap(map, params);
+  const { components, capped, floorPx } = traceLabelMap(map, params);
   const ms = performance.now() - t0;
   const painted = new Set(components.map((c) => map.palette[c.label]));
   const shapes: SVGShape[] = components.map((c, i) => ({
@@ -241,6 +243,12 @@ function traceWith(img: RasterImage, colors: number, params: TraceParams) {
   const { rings, points } = ringStats(shapes);
   return {
     components: components.length,
+    // Components the despeckle floor should have absorbed and did not: the invariant `despeckle`
+    // is written to hold, checked against real files rather than asserted in a comment. Against
+    // the floor the trace applied, not the one it started with, or a capped row is graded against
+    // a floor it raised and the check goes soft on exactly the rows it is for.
+    under: components.filter((c) => c.area < floorPx).length,
+    floorPx,
     painted: painted.size,
     rings,
     points,
@@ -883,6 +891,67 @@ async function modeBlur(args: string[]) {
 }
 
 /**
+ * Does the despeckle floor actually hold, at the settings that ship?
+ *
+ * `despeckle` promises that nothing under the floor survives it, and until 2026-08-20 it did not
+ * deliver that: the vote let two adjacent specks trade labels instead of merging, so a floor could
+ * shuffle noise rather than absorb it. `under` is the count that catches a return of that, or of
+ * the other way a component can end up under the floor, a `deChecker` split (see trace.ts). It
+ * counts what the trace *returns*, and so does the cap line below it: background components and
+ * any whose ring collapsed are already gone, so neither can see a transparent speck left under the
+ * floor, and the cap line reads a smaller number than the one the cap fired on.
+ */
+async function modeDespeckle(names: string[]) {
+  const sources = await pick(names);
+  const rows: {
+    name: string;
+    working: string;
+    colors: number;
+    detail: number;
+    floorPx: number;
+    components: number;
+    under: number;
+    painted: number;
+    points: number;
+    capped: string;
+    ms: number;
+  }[] = [];
+  const run = (name: string, img: RasterImage, colors: number, detail: number, edge: number) => {
+    const p = autoParams({ edgeDensity: edge }, detail, ranDetailPass(img));
+    const t = traceWith(img, colors, p);
+    rows.push({
+      name,
+      working: `${img.w}x${img.h}`,
+      colors,
+      detail,
+      floorPx: t.floorPx,
+      components: t.components,
+      under: t.under,
+      painted: t.painted,
+      points: t.points,
+      capped: t.capped ? 'yes' : '',
+      ms: t.ms,
+    });
+  };
+  for (const s of sources)
+    for (const detail of [DETAIL_DEFAULT, 100])
+      run(s.name, s.working, s.colors, detail, s.edgeDensity);
+  console.table(rows);
+  const bad = rows.filter((r) => r.under > 0);
+  console.log(
+    bad.length
+      ? `\n${bad.length} row(s) left components under the floor: ${bad.map((r) => `${r.name} D${r.detail} (${r.under})`).join(', ')}`
+      : '\nEvery row: no component survives under its own despeckle floor.',
+  );
+  const over = rows.filter((r) => r.components > MAX_COMPONENTS);
+  console.log(
+    over.length
+      ? `${over.length} row(s) came back over MAX_COMPONENTS (${MAX_COMPONENTS}) despite the cap.`
+      : `No row exceeds MAX_COMPONENTS (${MAX_COMPONENTS}).`,
+  );
+}
+
+/**
  * Would a knee detector reach the same answer from a cheaper, smaller copy of the image?
  *
  * A detector runs on every image load, and the full ladder costs seconds, so it would have to work
@@ -963,7 +1032,8 @@ async function modeKnee(args: string[]) {
       const ms = performance.now() - t0;
       const { k, growth } = kneeOf(pts);
       // Capping collapses the count instead of trimming it, so a capped rung is not part of the
-      // curve. `cartoon` caps at 5 of 11 rungs, which a bare cell would hide.
+      // curve. `cartoon` capped at 5 of 11 rungs until the 2026-08-20 despeckle fix, and no corpus
+      // source caps here now; the column stays so the next one that does is not read as a knee.
       const cappedAt = pts.filter((x) => x.capped).length;
       // The size the app would really work this source at. Every other column is diagnostic, and
       // some apply a detail-pass blur the shipping path never would.
@@ -1034,6 +1104,9 @@ switch (mode) {
   case 'knee':
     await modeKnee(rest);
     break;
+  case 'despeckle':
+    await modeDespeckle(rest);
+    break;
   default: {
     // Numeric arguments keep the original invocation working, which the header and two tech-debt
     // sections quote. A non-numeric word is a typo, not a request for the synthetic bench.
@@ -1042,7 +1115,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, blur, knee, ` +
+          `sizes, blur, knee, despeckle, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));

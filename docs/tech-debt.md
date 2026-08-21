@@ -813,20 +813,54 @@ placement given the two designs' actual placed footprints, rather than stepping
 a fixed distance and testing for an exact-spot collision. That is a real
 placement search and wants its own change, not a wider constant.
 
-## `MAX_COMPONENTS` does not bound the component count it names
+## A traced image can lose a color with nothing said
+
+`parseRasterImage` narrows the palette to the colors that actually paint something, and since
+2026-08-20 the despeckle floor removes far more than it used to
+([2026-08-20 despeckle floor](findings/2026-08-20-despeckle-floor.md)). Five of nineteen corpus
+sources come back with fewer colors than the Colors slider asked for: gravel 8 to 5, foliage 8 to
+7, dalmatian and zebra 4 to 2 and 3, the cartoon 6 to 5.
+
+- **Correct, and silent.** Those colors were only ever painted in pieces under the printable floor,
+  so the narrower list is the honest one. Nothing says so: the readout shows the number it found,
+  and the user has to notice it differs from the number they asked for.
+- The `capped` notice ("Some detail was too fine to print and was merged") covers the
+  `MAX_COMPONENTS` case only, which now fires much less often, and its remedy (lower Colors, lower
+  Detail) is backwards for this one.
+- Closing it means deciding whether a dropped color is worth a notice at all, and if it is, saying
+  it in a way that does not fire on every photograph. Raising Detail is the remedy that fits.
+
+## `MAX_COMPONENTS` is a target, not the bound its name implies
 
 `traceLabelMap` ([src/raster/trace.ts](../src/raster/trace.ts)) raises the despeckle floor when the
-component count exceeds `MAX_COMPONENTS` (800), then never rechecks. `red-sox-logo` at 8 colors
-returns **841 components with `capped: true`**, measured by
-[2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md).
+component count exceeds `MAX_COMPONENTS` (800), then never rechecks. The raise now reliably cuts
+the count, which it did not before 2026-08-20
+([2026-08-20 despeckle floor](findings/2026-08-20-despeckle-floor.md)), but it still does not bound
+it. Two ways past the cap, both after the count was taken:
 
-- Harmless today: it is a performance guard, and 841 against 800 costs nothing measurable.
-- Wrong as an invariant: anything that reads `MAX_COMPONENTS` as a ceiling is reading a number the
-  code does not enforce, and the `capped` flag says "a raise happened", not "the count is now under
-  the cap".
-- Closing it: loop the raise until the count is actually under, or rename the constant and the flag
-  to say what they do. The first costs a trace pass per iteration, which the bench puts at tens of
-  milliseconds on a 300px source.
+- **Absorbing specks merges them into each other**, minting components above the new floor. So
+  putting the floor above all but the largest 799 does not leave 799. Reproduces on a speck field
+  handed straight to `traceLabelMap` with a high floor. **Not reproduced through the real decode
+  path since the despeckle fix**: the pixel art that looked like it did reads as photographic at
+  the measurement size (0.3045), so the app traces it at 512px, where the raise fires and 78
+  components come back. Whether a decodable image can still get past the cap is open.
+- **`deChecker` breaks 2x2 checkerboards by rewriting one cell**, which can shave a pinch point and
+  split a surviving component in two. Off-corpus it is common: about 8% of random label grids come
+  back with a component under the floor the trace reports, against 0% straight out of `despeckle`.
+  No corpus source does it, so what it costs a real image is unmeasured. Swapping the order is not
+  the fix, since `despeckle` relabels whole components and can create the checkerboard `deChecker`
+  exists to remove, and a self-touching ring is the worse failure.
+
+- The cap is a performance guard on `shapeToFeature`, so being over by a few hundred on a
+  pathological source costs time rather than correctness.
+- Closing it: loop the raise until `realCount()` is actually under (and decide what a second raise
+  does when a `deChecker` split is what pushed it over), or rename the constant and the flag to say
+  what they do. `capped` today means "a raise happened", not "the count is under".
+- The bench's `despeckle` mode checks the floor and the cap on every row, but only over CORPUS, so
+  its cap line has never had a source that could trip it. Both columns also read the components the
+  trace _returns_, which is fewer than the count it capped on: background components and any whose
+  ring collapsed are already gone. A transparent speck left under the floor would be a real defect,
+  and this guard would miss it.
 
 ## The extrude repair never runs on a conformal zone
 
