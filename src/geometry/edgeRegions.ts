@@ -159,7 +159,7 @@ export function erodeBoundary(
  * 200, 599ms at 293, per color per part. Not reachable today, and measured rather than assumed:
  * every silhouette in the raster corpus traces to a face with at most one hole, and rebuild times
  * are unchanged against a single-loop face. The despeckle floor and MAX_COMPONENTS are what hold
- * it off; re-measure if either moves.
+ * it off, the cap loosely (see its note in raster/trace.ts); re-measure if either moves.
  */
 class SegmentGrid {
   private readonly cells = new Map<number, number[]>();

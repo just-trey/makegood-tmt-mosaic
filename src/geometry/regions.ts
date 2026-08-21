@@ -68,8 +68,9 @@ export function loopToRing(loop: Loop, forceCCW?: boolean): Ring | null {
  * no current sample exercises; measure such a file rather than guessing a threshold now.
  *
  * Raster tracing is the first producer that could plausibly reach it, and is held off by the
- * despeckle floor rather than by luck. MAX_COMPONENTS (src/raster/trace.ts) is what guarantees it:
- * re-run the bench if that cap is raised or the floor lowered.
+ * despeckle floor rather than by luck. MAX_COMPONENTS (src/raster/trace.ts) is what holds it down,
+ * and it is a target rather than a bound (see its own note): re-run the bench if that cap is
+ * raised or the floor lowered.
  *
  * Separately, thousands of nested rings or <g> elements deep enough to overflow the JS call stack
  * fail with a named "unusually deeply nested" error instead of a raw stack-overflow message, but

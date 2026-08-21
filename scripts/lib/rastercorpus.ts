@@ -1,10 +1,10 @@
 /**
  * Decodes a corpus of real image files through the app's own decode path, and caches the pixels.
  *
- * A library, not a script. `corpus`, `colors` and `curve` in scripts/bench-raster.ts call
- * `loadCorpus()`, which rebuilds whatever the cache is missing. `scale`, `render` and `alpha` bring
- * their own source. `sizes` is the odd one: it reads file paths out of CORPUS but decodes afresh
- * through `decodeAtEdges`, so it needs the files present and ignores the cache entirely.
+ * A library, not a script. `corpus`, `colors`, `curve` and `despeckle` in scripts/bench-raster.ts
+ * call `loadCorpus()`, which rebuilds whatever the cache is missing. `scale`, `render` and `alpha`
+ * bring their own source. `sizes` is the odd one: it reads file paths out of CORPUS but decodes
+ * afresh through `decodeAtEdges`, so it needs the files present and ignores the cache entirely.
  *
  * The `stock` half is fetched rather than committed: run scripts/fetch-raster-stock.mjs first.
  * Delete `stubs/raster-corpus/` to force a full rebuild of the cache.

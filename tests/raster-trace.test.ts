@@ -152,6 +152,29 @@ describe('traceLabelMap', () => {
     expect(areaOf(cleaned.components[0])).toBeCloseTo(size * size, 9);
   });
 
+  it('leaves nothing under the floor when the specks are nested inside each other', () => {
+    // Three specks nested one inside the next, each under the floor, and only the outermost
+    // touches the surrounding field. Relabelling every speck at once used to let the inner two
+    // trade labels while the outer one left, so the pile came back as a smaller pile still under
+    // the floor. They now merge into one another instead, and the 49px they add up to clears it.
+    const size = 13;
+    const rows = Array.from({ length: size }, (_, y) =>
+      Array.from({ length: size }, (_, x) => {
+        const d = Math.max(Math.abs(x - 6), Math.abs(y - 6));
+        return d <= 1 ? 'd' : d <= 2 ? 'b' : d <= 3 ? 'a' : 'c';
+      }).join(''),
+    );
+    // 30 clears the largest speck on its own (the outer ring, 24px) and stays under the 120px
+    // field, so every speck here is one and the field is not.
+    const floor = 30;
+    const { components } = traceLabelMap(
+      grid(rows, 'abcd'),
+      params({ despeckleFrac: floor / (size * size) }),
+    );
+    for (const c of components) expect(c.area).toBeGreaterThanOrEqual(floor);
+    expect(components.reduce((s, c) => s + areaOf(c), 0)).toBeCloseTo(size * size, 9);
+  });
+
   it('resolves a checkerboard without emitting a self-touching ring', () => {
     const { components } = traceLabelMap(grid(['abab', 'baba', 'abab', 'baba'], 'ab'), params());
     expect(components.length).toBeGreaterThan(0);

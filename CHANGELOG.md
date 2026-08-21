@@ -53,6 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An image traces to clean regions instead of a field of specks.** The step
+  that merges detail too fine to print could shuffle it instead: two specks side
+  by side traded colors and both stayed. A photo of gravel came back as 1251
+  separate regions, nearly all of them under the size the app had just decided
+  was printable. That photo now traces to 67 regions, and a cartoon to 21
+  instead of 414, with its eyelashes as continuous marks where they used to be
+  broken dashes. Line art is unchanged. Some images come back with fewer
+  colors, because the ones that go were only ever painted in those specks.
 - **The "designs overlap" warning no longer fires on a design sitting in
   another's empty middle.** Put a logo inside a frame, or a caption inside a
   border, and the app warned that their recesses cut into each other. They never

@@ -10,6 +10,10 @@ import { fitChain } from './curve';
  * component cap rather than a point cap: components are what drive ring count, and ring count is
  * what `shapeToFeature` is quadratic in. Raising it means re-running
  * scripts/bench-raster.ts and scripts/bench-shape-to-feature.ts.
+ *
+ * A target, not a bound: the raise is never rechecked, and absorbing specks merges them into each
+ * other, which can mint components above the new floor. `capped` means "a raise happened", never
+ * "the count is under" (docs/tech-debt.md).
  */
 export const MAX_COMPONENTS = 800;
 
@@ -24,6 +28,8 @@ export interface TraceResult {
   components: TracedComponent[];
   /** True when MAX_COMPONENTS forced the despeckle floor up — the caller turns this into a notice. */
   capped: boolean;
+  /** The floor in pixels this trace actually applied, which is the raised one when `capped`. */
+  floorPx: number;
 }
 
 const E = 0,
@@ -99,55 +105,96 @@ function labelComponents(
 }
 
 /**
- * Absorb components below `minArea` into whichever label surrounds them most.
+ * Absorb every component below `minArea` into the label that surrounds it most, smallest first.
  *
- * Relabelling to the dominant *neighbour* rather than to the background is what makes this correct
- * for a speck in the middle of a face as well as one on an empty margin — dropping it to background
- * would punch a hole through the artwork instead of removing a speck. Two passes, because absorbing
- * one speck can leave another below the floor; a third would be chasing.
+ * Dominant *neighbour*, not background: dropping a speck in the middle of a face to background
+ * would punch a hole through the artwork instead of removing a speck.
+ *
+ * Unions over one component labelling, never simultaneous relabelling, which let two adjacent
+ * specks trade labels rather than merge and left most of an image under the floor it had just
+ * applied (docs/findings/2026-08-20-despeckle-floor.md).
+ *
+ * Nothing is left under the floor: a speck always has a neighbour to join unless it is the whole
+ * image, and joining removes a component. `deChecker` afterwards can put one back, by shaving a
+ * pinch point and splitting a component in two.
  */
 function despeckle(labels: Int16Array, w: number, h: number, minArea: number): void {
   if (minArea <= 1) return;
-  for (let pass = 0; pass < 2; pass++) {
-    const { compId, areas } = labelComponents(labels, w, h);
-    const small = areas.map((a) => a < minArea);
-    if (!small.some(Boolean)) return;
+  const { compId, areas, labelOf } = labelComponents(labels, w, h);
+  const under = (i: number) => areas[i] < minArea;
+  // Before allocating anything: on artwork with no speck at all this is the whole call, and the
+  // adjacency scan below costs 20ms on a 1024px image to discover it has nothing to do.
+  if (areas.length < 2 || !areas.some((_, i) => under(i))) return;
 
-    const votes = new Map<number, Map<number, number>>();
-    for (let p = 0; p < labels.length; p++) {
-      const id = compId[p];
-      if (!small[id]) continue;
-      const x = p % w,
-        y = (p / w) | 0;
-      let tally = votes.get(id);
-      if (!tally) votes.set(id, (tally = new Map()));
-      const consider = (q: number) => {
-        if (compId[q] === id) return;
-        tally.set(labels[q], (tally.get(labels[q]) ?? 0) + 1);
-      };
-      if (x > 0) consider(p - 1);
-      if (x + 1 < w) consider(p + 1);
-      if (y > 0) consider(p - w);
-      if (y + 1 < h) consider(p + w);
+  // Shared boundary length per pair, and only for pairs with a speck on one side: the rest is
+  // never read, and tallying it on a 1024px image is a million map writes for nothing.
+  const adj: Map<number, number>[] = areas.map(() => new Map());
+  const touch = (p: number, q: number) => {
+    const a = compId[p],
+      b = compId[q];
+    if (a === b || (!under(a) && !under(b))) return;
+    adj[a].set(b, (adj[a].get(b) ?? 0) + 1);
+    adj[b].set(a, (adj[b].get(a) ?? 0) + 1);
+  };
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x;
+      if (x + 1 < w) touch(p, p + 1);
+      if (y + 1 < h) touch(p, p + w);
     }
 
-    const winner = new Map<number, number>();
-    for (const [id, tally] of votes) {
-      let best = -1,
-        bestN = -1;
-      for (const [label, n] of tally)
-        if (n > bestN || (n === bestN && label < best)) {
-          bestN = n;
-          best = label;
-        }
-      if (bestN > 0) winner.set(id, best);
+  const parent = new Int32Array(areas.length).map((_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) i = parent[i] = parent[parent[i]];
+    return i;
+  };
+  const merge = (a: number, b: number): number => {
+    a = find(a);
+    b = find(b);
+    if (a === b) return a;
+    // The larger neighbour set absorbs the smaller, which is what keeps the splicing near-linear
+    // rather than quadratic on a long chain of merges.
+    if (adj[a].size < adj[b].size) [a, b] = [b, a];
+    parent[b] = a;
+    areas[a] += areas[b];
+    for (const [nb, shared] of adj[b])
+      if (find(nb) !== a) adj[a].set(nb, (adj[a].get(nb) ?? 0) + shared);
+    adj[b].clear();
+    return a;
+  };
+
+  // Smallest first, so a speck is asked which label dominates it only once its own smaller
+  // neighbours have already joined something. Re-queued when a merge leaves it still too small.
+  const queue = areas
+    .map((_, i) => i)
+    .filter(under)
+    .sort((a, b) => areas[a] - areas[b]);
+  for (let at = 0; at < queue.length; at++) {
+    const comp = find(queue[at]);
+    if (comp !== queue[at] || !under(comp)) continue;
+    const byLabel = new Map<number, number>();
+    for (const [nb, shared] of adj[comp]) {
+      const root = find(nb);
+      if (root === comp) continue;
+      byLabel.set(labelOf[root], (byLabel.get(labelOf[root]) ?? 0) + shared);
     }
-    if (!winner.size) return;
-    for (let p = 0; p < labels.length; p++) {
-      const to = winner.get(compId[p]);
-      if (to !== undefined) labels[p] = to;
-    }
+    let best = -1,
+      bestN = -1;
+    for (const [label, shared] of byLabel)
+      if (shared > bestN || (shared === bestN && label < best)) {
+        bestN = shared;
+        best = label;
+      }
+    if (bestN <= 0) continue;
+    let root = comp;
+    // Every neighbour of the winning label, not just one: once the speck takes that label it
+    // connects them all into a single component anyway.
+    for (const nb of [...adj[comp].keys()]) if (labelOf[find(nb)] === best) root = merge(root, nb);
+    labelOf[root] = best;
+    if (under(root)) queue.push(root);
   }
+
+  for (let p = 0; p < labels.length; p++) labels[p] = labelOf[find(compId[p])];
 }
 
 /**
@@ -597,5 +644,5 @@ export function traceLabelMap(map: LabelMap, params: TraceParams): TraceResult {
     components.push({ label: labelOf[comp], loops: entry.loops, area: areas[comp] });
   }
   components.sort((a, b) => b.area - a.area);
-  return { components, capped };
+  return { components, capped, floorPx: minArea };
 }
