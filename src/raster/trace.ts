@@ -611,10 +611,13 @@ function appendFitted(loop: Loop, chain: Chain, entry: number, second: number): 
  * same goes for winding, which `loopToRing` normalizes. Emitting every closed ring and letting that
  * code classify them reuses tested logic and removes a whole class of tracer bug.
  */
-export function traceLabelMap(map: LabelMap, params: TraceParams): TraceResult {
+export function traceLabelMap(map: LabelMap, params: TraceParams, printableFloor = 0): TraceResult {
   const { w, h } = map;
   const labels = map.labels.slice(); // the caller's grid is reused across re-quantizes
-  let minArea = Math.max(1, Math.round(params.despeckleFrac * w * h));
+  // Two floors, and the larger wins. The fractional one is how much simplification this picture
+  // wants; the printable one (stats.ts) is what the placed size can carry, and it is a floor under
+  // the Detail slider rather than another thing the slider scales.
+  let minArea = Math.max(1, Math.round(params.despeckleFrac * w * h), printableFloor);
 
   despeckle(labels, w, h, minArea);
   deChecker(labels, w, h);

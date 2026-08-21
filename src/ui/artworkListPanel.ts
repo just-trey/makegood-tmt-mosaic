@@ -13,7 +13,7 @@ import {
 import { fillModeOffered } from '../assembly/kinds';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
 import { rasterCappedMessage } from '../raster/parse';
-import { dismissNotice, notice } from '../warnings';
+import { dismissNotice, notice, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { scheduleRebuild } from '../app/scheduler';
 import { refreshFitInputsFromState } from './fitPanel';
@@ -194,26 +194,39 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
     `${source.raster.palette.length} colors · ${source.raster.regions} regions`;
   readout.textContent = describe();
 
-  const apply = (patch: { colors?: number; detail?: number }) => {
-    const result = requantizeSource(source.id, patch);
-    if (!result) return;
+  /** False when the trace threw and the sliders were put back, so the caller does not log it. */
+  const apply = (patch: { colors?: number; detail?: number }): boolean => {
+    let result;
+    try {
+      result = requantizeSource(source.id, patch);
+    } catch (e) {
+      // A trace can legitimately come back with nothing (see parseRasterImage), and these sliders
+      // are the one place that walks into it on purpose. Uncaught, the listener died with the
+      // readout stuck on "recomputing on release" and no rebuild, which reads as a frozen app.
+      colors.value = String(source.raster.colors);
+      detail.value = String(source.raster.detail);
+      readout.textContent = describe();
+      warn((e as Error).message);
+      renderWarnings();
+      return false;
+    }
+    if (!result) return false;
     if (result.capped) notice(rasterCappedMessage(source.name));
     else dismissNotice(rasterCappedMessage(source.name));
     renderWarnings();
     readout.textContent = describe();
     scheduleRebuild();
+    return true;
   };
 
   colors.addEventListener('input', () => {
     readout.textContent = `${colors.value} colors · recomputing on release`;
   });
   colors.addEventListener('change', () => {
-    apply({ colors: parseInt(colors.value, 10) });
-    track('raster_adjust', { field: 'colors' });
+    if (apply({ colors: parseInt(colors.value, 10) })) track('raster_adjust', { field: 'colors' });
   });
   detail.addEventListener('change', () => {
-    apply({ detail: parseInt(detail.value, 10) });
-    track('raster_adjust', { field: 'detail' });
+    if (apply({ detail: parseInt(detail.value, 10) })) track('raster_adjust', { field: 'detail' });
   });
   return block;
 }

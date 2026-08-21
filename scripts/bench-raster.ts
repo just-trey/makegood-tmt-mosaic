@@ -12,6 +12,7 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts blur        compensating blur against downscale
 //   node_modules/.bin/vite-node scripts/bench-raster.ts knee        does a knee survive a cheaper image?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts despeckle   does the despeckle floor hold?
+//   node_modules/.bin/vite-node scripts/bench-raster.ts floor       despeckle floor in mm, per placement
 //
 // corpus, colors, curve and despeckle read the cached corpus. scale, render and alpha bring their
 // own source.
@@ -44,7 +45,15 @@ import { computeNetRegionsByColor, shapeToFeature } from '../src/geometry/region
 import { MAX_COLORS, MIN_COLORS, quantize } from '../src/raster/quantize';
 import { MAX_COMPONENTS, traceLabelMap } from '../src/raster/trace';
 import { fitChain } from '../src/raster/curve';
-import { autoParams, isPhotographic, measureImage, DETAIL_DEFAULT } from '../src/raster/stats';
+import {
+  autoParams,
+  isPhotographic,
+  measureImage,
+  printableFloorPx,
+  DETAIL_DEFAULT,
+} from '../src/raster/stats';
+import { designMmPerUnit } from '../src/geometry/assembly';
+import { HUBCAP_CHAMFER_MM, HUBCAP_MIN_DIAMETER_MM } from '../src/geometry/hubcap';
 import { MAX_WORKING_EDGE, MEASURE_EDGE, workingSize } from '../src/raster/decode';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -229,10 +238,10 @@ function sharpTurns(shapes: SVGShape[]): number {
  * otherwise pick. It is the same two calls parseRasterImage makes, in the same order, so the
  * shapes are what would ship at those settings.
  */
-function traceWith(img: RasterImage, colors: number, params: TraceParams) {
+function traceWith(img: RasterImage, colors: number, params: TraceParams, printableFloor = 0) {
   const t0 = performance.now();
   const map = quantize(img, colors, params.blurRadius);
-  const { components, capped, floorPx } = traceLabelMap(map, params);
+  const { components, capped, floorPx } = traceLabelMap(map, params, printableFloor);
   const ms = performance.now() - t0;
   const painted = new Set(components.map((c) => map.palette[c.label]));
   const shapes: SVGShape[] = components.map((c, i) => ({
@@ -952,6 +961,126 @@ async function modeDespeckle(names: string[]) {
 }
 
 /**
+ * Real placements, as mm per working pixel. Every one goes through the scale rule the build uses
+ * for that kind, not a restatement of it: a floor argued from a size the cut disagrees with would
+ * be measuring nothing.
+ *
+ * Assembly kinds only, which is where the printable floor applies: 266x185 footrest, 276mm wheel
+ * design circle, and the hubcap at its minimum diameter (2 x HUBCAP_CLIP_FACE_OUTER_R_MM) less the
+ * chamfer all round, which is the flat top artwork lands on and what `memoLargestDesignFace`
+ * measures off the built mesh.
+ */
+const PLACEMENTS: { name: string; mmPerPixel: (img: RasterImage) => number }[] = [
+  {
+    name: 'wheel 100%',
+    mmPerPixel: (img) =>
+      designMmPerUnit(
+        { userUnitMM: null, viewBox: { w: img.w, h: img.h }, origin: 'raster' },
+        1,
+        Math.max(img.w, img.h) / 2,
+        {
+          isRect: false,
+          radius: 138,
+          designFace: () => null,
+        },
+      ),
+  },
+  {
+    name: 'footrest 100%',
+    mmPerPixel: (img) => rectMmPerPixel(img, 266, 185, 1),
+  },
+  {
+    name: 'footrest 25%',
+    mmPerPixel: (img) => rectMmPerPixel(img, 266, 185, 0.25),
+  },
+  {
+    name: 'hubcap min 100%',
+    mmPerPixel: (img) => {
+      const face = HUBCAP_MIN_DIAMETER_MM - 2 * HUBCAP_CHAMFER_MM;
+      return rectMmPerPixel(img, face, face, 1);
+    },
+  },
+];
+
+function rectMmPerPixel(img: RasterImage, faceW: number, faceH: number, scaleMult: number): number {
+  return designMmPerUnit(
+    { userUnitMM: null, viewBox: { w: img.w, h: img.h }, origin: 'raster' },
+    scaleMult,
+    Math.max(img.w, img.h) / 2,
+    { isRect: true, radius: 0, designFace: () => ({ w: faceW, h: faceH }) },
+  );
+}
+
+/** Side of the square a floor in pixels stands for, at that placement. */
+const floorMM = (floorPx: number, mmPerPixel: number) => Math.sqrt(floorPx) * mmPerPixel;
+
+/**
+ * What the despeckle floor is worth in millimetres, and where a printable floor takes over from it.
+ *
+ * The fractional floor is a share of the image, so it says nothing about printed size on its own:
+ * the same picture is despeckled to 8.7mm features on the footrest and to 1.4mm on the smallest
+ * hubcap. This mode is the measurement behind putting a floor under that (`printableFloorPx`).
+ */
+async function modeFloor(names: string[]) {
+  const sources = await pick(names);
+  const rows = [];
+  const governed: { s: DecodedSource; place: string; mmPerPixel: number; detail: number }[] = [];
+  for (const s of sources) {
+    const img = s.working;
+    for (const place of PLACEMENTS) {
+      const mmPerPixel = place.mmPerPixel(img);
+      const row: Record<string, string | number> = {
+        name: s.name,
+        working: `${img.w}x${img.h}`,
+        placed: place.name,
+        mmPerPx: +mmPerPixel.toFixed(4),
+        printFloorPx: printableFloorPx(mmPerPixel),
+      };
+      for (const detail of [DETAIL_DEFAULT, 100]) {
+        const p = autoParams({ edgeDensity: s.edgeDensity }, detail, ranDetailPass(img));
+        const contentPx = Math.max(1, Math.round(p.despeckleFrac * img.w * img.h));
+        const mm = floorMM(contentPx, mmPerPixel);
+        row[`D${detail}mm`] = +mm.toFixed(2);
+        const bites = printableFloorPx(mmPerPixel) > contentPx;
+        row[`D${detail}`] = bites ? 'printable' : '';
+        if (bites) governed.push({ s, place: place.name, mmPerPixel, detail });
+      }
+      rows.push(row);
+    }
+  }
+  console.table(rows);
+  console.log(
+    '\nEach `D<n>mm` is the side of the square the fractional floor removes at that placement,\n' +
+      'at that Detail. The printable floor is one nozzle width, 0.4mm, at every placement, so a\n' +
+      'column under 0.40 is a floor letting through what the printer cannot lay down.',
+  );
+
+  if (!governed.length) {
+    console.log('\nNo row is governed by the printable floor: nothing below would change.');
+    return;
+  }
+  console.log(`\nWhat the printable floor changes, on the ${governed.length} rows it governs:`);
+  const effect = [];
+  for (const g of governed) {
+    const p = autoParams({ edgeDensity: g.s.edgeDensity }, g.detail, ranDetailPass(g.s.working));
+    const before = traceWith(g.s.working, g.s.colors, p);
+    const after = traceWith(g.s.working, g.s.colors, p, printableFloorPx(g.mmPerPixel));
+    effect.push({
+      name: g.s.name,
+      placed: g.place,
+      detail: g.detail,
+      colors: g.s.colors,
+      components: `${before.components} -> ${after.components}`,
+      painted: `${before.painted} -> ${after.painted}`,
+      points: `${before.points} -> ${after.points}`,
+      capped: `${before.capped ? 'yes' : 'no'} -> ${after.capped ? 'yes' : 'no'}`,
+      ms: `${before.ms} -> ${after.ms}`,
+    });
+  }
+  console.table(effect);
+}
+
+/**
  * Would a knee detector reach the same answer from a cheaper, smaller copy of the image?
  *
  * A detector runs on every image load, and the full ladder costs seconds, so it would have to work
@@ -1107,6 +1236,9 @@ switch (mode) {
   case 'despeckle':
     await modeDespeckle(rest);
     break;
+  case 'floor':
+    await modeFloor(rest);
+    break;
   default: {
     // Numeric arguments keep the original invocation working, which the header and two tech-debt
     // sections quote. A non-numeric word is a typo, not a request for the synthetic bench.
@@ -1115,7 +1247,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, blur, knee, despeckle, ` +
+          `sizes, blur, knee, despeckle, floor, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));

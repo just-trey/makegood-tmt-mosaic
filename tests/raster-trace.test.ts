@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { traceLabelMap } from '../src/raster/trace';
+import { printableFloorPx } from '../src/raster/stats';
 import type { TracedComponent } from '../src/raster/trace';
 import { BACKGROUND } from '../src/raster/types';
 import type { LabelMap, TraceParams } from '../src/raster/types';
@@ -173,6 +174,26 @@ describe('traceLabelMap', () => {
     );
     for (const c of components) expect(c.area).toBeGreaterThanOrEqual(floor);
     expect(components.reduce((s, c) => s + areaOf(c), 0)).toBeCloseTo(size * size, 9);
+  });
+
+  it('removes a speck the fractional floor keeps but the placed size cannot print', () => {
+    const size = 16;
+    const rows = Array.from({ length: size }, (_, y) =>
+      y === 7 ? 'a'.repeat(6) + 'bb' + 'a'.repeat(size - 8) : 'a'.repeat(size),
+    );
+    // No fractional floor at all, so the speck's only threat is the printable one.
+    const loose = traceLabelMap(grid(rows, 'ab'), params());
+    expect(loose.components).toHaveLength(2);
+
+    // 0.5mm per pixel puts one nozzle width under a pixel, so nothing is unprintable.
+    expect(
+      traceLabelMap(grid(rows, 'ab'), params(), printableFloorPx(0.5)).components,
+    ).toHaveLength(2);
+
+    // 0.1mm per pixel makes a nozzle 4 pixels across, 16 square, and the 2px speck cannot print.
+    const printed = traceLabelMap(grid(rows, 'ab'), params(), printableFloorPx(0.1));
+    expect(printed.components).toHaveLength(1);
+    expect(areaOf(printed.components[0])).toBeCloseTo(size * size, 9);
   });
 
   it('resolves a checkerboard without emitting a self-touching ring', () => {

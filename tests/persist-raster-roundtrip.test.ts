@@ -8,7 +8,7 @@ import {
 } from '../src/state/persist';
 import { WARNINGS } from '../src/warnings';
 import type { ParsedSVG } from '../src/types';
-import { clearArtwork, loadArtworkSource } from '../src/state/artwork';
+import { clearArtwork, loadArtworkSource, rasterMmPerPixel } from '../src/state/artwork';
 import { state } from '../src/state/store';
 import { parseRasterImage } from '../src/raster/parse';
 import { DETAIL_DEFAULT } from '../src/raster/stats';
@@ -87,7 +87,7 @@ function bands(w = 16, h = 16): RasterImage {
 
 function loadRaster(name = 'photo.png') {
   const image = bands();
-  const opts = { colors: 4, detail: DETAIL_DEFAULT };
+  const opts = { colors: 4, detail: DETAIL_DEFAULT, mmPerPixel: rasterMmPerPixel(image) };
   const result = parseRasterImage(image, opts);
   return loadArtworkSource(result.parsed, name, 'raster', 'sticker', '', {
     image,
@@ -104,10 +104,17 @@ beforeEach(() => {
   clearArtwork();
   clearSavedSession();
   state.assembly.parts = [];
+  state.shapeKind = 'disc';
 });
 
 describe('a raster source that the browser can encode', () => {
   it('is persisted, with the settings needed to reproduce its trace', () => {
+    // On the wheel, so the trace has a placement to size its printable floor from. Only this test
+    // needs one, and the restore tests below must stay in a flat mode: an assembly session pulls
+    // the parts back in, which jsdom has no canvas for.
+    state.shapeKind = 'assembly';
+    state.assembly.kindId = 'wheel';
+    state.asmRadius = 138;
     loadRaster();
     saveSession();
     const saved = loadSavedSession();
@@ -121,6 +128,10 @@ describe('a raster source that the browser can encode', () => {
     // Measured at a fixed reference size and NOT re-derivable from the working pixels: without it
     // restore re-measures the working image and quietly moves every threshold hanging off it.
     expect(src!.raster?.edgeDensity).toBe(0.137);
+    // Derivable in principle, but not during a restore: the parts are not back yet, so the design
+    // face this came from does not exist. Dropped, every restored design comes back at the
+    // fraction-only floor.
+    expect(src!.raster?.mmPerPixel).toBeCloseTo(rasterMmPerPixel(bands())!, 6);
   });
 
   it('keeps its instances, so no placement is orphaned and none is lost', () => {

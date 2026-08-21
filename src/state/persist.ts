@@ -70,8 +70,18 @@ type PersistedSource = Pick<DesignSource, 'id' | 'kind' | 'name' | 'svgText'> & 
    * image measures flatter the larger it is decoded, so re-measuring the working image would move
    * the flat-vs-photo thresholds and every blur and despeckle strength hanging off them (see
    * RasterImage in raster/types.ts).
+   *
+   * `mmPerPixel` travels for a different reason: it *could* be re-derived, but not here. The
+   * re-trace below runs before the assembly's parts are back, so the design face it would ask for
+   * does not exist yet, and per-instance scales are still in the session rather than in state.
    */
-  raster?: { png: string; colors: number; detail: number; edgeDensity?: number };
+  raster?: {
+    png: string;
+    colors: number;
+    detail: number;
+    edgeDensity?: number;
+    mmPerPixel?: number;
+  };
 };
 /** `zone` isn't persisted directly — `AssemblyPart.id` is a fresh per-session counter
  * (asmCreateRolePart), so a saved `partId` can't mean anything after a reload. Only `zoneId`
@@ -186,6 +196,7 @@ function snapshotSession(): PersistedSession {
         colors: s.raster.colors,
         detail: s.raster.detail,
         edgeDensity: s.raster.image.edgeDensity,
+        mmPerPixel: s.raster.mmPerPixel,
       });
     }
   }
@@ -501,7 +512,16 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       const image = await decodeWorkingImage(s.raster.png);
       // Put back the statistic that cannot be re-measured from these pixels (see PersistedSource).
       if (s.raster.edgeDensity !== undefined) image.edgeDensity = s.raster.edgeDensity;
-      const opts = { colors: s.raster.colors, detail: s.raster.detail };
+      const opts = {
+        colors: s.raster.colors,
+        detail: s.raster.detail,
+        // Whatever was saved, in every shape kind. This is a reconstruction, not a fresh trace:
+        // the design in the saved session carries this floor whether or not the mode it was
+        // switched into would derive one now (nothing re-traces on a shape-kind change), and a
+        // restore that quietly returns a different design is the failure this payload exists to
+        // prevent. `requantizeSource` is the other half, and re-derives.
+        mmPerPixel: s.raster.mmPerPixel,
+      };
       const result = parseRasterImage(image, opts);
       // The same notice the first load gave. Without it a design that comes back simplified looks
       // like the app quietly changed it.

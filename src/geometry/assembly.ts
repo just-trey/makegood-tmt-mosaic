@@ -173,7 +173,9 @@ export interface AssemblyBuildInput {
  *
  * Null when the file declares no canvas at all; the caller then falls back to the content bbox.
  */
-export function canvasAnchor(parsed: ParsedSVG): { cx: number; cy: number; r: number } | null {
+export function canvasAnchor(
+  parsed: Pick<ParsedSVG, 'canvas'>,
+): { cx: number; cy: number; r: number } | null {
   const c = parsed.canvas;
   if (!c || !(c.w > 0) || !(c.h > 0)) return null;
   return { cx: c.w / 2, cy: c.h / 2, r: Math.max(c.w, c.h) / 2 };
@@ -374,9 +376,13 @@ export interface DesignScaleContext {
  *
  * Shared with the gizmo like `designAnchor`, and it matters more here: every artwork the app ships
  * declares `width="100%"`, so this auto-fit branch is the normal path, not an edge case.
+ *
+ * Reads the document and not its content: everything about the artwork itself arrives as `anchorR`.
+ * That is what lets the raster stage ask what scale a trace will be placed at before it has traced
+ * anything (state/artwork.ts).
  */
 export function designMmPerUnit(
-  parsed: ParsedSVG,
+  parsed: Pick<ParsedSVG, 'userUnitMM' | 'viewBox' | 'origin'>,
   scaleMult: number,
   anchorR: number,
   ctx: DesignScaleContext,

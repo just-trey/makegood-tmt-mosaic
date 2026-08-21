@@ -1,5 +1,5 @@
 import type { Loop, ParsedSVG, SVGShape } from '../types';
-import { autoParams, measureImage } from './stats';
+import { autoParams, measureImage, printableFloorPx } from './stats';
 import { MEASURE_EDGE } from './decode';
 import { quantize } from './quantize';
 import { traceLabelMap } from './trace';
@@ -94,7 +94,7 @@ export function parseRasterImage(
   if (!map.palette.length)
     throw new Error('No opaque pixels were found in this image — there is nothing to cut.');
 
-  const { components, capped } = traceLabelMap(map, params);
+  const { components, capped } = traceLabelMap(map, params, printableFloorPx(opts.mmPerPixel ?? 0));
   if (!components.length)
     throw new Error(
       'No color regions survived tracing this image — try raising Detail, or use a less noisy image.',

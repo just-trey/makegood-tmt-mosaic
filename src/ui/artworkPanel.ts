@@ -1,5 +1,5 @@
 import type { ArtworkInstance, DesignSource } from '../types';
-import { loadArtworkSource, pruneSettingsToPalette } from '../state/artwork';
+import { loadArtworkSource, pruneSettingsToPalette, rasterMmPerPixel } from '../state/artwork';
 import { getPatterns } from '../state/patterns';
 import { fillModeOffered } from '../assembly/kinds';
 import { scheduleRebuild } from '../app/scheduler';
@@ -140,7 +140,11 @@ async function applyRasterFile(file: File): Promise<void> {
   beginWork();
   try {
     const image = await decodeImageFile(file);
-    const opts = { colors: DEFAULT_RASTER_COLORS, detail: DETAIL_DEFAULT };
+    const opts = {
+      colors: DEFAULT_RASTER_COLORS,
+      detail: DETAIL_DEFAULT,
+      mmPerPixel: rasterMmPerPixel(image),
+    };
     // Decode and trace before touching state, for the same reason applyParsedSVG parses first.
     const result = parseRasterImage(image, opts);
     // No svgText: an image's source of truth is its pixels. Session persistence round-trips those

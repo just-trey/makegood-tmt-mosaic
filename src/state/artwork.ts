@@ -2,8 +2,9 @@ import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState } from '../t
 import { clearBaseColor, state } from './store';
 import { deltaE, hexToLab } from '../color';
 import { parseRasterImage } from '../raster/parse';
+import type { RasterImage } from '../raster/types';
 import { currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
-import { placedFootprintMM } from '../geometry/assembly';
+import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
 
 let nextSourceId = 1;
@@ -151,6 +152,73 @@ function cascadedOffset(
     if (!at(u, v)) return { offsetU: u, offsetV: v };
   }
   return { offsetU, offsetV };
+}
+
+/**
+ * How large one working pixel of an image will print, in mm, at the placement it is about to be
+ * traced for. Undefined when there is nothing to answer with, and the trace then falls back to its
+ * fraction-of-the-image floor alone.
+ *
+ * **Assembly kinds only.** A flat plate fits the design's *drawn content*, which does not exist
+ * until the trace has run, and the closest pre-trace stand-in (the opaque pixels) is wrong in the
+ * damaging direction: one stray opaque speck in a corner inflates the extent, shrinks mm per pixel
+ * and raises the floor over printable detail. An assembly places an image on its own frame
+ * (`designAnchor`), so nothing there needs the traced bbox. docs/tech-debt.md carries the rest.
+ *
+ * This is the half the raster stage never had. It runs strictly before placement is known, so its
+ * despeckle floor could only be a share of the image (see `printableFloorPx`), which for one
+ * photograph means removing 8.7mm features on the footrest and 1.4mm ones on the smallest hubcap.
+ * Asking the two scale rules the build already uses, rather than restating a third one here, is
+ * what keeps the floor and the cut talking about the same design.
+ *
+ * Fixed at the moment of the trace: the Scale slider does not re-trace, because a trace measured
+ * ~830ms and a drag would fire it per step. Shrinking afterwards therefore keeps the older, more
+ * permissive floor, and enlarging keeps detail removed that the new size could print, until
+ * Colors or Detail re-runs it (docs/tech-debt.md).
+ */
+export function rasterMmPerPixel(img: RasterImage, sourceId?: string): number | undefined {
+  if (state.shapeKind !== 'assembly') return undefined;
+  const mm = assemblyMmPerUnit(img, sourceId);
+  return mm !== undefined && Number.isFinite(mm) && mm > 0 ? mm : undefined;
+}
+
+/**
+ * The largest millimetre-per-pixel any instance of this source is placed at.
+ *
+ * The largest, because one trace serves every instance: a floor sized for the smallest copy would
+ * throw away detail the biggest one prints perfectly well. Each instance is asked separately
+ * rather than taking the largest scale, because Fill and Sticker do not share a scale rule (see
+ * `designMmPerUnit`'s forceRect) and on the wheel they are different formulas entirely.
+ *
+ * A source with no instance yet is a first load, and every raster load is a Sticker at the global
+ * fit, which is exactly what `loadArtworkSource` is about to create.
+ *
+ * An image anchors on its own frame on every assembly kind, wheel included (`designAnchor`), so
+ * none of this needs the traced bbox that does not exist yet.
+ *
+ * Undefined while a rect kind's parts are still loading. `designMmPerUnit` answers 1mm per unit
+ * there, which is a real branch for an SVG with no viewBox and a fiction for an image: it would be
+ * stored on the source and saved to the session as if it had been measured, and a floor derived
+ * from it is inert.
+ */
+function assemblyMmPerUnit(img: RasterImage, sourceId?: string): number | undefined {
+  const canvas = { w: img.w, h: img.h };
+  const ctx = currentDesignScaleContext();
+  const anchorR = canvasAnchor({ canvas })?.r ?? 1;
+  const placed = state.artworks.filter((a) => a.sourceId === sourceId);
+  const anyRect = ctx.isRect || placed.some((a) => a.mode === 'fill');
+  if (anyRect && !ctx.designFace()) return undefined;
+  const at = (scalePct: number, fill: boolean) =>
+    designMmPerUnit(
+      { userUnitMM: null, viewBox: canvas, origin: 'raster' },
+      scalePct / 100,
+      anchorR,
+      ctx,
+      fill,
+    );
+  return placed.length
+    ? Math.max(...placed.map((a) => at(a.scalePct, a.mode === 'fill')))
+    : at(state.scalePct, false);
 }
 
 /**
@@ -373,7 +441,16 @@ export function requantizeSource(
   const colors = patch.colors ?? source.raster.colors;
   const detail = patch.detail ?? source.raster.detail;
 
-  const result = parseRasterImage(source.raster.image, { colors, detail });
+  // Re-derived rather than reused: this is a fresh trace, so it gets the size the design is placed
+  // at now, not the one it happened to be loaded at. The stored value stands in when the placement
+  // cannot be read (a rect kind mid-reload), which keeps the last real measurement rather than
+  // dropping the floor and saving that loss into the session — but only inside assembly mode, or
+  // switching to a plate would apply a part's floor to a shape that has none.
+  const mmPerPixel =
+    state.shapeKind === 'assembly'
+      ? (rasterMmPerPixel(source.raster.image, source.id) ?? source.raster.mmPerPixel)
+      : undefined;
+  const result = parseRasterImage(source.raster.image, { colors, detail, mmPerPixel });
   const oldPalette = source.raster.palette;
   // A brand-new ParsedSVG with a brand-new `shapes` array, never a mutation of the old one:
   // computeNetRegionsByColor memoizes on that array's identity, so an in-place edit would serve
@@ -383,6 +460,7 @@ export function requantizeSource(
     ...source.raster,
     colors,
     detail,
+    mmPerPixel,
     palette: result.palette,
     regions: result.componentCount,
   };

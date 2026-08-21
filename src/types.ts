@@ -157,6 +157,13 @@ export interface RasterState {
   image: RasterImage;
   colors: number;
   detail: number;
+  /**
+   * mm per working pixel at the placement this image was traced for, which is what put the
+   * despeckle floor in printable units (see `rasterMmPerPixel`). Saved with the session so a
+   * restore reproduces the same trace: restore re-traces before the parts are back, so it cannot
+   * derive this for itself. Absent on a session saved before it existed.
+   */
+  mmPerPixel?: number;
   /** The palette the current `parsed` was built with; can be shorter than `colors` asked for. */
   palette: string[];
   regions: number;
