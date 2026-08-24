@@ -5,7 +5,7 @@ import {
   loadSavedSession,
   type PersistedSession,
 } from '../state/persist';
-import { ASSEMBLY_KINDS } from '../assembly/kinds';
+import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
 import { setShapeKind, renderBaseColorSwatches, refreshShapeParamInputs } from './partPanel';
 import { renderArtworkList } from './artworkListPanel';
 import { refreshFitInputsFromState, updateOffsetSliderRanges } from './fitPanel';
@@ -25,10 +25,15 @@ function describeAge(savedAt: number): string {
 }
 
 function describeSession(session: PersistedSession): string {
-  const partName =
+  // Name the part the restore will actually land on, not the one the session was saved on. A kind
+  // that has since been retired, and a session saved back when a flat mode was offered, both fall
+  // back to the first offered kind (state/persist.ts) — the banner used to promise "the Disc" for
+  // the second, a part that is no longer in the dropdown and not where the click leads.
+  const saved =
     session.shapeKind === 'assembly'
-      ? (ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId)?.name ?? 'that part')
-      : 'the Disc';
+      ? ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId)
+      : undefined;
+  const partName = (saved ?? firstOfferedKind()).name;
   const n = session.artworks.length;
   const designPart = n ? `, ${n} design${n === 1 ? '' : 's'}` : '';
   return `Restore your previous session — ${partName}${designPart}, saved ${describeAge(session.savedAt)}?`;

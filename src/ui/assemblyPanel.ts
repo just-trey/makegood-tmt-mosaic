@@ -8,7 +8,7 @@ import {
   asmRebuildGeneratedParts,
   asmRemovePart,
   onAssemblyPartsChanged,
-  partsLibraryFailed,
+  partsLibrarySettled,
   switchChairVariant,
 } from '../assembly/parts';
 import { getPrinter } from '../export/printers';
@@ -350,12 +350,13 @@ export function renderAssemblyRoleControls(): void {
   // Still waiting on stl/parts.json. Says nothing rather than reporting a failure that hasn't
   // happened: `main.ts` calls setShapeKind('assembly') a line before loadPartsLibrary(), so this
   // is the state every healthy boot passes through for as long as the fetch takes.
-  if (!partsLibraryFailed()) {
+  if (!partsLibrarySettled()) {
     box.innerHTML = '';
     return;
   }
 
-  // The manifest didn't load, which takes every part with it. This used to offer per-role add
+  // The manifest has come back and this kind still can't load: either it was unreachable, or it
+  // arrived without an entry one of the kind's roles names. Both are a broken deployment. This used to offer per-role add
   // buttons and a mesh drop target, letting the user supply their own STL/3MF — but the app cannot
   // check an arbitrary mesh is the part it claims to be, and every verified export pose is keyed to
   // the shipped one. A broken deployment is the only way here, so say so and stop.
@@ -450,7 +451,7 @@ export function renderAssemblyPartList(): void {
     // Two different states, and only one of them is a failure. While stl/parts.json is still in
     // flight this is the same "Loading assembly…" a selected kind shows before its meshes arrive;
     // once it has failed, renderAssemblyRoleControls has already said so directly above this box.
-    if (!partsLibraryFailed()) box.innerHTML = '<div class="hint">Loading assembly…</div>';
+    if (!partsLibrarySettled()) box.innerHTML = '<div class="hint">Loading assembly…</div>';
     return;
   }
 

@@ -1,6 +1,6 @@
 // End-to-end smoke test: serves dist/ with vite preview, drives the app in headless
 // Chromium, and exercises assembly auto-load -> sample SVG -> CSG build -> 3MF export,
-// then a per-color depth override, then a PNG through the raster path.
+// then a PNG through the raster path.
 import { mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { startPreview, launchPage, afterRebuild, settle } from './lib/harness.mjs';

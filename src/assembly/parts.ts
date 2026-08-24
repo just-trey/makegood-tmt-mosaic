@@ -62,11 +62,11 @@ export async function asmLoadFullAssembly(): Promise<void> {
   const kind = currentAssemblyKind();
   if (!kind) return;
   if (!asmKindCanAutoLoad(kind)) {
-    // Only once the fetch has come back and failed. While it is still in flight this returns
-    // quietly and loadPartsLibrary calls back through maybeAutoLoadAssembly when it lands, so a
-    // restore accepted mid-flight loads a moment later instead of opening a "reload the page"
-    // dialog over a session that was about to work.
-    if (partsLibraryFailed())
+    // Only once the fetch has come back. While it is still in flight this returns quietly and
+    // loadPartsLibrary calls back through maybeAutoLoadAssembly when it lands, so a restore
+    // accepted mid-flight loads a moment later instead of opening a "reload the page" dialog over
+    // a session that was about to work.
+    if (partsLibrarySettled())
       await alertDialog("Couldn't load this part. Reload the page to try again.");
     return;
   }
@@ -520,16 +520,21 @@ export function applyAsmPatchChoice(part: AssemblyPart): void {
 }
 
 /**
- * Whether stl/parts.json has arrived. An empty `state.assembly.library` cannot answer this on its
- * own: it is equally "the fetch hasn't come back yet" and "there is no manifest", and the two need
- * opposite things said about them. Reporting the first as the second told every healthy boot it
- * had failed, for the second or so before the manifest landed.
+ * Whether the stl/parts.json fetch has come back, either way. An empty `state.assembly.library`
+ * cannot answer this on its own: it is equally "the fetch hasn't returned yet" and "there is no
+ * manifest", and the two need opposite things said about them. Reporting the first as the second
+ * told every healthy boot it had failed, for the second or so before the manifest landed.
+ *
+ * Deliberately "settled", not "failed". The caller's real question is "can parts still be
+ * expected", and a manifest that loads fine but is missing one of the kind's roles leaves
+ * `asmKindCanAutoLoad` false with nothing further coming — a broken deployment either way, and one
+ * that would otherwise sit on "Loading assembly…" forever.
  */
-let libraryFailed = false;
+let librarySettled = false;
 
-/** True only once the manifest fetch has actually come back and failed. */
-export function partsLibraryFailed(): boolean {
-  return libraryFailed;
+/** True once the manifest fetch has returned, whether it succeeded or not. */
+export function partsLibrarySettled(): boolean {
+  return librarySettled;
 }
 
 /**
@@ -540,9 +545,10 @@ export function partsLibraryFailed(): boolean {
  *
  */
 export async function loadPartsLibrary(): Promise<void> {
-  // Cleared at the *start*, not on success: while a fetch is in flight there is no known failure
-  // to report, so a retry shows "Loading assembly…" again rather than the previous attempt's error.
-  libraryFailed = false;
+  // Cleared at the *start*, not just set at the end: while a fetch is in flight there is nothing
+  // settled to report, so a retry shows "Loading assembly…" again rather than the previous
+  // attempt's error.
+  librarySettled = false;
   beginWork();
   try {
     // stl/parts.json is a stable (non-content-hashed) URL, unlike the JS bundle — tag it with
@@ -553,8 +559,9 @@ export async function loadPartsLibrary(): Promise<void> {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     state.assembly.library = await res.json();
   } catch {
-    libraryFailed = true;
+    /* no manifest reachable — `librarySettled` below is what says so */
   } finally {
+    librarySettled = true;
     endWork();
   }
   // The manifest may land after the user already opened Assembly mode — re-render either way, so

@@ -562,6 +562,12 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     // them: loading here would alert about an unreachable library the caller is about to retry.
     state.shapeKind = 'assembly';
     state.assembly.kindId = firstOfferedKind().id;
+    state.assembly.variantId = null;
+    // Cleared, or the fallback silently keeps whatever the user had loaded before clicking
+    // Restore: maybeAutoLoadAssembly no-ops while any part is present, so the dropdown would name
+    // the fallback kind while the scene and the export still held the other one's parts. The
+    // branch above avoids this only because asmLoadFullAssembly clears the list itself.
+    state.assembly.parts = [];
   }
 
   // Instances of a source that could not be rebuilt go with it, or the placement points at

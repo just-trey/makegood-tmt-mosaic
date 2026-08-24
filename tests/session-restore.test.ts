@@ -275,6 +275,18 @@ describe('applyRestoredSession: assembly mode', () => {
     expect(state.assembly.kindId).toBe(firstOfferedKind().id);
     expect(asmLoadFullAssembly).not.toHaveBeenCalled();
   });
+
+  // maybeAutoLoadAssembly no-ops while any part is present, so leaving the previous kind's parts
+  // in place would name the fallback kind in the dropdown while the scene and the export still
+  // held the other one's. Reachable by switching part, then accepting the still-open banner.
+  it('drops the parts already loaded, so the fallback kind can auto-load its own', async () => {
+    state.assembly.parts = [{ id: 1, name: 'Footrest' }] as unknown as typeof state.assembly.parts;
+
+    await applyRestoredSession(session({ shapeKind: 'rect' }));
+
+    expect(state.assembly.parts).toEqual([]);
+    expect(state.assembly.variantId).toBeNull();
+  });
 });
 
 describe('applyRestoredSession: failure handling', () => {

@@ -17,7 +17,7 @@ import {
   asmRemovePart,
   loadPartsLibrary,
   maybeAutoLoadAssembly,
-  partsLibraryFailed,
+  partsLibrarySettled,
   onAssemblyPartsChanged,
 } from '../src/assembly/parts';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
@@ -469,13 +469,28 @@ describe('loadPartsLibrary', () => {
 
     expect(state.assembly.library).toEqual([]);
     expect(alertDialog).not.toHaveBeenCalled();
-    expect(partsLibraryFailed()).toBe(true);
+    expect(partsLibrarySettled()).toBe(true);
+  });
+
+  // The caller's question is "can parts still be expected", and a manifest that arrives without an
+  // entry one of the kind's roles names answers no just as firmly as an unreachable one. Keying
+  // the panel off "the fetch failed" instead left that case on "Loading assembly…" forever.
+  it('settles on a manifest that loaded but is missing a role the kind needs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => [] as LibraryEntry[] }),
+    );
+    state.shapeKind = 'disc';
+
+    await loadPartsLibrary();
+
+    expect(partsLibrarySettled()).toBe(true);
   });
 
   // An empty library is equally "still fetching" and "there is no manifest", and only the second
   // is a failure. Reading the first as the second put a "reload the page" dialog over a restore
   // accepted mid-flight, on a session that then loaded correctly on its own.
-  it('reports no failure until the fetch has actually come back', async () => {
+  it('is unsettled until the fetch has actually come back', async () => {
     const lib: LibraryEntry[] = [{ id: 'w', name: 'Wheel', file: 'stl/w.stl' }];
     let release: () => void;
     const inFlight = new Promise<void>((r) => (release = r));
@@ -490,11 +505,11 @@ describe('loadPartsLibrary', () => {
 
     const pending = loadPartsLibrary();
     expect(state.assembly.library).toEqual([]);
-    expect(partsLibraryFailed()).toBe(false);
+    expect(partsLibrarySettled()).toBe(false);
 
     release!();
     await pending;
-    expect(partsLibraryFailed()).toBe(false);
+    expect(partsLibrarySettled()).toBe(true);
   });
 
   it('survives a manifest that is not valid JSON', async () => {
