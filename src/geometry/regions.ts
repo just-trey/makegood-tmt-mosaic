@@ -1,4 +1,5 @@
 import * as turf from '@turf/turf';
+import polygonClipping from 'polygon-clipping';
 import type { Loop, PolyFeature, ResolvedRegion, SVGShape } from '../types';
 import { signedArea } from '../svg/path';
 import { deltaE, hexToLab } from '../color';
@@ -278,6 +279,124 @@ export function boolOpWithRetry(
   }
 }
 
+/** MultiPolygon coordinates, the form the clipping engine takes and returns. */
+type Geom = Ring[][];
+
+function toGeom(f: PolyFeature): Geom {
+  const g = f.geometry;
+  return g.type === 'Polygon' ? [g.coordinates as Ring[]] : (g.coordinates as Ring[][]);
+}
+
+function fromGeom(polys: Geom): PolyFeature | null {
+  if (!polys.length) return null;
+  const geom =
+    polys.length === 1
+      ? { type: 'Polygon' as const, coordinates: polys[0] }
+      : { type: 'MultiPolygon' as const, coordinates: polys };
+  return { type: 'Feature', properties: {}, geometry: geom } as PolyFeature;
+}
+
+function truncGeom(polys: Geom, precision: number): Geom {
+  const f = Math.pow(10, precision);
+  return polys.map((p) =>
+    p.map((r) => r.map((pt) => [Math.round(pt[0] * f) / f, Math.round(pt[1] * f) / f])),
+  );
+}
+
+/**
+ * `boolOpWithRetry` for an n-ary op, called on the clipping engine directly rather than through
+ * Turf.
+ *
+ * Turf's union/difference are one-line wrappers that take exactly two features and hand their
+ * coordinates to this same engine, so a pairwise fold pays a full sweep per pair. The engine
+ * itself is n-ary: one sweep over every input. Measured (scripts/bench-regions.ts) that is where
+ * essentially all of the pass's time was, and n-ary sweeps take ~45% of it off.
+ *
+ * The retry ladder is the same one and matters as much: without it the direct calls fall back on
+ * inputs Turf's truncate would have rescued, and a degraded region is a wrong region, not a slow
+ * one.
+ */
+function naryOpWithRetry(
+  fn: (args: Geom[]) => Geom,
+  args: Geom[],
+): { ok: boolean; val?: PolyFeature | null } {
+  try {
+    return { ok: true, val: cleanFeature(fromGeom(fn(args))) };
+  } catch {
+    for (const p of [10, 8, 6]) {
+      try {
+        return { ok: true, val: cleanFeature(fromGeom(fn(args.map((a) => truncGeom(a, p))))) };
+      } catch {
+        /* next precision */
+      }
+    }
+    return { ok: false };
+  }
+}
+
+/**
+ * Union every feature in one engine sweep.
+ *
+ * **A failed sweep falls back to the pairwise fold, it does not give up on the batch.** One sweep
+ * covering n features has one outcome for all of them, so returning "the first one" on failure
+ * would discard the other n-1 -- where the fold this replaced lost exactly the one shape that
+ * failed. Re-folding gives every pair its own retry ladder and restores that: a bad shape costs a
+ * shape. It runs only after a total failure, so the fast path never pays for it.
+ */
+export function safeUnionAll(features: (PolyFeature | null)[], label?: string): PolyFeature | null {
+  const live = features.map(cleanFeature).filter((f): f is PolyFeature => !!f);
+  if (live.length < 2) return live[0] ?? null;
+  const r = naryOpWithRetry((a) => polygonClipping.union(a[0], ...a.slice(1)), live.map(toGeom));
+  if (r.ok) return r.val ?? null;
+  let acc: PolyFeature | null = live[0];
+  for (let i = 1; i < live.length; i++) acc = safeUnion(acc, live[i], label);
+  return acc;
+}
+
+/**
+ * `safeUnionAll` for a list whose length the artwork decides, not a constant.
+ *
+ * Same sweep, but the fallback is `unionAllCooperative` rather than a straight-line fold: it
+ * yields on the same budget and merges as a balanced tree. The sync fold above is fine where the
+ * caller bounds the batch (COVERED_BATCH caps it at 8 pairwise ops), and is a frozen tab where it
+ * does not -- a colour can carry hundreds of pieces, and the fallback runs precisely when the
+ * engine is already struggling with them.
+ */
+export async function safeUnionAllCooperative(
+  features: (PolyFeature | null)[],
+  label?: string,
+): Promise<PolyFeature | null> {
+  const live = features.map(cleanFeature).filter((f): f is PolyFeature => !!f);
+  if (live.length < 2) return live[0] ?? null;
+  const r = naryOpWithRetry((a) => polygonClipping.union(a[0], ...a.slice(1)), live.map(toGeom));
+  if (r.ok) return r.val ?? null;
+  return unionAllCooperative(live, undefined, label);
+}
+
+/**
+ * Subtract every clipping from `subject` in one engine sweep. Falls back to subtracting them one
+ * at a time for the same reason `safeUnionAll` re-folds: a failed sweep otherwise leaves the
+ * subject untrimmed against clippings that would each have succeeded on their own.
+ */
+export function safeDiffAll(
+  subject: PolyFeature | null,
+  clippings: (PolyFeature | null)[],
+  label?: string,
+): PolyFeature | null {
+  const s = cleanFeature(subject);
+  if (!s) return null;
+  const live = clippings.map(cleanFeature).filter((f): f is PolyFeature => !!f);
+  if (!live.length) return s;
+  const r = naryOpWithRetry(
+    (a) => polygonClipping.difference(a[0], ...a.slice(1)),
+    [toGeom(s), ...live.map(toGeom)],
+  );
+  if (r.ok) return r.val ?? null;
+  let acc: PolyFeature | null = s;
+  for (const c of live) acc = safeDiff(acc, c, label);
+  return acc;
+}
+
 /**
  * Diagnostics from the boolean helpers, tee'd into the memoized pass's record (if one is running)
  * on the way to the warning list. computeNetRegionsByColor's result is cached across rebuilds, so
@@ -404,6 +523,30 @@ export async function unionAllCooperative(
 }
 
 /**
+ * How many shapes are subtracted individually before the accumulator is folded.
+ *
+ * Not a tuning knob to taste: the two ends both lose. Folding every shape (batch 1) is the old
+ * pairwise cadence and gains almost nothing. Never folding wins on a small design and collapses on
+ * a dense one, because every difference then carries every shape above it: at 400 shapes it
+ * measured 13552ms against 1257ms for the old pairwise loop and 704ms for batch 8, so **11x the
+ * loop it replaced and 19x this**.
+ *
+ * 8 is chosen for the whole curve rather than for the best reading at any one size. Over
+ * 50/100/200/400 synthetic overlapping shapes it runs 1.9x, 1.8x, 1.9x, 1.8x against the pairwise
+ * loop, and a finer sweep puts 4 through 12 on a flat plateau with 8 on it. Bigger batches beat it
+ * at 50 shapes (3.0x) and are the numbers above at 400.
+ *
+ * It also bounds one engine call, which is what keeps the yield below honest. A batch of every
+ * shape is one atomic multi-second sweep with no frame to give back.
+ */
+const COVERED_BATCH = 8;
+
+/** Memo for the pass below, keyed on the parsed shapes' identity. */
+let regionsCacheKey: SVGShape[] | null = null;
+let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
+let regionsCacheDiagnostics: string[] = [];
+
+/**
  * Compute, per color, the net *visible* region accounting for paint order
  * (later elements occlude earlier ones).
  *
@@ -411,6 +554,13 @@ export async function unionAllCooperative(
  * later element individually with a bbox pre-filter is algebraically identical but benchmarked ~2x
  * SLOWER on real artwork: full-canvas backgrounds and lineart overlap everything, so the filter
  * rarely prunes and the pairwise diffs multiply. The accumulator stays.
+ *
+ * The accumulator is folded in batches rather than one shape at a time, and the per-color pieces
+ * are unioned once at the end, so both n-ary ops reach the engine as a single sweep. Within a
+ * batch the accumulator is deliberately stale: the visibility difference subtracts it *and* the
+ * not-yet-folded shapes above this one in the same call, which is the same set the up-to-date
+ * accumulator would have held. Measured 1.5-2.9x on real artwork against the pairwise fold, with
+ * per-color areas identical (scripts/bench-regions.ts).
  *
  * The dominant cost of a rebuild, so it runs cooperatively: every ~YIELD_BUDGET_MS it yields a
  * frame and reports progress, keeping the tab responsive on a dense SVG. See src/progress.ts.
@@ -421,10 +571,6 @@ export async function unionAllCooperative(
  * but at the 8 shades that path actually produces the pass is not where the time goes. Build it
  * only if MAX_COMPONENTS (src/raster/trace.ts) is ever raised enough to change that.
  */
-let regionsCacheKey: SVGShape[] | null = null;
-let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
-let regionsCacheDiagnostics: string[] = [];
-
 export async function computeNetRegionsByColor(
   shapes: SVGShape[],
   onProgress: (fraction: number) => void = reportProgress,
@@ -446,27 +592,58 @@ export async function computeNetRegionsByColor(
   boolDiagnostics = diagnostics;
   try {
     const features = shapes.map(shapeToFeature).map((f, idx) => ({ f, color: shapes[idx].fill }));
-    const byColor: Record<string, PolyFeature> = {};
+    const pieces: Record<string, PolyFeature[]> = {};
     let covered: PolyFeature | null = null;
+    let pending: PolyFeature[] = [];
     const total = features.length || 1;
     let lastYield = performance.now();
     for (let i = features.length - 1; i >= 0; i--) {
       const { f, color } = features[i];
       if (f) {
-        const visible = covered ? safeDiff(f, covered, `color ${color}`) : f;
-        if (visible) {
-          byColor[color] = byColor[color]
-            ? (safeUnion(byColor[color], visible, `color ${color}`) as PolyFeature)
-            : visible;
+        const visible =
+          covered || pending.length
+            ? safeDiffAll(f, covered ? [covered, ...pending] : pending, `color ${color}`)
+            : f;
+        if (visible) (pieces[color] ||= []).push(visible);
+        pending.push(f);
+        if (pending.length >= COVERED_BATCH) {
+          // No label: a batch spans whatever colors fell in it, so naming this shape's color would
+          // point the user at one arbitrary member of it. The old pairwise fold could name a color
+          // honestly because it folded exactly one shape.
+          covered = safeUnionAll(covered ? [covered, ...pending] : pending);
+          pending = [];
         }
-        covered = covered ? safeUnion(covered, f, `an element under color ${color}`) : f;
       }
-      onProgress((total - i) / total);
+      // The per-color merge below is real work, so the visibility loop stops short of 1: it owns
+      // the first 90% and the merge owns the rest. Reporting 1 here and then merging is how a
+      // progress bar sits full while the tab is still busy.
+      onProgress(0.9 * ((total - i) / total));
       if (performance.now() - lastYield > YIELD_BUDGET_MS) {
         await yieldToBrowser();
         lastYield = performance.now();
       }
     }
+    // One sweep per color, and unlike the accumulator fold it is bounded by nothing: the piece
+    // count comes from the artwork. The yield below runs *between* colors, so a single color with
+    // very many pieces is still one atomic call. Measured small on everything real (30ms over the
+    // corpus, 18ms worst), and worth keeping n-ary: folding it cooperatively instead costs dino
+    // ring 123ms -> 158ms. The unbounded case is a raster trace near MAX_COMPONENTS with one
+    // dominant shade, and it is written up in docs/tech-debt.md rather than closed with a chunk
+    // size nobody measured.
+    const byColor: Record<string, PolyFeature> = {};
+    const colors = Object.entries(pieces);
+    for (let c = 0; c < colors.length; c++) {
+      const [color, list] = colors[c];
+      const merged =
+        list.length === 1 ? list[0] : await safeUnionAllCooperative(list, `color ${color}`);
+      if (merged) byColor[color] = merged;
+      onProgress(0.9 + (0.1 * (c + 1)) / colors.length);
+      if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+        await yieldToBrowser();
+        lastYield = performance.now();
+      }
+    }
+    onProgress(1); // artwork with no usable shapes never entered either loop
     const result = { byColor };
     regionsCacheKey = shapes;
     regionsCacheVal = result;

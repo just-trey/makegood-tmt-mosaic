@@ -218,21 +218,39 @@ measured coverage was tuned against; changing it re-bakes all of them.
 
 ## Rebuild performance needs ongoing work — this is a heavy application
 
-A dense 135-path SVG still takes ~13s to rebuild in flat mode, ~9s of
-which is the paint-order boolean pass in
-[src/geometry/regions.ts](../src/geometry/regions.ts)
-(`computeNetRegionsByColor`). The rebuild is already cooperative (yields to
-the browser, live progress %) and the flat union phases use balanced tree
-merging (~3x faster than the old left-fold), so the tab never freezes —
-but the compute floor is still high. Measured leads for a follow-up, best
-first: (1) call the `polygon-clipping` engine directly with n-ary
-union/difference (one sweep instead of dozens of pairwise ops — but it
-bypasses Turf's wrappers, so the safeUnion/safeDiff fallback machinery
-needs care); (2) move the boolean pass into a Web Worker (doesn't reduce
-compute, makes the wait invisible). Dead end, already measured: bbox
-pre-filtered per-shape diffs benchmarked ~2x SLOWER than the accumulator
-on real artwork (full-canvas backgrounds overlap everything) — see the
-comment on `computeNetRegionsByColor`.
+The flat-mode half of this closed on 2026-08-23. `computeNetRegionsByColor`
+now calls the clipping engine n-ary (`COVERED_BATCH`,
+[src/geometry/regions.ts](../src/geometry/regions.ts)) and measures **1.76x
+faster on the 135-path SVG**, 1.5-2.9x across the corpus, with per-color areas
+unchanged (0.000% worst relative drift). See
+[docs/findings/2026-08-23-boolean-pass-and-weld.md](findings/2026-08-23-boolean-pass-and-weld.md).
+
+**The ~9s figure this section used to quote was wrong, by 4.5x.** Measured in
+Chrome against the real module, the pass on that SVG took **2066ms** before
+the change and 1177ms after. Nothing was found that would have made it 9s, and
+the reading was never reproduced. A whole flat rebuild of that file is ~5s, so
+the pass was never the majority of it either.
+
+Two leads from this section are now settled rather than open:
+
+- **Turf's wrappers cost nothing.** `turf.union` is a one-line pass-through to
+  the same engine. A pairwise loop calling the engine directly lands within 3%
+  of the pairwise loop calling Turf, on every corpus file. The win came from
+  n-ary sweeps, not from bypassing Turf.
+- **`cleanFeature` re-scrubbing costs nothing.** The old loop scrubbed the
+  accumulator three times per shape; skipping that measured 1.02-1.06x. It was
+  5-7% of the pass, and 93-95% was inside the engine.
+
+Still open here: the Web Worker lead (doesn't reduce compute, makes the wait
+invisible). Still a measured dead end: bbox pre-filtered per-shape diffs, ~2x
+SLOWER than the accumulator on real artwork (full-canvas backgrounds overlap
+everything) — see the comment on `computeNetRegionsByColor`.
+
+**Do not "improve" `COVERED_BATCH` by raising it.** Never folding the
+accumulator is the fastest setting on a 140-shape file and **10x slower than
+the old loop at 400 shapes**, because every difference then carries every shape
+above it. The constant is measured over 50/100/200/400 shapes and 8 sits on a
+flat plateau; the bench that produced it is `scripts/bench-regions.ts scaling`.
 
 The chair-body/Fill combination is an order of magnitude worse than the
 number above, measured on `MOSAIC_GPU=1` production build, 2026-08-02: the
@@ -275,6 +293,27 @@ covering the zones;
 at 400% (17.0s) and measures an ordinary auto-fit sticker on all five zones at
 4.0s — a 5x spread on the same path. What is paid for is pocket area, not
 surfaces touched.
+
+## The per-color union in the flat pass is one atomic sweep, bounded by nothing
+
+`computeNetRegionsByColor` ([src/geometry/regions.ts](../src/geometry/regions.ts)) merges each
+color's visible pieces with a single n-ary call. The accumulator fold beside it is capped at
+`COVERED_BATCH`, so it always hands the engine a bounded call; this one hands it however many
+pieces the artwork produced. The pass yields between colors, never inside one.
+
+**Measured, and small on everything real**: 30ms across the whole corpus, 18ms worst
+(`scripts/bench-regions.ts`). It is kept n-ary because the alternative costs real time: folding it
+through `unionAllCooperative` instead measures dino ring at 158ms against 123ms.
+
+The case that is not covered is a raster trace near `MAX_COMPONENTS` (800, src/raster/trace.ts)
+where one shade owns most of the components. Nothing in the corpus reaches it, so the freeze is
+unobserved rather than ruled out.
+
+**Closing it means chunking the sweep, and the chunk size has to be measured, not picked.**
+`COVERED_BATCH` was swept over 50/100/200/400 shapes before it was chosen; this is a different
+operation (many small pieces unioned, rather than a growing accumulator subtracted) and its curve
+has not been taken. Do that first. A constant copied across from the other call site would close
+the finding without measuring anything, which is the failure this file exists to prevent.
 
 ## Cancelling a rebuild waits for the current part, and flat rebuilds cannot be cancelled at all
 
@@ -373,10 +412,27 @@ wrong in the direction that hides work.
 strictly _worse_: it opens with
 `geometry.index ? geometry.toNonIndexed() : geometry`, so an indexed input is
 expanded and then hashed anyway. Capturing the saving means a crease-aware
-normal pass that consumes an index directly — real work, not a swap. Measure
-first: the shading swap cost 3.0s → 4.1s on a chair load, and the weld is the
-plausible cause but was never isolated, so confirm the attribution before
-building anything.
+normal pass that consumes an index directly — real work, not a swap.
+
+**Measured 2026-08-23**, and it changes three things this section said. Full
+numbers in
+[docs/findings/2026-08-23-boolean-pass-and-weld.md](findings/2026-08-23-boolean-pass-and-weld.md);
+`scripts/bench-shading.ts` reproduces them.
+
+| Claim above                    | What the measurement says                                                                                                                             |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The weld is the cost           | Half of it. The bucketing is **50%** of `toCreasedNormals` and pass 1 is 53%; the averaging pass is the other half, and re-hashes every corner        |
+| The saving needs `bodyIndexed` | The packed **3MF already carries a triangle index**, and `load3MF` expands it to a soup and drops it. The load path never needed the boolean's output |
+| 3.0s → 4.1s is the shading     | The whole chair's shading is **720ms**, against 27ms for flat normals. The other ~380ms of that 1.1s is not accounted for and was not re-measured     |
+
+A prototype crease pass reading the index runs the chair in **96ms against
+686ms, 7.2x**, and agrees with `toCreasedNormals` to under 1° on all but 892 of
+1.1M corners (0.08%, worst 24.9°). Those are corners where the 0.01mm bucketing
+smooths across vertices the mesh keeps distinct. Not yet built: it still needs
+a path for user-uploaded STL, which has no index. Welding a soup means
+keying all 1.1M corners, the work the bench's hash column prices at 358ms, so that path is about
+**1.5x** rather than 7.2x. Do not quote the bench's 269ms "fused" column as the STL cost: it keys
+23k unique vertices per part, not a soup.
 
 Two more things worth knowing before touching this:
 

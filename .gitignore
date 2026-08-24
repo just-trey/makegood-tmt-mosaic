@@ -2,6 +2,7 @@
 node_modules/
 dist/
 .smoke-out/
+.bench-flat-rebuild/
 coverage/
 
 # Editor directories and system files

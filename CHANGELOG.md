@@ -192,6 +192,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Busy designs build faster.** Working out which color is visible where is the
+  slowest step of a flat build, and it now asks the shape engine for many shapes
+  at once instead of two at a time. A 135-path drawing went from 2.07 to 1.18
+  seconds in that step, and simpler files from 1.5x to 2.9x faster. The shapes
+  that come out are the same, checked by area on every color. One rare warning
+  changed with it: when the maths fails while merging what is painted over a
+  region, it no longer names a color, because that step now handles several
+  colors at once and would have named an arbitrary one of them.
+
 - **The capacity pill states one way out instead of three.** It read `5 filament
 slots needed, but … tops out at 4 in a single print. Either drag one color row
 onto another to merge them, or "→ base" to print one in the body (auto-merge
