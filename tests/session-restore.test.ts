@@ -279,6 +279,23 @@ describe('applyRestoredSession: assembly mode', () => {
   // maybeAutoLoadAssembly no-ops while any part is present, so leaving the previous kind's parts
   // in place would name the fallback kind in the dropdown while the scene and the export still
   // held the other one's. Reachable by switching part, then accepting the still-open banner.
+  // setArtworkZone re-applies the saved zoneId against the part actually loaded. On the fallback
+  // that part is a different kind, so an instance keeps a binding no mapper matches — and
+  // geometry/assembly.ts drops such an instance from the cut entirely, with nothing said and (on a
+  // part with a single design face) no dropdown to re-target it.
+  it('does not re-apply zone bindings that named the kind it did not restore onto', async () => {
+    await applyRestoredSession(
+      session({
+        shapeKind: 'assembly',
+        assembly: { kindId: 'kind-that-no-longer-exists', variantId: null },
+        artworks: [{ ...session().artworks[0], zoneId: 'left' }],
+      }),
+    );
+
+    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
+    expect(state.artworks.map((a) => a.zone)).toEqual([null]);
+  });
+
   it('drops the parts already loaded, so the fallback kind can auto-load its own', async () => {
     state.assembly.parts = [{ id: 1, name: 'Footrest' }] as unknown as typeof state.assembly.parts;
 

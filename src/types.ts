@@ -230,11 +230,10 @@ export interface AssemblyPart {
    * both branches of `asmLoadPartBuffer` and the `buildMesh` branch of `asmAdoptMesh` today.
    * `indexMatchesSoup` is the backstop, and it only catches the crash-shaped half.
    *
-   * Absent for a drag-and-dropped mesh even when the file carries an index, because an unwelded
-   * upload would shade worse under exact sharing than under the fallback's bucketing.
+   * Absent for a part loaded from an `.stl` manifest entry, which records no sharing at all.
    */
   indexed?: IndexedMesh;
-  /** which stl/parts.json entry this part was loaded from; absent for a drag-and-drop upload */
+  /** which stl/parts.json entry this part was loaded from */
   libraryPartId?: string;
   /**
    * The library asset as fetched, for a role whose mesh is *built* from that asset rather than

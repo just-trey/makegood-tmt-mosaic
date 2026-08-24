@@ -540,7 +540,7 @@ export function partsLibrarySettled(): boolean {
 /**
  * Parts library: project-specific STL/3MF files listed in stl/parts.json, so a role with a
  * matching libraryPartId auto-loads. Every role of every shipped kind declares one, so an
- * unreachable manifest means no part can load at all — see `partsLibraryFailed`. Adding a new
+ * unreachable manifest means no part can load at all — see `partsLibrarySettled`. Adding a new
  * part is "drop the file in public/stl/ + add one manifest entry".
  *
  */
@@ -551,25 +551,32 @@ export async function loadPartsLibrary(): Promise<void> {
   librarySettled = false;
   beginWork();
   try {
-    // stl/parts.json is a stable (non-content-hashed) URL, unlike the JS bundle — tag it with
-    // the app version so a returning visitor's cached pre-release manifest can't silently lag
-    // behind a bundle that already knows about a newer part (e.g. the footrest launch).
-    const v = typeof __APP_VERSION__ === 'undefined' ? 'dev' : __APP_VERSION__;
-    const res = await fetch(`stl/parts.json?v=${v}`);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    state.assembly.library = await res.json();
-  } catch {
-    /* no manifest reachable — `librarySettled` below is what says so */
-  } finally {
+    try {
+      // stl/parts.json is a stable (non-content-hashed) URL, unlike the JS bundle — tag it with
+      // the app version so a returning visitor's cached pre-release manifest can't silently lag
+      // behind a bundle that already knows about a newer part (e.g. the footrest launch).
+      const v = typeof __APP_VERSION__ === 'undefined' ? 'dev' : __APP_VERSION__;
+      const res = await fetch(`stl/parts.json?v=${v}`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      state.assembly.library = await res.json();
+    } catch {
+      /* no manifest reachable — `librarySettled` is what says so */
+    }
     librarySettled = true;
+    // The manifest may land after the user already opened Assembly mode — re-render either way, so
+    // the panel swaps "Loading assembly…" for the parts or for the error. This is also what loads a
+    // restore that was accepted while the fetch was still in flight.
+    //
+    // Inside the work window on purpose: the part fetches this kicks off take their own
+    // beginWork(), and idle.ts forbids the outstanding count touching zero across a handoff that
+    // is really one continuous busy stretch. Released after, a settle() waiting on the manifest
+    // resolves in the gap and measures an empty scene.
+    if (state.shapeKind === 'assembly') {
+      notifyPartsChanged();
+      maybeAutoLoadAssembly();
+    }
+  } finally {
     endWork();
-  }
-  // The manifest may land after the user already opened Assembly mode — re-render either way, so
-  // the panel swaps "Loading assembly…" for the parts or for the error. This is also what loads a
-  // restore that was accepted while the fetch was still in flight.
-  if (state.shapeKind === 'assembly') {
-    notifyPartsChanged();
-    maybeAutoLoadAssembly();
   }
 }
 

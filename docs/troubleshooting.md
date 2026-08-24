@@ -266,8 +266,8 @@ autosave failed.
 The browser controls the prompt's wording and substitutes its own generic copy
 in most cases, so what you see may not match the string above.
 
-- **The session isn't lost yet, but leaving now would lose it.** Export a 3MF or
-  the STL set before closing the tab.
+- **The session isn't lost yet, but leaving now would lose it.** Export a 3MF
+  before closing the tab.
 - Common causes: the session grew past the app's size ceiling (a lot of large
   SVG artwork), the browser's storage quota for this site is full, or you are in
   a private window where storage is disabled.

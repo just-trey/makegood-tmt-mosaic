@@ -548,6 +548,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     session.shapeKind === 'assembly' && session.assembly.kindId
       ? ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId)
       : undefined;
+  let keepSavedZones = true;
   if (session.shapeKind === 'assembly' && kind) {
     state.shapeKind = 'assembly';
     state.assembly.kindId = kind.id;
@@ -563,11 +564,16 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     state.shapeKind = 'assembly';
     state.assembly.kindId = firstOfferedKind().id;
     state.assembly.variantId = null;
-    // Cleared, or the fallback silently keeps whatever the user had loaded before clicking
-    // Restore: maybeAutoLoadAssembly no-ops while any part is present, so the dropdown would name
-    // the fallback kind while the scene and the export still held the other one's parts. The
-    // branch above avoids this only because asmLoadFullAssembly clears the list itself.
+    // Cleared for the same reason `#shape-kind`'s own handler clears them (ui/partPanel.ts):
+    // maybeAutoLoadAssembly no-ops while any part is present, so leaving the previous kind's in
+    // place would name the fallback kind in the dropdown while the scene and the export still
+    // held the other one's.
     state.assembly.parts = [];
+    // And the saved zone bindings can't be re-applied below, for the other half of that handler's
+    // reasoning: they name zones on a part that is not the one being restored onto. An instance
+    // bound to a zone no mapper matches is dropped by geometry/assembly.ts and never cut, with no
+    // warning and, on a part with one design face, no dropdown to re-target it.
+    keepSavedZones = false;
   }
 
   // Instances of a source that could not be rebuilt go with it, or the placement points at
@@ -594,7 +600,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       mode: allowedArtworkMode(a.mode),
     }));
   restoreArtworkPool(sources, artworks);
-  session.artworks.forEach((a) => setArtworkZone(a.id, a.zoneId));
+  session.artworks.forEach((a) => setArtworkZone(a.id, keepSavedZones ? a.zoneId : null));
   setActiveArtwork(
     artworks.some((a) => a.id === session.activeArtworkId)
       ? session.activeArtworkId
