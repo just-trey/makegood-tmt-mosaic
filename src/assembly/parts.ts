@@ -62,7 +62,12 @@ export async function asmLoadFullAssembly(): Promise<void> {
   const kind = currentAssemblyKind();
   if (!kind) return;
   if (!asmKindCanAutoLoad(kind)) {
-    await alertDialog("Couldn't load this part. Reload the page to try again.");
+    // Only once the fetch has come back and failed. While it is still in flight this returns
+    // quietly and loadPartsLibrary calls back through maybeAutoLoadAssembly when it lands, so a
+    // restore accepted mid-flight loads a moment later instead of opening a "reload the page"
+    // dialog over a session that was about to work.
+    if (partsLibraryFailed())
+      await alertDialog("Couldn't load this part. Reload the page to try again.");
     return;
   }
   if (
@@ -515,12 +520,29 @@ export function applyAsmPatchChoice(part: AssemblyPart): void {
 }
 
 /**
+ * Whether stl/parts.json has arrived. An empty `state.assembly.library` cannot answer this on its
+ * own: it is equally "the fetch hasn't come back yet" and "there is no manifest", and the two need
+ * opposite things said about them. Reporting the first as the second told every healthy boot it
+ * had failed, for the second or so before the manifest landed.
+ */
+let libraryFailed = false;
+
+/** True only once the manifest fetch has actually come back and failed. */
+export function partsLibraryFailed(): boolean {
+  return libraryFailed;
+}
+
+/**
  * Parts library: project-specific STL/3MF files listed in stl/parts.json, so a role with a
- * matching libraryPartId auto-loads instead of requiring drag-and-drop. Purely additive — a
- * missing/unreachable manifest just leaves the library empty and roles fall back to
- * drag-and-drop. Adding a new part is "drop the file in public/stl/ + add one manifest entry".
+ * matching libraryPartId auto-loads. Every role of every shipped kind declares one, so an
+ * unreachable manifest means no part can load at all — see `partsLibraryFailed`. Adding a new
+ * part is "drop the file in public/stl/ + add one manifest entry".
+ *
  */
 export async function loadPartsLibrary(): Promise<void> {
+  // Cleared at the *start*, not on success: while a fetch is in flight there is no known failure
+  // to report, so a retry shows "Loading assembly…" again rather than the previous attempt's error.
+  libraryFailed = false;
   beginWork();
   try {
     // stl/parts.json is a stable (non-content-hashed) URL, unlike the JS bundle — tag it with
@@ -530,16 +552,17 @@ export async function loadPartsLibrary(): Promise<void> {
     const res = await fetch(`stl/parts.json?v=${v}`);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     state.assembly.library = await res.json();
-    // the manifest may land after the user already opened Assembly mode — re-render and
-    // auto-load now that the library (which auto-load depends on) is available.
-    if (state.shapeKind === 'assembly') {
-      notifyPartsChanged();
-      maybeAutoLoadAssembly();
-    }
   } catch {
-    // no manifest present — silently do nothing, this is optional
+    libraryFailed = true;
   } finally {
     endWork();
+  }
+  // The manifest may land after the user already opened Assembly mode — re-render either way, so
+  // the panel swaps "Loading assembly…" for the parts or for the error. This is also what loads a
+  // restore that was accepted while the fetch was still in flight.
+  if (state.shapeKind === 'assembly') {
+    notifyPartsChanged();
+    maybeAutoLoadAssembly();
   }
 }
 

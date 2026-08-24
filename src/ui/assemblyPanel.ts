@@ -8,6 +8,7 @@ import {
   asmRebuildGeneratedParts,
   asmRemovePart,
   onAssemblyPartsChanged,
+  partsLibraryFailed,
   switchChairVariant,
 } from '../assembly/parts';
 import { getPrinter } from '../export/printers';
@@ -346,6 +347,14 @@ export function renderAssemblyRoleControls(): void {
     return;
   }
 
+  // Still waiting on stl/parts.json. Says nothing rather than reporting a failure that hasn't
+  // happened: `main.ts` calls setShapeKind('assembly') a line before loadPartsLibrary(), so this
+  // is the state every healthy boot passes through for as long as the fetch takes.
+  if (!partsLibraryFailed()) {
+    box.innerHTML = '';
+    return;
+  }
+
   // The manifest didn't load, which takes every part with it. This used to offer per-role add
   // buttons and a mesh drop target, letting the user supply their own STL/3MF — but the app cannot
   // check an arbitrary mesh is the part it claims to be, and every verified export pose is keyed to
@@ -436,8 +445,14 @@ export function renderAssemblyPartList(): void {
   const kind = currentAssemblyKind();
   const parts = state.assembly.parts;
 
-  // Nothing to list, and renderAssemblyRoleControls has already said why directly above this box.
-  if (!kind || !asmKindCanAutoLoad(kind)) return;
+  if (!kind) return;
+  if (!asmKindCanAutoLoad(kind)) {
+    // Two different states, and only one of them is a failure. While stl/parts.json is still in
+    // flight this is the same "Loading assembly…" a selected kind shows before its meshes arrive;
+    // once it has failed, renderAssemblyRoleControls has already said so directly above this box.
+    if (!partsLibraryFailed()) box.innerHTML = '<div class="hint">Loading assembly…</div>';
+    return;
+  }
 
   // A clean one-line-per-part summary with the detailed face/alignment/remove controls tucked
   // behind an "Advanced" disclosure, so the default view is just "the wheel loaded" instead of a

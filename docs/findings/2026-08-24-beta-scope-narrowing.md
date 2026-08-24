@@ -48,6 +48,47 @@ parts for the Wheel (Top ×2 + Cap)" — the parenthetical is a parts list and
 reads as part of the sentence. The kind name came out; the user can see which
 part is selected.
 
+## Round 2: what `/code-review` found that the run had not
+
+The first pass of this branch went green on all five gates and on every driven
+check above, and was still wrong in five places. Recorded because four of the
+five are things a passing test suite cannot see.
+
+| Defect                                                                         | How it was missed                                                    |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| The error state flashed on **every healthy boot**, ~1s                         | No test covered the window; the driven check only tested the failure |
+| `asmLoadFullAssembly` alerted on a **pending** fetch, not a failed one         | Same root cause                                                      |
+| `npm run smoke` selected the removed `disc` option                             | Reported green because the invocation piped to `tail`                |
+| `check-view-fit.mjs` and `export-chair-examples.mjs` selected `asm:chair-body` | Neither runs in CI, and neither was run                              |
+
+**The root cause of the first two was one confusion.** An empty
+`state.assembly.library` is equally "the fetch has not come back" and "there is
+no manifest", and the two need opposite things said. `partsLibraryFailed()` now
+separates them, and both the panel and the alert read it.
+
+`main.ts` calls `setShapeKind('assembly')` on the line _before_
+`loadPartsLibrary()`, so the pending state is not an edge case: it is what every
+single boot passes through. Measured live before the fix at 578ms to 1573ms. The
+copy made it worse than a cosmetic flash, because it told the user to reload,
+which reproduces it.
+
+Re-verified with the manifest held back 3s and the DOM polled every 100ms for
+4s: no error at any point, and none once the parts arrive.
+
+**One defect the flag exposed, caught by its own test.** `libraryFailed` was
+first cleared on success only, so it stayed true across a retry and leaked
+between tests in one file. It is cleared when a fetch _starts_: while one is in
+flight there is no known failure to report.
+
+**Two things `smoke` lost, and one it never had.** Its disc steps went (see
+`docs/tech-debt.md`). The "Recess bg too" step went with them rather than moving
+to the assembly part: `state.recessBg` is read only inside `flat.ts`, so the
+Background row it waits for is never produced on any offered part. That control
+is therefore live and inert on screen — written up, not fixed, since it blocks
+nothing. And the PNG step needed the sample SVG removed first: designs stack
+rather than replace, so with the flat-mode detour gone the trace's 3 colors were
+being compared against 6 rows.
+
 ## Two checks that passed while testing nothing
 
 Both worth recording, because both looked green first.

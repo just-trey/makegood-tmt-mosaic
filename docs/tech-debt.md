@@ -649,6 +649,24 @@ Everything here still compiles and is still covered by `tests/flat.test.ts` and
 building) rather than a bug. The option list is what to touch if a future part
 wants a flat mode again.
 
+**"Recess bg too" is a live control that now does nothing.** `state.recessBg`
+is read in exactly one place, inside
+[flat.ts](../src/geometry/flat.ts), which produces the `isBackground` row the
+checkbox exists to add. With no flat mode reachable, ticking it on any offered
+part changes nothing and adds no row. Unlike the Margin slider, which
+`updateOffsetSliderRanges` hides in assembly mode, the checkbox has no such
+gate, so it is the one flat-only control still on screen. Not fixed here on
+purpose: it blocks nothing, and this release's rule was to fix only what stops
+a part working end to end. The fix is one line in
+[depthPanel.ts](../src/ui/depthPanel.ts), mirroring Margin's.
+
+**What `npm run smoke` no longer covers.** Four of its steps drove the disc:
+switch to flat mode, override the background recess depth, export a flat 3MF,
+export the per-color STL zip. They came out, since they drove UI that no longer
+exists. So the flat 3MF writer and the STL-zip writer now have unit coverage
+only, with nothing exercising either through a browser. The PNG-raster step was
+not flat-specific and was kept, now running against the assembly part.
+
 ## Flat plate modes have no printable despeckle floor
 
 **Unreachable as of the beta** (see "The flat-plate modes ship compiled and

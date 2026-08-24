@@ -17,6 +17,7 @@ import {
   asmRemovePart,
   loadPartsLibrary,
   maybeAutoLoadAssembly,
+  partsLibraryFailed,
   onAssemblyPartsChanged,
 } from '../src/assembly/parts';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
@@ -468,6 +469,32 @@ describe('loadPartsLibrary', () => {
 
     expect(state.assembly.library).toEqual([]);
     expect(alertDialog).not.toHaveBeenCalled();
+    expect(partsLibraryFailed()).toBe(true);
+  });
+
+  // An empty library is equally "still fetching" and "there is no manifest", and only the second
+  // is a failure. Reading the first as the second put a "reload the page" dialog over a restore
+  // accepted mid-flight, on a session that then loaded correctly on its own.
+  it('reports no failure until the fetch has actually come back', async () => {
+    const lib: LibraryEntry[] = [{ id: 'w', name: 'Wheel', file: 'stl/w.stl' }];
+    let release: () => void;
+    const inFlight = new Promise<void>((r) => (release = r));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        await inFlight;
+        return { ok: true, json: async () => lib };
+      }),
+    );
+    state.shapeKind = 'disc';
+
+    const pending = loadPartsLibrary();
+    expect(state.assembly.library).toEqual([]);
+    expect(partsLibraryFailed()).toBe(false);
+
+    release!();
+    await pending;
+    expect(partsLibraryFailed()).toBe(false);
   });
 
   it('survives a manifest that is not valid JSON', async () => {

@@ -118,7 +118,10 @@ try {
       const { page, errors } = await newPage(browser, { viewport: { width: 1440, height: 900 } });
 
       console.log(`\n=== ${label} / ${variant} ===`);
-      await page.goto(`http://localhost:${PORT}/`);
+      // ?kind= rather than a selectOption below: the chair is withheld from the Part dropdown, so
+      // it has no option to select, and main.ts honours the parameter for a hidden kind. It also
+      // skips building the wheel first.
+      await page.goto(`http://localhost:${PORT}/?kind=chair-body`);
       await page.waitForFunction(
         () => {
           const t = document.querySelector('#stat-tris')?.textContent || '';
@@ -139,8 +142,7 @@ try {
           { timeout: 180_000 },
         );
 
-      console.log('  selecting the chair…');
-      await page.selectOption('#shape-kind', 'asm:chair-body');
+      console.log('  waiting for the chair…');
       await allPartsLoaded();
 
       console.log(`  variant: ${variant}`);

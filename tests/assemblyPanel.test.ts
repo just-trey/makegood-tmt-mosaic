@@ -10,6 +10,7 @@ vi.mock('../src/assembly/parts', () => ({
   asmRebuildGeneratedParts: vi.fn(),
   asmRemovePart: vi.fn(),
   onAssemblyPartsChanged: vi.fn(),
+  partsLibraryFailed: vi.fn(() => false),
   switchChairVariant: vi.fn(),
 }));
 vi.mock('../src/ui/artworkListPanel', () => ({ renderArtworkList: vi.fn() }));
@@ -17,7 +18,7 @@ vi.mock('../src/state/artwork', () => ({ availableZones: () => [], clampArtworkM
 vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 
 import { renderAssemblyPartList, renderAssemblyRoleControls } from '../src/ui/assemblyPanel';
-import { applyAsmPatchChoice } from '../src/assembly/parts';
+import { applyAsmPatchChoice, partsLibraryFailed } from '../src/assembly/parts';
 import { state } from '../src/state/store';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 import type { AssemblyPart } from '../src/types';
@@ -71,6 +72,7 @@ beforeEach(() => {
   // The face-status test gives this mock a real implementation. Nothing in the config resets
   // mocks between tests, so without this it would leak into whatever is appended after it.
   vi.mocked(applyAsmPatchChoice).mockReset();
+  vi.mocked(partsLibraryFailed).mockReturnValue(false);
 });
 
 describe('the per-part rows in the Part panel', () => {
@@ -90,6 +92,7 @@ describe('the per-part rows in the Part panel', () => {
   // invitation to supply your own.
   it('reports an error and offers no way in when the library is unreachable', () => {
     libraryReachable(false);
+    vi.mocked(partsLibraryFailed).mockReturnValue(true);
 
     renderAssemblyRoleControls();
     renderAssemblyPartList();
@@ -100,6 +103,23 @@ describe('the per-part rows in the Part panel', () => {
     expect(document.querySelector('[data-asm-file]')).toBeNull();
     expect(document.querySelector('[data-role-add]')).toBeNull();
     expect(document.querySelector('#assembly-part-list')?.children).toHaveLength(0);
+  });
+
+  // main.ts calls setShapeKind('assembly') a line before loadPartsLibrary(), so an empty library
+  // is the state every healthy boot passes through. Reading it as a failure told every user the
+  // app was broken for as long as the fetch took, and told them to reload, which reproduces it.
+  it('says nothing about failure while the manifest is still in flight', () => {
+    libraryReachable(false);
+    state.assembly.parts = [];
+
+    renderAssemblyRoleControls();
+    renderAssemblyPartList();
+
+    expect(document.querySelector('[data-asm-load-error]')).toBeNull();
+    expect(document.querySelector('#assembly-part-list')?.textContent).toContain('Loading');
+    // and still no way to supply a mesh in the meantime
+    expect(document.querySelector('[data-asm-drop]')).toBeNull();
+    expect(document.querySelector('[data-role-add]')).toBeNull();
   });
 
   it('leaves the per-part face override in place — it is the only face control there is', () => {
