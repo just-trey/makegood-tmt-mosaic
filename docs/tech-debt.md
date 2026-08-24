@@ -389,8 +389,9 @@ than done alongside the reconciliation warning.
 ## Two open defects in the chair / pattern-library workflow
 
 Two of four defects the maintainer named on 2026-08-05; the other two are fixed.
-Both features are offered in the UI again. The report is the maintainer's, the
-diagnosis is not, and where the cause is confirmed it says so.
+Both features are withheld from the UI for the beta: `chair-body` carries
+`hidden: true` and `PATTERN_LIBRARY_ENABLED` is `false`. The report is the
+maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
 
 1. **Dead zones still need defining — open.** It is written up in
    [roadmap.md](roadmap.md) ("Dead zones: mark the parts of a design zone that
@@ -408,13 +409,14 @@ diagnosis is not, and where the cause is confirmed it says so.
    clips to. Note the repo already has curve fitting for the raster tracer
    (`src/raster/curve.ts`); nothing equivalent runs on a zone boundary.
 
-The `AssemblyKind.hidden` machinery is kept working although nothing ships
-hidden; the reasons are on `renderShapeKindOptions` in
-[src/ui/partPanel.ts](../src/ui/partPanel.ts), `savedSessionIsOnHiddenKind` in
-[src/state/persist.ts](../src/state/persist.ts), and at the top of
-`tests/persist-hidden-kind.test.ts`.
+`?kind=chair-body` still reaches the chair, which the `bake-zones` and
+`debug-csg-failure` skills and every chair drive script depend on. Nothing
+public names that parameter: it is out of the README's `?kind=` example list.
 
-## An uploaded mesh still re-derives its vertex weld for shading
+Neither flag is the fix. Restoring the chair needs the two defects above closed;
+restoring the pattern library needs the Zebra/Fill color loss below.
+
+## A library part shipped as an STL would shade the slow way
 
 Display shading reads a mesh's own vertex index where one exists
 ([src/geometry/creasedNormals.ts](../src/geometry/creasedNormals.ts)): Manifold
@@ -424,35 +426,51 @@ Measured in Chrome, that is **8.7x** on five chair parts (234.8ms -> 26.9ms), wi
 [docs/findings/2026-08-23-indexed-crease-normals.md](findings/2026-08-23-indexed-crease-normals.md),
 with the Node attribution behind it in
 [docs/findings/2026-08-23-boolean-pass-and-weld.md](findings/2026-08-23-boolean-pass-and-weld.md).
-That closed the larger half of this item.
 
-**Every mesh the user supplies still falls through** to three's
-`toCreasedNormals`, which rediscovers the sharing by hashing every corner
-twice. The rule the code implements is "did we pack this mesh", not "does the
-format record sharing": an uploaded 3MF carries an index and it is dropped
-anyway, because one converted from an STL claims no sharing at all and would
-shade fully faceted where the fallback's 0.01mm bucketing smooths it.
+The larger half of this item closed with that change, and the rest closed with
+the custom-mesh upload path (below): every mesh the app now takes comes from
+`public/stl/parts.json`, all 19 entries are 3MF, and all of them carry an index.
 
-Everything we produce takes the fast path: packed library parts, Manifold's cut
-output, and the generated hubcap body.
+**What is left is one live branch nothing exercises.** `asmLoadPartBuffer`
+offers no index for an `.stl`, because an STL records no sharing at all. Adding
+an STL to the manifest would therefore put that part on three's
+`toCreasedNormals`, which rediscovers the sharing by hashing every corner twice.
+Pack parts as 3MF and it never comes up. Nothing enforces that.
 
-Closing it means welding first, and the weld is the expensive half: keying a
-soup's corners is the same work the bench prices at 358ms for the chair, so that
-path lands about **1.5x** rather than 8.7x. Fewer parts than the thirteen above, so
-the payoff is smaller again.
-
-**The fallback is also the safer behaviour, which is why it was left rather
-than replaced.** `toCreasedNormals` matches vertices by truncating to 0.01mm,
-which is bucketing, not an exact or epsilon match. On a mesh that states its own
-sharing that approximation is strictly worse, and the indexed path drops it. On
-a user's STL there is nothing to state it, and switching to an exact weld would
-change how their file shades: a shared corner whose coordinates straddle a
-boundary is welded by one rule and not the other. Cosmetic, source-dependent,
-still unmeasured.
+Closing it properly means welding first, and the weld is the expensive half:
+keying a soup's corners is the same work the bench prices at 358ms for the
+chair, so that path lands about **1.5x** rather than 8.7x.
 
 Whatever replaces it has to keep the crease behaviour rather than drop it. A
 blanket weld plus `computeVertexNormals()` was measured and rejected: it melted
 the embossed logo on the storage box. See `CREASE_ANGLE_RAD`.
+
+## The custom-mesh upload path was removed, and took a placement guard with it
+
+Until this release, a failed `fetch('stl/parts.json')` put the assembly panel
+into a manual mode: per-role "+ Add …" buttons and an STL/3MF drop target on
+every part row. It was the only way to reach `asmLoadPartFile`, and so the only
+producer of `AssemblyPart.meshFromUpload`.
+
+Removed because the app cannot check that an arbitrary mesh is the part it
+claims to be, and every verified export pose is keyed to the shipped one. A
+broken deployment was the only route there, so it now reports an error instead.
+
+**What went with it, and is worth knowing before anyone reopens the path:**
+
+- `resolvePlacement`'s `'unverified-upload'` and `'no-baked-placement'` reasons
+  ([src/export/placement.ts](../src/export/placement.ts)). They existed to tell
+  "the user brought their own mesh", a supported case worth a quiet info, from
+  "our own asset drifted", a defect worth a warning. With no uploads the split
+  has no meaning: a foreign mesh on a sealed role is now `'mesh-mismatch'`, and
+  an unsealed one is `'unknown-part'`. Both warn. **Reopening uploads without
+  restoring that split would report every user mesh as a repo defect.**
+- The provenance ordering in `resolvePlacement`, which checked
+  `meshFromUpload` _before_ `libraryPartId` precisely because a drop onto an
+  auto-loaded part deliberately left the old id in place.
+- `asmAdoptMesh`'s upload branch, which cleared `assetPositions`,
+  `edgeCutThroughDepth` and `buildWarning` so a mesh dropped onto a generated
+  role (the hubcap) replaced the part rather than being fed to its builder.
 
 ## The raster edge-density reading depends on how big the file is
 
@@ -599,7 +617,43 @@ Closing it means one message with the right remedies for both causes, and one id
 retracting it. Three review rounds on this branch each produced a new defect in it, which is why it
 was cut rather than patched again.
 
+## The flat-plate modes ship compiled and unrendered
+
+`disc`, `rect`, `round` and `stl` are all still `ShapeKind`s, with their param
+panels, their input bindings, [flat.ts](../src/geometry/flat.ts), the per-color
+STL-set export and their branches in `store.ts` and `rebuild.ts`. None is
+reachable: `renderShapeKindOptions`
+([src/ui/partPanel.ts](../src/ui/partPanel.ts)) writes assembly kinds into the
+Part dropdown and nothing else.
+
+`rect`/`round`/`stl` have been unrendered since before 2026-08-02 and were
+re-confirmed deliberate by review then. `disc` joined them for the beta, closing
+the 2026-08-08 cycle's **A3**: it produced a plain flat cylinder related to no
+TMT part, sitting in the primary picker at the same weight as four real ones.
+
+Three consequences worth knowing:
+
+- `#btn-export-stl` and the per-color STL-set export go with it. `setShapeKind`
+  hides that button in assembly mode, so no offered part reaches it, and the
+  README no longer offers it as a fallback for slicers that can't read a
+  pre-mapped 3MF.
+- Two `'disc'` fallbacks had to move, since a select value with no matching
+  option renders blank and the next switch away is one-way: the option-list
+  default in `renderShapeKindOptions`, and the retired-kind branch of session
+  restore ([src/state/persist.ts](../src/state/persist.ts)). Both now take
+  `firstOfferedKind()`.
+- A session saved in a flat mode before this release restores onto the wheel.
+
+Everything here still compiles and is still covered by `tests/flat.test.ts` and
+`tests/depth.test.ts`. It is a maintenance question (why keep four dead panels
+building) rather than a bug. The option list is what to touch if a future part
+wants a flat mode again.
+
 ## Flat plate modes have no printable despeckle floor
+
+**Unreachable as of the beta** (see "The flat-plate modes ship compiled and
+unrendered"), so nothing can hit this today. Kept because reopening any flat
+mode reopens it, unfixed.
 
 The floor that stops the trace keeping detail under one nozzle width
 ([2026-08-20 printable floor](findings/2026-08-20-printable-floor.md)) applies on assembly kinds

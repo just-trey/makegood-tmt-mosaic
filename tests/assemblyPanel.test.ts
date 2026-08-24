@@ -6,10 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../src/app/scheduler', () => ({ scheduleRebuild: vi.fn() }));
 vi.mock('../src/assembly/parts', () => ({
   applyAsmPatchChoice: vi.fn(),
-  asmAddRoleDuplicate: vi.fn(),
-  asmAddRolePart: vi.fn(),
   asmLoadFullAssembly: vi.fn(),
-  asmLoadPartFile: vi.fn(),
   asmRebuildGeneratedParts: vi.fn(),
   asmRemovePart: vi.fn(),
   onAssemblyPartsChanged: vi.fn(),
@@ -19,7 +16,7 @@ vi.mock('../src/ui/artworkListPanel', () => ({ renderArtworkList: vi.fn() }));
 vi.mock('../src/state/artwork', () => ({ availableZones: () => [], clampArtworkModes: vi.fn() }));
 vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 
-import { renderAssemblyPartList } from '../src/ui/assemblyPanel';
+import { renderAssemblyPartList, renderAssemblyRoleControls } from '../src/ui/assemblyPanel';
 import { applyAsmPatchChoice } from '../src/assembly/parts';
 import { state } from '../src/state/store';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
@@ -65,7 +62,8 @@ const libraryReachable = (yes: boolean) => {
 };
 
 beforeEach(() => {
-  document.body.innerHTML = '<div id="assembly-part-list"></div>';
+  document.body.innerHTML =
+    '<div id="assembly-role-controls"></div><div id="assembly-part-list"></div>';
   state.shapeKind = 'assembly';
   state.assembly.kindId = kind.id;
   state.assembly.parts = [part()];
@@ -87,14 +85,21 @@ describe('the per-part rows in the Part panel', () => {
     expect(document.querySelector('[data-asm-file]')).toBeNull();
   });
 
-  it('keeps the drop target where the library is unreachable and it is the only way in', () => {
+  // The app cannot check that an arbitrary mesh is the part it claims to be, and every verified
+  // export pose is keyed to the shipped one — so an unreachable library is an error, not an
+  // invitation to supply your own.
+  it('reports an error and offers no way in when the library is unreachable', () => {
     libraryReachable(false);
 
+    renderAssemblyRoleControls();
     renderAssemblyPartList();
 
-    expect(document.querySelector('.asm-adv')).toBeNull(); // full rows, not the summary
-    expect(document.querySelector('[data-asm-drop]')).not.toBeNull();
-    expect(document.querySelector('[data-asm-file]')).not.toBeNull();
+    const err = document.querySelector('[data-asm-load-error]');
+    expect(err?.textContent).toContain('Reload the page');
+    expect(document.querySelector('[data-asm-drop]')).toBeNull();
+    expect(document.querySelector('[data-asm-file]')).toBeNull();
+    expect(document.querySelector('[data-role-add]')).toBeNull();
+    expect(document.querySelector('#assembly-part-list')?.children).toHaveLength(0);
   });
 
   it('leaves the per-part face override in place — it is the only face control there is', () => {

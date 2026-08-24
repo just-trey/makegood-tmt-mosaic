@@ -8,7 +8,7 @@ import {
   setActiveArtwork,
   setArtworkZone,
 } from './artwork';
-import { ASSEMBLY_KINDS } from '../assembly/kinds';
+import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
 import { HUBCAP_MIN_DIAMETER_MM } from '../geometry/hubcap';
 import { getPrinter } from '../export/printers';
 import { asmLoadFullAssembly } from '../assembly/parts';
@@ -554,9 +554,14 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     state.assembly.variantId = session.assembly.variantId;
     await asmLoadFullAssembly();
   } else {
-    // Either a flat mode, or an assembly kind that no longer exists (renamed/retired since the
-    // session was saved) — fall back to the flat default rather than fail the whole restore.
-    state.shapeKind = session.shapeKind === 'assembly' ? 'disc' : session.shapeKind;
+    // Either an assembly kind that no longer exists (renamed/retired since the session was saved),
+    // or a flat mode from a session saved back when one was offered. Neither has an option in the
+    // Part dropdown any more, so falling back to the saved value would leave the select blank and
+    // the next switch away from it one-way. Take the first offered kind instead of failing the
+    // whole restore. The parts are left to restoreBanner's own setShapeKind, which auto-loads
+    // them: loading here would alert about an unreachable library the caller is about to retry.
+    state.shapeKind = 'assembly';
+    state.assembly.kindId = firstOfferedKind().id;
   }
 
   // Instances of a source that could not be rebuilt go with it, or the placement points at

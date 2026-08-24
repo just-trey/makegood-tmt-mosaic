@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   moment on a photograph. The colors come back exactly as they were, because the
   copy is lossless.
 - **A long rebuild can be cancelled.** The "Rebuilding geometry…" curtain carries
-  a Cancel button on multi-part shapes like the wheel and the chair. Before,
+  a Cancel button on any part. Before,
   starting the wrong rebuild meant waiting it out or reloading the page, and
   reloading used to take every setting with it. Measured on a dense design: a 79
   second rebuild returned the app at 23.7 seconds. It is not instant, because it
@@ -36,20 +36,142 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   below", which was pointing at that other panel instead of showing the state.
 - **The Export panel says what you are about to get.** Above the button: how
   many parts, how many plates, and a swatch per filament, with the parts listed
-  plate by plate. Exporting the chair produces a 34 MB, 11-plate, 13-object,
-  5-filament file, and until now the panel said nothing about that either before
-  or after; the only feedback was the download itself. It follows the build on
-  screen, so a color change or a merge updates it before you commit. The plate
-  count appears where the part's plates are pinned, which covers the chair, the
+  plate by plate. Until now the panel said nothing about any of that either
+  before or after; the only feedback was the download itself. It follows the
+  build on screen, so a color change or a merge updates it before you commit.
+  The plate count appears where the part's plates are pinned, which covers the
   wheel and the footrest; a hubcap cut to artwork shape, or on a bed with no
   verified arrangement, is packed at export time and shows parts and filaments
   only.
-- **The chair's fenders can take artwork on their front face.** Two new design
-  zones, Left fender and Right fender (44.6 x 242.4mm each), cover the forward
-  face of each wing from the bottom edge up over the curve of the arch. The
-  face was previously outside every zone: the side zones stop at the flank, and
-  the front zone never reached the wings. Each fender zone comes with its own
-  true-size template.
+- **Hubcap part, built to the size you choose.** The first part the app
+  generates rather than loads: the four mounting clips ship as a fixed mesh and
+  the disc is built at whatever **Hubcap diameter** you set, 220mm to start
+  with, keeping a 3mm thickness and 1mm chamfered edge at any size. Artwork
+  recesses into it
+  at the usual depth. The diameter is capped by the printer's bed and floored
+  at the size that still covers the clips, so it can't produce a disc that
+  won't print or one whose clips come away as loose pieces. The design template
+  is drawn to the current size rather than being a fixed file.
+- The hubcap's plate is verified up to 220mm on 256mm and 270mm beds, exporting
+  at a hand-checked position with the prime tower clear of it (7mm on 256mm,
+  19mm on 270mm) and the tower width that clearance assumes. Above 220mm, or on
+  any other bed, it centres with the tower in the freest corner and says so.
+- A generated part now says plainly when it has no pre-verified plate position,
+  instead of reporting it as though one of the app's own meshes had drifted.
+- **Cut the hubcap to its own artwork's shape.** A new **Cut to artwork shape**
+  checkbox replaces the round disc with the outline of the artwork on it, so a
+  logo or character prints as its own silhouette. One image drives both picture
+  and cutline, so it needs a real transparent background and exactly one design
+  loaded. The edge is cut square, and the shape follows the artwork's scale,
+  rotation and flips, with the design template drawn to the silhouette rather
+  than to a disc. Offset does nothing while it is on: the part centres on
+  its clips and the picture on the part.
+  - Refused with a named reason when the shape wouldn't bond to the clips, when
+    the image has no transparency, or when more than one design is loaded. A
+    too-thin feature warns rather than refusing. Removing the artwork or the
+    checkbox reverts the part to a circle.
+  - A shape bigger than the 280mm wheel is scaled down to fit, artwork and all,
+    and says so.
+  - Fill is withheld while it is on; only Sticker makes sense against a shape
+    that keeps changing.
+- **Artwork at the edge of a cut-to-shape hubcap now cuts the full 3mm through**,
+  while interior artwork keeps its recess depth. Recessing the picture 1mm into
+  a 3mm shell left the outline as a 2mm band of base colour, visible from every
+  angle but straight on. The app names the colours this applied to. It overrides
+  a hand-set depth at the edge only, and applies to no other part: a round
+  hubcap's rim is chamfered, so its design face is inset from the edge and
+  cutting through wouldn't put the colour on the rim. Outside edge only: a
+  silhouette enclosing a hole keeps a base-colour rim around it, see
+  [docs/tech-debt.md](docs/tech-debt.md).
+- **Raster artwork.** The dropzone now takes PNG, JPG or WebP (and GIF or BMP)
+  as well as SVG. Images are quantized into flat colour regions, traced back to
+  outlines, and go through the same placement, merging, cutting and export path.
+  Format is detected from the file's bytes, so a mislabelled file still works.
+  Transparent areas cut nothing, and a phone photo arrives the right way up.
+- Each loaded image gets **Colors** and **Detail** sliders on its row. Colors
+  sets how many flat colours to reduce to, with a readout of how many were found
+  and how many regions that came to. Detail trades fine texture against
+  printability. Smoothing and speckle removal are tuned automatically from how
+  detailed the image is, so a photo and a logo are handled differently without
+  anyone saying which. Both re-trace on release, and per-colour depths carry
+  across.
+- An image whose detail runs past what is printable says so and merges the
+  too-fine parts into their surroundings, rather than tracing thousands of
+  specks. See [docs/troubleshooting.md](docs/troubleshooting.md).
+- **Traced outlines are fitted curves rather than pixel steps.** Every diagonal
+  used to ship the raster's own staircase, about half a millimetre of step
+  across the largest part, because corners could only land on whole pixels.
+  Boundaries now fit between pixels, so a traced logo has smooth edges at any
+  size while genuine square corners stay square.
+- **Flat artwork is traced at twice the resolution**, keeping detail that used
+  to be rounded away: on one cartoon the pupils and eye highlights survive where
+  they previously merged into a blob. Photographs stay at the old resolution,
+  where extra pixels buy sensor noise. The app decides which an image is by
+  looking at it.
+- The help panel has an About section linking
+  [3d-mobility.org](https://3d-mobility.org), where the TMT's printable part
+  files and assembly instructions live.
+- Below 900px window width, a plain message asks for a wider window instead of
+  showing the layout crushed. The desktop-only range is now driven and
+  screenshotted from 1920 down to 900px rather than asserted.
+- Every confirmation and error alert now uses a themed dialog matching the app
+  instead of the browser's unstyled `confirm()`/`alert()`.
+- The warning panel shows every current warning, not just the first 6 with the
+  rest collapsed into "+ N more warnings". Each pill has its own "×", plus a
+  "Dismiss all" when there is more than one.
+- **Merging colours no longer requires a drag.** Each row shows a "⠿" grip
+  marking what is draggable, plus a "Merge with…" dropdown for keyboard or touch
+  use. The Colors and Artwork hints now also explain Sticker/Fill.
+- **The AMS slot line always shows both numbers** ("N colors → M AMS slots
+  needed"), not only after a merge, and reconciles against the printer picked in
+  Export: brightening past the 4 slots in one AMS unit, red only past what the
+  printer can do in one go (16 across chained units on X1C/P1S/A1, 25 on an H2D
+  across both nozzles, a hard 4 on the Snapmaker U1). A pill says which and how
+  to get the count down. Both update on switching printers rather than waiting
+  for an export, and dismissing the pill keeps it gone until the count or
+  printer changes. The printer picker is relabeled name-first.
+- **A second design no longer lands exactly on the first.** On an assembly part
+  it starts stepped 8mm across and down, so it is visible and draggable without
+  moving the design covering it.
+- **Designs overlapping on one surface now warn, naming both by filename.** Two
+  overlapping recesses export as two inlays claiming the same space, which a
+  slicer resolves arbitrarily; nothing said so before. Two Fills get their own
+  wording, since moving or rescaling can't fix that. It doesn't block exporting,
+  and compares bounding boxes, so a design nested cleanly inside another can
+  trip it.
+
+- **Your session now autosaves as you work** (part, artwork, placement, colours,
+  depth, printer) and offers to restore it after a reload, close or crash. A
+  dismissible banner asks first; nothing is applied or rebuilt until you choose.
+  Leaving the tab with loaded artwork prompts to confirm. **Not restored:** an
+  uploaded STL reference mesh, or a loaded image, which must be re-dropped. A
+  session holding only an image saves nothing and offers no restore, but does
+  prompt on leaving, since that work genuinely can't be brought back.
+- On a part with several design surfaces, a design landing on just one now says
+  so: the row shows a "→ Zone name" badge, a pill names the zone and how many
+  surfaces are still blank, and exporting with blank surfaces warns which will
+  print body-coloured.
+- **The Artwork panel takes more than one design at once.** Each load adds a row
+  instead of replacing the last. Click a row to make it the design the fit
+  sliders and gizmo edit.
+- **Sticker or Fill** on an assembly part. Fill repeats the design across the
+  whole surface, one repeat per SVG document, clipped to the surface edge.
+  Scale sets the repeat size, Offset
+  shifts the pattern, and a fill needing an unreasonable number of repeats is
+  refused with a warning rather than hanging the tab.
+- **Export placement now checks the loaded mesh matches the mesh its baked
+  constants were verified against**, using the same fingerprint guard (triangle
+  count plus bbox hash) design zones already use. A part id renamed out of sync
+  with the placement table, or an asset re-packed without re-baking, now exports
+  auto-placed with a warning naming the part instead of silently applying
+  another part's rotation and position. A mesh you drag in inherits a role's
+  baked placement only if it really is the same mesh; otherwise it is placed
+  automatically with a quiet notice. (See the `wheel-mount-left` id-collision
+  fix under Fixed for the class of bug this generalizes a guard against.)
+- **A `?kind=` URL parameter** opens the app straight onto an assembly kind
+  (`?kind=footrest`, `?kind=hubcap`) instead of the wheel, so a link can
+  point at the part being discussed. An unknown or missing value opens the
+  wheel. It also reaches a kind left out of the Part dropdown.
 
 ### Changed
 
@@ -69,6 +191,137 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   already available before the app had to trace and simplify a photo to get
   one. A photo that traces cleanly now gets a dismissible notice naming it,
   the same way a photo that hit the detail cap already did.
+
+- **Parts appear faster.** Working out how to shade a part, so its curves
+  look curved and its machined edges stay crisp, meant re-deriving which corners
+  the model already knows are joined. It now reads that from the part instead,
+  which is about nine times quicker. Checked side by side
+  on screen at the same camera: 616 pixels out of 864,800 changed, none of them
+  by enough to see. A part you drop in yourself still takes the slower route,
+  whatever the file type: we cannot tell whether it records joined corners, and
+  guessing wrong would make it look faceted.
+
+- **Busy designs build faster.** Working out which color is visible where is the
+  slowest step of a flat build, and it now asks the shape engine for many shapes
+  at once instead of two at a time. A 135-path drawing went from 2.07 to 1.18
+  seconds in that step, and simpler files from 1.5x to 2.9x faster. The shapes
+  that come out are the same, checked by area on every color. One rare warning
+  changed with it: when the maths fails while merging what is painted over a
+  region, it no longer names a color, because that step now handles several
+  colors at once and would have named an arbitrary one of them.
+
+- **The capacity pill states one way out instead of three.** It read `5 filament
+slots needed, but … tops out at 4 in a single print. Either drag one color row
+onto another to merge them, or "→ base" to print one in the body (auto-merge
+alone may not be enough).` It now reads `… tops out at 4 in a single print. To
+fit, drag one color row onto another to merge them.` Printing a color in the
+  body, and swapping filament mid-print, are in Help, which is where a list of
+  alternatives belongs. The quieter note you get when a design needs more than
+  one unit but still fits the printer keeps saying so, since "this still prints"
+  is the reason it is a note and not a warning; it lost the same two extra
+  remedies. Its hover text lost an em dash with them.
+- **The cut warnings say what happened to your print, not what happened inside
+  the app.** `Couldn't build the cut solid for color #0a0a0a on Handle (left)`
+  is now `Couldn't cut color #0a0a0a into "Handle (left)"`, and `Boolean union
+failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
+  longer than the string it replaced. The merge warning also stopped guessing:
+  it used to blame "a self-intersecting path in the source SVG", the common
+  cause but not the only one, since a design repeated across a large zone can
+  simply be too big. It names no cause now and troubleshooting carries both.
+- **The accent stripe is drawn in the app's own two accent colors.** The bands
+  across the top and bottom of the window ran purple to indigo to teal, three
+  colors that appeared nowhere else in the app and in none of the token files.
+  They were a near-copy of makegood.design's banner gradient. Both bands now run
+  blue to cyan, `--accent` to `--accent-2`, so the stripe can't drift from the
+  palette the rest of the app uses.
+- **The session-restore banner's copy is set at the same leading as every other
+  paragraph in the app.** It was the only one at 1.4 rather than 1.55, with no
+  stated reason. This is the one visible change in a pass that otherwise moved
+  hardcoded CSS values onto the design tokens that already carried them (weight,
+  tracking, transition duration, swatch outline). Everything else is
+  byte-identical in what it renders: the audit's full-page census of every
+  rendered font size, weight, radius and colour is unchanged, and `var()`
+  adoption went from 80.0% to 84.5%.
+- **Panel explainer text is shorter, and mechanism help has moved to Help.** The
+  Colors detected hint packed six mechanisms into 96 words, and the Body colour
+  hint explained itself by pointing at two controls in another panel. Both are
+  now one or two sentences; Help already carried the detail. The Artwork hint
+  drops its Sticker/Fill paragraph for the same reason. Nothing was
+  removed from Help. See [docs/tech-debt.md](docs/tech-debt.md) for the model
+  problems the copy was covering for.
+- **The Help dialog is rewritten to the docs sentence rules.** Same eight
+  sections, same facts, same verified numbers. 38 em dashes and 57 sentences
+  over 20 words are gone; the longest sentence went from 50 words to 21.
+- **Help and panel text no longer uses words you would only have from CAD.**
+  "Quantized", "export artifacts", "shading ramps", "dominant member",
+  "chamfered edge" and "viewBox" are gone, replaced by what they mean.
+  Slicer words stay: filament, layer height and tileable are words you already
+  use. Every measurement is unchanged.
+- **The thumbnail beside the Part dropdown is now the part.** It was one of a
+  few hand-drawn glyphs chosen by how artwork is fitted rather than by what the
+  part looks like, so the footrest and the hubcap showed the same
+  rectangle. It is now drawn from the loaded mesh, at your display's real pixel
+  density and with a defined edge, from a fixed three-quarter angle so a thick
+  wheel and a thin cap are told apart. Neutral rather than accent blue, which is
+  reserved for selection.
+- **A Fill that couldn't be repeated across a surface now says why.** One
+  message covered four failures and told you to raise Scale for all of them,
+  right for one. Each now names the design, the part, its cause and its remedy:
+  too small to tile, no extent one way, a collapsed placement, or a part too
+  curved. See [docs/troubleshooting.md](docs/troubleshooting.md).
+- **The selection frame in the 3D view is no longer accent blue.** It was the
+  same blue the app uses for its controls, over artwork that is frequently also
+  blue. The frame and its corner handles are now white; the rotate handle moves
+  from an off-palette green to the palette's cyan. Nothing about its shape or
+  dragging changed. It is still faint where it crosses a light part, see
+  [docs/tech-debt.md](docs/tech-debt.md).
+
+- **Typography and spacing now run on tokens.** The app declared no `--text-*`
+  or `--space-*` property: 50 font-size rules and 97 padding/margin/gap rules
+  hardcoded their own px values, independently of each other and of
+  `design-system/tokens/`, which had inventoried those values and called the
+  inventory a scale. `src/styles.css` now declares five type tokens
+  (`--text-label/meta/body/emphasis/display`) and five spacing tokens
+  (`--space-hair/tight/row/section/panel`).
+
+  Two real bugs surfaced doing it: `.close-btn`, `.warn-dismiss` and
+  `.warn-clear-all` rendered in Arial rather than Inter, because form controls
+  don't inherit typography and nothing had set theirs; and `<code>` in the help
+  panel rendered in the browser's default monospace rather than IBM Plex Mono.
+  Both fixed.
+
+  `scripts/check-type-scale.mjs` (`npm run check:type-scale`) asserts that no
+  hardcoded px survives and every computed font-size is one of the five.
+  Design-system side: `tokens/typography.css` and `tokens/spacing.css` renamed
+  to the same five tokens each, `--font-heading/--font-sans/--font-mono` renamed
+  to `--heading/--sans/--mono`, and every reference updated. Values fitting
+  neither scale are resolved as comments beside the code they constrain, or
+  promoted to [docs/tech-debt.md](docs/tech-debt.md).
+
+### Removed
+
+- **Bringing your own STL or 3MF is no longer offered.** A part row could take a
+  dropped mesh, with per-part "+ Add" buttons beside it, on the one screen you
+  reached when the parts hadn't loaded. The app can't check that a mesh you
+  supply is the part it stands in for, and every hand-verified plate position,
+  rotation and prime tower is keyed to the shipped part, so anything dropped in
+  exported at a computed position nobody had opened in a slicer. If the parts
+  can't be reached, the panel now says so and asks you to reload the page. The
+  Advanced per-part face and alignment controls are untouched.
+
+- **Disc (reference) is out of the Part dropdown.** It was a plain flat plate
+  you sized by hand, matching no TMT part, listed beside the real ones at the
+  same weight. The dropdown is the parts themselves now: Wheel, Footrest and
+  Hubcap. Two controls that only ever applied to a flat plate go with it: the
+  Margin slider in Artwork fit, and the per-color STL set. Both were already
+  hidden on a real part, so nothing changes about what you get from one.
+
+- **The standalone hidden "Wheel mount (left)" assembly kind.** Briefly shipped
+  then deliberately un-shipped with no technical blocker recorded, asymmetric
+  (left-hand only, no matching right), and its role id collided with another
+  part's wheel-mount role in the export placement logic. That part's own
+  left/right wheel mounts are unaffected; they were always separate files in a
+  separately-verified pose.
 
 ### Fixed
 
@@ -185,8 +438,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the selected printer, so the U1 says toolchanger and the Bambus still say AMS
   unit.
 - **One word per concept, across every string.** The app used "surface" for two
-  different things (a **zone**, one of several named design areas on a part like
-  the chair body, and the **design face**, the single area on a part with one),
+  different things (a **zone**, one of several named design areas on a part
+  that has them, and the **design face**, the single area on a part with one),
   and spread "AMS slot", "filament slot", "filament" and "color" over what is
   really three things: the color your artwork has, the filament that prints it,
   and the numbered slot it sits in. "surface" is gone, the slot line reads
@@ -214,14 +467,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   plus the body: the inner disc is gone and a ring that never traced (a
   stroke with no fill) went with it.
 
-- **The chair's five design zone templates now show the real printable
-  surface.** Each sheet was drawn from the whole-zone outline, which frays into
-  spikes wherever it crosses a printed-part seam: 48 separate pieces on the left
-  side alone. Sheets showed grey wedges over surface that is not there, beside
-  white gaps over surface that is. They are now drawn from the same per-part
-  regions the app clips artwork to, so the sheet matches what actually cuts.
-  Templates only: the baked zone data is unchanged, so nothing about the 3D
-  preview or the export moved.
 - **The Help panel and the Fit hint now mention Flip V.** Both explained Flip H
   and stopped, leaving the checkbox beside it undescribed. Both now say it
   mirrors top-to-bottom, and Help adds that Flip H/V are mirrors, not rotations:
@@ -233,316 +478,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The Help dialog now closes when you press Back after following one of its own
   section links. It used to stay on screen over an app you had navigated away
   from.
-- **Clicking a design zone in the 3D view now hits the one you can see.**
-  Picking tested only the design zones, which are invisible to the renderer,
-  so a click on a handle or storage box in front of another zone selected the
-  one behind it. Measured on the chair across four viewpoints: 33 sampled points
-  showing bare body still selected a zone. Now none do.
-  `npm run check:zone-occlusion` is the check.
-
-### Changed
-
-- **The chair appears faster.** Working out how to shade a part, so its curves
-  look curved and its machined edges stay crisp, meant re-deriving which corners
-  the model already knows are joined. It now reads that from the part instead,
-  which is about nine times quicker on the chair's pieces. Checked side by side
-  on screen at the same camera: 616 pixels out of 864,800 changed, none of them
-  by enough to see. A part you drop in yourself still takes the slower route,
-  whatever the file type: we cannot tell whether it records joined corners, and
-  guessing wrong would make it look faceted.
-
-- **Busy designs build faster.** Working out which color is visible where is the
-  slowest step of a flat build, and it now asks the shape engine for many shapes
-  at once instead of two at a time. A 135-path drawing went from 2.07 to 1.18
-  seconds in that step, and simpler files from 1.5x to 2.9x faster. The shapes
-  that come out are the same, checked by area on every color. One rare warning
-  changed with it: when the maths fails while merging what is painted over a
-  region, it no longer names a color, because that step now handles several
-  colors at once and would have named an arbitrary one of them.
-
-- **The capacity pill states one way out instead of three.** It read `5 filament
-slots needed, but … tops out at 4 in a single print. Either drag one color row
-onto another to merge them, or "→ base" to print one in the body (auto-merge
-alone may not be enough).` It now reads `… tops out at 4 in a single print. To
-fit, drag one color row onto another to merge them.` Printing a color in the
-  body, and swapping filament mid-print, are in Help, which is where a list of
-  alternatives belongs. The quieter note you get when a design needs more than
-  one unit but still fits the printer keeps saying so, since "this still prints"
-  is the reason it is a note and not a warning; it lost the same two extra
-  remedies. Its hover text lost an em dash with them.
-- **The cut warnings say what happened to your print, not what happened inside
-  the app.** `Couldn't build the cut solid for color #0a0a0a on Handle (left)`
-  is now `Couldn't cut color #0a0a0a into "Handle (left)"`, and `Boolean union
-failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
-  longer than the string it replaced. The merge warning also stopped guessing:
-  it used to blame "a self-intersecting path in the source SVG", the common
-  cause but not the only one, since a design repeated across a large zone can
-  simply be too big. It names no cause now and troubleshooting carries both.
-- **The accent stripe is drawn in the app's own two accent colors.** The bands
-  across the top and bottom of the window ran purple to indigo to teal, three
-  colors that appeared nowhere else in the app and in none of the token files.
-  They were a near-copy of makegood.design's banner gradient. Both bands now run
-  blue to cyan, `--accent` to `--accent-2`, so the stripe can't drift from the
-  palette the rest of the app uses.
-- **The assembly part drop target has the same corners as every other dropzone.**
-  It rendered at 6px against the 3px the design system states and the Artwork
-  dropzone uses. 6px was the app-wide radius before the v3 redesign moved
-  everything onto the 0-3px scale; this one was missed because it lives in a
-  template string rather than in `styles.css`. Only visible where the parts
-  library is unreachable, which is the one screen that drop target appears on.
-- **The session-restore banner's copy is set at the same leading as every other
-  paragraph in the app.** It was the only one at 1.4 rather than 1.55, with no
-  stated reason. This is the one visible change in a pass that otherwise moved
-  hardcoded CSS values onto the design tokens that already carried them (weight,
-  tracking, transition duration, swatch outline). Everything else is
-  byte-identical in what it renders: the audit's full-page census of every
-  rendered font size, weight, radius and colour is unchanged, and `var()`
-  adoption went from 80.0% to 84.5%.
-- **Panel explainer text is shorter, and mechanism help has moved to Help.** The
-  Colors detected hint packed six mechanisms into 96 words, and the Body colour
-  hint explained itself by pointing at two controls in another panel. Both are
-  now one or two sentences; Help already carried the detail. The Artwork hint
-  drops its Sticker/Fill and "+zone" paragraphs for the same reason. Nothing was
-  removed from Help. See [docs/tech-debt.md](docs/tech-debt.md) for the model
-  problems the copy was covering for.
-- **The Help dialog is rewritten to the docs sentence rules.** Same eight
-  sections, same facts, same verified numbers. 38 em dashes and 57 sentences
-  over 20 words are gone; the longest sentence went from 50 words to 21.
-- **Help and panel text no longer uses words you would only have from CAD.**
-  "Quantized", "export artifacts", "shading ramps", "dominant member",
-  "chamfered edge" and "viewBox" are gone, replaced by what they mean.
-  Slicer words stay: filament, layer height and tileable are words you already
-  use. Every measurement is unchanged.
-- **The thumbnail beside the Part dropdown is now the part.** It was one of a
-  few hand-drawn glyphs chosen by how artwork is fitted rather than by what the
-  part looks like, so the footrest, hubcap and chair all showed the same
-  rectangle. It is now drawn from the loaded mesh, at your display's real pixel
-  density and with a defined edge, from a fixed three-quarter angle so a thick
-  wheel and a thin cap are told apart. Neutral rather than accent blue, which is
-  reserved for selection.
-- **A Fill that couldn't be repeated across a surface now says why.** One
-  message covered four failures and told you to raise Scale for all of them,
-  right for one. Each now names the design, the part, its cause and its remedy:
-  too small to tile, no extent one way, a collapsed placement, or a part too
-  curved. See [docs/troubleshooting.md](docs/troubleshooting.md).
-- **The selection frame in the 3D view is no longer accent blue.** It was the
-  same blue the app uses for its controls, over artwork that is frequently also
-  blue. The frame and its corner handles are now white; the rotate handle moves
-  from an off-palette green to the palette's cyan. Nothing about its shape or
-  dragging changed. It is still faint where it crosses a light part, see
-  [docs/tech-debt.md](docs/tech-debt.md).
-
-### Removed
-
-- **The "Drop STL/3MF here" target is gone from parts that loaded themselves.**
-  Dropping a file replaced the mesh but kept the role, and hand-verified export
-  placement is keyed to the mesh, so the part silently fell back to a computed
-  position nobody had opened in a slicer. It remains where the parts library is
-  unreachable and dragging a file in is the only way to get a part. The Advanced
-  per-part face and alignment controls are untouched.
-
-### Added
-
-- **Hubcap part, built to the size you choose.** The first part the app
-  generates rather than loads: the four mounting clips ship as a fixed mesh and
-  the disc is built at whatever **Hubcap diameter** you set, 220mm to start
-  with, keeping a 3mm thickness and 1mm chamfered edge at any size. Artwork
-  recesses into it
-  at the usual depth. The diameter is capped by the printer's bed and floored
-  at the size that still covers the clips, so it can't produce a disc that
-  won't print or one whose clips come away as loose pieces. The design template
-  is drawn to the current size rather than being a fixed file.
-- The hubcap's plate is verified up to 220mm on 256mm and 270mm beds, exporting
-  at a hand-checked position with the prime tower clear of it (7mm on 256mm,
-  19mm on 270mm) and the tower width that clearance assumes. Above 220mm, or on
-  any other bed, it centres with the tower in the freest corner and says so.
-- A generated part now says plainly when it has no pre-verified plate position,
-  instead of reporting it as though one of the app's own meshes had drifted.
-- **Cut the hubcap to its own artwork's shape.** A new **Cut to artwork shape**
-  checkbox replaces the round disc with the outline of the artwork on it, so a
-  logo or character prints as its own silhouette. One image drives both picture
-  and cutline, so it needs a real transparent background and exactly one design
-  loaded. The edge is cut square, and the shape follows the artwork's scale,
-  rotation and flips, with the design template drawn to the silhouette rather
-  than to a disc. Offset does nothing while it is on: the part centres on
-  its clips and the picture on the part.
-  - Refused with a named reason when the shape wouldn't bond to the clips, when
-    the image has no transparency, or when more than one design is loaded. A
-    too-thin feature warns rather than refusing. Removing the artwork or the
-    checkbox reverts the part to a circle.
-  - A shape bigger than the 280mm wheel is scaled down to fit, artwork and all,
-    and says so.
-  - Fill is withheld while it is on; only Sticker makes sense against a shape
-    that keeps changing.
-- **Artwork at the edge of a cut-to-shape hubcap now cuts the full 3mm through**,
-  while interior artwork keeps its recess depth. Recessing the picture 1mm into
-  a 3mm shell left the outline as a 2mm band of base colour, visible from every
-  angle but straight on. The app names the colours this applied to. It overrides
-  a hand-set depth at the edge only, and applies to no other part: a round
-  hubcap's rim is chamfered, so its design face is inset from the edge and
-  cutting through wouldn't put the colour on the rim. Outside edge only: a
-  silhouette enclosing a hole keeps a base-colour rim around it, see
-  [docs/tech-debt.md](docs/tech-debt.md).
-- **Raster artwork.** The dropzone now takes PNG, JPG or WebP (and GIF or BMP)
-  as well as SVG. Images are quantized into flat colour regions, traced back to
-  outlines, and go through the same placement, merging, cutting and export path.
-  Format is detected from the file's bytes, so a mislabelled file still works.
-  Transparent areas cut nothing, and a phone photo arrives the right way up.
-- Each loaded image gets **Colors** and **Detail** sliders on its row. Colors
-  sets how many flat colours to reduce to, with a readout of how many were found
-  and how many regions that came to. Detail trades fine texture against
-  printability. Smoothing and speckle removal are tuned automatically from how
-  detailed the image is, so a photo and a logo are handled differently without
-  anyone saying which. Both re-trace on release, and per-colour depths carry
-  across.
-- An image whose detail runs past what is printable says so and merges the
-  too-fine parts into their surroundings, rather than tracing thousands of
-  specks. See [docs/troubleshooting.md](docs/troubleshooting.md).
-- **Traced outlines are fitted curves rather than pixel steps.** Every diagonal
-  used to ship the raster's own staircase, about half a millimetre of step
-  across the largest part, because corners could only land on whole pixels.
-  Boundaries now fit between pixels, so a traced logo has smooth edges at any
-  size while genuine square corners stay square.
-- **Flat artwork is traced at twice the resolution**, keeping detail that used
-  to be rounded away: on one cartoon the pupils and eye highlights survive where
-  they previously merged into a blob. Photographs stay at the old resolution,
-  where extra pixels buy sensor noise. The app decides which an image is by
-  looking at it.
-- The help panel has an About section linking
-  [3d-mobility.org](https://3d-mobility.org), where the TMT's printable part
-  files and assembly instructions live.
-- Below 900px window width, a plain message asks for a wider window instead of
-  showing the layout crushed. The desktop-only range is now driven and
-  screenshotted from 1920 down to 900px rather than asserted.
-- Every confirmation and error alert now uses a themed dialog matching the app
-  instead of the browser's unstyled `confirm()`/`alert()`.
-- The warning panel shows every current warning, not just the first 6 with the
-  rest collapsed into "+ N more warnings". Each pill has its own "×", plus a
-  "Dismiss all" when there is more than one.
-- **Merging colours no longer requires a drag.** Each row shows a "⠿" grip
-  marking what is draggable, plus a "Merge with…" dropdown for keyboard or touch
-  use. The Colors and Artwork hints now also explain Sticker/Fill and "+zone".
-- **The AMS slot line always shows both numbers** ("N colors → M AMS slots
-  needed"), not only after a merge, and reconciles against the printer picked in
-  Export: brightening past the 4 slots in one AMS unit, red only past what the
-  printer can do in one go (16 across chained units on X1C/P1S/A1, 25 on an H2D
-  across both nozzles, a hard 4 on the Snapmaker U1). A pill says which and how
-  to get the count down. Both update on switching printers rather than waiting
-  for an export, and dismissing the pill keeps it gone until the count or
-  printer changes. The printer picker is relabeled name-first.
-- **A second design no longer lands exactly on the first.** On an assembly part
-  it starts stepped 8mm across and down, so it is visible and draggable without
-  moving the design covering it. A design on "All zones" counts as occupying
-  every surface, so a zone-bound one steps off it too.
-- **Designs overlapping on one surface now warn, naming both by filename.** Two
-  overlapping recesses export as two inlays claiming the same space, which a
-  slicer resolves arbitrarily; nothing said so before. Two Fills get their own
-  wording, since moving or rescaling can't fix that. It doesn't block exporting,
-  and compares bounding boxes, so a design nested cleanly inside another can
-  trip it.
-
-- **Your session now autosaves as you work** (part, artwork, placement, colours,
-  depth, printer) and offers to restore it after a reload, close or crash. A
-  dismissible banner asks first; nothing is applied or rebuilt until you choose.
-  Leaving the tab with loaded artwork prompts to confirm. **Not restored:** an
-  uploaded STL reference mesh, or a loaded image, which must be re-dropped. A
-  session holding only an image saves nothing and offers no restore, but does
-  prompt on leaving, since that work genuinely can't be brought back.
-- On a part with several design surfaces, a design landing on just one now says
-  so: the row shows a "→ Zone name" badge, a pill names the zone and how many
-  surfaces are still blank, and exporting with blank surfaces warns which will
-  print body-coloured.
-- **The Artwork panel takes more than one design at once.** Each load adds a row
-  instead of replacing the last. Click a row to make it the design the fit
-  sliders and gizmo edit, and on a multi-surface part each row can target a zone
-  (or place the same design on a second one) from its own dropdown.
-- **Sticker or Fill** on an assembly part. Fill repeats the design across the
-  whole surface, one repeat per SVG document, clipped to the surface edge and
-  wrapped conformally on a curved zone. Scale sets the repeat size, Offset
-  shifts the pattern, and a fill needing an unreasonable number of repeats is
-  refused with a warning rather than hanging the tab.
-- You can click a surface directly in the 3D view to bind the active design to
-  it, instead of using the row dropdown.
-- Assembly kinds with hardware variants (Standard vs Kit) show a version picker
-  at the top of the Part section. Switching reloads only the parts that differ,
-  confirming first if any are loaded.
-- **New assembly kind: Chair body**, the TMT's main frame, 13 printed pieces
-  with Standard/Kit caster mounts. Five surfaces (left, right, front, back,
-  seat) take artwork that wraps conformally onto the curved geometry rather than
-  being stamped flat.
-  - A newly loaded design starts on the first surface, not all five. "All zones"
-    is still in the dropdown.
-  - A surface covers the printed pieces under it rather than stopping at a
-    piece's edge: left and right run from the storage side across the handle and
-    wheel mount onto the front fender. A design laid across a join is split and
-    cut into each piece separately.
-  - Each surface has its own true-scale template, downloadable from the Part
-    section once the parts load. On a template spanning a join, dashed lines
-    mark it and labels name the piece each area lands on.
-  - Export placement is baked from MakeGood's own slicer-verified project, and
-    the prime tower from a second verified file.
-- **A built-in pattern library**: Cow, Dalmatian, Zebra and Tiger, as a
-  thumbnail strip in the Artwork panel. Clicking one loads it like an uploaded
-  SVG and defaults to Fill on an assembly part.
-- **Export placement now checks the loaded mesh matches the mesh its baked
-  constants were verified against**, using the same fingerprint guard (triangle
-  count plus bbox hash) design zones already use. A part id renamed out of sync
-  with the placement table, or an asset re-packed without re-baking, now exports
-  auto-placed with a warning naming the part instead of silently applying
-  another part's rotation and position. A mesh you drag in inherits a role's
-  baked placement only if it really is the same mesh; otherwise it is placed
-  automatically with a quiet notice. (See the `wheel-mount-left` id-collision
-  fix under Fixed for the class of bug this generalizes a guard against.)
-- **A `?kind=` URL parameter** opens the app straight onto an assembly kind
-  (`?kind=chair-body`, `?kind=footrest`) instead of the wheel, so a link can
-  point at the part being discussed. An unknown or missing value opens the
-  wheel. It also reaches a kind left out of the Part dropdown.
-
-### Changed
-
-- **Typography and spacing now run on tokens.** The app declared no `--text-*`
-  or `--space-*` property: 50 font-size rules and 97 padding/margin/gap rules
-  hardcoded their own px values, independently of each other and of
-  `design-system/tokens/`, which had inventoried those values and called the
-  inventory a scale. `src/styles.css` now declares five type tokens
-  (`--text-label/meta/body/emphasis/display`) and five spacing tokens
-  (`--space-hair/tight/row/section/panel`).
-
-  Two real bugs surfaced doing it: `.close-btn`, `.warn-dismiss` and
-  `.warn-clear-all` rendered in Arial rather than Inter, because form controls
-  don't inherit typography and nothing had set theirs; and `<code>` in the help
-  panel rendered in the browser's default monospace rather than IBM Plex Mono.
-  Both fixed.
-
-  `scripts/check-type-scale.mjs` (`npm run check:type-scale`) asserts that no
-  hardcoded px survives and every computed font-size is one of the five.
-  Design-system side: `tokens/typography.css` and `tokens/spacing.css` renamed
-  to the same five tokens each, `--font-heading/--font-sans/--font-mono` renamed
-  to `--heading/--sans/--mono`, and every reference updated. Values fitting
-  neither scale are resolved as comments beside the code they constrain, or
-  promoted to [docs/tech-debt.md](docs/tech-debt.md).
-
-- **Fill is no longer offered on the chair body**, and the pattern strip is
-  hidden there with it. Repeating a design across one of the five zones took
-  over a minute and a half to recut, "All zones" ran past fifteen minutes with
-  no way to stop it, and the bundled zebra lost a colour on "Handle (left)",
-  printing that piece without its black. Sticker on the chair is unchanged, as
-  is Fill everywhere else. A design already set to Fill drops back to Sticker
-  when it lands on the chair, and a saved session restores the same way. **A
-  gate, not a fix**: the defects stay recorded in
-  [docs/tech-debt.md](docs/tech-debt.md).
-
-### Removed
-
-- **The standalone hidden "Wheel mount (left)" assembly kind.** Briefly shipped
-  then deliberately un-shipped with no technical blocker recorded, asymmetric
-  (left-hand only, no matching right), and its role id collided with the chair
-  body's own wheel-mount role in the export placement logic. The chair's own
-  left/right wheel-mount parts are unaffected; they were always separate files
-  in a separately-verified pose.
-
-### Fixed
-
 - **The prime tower is now positioned on plates with no verified position**,
   instead of being left to the slicer's default, which for a part just centred
   on the plate could put the tower through it. Affects flat-plate exports and
@@ -555,17 +490,17 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
   nozzle-wipe exclusion, and writes no position at all when no corner is free
   rather than one it has measured as colliding.
 - **Parts in the 3D view were flat-shaded**, so every curved surface showed its
-  facets: banding across the chair's seat and back, polygonal silhouettes.
+  facets: banding across curved bodies, polygonal silhouettes.
   Curves now read as curves, while chamfers, panel seams, slot edges and
   embossed lettering stay crisp. Preview only; nothing about the export changes.
-- **The chair opened with its wings and caster mounts cut off.** The camera fit
-  sized itself from the part's largest single dimension, right only for
-  something as wide as it is deep, which put the camera 1.65x too close. It now
-  solves the distance that contains the part from the direction being viewed and
-  accounts for a narrow window as well as a short one. Parts that already fitted
-  are framed slightly larger, not smaller.
+- **A part could open with its edges cut off.** The camera fit sized itself
+  from the part's largest single dimension, right only for something as wide as
+  it is deep, which put the camera up to 1.65x too close. It now solves the
+  distance that contains the part from the direction being viewed and accounts
+  for a narrow window as well as a short one. Parts that already fitted are
+  framed slightly larger, not smaller.
 - A part could be framed while the rest of the assembly was still loading,
-  fitting the chair's thirteen pieces to whichever few had arrived.
+  fitting all its pieces to whichever few had arrived.
 - **A hole in a traced image could be painted over instead of cut.** Where a
   region's cavity met its own outline at a point, common in a busy image and
   exactly the point tested, the cavity read as a solid island, so that colour
@@ -606,13 +541,6 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
   panel is fixed width, so this happened at every window size. The slider now
   gives up the pixels instead. The smoke check measures every unit label against
   the panel edge.
-- **The bundled Zebra pattern no longer breaks Fill.** It shipped with 13.6k
-  vertices per tile (marching-squares oversampling, not detail) which put a
-  chair zone's 143 tiles past the polygon library's limit, so the tile union
-  failed on four parts and fell back to coarser shapes while blaming "a
-  self-intersecting path in the source SVG". Regenerated at 1.3k vertices,
-  visually identical and still seamless: the same zone now builds with no
-  warnings, 2.07M triangles instead of 853k, in 94s instead of 469s.
 - **Neither export button had a re-entrancy guard.** Confirmed live: 5 rapid
   clicks on "Export print-ready 3MF" triggered 5 independent exports. Both
   buttons now disable for the duration of their own export.
@@ -667,53 +595,17 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
   so on a slow renderer it kept easing, and redrawing, long after the gesture:
   measured at 221 s where it should be about one. The decay now scales to real
   frame time, identical at 60 fps and about a second at any rate.
-- **The on-face selection frame on the chair came in several times the size of
-  the artwork**, at an angle, handles hanging off the part. Three causes, all in
-  the frame rather than the cut:
-  - It re-derived the design's mm-per-unit and assumed 1 unit = 1 mm whenever
-    the file declared no absolute size, which is every SVG an editor exports as
-    `width="100%"`, while the build auto-fits to the part face.
-  - It was drawn as a flat rectangle spanned by the surface tangent, which on a
-    curved zone leaves the part by 110 mm at 300 mm across.
-  - On a surface spanning several printed parts it asked the first part for a
-    point lying on another, getting that part's nearest edge ~100 mm away.
-
-  The frame now takes its size and anchor from the same code the cut uses, is
-  traced along the surface so it lies on the part and crosses seams, and
-  resolves each point against the part carrying it. Click-to-drag hit-tests
-  against that traced outline too, so the grab area is the frame you can see. A
-  design centre off the surface entirely is drawn amber rather than as a
-  confident frame on unrelated geometry.
-
-- **A sticker on one of the chair's curved surfaces could drop a colour**,
-  reported as "Couldn't build the cut solid". The tolerance for how far off the
-  baked chart a cutter vertex may land was 0.5 mm for a sticker against 2 mm for
-  a fill, assuming only a fill runs along the clipped boundary. Wrong: a part's
-  baked claim is slightly more generous than the triangulation inside it,
-  leaving narrow uncovered spikes **inside** the claim, worst 2.150 mm deep with
-  every surface but three under 1 mm, which a sticker meets exactly as a fill
-  does. Both modes now use 3 mm, and a fill keeps its coarser refinement. A test
-  pins that worst case across all 25 chair charts, so a re-bake opening a wider
-  gap fails CI instead of silently dropping cuts.
 - **A warning could stay on screen after a later, successful rebuild superseded
   it.** Warnings were cleared only when an SVG was parsed or the Artwork panel
   changed, never per rebuild, and they dedupe by message, so a cut failure from
   an earlier zone or mode binding survived indefinitely describing geometry no
   longer in the viewport. Diagnostics a rebuild regenerates are now cleared at
   the start of each attempt; standing facts that nothing re-derives are left.
-- **The chair body rendered lying on its back.** The viewport is Z-up and parts
-  are never transformed at load, so the chair, packed in its CAD frame where up
-  is +Y, came in rotated a quarter turn, and "rest the assembly on the grid"
-  then sat it on its rear face with the wings 650 mm in the air. Kinds can now
-  declare a `displayFrame`. The wheel and footrest declare none and render as
-  before. **Viewport pose only**: meshes, the cut pipeline, the baked charts and
-  export placement all still use native coordinates.
 - **An assembly is now centred over the grid, not just rested on it**, and the
   grid grew from 600 mm to 800 mm (still 20 mm cells) to hold the largest part.
-  The chair's CAD origin is a datum rather than the middle of the part, so its
-  380 × 658 mm footprint ran from 4 mm to 662 mm, standing almost entirely off
-  the back edge of a stage sized for the 280 mm wheel. The wheel and footrest
-  don't move perceptibly.
+  A part whose CAD origin is a datum rather than its middle could stand almost
+  entirely off the back edge of a stage sized for the 280 mm wheel. The wheel
+  and footrest don't move perceptibly.
 - **Wheel mode's design-boundary anchor** (the SVG's largest `<circle>`) is now
   read through the same viewBox-origin and group-transform maths as every other
   shape, and searches only the visible subtree, excluding
@@ -737,24 +629,13 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
 - The 3MF writer now refuses to write a non-finite plate coordinate or
   transform, previously substituted as `0`, so an internal bug producing bad
   geometry fails the export instead of shipping a spike vertex.
-- **The chair's left wheel-mount part was silently picking up the retired
-  standalone kind's baked placement**, a fixed rotation and single-plate hint
-  meant for a lone part, because both shared the role id `wheel-mount-left` and
-  the export code matched on that id alone rather than the assembly kind. It now
-  takes the same generic centred placement as its other 12 pieces.
 - **The on-face gizmo now sits on the surface the active artwork row is bound
-  to.** It always used the first zoned part's first zone, so on the chair it
-  stayed on the left panel whatever you selected, reading as a frame stuck at an
+  to.** It always used the first zoned part's first zone, so on a part with
+  several it stayed put whatever you selected, reading as a frame stuck at an
   angle with every drag editing a surface you weren't looking at.
-- **The Zebra pattern now really does tile.** Its stripes are traced as contours
-  of a repeating wave field, and any contour not closing inside the sampled
-  window was discarded, leaving mismatched runs up to 11.7mm where one repeat
-  met the next and filling in the white gaps enclosed by a stripe. Contours are
-  now closed against the window edge, and enclosed gaps stay open. Cow,
-  Dalmatian and Tiger are generated differently and unchanged.
-- A chair part whose design-zone data can't be downloaded is now left with no
-  design surfaces, rather than stamping the artwork flat onto whatever the
-  largest flat face of that piece happens to be.
+- A part whose design-zone data can't be downloaded is now left with no design
+  surfaces, rather than stamping the artwork flat onto whatever the largest flat
+  face of that piece happens to be.
 - **Loading or removing a design now drops colour settings** (base assignments,
   merge groups, pinned-apart colours) for colours no loaded design paints any
   more. A colour the previous design sent to the base could otherwise stay
@@ -762,8 +643,7 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
 - **An export of three or more plates laid them out in a single row**, where the
   slicer expects a square-ish grid, so the third plate and everything after
   landed on empty space past the last column. Nothing shipped had hit it, since
-  the wheel's two-plate export is a single row either way, but every chair
-  export is eleven plates.
+  the wheel's two-plate export is a single row either way.
 - **A plate whose tower has no verified position could be handed one inside a
   part.** The fallback chose its X and Y insets independently, so a group
   leaving room along each axis separately could still occupy the corner where

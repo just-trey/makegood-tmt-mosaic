@@ -249,14 +249,6 @@ export interface AssemblyPart {
    * dismissNotice is for.
    */
   buildWarning?: string;
-  /**
-   * True when the *current* mesh came from a drag-and-drop rather than the parts library. Not
-   * derivable from `libraryPartId`: dropping onto a role that already auto-loaded its library part
-   * deliberately leaves that id in place, since attachBakedZones needs it to find the kind's baked
-   * charts. Export placement reads this to tell "our asset drifted", a repo defect, from "the user
-   * brought their own mesh", which is supported. See resolvePlacement in src/export/placement.ts.
-   */
-  meshFromUpload?: boolean;
   /** part geometry minus the design face; preview context only */
   restPositions?: Float32Array;
   patches: FlatPatch[] | null;

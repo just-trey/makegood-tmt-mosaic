@@ -188,6 +188,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
   {
     id: 'chair-body',
     name: 'Chair body',
+    hidden: true,
     // per-zone rect semantics: each zone's template maps its SVG 1:1 in mm, centered on the chart.
     designFit: 'rect',
     withholdFill: true,
@@ -366,6 +367,15 @@ export function fillWithheld(): boolean {
   // a shape with copies of itself. Withheld rather than merely unoffered, for the reason the doc
   // above gives: it would misbehave, so it is worth rewriting a mode already chosen.
   return state.hubcapSilhouette && !!currentAssemblyKind()?.buildParam;
+}
+
+/**
+ * The kind to fall back to whenever the app has to pick one for the user: boot with no `?kind=`,
+ * and a restore whose saved kind has been retired. It has to be one the Part dropdown actually
+ * lists, or the select holds a value with no matching option and renders blank.
+ */
+export function firstOfferedKind(): AssemblyKind {
+  return ASSEMBLY_KINDS.find((k) => !k.hidden) ?? ASSEMBLY_KINDS[0];
 }
 
 /**

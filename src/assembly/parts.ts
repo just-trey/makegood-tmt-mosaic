@@ -53,14 +53,6 @@ export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
   return part;
 }
 
-export function asmAddRolePart(role: AssemblyRole): void {
-  const part = asmCreateRolePart(role);
-  notifyPartsChanged();
-  const partId = roleLibraryPartId(role, currentVariantId());
-  const entry = partId ? state.assembly.library.find((e) => e.id === partId) : undefined;
-  if (entry) void asmLoadLibraryEntryIntoPart(part, entry);
-}
-
 /**
  * One-click "load the whole assembly": fetch + face-detect every role's primary, then add its
  * default rotated copies. Awaits each primary's load before duplicating it, since a rotated
@@ -70,9 +62,7 @@ export async function asmLoadFullAssembly(): Promise<void> {
   const kind = currentAssemblyKind();
   if (!kind) return;
   if (!asmKindCanAutoLoad(kind)) {
-    await alertDialog(
-      `Can't auto-load ${kind.name}: the parts library (stl/parts.json) isn't reachable. Check the deployment or drag the parts in manually.`,
-    );
+    await alertDialog("Couldn't load this part. Reload the page to try again.");
     return;
   }
   if (
@@ -161,7 +151,6 @@ export async function asmLoadLibraryEntryIntoPart(
 ): Promise<void> {
   if (entry.baseDepth) part.baseDepth = entry.baseDepth;
   part.libraryPartId = entry.id;
-  part.meshFromUpload = false;
   beginWork();
   try {
     const res = await fetch(entry.file);
@@ -175,12 +164,6 @@ export async function asmLoadLibraryEntryIntoPart(
   } finally {
     endWork();
   }
-}
-
-export function asmAddRoleDuplicate(role: AssemblyRole): void {
-  const src = state.assembly.parts.find((p) => p.roleId === role.id && !p.isDuplicateOf);
-  if (!src) return;
-  asmAddDuplicate(src.id, role.copyName);
 }
 
 export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPart | null {
@@ -197,7 +180,6 @@ export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPa
     // different pose, so it must carry the same index or it silently loses the fast shading path.
     indexed: src.indexed,
     libraryPartId: src.libraryPartId,
-    meshFromUpload: src.meshFromUpload,
     patches: src.patches,
     patchIdx: src.patchIdx,
     boundaryLoops: src.boundaryLoops,
@@ -247,7 +229,7 @@ function defaultPatchIdx(part: AssemblyPart): number {
   return idx >= 0 ? idx : 0;
 }
 
-/** Core mesh-buffer loader, shared by drag-and-drop upload and the parts library (fetch()). */
+/** Core mesh-buffer loader. Every mesh the app takes comes through here, from the parts library. */
 export async function asmLoadPartBuffer(
   part: AssemblyPart,
   buf: ArrayBuffer,
@@ -260,32 +242,27 @@ export async function asmLoadPartBuffer(
     const r = await load3MF(buf);
     positions = r.positions;
     part.vertices = r.vertices;
-    // The index is trusted for a library part and not for an upload, and that asymmetry is the
-    // point rather than caution. An index is a *claim* about which corners are one vertex. Display
-    // shading honours it exactly, where the fallback buckets positions to 0.01mm and welds a file
-    // that never said to. Our packed parts are welded (checked: all 19 sit at a 0.500 vertex-to-
-    // triangle ratio), so honouring their claim is strictly better. A dropped 3MF need not be: one
-    // converted from an STL carries a vertex per corner, claims no sharing at all, and would shade
-    // fully faceted where it used to come out smooth. Measured on a 10 degree fold: cross-seam dot
+    // The index is a *claim* about which corners are one vertex, and display shading honours it
+    // exactly where the fallback buckets positions to 0.01mm and welds a file that never said to.
+    // Our packed parts are welded (checked: all 19 sit at a 0.500 vertex-to-triangle ratio), so
+    // honouring their claim is strictly better. Measured on a 10 degree fold: cross-seam dot
     // 0.9848 from an unwelded index against 1.0000 from toCreasedNormals.
-    //
-    // `meshFromUpload` is set before this runs by both callers, so it is readable here.
     //
     // Handed to asmAdoptMesh rather than written here, so it lands with `part.positions` and not
     // before it: a generated role can still reject this asset, and a throw part-way would
     // otherwise leave the *previous* mesh paired with *this* file's index.
-    indexed = part.meshFromUpload ? undefined : { positions: r.vertices, indices: r.indices };
+    indexed = { positions: r.vertices, indices: r.indices };
   } else if (lower.endsWith('.stl')) {
     const geo = new STLLoader().parse(buf);
     positions = geo.attributes.position.array as Float32Array;
-    // An STL is soup with no vertex sharing recorded at all, so no index is offered below, and
-    // whatever the part carried is replaced along with its mesh.
+    // An STL is soup with no vertex sharing recorded at all, so no index is offered below. Every
+    // shipped manifest entry is a 3MF; this branch is here for one that isn't.
     //
     // **`part.vertices` deliberately stays.** Clearing it looks like the same tidy-up and is not:
     // `attachBakedZones` returns at its `!part.vertices` guard *before* it clears `part.zones`, so
-    // an STL dropped onto a part that had already loaded its library 3MF would keep the replaced
-    // mesh's baked charts and cut artwork against UVs for geometry that is gone. Leaving it lets
-    // the fingerprint check see a mismatch, drop the zones, and say so.
+    // a part loading an STL over an earlier 3MF would keep the replaced mesh's baked charts and cut
+    // artwork against UVs for geometry that is gone. Leaving it lets the fingerprint check see a
+    // mismatch, drop the zones, and say so.
   } else {
     throw new Error('Unsupported file type — use .stl or .3mf');
   }
@@ -308,11 +285,7 @@ async function asmAdoptMesh(
   indexed?: IndexedMesh,
 ): Promise<void> {
   const role = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId);
-  // A dropped file REPLACES the part, on a generated role as much as any other — running the
-  // builder over it would hand back the user's mesh with a generated disc fused onto it, which is
-  // not what dropping in a mesh means anywhere else in the app. Clearing assetPositions also keeps
-  // resolvePlacement reporting it as the upload it is rather than as a generated part.
-  if (role?.buildMesh && !part.meshFromUpload) {
+  if (role?.buildMesh) {
     part.assetPositions = positions;
     const built = await role.buildMesh(positions);
     positions = built.positions;
@@ -328,11 +301,6 @@ async function asmAdoptMesh(
     if (part.buildWarning) dismissNotice(part.buildWarning);
     part.buildWarning = built.warning;
     if (built.warning) warn(built.warning);
-  } else if (part.meshFromUpload) {
-    part.assetPositions = undefined;
-    part.edgeCutThroughDepth = undefined;
-    if (part.buildWarning) dismissNotice(part.buildWarning);
-    part.buildWarning = undefined;
   }
   // Committed together, and only once nothing above can still throw: `indexed` describes exactly
   // this soup, and any window where it describes a different one is a mis-shaded part.
@@ -521,18 +489,6 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
     }
   }
   part.zones = zones;
-}
-
-export async function asmLoadPartFile(part: AssemblyPart, file: File): Promise<void> {
-  const buf = await file.arrayBuffer();
-  // Set before the load, not after: a throw part-way still leaves whatever mesh state it got to,
-  // and that mesh is the user's either way. libraryPartId deliberately stays (see meshFromUpload).
-  part.meshFromUpload = true;
-  try {
-    await asmLoadPartBuffer(part, buf, file.name);
-  } catch (e) {
-    await alertDialog((e as Error).message);
-  }
 }
 
 /** Unsigned shoelace area of a loop projected to X/Z, the plane a design face is measured in. */

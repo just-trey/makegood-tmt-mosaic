@@ -29,8 +29,8 @@ afterEach(() => {
 });
 
 describe('chair-body kind shape', () => {
-  it('is offered (not hidden), rect, with 13 roles and Standard/Kit variants', () => {
-    expect(chair.hidden).toBeFalsy();
+  it('is withheld from the Part dropdown, rect, with 13 roles and Standard/Kit variants', () => {
+    expect(chair.hidden).toBe(true);
     expect(chair.designFit).toBe('rect');
     expect(chair.roles).toHaveLength(13);
     expect(chair.variants?.map((v) => v.id)).toEqual(['standard', 'kit']);

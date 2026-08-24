@@ -13,6 +13,7 @@ vi.mock('../src/assembly/parts', async (importOriginal) => {
 
 import { applyRestoredSession, type PersistedSession } from '../src/state/persist';
 import { asmLoadFullAssembly } from '../src/assembly/parts';
+import { firstOfferedKind } from '../src/assembly/kinds';
 import { state } from '../src/state/store';
 import { confirmDialog } from '../src/ui/dialogs';
 
@@ -251,7 +252,10 @@ describe('applyRestoredSession: assembly mode', () => {
     expect(confirmDialog).not.toHaveBeenCalled();
   });
 
-  it('falls back to a flat mode when the saved kind has since been retired', async () => {
+  // The Part dropdown offers assembly kinds and nothing else, so a saved value it cannot show
+  // would leave the select blank and the next switch away from it one-way. Loading the fallback's
+  // parts is left to restoreBanner's own setShapeKind.
+  it('falls back to the first offered kind when the saved kind has since been retired', async () => {
     await applyRestoredSession(
       session({
         shapeKind: 'assembly',
@@ -259,14 +263,16 @@ describe('applyRestoredSession: assembly mode', () => {
       }),
     );
 
-    expect(state.shapeKind).toBe('disc');
+    expect(state.shapeKind).toBe('assembly');
+    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
     expect(asmLoadFullAssembly).not.toHaveBeenCalled();
   });
 
-  it('does not load parts for a session that was in a flat mode', async () => {
+  it('falls back the same way for a session saved in a flat mode', async () => {
     await applyRestoredSession(session({ shapeKind: 'rect' }));
 
-    expect(state.shapeKind).toBe('rect');
+    expect(state.shapeKind).toBe('assembly');
+    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
     expect(asmLoadFullAssembly).not.toHaveBeenCalled();
   });
 });
