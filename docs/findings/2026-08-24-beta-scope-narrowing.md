@@ -63,8 +63,11 @@ five are things a passing test suite cannot see.
 
 **The root cause of the first two was one confusion.** An empty
 `state.assembly.library` is equally "the fetch has not come back" and "there is
-no manifest", and the two need opposite things said. `partsLibraryFailed()` now
-separates them, and both the panel and the alert read it.
+no manifest", and the two need opposite things said. `partsLibrarySettled()` now
+separates them, and both the panel and the alert read it. It asks whether parts
+can still be expected, not whether the fetch failed: a manifest that loads fine
+but is missing an entry one of the kind's roles names answers no just as firmly,
+and keying off failure left that case on "Loading assembly…" forever.
 
 `main.ts` calls `setShapeKind('assembly')` on the line _before_
 `loadPartsLibrary()`, so the pending state is not an edge case: it is what every
@@ -75,10 +78,10 @@ which reproduces it.
 Re-verified with the manifest held back 3s and the DOM polled every 100ms for
 4s: no error at any point, and none once the parts arrive.
 
-**One defect the flag exposed, caught by its own test.** `libraryFailed` was
-first cleared on success only, so it stayed true across a retry and leaked
-between tests in one file. It is cleared when a fetch _starts_: while one is in
-flight there is no known failure to report.
+**One defect the flag exposed, caught by its own test.** It was first cleared on
+success only, so it stayed set across a retry and leaked between tests in one
+file. It is cleared when a fetch _starts_: while one is in flight there is
+nothing settled to report.
 
 **Two things `smoke` lost, and one it never had.** Its disc steps went (see
 `docs/tech-debt.md`). The "Recess bg too" step went with them rather than moving
@@ -110,3 +113,30 @@ name)` passes `name` straight to Playwright, which needs the extension to
    With the path actually exercised: restore lands on `asm:wheel`, the value has
    a matching option, and the part loads. Before this branch it would have set
    `shapeKind = 'disc'`, which now has no option at all.
+
+## Where the review rounds stopped, and why
+
+Four rounds of `/code-review high`. CLAUDE.md's rule is to keep going while
+rounds return wrong output and stop when one returns taste.
+
+| Round | Found                                                 | Acted on                        |
+| ----- | ----------------------------------------------------- | ------------------------------- |
+| 1     | 5, incl. the boot flash and a broken `npm run smoke`  | all                             |
+| 2     | 4, two of them caused by round 1's own fixes          | all                             |
+| 3     | 6, two substantive, both caused by rounds 1-2's fixes | all                             |
+| 4     | 4, **none introduced by this branch**                 | 1 (a stale name in this report) |
+
+Round 4 is the stop. Its one substantive finding, a restore that confirms twice
+and strands the wrong part on cancel, is byte-identical on `main`: this branch
+only made the asymmetry visible by giving the sibling branch the clearing that
+the older one still lacks. Its `export-chair-examples.mjs` finding predates the
+branch too (#137). Both are written up in `tech-debt.md` rather than fixed.
+
+**Three rounds landing in `applyRestoredSession` is the signal that mattered.**
+Round 2 found stale parts there, round 3 found stale zone bindings there, round
+4 found the same class of thing in the sibling branch. Each was a subset of what
+the real `#shape-kind` handler does, hand-rolled again. CLAUDE.md is explicit
+that an area drawing repeat findings on its own fixes should stop being patched,
+so the fourth was logged instead. The restore path is worth taking as its own
+change, against the whole handler, rather than a fifth patch under release
+pressure.

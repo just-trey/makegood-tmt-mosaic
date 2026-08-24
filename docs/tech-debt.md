@@ -617,6 +617,53 @@ Closing it means one message with the right remedies for both causes, and one id
 retracting it. Three review rounds on this branch each produced a new defect in it, which is why it
 was cut rather than patched again.
 
+## Accepting a restore confirms twice, and cancelling leaves the wrong part
+
+Present on `main` before the beta narrowing and unchanged by it, found while
+reviewing that branch.
+
+`applyRestoredSession` calls `asmLoadFullAssembly()` for a session whose kind
+still exists, without clearing `state.assembly.parts` first. The boot auto-load
+has always already filled that list, so `asmLoadFullAssembly`'s own guard fires:
+
+> Load the full Footrest? This clears any parts you've already added.
+
+on top of the restore the user just accepted. **Cancelling is the bad half.**
+`state.assembly.kindId` and the dropdown have already moved to the restored
+kind, but the load returns without touching the scene, so the viewport and the
+export still hold the boot kind's parts. `maybeAutoLoadAssembly` cannot recover
+it: it no-ops while any part is present.
+
+Never seen in a driven run because `newPage`'s hook auto-accepts confirms
+(`scripts/lib/harness.mjs`), which takes the cancel path out of reach.
+
+The fix is one line, the same clearing the fallback branch beside it already
+does. Not taken with the beta narrowing: that branch had three review rounds
+land in this same function, each on the previous round's fix, and CLAUDE.md's
+rule is to stop patching an area at that point rather than take a fourth swing
+at it. It also blocks nothing on the wheel, footrest or hubcap.
+
+Related: the 2026-08-08 review cycle's **A2** (switching part shape carries
+artwork across with no confirmation) is the opposite failure in the same
+control.
+
+## `export-chair-examples.mjs` cannot reach Fill any more
+
+Broken since #137, not by the beta narrowing, though that branch touched the
+file to fix a different break in it (it selected an option the Part dropdown no
+longer offers).
+
+The script sets `.artwork-mode` to `fill`, and asserts it took. `chair-body`
+carries `withholdFill: true`, so `artworkListPanel` never renders that select
+at all: the step times out, and the explicit `bound.mode !== 'fill'` guard below
+it would throw regardless.
+
+What the script exists for is a Fill design across every zone, sized so each
+plate's prime tower sees the swaps it really will. Sticker on one zone is not
+that. So this is not a selector to update: either the chair's Fill defects close
+and `withholdFill` comes off (see above), or the script needs a different way to
+put several colours on every part.
+
 ## The flat-plate modes ship compiled and unrendered
 
 `disc`, `rect`, `round` and `stl` are all still `ShapeKind`s, with their param
