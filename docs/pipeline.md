@@ -34,11 +34,6 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
 - Flat art gets a one-pixel blur, but only when the 1024px pass ran. The
   photograph denoise blur stops at the photo cutoff instead of interpolating
   ([stats.ts](../src/raster/stats.ts) explains both).
-- With a known placement, the trace also absorbs any non-background component
-  too narrow to hold one extrusion, whatever its area (`fringeWidthPx`, capped
-  at 2px so tiny placements keep their structure). That is what catches the
-  anti-aliased boundary band coming back as a third colour: a thread on every
-  outline, too long for any area floor.
 - Colours are clustered in CIELAB, then forced a minimum perceptual distance
   (ΔE 3) apart. That's deliberately the same space, metric, and value the
   default "Slight" auto-merge threshold uses

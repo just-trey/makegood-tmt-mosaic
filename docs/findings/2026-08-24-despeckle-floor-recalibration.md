@@ -1,14 +1,16 @@
 # 2026-08-24: Despeckle floor recalibration, blur cutoff, fringe width
 
 Raster trace quality on flat art was visibly degraded (user report: mario.png on the wheel
-lost its eye, teeth, emblem; edges blocky; brown threads on every outline). Three defects,
-three fixes, all measured on this commit's corpus cache on the WSL2 dev box.
+lost its eye, teeth, emblem; edges blocky; brown threads on every outline). Three defects
+found; two fixes shipped, one cut in review. All measured on this commit's corpus cache on
+the WSL2 dev box.
 
 ## Result
 
 - mario.png at the app defaults (6 colors, Detail 50, wheel): eye with iris/pupil/highlight,
-  teeth, red M, mustache and glove marks all trace again. 41 regions, no fringe threads,
-  no staircases. Verified in the live app on wheel and hubcap, no console errors.
+  teeth, red M, mustache and glove marks all trace again, no staircases, no fringe bands.
+  Verified in the live app on wheel and hubcap, no console errors. One hair-thin thread on
+  the mustache's top edge remains (defect 3, cut).
 - Photographs and small placements byte-identical to #216/#217 results
   (stock-gravel 67 components at D50; makegood-logo on the 32mm hubcap keeps floor 185).
 - 1133 tests pass. `despeckle` and `floor` bench invariants hold: nothing survives under
@@ -49,25 +51,27 @@ three fixes, all measured on this commit's corpus cache on the WSL2 dev box.
 - **Fix**: the lerped share now stops at `isPhotographic` instead of interpolating.
   Only mario and red-sox-logo (both 0.253) change on the corpus; photographs unchanged.
 
-## Defect 3: boundary ribbons survive any area floor
+## Defect 3: boundary ribbons survive any area floor — CUT, not shipped
 
-- After the blur fix one thread remained (mustache top edge, later a button squiggle):
-  a fringe component as long as the boundary it hugs clears any area floor.
-- **Fix**: `despeckle` also absorbs non-background components whose mean width
-  (2·area/perimeter) is under `fringeWidthPx`: one nozzle at the placement, capped at
-  2px. Same physical claim as the area floor, made about width: a region narrower than
-  one extrusion cannot print however long it is. Background exempt: a thin transparent
-  gap is two shapes printed close together, not an extrusion.
-- The cap is what keeps small placements intact: there one nozzle is many working pixels,
-  wide enough to swallow a cartoon's whole outline network the area floor governs instead.
-- 2 is also a detail ceiling, not a taste: at 2.5 the cartoon's eyelashes go (27 → 15).
-- Two earlier formulations died in review before this one: "under 2px in an enlarged
-  image" (its debris premise fails at 1:1 and past 2:1 downscale, where hairlines are
-  content), then the same rule gated by a decoded downscale ratio (three premise holes,
-  plus a plumbed field sessions could not restore). Width-at-placement needs neither the
-  premise nor the plumbing.
-- Placement unknown (flat plates): no width rule, matching the floor. The tech-debt
-  flat-plate item covers both.
+- After the blur fix, thin threads remained (mustache top edge, a button squiggle): a
+  fringe component as long as the boundary it hugs clears any area floor. Both print
+  under one nozzle wide, so slicers drop them; they are a preview blemish.
+- Three formulations of a width rule (absorb components under a mean-width threshold,
+  2*area/perimeter) went through review, and each round found real defects:
+  1. "Under 2px in an enlarged image": premise false at 1:1 (1-2px strokes are drawn
+     content) and past 2:1 downscale (hairlines land under 2 working px).
+  2. Same rule gated by a decoded downscale ratio: three premise holes, a plumbed field
+     old sessions cannot restore, and a perimeter merge bug (double-subtracting the
+     shared run, caught by the look bench as mario collapsing to 10 components).
+  3. Width under one nozzle at the placement, capped at 2px: physically sound framing,
+     but round 4 found it shipping unmeasured on placed photographs (banding cascade in
+     a synthetic probe), able to absorb a whole sub-fringe line drawing into an error
+     whose advice (raise Detail) cannot help, resting on a perimeter invariant false for
+     big-big merges, and paying a full-image scan even when provably a no-op.
+- Three consecutive rounds of real defects in one area is this repo's cut signal. The
+  rule is out of the PR; the thread stays visible and is tracked in tech-debt.md
+  ("Boundary fringe threads survive the trace") with all of the above as the bar any
+  future attempt has to clear.
 
 ## Null results and open threads
 
@@ -80,5 +84,10 @@ three fixes, all measured on this commit's corpus cache on the WSL2 dev box.
 - Flat plates still have no placement-aware floor (open item in tech-debt.md, unchanged):
   they keep the recalibrated-in-name-only fractional floor, so a mario-like image on a
   flat plate still over-prunes. Closing that item now buys more than it did.
+- The cartoon corpus source's three-tone eyes (white, light blue, dark blue) quantize to
+  one gray at 6 colors, byte-identically before and after this work: k-means spends two of
+  the six slots on yellow's shading tones because it weighs pixel count, not saliency. At
+  8 colors the eyes separate fully. Filed in roadmap.md as palette allocation, not touched
+  here.
 - `look` bench mode added (bench-raster.ts): writes what the shipping path traces as SVGs,
   per source per placement. Counts cannot see a black-blob eye; renders can.

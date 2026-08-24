@@ -197,36 +197,6 @@ describe('traceLabelMap', () => {
     expect(areaOf(printed.components[0])).toBeCloseTo(size * size, 9);
   });
 
-  it('absorbs a sub-width ribbon between two colors, whatever its area', () => {
-    // A 1px band of 'b' the full width of the image: area 24 clears any small floor, but at under
-    // 2px mean width it is quantization fringe (the anti-aliased boundary band coming back as a
-    // third color) and cannot print.
-    const size = 24;
-    const rows = Array.from({ length: size }, (_, y) =>
-      (y < 12 ? 'a' : y === 12 ? 'b' : 'c').repeat(size),
-    );
-    const loose = traceLabelMap(grid(rows, 'abc'), params());
-    expect(loose.components).toHaveLength(3);
-
-    const cleaned = traceLabelMap(grid(rows, 'abc'), params(), 0, 2);
-    expect(cleaned.components).toHaveLength(2);
-    expect(cleaned.components.map((c) => c.label)).not.toContain(1);
-    expect(cleaned.components.reduce((s, c) => s + areaOf(c), 0)).toBeCloseTo(size * size, 9);
-  });
-
-  it('keeps a stroke wider than the fringe width, and never fills a background gap', () => {
-    const size = 24;
-    // A 4px 'b' stroke survives; the 1px transparent column between the two halves is a gap
-    // between printed shapes, not an extrusion, so thinness must not fill it in.
-    const rows = Array.from({ length: size }, (_, y) =>
-      y >= 10 && y < 14 ? 'b'.repeat(size) : 'a'.repeat(11) + '.' + 'a'.repeat(size - 12),
-    );
-    const { components } = traceLabelMap(grid(rows, 'ab'), params(), 0, 2);
-    expect(components.filter((c) => c.label === 1)).toHaveLength(1);
-    // The stroke and the gap quarter the 'a' field; all four quadrants are wide enough to keep.
-    expect(components.filter((c) => c.label === 0)).toHaveLength(4);
-  });
-
   it('resolves a checkerboard without emitting a self-touching ring', () => {
     const { components } = traceLabelMap(grid(['abab', 'baba', 'abab', 'baba'], 'ab'), params());
     expect(components.length).toBeGreaterThan(0);

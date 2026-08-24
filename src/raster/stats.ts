@@ -64,30 +64,6 @@ const FLAT_PARAMS: TraceParams = {
  */
 const DETAIL_PASS_BLUR = 1;
 
-/**
- * Cap, in working pixels, on the width under which the trace absorbs a component (fringeWidthPx).
- *
- * The cap is what keeps a small placement structurally intact: there one nozzle is many working
- * pixels, wide enough to swallow a cartoon's whole outline network, and the area floor is already
- * the rule that governs what a small placement can carry. Two pixels is also the width of the
- * band anti-aliasing plus the compensating blur leave along a boundary between two colors, which
- * quantizes to a third color and survives any area floor because it is as long as the boundary.
- */
-export const FRINGE_WIDTH_PX = 2;
-
-/**
- * Width in working pixels under which a component cannot print at this placement, capped by
- * FRINGE_WIDTH_PX, or 0 where the placement is unknown.
- *
- * The same claim as printableFloorPx made about area, for width: a region narrower than one
- * nozzle cannot hold an extrusion however long it is. That is what catches the boundary-band
- * threads no area floor can, without a debris-vs-content judgment: everything absorbed was
- * unprintable at the size the user placed it.
- */
-export function fringeWidthPx(mmPerPixel: number): number {
-  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0) return 0;
-  return Math.min(FRINGE_WIDTH_PX, NOZZLE_MM / mmPerPixel);
-}
 const PHOTO_PARAMS: TraceParams = {
   blurRadius: 2,
   despeckleFrac: 0.0022,
