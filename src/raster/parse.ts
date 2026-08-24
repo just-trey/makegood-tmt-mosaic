@@ -1,5 +1,11 @@
 import type { Loop, ParsedSVG, SVGShape } from '../types';
-import { autoParams, despeckleFloorPx, measureImage, FRINGE_WIDTH_PX } from './stats';
+import {
+  autoParams,
+  despeckleFloorPx,
+  measureImage,
+  FRINGE_MAX_DOWNSCALE,
+  FRINGE_WIDTH_PX,
+} from './stats';
 import { MEASURE_EDGE } from './decode';
 import { quantize } from './quantize';
 import { traceLabelMap } from './trace';
@@ -15,6 +21,8 @@ export interface RasterParseResult {
   componentCount: number;
   /** True when the despeckle floor was raised to stay under MAX_COMPONENTS. */
   capped: boolean;
+  /** The floor the trace actually applied, which is above `despeckleFloorPx`'s answer when capped. */
+  floorPx: number;
 }
 
 /**
@@ -95,12 +103,13 @@ export function parseRasterImage(
     throw new Error('No opaque pixels were found in this image — there is nothing to cut.');
 
   const floor = despeckleFloorPx(params, img.w, img.h, stats, opts.detail, opts.mmPerPixel ?? 0);
-  const { components, capped } = traceLabelMap(
-    map,
-    params,
-    floor,
-    ranDetailPass ? FRINGE_WIDTH_PX : 0,
-  );
+  // The fringe rule needs both facts: the detail pass ran (so nothing drawn is under 2px) and the
+  // downscale was mild (so the anti-aliased fringe survived to become debris). A large scan fails
+  // the second: its hairlines can land under 2 working pixels while its fringe is already gone.
+  // Absent downscale (a restored working copy was never resized) is 1, mild by definition.
+  const fringe =
+    ranDetailPass && (img.downscale ?? 1) <= FRINGE_MAX_DOWNSCALE ? FRINGE_WIDTH_PX : 0;
+  const { components, capped, floorPx } = traceLabelMap(map, params, floor, fringe);
   if (!components.length)
     throw new Error(
       'No color regions survived tracing this image — try raising Detail, or use a less noisy image.',
@@ -138,6 +147,7 @@ export function parseRasterImage(
     palette,
     componentCount: components.length,
     capped,
+    floorPx,
   };
 }
 

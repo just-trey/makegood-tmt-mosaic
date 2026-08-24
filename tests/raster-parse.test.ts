@@ -160,12 +160,14 @@ describe('measureImage / autoParams', () => {
     expect(autoParams({ edgeDensity: 0.8 }, DETAIL_DEFAULT, false).blurRadius).toBe(2);
   });
 
-  it('stops the photograph denoise blur at the photo cutoff instead of interpolating', () => {
+  it('gives an enlarged image exactly the detail-pass compensation, never the lerped share on top', () => {
     // A cartoon measuring partway to photographic (mario, 0.253) used to pick up a lerped blur on
     // top of the detail-pass compensation. That blur widened every anti-aliased line boundary into
     // a band that quantized to a third color: a brown fringe on every black outline.
     expect(autoParams({ edgeDensity: 0.253 }, DETAIL_DEFAULT, true).blurRadius).toBe(1);
-    expect(autoParams({ edgeDensity: 0.8 }, DETAIL_DEFAULT, false).blurRadius).toBe(2);
+    // Worked at its own size, the same image keeps the lerped blur it always had: that case has
+    // neither the detail-pass compensation nor the fringe absorption to fall back on.
+    expect(autoParams({ edgeDensity: 0.253 }, DETAIL_DEFAULT, false).blurRadius).toBe(1);
   });
 
   it('lets the Detail slider pull the auto-derived strength both ways', () => {
@@ -205,7 +207,8 @@ describe('despeckleFloorPx', () => {
   });
 
   it('keeps the #217 raise on a small placement', () => {
-    // 0.03mm per pixel is the smallest hubcap: the printable floor exceeds the fraction and wins.
+    // 0.01mm per pixel, coarser-floored than even the smallest hubcap (0.03), puts the printable
+    // floor over the fraction, and the raise wins.
     const frac = Math.round(p(flat).despeckleFrac * w * h);
     const floor = despeckleFloorPx(p(flat), w, h, flat, DETAIL_DEFAULT, 0.01);
     expect(printableFloorPx(0.01)).toBeGreaterThan(frac);

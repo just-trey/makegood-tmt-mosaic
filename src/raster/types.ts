@@ -11,6 +11,13 @@ export interface RasterImage {
    * strengths that hang off them — every time the working size changed.
    */
   edgeDensity?: number;
+  /**
+   * Source long edge over working long edge, carried for the same reason as edgeDensity: the
+   * working pixels no longer say how hard they were averaged. Past ~2:1 the downscale destroys the
+   * anti-aliased fringe (see the fringe gate in parse.ts), and sub-2px width in what remains is
+   * drawn content, not debris. Absent means "not resized or not known", both safe to treat as 1.
+   */
+  downscale?: number;
 }
 
 /**
@@ -67,9 +74,10 @@ export interface RasterOptions {
   /** User multiplier on the auto-derived despeckle/simplify strength — the "Detail" slider. */
   detail: number;
   /**
-   * mm per working pixel at the placement this trace is for, which turns the despeckle floor from
-   * a share of the image into a printable size (see `printableFloorPx`). Absent where the
-   * placement is not knowable: a bench sweep, or a session restored from before it was saved.
+   * mm per working pixel at the placement this trace is for. It resolves the whole despeckle
+   * floor (`despeckleFloorPx`): sized in mm for flat art, which can lower it below the image
+   * fraction as well as raise it. Absent where the placement is not knowable: a bench sweep, or a
+   * session restored from before it was saved, and those keep the fractional floor.
    */
   mmPerPixel?: number;
 }

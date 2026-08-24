@@ -1083,7 +1083,9 @@ async function modeFloor(names: string[]) {
   const effect = [];
   for (const g of governed) {
     const p = autoParams({ edgeDensity: g.s.edgeDensity }, g.detail, ranDetailPass(g.s.working));
-    const before = traceWith(g.s.working, g.s.colors, p);
+    // Fringe on both sides, so the delta is the placed floor's effect alone.
+    const fringe = ranDetailPass(g.s.working) ? FRINGE_WIDTH_PX : 0;
+    const before = traceWith(g.s.working, g.s.colors, p, 0, fringe);
     const after = traceWith(
       g.s.working,
       g.s.colors,
@@ -1096,7 +1098,7 @@ async function modeFloor(names: string[]) {
         g.detail,
         g.mmPerPixel,
       ),
-      ranDetailPass(g.s.working) ? FRINGE_WIDTH_PX : 0,
+      fringe,
     );
     effect.push({
       name: g.s.name,
@@ -1153,23 +1155,12 @@ async function modeLook(names: string[]) {
         path.join(outDir, file),
         shapesToSVG(r.parsed.shapes, s.working.w, s.working.h),
       );
-      const p = autoParams(
-        { edgeDensity: s.edgeDensity },
-        DETAIL_DEFAULT,
-        ranDetailPass(s.working),
-      );
       rows.push({
         name: s.name,
         placed: place?.name ?? '(none)',
         mmPerPx: +mmPerPixel.toFixed(4),
-        floorPx: despeckleFloorPx(
-          p,
-          s.working.w,
-          s.working.h,
-          { edgeDensity: s.edgeDensity },
-          DETAIL_DEFAULT,
-          mmPerPixel,
-        ),
+        // The floor the trace applied, off the result itself, so a capped row shows the raised one.
+        floorPx: r.floorPx,
         components: r.componentCount,
         painted: r.palette.length,
         capped: r.capped ? 'yes' : '',

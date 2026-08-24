@@ -2,6 +2,7 @@ import type { Loop, Pt } from '../types';
 import { BACKGROUND } from './types';
 import type { LabelMap, TraceParams } from './types';
 import { fitChain } from './curve';
+import { fracFloorPx } from './stats';
 
 /**
  * Ceiling on traced components. Exceeding it raises the despeckle floor and re-runs rather than
@@ -182,12 +183,19 @@ function despeckle(
     if (adj[a].size < adj[b].size) [a, b] = [b, a];
     parent[b] = a;
     areas[a] += areas[b];
-    // The union's boundary loses both sides of the shared run, so two merged ribbons of one label
-    // are re-judged on their joint width rather than each survivor inheriting a stale perimeter.
-    if (perim) perim[a] += perim[b] - 2 * (adj[a].get(b) ?? 0);
-    for (const [nb, shared] of adj[b])
+    // The union's boundary loses both sides of every run now internal to it, so merged ribbons of
+    // one label are re-judged on their joint width rather than inheriting a stale perimeter.
+    // Every run is tallied in both maps, and internal runs can be keyed by an already-absorbed
+    // member's id, not only by `b`. Summing `b`'s side alone counts each internal run exactly
+    // once (its full interface with the union), so `a`'s mirror entries are deleted unsubtracted:
+    // subtracting both sides halved perimeters until whole shapes read as thin.
+    if (perim) perim[a] += perim[b];
+    for (const [nb, shared] of adj[b]) {
       if (find(nb) !== a) adj[a].set(nb, (adj[a].get(nb) ?? 0) + shared);
+      else if (perim) perim[a] -= 2 * shared;
+    }
     adj[b].clear();
+    if (perim) for (const nb of adj[a].keys()) if (find(nb) === a) adj[a].delete(nb);
     return a;
   };
 
@@ -651,7 +659,7 @@ export function traceLabelMap(
   // despeckleFloorPx). It replaces the fractional floor rather than raising it, because at a large
   // placement the right floor is *below* the fraction; 0 means the placement is unknown and the
   // fraction is the only floor there is.
-  let minArea = Math.max(1, placedFloor || Math.round(params.despeckleFrac * w * h));
+  let minArea = Math.max(1, placedFloor || fracFloorPx(params, w, h));
 
   despeckle(labels, w, h, minArea, fringeWidth);
   deChecker(labels, w, h);

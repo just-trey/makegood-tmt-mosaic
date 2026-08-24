@@ -76,6 +76,17 @@ const DETAIL_PASS_BLUR = 1;
  * it cannot be (the downscale was at least 1.5:1), so only there is sub-2px width proof of debris.
  */
 export const FRINGE_WIDTH_PX = 2;
+
+/**
+ * Largest source-to-working downscale at which the fringe rule may run.
+ *
+ * The rule's proof ("sub-2px width is debris, not content") holds only under mild averaging: the
+ * detail pass downscales at most MEASURE_EDGE-to-MAX_WORKING_EDGE gently enough that the
+ * anti-aliased fringe survives, while a 3:1 downscale destroys it before quantization sees it
+ * (see DETAIL_PASS_BLUR). Past this ratio there is no fringe left to remove, and a drawn hairline
+ * in a large scan can itself land under 2 working pixels, so running the rule there guts line art.
+ */
+export const FRINGE_MAX_DOWNSCALE = 2;
 const PHOTO_PARAMS: TraceParams = {
   blurRadius: 2,
   despeckleFrac: 0.0022,
@@ -119,18 +130,17 @@ export function printableFloorPx(mmPerPixel: number): number {
  */
 export const DESPECKLE_FEATURE_MM = 4 * NOZZLE_MM;
 
+/** The fractional despeckle floor: `despeckleFrac` as working pixels, never under the no-op 1. */
+export function fracFloorPx(params: TraceParams, w: number, h: number): number {
+  return Math.max(1, Math.round(params.despeckleFrac * w * h));
+}
+
 /**
- * The despeckle floor a trace should apply, in working pixels.
- *
- * The fractional floor was calibrated while `despeckle` was broken and let most of what it named
- * survive (docs/findings/2026-08-20-despeckle-floor.md), so once #216 made it hold it over-pruned
- * flat art at large placements: mario's fractional floor at the wheel is 55mm² of printed area.
- * Where the placement is known and the image is flat art, the floor is therefore sized in mm and
- * the fraction only caps it, so small placements (the #217 hubcap result) keep their coarser floor.
- * Photographs keep the fractional floor untouched: theirs is a taste-of-simplification choice, not
- * a feature-size claim, and 0.0022 of a photo is ~9mm of print on the footrest by design.
- * Placement unknown (flat plates, old sessions) also stays fractional, since mm cannot be known
- * before the trace defines the artwork's extent.
+ * The despeckle floor a trace should apply, in working pixels: sized in mm for flat art with a
+ * known placement, bounded below by the nozzle and above by the fraction. Photographs and unknown
+ * placements keep the fraction alone. The measurements behind each branch, including why a photo's
+ * floor is taste rather than a feature size, are in
+ * docs/findings/2026-08-24-despeckle-floor-recalibration.md.
  */
 export function despeckleFloorPx(
   params: TraceParams,
@@ -140,7 +150,7 @@ export function despeckleFloorPx(
   detail: number,
   mmPerPixel = 0,
 ): number {
-  const frac = Math.max(1, Math.round(params.despeckleFrac * w * h));
+  const frac = fracFloorPx(params, w, h);
   // Gate on the placement being known, not on `printable` being nonzero: past ~0.4mm per pixel the
   // printable floor rounds to 0 while the placement is perfectly known, and a small logo placed
   // large is exactly where the fractional floor despeckles multi-mm features.
@@ -232,16 +242,16 @@ export function autoParams(
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
   return {
-    // The lerped share is photograph denoise, and it stops at the photo cutoff rather than
-    // interpolating into the flat regime: on flat art it widened every anti-aliased line boundary
-    // into a band that quantized to a third color (a brown fringe on every black outline) and made
-    // the label boundary staircase through the gradient. Measured on mario at 6 colors: blur 2 has
-    // both defects, blur 1 (the detail-pass compensation alone) has neither and keeps the eye the
-    // striping fix exists for (docs/findings/2026-08-24-despeckle-floor-recalibration.md).
-    blurRadius:
-      (isPhotographic(stats.edgeDensity)
-        ? Math.round(lerp(FLAT_PARAMS.blurRadius, PHOTO_PARAMS.blurRadius))
-        : 0) + (ranDetailPass ? DETAIL_PASS_BLUR : 0),
+    // An enlarged image gets exactly the detail-pass compensation, never the lerped share on top:
+    // on mario the extra pixel widened every anti-aliased line boundary into a band that
+    // quantized to a third color (a brown fringe on every black outline) and staircased the label
+    // boundary, and blur 1 alone has neither defect while keeping the eye the striping fix exists
+    // for (docs/findings/2026-08-24-despeckle-floor-recalibration.md). An image worked at its own
+    // size keeps the lerped blur it always had: that case was not in the measurement, and it has
+    // neither the compensation nor the fringe absorption to fall back on.
+    blurRadius: ranDetailPass
+      ? DETAIL_PASS_BLUR
+      : Math.round(lerp(FLAT_PARAMS.blurRadius, PHOTO_PARAMS.blurRadius)),
     despeckleFrac: lerp(FLAT_PARAMS.despeckleFrac, PHOTO_PARAMS.despeckleFrac) * strength,
     alphaMax: clamp(lerp(FLAT_PARAMS.alphaMax, PHOTO_PARAMS.alphaMax), 0, ALPHA_MAX_LIMIT),
     flatness: clamp(
