@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import JSZip from 'jszip';
 
 vi.mock('../src/app/scheduler', () => ({ scheduleRebuild: vi.fn() }));
 vi.mock('../src/scene/viewport', () => ({ requestFrame: vi.fn() }));
@@ -260,6 +261,77 @@ describe('asmRemovePart', () => {
     asmRemovePart(src.id);
 
     expect(scheduleRebuild).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Display shading reads a mesh's vertex index instead of rehashing every corner, but only where
+ * the sharing that index claims can be trusted. Our packed parts are welded, so honouring their
+ * claim exactly is strictly better than the fallback's 0.01mm bucketing. A dropped 3MF is not
+ * necessarily welded — one converted from an STL carries a vertex per corner and claims no sharing
+ * at all — and honouring *that* renders it fully faceted where it used to come out smooth.
+ *
+ * So the index is kept for a library load and dropped for an upload. Both cases here, because the
+ * two differ by one flag set by the caller and nothing about the rendered result would say which
+ * branch ran.
+ */
+describe('which loaded meshes are trusted to state their own vertex sharing', () => {
+  /** A two-triangle 3MF sharing an edge, in the single-inlined-<object> shape load3MF reads. */
+  async function packed3MF(): Promise<ArrayBuffer> {
+    const verts = [
+      [0, 0, 0],
+      [1, 0, 0],
+      [0, 1, 0],
+      [1, 1, 0],
+    ];
+    const tris = [
+      [0, 1, 2],
+      [1, 3, 2],
+    ];
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">` +
+      `<resources><object id="1" type="model"><mesh><vertices>` +
+      verts.map(([x, y, z]) => `<vertex x="${x}" y="${y}" z="${z}"/>`).join('') +
+      `</vertices><triangles>` +
+      tris.map(([a, b, c]) => `<triangle v1="${a}" v2="${b}" v3="${c}"/>`).join('') +
+      `</triangles></mesh></object></resources><build><item objectid="1"/></build></model>`;
+    const zip = new JSZip();
+    zip.file('3D/3dmodel.model', xml);
+    const buf = await zip.generateAsync({ type: 'arraybuffer' });
+    return buf;
+  }
+
+  it('keeps the index of a 3MF loaded from the library', async () => {
+    state.assembly.kindId = 'wheel';
+    const part = asmCreateRolePart(role({ id: 'wheel-half' }));
+    part.meshFromUpload = false;
+
+    await asmLoadPartBuffer(part, await packed3MF(), 'wheel-half.3mf');
+
+    expect(part.indexed).toBeDefined();
+    expect(part.indexed!.indices.length * 3).toBe(part.positions!.length);
+  });
+
+  it('drops the index of a 3MF the user dropped in', async () => {
+    state.assembly.kindId = 'wheel';
+    const part = asmCreateRolePart(role({ id: 'wheel-half' }));
+    part.meshFromUpload = true;
+
+    await asmLoadPartBuffer(part, await packed3MF(), 'whatever.3mf');
+
+    expect(part.indexed).toBeUndefined();
+    expect(part.positions!.length).toBeGreaterThan(0); // it still loaded, it just shades the old way
+  });
+
+  it('drops the index of an STL, which records no sharing at all', async () => {
+    state.assembly.kindId = 'wheel';
+    const part = asmCreateRolePart(role({ id: 'wheel-half' }));
+    part.meshFromUpload = false;
+
+    await asmLoadPartBuffer(part, twoFacedMesh(), 'p.stl');
+
+    expect(part.indexed).toBeUndefined();
   });
 });
 

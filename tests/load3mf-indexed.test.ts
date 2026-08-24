@@ -53,4 +53,21 @@ describe('load3MF vs read3MFIndexed vertex order', () => {
       }
     }
   });
+
+  // Display shading reads the file's own index instead of rehashing every corner, and writes each
+  // normal at a soup offset derived from that index. So "positions is indices expanded, in order"
+  // is not a description of load3MF, it is a precondition of the shading being applied to the
+  // right triangles. Asserted here, where a synthetic mesh keeps jsdom fast.
+  it('returns an index that expands to exactly the soup it ships', async () => {
+    const buf = await packedSingleObject3MF();
+    const { positions, vertices, indices } = await load3MF(new Uint8Array(buf).buffer);
+
+    expect(Array.from(indices)).toEqual(TRIS.flat());
+    expect(indices.length * 3).toBe(positions.length);
+    for (let i = 0; i < indices.length; i++) {
+      for (let k = 0; k < 3; k++) {
+        expect(positions[i * 3 + k]).toBe(vertices[indices[i] * 3 + k]);
+      }
+    }
+  });
 });

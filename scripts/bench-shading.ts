@@ -1,17 +1,22 @@
-// What the display path's creased shading costs, and whether the vertex weld inside it is the
-// reason. Backs the "display meshes re-derive a vertex weld" section of docs/tech-debt.md, which
-// records the shading swap as 3.0s -> 4.1s on a chair load and names the weld as the plausible but
-// never-isolated cause.
+// What the display path's creased shading costs, split by phase, and what reading the mesh's own
+// index instead saves. Backs "An uploaded mesh still re-derives its vertex weld for shading" in
+// docs/tech-debt.md, and the two findings reports it points at.
 //
 //   node_modules/.bin/vite-node scripts/bench-shading.ts cost      split toCreasedNormals by phase
-//   node_modules/.bin/vite-node scripts/bench-shading.ts candidate indexed crease pass, against it
+//   node_modules/.bin/vite-node scripts/bench-shading.ts candidate the indexed pass, against it
 //
 // Both run the chair's 13 parts by default; pass part ids to narrow.
 //
-// The soup measured here is the one a bare chair load actually shades: `renderRawAssemblyParts`
-// hands `part.positions` straight to `bufferGeometryFromTris`, with no artwork and no boolean
-// anywhere in the picture. That matters, because the tech-debt section proposes reusing
-// `bodyIndexed` from `AssemblyPartOutput`, which only exists after a cut.
+// **`candidate` imports the shipped `creasedNormalsFromIndex`, and must keep doing so.** It used
+// to hold a copy, and the copy drifted: `Math.hypot` where the shipped code had dropped it as 11x
+// slower, and `>=` where the shipped code gates on `>`. A bench that measures a near-miss of the
+// code cannot validate a change to it, and the figures it produced were published before anyone
+// noticed. `cost`'s `pass1Costs` is still a transcription, of three's `toCreasedNormals`, and
+// carries its own warning: it was wrong twice, both times by being subtly faster than three.
+//
+// The soup measured here is the one a bare chair load shades: `renderRawAssemblyParts` hands
+// `part.positions` straight to `bufferGeometryFromTris`. That path has no boolean in it, which is
+// what first showed that the index it needs comes from the 3MF rather than from a cut.
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -45,6 +50,7 @@ g.DOMParser = dom.window.DOMParser;
 const THREE = await import('three');
 const { toCreasedNormals } = await import('three/addons/utils/BufferGeometryUtils.js');
 const JSZip = (await import('jszip')).default;
+const { creasedNormalsFromIndex } = await import('../src/geometry/creasedNormals');
 
 /** rebuild.ts's CREASE_ANGLE_RAD. Duplicated rather than imported: importing rebuild.ts pulls in
  * the whole scene and UI graph, which has no business in a geometry bench. */
@@ -171,84 +177,19 @@ function pass1Costs(positions: Float32Array): {
 }
 
 /**
- * Candidate: crease-aware normals built from the triangle index, with no hashing at all.
+ * The shipped crease pass, imported rather than copied.
  *
- * Shares a vertex exactly (the file's own vertex list) instead of bucketing positions to 0.01mm,
- * and builds the vertex-to-face adjacency with a counting sort into two flat typed arrays, so
- * nothing is allocated per triangle. Output is still a non-indexed soup with per-corner normals,
- * because that is what crease shading needs: a vertex on a real edge carries a different normal on
- * each side of it.
+ * It used to be a copy here, and the copy drifted: it kept `Math.hypot` after the shipped code
+ * dropped it as 11x slower, and gated on `>= creaseDot` where the shipped code uses `>`. A bench
+ * that measures a near-miss of the code cannot validate a change to it, which is the whole reason
+ * the bench exists. Wrapped only to keep the (vertices, index) call shape the modes below use.
  */
 function creasedFromIndex(
   vertices: Float32Array,
   index: Uint32Array,
   creaseAngle: number,
 ): Float32Array {
-  const creaseDot = Math.cos(creaseAngle);
-  const triCount = index.length / 3;
-  const vertCount = vertices.length / 3;
-
-  const faceN = new Float32Array(triCount * 3);
-  for (let f = 0; f < triCount; f++) {
-    const a = index[f * 3] * 3,
-      b = index[f * 3 + 1] * 3,
-      c = index[f * 3 + 2] * 3;
-    const ux = vertices[c] - vertices[b],
-      uy = vertices[c + 1] - vertices[b + 1],
-      uz = vertices[c + 2] - vertices[b + 2];
-    const vx = vertices[a] - vertices[b],
-      vy = vertices[a + 1] - vertices[b + 1],
-      vz = vertices[a + 2] - vertices[b + 2];
-    let nx = uy * vz - uz * vy,
-      ny = uz * vx - ux * vz,
-      nz = ux * vy - uy * vx;
-    const len = Math.hypot(nx, ny, nz) || 1;
-    nx /= len;
-    ny /= len;
-    nz /= len;
-    faceN[f * 3] = nx;
-    faceN[f * 3 + 1] = ny;
-    faceN[f * 3 + 2] = nz;
-  }
-
-  // vertex -> incident faces, as a CSR-style pair of arrays (counting sort, two linear passes)
-  const start = new Uint32Array(vertCount + 1);
-  for (let i = 0; i < index.length; i++) start[index[i] + 1]++;
-  for (let v = 0; v < vertCount; v++) start[v + 1] += start[v];
-  const cursor = start.slice(0, vertCount);
-  const adj = new Uint32Array(index.length);
-  for (let f = 0; f < triCount; f++)
-    for (let k = 0; k < 3; k++) adj[cursor[index[f * 3 + k]]++] = f;
-
-  const normals = new Float32Array(triCount * 9);
-  for (let f = 0; f < triCount; f++) {
-    const fx = faceN[f * 3],
-      fy = faceN[f * 3 + 1],
-      fz = faceN[f * 3 + 2];
-    for (let k = 0; k < 3; k++) {
-      const v = index[f * 3 + k];
-      let sx = 0,
-        sy = 0,
-        sz = 0;
-      for (let p = start[v]; p < start[v + 1]; p++) {
-        const o = adj[p] * 3;
-        const ox = faceN[o],
-          oy = faceN[o + 1],
-          oz = faceN[o + 2];
-        if (fx * ox + fy * oy + fz * oz >= creaseDot) {
-          sx += ox;
-          sy += oy;
-          sz += oz;
-        }
-      }
-      const len = Math.hypot(sx, sy, sz) || 1;
-      const out = f * 9 + k * 3;
-      normals[out] = sx / len;
-      normals[out + 1] = sy / len;
-      normals[out + 2] = sz / len;
-    }
-  }
-  return normals;
+  return creasedNormalsFromIndex({ positions: vertices, indices: index }, creaseAngle);
 }
 
 /** Worst and mean angle, in degrees, between two per-corner normal arrays, plus how many corners
