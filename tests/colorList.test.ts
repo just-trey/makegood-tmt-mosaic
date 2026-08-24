@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ColorListEntry } from '../src/ui/colorList';
 
 vi.mock('../src/app/scheduler', () => ({ scheduleRebuild: vi.fn() }));
-vi.mock('../src/state/filaments', () => ({ nearestFilamentName: vi.fn(() => 'Generic PETG') }));
+vi.mock('../src/state/filaments', () => ({
+  nearestFilamentName: vi.fn(() => 'Generic PETG'),
+  // baseColorHex() (state/store.ts) reads this to show the body colour on the empty Base row.
+  getFilament: vi.fn(() => undefined),
+}));
 vi.mock('../src/export/printers', () => ({
   getPrinter: vi.fn(() => ({
     label: 'Test Printer',
@@ -515,5 +519,56 @@ describe('renderColorList — reset survives the field it sits next to', () => {
     input.dispatchEvent(new Event('change'));
 
     expect(state.colorSettings['#ff0000']).toEqual({ depth: 1.75 });
+  });
+});
+
+describe('renderColorList — "→ base"', () => {
+  beforeEach(() => {
+    state.baseColorKey = null;
+    state.baseColorMembers = [];
+    state.keptApart = [];
+  });
+
+  const addBaseButtons = () => [
+    ...document.querySelectorAll<HTMLElement>('.color-row [data-add-base]'),
+  ];
+
+  it('grows the base, so a second one does not evict the first', () => {
+    renderColorList([entry('#ff0000'), entry('#00ff00')], { rawColorCount: 2 });
+
+    const [red, green] = addBaseButtons();
+    red.click();
+    green.click();
+
+    // The whole point of the change: the button used to call replaceBase, so the second click
+    // silently dropped "#ff0000" back to being cut with only a tooltip having said so.
+    expect(state.baseColorMembers).toEqual(['#ff0000', '#00ff00']);
+  });
+
+  it('adds every member of a merged group at once', () => {
+    renderColorList(
+      [entry('#ff0000', { isMergeGroup: true, members: ['#ff0000', '#aa0000'], key: 'g' })],
+      { rawColorCount: 2 },
+    );
+
+    addBaseButtons()[0].click();
+
+    expect(state.baseColorMembers).toEqual(['#ff0000', '#aa0000']);
+  });
+
+  it('no longer warns about replacing, because it no longer replaces', () => {
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    expect(addBaseButtons()[0].title).toBe('Print this color in the body instead of cutting it');
+  });
+
+  it('shows the body color on the empty Base row, not a pointer to another panel', () => {
+    renderColorList([entry('#ff0000')], { rawColorCount: 1 });
+
+    const swatch = document.querySelector<HTMLElement>('.color-row.is-base-empty .swatch')!;
+    const hint = document.querySelector('.color-row.is-base-empty .hex')!;
+    // DEFAULT_BASE_COLOR — nothing in Part has been picked in this test's state.
+    expect(swatch.style.background).toBe('rgb(185, 192, 198)');
+    expect(hint.textContent).not.toMatch(/set in Part/);
   });
 });

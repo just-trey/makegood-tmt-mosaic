@@ -51,8 +51,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the front zone never reached the wings. Each fender zone comes with its own
   true-size template.
 
+### Changed
+
+- **"→ base" now adds a color to the base instead of replacing what is there.**
+  Sending a second color to the base used to silently drop the first back to
+  being cut, while dragging that same color onto the Base row added it. Two
+  gestures on one target that did opposite things, and the only warning was in a
+  tooltip. Both now add. To take a color back out, use the "×" on it in the Base
+  row, which is what that button was always for.
+- **Selected things in the left panel no longer go blue.** Blue is a filament you
+  might own, so a blue ring around a blue filament swatch was the place it
+  collided hardest. The selected body color now takes a two-tone ring that reads
+  against any color, the selected artwork row takes a plain border and a lighter
+  background, and the auto-merge label keeps its bold and drops the tint.
+
 ### Fixed
 
+- **The Colors panel shows the body color instead of saying where to find it.**
+  With nothing grouped into the base, the row read "Base — empty; body uses the
+  blank color set in Part". It now shows a swatch of the color the body will
+  print in, so the answer is on screen rather than in another panel.
 - **Picking a different design face updates what the panel says about it.** Under
   "Advanced: per-part face & alignment", the "face detected" line kept describing
   the face the part loaded with, sitting directly above a dropdown naming a

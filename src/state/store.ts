@@ -155,20 +155,12 @@ export function baseColorHex(): string {
   return getFilament(state.baseFilamentId)?.hex ?? DEFAULT_BASE_COLOR;
 }
 
-/** Make these hexes THE base, releasing any previous members back to being cut — the "→ base"
- * button switches the base rather than growing it (users read a second click as "use this one
- * instead"). Growing the base is the drag gesture's job (see addToBase). */
-export function replaceBase(hexes: string[]): void {
-  const next = hexes.filter(Boolean);
-  if (!next.length) return;
-  clearBaseColor();
-  addToBase(next);
-}
-
-/** Group more raw hexes into the base — accumulates, so dropping a color/merged group onto the
- * Base row grows the base slot instead of replacing it. The build re-derives baseColorKey as the
- * true dominant member on next rebuild; seed it here so the swatch/body have *something* to show
- * before that happens. */
+/** Group more raw hexes into the base: accumulates, so both the "→ base" button and dropping a
+ * color/merged group onto the Base row grow the base slot. One semantic on purpose: the button
+ * used to replace instead, so a second click silently evicted the first color with only a tooltip
+ * saying so, while the identical drop gesture added. Removing a member is what the "×" on the Base
+ * row is for. The build re-derives baseColorKey as the true dominant member on next rebuild; seed
+ * it here so the swatch/body have *something* to show before that happens. */
 export function addToBase(hexes: string[]): void {
   const add = hexes.filter(Boolean);
   if (!add.length) return;
