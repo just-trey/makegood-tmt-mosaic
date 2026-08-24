@@ -1045,10 +1045,21 @@ from one that silently redefines the verified pose.
 It used to be an `if (roleId === …) else if …` chain; the
 chair's fifteen pieces turned that into a `PLACEMENT` record keyed by
 library part id, so adding a part is now a data change rather than a code
-one. It still lives apart from the role it describes, though — these are
-per-part constants and belong as data on the `AssemblyKind` / role
-definition, matching the "one array entry" goal in
+one. It still lives apart from the role it describes, though, which looks
+like it belongs as data on the `AssemblyKind` / role definition instead,
+matching the "one array entry" goal in
 [src/assembly/kinds.ts](../src/assembly/kinds.ts).
+
+**That move fights a deliberate choice, so it is a decision, not a refactor.**
+The table's own provenance comment
+([src/export/placement.ts:33](../src/export/placement.ts#L33)) explains why it
+is keyed by library part id rather than role: the chair's two caster roles
+resolve to a different mesh per hardware variant, and Standard/Kit sit on
+different plates, so a role-keyed table would collapse two verified
+placements into one slot. Moving placement onto the role either has to solve
+that collision or accept losing the per-variant distinction. Re-scope with
+that in mind, or close this as won't-do and let the comment stand as the
+answer.
 
 ## Real malformed input never reaches the CSG failure branches
 
