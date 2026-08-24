@@ -107,29 +107,59 @@ function soupGeometry(positions: Float32Array): import('three').BufferGeometry {
 }
 
 /**
- * Pass 1 of toCreasedNormals on its own: the string hash of every corner into a bucket map.
+ * Pass 1 of toCreasedNormals, lifted verbatim, and the hashing inside it on its own.
  *
- * This *is* the weld the tech-debt section is about, lifted out verbatim so it can be priced
- * separately from the averaging pass that follows it. Re-implemented rather than imported because
- * three exports only the whole function.
+ * Two numbers because "is the weld the cost" needs both. Pass 1 is the whole first loop: a face
+ * normal per triangle (cross, normalize, and a `new Vector3` that every one of the triangle's
+ * three buckets then holds) plus three string hashes and three map pushes. The weld proper is only
+ * the hashing and bucketing half of that.
+ *
+ * Re-implemented rather than imported because three exports only the whole function. Keep this in
+ * step with `toCreasedNormals` if three is upgraded, or it stops being an attribution.
  */
-function weldOnly(positions: Float32Array): { buckets: number; ms: number } {
-  const t0 = now();
+function pass1Costs(positions: Float32Array): {
+  buckets: number;
+  verbatimMs: number;
+  hashMs: number;
+} {
   const hashMultiplier = (1 + 1e-10) * 1e2;
-  const vertexMap: Record<string, number[]> = {};
   const triCount = positions.length / 9;
+
+  const t0 = now();
+  const vertexMap: Record<string, InstanceType<typeof THREE.Vector3>[]> = {};
+  const a = new THREE.Vector3(),
+    b = new THREE.Vector3(),
+    c = new THREE.Vector3(),
+    u = new THREE.Vector3(),
+    v = new THREE.Vector3();
+  for (let i = 0; i < triCount; i++) {
+    const i9 = i * 9;
+    a.set(positions[i9], positions[i9 + 1], positions[i9 + 2]);
+    b.set(positions[i9 + 3], positions[i9 + 4], positions[i9 + 5]);
+    c.set(positions[i9 + 6], positions[i9 + 7], positions[i9 + 8]);
+    u.subVectors(c, b);
+    v.subVectors(a, b);
+    const normal = new THREE.Vector3().crossVectors(u, v).normalize();
+    for (const vert of [a, b, c]) {
+      const hash = `${~~(vert.x * hashMultiplier)},${~~(vert.y * hashMultiplier)},${~~(vert.z * hashMultiplier)}`;
+      (vertexMap[hash] ||= []).push(normal);
+    }
+  }
+  const verbatimMs = now() - t0;
+
+  const t1 = now();
+  const buckets: Record<string, number[]> = {};
   for (let i = 0; i < triCount; i++) {
     const i9 = i * 9;
     for (let n = 0; n < 3; n++) {
       const o = i9 + n * 3;
-      const x = ~~(positions[o] * hashMultiplier);
-      const y = ~~(positions[o + 1] * hashMultiplier);
-      const z = ~~(positions[o + 2] * hashMultiplier);
-      const hash = `${x},${y},${z}`;
-      (vertexMap[hash] ||= []).push(i);
+      const hash = `${~~(positions[o] * hashMultiplier)},${~~(positions[o + 1] * hashMultiplier)},${~~(positions[o + 2] * hashMultiplier)}`;
+      (buckets[hash] ||= []).push(i);
     }
   }
-  return { buckets: Object.keys(vertexMap).length, ms: now() - t0 };
+  const hashMs = now() - t1;
+
+  return { buckets: Object.keys(buckets).length, verbatimMs, hashMs };
 }
 
 /**
@@ -267,14 +297,20 @@ function degenerateCorners(vertices: Float32Array, index: Uint32Array): Uint8Arr
 }
 
 /**
- * Fuse vertices the packed file left duplicated at one position, and remap the index onto them.
+ * Fuse vertices sharing one exact position, and remap the index onto them.
  *
- * The packed parts are not fully welded: chair-storage-left carries 23244 vertices at 22640
- * distinct positions. toCreasedNormals shares those by position and smooths across them; an index
- * pass reading the file's own sharing does not, and the two disagree by up to 90° on exactly those
- * corners. Fusing first restores the agreement, and it is still far cheaper than what
- * toCreasedNormals does: one key per unique vertex (23k) rather than three per triangle (139k),
- * and an exact key rather than a 0.01mm bucket.
+ * **On the packed parts this is a measured no-op, and that is the result it exists to establish.**
+ * The obvious explanation for the disagreement with `toCreasedNormals` was that the files leave
+ * vertices duplicated at a position, which position-bucketing would silently fuse. They do not:
+ * chair-storage-left has 23244 vertices at 23244 distinct positions, and so does every part
+ * checked. The bench proves it from the other end too, since the fused and as-packed columns
+ * report identical worst angles and bad-corner counts on all 13 parts.
+ *
+ * So what `toCreasedNormals` merges beyond this is the 0.01mm bucket, not duplicate geometry.
+ *
+ * Kept because it is also the stand-in for the path an uploaded STL would need: soup with no
+ * vertex list at all. Its cost here is *not* that cost, and must not be quoted as it -- keying 23k
+ * unique vertices is a fraction of keying a soup's 1.1M corners.
  */
 function fuseVertices(
   vertices: Float32Array,
@@ -302,16 +338,18 @@ function fuseVertices(
 async function cost(ids: string[]): Promise<void> {
   console.log('\nWhat the display path pays per part, and how much of it is the weld\n');
   console.log(
-    '  part                        tris   verts   buckets    flat   creased    weld  weld%',
+    '  part                        tris   buckets    flat   creased   pass1  pass1%    hash   hash%',
   );
-  const totals = { tris: 0, flat: 0, creased: 0, weld: 0 };
+  const totals = { tris: 0, flat: 0, creased: 0, pass1: 0, hash: 0 };
   for (const id of ids) {
     const part = await loadPart(id);
     const tris = part.positions.length / 9;
 
-    // Warm both paths on this part before timing either.
+    // Warm every timed path on this part before timing any of it. pass1Costs used to be the one
+    // path left cold, which inflated its share of the creased pass from 32% to 38%.
     soupGeometry(part.positions).computeVertexNormals();
     toCreasedNormals(soupGeometry(part.positions), CREASE_ANGLE_RAD);
+    pass1Costs(part.positions);
 
     let t = now();
     soupGeometry(part.positions).computeVertexNormals();
@@ -321,25 +359,29 @@ async function cost(ids: string[]): Promise<void> {
     toCreasedNormals(soupGeometry(part.positions), CREASE_ANGLE_RAD);
     const creased = now() - t;
 
-    const w = weldOnly(part.positions);
+    const w = pass1Costs(part.positions);
     console.log(
-      `  ${id.padEnd(24)} ${String(tris).padStart(7)} ${String(part.vertices.length / 3).padStart(7)} ` +
-        `${String(w.buckets).padStart(9)} ${ms(flat).padStart(7)} ${ms(creased).padStart(9)} ` +
-        `${ms(w.ms).padStart(7)} ${((100 * w.ms) / creased).toFixed(0).padStart(5)}%`,
+      `  ${id.padEnd(24)} ${String(tris).padStart(7)} ${String(w.buckets).padStart(9)} ` +
+        `${ms(flat).padStart(7)} ${ms(creased).padStart(9)} ${ms(w.verbatimMs).padStart(7)} ` +
+        `${((100 * w.verbatimMs) / creased).toFixed(0).padStart(5)}% ${ms(w.hashMs).padStart(7)} ` +
+        `${((100 * w.hashMs) / creased).toFixed(0).padStart(5)}%`,
     );
     totals.tris += tris;
     totals.flat += flat;
     totals.creased += creased;
-    totals.weld += w.ms;
+    totals.pass1 += w.verbatimMs;
+    totals.hash += w.hashMs;
   }
   console.log(
-    `  ${'TOTAL'.padEnd(24)} ${String(totals.tris).padStart(7)} ${''.padStart(7)} ${''.padStart(9)} ` +
-      `${ms(totals.flat).padStart(7)} ${ms(totals.creased).padStart(9)} ${ms(totals.weld).padStart(7)} ` +
-      `${((100 * totals.weld) / totals.creased).toFixed(0).padStart(5)}%`,
+    `  ${'TOTAL'.padEnd(24)} ${String(totals.tris).padStart(7)} ${''.padStart(9)} ` +
+      `${ms(totals.flat).padStart(7)} ${ms(totals.creased).padStart(9)} ${ms(totals.pass1).padStart(7)} ` +
+      `${((100 * totals.pass1) / totals.creased).toFixed(0).padStart(5)}% ${ms(totals.hash).padStart(7)} ` +
+      `${((100 * totals.hash) / totals.creased).toFixed(0).padStart(5)}%`,
   );
   console.log(
     `\n  creased costs ${(totals.creased / totals.flat).toFixed(1)}x flat ` +
-      `(+${ms(totals.creased - totals.flat)} over the whole chair)\n`,
+      `(+${ms(totals.creased - totals.flat)} over the whole chair)\n` +
+      `  pass1 = the whole first loop, hash = only the bucketing inside it (the weld proper)\n`,
   );
 }
 

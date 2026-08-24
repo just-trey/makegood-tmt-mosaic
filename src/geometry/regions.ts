@@ -354,6 +354,26 @@ export function safeUnionAll(features: (PolyFeature | null)[], label?: string): 
 }
 
 /**
+ * `safeUnionAll` for a list whose length the artwork decides, not a constant.
+ *
+ * Same sweep, but the fallback is `unionAllCooperative` rather than a straight-line fold: it
+ * yields on the same budget and merges as a balanced tree. The sync fold above is fine where the
+ * caller bounds the batch (COVERED_BATCH caps it at 8 pairwise ops), and is a frozen tab where it
+ * does not -- a colour can carry hundreds of pieces, and the fallback runs precisely when the
+ * engine is already struggling with them.
+ */
+export async function safeUnionAllCooperative(
+  features: (PolyFeature | null)[],
+  label?: string,
+): Promise<PolyFeature | null> {
+  const live = features.map(cleanFeature).filter((f): f is PolyFeature => !!f);
+  if (live.length < 2) return live[0] ?? null;
+  const r = naryOpWithRetry((a) => polygonClipping.union(a[0], ...a.slice(1)), live.map(toGeom));
+  if (r.ok) return r.val ?? null;
+  return unionAllCooperative(live, undefined, label);
+}
+
+/**
  * Subtract every clipping from `subject` in one engine sweep. Falls back to subtracting them one
  * at a time for the same reason `safeUnionAll` re-folds: a failed sweep otherwise leaves the
  * subject untrimmed against clippings that would each have succeeded on their own.
@@ -503,6 +523,30 @@ export async function unionAllCooperative(
 }
 
 /**
+ * How many shapes are subtracted individually before the accumulator is folded.
+ *
+ * Not a tuning knob to taste: the two ends both lose. Folding every shape (batch 1) is the old
+ * pairwise cadence and gains almost nothing. Never folding wins on a small design and collapses on
+ * a dense one, because every difference then carries every shape above it: at 400 shapes it
+ * measured 13552ms against 1257ms for the old pairwise loop and 704ms for batch 8, so **11x the
+ * loop it replaced and 19x this**.
+ *
+ * 8 is chosen for the whole curve rather than for the best reading at any one size. Over
+ * 50/100/200/400 synthetic overlapping shapes it runs 1.9x, 1.8x, 1.9x, 1.8x against the pairwise
+ * loop, and a finer sweep puts 4 through 12 on a flat plateau with 8 on it. Bigger batches beat it
+ * at 50 shapes (3.0x) and are the numbers above at 400.
+ *
+ * It also bounds one engine call, which is what keeps the yield below honest. A batch of every
+ * shape is one atomic multi-second sweep with no frame to give back.
+ */
+const COVERED_BATCH = 8;
+
+/** Memo for the pass below, keyed on the parsed shapes' identity. */
+let regionsCacheKey: SVGShape[] | null = null;
+let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
+let regionsCacheDiagnostics: string[] = [];
+
+/**
  * Compute, per color, the net *visible* region accounting for paint order
  * (later elements occlude earlier ones).
  *
@@ -527,27 +571,6 @@ export async function unionAllCooperative(
  * but at the 8 shades that path actually produces the pass is not where the time goes. Build it
  * only if MAX_COMPONENTS (src/raster/trace.ts) is ever raised enough to change that.
  */
-/**
- * How many shapes are subtracted individually before the accumulator is folded.
- *
- * Not a tuning knob to taste: the two ends both lose. Folding every shape (batch 1) is the old
- * pairwise cadence and gains almost nothing. Never folding is fastest on a 140-shape file and
- * collapses on a dense one, because every difference then carries every shape above it: at 400
- * shapes it measured 12863ms against 1241ms for the old pairwise loop and 688ms for batch 8, so
- * **10x the loop it replaced and 19x this**.
- *
- * Swept over 50/100/200/400 synthetic overlapping shapes, batch 8 runs 2.5x, 1.8x, 1.8x, 1.8x
- * against the pairwise loop, and a finer sweep put 4 through 12 on a flat plateau with 8 on it.
- *
- * It also bounds one engine call, which is what keeps the yield below honest. A batch of every
- * shape is one atomic multi-second sweep with no frame to give back.
- */
-const COVERED_BATCH = 8;
-
-let regionsCacheKey: SVGShape[] | null = null;
-let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
-let regionsCacheDiagnostics: string[] = [];
-
 export async function computeNetRegionsByColor(
   shapes: SVGShape[],
   onProgress: (fraction: number) => void = reportProgress,
@@ -591,17 +614,36 @@ export async function computeNetRegionsByColor(
           pending = [];
         }
       }
-      onProgress((total - i) / total);
+      // The per-color merge below is real work, so the visibility loop stops short of 1: it owns
+      // the first 90% and the merge owns the rest. Reporting 1 here and then merging is how a
+      // progress bar sits full while the tab is still busy.
+      onProgress(0.9 * ((total - i) / total));
       if (performance.now() - lastYield > YIELD_BUDGET_MS) {
         await yieldToBrowser();
         lastYield = performance.now();
       }
     }
+    // One sweep per color, and unlike the accumulator fold it is bounded by nothing: the piece
+    // count comes from the artwork. The yield below runs *between* colors, so a single color with
+    // very many pieces is still one atomic call. Measured small on everything real (30ms over the
+    // corpus, 18ms worst), and worth keeping n-ary: folding it cooperatively instead costs dino
+    // ring 123ms -> 158ms. The unbounded case is a raster trace near MAX_COMPONENTS with one
+    // dominant shade, and it is written up in docs/tech-debt.md rather than closed with a chunk
+    // size nobody measured.
     const byColor: Record<string, PolyFeature> = {};
-    for (const [color, list] of Object.entries(pieces)) {
-      const merged = list.length === 1 ? list[0] : safeUnionAll(list, `color ${color}`);
+    const colors = Object.entries(pieces);
+    for (let c = 0; c < colors.length; c++) {
+      const [color, list] = colors[c];
+      const merged =
+        list.length === 1 ? list[0] : await safeUnionAllCooperative(list, `color ${color}`);
       if (merged) byColor[color] = merged;
+      onProgress(0.9 + (0.1 * (c + 1)) / colors.length);
+      if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+        await yieldToBrowser();
+        lastYield = performance.now();
+      }
     }
+    onProgress(1); // artwork with no usable shapes never entered either loop
     const result = { byColor };
     regionsCacheKey = shapes;
     regionsCacheVal = result;

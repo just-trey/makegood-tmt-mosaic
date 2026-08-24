@@ -45,6 +45,7 @@ const server = spawn(
   ['--port', String(PORT), '--strictPort', '--host', '127.0.0.1'],
   { cwd: REPO, stdio: 'ignore', detached: true },
 );
+let browser;
 const stop = () => {
   try {
     process.kill(-server.pid, 'SIGTERM');
@@ -65,7 +66,7 @@ try {
     await new Promise((r) => setTimeout(r, 200));
   }
 
-  const browser = await launchBrowser();
+  browser = await launchBrowser();
   const page = await browser.newPage();
   page.on('console', (m) => {
     if (m.type() === 'error') console.error(`  page error: ${m.text()}`);
@@ -106,7 +107,8 @@ try {
     );
   }
   console.log('');
-  await browser.close();
 } finally {
+  // Both in the finally: with only the server here, one bad file left a Chromium process running.
+  await browser?.close();
   stop();
 }

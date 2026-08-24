@@ -42,10 +42,17 @@ mkdirSync(outDir, { recursive: true });
 
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
-const server = await startPreview({ port: PORT });
-const { browser, page } = await launchPage({ port: PORT });
+// Both handles are declared before the try and torn down in the finally. With `launchPage` outside
+// it, a browser that failed to start left the detached preview server holding port 4174, and every
+// later run then hard-errored on startPreview's own port guard.
+let server;
+let browser;
+let page;
 
 try {
+  server = await startPreview({ port: PORT });
+  ({ browser, page } = await launchPage({ port: PORT }));
+
   console.log(`\nFlat rebuild, wall clock in the browser (median of ${REPEATS})\n`);
   for (const rel of svgs) {
     const name = path.basename(rel);
@@ -86,6 +93,6 @@ try {
   }
   console.log(`\n  screenshots in ${outDir}\n`);
 } finally {
-  await browser.close();
-  server.stop();
+  await browser?.close();
+  server?.stop();
 }

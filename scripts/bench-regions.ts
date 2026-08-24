@@ -13,8 +13,15 @@
 // shipping code rather than on another replica.
 //
 // It was validated as a replica while it still described shipping: within 3% of the real pass on
-// every corpus file, and identical areas. Keep it that way. If it stops matching the *areas* the
-// real pass produces, the rewrite changed behaviour and that is the finding.
+// every corpus file, and identical areas. That 3% is also the evidence that Turf's wrappers cost
+// nothing, since this replica calls the engine directly where the real pass went through Turf, and
+// both were pairwise. Keep it that way. If it stops matching the *areas* the real pass produces,
+// the rewrite changed behaviour and that is the finding.
+//
+// One known asymmetry, left in deliberately: the replica drops the cooperative yield, so the real
+// pass pays a ~1ms setTimeout every 30ms that the replica does not (~3% on the dense file). That
+// biases *against* the shipping pass, so every speedup `attribute` prints is a floor rather than a
+// claim. Do not read the time drift closer than that; the area check is the exact one.
 //
 // The candidates are reached through the same retry ladder the real helpers use. Without it they
 // look faster and drift up to 8% in area, because an op that throws falls back to a degraded
@@ -416,6 +423,20 @@ function finishFeatures(byColor: Record<string, Poly[]>): Record<string, PolyFea
   return out;
 }
 
+/**
+ * Run every timed path once, discarded, so none of them is measured cold.
+ *
+ * Both the baseline and the candidates, because warming only the baseline would tilt it the other
+ * way. `attribute` needs it too: without it the first file measured charges its warm-up to the
+ * real pass and the replica reads 10% faster on ordering alone.
+ */
+function warmUp(shapes: SVGShape[]): void {
+  replicaPairwise(shapes);
+  replicaCleanOnce(shapes);
+  replicaNary(shapes, 8);
+  replicaNary(shapes, Number.MAX_SAFE_INTEGER);
+}
+
 const ms = (n: number) => `${n.toFixed(0)}ms`;
 const pct = (n: number, total: number) => `${((100 * n) / total).toFixed(0)}%`;
 
@@ -460,15 +481,16 @@ async function attribute(files: string[]): Promise<void> {
   console.log('\nShipping computeNetRegionsByColor against the pairwise loop it replaced\n');
   for (const file of files) {
     const { name, shapes } = load(file);
-    // Warm the JIT on this file's own geometry first. Without it the first file measured charges
-    // its warmup to `real` and reads as a 10% replica win that is nothing but ordering.
-    replicaPairwise(shapes);
+    warmUp(shapes);
+    // The real pass is warmed on a *separate parse* of the same file. It memoizes on the shapes
+    // array's identity, so warming it on `shapes` would make the timed call a cache hit and report
+    // near-zero. Without this it was the one timed path running cold, against a warm replica.
+    await computeNetRegionsByColor(load(file).shapes, () => {});
     const t0 = now();
     const real = await computeNetRegionsByColor(shapes, () => {});
     const realMs = now() - t0;
 
     const rep = replicaPairwise(shapes);
-    const drift = (100 * (rep.cost.total - realMs)) / realMs;
     const c = compare(areaSignature(real.byColor), areaSignature(rep.byColor));
 
     const verts = Object.values(real.byColor).reduce((s, f) => s + vertexCount(f), 0);
@@ -479,7 +501,7 @@ async function attribute(files: string[]): Promise<void> {
     console.log(`  ${'real (shipping)'.padEnd(22)} ${ms(realMs).padStart(8)}`);
     printCost('pairwise (was)', rep.cost);
     console.log(
-      `  pairwise costs ${drift >= 0 ? '+' : ''}${drift.toFixed(1)}% of real's time, ` +
+      `  pairwise takes ${(rep.cost.total / realMs).toFixed(2)}x real's time, ` +
         `and lands ${(100 * c.worstRel).toFixed(3)}% off its worst area` +
         (c.missing.length ? `, MISSING ${c.missing.join(',')}` : '') +
         (c.extra.length ? `, EXTRA ${c.extra.join(',')}` : '') +
@@ -492,6 +514,11 @@ async function variants(files: string[]): Promise<void> {
   console.log('\nCandidates against the pairwise loop (area-checked)\n');
   for (const file of files) {
     const { name, shapes } = load(file);
+    // Warm every path on this file's own geometry before timing any of it. The baseline runs
+    // first, so without this it absorbs the JIT warm-up and every candidate reads faster than it
+    // is: n=50 measured 324ms cold against 230ms warm, which shipped a 2.5x into a code comment
+    // where the truth was 1.9x.
+    warmUp(shapes);
     const base = replicaPairwise(shapes);
     const sig = areaSignature(base.byColor);
     console.log(`${name}  ${shapes.length} shapes, ${Object.keys(base.byColor).length} colors`);
@@ -581,6 +608,7 @@ async function scaling(counts: number[]): Promise<void> {
   console.log('\nBatch size against shape count, on synthetic overlapping artwork\n');
   for (const n of counts) {
     const shapes = syntheticShapes(n);
+    warmUp(shapes);
     const base = replicaPairwise(shapes);
     const sig = areaSignature(base.byColor);
     console.log(`n=${n}`);
