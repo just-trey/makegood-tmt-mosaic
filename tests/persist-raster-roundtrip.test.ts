@@ -6,7 +6,8 @@ import {
   loadSavedSession,
   saveSession,
 } from '../src/state/persist';
-import { WARNINGS } from '../src/warnings';
+import { rasterCappedMessage, rasterTracedMessage } from '../src/raster/parse';
+import { WARNINGS, clearWarnings } from '../src/warnings';
 import type { ParsedSVG } from '../src/types';
 import { clearArtwork, loadArtworkSource, rasterMmPerPixel } from '../src/state/artwork';
 import { state } from '../src/state/store';
@@ -132,6 +133,35 @@ describe('a raster source that the browser can encode', () => {
     // face this came from does not exist. Dropped, every restored design comes back at the
     // fraction-only floor.
     expect(src!.raster?.mmPerPixel).toBeCloseTo(rasterMmPerPixel(bands())!, 6);
+  });
+
+  // Flat mode, like the restore tests below it: an assembly session pulls its parts back in on
+  // restore, which jsdom has no canvas for.
+  it('re-traces on restore and gives the same notice a fresh load would', async () => {
+    loadRaster();
+    saveSession();
+    const session = loadSavedSession()!;
+
+    // decodeWorkingImage needs an Image that actually loads: the failure-path test below stubs
+    // one that errors instead, on purpose, so this stub is local rather than shared.
+    class DecodingImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 16;
+      naturalHeight = 16;
+      set src(_v: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    vi.stubGlobal('Image', DecodingImage);
+
+    clearArtwork();
+    clearWarnings();
+    state.assembly.parts = [];
+    await applyRestoredSession(session);
+
+    expect(WARNINGS.some((w) => w.message === rasterTracedMessage('photo.png'))).toBe(true);
+    expect(WARNINGS.some((w) => w.message === rasterCappedMessage('photo.png'))).toBe(false);
   });
 
   it('keeps its instances, so no placement is orphaned and none is lost', () => {

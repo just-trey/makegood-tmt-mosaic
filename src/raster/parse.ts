@@ -157,3 +157,14 @@ export function rasterCappedMessage(name: string): string {
     'Lower Colors, or lower Detail, for a cleaner result.'
   );
 }
+
+/**
+ * Shown once a photo has traced without hitting the cap above. An SVG is already flat color;
+ * a photo has to be quantized and traced to get there, so it never comes out as sharp.
+ *
+ * Same shape as rasterCappedMessage: filename-keyed and mutually exclusive with it per source,
+ * so a row shows exactly one status line once it has traced.
+ */
+export function rasterTracedMessage(name: string): string {
+  return `"${name}" was traced from a photo. An SVG would come out cleaner.`;
+}

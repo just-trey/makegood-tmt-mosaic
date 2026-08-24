@@ -14,7 +14,7 @@ import { getPrinter } from '../export/printers';
 import { asmLoadFullAssembly } from '../assembly/parts';
 import { parseSVGDocument } from '../svg/parse';
 import { decodeWorkingImage, encodeWorkingImage } from '../raster/store';
-import { parseRasterImage, rasterCappedMessage } from '../raster/parse';
+import { parseRasterImage, rasterCappedMessage, rasterTracedMessage } from '../raster/parse';
 import { notice, warn } from '../warnings';
 import type { RasterImage } from '../raster/types';
 
@@ -526,6 +526,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       // The same notice the first load gave. Without it a design that comes back simplified looks
       // like the app quietly changed it.
       if (result.capped) notice(rasterCappedMessage(s.name));
+      else notice(rasterTracedMessage(s.name));
       sources.push({
         id: s.id,
         kind: s.kind,

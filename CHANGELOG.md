@@ -64,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   collided hardest. The selected body color now takes a two-tone ring that reads
   against any color, the selected artwork row takes a plain border and a lighter
   background, and the auto-merge label keeps its bold and drops the tint.
+- **The dropzone now says SVG comes out sharpest.** SVG and a photo were shown
+  as parallel, equal-quality choices, so nothing on screen said an SVG was
+  already available before the app had to trace and simplify a photo to get
+  one. A photo that traces cleanly now gets a dismissible notice naming it,
+  the same way a photo that hit the detail cap already did.
 
 ### Fixed
 

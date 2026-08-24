@@ -19,6 +19,27 @@ survives as its own section; only the closed part goes. Checking that the diff
 removed only the lines you meant to remove is _not_ this check: it confirms the
 scope of the edit, not that what left was finished.
 
+## Raster status notices dedupe by filename, not by source id
+
+`rasterCappedMessage`/`rasterTracedMessage` in
+[src/raster/parse.ts](../src/raster/parse.ts) key their `notice()`/
+`dismissNotice()` calls off the loaded file's name, because the message text
+itself names the file for the user. Two different raster sources that happen
+to share a filename (re-loading a same-named export, two different photos
+both called `IMG_0001.jpg`) can land on opposite sides of the capped/traced
+split, and both notices then stand at once, reading as contradictory advice
+about what looks like one file.
+
+Fixing it means separating the dedupe key from the display text (an id-keyed
+entry whose rendered message still names the file), which touches every call
+site of `notice`/`dismissNotice` for these two messages
+(`src/ui/artworkPanel.ts`, `src/ui/artworkListPanel.ts`,
+`src/state/persist.ts`) plus the `Notice` shape in
+[src/warnings.ts](../src/warnings.ts). Deferred: the collision needs two
+sources with an identical name loaded in the same session, which is rare, and
+the existing capped-only notice already carried the same limitation before
+`rasterTracedMessage` was added.
+
 ## Two of convention 19's neighbours are open, and one has a second instance
 
 Convention 19 itself is closed in both halves. The viewport frame and its handles are `--text`,
