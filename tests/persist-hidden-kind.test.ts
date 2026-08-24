@@ -6,13 +6,15 @@ import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 
 const STORAGE_KEY = 'tmt-mosaic:session:v1';
 
-// No kind ships hidden today (the chair body was, briefly — see docs/tech-debt.md), so the guard
-// is exercised by marking a real kind hidden for the duration of a test rather than by finding
-// one. Driving it off whatever happens to carry `hidden` made the suite go quiet the moment the
-// chair was unhidden: the assertions still "passed" against a kind that no longer had the
-// property, which is the failure mode this arrangement exists to avoid.
-const gated = ASSEMBLY_KINDS[ASSEMBLY_KINDS.length - 1];
-const offered = ASSEMBLY_KINDS[0];
+// Both kinds here are ones that ship *offered*, and `gated` is marked hidden for the duration of a
+// test. Two reasons it is not simply whichever kind really carries `hidden`. Driving it off that
+// made the suite go quiet the moment the chair was unhidden: the assertions still "passed" against
+// a kind that no longer had the property. And the second case below needs `gated` to be genuinely
+// offered, while `afterEach`'s `delete` would otherwise leave a withheld part unhidden for every
+// later test in the worker.
+const offeredKinds = ASSEMBLY_KINDS.filter((k) => !k.hidden);
+const gated = offeredKinds[offeredKinds.length - 1];
+const offered = offeredKinds[0];
 
 /** Enough loaded work for saveSession to consider the session worth keeping (same shape as
  * tests/persist-unload.test.ts's withLoadedWork). */

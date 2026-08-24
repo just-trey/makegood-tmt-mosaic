@@ -1,8 +1,7 @@
 // End-to-end smoke test: serves dist/ with vite preview, drives the app in headless
 // Chromium, and exercises assembly auto-load -> sample SVG -> CSG build -> 3MF export,
-// then flat (disc) mode -> rebuild -> STL zip export, then a PNG through the raster path.
-import { mkdirSync, readFileSync, statSync } from 'node:fs';
-import JSZip from 'jszip';
+// then a PNG through the raster path.
+import { mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { startPreview, launchPage, afterRebuild, settle } from './lib/harness.mjs';
 import { partSummaries, plateSummary } from './lib/threemf.mjs';
@@ -119,83 +118,27 @@ try {
   if (plates.items !== asm.length)
     errors.push(`assembly 3MF has ${plates.items} build items for ${asm.length} parts`);
 
-  console.log('5. switching to disc (flat) mode…');
-  await afterRebuild(page, () => page.selectOption('#shape-kind', 'disc'), {
-    rebuildTimeoutMs: 60_000,
-  });
-  const rows = await page.locator('#color-list .color-row').count();
-  console.log(
-    '   flat rebuild done, color rows:',
-    rows,
-    '| tris:',
-    await page.textContent('#stat-tris'),
-  );
-  await page.screenshot({ path: path.join(OUT, '4-flat-disc.png') });
+  // The flat-plate modes are no longer reachable from the Part dropdown (docs/tech-debt.md), so
+  // four steps here — switch to disc, override the background recess depth, export a flat 3MF,
+  // export the per-color STL zip — drove UI that no longer exists. `tests/flat.test.ts` and
+  // `tests/depth.test.ts` still cover that geometry. "Recess bg too" went with them rather than
+  // moving to the assembly part: `recessBg` is read only inside flat.ts, so the Background row it
+  // waits for is never produced on a real part (see docs/tech-debt.md).
 
-  console.log('6. overriding the background recess depth (flat mode)…');
-  await page.check('#p-recess-bg');
+  console.log('5. loading a PNG as artwork (browser decode + quantize + trace)…');
+  // The sample SVG from step 2 comes off first. Designs stack rather than replace, so leaving it
+  // loaded puts its colours in the same list, and the assertion below — every traced colour
+  // reached the list — would be comparing the tracer's palette against both designs' rows. The
+  // old flow got this for free from a step that switched part shape in between.
+  // Not wrapped in afterRebuild: removing the only design leaves nothing to build, so the rebuild
+  // counter never moves and the wrapper waits out its whole timeout. The row going is the signal.
+  await page.click('#artwork-list .artwork-row .artwork-remove');
   await page.waitForFunction(
-    () => {
-      const rows = [...document.querySelectorAll('#color-list .color-row .hex')];
-      return rows.some((r) => r.textContent === 'Background');
-    },
+    () => document.querySelectorAll('#artwork-list .artwork-row').length === 0,
+    null,
     { timeout: 60_000 },
   );
-  const bgRow = page.locator('#color-list .color-row', { hasText: 'Background' });
-  await afterRebuild(
-    page,
-    async () => {
-      await bgRow.locator('.depth-input').fill('2.5');
-      await bgRow.locator('.depth-input').dispatchEvent('change');
-    },
-    { rebuildTimeoutMs: 60_000 },
-  );
-  console.log('   background depth set to 2.5 (mesh should recess deeper)');
-  await page.screenshot({ path: path.join(OUT, '5-bg-depth.png') });
-
-  console.log('7. exporting flat 3MF + STL zip…');
-  // Read at export time, not reused from step 5: step 6 ticked "Recess bg too", which adds the
-  // Background row, so the count that matters here is not the one logged above. `:not(.is-base)`
-  // because the pinned Base row is a control rather than a colour that cuts — measured, since
-  // counting every row gave 5 against the export's 4 plugs.
-  const cutRows = await page.locator('#color-list .color-row:not(.is-base)').count();
-  const [dl2] = await Promise.all([
-    page.waitForEvent('download', { timeout: 120_000 }),
-    page.click('#btn-export'),
-  ]);
-  const fplate = path.join(OUT, 'flat-' + dl2.suggestedFilename());
-  await dl2.saveAs(fplate);
-  const flat = await partSummaries(fplate);
-  console.log(
-    `   saved ${dl2.suggestedFilename()} ${statSync(fplate).size} bytes — ` +
-      `${flat.length} object(s), ${flat[0]?.inlayCount ?? 0} inlays`,
-  );
-  if (flat.length !== 1) errors.push(`flat 3MF has ${flat.length} objects, expected 1`);
-  // Against the row count, not a floor: `>= 2` passes an export that dropped every colour but
-  // one, which is the regression this exists to catch.
-  if ((flat[0]?.inlayCount ?? 0) !== cutRows)
-    errors.push(
-      `flat 3MF carries ${flat[0]?.inlayCount ?? 0} colour plugs for ${cutRows} colour rows`,
-    );
-  const [dl3] = await Promise.all([
-    page.waitForEvent('download', { timeout: 120_000 }),
-    page.click('#btn-export-stl'),
-  ]);
-  const fzip = path.join(OUT, dl3.suggestedFilename());
-  await dl3.saveAs(fzip);
-  const zipped = Object.keys((await JSZip.loadAsync(readFileSync(fzip))).files);
-  console.log(
-    `   saved ${dl3.suggestedFilename()} ${statSync(fzip).size} bytes — ${zipped.length} entries`,
-  );
-  if (!zipped.some((n) => /base\.stl$/i.test(n)))
-    errors.push(`STL zip has no base.stl (entries: ${zipped.join(', ') || 'none'})`);
-  const stls = zipped.filter((n) => /\.stl$/i.test(n)).length;
-  if (stls !== cutRows + 1)
-    errors.push(
-      `STL zip has ${stls} .stl entries, expected base.stl plus one per ${cutRows} colours`,
-    );
-
-  console.log('8. loading a PNG as artwork (browser decode + quantize + trace)…');
+  await settle(page, 'artwork cleared');
   // Three flat bands, so the trace has an unambiguous answer to check against.
   const png = encodePNG(96, 96, (x) =>
     x < 32 ? [230, 60, 60, 255] : x < 64 ? [40, 130, 220, 255] : [250, 205, 80, 255],
@@ -215,8 +158,8 @@ try {
   const readout = await page.textContent('.artwork-raster .raster-readout');
   const traced = parseInt(readout, 10);
   if (!(traced >= 2)) errors.push(`PNG traced no usable palette (readout: ${readout})`);
-  // Count the artwork's own rows rather than reading either summary number. Both of those count
-  // the Background row this step has switched on, so neither equals the tracer's palette, and
+  // Count the artwork's own rows rather than reading either summary number. Neither equals the
+  // tracer's palette, and
   // inferring one from a summary string is what tied this check to a particular meaning of the
   // word "colors" (it broke when the slot line started counting the recess). The rows are the
   // property being asserted: every traced colour reached the list. They only appear once the
@@ -244,7 +187,7 @@ try {
     errors.push(
       `traced ${traced} colors but the color list shows ${shown} artwork rows ("${slotText}")`,
     );
-  await page.screenshot({ path: path.join(OUT, '6-raster-artwork.png') });
+  await page.screenshot({ path: path.join(OUT, '4-raster-artwork.png') });
 
   // Nothing in this flow should need a confirmation, and the harness auto-accepts any that appear,
   // so without counting them "none was needed" and "one was silently clicked away" are the same

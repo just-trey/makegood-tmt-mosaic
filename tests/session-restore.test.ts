@@ -13,6 +13,7 @@ vi.mock('../src/assembly/parts', async (importOriginal) => {
 
 import { applyRestoredSession, type PersistedSession } from '../src/state/persist';
 import { asmLoadFullAssembly } from '../src/assembly/parts';
+import { firstOfferedKind } from '../src/assembly/kinds';
 import { state } from '../src/state/store';
 import { confirmDialog } from '../src/ui/dialogs';
 
@@ -251,7 +252,10 @@ describe('applyRestoredSession: assembly mode', () => {
     expect(confirmDialog).not.toHaveBeenCalled();
   });
 
-  it('falls back to a flat mode when the saved kind has since been retired', async () => {
+  // The Part dropdown offers assembly kinds and nothing else, so a saved value it cannot show
+  // would leave the select blank and the next switch away from it one-way. Loading the fallback's
+  // parts is left to restoreBanner's own setShapeKind.
+  it('falls back to the first offered kind when the saved kind has since been retired', async () => {
     await applyRestoredSession(
       session({
         shapeKind: 'assembly',
@@ -259,15 +263,46 @@ describe('applyRestoredSession: assembly mode', () => {
       }),
     );
 
-    expect(state.shapeKind).toBe('disc');
+    expect(state.shapeKind).toBe('assembly');
+    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
     expect(asmLoadFullAssembly).not.toHaveBeenCalled();
   });
 
-  it('does not load parts for a session that was in a flat mode', async () => {
+  it('falls back the same way for a session saved in a flat mode', async () => {
     await applyRestoredSession(session({ shapeKind: 'rect' }));
 
-    expect(state.shapeKind).toBe('rect');
+    expect(state.shapeKind).toBe('assembly');
+    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
     expect(asmLoadFullAssembly).not.toHaveBeenCalled();
+  });
+
+  // maybeAutoLoadAssembly no-ops while any part is present, so leaving the previous kind's parts
+  // in place would name the fallback kind in the dropdown while the scene and the export still
+  // held the other one's. Reachable by switching part, then accepting the still-open banner.
+  // setArtworkZone re-applies the saved zoneId against the part actually loaded. On the fallback
+  // that part is a different kind, so an instance keeps a binding no mapper matches — and
+  // geometry/assembly.ts drops such an instance from the cut entirely, with nothing said and (on a
+  // part with a single design face) no dropdown to re-target it.
+  it('does not re-apply zone bindings that named the kind it did not restore onto', async () => {
+    await applyRestoredSession(
+      session({
+        shapeKind: 'assembly',
+        assembly: { kindId: 'kind-that-no-longer-exists', variantId: null },
+        artworks: [{ ...session().artworks[0], zoneId: 'left' }],
+      }),
+    );
+
+    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
+    expect(state.artworks.map((a) => a.zone)).toEqual([null]);
+  });
+
+  it('drops the parts already loaded, so the fallback kind can auto-load its own', async () => {
+    state.assembly.parts = [{ id: 1, name: 'Footrest' }] as unknown as typeof state.assembly.parts;
+
+    await applyRestoredSession(session({ shapeKind: 'rect' }));
+
+    expect(state.assembly.parts).toEqual([]);
+    expect(state.assembly.variantId).toBeNull();
   });
 });
 

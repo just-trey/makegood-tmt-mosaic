@@ -35,7 +35,10 @@ try {
       const { page, errors } = await newPage(browser, {
         viewport: { width: vp.width, height: vp.height },
       });
-      await page.goto(`http://localhost:${PORT}/`);
+      // ?kind= rather than selectOption: a kind withheld from the Part dropdown has no option to
+      // select, and main.ts honours the parameter for those too. It also skips building the
+      // default part first, which is the whole reason the parameter exists.
+      await page.goto(`http://localhost:${PORT}/?kind=${kind.id}`);
       await page.waitForFunction(
         () => {
           const t = document.querySelector('#stat-tris')?.textContent || '';
@@ -44,7 +47,6 @@ try {
         null,
         { timeout: 90_000 },
       );
-      await page.selectOption('#shape-kind', `asm:${kind.id}`);
       // Every part in the scene before the extent is read — the whole point of the second half of
       // this fix is that the fit must survive parts arriving one at a time.
       //

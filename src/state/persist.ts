@@ -8,7 +8,7 @@ import {
   setActiveArtwork,
   setArtworkZone,
 } from './artwork';
-import { ASSEMBLY_KINDS } from '../assembly/kinds';
+import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
 import { HUBCAP_MIN_DIAMETER_MM } from '../geometry/hubcap';
 import { getPrinter } from '../export/printers';
 import { asmLoadFullAssembly } from '../assembly/parts';
@@ -548,15 +548,32 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     session.shapeKind === 'assembly' && session.assembly.kindId
       ? ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId)
       : undefined;
+  let keepSavedZones = true;
   if (session.shapeKind === 'assembly' && kind) {
     state.shapeKind = 'assembly';
     state.assembly.kindId = kind.id;
     state.assembly.variantId = session.assembly.variantId;
     await asmLoadFullAssembly();
   } else {
-    // Either a flat mode, or an assembly kind that no longer exists (renamed/retired since the
-    // session was saved) — fall back to the flat default rather than fail the whole restore.
-    state.shapeKind = session.shapeKind === 'assembly' ? 'disc' : session.shapeKind;
+    // Either an assembly kind that no longer exists (renamed/retired since the session was saved),
+    // or a flat mode from a session saved back when one was offered. Neither has an option in the
+    // Part dropdown any more, so falling back to the saved value would leave the select blank and
+    // the next switch away from it one-way. Take the first offered kind instead of failing the
+    // whole restore. The parts are left to restoreBanner's own setShapeKind, which auto-loads
+    // them: loading here would alert about an unreachable library the caller is about to retry.
+    state.shapeKind = 'assembly';
+    state.assembly.kindId = firstOfferedKind().id;
+    state.assembly.variantId = null;
+    // Cleared for the same reason `#shape-kind`'s own handler clears them (ui/partPanel.ts):
+    // maybeAutoLoadAssembly no-ops while any part is present, so leaving the previous kind's in
+    // place would name the fallback kind in the dropdown while the scene and the export still
+    // held the other one's.
+    state.assembly.parts = [];
+    // And the saved zone bindings can't be re-applied below, for the other half of that handler's
+    // reasoning: they name zones on a part that is not the one being restored onto. An instance
+    // bound to a zone no mapper matches is dropped by geometry/assembly.ts and never cut, with no
+    // warning and, on a part with one design face, no dropdown to re-target it.
+    keepSavedZones = false;
   }
 
   // Instances of a source that could not be rebuilt go with it, or the placement points at
@@ -583,7 +600,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       mode: allowedArtworkMode(a.mode),
     }));
   restoreArtworkPool(sources, artworks);
-  session.artworks.forEach((a) => setArtworkZone(a.id, a.zoneId));
+  session.artworks.forEach((a) => setArtworkZone(a.id, keepSavedZones ? a.zoneId : null));
   setActiveArtwork(
     artworks.some((a) => a.id === session.activeArtworkId)
       ? session.activeArtworkId

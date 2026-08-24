@@ -64,24 +64,16 @@ export const PLACEMENT: Record<string, PartPlacement> = {
 };
 
 /**
- * Why a part didn't get baked placement. The split is by *provenance*, because the same failed
- * fingerprint means opposite things depending on where the mesh came from:
+ * Why a part didn't get baked placement.
  *
  *   - 'unknown-part' / 'mesh-mismatch' — a library part (our asset) whose id has no PLACEMENT entry,
  *     or whose mesh no longer matches its seal. Both mean the repo's own ids/assets drifted out of
  *     sync with constants a human verified, which tests/placement.test.ts refuses to let ship —
  *     loud warning if one ever escapes anyway.
- *   - 'unverified-upload' — the user dropped their own mesh onto a role that *does* carry baked
- *     placement (the wheel's or footrest's), and it isn't the shipped part. Supported, documented
- *     use, so a quiet notice: something was withheld and they should check the plate.
- *   - 'no-baked-placement' — the user dropped their own mesh onto a role with nothing baked at all.
- *     Nothing was withheld and nothing changed, so the caller says nothing.
  */
 export type PlacementReason =
   | 'unknown-part'
   | 'mesh-mismatch'
-  | 'unverified-upload'
-  | 'no-baked-placement'
   /**
    * The part's mesh was *generated* (AssemblyRole.buildMesh), so no baked pose can exist for it:
    * a seal pins one exact mesh, and this one is built to vary. Its own category because the
@@ -130,17 +122,6 @@ export function resolvePlacement(part: AssemblyPart): PlacementResolution {
       return { placement, verified: true, key };
   }
 
-  // Provenance is checked before libraryPartId, and that ordering is the point: dropping a file
-  // onto a role that already auto-loaded its library part leaves the old id on the part (see
-  // AssemblyPart.meshFromUpload), so keying off the id alone would report every hand-dropped mesh
-  // as one of our own assets having drifted.
-  if (part.meshFromUpload)
-    return {
-      placement: undefined,
-      verified: false,
-      reason: placement ? 'unverified-upload' : 'no-baked-placement',
-      key,
-    };
   return {
     placement: undefined,
     verified: false,
@@ -154,24 +135,18 @@ export function resolvePlacement(part: AssemblyPart): PlacementResolution {
  * than in exportPanel.ts so it's testable without a DOM, and so the reason -> severity mapping sits
  * next to the reasons themselves.
  *
- * The three reported reasons get their own wording deliberately: telling "this id has no baked
- * placement" apart from "this id's mesh changed" is the difference between hunting a rename and
- * hunting a re-pack, and the id is named for exactly that reason. Every message ends with the same
- * sentence so exportPanel's PLACEMENT_WARNING_SUFFIXES can clear a stale one on the next attempt.
+ * Each reason gets its own wording deliberately: telling "this id has no baked placement" apart
+ * from "this id's mesh changed" is the difference between hunting a rename and hunting a re-pack,
+ * and the id is named for exactly that reason. Every message ends with the same sentence so
+ * exportPanel's PLACEMENT_WARNING_SUFFIXES can clear a stale one on the next attempt.
  */
 export function placementNotice(
   partName: string,
   resolution: PlacementResolution,
 ): { message: string; level: 'warn' | 'info' } | null {
-  if (resolution.verified || resolution.reason === 'no-baked-placement') return null;
+  if (resolution.verified) return null;
   const tail = 'so it was placed automatically — check it in your slicer before printing.';
   switch (resolution.reason) {
-    // a mesh the user brought is expected to differ; one of ours differing is a defect
-    case 'unverified-upload':
-      return {
-        message: `Part "${partName}" isn't the verified library mesh for this role, ${tail}`,
-        level: 'info',
-      };
     case 'unknown-part':
       return {
         message: `Part "${partName}" has no verified print placement under its part id "${resolution.key}", ${tail}`,
@@ -183,8 +158,8 @@ export function placementNotice(
         level: 'warn',
       };
     // Nothing was withheld and nothing drifted — this part has no fixed mesh to verify a pose
-    // against, by design. An info, for the same reason 'unverified-upload' is one: it reports a
-    // supported situation, and warning about it would erode the two reasons above that are defects.
+    // against, by design. An info rather than a warning: it reports a supported situation, and
+    // warning about it would erode the two reasons above, which are defects.
     case 'generated-part':
       return {
         message: `Part "${partName}" is generated to the size you chose, so no pre-verified print placement applies, ${tail}`,

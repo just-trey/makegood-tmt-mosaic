@@ -8,7 +8,7 @@ import { loadFilaments } from './state/filaments';
 import { loadPatterns } from './state/patterns';
 import { state } from './state/store';
 import { loadPartsLibrary } from './assembly/parts';
-import { ASSEMBLY_KINDS } from './assembly/kinds';
+import { ASSEMBLY_KINDS, firstOfferedKind } from './assembly/kinds';
 import { initColorListPanel, renderColorList } from './ui/colorList';
 import { initAssemblyPanel } from './ui/assemblyPanel';
 import { initPartPanel, renderBaseColorSwatches, setShapeKind } from './ui/partPanel';
@@ -77,7 +77,7 @@ renderColorList(null);
 // the auto-load, and loadPartsLibrary() triggers it once the manifest arrives. A verify/drive
 // script can skip straight past that first build with ?kind=<id> (e.g. ?kind=chair-body).
 const requestedKindId = new URLSearchParams(location.search).get('kind');
-const bootKind = ASSEMBLY_KINDS.find((k) => k.id === requestedKindId) ?? ASSEMBLY_KINDS[0];
+const bootKind = ASSEMBLY_KINDS.find((k) => k.id === requestedKindId) ?? firstOfferedKind();
 state.assembly.kindId = bootKind.id;
 $<HTMLSelectElement>('#shape-kind').value = 'asm:' + state.assembly.kindId;
 setShapeKind('assembly');

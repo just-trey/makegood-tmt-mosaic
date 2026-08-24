@@ -178,10 +178,10 @@ describe('resolvePlacement for a generated part', () => {
     expect(unverified(r).reason).toBe('generated-part');
   });
 
-  it('goes back to the ordinary path once the user drops their own mesh in', () => {
-    // asmAdoptMesh clears assetPositions on an upload, and that is what makes this report as the
-    // upload it is rather than as something generated.
-    const r = resolvePlacement(generatedPart({ assetPositions: undefined, meshFromUpload: true }));
+  // assetPositions is the whole signal, so a part that never went through a builder has to fall
+  // through to the ordinary seal path rather than claim the generated-part exemption.
+  it('goes back to the ordinary path for a part with no builder asset', () => {
+    const r = resolvePlacement(generatedPart({ assetPositions: undefined }));
 
     expect(unverified(r).reason).not.toBe('generated-part');
   });

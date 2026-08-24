@@ -4,13 +4,11 @@ import { scheduleRebuild } from '../app/scheduler';
 import { asmKindCanAutoLoad, currentAssemblyKind, currentVariantId } from '../assembly/kinds';
 import {
   applyAsmPatchChoice,
-  asmAddRoleDuplicate,
-  asmAddRolePart,
   asmLoadFullAssembly,
-  asmLoadPartFile,
   asmRebuildGeneratedParts,
   asmRemovePart,
   onAssemblyPartsChanged,
+  partsLibrarySettled,
   switchChairVariant,
 } from '../assembly/parts';
 import { getPrinter } from '../export/printers';
@@ -349,34 +347,22 @@ export function renderAssemblyRoleControls(): void {
     return;
   }
 
-  // Fallback when the library isn't reachable: manual per-role add buttons.
-  const buttons: string[] = [];
-  kind.roles.forEach((role) => {
-    const primary = state.assembly.parts.find((p) => p.roleId === role.id && !p.isDuplicateOf);
-    if (!primary)
-      buttons.push(
-        `<button class="btn small" data-role-add="${role.id}">+ Add ${role.name}</button>`,
-      );
-    else if (role.allowRotatedCopies)
-      buttons.push(
-        `<button class="btn small" data-role-dup="${role.id}">+ Add rotated copy of ${role.name}</button>`,
-      );
-  });
-  box.innerHTML = buttons.length
-    ? `<div class="hint" style="margin-bottom:var(--space-tight);">The parts library isn't reachable, so add parts manually:</div><div class="btn-row" style="flex-wrap:wrap;margin-bottom:var(--space-row);">${buttons.join('')}</div>`
-    : `<div class="hint" style="margin-bottom:var(--space-row);">All roles for this assembly are filled.</div>`;
-  box.querySelectorAll<HTMLElement>('[data-role-add]').forEach((btn) =>
-    btn.addEventListener('click', () => {
-      const role = kind.roles.find((r) => r.id === btn.dataset.roleAdd);
-      if (role) asmAddRolePart(role);
-    }),
-  );
-  box.querySelectorAll<HTMLElement>('[data-role-dup]').forEach((btn) =>
-    btn.addEventListener('click', () => {
-      const role = kind.roles.find((r) => r.id === btn.dataset.roleDup);
-      if (role) asmAddRoleDuplicate(role);
-    }),
-  );
+  // Still waiting on stl/parts.json. Says nothing rather than reporting a failure that hasn't
+  // happened: `main.ts` calls setShapeKind('assembly') a line before loadPartsLibrary(), so this
+  // is the state every healthy boot passes through for as long as the fetch takes.
+  if (!partsLibrarySettled()) {
+    box.innerHTML = '';
+    return;
+  }
+
+  // The manifest has come back and this kind still can't load: either it was unreachable, or it
+  // arrived without an entry one of the kind's roles names. Both are a broken deployment. This used to offer per-role add
+  // buttons and a mesh drop target, letting the user supply their own STL/3MF — but the app cannot
+  // check an arbitrary mesh is the part it claims to be, and every verified export pose is keyed to
+  // the shipped one. A broken deployment is the only way here, so say so and stop.
+  // No kind name in the message: `AssemblyKind.name` is the dropdown label ("Wheel (Top ×2 + Cap)")
+  // and reads as a parts list mid-sentence. The user can see which part is selected.
+  box.innerHTML = `<div class="hint" data-asm-load-error>Couldn't load this part. Reload the page to try again.</div>`;
 }
 
 /**
@@ -391,24 +377,8 @@ function faceStatusText(part: AssemblyPart): string {
   return `face detected: normal (${normal}), plane offset ${part.topZ.toFixed(2)}mm, ${pts}-pt boundary`;
 }
 
-/**
- * Full editable controls for one part (face pick, base thickness / pivot+angle, remove), plus the
- * STL/3MF drop target when `canSwapMesh` — which is only where the parts library isn't reachable
- * and the user has no other way to get a part in.
- *
- * **The drop target is deliberately absent from the auto-load case.** Dropping a file onto a role
- * that already holds its library part replaces the mesh while keeping the role, and every piece of
- * verified export placement is keyed to the mesh: `resolvePlacement`
- * ([src/export/placement.ts](../export/placement.ts)) fingerprints the loaded geometry against
- * `PART_FINGERPRINTS` and withholds the hand-checked plate position, rotation and prime tower the
- * moment it doesn't match. The part still exports, at a computed position nobody has opened in a
- * slicer. That is a real escape hatch when there is no library to fall back on, and an invitation
- * to quietly lose the verified placement when there is.
- */
-function buildAsmPartRow(
-  part: AssemblyPart,
-  { canSwapMesh }: { canSwapMesh: boolean },
-): HTMLElement {
+/** Full editable controls for one part: face pick, base thickness / pivot+angle, remove. */
+function buildAsmPartRow(part: AssemblyPart): HTMLElement {
   const row = document.createElement('div');
   row.className = 'color-row';
   row.style.marginBottom = 'var(--space-row)';
@@ -431,17 +401,8 @@ function buildAsmPartRow(
           `<option value="${i}" ${i === part.patchIdx ? 'selected' : ''}>#${i + 1}: area ${p.area.toFixed(0)}mm² (normal ${p.normal.map((v) => v.toFixed(2)).join(',')})</option>`,
       )
       .join('');
-    // --radius-2xl is the dropzone step (design-system/README.md: "dropzones 3px"), same as
-    // #dropzone. Styling here is an inline style in a template string, so a sweep over
-    // styles.css does not reach it — this one sat at the pre-v3 6px for that reason.
-    const dropzone = canSwapMesh
-      ? `<div style="border:1.5px dashed var(--line);border-radius:var(--radius-2xl);padding:var(--space-row);text-align:center;color:var(--text-dim);cursor:pointer;" data-asm-drop>
-        Drop STL/3MF here<input type="file" accept=".stl,.3mf" style="display:none" data-asm-file aria-label="Upload STL/3MF for ${part.name}">
-      </div>`
-      : '';
     row.innerHTML = `
       <div class="top"><div class="hex">${part.name}</div></div>
-      ${dropzone}
       <div class="hint" style="margin-top:var(--space-tight);" data-asm-face-status>${statusText}</div>
       ${part.patches ? `<div class="depth-row"><label>design face</label><select data-asm="patchIdx" style="flex:1;" aria-label="Design face for ${part.name}">${patchOptions}</select></div>` : ''}
       <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;" aria-label="Base thickness for ${part.name}"><span class="hint">mm of material behind the face this replaces</span></div>
@@ -449,21 +410,6 @@ function buildAsmPartRow(
         <button class="btn small" data-asm-remove aria-label="Remove ${part.name}">Remove</button>
       </div>
     `;
-  }
-  const drop = row.querySelector<HTMLElement>('[data-asm-drop]');
-  const fileInput = row.querySelector<HTMLInputElement>('[data-asm-file]');
-  if (drop && fileInput) {
-    drop.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (e) => {
-      const f = (e.target as HTMLInputElement).files?.[0];
-      if (f) void asmLoadPartFile(part, f);
-    });
-    ['dragover', 'dragenter'].forEach((ev) => drop.addEventListener(ev, (e) => e.preventDefault()));
-    drop.addEventListener('drop', (e) => {
-      e.preventDefault();
-      const f = (e as DragEvent).dataTransfer?.files[0];
-      if (f) void asmLoadPartFile(part, f);
-    });
   }
   row.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-asm]').forEach((inp) => {
     inp.addEventListener('change', (e) => {
@@ -500,41 +446,45 @@ export function renderAssemblyPartList(): void {
   const kind = currentAssemblyKind();
   const parts = state.assembly.parts;
 
-  // Auto-load case: a clean one-line-per-part summary with the detailed face/alignment/remove
-  // controls tucked behind an "Advanced" disclosure, so the default view is just "the wheel
-  // loaded" instead of a wall of options.
-  if (kind && asmKindCanAutoLoad(kind)) {
-    if (!parts.length) {
-      box.innerHTML = '<div class="hint">Loading assembly…</div>';
-      return;
-    }
-    const summary = document.createElement('div');
-    summary.className = 'asm-summary';
-    summary.innerHTML = parts
-      .map(
-        (p) =>
-          `<div class="asm-sum-row"><span class="ok">${p.loaded ? '✓' : '…'}</span>${p.name}</div>`,
-      )
-      .join('');
-    box.appendChild(summary);
-
-    const det = document.createElement('details');
-    det.className = 'asm-adv';
-    det.appendChild(
-      Object.assign(document.createElement('summary'), {
-        textContent: 'Advanced: per-part face & alignment',
-      }),
-    );
-    const inner = document.createElement('div');
-    inner.style.marginTop = 'var(--space-row)';
-    parts.forEach((p) => inner.appendChild(buildAsmPartRow(p, { canSwapMesh: false })));
-    det.appendChild(inner);
-    box.appendChild(det);
+  if (!kind) return;
+  if (!asmKindCanAutoLoad(kind)) {
+    // Two different states, and only one of them is a failure. While stl/parts.json is still in
+    // flight this is the same "Loading assembly…" a selected kind shows before its meshes arrive;
+    // once it has failed, renderAssemblyRoleControls has already said so directly above this box.
+    if (!partsLibrarySettled()) box.innerHTML = '<div class="hint">Loading assembly…</div>';
     return;
   }
 
-  // Manual case: the full editable rows, since parts must be dragged in by hand.
-  parts.forEach((p) => box.appendChild(buildAsmPartRow(p, { canSwapMesh: true })));
+  // A clean one-line-per-part summary with the detailed face/alignment/remove controls tucked
+  // behind an "Advanced" disclosure, so the default view is just "the wheel loaded" instead of a
+  // wall of options.
+  if (!parts.length) {
+    box.innerHTML = '<div class="hint">Loading assembly…</div>';
+    return;
+  }
+
+  const summary = document.createElement('div');
+  summary.className = 'asm-summary';
+  summary.innerHTML = parts
+    .map(
+      (p) =>
+        `<div class="asm-sum-row"><span class="ok">${p.loaded ? '✓' : '…'}</span>${p.name}</div>`,
+    )
+    .join('');
+  box.appendChild(summary);
+
+  const det = document.createElement('details');
+  det.className = 'asm-adv';
+  det.appendChild(
+    Object.assign(document.createElement('summary'), {
+      textContent: 'Advanced: per-part face & alignment',
+    }),
+  );
+  const inner = document.createElement('div');
+  inner.style.marginTop = 'var(--space-row)';
+  parts.forEach((p) => inner.appendChild(buildAsmPartRow(p)));
+  det.appendChild(inner);
+  box.appendChild(det);
 }
 
 export function initAssemblyPanel(): void {

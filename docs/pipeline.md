@@ -85,6 +85,11 @@ the 3D view.
 
 ### 4. Flat-plate mode
 
+**Not reachable from the UI.** The Part dropdown lists assembly kinds and
+nothing else, so `disc`/`rect`/`round`/`stl` all ship compiled and unrendered.
+The code below is live and tested; nothing drives it. See
+[tech-debt.md](tech-debt.md).
+
 The plate is a stack of flat slabs between depth boundaries. Pure 2D maths, no
 3D booleans ([flat.ts](../src/geometry/flat.ts)).
 
@@ -217,8 +222,9 @@ has no verified position and no free corner.
 Assemblies live in [kinds.ts](../src/assembly/kinds.ts), one entry per assembly
 listing its part roles. A role's `libraryPartId` links to
 [parts.json](../public/stl/parts.json): drop the STL/3MF in `public/stl/`, add a
-manifest entry, and the role auto-loads. Roles without one fall back to
-drag-and-drop.
+manifest entry, and the role auto-loads. Every role needs one. There is no
+drag-and-drop fallback: the app cannot check an arbitrary mesh is the part it
+claims to be, and every verified export pose is keyed to the shipped one.
 
 Two fields tune non-wheel parts:
 

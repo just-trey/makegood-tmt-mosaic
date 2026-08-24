@@ -5,7 +5,7 @@ import { clearBaseColor, DEFAULT_BASE_COLOR, state } from '../state/store';
 import { getFilaments } from '../state/filaments';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
-import { ASSEMBLY_KINDS } from '../assembly/kinds';
+import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
 import { maybeAutoLoadAssembly } from '../assembly/parts';
 import { clampArtworkModes, clearArtworkZoneBindings } from '../state/artwork';
 import { renderArtworkList } from './artworkListPanel';
@@ -66,15 +66,15 @@ function setShapeThumb(kind: string): void {
 
 /**
  * Populates the single part dropdown: one real assembly part per ASSEMBLY_KINDS entry (value
- * "asm:{id}"), then "disc" — a plain flat-plate insert kept as a quick reference shape. Rect/
- * round/stl remain in the codebase (their param blocks + bindings are untouched) but aren't
- * offered here; picking a real part shouldn't require navigating a second nested dropdown.
+ * "asm:{id}"), and nothing else. The four flat modes (disc/rect/round/stl) remain in the codebase
+ * — their param blocks, bindings, `src/geometry/flat.ts` and the `ShapeKind` branches in
+ * state/store.ts are untouched — but none is offered here; picking a real part shouldn't require
+ * navigating a second nested dropdown.
  *
- * So three complete UI panels (`#shape-params-rect|round|stl`, their bindings, and the `ShapeKind`
- * branches in state/store.ts) ship in the bundle and nothing renders them — no test drives them
- * either. That is deliberate and was re-confirmed by review (2026-08-02), not something that broke
- * — it is a maintenance question (why keep them compiling), not a bug. If a future part genuinely
- * wants a rect/round/plate flat mode again, the option list below is what to touch: the kinds are
+ * So four complete UI panels ship in the bundle and nothing renders them. That is deliberate
+ * (rect/round/stl re-confirmed by review 2026-08-02, disc joined them for the beta), not something
+ * that broke — it is a maintenance question (why keep them compiling), not a bug. If a future part
+ * genuinely wants a flat mode again, the option list below is what to touch: those kinds are
  * excluded by never being written into `sel.innerHTML`, not by the `hidden` filter above it.
  *
  * A `hidden` kind is listed only while it's the one already selected, which is reachable solely
@@ -83,11 +83,10 @@ function setShapeThumb(kind: string): void {
  */
 function renderShapeKindOptions(): void {
   const sel = $<HTMLSelectElement>('#shape-kind');
-  const asmOptions = ASSEMBLY_KINDS.filter((k) => !k.hidden || k.id === state.assembly.kindId)
+  sel.innerHTML = ASSEMBLY_KINDS.filter((k) => !k.hidden || k.id === state.assembly.kindId)
     .map((k) => `<option value="asm:${k.id}">${k.name}</option>`)
     .join('');
-  sel.innerHTML = asmOptions + '<option value="disc">Disc (reference)</option>';
-  sel.value = currentAsmOptionValue() || 'disc';
+  sel.value = currentAsmOptionValue() || 'asm:' + firstOfferedKind().id;
 }
 
 export function setShapeKind(kind: ShapeKind): void {
@@ -97,7 +96,7 @@ export function setShapeKind(kind: ShapeKind): void {
     if (el) el.style.display = k === kind ? 'block' : 'none';
   });
   if (kind === 'assembly') {
-    if (!state.assembly.kindId) state.assembly.kindId = ASSEMBLY_KINDS[0].id;
+    if (!state.assembly.kindId) state.assembly.kindId = firstOfferedKind().id;
     // The kind is only settled here, so the dropdown's membership is too — a hidden kind is
     // listed only while it's the selected one.
     renderShapeKindOptions();
@@ -251,33 +250,29 @@ export function initPartPanel(): void {
   $<HTMLSelectElement>('#shape-kind').addEventListener('change', (e) => {
     void (async () => {
       const sel = e.target as HTMLSelectElement;
-      const val = sel.value;
-      if (val.startsWith('asm:')) {
-        const newKindId = val.slice(4);
-        const switchingKind = state.assembly.kindId !== newKindId;
-        if (
-          switchingKind &&
-          state.assembly.parts.length > 0 &&
-          !(await confirmDialog('Switching parts will clear the currently loaded ones. Continue?'))
-        ) {
-          sel.value = currentAsmOptionValue() || 'disc';
-          return;
-        }
-        if (switchingKind) {
-          state.assembly.kindId = newKindId;
-          state.assembly.parts = [];
-          // The new kind's parts are an entirely different mesh — a zone binding from the old kind
-          // would either match nothing or (worse) silently match a same-named zone on an unrelated
-          // part, so every instance goes back to "every zone the part offers" for the user to
-          // re-target from the list.
-          clearArtworkZoneBindings();
-        }
-        setShapeKind('assembly');
-        track('mode_switch', { kind: 'assembly' });
-      } else {
-        setShapeKind(val as ShapeKind);
-        track('mode_switch', { kind: val as ShapeKind });
+      // Every option this select holds is an assembly kind (renderShapeKindOptions), so there is
+      // no flat-mode branch to take here.
+      const newKindId = sel.value.slice(4);
+      const switchingKind = state.assembly.kindId !== newKindId;
+      if (
+        switchingKind &&
+        state.assembly.parts.length > 0 &&
+        !(await confirmDialog('Switching parts will clear the currently loaded ones. Continue?'))
+      ) {
+        sel.value = currentAsmOptionValue() || 'asm:' + firstOfferedKind().id;
+        return;
       }
+      if (switchingKind) {
+        state.assembly.kindId = newKindId;
+        state.assembly.parts = [];
+        // The new kind's parts are an entirely different mesh — a zone binding from the old kind
+        // would either match nothing or (worse) silently match a same-named zone on an unrelated
+        // part, so every instance goes back to "every zone the part offers" for the user to
+        // re-target from the list.
+        clearArtworkZoneBindings();
+      }
+      setShapeKind('assembly');
+      track('mode_switch', { kind: 'assembly' });
       // Artwork outlives a part switch, so a design left in Fill by the previous kind has to be
       // re-clamped against the new one before it reaches a rebuild — hiding the control alone would
       // leave the old mode live and still cut through the withheld path.
