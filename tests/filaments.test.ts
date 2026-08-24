@@ -157,4 +157,13 @@ describe('nearestFilamentName', () => {
 
     expect(nearestFilamentName('#00ff00')).toBe('Shop Black');
   });
+
+  it('matches a saturated mid-brightness color by hue, not by brightness', async () => {
+    // #4eb8ca is a saturated cyan roughly as bright as the shipped Grey (#8a8f94). Squared RGB
+    // distance ranked Grey closer (8197 vs Blue's 11381) because it conflates brightness with
+    // hue; Lab deltaE separates them and picks the actual hue family instead.
+    const { nearestFilamentName } = await freshModule();
+
+    expect(nearestFilamentName('#4eb8ca')).toBe('Cyan');
+  });
 });

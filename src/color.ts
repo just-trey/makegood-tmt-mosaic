@@ -20,8 +20,9 @@ function linearToSrgb(v: number): number {
 }
 
 /**
- * sRGB hex -> CIELAB (D65 white point). Used only to judge "how visually similar are these two
- * colors" for auto-merge clustering (see deltaE) — not for display or storage.
+ * sRGB hex -> CIELAB (D65 white point). Used with deltaE wherever "how visually similar are
+ * these two colors" needs a real answer: auto-merge clustering, and the nearest-owned-filament
+ * match shown on screen. Not for storage; every consumer downstream speaks hex.
  */
 export function hexToLab(hex: string): Lab {
   const { r, g, b } = hexToRgb(hex);
