@@ -2,8 +2,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SVGShape } from '../src/types';
 import { WARNINGS, clearBuildWarnings, clearWarnings } from '../src/warnings';
 
-// computeNetRegionsByColor's fallback path only runs when a turf boolean throws, and real
-// polygons that break turf 6.5 are not reproducible across platforms — force it instead.
+// computeNetRegionsByColor's fallback path only runs when a boolean throws, and real polygons that
+// break the clipping engine are not reproducible across platforms — force it instead. Throwing at
+// every precision is what the retry ladder needs to see before it gives up and warns.
+//
+// **Both engines have to be broken, and that is the point of the test.** The pass calls
+// polygon-clipping directly (safeDiffAll), and when that whole sweep fails it re-subtracts one
+// clipping at a time through safeDiff, which goes via Turf. Turf is CommonJS and requires its own
+// copy of polygon-clipping, so mocking the ESM specifier alone leaves the fallback working and no
+// warning is ever reported — which is correct behaviour, and not what this file is asserting.
+vi.mock('polygon-clipping', async (importOriginal) => {
+  const actual = (await importOriginal<{ default: Record<string, unknown> }>()).default;
+  return {
+    default: {
+      ...actual,
+      difference: () => {
+        throw new Error('forced boolean failure');
+      },
+    },
+  };
+});
 vi.mock('@turf/turf', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@turf/turf')>();
   return {

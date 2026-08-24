@@ -4,7 +4,10 @@ One section per user-visible warning string.
 
 ## Troubleshooting: "Couldn't merge the shapes" / "Couldn't trim the overlap" warnings
 
-The polygon maths failed on one colour's shape. The warning names the colour.
+The polygon maths failed on one colour's shape. The warning usually names the
+colour. One form of it does not: the flat build merges the shapes painted over
+each region in batches, and a batch holds whatever colours fell in it, so a
+failure there names none. Treat it as "somewhere in this design" and read on.
 There are two causes and the warning does not guess between them: a
 **self-intersecting path** in the source SVG (much the commoner one), or sheer
 size in Fill mode (below).

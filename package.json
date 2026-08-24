@@ -26,10 +26,12 @@
     "@turf/turf": "6.5.0",
     "jszip": "^3.10.1",
     "manifold-3d": "3.5.1",
+    "polygon-clipping": "0.15.7",
     "three": "0.160.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^26.1.1",
     "@types/three": "0.160.0",
     "@vitest/coverage-v8": "^2.1.9",
