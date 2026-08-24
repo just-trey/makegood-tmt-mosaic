@@ -20,12 +20,19 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
   `RasterImage.edgeDensity` so a re-trace can't re-derive it.
 - Pixels under 50% alpha are background and cut nothing.
 - Edge density (how much of the image is colour boundary) sets blur, despeckle
-  and curve-fit strength; the Detail slider scales them. The despeckle floor is
-  then the larger of that fraction and one nozzle width at the size the design is
-  placed (`printableFloorPx`), and Detail deliberately does not scale the second.
-  Assembly kinds only: a flat plate fits the design's traced content, which does
-  not exist yet when the floor is chosen (docs/tech-debt.md). The user never picks a
-  mode. Flat art also gets a one-pixel blur, but only when the 1024px pass ran
+  and curve-fit strength; the Detail slider scales them.
+- On assembly kinds the despeckle floor is sized in mm, not as an image
+  fraction (`despeckleFloorPx`, measured in
+  [2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md)). Flat art
+  keeps everything down to a 1.6mm feature. One nozzle width is the hard
+  minimum (`printableFloorPx`), which Detail deliberately does not scale. The
+  fraction caps it, so small placements keep their coarser floor.
+- Photographs keep the fraction: theirs is simplification taste, not a feature
+  size. Flat plates stay fractional too, since their fit needs the traced
+  content that does not exist yet (docs/tech-debt.md). The user never picks a
+  mode.
+- Flat art gets a one-pixel blur, but only when the 1024px pass ran. The
+  photograph denoise blur stops at the photo cutoff instead of interpolating
   ([stats.ts](../src/raster/stats.ts) explains both).
 - Colours are clustered in CIELAB, then forced a minimum perceptual distance
   (ΔE 3) apart. That's deliberately the same space, metric, and value the

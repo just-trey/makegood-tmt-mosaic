@@ -1,6 +1,12 @@
 import type { ImageStats, RasterImage, TraceParams } from './types';
 import { ALPHA_THRESHOLD } from './types';
 
+/** The Detail slider's multiplier on despeckle/simplify strength: 4x at full left, 1/4 at full right. */
+export function detailStrength(detail: number): number {
+  const clamped = Math.max(0, Math.min(100, detail));
+  return Math.pow(DETAIL_RANGE, (DETAIL_DEFAULT - clamped) / DETAIL_DEFAULT);
+}
+
 /**
  * Bits per channel kept when bucketing a pixel for the edge-density measurement. 3 bits (8 levels
  * per channel) is coarse enough that a smooth gradient still reads as "changing" while JPEG ringing
@@ -57,6 +63,7 @@ const FLAT_PARAMS: TraceParams = {
  * pixel, a one-pixel cross and an eight-pixel bar with it.
  */
 const DETAIL_PASS_BLUR = 1;
+
 const PHOTO_PARAMS: TraceParams = {
   blurRadius: 2,
   despeckleFrac: 0.0022,
@@ -87,6 +94,51 @@ const NOZZLE_MM = 0.4;
 export function printableFloorPx(mmPerPixel: number): number {
   if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0) return 0;
   return Math.round((NOZZLE_MM / mmPerPixel) ** 2);
+}
+
+/**
+ * Smallest printed feature flat art keeps when the placement is known, as a square's side in mm.
+ *
+ * Four nozzle widths, chosen from a measured band rather than argued (see
+ * docs/findings/2026-08-24-despeckle-floor-recalibration.md): on the flat corpus at the wheel
+ * placement every floor from 1.1mm to 5.3mm sides traced visually identically, the quality cliff
+ * (mario loses its eye, teeth and emblem) starts past 5.3mm, and ring counts inflate the
+ * shapeToFeature quadratic below about 1.5mm. 1.6mm sits inside that band with margin both ways.
+ */
+export const DESPECKLE_FEATURE_MM = 4 * NOZZLE_MM;
+
+/** The fractional despeckle floor: `despeckleFrac` as working pixels, never under the no-op 1. */
+export function fracFloorPx(params: TraceParams, w: number, h: number): number {
+  return Math.max(1, Math.round(params.despeckleFrac * w * h));
+}
+
+/**
+ * The despeckle floor a trace should apply, in working pixels: sized in mm for flat art with a
+ * known placement, bounded below by the nozzle and above by the fraction. Photographs and unknown
+ * placements keep the fraction alone. The measurements behind each branch, including why a photo's
+ * floor is taste rather than a feature size, are in
+ * docs/findings/2026-08-24-despeckle-floor-recalibration.md.
+ */
+export function despeckleFloorPx(
+  params: TraceParams,
+  w: number,
+  h: number,
+  stats: ImageStats,
+  detail: number,
+  mmPerPixel = 0,
+): number {
+  const frac = fracFloorPx(params, w, h);
+  // Gate on the placement being known, not on `printable` being nonzero: past ~0.4mm per pixel the
+  // printable floor rounds to 0 while the placement is perfectly known, and a small logo placed
+  // large is exactly where the fractional floor despeckles multi-mm features.
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0) return frac;
+  const printable = printableFloorPx(mmPerPixel);
+  if (isPhotographic(stats.edgeDensity)) return Math.max(frac, printable);
+  const feature = Math.round((DESPECKLE_FEATURE_MM / mmPerPixel) ** 2 * detailStrength(detail));
+  // Never 0: past ~3mm per working pixel the feature floor rounds to 0, and a 0 tells
+  // traceLabelMap "placement unknown, use the fraction", the exact inversion of what a placement
+  // that coarse means. 1 is the no-op floor.
+  return Math.max(1, printable, Math.min(frac, feature));
 }
 
 /**
@@ -162,15 +214,21 @@ export function autoParams(
   const t = Math.max(0, Math.min(1, (stats.edgeDensity - FLAT_EDGE_DENSITY) / span));
   const lerp = (a: number, b: number) => a + (b - a) * t;
 
-  const clampedDetail = Math.max(0, Math.min(100, detail));
-  const strength = Math.pow(DETAIL_RANGE, (DETAIL_DEFAULT - clampedDetail) / DETAIL_DEFAULT);
+  const strength = detailStrength(detail);
 
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
   return {
-    blurRadius:
-      Math.round(lerp(FLAT_PARAMS.blurRadius, PHOTO_PARAMS.blurRadius)) +
-      (ranDetailPass ? DETAIL_PASS_BLUR : 0),
+    // An enlarged image gets exactly the detail-pass compensation, never the lerped share on top:
+    // on mario the extra pixel widened every anti-aliased line boundary into a band that
+    // quantized to a third color (a brown fringe on every black outline) and staircased the label
+    // boundary, and blur 1 alone has neither defect while keeping the eye the striping fix exists
+    // for (docs/findings/2026-08-24-despeckle-floor-recalibration.md). An image worked at its own
+    // size keeps the lerped blur it always had: that case was not in the measurement, and it does
+    // not have the detail-pass compensation to fall back on.
+    blurRadius: ranDetailPass
+      ? DETAIL_PASS_BLUR
+      : Math.round(lerp(FLAT_PARAMS.blurRadius, PHOTO_PARAMS.blurRadius)),
     despeckleFrac: lerp(FLAT_PARAMS.despeckleFrac, PHOTO_PARAMS.despeckleFrac) * strength,
     alphaMax: clamp(lerp(FLAT_PARAMS.alphaMax, PHOTO_PARAMS.alphaMax), 0, ALPHA_MAX_LIMIT),
     flatness: clamp(

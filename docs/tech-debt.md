@@ -617,6 +617,10 @@ fraction-of-the-image floor alone, which is what every mode had before.
 - Closing it means an extent the trace agrees with: either trace once at the fractional floor and
   re-trace when the printable one turns out to bind (two passes, ~830ms each on a photograph), or
   a cheap despeckle-equivalent pass over the alpha channel before measuring.
+- Closing it now buys more than when this was written: assembly kinds also size the floor _down_ in
+  mm ([2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md)), so a flat plate keeps a
+  fractional floor that over-prunes detailed flat art (mario: 55mm² of print on a wheel-sized
+  plate), not just the missing nozzle floor.
 
 ## The printable despeckle floor is fixed at the moment of the trace
 
@@ -1223,3 +1227,29 @@ the loops are separated the way the geometry actually runs. A per-walk visited s
 global one only on close, so a failed walk consumes nothing and cannot spin. Then decide what a
 patch with no closed ring should do: today it yields a boundary that is wrong rather than absent,
 and callers only ask whether a face was detected at all.
+
+## Boundary fringe threads survive the trace
+
+A hair-thin thread of a third color can hug a high-contrast boundary in a traced image
+(mario's mustache top edge, a button accent): the anti-aliased band quantizes to its own
+label, and it is as long as the boundary, so no area floor catches it. Prints under one
+nozzle wide, so slicers drop it; a preview blemish, not a bad print.
+
+Three width-rule formulations (absorb components under a mean-width threshold) were built
+and cut on this branch after three consecutive review rounds each found real defects.
+The full history is in
+[2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md), defect 3.
+
+Closing this again means clearing, at minimum:
+
+- Placed photographs: quantized gradients are long 1-3px iso-color bands; a probe showed
+  a width rule cascade-collapsing sixteen bands into one component. Photos need an exemption
+  or a measurement.
+- Sub-fringe line art: a drawing whose every stroke is under the threshold must not trace
+  to nothing, and the "raise Detail" advice in the empty-trace error cannot be the remedy,
+  since Detail does not scale a width rule.
+- Perimeter bookkeeping through union-find merges: the despeckle adjacency maps only tally
+  pairs with a speck side, so a union's internal big-big runs are not subtractable from a
+  perimeter without a fuller tally. Two of the three attempts got this wrong.
+- The no-op regime: mean width is never under 0.5 (a lone pixel is 2*1/4), so any threshold
+  at or under 0.5 must skip the O(w*h) perimeter scan entirely.

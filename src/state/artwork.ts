@@ -165,9 +165,11 @@ function cascadedOffset(
  * and raises the floor over printable detail. An assembly places an image on its own frame
  * (`designAnchor`), so nothing there needs the traced bbox. docs/tech-debt.md carries the rest.
  *
- * This is the half the raster stage never had. It runs strictly before placement is known, so its
- * despeckle floor could only be a share of the image (see `printableFloorPx`), which for one
+ * This is the half the raster stage never had. It runs strictly before placement is known, so
+ * without this value its despeckle floor could only be a share of the image, which for one
  * photograph means removing 8.7mm features on the footrest and 1.4mm ones on the smallest hubcap.
+ * With it, `despeckleFloorPx` sizes the floor in mm, lowering it below the fraction on flat art
+ * placed large as well as raising it to a nozzle width on small faces.
  * Asking the two scale rules the build already uses, rather than restating a third one here, is
  * what keeps the floor and the cut talking about the same design.
  *
