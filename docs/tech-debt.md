@@ -617,6 +617,10 @@ fraction-of-the-image floor alone, which is what every mode had before.
 - Closing it means an extent the trace agrees with: either trace once at the fractional floor and
   re-trace when the printable one turns out to bind (two passes, ~830ms each on a photograph), or
   a cheap despeckle-equivalent pass over the alpha channel before measuring.
+- Closing it now buys more than when this was written: assembly kinds also size the floor _down_ in
+  mm ([2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md)), so a flat plate keeps a
+  fractional floor that over-prunes detailed flat art (mario: 55mm² of print on a wheel-sized
+  plate), not just the missing nozzle floor.
 
 ## The printable despeckle floor is fixed at the moment of the trace
 

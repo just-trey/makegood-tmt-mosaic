@@ -72,6 +72,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Traced images keep their small detail at the size you placed them.** The
+  cleanup that merges too-small regions was sized as a share of the picture, so
+  the same cartoon lost its eye, teeth and emblem on a full-size wheel where all
+  of them would print. When the design is on a wheel, hubcap or footrest, the
+  cleanup is now sized in millimetres: everything down to a 1.6mm feature stays,
+  nothing under one nozzle width survives, and small faces keep the coarser
+  cleanup they had. Photos are unchanged.
+- **No more color threads and stair-steps along traced outlines.** Cartoon-like
+  images picked up part of the smoothing meant for photos, which turned the soft
+  edge of every outline into a thin band of a third color, one to two pixels
+  wide and jagged. That smoothing now stays on photos, and the trace drops any
+  band too narrow to print no matter how long it is.
+
 - **The "≈" filament name beside a detected color now matches what it looks
   like.** The nearest match used plain RGB distance across the 13 owned
   filaments, which can rank brightness above color: a saturated teal read

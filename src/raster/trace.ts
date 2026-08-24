@@ -118,10 +118,35 @@ function labelComponents(
  * image, and joining removes a component. `deChecker` afterwards can put one back, by shaving a
  * pinch point and splitting a component in two.
  */
-function despeckle(labels: Int16Array, w: number, h: number, minArea: number): void {
-  if (minArea <= 1) return;
+function despeckle(
+  labels: Int16Array,
+  w: number,
+  h: number,
+  minArea: number,
+  fringeWidth = 0,
+): void {
+  if (minArea <= 1 && fringeWidth <= 0) return;
   const { compId, areas, labelOf } = labelComponents(labels, w, h);
-  const under = (i: number) => areas[i] < minArea;
+  // Mean width as 2*area/perimeter, the ribbon test: a component can clear any area floor and
+  // still be a quantization artifact, the anti-aliased band along a boundary between two other
+  // colors coming back as a third. Long and 1-2px wide is exactly that shape, and nothing drawn
+  // survives at that width in an image the detail pass enlarged. Background is exempt: a thin
+  // transparent gap is two shapes printed close together, not an extrusion that cannot exist.
+  let perim: Int32Array | null = null;
+  if (fringeWidth > 0) {
+    perim = new Int32Array(areas.length);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const c = compId[y * w + x];
+        if (x === 0 || compId[y * w + x - 1] !== c) perim[c]++;
+        if (x === w - 1 || compId[y * w + x + 1] !== c) perim[c]++;
+        if (y === 0 || compId[(y - 1) * w + x] !== c) perim[c]++;
+        if (y === h - 1 || compId[(y + 1) * w + x] !== c) perim[c]++;
+      }
+  }
+  const thin = (i: number) =>
+    perim !== null && labelOf[i] !== BACKGROUND && (2 * areas[i]) / perim[i] < fringeWidth;
+  const under = (i: number) => areas[i] < minArea || thin(i);
   // Before allocating anything: on artwork with no speck at all this is the whole call, and the
   // adjacency scan below costs 20ms on a 1024px image to discover it has nothing to do.
   if (areas.length < 2 || !areas.some((_, i) => under(i))) return;
@@ -157,6 +182,9 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
     if (adj[a].size < adj[b].size) [a, b] = [b, a];
     parent[b] = a;
     areas[a] += areas[b];
+    // The union's boundary loses both sides of the shared run, so two merged ribbons of one label
+    // are re-judged on their joint width rather than each survivor inheriting a stale perimeter.
+    if (perim) perim[a] += perim[b] - 2 * (adj[a].get(b) ?? 0);
     for (const [nb, shared] of adj[b])
       if (find(nb) !== a) adj[a].set(nb, (adj[a].get(nb) ?? 0) + shared);
     adj[b].clear();
@@ -611,15 +639,21 @@ function appendFitted(loop: Loop, chain: Chain, entry: number, second: number): 
  * same goes for winding, which `loopToRing` normalizes. Emitting every closed ring and letting that
  * code classify them reuses tested logic and removes a whole class of tracer bug.
  */
-export function traceLabelMap(map: LabelMap, params: TraceParams, printableFloor = 0): TraceResult {
+export function traceLabelMap(
+  map: LabelMap,
+  params: TraceParams,
+  placedFloor = 0,
+  fringeWidth = 0,
+): TraceResult {
   const { w, h } = map;
   const labels = map.labels.slice(); // the caller's grid is reused across re-quantizes
-  // Two floors, and the larger wins. The fractional one is how much simplification this picture
-  // wants; the printable one (stats.ts) is what the placed size can carry, and it is a floor under
-  // the Detail slider rather than another thing the slider scales.
-  let minArea = Math.max(1, Math.round(params.despeckleFrac * w * h), printableFloor);
+  // `placedFloor` is the already-resolved floor for this trace's placement (stats.ts
+  // despeckleFloorPx). It replaces the fractional floor rather than raising it, because at a large
+  // placement the right floor is *below* the fraction; 0 means the placement is unknown and the
+  // fraction is the only floor there is.
+  let minArea = Math.max(1, placedFloor || Math.round(params.despeckleFrac * w * h));
 
-  despeckle(labels, w, h, minArea);
+  despeckle(labels, w, h, minArea, fringeWidth);
   deChecker(labels, w, h);
 
   let { compId, areas, labelOf } = labelComponents(labels, w, h);
@@ -630,7 +664,7 @@ export function traceLabelMap(map: LabelMap, params: TraceParams, printableFloor
     // multiplier and re-running blind.
     const sorted = areas.filter((_, i) => labelOf[i] !== BACKGROUND).sort((a, b) => b - a);
     minArea = Math.max(minArea + 1, sorted[MAX_COMPONENTS - 1] + 1);
-    despeckle(labels, w, h, minArea);
+    despeckle(labels, w, h, minArea, fringeWidth);
     deChecker(labels, w, h);
     ({ compId, areas, labelOf } = labelComponents(labels, w, h));
     capped = true;
