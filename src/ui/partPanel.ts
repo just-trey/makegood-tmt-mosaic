@@ -134,6 +134,9 @@ export function renderBaseColorSwatches(): void {
     b.type = 'button';
     b.className = 'base-swatch' + (selected ? ' selected' : '');
     b.style.background = hex;
+    // Name is hover/aria-label only here, deliberately: this is the user's own small fixed
+    // palette (unlike the per-artwork rows in colorList.ts, which show the name as visible
+    // text because those colors were never chosen or named by anyone).
     b.title = title;
     b.setAttribute('aria-label', `Use ${title} as the body / blank color`);
     // Selection is a ring rather than a hue (convention 19), so it has to be stated as well as

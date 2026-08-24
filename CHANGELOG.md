@@ -67,6 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The "≈" filament name beside a detected color now matches what it looks
+  like.** The nearest match used plain RGB distance across the 13 owned
+  filaments, which can rank brightness above color: a saturated teal read
+  closer to Grey than to Blue, and near-identical colors could get different
+  names. It now matches on how colors actually compare to the eye. The
+  palette also gained Cyan and Magenta, since neither had a filament to match
+  against before.
 - **The Colors panel shows the body color instead of saying where to find it.**
   With nothing grouped into the base, the row read "Base — empty; body uses the
   blank color set in Part". It now shows a swatch of the color the body will

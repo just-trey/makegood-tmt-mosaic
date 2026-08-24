@@ -50,29 +50,6 @@ tweak.
 against 5.3:1, where the accent's farthest shaded surface was 2.9:1, under WCAG's 3:1 non-text
 minimum.
 
-## A filament's name is nowhere on screen, only its hex
-
-Convention 16 asks for swatches carrying their filament name. No surface does it:
-
-| Where                          | Shows                  | Name available?                                            |
-| ------------------------------ | ---------------------- | ---------------------------------------------------------- |
-| Colors detected rows           | the raw hex, `#1e5fa8` | `title` on nothing; the row has no name at all             |
-| Body / blank color swatch grid | colour only            | `title` and `aria-label` only, so hover or a screen reader |
-| Export summary, exported 3MF   | the name               | already resolved via `nearestFilamentName`                 |
-
-So the app knows the name everywhere it writes a file and shows it nowhere the user is choosing.
-A volunteer matching rows to spools reads hex codes off a screen and colours off a shelf.
-
-This is the surviving half of the section that closed when the slot count went live and slot
-numbering was settled against (convention 16's exception, reasoned on the sort in
-[src/ui/colorList.ts](../src/ui/colorList.ts)). Deleting it whole was wrong and a review caught it:
-the count complaint closed, this one never did.
-
-Closing it: `nearestFilamentName` ([src/state/filaments.ts](../src/state/filaments.ts)) is the same
-lookup the export already uses, so this is presentation over a resolved value, not new matching.
-The open questions are what to show when a colour is far from anything owned, and whether the hex
-stays alongside the name (it is what a user pastes back into Illustrator, so probably yes).
-
 ## Colors detected needs a paragraph of prose because none of its mechanisms are visible
 
 Convention 5 of [ui-conventions.md](ui-conventions.md): prose in a panel is a symptom, and a panel
