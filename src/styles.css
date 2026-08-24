@@ -630,9 +630,11 @@ input[type='checkbox'] {
 .artwork-row {
   cursor: pointer;
 }
+/* Neutral, not accent: convention 19. A row carries no colour of its own, so the accent was
+   defensible here, but one selection treatment across the sidebar beats two defensible ones. */
 .artwork-row.active {
-  border-color: var(--accent);
-  background: var(--accent-wash);
+  border-color: var(--text);
+  background: var(--panel-2);
 }
 .artwork-row .artwork-zone,
 .artwork-row .artwork-mode {
@@ -930,9 +932,16 @@ input[type='checkbox'] {
 .base-swatch:hover {
   border-color: var(--accent);
 }
+/* Two rings, not one outline. Convention 19 bars selection-as-accent-hue, and this is the sharpest
+   instance in the app: --accent is blue and the thing being outlined IS a filament swatch, so a
+   blue ring landed on a blue filament. It also carries convention 19's own caveat, that an outline
+   is only as good as its luminance against whatever it crosses (same reasoning as --swatch-line).
+   The inner ring separates the fill from the outer one, so the pair reads against any colour. 3px
+   total, inside the 4px --space-tight gap, so a selected swatch never crowds its neighbour. */
 .base-swatch.selected {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  box-shadow:
+    0 0 0 1px var(--panel),
+    0 0 0 3px var(--text);
 }
 
 .auto-merge-labels {
@@ -961,8 +970,9 @@ input[type='checkbox'] {
   left: calc(100% - 7px);
   transform: translateX(-100%);
 }
+/* Weight alone carries which stop is active; the hue was doing nothing the semibold wasn't. */
 .auto-merge-labels span.active {
-  color: var(--accent-2);
+  color: var(--text);
   font-weight: var(--weight-semibold);
 }
 

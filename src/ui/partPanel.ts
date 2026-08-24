@@ -136,6 +136,9 @@ export function renderBaseColorSwatches(): void {
     b.style.background = hex;
     b.title = title;
     b.setAttribute('aria-label', `Use ${title} as the body / blank color`);
+    // Selection is a ring rather than a hue (convention 19), so it has to be stated as well as
+    // drawn: a ring is nothing to a screen reader.
+    b.setAttribute('aria-pressed', String(selected));
     b.addEventListener('click', () => {
       onClick();
       renderBaseColorSwatches();

@@ -1,4 +1,4 @@
-import { addToBase, removeFromBase, replaceBase, state } from '../state/store';
+import { addToBase, baseColorHex, removeFromBase, state } from '../state/store';
 import { requestedDepth } from '../geometry/depth';
 import { scheduleRebuild } from '../app/scheduler';
 import { nearestFilamentName } from '../state/filaments';
@@ -84,7 +84,7 @@ function wireBaseDropTarget(row: HTMLElement): void {
 
 /** The Base row: pinned at the top of the list so it never reorders, shows every color grouped
  * into it (dominant = body color) with a "×" to send one back to being cut, and doubles as a
- * drop target so dragging a color/merged group onto it grows the base instead of replacing it. */
+ * drop target. Its swatch is the body colour, which is why the empty row below shows one too. */
 function renderBaseRow(list: HTMLElement, c: ColorListEntry): void {
   const row = document.createElement('div');
   row.className = 'color-row is-base';
@@ -112,15 +112,24 @@ function renderBaseRow(list: HTMLElement, c: ColorListEntry): void {
   list.appendChild(row);
 }
 
-/** Shown instead of the Base row when nothing's grouped into it yet, so the empty state — using
- * the plain Body / blank color picker up in Part — reads as a normal, common choice rather than a
- * gap. Still a drop target: dragging a color onto it starts the base the same way "→ base" would. */
+/**
+ * Shown instead of the Base row when nothing's grouped into it yet, so the empty state reads as a
+ * normal, common choice rather than a gap. Still a drop target: dragging a color onto it starts
+ * the base the same way "→ base" would.
+ *
+ * It carries the body colour as a swatch rather than naming the panel that sets it. Convention 4
+ * bars a control's explanation from pointing at another panel, and this row was the live instance:
+ * "body uses the blank color set in Part". Showing the colour answers the same question without
+ * sending anyone anywhere, and it is the same state value the Part picker writes.
+ */
 function renderEmptyBaseRow(list: HTMLElement): void {
   const row = document.createElement('div');
   row.className = 'color-row is-base is-base-empty';
+  const body = baseColorHex();
   row.innerHTML = `
     <div class="top">
-      <div class="hex hint">Base — empty; body uses the blank color set in Part</div>
+      <div class="swatch" style="background:${body}" title="The body prints in ${body}"></div>
+      <div class="hex hint">Base (empty): the body prints in this color</div>
     </div>`;
   wireBaseDropTarget(row);
   list.appendChild(row);
@@ -322,12 +331,12 @@ export function renderColorList(
         )
         .join('')}</div>`;
       labelHtml = `Merged (${c.members.length})`;
-      rightControlHtml = `<button class="btn small" data-add-base="${c.members.join(',')}" title="Print this group in the body instead of cutting it (replaces the current base — drag onto the Base row to add alongside instead)">→ base</button>`;
+      rightControlHtml = `<button class="btn small" data-add-base="${c.members.join(',')}" title="Print this group in the body instead of cutting it">→ base</button>`;
     } else {
       const pinned = state.keptApart.includes(c.color);
       swatchHtml = `<div class="swatch${pinned ? ' pinned' : ''}" style="background:${c.color}" ${pinned ? 'title="Pulled out of auto-merge — click to re-allow merging"' : ''}></div>`;
       labelHtml = c.color;
-      rightControlHtml = `<button class="btn small" data-add-base="${c.color}" title="Print this color in the body instead of cutting it (replaces the current base — drag onto the Base row to add alongside instead)">→ base</button>`;
+      rightControlHtml = `<button class="btn small" data-add-base="${c.color}" title="Print this color in the body instead of cutting it">→ base</button>`;
     }
 
     // Keyboard/non-drag alternative to the drag-to-merge gesture below — same effect, listed by
@@ -414,7 +423,7 @@ export function renderColorList(
     const addBase = row.querySelector<HTMLElement>('[data-add-base]');
     if (addBase)
       addBase.addEventListener('click', () => {
-        replaceBase(addBase.dataset.addBase!.split(','));
+        addToBase(addBase.dataset.addBase!.split(','));
         scheduleRebuild();
       });
     const pinnedSwatch = row.querySelector<HTMLElement>('.swatch.pinned');

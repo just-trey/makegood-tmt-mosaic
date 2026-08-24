@@ -13,7 +13,6 @@ import {
   clearBaseColor,
   currentBaseParams,
   removeFromBase,
-  replaceBase,
   state,
 } from '../src/state/store';
 
@@ -61,27 +60,6 @@ describe('addToBase', () => {
 
     addToBase([]);
     addToBase(['']);
-
-    expect(state.baseColorMembers).toEqual(['#ff0000']);
-    expect(state.baseColorKey).toBe('#ff0000');
-  });
-});
-
-describe('replaceBase', () => {
-  it('switches the base instead of growing it — a second "→ base" means "use this one"', () => {
-    addToBase(['#ff0000', '#00ff00']);
-
-    replaceBase(['#0000ff']);
-
-    expect(state.baseColorMembers).toEqual(['#0000ff']);
-    expect(state.baseColorKey).toBe('#0000ff');
-  });
-
-  it('leaves the existing base untouched when given nothing usable', () => {
-    addToBase(['#ff0000']);
-
-    replaceBase([]);
-    replaceBase(['']);
 
     expect(state.baseColorMembers).toEqual(['#ff0000']);
     expect(state.baseColorKey).toBe('#ff0000');

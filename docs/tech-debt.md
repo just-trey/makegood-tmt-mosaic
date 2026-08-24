@@ -19,46 +19,36 @@ survives as its own section; only the closed part goes. Checking that the diff
 removed only the lines you meant to remove is _not_ this check: it confirms the
 scope of the edit, not that what left was finished.
 
-## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
+## Two of convention 19's neighbours are open, and one has a second instance
 
-The viewport half is closed. The frame and its handles are `--text`, and every measurement behind
-that (the dark/light pair that lost at 1.06:1, and the `--text`-over-light-body case still open at
-1.50:1) is on `FRAME_COLOR` in [src/scene/designGizmo.ts](../src/scene/designGizmo.ts), where
-someone changing the colour will meet it.
+Convention 19 itself is closed in both halves. The viewport frame and its handles are `--text`,
+and the three DOM instances are neutral as of the base-and-selection pass: the filament swatch
+takes a two-tone ring, the artwork row takes `--text` plus `--panel-2`, and the auto-merge label
+keeps its weight and drops `--accent-2`. Every measurement behind the viewport half is on
+`FRAME_COLOR` in [src/scene/designGizmo.ts](../src/scene/designGizmo.ts).
 
-**The fix used one of convention 19's three mechanisms, and the unused one closes two items at
-once.** Dimming the unselected surroundings is the only mechanism that doesn't depend on what the
-artwork happens to be, and it is what convention 20 below asks for on its own account. Not
-attempted: it changes the model's materials in an app whose subject is showing true colour, so
-"how much dim, and only while something is selected?" is a decision, not a tweak.
+**Convention 20**: greyed-back excluded geometry must not look like geometry printing in grey.
+Untested either way, and the body renders `#b9c0c6`, which is a grey somebody prints in.
 
-Three places in `src/styles.css` still say "selected" with the accent:
+**Convention 21**: a meaning-carrying overlay has to be distinguishable from artwork by pattern or
+motion rather than hue alone, and the placement frame's off-surface warning state is still hue
+alone (amber `0xe0a33a`, which matches no token). That one is deliberately as it is: it is a
+warning rather than a selection, and the comment on it defends the choice against a desaturated
+alternative. The sharper version, from a conventions review of the shipped screenshots: with the
+resting frame `--text` and the off-surface frame amber, **the app has two different frame
+treatments in the same widget**, one on-token and one not.
 
-- `.artwork-row.active` — `border-color: var(--accent)` plus `--accent-wash`.
-- `.base-swatch.selected` — `outline: 2px solid var(--accent)`, and this is the sharp one: the
-  thing being outlined **is a filament swatch**, so a blue ring around a blue filament is exactly
-  the collision convention 19 names, in the one list where it matters most.
-- `.auto-merge-labels span.active` — `color: var(--accent-2)`.
+**Dimming the unselected surroundings is the mechanism nobody has used**, and it is what
+convention 20 asks for on its own account. Deliberately not attempted: it changes the model's
+materials in an app whose subject is showing true colour. Convention 20 is the reason: the body
+already renders a grey somebody prints in, so dimming risks creating the exact collision the
+next convention names. "How much dim, and only while something is selected?" is a decision, not a
+tweak.
 
-Not measured; these are read off the stylesheet, not off a screenshot. Closing it means the same
-decision applied in a DOM context, where the tools differ from the viewport's (an outline offset,
-a weight change, a checkmark) and where the accent may well be fine for a row that carries no
-color of its own. Settle the swatch first.
-
-**Two neighbours of the same rule, both still open**, and the second now has a second instance. Convention 20: greyed-back excluded geometry
-must not look like geometry printing in grey — untested either way, and the body renders `#b9c0c6`,
-which is a grey somebody prints in. Convention 21: a meaning-carrying overlay has to be
-distinguishable from artwork by pattern or motion rather than hue alone, and the placement frame's
-off-surface warning state is still hue alone (amber `0xe0a33a`, which matches no token). That one
-is deliberately as it is: it is a warning rather than a selection, and the comment on it defends
-the choice against a desaturated alternative. The sharper version of the point, from a conventions
-review of the shipped screenshots: with the resting frame `--text` and the off-surface frame
-amber, **the app has two different frame treatments in the same widget**, one on-token and one not.
-
-**Legibility is not the thing to trade against here.** On the one instance already converted (the
-part thumbnail, `src/ui/shapeThumb.ts`), the neutral measured _more_ legible than the accent it
-replaced: 7.3:1 against 5.3:1, where the accent's farthest shaded surface was 2.9:1, under WCAG's
-3:1 non-text minimum. Don't assume the remaining instances cost legibility to fix.
+**Legibility is not the thing to trade against here.** On the part thumbnail
+(`src/ui/shapeThumb.ts`), the neutral measured _more_ legible than the accent it replaced: 7.3:1
+against 5.3:1, where the accent's farthest shaded surface was 2.9:1, under WCAG's 3:1 non-text
+minimum.
 
 ## A filament's name is nowhere on screen, only its hex
 
@@ -83,44 +73,32 @@ lookup the export already uses, so this is presentation over a resolved value, n
 The open questions are what to show when a colour is far from anything owned, and whether the hex
 stays alongside the name (it is what a user pastes back into Illustrator, so probably yes).
 
-## The body-color help text tells the user to act in a different panel
-
-Convention 4 of [ui-conventions.md](ui-conventions.md), which states that no control's
-explanation may reference a control in another panel: if it must, the model is wrong and the
-layout should change rather than the copy grow. The live instance: "Body / blank color … To print
-an artwork color as the body instead, use '→ base' (or drag it onto the Base row) in Colors
-detected further down."
-
-Not measured; carried from the rubric's conflicts table. The copy is a symptom, so the fix is not
-a rewrite — closing it means putting base assignment where the body color is chosen, or accepting
-that these are one decision presented in two places. Worth settling alongside the swatch-grid item
-above, since both are about the same panel.
-
-**The quoted sentence is gone** as of the copy-tightening pass; the hint is now "The body color
-used when no artwork color is grouped into the base." That removed the pointer, not the split. The
-item stays open, and the live instance is now the layout rather than a sentence to grep for.
-
 ## Colors detected needs a paragraph of prose because none of its mechanisms are visible
 
 Convention 5 of [ui-conventions.md](ui-conventions.md): prose in a panel is a symptom, and a panel
 needing several sentences to explain what its controls do to each other is describing a
 relationship that should be visible instead. This is the rubric's own worked example.
 
-Measured before the copy-tightening pass: the hint ran 96 words and carried six mechanisms.
+Measured before the copy-tightening pass: the hint ran 96 words and carried six mechanisms. Five
+are still carried by copy rather than shown:
 
-| Mechanism                                                     | Why copy was carrying it                           |
-| ------------------------------------------------------------- | -------------------------------------------------- |
-| Drag one row onto another to merge                            | Drag targets are not indicated                     |
-| The ⠿ grip marks what is draggable                            | A glyph that has to be named in prose              |
-| The "Merge with…" dropdown does the same thing                | Two paths to one result, neither obviously primary |
-| A merged group shares one depth                               | Not shown on the group                             |
-| A merged group prints in its dominant member's color          | Not shown on the group                             |
-| "→ base" replaces the base, dragging onto Base row adds to it | Two gestures, opposite semantics, same target      |
+| Mechanism                                            | Why copy is carrying it                            |
+| ---------------------------------------------------- | -------------------------------------------------- |
+| Drag one row onto another to merge                   | Drag targets are not indicated                     |
+| The ⠿ grip marks what is draggable                   | A glyph that has to be named in prose              |
+| The "Merge with…" dropdown does the same thing       | Two paths to one result, neither obviously primary |
+| A merged group shares one depth                      | Not shown on the group                             |
+| A merged group prints in its dominant member's color | Not shown on the group                             |
 
 The hint is now two sentences and the detail lives in the help dialog, which is where mechanism
 belongs (convention 6). That is the copy fix and it is done. What remains is the reason the copy
-existed: closing this means making the affordances legible, in particular the last row — an
-asymmetry between two gestures on the same target is not something help text can rescue.
+existed: closing this means making these five legible.
+
+**The sixth is closed.** "→ base" replaced the base while dragging a row onto the Base row added
+to it: two gestures, opposite semantics, same target, and the destructive one was the button, with
+the only warning in a `title` tooltip. Both now add. Nothing was lost by dropping replace, because
+removing a member is what the "×" on each Base row member already does: it was a shortcut that
+destroyed work without saying so, not a capability. `replaceBase` went with it.
 
 ## User-facing strings still use em dashes, which CLAUDE.md bars
 
