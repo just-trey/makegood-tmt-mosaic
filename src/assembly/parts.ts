@@ -1,5 +1,5 @@
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
-import type { AssemblyPart, AssemblyRole, DesignZone, LibraryEntry } from '../types';
+import type { AssemblyPart, AssemblyRole, DesignZone, IndexedMesh, LibraryEntry } from '../types';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { beginWork, endWork } from '../app/idle';
@@ -193,6 +193,9 @@ export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPa
     roleId: src.roleId,
     positions: src.positions,
     vertices: src.vertices,
+    // Shared with the source, like `positions` right above it: a duplicate is the same mesh at a
+    // different pose, so it must carry the same index or it silently loses the fast shading path.
+    indexed: src.indexed,
     libraryPartId: src.libraryPartId,
     meshFromUpload: src.meshFromUpload,
     patches: src.patches,
@@ -252,17 +255,41 @@ export async function asmLoadPartBuffer(
 ): Promise<void> {
   const lower = filename.toLowerCase();
   let positions: Float32Array;
+  let indexed: IndexedMesh | undefined;
   if (lower.endsWith('.3mf')) {
     const r = await load3MF(buf);
     positions = r.positions;
     part.vertices = r.vertices;
+    // The index is trusted for a library part and not for an upload, and that asymmetry is the
+    // point rather than caution. An index is a *claim* about which corners are one vertex. Display
+    // shading honours it exactly, where the fallback buckets positions to 0.01mm and welds a file
+    // that never said to. Our packed parts are welded (checked: all 19 sit at a 0.500 vertex-to-
+    // triangle ratio), so honouring their claim is strictly better. A dropped 3MF need not be: one
+    // converted from an STL carries a vertex per corner, claims no sharing at all, and would shade
+    // fully faceted where it used to come out smooth. Measured on a 10 degree fold: cross-seam dot
+    // 0.9848 from an unwelded index against 1.0000 from toCreasedNormals.
+    //
+    // `meshFromUpload` is set before this runs by both callers, so it is readable here.
+    //
+    // Handed to asmAdoptMesh rather than written here, so it lands with `part.positions` and not
+    // before it: a generated role can still reject this asset, and a throw part-way would
+    // otherwise leave the *previous* mesh paired with *this* file's index.
+    indexed = part.meshFromUpload ? undefined : { positions: r.vertices, indices: r.indices };
   } else if (lower.endsWith('.stl')) {
     const geo = new STLLoader().parse(buf);
     positions = geo.attributes.position.array as Float32Array;
+    // An STL is soup with no vertex sharing recorded at all, so no index is offered below, and
+    // whatever the part carried is replaced along with its mesh.
+    //
+    // **`part.vertices` deliberately stays.** Clearing it looks like the same tidy-up and is not:
+    // `attachBakedZones` returns at its `!part.vertices` guard *before* it clears `part.zones`, so
+    // an STL dropped onto a part that had already loaded its library 3MF would keep the replaced
+    // mesh's baked charts and cut artwork against UVs for geometry that is gone. Leaving it lets
+    // the fingerprint check see a mismatch, drop the zones, and say so.
   } else {
     throw new Error('Unsupported file type — use .stl or .3mf');
   }
-  await asmAdoptMesh(part, positions);
+  await asmAdoptMesh(part, positions, {}, indexed);
 }
 
 /**
@@ -278,6 +305,7 @@ async function asmAdoptMesh(
   part: AssemblyPart,
   positions: Float32Array,
   opts: { schedule?: boolean } = {},
+  indexed?: IndexedMesh,
 ): Promise<void> {
   const role = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId);
   // A dropped file REPLACES the part, on a generated role as much as any other — running the
@@ -289,6 +317,10 @@ async function asmAdoptMesh(
     const built = await role.buildMesh(positions);
     positions = built.positions;
     part.vertices = built.vertices;
+    // The generated mesh is a different mesh, so the asset's index goes either way. A generator
+    // that built through Manifold gets one back for free and can hand it over; one that cannot
+    // returns undefined here, and shading falls back to hashing for that part.
+    indexed = built.indexed;
     // Assigned unconditionally, including when the generator returns undefined: the rule belongs
     // to the mesh currently on the part, so a rebuild that falls back to a plain circle has to
     // clear the rule the previous silhouette set rather than leave it standing.
@@ -302,7 +334,10 @@ async function asmAdoptMesh(
     if (part.buildWarning) dismissNotice(part.buildWarning);
     part.buildWarning = undefined;
   }
+  // Committed together, and only once nothing above can still throw: `indexed` describes exactly
+  // this soup, and any window where it describes a different one is a mis-shaded part.
   part.positions = positions;
+  part.indexed = indexed;
   part.patches = detectFlatPatches(positions);
   part.patchIdx = defaultPatchIdx(part); // largest-area patch, or the role's preferred face
   applyAsmPatchChoice(part);

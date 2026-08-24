@@ -5,9 +5,12 @@ import type { FlatPatch } from '../types';
  * Minimal 3MF reader: it's a zip containing 3D/3dmodel.model (XML). Returns a flat triangle
  * soup matching what STLLoader gives, so downstream code doesn't care which format.
  */
-export async function load3MF(
-  arrayBuffer: ArrayBuffer,
-): Promise<{ positions: Float32Array; triCount: number; vertices: Float32Array }> {
+export async function load3MF(arrayBuffer: ArrayBuffer): Promise<{
+  positions: Float32Array;
+  triCount: number;
+  vertices: Float32Array;
+  indices: Uint32Array;
+}> {
   const zip = await JSZip.loadAsync(arrayBuffer);
   const modelFile = zip.file('3D/3dmodel.model');
   if (!modelFile) throw new Error('Not a valid 3MF: missing 3D/3dmodel.model');
@@ -48,7 +51,12 @@ export async function load3MF(
   // For a single-object part (every packed library part) this is just that object's <vertex> list.
   const vertices = new Float32Array(allVerts.length * 3);
   allVerts.forEach((v, i) => vertices.set(v, i * 3));
-  return { positions, triCount: allTris.length, vertices };
+  // The <triangle> elements are already an index into that list, and `positions` above is just it
+  // expanded. Returned rather than dropped so display shading can read the sharing the file states
+  // instead of rediscovering it by hashing every corner.
+  const indices = new Uint32Array(allTris.length * 3);
+  allTris.forEach((tri, i) => indices.set(tri, i * 3));
+  return { positions, triCount: allTris.length, vertices, indices };
 }
 
 /**

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { indexMatchesSoup } from '../src/geometry/creasedNormals';
 import {
   readMesh,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
@@ -238,6 +239,27 @@ describe('hubcap body = disc union clips', () => {
     expect(body.components).toBe(1);
     expect(body.positions.length).toBeGreaterThan(0);
     expect(soupVolume(body.positions)).toBeGreaterThan(0);
+  }, 30000);
+
+  // Display shading takes the fast path only if the generator hands its index all the way through
+  // to the part. Every link is silent when it breaks: a missing field forwards `undefined`, the
+  // shading falls back, and the render is pixel-identical either way — which is exactly how the
+  // first attempt at this shipped as dead code and still looked verified.
+  it('carries an index that describes its own soup, so shading can use it', async () => {
+    const clips = await readMesh(clipsPath);
+    const body = await buildHubcapBody({ kind: 'circle', diameterMm: REF.diameter }, clips);
+    expect(body.indexed).toBeDefined();
+    expect(body.indexed.indices.length * 3).toBe(body.positions.length);
+    expect(indexMatchesSoup(body.indexed, body.positions)).toBe(true);
+    // All three components. The disc is extruded in Y, so top and bottom vertices come in pairs
+    // sharing x and z: checking only those two would pass a corner mapped to the wrong end of the
+    // extrusion, which is exactly the mapping this is here to pin.
+    for (let i = 0; i < body.indexed.indices.length; i += 331) {
+      const v = body.indexed.indices[i] * 3;
+      for (let k = 0; k < 3; k++) {
+        expect(body.positions[i * 3 + k]).toBe(body.indexed.positions[v + k]);
+      }
+    }
   }, 30000);
 
   it('comes apart below the clip reach, and the clamp floor is above that', async () => {

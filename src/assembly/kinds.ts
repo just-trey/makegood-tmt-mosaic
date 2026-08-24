@@ -156,6 +156,10 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
           return {
             positions: built.positions,
             vertices: built.vertices,
+            // Manifold's own index for the mesh it just built, so display shading reads the vertex
+            // sharing instead of rehashing every corner. Forwarding it is the whole point of
+            // GeneratedMesh.indexed: dropping it here silently leaves this part on the slow path.
+            indexed: built.indexed,
             // Only a silhouette. It is cut FLAT (see HubcapShape) so its design face IS its
             // outline, and a region touching that boundary is one standing on the part's real
             // outer wall — cutting it the shell's full 3mm puts the rim in the artwork's color

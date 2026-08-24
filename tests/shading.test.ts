@@ -74,4 +74,47 @@ describe('bufferGeometryFromTris shading', () => {
     expect(pos.count).toBe(6);
     for (let i = 0; i < soup.length; i++) expect(pos.array[i]).toBeCloseTo(soup[i], 6);
   });
+
+  /**
+   * Which of the two normal passes actually ran.
+   *
+   * Nothing above distinguishes them: on any well-formed mesh they agree, which is the point of
+   * the swap and also why passing the index and forgetting to pass it look identical in every
+   * other test and in the render. This PR has already shipped that mistake once, in the hubcap
+   * generator, and it was invisible until someone read the code.
+   *
+   * So the fixture is a mesh where the two rules must disagree: the shared edge is duplicated, so
+   * the *index* says four separate vertices while their *positions* are identical. Exact sharing
+   * (the fast path) sees no seam to smooth across; three's 0.01mm bucket merges them and smooths.
+   * A 20 degree fold is under the crease angle, so smoothing is what the fallback will do.
+   */
+  const duplicatedSeam = (foldDeg: number) => {
+    const r = (foldDeg * Math.PI) / 180;
+    const a = [0, 0, 0];
+    const b = [1, 0, 0];
+    const apexA = [0.5, 1, 0];
+    const apexB = [0.5, -Math.cos(r), Math.sin(r)];
+    // Six vertices for two triangles: a and b appear twice, once per triangle, never shared.
+    const positions = Float32Array.from([...a, ...b, ...apexA, ...b, ...a, ...apexB]);
+    const indices = Uint32Array.from([0, 1, 2, 3, 4, 5]);
+    const soup = new Float32Array(indices.length * 3);
+    for (let i = 0; i < indices.length; i++) {
+      soup.set(positions.subarray(indices[i] * 3, indices[i] * 3 + 3), i * 3);
+    }
+    return { soup, indexed: { positions, indices } };
+  };
+
+  it('uses the index when given one, and three’s bucketing when not', () => {
+    const { soup, indexed } = duplicatedSeam(20);
+
+    // Fast path: the index shares nothing, so every corner keeps its own face normal.
+    const fast = bufferGeometryFromTris(soup, indexed);
+    const fastA = faceNormal(fast.attributes.position as THREE.BufferAttribute, 0);
+    for (const i of [0, 1, 2]) expect(normalAt(fast, i).angleTo(fastA)).toBeLessThan(1e-6);
+
+    // Fallback: the duplicated seam vertices land in one 0.01mm bucket and smooth across it.
+    const slow = bufferGeometryFromTris(soup);
+    const slowA = faceNormal(slow.attributes.position as THREE.BufferAttribute, 0);
+    for (const i of [0, 1]) expect(normalAt(slow, i).angleTo(slowA)).toBeGreaterThan(1e-3);
+  });
 });

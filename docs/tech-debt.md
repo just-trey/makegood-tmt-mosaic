@@ -393,59 +393,45 @@ hidden; the reasons are on `renderShapeKindOptions` in
 [src/state/persist.ts](../src/state/persist.ts), and at the top of
 `tests/persist-hidden-kind.test.ts`.
 
-## The display meshes re-derive a vertex weld the build already did
+## An uploaded mesh still re-derives its vertex weld for shading
 
-`bufferGeometryFromTris()` in [src/app/rebuild.ts](../src/app/rebuild.ts)
-shades via `toCreasedNormals`, which buckets vertices by position to find the
-faces sharing each one — for the chair that is a string hash per vertex across
-368k triangles, on **every rebuild**, not just on load.
+Display shading reads a mesh's own vertex index where one exists
+([src/geometry/creasedNormals.ts](../src/geometry/creasedNormals.ts)): Manifold
+returns one from every boolean, and a packed 3MF carries one in the file.
+Measured in Chrome, that is **8.7x** on five chair parts (234.8ms -> 26.9ms), with
+616 of 864,800 pixels changed in the render and a max channel delta of 8/255:
+[docs/findings/2026-08-23-indexed-crease-normals.md](findings/2026-08-23-indexed-crease-normals.md),
+with the Node attribution behind it in
+[docs/findings/2026-08-23-boolean-pass-and-weld.md](findings/2026-08-23-boolean-pass-and-weld.md).
+That closed the larger half of this item.
 
-Manifold already welded those vertices during the boolean, and the result is
-sitting on the same object the display path destructures: `bodyIndexed` /
-`inlayIndexed` on `AssemblyPartOutput` ([src/types.ts](../src/types.ts)), which
-3MF export consumes rather than re-welding. The display path ignores them.
-Recorded here because the PR that added the creased shading (#140) claimed the
-opposite — that no vertex-count saving was available — which was wrong, and
-wrong in the direction that hides work.
+**Every mesh the user supplies still falls through** to three's
+`toCreasedNormals`, which rediscovers the sharing by hashing every corner
+twice. The rule the code implements is "did we pack this mesh", not "does the
+format record sharing": an uploaded 3MF carries an index and it is dropped
+anyway, because one converted from an STL claims no sharing at all and would
+shade fully faceted where the fallback's 0.01mm bucketing smooths it.
 
-**Not a drop-in.** Handing the indexed geometry to `toCreasedNormals` is
-strictly _worse_: it opens with
-`geometry.index ? geometry.toNonIndexed() : geometry`, so an indexed input is
-expanded and then hashed anyway. Capturing the saving means a crease-aware
-normal pass that consumes an index directly — real work, not a swap.
+Everything we produce takes the fast path: packed library parts, Manifold's cut
+output, and the generated hubcap body.
 
-**Measured 2026-08-23**, and it changes three things this section said. Full
-numbers in
-[docs/findings/2026-08-23-boolean-pass-and-weld.md](findings/2026-08-23-boolean-pass-and-weld.md);
-`scripts/bench-shading.ts` reproduces them.
+Closing it means welding first, and the weld is the expensive half: keying a
+soup's corners is the same work the bench prices at 358ms for the chair, so that
+path lands about **1.5x** rather than 8.7x. Fewer parts than the thirteen above, so
+the payoff is smaller again.
 
-| Claim above                    | What the measurement says                                                                                                                             |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The weld is the cost           | Half of it. The bucketing is **50%** of `toCreasedNormals` and pass 1 is 53%; the averaging pass is the other half, and re-hashes every corner        |
-| The saving needs `bodyIndexed` | The packed **3MF already carries a triangle index**, and `load3MF` expands it to a soup and drops it. The load path never needed the boolean's output |
-| 3.0s → 4.1s is the shading     | The whole chair's shading is **720ms**, against 27ms for flat normals. The other ~380ms of that 1.1s is not accounted for and was not re-measured     |
+**The fallback is also the safer behaviour, which is why it was left rather
+than replaced.** `toCreasedNormals` matches vertices by truncating to 0.01mm,
+which is bucketing, not an exact or epsilon match. On a mesh that states its own
+sharing that approximation is strictly worse, and the indexed path drops it. On
+a user's STL there is nothing to state it, and switching to an exact weld would
+change how their file shades: a shared corner whose coordinates straddle a
+boundary is welded by one rule and not the other. Cosmetic, source-dependent,
+still unmeasured.
 
-A prototype crease pass reading the index runs the chair in **96ms against
-686ms, 7.2x**, and agrees with `toCreasedNormals` to under 1° on all but 892 of
-1.1M corners (0.08%, worst 24.9°). Those are corners where the 0.01mm bucketing
-smooths across vertices the mesh keeps distinct. Not yet built: it still needs
-a path for user-uploaded STL, which has no index. Welding a soup means
-keying all 1.1M corners, the work the bench's hash column prices at 358ms, so that path is about
-**1.5x** rather than 7.2x. Do not quote the bench's 269ms "fused" column as the STL cost: it keys
-23k unique vertices per part, not a soup.
-
-Two more things worth knowing before touching this:
-
-- `toCreasedNormals` matches vertices by **truncating to 0.01mm**
-  (`hashMultiplier = (1 + 1e-10) * 1e2`, then `~~`), which is bucketing, not an
-  exact or epsilon match. Cut bodies are safe — Manifold emits exactly
-  coincident vertices, which always land in one bucket. A **user-uploaded STL**
-  has no such guarantee (`renderRawAssemblyParts`): a shared corner whose
-  coordinates straddle a bucket boundary stays unwelded and renders as an
-  isolated flat facet. Cosmetic, source-dependent, unmeasured.
-- Whatever replaces it has to keep the crease behaviour rather than drop it.
-  A blanket weld plus `computeVertexNormals()` was measured and rejected — it
-  melted the embossed logo on the storage box; see `CREASE_ANGLE_RAD`.
+Whatever replaces it has to keep the crease behaviour rather than drop it. A
+blanket weld plus `computeVertexNormals()` was measured and rejected: it melted
+the embossed logo on the storage box. See `CREASE_ANGLE_RAD`.
 
 ## The raster edge-density reading depends on how big the file is
 

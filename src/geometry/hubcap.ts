@@ -1,3 +1,4 @@
+import type { IndexedMesh } from '../types';
 import { HUBCAP_PLATE } from '../export/threemf';
 import { outlineBounds, type Outline } from './hubcapOutline';
 import { shapeToFeature } from './regions';
@@ -298,6 +299,9 @@ export interface HubcapBody {
   positions: Float32Array;
   /** Welded vertices, so 3MF export doesn't have to re-derive them from the soup. */
   vertices: Float32Array;
+  /** The same mesh as an index. Manifold hands it back from the union, so display shading gets
+   * the vertex sharing for free instead of rehashing every corner. */
+  indexed: IndexedMesh;
   /** Connected solids in the result. Anything but 1 means the disc missed the clips. */
   components: number;
 }
@@ -355,7 +359,7 @@ export async function buildHubcapBody(
       const components = parts.length;
       parts.forEach((p) => p.delete());
       const { soup, indexed } = manifoldToMeshes(body);
-      return { positions: soup, vertices: indexed.positions, components };
+      return { positions: soup, vertices: indexed.positions, indexed, components };
     } finally {
       body.delete();
     }

@@ -221,6 +221,19 @@ export interface AssemblyPart {
    * packed vertex order to index into.
    */
   vertices?: Float32Array;
+  /**
+   * The same packed mesh as an index: unique vertices plus 3 indices per triangle, exactly as the
+   * 3MF stores it. `positions` is this expanded, corner for corner in the same order, which is
+   * what lets display shading read the vertex sharing instead of rehashing it.
+   *
+   * **Must be set or cleared wherever `positions` is replaced**, or it describes the previous mesh:
+   * both branches of `asmLoadPartBuffer` and the `buildMesh` branch of `asmAdoptMesh` today.
+   * `indexMatchesSoup` is the backstop, and it only catches the crash-shaped half.
+   *
+   * Absent for a drag-and-dropped mesh even when the file carries an index, because an unwelded
+   * upload would shade worse under exact sharing than under the fallback's bucketing.
+   */
+  indexed?: IndexedMesh;
   /** which stl/parts.json entry this part was loaded from; absent for a drag-and-drop upload */
   libraryPartId?: string;
   /**
@@ -354,6 +367,12 @@ export interface AssemblyRole {
 export interface GeneratedMesh {
   positions: Float32Array;
   vertices?: Float32Array;
+  /**
+   * `positions` as an index, when the generator has one. Manifold returns it from every boolean,
+   * so a generator building its mesh that way gets it for nothing; display shading uses it to skip
+   * rediscovering the vertex sharing by hashing. Omit it and shading falls back, correctly.
+   */
+  indexed?: IndexedMesh;
   /** Surfaced to the user as-is; the generator knows why its output is off, the loader doesn't. */
   warning?: string;
   /**
@@ -492,8 +511,9 @@ export interface AssemblyPartOutput {
    * Manifold's native indexing, kept beside the scene soup so 3MF export emits vertices/triangles
    * directly instead of re-welding. Absent on fallback parts that never went through a boolean.
    *
-   * Export is the only consumer. The scene mesh is built from `bodySoup`/`inlaySoups` and
-   * re-derives its own weld for shading: a known duplication (see tech-debt.md), not an oversight.
+   * Read by 3MF export and by display shading, which uses it to skip rediscovering the vertex
+   * sharing by hashing (see src/geometry/creasedNormals.ts). The scene mesh is still built from
+   * `bodySoup`/`inlaySoups`; this only supplies the normals for it.
    */
   bodyIndexed?: IndexedMesh;
   inlayIndexed?: Record<number, IndexedMesh>;

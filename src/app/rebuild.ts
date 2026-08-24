@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { AssemblyBuild } from '../types';
+import type { AssemblyBuild, IndexedMesh } from '../types';
 import { baseColorHex, currentBaseParams, state } from '../state/store';
 import {
   activeArtworkInstance,
@@ -8,6 +8,7 @@ import {
   syncActiveArtworkPlacement,
   zoneCoverage,
 } from '../state/artwork';
+import { creasedNormalsFromIndex, indexMatchesSoup } from '../geometry/creasedNormals';
 import { clearBuildWarnings, noticeBuild } from '../warnings';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
@@ -66,15 +67,31 @@ const CREASE_ANGLE_RAD = (30 * Math.PI) / 180;
  * The soup is non-indexed — every triangle carries its own three vertices — and
  * `computeVertexNormals()` on non-indexed geometry gives each vertex its own face's normal, so it
  * produced flat shading by construction: curved surfaces banded and silhouettes read as polygonal
- * on every part, worst on the chair. `toCreasedNormals` averages normals across shared positions
- * instead, up to the crease angle.
+ * on every part, worst on the chair. Normals are averaged across shared vertices instead, up to
+ * the crease angle.
+ *
+ * **Pass `indexed` whenever the caller has it.** Manifold returns one from every boolean and a
+ * packed 3MF carries one in the file, and with it the sharing is read instead of rediscovered by
+ * hashing every corner twice: 8.7x measured in Chrome on five chair parts. Without it this falls
+ * back to three's `toCreasedNormals`, unchanged, which is what any mesh the user supplies takes.
+ * That fallback is the reason this is a swap rather than a migration.
  *
  * Display only. The cut and export paths never read these normals — they work from the same soup
  * this is built from, already cut.
  */
-export function bufferGeometryFromTris(float32arr: Float32Array): THREE.BufferGeometry {
+export function bufferGeometryFromTris(
+  float32arr: Float32Array,
+  indexed?: IndexedMesh,
+): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(float32arr, 3));
+  if (indexMatchesSoup(indexed, float32arr)) {
+    geo.setAttribute(
+      'normal',
+      new THREE.BufferAttribute(creasedNormalsFromIndex(indexed!, CREASE_ANGLE_RAD), 3),
+    );
+    return geo;
+  }
   return toCreasedNormals(geo, CREASE_ANGLE_RAD);
 }
 
@@ -279,7 +296,8 @@ function renderRawAssemblyParts(): void {
     if (!part.loaded || !part.positions) return;
     const xf = asmPartTransformGroup(part);
     modelGroup.add(xf.outer);
-    xf.add(new THREE.Mesh(bufferGeometryFromTris(Float32Array.from(part.positions)), rawMat));
+    const soup = Float32Array.from(part.positions);
+    xf.add(new THREE.Mesh(bufferGeometryFromTris(soup, part.indexed), rawMat));
     tris += part.positions.length / 9;
   });
   $('#stat-tris').textContent = Math.round(tris) + ' tris';
@@ -469,11 +487,16 @@ async function rebuildAssemblyScene(): Promise<void> {
   });
   let tris = 0;
 
-  built.partOutputs.forEach(({ part, bodySoup, inlaySoups }) => {
+  built.partOutputs.forEach(({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }) => {
     const xf = asmPartTransformGroup(part); // identity for primaries; pivot-rotates duplicates to their real position
     modelGroup.add(xf.outer);
     // the modified body IS the whole real part (pockets cut in) — no separate context mesh
-    xf.add(new THREE.Mesh(bufferGeometryFromTris(bodySoup), baseMat));
+    // `bodyIndexed` is absent whenever the part never went through a boolean: no artwork on it, or
+    // a cut that failed. Its soup is then `part.positions` verbatim, which `part.indexed` already
+    // describes, so shading still gets the fast path. Read here rather than filled in on the build
+    // output because `bodyIndexed` is also what 3MF export writes, and this must not change what
+    // an uncut part exports.
+    xf.add(new THREE.Mesh(bufferGeometryFromTris(bodySoup, bodyIndexed ?? part.indexed), baseMat));
     tris += bodySoup.length / 9;
     Object.entries(inlaySoups).forEach(([ci, soup]) => {
       const hex = built.palette[+ci].hex;
@@ -483,7 +506,7 @@ async function rebuildAssemblyScene(): Promise<void> {
         metalness: 0.05,
         side: THREE.DoubleSide,
       });
-      xf.add(new THREE.Mesh(bufferGeometryFromTris(soup), mat));
+      xf.add(new THREE.Mesh(bufferGeometryFromTris(soup, inlayIndexed?.[+ci]), mat));
       tris += soup.length / 9;
     });
   });

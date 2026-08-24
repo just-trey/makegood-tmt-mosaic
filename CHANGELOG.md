@@ -192,6 +192,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The chair appears faster.** Working out how to shade a part, so its curves
+  look curved and its machined edges stay crisp, meant re-deriving which corners
+  the model already knows are joined. It now reads that from the part instead,
+  which is about nine times quicker on the chair's pieces. Checked side by side
+  on screen at the same camera: 616 pixels out of 864,800 changed, none of them
+  by enough to see. A part you drop in yourself still takes the slower route,
+  whatever the file type: we cannot tell whether it records joined corners, and
+  guessing wrong would make it look faceted.
+
 - **Busy designs build faster.** Working out which color is visible where is the
   slowest step of a flat build, and it now asks the shape engine for many shapes
   at once instead of two at a time. A 135-path drawing went from 2.07 to 1.18
