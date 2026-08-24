@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: Pre-PR gate for this repo: checks DECISIONS-NEEDED.md is drained, runs the five CI gates locally, then checks the four docs that drift silently (CHANGELOG, README, in-app help panel, analytics catalog) against the actual diff, checks any new user-facing string against the plain-language conventions, and watches CI without polling. Use before opening or updating a PR, or when asked "is this ready to push / ready for a PR".
+description: 'Pre-PR gate for this repo: checks DECISIONS-NEEDED.md is drained, runs the five CI gates locally, then checks the four docs that drift silently (CHANGELOG, README, in-app help panel, analytics catalog) against the actual diff, checks any new user-facing string against the plain-language conventions, and watches CI without polling. Use before opening or updating a PR, or when asked "is this ready to push / ready for a PR".'
 model: sonnet
 ---
 
