@@ -145,19 +145,64 @@ the thing it acts on, and only one manipulation affordance is offered at a time.
 reported broken — the placement frame renders at an angle with no relation to the part face, and
 corner handles compete with an axis handle for the same drag.
 
-Not measured, and the one item in this group where that matters most: an arbitrary gizmo angle is
-either a genuine frame bug in the placement math or a rendering choice, and those close very
-differently. Establishing which comes before any fix — it touches placement, so treat it as
-geometry work rather than UI. The competing-affordances half is separable and is a UI decision.
-This is the last of the group that made the viewport not behave like the direct-manipulation
-surface it looks like; the other one, "Zone picking has no occlusion test," is closed
-(`npm run check:zone-occlusion` re-measures it — by hand, it is not in CI).
+**Measured 2026-08-24, and it is a bug, not a rendering choice**
+([findings report](findings/2026-08-24-placement-frame-angle.md)). `scripts/measure-frame-angle.ts`
+re-measures it. The anchor hijack that faked this in the 2026-08-16 run is fixed (PR E), so the
+angle now reads honestly.
 
-**Still unmeasured after the 2026-08-16 run, and that run recorded a way to get it wrong**
-([findings report](findings/2026-08-16-maker-ease-review.md)): a skewed frame across the wheel
-read as this bug and was not. It was the frame correctly enclosing an anchor the largest-circle
-heuristic had hijacked (its own section below). A skewed-looking frame is evidence of the anchor,
-not of the angle, until the anchor is ruled out.
+- **8 of the 18 patches the part panel offers put the frame 90.0° off the face**, across the three
+  file-based design meshes. Always exactly 90.0°: `FlatZoneMapper.frameAt` returns a literal
+  horizontal basis whatever the part is shaped like.
+- **7 of the 8 clip the cut to exactly 0 mm².** Nothing prints there, so the build's "the cut may
+  be wrong" understates it. The eighth is `wheel-hub-cap`, which sets `cutThrough` and so is not
+  clipped at all; what it cuts on a sideways face is untested.
+- **Every kind's default face reads 0.0°**, all four parts, read from the app rather than from the
+  area ranking (`defaultPatchIdx` prefers the role's `preferFaceNormal`, and two default to rank
+  1). That is why ordinary use never shows it.
+- Not silent: the sideways-face warning and the "colors land entirely off the part" warning both
+  fire, and the second is accurate.
+
+Two defects left open. A third, the "face detected" line not tracking the dropdown, is fixed: the
+row now recomputes it in place through `faceStatusText`.
+
+1. `frameAt` hardcodes the horizontal basis. `faceY` already carries a fallback for a sideways
+   normal, so the case is known and drawn through anyway.
+2. The gizmo cannot warn: the amber off-surface state keys on `offSurfaceMM`, and the flat path
+   returns `offChartMM: 0` unconditionally, so that state is unreachable on every flat part.
+
+**Bounded, which is what keeps the fix small.** Every shipped part's default face is horizontal
+because `pack-part.mjs` aligns it, so all 8 measured cases need a deliberate pick from the
+dropdown, behind the "Advanced: per-part face & alignment" disclosure. An uploaded mesh has no
+such guarantee and would hit both defects at its default face with no interaction at all, but the
+STL/3MF drop target is only offered when the parts library is unreachable (see
+`buildAsmPartRow`'s docstring in [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts)), so that
+is a degraded-mode path rather than a normal one. Undriven either way.
+
+The competing-affordances half (corner handles against an axis handle for the same drag,
+convention 14) is separable, is a UI decision, and was not touched here. This is the last of the
+group that made the viewport not behave like the direct-manipulation surface it looks like; the
+other one, "Zone picking has no occlusion test," is closed (`npm run check:zone-occlusion`
+re-measures it — by hand, it is not in CI).
+
+## Changing a part's design face leaves its rotated duplicate on the old one
+
+The wheel's Bottom half is a rotated duplicate of its Top. `asmAddDuplicate`
+([src/assembly/parts.ts](../src/assembly/parts.ts)) copies `patchIdx`, `patchNormal`, `topZ`,
+`boundaryLoops` and `restPositions` into the duplicate at the moment it is created, and a
+duplicate's row offers pivot, angle and Remove but no design-face control of its own. Nothing
+re-derives those fields afterwards, so picking a different face on the source cuts the two halves
+on different faces.
+
+Not measured beyond reading the copy list: found while reviewing the frame-angle change
+(2026-08-24), which fixed the neighbouring "the panel says the wrong face" bug and made the
+question obvious. This one is a wrong cut rather than a wrong label, so it is the more serious of
+the pair.
+
+Closing it means deciding what a duplicate _is_: re-derive its face from its source on every
+change (the source becomes the single owner, and the copied fields become a cache), or give the
+duplicate its own face control and let the two differ on purpose. The first matches how
+`asmPartFaceNormal` already falls back to the source when a duplicate has no `patchNormal`. The
+second is the bigger change and nothing has asked for it.
 
 ## The chair's prime-tower positions have only been verified on one bed size
 

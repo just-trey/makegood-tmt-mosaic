@@ -53,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Picking a different design face updates what the panel says about it.** Under
+  "Advanced: per-part face & alignment", the "face detected" line kept describing
+  the face the part loaded with, sitting directly above a dropdown naming a
+  different one. It now updates with the choice, normal, plane offset and
+  boundary points together.
+
 - **Detail too fine to print is dropped by how big it prints, not by how big the
   image is.** The trace merged away anything under a share of the image, which
   for one photo meant merging features under 8.7mm on the footrest and under
