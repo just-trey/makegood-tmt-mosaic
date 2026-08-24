@@ -49,6 +49,7 @@ import { fitChain } from '../src/raster/curve';
 import {
   autoParams,
   despeckleFloorPx,
+  FRINGE_WIDTH_PX,
   isPhotographic,
   measureImage,
   printableFloorPx,
@@ -237,13 +238,20 @@ function sharpTurns(shapes: SVGShape[]): number {
  * One trace with the parameters supplied rather than derived.
  *
  * Bypasses parseRasterImage because every sweep below exists to vary a number autoParams would
- * otherwise pick. It is the same two calls parseRasterImage makes, in the same order, so the
- * shapes are what would ship at those settings.
+ * otherwise pick. It is the same two calls parseRasterImage makes, in the same order, but only the
+ * shapes of a caller that also passes `fringe` (the shipping-parity modes, despeckle and floor)
+ * are what would ship: parse.ts passes FRINGE_WIDTH_PX whenever the detail pass ran.
  */
-function traceWith(img: RasterImage, colors: number, params: TraceParams, placedFloor = 0) {
+function traceWith(
+  img: RasterImage,
+  colors: number,
+  params: TraceParams,
+  placedFloor = 0,
+  fringe = 0,
+) {
   const t0 = performance.now();
   const map = quantize(img, colors, params.blurRadius);
-  const { components, capped, floorPx } = traceLabelMap(map, params, placedFloor);
+  const { components, capped, floorPx } = traceLabelMap(map, params, placedFloor, fringe);
   const ms = performance.now() - t0;
   const painted = new Set(components.map((c) => map.palette[c.label]));
   const shapes: SVGShape[] = components.map((c, i) => ({
@@ -929,7 +937,7 @@ async function modeDespeckle(names: string[]) {
   }[] = [];
   const run = (name: string, img: RasterImage, colors: number, detail: number, edge: number) => {
     const p = autoParams({ edgeDensity: edge }, detail, ranDetailPass(img));
-    const t = traceWith(img, colors, p);
+    const t = traceWith(img, colors, p, 0, ranDetailPass(img) ? FRINGE_WIDTH_PX : 0);
     rows.push({
       name,
       working: `${img.w}x${img.h}`,
@@ -1088,6 +1096,7 @@ async function modeFloor(names: string[]) {
         g.detail,
         g.mmPerPixel,
       ),
+      ranDetailPass(g.s.working) ? FRINGE_WIDTH_PX : 0,
     );
     effect.push({
       name: g.s.name,

@@ -148,7 +148,10 @@ export function despeckleFloorPx(
   const printable = printableFloorPx(mmPerPixel);
   if (isPhotographic(stats.edgeDensity)) return Math.max(frac, printable);
   const feature = Math.round((DESPECKLE_FEATURE_MM / mmPerPixel) ** 2 * detailStrength(detail));
-  return Math.max(printable, Math.min(frac, feature));
+  // Never 0: past ~3mm per working pixel the feature floor rounds to 0, and a 0 tells
+  // traceLabelMap "placement unknown, use the fraction", the exact inversion of what a placement
+  // that coarse means. 1 is the no-op floor.
+  return Math.max(1, printable, Math.min(frac, feature));
 }
 
 /**

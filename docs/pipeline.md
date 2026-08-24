@@ -20,23 +20,24 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
   `RasterImage.edgeDensity` so a re-trace can't re-derive it.
 - Pixels under 50% alpha are background and cut nothing.
 - Edge density (how much of the image is colour boundary) sets blur, despeckle
-  and curve-fit strength; the Detail slider scales them. When the placement is
-  known (assembly kinds), the despeckle floor is sized in mm instead of as an
-  image fraction: a 1.6mm feature floor for flat art, clamped between one nozzle
-  width (`printableFloorPx`, which Detail deliberately does not scale) and the
-  fraction, so small placements keep their coarser floor
-  (`despeckleFloorPx`, measured in
-  [2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md)).
-  Photographs keep the fraction: theirs is simplification taste, not a feature
-  size. Flat plates fit the design's traced content, which does not exist yet
-  when the floor is chosen, so they stay fractional too (docs/tech-debt.md). The
-  user never picks a mode.
-- Flat art gets a one-pixel blur, but only when the 1024px pass ran; the
+  and curve-fit strength; the Detail slider scales them.
+- On assembly kinds the despeckle floor is sized in mm, not as an image
+  fraction (`despeckleFloorPx`, measured in
+  [2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md)). Flat art
+  keeps everything down to a 1.6mm feature. One nozzle width is the hard
+  minimum (`printableFloorPx`), which Detail deliberately does not scale. The
+  fraction caps it, so small placements keep their coarser floor.
+- Photographs keep the fraction: theirs is simplification taste, not a feature
+  size. Flat plates stay fractional too, since their fit needs the traced
+  content that does not exist yet (docs/tech-debt.md). The user never picks a
+  mode.
+- Flat art gets a one-pixel blur, but only when the 1024px pass ran. The
   photograph denoise blur stops at the photo cutoff instead of interpolating
-  ([stats.ts](../src/raster/stats.ts) explains both). The trace also absorbs any
-  non-background component under 2px mean width in an enlarged image, whatever
-  its area: that shape is the anti-aliased boundary band coming back as a third
-  colour, a thread on every outline that no area floor can catch.
+  ([stats.ts](../src/raster/stats.ts) explains both).
+- The trace absorbs any non-background component under 2px mean width in an
+  enlarged image, whatever its area. That shape is the anti-aliased boundary
+  band coming back as a third colour: a thread on every outline, too long for
+  any area floor to catch.
 - Colours are clustered in CIELAB, then forced a minimum perceptual distance
   (ΔE 3) apart. That's deliberately the same space, metric, and value the
   default "Slight" auto-merge threshold uses
