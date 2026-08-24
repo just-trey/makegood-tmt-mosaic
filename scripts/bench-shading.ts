@@ -142,7 +142,12 @@ function pass1Costs(positions: Float32Array): {
     const normal = new THREE.Vector3().crossVectors(u, v).normalize();
     for (const vert of [a, b, c]) {
       const hash = `${~~(vert.x * hashMultiplier)},${~~(vert.y * hashMultiplier)},${~~(vert.z * hashMultiplier)}`;
-      (vertexMap[hash] ||= []).push(normal);
+      // three's exact bucket write. `(map[hash] ||= []).push(x)` is one property lookup fewer and
+      // measured pass 1 at 39% where this measures ~50%, which is the whole point of the split.
+      if (!(hash in vertexMap)) {
+        vertexMap[hash] = [];
+      }
+      vertexMap[hash].push(normal);
     }
   }
   const verbatimMs = now() - t0;
@@ -154,7 +159,10 @@ function pass1Costs(positions: Float32Array): {
     for (let n = 0; n < 3; n++) {
       const o = i9 + n * 3;
       const hash = `${~~(positions[o] * hashMultiplier)},${~~(positions[o + 1] * hashMultiplier)},${~~(positions[o + 2] * hashMultiplier)}`;
-      (buckets[hash] ||= []).push(i);
+      if (!(hash in buckets)) {
+        buckets[hash] = [];
+      }
+      buckets[hash].push(i);
     }
   }
   const hashMs = now() - t1;

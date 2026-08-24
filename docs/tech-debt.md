@@ -421,17 +421,17 @@ numbers in
 
 | Claim above                    | What the measurement says                                                                                                                             |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The weld is the cost           | The bucketing is **32%** of `toCreasedNormals`, and pass 1 as a whole is 39%. The averaging pass is the larger half, and re-hashes every corner       |
+| The weld is the cost           | Half of it. The bucketing is **50%** of `toCreasedNormals` and pass 1 is 53%; the averaging pass is the other half, and re-hashes every corner        |
 | The saving needs `bodyIndexed` | The packed **3MF already carries a triangle index**, and `load3MF` expands it to a soup and drops it. The load path never needed the boolean's output |
-| 3.0s → 4.1s is the shading     | The whole chair's shading is **697ms**, against 27ms for flat normals. The other ~400ms of that 1.1s is not accounted for and was not re-measured     |
+| 3.0s → 4.1s is the shading     | The whole chair's shading is **720ms**, against 27ms for flat normals. The other ~380ms of that 1.1s is not accounted for and was not re-measured     |
 
 A prototype crease pass reading the index runs the chair in **96ms against
 686ms, 7.2x**, and agrees with `toCreasedNormals` to under 1° on all but 892 of
 1.1M corners (0.08%, worst 24.9°). Those are corners where the 0.01mm bucketing
 smooths across vertices the mesh keeps distinct. Not yet built: it still needs
 a path for user-uploaded STL, which has no index. Welding a soup means
-keying all 1.1M corners, the work the bench's hash column prices at 225ms, so that path is about
-**2x** rather than 7.2x. Do not quote the bench's 269ms "fused" column as the STL cost: it keys
+keying all 1.1M corners, the work the bench's hash column prices at 358ms, so that path is about
+**1.5x** rather than 7.2x. Do not quote the bench's 269ms "fused" column as the STL cost: it keys
 23k unique vertices per part, not a soup.
 
 Two more things worth knowing before touching this:

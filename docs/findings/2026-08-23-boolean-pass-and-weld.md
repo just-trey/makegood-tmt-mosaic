@@ -22,8 +22,8 @@ Both measurements contradicted the tech-debt section that asked for them.
 
 - The boolean pass was **2066ms** on the dense SVG, not the ~9s tech-debt.md quoted. It is now
   **1177ms**, 1.76x, with per-color areas unchanged.
-- The chair's creased shading is **697ms**, not the ~1.1s the "3.0s → 4.1s" reading implied.
-- The vertex weld is **32%** of that shading, not the cause of it.
+- The chair's creased shading is **720ms**, not the ~1.1s the "3.0s → 4.1s" reading implied.
+- The vertex weld is about **half** of that shading; the averaging pass is the other half.
 - The packed 3MF already carries a triangle index. `load3MF` expands it and throws it away.
 
 ## Item 1: the paint-order boolean pass
@@ -126,20 +126,27 @@ Measured, not built. The prototype is in `bench-shading.ts`, not in `src/`.
 | Pass                                       |           cost |
 | ------------------------------------------ | -------------: |
 | `computeVertexNormals` (flat, pre-#140)    |           27ms |
-| `toCreasedNormals` (shipping)              |      **697ms** |
-| of which pass 1 (face normals + bucketing) | 273ms, **39%** |
-| of which the bucketing alone (the weld)    | 225ms, **32%** |
+| `toCreasedNormals` (shipping)              |      **720ms** |
+| of which pass 1 (face normals + bucketing) | 383ms, **53%** |
+| of which the bucketing alone (the weld)    | 358ms, **50%** |
 
-**So the weld is not the cost; it is a third of it, and the averaging pass is the larger half.**
-Stable across three warmed runs (39/39/38% and 33/32/32%).
+**So the weld is about half of it, and the two passes cost roughly the same.** Three warmed runs:
+pass 1 at 52/52/55%, bucketing at 49/52/49%.
 
-But pass 2 re-hashes all three corners of every triangle to look the bucket up again, so string
-hashing is the majority of the whole function across both passes. The lever is "stop hashing
-strings", not "reuse the weld" — and an index removes the hashing from both passes at once, which
-is why the prototype below beats it by more than pass 1's share would allow.
+Pass 2 then re-hashes all three corners of every triangle to look the bucket up again, so string
+hashing dominates the whole function across both passes. That is why an index wins by 7.2x rather
+than the ~2x that removing pass 1 alone would allow: it deletes the hashing from both halves.
+
+**This number was wrong twice before landing, both times too low, and the trap is worth naming.**
+The first helper priced only the hashing and was never warmed, giving 36%. The second was warmed
+and included the face normals but wrote its buckets as `(map[hash] ||= []).push(n)`, where three
+does `if (!(hash in map)) map[hash] = []; map[hash].push(n)` — one property lookup more per corner,
+across 1.1M corners. That alone moved pass 1 from 39% to ~52%. **A bucket write is not an
+implementation detail here; it is the thing being priced.** The figure above is the faithful
+version, and an independent re-measurement agrees (47-52%).
 
 The 368k triangle figure in tech-debt.md is confirmed exactly. The 3.0s → 4.1s reading is not:
-697ms is what the shading costs, so roughly 400ms of that 1.1s delta belongs to something else
+720ms is what the shading costs, so roughly 380ms of that 1.1s delta belongs to something else
 that was never identified.
 
 **An earlier draft of this section said 36% for "the weld", from a helper that was neither the
@@ -192,8 +199,8 @@ worst 24.9°, mean 0.011°.
 A user-uploaded STL arrives as soup with no index (`STLLoader`), so it needs a weld of its own.
 **The 269ms "fused" column above is not that cost** and must not be quoted as it: fusing keys 23k
 unique vertices per part, while a soup has no vertex list and must key all 1.1M corners. That is
-the same work the bench's hash column prices at 225ms for the whole chair, so the STL path is roughly
-225 + 96 = 321ms against 686ms, about **2x** rather than 7.2x. Estimated by adding two measured
+the same work the bench's hash column prices at 358ms for the whole chair, so the STL path is roughly
+358 + 96 = 454ms against 686ms, about **1.5x** rather than 7.2x. Estimated by adding two measured
 halves, not measured end to end, because the path does not exist yet.
 
 It is also a different weld from the one `toCreasedNormals` does: exact rather than bucketed to
