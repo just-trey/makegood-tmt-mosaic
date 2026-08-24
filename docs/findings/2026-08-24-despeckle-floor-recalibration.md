@@ -53,11 +53,21 @@ three fixes, all measured on this commit's corpus cache on the WSL2 dev box.
 
 - After the blur fix one thread remained (mustache top edge, later a button squiggle):
   a fringe component as long as the boundary it hugs clears any area floor.
-- **Fix**: `despeckle` also absorbs non-background components under 2px mean width
-  (2·area/perimeter), `FRINGE_WIDTH_PX`, gated on the detail pass having enlarged the
-  image, same reasoning as the compensating blur. Background exempt: a thin transparent
+- **Fix**: `despeckle` also absorbs non-background components whose mean width
+  (2·area/perimeter) is under `fringeWidthPx`: one nozzle at the placement, capped at
+  2px. Same physical claim as the area floor, made about width: a region narrower than
+  one extrusion cannot print however long it is. Background exempt: a thin transparent
   gap is two shapes printed close together, not an extrusion.
-- 2 is a ceiling, not a taste: at 2.5 the cartoon's eyelashes go (27 → 15 components).
+- The cap is what keeps small placements intact: there one nozzle is many working pixels,
+  wide enough to swallow a cartoon's whole outline network the area floor governs instead.
+- 2 is also a detail ceiling, not a taste: at 2.5 the cartoon's eyelashes go (27 → 15).
+- Two earlier formulations died in review before this one: "under 2px in an enlarged
+  image" (its debris premise fails at 1:1 and past 2:1 downscale, where hairlines are
+  content), then the same rule gated by a decoded downscale ratio (three premise holes,
+  plus a plumbed field sessions could not restore). Width-at-placement needs neither the
+  premise nor the plumbing.
+- Placement unknown (flat plates): no width rule, matching the floor. The tech-debt
+  flat-plate item covers both.
 
 ## Null results and open threads
 

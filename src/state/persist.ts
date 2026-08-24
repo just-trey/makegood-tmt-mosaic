@@ -80,7 +80,6 @@ type PersistedSource = Pick<DesignSource, 'id' | 'kind' | 'name' | 'svgText'> & 
     colors: number;
     detail: number;
     edgeDensity?: number;
-    downscale?: number;
     mmPerPixel?: number;
   };
 };
@@ -197,7 +196,6 @@ function snapshotSession(): PersistedSession {
         colors: s.raster.colors,
         detail: s.raster.detail,
         edgeDensity: s.raster.image.edgeDensity,
-        downscale: s.raster.image.downscale,
         mmPerPixel: s.raster.mmPerPixel,
       });
     }
@@ -514,7 +512,6 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       const image = await decodeWorkingImage(s.raster.png);
       // Put back the statistic that cannot be re-measured from these pixels (see PersistedSource).
       if (s.raster.edgeDensity !== undefined) image.edgeDensity = s.raster.edgeDensity;
-      if (s.raster.downscale !== undefined) image.downscale = s.raster.downscale;
       const opts = {
         colors: s.raster.colors,
         detail: s.raster.detail,

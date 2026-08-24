@@ -65,28 +65,29 @@ const FLAT_PARAMS: TraceParams = {
 const DETAIL_PASS_BLUR = 1;
 
 /**
- * Components with a mean width under this many working pixels are absorbed by the trace when the
- * detail pass enlarged the image, whatever their area.
+ * Cap, in working pixels, on the width under which the trace absorbs a component (fringeWidthPx).
  *
- * The anti-aliased band along a boundary between two colors quantizes to a third and survives any
- * area floor, because it is as long as the boundary: a brown thread on every black outline, one to
- * two pixels wide, staircased. Two pixels is the transition width the source's anti-aliasing plus
- * the compensating blur leaves. Gated on the detail pass for the same reason the blur is: in an
- * image worked at full size a one-pixel mark can be drawn content, in one the detail pass enlarged
- * it cannot be (the downscale was at least 1.5:1), so only there is sub-2px width proof of debris.
+ * The cap is what keeps a small placement structurally intact: there one nozzle is many working
+ * pixels, wide enough to swallow a cartoon's whole outline network, and the area floor is already
+ * the rule that governs what a small placement can carry. Two pixels is also the width of the
+ * band anti-aliasing plus the compensating blur leave along a boundary between two colors, which
+ * quantizes to a third color and survives any area floor because it is as long as the boundary.
  */
 export const FRINGE_WIDTH_PX = 2;
 
 /**
- * Largest source-to-working downscale at which the fringe rule may run.
+ * Width in working pixels under which a component cannot print at this placement, capped by
+ * FRINGE_WIDTH_PX, or 0 where the placement is unknown.
  *
- * The rule's proof ("sub-2px width is debris, not content") holds only under mild averaging: the
- * detail pass downscales at most MEASURE_EDGE-to-MAX_WORKING_EDGE gently enough that the
- * anti-aliased fringe survives, while a 3:1 downscale destroys it before quantization sees it
- * (see DETAIL_PASS_BLUR). Past this ratio there is no fringe left to remove, and a drawn hairline
- * in a large scan can itself land under 2 working pixels, so running the rule there guts line art.
+ * The same claim as printableFloorPx made about area, for width: a region narrower than one
+ * nozzle cannot hold an extrusion however long it is. That is what catches the boundary-band
+ * threads no area floor can, without a debris-vs-content judgment: everything absorbed was
+ * unprintable at the size the user placed it.
  */
-export const FRINGE_MAX_DOWNSCALE = 2;
+export function fringeWidthPx(mmPerPixel: number): number {
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0) return 0;
+  return Math.min(FRINGE_WIDTH_PX, NOZZLE_MM / mmPerPixel);
+}
 const PHOTO_PARAMS: TraceParams = {
   blurRadius: 2,
   despeckleFrac: 0.0022,
@@ -247,8 +248,8 @@ export function autoParams(
     // quantized to a third color (a brown fringe on every black outline) and staircased the label
     // boundary, and blur 1 alone has neither defect while keeping the eye the striping fix exists
     // for (docs/findings/2026-08-24-despeckle-floor-recalibration.md). An image worked at its own
-    // size keeps the lerped blur it always had: that case was not in the measurement, and it has
-    // neither the compensation nor the fringe absorption to fall back on.
+    // size keeps the lerped blur it always had: that case was not in the measurement, and it does
+    // not have the detail-pass compensation to fall back on.
     blurRadius: ranDetailPass
       ? DETAIL_PASS_BLUR
       : Math.round(lerp(FLAT_PARAMS.blurRadius, PHOTO_PARAMS.blurRadius)),

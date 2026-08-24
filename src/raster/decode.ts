@@ -100,14 +100,12 @@ export async function decodeImageFile(file: Blob): Promise<RasterImage> {
     );
   }
   try {
-    const srcEdge = Math.max(bitmap.width, bitmap.height);
     const reference = drawAt(bitmap, MEASURE_EDGE);
     const { edgeDensity } = measureImage(reference);
-    if (isPhotographic(edgeDensity))
-      return { ...reference, edgeDensity, downscale: srcEdge / Math.max(reference.w, reference.h) };
+    if (isPhotographic(edgeDensity)) return { ...reference, edgeDensity };
 
     const detailed = drawAt(bitmap, MAX_WORKING_EDGE);
-    return { ...detailed, edgeDensity, downscale: srcEdge / Math.max(detailed.w, detailed.h) };
+    return { ...detailed, edgeDensity };
   } finally {
     bitmap.close();
   }

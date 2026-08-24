@@ -49,7 +49,8 @@ import { fitChain } from '../src/raster/curve';
 import {
   autoParams,
   despeckleFloorPx,
-  FRINGE_WIDTH_PX,
+  fracFloorPx,
+  fringeWidthPx,
   isPhotographic,
   measureImage,
   printableFloorPx,
@@ -239,8 +240,8 @@ function sharpTurns(shapes: SVGShape[]): number {
  *
  * Bypasses parseRasterImage because every sweep below exists to vary a number autoParams would
  * otherwise pick. It is the same two calls parseRasterImage makes, in the same order, but only the
- * shapes of a caller that also passes `fringe` (the shipping-parity modes, despeckle and floor)
- * are what would ship: parse.ts passes FRINGE_WIDTH_PX whenever the detail pass ran.
+ * shapes of a caller that also passes `fringe` (the shipping-parity modes) are what would ship:
+ * parse.ts passes `fringeWidthPx` of the placement, which is 0 where the placement is unknown.
  */
 function traceWith(
   img: RasterImage,
@@ -937,7 +938,8 @@ async function modeDespeckle(names: string[]) {
   }[] = [];
   const run = (name: string, img: RasterImage, colors: number, detail: number, edge: number) => {
     const p = autoParams({ edgeDensity: edge }, detail, ranDetailPass(img));
-    const t = traceWith(img, colors, p, 0, ranDetailPass(img) ? FRINGE_WIDTH_PX : 0);
+    // No placement in this mode, and shipping passes no fringe width without one.
+    const t = traceWith(img, colors, p);
     rows.push({
       name,
       working: `${img.w}x${img.h}`,
@@ -1048,7 +1050,7 @@ async function modeFloor(names: string[]) {
       };
       for (const detail of [DETAIL_DEFAULT, 100]) {
         const p = autoParams({ edgeDensity: s.edgeDensity }, detail, ranDetailPass(img));
-        const contentPx = Math.max(1, Math.round(p.despeckleFrac * img.w * img.h));
+        const contentPx = fracFloorPx(p, img.w, img.h);
         const mm = floorMM(contentPx, mmPerPixel);
         row[`D${detail}mm`] = +mm.toFixed(2);
         const resolved = despeckleFloorPx(
@@ -1084,7 +1086,7 @@ async function modeFloor(names: string[]) {
   for (const g of governed) {
     const p = autoParams({ edgeDensity: g.s.edgeDensity }, g.detail, ranDetailPass(g.s.working));
     // Fringe on both sides, so the delta is the placed floor's effect alone.
-    const fringe = ranDetailPass(g.s.working) ? FRINGE_WIDTH_PX : 0;
+    const fringe = fringeWidthPx(g.mmPerPixel);
     const before = traceWith(g.s.working, g.s.colors, p, 0, fringe);
     const after = traceWith(
       g.s.working,

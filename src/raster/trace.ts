@@ -129,9 +129,9 @@ function despeckle(
   if (minArea <= 1 && fringeWidth <= 0) return;
   const { compId, areas, labelOf } = labelComponents(labels, w, h);
   // Mean width as 2*area/perimeter, the ribbon test: a component can clear any area floor and
-  // still be a quantization artifact, the anti-aliased band along a boundary between two other
-  // colors coming back as a third. Long and 1-2px wide is exactly that shape, and nothing drawn
-  // survives at that width in an image the detail pass enlarged. Background is exempt: a thin
+  // still be too narrow to hold an extrusion at the placed size, however long it is. The
+  // anti-aliased band along a boundary between two colors, coming back as a third, is the shape
+  // this catches that no area floor can (stats.ts fringeWidthPx). Background is exempt: a thin
   // transparent gap is two shapes printed close together, not an extrusion that cannot exist.
   let perim: Int32Array | null = null;
   if (fringeWidth > 0) {

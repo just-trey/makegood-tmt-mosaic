@@ -11,13 +11,6 @@ export interface RasterImage {
    * strengths that hang off them — every time the working size changed.
    */
   edgeDensity?: number;
-  /**
-   * Source long edge over working long edge, carried for the same reason as edgeDensity: the
-   * working pixels no longer say how hard they were averaged. Past ~2:1 the downscale destroys the
-   * anti-aliased fringe (see the fringe gate in parse.ts), and sub-2px width in what remains is
-   * drawn content, not debris. Absent means "not resized or not known", both safe to treat as 1.
-   */
-  downscale?: number;
 }
 
 /**

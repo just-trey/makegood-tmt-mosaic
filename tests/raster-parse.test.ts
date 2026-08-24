@@ -165,8 +165,8 @@ describe('measureImage / autoParams', () => {
     // top of the detail-pass compensation. That blur widened every anti-aliased line boundary into
     // a band that quantized to a third color: a brown fringe on every black outline.
     expect(autoParams({ edgeDensity: 0.253 }, DETAIL_DEFAULT, true).blurRadius).toBe(1);
-    // Worked at its own size, the same image keeps the lerped blur it always had: that case has
-    // neither the detail-pass compensation nor the fringe absorption to fall back on.
+    // Worked at its own size, the same image keeps the lerped blur it always had: that case
+    // was not in the measurement and has no detail-pass compensation to fall back on.
     expect(autoParams({ edgeDensity: 0.253 }, DETAIL_DEFAULT, false).blurRadius).toBe(1);
   });
 
