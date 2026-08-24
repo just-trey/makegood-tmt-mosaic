@@ -20,6 +20,7 @@ vi.mock('../src/state/artwork', () => ({ availableZones: () => [], clampArtworkM
 vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 
 import { renderAssemblyPartList } from '../src/ui/assemblyPanel';
+import { applyAsmPatchChoice } from '../src/assembly/parts';
 import { state } from '../src/state/store';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 import type { AssemblyPart } from '../src/types';
@@ -69,6 +70,9 @@ beforeEach(() => {
   state.assembly.kindId = kind.id;
   state.assembly.parts = [part()];
   libraryReachable(true);
+  // The face-status test gives this mock a real implementation. Nothing in the config resets
+  // mocks between tests, so without this it would leak into whatever is appended after it.
+  vi.mocked(applyAsmPatchChoice).mockReset();
 });
 
 describe('the per-part rows in the Part panel', () => {
@@ -108,5 +112,36 @@ describe('the per-part rows in the Part panel', () => {
     const face = document.querySelector<HTMLSelectElement>('[data-asm="patchIdx"]');
     expect(face).not.toBeNull();
     expect(face!.options).toHaveLength(2);
+  });
+
+  it('updates the face status line when the face changes, so it cannot contradict the dropdown', () => {
+    // The real applyAsmPatchChoice also rebuilds boundaryLoops and restPositions, which need real
+    // geometry. Only the two fields the status line reads are needed here.
+    vi.mocked(applyAsmPatchChoice).mockImplementation((p: AssemblyPart) => {
+      const patch = p.patches![p.patchIdx];
+      p.patchNormal = patch.normal;
+      p.topZ = patch.offset;
+    });
+    state.assembly.parts = [
+      part({
+        patches: [
+          { area: 29403, normal: [0, 1, 0], offset: 24.25, triIndices: [] },
+          { area: 4468, normal: [0, 0, -1], offset: -8, triIndices: [] },
+        ],
+      }),
+    ];
+
+    renderAssemblyPartList();
+    const status = document.querySelector('[data-asm-face-status]')!;
+    expect(status.textContent).toContain('normal (0.00, 1.00, 0.00)');
+
+    const face = document.querySelector<HTMLSelectElement>('[data-asm="patchIdx"]')!;
+    face.value = '1';
+    face.dispatchEvent(new Event('change'));
+
+    // The specific new values, not just "it changed": the bug this guards left the OLD normal
+    // sitting above a dropdown naming the new one.
+    expect(status.textContent).toContain('normal (0.00, 0.00, -1.00)');
+    expect(status.textContent).toContain('plane offset -8.00mm');
   });
 });

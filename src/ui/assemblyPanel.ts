@@ -380,6 +380,18 @@ export function renderAssemblyRoleControls(): void {
 }
 
 /**
+ * What the detected design face is, as the row states it. Recomputed rather than re-rendered when
+ * the face changes: re-running the row's innerHTML from inside its own change handler destroys the
+ * <select> that fired the event and collapses the Advanced disclosure around it.
+ */
+function faceStatusText(part: AssemblyPart): string {
+  if (!part.loaded) return 'no file loaded yet';
+  const normal = part.patchNormal!.map((v) => v.toFixed(2)).join(', ');
+  const pts = (part.boundaryLoops || []).reduce((n, l) => n + l.length, 0);
+  return `face detected: normal (${normal}), plane offset ${part.topZ.toFixed(2)}mm, ${pts}-pt boundary`;
+}
+
+/**
  * Full editable controls for one part (face pick, base thickness / pivot+angle, remove), plus the
  * STL/3MF drop target when `canSwapMesh` — which is only where the parts library isn't reachable
  * and the user has no other way to get a part in.
@@ -411,9 +423,7 @@ function buildAsmPartRow(
       <button class="btn small" data-asm-remove style="margin-top:var(--space-tight);" aria-label="Remove ${part.name}">Remove</button>
     `;
   } else {
-    const statusText = part.loaded
-      ? `face detected: normal (${part.patchNormal!.map((v) => v.toFixed(2)).join(', ')}), plane offset ${part.topZ.toFixed(2)}mm, ${(part.boundaryLoops || []).reduce((n, l) => n + l.length, 0)}-pt boundary`
-      : 'no file loaded yet';
+    const statusText = faceStatusText(part);
     const patchOptions = (part.patches || [])
       .slice(0, 6)
       .map(
@@ -432,7 +442,7 @@ function buildAsmPartRow(
     row.innerHTML = `
       <div class="top"><div class="hex">${part.name}</div></div>
       ${dropzone}
-      <div class="hint" style="margin-top:var(--space-tight);">${statusText}</div>
+      <div class="hint" style="margin-top:var(--space-tight);" data-asm-face-status>${statusText}</div>
       ${part.patches ? `<div class="depth-row"><label>design face</label><select data-asm="patchIdx" style="flex:1;" aria-label="Design face for ${part.name}">${patchOptions}</select></div>` : ''}
       <div class="depth-row"><label>base thick.</label><input type="number" step="0.5" min="0.5" value="${part.baseDepth}" data-asm="baseDepth" style="width:56px;" aria-label="Base thickness for ${part.name}"><span class="hint">mm of material behind the face this replaces</span></div>
       <div class="btn-row" style="margin-top:var(--space-tight);">
@@ -467,7 +477,14 @@ function buildAsmPartRow(
         return;
       }
       part[field] = val;
-      if (field === 'patchIdx') applyAsmPatchChoice(part);
+      if (field === 'patchIdx') {
+        applyAsmPatchChoice(part);
+        // Without this the line keeps reporting the face the part loaded with, directly above a
+        // dropdown naming a different one. Measured on the footrest in
+        // docs/findings/2026-08-24-placement-frame-angle.md.
+        const status = row.querySelector('[data-asm-face-status]');
+        if (status) status.textContent = faceStatusText(part);
+      }
       scheduleRebuild();
     });
   });
