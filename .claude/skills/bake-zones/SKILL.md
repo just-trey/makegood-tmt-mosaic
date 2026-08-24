@@ -1,6 +1,6 @@
 ---
 name: bake-zones
-description: Bake the design zones of a multi-design-surface part: write the zone config, weld the printed parts across their seams, segment and LSCM-unwrap each zone, and ship the sidecar plus per-zone true-size templates. Use when adding, retuning, or debugging zones for any kind with a zonesFile (the chair body), or when a zone's coverage, stretch or seams look wrong.
+description: "Bake the design zones of a multi-design-surface part: write the zone config, weld the printed parts across their seams, segment and LSCM-unwrap each zone, and ship the sidecar plus per-zone true-size templates. Use when adding, retuning, or debugging zones for any kind with a zonesFile (the chair body), or when a zone's coverage, stretch or seams look wrong."
 model: opus
 ---
 

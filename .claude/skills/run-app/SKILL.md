@@ -1,6 +1,6 @@
 ---
 name: run-app
-description: Launch the app for manual or headless verification: dev server for interactive use, or a headless Playwright page for screenshots/driving it from a script. Use before claiming a UI or geometry change works, or when a reviewer skill needs to observe real app behavior.
+description: 'Launch the app for manual or headless verification: dev server for interactive use, or a headless Playwright page for screenshots/driving it from a script. Use before claiming a UI or geometry change works, or when a reviewer skill needs to observe real app behavior.'
 model: sonnet
 ---
 
