@@ -191,17 +191,18 @@ function buildParamMax(param: NonNullable<AssemblyKind['buildParam']>): number {
  * into something that looks fine on screen.
  */
 export async function applyBuildParam(raw: number): Promise<void> {
-  // The hubcap's verified arrangement is gated on the diameter and the silhouette toggle
-  // (buildPlacement), so either control can flip the placement notice and the blocked-tower
-  // warning on or off. Without this, exporting at 240mm then dropping to 200mm left both pills
-  // describing a setup no longer on screen.
-  clearStalePlacementNotices();
-  renderWarnings();
   const kind = currentAssemblyKind();
   const param = kind?.buildParam;
   if (param && Number.isFinite(raw)) {
     const committed = await commitBuildParam(raw);
     if (committed !== undefined) {
+      // Cleared only once the size actually changed. The hubcap's verified arrangement is gated on
+      // the diameter and the silhouette toggle (buildPlacement), so either control can flip the
+      // placement notice and the blocked-tower warning on or off — but a rejected edit changes
+      // nothing, and clearing up front wiped warnings that still described the exported setup.
+      // Emptying the field at the clamp max, or typing over it, both take that path.
+      clearStalePlacementNotices();
+      renderWarnings();
       // the value that was BUILT, not the one that was typed: a typed 9999 clamps to the plate,
       // and reporting the 9999 would put a size nothing was ever generated at into the catalog
       track('build_param_changed', {
@@ -238,14 +239,13 @@ export async function clampBuildParamToPrinter(): Promise<void> {
  * the part's mesh depends on it exactly as it depends on the size.
  */
 export async function applyHubcapSilhouette(on: boolean): Promise<void> {
-  // The hubcap's verified arrangement is gated on the diameter and the silhouette toggle
-  // (buildPlacement), so either control can flip the placement notice and the blocked-tower
-  // warning on or off. Without this, exporting at 240mm then dropping to 200mm left both pills
-  // describing a setup no longer on screen.
-  clearStalePlacementNotices();
-  renderWarnings();
   if (on === state.hubcapSilhouette) return;
   state.hubcapSilhouette = on;
+  // After the no-op guard, for the same reason applyBuildParam clears after its commit: this
+  // toggle gates the hubcap's verified arrangement (buildPlacement), so it flips the placement
+  // notice and the blocked-tower warning on or off — but only when it actually changes something.
+  clearStalePlacementNotices();
+  renderWarnings();
   const kind = currentAssemblyKind();
   // Fill is withheld while the part follows the artwork, so a Fill already chosen has to be
   // rewritten here — the same clamp a kind that withholds Fill outright applies on a part switch.

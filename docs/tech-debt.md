@@ -1319,6 +1319,29 @@ budget above a performance concern rather than a correctness one. Upgrading
 turf past 6.5 may move the ceiling but is separately blocked — see the
 `@turf/turf` pin section.
 
+## A round part is scored by its bounding box when placing the prime tower
+
+`suggestTowerPos` measures each corner's overlap against a part's bounding box,
+which over-reports a disc by the corners the circle never reaches. On the default
+220mm hubcap on the H2D that reads every corner as blocked, so the export writes
+no `wipe_tower_x/y` at all and leaves the slicer to place the tower, when the disc
+in fact clears the back-right corner by **14mm**.
+
+Measured by review on 2026-08-25, while checking the T0-4 message fix. That fix
+made the app tell the truth about which case happened; it did not make the case
+correct. The 2026-08-24 cycle's **T0-4** is closed on the copy and open here on
+the geometry.
+
+Its own code comment already owns the approximation ("a part's footprint here is
+its bounding box, which over-reports a round part"), and the fallback is
+deliberately conservative: a tower parked through a part is worse than one the
+slicer places. So this is a precision item, not a correctness one, and it costs
+the user a verified position they could have had.
+
+Closing it means scoring the overlap against the part's real footprint rather
+than its bbox, for the parts that have one, most cheaply via the outline
+`hubcapOutline.ts` already computes for the silhouette path.
+
 ## The hubcap's plate is verified on two beds and up to one diameter
 
 `HUBCAP_PLATE` ([src/export/threemf.ts](../src/export/threemf.ts)) carries
