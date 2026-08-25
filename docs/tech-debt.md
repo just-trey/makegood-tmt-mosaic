@@ -634,14 +634,30 @@ kind, but the load returns without touching the scene, so the viewport and the
 export still hold the boot kind's parts. `maybeAutoLoadAssembly` cannot recover
 it: it no-ops while any part is present.
 
+**It exports the wrong part under the right filename.** Measured by the
+`not-ready` lens on 2026-08-24, driving with the confirm hook removed: restore a
+footrest session, Cancel, and Export downloads **`mosaic-footrest.3mf`
+containing Top / Bottom / Cap**, 2 plates, 4 filaments, no warning. A complete,
+valid, printable wheel under the footrest's name. The filename follows the
+dropdown, which has already moved; the scene has not.
+
 Never seen in a driven run because `newPage`'s hook auto-accepts confirms
-(`scripts/lib/harness.mjs`), which takes the cancel path out of reach.
+(`scripts/lib/harness.mjs`), which takes the cancel path out of reach. That is
+also why four rounds of `/code-review` and the branch's own driven check missed
+it.
+
+Reachable from any session on a kind that is not the boot default, so it blocks
+the footrest and the hubcap. **An earlier revision of this section said it
+"blocks nothing on the wheel, footrest or hubcap" and did not mention the
+filename. Both were wrong**, and the deferral was decided on them.
 
 The fix is one line, the same clearing the fallback branch beside it already
-does. Not taken with the beta narrowing: that branch had three review rounds
-land in this same function, each on the previous round's fix, and CLAUDE.md's
-rule is to stop patching an area at that point rather than take a fourth swing
-at it. It also blocks nothing on the wheel, footrest or hubcap.
+does. Deferred once, when this was believed to be cosmetic: that branch had
+three review rounds land in this same function, each on the previous round's
+fix, and CLAUDE.md's rule is to stop patching an area at that point. That
+reasoning does not survive the measurement. It is **T0-1** in
+[review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md), ranked
+first and alone, and landing it flips that cycle's readiness verdict.
 
 Related: the 2026-08-08 review cycle's **A2** (switching part shape carries
 artwork across with no confirmation) is the opposite failure in the same
@@ -706,6 +722,11 @@ gate, so it is the one flat-only control still on screen. Not fixed here on
 purpose: it blocks nothing, and this release's rule was to fix only what stops
 a part working end to end. The fix is one line in
 [depthPanel.ts](../src/ui/depthPanel.ts), mirroring Margin's.
+
+**Worse than first recorded**: the help dialog still teaches it as working
+("Check 'Recess bg too' to cut the background as well"), so the app documents a
+control that does nothing. Found by the `not-ready` lens, 2026-08-24; it is
+**T1-6** in [review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md).
 
 **What `npm run smoke` no longer covers.** Four of its steps drove the disc:
 switch to flat mode, override the background recess depth, export a flat 3MF,
