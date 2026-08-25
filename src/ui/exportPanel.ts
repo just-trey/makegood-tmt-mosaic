@@ -32,7 +32,7 @@ const PLACEMENT_WARNING_SUFFIXES = [
   'even at its best-fit rotation.',
   'double-check for overlap in your slicer.',
   'reposition it in your slicer before printing.',
-  'move the tower in your slicer.',
+  'Check where your slicer puts the tower before printing.',
   // placementNotice's mesh-identity guard — every variant of it ends this way, which
   // tests/placement.test.ts pins so a reworded message can't silently stop being cleared
   'placed automatically — check it in your slicer before printing.',
@@ -51,7 +51,7 @@ function download(blob: Blob, fname: string): void {
  * must re-render afterwards on every path, including the ones that bail — WARNINGS is the model
  * behind the on-screen pills, and mutating it without a render leaves the two disagreeing.
  */
-function clearStalePlacementNotices(): void {
+export function clearStalePlacementNotices(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
     if (PLACEMENT_WARNING_SUFFIXES.some((s) => WARNINGS[i].message.endsWith(s)))
       WARNINGS.splice(i, 1);
@@ -418,6 +418,10 @@ export function initExportPanel(): void {
     // autosave trigger rather than piggybacking on rebuildCurrent()'s, and its own slot-count
     // redraw rather than picking one up from a rebuild.
     void clampBuildParamToPrinter();
+    // Every placement message names a bed, a plate size or a verified pose, so a printer switch
+    // invalidates all of them at once. They used to be cleared only by the *next* export, which
+    // left pills naming a 350x320mm plate sitting over a part on a 256mm bed.
+    clearStalePlacementNotices();
     // re-posts the slot-budget pill against the new printer's numbers as well as redrawing the line
     refreshSlotCountCapacity();
     renderExportSummary();

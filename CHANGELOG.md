@@ -325,6 +325,17 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
 
 ### Fixed
 
+- **The prime tower warning no longer names a position the file does not carry.**
+  On a plate where every corner overlaps a part, the app writes no tower position
+  at all and leaves the slicer to place it, which is right: pinning a spot it has
+  just measured as colliding would be asserting something false. The warning said
+  the opposite, quoting coordinates that appear nowhere in the export, and the
+  help said the tower goes in the freest corner regardless. Both now say what
+  actually happens, and the warning asks you to check where your slicer put it.
+- **Placement warnings clear when they stop applying.** They named a part, a bed
+  or a plate size, and were only cleared by the next export, so switching part or
+  printer left pills describing a setup that was no longer on screen.
+
 - **A recess deeper than the part no longer cuts silently.** Setting a depth
   larger than the part had material for built and exported with nothing said. It
   is now cut at the deepest that part can take, with a warning naming the color

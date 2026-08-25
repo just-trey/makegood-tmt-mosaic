@@ -244,7 +244,10 @@ describe('multi-plate world layout', () => {
     const { warnings } = await build3MFCombined(twoMaterials, [box('Wide', 170, 170, 50, 50)], {
       printer: getPrinter('bambu-x1c'),
     });
-    expect(warnings.join(' ')).toContain('move the tower in your slicer');
+    // Names no coordinates. When every plate is blocked the exporter writes no wipe_tower_x/y at
+    // all, so "it was parked at (270, 240)" quoted a position that appears nowhere in the file.
+    expect(warnings.join(' ')).toContain('Check where your slicer puts the tower');
+    expect(warnings.join(' ')).not.toMatch(/parked at \(/);
   });
 
   // The same crowded plate, minus the second filament: no tower gets printed there, so the

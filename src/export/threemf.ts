@@ -593,12 +593,17 @@ export async function build3MFCombined(
     // prints no tower, so whatever this returns for it is never used.
     const needsTower = new Set(items.flatMap((pl) => pl.part.subs.map((s) => s.matIndex))).size > 1;
     const clear = overlap(best) === 0;
+    // Claims no position, because the file may carry none. When every plate is blocked the caller
+    // writes no wipe_tower_x/y at all and lets the slicer place the tower (see the `towerBlocked`
+    // gate at the end of this file), so "it was parked at (270, 240)" named coordinates that
+    // appeared nowhere in the export. It was also false about the mixed case in a subtler way:
+    // this runs per plate and cannot see whether the others are blocked. What is true either way
+    // is that nothing here is verified and the user has to look.
     if (needsTower && !clear)
       warnings.push(
         `The prime tower on the plate holding ${items.map((pl) => `"${pl.part.name}"`).join(', ')} ` +
           `has no verified position, and every corner of the ${plateW}×${plateD}mm plate overlaps ` +
-          `a part, so it was parked at (${best.x.toFixed(0)}, ${best.y.toFixed(0)}) — ` +
-          `move the tower in your slicer.`,
+          `a part. Check where your slicer puts the tower before printing.`,
       );
     return { ...best, clear };
   }

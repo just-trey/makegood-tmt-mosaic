@@ -1180,7 +1180,10 @@ describe('a bed-specific plate position in the exporter', () => {
     );
 
     const p = await proj(blob);
-    expect(warnings.join(' ')).toContain('move the tower in your slicer');
+    // Names no coordinates. When every plate is blocked the exporter writes no wipe_tower_x/y at
+    // all, so "it was parked at (270, 240)" quoted a position that appears nowhere in the file.
+    expect(warnings.join(' ')).toContain('Check where your slicer puts the tower');
+    expect(warnings.join(' ')).not.toMatch(/parked at \(/);
     expect(p.wipe_tower_x).toBeUndefined();
     expect(p.wipe_tower_y).toBeUndefined();
   });
