@@ -17,6 +17,8 @@ import { availableZones, clampArtworkModes } from '../state/artwork';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
 import { refreshShapeThumb } from './shapeThumb';
+import { clearStalePlacementNotices } from './exportPanel';
+import { renderWarnings } from './warningsView';
 import { $ } from './dom';
 
 /** Show/hide controls that only apply to certain assembly kinds (Design radius is wheel-only). */
@@ -189,6 +191,12 @@ function buildParamMax(param: NonNullable<AssemblyKind['buildParam']>): number {
  * into something that looks fine on screen.
  */
 export async function applyBuildParam(raw: number): Promise<void> {
+  // The hubcap's verified arrangement is gated on the diameter and the silhouette toggle
+  // (buildPlacement), so either control can flip the placement notice and the blocked-tower
+  // warning on or off. Without this, exporting at 240mm then dropping to 200mm left both pills
+  // describing a setup no longer on screen.
+  clearStalePlacementNotices();
+  renderWarnings();
   const kind = currentAssemblyKind();
   const param = kind?.buildParam;
   if (param && Number.isFinite(raw)) {
@@ -230,6 +238,12 @@ export async function clampBuildParamToPrinter(): Promise<void> {
  * the part's mesh depends on it exactly as it depends on the size.
  */
 export async function applyHubcapSilhouette(on: boolean): Promise<void> {
+  // The hubcap's verified arrangement is gated on the diameter and the silhouette toggle
+  // (buildPlacement), so either control can flip the placement notice and the blocked-tower
+  // warning on or off. Without this, exporting at 240mm then dropping to 200mm left both pills
+  // describing a setup no longer on screen.
+  clearStalePlacementNotices();
+  renderWarnings();
   if (on === state.hubcapSilhouette) return;
   state.hubcapSilhouette = on;
   const kind = currentAssemblyKind();

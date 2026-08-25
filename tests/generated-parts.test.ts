@@ -114,6 +114,7 @@ function mountPanel(): void {
     <div id="asm-variant-row"><span id="asm-variant-controls"></span></div>
     <div id="assembly-part-list"></div>
     <div id="asm-role-controls"></div>
+    <div id="warnings"></div>
   `;
   // jsdom implements neither, and syncTemplateLink revokes the previous URL on every call
   URL.createObjectURL = vi.fn(() => 'blob:hubcap-template');

@@ -539,15 +539,15 @@ export async function build3MFCombined(
     });
   }
 
+  /** Plates whose best tower corner still overlaps a part, held until the write decision is made. */
+  const blockedTowers: Array<{ names: string; plate: string }> = [];
+
   /**
    * Where to park the prime tower on a plate whose parts carry no verified `primeTowerDelta`.
    * Deliberately NOT a baked position: it is a starting point for the human pass that produces
    * one, and only has to beat dropping the tower on the plate center, straight through the part.
    * Insets the tower's nominal footprint into whichever corner the parts intrude on least.
    */
-  /** Plates whose best tower corner still overlaps a part, held until the write decision is made. */
-  const blockedTowers: Array<{ names: string; plate: string }> = [];
-
   function suggestTowerPos(items: Placed[]): { x: number; y: number; clear: boolean } {
     const TOWER = 60; // nominal prime-tower footprint; the slicer sizes the real one per filament count
     // `wipe_tower_x/y` is the tower's FRONT-LEFT CORNER, not its centre (settled against two
