@@ -54,6 +54,8 @@ export function refreshShapeParamInputs(): void {
   input('#p-corner').value = String(state.round.corner);
   input('#p-thickness-rr').value = String(state.round.thickness);
   input('#p-asm-radius').value = String(state.asmRadius);
+  // The fields now hold the restored values, so the bindings' last-good caches must follow them.
+  resyncShapeInputs();
 }
 
 function setShapeThumb(kind: string): void {
@@ -181,11 +183,28 @@ export function renderBaseColorSwatches(): void {
  * rather than hardcoding "> 0" so a field like corner radius, which is legitimately 0, isn't
  * rejected at its own valid floor.
  */
+/**
+ * Resync every bound field's "last good value" from what the field currently holds.
+ *
+ * `lastValid` is seeded once at init from the HTML default, and the blur handler writes it back
+ * when the field is invalid. Session restore pushes state into these fields directly
+ * (refreshShapeParamInputs), so without this a restored radius of 200 left `lastValid` at the
+ * markup's 138: clear the field, tab away, and the panel silently disagreed with the export.
+ */
+const resyncBoundInput: Array<() => void> = [];
+export function resyncShapeInputs(): void {
+  resyncBoundInput.forEach((f) => f());
+}
+
 function bindShapeInput(sel: string, apply: (v: number) => void): void {
   const el = input(sel);
   const min = el.min !== '' ? parseFloat(el.min) : -Infinity;
   const isValid = (v: number) => Number.isFinite(v) && v >= min;
   let lastValid = numVal(sel, min > 0 ? min : 0);
+  resyncBoundInput.push(() => {
+    const v = numVal(sel, NaN);
+    if (isValid(v)) lastValid = v;
+  });
 
   el.addEventListener('input', () => {
     const v = numVal(sel, NaN);

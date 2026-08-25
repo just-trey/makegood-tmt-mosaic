@@ -188,6 +188,19 @@ describe('applyRestoredSession: the settings the user had', () => {
     expect(state.asmRadius).toBe(before);
   });
 
+  // isPersistedSession checks four fields and repairSessionContainers repairs containers, never
+  // scalars, so a session missing this reached colorList's `shownDepth.toFixed(2)` and threw
+  // part-way through the restore.
+  it('ignores a saved depth that is not a number', async () => {
+    const before = state.globalDepth;
+    const bad = session();
+    delete (bad as unknown as Record<string, unknown>).globalDepth;
+
+    await expect(applyRestoredSession(bad)).resolves.toBeUndefined();
+
+    expect(state.globalDepth).toBe(before);
+  });
+
   it('restores a design radius that is a real one', async () => {
     await applyRestoredSession(session({ asmRadius: 120 }));
 

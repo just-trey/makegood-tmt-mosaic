@@ -583,7 +583,11 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.flipX = session.flipX;
   state.flipY = session.flipY;
   state.rotationDeg = session.rotationDeg;
-  state.globalDepth = session.globalDepth;
+  // Guarded like asmRadius below. isPersistedSession checks four fields and repairSessionContainers
+  // repairs containers, never scalars, so a session missing this reached colorList's
+  // `shownDepth.toFixed(2)` and threw mid-restore — the half-applied failure this path exists to
+  // avoid.
+  if (Number.isFinite(session.globalDepth)) state.globalDepth = session.globalDepth;
   state.recessBg = session.recessBg;
   // Coerced to a printer that exists, not adopted verbatim. An unknown id (an older build's, a
   // hand-edited session) left `#p-printer` blank while getPrinter() silently fell back to the
