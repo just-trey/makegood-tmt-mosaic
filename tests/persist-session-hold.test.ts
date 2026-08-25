@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { saveSession } from '../src/state/persist';
+import { holdSavedSessionUntilAnswered, saveSession } from '../src/state/persist';
 import { state } from '../src/state/store';
 import { firstOfferedKind } from '../src/assembly/kinds';
 
@@ -37,12 +37,30 @@ describe('a saved session whose restore offer has not been answered', () => {
     withLoadedWork();
     saveSession();
     expect(localStorage.getItem(STORAGE_KEY), 'fixture did not persist').not.toBeNull();
+    holdSavedSessionUntilAnswered(); // the next page load arrives with that session
 
     state.sources = [];
     state.artworks = [];
     saveSession(); // the bare boot's own rebuild, with nothing loaded
 
     expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+  });
+
+  // The hold protects the session the user *arrived* with. An earlier version defaulted to held,
+  // so a visitor who arrived with nothing, loaded a design and then deleted it kept an emptied
+  // session in storage and was offered it back next visit — the exact thing the clear exists to
+  // prevent.
+  it('does not hold a session created after a boot that found none', () => {
+    holdSavedSessionUntilAnswered(); // storage is empty at this point
+    withLoadedWork();
+    saveSession();
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+
+    state.sources = [];
+    state.artworks = [];
+    saveSession(); // the user deleted their only design
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   it('is still overwritten by real work, so the hold cannot strand a stale session', () => {

@@ -278,7 +278,7 @@ let lastSaveFailed = false;
 let lastSaveDropped = false;
 
 /**
- * Whether the user has answered this page load's restore offer, either way.
+ * Whether a session that was already in storage when this page loaded is still unanswered.
  *
  * The empty-snapshot clear below is what destroys a saved session, and it fires about a second
  * into any bare boot. Until the offer has been answered there is nothing to act on, so clearing
@@ -286,11 +286,29 @@ let lastSaveDropped = false;
  * a `?kind=` link (the banner is never shown, so the session was never offered), a reload while
  * the banner sits unanswered on screen, and a restore that threw.
  */
-let savedSessionAnswered = false;
+let unansweredSavedSession = false;
+
+/**
+ * Arm the hold if the user arrived with a saved session. Called once at boot, before anything
+ * decides whether to offer it — including the paths that decide not to (`?kind=`, a withheld
+ * kind), which are the ones that used to destroy it.
+ *
+ * **Armed rather than defaulting on.** It protects the session the user arrived with, not any
+ * session: defaulting to held meant a visitor who arrived with nothing, loaded a design and then
+ * deleted it kept an emptied session in storage and was offered it back next visit, which is the
+ * exact thing the clear exists to prevent.
+ */
+export function holdSavedSessionUntilAnswered(): void {
+  try {
+    unansweredSavedSession = localStorage.getItem(STORAGE_KEY) !== null;
+  } catch {
+    unansweredSavedSession = false;
+  }
+}
 
 /** Called by the restore banner when the user accepts or dismisses the offer. */
 export function markSavedSessionAnswered(): void {
-  savedSessionAnswered = true;
+  unansweredSavedSession = false;
 }
 
 /**
@@ -342,7 +360,7 @@ export function saveSession(): void {
     // where the stored session is still the user's only copy and the restore offer may not even
     // have been seen yet, and a session the user has actively moved past — they loaded something
     // that could not be saved, which genuinely supersedes what is in storage.
-    const held = savedSessionIsOnHiddenKind() || (!savedSessionAnswered && !hasLoadedWork());
+    const held = savedSessionIsOnHiddenKind() || (unansweredSavedSession && !hasLoadedWork());
     if (!held) clearSavedSession();
     lastSaveFailed = hasLoadedWork();
     return;

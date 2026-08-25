@@ -7,6 +7,7 @@ import {
   type PersistedSession,
 } from '../state/persist';
 import { warn } from '../warnings';
+import { renderWarnings } from './warningsView';
 import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
 import { setShapeKind, renderBaseColorSwatches, refreshShapeParamInputs } from './partPanel';
 import { renderArtworkList } from './artworkListPanel';
@@ -74,9 +75,18 @@ export function initRestoreBanner(): void {
         await applyRestoredSession(session);
       } catch (e) {
         console.error('Session restore failed:', e);
-        // Say so. This used to delete the session and return with nothing on screen, so the user
-        // clicked Restore, saw no change, and had lost the work.
-        warn('That saved session could not be opened, so it was cleared. Nothing else changed.');
+        // Say so, and render it. This used to delete the session and return with nothing on
+        // screen, so the user clicked Restore, saw no change, and had lost the work. warn() only
+        // pushes onto the list; this path returns before setShapeKind(), which is the only call
+        // on it that would otherwise reach renderWarnings().
+        //
+        // "Reload the page" is not boilerplate: applyRestoredSession assigns state as it goes, so
+        // a throw part-way leaves it half applied — the printer can be one value while the picker
+        // shows another. Making that application atomic is still owed (docs/tech-debt.md).
+        warn(
+          'That saved session could not be opened, so it was cleared. Reload the page to start clean.',
+        );
+        renderWarnings();
         clearSavedSession();
         return;
       }
