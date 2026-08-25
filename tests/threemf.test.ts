@@ -310,8 +310,26 @@ describe('multi-plate world layout', () => {
 
       const proj = await projectSettings(blob);
       expect(proj.wipe_tower_x, 'a position was written for both plates').toHaveLength(2);
-      expect(warnings.join(' ')).toContain('Move the tower in your slicer');
+      expect(warnings.join(' ')).toMatch(/It was put at \(\d+, \d+\), so move the tower/);
       expect(warnings.join(' ')).not.toContain('No tower position was saved');
+    });
+
+    // A single-filament plate prints no tower, so it has no opinion on whether a position is worth
+    // asserting. Letting it vote turned the all-or-nothing gate off: measured by review, a 240mm
+    // two-material disc beside a plate of single-filament clips wrote wipe_tower_x for BOTH,
+    // pinning the disc plate's tower at a corner just measured as overlapping it.
+    it('does not let a plate that prints no tower unblock the gate', async () => {
+      const disc: ExportPart = { ...box('Disc', 240, 240, 8, 8), plateHint: 1 };
+      const clips = { ...box('Clips', 40, 40, 8, 8), plateHint: 2 };
+      clips.subs = clips.subs.slice(0, 1); // one filament: no tower on that plate
+
+      const { blob, warnings } = await build3MFCombined(twoMaterials, [disc, clips], {
+        printer: getPrinter('bambu-x1c'),
+      });
+
+      const proj = await projectSettings(blob);
+      expect(proj.wipe_tower_x, 'a colliding corner was written anyway').toBeUndefined();
+      expect(warnings.join(' ')).toContain('No tower position was saved');
     });
 
     // The same crowded plate, minus the second filament: no tower gets printed there, so the

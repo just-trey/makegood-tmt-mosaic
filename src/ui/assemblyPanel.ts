@@ -339,7 +339,13 @@ export function renderAssemblyVariantControls(): void {
   box.querySelectorAll<HTMLInputElement>('input[name="asm-variant"]').forEach((r) =>
     r.addEventListener('change', () => {
       if (!r.checked) return;
-      void switchChairVariant(r.value).finally(renderAssemblyVariantControls);
+      void switchChairVariant(r.value).finally(() => {
+        renderAssemblyVariantControls();
+        // The swap replaces parts, so a pill naming the outgoing ones describes a build that is
+        // gone. Same class as the printer, kind, diameter, silhouette and remove clears.
+        clearStalePlacementNotices();
+        renderWarnings();
+      });
     }),
   );
 }
@@ -357,7 +363,15 @@ export function renderAssemblyRoleControls(): void {
   if (asmKindCanAutoLoad(kind)) {
     box.innerHTML = `<div class="btn-row" style="margin-bottom:var(--space-row);"><button class="btn small" data-load-full>↻ Reload assembly</button></div>`;
     const b = box.querySelector('[data-load-full]');
-    if (b) b.addEventListener('click', () => void asmLoadFullAssembly());
+    if (b)
+      b.addEventListener(
+        'click',
+        () =>
+          void asmLoadFullAssembly().finally(() => {
+            clearStalePlacementNotices();
+            renderWarnings();
+          }),
+      );
     return;
   }
 
