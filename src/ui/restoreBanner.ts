@@ -3,6 +3,7 @@ import {
   applyRestoredSession,
   clearSavedSession,
   disableSessionWritesAfterFailedRestore,
+  SESSION_WRITES_DISABLED_MSG,
   loadSavedSession,
   markSavedSessionAnswered,
   type PersistedSession,
@@ -84,9 +85,7 @@ export function initRestoreBanner(): void {
         // "Reload the page" is not boilerplate: applyRestoredSession assigns state as it goes, so
         // a throw part-way leaves it half applied — the printer can be one value while the picker
         // shows another. Making that application atomic is still owed (docs/tech-debt.md).
-        warn(
-          'That saved session could not be opened, so it was cleared. Reload the page to start clean.',
-        );
+        warn(SESSION_WRITES_DISABLED_MSG);
         renderWarnings();
         clearSavedSession();
         // And keep it cleared. The next rebuild's debounced save would otherwise write the

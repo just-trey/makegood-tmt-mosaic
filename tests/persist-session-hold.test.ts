@@ -13,6 +13,7 @@ vi.mock('../src/assembly/parts', async (importOriginal) => {
 import {
   applyRestoredSession,
   disableSessionWritesAfterFailedRestore,
+  initBeforeUnloadGuard,
   holdSavedSessionUntilAnswered,
   loadSavedSession,
   markSavedSessionAnswered,
@@ -22,6 +23,7 @@ import {
 } from '../src/state/persist';
 import { state } from '../src/state/store';
 import { asmLoadFullAssembly } from '../src/assembly/parts';
+import { WARNINGS } from '../src/warnings';
 import { firstOfferedKind } from '../src/assembly/kinds';
 
 const STORAGE_KEY = 'tmt-mosaic:session:v1';
@@ -209,5 +211,22 @@ describe('after a restore fails part-way', () => {
     saveSession();
 
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  // lastSaveFailed drives the beforeunload prompt. Skipping it meant the guard went quiet exactly
+  // when nothing is being saved: work for ten minutes, close the tab, no prompt.
+  it('still arms the unload prompt, and re-states why', () => {
+    initBeforeUnloadGuard();
+    disableSessionWritesAfterFailedRestore();
+    withLoadedWork();
+
+    saveSession();
+
+    const e = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented, 'the unload prompt was not armed').toBe(true);
+
+    // and the reason is back on screen, since loading an SVG clears it
+    expect(WARNINGS.some((w) => w.message.includes('could not be opened'))).toBe(true);
   });
 });

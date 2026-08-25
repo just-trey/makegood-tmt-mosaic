@@ -339,8 +339,24 @@ function savedSessionIsOnHiddenKind(): boolean {
  * mid-work. Mirrors helpPanel.ts's degrade-silently pattern for the same reason. lastSaveFailed
  * is the one exception — read only at unload, to decide whether the native prompt is warranted.
  */
+/** The notice shown when a restore failed. Exported so the banner and the re-announce agree. */
+export const SESSION_WRITES_DISABLED_MSG =
+  'That saved session could not be opened, so it was cleared. Reload the page to start clean.';
+
 export function saveSession(): void {
-  if (writesDisabledAfterFailedRestore) return;
+  if (writesDisabledAfterFailedRestore) {
+    // Two things this must not skip.
+    //
+    // `lastSaveFailed` drives the beforeunload prompt, so leaving it false meant the guard went
+    // quiet exactly when nothing is being saved: work for ten minutes, close the tab, no prompt.
+    lastSaveFailed = true;
+    // And the notice is re-stated, because loading an SVG calls clearWarnings() (src/svg/parse.ts)
+    // and drops it, leaving an app that looks healthy while persisting nothing. warn() dedupes by
+    // message, so this is free. Same reason csgFault.ts re-announces rather than pushing once.
+    // It lands one render late, since this runs on the debounced save rather than inside a build.
+    warn(SESSION_WRITES_DISABLED_MSG);
+    return;
+  }
   // An empty snapshot (no artwork, no loaded parts) isn't worth restoring — and saving one
   // unconditionally would re-arm the restore banner within a second of a user dismissing it, since
   // the default boot's own bare-wheel rebuild reaches this same path. Clear instead, so "Start
