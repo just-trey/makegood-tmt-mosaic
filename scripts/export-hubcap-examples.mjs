@@ -212,8 +212,12 @@ try {
       // has to come with the warning that explains it.
       const noTower = !Number.isFinite(t0?.x);
       if (noTower) {
+        // The no-position arm specifically. The message has two, chosen by whether the export
+        // wrote a tower position for any plate, and `noTower` here means it did not — so matching
+        // the "move the tower" arm made this permanently false and failed the run on exactly the
+        // unverified-bed path it exists to check.
         const warned = (await page.evaluate(() => window.__mosaic.warnings())).some((w) =>
-          w.includes('move the tower in your slicer'),
+          w.includes('No tower position was saved'),
         );
         console.log(`  no tower position written (every corner blocked), warned: ${warned}`);
         if (!warned) {

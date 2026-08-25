@@ -182,44 +182,31 @@ describe('resolvePlacement', () => {
     if (!res.verified) expect(res.reason).toBe('unknown-part');
   });
 
-  it('does not apply the footrest placement to a hand-dropped mesh on the footrest role', () => {
+  // The roleId fallback is what a part with no libraryPartId resolves through, so it has to be
+  // held to the same seal as an id — otherwise a role name alone would buy the baked pose.
+  it('refuses the footrest placement to a mesh that resolves by roleId but fails the seal', () => {
     const foreign = Float32Array.from([0, 0, 0, 40, 0, 0, 0, 40, 0]);
-    const part = makePart({ roleId: 'footrest', meshFromUpload: true, positions: foreign });
+    const part = makePart({ roleId: 'footrest', positions: foreign });
     const res = resolvePlacement(part);
     expect(res.verified).toBe(false);
-    if (!res.verified) expect(res.reason).toBe('unverified-upload');
+    if (!res.verified) expect(res.reason).toBe('mesh-mismatch');
   });
 
-  it('still resolves the roleId fallback when the dropped mesh really is the shipped one', async () => {
+  it('resolves the roleId fallback when the mesh really is the shipped one', async () => {
     const soup = await soupOf('footrest');
-    const part = makePart({ roleId: 'footrest', meshFromUpload: true, positions: soup });
+    const part = makePart({ roleId: 'footrest', positions: soup });
     const res = resolvePlacement(part);
     expect(res.verified).toBe(true);
     if (res.verified) expect(res.placement.plateR).toEqual(FOOTREST_PLATE_R);
   });
 
-  // asmLoadPartFile deliberately leaves libraryPartId on the part (attachBakedZones needs it), so
-  // without the provenance flag every one of these would read as one of our own assets drifting.
-  it('treats a drop onto an already-auto-loaded library part as an upload, not a repo defect', () => {
-    const foreign = Float32Array.from([0, 0, 0, 40, 0, 0, 0, 40, 0]);
-    const part = makePart({
-      roleId: 'footrest',
-      libraryPartId: 'footrest',
-      meshFromUpload: true,
-      positions: foreign,
-    });
-    const res = resolvePlacement(part);
-    expect(res.verified).toBe(false);
-    if (!res.verified) expect(res.reason).toBe('unverified-upload');
-  });
-
-  it('stays silent for an upload onto a role that has no baked placement at all', () => {
+  it('reports a role id that is not a PLACEMENT key as unknown-part', () => {
     const foreign = Float32Array.from([0, 0, 0, 40, 0, 0, 0, 40, 0]);
     // a chair role id is never a PLACEMENT key — those are keyed by library part id
-    const part = makePart({ roleId: 'handle-left', meshFromUpload: true, positions: foreign });
+    const part = makePart({ roleId: 'handle-left', positions: foreign });
     const res = resolvePlacement(part);
     expect(res.verified).toBe(false);
-    if (!res.verified) expect(res.reason).toBe('no-baked-placement');
+    if (!res.verified) expect(res.reason).toBe('unknown-part');
   });
 });
 
@@ -227,13 +214,10 @@ describe('placementNotice', () => {
   const foreign = Float32Array.from([0, 0, 0, 40, 0, 0, 0, 40, 0]);
   const noticeFor = (part: AssemblyPart) => placementNotice(part.name, resolvePlacement(part));
 
-  it('says nothing when the placement verified, or when nothing was baked to withhold', async () => {
+  it('says nothing when the placement verified', async () => {
     const soup = await soupOf('footrest');
     expect(
       noticeFor(makePart({ roleId: 'footrest', libraryPartId: 'footrest', positions: soup })),
-    ).toBeNull();
-    expect(
-      noticeFor(makePart({ roleId: 'handle-left', meshFromUpload: true, positions: foreign })),
     ).toBeNull();
   });
 
@@ -260,21 +244,13 @@ describe('placementNotice', () => {
     expect(mismatch?.message).not.toContain('no verified print placement');
   });
 
-  it('keeps a user upload quiet', () => {
-    const upload = noticeFor(
-      makePart({ name: 'Footrest', roleId: 'footrest', meshFromUpload: true, positions: foreign }),
-    );
-    expect(upload?.level).toBe('info');
-    expect(upload?.message).toContain("isn't the verified library mesh");
-  });
-
   // exportPanel clears a stale message by matching this suffix, so every variant must end with it
   // or a fixed export would keep showing the previous attempt's pill.
   it('ends every message with the shared suffix exportPanel clears on', () => {
     const parts = [
       makePart({ roleId: 'handle-left', libraryPartId: 'chair-handle-lft' }),
       makePart({ roleId: 'footrest', libraryPartId: 'footrest', positions: foreign }),
-      makePart({ roleId: 'footrest', meshFromUpload: true, positions: foreign }),
+      makePart({ roleId: 'hubcap', assetPositions: foreign, positions: foreign }),
     ];
     for (const p of parts)
       expect(noticeFor(p)?.message).toMatch(
@@ -313,13 +289,9 @@ describe('resolvePlacement wired into an export', () => {
     const verifiedExport = toExportPart('Footrest', realSoup, resolvePlacement(verifiedPart));
 
     const foreignSoup = Float32Array.from([0, 0, 0, 40, 0, 0, 0, 40, 0]);
-    const unverifiedPart = makePart({
-      roleId: 'footrest',
-      meshFromUpload: true,
-      positions: foreignSoup,
-    });
+    const unverifiedPart = makePart({ roleId: 'footrest', positions: foreignSoup });
     const unverifiedExport = toExportPart(
-      'Dropped mesh',
+      'Drifted mesh',
       foreignSoup,
       resolvePlacement(unverifiedPart),
     );

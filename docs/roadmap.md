@@ -47,3 +47,13 @@
   session-autosave work already landing (that recovers _your_ session; this
   is for sharing a finished setup); and a way to edit the owned-filament
   palette (`public/filaments.json`) without a code-adjacent JSON edit.
+
+## Give small salient features a fair share of the traced palette
+
+The cartoon corpus source's three-tone eyes (white sclera, light blue iris, dark blue
+pupil) quantize to one gray at the default 6 colors: k-means weighs pixel count, so two
+slots go to yellow's shading tones while the eyes, tiny but the most looked-at region,
+share one. 8 colors separates them fully. Pre-existing, unchanged by the 2026-08-24 floor
+work ([findings](findings/2026-08-24-despeckle-floor-recalibration.md)). A fix would weight
+clusters by something other than raw pixel count (edge adjacency, distinct-region count),
+measured on the corpus with the `look` bench.

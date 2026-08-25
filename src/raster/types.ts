@@ -67,9 +67,10 @@ export interface RasterOptions {
   /** User multiplier on the auto-derived despeckle/simplify strength — the "Detail" slider. */
   detail: number;
   /**
-   * mm per working pixel at the placement this trace is for, which turns the despeckle floor from
-   * a share of the image into a printable size (see `printableFloorPx`). Absent where the
-   * placement is not knowable: a bench sweep, or a session restored from before it was saved.
+   * mm per working pixel at the placement this trace is for. It resolves the whole despeckle
+   * floor (`despeckleFloorPx`): sized in mm for flat art, which can lower it below the image
+   * fraction as well as raise it. Absent where the placement is not knowable: a bench sweep, or a
+   * session restored from before it was saved, and those keep the fractional floor.
    */
   mmPerPixel?: number;
 }

@@ -2,6 +2,7 @@ import type { Loop, Pt } from '../types';
 import { BACKGROUND } from './types';
 import type { LabelMap, TraceParams } from './types';
 import { fitChain } from './curve';
+import { fracFloorPx } from './stats';
 
 /**
  * Ceiling on traced components. Exceeding it raises the despeckle floor and re-runs rather than
@@ -611,13 +612,14 @@ function appendFitted(loop: Loop, chain: Chain, entry: number, second: number): 
  * same goes for winding, which `loopToRing` normalizes. Emitting every closed ring and letting that
  * code classify them reuses tested logic and removes a whole class of tracer bug.
  */
-export function traceLabelMap(map: LabelMap, params: TraceParams, printableFloor = 0): TraceResult {
+export function traceLabelMap(map: LabelMap, params: TraceParams, placedFloor = 0): TraceResult {
   const { w, h } = map;
   const labels = map.labels.slice(); // the caller's grid is reused across re-quantizes
-  // Two floors, and the larger wins. The fractional one is how much simplification this picture
-  // wants; the printable one (stats.ts) is what the placed size can carry, and it is a floor under
-  // the Detail slider rather than another thing the slider scales.
-  let minArea = Math.max(1, Math.round(params.despeckleFrac * w * h), printableFloor);
+  // `placedFloor` is the already-resolved floor for this trace's placement (stats.ts
+  // despeckleFloorPx). It replaces the fractional floor rather than raising it, because at a large
+  // placement the right floor is *below* the fraction; 0 means the placement is unknown and the
+  // fraction is the only floor there is.
+  let minArea = Math.max(1, placedFloor || fracFloorPx(params, w, h));
 
   despeckle(labels, w, h, minArea);
   deChecker(labels, w, h);

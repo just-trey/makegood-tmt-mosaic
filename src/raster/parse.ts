@@ -1,5 +1,5 @@
 import type { Loop, ParsedSVG, SVGShape } from '../types';
-import { autoParams, measureImage, printableFloorPx } from './stats';
+import { autoParams, despeckleFloorPx, measureImage } from './stats';
 import { MEASURE_EDGE } from './decode';
 import { quantize } from './quantize';
 import { traceLabelMap } from './trace';
@@ -15,6 +15,8 @@ export interface RasterParseResult {
   componentCount: number;
   /** True when the despeckle floor was raised to stay under MAX_COMPONENTS. */
   capped: boolean;
+  /** The floor the trace actually applied, which is above `despeckleFloorPx`'s answer when capped. */
+  floorPx: number;
 }
 
 /**
@@ -94,7 +96,8 @@ export function parseRasterImage(
   if (!map.palette.length)
     throw new Error('No opaque pixels were found in this image — there is nothing to cut.');
 
-  const { components, capped } = traceLabelMap(map, params, printableFloorPx(opts.mmPerPixel ?? 0));
+  const floor = despeckleFloorPx(params, img.w, img.h, stats, opts.detail, opts.mmPerPixel ?? 0);
+  const { components, capped, floorPx } = traceLabelMap(map, params, floor);
   if (!components.length)
     throw new Error(
       'No color regions survived tracing this image — try raising Detail, or use a less noisy image.',
@@ -132,6 +135,7 @@ export function parseRasterImage(
     palette,
     componentCount: components.length,
     capped,
+    floorPx,
   };
 }
 
@@ -156,4 +160,15 @@ export function rasterCappedMessage(name: string): string {
     `Some detail in "${name}" was too fine to print and was merged into its surroundings. ` +
     'Lower Colors, or lower Detail, for a cleaner result.'
   );
+}
+
+/**
+ * Shown once a photo has traced without hitting the cap above. An SVG is already flat color;
+ * a photo has to be quantized and traced to get there, so it never comes out as sharp.
+ *
+ * Same shape as rasterCappedMessage: filename-keyed and mutually exclusive with it per source,
+ * so a row shows exactly one status line once it has traced.
+ */
+export function rasterTracedMessage(name: string): string {
+  return `"${name}" was traced from a photo. An SVG would come out cleaner.`;
 }

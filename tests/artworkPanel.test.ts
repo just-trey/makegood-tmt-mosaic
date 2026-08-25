@@ -19,7 +19,7 @@ vi.mock('../src/state/patterns', () => ({
 }));
 
 import { applyParsedSVG, applyPattern } from '../src/ui/artworkPanel';
-import { rasterCappedMessage } from '../src/raster/parse';
+import { rasterCappedMessage, rasterTracedMessage } from '../src/raster/parse';
 import { state } from '../src/state/store';
 import { autoParams } from '../src/raster/stats';
 import { notice, dismissNotice, clearWarnings, WARNINGS } from '../src/warnings';
@@ -128,6 +128,27 @@ describe('rasterCappedMessage', () => {
     dismissNotice(rasterCappedMessage('b.png'));
 
     expect(WARNINGS.map((w) => w.message)).toEqual([rasterCappedMessage('a.png')]);
+  });
+});
+
+describe('rasterTracedMessage', () => {
+  beforeEach(() => clearWarnings());
+
+  it('is per image, so dismissing one leaves another image’s standing', () => {
+    expect(rasterTracedMessage('a.png')).not.toBe(rasterTracedMessage('b.png'));
+    expect(rasterTracedMessage('a.png')).toContain('"a.png"');
+
+    notice(rasterTracedMessage('a.png'));
+    notice(rasterTracedMessage('b.png'));
+    dismissNotice(rasterTracedMessage('b.png'));
+
+    expect(WARNINGS.map((w) => w.message)).toEqual([rasterTracedMessage('a.png')]);
+  });
+
+  // A row shows exactly one status line once it has traced: capped and traced are mutually
+  // exclusive, never both standing for the same image.
+  it('is a different message from the capped notice, for the same file', () => {
+    expect(rasterTracedMessage('a.png')).not.toBe(rasterCappedMessage('a.png'));
   });
 });
 

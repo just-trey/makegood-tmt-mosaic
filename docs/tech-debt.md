@@ -19,6 +19,27 @@ survives as its own section; only the closed part goes. Checking that the diff
 removed only the lines you meant to remove is _not_ this check: it confirms the
 scope of the edit, not that what left was finished.
 
+## Raster status notices dedupe by filename, not by source id
+
+`rasterCappedMessage`/`rasterTracedMessage` in
+[src/raster/parse.ts](../src/raster/parse.ts) key their `notice()`/
+`dismissNotice()` calls off the loaded file's name, because the message text
+itself names the file for the user. Two different raster sources that happen
+to share a filename (re-loading a same-named export, two different photos
+both called `IMG_0001.jpg`) can land on opposite sides of the capped/traced
+split, and both notices then stand at once, reading as contradictory advice
+about what looks like one file.
+
+Fixing it means separating the dedupe key from the display text (an id-keyed
+entry whose rendered message still names the file), which touches every call
+site of `notice`/`dismissNotice` for these two messages
+(`src/ui/artworkPanel.ts`, `src/ui/artworkListPanel.ts`,
+`src/state/persist.ts`) plus the `Notice` shape in
+[src/warnings.ts](../src/warnings.ts). Deferred: the collision needs two
+sources with an identical name loaded in the same session, which is rare, and
+the existing capped-only notice already carried the same limitation before
+`rasterTracedMessage` was added.
+
 ## Two of convention 19's neighbours are open, and one has a second instance
 
 Convention 19 itself is closed in both halves. The viewport frame and its handles are `--text`,
@@ -49,29 +70,6 @@ tweak.
 (`src/ui/shapeThumb.ts`), the neutral measured _more_ legible than the accent it replaced: 7.3:1
 against 5.3:1, where the accent's farthest shaded surface was 2.9:1, under WCAG's 3:1 non-text
 minimum.
-
-## A filament's name is nowhere on screen, only its hex
-
-Convention 16 asks for swatches carrying their filament name. No surface does it:
-
-| Where                          | Shows                  | Name available?                                            |
-| ------------------------------ | ---------------------- | ---------------------------------------------------------- |
-| Colors detected rows           | the raw hex, `#1e5fa8` | `title` on nothing; the row has no name at all             |
-| Body / blank color swatch grid | colour only            | `title` and `aria-label` only, so hover or a screen reader |
-| Export summary, exported 3MF   | the name               | already resolved via `nearestFilamentName`                 |
-
-So the app knows the name everywhere it writes a file and shows it nowhere the user is choosing.
-A volunteer matching rows to spools reads hex codes off a screen and colours off a shelf.
-
-This is the surviving half of the section that closed when the slot count went live and slot
-numbering was settled against (convention 16's exception, reasoned on the sort in
-[src/ui/colorList.ts](../src/ui/colorList.ts)). Deleting it whole was wrong and a review caught it:
-the count complaint closed, this one never did.
-
-Closing it: `nearestFilamentName` ([src/state/filaments.ts](../src/state/filaments.ts)) is the same
-lookup the export already uses, so this is presentation over a resolved value, not new matching.
-The open questions are what to show when a colour is far from anything owned, and whether the hex
-stays alongside the name (it is what a user pastes back into Illustrator, so probably yes).
 
 ## Colors detected needs a paragraph of prose because none of its mechanisms are visible
 
@@ -239,6 +237,49 @@ and the note stands as written. Resolve that against the CAD assembly before
 touching the tolerance, because it is the tolerance the existing seven zones'
 measured coverage was tuned against; changing it re-bakes all of them.
 
+## Assembly mode bounds a depth by the part, not by its wall
+
+The 2026-08-24 cycle's **T0-3**, half closed.
+
+**What was wrong.** Assembly mode had no upper bound on recess depth at all.
+Depth 20mm and 9999mm on the wheel both built and exported with **zero
+warnings**, while flat mode clamped and warned for the same input, and
+`geometry/depth.ts`'s own comment stated the contract as "a zero is raised and a
+too-deep value clamped, so both warn". That second half was false for every part
+a user could select, and the flat modes leaving the UI made the unbounded path
+the only reachable one.
+
+**What is fixed.** `ZoneMapper.maxCutDepth()` bounds the setting, and a clamp is
+warned about by name. The flat mapper measures how far the part extends behind
+its design face **along Y, the axis `buildCutter` extrudes down**, off the loaded
+mesh. Measuring along the face normal instead was tried and is wrong: on
+wheel-half's -Z patch it read 139.88mm against 24.13mm of real material. A face
+whose normal is not substantially along Y declines outright, since the plane
+offset is then an X or Z distance and there is nothing to measure. The conformal
+mapper declines too: it cuts along a normal field rather than one axis.
+
+**What is not.** That bound is the part, not the wall. On the wheel it is
+**48.45mm**, so a mistyped 9999 is caught and a 20mm pocket in a 3mm wall is not.
+**The wall is what closes the rest, and nothing measures it.** A part's wall
+varies across it, so a pocket deeper than the wall in one spot still cuts a hole
+clean through and exports without comment. That is the open half of this item, not
+a separate one: the prose that used to carry it lived in the README's limitations
+list and now points here.
+
+**Three cases decline outright** rather than guessing, and raise no warning at
+all: a conformal zone (it cuts along a normal field, not one axis), a face whose
+plane lands outside the mesh, and a part too thin to hold the minimum. On those
+the deep end is unbounded exactly as before.
+
+Deliberately not solved with a constant. `AssemblyPart.baseDepth` states "mm of
+material behind the face this replaces" and looks like the answer, but nothing in
+the build has ever read it, so adopting it would have given a dormant,
+user-editable field control of cut depth as a side effect of a bug fix.
+
+Closing it means measuring the wall under each cut region, most likely by casting
+into the mesh along the cut direction, and comparing that against the setting per
+region rather than per part.
+
 ## Rebuild performance needs ongoing work — this is a heavy application
 
 The flat-mode half of this closed on 2026-08-23. `computeNetRegionsByColor`
@@ -338,35 +379,86 @@ operation (many small pieces unioned, rather than a growing accumulator subtract
 has not been taken. Do that first. A constant copied across from the other call site would close
 the finding without measuring anything, which is the failure this file exists to prevent.
 
-## Cancelling a rebuild waits for the current part, and flat rebuilds cannot be cancelled at all
+## Cancel still waits for the part being cut, once cutting has started
 
-Measured on the chair, 2026-08-17, `MOSAIC_GPU=1`: a dense 676-circle design took **79.1s** to
-rebuild, and Cancel returned the UI at **23.7s**. The 55s saved is the point; what follows is what
-that design bought.
+Mostly closed by the 2026-08-24 cycle's **T0-7**, and reduced to a much smaller
+claim than this section used to make.
 
-**One check, at the top of the part loop** in `buildAssemblyGeometry`
-([src/geometry/assembly.ts](../src/geometry/assembly.ts)). That is the only place in that loop
-where nothing is owned: `owned` and `partMan` are Manifold solids freed by hand on each branch,
-with no outer try/finally around the per-part body. Three cancels in a row held the heap flat at
-177.0 MB.
+**What was wrong.** The single check at the top of the part loop was in the wrong
+phase. The cycle measured 140.4s of latency on a 6000-region wheel with the button
+reading "Cancelling…" throughout, and read that as the per-part cut being
+uninterruptible. It was not. Driving the same fixture and clicking Cancel at a
+fixed t+10s, the readout stood at **11%** at the click, which is inside
+`computeNetRegionsByColor` ([regions.ts](../src/geometry/regions.ts)) — the 2D
+paint-order pass that runs before any Manifold solid exists. A check at its yield
+points takes that fixture from **140.4s to 0.3s**, and is safe precisely because
+that pass holds no solids.
 
-Three consequences, all open:
+The cycle recorded the readout climbing 24%→40% on this fixture, so it is not
+stuck; the phase is simply long enough that a click at t+10s lands early in it.
+Every number here comes from
+[2026-08-25 cancel latency](findings/2026-08-25-cancel-latency.md), including the
+40-colour run that showed the first fix doing nothing.
 
-- **Latency is one part.** 23.7s of 79.1s above.
-- **A single-part assembly cannot be cancelled**, nor can a press that lands during the last part.
-  The button sits at "Cancelling…" for the rest of the build.
-- **Flat rebuilds are not offered a Cancel.** The obvious place to check, `unionAllCooperative`
-  ([regions.ts](../src/geometry/regions.ts)), is shared with Fill's tiling, which runs _inside_ the
-  per-part body holding Manifold solids. A check there leaks on the Fill case the button exists
-  for. Flat rebuilds measured 1.8-4s on 169 paths, so this costs little today; the dense
-  135-path case is ~13s.
+Two checks were added, and only one of them mattered. The per-colour one inside
+the cutter loop is correct and carries its own owner over `colorPrisms`, but on
+that fixture it never fired, because the time was not there. It is kept for the
+case where it is.
 
-Closing all three is one job: give the per-part loop body a `finally` that releases what it holds.
-The frees are spread across the branches and would have to become idempotent first, so a `finally`
-could call them without double-freeing. Then the existing yield points become safe cancellation
-points, latency drops to the yield budget, and the flat path can check too. Worth doing when
-someone is already in that code; not worth a delicate refactor of the CSG memory management on its
-own.
+**What is still open.** Once cutting has genuinely started, cancelling waits for
+the part being cut to finish: `owned` and `partMan` are freed by hand on each
+branch with no outer try/finally, so a check anywhere else in the per-part body
+leaks WASM that repeated cancelling accumulates.
+
+The 177.0 MB heap-flat figure quoted here previously was measured on 2026-08-17
+against the single original call site, and is not evidence about the two added
+since. Neither the `colorPrisms` catch nor the regions.ts sites have a heap
+measurement behind them: the first is reasoned from ownership, the second from
+there being nothing allocated to leak.
+
+**And `computeNetRegionsByColor` is memoized on the shapes array identity**, so a
+rebuild reusing a cached pass skips both of its checks. A second rebuild forced by
+a depth edit was measured and still cancelled in 0.3s, so the case did not
+reproduce, but that is not proof it cannot.
+
+- **A single-part assembly still cannot be cancelled mid-cut**, nor can a press
+  landing during the last part.
+- **`unionAllCooperative` is still not a safe place to check.** It is shared with
+  Fill's tiling, which runs inside the per-part body holding solids. This is the
+  trap [src/cancel.ts](../src/cancel.ts) records, and it is why the fix went where
+  it did rather than there.
+
+Closing the rest is still one job: give the per-part loop body a `finally` that
+releases what it holds. It is worth much less than it was, since the phase that
+actually took minutes is now interruptible.
+
+## The depth field cannot show a clamp that depends on the part
+
+Half of the 2026-08-24 cycle's **T0-9**.
+
+The field shows the depth that was asked for and deliberately does not write the
+built value back: doing that pinned every row to its clamped depth, so the global
+Depth field stopped reaching those rows and the warning went quiet (the reasoning
+is on `shownDepth` in [colorList.ts](../src/ui/colorList.ts)).
+
+**Fixed:** a depth of zero or less now says `raised to 0.20` beside the field.
+The panel can work that out on its own, since the floor is a constant. It names
+the _setting_, never a cut: a cut-through part discards the setting entirely, so
+"cut at" would be false there.
+
+**Not fixed:** a depth deeper than the part is clamped too, and the field says
+nothing. That bound is `ZoneMapper.maxCutDepth()` — per part, measured off the
+loaded mesh, and not knowable in the colour list, which has no part. The warning
+names it; the field does not.
+
+Closing it means carrying the applied depth out of the build on
+`ColorListEntry`, which today holds only what the palette knows. It has to stay
+display-only when it gets there, or it re-creates the pinning bug above.
+
+**Also open, from the same finding:** one depth edit raises one warning per
+colour. Typing `0` with four colours loaded stacks four identical pills, and on a
+photograph it would stack ten. They are per-colour because the build warns as it
+cuts each one; saying it once needs the loop to collect rather than announce.
 
 ## Auto-merge is a similarity control; the user's actual constraint is a slot count
 
@@ -391,8 +483,9 @@ than done alongside the reconciliation warning.
 ## Two open defects in the chair / pattern-library workflow
 
 Two of four defects the maintainer named on 2026-08-05; the other two are fixed.
-Both features are offered in the UI again. The report is the maintainer's, the
-diagnosis is not, and where the cause is confirmed it says so.
+Both features are withheld from the UI for the beta: `chair-body` carries
+`hidden: true` and `PATTERN_LIBRARY_ENABLED` is `false`. The report is the
+maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
 
 1. **Dead zones still need defining — open.** It is written up in
    [roadmap.md](roadmap.md) ("Dead zones: mark the parts of a design zone that
@@ -410,13 +503,14 @@ diagnosis is not, and where the cause is confirmed it says so.
    clips to. Note the repo already has curve fitting for the raster tracer
    (`src/raster/curve.ts`); nothing equivalent runs on a zone boundary.
 
-The `AssemblyKind.hidden` machinery is kept working although nothing ships
-hidden; the reasons are on `renderShapeKindOptions` in
-[src/ui/partPanel.ts](../src/ui/partPanel.ts), `savedSessionIsOnHiddenKind` in
-[src/state/persist.ts](../src/state/persist.ts), and at the top of
-`tests/persist-hidden-kind.test.ts`.
+`?kind=chair-body` still reaches the chair, which the `bake-zones` and
+`debug-csg-failure` skills and every chair drive script depend on. Nothing
+public names that parameter: it is out of the README's `?kind=` example list.
 
-## An uploaded mesh still re-derives its vertex weld for shading
+Neither flag is the fix. Restoring the chair needs the two defects above closed;
+restoring the pattern library needs the Zebra/Fill color loss below.
+
+## A library part shipped as an STL would shade the slow way
 
 Display shading reads a mesh's own vertex index where one exists
 ([src/geometry/creasedNormals.ts](../src/geometry/creasedNormals.ts)): Manifold
@@ -426,35 +520,51 @@ Measured in Chrome, that is **8.7x** on five chair parts (234.8ms -> 26.9ms), wi
 [docs/findings/2026-08-23-indexed-crease-normals.md](findings/2026-08-23-indexed-crease-normals.md),
 with the Node attribution behind it in
 [docs/findings/2026-08-23-boolean-pass-and-weld.md](findings/2026-08-23-boolean-pass-and-weld.md).
-That closed the larger half of this item.
 
-**Every mesh the user supplies still falls through** to three's
-`toCreasedNormals`, which rediscovers the sharing by hashing every corner
-twice. The rule the code implements is "did we pack this mesh", not "does the
-format record sharing": an uploaded 3MF carries an index and it is dropped
-anyway, because one converted from an STL claims no sharing at all and would
-shade fully faceted where the fallback's 0.01mm bucketing smooths it.
+The larger half of this item closed with that change, and the rest closed with
+the custom-mesh upload path (below): every mesh the app now takes comes from
+`public/stl/parts.json`, all 19 entries are 3MF, and all of them carry an index.
 
-Everything we produce takes the fast path: packed library parts, Manifold's cut
-output, and the generated hubcap body.
+**What is left is one live branch nothing exercises.** `asmLoadPartBuffer`
+offers no index for an `.stl`, because an STL records no sharing at all. Adding
+an STL to the manifest would therefore put that part on three's
+`toCreasedNormals`, which rediscovers the sharing by hashing every corner twice.
+Pack parts as 3MF and it never comes up. Nothing enforces that.
 
-Closing it means welding first, and the weld is the expensive half: keying a
-soup's corners is the same work the bench prices at 358ms for the chair, so that
-path lands about **1.5x** rather than 8.7x. Fewer parts than the thirteen above, so
-the payoff is smaller again.
-
-**The fallback is also the safer behaviour, which is why it was left rather
-than replaced.** `toCreasedNormals` matches vertices by truncating to 0.01mm,
-which is bucketing, not an exact or epsilon match. On a mesh that states its own
-sharing that approximation is strictly worse, and the indexed path drops it. On
-a user's STL there is nothing to state it, and switching to an exact weld would
-change how their file shades: a shared corner whose coordinates straddle a
-boundary is welded by one rule and not the other. Cosmetic, source-dependent,
-still unmeasured.
+Closing it properly means welding first, and the weld is the expensive half:
+keying a soup's corners is the same work the bench prices at 358ms for the
+chair, so that path lands about **1.5x** rather than 8.7x.
 
 Whatever replaces it has to keep the crease behaviour rather than drop it. A
 blanket weld plus `computeVertexNormals()` was measured and rejected: it melted
 the embossed logo on the storage box. See `CREASE_ANGLE_RAD`.
+
+## The custom-mesh upload path was removed, and took a placement guard with it
+
+Until this release, a failed `fetch('stl/parts.json')` put the assembly panel
+into a manual mode: per-role "+ Add …" buttons and an STL/3MF drop target on
+every part row. It was the only way to reach `asmLoadPartFile`, and so the only
+producer of `AssemblyPart.meshFromUpload`.
+
+Removed because the app cannot check that an arbitrary mesh is the part it
+claims to be, and every verified export pose is keyed to the shipped one. A
+broken deployment was the only route there, so it now reports an error instead.
+
+**What went with it, and is worth knowing before anyone reopens the path:**
+
+- `resolvePlacement`'s `'unverified-upload'` and `'no-baked-placement'` reasons
+  ([src/export/placement.ts](../src/export/placement.ts)). They existed to tell
+  "the user brought their own mesh", a supported case worth a quiet info, from
+  "our own asset drifted", a defect worth a warning. With no uploads the split
+  has no meaning: a foreign mesh on a sealed role is now `'mesh-mismatch'`, and
+  an unsealed one is `'unknown-part'`. Both warn. **Reopening uploads without
+  restoring that split would report every user mesh as a repo defect.**
+- The provenance ordering in `resolvePlacement`, which checked
+  `meshFromUpload` _before_ `libraryPartId` precisely because a drop onto an
+  auto-loaded part deliberately left the old id in place.
+- `asmAdoptMesh`'s upload branch, which cleared `assetPositions`,
+  `edgeCutThroughDepth` and `buildWarning` so a mesh dropped onto a generated
+  role (the hubcap) replaced the part rather than being fed to its builder.
 
 ## The raster edge-density reading depends on how big the file is
 
@@ -601,7 +711,118 @@ Closing it means one message with the right remedies for both causes, and one id
 retracting it. Three review rounds on this branch each produced a new defect in it, which is why it
 was cut rather than patched again.
 
+## A restore assigns state as it goes, so a throw leaves it half applied
+
+What is left of the restore-confirm item, after the wrong-part export it caused
+was fixed. Kept because the underlying shape is unchanged.
+
+`applyRestoredSession` writes about twenty fields into `state` before the source
+loop where a failure is most likely, and its caller's catch skips every DOM
+refresher. So a restore that throws part-way can leave the printer set to one
+value while `#p-printer` shows another, which is the same desync class as the
+unknown-printer bug fixed alongside it.
+
+Two things reduced the blast radius rather than closing it: the containers the
+restore dereferences are now repaired at load (seven single-field corruptions
+used to throw here, three of them wedging the app until F5), and the failure now
+says so on screen and tells the user to reload. Neither makes the application
+atomic.
+
+Closing it means building the restored state into a local object and committing
+it to `state` only once nothing further can throw, the way `applyRasterFile` and
+the source loop inside this same function already do.
+
+**A related notice is lost the same way.** When one source of several fails to
+restore, the per-image "could not be restored from the saved session" warning is
+wiped by the next SVG source in the list: `parseSVGDocument`
+([src/svg/parse.ts](../src/svg/parse.ts)) opens with `clearWarnings()`. So a
+partial failure, the case that warning exists for, is the case least likely to
+show it. Pre-existing, and the fix is in that `clearWarnings()` contract rather
+than in the restore.
+
+Related, from the section this replaced: the 2026-08-08 cycle's **A2** (switching
+part shape carries artwork across with no confirmation) is the opposite failure in
+the same control. It is graded FIXED in
+[review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md), and that
+cycle's **C1** records why the confirm's wording is still wrong.
+
+## `export-chair-examples.mjs` cannot reach Fill any more
+
+Broken since #137, not by the beta narrowing, though that branch touched the
+file to fix a different break in it (it selected an option the Part dropdown no
+longer offers).
+
+The script sets `.artwork-mode` to `fill`, and asserts it took. `chair-body`
+carries `withholdFill: true`, so `artworkListPanel` never renders that select
+at all: the step times out, and the explicit `bound.mode !== 'fill'` guard below
+it would throw regardless.
+
+What the script exists for is a Fill design across every zone, sized so each
+plate's prime tower sees the swaps it really will. Sticker on one zone is not
+that. So this is not a selector to update: either the chair's Fill defects close
+and `withholdFill` comes off (see above), or the script needs a different way to
+put several colours on every part.
+
+## The flat-plate modes ship compiled and unrendered
+
+`disc`, `rect`, `round` and `stl` are all still `ShapeKind`s, with their param
+panels, their input bindings, [flat.ts](../src/geometry/flat.ts), the per-color
+STL-set export and their branches in `store.ts` and `rebuild.ts`. None is
+reachable: `renderShapeKindOptions`
+([src/ui/partPanel.ts](../src/ui/partPanel.ts)) writes assembly kinds into the
+Part dropdown and nothing else.
+
+`rect`/`round`/`stl` have been unrendered since before 2026-08-02 and were
+re-confirmed deliberate by review then. `disc` joined them for the beta, closing
+the 2026-08-08 cycle's **A3**: it produced a plain flat cylinder related to no
+TMT part, sitting in the primary picker at the same weight as four real ones.
+
+Three consequences worth knowing:
+
+- `#btn-export-stl` and the per-color STL-set export go with it. `setShapeKind`
+  hides that button in assembly mode, so no offered part reaches it, and the
+  README no longer offers it as a fallback for slicers that can't read a
+  pre-mapped 3MF.
+- Two `'disc'` fallbacks had to move, since a select value with no matching
+  option renders blank and the next switch away is one-way: the option-list
+  default in `renderShapeKindOptions`, and the retired-kind branch of session
+  restore ([src/state/persist.ts](../src/state/persist.ts)). Both now take
+  `firstOfferedKind()`.
+- A session saved in a flat mode before this release restores onto the wheel.
+
+Everything here still compiles and is still covered by `tests/flat.test.ts` and
+`tests/depth.test.ts`. It is a maintenance question (why keep four dead panels
+building) rather than a bug. The option list is what to touch if a future part
+wants a flat mode again.
+
+**"Recess bg too" is a live control that now does nothing.** `state.recessBg`
+is read in exactly one place, inside
+[flat.ts](../src/geometry/flat.ts), which produces the `isBackground` row the
+checkbox exists to add. With no flat mode reachable, ticking it on any offered
+part changes nothing and adds no row. Unlike the Margin slider, which
+`updateOffsetSliderRanges` hides in assembly mode, the checkbox has no such
+gate, so it is the one flat-only control still on screen. Not fixed here on
+purpose: it blocks nothing, and this release's rule was to fix only what stops
+a part working end to end. The fix is one line in
+[depthPanel.ts](../src/ui/depthPanel.ts), mirroring Margin's.
+
+**Worse than first recorded**: the help dialog still teaches it as working
+("Check 'Recess bg too' to cut the background as well"), so the app documents a
+control that does nothing. Found by the `not-ready` lens, 2026-08-24; it is
+**T1-6** in [review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md).
+
+**What `npm run smoke` no longer covers.** Four of its steps drove the disc:
+switch to flat mode, override the background recess depth, export a flat 3MF,
+export the per-color STL zip. They came out, since they drove UI that no longer
+exists. So the flat 3MF writer and the STL-zip writer now have unit coverage
+only, with nothing exercising either through a browser. The PNG-raster step was
+not flat-specific and was kept, now running against the assembly part.
+
 ## Flat plate modes have no printable despeckle floor
+
+**Unreachable as of the beta** (see "The flat-plate modes ship compiled and
+unrendered"), so nothing can hit this today. Kept because reopening any flat
+mode reopens it, unfixed.
 
 The floor that stops the trace keeping detail under one nozzle width
 ([2026-08-20 printable floor](findings/2026-08-20-printable-floor.md)) applies on assembly kinds
@@ -619,6 +840,10 @@ fraction-of-the-image floor alone, which is what every mode had before.
 - Closing it means an extent the trace agrees with: either trace once at the fractional floor and
   re-trace when the printable one turns out to bind (two passes, ~830ms each on a photograph), or
   a cheap despeckle-equivalent pass over the alpha channel before measuring.
+- Closing it now buys more than when this was written: assembly kinds also size the floor _down_ in
+  mm ([2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md)), so a flat plate keeps a
+  fractional floor that over-prunes detailed flat art (mario: 55mm² of print on a wheel-sized
+  plate), not just the missing nozzle floor.
 
 ## The printable despeckle floor is fixed at the moment of the trace
 
@@ -1156,6 +1381,29 @@ budget above a performance concern rather than a correctness one. Upgrading
 turf past 6.5 may move the ceiling but is separately blocked — see the
 `@turf/turf` pin section.
 
+## A round part is scored by its bounding box when placing the prime tower
+
+`suggestTowerPos` measures each corner's overlap against a part's bounding box,
+which over-reports a disc by the corners the circle never reaches. On the default
+220mm hubcap on the H2D that reads every corner as blocked, so the export writes
+no `wipe_tower_x/y` at all and leaves the slicer to place the tower, when the disc
+in fact clears the back-right corner by **14mm**.
+
+Measured by review on 2026-08-25, while checking the T0-4 message fix. That fix
+made the app tell the truth about which case happened; it did not make the case
+correct. The 2026-08-24 cycle's **T0-4** is closed on the copy and open here on
+the geometry.
+
+Its own code comment already owns the approximation ("a part's footprint here is
+its bounding box, which over-reports a round part"), and the fallback is
+deliberately conservative: a tower parked through a part is worse than one the
+slicer places. So this is a precision item, not a correctness one, and it costs
+the user a verified position they could have had.
+
+Closing it means scoring the overlap against the part's real footprint rather
+than its bbox, for the parts that have one, most cheaply via the outline
+`hubcapOutline.ts` already computes for the silhouette path.
+
 ## The hubcap's plate is verified on two beds and up to one diameter
 
 `HUBCAP_PLATE` ([src/export/threemf.ts](../src/export/threemf.ts)) carries
@@ -1236,3 +1484,29 @@ the loops are separated the way the geometry actually runs. A per-walk visited s
 global one only on close, so a failed walk consumes nothing and cannot spin. Then decide what a
 patch with no closed ring should do: today it yields a boundary that is wrong rather than absent,
 and callers only ask whether a face was detected at all.
+
+## Boundary fringe threads survive the trace
+
+A hair-thin thread of a third color can hug a high-contrast boundary in a traced image
+(mario's mustache top edge, a button accent): the anti-aliased band quantizes to its own
+label, and it is as long as the boundary, so no area floor catches it. Prints under one
+nozzle wide, so slicers drop it; a preview blemish, not a bad print.
+
+Three width-rule formulations (absorb components under a mean-width threshold) were built
+and cut on this branch after three consecutive review rounds each found real defects.
+The full history is in
+[2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md), defect 3.
+
+Closing this again means clearing, at minimum:
+
+- Placed photographs: quantized gradients are long 1-3px iso-color bands; a probe showed
+  a width rule cascade-collapsing sixteen bands into one component. Photos need an exemption
+  or a measurement.
+- Sub-fringe line art: a drawing whose every stroke is under the threshold must not trace
+  to nothing, and the "raise Detail" advice in the empty-trace error cannot be the remedy,
+  since Detail does not scale a width rule.
+- Perimeter bookkeeping through union-find merges: the despeckle adjacency maps only tally
+  pairs with a speck side, so a union's internal big-big runs are not subtractable from a
+  perimeter without a fuller tally. Two of the three attempts got this wrong.
+- The no-op regime: mean width is never under 0.5 (a lone pixel is 2*1/4), so any threshold
+  at or under 0.5 must skip the O(w*h) perimeter scan entirely.

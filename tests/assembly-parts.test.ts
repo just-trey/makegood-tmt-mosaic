@@ -10,16 +10,14 @@ vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn
 
 import {
   asmAddDuplicate,
-  asmAddRoleDuplicate,
-  asmAddRolePart,
   asmCreateRolePart,
   asmLoadFullAssembly,
   asmLoadLibraryEntryIntoPart,
   asmLoadPartBuffer,
-  asmLoadPartFile,
   asmRemovePart,
   loadPartsLibrary,
   maybeAutoLoadAssembly,
+  partsLibrarySettled,
   onAssemblyPartsChanged,
 } from '../src/assembly/parts';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
@@ -157,13 +155,14 @@ describe('asmCreateRolePart', () => {
 
 describe('onAssemblyPartsChanged', () => {
   it('fires the registered listener when a part is added or removed', () => {
+    const src = loadedPart();
     const spy = vi.fn();
     onAssemblyPartsChanged(spy);
 
-    asmAddRolePart(role());
+    const dup = asmAddDuplicate(src.id)!;
     expect(spy).toHaveBeenCalledTimes(1);
 
-    asmRemovePart(1);
+    asmRemovePart(dup.id);
     expect(spy).toHaveBeenCalledTimes(2);
   });
 });
@@ -210,25 +209,6 @@ describe('asmAddDuplicate', () => {
 
   it('returns null for an id that is not in the parts list', () => {
     expect(asmAddDuplicate(999)).toBeNull();
-    expect(state.assembly.parts).toHaveLength(0);
-  });
-});
-
-describe('asmAddRoleDuplicate', () => {
-  it('copies the role’s primary part, not one of its existing copies', () => {
-    const primary = loadedPart();
-    const firstCopy = asmAddDuplicate(primary.id)!;
-
-    asmAddRoleDuplicate(role());
-
-    const newest = state.assembly.parts[state.assembly.parts.length - 1];
-    expect(newest.isDuplicateOf).toBe(primary.id);
-    expect(newest.isDuplicateOf).not.toBe(firstCopy.id);
-  });
-
-  it('is a no-op when the role has no part loaded yet', () => {
-    asmAddRoleDuplicate(role({ id: 'nothing-loaded' }));
-
     expect(state.assembly.parts).toHaveLength(0);
   });
 });
@@ -305,7 +285,6 @@ describe('which loaded meshes are trusted to state their own vertex sharing', ()
   it('keeps the index of a 3MF loaded from the library', async () => {
     state.assembly.kindId = 'wheel';
     const part = asmCreateRolePart(role({ id: 'wheel-half' }));
-    part.meshFromUpload = false;
 
     await asmLoadPartBuffer(part, await packed3MF(), 'wheel-half.3mf');
 
@@ -313,21 +292,9 @@ describe('which loaded meshes are trusted to state their own vertex sharing', ()
     expect(part.indexed!.indices.length * 3).toBe(part.positions!.length);
   });
 
-  it('drops the index of a 3MF the user dropped in', async () => {
-    state.assembly.kindId = 'wheel';
-    const part = asmCreateRolePart(role({ id: 'wheel-half' }));
-    part.meshFromUpload = true;
-
-    await asmLoadPartBuffer(part, await packed3MF(), 'whatever.3mf');
-
-    expect(part.indexed).toBeUndefined();
-    expect(part.positions!.length).toBeGreaterThan(0); // it still loaded, it just shades the old way
-  });
-
   it('drops the index of an STL, which records no sharing at all', async () => {
     state.assembly.kindId = 'wheel';
     const part = asmCreateRolePart(role({ id: 'wheel-half' }));
-    part.meshFromUpload = false;
 
     await asmLoadPartBuffer(part, twoFacedMesh(), 'p.stl');
 
@@ -395,29 +362,6 @@ describe('the design face a freshly loaded part starts on', () => {
   });
 });
 
-describe('asmLoadPartFile', () => {
-  it('marks the mesh as the user’s upload', async () => {
-    const part = asmCreateRolePart(role());
-    const file = new File([twoFacedMesh()], 'mine.stl');
-
-    await asmLoadPartFile(part, file);
-
-    expect(part.meshFromUpload).toBe(true);
-    expect(part.loaded).toBe(true);
-  });
-
-  it('reports an unusable upload instead of throwing at the caller', async () => {
-    const part = asmCreateRolePart(role());
-    const file = new File([new ArrayBuffer(8)], 'mine.obj');
-
-    await expect(asmLoadPartFile(part, file)).resolves.toBeUndefined();
-
-    expect(alertDialog).toHaveBeenCalledWith(expect.stringMatching(/use \.stl or \.3mf/));
-    // the flag is still set — a part-way failure leaves whatever mesh state it reached
-    expect(part.meshFromUpload).toBe(true);
-  });
-});
-
 describe('a role that builds its own mesh (AssemblyRole.buildMesh)', () => {
   /** Stand-in generator: ignores the asset and hands back a fixed one-triangle mesh. */
   const builtMesh = () => new Float32Array([0, 0, 0, 5, 0, 0, 0, 5, 0]);
@@ -449,24 +393,12 @@ describe('a role that builds its own mesh (AssemblyRole.buildMesh)', () => {
     expect(part.assetPositions).toBeInstanceOf(Float32Array);
     expect(part.assetPositions).not.toEqual(part.positions);
   });
-
-  it('lets a dropped file replace the part instead of feeding it to the builder', async () => {
-    const part = asmCreateRolePart(hubcapRole());
-
-    await asmLoadPartFile(part, new File([twoFacedMesh()], 'mine.stl'));
-
-    // running the builder here would hand back the user's mesh with a generated disc fused on
-    expect(buildMesh).not.toHaveBeenCalled();
-    expect(part.meshFromUpload).toBe(true);
-    // cleared, so resolvePlacement reports the upload it is rather than a generated part
-    expect(part.assetPositions).toBeUndefined();
-  });
 });
 
 describe('asmLoadLibraryEntryIntoPart', () => {
   const entry: LibraryEntry = { id: 'w', name: 'Wheel', file: 'stl/w.stl' };
 
-  it('records where the mesh came from and applies the entry’s base depth', async () => {
+  it('records which library part it is and applies the entry’s base depth', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => twoFacedMesh() }),
@@ -476,7 +408,6 @@ describe('asmLoadLibraryEntryIntoPart', () => {
     await asmLoadLibraryEntryIntoPart(part, { ...entry, baseDepth: 2.5 });
 
     expect(part.libraryPartId).toBe('w');
-    expect(part.meshFromUpload).toBe(false);
     expect(part.baseDepth).toBe(2.5);
     expect(part.loaded).toBe(true);
   });
@@ -538,6 +469,62 @@ describe('loadPartsLibrary', () => {
 
     expect(state.assembly.library).toEqual([]);
     expect(alertDialog).not.toHaveBeenCalled();
+    expect(partsLibrarySettled()).toBe(true);
+  });
+
+  // The caller's question is "can parts still be expected", and a manifest that arrives without an
+  // entry one of the kind's roles names answers no just as firmly as an unreachable one. Keying
+  // the panel off "the fetch failed" instead left that case on "Loading assembly…" forever.
+  it('settles on a manifest that loaded but is missing a role the kind needs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => [] as LibraryEntry[] }),
+    );
+    state.shapeKind = 'disc';
+
+    await loadPartsLibrary();
+
+    expect(partsLibrarySettled()).toBe(true);
+  });
+
+  // An empty library is equally "still fetching" and "there is no manifest", and only the second
+  // is a failure. Reading the first as the second put a "reload the page" dialog over a restore
+  // accepted mid-flight, on a session that then loaded correctly on its own.
+  it('is unsettled until the fetch has actually come back', async () => {
+    const lib: LibraryEntry[] = [{ id: 'w', name: 'Wheel', file: 'stl/w.stl' }];
+    let release: () => void;
+    const inFlight = new Promise<void>((r) => (release = r));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        await inFlight;
+        return { ok: true, json: async () => lib };
+      }),
+    );
+    state.shapeKind = 'disc';
+
+    const pending = loadPartsLibrary();
+    expect(state.assembly.library).toEqual([]);
+    expect(partsLibrarySettled()).toBe(false);
+
+    release!();
+    await pending;
+    expect(partsLibrarySettled()).toBe(true);
+  });
+
+  // A non-array manifest used to throw from asmKindCanAutoLoad's `.find` inside the render, so the
+  // panel sat on "Loading assembly…" with no message. It has to settle like any other failure.
+  it('treats a manifest that is not a list as unreachable rather than throwing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ wheel: 'stl/w.3mf' }) }),
+    );
+    state.shapeKind = 'disc';
+
+    await expect(loadPartsLibrary()).resolves.toBeUndefined();
+
+    expect(state.assembly.library).toEqual([]);
+    expect(partsLibrarySettled()).toBe(true);
   });
 
   it('survives a manifest that is not valid JSON', async () => {
@@ -589,7 +576,7 @@ describe('asmLoadFullAssembly', () => {
 
     await asmLoadFullAssembly();
 
-    expect(alertDialog).toHaveBeenCalledWith(expect.stringMatching(/isn't reachable/));
+    expect(alertDialog).toHaveBeenCalledWith(expect.stringMatching(/Reload the page/));
     expect(state.assembly.parts).toHaveLength(0);
   });
 

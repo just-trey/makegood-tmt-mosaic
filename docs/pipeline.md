@@ -20,12 +20,19 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
   `RasterImage.edgeDensity` so a re-trace can't re-derive it.
 - Pixels under 50% alpha are background and cut nothing.
 - Edge density (how much of the image is colour boundary) sets blur, despeckle
-  and curve-fit strength; the Detail slider scales them. The despeckle floor is
-  then the larger of that fraction and one nozzle width at the size the design is
-  placed (`printableFloorPx`), and Detail deliberately does not scale the second.
-  Assembly kinds only: a flat plate fits the design's traced content, which does
-  not exist yet when the floor is chosen (docs/tech-debt.md). The user never picks a
-  mode. Flat art also gets a one-pixel blur, but only when the 1024px pass ran
+  and curve-fit strength; the Detail slider scales them.
+- On assembly kinds the despeckle floor is sized in mm, not as an image
+  fraction (`despeckleFloorPx`, measured in
+  [2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md)). Flat art
+  keeps everything down to a 1.6mm feature. One nozzle width is the hard
+  minimum (`printableFloorPx`), which Detail deliberately does not scale. The
+  fraction caps it, so small placements keep their coarser floor.
+- Photographs keep the fraction: theirs is simplification taste, not a feature
+  size. Flat plates stay fractional too, since their fit needs the traced
+  content that does not exist yet (docs/tech-debt.md). The user never picks a
+  mode.
+- Flat art gets a one-pixel blur, but only when the 1024px pass ran. The
+  photograph denoise blur stops at the photo cutoff instead of interpolating
   ([stats.ts](../src/raster/stats.ts) explains both).
 - Colours are clustered in CIELAB, then forced a minimum perceptual distance
   (ΔE 3) apart. That's deliberately the same space, metric, and value the
@@ -78,6 +85,11 @@ the 3D view.
 
 ### 4. Flat-plate mode
 
+**Not reachable from the UI.** The Part dropdown lists assembly kinds and
+nothing else, so `disc`/`rect`/`round`/`stl` all ship compiled and unrendered.
+The code below is live and tested; nothing drives it. See
+[tech-debt.md](tech-debt.md).
+
 The plate is a stack of flat slabs between depth boundaries. Pure 2D maths, no
 3D booleans ([flat.ts](../src/geometry/flat.ts)).
 
@@ -101,14 +113,23 @@ prism in the part's own coordinates and subtracted from the mesh with
 [Manifold](https://github.com/elalish/manifold), a 3D solid-boolean engine (CSG)
 loaded on demand ([assembly.ts](../src/geometry/assembly.ts)).
 
-**Depth is bounded at the shallow end only.** It is raised to the same 0.2 mm
-floor, and the warning names the raised _setting_ rather than a cut depth,
-because a cut-through part holes the whole way through regardless.
+**The shallow end** is raised to the same 0.2 mm floor, and the warning names the
+raised _setting_ rather than a cut depth, because a cut-through part holes the
+whole way through regardless.
 
-**The deep end is not checked at all.** Wall thickness varies across a part and
-nothing measures it, so a pocket deeper than the wall exports as a part with a
-hole through it, silently. Only the extreme case surfaces, where the cut leaves
-the part empty and the export drops it.
+**The deep end is bounded by the part, not by its wall.** `ZoneMapper.maxCutDepth()`
+gives the material behind the design face along Y, the axis the cutter extrudes
+down, less flat mode's `CUT_FLOOR_MM` so a clamped cut stays a recess rather than
+landing coplanar with the back face. Past that the cut is clamped and named. Three
+cases decline instead of guessing, all returning `Infinity`: a conformal zone (it
+cuts along a normal field, not one axis), a face whose normal is not substantially
+along Y (the plane offset is then an X or Z distance), and a part too thin to hold
+the minimum.
+
+**Wall thickness is still not checked.** It varies across a part and nothing
+measures it, so a pocket deeper than the wall in one spot exports as a part with a
+hole through it, silently. On the wheel the bound is 48.45 mm, so it catches a
+mistyped number and not a 20 mm pocket in a 3 mm wall.
 
 **Rotated copies** are supported (a wheel's two halves): the slice of the design
 landing on the copy is mapped back into the part's own print orientation.
@@ -210,8 +231,9 @@ has no verified position and no free corner.
 Assemblies live in [kinds.ts](../src/assembly/kinds.ts), one entry per assembly
 listing its part roles. A role's `libraryPartId` links to
 [parts.json](../public/stl/parts.json): drop the STL/3MF in `public/stl/`, add a
-manifest entry, and the role auto-loads. Roles without one fall back to
-drag-and-drop.
+manifest entry, and the role auto-loads. Every role needs one. There is no
+drag-and-drop fallback: the app cannot check an arbitrary mesh is the part it
+claims to be, and every verified export pose is keyed to the shipped one.
 
 Two fields tune non-wheel parts:
 

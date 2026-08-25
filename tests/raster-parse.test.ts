@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { parseRasterImage } from '../src/raster/parse';
-import { measureImage, autoParams, DETAIL_DEFAULT } from '../src/raster/stats';
+import {
+  measureImage,
+  autoParams,
+  despeckleFloorPx,
+  printableFloorPx,
+  DETAIL_DEFAULT,
+} from '../src/raster/stats';
 import { quantize } from '../src/raster/quantize';
 import type { RasterImage } from '../src/raster/types';
 import { deltaE, hexToLab } from '../src/color';
@@ -154,6 +160,16 @@ describe('measureImage / autoParams', () => {
     expect(autoParams({ edgeDensity: 0.8 }, DETAIL_DEFAULT, false).blurRadius).toBe(2);
   });
 
+  it('gives an enlarged image exactly the detail-pass compensation, never the lerped share on top', () => {
+    // A cartoon measuring partway to photographic (mario, 0.253) used to pick up a lerped blur on
+    // top of the detail-pass compensation. That blur widened every anti-aliased line boundary into
+    // a band that quantized to a third color: a brown fringe on every black outline.
+    expect(autoParams({ edgeDensity: 0.253 }, DETAIL_DEFAULT, true).blurRadius).toBe(1);
+    // Worked at its own size, the same image keeps the lerped blur it always had: that case
+    // was not in the measurement and has no detail-pass compensation to fall back on.
+    expect(autoParams({ edgeDensity: 0.253 }, DETAIL_DEFAULT, false).blurRadius).toBe(1);
+  });
+
   it('lets the Detail slider pull the auto-derived strength both ways', () => {
     const mid = autoParams({ edgeDensity: 0.3 }, DETAIL_DEFAULT);
     const bolder = autoParams({ edgeDensity: 0.3 }, 0);
@@ -165,5 +181,42 @@ describe('measureImage / autoParams', () => {
     // detail survives, and its useful range is too narrow to take a 4x multiplier.
     expect(finer.alphaMax).toBe(mid.alphaMax);
     expect(bolder.alphaMax).toBe(mid.alphaMax);
+  });
+});
+
+describe('despeckleFloorPx', () => {
+  const flat = { edgeDensity: 0.05 };
+  const photo = { edgeDensity: 0.8 };
+  const p = (stats: { edgeDensity: number }) => autoParams(stats, DETAIL_DEFAULT, true);
+  const w = 1024,
+    h = 768;
+
+  it('falls back to the fractional floor when the placement is unknown', () => {
+    const frac = Math.round(p(flat).despeckleFrac * w * h);
+    expect(despeckleFloorPx(p(flat), w, h, flat, DETAIL_DEFAULT, 0)).toBe(frac);
+    expect(despeckleFloorPx(p(flat), w, h, flat, DETAIL_DEFAULT, NaN)).toBe(frac);
+  });
+
+  it('sizes flat art placed large in mm, below the fraction', () => {
+    // 0.27mm per working pixel is the wheel at full size. The fractional floor there is tens of
+    // square millimetres of print; the mm floor keeps everything down to the printable band.
+    const floor = despeckleFloorPx(p(flat), w, h, flat, DETAIL_DEFAULT, 0.27);
+    const frac = Math.round(p(flat).despeckleFrac * w * h);
+    expect(floor).toBeLessThan(frac);
+    expect(floor).toBeGreaterThanOrEqual(printableFloorPx(0.27));
+  });
+
+  it('keeps the #217 raise on a small placement', () => {
+    // 0.01mm per pixel, coarser-floored than even the smallest hubcap (0.03), puts the printable
+    // floor over the fraction, and the raise wins.
+    const frac = Math.round(p(flat).despeckleFrac * w * h);
+    const floor = despeckleFloorPx(p(flat), w, h, flat, DETAIL_DEFAULT, 0.01);
+    expect(printableFloorPx(0.01)).toBeGreaterThan(frac);
+    expect(floor).toBe(printableFloorPx(0.01));
+  });
+
+  it('leaves photographs on the fractional floor at any placement', () => {
+    const frac = Math.round(p(photo).despeckleFrac * w * h);
+    expect(despeckleFloorPx(p(photo), w, h, photo, DETAIL_DEFAULT, 0.27)).toBe(frac);
   });
 });

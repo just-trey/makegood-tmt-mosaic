@@ -13,6 +13,7 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts knee        does a knee survive a cheaper image?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts despeckle   does the despeckle floor hold?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts floor       despeckle floor in mm, per placement
+//   node_modules/.bin/vite-node scripts/bench-raster.ts look        write traced SVGs to look at
 //
 // corpus, colors, curve and despeckle read the cached corpus. scale, render and alpha bring their
 // own source.
@@ -47,6 +48,8 @@ import { MAX_COMPONENTS, traceLabelMap } from '../src/raster/trace';
 import { fitChain } from '../src/raster/curve';
 import {
   autoParams,
+  despeckleFloorPx,
+  fracFloorPx,
   isPhotographic,
   measureImage,
   printableFloorPx,
@@ -55,7 +58,7 @@ import {
 import { designMmPerUnit } from '../src/geometry/assembly';
 import { HUBCAP_CHAMFER_MM, HUBCAP_MIN_DIAMETER_MM } from '../src/geometry/hubcap';
 import { MAX_WORKING_EDGE, MEASURE_EDGE, workingSize } from '../src/raster/decode';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -238,10 +241,10 @@ function sharpTurns(shapes: SVGShape[]): number {
  * otherwise pick. It is the same two calls parseRasterImage makes, in the same order, so the
  * shapes are what would ship at those settings.
  */
-function traceWith(img: RasterImage, colors: number, params: TraceParams, printableFloor = 0) {
+function traceWith(img: RasterImage, colors: number, params: TraceParams, placedFloor = 0) {
   const t0 = performance.now();
   const map = quantize(img, colors, params.blurRadius);
-  const { components, capped, floorPx } = traceLabelMap(map, params, printableFloor);
+  const { components, capped, floorPx } = traceLabelMap(map, params, placedFloor);
   const ms = performance.now() - t0;
   const painted = new Set(components.map((c) => map.palette[c.label]));
   const shapes: SVGShape[] = components.map((c, i) => ({
@@ -1038,12 +1041,22 @@ async function modeFloor(names: string[]) {
       };
       for (const detail of [DETAIL_DEFAULT, 100]) {
         const p = autoParams({ edgeDensity: s.edgeDensity }, detail, ranDetailPass(img));
-        const contentPx = Math.max(1, Math.round(p.despeckleFrac * img.w * img.h));
+        const contentPx = fracFloorPx(p, img.w, img.h);
         const mm = floorMM(contentPx, mmPerPixel);
         row[`D${detail}mm`] = +mm.toFixed(2);
-        const bites = printableFloorPx(mmPerPixel) > contentPx;
-        row[`D${detail}`] = bites ? 'printable' : '';
-        if (bites) governed.push({ s, place: place.name, mmPerPixel, detail });
+        const resolved = despeckleFloorPx(
+          p,
+          img.w,
+          img.h,
+          { edgeDensity: s.edgeDensity },
+          detail,
+          mmPerPixel,
+        );
+        // Which side moved the floor off the fraction: 'printable' raised it (the #217 case),
+        // 'feature' lowered it (flat art placed large).
+        row[`D${detail}`] =
+          resolved > contentPx ? 'printable' : resolved < contentPx ? 'feature' : '';
+        if (resolved !== contentPx) governed.push({ s, place: place.name, mmPerPixel, detail });
       }
       rows.push(row);
     }
@@ -1059,12 +1072,24 @@ async function modeFloor(names: string[]) {
     console.log('\nNo row is governed by the printable floor: nothing below would change.');
     return;
   }
-  console.log(`\nWhat the printable floor changes, on the ${governed.length} rows it governs:`);
+  console.log(`\nWhat the placed floor changes, on the ${governed.length} rows it governs:`);
   const effect = [];
   for (const g of governed) {
     const p = autoParams({ edgeDensity: g.s.edgeDensity }, g.detail, ranDetailPass(g.s.working));
     const before = traceWith(g.s.working, g.s.colors, p);
-    const after = traceWith(g.s.working, g.s.colors, p, printableFloorPx(g.mmPerPixel));
+    const after = traceWith(
+      g.s.working,
+      g.s.colors,
+      p,
+      despeckleFloorPx(
+        p,
+        g.s.working.w,
+        g.s.working.h,
+        { edgeDensity: g.s.edgeDensity },
+        g.detail,
+        g.mmPerPixel,
+      ),
+    );
     effect.push({
       name: g.s.name,
       placed: g.place,
@@ -1078,6 +1103,63 @@ async function modeFloor(names: string[]) {
     });
   }
   console.table(effect);
+}
+
+/** Traced shapes as a standalone SVG, in paint order, so a trace can be looked at rather than counted. */
+function shapesToSVG(shapes: SVGShape[], w: number, h: number): string {
+  const paths = shapes.map((s) => {
+    const d = s.loops
+      .map((loop) => 'M' + loop.map((p) => `${+p.x.toFixed(2)},${+p.y.toFixed(2)}`).join('L') + 'Z')
+      .join('');
+    return `<path fill="${s.fill}" fill-rule="evenodd" d="${d}"/>`;
+  });
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">\n` +
+    paths.join('\n') +
+    '\n</svg>\n'
+  );
+}
+
+/**
+ * Write what the shipping path traces to stubs/raster-look/, one SVG per source per placement.
+ *
+ * Every quality question so far has been settled by counts, and counts cannot see a black-blob eye:
+ * the component total can be right while the wrong regions survived. This mode goes through
+ * `parseRasterImage` itself, not `traceWith`, so each file is exactly the shapes that ship at that
+ * placement, in the paint order the app uses.
+ */
+async function modeLook(names: string[]) {
+  const sources = await pick(names.length ? names : ['mario', 'cartoon', 'makegood-logo']);
+  const outDir = path.join(REPO, 'stubs', 'raster-look');
+  mkdirSync(outDir, { recursive: true });
+  const rows = [];
+  for (const s of sources) {
+    for (const place of [null, ...PLACEMENTS]) {
+      const mmPerPixel = place ? place.mmPerPixel(s.working) : 0;
+      const r = parseRasterImage(
+        { ...s.working, edgeDensity: s.edgeDensity },
+        { colors: s.colors, detail: DETAIL_DEFAULT, mmPerPixel },
+      );
+      const file = `${s.name}@${(place?.name ?? 'no-placement').replace(/[ %]/g, '')}.svg`;
+      writeFileSync(
+        path.join(outDir, file),
+        shapesToSVG(r.parsed.shapes, s.working.w, s.working.h),
+      );
+      rows.push({
+        name: s.name,
+        placed: place?.name ?? '(none)',
+        mmPerPx: +mmPerPixel.toFixed(4),
+        // The floor the trace applied, off the result itself, so a capped row shows the raised one.
+        floorPx: r.floorPx,
+        components: r.componentCount,
+        painted: r.palette.length,
+        capped: r.capped ? 'yes' : '',
+        file,
+      });
+    }
+  }
+  console.table(rows);
+  console.log(`\nWrote ${rows.length} SVGs to ${outDir}. Open them next to the source image.`);
 }
 
 /**
@@ -1239,6 +1321,9 @@ switch (mode) {
   case 'floor':
     await modeFloor(rest);
     break;
+  case 'look':
+    await modeLook(rest);
+    break;
   default: {
     // Numeric arguments keep the original invocation working, which the header and two tech-debt
     // sections quote. A non-numeric word is a typo, not a request for the synthetic bench.
@@ -1247,7 +1332,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, blur, knee, despeckle, floor, ` +
+          `sizes, blur, knee, despeckle, floor, look, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));

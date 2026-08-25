@@ -11,8 +11,14 @@ vi.mock('../src/assembly/parts', async (importOriginal) => {
   return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
 });
 
-import { applyRestoredSession, type PersistedSession } from '../src/state/persist';
+import {
+  applyRestoredSession,
+  loadSavedSession,
+  type PersistedSession,
+} from '../src/state/persist';
 import { asmLoadFullAssembly } from '../src/assembly/parts';
+import { firstOfferedKind } from '../src/assembly/kinds';
+import { getPrinter } from '../src/export/printers';
 import { state } from '../src/state/store';
 import { confirmDialog } from '../src/ui/dialogs';
 
@@ -62,7 +68,7 @@ function session(over: Partial<PersistedSession> = {}): PersistedSession {
     rotationDeg: 45,
     globalDepth: 1.5,
     recessBg: true,
-    printerId: 'p-saved',
+    printerId: 'snapmaker-u1',
     asmRadius: 140,
     assembly: { kindId: null, variantId: null },
     baseFilamentId: 'blue',
@@ -144,12 +150,80 @@ describe('applyRestoredSession: the settings the user had', () => {
     expect(state.flipX).toBe(true);
   });
 
+  // getPrinter() falls back to the default when the id is unknown, so adopting the saved value
+  // verbatim left `#p-printer` blank while the export used a bed the picker did not name — and the
+  // bed is what every verified placement is checked against.
+  // Seven single-field corruptions used to pass the gate and throw part-way through, leaving the
+  // app unable to build until F5. Rejecting them was the first fix and was wrong: a session written
+  // by an older build, before one of these fields existed, is not corrupt and still holds the
+  // user's artwork. It is repaired to the same "nothing set" the app boots with.
+  it('restores a session that predates the container fields instead of discarding it', async () => {
+    const legacy = session();
+    for (const k of ['colorSettings', 'keptApart', 'mergeGroups', 'baseColorMembers', 'assembly'])
+      delete (legacy as unknown as Record<string, unknown>)[k];
+
+    localStorage.setItem(
+      'tmt-mosaic:session:v1',
+      JSON.stringify({ ...legacy, version: 1, savedAt: Date.now() }),
+    );
+    const loaded = loadSavedSession()!;
+    expect(loaded, 'a session missing containers must still load').not.toBeNull();
+
+    await expect(applyRestoredSession(loaded)).resolves.toBeUndefined();
+
+    // the artwork is the point — that is the work the user would otherwise have lost
+    expect(state.artworks).toHaveLength(1);
+    expect(state.colorSettings).toEqual({});
+    expect(state.keptApart).toEqual([]);
+  });
+
+  // The field refuses 0 and negatives, but a session saved by an earlier build can carry either,
+  // and a reload walked straight past the guard. Zero makes every cut fail while Export stays
+  // green; a negative builds as if positive.
+  // 0.2 is below the field's own floor but above zero, which is what a looser guard let through:
+  // the field then snapped itself to its default while state kept 0.2.
+  it.each([0, -50, 0.2])('ignores a saved design radius of %d', async (asmRadius) => {
+    const before = state.asmRadius;
+
+    await applyRestoredSession(session({ asmRadius }));
+
+    expect(state.asmRadius).toBe(before);
+  });
+
+  // isPersistedSession checks four fields and repairSessionContainers repairs containers, never
+  // scalars, so a session missing this reached colorList's `shownDepth.toFixed(2)` and threw
+  // part-way through the restore.
+  it('ignores a saved depth that is not a number', async () => {
+    const before = state.globalDepth;
+    const bad = session();
+    delete (bad as unknown as Record<string, unknown>).globalDepth;
+
+    await expect(applyRestoredSession(bad)).resolves.toBeUndefined();
+
+    expect(state.globalDepth).toBe(before);
+  });
+
+  it('restores a design radius that is a real one', async () => {
+    await applyRestoredSession(session({ asmRadius: 120 }));
+
+    expect(state.asmRadius).toBe(120);
+  });
+
+  it('coerces an unknown printer id to one that exists', async () => {
+    await applyRestoredSession(session({ printerId: 'no-such-printer' }));
+
+    expect(state.printerId).not.toBe('no-such-printer');
+    expect(getPrinter(state.printerId).id).toBe(state.printerId);
+  });
+
   it('restores depth, printer and color grouping', async () => {
     await applyRestoredSession(session());
 
     expect(state.globalDepth).toBe(1.5);
     expect(state.recessBg).toBe(true);
-    expect(state.printerId).toBe('p-saved');
+    // A real id, and deliberately not the default, so this proves the saved value was adopted
+    // rather than the fallback happening to match.
+    expect(state.printerId).toBe('snapmaker-u1');
     expect(state.asmRadius).toBe(140);
     expect(state.baseFilamentId).toBe('blue');
     expect(state.autoMergeLevel).toBe(2);
@@ -243,15 +317,37 @@ describe('applyRestoredSession: assembly mode', () => {
     expect(asmLoadFullAssembly).toHaveBeenCalledTimes(1);
   });
 
-  it('never asks the user to confirm — the parts list is empty this early in the session', async () => {
+  // The parts list is NOT empty this early: the boot's own auto-load has already filled it. That
+  // is why this asserts the list is empty *at the moment asmLoadFullAssembly is called*, rather
+  // than that no confirm fired — the confirm lives inside that function, which is mocked here, so
+  // "confirmDialog was not called" passes whatever the caller does and guards nothing.
+  //
+  // Cancelling that confirm returned without touching the scene while `kindId` and the dropdown
+  // had already moved, so the export wrote the previous kind's parts under the restored kind's
+  // filename. Measured: a restored footrest session exported `mosaic-footrest.3mf` holding the
+  // wheel's Top/Bottom/Cap.
+  it('clears the parts the boot loaded before asking for the restored kind, so no confirm can fire', async () => {
+    let partsWhenLoadRan: number | undefined;
+    vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {
+      partsWhenLoadRan = state.assembly.parts.length;
+    });
+    state.assembly.parts = [
+      { id: 1, name: 'Top' },
+      { id: 2, name: 'Bottom' },
+    ] as unknown as typeof state.assembly.parts;
+
     await applyRestoredSession(
-      session({ shapeKind: 'assembly', assembly: { kindId: 'wheel', variantId: null } }),
+      session({ shapeKind: 'assembly', assembly: { kindId: 'footrest', variantId: null } }),
     );
 
+    expect(partsWhenLoadRan).toBe(0);
     expect(confirmDialog).not.toHaveBeenCalled();
   });
 
-  it('falls back to a flat mode when the saved kind has since been retired', async () => {
+  // The Part dropdown offers assembly kinds and nothing else, so a saved value it cannot show
+  // would leave the select blank and the next switch away from it one-way. Loading the fallback's
+  // parts is left to restoreBanner's own setShapeKind.
+  it('falls back to the first offered kind when the saved kind has since been retired', async () => {
     await applyRestoredSession(
       session({
         shapeKind: 'assembly',
@@ -259,15 +355,46 @@ describe('applyRestoredSession: assembly mode', () => {
       }),
     );
 
-    expect(state.shapeKind).toBe('disc');
+    expect(state.shapeKind).toBe('assembly');
+    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
     expect(asmLoadFullAssembly).not.toHaveBeenCalled();
   });
 
-  it('does not load parts for a session that was in a flat mode', async () => {
+  it('falls back the same way for a session saved in a flat mode', async () => {
     await applyRestoredSession(session({ shapeKind: 'rect' }));
 
-    expect(state.shapeKind).toBe('rect');
+    expect(state.shapeKind).toBe('assembly');
+    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
     expect(asmLoadFullAssembly).not.toHaveBeenCalled();
+  });
+
+  // maybeAutoLoadAssembly no-ops while any part is present, so leaving the previous kind's parts
+  // in place would name the fallback kind in the dropdown while the scene and the export still
+  // held the other one's. Reachable by switching part, then accepting the still-open banner.
+  // setArtworkZone re-applies the saved zoneId against the part actually loaded. On the fallback
+  // that part is a different kind, so an instance keeps a binding no mapper matches — and
+  // geometry/assembly.ts drops such an instance from the cut entirely, with nothing said and (on a
+  // part with a single design face) no dropdown to re-target it.
+  it('does not re-apply zone bindings that named the kind it did not restore onto', async () => {
+    await applyRestoredSession(
+      session({
+        shapeKind: 'assembly',
+        assembly: { kindId: 'kind-that-no-longer-exists', variantId: null },
+        artworks: [{ ...session().artworks[0], zoneId: 'left' }],
+      }),
+    );
+
+    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
+    expect(state.artworks.map((a) => a.zone)).toEqual([null]);
+  });
+
+  it('drops the parts already loaded, so the fallback kind can auto-load its own', async () => {
+    state.assembly.parts = [{ id: 1, name: 'Footrest' }] as unknown as typeof state.assembly.parts;
+
+    await applyRestoredSession(session({ shapeKind: 'rect' }));
+
+    expect(state.assembly.parts).toEqual([]);
+    expect(state.assembly.variantId).toBeNull();
   });
 });
 

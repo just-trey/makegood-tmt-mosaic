@@ -468,6 +468,15 @@ export class ConformalZoneMapper implements ZoneMapper {
     return [{ feat, depth: depthSetting }];
   }
 
+  /**
+   * Declines to bound. A conformal zone cuts along its chart's normal field rather than one axis,
+   * so "how far the part extends behind the face" has no single answer here — and the flat zone's
+   * measurement, applied to this part's flat patch, describes a face these cuts do not use.
+   */
+  maxCutDepth(): number {
+    return Infinity;
+  }
+
   buildCutter(
     feat: PolyFeature,
     depth: number,

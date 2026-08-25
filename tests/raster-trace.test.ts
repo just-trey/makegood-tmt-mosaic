@@ -181,7 +181,8 @@ describe('traceLabelMap', () => {
     const rows = Array.from({ length: size }, (_, y) =>
       y === 7 ? 'a'.repeat(6) + 'bb' + 'a'.repeat(size - 8) : 'a'.repeat(size),
     );
-    // No fractional floor at all, so the speck's only threat is the printable one.
+    // The third argument is the resolved placed floor (stats.ts despeckleFloorPx); passing the
+    // printable floor raw stands in for a placement whose resolved floor is exactly that.
     const loose = traceLabelMap(grid(rows, 'ab'), params());
     expect(loose.components).toHaveLength(2);
 

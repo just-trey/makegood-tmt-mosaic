@@ -9,8 +9,8 @@ placed on build plates, every recess pre-named and pre-assigned to its own
 Generic PETG filament slot with the detected colors, 15% gyroid infill and
 tree (auto) support pre-set, so it opens ready to slice in **Bambu Studio,
 OrcaSlicer, or Snapmaker Orca** (pick your printer from the export panel —
-Bambu X1C/P1S/A1/H2D or Snapmaker U1). A per-color STL set is available as a
-fallback for other slicers.
+Bambu X1C/P1S/A1/H2D or Snapmaker U1). It covers three TMT parts: the wheel,
+the hubcap, and the footrest.
 
 Built for [MakeGood](https://makegood.design)'s Toddler Mobility Trainer
 (TMT) — a free, open-source 3D-printable mobility device for children ages
@@ -55,9 +55,9 @@ build time, so the deployed app has no runtime CDN dependencies. The Google
 Fonts stylesheet is the only external request.
 
 The app opens on the wheel. `?kind=` opens it on a given assembly kind instead
-— `?kind=chair-body`, `?kind=footrest`, `?kind=hubcap` — so a link can point at
-the part being discussed, and a script driving the app can skip building a part
-it doesn't want. An unknown or absent value opens the wheel, as before.
+(`?kind=footrest`, `?kind=hubcap`), so a link can point at the part being
+discussed, and a script driving the app can skip building a part it doesn't
+want. An unknown or absent value opens the wheel, as before.
 
 ## Deployment
 
@@ -90,12 +90,10 @@ contents, or other personal data are ever sent. See
    similar colors into recess slots.
 3. **Place** the artwork on the part — fit sliders, or drag it directly on the
    3D model with a selection frame.
-4. **Cut**: flat-plate mode stacks flat slabs (pure 2D, no CSG); assembly mode
-   extrudes each region into a prism and booleans it into the part mesh with
-   [Manifold](https://github.com/elalish/manifold) (WASM CSG). Parts with more
-   than one **design zone** (e.g. the chair body) wrap
-   artwork **conformally** onto a baked UV chart per zone, split across
-   printed part seams as needed.
+4. **Cut**: each region is extruded into a prism and booleaned into the part
+   mesh with [Manifold](https://github.com/elalish/manifold) (WASM CSG). A part
+   that ships baked design zones wraps artwork **conformally** onto a UV chart
+   per zone, split across printed part seams as needed.
 5. **Export** a Bambu Studio project 3MF — named parts, per-part filament
    slots, multi-plate placement — resolved for the selected printer. Placement
    for parts with a verified real-world pose is baked from a hand-checked
@@ -109,24 +107,20 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - Flat, roughly horizontal faces only, unless the part ships baked design
   zones — see [docs/pipeline.md](docs/pipeline.md).
 - A design crossing a printed join lines up only as well as the print does.
-- A design can't flow across a zone boundary — on the chair it stops where
-  "Left side", "Back" and "Right side" meet. Three ways of making it continuous
+- A design can't flow across a zone boundary. Three ways of making it continuous
   were prototyped and measured as dead ends; the numbers are in
   [docs/tech-debt.md](docs/tech-debt.md).
-- Large wrapped surfaces stretch the artwork somewhat (the chair's worst spots
-  run 1.11–1.28×).
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.
 - Input parts must be watertight/manifold for assembly cutting.
-- Assembly mode has no deep-end wall-thickness check. A part's wall varies
-  across it, and nothing measures it or compares a depth against it, so a
-  pocket deeper than the wall in one spot cuts a hole clean through and
-  exports without comment. The only deep-end case that says anything is the
-  extreme one where the cut consumes the whole part, leaving nothing to
-  export. The shallow end (zero or negative) is caught up front and raised to
-  a safe minimum. The flat modes check both ends: a depth the plate can't hold
-  is cut at the nearest depth it can, with a warning saying which color and
-  what was actually cut.
+- Assembly mode has no wall-thickness check. A part's wall varies across it,
+  and nothing measures it, so a pocket deeper than the wall in one spot cuts a
+  hole clean through and exports without comment. A depth is bounded only by
+  how far the part extends behind its design face: past that it is cut at the
+  part's own depth, with a warning naming the color and the part. On the wheel
+  that bound is 48.45mm, so it catches a mistyped number and not a 20mm pocket
+  in a 3mm wall. The shallow end (zero or negative) is caught up front and
+  raised to a safe minimum.
 - Gradients/patterns in an SVG are detected and skipped with a warning.
 - A raster image is processed at 1024px on its long edge for flat art (logos,
   drawings, cartoons) and 512px for photographs, chosen from the image itself —
@@ -138,22 +132,16 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   the Colors slider and Auto-merge to get down to the slots you own.
 - Detail below the printable floor is merged into its surroundings rather than
   cut, and a very busy image says so instead of tracing thousands of specks.
-- Fill (repeat the design across the design face) is assembly-mode only, and is not
-  offered on the chair body — it was too slow to sit through and dropped a color
-  on one part. The pattern strip is hidden there for the same reason; Sticker
-  placement works normally. See [docs/tech-debt.md](docs/tech-debt.md).
 - Two designs placed over each other are warned about by name,
   not resolved for you — their recesses still both get cut. A Fill underneath
   a sticker isn't checked at all; see [docs/tech-debt.md](docs/tech-debt.md).
-- The chair body's prime-tower positions are verified on 270mm and 256mm beds
-  only; other bed sizes inherit the 270mm positions untested — see
-  [docs/tech-debt.md](docs/tech-debt.md).
 - The hubcap's plate is verified up to 220mm on 256mm and 270mm beds only.
   Within that it exports at a hand-checked position with the prime tower placed
   clear of it (7mm of clearance on a 256mm bed, 19mm on a 270mm one). Larger
-  than 220mm, or on any other bed, nothing was verified: it exports centred with
-  the tower parked in the freest corner, and says so — check both in your
-  slicer. Because the part is generated, this can't be a fingerprint-sealed pose
+  than 220mm, or on any other bed, nothing was verified: it exports centred, with
+  the prime tower in the freest corner. Where every corner overlaps a part it says
+  so, and where that is true of every plate printing a tower it saves no position
+  at all and the slicer places it. Check both in your slicer. Because the part is generated, this can't be a fingerprint-sealed pose
   the way the fixed parts have; it's an arrangement verified at one size, which
   is why it stops applying above that size. Cutting the hubcap to its artwork's
   shape (**Cut to artwork shape**) always uses the computed centred placement —
@@ -169,13 +157,11 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   [docs/troubleshooting.md](docs/troubleshooting.md).
 - Parts the reference sets to manual tree support arrive without the painted
   enforcers; paint them yourself or switch to auto support.
-- The caster mounts can't carry artwork — see
-  [docs/tech-debt.md](docs/tech-debt.md).
 - Session autosave/restore covers SVG artwork, loaded images, placement, colors,
-  depth, part, and printer — not an uploaded STL reference mesh, which is not
-  kept. An image is saved as its working copy re-encoded, so restoring re-traces
-  it and takes a moment on a photograph. If your browser refuses to encode it,
-  that one image is left out and you are asked before leaving the page.
+  depth, part, and printer. An image is saved as its working copy re-encoded, so
+  restoring re-traces it and takes a moment on a photograph. If your browser
+  refuses to encode it, that one image is left out and you are asked before
+  leaving the page.
 - Desktop/laptop screens only, by design — the layout has one fixed-width
   left column and no responsive breakpoint. Verified usable from 900px
   width up (1920 down to 900 driven and screenshotted); below that, a

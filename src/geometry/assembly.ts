@@ -8,6 +8,7 @@ import {
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
+  tooDeepWarning,
   zeroDepthWarning,
 } from './depth';
 import type {
@@ -777,11 +778,12 @@ export async function buildAssemblyGeometry(
     viewSignSet = false; // Y direction of the first real part's design face
   for (const part of parts) {
     if (!part.loaded || !part.boundaryLoops || !part.positions) continue;
-    // The one safe point in this build: the previous part's solids are freed and this one's are
-    // not allocated yet. Inside a part, `owned` and `partMan` are released per branch with no
-    // outer finally, so throwing there would leak WASM the user could accumulate by cancelling
-    // repeatedly. Cancel latency is therefore one part, which on the chair is seconds against the
-    // minutes this exists to escape.
+    // Safe here because the previous part's solids are freed and this one's are not allocated
+    // yet. The second call site is per colour, inside the cutter loop below, which carries its own
+    // catch over `colorPrisms` — this one alone left cancel latency at a whole part, measured at
+    // 140.4s on a 6000-region wheel. Everywhere else inside a part, `owned` and `partMan` are
+    // released per branch with no outer finally, so a throw would leak WASM that repeated
+    // cancelling accumulates.
     throwIfCancelled();
 
     // Every design surface this part takes artwork on: one implicit flat zone for an ordinary
@@ -859,7 +861,16 @@ export async function buildAssemblyGeometry(
       // The message reports the *setting* it raised, not the cut produced: what a part does with a
       // depth is the mapper's business. Naming a cut depth here claimed 0.02 mm on a 3 mm
       // through-cut. No part name either, so it dedupes to one warning per color.
-      const depthSetting = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
+      const raised = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
+      // And bounded above by how far this part actually extends behind its design face. Without
+      // this, assembly mode had no upper bound at all: 20 mm and 9999 mm on the wheel both built
+      // and exported with no warning, while flat mode clamped and warned for the same input, and
+      // depth.ts's own comment claimed both did. The flat modes then left the UI, making the
+      // unbounded path the only one a user can reach.
+      //
+      // **Not a wall-thickness check.** A recess shallower than this can still break through a
+      // thin wall; measuring that is still owed (docs/tech-debt.md). This bounds the absurd.
+      const depthSetting = Math.min(raised, mapper.maxCutDepth());
       const label = regionLabel(c.hex, c.isMerge, c.members.length);
       // One entry per depth this zone wants, each carrying the slice cut at it, usually just one.
       // An edge rule (a hubcap cut to its artwork's shape) splits the region into polygons
@@ -870,6 +881,21 @@ export async function buildAssemblyGeometry(
         clipped,
       });
       if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depthSetting));
+      // Gated on what the mapper did with the number, exactly like the sub-layer note below, and
+      // for the same reason: a cutThrough part discards the setting and holes the whole way
+      // through, so "it was cut at 24.25 mm instead" would be false there. Never test
+      // `part.cutThrough` here.
+      // Not on a rotated copy: it shares its source's mesh, face and topZ by construction
+      // (asmAddDuplicate), so its bound is the same number and the pill would differ only by
+      // "(rotated copy)". A two-half wheel with eight colours raised sixteen, half of them saying
+      // nothing new. zeroDepthWarning drops the part name outright for the same reason; this one
+      // keeps it, because the bound really is per-part wherever the parts differ.
+      else if (
+        !part.isDuplicateOf &&
+        depthDiffers(depthSetting, raised) &&
+        regions.some((r) => !depthDiffers(r.depth, depthSetting))
+      )
+        warnBuild(tooDeepWarning(label, part.name, raised, depthSetting));
       // The warning above describes the setting and holds wherever the color lands. This one
       // predicts the printed recess, so it must not be said about a part that discards the setting
       // and cuts the whole way through: "too thin to show up" is wrong about a 3 mm hole. Ask the
@@ -982,63 +1008,79 @@ export async function buildAssemblyGeometry(
     const zoneWork = mappers.map(artworksOn);
     const partUnits = palette.length * zoneWork.reduce((s, l) => s + l.length, 0) + 1;
     let unitsDone = 0;
-    for (let zi = 0; zi < mappers.length; zi++) {
-      const mapper = mappers[zi];
-      if (!zoneWork[zi].length) continue;
-      if (zoneWork[zi].length > 1 && !overlapCheckedZones.has(mapper.zoneId ?? '')) {
-        warnOverlappingDesigns(
-          zoneWork[zi].map((ai) => {
-            const place = mapper.placer(placements[ai]);
-            return {
-              name: artworks[ai].name || 'design',
-              quad: placedBBoxQuad(artworks[ai].parsed, place),
-              fill: artworks[ai].mode === 'fill',
-              ink: () => placedInk(featuresByColor, ai, place),
-            };
-          }),
-        );
-        // Marked only where the check actually ran, so a part that happens to carry one design
-        // can't suppress the zone's warning for the parts that carry both.
-        overlapCheckedZones.add(mapper.zoneId ?? '');
-      }
-      const boundaryPoly = mapper.boundary();
-      for (const ai of zoneWork[zi]) {
-        anyPlacements = true;
-        const place = mapper.placer(placements[ai]);
-        // One grid per (zone, artwork): every color of a fill repeats identically, so the
-        // inverted-placement coverage math runs once, not per palette slot. A fill that can't be
-        // tiled degrades to a single copy plus a warning rather than an empty part.
-        let grid: TileGrid | null = null;
-        if (artworks[ai].mode === 'fill') {
-          const extent = mapper.fillExtent();
-          if (!extent) {
-            warnBuild(
-              `Couldn't measure the area to fill on "${part.name}", so "${artworks[ai].name || 'design'}" ` +
-                `can't be tiled across it. ${FILL_FELL_BACK_TO_ONE_TILE} Please report this.`,
-            );
-          } else {
-            const refusal: { reason?: TileRefusal } = {};
-            grid = tileCoverage(place, tileCells[ai], extent, refusal);
-            // Named per design, not just per part: a part can carry several, both remedies write
-            // fit state reaching only the ACTIVE one, and warnings dedupe on the exact string. Two
-            // designs failing the same way would otherwise become one pill pointing at neither.
-            // Two placements of the SAME design still collapse, since they share a name; splitting
-            // those needs warnOverlappingDesigns's counted phrasing, which nothing asks for yet.
-            if (!grid)
+    // Everything this loop allocates lives in `colorPrisms` and is not tracked by `owned`, which
+    // does not exist until after it. So a throw from inside here — the cancel check below is the
+    // only one — would leak every cutter built so far, which is the leak throwIfCancelled's own
+    // doc warns about. This catch is the owner for that window, and nothing else in the loop
+    // throws past it: buildColorPrism handles its own failures per colour.
+    try {
+      for (let zi = 0; zi < mappers.length; zi++) {
+        const mapper = mappers[zi];
+        if (!zoneWork[zi].length) continue;
+        if (zoneWork[zi].length > 1 && !overlapCheckedZones.has(mapper.zoneId ?? '')) {
+          warnOverlappingDesigns(
+            zoneWork[zi].map((ai) => {
+              const place = mapper.placer(placements[ai]);
+              return {
+                name: artworks[ai].name || 'design',
+                quad: placedBBoxQuad(artworks[ai].parsed, place),
+                fill: artworks[ai].mode === 'fill',
+                ink: () => placedInk(featuresByColor, ai, place),
+              };
+            }),
+          );
+          // Marked only where the check actually ran, so a part that happens to carry one design
+          // can't suppress the zone's warning for the parts that carry both.
+          overlapCheckedZones.add(mapper.zoneId ?? '');
+        }
+        const boundaryPoly = mapper.boundary();
+        for (const ai of zoneWork[zi]) {
+          anyPlacements = true;
+          const place = mapper.placer(placements[ai]);
+          // One grid per (zone, artwork): every color of a fill repeats identically, so the
+          // inverted-placement coverage math runs once, not per palette slot. A fill that can't be
+          // tiled degrades to a single copy plus a warning rather than an empty part.
+          let grid: TileGrid | null = null;
+          if (artworks[ai].mode === 'fill') {
+            const extent = mapper.fillExtent();
+            if (!extent) {
               warnBuild(
-                fillRefusalMessage(artworks[ai].name || 'design', part.name, refusal.reason),
+                `Couldn't measure the area to fill on "${part.name}", so "${artworks[ai].name || 'design'}" ` +
+                  `can't be tiled across it. ${FILL_FELL_BACK_TO_ONE_TILE} Please report this.`,
               );
+            } else {
+              const refusal: { reason?: TileRefusal } = {};
+              grid = tileCoverage(place, tileCells[ai], extent, refusal);
+              // Named per design, not just per part: a part can carry several, both remedies write
+              // fit state reaching only the ACTIVE one, and warnings dedupe on the exact string. Two
+              // designs failing the same way would otherwise become one pill pointing at neither.
+              // Two placements of the SAME design still collapse, since they share a name; splitting
+              // those needs warnOverlappingDesigns's counted phrasing, which nothing asks for yet.
+              if (!grid)
+                warnBuild(
+                  fillRefusalMessage(artworks[ai].name || 'design', part.name, refusal.reason),
+                );
+            }
+          }
+          for (let ci = 0; ci < palette.length; ci++) {
+            // Per colour, not per part. The part-loop check above leaves cancel latency at one
+            // whole part, which on a 6000-region wheel was measured at 140.4s with the button
+            // reading "Cancelling…" the entire time (2026-08-24 cycle, T0-7). A colour is the
+            // finest boundary where nothing is half-built: buildColorPrism either pushed a cutter
+            // into colorPrisms or it did not.
+            throwIfCancelled();
+            const base = unitsDone;
+            await buildColorPrism(mapper, boundaryPoly, place, grid, palette[ci], ci, ai, (f) =>
+              reportPartProgress((base + f) / partUnits),
+            );
+            reportPartProgress(++unitsDone / partUnits);
+            await maybeYield();
           }
         }
-        for (let ci = 0; ci < palette.length; ci++) {
-          const base = unitsDone;
-          await buildColorPrism(mapper, boundaryPoly, place, grid, palette[ci], ci, ai, (f) =>
-            reportPartProgress((base + f) / partUnits),
-          );
-          reportPartProgress(++unitsDone / partUnits);
-          await maybeYield();
-        }
       }
+    } catch (e) {
+      Object.values(colorPrisms).forEach((list) => list.forEach(manifoldDelete));
+      throw e;
     }
 
     // Per color: the union of its cutters across every zone. `owned` tracks each solid exactly

@@ -266,8 +266,8 @@ autosave failed.
 The browser controls the prompt's wording and substitutes its own generic copy
 in most cases, so what you see may not match the string above.
 
-- **The session isn't lost yet, but leaving now would lose it.** Export a 3MF or
-  the STL set before closing the tab.
+- **The session isn't lost yet, but leaving now would lose it.** Export a 3MF
+  before closing the tab.
 - Common causes: the session grew past the app's size ceiling (a lot of large
   SVG artwork), the browser's storage quota for this site is full, or you are in
   a private window where storage is disabled.
@@ -553,3 +553,70 @@ rim while others reach it, which is why it says so rather than staying quiet.
 Same cause as the "Couldn't merge the shapes" warnings above: dense or
 self-touching line-work the 2D maths can't resolve. Simplifying that colour's
 regions, or nudging Scale, usually clears it.
+
+## Troubleshooting: "That saved session could not be opened, so it was cleared"
+
+**What it means.** The app found a saved session from a previous visit, you asked
+for it back, and it could not be read. The save has been removed so it will not
+be offered again.
+
+**What to do.** Reload the page before carrying on. The restore assigns settings
+as it goes, so a failure part-way can leave the printer set to one value while the
+picker shows another. A reload starts clean.
+
+**Why it happens.** The stored session is JSON in the browser's local storage for
+this site. It reads as valid JSON but describes something this build cannot use:
+another tab or extension has written to the same key, or the session came from a
+build whose settings no longer line up. Settings that simply did not exist when
+the session was saved are filled in at their normal values rather than failing, so
+this message means something beyond that.
+
+A save that is damaged outright, rather than merely unusable, does not reach this
+message. It cannot be parsed at all, so it is discarded on load without a banner
+ever being offered.
+
+**What it does affect.** The restore had already applied some settings before it
+stopped, so what is on screen is a mix of the saved session and what you had. The
+app stops saving until you reload, so this mixed state is never written back, but
+it also means anything you do before reloading will not be saved. Reload first.
+
+## Troubleshooting: "… deeper than "Wheel top" goes. It was cut at … mm instead"
+
+**What it means.** The depth you asked for is more than that part has material
+for, measured from its design face straight back. It was cut at the deepest the
+part can take, a fraction of a millimetre short of breaking out the back.
+
+**What to do.** Nothing, if the number was a slip. If you meant a deep pocket,
+the part is the limit, so there is nothing to raise it to.
+
+**This is not a wall check, and not every part has one.** A part's wall varies
+across it, and a recess well under this limit can still break through a thin spot
+without any warning. Some parts raise no limit at all: a design face the app
+cannot measure a depth against, or a part too thin to hold the minimum. Look at
+the cut in the 3D view, and in your slicer's preview, before printing. See
+[tech-debt.md](tech-debt.md).
+
+## Troubleshooting: "The prime tower … has no verified position, and every corner … overlaps a part"
+
+**What it means.** The plate is crowded enough that the prime tower has nowhere
+clear to go. The tower is the block the printer wipes filament into on every
+color change, and it needs its own floor space.
+
+The message ends one of two ways, and they ask for different things:
+
+- **"It was put at (x, y), so move the tower in your slicer."** A position was
+  saved, and it overlaps a part. Open the plate in your slicer, drag the tower
+  somewhere clear, and save before printing.
+- **"No tower position was saved, so your slicer will place it."** Every plate
+  that prints a tower was crowded, so nothing was written and your slicer picks
+  the spot. Check where it landed before printing.
+
+**What to do about the crowding.** Fewer colors means a smaller tower. Merging
+two similar colors in Colors detected, or sending one to the base, frees space.
+A smaller part on the plate does too, where the size is yours to choose.
+
+**Why it happens.** The check measures each corner against the parts' bounding
+boxes, which over-reports a round part: a disc can be reported as blocking a
+corner it does not reach. That is deliberate for now, since a tower printed
+through a part is worse than one you place yourself, and it is written up in
+[tech-debt.md](tech-debt.md).

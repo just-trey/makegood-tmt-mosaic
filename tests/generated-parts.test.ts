@@ -114,6 +114,7 @@ function mountPanel(): void {
     <div id="asm-variant-row"><span id="asm-variant-controls"></span></div>
     <div id="assembly-part-list"></div>
     <div id="asm-role-controls"></div>
+    <div id="warnings"></div>
   `;
   // jsdom implements neither, and syncTemplateLink revokes the previous URL on every call
   URL.createObjectURL = vi.fn(() => 'blob:hubcap-template');
@@ -178,10 +179,10 @@ describe('resolvePlacement for a generated part', () => {
     expect(unverified(r).reason).toBe('generated-part');
   });
 
-  it('goes back to the ordinary path once the user drops their own mesh in', () => {
-    // asmAdoptMesh clears assetPositions on an upload, and that is what makes this report as the
-    // upload it is rather than as something generated.
-    const r = resolvePlacement(generatedPart({ assetPositions: undefined, meshFromUpload: true }));
+  // assetPositions is the whole signal, so a part that never went through a builder has to fall
+  // through to the ordinary seal path rather than claim the generated-part exemption.
+  it('goes back to the ordinary path for a part with no builder asset', () => {
+    const r = resolvePlacement(generatedPart({ assetPositions: undefined }));
 
     expect(unverified(r).reason).not.toBe('generated-part');
   });
@@ -1180,7 +1181,12 @@ describe('a bed-specific plate position in the exporter', () => {
     );
 
     const p = await proj(blob);
-    expect(warnings.join(' ')).toContain('move the tower in your slicer');
+    // Every plate here is blocked, so no wipe_tower_x/y is written and the message must say so
+    // rather than naming a position. "It was parked at (270, 240)" quoted coordinates that appear
+    // nowhere in the file; the other arm ("Move the tower in your slicer") would name one the user
+    // cannot move, because none was saved.
+    expect(warnings.join(' ')).toContain('No tower position was saved');
+    expect(warnings.join(' ')).not.toMatch(/parked at \(/);
     expect(p.wipe_tower_x).toBeUndefined();
     expect(p.wipe_tower_y).toBeUndefined();
   });

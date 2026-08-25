@@ -1,3 +1,4 @@
+import { CUT_FLOOR_MM, MIN_CUT_DEPTH_MM } from './depth';
 import * as THREE from 'three';
 import * as turf from '@turf/turf';
 import type { AssemblyPart, PolyFeature } from '../types';
@@ -178,6 +179,18 @@ export interface ZoneMapper {
    * array is not a thing any mapper does: a region always gets cut somehow.
    */
   resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[];
+  /**
+   * The deepest setting worth handing this zone, or Infinity where the zone cannot say.
+   *
+   * Asked of the mapper rather than measured off the part upstream, for the same reason
+   * resolveCutRegions is: only the zone knows which direction its cuts go. A flat zone cuts along
+   * one face normal and can measure the part behind it; a conformal zone cuts along a whole normal
+   * field and has no single axis to measure, so it declines.
+   *
+   * **A bound on the part, never on its wall.** A recess shallower than this can still break
+   * through a thin one, and nothing here measures that (docs/tech-debt.md).
+   */
+  maxCutDepth(): number;
   /** build the cutter geometry from a placed+clipped 2D feature */
   buildCutter(
     feat: PolyFeature,
@@ -205,11 +218,15 @@ export class FlatZoneMapper implements ZoneMapper {
   readonly faceNormal: number[] | null;
   readonly nsign: number;
   private readonly faceY: number;
+  private readonly faceYKnown: boolean;
   private readonly faceCx: number;
   private readonly faceCz: number;
   private boundaryComputed = false;
   private boundaryPoly: PolyFeature | null = null;
   private throughDepthCache: number | null = null;
+  // Cached like every other per-part measurement here: it is asked once per colour per artwork
+  // (16 scans of 53,904 vertices on a two-half wheel with an 8-colour palette) and cannot change.
+  private maxCutDepthCache: number | null = null;
   private fillExtentCache: FillExtent | null | undefined;
 
   constructor(
@@ -226,7 +243,13 @@ export class FlatZoneMapper implements ZoneMapper {
     // offset (= nrm.y * faceY), so a face pointing -Y (e.g. the BACK of the wheel) needs the
     // pocket cut in the opposite direction — otherwise the inlay lands on the wrong side.
     this.nsign = nrm && nrm[1] < 0 ? -1 : 1;
-    this.faceY = nrm && Math.abs(nrm[1]) > 0.1 ? part.topZ / nrm[1] : part.topZ;
+    // Whether `faceY` below is a real Y at all. The fallback assigns the raw plane offset, which
+    // for a face pointing along X or Z is an X or Z distance wearing a Y's name. Recorded once
+    // here so every reader tests the same condition: maxCutDepth() checking the *sign* of its own
+    // result instead measured the footrest's side patches at 141.95mm and 169.95mm on a part 64mm
+    // tall, and caught the tilted case only when topZ happened to come out negative.
+    this.faceYKnown = !!nrm && Math.abs(nrm[1]) > 0.1;
+    this.faceY = this.faceYKnown ? part.topZ / nrm![1] : part.topZ;
 
     // Rect parts center the design on the detected face (its native X/Z bbox center); wheel parts
     // anchor on the hub at the origin.
@@ -344,6 +367,64 @@ export class FlatZoneMapper implements ZoneMapper {
     return (this.erodedCache = this.wasm
       ? erodeBoundary(this.wasm, boundary, EDGE_TOUCH_TOL_MM)
       : null);
+  }
+
+  /**
+   * The deepest recess this part can hold: its extent from the design face to the far side along
+   * the cut axis, less the floor that keeps a clamped cut from becoming a hole.
+   *
+   * **Measured along Y, like `throughDepth()` above, because that is where the cutter goes** —
+   * `buildCutter` extrudes from `faceY` down the Y axis. Projecting onto `patchNormal` instead
+   * measured a distance the cut never travels: on wheel-half's -Z patch that read 139.88mm against
+   * 24.13mm of real material, so the mistyped depth this exists to catch sailed through and the
+   * warning would have quoted a distance the part does not have.
+   *
+   * Uses `nsign`/`faceY` from the constructor, so a duplicate part with a borrowed normal
+   * (`asmPartFaceNormal`) is bounded like its source rather than going unbounded.
+   *
+   * Measured off the loaded mesh rather than taken from a setting. `AssemblyPart.baseDepth` states
+   * "mm of material behind the face this replaces" and looks like the answer, but nothing in the
+   * build has ever read it, so adopting it here would give a dormant, user-editable field control
+   * of cut depth as a side effect of a bug fix.
+   *
+   * **A bound on the part, never on its wall.** A recess shallower than this can still break
+   * through a thin one, and nothing here measures that (docs/tech-debt.md).
+   */
+  maxCutDepth(): number {
+    if (this.maxCutDepthCache != null) return this.maxCutDepthCache;
+    const pos = this.part.positions;
+    // Cached on the decline paths too, or the full-mesh scan below reruns per colour per artwork on
+    // exactly the parts that decline, which is what the cache exists to stop.
+    if (!pos || !this.faceYKnown) return (this.maxCutDepthCache = Infinity);
+    let yMin = Infinity,
+      yMax = -Infinity;
+    for (let i = 1; i < pos.length; i += 3) {
+      const y = pos[i];
+      if (y < yMin) yMin = y;
+      if (y > yMax) yMax = y;
+    }
+    // Checked against the mesh, not inferred from the sign of the result. `faceYKnown` only says
+    // the normal has enough Y to divide by; `topZ / nrm.y` can still land far outside the part on
+    // a tilted face, and reading that as a depth gave 299.95mm on a box 10mm tall. Two earlier
+    // versions guessed at this from the sign of `extent` and each was caught by a fixture that
+    // happened to use the other sign. The part's own Y range is the thing being asked about, so
+    // ask it.
+    if (this.faceY < yMin || this.faceY > yMax) return (this.maxCutDepthCache = Infinity);
+    const extent = this.nsign > 0 ? this.faceY - yMin : yMax - this.faceY;
+    const usable = extent - CUT_FLOOR_MM;
+    // Declines rather than clamping whenever the answer would not be a printable recess. Two ways
+    // to get there, and both mean "this measurement does not apply here" rather than "the part is
+    // 0.2mm deep":
+    //
+    //   - A face that is not vertical makes `faceY` (topZ / nrm.y) a Y-intercept outside the mesh,
+    //     so the extent comes out negative. The face picker offers any of the top six patches with
+    //     no normal filter, so a tilted one is selectable. Clamping there cut every colour on the
+    //     part at the minimum depth and told the user it was "deeper than the part goes".
+    //   - A part too thin to hold the minimum. Warning about the user's number would be reporting
+    //     the geometry, which is not what this message says.
+    if (!Number.isFinite(usable) || usable < MIN_CUT_DEPTH_MM)
+      return (this.maxCutDepthCache = Infinity);
+    return (this.maxCutDepthCache = usable);
   }
 
   resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[] {

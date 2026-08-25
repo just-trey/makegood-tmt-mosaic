@@ -142,6 +142,20 @@ export const state: AppState = {
 };
 
 /** Neutral PLA-grey used when no base filament is chosen. */
+/**
+ * Smallest Design radius the app accepts, in mm.
+ *
+ * Not a print constraint: 0 makes every cut fail while Export stays green, and a negative builds
+ * as if positive, so this only has to be above zero. It matches the field's `step`, which keeps the
+ * spinner on its own grid (`min` is the step base).
+ *
+ * Shared with the restore path deliberately. A guard of "> 0" there was looser than the field's
+ * own floor, so a session carrying 0.2 restored, showed 0.2 unmarked, and the first blur snapped
+ * the field to its default while state kept 0.2 — the panel and the export disagreeing, which is
+ * what these guards exist to stop.
+ */
+export const MIN_DESIGN_RADIUS_MM = 0.5;
+
 export const DEFAULT_BASE_COLOR = '#b9c0c6';
 
 /**

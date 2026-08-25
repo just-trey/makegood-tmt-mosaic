@@ -4,11 +4,10 @@ let patterns: PatternEntry[] = [];
 
 /**
  * Whether the built-in pattern library is offered in the UI. The picker strip renders from
- * whatever this module loaded, so turning it off is just leaving the list empty — the same state
- * a missing manifest already produces. Kept as a switch rather than deleted because the library
- * has been withheld once already while its open defects were worked (see docs/tech-debt.md).
+ * whatever this module loaded, so turning it off is just leaving the list empty, the same state
+ * a missing manifest already produces. Off while its open defects are worked (docs/tech-debt.md).
  */
-export const PATTERN_LIBRARY_ENABLED = true;
+export const PATTERN_LIBRARY_ENABLED = false;
 
 /**
  * Load the built-in pattern library manifest (public/patterns/patterns.json). Purely additive

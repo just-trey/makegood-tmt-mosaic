@@ -572,3 +572,54 @@ describe('renderColorList — "→ base"', () => {
     expect(hint.textContent).not.toMatch(/set in Part/);
   });
 });
+
+/**
+ * The field shows what was asked for and deliberately does not write the built value back — doing
+ * that pinned every row to its clamped depth and silenced the warning (see the comment on
+ * `shownDepth`). But it went on reading 0.00 while the app cut 0.20, so the only place the real
+ * number appeared was a warning that scrolls away when dismissed.
+ */
+describe('a depth the build will raise', () => {
+  it('says what will actually be cut, without changing the field', () => {
+    state.colorSettings = {}; // no per-row override, so the global is what the row shows
+    state.globalDepth = 0;
+
+    renderColorList([
+      {
+        color: '#ff0000',
+        key: '#ff0000',
+        members: ['#ff0000'],
+        isMergeGroup: false,
+        areaPct: 50,
+        isBackground: false,
+      },
+    ]);
+
+    const input = document.querySelector<HTMLInputElement>('.depth-input')!;
+    expect(input.value, 'the field still shows what was typed').toBe('0.00');
+    // "raised to", not "cut at": a cut-through part discards the setting, so naming a cut
+    // depth here would be false on the wheel's own cap.
+    const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
+    expect(hints.join(' ')).toContain('raised to 0.20');
+    expect(hints.join(' ')).not.toContain('cut at');
+  });
+
+  it('says nothing extra for a depth the build will use as asked', () => {
+    state.colorSettings = {};
+    state.globalDepth = 2;
+
+    renderColorList([
+      {
+        color: '#ff0000',
+        key: '#ff0000',
+        members: ['#ff0000'],
+        isMergeGroup: false,
+        areaPct: 50,
+        isBackground: false,
+      },
+    ]);
+
+    const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
+    expect(hints).toEqual(['mm']);
+  });
+});

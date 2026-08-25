@@ -23,6 +23,7 @@ Fired when artwork is loaded into the scene.
 
 - **Where:** [src/ui/artworkPanel.ts](../src/ui/artworkPanel.ts) — `loadArtworkFile` (SVG upload via click-browse or drag-drop), `applyRasterFile` (a PNG/JPG/WebP through the same dropzone), the `#btn-sample` handler, and `applyPattern` (built-in pattern picker strip).
 - **Props:** `{ source: 'upload' | 'sample' | 'pattern' | 'raster' }`, plus `pattern: string` (the pattern id, e.g. `cow`) when `source` is `'pattern'`. `'raster'` covers any decoded image; the format is not recorded.
+- **Dormant:** `source: 'pattern'` cannot fire while `PATTERN_LIBRARY_ENABLED` is `false` — the picker strip renders nothing to click.
 
 ### `raster_adjust`
 
@@ -49,6 +50,7 @@ row's "+zone" button.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-add-zone` click handler in `renderArtworkList`.
 - **Props:** none.
+- **Dormant:** no offered kind ships design zones, so the button never renders.
 
 ### `artwork_instance_zone_changed`
 
@@ -57,6 +59,7 @@ dropdown.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-zone` change handler in `renderArtworkList`.
 - **Props:** `{ zone: string }` (the zone id, or `'all'` for the unbound/"every zone" option)
+- **Dormant:** no offered kind ships design zones, so the dropdown never renders.
 
 ### `artwork_mode_changed`
 
@@ -73,6 +76,7 @@ after any confirm() dialog is accepted.
 
 - **Where:** [src/assembly/parts.ts](../src/assembly/parts.ts) — `switchChairVariant`.
 - **Props:** `{ variant: string }` (the variant id, e.g. `standard` / `kit`)
+- **Dormant:** the only kind with variants carries `hidden: true`, so the picker is reachable through `?kind=` alone.
 
 ### `zone_selected`
 
@@ -81,19 +85,21 @@ active artwork instance to it.
 
 - **Where:** [src/scene/zonePick.ts](../src/scene/zonePick.ts) — `onPointerUp`.
 - **Props:** `{ zone: string }` (the zone id)
+- **Dormant:** no offered kind ships design zones, so this is reachable through `?kind=` alone.
 
 ### `mode_switch`
 
 Fired when the user changes the part-shape mode.
 
 - **Where:** [src/ui/partPanel.ts](../src/ui/partPanel.ts) — `#shape-kind` change handler in `initPartPanel`.
-- **Props:** `{ kind: 'assembly' | 'disc' | 'rect' | 'round' | 'stl' }`
+- **Props:** `{ kind: 'assembly' }`. The dropdown offers assembly kinds only, so no other value can be sent. It still does not record _which_ kind — see `assembly_kind_select` below.
 
 ### `template_download`
 
 Fired when the user downloads an assembly kind's design template from the Part
 panel — either the single per-kind template, or (for a part with more than
-one design zone, like the chair body) one of the per-zone templates.
+one design zone) one of the per-zone templates. No offered kind has more than
+one, so only the single-template path fires.
 
 - **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `#asm-template-link` click handler in `initAssemblyPanel`, and the per-zone link handlers in `renderZoneTemplateLinks`.
 - **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`), plus `zone: string` (the zone id) on a per-zone download
@@ -120,8 +126,8 @@ Fired on a successful export, just before the file download starts.
 
 - **Where:** [src/ui/exportPanel.ts](../src/ui/exportPanel.ts) — `exportPrintReady3MF` and `exportSTLSet`.
 - **Props:**
-  - `format: '3mf' | 'stl_zip'`
-  - `mode: 'assembly' | 'flat'`
+  - `format: '3mf' | 'stl_zip'` — `stl_zip` is dormant: `#btn-export-stl` renders only outside assembly mode, and no flat mode is offered
+  - `mode: 'assembly' | 'flat'` — `flat` is dormant for the same reason
   - `printer: string` (`state.printerId`)
   - `colors: number` (material/color count)
   - `warnings: number` (3MF only — placement warnings emitted)
@@ -174,7 +180,7 @@ either direction.
 Candidates for a later pass, roughly in order of likely value. Follow the same
 pattern: wire at the DOM handler, add the entry here, keep props PII-free.
 
-- `assembly_kind_select` — `src/ui/partPanel.ts`, `#shape-kind` change handler (the `asm:` branch). Prop: `kindId`. `mode_switch` already fires here but only records `kind: 'assembly'`, not which one — `wheel`, `footrest`, and `chair-body` all exist today, worth wiring as more parts ship.
+- `assembly_kind_select` — `src/ui/partPanel.ts`, `#shape-kind` change handler. Prop: `kindId`. `mode_switch` fires here but only ever records `kind: 'assembly'`, which is now the only value it can carry, so which part the user picked is not recorded at all. `wheel`, `footrest` and `hubcap` are offered; worth wiring as more parts ship.
 - `base_color_change` — `src/ui/partPanel.ts`, `renderBaseColorSwatches` swatch click. Prop: `default` vs `filament`.
 - `automerge_change` — `src/ui/colorList.ts`, `#p-automerge` slider. Prop: `level` (0-3).
 - `color_merge` / `color_to_base` — `src/ui/colorList.ts` drag-merge and "→ base" actions. Prop: resulting group size.
