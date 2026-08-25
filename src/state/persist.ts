@@ -278,6 +278,22 @@ let lastSaveFailed = false;
 let lastSaveDropped = false;
 
 /**
+ * Whether the user has answered this page load's restore offer, either way.
+ *
+ * The empty-snapshot clear below is what destroys a saved session, and it fires about a second
+ * into any bare boot. Until the offer has been answered there is nothing to act on, so clearing
+ * is premature — three separate ways of losing work measured on 2026-08-24 were all this:
+ * a `?kind=` link (the banner is never shown, so the session was never offered), a reload while
+ * the banner sits unanswered on screen, and a restore that threw.
+ */
+let savedSessionAnswered = false;
+
+/** Called by the restore banner when the user accepts or dismisses the offer. */
+export function markSavedSessionAnswered(): void {
+  savedSessionAnswered = true;
+}
+
+/**
  * Whether the session already in storage is on an assembly kind that's currently withheld from
  * the UI (`AssemblyKind.hidden`). Such a session is never offered back — initRestoreBanner()
  * skips it — so the empty-snapshot clear in saveSession() would be the thing that destroys it,
@@ -322,7 +338,12 @@ export function saveSession(): void {
   const savedRasterIds = new Set(session.sources.filter((s) => s.raster).map((s) => s.id));
   lastSaveDropped = state.sources.some((s) => s.raster && !savedRasterIds.has(s.id));
   if (!session.artworks.length) {
-    if (!savedSessionIsOnHiddenKind()) clearSavedSession();
+    // Held only while nothing is loaded. `hasLoadedWork()` is the difference between a bare boot,
+    // where the stored session is still the user's only copy and the restore offer may not even
+    // have been seen yet, and a session the user has actively moved past — they loaded something
+    // that could not be saved, which genuinely supersedes what is in storage.
+    const held = savedSessionIsOnHiddenKind() || (!savedSessionAnswered && !hasLoadedWork());
+    if (!held) clearSavedSession();
     lastSaveFailed = hasLoadedWork();
     return;
   }
@@ -387,8 +408,10 @@ export function clearSavedSession(): void {
 
 /** Basic structural sanity — a corrupt or hand-edited value should read as "nothing saved", not
  * throw partway through a restore. */
+const isObj = (v: unknown): boolean => !!v && typeof v === 'object' && !Array.isArray(v);
+
 function isPersistedSession(v: unknown): v is PersistedSession {
-  if (!v || typeof v !== 'object') return false;
+  if (!isObj(v)) return false;
   const s = v as Partial<PersistedSession>;
   return (
     s.version === SCHEMA_VERSION &&
@@ -396,6 +419,38 @@ function isPersistedSession(v: unknown): v is PersistedSession {
     Array.isArray(s.sources) &&
     Array.isArray(s.artworks)
   );
+}
+
+/**
+ * Fill in the containers `applyRestoredSession` dereferences, for a session that does not carry
+ * them.
+ *
+ * **Repaired rather than rejected, deliberately.** Seven single-field corruptions used to pass the
+ * gate above and throw part-way through the restore (measured 2026-08-24); three left the app
+ * unable to build at all, showing the raw exception text, recoverable only by F5 — because the
+ * restore assigns state as it goes, so a throw leaves it half applied. Tightening the gate to
+ * reject them was the first fix and was wrong: a session written by an older build, before one of
+ * these fields existed, is not corrupt and still carries the user's artwork. Discarding it to
+ * avoid a crash trades one kind of lost work for another.
+ *
+ * So each container is replaced only when it is not the shape the restore needs, and every default
+ * here is the same "nothing set" the app boots with.
+ */
+function repairSessionContainers(s: PersistedSession): PersistedSession {
+  const obj = <T>(v: unknown, fallback: T): T => (isObj(v) ? (v as T) : fallback);
+  const arr = <T>(v: unknown, fallback: T[]): T[] => (Array.isArray(v) ? (v as T[]) : fallback);
+  return {
+    ...s,
+    colorSettings: obj(s.colorSettings, {}),
+    keptApart: arr(s.keptApart, []),
+    mergeGroups: arr(s.mergeGroups, []),
+    baseColorMembers: arr(s.baseColorMembers, []),
+    disc: obj(s.disc, { ...state.disc }),
+    rect: obj(s.rect, { ...state.rect }),
+    round: obj(s.round, { ...state.round }),
+    stlPlate: obj(s.stlPlate, { ...state.stlPlate }),
+    assembly: obj(s.assembly, { kindId: null, variantId: null }),
+  };
 }
 
 /**
@@ -420,7 +475,7 @@ export function loadSavedSession(): PersistedSession | null {
       clearSavedSession(); // won't parse as this schema again either — stop offering to restore it
       return null;
     }
-    return parsed;
+    return repairSessionContainers(parsed);
   } catch {
     return null;
   }
@@ -461,7 +516,11 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.rotationDeg = session.rotationDeg;
   state.globalDepth = session.globalDepth;
   state.recessBg = session.recessBg;
-  state.printerId = session.printerId;
+  // Coerced to a printer that exists, not adopted verbatim. An unknown id (an older build's, a
+  // hand-edited session) left `#p-printer` blank while getPrinter() silently fell back to the
+  // default bed — and the bed is what every verified placement is checked against, so the export
+  // would use one printer's plate while the picker named none.
+  state.printerId = getPrinter(session.printerId).id;
   state.asmRadius = session.asmRadius;
   // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
   //
@@ -553,6 +612,14 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     state.shapeKind = 'assembly';
     state.assembly.kindId = kind.id;
     state.assembly.variantId = session.assembly.variantId;
+    // Cleared before the load, not left to asmLoadFullAssembly's own clear. That clear sits behind
+    // a confirm ("Load the full X? This clears any parts you've already added"), and the boot's
+    // auto-load has always filled this list, so restoring raised a second dialog on top of the one
+    // the user just accepted. Cancelling it returned without touching the scene while `kindId` and
+    // the dropdown had already moved: the export then wrote the *previous* kind's parts under the
+    // restored kind's filename. Measured 2026-08-24: a restored footrest session exported
+    // `mosaic-footrest.3mf` holding the wheel's Top/Bottom/Cap, valid and printable, no warning.
+    state.assembly.parts = [];
     await asmLoadFullAssembly();
   } else {
     // Either an assembly kind that no longer exists (renamed/retired since the session was saved),

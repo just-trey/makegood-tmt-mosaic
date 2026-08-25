@@ -11,9 +11,14 @@ vi.mock('../src/assembly/parts', async (importOriginal) => {
   return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
 });
 
-import { applyRestoredSession, type PersistedSession } from '../src/state/persist';
+import {
+  applyRestoredSession,
+  loadSavedSession,
+  type PersistedSession,
+} from '../src/state/persist';
 import { asmLoadFullAssembly } from '../src/assembly/parts';
 import { firstOfferedKind } from '../src/assembly/kinds';
+import { getPrinter } from '../src/export/printers';
 import { state } from '../src/state/store';
 import { confirmDialog } from '../src/ui/dialogs';
 
@@ -63,7 +68,7 @@ function session(over: Partial<PersistedSession> = {}): PersistedSession {
     rotationDeg: 45,
     globalDepth: 1.5,
     recessBg: true,
-    printerId: 'p-saved',
+    printerId: 'snapmaker-u1',
     asmRadius: 140,
     assembly: { kindId: null, variantId: null },
     baseFilamentId: 'blue',
@@ -145,12 +150,48 @@ describe('applyRestoredSession: the settings the user had', () => {
     expect(state.flipX).toBe(true);
   });
 
+  // getPrinter() falls back to the default when the id is unknown, so adopting the saved value
+  // verbatim left `#p-printer` blank while the export used a bed the picker did not name — and the
+  // bed is what every verified placement is checked against.
+  // Seven single-field corruptions used to pass the gate and throw part-way through, leaving the
+  // app unable to build until F5. Rejecting them was the first fix and was wrong: a session written
+  // by an older build, before one of these fields existed, is not corrupt and still holds the
+  // user's artwork. It is repaired to the same "nothing set" the app boots with.
+  it('restores a session that predates the container fields instead of discarding it', async () => {
+    const legacy = session();
+    for (const k of ['colorSettings', 'keptApart', 'mergeGroups', 'baseColorMembers', 'assembly'])
+      delete (legacy as unknown as Record<string, unknown>)[k];
+
+    localStorage.setItem(
+      'tmt-mosaic:session:v1',
+      JSON.stringify({ ...legacy, version: 1, savedAt: Date.now() }),
+    );
+    const loaded = loadSavedSession()!;
+    expect(loaded, 'a session missing containers must still load').not.toBeNull();
+
+    await expect(applyRestoredSession(loaded)).resolves.toBeUndefined();
+
+    // the artwork is the point — that is the work the user would otherwise have lost
+    expect(state.artworks).toHaveLength(1);
+    expect(state.colorSettings).toEqual({});
+    expect(state.keptApart).toEqual([]);
+  });
+
+  it('coerces an unknown printer id to one that exists', async () => {
+    await applyRestoredSession(session({ printerId: 'no-such-printer' }));
+
+    expect(state.printerId).not.toBe('no-such-printer');
+    expect(getPrinter(state.printerId).id).toBe(state.printerId);
+  });
+
   it('restores depth, printer and color grouping', async () => {
     await applyRestoredSession(session());
 
     expect(state.globalDepth).toBe(1.5);
     expect(state.recessBg).toBe(true);
-    expect(state.printerId).toBe('p-saved');
+    // A real id, and deliberately not the default, so this proves the saved value was adopted
+    // rather than the fallback happening to match.
+    expect(state.printerId).toBe('snapmaker-u1');
     expect(state.asmRadius).toBe(140);
     expect(state.baseFilamentId).toBe('blue');
     expect(state.autoMergeLevel).toBe(2);
@@ -244,11 +285,30 @@ describe('applyRestoredSession: assembly mode', () => {
     expect(asmLoadFullAssembly).toHaveBeenCalledTimes(1);
   });
 
-  it('never asks the user to confirm — the parts list is empty this early in the session', async () => {
+  // The parts list is NOT empty this early: the boot's own auto-load has already filled it. That
+  // is why this asserts the list is empty *at the moment asmLoadFullAssembly is called*, rather
+  // than that no confirm fired — the confirm lives inside that function, which is mocked here, so
+  // "confirmDialog was not called" passes whatever the caller does and guards nothing.
+  //
+  // Cancelling that confirm returned without touching the scene while `kindId` and the dropdown
+  // had already moved, so the export wrote the previous kind's parts under the restored kind's
+  // filename. Measured: a restored footrest session exported `mosaic-footrest.3mf` holding the
+  // wheel's Top/Bottom/Cap.
+  it('clears the parts the boot loaded before asking for the restored kind, so no confirm can fire', async () => {
+    let partsWhenLoadRan: number | undefined;
+    vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {
+      partsWhenLoadRan = state.assembly.parts.length;
+    });
+    state.assembly.parts = [
+      { id: 1, name: 'Top' },
+      { id: 2, name: 'Bottom' },
+    ] as unknown as typeof state.assembly.parts;
+
     await applyRestoredSession(
-      session({ shapeKind: 'assembly', assembly: { kindId: 'wheel', variantId: null } }),
+      session({ shapeKind: 'assembly', assembly: { kindId: 'footrest', variantId: null } }),
     );
 
+    expect(partsWhenLoadRan).toBe(0);
     expect(confirmDialog).not.toHaveBeenCalled();
   });
 

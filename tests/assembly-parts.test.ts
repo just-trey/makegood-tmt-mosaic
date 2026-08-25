@@ -512,6 +512,21 @@ describe('loadPartsLibrary', () => {
     expect(partsLibrarySettled()).toBe(true);
   });
 
+  // A non-array manifest used to throw from asmKindCanAutoLoad's `.find` inside the render, so the
+  // panel sat on "Loading assembly…" with no message. It has to settle like any other failure.
+  it('treats a manifest that is not a list as unreachable rather than throwing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ wheel: 'stl/w.3mf' }) }),
+    );
+    state.shapeKind = 'disc';
+
+    await expect(loadPartsLibrary()).resolves.toBeUndefined();
+
+    expect(state.assembly.library).toEqual([]);
+    expect(partsLibrarySettled()).toBe(true);
+  });
+
   it('survives a manifest that is not valid JSON', async () => {
     vi.stubGlobal(
       'fetch',

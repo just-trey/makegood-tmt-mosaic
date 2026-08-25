@@ -3,8 +3,10 @@ import {
   applyRestoredSession,
   clearSavedSession,
   loadSavedSession,
+  markSavedSessionAnswered,
   type PersistedSession,
 } from '../state/persist';
+import { warn } from '../warnings';
 import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
 import { setShapeKind, renderBaseColorSwatches, refreshShapeParamInputs } from './partPanel';
 import { renderArtworkList } from './artworkListPanel';
@@ -63,11 +65,18 @@ export function initRestoreBanner(): void {
 
   $('#btn-restore-session').addEventListener('click', () => {
     banner.hidden = true;
+    // The offer has been answered, so the empty-snapshot clear in saveSession() may resume. Until
+    // this point the session is held: a reload while the banner sat unanswered used to destroy it
+    // about a second into the boot that was still offering it.
+    markSavedSessionAnswered();
     void (async () => {
       try {
         await applyRestoredSession(session);
       } catch (e) {
         console.error('Session restore failed:', e);
+        // Say so. This used to delete the session and return with nothing on screen, so the user
+        // clicked Restore, saw no change, and had lost the work.
+        warn('That saved session could not be opened, so it was cleared. Nothing else changed.');
         clearSavedSession();
         return;
       }
@@ -91,6 +100,7 @@ export function initRestoreBanner(): void {
 
   $('#btn-restore-dismiss').addEventListener('click', () => {
     banner.hidden = true;
+    markSavedSessionAnswered();
     clearSavedSession();
     track('session_restore_dismissed');
   });
