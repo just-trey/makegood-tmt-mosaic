@@ -113,15 +113,14 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.
 - Input parts must be watertight/manifold for assembly cutting.
-- Assembly mode has no deep-end wall-thickness check. A part's wall varies
-  across it, and nothing measures it or compares a depth against it, so a
-  pocket deeper than the wall in one spot cuts a hole clean through and
-  exports without comment. The only deep-end case that says anything is the
-  extreme one where the cut consumes the whole part, leaving nothing to
-  export. The shallow end (zero or negative) is caught up front and raised to
-  a safe minimum. The flat modes check both ends: a depth the plate can't hold
-  is cut at the nearest depth it can, with a warning saying which color and
-  what was actually cut.
+- Assembly mode has no wall-thickness check. A part's wall varies across it,
+  and nothing measures it, so a pocket deeper than the wall in one spot cuts a
+  hole clean through and exports without comment. A depth is bounded only by
+  how far the part extends behind its design face: past that it is cut at the
+  part's own depth, with a warning naming the color and the part. On the wheel
+  that bound is 48.5mm, so it catches a mistyped number and not a 20mm pocket
+  in a 3mm wall. The shallow end (zero or negative) is caught up front and
+  raised to a safe minimum.
 - Gradients/patterns in an SVG are detected and skipped with a warning.
 - A raster image is processed at 1024px on its long edge for flat art (logos,
   drawings, cartoons) and 512px for photographs, chosen from the image itself —

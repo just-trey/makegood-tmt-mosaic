@@ -178,6 +178,18 @@ export interface ZoneMapper {
    * array is not a thing any mapper does: a region always gets cut somehow.
    */
   resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[];
+  /**
+   * The deepest setting worth handing this zone, or Infinity where the zone cannot say.
+   *
+   * Asked of the mapper rather than measured off the part upstream, for the same reason
+   * resolveCutRegions is: only the zone knows which direction its cuts go. A flat zone cuts along
+   * one face normal and can measure the part behind it; a conformal zone cuts along a whole normal
+   * field and has no single axis to measure, so it declines.
+   *
+   * **A bound on the part, never on its wall.** A recess shallower than this can still break
+   * through a thin one, and nothing here measures that (docs/tech-debt.md).
+   */
+  maxCutDepth(): number;
   /** build the cutter geometry from a placed+clipped 2D feature */
   buildCutter(
     feat: PolyFeature,
@@ -344,6 +356,26 @@ export class FlatZoneMapper implements ZoneMapper {
     return (this.erodedCache = this.wasm
       ? erodeBoundary(this.wasm, boundary, EDGE_TOUCH_TOL_MM)
       : null);
+  }
+
+  /**
+   * How far this part extends behind its design face, along that face's normal.
+   *
+   * Measured off the loaded mesh rather than taken from a setting. `AssemblyPart.baseDepth` states
+   * "mm of material behind the face this replaces" and looks like the answer, but nothing in the
+   * build has ever read it, so adopting it here would give a dormant, user-editable field control
+   * of cut depth as a side effect of a bug fix.
+   */
+  maxCutDepth(): number {
+    const n = this.part.patchNormal;
+    const pos = this.part.positions;
+    if (!n || !pos) return Infinity;
+    let min = Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      const d = pos[i] * n[0] + pos[i + 1] * n[1] + pos[i + 2] * n[2];
+      if (d < min) min = d;
+    }
+    return Number.isFinite(min) ? this.part.topZ - min : Infinity;
   }
 
   resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[] {

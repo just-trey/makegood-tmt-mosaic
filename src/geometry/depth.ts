@@ -50,6 +50,31 @@ export function zeroDepthWarning(label: string, requested: number, raisedTo: num
 }
 
 /**
+ * The warning for a depth deeper than the part has material to give.
+ *
+ * Names the part, unlike zeroDepthWarning: the bound is a property of one part's geometry, so the
+ * same setting can be fine on the wheel and clamped on the cap, and a message without the name
+ * would read as a fact about the number.
+ *
+ * **This is not a wall-thickness check**, and it is worded so it cannot be read as one. It bounds
+ * the recess by how far the part extends behind its design face, which is the deepest any cut
+ * could go before leaving the part entirely. A recess shallower than that can still break through
+ * a thin wall, and nothing here measures that (docs/tech-debt.md).
+ */
+export function tooDeepWarning(
+  label: string,
+  partName: string,
+  requested: number,
+  cutAt: number,
+): string {
+  return (
+    `Depth for "${label}" was set to ${requested.toFixed(2)} mm. "${partName}" is ` +
+    `${cutAt.toFixed(2)} mm from its design face to the back, so it was cut at ` +
+    `${cutAt.toFixed(2)} mm instead.`
+  );
+}
+
+/**
  * Whether a depth is shallow enough to be worth a note, asked at the precision the note prints at,
  * not machine epsilon. A 0.199 mm cut is a rounding artefact away from a full layer, and
  * announcing it produced "is 0.20 mm, thinner than the usual 0.20 mm print layer", which reads as
@@ -65,8 +90,8 @@ export function subLayerDepth(depth: number): boolean {
  * flat mode had already fixed.
  *
  * **An `ℹ`, not a `⚠`. Proposed and rejected (UX review 2026-08-03).** The icon tracks "did the
- * app change your number?", not "might you be disappointed?". A zero is raised and a too-deep
- * value clamped, so both warn: something was overridden. A positive sub-layer depth is honored
+ * app change your number?", not "might you be disappointed?". A zero is raised, and a value
+ * deeper than the part is clamped, so both warn: something was overridden. A positive sub-layer depth is honored
  * exactly as asked, and someone on a 0.08 mm profile cutting a 0.12 mm recess made a real choice
  * (docs/audience.md). Warning about a value the app then obeys is what stops the two real `⚠`s
  * being trusted.

@@ -591,3 +591,30 @@ describe('implicitZoneFor', () => {
     expect(implicitZoneFor(boxPart(), [], false)).toBeInstanceOf(FlatZoneMapper);
   });
 });
+
+/**
+ * Assembly mode had no upper bound on depth at all: 20mm and 9999mm on the wheel both built and
+ * exported with zero warnings, while flat mode clamped and warned for the same input, and
+ * depth.ts's own comment claimed both did. The flat modes then left the UI, which made the
+ * unbounded path the only one a user can reach.
+ */
+describe('maxCutDepth', () => {
+  // The box is 10 tall with its design face on top at y=10, so a recess has 10mm behind it.
+  it('measures how far the part extends behind its design face', () => {
+    expect(new FlatZoneMapper(boxPart(), [], false).maxCutDepth()).toBeCloseTo(10, 6);
+  });
+
+  // Measured along the face's own normal, not a fixed axis: the same box read from underneath has
+  // the same 10mm behind its face, in the other direction.
+  it('follows the face normal rather than an axis', () => {
+    const flipped = boxPart({ patchNormal: [0, -1, 0], topZ: 0 });
+    expect(new FlatZoneMapper(flipped, [], false).maxCutDepth()).toBeCloseTo(10, 6);
+  });
+
+  // An unloaded part must clamp nothing, or a depth would be silently pinned to whatever a missing
+  // mesh implies.
+  it('declines when the part has no mesh yet', () => {
+    const bare = boxPart({ positions: null as unknown as Float32Array });
+    expect(new FlatZoneMapper(bare, [], false).maxCutDepth()).toBe(Infinity);
+  });
+});

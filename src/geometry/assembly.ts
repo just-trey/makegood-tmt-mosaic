@@ -8,6 +8,7 @@ import {
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
+  tooDeepWarning,
   zeroDepthWarning,
 } from './depth';
 import type {
@@ -578,6 +579,7 @@ function warnOverlappingDesigns(placed: PlacedDesign[]): void {
  * subtract all prisms from the part mesh (the full modified body) and (b) intersect each prism
  * with the part (a flush inlay solid per color).
  */
+
 export async function buildAssemblyGeometry(
   input: AssemblyBuildInput,
 ): Promise<AssemblyBuild | null> {
@@ -859,7 +861,16 @@ export async function buildAssemblyGeometry(
       // The message reports the *setting* it raised, not the cut produced: what a part does with a
       // depth is the mapper's business. Naming a cut depth here claimed 0.02 mm on a 3 mm
       // through-cut. No part name either, so it dedupes to one warning per color.
-      const depthSetting = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
+      const raised = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
+      // And bounded above by how far this part actually extends behind its design face. Without
+      // this, assembly mode had no upper bound at all: 20 mm and 9999 mm on the wheel both built
+      // and exported with no warning, while flat mode clamped and warned for the same input, and
+      // depth.ts's own comment claimed both did. The flat modes then left the UI, making the
+      // unbounded path the only one a user can reach.
+      //
+      // **Not a wall-thickness check.** A recess shallower than this can still break through a
+      // thin wall; measuring that is still owed (docs/tech-debt.md). This bounds the absurd.
+      const depthSetting = Math.min(raised, mapper.maxCutDepth());
       const label = regionLabel(c.hex, c.isMerge, c.members.length);
       // One entry per depth this zone wants, each carrying the slice cut at it, usually just one.
       // An edge rule (a hubcap cut to its artwork's shape) splits the region into polygons
@@ -870,6 +881,15 @@ export async function buildAssemblyGeometry(
         clipped,
       });
       if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depthSetting));
+      // Gated on what the mapper did with the number, exactly like the sub-layer note below, and
+      // for the same reason: a cutThrough part discards the setting and holes the whole way
+      // through, so "it was cut at 24.25 mm instead" would be false there. Never test
+      // `part.cutThrough` here.
+      else if (
+        depthDiffers(depthSetting, raised) &&
+        regions.some((r) => !depthDiffers(r.depth, depthSetting))
+      )
+        warnBuild(tooDeepWarning(label, part.name, raised, depthSetting));
       // The warning above describes the setting and holds wherever the color lands. This one
       // predicts the printed recess, so it must not be said about a part that discards the setting
       // and cuts the whole way through: "too thin to show up" is wrong about a 3 mm hole. Ask the

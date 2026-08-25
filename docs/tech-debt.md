@@ -237,6 +237,39 @@ and the note stands as written. Resolve that against the CAD assembly before
 touching the tolerance, because it is the tolerance the existing seven zones'
 measured coverage was tuned against; changing it re-bakes all of them.
 
+## Assembly mode bounds a depth by the part, not by its wall
+
+The 2026-08-24 cycle's **T0-3**, half closed.
+
+**What was wrong.** Assembly mode had no upper bound on recess depth at all.
+Depth 20mm and 9999mm on the wheel both built and exported with **zero
+warnings**, while flat mode clamped and warned for the same input, and
+`geometry/depth.ts`'s own comment stated the contract as "a zero is raised and a
+too-deep value clamped, so both warn". That second half was false for every part
+a user could select, and the flat modes leaving the UI made the unbounded path
+the only reachable one.
+
+**What is fixed.** `ZoneMapper.maxCutDepth()` bounds the setting, and a clamp is
+warned about by name. The flat mapper measures how far the part extends behind
+its design face, along that face's normal, off the loaded mesh. The conformal
+mapper declines and returns Infinity: it cuts along a normal field rather than
+one axis, so the question has no single answer there.
+
+**What is not.** That bound is the part, not the wall. On the wheel it is
+**48.5mm**, so a mistyped 9999 is caught and a 20mm pocket in a 3mm wall is not.
+The pre-existing wall-thickness item is what closes the rest, and it stays open:
+a part's wall varies across it, nothing measures it, and a pocket deeper than the
+wall in one spot still cuts a hole clean through and exports without comment.
+
+Deliberately not solved with a constant. `AssemblyPart.baseDepth` states "mm of
+material behind the face this replaces" and looks like the answer, but nothing in
+the build has ever read it, so adopting it would have given a dormant,
+user-editable field control of cut depth as a side effect of a bug fix.
+
+Closing it means measuring the wall under each cut region, most likely by casting
+into the mesh along the cut direction, and comparing that against the setting per
+region rather than per part.
+
 ## Rebuild performance needs ongoing work — this is a heavy application
 
 The flat-mode half of this closed on 2026-08-23. `computeNetRegionsByColor`
