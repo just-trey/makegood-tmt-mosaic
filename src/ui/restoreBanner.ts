@@ -2,6 +2,7 @@ import { state } from '../state/store';
 import {
   applyRestoredSession,
   clearSavedSession,
+  disableSessionWritesAfterFailedRestore,
   loadSavedSession,
   markSavedSessionAnswered,
   type PersistedSession,
@@ -88,6 +89,10 @@ export function initRestoreBanner(): void {
         );
         renderWarnings();
         clearSavedSession();
+        // And keep it cleared. The next rebuild's debounced save would otherwise write the
+        // half-applied state straight back, so the visit after this one would be offered a session
+        // built from the restore that just failed.
+        disableSessionWritesAfterFailedRestore();
         return;
       }
       $<HTMLSelectElement>('#shape-kind').value =

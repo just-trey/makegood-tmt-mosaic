@@ -12,6 +12,7 @@ vi.mock('../src/assembly/parts', async (importOriginal) => {
 });
 import {
   applyRestoredSession,
+  disableSessionWritesAfterFailedRestore,
   holdSavedSessionUntilAnswered,
   loadSavedSession,
   markSavedSessionAnswered,
@@ -61,6 +62,10 @@ beforeAll(() => {
 
 beforeEach(() => {
   localStorage.clear();
+  // Resets the module-level hold through its own API: arming against empty storage disarms it.
+  // Without this each case would depend on the previous one's arming surviving, so inserting or
+  // reordering a test could mask the thing under test.
+  holdSavedSessionUntilAnswered();
   state.shapeKind = 'assembly';
   state.assembly.kindId = firstOfferedKind().id;
   state.sources = [];
@@ -185,5 +190,24 @@ describe('a save already armed when a restore starts', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * The failure message tells the user to reload, because a restore that throws part-way leaves
+ * state inconsistent. Writes have to stop with it: the next rebuild's debounced save otherwise
+ * wrote that half-applied state back over the session the catch had just cleared, and the visit
+ * after this one was offered a session built from the restore that failed.
+ */
+// MUST STAY LAST IN THIS FILE. The flag it sets is deliberately one-way — writes stay off until
+// the page reloads — so anything added below it would run with saving disabled.
+describe('after a restore fails part-way', () => {
+  it('writes nothing further, so the failed state is never persisted', () => {
+    disableSessionWritesAfterFailedRestore();
+    withLoadedWork(); // whatever the half-applied restore left in state
+
+    saveSession();
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 });

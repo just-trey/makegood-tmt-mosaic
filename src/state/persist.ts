@@ -340,6 +340,7 @@ function savedSessionIsOnHiddenKind(): boolean {
  * is the one exception — read only at unload, to decide whether the native prompt is warranted.
  */
 export function saveSession(): void {
+  if (writesDisabledAfterFailedRestore) return;
   // An empty snapshot (no artwork, no loaded parts) isn't worth restoring — and saving one
   // unconditionally would re-arm the restore banner within a second of a user dismissing it, since
   // the default boot's own bare-wheel rebuild reaches this same path. Clear instead, so "Start
@@ -393,6 +394,21 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
  * overwriting the very session being restored, before restore finishes.
  */
 let restoring = false;
+
+/**
+ * Set when a restore failed part-way, and never cleared: writes stay off until the page reloads.
+ *
+ * The failure message tells the user to reload precisely because the restore assigns state as it
+ * goes, so what is in memory at that point is inconsistent. Without this the next rebuild's
+ * debounced save wrote exactly that state back over the session the catch had just cleared, and
+ * the next visit offered a session built from the thing that had failed.
+ */
+let writesDisabledAfterFailedRestore = false;
+
+/** Called by the restore banner when a restore throws part-way. */
+export function disableSessionWritesAfterFailedRestore(): void {
+  writesDisabledAfterFailedRestore = true;
+}
 
 /** Debounced save — called after every rebuild (see app/rebuild.ts) and a couple of state changes
  * that don't go through one (the printer picker). One save per burst of activity, not one per

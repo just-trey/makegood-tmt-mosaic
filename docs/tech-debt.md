@@ -638,6 +638,14 @@ Closing it means building the restored state into a local object and committing
 it to `state` only once nothing further can throw, the way `applyRasterFile` and
 the source loop inside this same function already do.
 
+**A related notice is lost the same way.** When one source of several fails to
+restore, the per-image "could not be restored from the saved session" warning is
+wiped by the next SVG source in the list: `parseSVGDocument`
+([src/svg/parse.ts](../src/svg/parse.ts)) opens with `clearWarnings()`. So a
+partial failure, the case that warning exists for, is the case least likely to
+show it. Pre-existing, and the fix is in that `clearWarnings()` contract rather
+than in the restore.
+
 Related, from the section this replaced: the 2026-08-08 cycle's **A2** (switching
 part shape carries artwork across with no confirmation) is the opposite failure in
 the same control. It is graded FIXED in

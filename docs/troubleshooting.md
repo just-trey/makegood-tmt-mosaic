@@ -575,5 +575,7 @@ A save that is damaged outright, rather than merely unusable, does not reach thi
 message. It cannot be parsed at all, so it is discarded on load without a banner
 ever being offered.
 
-**Nothing else was lost.** Only the saved session is affected. Any design you have
-loaded in this tab is untouched.
+**What it does affect.** The restore had already applied some settings before it
+stopped, so what is on screen is a mix of the saved session and what you had. The
+app stops saving until you reload, so this mixed state is never written back, but
+it also means anything you do before reloading will not be saved. Reload first.
