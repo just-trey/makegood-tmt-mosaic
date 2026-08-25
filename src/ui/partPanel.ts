@@ -19,6 +19,8 @@ import {
 } from './assemblyPanel';
 import { updateOffsetSliderRanges } from './fitPanel';
 import { refreshShapeThumb } from './shapeThumb';
+import { clearStalePlacementNotices } from './exportPanel';
+import { renderWarnings } from './warningsView';
 import { $, input, numVal } from './dom';
 import { track } from '../analytics/track';
 import { confirmDialog } from './dialogs';
@@ -271,6 +273,14 @@ export function initPartPanel(): void {
         // re-target from the list.
         clearArtworkZoneBindings();
       }
+      // Every placement message names a part, so switching kinds invalidates all of them. They
+      // used to be cleared only by the next export, which left pills naming the previous part
+      // standing over the new one.
+      clearStalePlacementNotices();
+      // Rendered here, not left to the rebuild this schedules: a cancel honoured inside the
+      // debounce window clears both the dirty flag and the armed timer (app/scheduler.ts), which
+      // would leave pills on screen that WARNINGS no longer holds.
+      renderWarnings();
       setShapeKind('assembly');
       track('mode_switch', { kind: 'assembly' });
       // Artwork outlives a part switch, so a design left in Fill by the previous kind has to be

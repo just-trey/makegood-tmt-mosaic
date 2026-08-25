@@ -539,6 +539,17 @@ export async function build3MFCombined(
     });
   }
 
+  /** A plate prints a prime tower only when its parts between them use more than one filament. */
+  const platePrintsTower = (row: Placed[]): boolean =>
+    new Set(row.flatMap((pl) => pl.part.subs.map((s) => s.matIndex))).size > 1;
+
+  /** Plates whose best tower corner still overlaps a part, held until the write decision is made. */
+  const blockedTowers: Array<{
+    names: string;
+    plate: string;
+    at: { x: number; y: number };
+  }> = [];
+
   /**
    * Where to park the prime tower on a plate whose parts carry no verified `primeTowerDelta`.
    * Deliberately NOT a baked position: it is a starting point for the human pass that produces
@@ -591,15 +602,19 @@ export async function build3MFCombined(
     // box, which over-reports a round part. A crowded plate gets a warning rather than a position
     // that quietly prints through a part. A one-filament plate (the caster plate, no artwork)
     // prints no tower, so whatever this returns for it is never used.
-    const needsTower = new Set(items.flatMap((pl) => pl.part.subs.map((s) => s.matIndex))).size > 1;
+    const needsTower = platePrintsTower(items);
     const clear = overlap(best) === 0;
+    // Recorded, not announced. What to tell the user depends on whether the file ends up carrying
+    // this position, and that is decided once for the whole export by the `towerBlocked` gate at
+    // the bottom of this function: a lone blocked plate still gets its corner written, while a
+    // run where every plate is blocked writes no wipe_tower_x/y at all. Said from here, the
+    // message was wrong for one case or the other whichever way it was worded.
     if (needsTower && !clear)
-      warnings.push(
-        `The prime tower on the plate holding ${items.map((pl) => `"${pl.part.name}"`).join(', ')} ` +
-          `has no verified position, and every corner of the ${plateW}×${plateD}mm plate overlaps ` +
-          `a part, so it was parked at (${best.x.toFixed(0)}, ${best.y.toFixed(0)}) — ` +
-          `move the tower in your slicer.`,
-      );
+      blockedTowers.push({
+        names: items.map((pl) => `"${pl.part.name}"`).join(', '),
+        plate: `${plateW}×${plateD}mm`,
+        at: best,
+      });
     return { ...best, clear };
   }
 
@@ -609,6 +624,8 @@ export async function build3MFCombined(
     wipeTower?: { x: number; y: number };
     /** true when the position is only the least-bad corner, all of which a part overlaps */
     towerBlocked?: boolean;
+    /** Whether this plate prints a prime tower at all: a single-filament plate never does. */
+    towerNeeded?: boolean;
   }[] = [];
   if (useHints) {
     groupByPlateHint(placed, (pl) => pl.part.plateHint).forEach((row) => plates.push({ row }));
@@ -644,6 +661,7 @@ export async function build3MFCombined(
       );
       const delta =
         anchor && (anchor.part.primeTowerDeltaByPlate?.[bedKey] ?? anchor.part.primeTowerDelta);
+      plate.towerNeeded = platePrintsTower(plate.row);
       if (anchor && delta) {
         plate.wipeTower = { x: anchor.tx! + delta.x, y: anchor.ty! + delta.y };
       } else {
@@ -665,6 +683,7 @@ export async function build3MFCombined(
       // Same free-corner search as the hinted branch. Without it this branch wrote no
       // wipe_tower_x/y, leaving the slicer on its preset default, which for a part just centered
       // on the plate is very likely through it. Reachable for any part with no plateHint.
+      plate.towerNeeded = platePrintsTower(plate.row);
       const { clear, ...pos } = suggestTowerPos(plate.row);
       plate.wipeTower = pos;
       plate.towerBlocked = !clear;
@@ -832,6 +851,36 @@ ${items.join('\n')}
   cfg.push('</config>');
   files.push({ name: 'Metadata/model_settings.config', data: enc.encode(cfg.join('\n')) });
 
+  // Whether the export carries tower positions at all, decided once here for the whole file.
+  //
+  // Write nothing when NO plate has a position worth asserting: a blocked plate's best corner is
+  // still overlapped, and pinning it would state a placement the exporter has just measured as
+  // colliding. Omitting the key lets the slicer apply its own printer-aware default. Only when
+  // *every* plate is blocked, since these keys are per-plate arrays with no way to say "no
+  // opinion" for one entry.
+  // Counted over the plates that actually print a tower. A single-filament plate has no opinion,
+  // and letting it vote turned the gate off: a 240mm two-material disc beside a plate of
+  // single-filament clips wrote wipe_tower_x for BOTH, pinning the disc plate's tower at a corner
+  // the exporter had just measured as overlapping it — the exact thing this gate exists to refuse.
+  const towerPlates = plates.filter((p) => p.towerNeeded);
+  const allBlocked = towerPlates.length > 0 && towerPlates.every((p) => p.towerBlocked);
+  const towerPositions = allBlocked ? undefined : plates.map((p) => p.wipeTower);
+  // Said here rather than where the overlap is measured, because the right thing to say depends on
+  // the decision above. A lone blocked plate still gets its corner written, so the user can move
+  // it; when nothing was written there is no position to move and the slicer decides.
+  blockedTowers.forEach(({ names, plate, at }) =>
+    warnings.push(
+      `The prime tower on the plate holding ${names} has no verified position, and every corner ` +
+        `of the ${plate} plate overlaps a part. ` +
+        (allBlocked
+          ? 'No tower position was saved, so your slicer will place it. Check it before printing.'
+          : // Named, because this arm fires precisely when a position WAS written. Telling someone
+            // to move a tower without saying where it is leaves them hunting for it under a part,
+            // which is what dropping the coordinates from both arms did.
+            `It was put at (${at.x.toFixed(0)}, ${at.y.toFixed(0)}), so move the tower in your slicer.`),
+    ),
+  );
+
   files.push({
     name: 'Metadata/project_settings.config',
     data: enc.encode(
@@ -842,12 +891,7 @@ ${items.join('\n')}
       bambuProjectSettings(
         materials,
         printer,
-        // Write nothing when NO plate has a position worth asserting: a blocked plate's best
-        // corner is still overlapped, and pinning it would state a placement the exporter has just
-        // measured as colliding. The warning already says to move it, and omitting the key lets
-        // the slicer apply its own printer-aware default. Only when *every* plate is blocked,
-        // since these keys are per-plate arrays with no way to say "no opinion" for one entry.
-        plates.every((p) => p.towerBlocked) ? undefined : plates.map((p) => p.wipeTower),
+        towerPositions,
         // Project settings are global to the file, so baked overrides merge rather than stay per
         // plate. Nothing ships two parts setting the same key differently, and one that did would
         // be a plate-level claim that can't be honored anyway.

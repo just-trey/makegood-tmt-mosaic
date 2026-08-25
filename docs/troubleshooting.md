@@ -595,3 +595,28 @@ without any warning. Some parts raise no limit at all: a design face the app
 cannot measure a depth against, or a part too thin to hold the minimum. Look at
 the cut in the 3D view, and in your slicer's preview, before printing. See
 [tech-debt.md](tech-debt.md).
+
+## Troubleshooting: "The prime tower … has no verified position, and every corner … overlaps a part"
+
+**What it means.** The plate is crowded enough that the prime tower has nowhere
+clear to go. The tower is the block the printer wipes filament into on every
+color change, and it needs its own floor space.
+
+The message ends one of two ways, and they ask for different things:
+
+- **"It was put at (x, y), so move the tower in your slicer."** A position was
+  saved, and it overlaps a part. Open the plate in your slicer, drag the tower
+  somewhere clear, and save before printing.
+- **"No tower position was saved, so your slicer will place it."** Every plate
+  that prints a tower was crowded, so nothing was written and your slicer picks
+  the spot. Check where it landed before printing.
+
+**What to do about the crowding.** Fewer colors means a smaller tower. Merging
+two similar colors in Colors detected, or sending one to the base, frees space.
+A smaller part on the plate does too, where the size is yours to choose.
+
+**Why it happens.** The check measures each corner against the parts' bounding
+boxes, which over-reports a round part: a disc can be reported as blocking a
+corner it does not reach. That is deliberate for now, since a tower printed
+through a part is worse than one you place yourself, and it is written up in
+[tech-debt.md](tech-debt.md).
