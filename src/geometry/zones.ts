@@ -218,6 +218,7 @@ export class FlatZoneMapper implements ZoneMapper {
   readonly faceNormal: number[] | null;
   readonly nsign: number;
   private readonly faceY: number;
+  private readonly faceYKnown: boolean;
   private readonly faceCx: number;
   private readonly faceCz: number;
   private boundaryComputed = false;
@@ -242,7 +243,13 @@ export class FlatZoneMapper implements ZoneMapper {
     // offset (= nrm.y * faceY), so a face pointing -Y (e.g. the BACK of the wheel) needs the
     // pocket cut in the opposite direction — otherwise the inlay lands on the wrong side.
     this.nsign = nrm && nrm[1] < 0 ? -1 : 1;
-    this.faceY = nrm && Math.abs(nrm[1]) > 0.1 ? part.topZ / nrm[1] : part.topZ;
+    // Whether `faceY` below is a real Y at all. The fallback assigns the raw plane offset, which
+    // for a face pointing along X or Z is an X or Z distance wearing a Y's name. Recorded once
+    // here so every reader tests the same condition: maxCutDepth() checking the *sign* of its own
+    // result instead measured the footrest's side patches at 141.95mm and 169.95mm on a part 64mm
+    // tall, and caught the tilted case only when topZ happened to come out negative.
+    this.faceYKnown = !!nrm && Math.abs(nrm[1]) > 0.1;
+    this.faceY = this.faceYKnown ? part.topZ / nrm![1] : part.topZ;
 
     // Rect parts center the design on the detected face (its native X/Z bbox center); wheel parts
     // anchor on the hub at the origin.
@@ -386,7 +393,9 @@ export class FlatZoneMapper implements ZoneMapper {
   maxCutDepth(): number {
     if (this.maxCutDepthCache != null) return this.maxCutDepthCache;
     const pos = this.part.positions;
-    if (!pos) return Infinity;
+    // Cached on the decline paths too, or the full-mesh scan below reruns per colour per artwork on
+    // exactly the parts that decline, which is what the cache exists to stop.
+    if (!pos || !this.faceYKnown) return (this.maxCutDepthCache = Infinity);
     let yMin = Infinity,
       yMax = -Infinity;
     for (let i = 1; i < pos.length; i += 3) {
@@ -406,7 +415,8 @@ export class FlatZoneMapper implements ZoneMapper {
     //     part at the minimum depth and told the user it was "deeper than the part goes".
     //   - A part too thin to hold the minimum. Warning about the user's number would be reporting
     //     the geometry, which is not what this message says.
-    if (!Number.isFinite(usable) || usable < MIN_CUT_DEPTH_MM) return Infinity;
+    if (!Number.isFinite(usable) || usable < MIN_CUT_DEPTH_MM)
+      return (this.maxCutDepthCache = Infinity);
     return (this.maxCutDepthCache = usable);
   }
 

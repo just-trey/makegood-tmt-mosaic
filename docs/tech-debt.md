@@ -251,9 +251,12 @@ the only reachable one.
 
 **What is fixed.** `ZoneMapper.maxCutDepth()` bounds the setting, and a clamp is
 warned about by name. The flat mapper measures how far the part extends behind
-its design face, along that face's normal, off the loaded mesh. The conformal
-mapper declines and returns Infinity: it cuts along a normal field rather than
-one axis, so the question has no single answer there.
+its design face **along Y, the axis `buildCutter` extrudes down**, off the loaded
+mesh. Measuring along the face normal instead was tried and is wrong: on
+wheel-half's -Z patch it read 139.88mm against 24.13mm of real material. A face
+whose normal is not substantially along Y declines outright, since the plane
+offset is then an X or Z distance and there is nothing to measure. The conformal
+mapper declines too: it cuts along a normal field rather than one axis.
 
 **What is not.** That bound is the part, not the wall. On the wheel it is
 **48.5mm**, so a mistyped 9999 is caught and a 20mm pocket in a 3mm wall is not.

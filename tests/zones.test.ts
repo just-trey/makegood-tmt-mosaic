@@ -617,6 +617,15 @@ describe('maxCutDepth', () => {
     expect(new FlatZoneMapper(sideFacing, [], false).maxCutDepth()).toBe(Infinity);
   });
 
+  // With a POSITIVE plane offset, which is what made the first version of this look correct. It
+  // tested the sign of its own result, so a side-facing patch declined only when `topZ` happened
+  // to come out negative. On the real footrest those patches measured 141.95mm and 169.95mm on a
+  // part 64mm tall.
+  it('declines on a side-facing patch whose plane offset is positive', () => {
+    const sideFacing = boxPart({ patchNormal: [0, 0, 1], topZ: 20 });
+    expect(new FlatZoneMapper(sideFacing, [], false).maxCutDepth()).toBe(Infinity);
+  });
+
   // A tilted face is the same class: faceY (topZ / nrm.y) lands outside the mesh, so the extent
   // comes out negative. Clamping on that cut every colour on the part at 0.2mm while telling the
   // user it was "deeper than the part goes".
