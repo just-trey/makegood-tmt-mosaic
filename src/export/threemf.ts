@@ -545,6 +545,9 @@ export async function build3MFCombined(
    * one, and only has to beat dropping the tower on the plate center, straight through the part.
    * Insets the tower's nominal footprint into whichever corner the parts intrude on least.
    */
+  /** Plates whose best tower corner still overlaps a part, held until the write decision is made. */
+  const blockedTowers: Array<{ names: string; plate: string }> = [];
+
   function suggestTowerPos(items: Placed[]): { x: number; y: number; clear: boolean } {
     const TOWER = 60; // nominal prime-tower footprint; the slicer sizes the real one per filament count
     // `wipe_tower_x/y` is the tower's FRONT-LEFT CORNER, not its centre (settled against two
@@ -593,18 +596,16 @@ export async function build3MFCombined(
     // prints no tower, so whatever this returns for it is never used.
     const needsTower = new Set(items.flatMap((pl) => pl.part.subs.map((s) => s.matIndex))).size > 1;
     const clear = overlap(best) === 0;
-    // Claims no position, because the file may carry none. When every plate is blocked the caller
-    // writes no wipe_tower_x/y at all and lets the slicer place the tower (see the `towerBlocked`
-    // gate at the end of this file), so "it was parked at (270, 240)" named coordinates that
-    // appeared nowhere in the export. It was also false about the mixed case in a subtler way:
-    // this runs per plate and cannot see whether the others are blocked. What is true either way
-    // is that nothing here is verified and the user has to look.
+    // Recorded, not announced. What to tell the user depends on whether the file ends up carrying
+    // this position, and that is decided once for the whole export by the `towerBlocked` gate at
+    // the bottom of this function: a lone blocked plate still gets its corner written, while a
+    // run where every plate is blocked writes no wipe_tower_x/y at all. Said from here, the
+    // message was wrong for one case or the other whichever way it was worded.
     if (needsTower && !clear)
-      warnings.push(
-        `The prime tower on the plate holding ${items.map((pl) => `"${pl.part.name}"`).join(', ')} ` +
-          `has no verified position, and every corner of the ${plateW}×${plateD}mm plate overlaps ` +
-          `a part. Check where your slicer puts the tower before printing.`,
-      );
+      blockedTowers.push({
+        names: items.map((pl) => `"${pl.part.name}"`).join(', '),
+        plate: `${plateW}×${plateD}mm`,
+      });
     return { ...best, clear };
   }
 
@@ -837,6 +838,28 @@ ${items.join('\n')}
   cfg.push('</config>');
   files.push({ name: 'Metadata/model_settings.config', data: enc.encode(cfg.join('\n')) });
 
+  // Whether the export carries tower positions at all, decided once here for the whole file.
+  //
+  // Write nothing when NO plate has a position worth asserting: a blocked plate's best corner is
+  // still overlapped, and pinning it would state a placement the exporter has just measured as
+  // colliding. Omitting the key lets the slicer apply its own printer-aware default. Only when
+  // *every* plate is blocked, since these keys are per-plate arrays with no way to say "no
+  // opinion" for one entry.
+  const allBlocked = plates.every((p) => p.towerBlocked);
+  const towerPositions = allBlocked ? undefined : plates.map((p) => p.wipeTower);
+  // Said here rather than where the overlap is measured, because the right thing to say depends on
+  // the decision above. A lone blocked plate still gets its corner written, so the user can move
+  // it; when nothing was written there is no position to move and the slicer decides.
+  blockedTowers.forEach(({ names, plate }) =>
+    warnings.push(
+      `The prime tower on the plate holding ${names} has no verified position, and every corner ` +
+        `of the ${plate} plate overlaps a part. ` +
+        (allBlocked
+          ? 'No tower position was saved, so your slicer will place it. Check it before printing.'
+          : 'Move the tower in your slicer before printing.'),
+    ),
+  );
+
   files.push({
     name: 'Metadata/project_settings.config',
     data: enc.encode(
@@ -847,12 +870,7 @@ ${items.join('\n')}
       bambuProjectSettings(
         materials,
         printer,
-        // Write nothing when NO plate has a position worth asserting: a blocked plate's best
-        // corner is still overlapped, and pinning it would state a placement the exporter has just
-        // measured as colliding. The warning already says to move it, and omitting the key lets
-        // the slicer apply its own printer-aware default. Only when *every* plate is blocked,
-        // since these keys are per-plate arrays with no way to say "no opinion" for one entry.
-        plates.every((p) => p.towerBlocked) ? undefined : plates.map((p) => p.wipeTower),
+        towerPositions,
         // Project settings are global to the file, so baked overrides merge rather than stay per
         // plate. Nothing ships two parts setting the same key differently, and one that did would
         // be a plate-level claim that can't be honored anyway.

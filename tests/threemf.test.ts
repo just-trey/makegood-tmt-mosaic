@@ -237,17 +237,42 @@ describe('multi-plate world layout', () => {
     expect(x).toBeGreaterThanOrEqual(printer.plate.w / 2);
     expect(x + TOWER).toBeLessThanOrEqual(printer.plate.w);
     expect(y + TOWER).toBeLessThan(printer.plate.d / 2);
-    expect(warnings.join(' ')).not.toContain('move the tower');
+    // Matched against what the exporter actually emits. 'move the tower' stopped being any part
+    // of a shipped message, so asserting its absence pinned nothing at all.
+    expect(warnings.join(' ')).not.toContain('has no verified position');
   });
 
   it('warns instead of parking the tower inside a part when every corner is occupied', async () => {
     const { warnings } = await build3MFCombined(twoMaterials, [box('Wide', 170, 170, 50, 50)], {
       printer: getPrinter('bambu-x1c'),
     });
-    // Names no coordinates. When every plate is blocked the exporter writes no wipe_tower_x/y at
-    // all, so "it was parked at (270, 240)" quoted a position that appears nowhere in the file.
-    expect(warnings.join(' ')).toContain('Check where your slicer puts the tower');
+    // Every plate here is blocked, so no wipe_tower_x/y is written and the message must say so
+    // rather than naming a position. "It was parked at (270, 240)" quoted coordinates that appear
+    // nowhere in the file; the other arm ("Move the tower in your slicer") would name one the user
+    // cannot move, because none was saved.
+    expect(warnings.join(' ')).toContain('No tower position was saved');
     expect(warnings.join(' ')).not.toMatch(/parked at \(/);
+  });
+
+  // The mixed case, which is where the first rewording of this message was wrong. A blocked plate
+  // sitting alongside one with a verified position still gets its corner written — the omission is
+  // all-or-nothing, since these keys are per-plate arrays — so there IS a position, and telling the
+  // user their slicer would place it was false.
+  it('tells the user to move a tower that was written, when another plate has one', async () => {
+    const verified: ExportPart = {
+      ...box('Small', 20, 20, 50, 50),
+      plateHint: 2,
+      primeTowerDelta: { x: 10, y: 10 },
+    };
+    const blocked: ExportPart = { ...box('Wide', 170, 170, 50, 50), plateHint: 1 };
+    const { blob, warnings } = await build3MFCombined(twoMaterials, [blocked, verified], {
+      printer: getPrinter('bambu-x1c'),
+    });
+
+    const proj = await projectSettings(blob);
+    expect(proj.wipe_tower_x, 'a position was written for both plates').toHaveLength(2);
+    expect(warnings.join(' ')).toContain('Move the tower in your slicer');
+    expect(warnings.join(' ')).not.toContain('No tower position was saved');
   });
 
   // The same crowded plate, minus the second filament: no tower gets printed there, so the
@@ -258,7 +283,9 @@ describe('multi-plate world layout', () => {
     const { warnings } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], [single], {
       printer: getPrinter('bambu-x1c'),
     });
-    expect(warnings.join(' ')).not.toContain('move the tower');
+    // Matched against what the exporter actually emits. 'move the tower' stopped being any part
+    // of a shipped message, so asserting its absence pinned nothing at all.
+    expect(warnings.join(' ')).not.toContain('has no verified position');
   });
 
   // Size and position are separate claims: this part fits the plate at some position, just not at

@@ -139,9 +139,9 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   Within that it exports at a hand-checked position with the prime tower placed
   clear of it (7mm of clearance on a 256mm bed, 19mm on a 270mm one). Larger
   than 220mm, or on any other bed, nothing was verified: it exports centred, with
-  the prime tower in the freest corner. Where every corner overlaps a part, no
-  tower position is written and the slicer places it. Either way the app says so;
-  check both in your slicer. Because the part is generated, this can't be a fingerprint-sealed pose
+  the prime tower in the freest corner. Where every corner overlaps a part it says
+  so, and if that is true of every plate it saves no tower position at all and the
+  slicer places it. Check both in your slicer. Because the part is generated, this can't be a fingerprint-sealed pose
   the way the fixed parts have; it's an arrangement verified at one size, which
   is why it stops applying above that size. Cutting the hubcap to its artwork's
   shape (**Cut to artwork shape**) always uses the computed centred placement —

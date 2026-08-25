@@ -32,7 +32,10 @@ const PLACEMENT_WARNING_SUFFIXES = [
   'even at its best-fit rotation.',
   'double-check for overlap in your slicer.',
   'reposition it in your slicer before printing.',
-  'Check where your slicer puts the tower before printing.',
+  // both arms of the blocked-tower message (threemf.ts), which differ by whether a position
+  // was saved at all
+  'so your slicer will place it. Check it before printing.',
+  'Move the tower in your slicer before printing.',
   // placementNotice's mesh-identity guard — every variant of it ends this way, which
   // tests/placement.test.ts pins so a reworded message can't silently stop being cleared
   'placed automatically — check it in your slicer before printing.',
