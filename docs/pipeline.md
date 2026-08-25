@@ -113,14 +113,23 @@ prism in the part's own coordinates and subtracted from the mesh with
 [Manifold](https://github.com/elalish/manifold), a 3D solid-boolean engine (CSG)
 loaded on demand ([assembly.ts](../src/geometry/assembly.ts)).
 
-**Depth is bounded at the shallow end only.** It is raised to the same 0.2 mm
-floor, and the warning names the raised _setting_ rather than a cut depth,
-because a cut-through part holes the whole way through regardless.
+**The shallow end** is raised to the same 0.2 mm floor, and the warning names the
+raised _setting_ rather than a cut depth, because a cut-through part holes the
+whole way through regardless.
 
-**The deep end is not checked at all.** Wall thickness varies across a part and
-nothing measures it, so a pocket deeper than the wall exports as a part with a
-hole through it, silently. Only the extreme case surfaces, where the cut leaves
-the part empty and the export drops it.
+**The deep end is bounded by the part, not by its wall.** `ZoneMapper.maxCutDepth()`
+gives the material behind the design face along Y, the axis the cutter extrudes
+down, less flat mode's `CUT_FLOOR_MM` so a clamped cut stays a recess rather than
+landing coplanar with the back face. Past that the cut is clamped and named. Three
+cases decline instead of guessing, all returning `Infinity`: a conformal zone (it
+cuts along a normal field, not one axis), a face whose normal is not substantially
+along Y (the plane offset is then an X or Z distance), and a part too thin to hold
+the minimum.
+
+**Wall thickness is still not checked.** It varies across a part and nothing
+measures it, so a pocket deeper than the wall in one spot exports as a part with a
+hole through it, silently. On the wheel the bound is 48.45 mm, so it catches a
+mistyped number and not a 20 mm pocket in a 3 mm wall.
 
 **Rotated copies** are supported (a wheel's two halves): the slice of the design
 landing on the copy is mapped back into the part's own print orientation.

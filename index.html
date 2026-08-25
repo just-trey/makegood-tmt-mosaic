@@ -238,8 +238,11 @@
               the Depth panel says how many are doing it, with a "Reset all" to put them back. Its
               "↺" button does the same for one row. A depth of 0 cuts nothing at all, so it is
               raised to 0.2mm. A depth below 0.2mm is cut exactly as asked. A note says it needs a
-              layer height finer than the usual 0.2mm. To stop cutting a color entirely, use "→
-              base" on its row to print it in the body instead.
+              layer height finer than the usual 0.2mm. A depth deeper than the part has material for
+              is cut at the deepest it can take, and says so. That is the whole part, not its wall,
+              so a pocket deeper than a thin wall can still break through without a warning: check
+              the cut in the 3D view before printing. To stop cutting a color entirely, use "→ base"
+              on its row to print it in the body instead.
             </p>
           </section>
 

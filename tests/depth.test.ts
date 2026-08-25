@@ -5,6 +5,7 @@ import {
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
+  tooDeepWarning,
 } from '../src/geometry/depth';
 
 describe('subLayerDepth', () => {
@@ -74,5 +75,28 @@ describe('depthDiffers', () => {
   it('reports a difference the message would actually show', () => {
     expect(depthDiffers(3.95, 4)).toBe(true);
     expect(depthDiffers(MIN_CUT_DEPTH_MM, 0)).toBe(true);
+  });
+});
+
+describe('tooDeepWarning', () => {
+  const msg = tooDeepWarning('#ff0000', 'Wheel top', 9999, 48.45);
+
+  it('names the color, the part, and both numbers', () => {
+    expect(msg).toContain('"#ff0000"');
+    expect(msg).toContain('"Wheel top"');
+    expect(msg).toContain('9999.00 mm');
+    expect(msg).toContain('48.45 mm');
+  });
+
+  // The cut stops CUT_FLOOR_MM short of the part's back, so quoting the cut depth as the part's
+  // face-to-back distance made one figure do two jobs and was wrong by that floor at the second.
+  it('does not claim the cut depth is the part’s depth', () => {
+    expect(msg).not.toMatch(/is 48\.45 mm from/);
+    expect(msg).toContain('deeper than "Wheel top" goes');
+  });
+
+  // CLAUDE.md bars em dashes in user-facing copy.
+  it('uses no em dash', () => {
+    expect(msg).not.toContain('\u2014');
   });
 });

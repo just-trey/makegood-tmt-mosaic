@@ -7,6 +7,7 @@ import {
   subLayerDepth,
   thinDepthNotice,
   zeroDepthWarning,
+  CUT_FLOOR_MM,
 } from './depth';
 import type {
   BaseParams,
@@ -280,7 +281,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const footprint = footprintFeature(shapeKind, baseParams);
   const thickness = baseParams.thickness;
 
-  const maxDepth = thickness - 0.05;
+  const maxDepth = thickness - CUT_FLOOR_MM;
 
   /**
    * A recess reaching the back of the plate would cut through it, and one at or below zero cuts

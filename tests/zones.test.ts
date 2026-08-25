@@ -591,3 +591,74 @@ describe('implicitZoneFor', () => {
     expect(implicitZoneFor(boxPart(), [], false)).toBeInstanceOf(FlatZoneMapper);
   });
 });
+
+/**
+ * Assembly mode had no upper bound on depth at all: 20mm and 9999mm on the wheel both built and
+ * exported with zero warnings, while flat mode clamped and warned for the same input, and
+ * depth.ts's own comment claimed both did. The flat modes then left the UI, which made the
+ * unbounded path the only one a user can reach.
+ */
+describe('maxCutDepth', () => {
+  // The box is 10 tall with its design face on top, so a recess has 10mm behind it, less the floor
+  // that keeps a clamped cut from becoming a hole.
+  it('measures the material behind the face, less the through floor', () => {
+    expect(new FlatZoneMapper(boxPart(), [], false).maxCutDepth()).toBeCloseTo(10 - 0.05, 6);
+  });
+
+  // The cut runs down Y (buildCutter extrudes from faceY along that axis), so this measurement
+  // only means anything for a face whose normal has a Y component. Everything else declines.
+  //
+  // That is the bug being pinned: projecting onto `patchNormal` instead returned a distance the
+  // cut never travels, and wheel-half's -Z patch — selectable from the design-face dropdown, which
+  // offers the top six patches unfiltered — read 139.88mm against 24.13mm of real material. The
+  // mistyped depth the clamp exists to catch went straight through it.
+  it('declines on a face the cut axis cannot measure, rather than guessing', () => {
+    const sideFacing = boxPart({ patchNormal: [0, 0, -1], topZ: -20 });
+    expect(new FlatZoneMapper(sideFacing, [], false).maxCutDepth()).toBe(Infinity);
+  });
+
+  // With a POSITIVE plane offset, which is what made the first version of this look correct. It
+  // tested the sign of its own result, so a side-facing patch declined only when `topZ` happened
+  // to come out negative. On the real footrest those patches measured 141.95mm and 169.95mm on a
+  // part 64mm tall.
+  it('declines on a side-facing patch whose plane offset is positive', () => {
+    const sideFacing = boxPart({ patchNormal: [0, 0, 1], topZ: 20 });
+    expect(new FlatZoneMapper(sideFacing, [], false).maxCutDepth()).toBe(Infinity);
+  });
+
+  // A tilted face is the same class: faceY (topZ / nrm.y) lands outside the mesh, so the extent
+  // comes out negative. Clamping on that cut every colour on the part at 0.2mm while telling the
+  // user it was "deeper than the part goes".
+  // Both signs of the plane offset. The guard used to be inferred from the sign of the result, so
+  // each earlier version passed on whichever sign its fixture happened to use: -90 gave a negative
+  // extent and declined, while +90 gave 299.95mm on a box 10mm tall and clamped nothing.
+  it.each([-90, 90])('declines on a tilted face, plane offset %d', (topZ) => {
+    const tilted = boxPart({ patchNormal: [-0.95, 0.3, 0], topZ });
+    expect(new FlatZoneMapper(tilted, [], false).maxCutDepth()).toBe(Infinity);
+  });
+
+  // A normal with just enough Y to pass faceYKnown, and a face plane well outside the mesh.
+  it('declines when the face plane lands outside the part', () => {
+    const shallow = boxPart({ patchNormal: [0, 0.15, 0.99], topZ: 29.7 });
+    expect(new FlatZoneMapper(shallow, [], false).maxCutDepth()).toBe(Infinity);
+  });
+
+  // Same reasoning at the other end: a part too thin to hold the minimum printable recess is a
+  // fact about the geometry, and "deeper than the part goes" is a message about the user's number.
+  it('declines when the part cannot hold a printable recess', () => {
+    expect(new FlatZoneMapper(boxPart({ topZ: -4.9 }), [], false).maxCutDepth()).toBe(Infinity);
+  });
+
+  // A face pointing the other way has the same material behind it, in the other direction.
+  it('handles a face pointing the other way', () => {
+    const flipped = boxPart({ patchNormal: [0, -1, 0], topZ: 0 });
+    expect(new FlatZoneMapper(flipped, [], false).maxCutDepth()).toBeCloseTo(10 - 0.05, 6);
+  });
+
+  // An unloaded part must clamp nothing, or a depth would be silently pinned to whatever a missing
+  // mesh implies.
+  it('declines when the part has no mesh yet', () => {
+    const bare = boxPart({ positions: null as unknown as Float32Array });
+    expect(new FlatZoneMapper(bare, [], false).maxCutDepth()).toBe(Infinity);
+  });
+});

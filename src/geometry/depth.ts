@@ -14,6 +14,17 @@ import type { ColorSettings } from '../types';
 export const MIN_CUT_DEPTH_MM = 0.2;
 
 /**
+ * How much material a recess leaves behind it, so a clamped cut is still a recess.
+ *
+ * Shared with flat mode rather than duplicated: it had this rule ("depth is capped at the plate
+ * thickness less a 0.05 mm floor, so a recess cannot cut through", docs/pipeline.md) and assembly
+ * mode had no upper bound at all. Clamping to the bare extent instead put the cutter floor exactly
+ * coplanar with the part's back face — a through-hole and a coincident-face boolean, reported to
+ * the user as a recess "cut at 48.50 mm".
+ */
+export const CUT_FLOOR_MM = 0.05;
+
+/**
  * Compare a requested depth against the one cut at the precision the warnings print (2dp), not at
  * machine epsilon: a 3.951 mm request on a 4 mm plate otherwise reports "set to 3.95 mm … cut at
  * 3.95 mm instead."
@@ -50,6 +61,32 @@ export function zeroDepthWarning(label: string, requested: number, raisedTo: num
 }
 
 /**
+ * The warning for a depth deeper than the part has material to give.
+ *
+ * Names the part, unlike zeroDepthWarning: the bound is a property of one part's geometry, so the
+ * same setting can be fine on the wheel and clamped on the cap, and a message without the name
+ * would read as a fact about the number.
+ *
+ * **This is not a wall-thickness check**, and it is worded so it cannot be read as one. It bounds
+ * the recess by how far the part extends behind its design face, which is the deepest any cut
+ * could go before leaving the part entirely. A recess shallower than that can still break through
+ * a thin wall, and nothing here measures that (docs/tech-debt.md).
+ */
+export function tooDeepWarning(
+  label: string,
+  partName: string,
+  requested: number,
+  cutAt: number,
+): string {
+  // Says what it cut, and does not claim that number is the part's face-to-back distance: the cut
+  // stops a floor short of it, so quoting one figure as both was wrong by CUT_FLOOR_MM.
+  return (
+    `Depth for "${label}" was set to ${requested.toFixed(2)} mm, deeper than "${partName}" goes. ` +
+    `It was cut at ${cutAt.toFixed(2)} mm instead.`
+  );
+}
+
+/**
  * Whether a depth is shallow enough to be worth a note, asked at the precision the note prints at,
  * not machine epsilon. A 0.199 mm cut is a rounding artefact away from a full layer, and
  * announcing it produced "is 0.20 mm, thinner than the usual 0.20 mm print layer", which reads as
@@ -65,8 +102,8 @@ export function subLayerDepth(depth: number): boolean {
  * flat mode had already fixed.
  *
  * **An `ℹ`, not a `⚠`. Proposed and rejected (UX review 2026-08-03).** The icon tracks "did the
- * app change your number?", not "might you be disappointed?". A zero is raised and a too-deep
- * value clamped, so both warn: something was overridden. A positive sub-layer depth is honored
+ * app change your number?", not "might you be disappointed?". A zero is raised, and a value
+ * deeper than the part is clamped, so both warn: something was overridden. A positive sub-layer depth is honored
  * exactly as asked, and someone on a 0.08 mm profile cutting a 0.12 mm recess made a real choice
  * (docs/audience.md). Warning about a value the app then obeys is what stops the two real `⚠`s
  * being trusted.
