@@ -79,12 +79,13 @@ async function runNow(): Promise<void> {
     // Assembly only, which is every part the app offers — the flat modes ship compiled and
     // unrendered (docs/tech-debt.md), so this condition selects everything reachable.
     //
-    // The reason recorded here used to be that flat had no safe abort point. That stopped being
-    // true when the check went into computeNetRegionsByColor, which both paths run and which holds
-    // no Manifold solids. What remains true is the narrower thing: `unionAllCooperative` is shared
-    // with Fill's tiling, which runs inside the per-part body holding solids, so a check *there*
-    // would still leak. Offering flat a Cancel is untested rather than unsafe, and there is no
-    // reachable flat mode to test it on.
+    // The reason recorded here used to be that flat had no safe abort point, and that is no longer
+    // true twice over: the check went into computeNetRegionsByColor, which both paths run and
+    // which holds no Manifold solids, and Fill's tiling — the case that made
+    // `unionAllCooperative` unsafe — now runs inside the cutter loop's own catch over
+    // `colorPrisms`. flat.ts imports no Manifold at all. So offering flat a Cancel is untested
+    // rather than unsafe, and there is no reachable flat mode to test it on
+    // (docs/tech-debt.md).
     showOverlay('Rebuilding geometry…', { cancellable: state.shapeKind === 'assembly' });
     // The rebuild reports progress as it chunks through the boolean pass; show it as a live
     // percentage, and once it's dragged on a while add a "hang tight" so it reads as working.
@@ -125,9 +126,21 @@ async function runNow(): Promise<void> {
       dirty = false;
       // And the armed debounce: an edit typed inside its window never set `dirty`, so clearing
       // that alone leaves the timer to fire and restart the rebuild that was just stopped.
-      if (timer !== undefined) {
+      //
+      // Keyed on `debouncePending`, not on `timer`. The timer callback never nulls its own handle,
+      // so `timer !== undefined` is true for one that has already fired and tests nothing.
+      //
+      // And the reservation has to be released here, because the callback that owns it is the
+      // thing being cancelled: scheduleRebuild's beginWork() is matched by an endWork() inside the
+      // timer, so dropping the timer without this leaks +1 outstanding and whenIdle() never
+      // resolves until the user's next edit. Unreachable while a cancel took 140s — any armed
+      // timer had long since fired — and routine at 0.3s, where a typed edit's 550ms window is
+      // wide open when the button is pressed.
+      if (debouncePending) {
         clearTimeout(timer);
         timer = undefined;
+        debouncePending = false;
+        endWork();
       }
     }
     // Start the follow-up pass (which does its own beginWork()) before releasing this pass's
