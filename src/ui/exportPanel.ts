@@ -28,7 +28,7 @@ import { alertDialog } from './dialogs';
 
 // suffixes of the placement-related messages this module and build3MFCombined can emit — used to
 // clear a stale one from a previous export attempt before reporting this attempt's
-const PLACEMENT_WARNING_SUFFIXES = [
+export const PLACEMENT_WARNING_SUFFIXES = [
   'even at its best-fit rotation.',
   'double-check for overlap in your slicer.',
   'reposition it in your slicer before printing.',

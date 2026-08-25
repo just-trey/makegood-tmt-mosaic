@@ -15,6 +15,7 @@ import {
 } from '../src/export/threemf';
 import { CHAIR_PLACEMENT } from '../src/export/chairPlacement';
 import { getPrinter } from '../src/export/printers';
+import { PLACEMENT_WARNING_SUFFIXES } from '../src/ui/exportPanel';
 
 /** The `transform` of every build item, in input-part order, from a built 3MF. */
 async function itemTransforms(blob: Blob): Promise<number[][]> {
@@ -219,249 +220,292 @@ describe('multi-plate world layout', () => {
     { name: 'Red', color: '#c1272d' },
   ];
 
-  // Two parts in an L: every corner is inside their combined bounding box, but the notch between
-  // them is free. Choosing the insets per axis lands in the top-right part instead.
-  it('puts the suggested tower in a corner no part occupies, not one only the axes agree on', async () => {
-    const printer = getPrinter('bambu-x1c');
-    const { blob, warnings } = await build3MFCombined(
-      twoMaterials,
-      [box('L', 110, 236, 10, 10), box('R', 110, 110, 136, 136)],
-      { printer },
-    );
-    const proj = await projectSettings(blob);
-    const TOWER = 60;
-    const x = Number(proj.wipe_tower_x[0]);
-    const y = Number(proj.wipe_tower_y[0]);
-    // the free notch is the front-right corner: right half, front edge. The figures moved by half
-    // a tower when the suggestion stopped being a centre written out as a corner.
-    expect(x).toBeGreaterThanOrEqual(printer.plate.w / 2);
-    expect(x + TOWER).toBeLessThanOrEqual(printer.plate.w);
-    expect(y + TOWER).toBeLessThan(printer.plate.d / 2);
-    // Matched against what the exporter actually emits. 'move the tower' stopped being any part
-    // of a shipped message, so asserting its absence pinned nothing at all.
-    expect(warnings.join(' ')).not.toContain('has no verified position');
-  });
+  /**
+   * Every placement message the exporter can emit has to end with one of the suffixes the panel
+   * clears on, or its pill sticks around after a printer switch describing a setup that is gone.
+   *
+   * Nothing pinned that pairing before, and the rot it allows is not hypothetical: rewording the
+   * blocked-tower message left `scripts/export-hubcap-examples.mjs` matching a fragment no message
+   * contained any more, so its check was permanently false on the one path it exists to run. The
+   * suite stayed green throughout, because every other assertion matches a distinguishing phrase
+   * from the middle of a message rather than the tail that does the clearing.
+   */
+  describe('placement warnings stay clearable', () => {
+    const endsWithRegistered = (w: string) => PLACEMENT_WARNING_SUFFIXES.some((s) => w.endsWith(s));
 
-  it('warns instead of parking the tower inside a part when every corner is occupied', async () => {
-    const { warnings } = await build3MFCombined(twoMaterials, [box('Wide', 170, 170, 50, 50)], {
-      printer: getPrinter('bambu-x1c'),
-    });
-    // Every plate here is blocked, so no wipe_tower_x/y is written and the message must say so
-    // rather than naming a position. "It was parked at (270, 240)" quoted coordinates that appear
-    // nowhere in the file; the other arm ("Move the tower in your slicer") would name one the user
-    // cannot move, because none was saved.
-    expect(warnings.join(' ')).toContain('No tower position was saved');
-    expect(warnings.join(' ')).not.toMatch(/parked at \(/);
-  });
-
-  // The mixed case, which is where the first rewording of this message was wrong. A blocked plate
-  // sitting alongside one with a verified position still gets its corner written — the omission is
-  // all-or-nothing, since these keys are per-plate arrays — so there IS a position, and telling the
-  // user their slicer would place it was false.
-  it('tells the user to move a tower that was written, when another plate has one', async () => {
-    const verified: ExportPart = {
-      ...box('Small', 20, 20, 50, 50),
-      plateHint: 2,
-      primeTowerDelta: { x: 10, y: 10 },
-    };
-    const blocked: ExportPart = { ...box('Wide', 170, 170, 50, 50), plateHint: 1 };
-    const { blob, warnings } = await build3MFCombined(twoMaterials, [blocked, verified], {
-      printer: getPrinter('bambu-x1c'),
-    });
-
-    const proj = await projectSettings(blob);
-    expect(proj.wipe_tower_x, 'a position was written for both plates').toHaveLength(2);
-    expect(warnings.join(' ')).toContain('Move the tower in your slicer');
-    expect(warnings.join(' ')).not.toContain('No tower position was saved');
-  });
-
-  // The same crowded plate, minus the second filament: no tower gets printed there, so the
-  // position it would have had is not worth a warning.
-  it('stays quiet about the tower on a plate that prints one filament', async () => {
-    const single = { ...box('Wide', 170, 170, 50, 50) };
-    single.subs = single.subs.slice(0, 1);
-    const { warnings } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], [single], {
-      printer: getPrinter('bambu-x1c'),
-    });
-    // Matched against what the exporter actually emits. 'move the tower' stopped being any part
-    // of a shipped message, so asserting its absence pinned nothing at all.
-    expect(warnings.join(' ')).not.toContain('has no verified position');
-  });
-
-  // Size and position are separate claims: this part fits the plate at some position, just not at
-  // the one it was given — the shape a verified fixedPos takes on a bed it wasn't verified against.
-  it('warns about a part placed off the plate, not only one too big for it', async () => {
-    const { warnings } = await build3MFCombined(twoMaterials, [box('Overhang', 40, 40, 230, 100)], {
-      printer: getPrinter('bambu-x1c'),
-    });
-    expect(warnings.join(' ')).toContain('"Overhang" is placed ~14mm past the edge');
-    expect(warnings.join(' ')).toContain('reposition it in your slicer');
-    expect(warnings.join(' ')).not.toContain('best-fit rotation');
-  });
-});
-
-describe('CHAIR_PLACEMENT', () => {
-  const entries = Object.entries(CHAIR_PLACEMENT);
-
-  it('covers all 15 chair pieces on the reference plates', () => {
-    expect(entries).toHaveLength(15);
-    for (const [, p] of entries) {
-      expect(p.plateHint).toBeGreaterThanOrEqual(1);
-      expect(p.plateHint).toBeLessThanOrEqual(12);
-    }
-  });
-
-  // A mirrored (determinant -1) matrix would print the opposite hand of the part and look
-  // plausible in every other check, so pin the handedness explicitly.
-  it('bakes proper rotations, never a mirror', () => {
-    for (const [id, { plateR: R }] of entries) {
-      const det =
-        R[0][0] * (R[1][1] * R[2][2] - R[1][2] * R[2][1]) -
-        R[0][1] * (R[1][0] * R[2][2] - R[1][2] * R[2][0]) +
-        R[0][2] * (R[1][0] * R[2][1] - R[1][1] * R[2][0]);
-      expect(det, `${id} determinant`).toBeCloseTo(1, 4);
-      for (const row of R) expect(Math.hypot(...row)).toBeCloseTo(1, 4);
-    }
-  });
-
-  it('keeps the two caster variants on separate plates', () => {
-    const plate = (id: string) => CHAIR_PLACEMENT[id].plateHint;
-    expect(plate('chair-caster-std-left')).toBe(plate('chair-caster-std-right'));
-    expect(plate('chair-caster-kit-left')).toBe(plate('chair-caster-kit-right'));
-    expect(plate('chair-caster-std-left')).not.toBe(plate('chair-caster-kit-left'));
-  });
-
-  // The seat-back plate is the export's first two-part group. Its members must keep their verified
-  // spacing when the group is re-centered for a bed that isn't the reference's 256x256.
-  it('holds a shared plate together across bed sizes', async () => {
-    const tri = new Float32Array([0, 0, 0, 40, 0, 0, 0, 40, 0]);
-    const mk = (id: string): ExportPart => ({
-      name: id,
-      nsign: 0,
-      bodySoup: tri,
-      subs: [{ name: 'Body', matIndex: 0, soup: tri }],
-      ...CHAIR_PLACEMENT[id],
-    });
-    const parts = [mk('chair-seat-back-top'), mk('chair-seat-back-bottom')];
-    const gaps: number[][] = [];
-    for (const printerId of ['bambu-x1c', 'snapmaker-u1']) {
-      const { blob } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], parts, {
-        printer: getPrinter(printerId),
+    it('every corner blocked, so no position is written', async () => {
+      const { warnings } = await build3MFCombined(twoMaterials, [box('Wide', 170, 170, 50, 50)], {
+        printer: getPrinter('bambu-x1c'),
       });
-      const xf = await itemTransforms(blob);
-      expect(xf).toHaveLength(2);
-      gaps.push([xf[0][9] - xf[1][9], xf[0][10] - xf[1][10]]);
-    }
-    expect(gaps[0][0]).toBeCloseTo(gaps[1][0], 4);
-    expect(gaps[0][1]).toBeCloseTo(gaps[1][1], 4);
-  });
+      expect(warnings.length, 'this case is meant to produce a warning').toBeGreaterThan(0);
+      warnings.forEach((w) =>
+        expect(endsWithRegistered(w), `not clearable, so this pill would stick: ${w}`).toBe(true),
+      );
+    });
 
-  it('uses the reference plate positions verbatim on the bed they were authored for', async () => {
-    const tri = new Float32Array([0, 0, 0, 40, 0, 0, 0, 40, 0]);
-    const id = 'chair-seat-center';
-    const { blob } = await build3MFCombined(
-      [{ name: 'Body', color: '#cccccc' }],
-      [
-        {
-          name: id,
-          nsign: 0,
-          bodySoup: tri,
-          subs: [{ name: 'Body', matIndex: 0, soup: tri }],
-          ...CHAIR_PLACEMENT[id],
-        },
-      ],
-      { printer: getPrinter('bambu-x1c') },
-    );
-    const v = (await itemTransforms(blob))[0];
-    expect(v.slice(0, 9)).toEqual(CHAIR_PLACEMENT[id].plateR.flat());
-    expect(v[9]).toBeCloseTo(CHAIR_PLACEMENT[id].fixedPos.x, 4);
-    expect(v[10]).toBeCloseTo(CHAIR_PLACEMENT[id].fixedPos.y, 4);
-  });
+    it('one plate blocked while another carries a verified position', async () => {
+      const { warnings } = await build3MFCombined(
+        twoMaterials,
+        [
+          { ...box('Wide', 170, 170, 50, 50), plateHint: 1 },
+          { ...box('Small', 20, 20, 50, 50), plateHint: 2, primeTowerDelta: { x: 10, y: 10 } },
+        ],
+        { printer: getPrinter('bambu-x1c') },
+      );
+      expect(warnings.length, 'this case is meant to produce a warning').toBeGreaterThan(0);
+      warnings.forEach((w) =>
+        expect(endsWithRegistered(w), `not clearable, so this pill would stick: ${w}`).toBe(true),
+      );
+    });
 
-  // Exactly one anchor per plate: build3MFCombined takes the first part it finds carrying a delta,
-  // so two on a plate would make the tower depend on part order.
-  it('carries a verified tower on one anchor per plate, and none on the caster plates', () => {
-    const anchors = new Map<number, string[]>();
-    for (const [id, p] of entries)
-      if (p.primeTowerDelta) anchors.set(p.plateHint, [...(anchors.get(p.plateHint) ?? []), id]);
-    for (const [plate, ids] of anchors) expect(ids, `plate ${plate}`).toHaveLength(1);
-
-    // Per-bed overrides only exist where a separately-verified bed disagreed with the default, so
-    // one that merely restates it is a bake gone wrong — it would read as "checked here" while
-    // carrying nothing that was.
-    for (const [id, p] of entries)
-      for (const [bed, d] of Object.entries(p.primeTowerDeltaByPlate ?? {})) {
-        expect(p.primeTowerDelta, `${id} override for ${bed} without a default`).toBeDefined();
-        const gap = Math.max(
-          Math.abs(d.x - p.primeTowerDelta!.x),
-          Math.abs(d.y - p.primeTowerDelta!.y),
-        );
-        expect(gap, `${id} override for ${bed} matches the default`).toBeGreaterThan(0.05);
-      }
-
-    // The casters carry no design zones, so their plates print one filament and have no tower to
-    // verify — both variants' plates must stay unbaked rather than pick up a guess.
-    const casterPlates = ['chair-caster-std-left', 'chair-caster-kit-left'].map(
-      (id) => CHAIR_PLACEMENT[id].plateHint,
-    );
-    const baked = [...anchors.keys()];
-    for (const plate of casterPlates) expect(baked).not.toContain(plate);
-    expect(baked).toHaveLength(new Set(entries.map(([, p]) => p.plateHint)).size - 2);
-  });
-
-  // The deltas are baked from a 270mm Snapmaker bed. On the A1's 256mm bed each plate group is
-  // re-centered, and the tower has to travel with its part rather than stay at a bed coordinate —
-  // otherwise a position verified against the part drifts onto it.
-  it('keeps each tower fixed relative to its anchor across bed sizes, and on the bed', async () => {
-    const tri = new Float32Array([0, 0, 0, 40, 0, 0, 0, 40, 0]);
-    const anchors = entries.filter(([, p]) => p.primeTowerDelta);
-    const parts: ExportPart[] = anchors.map(([id]) => ({
-      name: id,
-      nsign: 0,
-      bodySoup: tri,
-      subs: [{ name: 'Body', matIndex: 0, soup: tri }],
-      ...CHAIR_PLACEMENT[id],
-    }));
-
-    for (const printerId of ['bambu-x1c', 'snapmaker-u1']) {
-      const printer = getPrinter(printerId);
-      const { blob } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], parts, {
-        printer,
-      });
-      const xf = await itemTransforms(blob);
+    // Two parts in an L: every corner is inside their combined bounding box, but the notch between
+    // them is free. Choosing the insets per axis lands in the top-right part instead.
+    it('puts the suggested tower in a corner no part occupies, not one only the axes agree on', async () => {
+      const printer = getPrinter('bambu-x1c');
+      const { blob, warnings } = await build3MFCombined(
+        twoMaterials,
+        [box('L', 110, 236, 10, 10), box('R', 110, 110, 136, 136)],
+        { printer },
+      );
       const proj = await projectSettings(blob);
-      expect(xf).toHaveLength(anchors.length);
+      const TOWER = 60;
+      const x = Number(proj.wipe_tower_x[0]);
+      const y = Number(proj.wipe_tower_y[0]);
+      // the free notch is the front-right corner: right half, front edge. The figures moved by half
+      // a tower when the suggestion stopped being a centre written out as a corner.
+      expect(x).toBeGreaterThanOrEqual(printer.plate.w / 2);
+      expect(x + TOWER).toBeLessThanOrEqual(printer.plate.w);
+      expect(y + TOWER).toBeLessThan(printer.plate.d / 2);
+      // Matched against what the exporter actually emits. 'move the tower' stopped being any part
+      // of a shipped message, so asserting its absence pinned nothing at all.
+      expect(warnings.join(' ')).not.toContain('has no verified position');
+    });
 
-      // wipe_tower_x/y are plate-local, but an item transform carries the plate-grid stride that
-      // spreads the logical plates out in world space — take it back off before comparing.
-      const cols = plateColumns(anchors.length);
-      const bedKey = `${printer.plate.w}x${printer.plate.d}`;
-      anchors.forEach(([id], i) => {
-        // A bed that was verified separately overrides the default delta; every other bed inherits
-        // it. Resolving it the same way the exporter does is the point of the check.
-        const delta =
-          CHAIR_PLACEMENT[id].primeTowerDeltaByPlate?.[bedKey] ??
-          CHAIR_PLACEMENT[id].primeTowerDelta!;
-        const localX = xf[i][9] - (i % cols) * printer.plate.w * 1.2;
-        const localY = xf[i][10] + Math.floor(i / cols) * printer.plate.d * 1.2;
-        const towerX = Number(proj.wipe_tower_x[i]);
-        const towerY = Number(proj.wipe_tower_y[i]);
-        expect(towerX, `${id} on ${printerId}`).toBeCloseTo(localX + delta.x, 3);
-        expect(towerY, `${id} on ${printerId}`).toBeCloseTo(localY + delta.y, 3);
-
-        // Landing on the bed is only checkable on the 256x256 reference plate, where fixedPos is
-        // used verbatim and the answer doesn't depend on the mesh. Every other bed re-centers the
-        // plate group on its parts' real footprints, which these stand-in triangles are not — so
-        // asserting bounds there would be testing the placeholder geometry. How much clearance the
-        // tower actually needs comes from the slicer's own prime_tower_width;
-        // scripts/export-chair-examples.mjs checks that against the files it builds.
-        if (printerId !== 'bambu-x1c') return;
-        expect(towerX, `${id} on ${printerId}`).toBeGreaterThan(0);
-        expect(towerY, `${id} on ${printerId}`).toBeGreaterThan(0);
-        expect(towerX, `${id} on ${printerId}`).toBeLessThan(printer.plate.w);
-        expect(towerY, `${id} on ${printerId}`).toBeLessThan(printer.plate.d);
+    it('warns instead of parking the tower inside a part when every corner is occupied', async () => {
+      const { warnings } = await build3MFCombined(twoMaterials, [box('Wide', 170, 170, 50, 50)], {
+        printer: getPrinter('bambu-x1c'),
       });
-    }
+      // Every plate here is blocked, so no wipe_tower_x/y is written and the message must say so
+      // rather than naming a position. "It was parked at (270, 240)" quoted coordinates that appear
+      // nowhere in the file; the other arm ("Move the tower in your slicer") would name one the user
+      // cannot move, because none was saved.
+      expect(warnings.join(' ')).toContain('No tower position was saved');
+      expect(warnings.join(' ')).not.toMatch(/parked at \(/);
+    });
+
+    // The mixed case, which is where the first rewording of this message was wrong. A blocked plate
+    // sitting alongside one with a verified position still gets its corner written — the omission is
+    // all-or-nothing, since these keys are per-plate arrays — so there IS a position, and telling the
+    // user their slicer would place it was false.
+    it('tells the user to move a tower that was written, when another plate has one', async () => {
+      const verified: ExportPart = {
+        ...box('Small', 20, 20, 50, 50),
+        plateHint: 2,
+        primeTowerDelta: { x: 10, y: 10 },
+      };
+      const blocked: ExportPart = { ...box('Wide', 170, 170, 50, 50), plateHint: 1 };
+      const { blob, warnings } = await build3MFCombined(twoMaterials, [blocked, verified], {
+        printer: getPrinter('bambu-x1c'),
+      });
+
+      const proj = await projectSettings(blob);
+      expect(proj.wipe_tower_x, 'a position was written for both plates').toHaveLength(2);
+      expect(warnings.join(' ')).toContain('Move the tower in your slicer');
+      expect(warnings.join(' ')).not.toContain('No tower position was saved');
+    });
+
+    // The same crowded plate, minus the second filament: no tower gets printed there, so the
+    // position it would have had is not worth a warning.
+    it('stays quiet about the tower on a plate that prints one filament', async () => {
+      const single = { ...box('Wide', 170, 170, 50, 50) };
+      single.subs = single.subs.slice(0, 1);
+      const { warnings } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], [single], {
+        printer: getPrinter('bambu-x1c'),
+      });
+      // Matched against what the exporter actually emits. 'move the tower' stopped being any part
+      // of a shipped message, so asserting its absence pinned nothing at all.
+      expect(warnings.join(' ')).not.toContain('has no verified position');
+    });
+
+    // Size and position are separate claims: this part fits the plate at some position, just not at
+    // the one it was given — the shape a verified fixedPos takes on a bed it wasn't verified against.
+    it('warns about a part placed off the plate, not only one too big for it', async () => {
+      const { warnings } = await build3MFCombined(
+        twoMaterials,
+        [box('Overhang', 40, 40, 230, 100)],
+        {
+          printer: getPrinter('bambu-x1c'),
+        },
+      );
+      expect(warnings.join(' ')).toContain('"Overhang" is placed ~14mm past the edge');
+      expect(warnings.join(' ')).toContain('reposition it in your slicer');
+      expect(warnings.join(' ')).not.toContain('best-fit rotation');
+    });
+  });
+
+  describe('CHAIR_PLACEMENT', () => {
+    const entries = Object.entries(CHAIR_PLACEMENT);
+
+    it('covers all 15 chair pieces on the reference plates', () => {
+      expect(entries).toHaveLength(15);
+      for (const [, p] of entries) {
+        expect(p.plateHint).toBeGreaterThanOrEqual(1);
+        expect(p.plateHint).toBeLessThanOrEqual(12);
+      }
+    });
+
+    // A mirrored (determinant -1) matrix would print the opposite hand of the part and look
+    // plausible in every other check, so pin the handedness explicitly.
+    it('bakes proper rotations, never a mirror', () => {
+      for (const [id, { plateR: R }] of entries) {
+        const det =
+          R[0][0] * (R[1][1] * R[2][2] - R[1][2] * R[2][1]) -
+          R[0][1] * (R[1][0] * R[2][2] - R[1][2] * R[2][0]) +
+          R[0][2] * (R[1][0] * R[2][1] - R[1][1] * R[2][0]);
+        expect(det, `${id} determinant`).toBeCloseTo(1, 4);
+        for (const row of R) expect(Math.hypot(...row)).toBeCloseTo(1, 4);
+      }
+    });
+
+    it('keeps the two caster variants on separate plates', () => {
+      const plate = (id: string) => CHAIR_PLACEMENT[id].plateHint;
+      expect(plate('chair-caster-std-left')).toBe(plate('chair-caster-std-right'));
+      expect(plate('chair-caster-kit-left')).toBe(plate('chair-caster-kit-right'));
+      expect(plate('chair-caster-std-left')).not.toBe(plate('chair-caster-kit-left'));
+    });
+
+    // The seat-back plate is the export's first two-part group. Its members must keep their verified
+    // spacing when the group is re-centered for a bed that isn't the reference's 256x256.
+    it('holds a shared plate together across bed sizes', async () => {
+      const tri = new Float32Array([0, 0, 0, 40, 0, 0, 0, 40, 0]);
+      const mk = (id: string): ExportPart => ({
+        name: id,
+        nsign: 0,
+        bodySoup: tri,
+        subs: [{ name: 'Body', matIndex: 0, soup: tri }],
+        ...CHAIR_PLACEMENT[id],
+      });
+      const parts = [mk('chair-seat-back-top'), mk('chair-seat-back-bottom')];
+      const gaps: number[][] = [];
+      for (const printerId of ['bambu-x1c', 'snapmaker-u1']) {
+        const { blob } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], parts, {
+          printer: getPrinter(printerId),
+        });
+        const xf = await itemTransforms(blob);
+        expect(xf).toHaveLength(2);
+        gaps.push([xf[0][9] - xf[1][9], xf[0][10] - xf[1][10]]);
+      }
+      expect(gaps[0][0]).toBeCloseTo(gaps[1][0], 4);
+      expect(gaps[0][1]).toBeCloseTo(gaps[1][1], 4);
+    });
+
+    it('uses the reference plate positions verbatim on the bed they were authored for', async () => {
+      const tri = new Float32Array([0, 0, 0, 40, 0, 0, 0, 40, 0]);
+      const id = 'chair-seat-center';
+      const { blob } = await build3MFCombined(
+        [{ name: 'Body', color: '#cccccc' }],
+        [
+          {
+            name: id,
+            nsign: 0,
+            bodySoup: tri,
+            subs: [{ name: 'Body', matIndex: 0, soup: tri }],
+            ...CHAIR_PLACEMENT[id],
+          },
+        ],
+        { printer: getPrinter('bambu-x1c') },
+      );
+      const v = (await itemTransforms(blob))[0];
+      expect(v.slice(0, 9)).toEqual(CHAIR_PLACEMENT[id].plateR.flat());
+      expect(v[9]).toBeCloseTo(CHAIR_PLACEMENT[id].fixedPos.x, 4);
+      expect(v[10]).toBeCloseTo(CHAIR_PLACEMENT[id].fixedPos.y, 4);
+    });
+
+    // Exactly one anchor per plate: build3MFCombined takes the first part it finds carrying a delta,
+    // so two on a plate would make the tower depend on part order.
+    it('carries a verified tower on one anchor per plate, and none on the caster plates', () => {
+      const anchors = new Map<number, string[]>();
+      for (const [id, p] of entries)
+        if (p.primeTowerDelta) anchors.set(p.plateHint, [...(anchors.get(p.plateHint) ?? []), id]);
+      for (const [plate, ids] of anchors) expect(ids, `plate ${plate}`).toHaveLength(1);
+
+      // Per-bed overrides only exist where a separately-verified bed disagreed with the default, so
+      // one that merely restates it is a bake gone wrong — it would read as "checked here" while
+      // carrying nothing that was.
+      for (const [id, p] of entries)
+        for (const [bed, d] of Object.entries(p.primeTowerDeltaByPlate ?? {})) {
+          expect(p.primeTowerDelta, `${id} override for ${bed} without a default`).toBeDefined();
+          const gap = Math.max(
+            Math.abs(d.x - p.primeTowerDelta!.x),
+            Math.abs(d.y - p.primeTowerDelta!.y),
+          );
+          expect(gap, `${id} override for ${bed} matches the default`).toBeGreaterThan(0.05);
+        }
+
+      // The casters carry no design zones, so their plates print one filament and have no tower to
+      // verify — both variants' plates must stay unbaked rather than pick up a guess.
+      const casterPlates = ['chair-caster-std-left', 'chair-caster-kit-left'].map(
+        (id) => CHAIR_PLACEMENT[id].plateHint,
+      );
+      const baked = [...anchors.keys()];
+      for (const plate of casterPlates) expect(baked).not.toContain(plate);
+      expect(baked).toHaveLength(new Set(entries.map(([, p]) => p.plateHint)).size - 2);
+    });
+
+    // The deltas are baked from a 270mm Snapmaker bed. On the A1's 256mm bed each plate group is
+    // re-centered, and the tower has to travel with its part rather than stay at a bed coordinate —
+    // otherwise a position verified against the part drifts onto it.
+    it('keeps each tower fixed relative to its anchor across bed sizes, and on the bed', async () => {
+      const tri = new Float32Array([0, 0, 0, 40, 0, 0, 0, 40, 0]);
+      const anchors = entries.filter(([, p]) => p.primeTowerDelta);
+      const parts: ExportPart[] = anchors.map(([id]) => ({
+        name: id,
+        nsign: 0,
+        bodySoup: tri,
+        subs: [{ name: 'Body', matIndex: 0, soup: tri }],
+        ...CHAIR_PLACEMENT[id],
+      }));
+
+      for (const printerId of ['bambu-x1c', 'snapmaker-u1']) {
+        const printer = getPrinter(printerId);
+        const { blob } = await build3MFCombined([{ name: 'Body', color: '#cccccc' }], parts, {
+          printer,
+        });
+        const xf = await itemTransforms(blob);
+        const proj = await projectSettings(blob);
+        expect(xf).toHaveLength(anchors.length);
+
+        // wipe_tower_x/y are plate-local, but an item transform carries the plate-grid stride that
+        // spreads the logical plates out in world space — take it back off before comparing.
+        const cols = plateColumns(anchors.length);
+        const bedKey = `${printer.plate.w}x${printer.plate.d}`;
+        anchors.forEach(([id], i) => {
+          // A bed that was verified separately overrides the default delta; every other bed inherits
+          // it. Resolving it the same way the exporter does is the point of the check.
+          const delta =
+            CHAIR_PLACEMENT[id].primeTowerDeltaByPlate?.[bedKey] ??
+            CHAIR_PLACEMENT[id].primeTowerDelta!;
+          const localX = xf[i][9] - (i % cols) * printer.plate.w * 1.2;
+          const localY = xf[i][10] + Math.floor(i / cols) * printer.plate.d * 1.2;
+          const towerX = Number(proj.wipe_tower_x[i]);
+          const towerY = Number(proj.wipe_tower_y[i]);
+          expect(towerX, `${id} on ${printerId}`).toBeCloseTo(localX + delta.x, 3);
+          expect(towerY, `${id} on ${printerId}`).toBeCloseTo(localY + delta.y, 3);
+
+          // Landing on the bed is only checkable on the 256x256 reference plate, where fixedPos is
+          // used verbatim and the answer doesn't depend on the mesh. Every other bed re-centers the
+          // plate group on its parts' real footprints, which these stand-in triangles are not — so
+          // asserting bounds there would be testing the placeholder geometry. How much clearance the
+          // tower actually needs comes from the slicer's own prime_tower_width;
+          // scripts/export-chair-examples.mjs checks that against the files it builds.
+          if (printerId !== 'bambu-x1c') return;
+          expect(towerX, `${id} on ${printerId}`).toBeGreaterThan(0);
+          expect(towerY, `${id} on ${printerId}`).toBeGreaterThan(0);
+          expect(towerX, `${id} on ${printerId}`).toBeLessThan(printer.plate.w);
+          expect(towerY, `${id} on ${printerId}`).toBeLessThan(printer.plate.d);
+        });
+      }
+    });
   });
 });
 

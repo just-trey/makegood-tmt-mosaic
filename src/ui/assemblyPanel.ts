@@ -449,7 +449,14 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
     });
   });
   const rmBtn = row.querySelector<HTMLElement>('[data-asm-remove]');
-  if (rmBtn) rmBtn.addEventListener('click', () => asmRemovePart(part.id));
+  if (rmBtn)
+    rmBtn.addEventListener('click', () => {
+      asmRemovePart(part.id);
+      // Placement messages name a part, so removing one leaves its pill naming something no longer
+      // in the build. Same class as the printer, kind, diameter and silhouette cases.
+      clearStalePlacementNotices();
+      renderWarnings();
+    });
   return row;
 }
 
