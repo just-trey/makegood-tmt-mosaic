@@ -20,7 +20,7 @@ import { initHelpPanel } from './ui/helpPanel';
 import { initOverlay } from './ui/overlay';
 import { initConfirmDialog } from './ui/dialogs';
 import { initRestoreBanner } from './ui/restoreBanner';
-import { initBeforeUnloadGuard } from './state/persist';
+import { holdSavedSessionUntilAnswered, initBeforeUnloadGuard } from './state/persist';
 import { $ } from './ui/dom';
 import { getAppVersion } from './version';
 import { rebuildsSoFar, whenIdle } from './app/idle';
@@ -82,6 +82,10 @@ state.assembly.kindId = bootKind.id;
 $<HTMLSelectElement>('#shape-kind').value = 'asm:' + state.assembly.kindId;
 setShapeKind('assembly');
 void loadPartsLibrary();
+// Armed before anything decides whether to offer the session, including the two paths that decide
+// not to: a ?kind= link, and a session on a withheld kind. Those used to let the first bare
+// rebuild's empty snapshot delete it about a second later, with nothing shown to explain it.
+holdSavedSessionUntilAnswered();
 // A ?kind= link is an explicit ask for that part — don't offer to override it with a leftover
 // session from before.
 if (!requestedKindId) initRestoreBanner();

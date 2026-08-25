@@ -617,51 +617,40 @@ Closing it means one message with the right remedies for both causes, and one id
 retracting it. Three review rounds on this branch each produced a new defect in it, which is why it
 was cut rather than patched again.
 
-## Accepting a restore confirms twice, and cancelling leaves the wrong part
+## A restore assigns state as it goes, so a throw leaves it half applied
 
-Present on `main` before the beta narrowing and unchanged by it, found while
-reviewing that branch.
+What is left of the restore-confirm item, after the wrong-part export it caused
+was fixed. Kept because the underlying shape is unchanged.
 
-`applyRestoredSession` calls `asmLoadFullAssembly()` for a session whose kind
-still exists, without clearing `state.assembly.parts` first. The boot auto-load
-has always already filled that list, so `asmLoadFullAssembly`'s own guard fires:
+`applyRestoredSession` writes about twenty fields into `state` before the source
+loop where a failure is most likely, and its caller's catch skips every DOM
+refresher. So a restore that throws part-way can leave the printer set to one
+value while `#p-printer` shows another, which is the same desync class as the
+unknown-printer bug fixed alongside it.
 
-> Load the full Footrest? This clears any parts you've already added.
+Two things reduced the blast radius rather than closing it: the containers the
+restore dereferences are now repaired at load (seven single-field corruptions
+used to throw here, three of them wedging the app until F5), and the failure now
+says so on screen and tells the user to reload. Neither makes the application
+atomic.
 
-on top of the restore the user just accepted. **Cancelling is the bad half.**
-`state.assembly.kindId` and the dropdown have already moved to the restored
-kind, but the load returns without touching the scene, so the viewport and the
-export still hold the boot kind's parts. `maybeAutoLoadAssembly` cannot recover
-it: it no-ops while any part is present.
+Closing it means building the restored state into a local object and committing
+it to `state` only once nothing further can throw, the way `applyRasterFile` and
+the source loop inside this same function already do.
 
-**It exports the wrong part under the right filename.** Measured by the
-`not-ready` lens on 2026-08-24, driving with the confirm hook removed: restore a
-footrest session, Cancel, and Export downloads **`mosaic-footrest.3mf`
-containing Top / Bottom / Cap**, 2 plates, 4 filaments, no warning. A complete,
-valid, printable wheel under the footrest's name. The filename follows the
-dropdown, which has already moved; the scene has not.
+**A related notice is lost the same way.** When one source of several fails to
+restore, the per-image "could not be restored from the saved session" warning is
+wiped by the next SVG source in the list: `parseSVGDocument`
+([src/svg/parse.ts](../src/svg/parse.ts)) opens with `clearWarnings()`. So a
+partial failure, the case that warning exists for, is the case least likely to
+show it. Pre-existing, and the fix is in that `clearWarnings()` contract rather
+than in the restore.
 
-Never seen in a driven run because `newPage`'s hook auto-accepts confirms
-(`scripts/lib/harness.mjs`), which takes the cancel path out of reach. That is
-also why four rounds of `/code-review` and the branch's own driven check missed
-it.
-
-Reachable from any session on a kind that is not the boot default, so it blocks
-the footrest and the hubcap. **An earlier revision of this section said it
-"blocks nothing on the wheel, footrest or hubcap" and did not mention the
-filename. Both were wrong**, and the deferral was decided on them.
-
-The fix is one line, the same clearing the fallback branch beside it already
-does. Deferred once, when this was believed to be cosmetic: that branch had
-three review rounds land in this same function, each on the previous round's
-fix, and CLAUDE.md's rule is to stop patching an area at that point. That
-reasoning does not survive the measurement. It is **T0-1** in
-[review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md), ranked
-first and alone, and landing it flips that cycle's readiness verdict.
-
-Related: the 2026-08-08 review cycle's **A2** (switching part shape carries
-artwork across with no confirmation) is the opposite failure in the same
-control.
+Related, from the section this replaced: the 2026-08-08 cycle's **A2** (switching
+part shape carries artwork across with no confirmation) is the opposite failure in
+the same control. It is graded FIXED in
+[review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md), and that
+cycle's **C1** records why the confirm's wording is still wrong.
 
 ## `export-chair-examples.mjs` cannot reach Fill any more
 

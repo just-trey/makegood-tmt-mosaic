@@ -558,7 +558,12 @@ export async function loadPartsLibrary(): Promise<void> {
       const v = typeof __APP_VERSION__ === 'undefined' ? 'dev' : __APP_VERSION__;
       const res = await fetch(`stl/parts.json?v=${v}`);
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      state.assembly.library = await res.json();
+      const manifest: unknown = await res.json();
+      // Shape-checked, not trusted. A manifest that parses to an object rather than an array threw
+      // from `asmKindCanAutoLoad`'s `.find` *inside the render*, which left the panel on whatever
+      // it had last drawn ("Loading assembly…") with no message and no way forward.
+      if (!Array.isArray(manifest)) throw new Error('parts.json is not a list of parts');
+      state.assembly.library = manifest as LibraryEntry[];
     } catch {
       /* no manifest reachable — `librarySettled` is what says so */
     }

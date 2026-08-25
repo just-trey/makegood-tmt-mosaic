@@ -2,9 +2,14 @@ import { state } from '../state/store';
 import {
   applyRestoredSession,
   clearSavedSession,
+  disableSessionWritesAfterFailedRestore,
+  SESSION_WRITES_DISABLED_MSG,
   loadSavedSession,
+  markSavedSessionAnswered,
   type PersistedSession,
 } from '../state/persist';
+import { warn } from '../warnings';
+import { renderWarnings } from './warningsView';
 import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
 import { setShapeKind, renderBaseColorSwatches, refreshShapeParamInputs } from './partPanel';
 import { renderArtworkList } from './artworkListPanel';
@@ -63,12 +68,30 @@ export function initRestoreBanner(): void {
 
   $('#btn-restore-session').addEventListener('click', () => {
     banner.hidden = true;
+    // The offer has been answered, so the empty-snapshot clear in saveSession() may resume. Until
+    // this point the session is held: a reload while the banner sat unanswered used to destroy it
+    // about a second into the boot that was still offering it.
+    markSavedSessionAnswered();
     void (async () => {
       try {
         await applyRestoredSession(session);
       } catch (e) {
         console.error('Session restore failed:', e);
+        // Say so, and render it. This used to delete the session and return with nothing on
+        // screen, so the user clicked Restore, saw no change, and had lost the work. warn() only
+        // pushes onto the list; this path returns before setShapeKind(), which is the only call
+        // on it that would otherwise reach renderWarnings().
+        //
+        // "Reload the page" is not boilerplate: applyRestoredSession assigns state as it goes, so
+        // a throw part-way leaves it half applied — the printer can be one value while the picker
+        // shows another. Making that application atomic is still owed (docs/tech-debt.md).
+        warn(SESSION_WRITES_DISABLED_MSG);
+        renderWarnings();
         clearSavedSession();
+        // And keep it cleared. The next rebuild's debounced save would otherwise write the
+        // half-applied state straight back, so the visit after this one would be offered a session
+        // built from the restore that just failed.
+        disableSessionWritesAfterFailedRestore();
         return;
       }
       $<HTMLSelectElement>('#shape-kind').value =
@@ -91,6 +114,7 @@ export function initRestoreBanner(): void {
 
   $('#btn-restore-dismiss').addEventListener('click', () => {
     banner.hidden = true;
+    markSavedSessionAnswered();
     clearSavedSession();
     track('session_restore_dismissed');
   });

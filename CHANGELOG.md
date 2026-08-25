@@ -325,6 +325,29 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
 
 ### Fixed
 
+- **Restoring a session could hand you a file with the wrong part in it.** Bringing
+  back a saved footrest or hubcap raised a second question on top of the one you
+  had just answered, "Load the full Footrest? This clears any parts you've already
+  added". Answering Cancel, which is the careful-sounding answer, left the part
+  menu naming one part while the screen still held another. Export then wrote the
+  part on screen into a file named after the part in the menu: a complete,
+  printable wheel called `mosaic-footrest.3mf`, with nothing on screen saying so.
+  The second question is gone.
+- **Three ways your saved work could disappear.** Opening a link that names a part
+  (`?kind=footrest`) deleted whatever you had saved. So did reloading while the
+  "Restore your previous session" offer was still on screen, about a second into
+  the page. So did a restore that failed. All three were the same thing: the app
+  cleared the save before you had answered the offer. It waits now.
+- **A restore that fails says so.** It used to delete the saved session and change
+  nothing on screen, so it looked like the button did nothing.
+- **A saved session from an older version comes back instead of being dropped.** A
+  session missing a setting that did not exist when it was saved could stop the app
+  building at all until you reloaded the page. The missing settings start at their
+  normal values.
+- **A saved printer that no longer exists no longer blanks the printer picker.** It
+  used to leave the box empty while the export quietly used a different bed, which
+  is what the verified part positions are checked against.
+
 - **Traced images keep their small detail at the size you placed them.** The
   cleanup that merges too-small regions was sized as a share of the picture, so
   the same cartoon lost its eye, teeth and emblem on a full-size wheel where all
