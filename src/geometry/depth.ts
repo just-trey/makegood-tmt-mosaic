@@ -14,6 +14,17 @@ import type { ColorSettings } from '../types';
 export const MIN_CUT_DEPTH_MM = 0.2;
 
 /**
+ * How much material a recess leaves behind it, so a clamped cut is still a recess.
+ *
+ * Shared with flat mode rather than duplicated: it had this rule ("depth is capped at the plate
+ * thickness less a 0.05 mm floor, so a recess cannot cut through", docs/pipeline.md) and assembly
+ * mode had no upper bound at all. Clamping to the bare extent instead put the cutter floor exactly
+ * coplanar with the part's back face — a through-hole and a coincident-face boolean, reported to
+ * the user as a recess "cut at 48.50 mm".
+ */
+export const CUT_FLOOR_MM = 0.05;
+
+/**
  * Compare a requested depth against the one cut at the precision the warnings print (2dp), not at
  * machine epsilon: a 3.951 mm request on a 4 mm plate otherwise reports "set to 3.95 mm … cut at
  * 3.95 mm instead."
@@ -67,10 +78,11 @@ export function tooDeepWarning(
   requested: number,
   cutAt: number,
 ): string {
+  // Says what it cut, and does not claim that number is the part's face-to-back distance: the cut
+  // stops a floor short of it, so quoting one figure as both was wrong by CUT_FLOOR_MM.
   return (
-    `Depth for "${label}" was set to ${requested.toFixed(2)} mm. "${partName}" is ` +
-    `${cutAt.toFixed(2)} mm from its design face to the back, so it was cut at ` +
-    `${cutAt.toFixed(2)} mm instead.`
+    `Depth for "${label}" was set to ${requested.toFixed(2)} mm, deeper than "${partName}" goes. ` +
+    `It was cut at ${cutAt.toFixed(2)} mm instead.`
   );
 }
 

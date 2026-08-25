@@ -327,8 +327,8 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
 
 - **A recess deeper than the part no longer cuts silently.** Setting a depth
   larger than the part had material for built and exported with nothing said. It
-  is now cut at the part's own depth, with a warning naming the color and the
-  part. This bounds the part, not its wall: a pocket deeper than a thin wall in
+  is now cut at the deepest that part can take, with a warning naming the color
+  and the part. This bounds the part, not its wall: a pocket deeper than a thin wall in
   one spot still cuts through without comment, which is in
   [docs/tech-debt.md](docs/tech-debt.md).
 

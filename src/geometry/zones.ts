@@ -1,3 +1,4 @@
+import { CUT_FLOOR_MM, MIN_CUT_DEPTH_MM } from './depth';
 import * as THREE from 'three';
 import * as turf from '@turf/turf';
 import type { AssemblyPart, PolyFeature } from '../types';
@@ -222,6 +223,9 @@ export class FlatZoneMapper implements ZoneMapper {
   private boundaryComputed = false;
   private boundaryPoly: PolyFeature | null = null;
   private throughDepthCache: number | null = null;
+  // Cached like every other per-part measurement here: it is asked once per colour per artwork
+  // (16 scans of 53,904 vertices on a two-half wheel with an 8-colour palette) and cannot change.
+  private maxCutDepthCache: number | null = null;
   private fillExtentCache: FillExtent | null | undefined;
 
   constructor(
@@ -359,23 +363,42 @@ export class FlatZoneMapper implements ZoneMapper {
   }
 
   /**
-   * How far this part extends behind its design face, along that face's normal.
+   * The deepest recess this part can hold: its extent from the design face to the far side along
+   * the cut axis, less the floor that keeps a clamped cut from becoming a hole.
+   *
+   * **Measured along Y, like `throughDepth()` above, because that is where the cutter goes** —
+   * `buildCutter` extrudes from `faceY` down the Y axis. Projecting onto `patchNormal` instead
+   * measured a distance the cut never travels: on wheel-half's -Z patch that read 139.88mm against
+   * 24.13mm of real material, so the mistyped depth this exists to catch sailed through and the
+   * warning would have quoted a distance the part does not have.
+   *
+   * Uses `nsign`/`faceY` from the constructor, so a duplicate part with a borrowed normal
+   * (`asmPartFaceNormal`) is bounded like its source rather than going unbounded.
    *
    * Measured off the loaded mesh rather than taken from a setting. `AssemblyPart.baseDepth` states
    * "mm of material behind the face this replaces" and looks like the answer, but nothing in the
    * build has ever read it, so adopting it here would give a dormant, user-editable field control
    * of cut depth as a side effect of a bug fix.
+   *
+   * **A bound on the part, never on its wall.** A recess shallower than this can still break
+   * through a thin one, and nothing here measures that (docs/tech-debt.md).
    */
   maxCutDepth(): number {
-    const n = this.part.patchNormal;
+    if (this.maxCutDepthCache != null) return this.maxCutDepthCache;
     const pos = this.part.positions;
-    if (!n || !pos) return Infinity;
-    let min = Infinity;
-    for (let i = 0; i < pos.length; i += 3) {
-      const d = pos[i] * n[0] + pos[i + 1] * n[1] + pos[i + 2] * n[2];
-      if (d < min) min = d;
+    if (!pos) return Infinity;
+    let yMin = Infinity,
+      yMax = -Infinity;
+    for (let i = 1; i < pos.length; i += 3) {
+      const y = pos[i];
+      if (y < yMin) yMin = y;
+      if (y > yMax) yMax = y;
     }
-    return Number.isFinite(min) ? this.part.topZ - min : Infinity;
+    const extent = this.nsign > 0 ? this.faceY - yMin : yMax - this.faceY;
+    if (!Number.isFinite(extent)) return Infinity;
+    // Floored at the minimum printable depth: a part thinner than the floor would otherwise clamp
+    // every colour to a cut that cannot print, which is the shallow-end bug in reverse.
+    return (this.maxCutDepthCache = Math.max(extent - CUT_FLOOR_MM, MIN_CUT_DEPTH_MM));
   }
 
   resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[] {

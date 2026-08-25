@@ -579,7 +579,6 @@ function warnOverlappingDesigns(placed: PlacedDesign[]): void {
  * subtract all prisms from the part mesh (the full modified body) and (b) intersect each prism
  * with the part (a flush inlay solid per color).
  */
-
 export async function buildAssemblyGeometry(
   input: AssemblyBuildInput,
 ): Promise<AssemblyBuild | null> {

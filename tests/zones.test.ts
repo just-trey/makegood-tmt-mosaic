@@ -599,16 +599,25 @@ describe('implicitZoneFor', () => {
  * unbounded path the only one a user can reach.
  */
 describe('maxCutDepth', () => {
-  // The box is 10 tall with its design face on top at y=10, so a recess has 10mm behind it.
-  it('measures how far the part extends behind its design face', () => {
-    expect(new FlatZoneMapper(boxPart(), [], false).maxCutDepth()).toBeCloseTo(10, 6);
+  // The box is 10 tall with its design face on top, so a recess has 10mm behind it, less the floor
+  // that keeps a clamped cut from becoming a hole.
+  it('measures the material behind the face, less the through floor', () => {
+    expect(new FlatZoneMapper(boxPart(), [], false).maxCutDepth()).toBeCloseTo(10 - 0.05, 6);
   });
 
-  // Measured along the face's own normal, not a fixed axis: the same box read from underneath has
-  // the same 10mm behind its face, in the other direction.
-  it('follows the face normal rather than an axis', () => {
+  // Measured along the cut axis, which is where buildCutter extrudes, not along patchNormal.
+  // Projecting onto the normal read a distance the cut never travels: on wheel-half's -Z patch
+  // that was 139.88mm against 24.13mm of real material, so a mistyped depth passed the clamp.
+  it('follows the cut axis, not the face normal', () => {
+    const sideFacing = boxPart({ patchNormal: [0, 0, -1], topZ: -20 });
+    // 20 along -Z, but only 10 of material along the axis the cutter actually travels
+    expect(new FlatZoneMapper(sideFacing, [], false).maxCutDepth()).toBeLessThan(20);
+  });
+
+  // A face pointing the other way has the same material behind it, in the other direction.
+  it('handles a face pointing the other way', () => {
     const flipped = boxPart({ patchNormal: [0, -1, 0], topZ: 0 });
-    expect(new FlatZoneMapper(flipped, [], false).maxCutDepth()).toBeCloseTo(10, 6);
+    expect(new FlatZoneMapper(flipped, [], false).maxCutDepth()).toBeCloseTo(10 - 0.05, 6);
   });
 
   // An unloaded part must clamp nothing, or a depth would be silently pinned to whatever a missing
