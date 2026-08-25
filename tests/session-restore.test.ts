@@ -180,7 +180,9 @@ describe('applyRestoredSession: the settings the user had', () => {
   // The field refuses 0 and negatives, but a session saved by an earlier build can carry either,
   // and a reload walked straight past the guard. Zero makes every cut fail while Export stays
   // green; a negative builds as if positive.
-  it.each([0, -50])('ignores a saved design radius of %d', async (asmRadius) => {
+  // 0.2 is below the field's own floor but above zero, which is what a looser guard let through:
+  // the field then snapped itself to its default while state kept 0.2.
+  it.each([0, -50, 0.2])('ignores a saved design radius of %d', async (asmRadius) => {
     const before = state.asmRadius;
 
     await applyRestoredSession(session({ asmRadius }));

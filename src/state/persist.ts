@@ -1,5 +1,5 @@
 import type { AppState } from './store';
-import { state } from './store';
+import { MIN_DESIGN_RADIUS_MM, state } from './store';
 import type { ArtworkInstance, DesignSource } from '../types';
 import {
   allowedArtworkMode,
@@ -594,10 +594,11 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   // default bed — and the bed is what every verified placement is checked against, so the export
   // would use one printer's plate while the picker named none.
   state.printerId = getPrinter(session.printerId).id;
-  // Only a positive radius, for the same reason the field refuses one: 0 makes every cut fail
-  // while Export stays green, and a negative builds as if positive. A session saved by an earlier
-  // build can carry either, so the guard has to be here too or a reload walks straight past it.
-  if (Number.isFinite(session.asmRadius) && session.asmRadius > 0)
+  // The same floor the field enforces, from the same constant: a looser guard here let a session
+  // carrying 0.2 through, and the field then snapped itself to its default while state kept 0.2.
+  // A session saved by an earlier build can carry 0 or a negative, so the guard has to be here too
+  // or a reload walks straight past the field's.
+  if (Number.isFinite(session.asmRadius) && session.asmRadius >= MIN_DESIGN_RADIUS_MM)
     state.asmRadius = session.asmRadius;
   // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
   //

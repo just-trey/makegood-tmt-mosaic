@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import type { ShapeKind } from '../types';
-import { clearBaseColor, DEFAULT_BASE_COLOR, state } from '../state/store';
+import { clearBaseColor, DEFAULT_BASE_COLOR, MIN_DESIGN_RADIUS_MM, state } from '../state/store';
 import { getFilaments } from '../state/filaments';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
@@ -183,15 +183,20 @@ export function renderBaseColorSwatches(): void {
  * rather than hardcoding "> 0" so a field like corner radius, which is legitimately 0, isn't
  * rejected at its own valid floor.
  */
+const resyncBoundInput: Array<() => void> = [];
+
 /**
- * Resync every bound field's "last good value" from what the field currently holds.
+ * Resync every bound field from what it currently holds, and drop any invalid marking.
  *
  * `lastValid` is seeded once at init from the HTML default, and the blur handler writes it back
  * when the field is invalid. Session restore pushes state into these fields directly
  * (refreshShapeParamInputs), so without this a restored radius of 200 left `lastValid` at the
  * markup's 138: clear the field, tab away, and the panel silently disagreed with the export.
+ *
+ * The marking has to go with it. Clearing the field while the restore banner is up, then
+ * accepting the restore, left a field showing the restored value and still wearing `.invalid`
+ * plus "the last valid value stays in use until this is fixed", about a value now in use.
  */
-const resyncBoundInput: Array<() => void> = [];
 export function resyncShapeInputs(): void {
   resyncBoundInput.forEach((f) => f());
 }
@@ -203,7 +208,10 @@ function bindShapeInput(sel: string, apply: (v: number) => void): void {
   let lastValid = numVal(sel, min > 0 ? min : 0);
   resyncBoundInput.push(() => {
     const v = numVal(sel, NaN);
-    if (isValid(v)) lastValid = v;
+    if (!isValid(v)) return;
+    lastValid = v;
+    el.classList.remove('invalid');
+    el.title = '';
   });
 
   el.addEventListener('input', () => {
@@ -365,6 +373,9 @@ export function initPartPanel(): void {
   // is invalid — writing it back into the field instead makes clear-and-retype impossible, which
   // is what a hand-rolled version of this did: backspacing 138 left "1" in the box and typing
   // "200" after it gave a 1200mm radius.
+  // The floor comes from the shared constant rather than the markup, so the field and the restore
+  // path cannot drift apart. bindShapeInput reads `min` when it binds, so this must be set first.
+  input('#p-asm-radius').min = String(MIN_DESIGN_RADIUS_MM);
   bindShapeInput('#p-asm-radius', (v) => {
     state.asmRadius = v;
   });
