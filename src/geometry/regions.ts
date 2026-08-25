@@ -5,6 +5,7 @@ import { signedArea } from '../svg/path';
 import { deltaE, hexToLab } from '../color';
 import { warnBuild } from '../warnings';
 import { reportProgress } from '../progress';
+import { throwIfCancelled } from '../cancel';
 import { rethrowStackOverflowAs } from '../errors';
 
 type Ring = number[][];
@@ -619,6 +620,11 @@ export async function computeNetRegionsByColor(
       // progress bar sits full while the tab is still busy.
       onProgress(0.9 * ((total - i) / total));
       if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+        // Safe here, unlike anywhere inside the per-part cut: this pass is pure 2D polygon work
+        // and holds no Manifold solids, so a throw leaks nothing (see src/cancel.ts). It is also
+        // where a heavy design actually spends its time — a 6000-region wheel sat at 11% for the
+        // whole 140.4s the 2026-08-24 cycle measured, which is this loop, not the CSG below it.
+        throwIfCancelled();
         await yieldToBrowser();
         lastYield = performance.now();
       }
