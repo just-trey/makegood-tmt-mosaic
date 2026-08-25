@@ -78,25 +78,6 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     ],
   },
   {
-    id: 'footrest',
-    name: 'Footrest',
-    // rectangular design face — no circle/radius to anchor on, so the SVG maps 1:1 in mm
-    // and centers on the detected face instead.
-    designFit: 'rect',
-    templateFile: 'footrest-template.svg',
-    roles: [
-      {
-        id: 'footrest',
-        name: 'Footrest',
-        libraryPartId: 'footrest',
-        allowRotatedCopies: false,
-        // the flat back of the shell outsizes the seat face by area, so patch auto-detect
-        // needs a nudge toward the +Y-facing (up, seat-side) patch instead of the largest one.
-        preferFaceNormal: [0, 1, 0],
-      },
-    ],
-  },
-  {
     id: 'hubcap',
     name: 'Hubcap',
     // 1:1 mm, auto-centered on the face — NOT the wheel's circle/Design-radius model, even though
@@ -182,6 +163,25 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
                   shape.warning,
           };
         },
+      },
+    ],
+  },
+  {
+    id: 'footrest',
+    name: 'Footrest',
+    // rectangular design face — no circle/radius to anchor on, so the SVG maps 1:1 in mm
+    // and centers on the detected face instead.
+    designFit: 'rect',
+    templateFile: 'footrest-template.svg',
+    roles: [
+      {
+        id: 'footrest',
+        name: 'Footrest',
+        libraryPartId: 'footrest',
+        allowRotatedCopies: false,
+        // the flat back of the shell outsizes the seat face by area, so patch auto-detect
+        // needs a nudge toward the +Y-facing (up, seat-side) patch instead of the largest one.
+        preferFaceNormal: [0, 1, 0],
       },
     ],
   },

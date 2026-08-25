@@ -10,7 +10,7 @@ Generic PETG filament slot with the detected colors, 15% gyroid infill and
 tree (auto) support pre-set, so it opens ready to slice in **Bambu Studio,
 OrcaSlicer, or Snapmaker Orca** (pick your printer from the export panel —
 Bambu X1C/P1S/A1/H2D or Snapmaker U1). It covers three TMT parts: the wheel,
-the footrest, and the hubcap.
+the hubcap, and the footrest.
 
 Built for [MakeGood](https://makegood.design)'s Toddler Mobility Trainer
 (TMT) — a free, open-source 3D-printable mobility device for children ages
