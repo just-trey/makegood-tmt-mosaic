@@ -314,8 +314,8 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
 
 - **Disc (reference) is out of the Part dropdown.** It was a plain flat plate
   you sized by hand, matching no TMT part, listed beside the real ones at the
-  same weight. The dropdown is the parts themselves now: Wheel, Footrest and
-  Hubcap. Two controls that only ever applied to a flat plate go with it: the
+  same weight. The dropdown is the parts themselves now: Wheel, Hubcap and
+  Footrest. Two controls that only ever applied to a flat plate go with it: the
   Margin slider in Artwork fit, and the per-color STL set. Both were already
   hidden on a real part, so nothing changes about what you get from one.
 

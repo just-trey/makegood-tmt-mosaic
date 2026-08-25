@@ -10,7 +10,7 @@
 import { startPreview, launchBrowser, newPage, settle } from './lib/harness.mjs';
 
 const PORT = 4176;
-const KINDS = ['wheel', 'footrest', 'hubcap', 'chair-body'];
+const KINDS = ['wheel', 'hubcap', 'footrest', 'chair-body'];
 /**
  * The ratio the captures are taken at. 1.5 on purpose and not the headless default of 1: at dpr 1
  * the backing-store rule is satisfied by any code that ignores dpr entirely, so a run at 1 proves
