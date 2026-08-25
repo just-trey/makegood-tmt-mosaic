@@ -441,8 +441,10 @@ built value back: doing that pinned every row to its clamped depth, so the globa
 Depth field stopped reaching those rows and the warning went quiet (the reasoning
 is on `shownDepth` in [colorList.ts](../src/ui/colorList.ts)).
 
-**Fixed:** a depth of zero or less now says `cut at 0.20` beside the field. The
-panel can work that out on its own, since the floor is a constant.
+**Fixed:** a depth of zero or less now says `raised to 0.20` beside the field.
+The panel can work that out on its own, since the floor is a constant. It names
+the _setting_, never a cut: a cut-through part discards the setting entirely, so
+"cut at" would be false there.
 
 **Not fixed:** a depth deeper than the part is clamped too, and the field says
 nothing. That bound is `ZoneMapper.maxCutDepth()` — per part, measured off the

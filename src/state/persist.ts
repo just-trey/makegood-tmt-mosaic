@@ -590,7 +590,11 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   // default bed — and the bed is what every verified placement is checked against, so the export
   // would use one printer's plate while the picker named none.
   state.printerId = getPrinter(session.printerId).id;
-  state.asmRadius = session.asmRadius;
+  // Only a positive radius, for the same reason the field refuses one: 0 makes every cut fail
+  // while Export stays green, and a negative builds as if positive. A session saved by an earlier
+  // build can carry either, so the guard has to be here too or a reload walks straight past it.
+  if (Number.isFinite(session.asmRadius) && session.asmRadius > 0)
+    state.asmRadius = session.asmRadius;
   // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
   //
   // Clamped at BOTH ends here, against the printer restored on the line above. A stored value

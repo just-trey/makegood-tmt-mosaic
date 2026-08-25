@@ -597,7 +597,11 @@ describe('a depth the build will raise', () => {
 
     const input = document.querySelector<HTMLInputElement>('.depth-input')!;
     expect(input.value, 'the field still shows what was typed').toBe('0.00');
-    expect(document.querySelector('.depth-row .hint')!.textContent).toContain('cut at 0.20');
+    // "raised to", not "cut at": a cut-through part discards the setting, so naming a cut
+    // depth here would be false on the wheel's own cap.
+    const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
+    expect(hints.join(' ')).toContain('raised to 0.20');
+    expect(hints.join(' ')).not.toContain('cut at');
   });
 
   it('says nothing extra for a depth the build will use as asked', () => {
@@ -615,6 +619,7 @@ describe('a depth the build will raise', () => {
       },
     ]);
 
-    expect(document.querySelector('.depth-row .hint')!.textContent).toBe('mm');
+    const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
+    expect(hints).toEqual(['mm']);
   });
 });

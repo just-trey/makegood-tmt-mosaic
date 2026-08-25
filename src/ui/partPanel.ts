@@ -339,20 +339,15 @@ export function initPartPanel(): void {
     state.stlPlate.faceZ = v;
   });
   // assembly design radius
-  input('#p-asm-radius').addEventListener('input', () => {
-    // A radius has to be positive. 0 made every cut fail while Export stayed green, and a negative
-    // built silently as if it were positive — the design circle is only ever used as a magnitude.
-    // Rejected rather than clamped to some floor, because any floor here would be a number nobody
-    // measured: the hubcap's own size control clamps to a bound that was (its minimum is the size
-    // that still covers the mounting clips), and this has no equivalent.
-    const raw = numVal('#p-asm-radius', 0);
-    if (!(raw > 0)) {
-      input('#p-asm-radius').value = String(state.asmRadius);
-      return;
-    }
-    state.asmRadius = raw;
-    updateOffsetSliderRanges();
-    scheduleRebuild('typed');
+  // Through bindShapeInput like every other numeric dimension, rather than its own handler. A
+  // radius has to be positive: 0 made every cut fail while Export stayed green, and a negative
+  // built as if it were positive, since the design circle is only ever used as a magnitude. The
+  // bound comes off the input's own `min`, and the last good value stays in state while the field
+  // is invalid — writing it back into the field instead makes clear-and-retype impossible, which
+  // is what a hand-rolled version of this did: backspacing 138 left "1" in the box and typing
+  // "200" after it gave a 1200mm radius.
+  bindShapeInput('#p-asm-radius', (v) => {
+    state.asmRadius = v;
   });
   // The kind's build parameter (the hubcap's disc diameter). On `change`, not `input`, unlike the
   // radius above: this one regenerates the part's mesh through a CSG union, so firing it per

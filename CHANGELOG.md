@@ -328,10 +328,10 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
 
 ### Fixed
 
-- **A depth of 0 no longer reads as 0 while the app cuts 0.20.** The field kept
-  showing what you typed, and the only place the real number appeared was a
-  warning that goes away when dismissed. The row now says `cut at 0.20` beside the
-  field. A depth deeper than the part is still only reported in the warning, since
+- **A depth of 0 no longer reads as 0 when the app is using 0.20.** The field
+  kept showing what you typed, and the only place the real number appeared was a
+  warning that goes away when dismissed. The row now says `raised to 0.20` beside
+  the field. A depth deeper than the part is still only reported in the warning, since
   that limit belongs to the part rather than the number, and it is in
   [docs/tech-debt.md](docs/tech-debt.md).
 - **Design radius no longer accepts 0 or a negative number.** Zero made every cut
