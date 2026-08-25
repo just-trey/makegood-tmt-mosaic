@@ -602,7 +602,7 @@ export async function build3MFCombined(
     // box, which over-reports a round part. A crowded plate gets a warning rather than a position
     // that quietly prints through a part. A one-filament plate (the caster plate, no artwork)
     // prints no tower, so whatever this returns for it is never used.
-    const needsTower = new Set(items.flatMap((pl) => pl.part.subs.map((s) => s.matIndex))).size > 1;
+    const needsTower = platePrintsTower(items);
     const clear = overlap(best) === 0;
     // Recorded, not announced. What to tell the user depends on whether the file ends up carrying
     // this position, and that is decided once for the whole export by the `towerBlocked` gate at

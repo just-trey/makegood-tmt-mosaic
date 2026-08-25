@@ -339,13 +339,7 @@ export function renderAssemblyVariantControls(): void {
   box.querySelectorAll<HTMLInputElement>('input[name="asm-variant"]').forEach((r) =>
     r.addEventListener('change', () => {
       if (!r.checked) return;
-      void switchChairVariant(r.value).finally(() => {
-        renderAssemblyVariantControls();
-        // The swap replaces parts, so a pill naming the outgoing ones describes a build that is
-        // gone. Same class as the printer, kind, diameter, silhouette and remove clears.
-        clearStalePlacementNotices();
-        renderWarnings();
-      });
+      void switchChairVariant(r.value).finally(renderAssemblyVariantControls);
     }),
   );
 }
@@ -363,15 +357,7 @@ export function renderAssemblyRoleControls(): void {
   if (asmKindCanAutoLoad(kind)) {
     box.innerHTML = `<div class="btn-row" style="margin-bottom:var(--space-row);"><button class="btn small" data-load-full>↻ Reload assembly</button></div>`;
     const b = box.querySelector('[data-load-full]');
-    if (b)
-      b.addEventListener(
-        'click',
-        () =>
-          void asmLoadFullAssembly().finally(() => {
-            clearStalePlacementNotices();
-            renderWarnings();
-          }),
-      );
+    if (b) b.addEventListener('click', () => void asmLoadFullAssembly());
     return;
   }
 
@@ -463,14 +449,7 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
     });
   });
   const rmBtn = row.querySelector<HTMLElement>('[data-asm-remove]');
-  if (rmBtn)
-    rmBtn.addEventListener('click', () => {
-      asmRemovePart(part.id);
-      // Placement messages name a part, so removing one leaves its pill naming something no longer
-      // in the build. Same class as the printer, kind, diameter and silhouette cases.
-      clearStalePlacementNotices();
-      renderWarnings();
-    });
+  if (rmBtn) rmBtn.addEventListener('click', () => asmRemovePart(part.id));
   return row;
 }
 
@@ -526,6 +505,12 @@ export function initAssemblyPanel(): void {
   onAssemblyPartsChanged(() => {
     renderAssemblyRoleControls();
     renderAssemblyPartList();
+    // Every placement message names a part, so the parts changing is what makes one stale. Hooked
+    // here rather than at each caller: the per-caller version sat in `.finally()`, so cancelling
+    // "Load the full …?" or "Switch to Kit?" — which changes nothing — still wiped the pill
+    // telling the user to check their prime tower.
+    clearStalePlacementNotices();
+    renderWarnings();
     // The part thumbnail is the loaded mesh's own silhouette, so it can only be drawn once the
     // mesh is here — and re-drawn when a variant swap replaces one.
     refreshShapeThumb();
