@@ -17,17 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the raw pixels were 4 MB on their own. Restoring re-traces it, so it takes a
   moment on a photograph. The colors come back exactly as they were, because the
   copy is lossless.
-- **A long rebuild can be cancelled.** The "Rebuilding geometry…" curtain carries
-  a Cancel button on any part. Before,
-  starting the wrong rebuild meant waiting it out or reloading the page, and
-  reloading used to take every setting with it. Measured on a dense design: a 79
-  second rebuild returned the app at 23.7 seconds. It is not instant, because it
-  takes effect when the part being cut finishes, and the button says
-  "Cancelling…" while that happens. The stage goes back to showing the uncut
-  parts, since the cut it was part-way through is what you stopped, and Export
-  switches off until you build again. Your settings are untouched and still
-  saved, which a page reload never managed. Flat shapes rebuild in seconds and
-  are not offered a Cancel.
+- **A long rebuild can be cancelled, and now actually stops.** The "Rebuilding
+  geometry…" curtain carries a Cancel button on any part. Before, starting the
+  wrong rebuild meant waiting it out or reloading the page, and reloading used to
+  take every setting with it. Measured on a wheel carrying 6000 regions: the
+  button used to sit on "Cancelling…" for **140 seconds** while the progress
+  readout kept climbing, and now returns the app in **0.3 seconds**. The stage
+  goes back to showing the uncut parts, since the cut it was part-way through is
+  what you stopped, and Export switches off until you build again. Your settings
+  are untouched and still saved, which a page reload never managed.
+
+  It is still not instant everywhere: once the cutting itself starts, stopping
+  waits for the part being cut to finish, which is seconds on the parts that
+  ship. The long wait was never in the cutting.
+
 - **The Depth panel says when colors are ignoring the default.** Typing in
   Default depth could appear to do nothing, because a color with its own depth
   keeps it, and the only sign of that was a highlight on a row in another panel.

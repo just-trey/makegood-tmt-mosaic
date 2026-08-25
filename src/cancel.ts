@@ -49,9 +49,18 @@ export function cancelHonoured(): boolean {
  * **Only call this where nothing is owned that a `finally` would not free.** The assembly build
  * allocates Manifold solids and frees them by hand on each branch, with no outer try/finally
  * around the per-part body, so a throw from inside a part leaks WASM memory that repeated
- * cancelling would accumulate. The call sites are therefore the boundaries where the previous
- * part has already been released: today that is one call, at the top of the part loop in
- * geometry/assembly.ts.
+ * cancelling would accumulate.
+ *
+ * **A call site is only safe where nothing is allocated, or where something owns what is.** Today
+ * there are four:
+ *
+ *   - geometry/assembly.ts, top of the part loop: the previous part is released and this one has
+ *     allocated nothing.
+ *   - geometry/assembly.ts, the per-colour step of the cutter loop: a catch around that loop frees
+ *     `colorPrisms` before rethrowing.
+ *   - geometry/regions.ts, both yield points: that pass is 2D polygon work and holds no solids at
+ *     all. This is where a heavy design actually spends its time, and checking there took a
+ *     6000-region wheel from 140.4s to 0.3s. The two assembly sites together left it at 132.2s.
  *
  * **The trap, hit once already:** the flat path's cooperative union looks safe, and is not. It is
  * shared with Fill's tiling (geometry/patterns.ts), which runs inside the per-part body holding

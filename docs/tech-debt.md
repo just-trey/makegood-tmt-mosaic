@@ -379,35 +379,58 @@ operation (many small pieces unioned, rather than a growing accumulator subtract
 has not been taken. Do that first. A constant copied across from the other call site would close
 the finding without measuring anything, which is the failure this file exists to prevent.
 
-## Cancelling a rebuild waits for the current part, and flat rebuilds cannot be cancelled at all
+## Cancel still waits for the part being cut, once cutting has started
 
-Measured on the chair, 2026-08-17, `MOSAIC_GPU=1`: a dense 676-circle design took **79.1s** to
-rebuild, and Cancel returned the UI at **23.7s**. The 55s saved is the point; what follows is what
-that design bought.
+Mostly closed by the 2026-08-24 cycle's **T0-7**, and reduced to a much smaller
+claim than this section used to make.
 
-**One check, at the top of the part loop** in `buildAssemblyGeometry`
-([src/geometry/assembly.ts](../src/geometry/assembly.ts)). That is the only place in that loop
-where nothing is owned: `owned` and `partMan` are Manifold solids freed by hand on each branch,
-with no outer try/finally around the per-part body. Three cancels in a row held the heap flat at
-177.0 MB.
+**What was wrong.** The single check at the top of the part loop was in the wrong
+phase. The cycle measured 140.4s of latency on a 6000-region wheel with the button
+reading "Cancelling…" throughout, and read that as the per-part cut being
+uninterruptible. It was not. Driving the same fixture and clicking Cancel at a
+fixed t+10s, the readout stood at **11%** at the click, which is inside
+`computeNetRegionsByColor` ([regions.ts](../src/geometry/regions.ts)) — the 2D
+paint-order pass that runs before any Manifold solid exists. A check at its yield
+points takes that fixture from **140.4s to 0.3s**, and is safe precisely because
+that pass holds no solids.
 
-Three consequences, all open:
+The cycle recorded the readout climbing 24%→40% on this fixture, so it is not
+stuck; the phase is simply long enough that a click at t+10s lands early in it.
+Every number here comes from
+[2026-08-25 cancel latency](findings/2026-08-25-cancel-latency.md), including the
+40-colour run that showed the first fix doing nothing.
 
-- **Latency is one part.** 23.7s of 79.1s above.
-- **A single-part assembly cannot be cancelled**, nor can a press that lands during the last part.
-  The button sits at "Cancelling…" for the rest of the build.
-- **Flat rebuilds are not offered a Cancel.** The obvious place to check, `unionAllCooperative`
-  ([regions.ts](../src/geometry/regions.ts)), is shared with Fill's tiling, which runs _inside_ the
-  per-part body holding Manifold solids. A check there leaks on the Fill case the button exists
-  for. Flat rebuilds measured 1.8-4s on 169 paths, so this costs little today; the dense
-  135-path case is ~13s.
+Two checks were added, and only one of them mattered. The per-colour one inside
+the cutter loop is correct and carries its own owner over `colorPrisms`, but on
+that fixture it never fired, because the time was not there. It is kept for the
+case where it is.
 
-Closing all three is one job: give the per-part loop body a `finally` that releases what it holds.
-The frees are spread across the branches and would have to become idempotent first, so a `finally`
-could call them without double-freeing. Then the existing yield points become safe cancellation
-points, latency drops to the yield budget, and the flat path can check too. Worth doing when
-someone is already in that code; not worth a delicate refactor of the CSG memory management on its
-own.
+**What is still open.** Once cutting has genuinely started, cancelling waits for
+the part being cut to finish: `owned` and `partMan` are freed by hand on each
+branch with no outer try/finally, so a check anywhere else in the per-part body
+leaks WASM that repeated cancelling accumulates.
+
+The 177.0 MB heap-flat figure quoted here previously was measured on 2026-08-17
+against the single original call site, and is not evidence about the two added
+since. Neither the `colorPrisms` catch nor the regions.ts sites have a heap
+measurement behind them: the first is reasoned from ownership, the second from
+there being nothing allocated to leak.
+
+**And `computeNetRegionsByColor` is memoized on the shapes array identity**, so a
+rebuild reusing a cached pass skips both of its checks. A second rebuild forced by
+a depth edit was measured and still cancelled in 0.3s, so the case did not
+reproduce, but that is not proof it cannot.
+
+- **A single-part assembly still cannot be cancelled mid-cut**, nor can a press
+  landing during the last part.
+- **`unionAllCooperative` is still not a safe place to check.** It is shared with
+  Fill's tiling, which runs inside the per-part body holding solids. This is the
+  trap [src/cancel.ts](../src/cancel.ts) records, and it is why the fix went where
+  it did rather than there.
+
+Closing the rest is still one job: give the per-part loop body a `finally` that
+releases what it holds. It is worth much less than it was, since the phase that
+actually took minutes is now interruptible.
 
 ## Auto-merge is a similarity control; the user's actual constraint is a slot count
 
