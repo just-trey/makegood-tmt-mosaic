@@ -13,6 +13,7 @@ vi.mock('../src/assembly/parts', async (importOriginal) => {
 import {
   applyRestoredSession,
   holdSavedSessionUntilAnswered,
+  loadSavedSession,
   markSavedSessionAnswered,
   saveSession,
   schedulePersist,
@@ -105,6 +106,16 @@ describe('a saved session whose restore offer has not been answered', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
+  // A blob that is not JSON at all cannot be offered, so nothing ever answers for it. It has to be
+  // discarded on load, or the hold suppresses the cleanup on this visit and every future one.
+  it('discards a stored session that cannot be parsed, rather than holding it forever', () => {
+    localStorage.setItem(STORAGE_KEY, '{ not json');
+    holdSavedSessionUntilAnswered();
+
+    expect(loadSavedSession()).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
   // Arming reads storage, so a boot that finds nothing must not hold. Asserted on the flag's own
   // effect — an empty save with nothing else in between — because any successful save clears the
   // flag anyway: routing through one made this pass with the whole feature stubbed out.
@@ -158,7 +169,10 @@ describe('a save already armed when a restore starts', () => {
       state.artworks = [];
 
       const restore = applyRestoredSession(JSON.parse(stored) as PersistedSession);
-      await Promise.resolve(); // let the restore reach its await, so `restoring` is set
+      // Wait for the restore to actually reach its await rather than assuming a microtask count:
+      // `restoring` is set just before this call, and instrumentation changes how many ticks it
+      // takes to get here. Guessing one `Promise.resolve()` made this fail under --coverage only.
+      while (!vi.mocked(asmLoadFullAssembly).mock.calls.length) await Promise.resolve();
       await vi.advanceTimersByTimeAsync(1000); // the armed save comes due mid-restore
 
       expect(

@@ -565,11 +565,15 @@ as it goes, so a failure part-way can leave the printer set to one value while t
 picker shows another. A reload starts clean.
 
 **Why it happens.** The stored session is JSON in the browser's local storage for
-this site. It can be left unreadable by another tab or extension writing to the
-same key, by storage being truncated when the browser reclaims space, or by a
-build older than the fields the current one expects. Settings that simply did not
-exist when the session was saved are filled in at their normal values rather than
-failing, so this message means something beyond that.
+this site. It reads as valid JSON but describes something this build cannot use:
+another tab or extension has written to the same key, or the session came from a
+build whose settings no longer line up. Settings that simply did not exist when
+the session was saved are filled in at their normal values rather than failing, so
+this message means something beyond that.
+
+A save that is damaged outright, rather than merely unusable, does not reach this
+message. It cannot be parsed at all, so it is discarded on load without a banner
+ever being offered.
 
 **Nothing else was lost.** Only the saved session is affected. Any design you have
 loaded in this tab is untouched.

@@ -506,6 +506,10 @@ export function loadSavedSession(): PersistedSession | null {
     }
     return repairSessionContainers(parsed);
   } catch {
+    // Cleared, like the schema branch above. Without this an unparseable blob was held forever:
+    // nothing renders a banner for it, so nothing ever answers the offer, so the empty-snapshot
+    // clear that used to tidy it up stays suppressed for every future visit as well.
+    clearSavedSession();
     return null;
   }
 }
