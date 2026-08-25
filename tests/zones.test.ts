@@ -605,13 +605,30 @@ describe('maxCutDepth', () => {
     expect(new FlatZoneMapper(boxPart(), [], false).maxCutDepth()).toBeCloseTo(10 - 0.05, 6);
   });
 
-  // Measured along the cut axis, which is where buildCutter extrudes, not along patchNormal.
-  // Projecting onto the normal read a distance the cut never travels: on wheel-half's -Z patch
-  // that was 139.88mm against 24.13mm of real material, so a mistyped depth passed the clamp.
-  it('follows the cut axis, not the face normal', () => {
+  // The cut runs down Y (buildCutter extrudes from faceY along that axis), so this measurement
+  // only means anything for a face whose normal has a Y component. Everything else declines.
+  //
+  // That is the bug being pinned: projecting onto `patchNormal` instead returned a distance the
+  // cut never travels, and wheel-half's -Z patch — selectable from the design-face dropdown, which
+  // offers the top six patches unfiltered — read 139.88mm against 24.13mm of real material. The
+  // mistyped depth the clamp exists to catch went straight through it.
+  it('declines on a face the cut axis cannot measure, rather than guessing', () => {
     const sideFacing = boxPart({ patchNormal: [0, 0, -1], topZ: -20 });
-    // 20 along -Z, but only 10 of material along the axis the cutter actually travels
-    expect(new FlatZoneMapper(sideFacing, [], false).maxCutDepth()).toBeLessThan(20);
+    expect(new FlatZoneMapper(sideFacing, [], false).maxCutDepth()).toBe(Infinity);
+  });
+
+  // A tilted face is the same class: faceY (topZ / nrm.y) lands outside the mesh, so the extent
+  // comes out negative. Clamping on that cut every colour on the part at 0.2mm while telling the
+  // user it was "deeper than the part goes".
+  it('declines on a tilted face rather than clamping to the minimum', () => {
+    const tilted = boxPart({ patchNormal: [-0.95, 0.3, 0], topZ: -90 });
+    expect(new FlatZoneMapper(tilted, [], false).maxCutDepth()).toBe(Infinity);
+  });
+
+  // Same reasoning at the other end: a part too thin to hold the minimum printable recess is a
+  // fact about the geometry, and "deeper than the part goes" is a message about the user's number.
+  it('declines when the part cannot hold a printable recess', () => {
+    expect(new FlatZoneMapper(boxPart({ topZ: -4.9 }), [], false).maxCutDepth()).toBe(Infinity);
   });
 
   // A face pointing the other way has the same material behind it, in the other direction.

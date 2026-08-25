@@ -395,10 +395,19 @@ export class FlatZoneMapper implements ZoneMapper {
       if (y > yMax) yMax = y;
     }
     const extent = this.nsign > 0 ? this.faceY - yMin : yMax - this.faceY;
-    if (!Number.isFinite(extent)) return Infinity;
-    // Floored at the minimum printable depth: a part thinner than the floor would otherwise clamp
-    // every colour to a cut that cannot print, which is the shallow-end bug in reverse.
-    return (this.maxCutDepthCache = Math.max(extent - CUT_FLOOR_MM, MIN_CUT_DEPTH_MM));
+    const usable = extent - CUT_FLOOR_MM;
+    // Declines rather than clamping whenever the answer would not be a printable recess. Two ways
+    // to get there, and both mean "this measurement does not apply here" rather than "the part is
+    // 0.2mm deep":
+    //
+    //   - A face that is not vertical makes `faceY` (topZ / nrm.y) a Y-intercept outside the mesh,
+    //     so the extent comes out negative. The face picker offers any of the top six patches with
+    //     no normal filter, so a tilted one is selectable. Clamping there cut every colour on the
+    //     part at the minimum depth and told the user it was "deeper than the part goes".
+    //   - A part too thin to hold the minimum. Warning about the user's number would be reporting
+    //     the geometry, which is not what this message says.
+    if (!Number.isFinite(usable) || usable < MIN_CUT_DEPTH_MM) return Infinity;
+    return (this.maxCutDepthCache = usable);
   }
 
   resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[] {
