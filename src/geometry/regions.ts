@@ -645,6 +645,10 @@ export async function computeNetRegionsByColor(
       if (merged) byColor[color] = merged;
       onProgress(0.9 + (0.1 * (c + 1)) / colors.length);
       if (performance.now() - lastYield > YIELD_BUDGET_MS) {
+        // Same safety as the visibility loop above, and the same reason to want it: this merge is
+        // the unbounded case the comment on COVERED_BATCH names, so a cancel landing here waited
+        // it out with no check of its own.
+        throwIfCancelled();
         await yieldToBrowser();
         lastYield = performance.now();
       }

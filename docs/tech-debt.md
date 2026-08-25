@@ -387,12 +387,15 @@ claim than this section used to make.
 **What was wrong.** The single check at the top of the part loop was in the wrong
 phase. The cycle measured 140.4s of latency on a 6000-region wheel with the button
 reading "Cancelling…" throughout, and read that as the per-part cut being
-uninterruptible. It was not: the build sat at **11% progress** for the whole time,
-which is `computeNetRegionsByColor`
-([regions.ts](../src/geometry/regions.ts)), the 2D paint-order pass that runs
-before any Manifold solid exists. A check at its existing yield point takes the
-same fixture from **140.4s to 0.3s**, and it is safe precisely because that pass
-holds no solids.
+uninterruptible. It was not. Driving the same fixture and clicking Cancel at a
+fixed t+10s, the readout stood at **11%** at the click, which is inside
+`computeNetRegionsByColor` ([regions.ts](../src/geometry/regions.ts)) — the 2D
+paint-order pass that runs before any Manifold solid exists. A check at its yield
+points takes that fixture from **140.4s to 0.3s**, and is safe precisely because
+that pass holds no solids.
+
+The 2026-08-24 cycle recorded the readout climbing 24%→40% on this fixture, so it
+is not stuck; the phase is simply long enough that a click lands in it.
 
 Two checks were added, and only one of them mattered. The per-colour one inside
 the cutter loop is correct and carries its own owner over `colorPrisms`, but on
@@ -402,8 +405,13 @@ case where it is.
 **What is still open.** Once cutting has genuinely started, cancelling waits for
 the part being cut to finish: `owned` and `partMan` are freed by hand on each
 branch with no outer try/finally, so a check anywhere else in the per-part body
-leaks WASM that repeated cancelling accumulates. Three cancels in a row held the
-heap flat at 177.0 MB with the current call sites.
+leaks WASM that repeated cancelling accumulates.
+
+The 177.0 MB heap-flat figure quoted here previously was measured on 2026-08-17
+against the single original call site, and is not evidence about the two added
+since. Neither the `colorPrisms` catch nor the regions.ts sites have a heap
+measurement behind them: the first is reasoned from ownership, the second from
+there being nothing allocated to leak.
 
 - **A single-part assembly still cannot be cancelled mid-cut**, nor can a press
   landing during the last part.

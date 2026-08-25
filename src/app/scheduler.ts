@@ -76,10 +76,15 @@ async function runNow(): Promise<void> {
   const showsOverlay = isRebuildLikelySlow();
   const t0 = performance.now();
   if (showsOverlay) {
-    // Assembly only. That is where the minutes are (the tech-debt this closes measured 93.6s for
-    // one chair zone), and it is the only path with a safe abort point: the flat path's
-    // cooperative union is shared with Fill's tiling, which runs inside the per-part body holding
-    // Manifold solids, so a check there would leak on exactly the slow case the button is for.
+    // Assembly only, which is every part the app offers — the flat modes ship compiled and
+    // unrendered (docs/tech-debt.md), so this condition selects everything reachable.
+    //
+    // The reason recorded here used to be that flat had no safe abort point. That stopped being
+    // true when the check went into computeNetRegionsByColor, which both paths run and which holds
+    // no Manifold solids. What remains true is the narrower thing: `unionAllCooperative` is shared
+    // with Fill's tiling, which runs inside the per-part body holding solids, so a check *there*
+    // would still leak. Offering flat a Cancel is untested rather than unsafe, and there is no
+    // reachable flat mode to test it on.
     showOverlay('Rebuilding geometry…', { cancellable: state.shapeKind === 'assembly' });
     // The rebuild reports progress as it chunks through the boolean pass; show it as a live
     // percentage, and once it's dragged on a while add a "hang tight" so it reads as working.

@@ -226,8 +226,8 @@ async function rebuildScene(): Promise<void> {
   );
   lastBuild = built;
   // Refused: leave the panels describing nothing rather than the previous build, whose meshes
-  // newModelGroup() has already removed. Flat rebuilds are not cancellable (see scheduler.ts), so
-  // this is the pre-existing refusal path, not a cancel.
+  // newModelGroup() has already removed. A cancel is caught by catchCancel and never reaches here,
+  // so this is the refusal path, not a cancel.
   if (!built) {
     renderColorList(null);
     renderWarnings();
