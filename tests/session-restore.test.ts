@@ -177,6 +177,38 @@ describe('applyRestoredSession: the settings the user had', () => {
     expect(state.keptApart).toEqual([]);
   });
 
+  // The field refuses 0 and negatives, but a session saved by an earlier build can carry either,
+  // and a reload walked straight past the guard. Zero makes every cut fail while Export stays
+  // green; a negative builds as if positive.
+  // 0.2 is below the field's own floor but above zero, which is what a looser guard let through:
+  // the field then snapped itself to its default while state kept 0.2.
+  it.each([0, -50, 0.2])('ignores a saved design radius of %d', async (asmRadius) => {
+    const before = state.asmRadius;
+
+    await applyRestoredSession(session({ asmRadius }));
+
+    expect(state.asmRadius).toBe(before);
+  });
+
+  // isPersistedSession checks four fields and repairSessionContainers repairs containers, never
+  // scalars, so a session missing this reached colorList's `shownDepth.toFixed(2)` and threw
+  // part-way through the restore.
+  it('ignores a saved depth that is not a number', async () => {
+    const before = state.globalDepth;
+    const bad = session();
+    delete (bad as unknown as Record<string, unknown>).globalDepth;
+
+    await expect(applyRestoredSession(bad)).resolves.toBeUndefined();
+
+    expect(state.globalDepth).toBe(before);
+  });
+
+  it('restores a design radius that is a real one', async () => {
+    await applyRestoredSession(session({ asmRadius: 120 }));
+
+    expect(state.asmRadius).toBe(120);
+  });
+
   it('coerces an unknown printer id to one that exists', async () => {
     await applyRestoredSession(session({ printerId: 'no-such-printer' }));
 

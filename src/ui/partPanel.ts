@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import type { ShapeKind } from '../types';
-import { clearBaseColor, DEFAULT_BASE_COLOR, state } from '../state/store';
+import { clearBaseColor, DEFAULT_BASE_COLOR, MIN_DESIGN_RADIUS_MM, state } from '../state/store';
 import { getFilaments } from '../state/filaments';
 import { scheduleRebuild } from '../app/scheduler';
 import { requestFrame } from '../scene/viewport';
@@ -54,6 +54,8 @@ export function refreshShapeParamInputs(): void {
   input('#p-corner').value = String(state.round.corner);
   input('#p-thickness-rr').value = String(state.round.thickness);
   input('#p-asm-radius').value = String(state.asmRadius);
+  // The fields now hold the restored values, so the bindings' last-good caches must follow them.
+  resyncShapeInputs();
 }
 
 function setShapeThumb(kind: string): void {
@@ -181,11 +183,36 @@ export function renderBaseColorSwatches(): void {
  * rather than hardcoding "> 0" so a field like corner radius, which is legitimately 0, isn't
  * rejected at its own valid floor.
  */
+const resyncBoundInput: Array<() => void> = [];
+
+/**
+ * Resync every bound field from what it currently holds, and drop any invalid marking.
+ *
+ * `lastValid` is seeded once at init from the HTML default, and the blur handler writes it back
+ * when the field is invalid. Session restore pushes state into these fields directly
+ * (refreshShapeParamInputs), so without this a restored radius of 200 left `lastValid` at the
+ * markup's 138: clear the field, tab away, and the panel silently disagreed with the export.
+ *
+ * The marking has to go with it. Clearing the field while the restore banner is up, then
+ * accepting the restore, left a field showing the restored value and still wearing `.invalid`
+ * plus "the last valid value stays in use until this is fixed", about a value now in use.
+ */
+export function resyncShapeInputs(): void {
+  resyncBoundInput.forEach((f) => f());
+}
+
 function bindShapeInput(sel: string, apply: (v: number) => void): void {
   const el = input(sel);
   const min = el.min !== '' ? parseFloat(el.min) : -Infinity;
   const isValid = (v: number) => Number.isFinite(v) && v >= min;
   let lastValid = numVal(sel, min > 0 ? min : 0);
+  resyncBoundInput.push(() => {
+    const v = numVal(sel, NaN);
+    if (!isValid(v)) return;
+    lastValid = v;
+    el.classList.remove('invalid');
+    el.title = '';
+  });
 
   el.addEventListener('input', () => {
     const v = numVal(sel, NaN);
@@ -339,10 +366,18 @@ export function initPartPanel(): void {
     state.stlPlate.faceZ = v;
   });
   // assembly design radius
-  input('#p-asm-radius').addEventListener('input', () => {
-    state.asmRadius = numVal('#p-asm-radius', 138);
-    updateOffsetSliderRanges();
-    scheduleRebuild('typed');
+  // Through bindShapeInput like every other numeric dimension, rather than its own handler. A
+  // radius has to be positive: 0 made every cut fail while Export stayed green, and a negative
+  // built as if it were positive, since the design circle is only ever used as a magnitude. The
+  // bound comes off the input's own `min`, and the last good value stays in state while the field
+  // is invalid — writing it back into the field instead makes clear-and-retype impossible, which
+  // is what a hand-rolled version of this did: backspacing 138 left "1" in the box and typing
+  // "200" after it gave a 1200mm radius.
+  // The floor comes from the shared constant rather than the markup, so the field and the restore
+  // path cannot drift apart. bindShapeInput reads `min` when it binds, so this must be set first.
+  input('#p-asm-radius').min = String(MIN_DESIGN_RADIUS_MM);
+  bindShapeInput('#p-asm-radius', (v) => {
+    state.asmRadius = v;
   });
   // The kind's build parameter (the hubcap's disc diameter). On `change`, not `input`, unlike the
   // radius above: this one regenerates the part's mesh through a CSG union, so firing it per

@@ -1,5 +1,5 @@
 import type { AppState } from './store';
-import { state } from './store';
+import { MIN_DESIGN_RADIUS_MM, state } from './store';
 import type { ArtworkInstance, DesignSource } from '../types';
 import {
   allowedArtworkMode,
@@ -583,14 +583,23 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   state.flipX = session.flipX;
   state.flipY = session.flipY;
   state.rotationDeg = session.rotationDeg;
-  state.globalDepth = session.globalDepth;
+  // Guarded like asmRadius below. isPersistedSession checks four fields and repairSessionContainers
+  // repairs containers, never scalars, so a session missing this reached colorList's
+  // `shownDepth.toFixed(2)` and threw mid-restore — the half-applied failure this path exists to
+  // avoid.
+  if (Number.isFinite(session.globalDepth)) state.globalDepth = session.globalDepth;
   state.recessBg = session.recessBg;
   // Coerced to a printer that exists, not adopted verbatim. An unknown id (an older build's, a
   // hand-edited session) left `#p-printer` blank while getPrinter() silently fell back to the
   // default bed — and the bed is what every verified placement is checked against, so the export
   // would use one printer's plate while the picker named none.
   state.printerId = getPrinter(session.printerId).id;
-  state.asmRadius = session.asmRadius;
+  // The same floor the field enforces, from the same constant: a looser guard here let a session
+  // carrying 0.2 through, and the field then snapped itself to its default while state kept 0.2.
+  // A session saved by an earlier build can carry 0 or a negative, so the guard has to be here too
+  // or a reload walks straight past the field's.
+  if (Number.isFinite(session.asmRadius) && session.asmRadius >= MIN_DESIGN_RADIUS_MM)
+    state.asmRadius = session.asmRadius;
   // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
   //
   // Clamped at BOTH ends here, against the printer restored on the line above. A stored value
