@@ -553,3 +553,23 @@ rim while others reach it, which is why it says so rather than staying quiet.
 Same cause as the "Couldn't merge the shapes" warnings above: dense or
 self-touching line-work the 2D maths can't resolve. Simplifying that colour's
 regions, or nudging Scale, usually clears it.
+
+## Troubleshooting: "That saved session could not be opened, so it was cleared"
+
+**What it means.** The app found a saved session from a previous visit, you asked
+for it back, and it could not be read. The save has been removed so it will not
+be offered again.
+
+**What to do.** Reload the page before carrying on. The restore assigns settings
+as it goes, so a failure part-way can leave the printer set to one value while the
+picker shows another. A reload starts clean.
+
+**Why it happens.** The stored session is JSON in the browser's local storage for
+this site. It can be left unreadable by another tab or extension writing to the
+same key, by storage being truncated when the browser reclaims space, or by a
+build older than the fields the current one expects. Settings that simply did not
+exist when the session was saved are filled in at their normal values rather than
+failing, so this message means something beyond that.
+
+**Nothing else was lost.** Only the saved session is affected. Any design you have
+loaded in this tab is untouched.

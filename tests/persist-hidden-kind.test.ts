@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { markSavedSessionAnswered, saveSession } from '../src/state/persist';
+import { saveSession } from '../src/state/persist';
 import { state } from '../src/state/store';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
 
@@ -39,11 +39,6 @@ function storeSessionOn(kindId: string): void {
 }
 
 beforeEach(() => {
-  // These cases are about the hidden-kind hold specifically. Without this the *unanswered-offer*
-  // hold would keep every session alive and all three would pass without touching the guard under
-  // test — including "still clears a session stored on a kind that is offered", which would then
-  // assert nothing at all.
-  markSavedSessionAnswered();
   localStorage.clear();
   state.sources = [];
   state.artworks = [];

@@ -638,6 +638,12 @@ Closing it means building the restored state into a local object and committing
 it to `state` only once nothing further can throw, the way `applyRasterFile` and
 the source loop inside this same function already do.
 
+Related, from the section this replaced: the 2026-08-08 cycle's **A2** (switching
+part shape carries artwork across with no confirmation) is the opposite failure in
+the same control. It is graded FIXED in
+[review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md), and that
+cycle's **C1** records why the confirm's wording is still wrong.
+
 ## `export-chair-examples.mjs` cannot reach Fill any more
 
 Broken since #137, not by the beta narrowing, though that branch touched the

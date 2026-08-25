@@ -402,6 +402,11 @@ export function schedulePersist(): void {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = undefined;
+    // Re-checked here, not only when scheduling. A save armed a moment *before* the user clicked
+    // Restore fires in the middle of it and writes an empty snapshot over the session being
+    // restored — the exact loss `restoring` exists to prevent, through the one path that skipped
+    // its guard.
+    if (restoring) return;
     saveSession();
   }, 1000);
 }
@@ -513,9 +518,13 @@ export function loadSavedSession(): PersistedSession | null {
  *
  * Assembly restore awaits asmLoadFullAssembly() directly rather than going through
  * maybeAutoLoadAssembly()'s fire-and-forget call, because the zone bindings below need the
- * restored parts (and their fresh session-local ids) to already exist. state.assembly.parts is
- * empty at this point (nothing has loaded yet this session), so the confirmDialog() guard in
- * asmLoadFullAssembly — which only fires when parts are already present — never triggers.
+ * restored parts (and their fresh session-local ids) to already exist.
+ *
+ * **`state.assembly.parts` is not empty on entry**, and a previous version of this comment said it
+ * was. The boot's own auto-load has always filled it, so asmLoadFullAssembly's confirmDialog guard
+ * did fire, raising a second question on top of the restore the user had just accepted — and
+ * cancelling it exported the boot kind's parts under the restored kind's filename. Both branches
+ * below clear the list before loading; do not remove that on the strength of the old claim.
  */
 export async function applyRestoredSession(session: PersistedSession): Promise<void> {
   restoring = true;
