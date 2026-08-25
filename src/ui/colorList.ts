@@ -1,5 +1,5 @@
 import { addToBase, baseColorHex, removeFromBase, state } from '../state/store';
-import { requestedDepth } from '../geometry/depth';
+import { MIN_CUT_DEPTH_MM, requestedDepth } from '../geometry/depth';
 import { scheduleRebuild } from '../app/scheduler';
 import { nearestFilamentName } from '../state/filaments';
 import { getPrinter } from '../export/printers';
@@ -309,6 +309,15 @@ export function renderColorList(
     // global Depth field, the fix the warning tells you to apply, no longer reached rows that now
     // carried an explicit override. colorSettings holds deliberate per-row overrides only.
     const shownDepth = requestedDepth(state.colorSettings, state.globalDepth, c.key);
+    // A depth of zero or less cuts nothing, so the build raises it — and the field went on reading
+    // 0.00 while the app cut 0.20, with the warning the only place the real number appeared.
+    // Said beside the field instead of written into it: writing it back is what the comment above
+    // records as pinning every row to the clamped value and silencing the warning.
+    //
+    // Only the zero case, which the panel can work out on its own. The other override, a depth
+    // deeper than the part, depends on that part's geometry and is not knowable here
+    // (docs/tech-debt.md).
+    const raisedFromZero = shownDepth <= 0;
     // A row carrying its own depth looked identical to one following the global, so the global
     // Depth field appearing not to work had no visible cause and no visible undo — clearing the
     // field was the only way back, and it was documented only in the help panel.
@@ -369,7 +378,7 @@ export function renderColorList(
             ? `Using its own depth (${shownDepth.toFixed(2)} mm) instead of the ${state.globalDepth.toFixed(2)} mm default`
             : 'Following the default depth set in Depth — type here to give this row its own'
         }">
-        <span class="hint">mm</span>
+        <span class="hint">${raisedFromZero ? `mm, cut at ${MIN_CUT_DEPTH_MM.toFixed(2)}` : 'mm'}</span>
         ${
           isOverridden
             ? `<button type="button" class="btn small depth-reset" data-reset-key="${c.key}" title="Reset to the default depth (${state.globalDepth.toFixed(2)} mm)" aria-label="Reset depth for ${c.isBackground ? 'Background' : labelHtml} to the default">↺</button>`

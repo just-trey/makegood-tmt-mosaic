@@ -340,7 +340,17 @@ export function initPartPanel(): void {
   });
   // assembly design radius
   input('#p-asm-radius').addEventListener('input', () => {
-    state.asmRadius = numVal('#p-asm-radius', 138);
+    // A radius has to be positive. 0 made every cut fail while Export stayed green, and a negative
+    // built silently as if it were positive — the design circle is only ever used as a magnitude.
+    // Rejected rather than clamped to some floor, because any floor here would be a number nobody
+    // measured: the hubcap's own size control clamps to a bound that was (its minimum is the size
+    // that still covers the mounting clips), and this has no equivalent.
+    const raw = numVal('#p-asm-radius', 0);
+    if (!(raw > 0)) {
+      input('#p-asm-radius').value = String(state.asmRadius);
+      return;
+    }
+    state.asmRadius = raw;
     updateOffsetSliderRanges();
     scheduleRebuild('typed');
   });

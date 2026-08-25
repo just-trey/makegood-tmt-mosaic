@@ -432,6 +432,32 @@ Closing the rest is still one job: give the per-part loop body a `finally` that
 releases what it holds. It is worth much less than it was, since the phase that
 actually took minutes is now interruptible.
 
+## The depth field cannot show a clamp that depends on the part
+
+Half of the 2026-08-24 cycle's **T0-9**.
+
+The field shows the depth that was asked for and deliberately does not write the
+built value back: doing that pinned every row to its clamped depth, so the global
+Depth field stopped reaching those rows and the warning went quiet (the reasoning
+is on `shownDepth` in [colorList.ts](../src/ui/colorList.ts)).
+
+**Fixed:** a depth of zero or less now says `cut at 0.20` beside the field. The
+panel can work that out on its own, since the floor is a constant.
+
+**Not fixed:** a depth deeper than the part is clamped too, and the field says
+nothing. That bound is `ZoneMapper.maxCutDepth()` — per part, measured off the
+loaded mesh, and not knowable in the colour list, which has no part. The warning
+names it; the field does not.
+
+Closing it means carrying the applied depth out of the build on
+`ColorListEntry`, which today holds only what the palette knows. It has to stay
+display-only when it gets there, or it re-creates the pinning bug above.
+
+**Also open, from the same finding:** one depth edit raises one warning per
+colour. Typing `0` with four colours loaded stacks four identical pills, and on a
+photograph it would stack ten. They are per-colour because the build warns as it
+cuts each one; saying it once needs the loop to collect rather than announce.
+
 ## Auto-merge is a similarity control; the user's actual constraint is a slot count
 
 The slider (`None`/`Slight`/`Medium`/`Strong` — `src/ui/colorList.ts`,
