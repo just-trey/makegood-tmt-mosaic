@@ -394,8 +394,11 @@ paint-order pass that runs before any Manifold solid exists. A check at its yiel
 points takes that fixture from **140.4s to 0.3s**, and is safe precisely because
 that pass holds no solids.
 
-The 2026-08-24 cycle recorded the readout climbing 24%→40% on this fixture, so it
-is not stuck; the phase is simply long enough that a click lands in it.
+The cycle recorded the readout climbing 24%→40% on this fixture, so it is not
+stuck; the phase is simply long enough that a click at t+10s lands early in it.
+Every number here comes from
+[2026-08-25 cancel latency](findings/2026-08-25-cancel-latency.md), including the
+40-colour run that showed the first fix doing nothing.
 
 Two checks were added, and only one of them mattered. The per-colour one inside
 the cutter loop is correct and carries its own owner over `colorPrisms`, but on
@@ -412,6 +415,11 @@ against the single original call site, and is not evidence about the two added
 since. Neither the `colorPrisms` catch nor the regions.ts sites have a heap
 measurement behind them: the first is reasoned from ownership, the second from
 there being nothing allocated to leak.
+
+**And `computeNetRegionsByColor` is memoized on the shapes array identity**, so a
+rebuild reusing a cached pass skips both of its checks. A second rebuild forced by
+a depth edit was measured and still cancelled in 0.3s, so the case did not
+reproduce, but that is not proof it cannot.
 
 - **A single-part assembly still cannot be cancelled mid-cut**, nor can a press
   landing during the last part.

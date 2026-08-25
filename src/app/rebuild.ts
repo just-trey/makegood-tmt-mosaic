@@ -226,8 +226,8 @@ async function rebuildScene(): Promise<void> {
   );
   lastBuild = built;
   // Refused: leave the panels describing nothing rather than the previous build, whose meshes
-  // newModelGroup() has already removed. A cancel is caught by catchCancel and never reaches here,
-  // so this is the refusal path, not a cancel.
+  // newModelGroup() has already removed. catchCancel returns null on a cancel, so a cancel does
+  // reach here — this branch is both, and the panels want clearing either way.
   if (!built) {
     renderColorList(null);
     renderWarnings();

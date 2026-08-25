@@ -28,10 +28,11 @@ export function hideOverlay(): void {
 }
 
 /**
- * Cancel is acknowledged immediately and takes effect at the next safe point. On a detailed design
- * that is within a fraction of a second, since most of the wait is the 2D region pass; once the
- * cutting itself has started it is the end of the part being cut. Saying "Cancelling…" is the difference between a button
- * that looks broken for a few seconds and one that is visibly working.
+ * Cancel is acknowledged immediately and takes effect at the next safe point. On a detailed
+ * design that is within a fraction of a second, since most of the wait is the 2D region pass;
+ * once the cutting itself has started it is the end of the part being cut. Saying "Cancelling…"
+ * is the difference between a button that looks broken for a few seconds and one that is visibly
+ * working.
  */
 function setCancelState(pending: boolean): void {
   const btn = $<HTMLButtonElement>('#loading-cancel');
