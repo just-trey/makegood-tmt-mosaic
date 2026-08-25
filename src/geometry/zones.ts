@@ -403,6 +403,13 @@ export class FlatZoneMapper implements ZoneMapper {
       if (y < yMin) yMin = y;
       if (y > yMax) yMax = y;
     }
+    // Checked against the mesh, not inferred from the sign of the result. `faceYKnown` only says
+    // the normal has enough Y to divide by; `topZ / nrm.y` can still land far outside the part on
+    // a tilted face, and reading that as a depth gave 299.95mm on a box 10mm tall. Two earlier
+    // versions guessed at this from the sign of `extent` and each was caught by a fixture that
+    // happened to use the other sign. The part's own Y range is the thing being asked about, so
+    // ask it.
+    if (this.faceY < yMin || this.faceY > yMax) return (this.maxCutDepthCache = Infinity);
     const extent = this.nsign > 0 ? this.faceY - yMin : yMax - this.faceY;
     const usable = extent - CUT_FLOOR_MM;
     // Declines rather than clamping whenever the answer would not be a printable recess. Two ways

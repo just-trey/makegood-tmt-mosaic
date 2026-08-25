@@ -629,9 +629,18 @@ describe('maxCutDepth', () => {
   // A tilted face is the same class: faceY (topZ / nrm.y) lands outside the mesh, so the extent
   // comes out negative. Clamping on that cut every colour on the part at 0.2mm while telling the
   // user it was "deeper than the part goes".
-  it('declines on a tilted face rather than clamping to the minimum', () => {
-    const tilted = boxPart({ patchNormal: [-0.95, 0.3, 0], topZ: -90 });
+  // Both signs of the plane offset. The guard used to be inferred from the sign of the result, so
+  // each earlier version passed on whichever sign its fixture happened to use: -90 gave a negative
+  // extent and declined, while +90 gave 299.95mm on a box 10mm tall and clamped nothing.
+  it.each([-90, 90])('declines on a tilted face, plane offset %d', (topZ) => {
+    const tilted = boxPart({ patchNormal: [-0.95, 0.3, 0], topZ });
     expect(new FlatZoneMapper(tilted, [], false).maxCutDepth()).toBe(Infinity);
+  });
+
+  // A normal with just enough Y to pass faceYKnown, and a face plane well outside the mesh.
+  it('declines when the face plane lands outside the part', () => {
+    const shallow = boxPart({ patchNormal: [0, 0.15, 0.99], topZ: 29.7 });
+    expect(new FlatZoneMapper(shallow, [], false).maxCutDepth()).toBe(Infinity);
   });
 
   // Same reasoning at the other end: a part too thin to hold the minimum printable recess is a

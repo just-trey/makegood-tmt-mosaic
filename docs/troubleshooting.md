@@ -589,7 +589,9 @@ part can take, a fraction of a millimetre short of breaking out the back.
 **What to do.** Nothing, if the number was a slip. If you meant a deep pocket,
 the part is the limit, so there is nothing to raise it to.
 
-**This is not a wall check.** A part's wall varies across it, and a recess well
-under this limit can still break through a thin spot without any warning. Look at
+**This is not a wall check, and not every part has one.** A part's wall varies
+across it, and a recess well under this limit can still break through a thin spot
+without any warning. Some parts raise no limit at all: a design face the app
+cannot measure a depth against, or a part too thin to hold the minimum. Look at
 the cut in the 3D view, and in your slicer's preview, before printing. See
 [tech-debt.md](tech-debt.md).

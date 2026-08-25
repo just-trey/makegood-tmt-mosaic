@@ -884,7 +884,13 @@ export async function buildAssemblyGeometry(
       // for the same reason: a cutThrough part discards the setting and holes the whole way
       // through, so "it was cut at 24.25 mm instead" would be false there. Never test
       // `part.cutThrough` here.
+      // Not on a rotated copy: it shares its source's mesh, face and topZ by construction
+      // (asmAddDuplicate), so its bound is the same number and the pill would differ only by
+      // "(rotated copy)". A two-half wheel with eight colours raised sixteen, half of them saying
+      // nothing new. zeroDepthWarning drops the part name outright for the same reason; this one
+      // keeps it, because the bound really is per-part wherever the parts differ.
       else if (
+        !part.isDuplicateOf &&
         depthDiffers(depthSetting, raised) &&
         regions.some((r) => !depthDiffers(r.depth, depthSetting))
       )

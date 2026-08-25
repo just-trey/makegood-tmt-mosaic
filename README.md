@@ -118,7 +118,7 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   hole clean through and exports without comment. A depth is bounded only by
   how far the part extends behind its design face: past that it is cut at the
   part's own depth, with a warning naming the color and the part. On the wheel
-  that bound is 48.5mm, so it catches a mistyped number and not a 20mm pocket
+  that bound is 48.45mm, so it catches a mistyped number and not a 20mm pocket
   in a 3mm wall. The shallow end (zero or negative) is caught up front and
   raised to a safe minimum.
 - Gradients/patterns in an SVG are detected and skipped with a warning.

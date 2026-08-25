@@ -128,7 +128,7 @@ the minimum.
 
 **Wall thickness is still not checked.** It varies across a part and nothing
 measures it, so a pocket deeper than the wall in one spot exports as a part with a
-hole through it, silently. On the wheel the bound is 48.5 mm, so it catches a
+hole through it, silently. On the wheel the bound is 48.45 mm, so it catches a
 mistyped number and not a 20 mm pocket in a 3 mm wall.
 
 **Rotated copies** are supported (a wheel's two halves): the slice of the design

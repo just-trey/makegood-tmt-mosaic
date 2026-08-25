@@ -259,10 +259,17 @@ offset is then an X or Z distance and there is nothing to measure. The conformal
 mapper declines too: it cuts along a normal field rather than one axis.
 
 **What is not.** That bound is the part, not the wall. On the wheel it is
-**48.5mm**, so a mistyped 9999 is caught and a 20mm pocket in a 3mm wall is not.
-The pre-existing wall-thickness item is what closes the rest, and it stays open:
-a part's wall varies across it, nothing measures it, and a pocket deeper than the
-wall in one spot still cuts a hole clean through and exports without comment.
+**48.45mm**, so a mistyped 9999 is caught and a 20mm pocket in a 3mm wall is not.
+**The wall is what closes the rest, and nothing measures it.** A part's wall
+varies across it, so a pocket deeper than the wall in one spot still cuts a hole
+clean through and exports without comment. That is the open half of this item, not
+a separate one: the prose that used to carry it lived in the README's limitations
+list and now points here.
+
+**Three cases decline outright** rather than guessing, and raise no warning at
+all: a conformal zone (it cuts along a normal field, not one axis), a face whose
+plane lands outside the mesh, and a part too thin to hold the minimum. On those
+the deep end is unbounded exactly as before.
 
 Deliberately not solved with a constant. `AssemblyPart.baseDepth` states "mm of
 material behind the face this replaces" and looks like the answer, but nothing in
