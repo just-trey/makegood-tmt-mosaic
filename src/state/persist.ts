@@ -372,6 +372,12 @@ export function saveSession(): void {
       return;
     }
     localStorage.setItem(STORAGE_KEY, json);
+    // What is in storage is now this page's own work, not the session the user arrived with, so
+    // the hold has nothing left to protect. Without this it never ended on a boot where the banner
+    // is never answered — a `?kind=` link, or a banner the user simply ignores — and deleting the
+    // last design afterwards left the *earlier* work in storage, offered back next visit as a
+    // design they had removed.
+    unansweredSavedSession = false;
     lastSaveFailed = false;
   } catch {
     // storage unavailable, full, or the write threw for some other reason — nothing to do

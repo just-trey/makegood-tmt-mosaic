@@ -6,9 +6,9 @@ import { firstOfferedKind } from '../src/assembly/kinds';
 
 const STORAGE_KEY = 'tmt-mosaic:session:v1';
 
-// This file must never call markSavedSessionAnswered(): the flag it tests is module state that
-// only moves one way, so answering it anywhere here would disarm every case below.
-// tests/persist-hidden-kind.test.ts owns the answered side.
+// This file must never call markSavedSessionAnswered(): that is the banner's release, and
+// tests/persist-hidden-kind.test.ts owns the answered side. The hold here is armed and released
+// through the two paths a page actually takes — arriving with a session, and writing over it.
 
 /** Enough loaded work for saveSession to write a session at all. */
 function withLoadedWork(): void {
@@ -46,19 +46,35 @@ describe('a saved session whose restore offer has not been answered', () => {
     expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
   });
 
-  // The hold protects the session the user *arrived* with. An earlier version defaulted to held,
-  // so a visitor who arrived with nothing, loaded a design and then deleted it kept an emptied
-  // session in storage and was offered it back next visit — the exact thing the clear exists to
-  // prevent.
-  it('does not hold a session created after a boot that found none', () => {
-    holdSavedSessionUntilAnswered(); // storage is empty at this point
+  // The hold ends the moment the user's own work reaches storage — what is there is then theirs
+  // from this page life, not the session they arrived with. Without that release it never ended on
+  // a boot where the banner is never answered (a `?kind=` link, or a banner simply ignored), and
+  // deleting the last design left the *earlier* work in storage to be offered back next visit.
+  it('ends once the user\u2019s own work overwrites what they arrived with', () => {
     withLoadedWork();
     saveSession();
-    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+    holdSavedSessionUntilAnswered(); // a later page load arrives with that session, banner ignored
+
+    state.artworks = [{ id: 'a2', sourceId: 's1' }] as unknown as typeof state.artworks;
+    saveSession(); // the user works anyway, overwriting it
 
     state.sources = [];
     state.artworks = [];
-    saveSession(); // the user deleted their only design
+    saveSession(); // then deletes their only design
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  // Arming reads storage, so a boot that finds nothing must not hold: a visitor who arrives with
+  // no session, loads a design and deletes it should not leave an emptied session behind.
+  it('does not arm when the user arrives with nothing', () => {
+    holdSavedSessionUntilAnswered(); // storage is empty at this point
+    withLoadedWork();
+    saveSession();
+
+    state.sources = [];
+    state.artworks = [];
+    saveSession();
 
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
