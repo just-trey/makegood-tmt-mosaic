@@ -1557,8 +1557,8 @@ rule on this widget.
 
 ## Numeric coercion has no lint rule
 
-CLAUDE.md's "Code rules" section says mechanical rules including numeric input
-guards are enforced by lint/CI. Two thirds of that is true, one third is not.
+Numeric input guards are enforced by lint and CI in part, not in full. What
+holds and what does not:
 
 **Enforced.** `strict: true`, plus the five type-aware
 `@typescript-eslint/no-unsafe-*` rules on `src/**/*.ts`. Those caught 12 real
