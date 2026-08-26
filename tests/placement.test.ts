@@ -254,7 +254,7 @@ describe('placementNotice', () => {
     ];
     for (const p of parts)
       expect(noticeFor(p)?.message).toMatch(
-        /so it was placed automatically — check it in your slicer before printing\.$/,
+        /so it was placed automatically\. Check it in your slicer before printing\.$/,
       );
   });
 });

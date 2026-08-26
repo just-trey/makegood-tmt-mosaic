@@ -132,7 +132,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   clearWarnings();
   const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
   const perr = doc.querySelector('parsererror');
-  if (perr) throw new Error('SVG could not be parsed — check the file is valid XML.');
+  if (perr) throw new Error('SVG could not be parsed. Check the file is valid XML.');
   const svgEl = doc.documentElement;
 
   // Root transform from the viewBox origin. viewBox coordinate space is treated directly as
@@ -297,7 +297,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
           warn(
             'Skipped a <' +
               tag +
-              '> with a gradient/pattern fill (not a flat color) — element ignored.',
+              '> with a gradient/pattern fill (not a flat color), element ignored.',
           );
         } else if (fillRaw === 'none') {
           // no fill, e.g. stroke-only outline — ignored for inlay purposes

@@ -57,12 +57,12 @@ preview rather than assuming the colour is gone.
 can print rather than a broken file, and the warning tells you which outcome you
 got. Two of them mean the part carries less artwork than you designed:
 
-| Warning                                                                                                  | What you get                                                                                                                                                                    |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Couldn't merge color … on …"                                                                            | That one colour is dropped from that part. Every other colour cuts normally.                                                                                                    |
-| "Couldn't merge the recesses on …", or "Couldn't cut the recesses into …"                                | That part ships with **no artwork at all**. Still printable, just blank, so don't print it expecting the design.                                                                |
-| "Couldn't fit the inlay for color … — its pocket is cut into the body but will print as an empty recess" | The recess is cut but nothing fills it, so that colour prints as a bare cavity.                                                                                                 |
-| "Part … has no geometry to export — its pocket cut went all the way through …"                           | The cut succeeded but left nothing: a pocket reached the part's wall thickness and went clean through. The part is dropped from the export rather than shipping a hollow shell. |
+| Warning                                                                                                 | What you get                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Couldn't merge color … on …"                                                                           | That one colour is dropped from that part. Every other colour cuts normally.                                                                                                    |
+| "Couldn't merge the recesses on …", or "Couldn't cut the recesses into …"                               | That part ships with **no artwork at all**. Still printable, just blank, so don't print it expecting the design.                                                                |
+| "Couldn't fit the inlay for color …. Its pocket is cut into the body but will print as an empty recess" | The recess is cut but nothing fills it, so that colour prints as a bare cavity.                                                                                                 |
+| "Part … has no geometry to export. Its pocket cut went all the way through …"                           | The cut succeeded but left nothing: a pocket reached the part's wall thickness and went clean through. The part is dropped from the export rather than shipping a hollow shell. |
 
 These are 3D failures rather than the 2D clip problem above, so path-cleaning is
 less reliably the fix. Suspect the part mesh and the amount of fine detail
@@ -140,13 +140,13 @@ design on top is a real workflow. It has the same overlapping-inlay problem
 where the sticker's colours differ from the pattern's. Known gap, also in
 [tech-debt.md](tech-debt.md).
 
-## Troubleshooting: Fill warnings — "You have one tile instead"
+## Troubleshooting: Fill warnings, "You have one tile instead"
 
 Fill repeats one design across a whole part. When it can't work out how, it
 places the design once and says why. Only the first reason below is fixed by
 changing Scale; the last two mean a bug rather than a problem with your design.
 
-### "… is too small to fill … — it would take more than 1024 tiles."
+### "… is too small to fill …: it would take more than 1024 tiles."
 
 The commonest one. A pattern scaled far down against a large part (5% on a chair
 panel) needs tens of thousands of copies, which would hang the tab, so the app
@@ -256,7 +256,7 @@ inlay, no message.
   export" only fires when the cut consumed the _whole_ part, so its absence is
   not a report that the depth was safe.
 
-## Troubleshooting: "TMT Mosaic couldn't save this session — leaving now loses it" warnings
+## Troubleshooting: "TMT Mosaic couldn't save this session. Leaving now loses it" warnings
 
 The app autosaves your session (design, placement, colours, depths) to browser
 storage after every change and offers it back next time. Reloading normally
@@ -311,7 +311,7 @@ To get a result you are happier with:
 
 ## Troubleshooting: "This image could not be decoded…"
 
-Full text: _"This image could not be decoded — the browser cannot read this
+Full text: _"This image could not be decoded. The browser cannot read this
 format, or the file is damaged. PNG, JPG and WebP always work; TIFF never
 does. Re-export it as a PNG."_
 
@@ -327,7 +327,7 @@ is whatever your browser supports.
 
 An SVG never reaches this message: format is sniffed from the first bytes, so
 vector artwork goes to the SVG parser. That split is what stops a dropped image
-failing with "SVG could not be parsed — check the file is valid XML", true but
+failing with "SVG could not be parsed. Check the file is valid XML", true but
 useless about a file that was never XML.
 
 ## Troubleshooting: "This image has no real-world size…"
@@ -408,7 +408,7 @@ and 25% wrong with nothing said. A design three times too big gets noticed.
 
 ## Troubleshooting: "The hubcap disc is too small to reach its mounting clips"
 
-Full text: _"The hubcap disc is too small to reach its mounting clips — they
+Full text: _"The hubcap disc is too small to reach its mounting clips. They
 would print as four loose pieces. Increase the diameter."_
 
 The hubcap is generated rather than loaded: only its four clips ship as a mesh,
@@ -436,7 +436,7 @@ this is a hard floor rather than advice.
 ## Troubleshooting: "The hubcap is set to follow your artwork's shape, but no artwork is loaded"
 
 Full text: _"The hubcap is set to follow your artwork's shape, but no artwork
-is loaded — it stays round until you add one."_
+is loaded. It stays round until you add one."_
 
 The **Cut to artwork shape** checkbox and the artwork on the part are the same
 object by design: there is no separate silhouette upload, so with nothing loaded
@@ -446,7 +446,7 @@ diameter** size and reshapes the moment you add artwork.
 ## Troubleshooting: "That shape doesn't cover the hubcap's mounting clips"
 
 Full text: _"That shape doesn't cover the hubcap's mounting clips, so it stays
-round — make it bigger, or use artwork whose middle is filled in."_
+round. Make it bigger, or use artwork whose middle is filled in."_
 
 The clips need solid material under them, in a ring 10.6-16.0mm out from the
 axis: the same requirement the plain-circle floor (`HUBCAP_MIN_DIAMETER_MM`)
@@ -460,7 +460,7 @@ both fix it.
 
 ## Troubleshooting: "A hubcap cut to shape can only follow one design"
 
-Full text: _"A hubcap cut to shape can only follow one design — remove the
+Full text: _"A hubcap cut to shape can only follow one design. Remove the
 others, or turn 'Cut to artwork shape' off."_
 
 With two designs loaded there is no single answer to "the shape": their union is
@@ -534,8 +534,8 @@ the rest of the design was thrown off the part in silence.
 
 ## Troubleshooting: "This shape was too big for the wheel, so it was scaled down to fit"
 
-Full text: _"This shape was too big for the wheel, so it was scaled down to fit —
-the hubcap and the artwork on it are both smaller than the size you set. Reduce
+Full text: _"This shape was too big for the wheel, so it was scaled down to fit.
+The hubcap and the artwork on it are both smaller than the size you set. Reduce
 the size or the scale to take control of it yourself."_
 
 Nothing may overhang the wheel the hubcap mounts on, which is 280mm across. A
@@ -551,8 +551,8 @@ clears puts you back in control.
 
 ## Troubleshooting: "Some of this shape is thinner than 1mm"
 
-Full text: _"Some of this shape is thinner than 1mm, which is about one
-nozzle wide — those parts will be fragile. Simplifying the artwork or making
+Full text: _"Some of this shape is thinner than 1mm, about one
+nozzle wide. Those parts will be fragile. Simplifying the artwork or making
 the hubcap bigger will thicken them."_
 
 Unlike the other silhouette warnings this one does **not** fall back to a
@@ -655,7 +655,7 @@ cannot measure a depth against, or a part too thin to hold the minimum. Look at
 the cut in the 3D view, and in your slicer's preview, before printing. See
 [tech-debt.md](tech-debt.md).
 
-## Troubleshooting: "The prime tower … has no verified position, and every corner … overlaps a part"
+## Troubleshooting: "The prime tower … has no verified position. Every corner … overlaps a part"
 
 **What it means.** The plate is crowded enough that the prime tower has nowhere
 clear to go. The tower is the block the printer wipes filament into on every

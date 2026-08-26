@@ -41,7 +41,7 @@ export const MEASURE_EDGE = 512;
  *
  * Deliberately "is it raster", not "can we decode it". GIF, BMP and TIFF are here even though the
  * pipeline has never been aimed at them, because the alternative is worse: anything this returns
- * false for goes to the SVG parser and comes back "SVG could not be parsed — check the file is
+ * false for goes to the SVG parser and comes back "SVG could not be parsed. Check the file is
  * valid XML", which is true but useless, since the file isn't malformed XML, it's not XML at all.
  * Routed here, GIF and BMP simply work (the browser decodes both), and a TIFF gets decodeImageFile's
  * honest "this format could not be decoded" instead.
@@ -95,7 +95,7 @@ export async function decodeImageFile(file: Blob): Promise<RasterImage> {
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   } catch {
     throw new Error(
-      'This image could not be decoded — the browser cannot read this format, or the file is ' +
+      'This image could not be decoded. The browser cannot read this format, or the file is ' +
         'damaged. PNG, JPG and WebP always work; TIFF never does. Re-export it as a PNG.',
     );
   }

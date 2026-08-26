@@ -126,7 +126,7 @@ export function reconstructChart(
     if ((vi + 1) * 3 > partVertices.length)
       throw new Error(
         `zone "${zone.id}" chart references vertex ${vi} of part ${chart.libraryPartId}, ` +
-          `which has only ${partVertices.length / 3} vertices — the sidecar is stale for this mesh`,
+          `which has only ${partVertices.length / 3} vertices. The sidecar is stale for this mesh`,
       );
     positions3[i * 3] = partVertices[vi * 3];
     positions3[i * 3 + 1] = partVertices[vi * 3 + 1];

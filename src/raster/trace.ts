@@ -129,7 +129,7 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
 
   // Shared boundary length per pair, and only for pairs with a speck on one side: the rest is
   // never read, and tallying it on a 1024px image is a million map writes for nothing.
-  const adj: Map<number, number>[] = areas.map(() => new Map());
+  const adj: Map<number, number>[] = areas.map(() => new Map<number, number>());
   const touch = (p: number, q: number) => {
     const a = compId[p],
       b = compId[q];

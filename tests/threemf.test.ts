@@ -258,6 +258,56 @@ describe('multi-plate world layout', () => {
       );
     });
 
+    // The off-plate arm, which the two cases above do not reach: they warn about a blocked tower,
+    // not about a part past the edge. Rewording that message's tail broke its clearing once.
+    it('a part placed off the plate', async () => {
+      const { warnings } = await build3MFCombined(
+        twoMaterials,
+        [box('Overhang', 40, 40, 230, 100)],
+        { printer: getPrinter('bambu-x1c') },
+      );
+      expect(warnings.length, 'this case is meant to produce a warning').toBeGreaterThan(0);
+      warnings.forEach((w) =>
+        expect(endsWithRegistered(w), `not clearable, so this pill would stick: ${w}`).toBe(true),
+      );
+    });
+
+    // A full stop mid-message is where a reworded warning goes wrong quietly: the em-dash sweep
+    // put one in front of a lowercase word across a concatenation seam, which reads as a typo and
+    // no assertion on a distinguishing phrase would ever see.
+    it('never starts a sentence with a lowercase word', async () => {
+      const cases = await Promise.all([
+        build3MFCombined(twoMaterials, [box('Overhang', 40, 40, 230, 100)], {
+          printer: getPrinter('bambu-x1c'),
+        }),
+        build3MFCombined(twoMaterials, [box('Wide', 170, 170, 50, 50)], {
+          printer: getPrinter('bambu-x1c'),
+        }),
+      ]);
+      const all = cases.flatMap((c) => c.warnings);
+      expect(all.length, 'these cases are meant to produce warnings').toBeGreaterThan(0);
+      all.forEach((w) =>
+        expect(/\.\s+[a-z]/.test(w), `sentence starts lowercase: ${w}`).toBe(false),
+      );
+    });
+
+    // Two parts sharing a plate with no verified position between them: the third producer of a
+    // placement warning. Coverage for that arm, not a regression test: its tail was never broken.
+    it('parts stacked on the plate center with no verified position', async () => {
+      // fixedPos removed: the branch is for parts with no verified position of their own.
+      const loose = (name: string) => {
+        const b = box(name, 40, 40, 60, 60);
+        return { ...b, fixedPos: undefined };
+      };
+      const { warnings } = await build3MFCombined(twoMaterials, [loose('A'), loose('B')], {
+        printer: getPrinter('bambu-x1c'),
+      });
+      expect(warnings.length, 'this case is meant to produce a warning').toBeGreaterThan(0);
+      warnings.forEach((w) =>
+        expect(endsWithRegistered(w), `not clearable, so this pill would stick: ${w}`).toBe(true),
+      );
+    });
+
     // Two parts in an L: every corner is inside their combined bounding box, but the notch between
     // them is free. Choosing the insets per axis lands in the top-right part instead.
     it('puts the suggested tower in a corner no part occupies, not one only the axes agree on', async () => {
@@ -356,7 +406,7 @@ describe('multi-plate world layout', () => {
         },
       );
       expect(warnings.join(' ')).toContain('"Overhang" is placed ~14mm past the edge');
-      expect(warnings.join(' ')).toContain('reposition it in your slicer');
+      expect(warnings.join(' ')).toContain('Reposition it in your slicer');
       expect(warnings.join(' ')).not.toContain('best-fit rotation');
     });
   });

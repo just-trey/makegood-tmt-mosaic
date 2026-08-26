@@ -153,7 +153,7 @@ export function renderBuildParamSize(): void {
   el.style.display = '';
   el.innerHTML =
     `<b>Actual size ${w.toFixed(1)} × ${d.toFixed(1)} mm</b>` +
-    ` — ${(reach * 2).toFixed(0)}mm across, on a ${HUBCAP_WHEEL_DIAMETER_MM}mm wheel`;
+    ` (${(reach * 2).toFixed(0)}mm across, on a ${HUBCAP_WHEEL_DIAMETER_MM}mm wheel)`;
 
   // The unit hint beside the field says "mm", which stops being the useful thing to say the
   // moment the number in the field is only one of the part's two dimensions.

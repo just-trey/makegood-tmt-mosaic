@@ -334,7 +334,7 @@ async function genWheel() {
   <circle cx="${WHEEL_C}" cy="${WHEEL_C}" r="${R}" fill="none" stroke="${ACCENT}"
           stroke-width="1" stroke-linecap="round" stroke-dasharray="0.5 4"/>
   <text x="${WHEEL_C}" y="${labelY}" text-anchor="middle" font-family="sans-serif"
-        font-size="${LABEL_SIZE}" fill="${ACCENT}">center cap — prints</text>
+        font-size="${LABEL_SIZE}" fill="${ACCENT}">center cap prints here</text>
 </svg>
 `;
   writeFileSync(tpl('wheel-cover-circle.svg'), svg);

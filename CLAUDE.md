@@ -5,19 +5,19 @@
 Recurring workflows live in `.claude/skills/`. Read the skill instead of
 rebuilding the steps from memory.
 
-| Skill                 | Use it for                                         |
-| --------------------- | -------------------------------------------------- |
-| `ship-it`             | The pre-PR gate: five checks, four docs that drift |
-| `run-app`             | Launching the app, by hand or headless             |
-| `add-part`            | Adding a MakeGood TMT part as an assembly kind     |
-| `bake-zones`          | Baking design zones on a multi-surface part        |
-| `verify-new-bed-size` | Checking export placement on an unverified bed     |
-| `debug-csg-failure`   | Investigating an assembly-mode CSG warning         |
-| `release`             | Cutting and tagging a release                      |
+| Skill                 | Use it for                                        |
+| --------------------- | ------------------------------------------------- |
+| `ship-it`             | The pre-PR gate: six checks, four docs that drift |
+| `run-app`             | Launching the app, by hand or headless            |
+| `add-part`            | Adding a MakeGood TMT part as an assembly kind    |
+| `bake-zones`          | Baking design zones on a multi-surface part       |
+| `verify-new-bed-size` | Checking export placement on an unverified bed    |
+| `debug-csg-failure`   | Investigating an assembly-mode CSG warning        |
+| `release`             | Cutting and tagging a release                     |
 
 ## Before opening a PR
 
-Run the `ship-it` skill. It carries the five CI gates (the same ones that
+Run the `ship-it` skill. It carries the six CI gates (the same ones that
 block merge into `main`) and the four docs that drift silently.
 
 `/code-review` is **required**, not optional, on **every PR that changes code**.
@@ -96,7 +96,9 @@ Two guards that matter more than the count:
 - Comments: see [Comments](#comments) below.
 - UI copy follows [docs/ui-conventions.md](docs/ui-conventions.md)
   (vocabulary table, conventions 1-6, plain language 33-37) and the same
-  sentence rules as docs: short, no em dashes.
+  sentence rules: short sentences, each doing one job. `npm run check:copy`
+  gates the shape (sentence length, joins, splices, em dashes). Docs are not
+  held to this: they are working notes, not copy anyone reads in the app.
 - **Plain language is the bar for every user-facing string, and it is not a
   reading-age rule.** The reader runs a slicer daily. The line is their
   vocabulary against ours: if a word appears in Bambu Studio's UI or a
@@ -136,7 +138,8 @@ Two guards that matter more than the count:
   are the worked examples.
 - One line where possible. Docstrings may run 2-4 lines when they carry real
   constraints, never longer.
-- No em dashes. Use commas, colons, parentheses, or separate sentences.
+- Em dashes and long sentences are fine here. The bar applies to user-facing
+  copy only, and `npm run check:copy` is what draws that line.
 - Never write: banner or divider comments, changelog-style comments ("updated
   to handle X"), comments restating a type signature, comments narrating
   obvious control flow.
@@ -311,7 +314,7 @@ Applies to every doc above, and to `docs/` generally.
 - Docs are working notes for the owner and Claude. Optimize for scanning.
 - First line states the result or decision. Detail follows, never leads.
 - Bullets over paragraphs. One fact per bullet. Sentences under ~20 words.
-- No em dashes. Use commas, colons, parentheses, or separate sentences.
+- Em dashes are fine. These are working notes, not copy a user reads.
 - Record findings, numbers, caveats, and decisions. Never narrate the
   reasoning journey, justify the doc's existence, or editorialize.
 - Bold key terms only, never whole sentences.

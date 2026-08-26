@@ -197,7 +197,7 @@ describe('placementNotice for a generated part', () => {
     expect(notice.level).toBe('info');
     expect(notice.message).toContain('generated to the size you chose');
     // the shared suffix exportPanel matches on to retract a stale one
-    expect(notice.message).toContain('check it in your slicer before printing');
+    expect(notice.message).toContain('Check it in your slicer before printing');
   });
 
   it('says nothing at all when the size is a verified one', () => {

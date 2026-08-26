@@ -1083,7 +1083,7 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
     // nothing while still costing an AMS slot
     expect(r.min).toBeCloseTo(9.8, 4);
     expect(WARNINGS.map((w) => w.message)).toContain(
-      'Depth for "#ff0000" was set to 0.00 mm, which is not a depth that can cut — it was raised to 0.20 mm.',
+      'Depth for "#ff0000" was set to 0.00 mm, which is not a depth that can cut. It was raised to 0.20 mm.',
     );
   });
 
@@ -1120,7 +1120,7 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
       const r = yRange(built.partOutputs[0].inlaySoups[0]);
       expect(r.max - r.min).toBeGreaterThan(2.5); // really cut through, not 0.2 mm
       expect(WARNINGS.every((w) => !w.message.includes('was cut at'))).toBe(true);
-      expect(WARNINGS.some((w) => w.message.includes('it was raised to 0.20 mm.'))).toBe(true);
+      expect(WARNINGS.some((w) => w.message.includes('It was raised to 0.20 mm.'))).toBe(true);
     },
   );
 

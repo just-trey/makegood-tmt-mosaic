@@ -41,7 +41,7 @@ function describeSession(session: PersistedSession): string {
   const partName = (saved ?? firstOfferedKind()).name;
   const n = session.artworks.length;
   const designPart = n ? `, ${n} design${n === 1 ? '' : 's'}` : '';
-  return `Restore your previous session — ${partName}${designPart}, saved ${describeAge(session.savedAt)}?`;
+  return `Restore your previous session: ${partName}${designPart}, saved ${describeAge(session.savedAt)}?`;
 }
 
 /**

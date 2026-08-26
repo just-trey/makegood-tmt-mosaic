@@ -145,7 +145,7 @@ export function placementNotice(
   resolution: PlacementResolution,
 ): { message: string; level: 'warn' | 'info' } | null {
   if (resolution.verified) return null;
-  const tail = 'so it was placed automatically — check it in your slicer before printing.';
+  const tail = 'so it was placed automatically. Check it in your slicer before printing.';
   switch (resolution.reason) {
     case 'unknown-part':
       return {
@@ -162,7 +162,7 @@ export function placementNotice(
     // warning about it would erode the two reasons above, which are defects.
     case 'generated-part':
       return {
-        message: `Part "${partName}" is generated to the size you chose, so no pre-verified print placement applies, ${tail}`,
+        message: `Part "${partName}" is generated to the size you chose. No pre-verified print placement applies, ${tail}`,
         level: 'info',
       };
   }

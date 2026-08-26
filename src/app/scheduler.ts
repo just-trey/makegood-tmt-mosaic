@@ -92,7 +92,7 @@ async function runNow(): Promise<void> {
     setProgressSink((fraction) => {
       const pct = Math.round(fraction * 100);
       const suffix =
-        performance.now() - t0 > HANG_TIGHT_MS ? ' — detailed artwork, hang tight' : '';
+        performance.now() - t0 > HANG_TIGHT_MS ? ' (detailed artwork, hang tight)' : '';
       updateOverlay(`Rebuilding geometry… ${pct}%${suffix}`);
     });
     // Yield a paint frame so the curtain is actually on screen before the rebuild starts.

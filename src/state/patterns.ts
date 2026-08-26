@@ -9,6 +9,24 @@ let patterns: PatternEntry[] = [];
  */
 export const PATTERN_LIBRARY_ENABLED = false;
 
+function isPatternList(v: unknown): v is PatternEntry[] {
+  return (
+    Array.isArray(v) &&
+    (v as unknown[]).every((p) => {
+      if (typeof p !== 'object' || p === null) return false;
+      const c = p as Partial<PatternEntry>;
+      return (
+        typeof c.id === 'string' &&
+        !!c.id &&
+        typeof c.name === 'string' &&
+        !!c.name &&
+        typeof c.file === 'string' &&
+        !!c.file
+      );
+    })
+  );
+}
+
 /**
  * Load the built-in pattern library manifest (public/patterns/patterns.json). Purely additive
  * like loadPartsLibrary — a missing/unreachable manifest just leaves the picker strip empty,
@@ -23,8 +41,8 @@ export async function loadPatterns(): Promise<PatternEntry[]> {
     const v = typeof __APP_VERSION__ === 'undefined' ? 'dev' : __APP_VERSION__;
     const res = await fetch(`patterns/patterns.json?v=${v}`);
     if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.every((p) => p && p.id && p.name && p.file)) {
+      const data: unknown = await res.json();
+      if (isPatternList(data)) {
         patterns = data;
       }
     }

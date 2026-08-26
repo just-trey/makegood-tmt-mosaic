@@ -129,22 +129,6 @@ the only warning in a `title` tooltip. Both now add. Nothing was lost by droppin
 removing a member is what the "×" on each Base row member already does: it was a shortcut that
 destroyed work without saying so, not a capability. `replaceBase` went with it.
 
-## User-facing strings still use em dashes, which CLAUDE.md bars
-
-CLAUDE.md's code conventions say UI copy follows "the same sentence rules as docs: short, no em
-dashes". Counted 2026-08-16 with a comment-stripping tokenizer over `src/**/*.ts` (a grep first
-gave 35, which was wrong: it missed literals on lines that also carry a trailing comment, and
-block-comment interiors were not the problem): **57 lines carry an em dash inside a string
-literal**, plus 2 in the help dialog markup. That 57 is an upper bound on the copy problem, since
-it counts every literal rather than only the ones a user reads. Mostly `title=` tooltips in
-[src/ui/colorList.ts](../src/ui/colorList.ts), where the dash joins a clause that would read fine
-as a second sentence.
-
-Not a defect a user can hit, which is why it is deferred rather than fixed alongside the warning
-rewrites that found it: those passes replaced the dash wherever they touched a string, so the
-count only falls as copy is otherwise reworked. Closing it is one mechanical pass, and the trap is
-convention 36: splitting a clause into a sentence must not add words. Count after, do not eyeball.
-
 ## The placement frame's angle is unrelated to the face it acts on, and it shares the viewport with a second affordance
 
 Conventions 13–14 of [ui-conventions.md](ui-conventions.md): a gizmo is aligned to the frame of
@@ -1570,3 +1554,90 @@ the warning than the overlap is for dismissing it.
 warnings column both live**, probably by moving warnings out of the viewport's
 bottom edge entirely. That is a layout question for the whole viewport, not a
 rule on this widget.
+
+## Numeric coercion has no lint rule
+
+Numeric input guards are enforced by lint and CI in part, not in full. What
+holds and what does not:
+
+**Enforced.** `strict: true`, plus the five type-aware
+`@typescript-eslint/no-unsafe-*` rules on `src/**/*.ts`. Those caught 12 real
+cases of untrusted input reaching typed state, all fixed.
+
+**Not enforced.** `parseFloat` / `Number` / unary `+` coercion. No lint rule in
+the current plugin ecosystem covers the pattern, and a custom parser rule was
+ruled out as too much machinery for one check. Nothing catches a `parseFloat`
+whose `NaN` is never guarded.
+
+**Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
+on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
+
+**Closing it** would take either a custom ESLint rule for the coercion pattern,
+or a convention that all external numbers land through one parsing helper that
+the type system can then police.
+
+## The copy gate's scope and known gaps
+
+`npm run check:copy` covers string literals in
+`src/**/*.ts`, visible `index.html` markup, and `<text>` in
+`public/templates/*.svg`. Code, comments, `docs/`, `design-system/` and
+formatting glyphs are all deliberately out of scope.
+
+It checks five things, all one rule: a warning is short sentences that each do
+one job. Em dash, sentence over 20 words, more than one joining mark in a
+sentence, a comma splice, and a lowercase word after a full stop. Thresholds
+were measured, not picked: the gate admits 220 strings from `src/`, of which
+142 get the full shape checks and 78 are markup. Joins
+are counted per sentence: per string flagged 11, of which 10 were correct
+multi-sentence copy, because splitting a run-on raises the per-string count
+while improving the writing.
+
+**Known gaps.** The prose filter is a heuristic (has a space, has a word, over
+25 characters, not markup), so a shorter user-facing string is not checked. No
+instance found, but nothing prevents one. `index.html` gets the em dash check
+only, for the reason in the section below. The imperative list in the comma
+splice check is closed, so an instruction using a verb outside it reads as
+clean.
+
+The widest hole is markup: a string containing a tag is exempt from the four
+shape checks and gets the em dash check only, because a tag soup has no
+sentences to measure. That is **78 of the 220** strings the gate admits. Measured
+per file, the largest is [threemf.ts](../src/export/threemf.ts) at 23, which is
+3MF XML rather than copy, then [colorList.ts](../src/ui/colorList.ts) (19),
+[assemblyPanel.ts](../src/ui/assemblyPanel.ts) (12) and
+[artworkListPanel.ts](../src/ui/artworkListPanel.ts) (9), which are `title=`
+tooltips. Those four are 63 of the 78. Closing it means
+extracting the text out of the markup before measuring it, not loosening the
+exemption.
+
+## The help dialog is exempt from the copy shape checks
+
+`npm run check:copy` runs all five checks on warning strings and on template
+`<text>`. On `index.html` it runs the em dash check only, for every block, not
+just the help dialog.
+
+Measured 2026-08-26 by flipping the flag: **26 problems across 10 blocks**, at
+these lines in `index.html`.
+
+| Line | Block                | Worst finding                  |
+| ---- | -------------------- | ------------------------------ |
+| 109  | Sticker against Fill | joins                          |
+| 119  | Design face reuse    | long sentence                  |
+| 169  | Detail slider        | joins                          |
+| 192  | Cut to artwork shape | long sentence                  |
+| 204  | Direct manipulation  | long sentence                  |
+| 223  | Verified plate sizes | long sentence                  |
+| 235  | Depth explainer      | 2 joins in one sentence        |
+| 277  | Slot budget          | 35-word sentence, comma splice |
+| 300  | Cancel semantics     | 25-word sentence               |
+| 307  | Export summary box   | 33-word sentence, 2 joins      |
+
+Deferred rather than swept, on purpose. The four warning strings this branch
+damaged were all damaged by exactly this: substituting punctuation into copy
+without re-reading the sentence. The help dialog is long-form explanation, not
+an interruption, and it is denser than anything the sweep touched.
+
+**Closing it** is one copy pass over those 10 blocks, then flipping
+`INDEX_HTML_EM_DASH_ONLY` to `false` in `scripts/check-copy.mjs`, which runs
+`problems()` on `index.html` the way it already does on warnings. Check
+convention 36 after: the rewrite must not be longer than what it replaced.

@@ -526,7 +526,7 @@ export async function build3MFCombined(
     if (centered.length > 1)
       warnings.push(
         `${centered.map((pl) => `"${pl.part.name}"`).join(', ')} share a build plate with no ` +
-          `verified position between them, so they are stacked on the plate center — ` +
+          `verified position between them. They are stacked on the plate center: ` +
           `double-check for overlap in your slicer.`,
       );
     items.forEach((pl) => {
@@ -706,7 +706,7 @@ export async function build3MFCombined(
         warnings.push(
           `"${pl.part.name}" is placed ~${Math.ceil(over)}mm past the edge of ` +
             `${plates.length > 1 ? `plate ${pi + 1}` : 'the plate'} on this ` +
-            `${plateW}×${plateD}mm bed — reposition it in your slicer before printing.`,
+            `${plateW}×${plateD}mm bed. Reposition it in your slicer before printing.`,
         );
     });
   });
@@ -784,7 +784,7 @@ ${subs.map((s) => `    <component objectid="${s.id}"/>`).join('\n')}
       .map((v) => {
         if (!Number.isFinite(v))
           throw new Error(
-            `Part "${pl.part.name}" has a non-finite plate transform — refusing to write a malformed 3MF.`,
+            `Part "${pl.part.name}" has a non-finite plate transform, refusing to write a malformed 3MF.`,
           );
         return +v.toFixed(6);
       })
@@ -870,8 +870,8 @@ ${items.join('\n')}
   // it; when nothing was written there is no position to move and the slicer decides.
   blockedTowers.forEach(({ names, plate, at }) =>
     warnings.push(
-      `The prime tower on the plate holding ${names} has no verified position, and every corner ` +
-        `of the ${plate} plate overlaps a part. ` +
+      `The prime tower on the plate holding ${names} has no verified position. ` +
+        `Every corner of the ${plate} plate overlaps a part. ` +
         (allBlocked
           ? 'No tower position was saved, so your slicer will place it. Check it before printing.'
           : // Named, because this arm fires precisely when a position WAS written. Telling someone
@@ -895,7 +895,7 @@ ${items.join('\n')}
         // Project settings are global to the file, so baked overrides merge rather than stay per
         // plate. Nothing ships two parts setting the same key differently, and one that did would
         // be a plate-level claim that can't be honored anyway.
-        Object.assign({}, ...parts.map((p) => p.projectSettings ?? {})),
+        parts.reduce<Record<string, string>>((acc, p) => Object.assign(acc, p.projectSettings), {}),
       ),
     ),
   });

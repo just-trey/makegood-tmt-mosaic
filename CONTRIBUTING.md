@@ -23,12 +23,13 @@ npm install
 npm run dev        # dev server with hot reload
 ```
 
-Before opening a PR, make sure all five of these pass — they're exactly what CI
+Before opening a PR, make sure all six of these pass — they're exactly what CI
 runs, and `main` is protected, so a red one blocks the merge:
 
 ```bash
 npm run lint
 npm run format:check
+npm run check:copy      # shape of user-facing copy
 npm run typecheck
 npm run test:coverage   # the suite, plus the coverage floors below
 npm run smoke           # builds and exercises the app end-to-end

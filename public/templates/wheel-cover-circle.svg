@@ -10,5 +10,5 @@
   <circle cx="140" cy="140" r="18.38" fill="none" stroke="#1a4f8f"
           stroke-width="1" stroke-linecap="round" stroke-dasharray="0.5 4"/>
   <text x="140" y="117.62" text-anchor="middle" font-family="sans-serif"
-        font-size="8" fill="#1a4f8f">center cap — prints</text>
+        font-size="8" fill="#1a4f8f">center cap prints here</text>
 </svg>

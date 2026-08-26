@@ -36,7 +36,7 @@ function armed(): { point: CsgFaultPoint; limit: number } | null {
   const [name, count] = raw.split(':');
   const point = POINTS.find((p) => p === name);
   if (!point) {
-    announcement = `Unknown ?csgfault=${raw} — expected one of: ${POINTS.join(', ')}.`;
+    announcement = `Unknown ?csgfault=${raw}, expected one of: ${POINTS.join(', ')}.`;
     return null;
   }
   const limit = count === undefined ? Infinity : Number(count);
@@ -45,7 +45,7 @@ function armed(): { point: CsgFaultPoint; limit: number } | null {
     return null;
   }
   announcement =
-    `CSG fault injection is armed (?csgfault) — "${point}" will be forced to fail ` +
+    `CSG fault injection is armed (?csgfault): "${point}" will be forced to fail ` +
     `${limit === Infinity ? 'on every part' : `${limit}×`}. Reload without the ` +
     `parameter to build normally.`;
   return { point, limit };
