@@ -26,10 +26,12 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-        # Set this as a repo Variable (Settings → Secrets and variables → Actions →
-        # Variables). Forks don't inherit it, so their deploys ship without the beacon.
+        # Both are repo Variables (Settings → Secrets and variables → Actions → Variables).
+        # Forks don't inherit them, so their deploys ship without the beacon and without the
+        # feedback widget.
         env:
           UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
+          FEEDBACK_ENDPOINT: ${{ vars.FEEDBACK_ENDPOINT }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

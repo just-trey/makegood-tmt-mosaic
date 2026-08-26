@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Send feedback without leaving the app.** A Feedback button in the bottom
+  right of the 3D view opens a short form: what happened, and an email if you
+  want a reply. It posts straight to us, with the app version attached so a
+  report is actionable, and nothing else. The same panel links to GitHub for
+  anyone who would rather file a bug there. The button only appears on our own
+  deploy, so a fork never posts to our inbox.
 - **A loaded image now survives a reload.** Sessions saved SVG artwork and threw
   images away, so reloading with a photo or a PNG open meant re-dropping it, and
   a session whose only design was an image saved nothing at all. The image is

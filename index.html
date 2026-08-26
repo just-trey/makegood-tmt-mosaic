@@ -324,6 +324,17 @@
               Printable part files and assembly instructions live at
               <a href="https://3d-mobility.org" target="_blank" rel="noopener">3d-mobility.org</a>.
             </p>
+            <h3>Telling us something went wrong</h3>
+            <p>
+              Bug reports go to
+              <a
+                href="https://github.com/just-trey/makegood-tmt-mosaic/issues/new"
+                target="_blank"
+                rel="noopener"
+                >GitHub issues</a
+              >. On the hosted app there is also a <b>Feedback</b> button in the bottom right of the
+              3D view, which sends a note straight to us. Leave an email there if you want a reply.
+            </p>
           </section>
         </div>
       </dialog>
@@ -760,6 +771,41 @@
           <div class="spinner"></div>
           <div id="loading-text">Rebuilding geometry…</div>
           <button type="button" class="btn small" id="loading-cancel">Cancel</button>
+        </div>
+        <div id="feedback" hidden>
+          <div id="feedback-popover" role="dialog" aria-labelledby="feedback-title" hidden>
+            <div class="feedback-head">
+              <h2 id="feedback-title">Send feedback</h2>
+              <button class="close-btn" id="feedback-close" aria-label="Close">&times;</button>
+            </div>
+            <form id="feedback-form">
+              <label for="feedback-message">What went well, or what got in your way?</label>
+              <textarea id="feedback-message" rows="4" required maxlength="2000"></textarea>
+              <label for="feedback-email">Email, if you want a reply</label>
+              <input type="email" id="feedback-email" autocomplete="email" />
+              <button type="submit" class="btn primary full" id="feedback-send">
+                Send feedback
+              </button>
+            </form>
+            <p id="feedback-status" role="status" aria-live="polite"></p>
+            <a
+              class="feedback-issue"
+              href="https://github.com/just-trey/makegood-tmt-mosaic/issues/new"
+              target="_blank"
+              rel="noopener"
+              >Report a bug on GitHub</a
+            >
+          </div>
+          <button
+            type="button"
+            class="btn small feedback-trigger"
+            id="feedback-trigger"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="feedback-popover"
+          >
+            Feedback
+          </button>
         </div>
       </div>
       <div class="accent-stripe"></div>

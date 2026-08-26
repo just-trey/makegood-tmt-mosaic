@@ -78,6 +78,12 @@ usage (artwork loaded, mode switched, export completed) — no file names, file
 contents, or other personal data are ever sent. See
 [docs/analytics.md](docs/analytics.md) for the full event catalog.
 
+**Feedback widget (optional).** The in-app Feedback button posts to Formspree
+and is rendered only when `FEEDBACK_ENDPOINT` is set at build time — a repo
+**Variable** for the deploy, and a local `.env.local` for local builds (see
+[.env.example](.env.example)). Unset, as in any fork, and no button appears, so
+a fork never posts to our inbox.
+
 ## How it works
 
 1. **Read the artwork.** An SVG is parsed as vectors, not pixels — shapes

@@ -40,3 +40,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run smoke
+        # A placeholder, never posted to: it exists so the build under smoke renders the feedback
+        # widget at all. Left unset, every gate ran the fork path with the markup dead, and the
+        # tagged deploy would have been the first time any of it painted.
+        env:
+          FEEDBACK_ENDPOINT: https://example.invalid/f/ci
