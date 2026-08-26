@@ -1570,3 +1570,30 @@ the warning than the overlap is for dismissing it.
 warnings column both live**, probably by moving warnings out of the viewport's
 bottom edge entirely. That is a layout question for the whole viewport, not a
 rule on this widget.
+
+## Numeric coercion has no lint rule
+
+CLAUDE.md's "Code rules" section says mechanical rules including numeric input
+guards are enforced by lint/CI. Two thirds of that is true, one third is not.
+
+**Enforced.** `strict: true`, plus the five type-aware
+`@typescript-eslint/no-unsafe-*` rules on `src/**/*.ts`. Those caught 12 real
+cases of untrusted input reaching typed state, all fixed.
+
+**Not enforced.** `parseFloat` / `Number` / unary `+` coercion. No lint rule in
+the current plugin ecosystem covers the pattern, and a custom parser rule was
+ruled out as too much machinery for one check. Nothing catches a `parseFloat`
+whose `NaN` is never guarded.
+
+**Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
+on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
+
+**Scope of the em dash gate.** `npm run check:em-dashes` covers string literals
+in `src/**/*.ts`, visible `index.html` markup, and `<text>` in
+`public/templates/*.svg`. Code, comments, `docs/`, `design-system/` and
+formatting glyphs are all deliberately out of scope: em dashes are banned in
+user-facing copy only.
+
+**Closing it** would take either a custom ESLint rule for the coercion pattern,
+or a convention that all external numbers land through one parsing helper that
+the type system can then police.

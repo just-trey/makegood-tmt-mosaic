@@ -140,7 +140,7 @@ export function edgeCutThroughNotice(labels: string[], depth: number): string {
   const which = labels.map((l) => `"${l}"`).join(', ');
   return (
     `${one ? 'Color' : 'Colors'} ${which} ${one ? 'reaches' : 'reach'} the part's outer edge, so ` +
-    `${one ? 'that region cuts' : 'those regions cut'} the full ${depth.toFixed(2)} mm through, the rim ` +
+    `${one ? 'that region cuts' : 'those regions cut'} the full ${depth.toFixed(2)} mm through. The rim ` +
     `prints in ${one ? 'that color' : 'those colors'} instead of the base color. Interior regions ` +
     `still cut at their recess depth.`
   );

@@ -15,7 +15,14 @@ function isPatternList(v: unknown): v is PatternEntry[] {
     (v as unknown[]).every((p) => {
       if (typeof p !== 'object' || p === null) return false;
       const c = p as Partial<PatternEntry>;
-      return Boolean(c.id && c.name && c.file);
+      return (
+        typeof c.id === 'string' &&
+        !!c.id &&
+        typeof c.name === 'string' &&
+        !!c.name &&
+        typeof c.file === 'string' &&
+        !!c.file
+      );
     })
   );
 }

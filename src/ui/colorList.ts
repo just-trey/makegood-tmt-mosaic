@@ -391,7 +391,7 @@ export function renderColorList(
             : ''
         }
         ${raisedFromZero ? `<span class="hint">raised to ${MIN_CUT_DEPTH_MM.toFixed(2)}</span>` : ''}
-        <span class="preset">${c.isBackground ? '–' : '≈ ' + nearestFilamentName(c.color)}</span>
+        <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
       </div>
       ${mergeSelectHtml ? `<div class="merge-row">${mergeSelectHtml}</div>` : ''}`;
 

@@ -431,7 +431,7 @@ export const HUBCAP_SILHOUETTE_NO_TRANSPARENCY =
  * is the size control no longer changing anything, which reads as a broken input.
  */
 export const HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL =
-  'This shape was too big for the wheel, so it was scaled down to fit, the hubcap and the ' +
+  'This shape was too big for the wheel, so it was scaled down to fit. The hubcap and the ' +
   'artwork on it are both smaller than the size you set. Reduce the size or the scale to take ' +
   'control of it yourself.';
 

@@ -37,7 +37,14 @@ function isFilamentList(v: unknown): v is Filament[] {
     (v as unknown[]).every((f) => {
       if (typeof f !== 'object' || f === null) return false;
       const c = f as Partial<Filament>;
-      return Boolean(c.id && c.name && c.hex);
+      return (
+        typeof c.id === 'string' &&
+        !!c.id &&
+        typeof c.name === 'string' &&
+        !!c.name &&
+        typeof c.hex === 'string' &&
+        !!c.hex
+      );
     })
   );
 }

@@ -526,7 +526,7 @@ export async function build3MFCombined(
     if (centered.length > 1)
       warnings.push(
         `${centered.map((pl) => `"${pl.part.name}"`).join(', ')} share a build plate with no ` +
-          `verified position between them, so they are stacked on the plate center. ` +
+          `verified position between them, so they are stacked on the plate center, ` +
           `double-check for overlap in your slicer.`,
       );
     items.forEach((pl) => {
@@ -706,7 +706,7 @@ export async function build3MFCombined(
         warnings.push(
           `"${pl.part.name}" is placed ~${Math.ceil(over)}mm past the edge of ` +
             `${plates.length > 1 ? `plate ${pi + 1}` : 'the plate'} on this ` +
-            `${plateW}×${plateD}mm bed. Reposition it in your slicer before printing.`,
+            `${plateW}×${plateD}mm bed, reposition it in your slicer before printing.`,
         );
     });
   });
