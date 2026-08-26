@@ -655,7 +655,7 @@ cannot measure a depth against, or a part too thin to hold the minimum. Look at
 the cut in the 3D view, and in your slicer's preview, before printing. See
 [tech-debt.md](tech-debt.md).
 
-## Troubleshooting: "The prime tower … has no verified position, and every corner … overlaps a part"
+## Troubleshooting: "The prime tower … has no verified position. Every corner … overlaps a part"
 
 **What it means.** The plate is crowded enough that the prime tower has nowhere
 clear to go. The tower is the block the printer wipes filament into on every

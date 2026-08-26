@@ -1592,6 +1592,15 @@ only, for the reason in the section below. The imperative list in the comma
 splice check is closed, so an instruction using a verb outside it reads as
 clean.
 
+The widest hole is markup: a string containing a tag is exempt from the four
+shape checks and gets the em dash check only, because a tag soup has no
+sentences to measure. That is **78 of the 220** strings the gate admits, mostly
+`title=` tooltips in [colorList.ts](../src/ui/colorList.ts) (19),
+[assemblyPanel.ts](../src/ui/assemblyPanel.ts) (12) and
+[artworkListPanel.ts](../src/ui/artworkListPanel.ts) (9). Closing it means
+extracting the text out of the markup before measuring it, not loosening the
+exemption.
+
 **Closing it** would take either a custom ESLint rule for the coercion pattern,
 or a convention that all external numbers land through one parsing helper that
 the type system can then police.
@@ -1616,8 +1625,7 @@ damaged were all damaged by exactly this: substituting punctuation into copy
 without re-reading the sentence. The help dialog is long-form explanation, not
 an interruption, and it is denser than anything the sweep touched.
 
-**Closing it** is one copy pass over those 4 blocks, then deleting the
-`if (!text.includes(EM_DASH))` line in `scripts/check-copy.mjs` so
-`problems(text)` runs on `index.html` the way it already does on warnings.
-Check convention 36 after: the rewrite must not be longer than what it
-replaced.
+**Closing it** is one copy pass over those 4 blocks, then flipping
+`HELP_DIALOG_EM_DASH_ONLY` to `false` in `scripts/check-copy.mjs`, which runs
+`problems()` on `index.html` the way it already does on warnings. Check
+convention 36 after: the rewrite must not be longer than what it replaced.

@@ -14,11 +14,14 @@
 //   - visible markup of index.html, with <!-- --> blanked
 //   - visible <text> of public/templates/*.svg, which users download and print
 //
-// Thresholds are measured, not picked. Against the 127 prose strings this repo ships:
+// Thresholds are measured, not picked. The gate admits 220 prose strings from src/, of which 142
+// get the full shape checks and 78 are markup and get the em dash check only. Against that set:
 //   - MAX_WORDS 20 is CLAUDE.md's existing sentence limit for docs, not a new number
 //   - joins are counted per SENTENCE, not per string: per-string flagged 11, of which 10 were
 //     correct multi-sentence copy. Splitting a run-on in two RAISES the per-string count while
 //     improving the writing, so the string is the wrong denominator
+//   - markup is exempt from the shape checks because a tag soup has no sentences to measure. That
+//     is 78 of the 220, mostly title= tooltips, and it is the widest hole in this gate
 //   - the comma-splice check needs 4+ words before the comma, or it flags "Thanks, we got it."
 //
 // Usage:
@@ -39,7 +42,7 @@ const IMPERATIVE =
   'reposition|check|move|use|make|remove|add|try|pick|repair|simplify|turn|load|keep|raise|' +
   'set|increase|reduce|resize|reload|select|drag|slice|assign|import|click|open|save|export|' +
   'choose|enter|type';
-const SPLICE = new RegExp(`^(.*?),\\s+(${PRONOUN}|${IMPERATIVE})\\s+\\w`, 'i');
+const SPLICE = new RegExp(`,\\s+(?:${PRONOUN}|${IMPERATIVE})\\s+\\w`, 'gi');
 // A sentence that opens with one of these is a dependent phrase, not a clause, so the comma
 // after it is correct: "In the object list, click each part".
 const DEPENDENT_OPENER =
@@ -66,9 +69,14 @@ function problems(text) {
   if (isMarkup(text)) return out;
   if (/[.!?]\s+[a-z]/.test(text)) out.push('a sentence starts with a lowercase word');
   for (const s of sentences(text)) {
-    const m = s.match(SPLICE);
-    if (m && words(m[1]) >= 4 && !DEPENDENT_OPENER.test(m[1].trim()))
-      out.push('comma splice. Make it two sentences');
+    // Every comma, not just the first: one excused comma used to hide every splice after it.
+    for (const m of s.matchAll(SPLICE)) {
+      const before = s.slice(0, m.index).trim();
+      // The opener only excuses a prefix that is still one phrase. Once the prefix carries its
+      // own comma, an "In ..." at the far left no longer says anything about this comma.
+      const excused = !before.includes(',') && DEPENDENT_OPENER.test(before);
+      if (words(before) >= 4 && !excused) out.push('comma splice. Make it two sentences');
+    }
   }
   for (const s of sentences(text)) {
     if (words(s) > MAX_WORDS) out.push(`a ${words(s)}-word sentence (limit ${MAX_WORDS})`);
@@ -151,9 +159,11 @@ for (const file of sources('src/**/*.ts', 'src/*.ts')) {
   visit(src);
 }
 
-// index.html gets the em dash check only, for now. The full shape checks flag 26 problems in the
-// help dialog, which is long-form explanation rather than a warning, and rewriting it is a copy
-// pass of its own (docs/tech-debt.md). Widen this to `problems(text)` when that pass lands.
+// The help dialog is long-form explanation rather than a warning, and the full checks flag 26
+// problems in it. Rewriting it is a copy pass of its own (docs/tech-debt.md), so for now only the
+// em dash check applies. Flip this to false when that pass lands; nothing else needs changing.
+const HELP_DIALOG_EM_DASH_ONLY = true;
+
 for (const file of sources('index.html')) {
   const html = read(file);
   if (html === null) continue;
@@ -161,9 +171,13 @@ for (const file of sources('index.html')) {
   for (const m of stripped.matchAll(/>([^<>]{26,})</g)) {
     const text = m[1].replace(/\s+/g, ' ').trim();
     if (!/\s/.test(text) || !/[a-z]{3}/.test(text)) continue;
-    if (!text.includes(EM_DASH) || isGlyph(text)) continue;
     const line = stripped.slice(0, m.index).split('\n').length - 1;
-    add(file, line, 'em dash in visible page copy', text);
+    const why = HELP_DIALOG_EM_DASH_ONLY
+      ? text.includes(EM_DASH) && !isGlyph(text)
+        ? ['em dash in visible page copy']
+        : []
+      : problems(text);
+    for (const w of why) add(file, line, w, text);
   }
 }
 
