@@ -129,22 +129,6 @@ the only warning in a `title` tooltip. Both now add. Nothing was lost by droppin
 removing a member is what the "×" on each Base row member already does: it was a shortcut that
 destroyed work without saying so, not a capability. `replaceBase` went with it.
 
-## User-facing strings still use em dashes, which CLAUDE.md bars
-
-CLAUDE.md's code conventions say UI copy follows "the same sentence rules as docs: short, no em
-dashes". Counted 2026-08-16 with a comment-stripping tokenizer over `src/**/*.ts` (a grep first
-gave 35, which was wrong: it missed literals on lines that also carry a trailing comment, and
-block-comment interiors were not the problem): **57 lines carry an em dash inside a string
-literal**, plus 2 in the help dialog markup. That 57 is an upper bound on the copy problem, since
-it counts every literal rather than only the ones a user reads. Mostly `title=` tooltips in
-[src/ui/colorList.ts](../src/ui/colorList.ts), where the dash joins a clause that would read fine
-as a second sentence.
-
-Not a defect a user can hit, which is why it is deferred rather than fixed alongside the warning
-rewrites that found it: those passes replaced the dash wherever they touched a string, so the
-count only falls as copy is otherwise reworked. Closing it is one mechanical pass, and the trap is
-convention 36: splitting a clause into a sentence must not add words. Count after, do not eyeball.
-
 ## The placement frame's angle is unrelated to the face it acts on, and it shares the viewport with a second affordance
 
 Conventions 13–14 of [ui-conventions.md](ui-conventions.md): a gizmo is aligned to the frame of
@@ -1588,11 +1572,22 @@ whose `NaN` is never guarded.
 **Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
 on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
 
-**Scope of the em dash gate.** `npm run check:em-dashes` covers string literals
-in `src/**/*.ts`, visible `index.html` markup, and `<text>` in
+**Scope of the copy gate.** `npm run check:copy` covers string literals in
+`src/**/*.ts`, visible `index.html` markup, and `<text>` in
 `public/templates/*.svg`. Code, comments, `docs/`, `design-system/` and
-formatting glyphs are all deliberately out of scope: em dashes are banned in
-user-facing copy only.
+formatting glyphs are all deliberately out of scope.
+
+It checks five things, all one rule: a warning is short sentences that each do
+one job. Em dash, sentence over 20 words, more than one joining mark in a
+sentence, a comma splice, and a lowercase word after a full stop. Thresholds
+were measured against the 127 prose strings the app ships, not picked. Joins
+are counted per sentence: per string flagged 11, of which 10 were correct
+multi-sentence copy, because splitting a run-on raises the per-string count
+while improving the writing.
+
+**Known gap.** The prose filter is a heuristic (has a space, has a word, over
+25 characters, not markup). A user-facing string shorter than that is not
+checked. No instance found, but nothing prevents one.
 
 **Closing it** would take either a custom ESLint rule for the coercion pattern,
 or a convention that all external numbers land through one parsing helper that

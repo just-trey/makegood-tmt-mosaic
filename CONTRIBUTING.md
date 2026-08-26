@@ -29,7 +29,7 @@ runs, and `main` is protected, so a red one blocks the merge:
 ```bash
 npm run lint
 npm run format:check
-npm run check:em-dashes # no em dashes in user-facing copy
+npm run check:copy      # shape of user-facing copy
 npm run typecheck
 npm run test:coverage   # the suite, plus the coverage floors below
 npm run smoke           # builds and exercises the app end-to-end

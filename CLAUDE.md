@@ -96,8 +96,9 @@ Two guards that matter more than the count:
 - Comments: see [Comments](#comments) below.
 - UI copy follows [docs/ui-conventions.md](docs/ui-conventions.md)
   (vocabulary table, conventions 1-6, plain language 33-37) and the same
-  sentence rules as docs: short, and no em dashes (`npm run check:em-dashes`
-  gates this).
+  sentence rules: short sentences, each doing one job. `npm run check:copy`
+  gates the shape (sentence length, joins, splices, em dashes). Docs are not
+  held to this: they are working notes, not copy anyone reads in the app.
 - **Plain language is the bar for every user-facing string, and it is not a
   reading-age rule.** The reader runs a slicer daily. The line is their
   vocabulary against ours: if a word appears in Bambu Studio's UI or a
@@ -137,8 +138,8 @@ Two guards that matter more than the count:
   are the worked examples.
 - One line where possible. Docstrings may run 2-4 lines when they carry real
   constraints, never longer.
-- Em dashes are fine here. The ban is on user-facing copy only, and
-  `npm run check:em-dashes` is what draws that line.
+- Em dashes and long sentences are fine here. The bar applies to user-facing
+  copy only, and `npm run check:copy` is what draws that line.
 - Never write: banner or divider comments, changelog-style comments ("updated
   to handle X"), comments restating a type signature, comments narrating
   obvious control flow.

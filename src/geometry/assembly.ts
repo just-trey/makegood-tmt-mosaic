@@ -526,8 +526,8 @@ export function fillRefusalMessage(
       );
     case 'not-invertible':
       return (
-        `The placement of ${design} on "${partName}" has collapsed to no width or no height, so ` +
-        `its tiles can't be worked out. ${placed} Use "Reset to auto-fit" to put it back.`
+        `The placement of ${design} on "${partName}" has collapsed to no width or no height. ` +
+        `Its tiles can't be worked out. ${placed} Use "Reset to auto-fit" to put it back.`
       );
     case 'not-affine':
       return (
@@ -1226,7 +1226,7 @@ export async function buildAssemblyGeometry(
         // the color and say the recess ships empty, so the warning is actionable.
         landedColors.add(ci);
         warnBuild(
-          `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}": its pocket ` +
+          `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}". Its pocket ` +
             `is cut into the body but will print as an empty recess.`,
         );
       } finally {

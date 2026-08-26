@@ -301,7 +301,7 @@ export function splitAtBoundary(
       // says so, because the visible symptom (one color's edge stops short of the rim) reads as
       // the feature being broken rather than as one region the clipper couldn't measure.
       warnBuild(
-        `Couldn't tell whether ${label ?? 'a region'} reaches the part's outer edge, it was cut ` +
+        `Couldn't tell whether ${label ?? 'a region'} reaches the part's outer edge. It was cut ` +
           `as a recess rather than through.`,
       );
       interior.push(poly);

@@ -32,7 +32,7 @@ and "the branch is done" are different claims.
 Run these together, in the background, and wait for the notification:
 
 ```bash
-npm run lint && npm run format:check && npm run check:em-dashes && npm run typecheck && npm run test:coverage && npm run smoke
+npm run lint && npm run format:check && npm run check:copy && npm run typecheck && npm run test:coverage && npm run smoke
 ```
 
 `smoke` builds first, so expect minutes, not seconds. Don't poll it; the harness

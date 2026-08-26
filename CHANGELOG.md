@@ -184,8 +184,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **Warnings and notices no longer use em dashes.** The same text, punctuated
-  with commas, colons and full stops instead. A check now keeps new ones out.
+- **Warnings and notices read as short sentences.** Long run-ons are split, so
+  each sentence does one job, and none of them use em dashes. A check keeps new
+  ones out.
 - **"→ base" now adds a color to the base instead of replacing what is there.**
   Sending a second color to the base used to silently drop the first back to
   being cut, while dragging that same color onto the Base row added it. Two

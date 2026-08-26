@@ -298,7 +298,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
     else if (depthDiffers(depth, requested))
       warnBuild(
         `Depth for "${label}" was set to ${requested.toFixed(2)} mm, but a ${thickness.toFixed(2)} mm ` +
-          `plate can only cut ${maxDepth.toFixed(2)} mm deep, it was cut at ${depth.toFixed(2)} mm ` +
+          `plate can only cut ${maxDepth.toFixed(2)} mm deep. It was cut at ${depth.toFixed(2)} mm ` +
           `instead.`,
       );
     // noticeBuild, not warnBuild: the two branches above overrode the user's number, this one

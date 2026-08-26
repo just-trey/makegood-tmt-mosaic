@@ -19,7 +19,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
-      - run: npm run check:em-dashes
+      - run: npm run check:copy
       - run: npm run typecheck
       # Coverage rather than plain `npm test`: same suite, one run, plus the per-directory
       # coverage floors in vite.config.ts. A breach fails this step with an

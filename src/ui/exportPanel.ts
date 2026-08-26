@@ -199,7 +199,7 @@ function keptPartOutputs(
   return built.partOutputs.filter((o) => {
     if (o.bodySoup.length) return true;
     report?.(
-      `Part "${o.part.name}" has no geometry to export, its pocket cut went all the way ` +
+      `Part "${o.part.name}" has no geometry to export. Its pocket cut went all the way ` +
         `through, likely because its depth exceeds the wall thickness there.`,
     );
     return false;
@@ -362,7 +362,8 @@ ${built.colorMeshes.length} color STL(s) + base.stl (uncut plate body).
 
 Bambu Studio workflow:
 1. File > Import > import all STLs from this folder as separate objects.
-2. Select all imported objects, right-click > "Assemble" (or drag them onto one another) so they share one build plate position and register as one multi-part object.
+2. Select all imported objects, then right-click > "Assemble" (or drag them together).
+   That gives them one build plate position, as a single multi-part object.
 3. In the object list, click each part and assign it a filament / AMS slot from the color swatch.
 4. Slice as normal. Bambu Studio will generate the per-color toolpaths and AMS color changes automatically.
 

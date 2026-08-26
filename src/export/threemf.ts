@@ -526,7 +526,7 @@ export async function build3MFCombined(
     if (centered.length > 1)
       warnings.push(
         `${centered.map((pl) => `"${pl.part.name}"`).join(', ')} share a build plate with no ` +
-          `verified position between them, so they are stacked on the plate center, ` +
+          `verified position between them. They are stacked on the plate center: ` +
           `double-check for overlap in your slicer.`,
       );
     items.forEach((pl) => {

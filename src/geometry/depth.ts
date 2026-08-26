@@ -56,7 +56,7 @@ export function regionLabel(color: string, isMerge: boolean, memberCount: number
 export function zeroDepthWarning(label: string, requested: number, raisedTo: number): string {
   return (
     `Depth for "${label}" was set to ${requested.toFixed(2)} mm, which is not a depth that can ` +
-    `cut, it was raised to ${raisedTo.toFixed(2)} mm.`
+    `cut. It was raised to ${raisedTo.toFixed(2)} mm.`
   );
 }
 
@@ -114,7 +114,7 @@ export function subLayerDepth(depth: number): boolean {
 export function thinDepthNotice(label: string, depth: number): string {
   return (
     `Depth for "${label}" is ${depth.toFixed(2)} mm, thinner than the usual ` +
-    `${MIN_CUT_DEPTH_MM.toFixed(2)} mm print layer, it will only show up if your slicer ` +
+    `${MIN_CUT_DEPTH_MM.toFixed(2)} mm print layer. It will only show up if your slicer ` +
     `profile uses a layer height finer than that.`
   );
 }

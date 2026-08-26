@@ -94,7 +94,7 @@ export function parseRasterImage(
   const params = autoParams(stats, opts.detail, ranDetailPass);
   const map = quantize(img, opts.colors, params.blurRadius);
   if (!map.palette.length)
-    throw new Error('No opaque pixels were found in this image, there is nothing to cut.');
+    throw new Error('No opaque pixels were found in this image. There is nothing to cut.');
 
   const floor = despeckleFloorPx(params, img.w, img.h, stats, opts.detail, opts.mmPerPixel ?? 0);
   const { components, capped, floorPx } = traceLabelMap(map, params, floor);

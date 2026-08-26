@@ -120,7 +120,7 @@ export const HUBCAP_MIN_DIAMETER_MM = 2 * HUBCAP_CLIP_FACE_OUTER_R_MM;
  * match on, and the diameter is already on screen in the control beside it.
  */
 export const HUBCAP_DISCONNECTED_WARNING =
-  'The hubcap disc is too small to reach its mounting clips, they would print as four loose ' +
+  'The hubcap disc is too small to reach its mounting clips. They would print as four loose ' +
   'pieces. Increase the diameter.';
 
 /**
@@ -396,7 +396,7 @@ export const HUBCAP_MIN_CLIP_COVERAGE = 0.9;
 
 /** Silhouette asked for with nothing loaded to take one from. */
 export const HUBCAP_SILHOUETTE_NO_ARTWORK =
-  'The hubcap is set to follow your artwork’s shape, but no artwork is loaded, it stays round ' +
+  'The hubcap is set to follow your artwork’s shape, but no artwork is loaded. It stays round ' +
   'until you add one.';
 
 /**
@@ -436,5 +436,5 @@ export const HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL =
   'control of it yourself.';
 
 export const HUBCAP_SILHOUETTE_THIN_DETAIL =
-  'Some of this shape is thinner than 1mm, which is about one nozzle wide, so those parts will be ' +
+  'Some of this shape is thinner than 1mm, about one nozzle wide. Those parts will be ' +
   'fragile. Simplifying the artwork or making the hubcap bigger will thicken them.';
