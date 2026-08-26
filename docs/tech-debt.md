@@ -1572,7 +1572,13 @@ whose `NaN` is never guarded.
 **Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
 on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
 
-**Scope of the copy gate.** `npm run check:copy` covers string literals in
+**Closing it** would take either a custom ESLint rule for the coercion pattern,
+or a convention that all external numbers land through one parsing helper that
+the type system can then police.
+
+## The copy gate's scope and known gaps
+
+`npm run check:copy` covers string literals in
 `src/**/*.ts`, visible `index.html` markup, and `<text>` in
 `public/templates/*.svg`. Code, comments, `docs/`, `design-system/` and
 formatting glyphs are all deliberately out of scope.
@@ -1595,16 +1601,14 @@ clean.
 
 The widest hole is markup: a string containing a tag is exempt from the four
 shape checks and gets the em dash check only, because a tag soup has no
-sentences to measure. That is **78 of the 220** strings the gate admits, mostly
-`title=` tooltips in [colorList.ts](../src/ui/colorList.ts) (19),
+sentences to measure. That is **78 of the 220** strings the gate admits. Measured
+per file, the largest is [threemf.ts](../src/export/threemf.ts) at 23, which is
+3MF XML rather than copy, then [colorList.ts](../src/ui/colorList.ts) (19),
 [assemblyPanel.ts](../src/ui/assemblyPanel.ts) (12) and
-[artworkListPanel.ts](../src/ui/artworkListPanel.ts) (9). Closing it means
+[artworkListPanel.ts](../src/ui/artworkListPanel.ts) (9), which are `title=`
+tooltips. Those four are 63 of the 78. Closing it means
 extracting the text out of the markup before measuring it, not loosening the
 exemption.
-
-**Closing it** would take either a custom ESLint rule for the coercion pattern,
-or a convention that all external numbers land through one parsing helper that
-the type system can then police.
 
 ## The help dialog is exempt from the copy shape checks
 

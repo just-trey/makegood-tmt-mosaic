@@ -162,7 +162,7 @@ export function placementNotice(
     // warning about it would erode the two reasons above, which are defects.
     case 'generated-part':
       return {
-        message: `Part "${partName}" is generated to the size you chose, so no pre-verified print placement applies, ${tail}`,
+        message: `Part "${partName}" is generated to the size you chose. No pre-verified print placement applies, ${tail}`,
         level: 'info',
       };
   }
