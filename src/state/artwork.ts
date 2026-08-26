@@ -212,7 +212,7 @@ function assemblyMmPerUnit(img: RasterImage, sourceId?: string): number | undefi
   if (anyRect && !ctx.designFace()) return undefined;
   const at = (scalePct: number, fill: boolean) =>
     designMmPerUnit(
-      { userUnitMM: null, viewBox: canvas, origin: 'raster' },
+      { userUnitMM: null, canvas, origin: 'raster' },
       scalePct / 100,
       anchorR,
       ctx,

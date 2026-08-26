@@ -19,6 +19,37 @@ survives as its own section; only the closed part goes. Checking that the diff
 removed only the lines you meant to remove is _not_ this check: it confirms the
 scope of the edit, not that what left was finished.
 
+## A Fill tile with no mm size is stretched to one repeat, which is what forceRect exists to prevent
+
+`designMmPerUnit` ([src/geometry/assembly.ts](../src/geometry/assembly.ts))
+auto-fits the document canvas to the design face whenever `userUnitMM` is null,
+and that branch runs for `forceRect` (Fill) too. Its own docstring says the
+opposite: "a tile is a real-world period: radius-driven scaling would stretch
+one period across the whole design."
+
+**Measured** on a 60-unit two-color tile against the footrest's 266x185mm face:
+
+| The tile declares               | mm per unit | Tile period |
+| ------------------------------- | ----------- | ----------- |
+| `width="60mm"`                  | 1.0000      | 60.0mm      |
+| `width="100%"` + viewBox        | 3.0833      | 185.0mm     |
+| `width="60px"` (viewBox or not) | 3.0833      | 185.0mm     |
+
+185mm on a 185mm face is a single repeat, so Fill produces a stretched sticker.
+
+- **Pre-existing**, not introduced by the px-size fix. The `width="100%"` row is
+  what an Affinity export has always done.
+- **Not reachable with a shipped pattern.** All four in `public/patterns/` declare
+  `width="60mm"`, so only a user's own tile hits it.
+- The px-size fix widened the set of files that land here, which is how it was
+  found.
+
+Closing it means deciding what a periodless tile should repeat at, which is a
+real product question and not a constant to invent: the design face is wrong,
+1:1 is a guess, and the honest answer may be to refuse Fill and say so. It is a
+different change from sizing a Sticker, which is why it is written down instead
+of bolted onto that one.
+
 ## Raster status notices dedupe by filename, not by source id
 
 `rasterCappedMessage`/`rasterTracedMessage` in

@@ -28,9 +28,11 @@ export function normalizeColor(str: string | null): string | null {
   return '#000000';
 }
 
-const SVG_LENGTH_UNIT_MM: Record<string, number> = {
-  '': 25.4 / 96, // unitless user units default to px
-  px: 25.4 / 96,
+const PX_MM = 25.4 / 96;
+
+export const SVG_LENGTH_UNIT_MM: Record<string, number> = {
+  '': PX_MM, // unitless user units default to px
+  px: PX_MM,
   pt: 25.4 / 72,
   pc: 25.4 / 6,
   mm: 1,
@@ -38,15 +40,44 @@ const SVG_LENGTH_UNIT_MM: Record<string, number> = {
   in: 25.4,
 };
 
-/** SVG length ("266mm", "1005.2", "10in") -> millimeters. Null for %, unknown units, or non-numeric. */
-export function svgLengthToMM(value: string | null): number | null {
+/**
+ * Units that state a real-world size. px and the unitless default are screen units at whatever DPI
+ * the editor used.
+ *
+ * Listed, not derived by subtracting px from the table above. Derivation fails open: a unit added
+ * there later (`em`, `vw`) would be trusted as a measurement without anyone deciding it is one,
+ * which silently reinstates DPI-guessed sizing. Listing fails to an auto-fit and a notice instead.
+ * `svgLengthToMM handles every table unit` in tests/parse.test.ts keeps the two from drifting.
+ */
+const PHYSICAL_UNITS = new Set(['pt', 'pc', 'mm', 'cm', 'in']);
+
+/** value and unit of an SVG length, or null when it isn't one. The unit is '' when omitted. */
+function splitSVGLength(value: string | null): { n: number; unit: string } | null {
   if (!value) return null;
   const m = value.trim().match(/^([+-]?[\d.eE]+)\s*([a-z%]*)$/i);
   if (!m) return null;
   const n = parseFloat(m[1]);
-  if (!Number.isFinite(n)) return null;
-  const factor = SVG_LENGTH_UNIT_MM[m[2].toLowerCase()];
-  return factor == null ? null : n * factor;
+  return Number.isFinite(n) ? { n, unit: m[2].toLowerCase() } : null;
+}
+
+/** SVG length ("266mm", "1005.2", "10in") -> millimeters. Null for %, unknown units, or non-numeric. */
+export function svgLengthToMM(value: string | null): number | null {
+  const l = splitSVGLength(value);
+  if (!l) return null;
+  const factor = SVG_LENGTH_UNIT_MM[l.unit];
+  return factor == null ? null : l.n * factor;
+}
+
+/**
+ * Whether an SVG length claims a real-world size, as opposed to screen pixels.
+ *
+ * A `px` (or unitless) length is whatever DPI the editor happened to use: Affinity writes 72,
+ * the CSS/SVG spec says 96. A 266mm template re-exported from Affinity comes back as "755px" and
+ * reads 25% small at the spec's 96, so px alone is not a measurement.
+ */
+export function svgLengthIsPhysical(value: string | null): boolean {
+  const l = splitSVGLength(value);
+  return !!l && PHYSICAL_UNITS.has(l.unit);
 }
 
 function getInlineStyleProp(el: Element, prop: string): string | null {
@@ -129,9 +160,33 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   // mode maps SVG units straight to mm, so we must honor the real-world size: an editor round-trip
   // (e.g. re-export from Affinity) can rewrite the viewBox to a different internal resolution while
   // keeping the same physical width, and without this the design comes out mis-scaled. Null when
-  // the SVG declares no absolute size (rect mode then falls back to 1:1 with a notice).
-  const widthMM = svgLengthToMM(svgEl.getAttribute('width'));
-  const heightMM = svgLengthToMM(svgEl.getAttribute('height'));
+  // the SVG declares no size a printer could act on (rect mode then fits the canvas to the design
+  // face, with a notice).
+  const widthAttr = svgEl.getAttribute('width');
+  const heightAttr = svgEl.getAttribute('height');
+  const widthMM = svgLengthToMM(widthAttr);
+  const heightMM = svgLengthToMM(heightAttr);
+
+  // The document's own canvas, which rect placement anchors artwork on, and fits to the design
+  // face when there is no mm size. A viewBox states it directly; without one, the declared
+  // width/height does, converted at 96dpi because with no viewBox a user unit *is* a px by
+  // definition (independent of whether that px count is trustworthy as a print size). Both axes
+  // are required in that second case: a lone width leaves the canvas height unknown, and half a
+  // canvas is not an anchor.
+  let canvas: { w: number; h: number } | null = null;
+  if (vb && vbW > 0 && vbH > 0) {
+    canvas = { w: vbW, h: vbH };
+  } else if (!vb && widthMM != null && heightMM != null && widthMM > 0 && heightMM > 0) {
+    canvas = { w: widthMM / PX_MM, h: heightMM / PX_MM };
+  }
+
+  // Only an axis declared in a real unit sets the scale. A px (or unitless) length is the editor's
+  // own DPI and states no size at all: Affinity writes px at 72, the spec reads them at 96, and
+  // our own 266mm footrest template comes back from Affinity as "755px" either with no viewBox or
+  // with a matching one. Both readings land it at ~75%, so both are rejected here and fitted to
+  // the design face instead.
+  const wMM = svgLengthIsPhysical(widthAttr) ? widthMM : null;
+  const hMM = svgLengthIsPhysical(heightAttr) ? heightMM : null;
   let userUnitMM: number | null = null;
   if (vb) {
     // mm-per-unit from each declared axis independently. Guard `> 0` so a width="0"/height="0"
@@ -140,22 +195,11 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     // viewBox aspect — there's no single true scale, so take the smaller: that matches SVG's
     // default "meet" fitting, which uniformly scales the design to sit inside the declared box
     // rather than stretching one axis to match the other.
-    const sx = vbW > 0 && widthMM != null && widthMM > 0 ? widthMM / vbW : null;
-    const sy = vbH > 0 && heightMM != null && heightMM > 0 ? heightMM / vbH : null;
+    const sx = vbW > 0 && wMM != null && wMM > 0 ? wMM / vbW : null;
+    const sy = vbH > 0 && hMM != null && hMM > 0 ? hMM / vbH : null;
     userUnitMM = sx != null && sy != null ? Math.min(sx, sy) : (sx ?? sy);
-  } else if ((widthMM != null && widthMM > 0) || (heightMM != null && heightMM > 0)) {
-    userUnitMM = 25.4 / 96; // no viewBox: coords are user px
-  }
-
-  // The document's own canvas, which rect placement anchors artwork on. A viewBox states it
-  // directly; without one, the declared physical size does, converted at the same 96dpi the
-  // branch above assumes. Both axes are required in that second case — a lone width leaves the
-  // canvas height unknown, and half a canvas is not an anchor.
-  let canvas: { w: number; h: number } | null = null;
-  if (vb && vbW > 0 && vbH > 0) {
-    canvas = { w: vbW, h: vbH };
-  } else if (!vb && userUnitMM != null && widthMM != null && heightMM != null) {
-    if (widthMM > 0 && heightMM > 0) canvas = { w: widthMM / userUnitMM, h: heightMM / userUnitMM };
+  } else if ((wMM != null && wMM > 0) || (hMM != null && hMM > 0)) {
+    userUnitMM = PX_MM; // no viewBox: coords are user px, and the declared mm size is real
   }
 
   const shapes: SVGShape[] = [];

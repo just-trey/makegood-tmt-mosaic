@@ -370,10 +370,15 @@ export interface DesignScaleContext {
  * physical size (userUnitMM), so a template lands life-size whatever internal resolution an
  * editor re-exported it at.
  *
- * With no declared mm size, fit the viewBox to the design face rather than assuming 1 unit = 1 mm:
- * the template's viewBox *is* the face. Meet-fit (smaller axis ratio) matches SVG's own default.
- * Genuine 1:1 only when there is no viewBox either. `forceRect` is the fill path, where a tile is
- * a real-world period: radius-driven scaling would stretch one period across the whole design.
+ * With no declared mm size, fit the document canvas to the design face rather than assuming
+ * 1 unit = 1 mm: the template's sheet *is* the face. Meet-fit (smaller axis ratio) matches SVG's
+ * own default. Genuine 1:1 only when the file declares no canvas either. `forceRect` is the fill
+ * path, where a tile is a real-world period: radius-driven scaling would stretch one period across
+ * the whole design.
+ *
+ * Canvas and not viewBox, though they are the same box whenever a viewBox exists: an Affinity
+ * export can drop the viewBox and state the sheet in px alone, and that sheet still fits the face.
+ * viewBox stays the fill tile period, where the bbox fallback for a viewBox-less file is wanted.
  *
  * Shared with the gizmo like `designAnchor`, and it matters more here: every artwork the app ships
  * declares `width="100%"`, so this auto-fit branch is the normal path, not an edge case.
@@ -383,7 +388,7 @@ export interface DesignScaleContext {
  * anything (state/artwork.ts).
  */
 export function designMmPerUnit(
-  parsed: Pick<ParsedSVG, 'userUnitMM' | 'viewBox' | 'origin'>,
+  parsed: Pick<ParsedSVG, 'userUnitMM' | 'canvas' | 'origin'>,
   scaleMult: number,
   anchorR: number,
   ctx: DesignScaleContext,
@@ -394,21 +399,21 @@ export function designMmPerUnit(
   const fit = ctx.generatedFit?.() ?? 1;
   if (!ctx.isRect && !forceRect) return (ctx.radius / anchorR) * scaleMult * fit;
   if (parsed.userUnitMM != null) return parsed.userUnitMM * scaleMult * fit;
-  const vb = parsed.viewBox;
+  const sheet = parsed.canvas;
   const designFace = ctx.designFace();
-  if (designFace && vb && vb.w > 0 && vb.h > 0) {
+  if (designFace && sheet && sheet.w > 0 && sheet.h > 0) {
     // Two strings, not one format-neutral one: setting the document size in mm is the real fix for
     // an SVG and impossible for an image, so a shared message loses the actionable half of each.
     notice(
       parsed.origin === 'raster'
         ? 'This image has no real-world size, so it was auto-fit to the part face. Use Scale to fine-tune.'
-        : 'This SVG has no absolute width/height in mm, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
+        : 'This SVG has no size in millimeters, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
     );
-    return Math.min(designFace.w / vb.w, designFace.h / vb.h) * scaleMult * fit;
+    return Math.min(designFace.w / sheet.w, designFace.h / sheet.h) * scaleMult * fit;
   }
   if (designFace)
     notice(
-      'This SVG has no absolute width/height in mm, so its true print size is unknown — placing it 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
+      'This SVG has no size in millimeters, so its true print size is unknown. It was placed 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
     );
   return scaleMult * fit;
 }

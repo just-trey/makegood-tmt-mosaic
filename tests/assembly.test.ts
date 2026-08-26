@@ -585,13 +585,17 @@ describe('buildAssemblyGeometry', () => {
   );
 
   it(
-    'rect designFit fits a size-less SVG to the face via its viewBox',
+    'rect designFit fits a size-less SVG to the face via its canvas',
     { timeout: 30000 },
     async () => {
       // No userUnitMM (an editor stripped the mm size, e.g. Affinity's width="100%"), but the
-      // viewBox is 20 units across a 40mm face -> fit 2mm per unit, so the 10-unit square cuts a
+      // canvas is 20 units across a 40mm face -> fit 2mm per unit, so the 10-unit square cuts a
       // 20mm region instead of landing 1:1. This is what keeps a template trace life-size.
-      const parsed: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 20, h: 20 } };
+      const parsed: ParsedSVG = {
+        ...redSquareParsed(),
+        viewBox: { w: 20, h: 20 },
+        canvas: { w: 20, h: 20 },
+      };
       const built = (await buildAssemblyGeometry(baseInput({ designFit: 'rect', parsed })))!;
       const r = xzRange(built.partOutputs[0].inlaySoups[0]);
       expect(r.maxX - r.minX).toBeCloseTo(20, 4);
@@ -607,11 +611,15 @@ describe('buildAssemblyGeometry', () => {
       // would be contradicted moments later by the rebuild the part's own load triggers, so the
       // build stays quiet instead of emitting a notice it's about to walk back.
       clearWarnings();
-      const parsed: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 20, h: 20 } };
+      const parsed: ParsedSVG = {
+        ...redSquareParsed(),
+        viewBox: { w: 20, h: 20 },
+        canvas: { w: 20, h: 20 },
+      };
       await buildAssemblyGeometry(
         baseInput({ designFit: 'rect', parsed, parts: [boxPart({ loaded: false })] }),
       );
-      expect(WARNINGS.filter((w) => /absolute width\/height/.test(w.message))).toEqual([]);
+      expect(WARNINGS.filter((w) => /no size in millimeters/.test(w.message))).toEqual([]);
 
       // …and once it has loaded, the auto-fit notice does appear.
       await buildAssemblyGeometry(baseInput({ designFit: 'rect', parsed }));
@@ -1016,22 +1024,22 @@ describe('shared design anchor and scale resolvers', () => {
     expect(designMmPerUnit({ ...redSquareParsed(), userUnitMM: 0.5 }, 1, 5, ctx, true)).toBe(0.5);
   });
 
-  it('prefers a declared mm size, else auto-fits the viewBox to the design face', () => {
+  it('prefers a declared mm size, else auto-fits the canvas to the design face', () => {
     const ctx = { isRect: true, radius: 138, designFace: face };
     expect(designMmPerUnit({ ...redSquareParsed(), userUnitMM: 0.5 }, 2, 5, ctx)).toBe(1);
     // meet-fit: the smaller axis ratio, matching SVG's own default fitting
-    const noSize: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 100, h: 50 } };
+    const noSize: ParsedSVG = { ...redSquareParsed(), canvas: { w: 100, h: 50 } };
     expect(designMmPerUnit(noSize, 1, 5, ctx)).toBeCloseTo(2, 9); // min(200/100, 200/50)
   });
 
-  it('places 1:1 when there is no declared size and no viewBox', () => {
+  it('places 1:1 when there is no declared size and no canvas', () => {
     const ctx = { isRect: true, radius: 138, designFace: face };
     expect(designMmPerUnit(redSquareParsed(), 3, 5, ctx)).toBe(3);
   });
 
   it('reports through `notice` only when one is passed', () => {
     const ctx = { isRect: true, radius: 138, designFace: face };
-    const noSize: ParsedSVG = { ...redSquareParsed(), viewBox: { w: 100, h: 100 } };
+    const noSize: ParsedSVG = { ...redSquareParsed(), canvas: { w: 100, h: 100 } };
     const said: string[] = [];
     designMmPerUnit(noSize, 1, 5, ctx, false, (m) => said.push(m));
     expect(said).toHaveLength(1);

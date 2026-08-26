@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, expect, it } from 'vitest';
-import { normalizeColor, parseSVGDocument, svgLengthToMM } from '../src/svg/parse';
+import {
+  SVG_LENGTH_UNIT_MM,
+  normalizeColor,
+  parseSVGDocument,
+  svgLengthIsPhysical,
+  svgLengthToMM,
+} from '../src/svg/parse';
+import { designAnchor, placedFootprintMM } from '../src/geometry/assembly';
 
 // jsdom has no 2d canvas without the native `canvas` package, so normalizeColor's color
 // oracle would return null and every fill would collapse to #000000. Stub just enough of
@@ -200,6 +207,80 @@ describe('parseSVGDocument', () => {
     expect(out.viewBox).toEqual({ w: 755, h: 525 });
   });
 
+  it('rejects a px-only size with no viewBox as a print size, but keeps it as the canvas', () => {
+    // Affinity's other export shape: viewBox dropped, size written as px at the document's own DPI
+    // (72 here, so 755px IS 266mm). Trusting the spec's 96dpi lands our 266mm footrest template at
+    // 199.8mm, exactly 75%. Null userUnitMM sends rect placement to the fit-the-canvas branch.
+    const out = parseSVGDocument(
+      svg('<rect width="10" height="10" fill="#ff0000"/>', 'width="755px" height="525px"'),
+    );
+    expect(out.userUnitMM).toBeNull();
+    expect(out.canvas).toEqual({ w: 755, h: 525 });
+  });
+
+  it('rejects a unitless size with no viewBox the same way', () => {
+    const out = parseSVGDocument(
+      svg('<rect width="10" height="10" fill="#ff0000"/>', 'width="755" height="525"'),
+    );
+    expect(out.userUnitMM).toBeNull();
+    expect(out.canvas).toEqual({ w: 755, h: 525 });
+  });
+
+  it('rejects a px size that comes WITH a viewBox, which is the same 75% bug', () => {
+    // Affinity's export with "Set viewBox" ticked. widthMM/vbW cancels to exactly the 96dpi
+    // constant, so the ratio carries no information the px reading did not already assume: our
+    // 266mm template came out at 199.5mm here too, and silently, until this branch rejected it.
+    for (const attrs of [
+      'width="755px" height="525px" viewBox="0 0 755 525"',
+      'width="755" height="525" viewBox="0 0 755 525"',
+    ]) {
+      const out = parseSVGDocument(svg('<rect width="10" height="10" fill="#ff0000"/>', attrs));
+      expect(out.userUnitMM).toBeNull();
+      expect(out.canvas).toEqual({ w: 755, h: 525 }); // still fits to the face
+    }
+  });
+
+  it('mixes a physical axis with a px one by taking only the physical axis', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<rect width="10" height="10" fill="#ff0000"/>',
+        'width="266mm" height="525px" viewBox="0 0 266 185"',
+      ),
+    );
+    expect(out.userUnitMM).toBeCloseTo(1, 9); // 266mm / 266 units, ignoring the px height
+  });
+
+  it('still trusts a physical size with no viewBox', () => {
+    // mm/cm/in/pt/pc are measurements whatever the editor's DPI, so these keep mapping user px
+    // at 96dpi rather than being auto-fit to the face.
+    for (const attrs of ['width="266mm" height="185mm"', 'width="10in" height="7in"']) {
+      const out = parseSVGDocument(svg('<rect width="10" height="10" fill="#ff0000"/>', attrs));
+      expect(out.userUnitMM).toBeCloseTo(25.4 / 96, 12);
+    }
+  });
+
+  it('claims no size from a single px axis either, so the notice still fires', () => {
+    // No second axis means no canvas to fit, so this lands on the 1:1 branch and prints 3x
+    // oversized. That is wrong and loud. Keeping the 96dpi reading here instead put it at 199.5mm
+    // on a 266mm face with nothing said, which is this whole fix's failure mode.
+    for (const attrs of ['width="755px"', 'width="755px" height="100%"']) {
+      const out = parseSVGDocument(svg('<rect width="10" height="10" fill="#ff0000"/>', attrs));
+      expect(out.userUnitMM).toBeNull();
+      expect(out.canvas).toBeNull();
+    }
+  });
+
+  it('classifies every unit the length table knows, so the two cannot drift', () => {
+    // PHYSICAL_UNITS is a list, not a subtraction, so a unit added to the table is auto-fit rather
+    // than silently trusted as a measurement. This is what stops that list going stale unnoticed.
+    for (const unit of Object.keys(SVG_LENGTH_UNIT_MM)) {
+      const physical = svgLengthIsPhysical(`10${unit}`);
+      expect(physical).toBe(unit !== '' && unit !== 'px');
+      expect(svgLengthToMM(`10${unit}`)).not.toBeNull();
+    }
+    expect(svgLengthIsPhysical('10em')).toBe(false); // not in the table, so not a measurement
+  });
+
   it('reports a null viewBox when the SVG declares none', () => {
     const out = parseSVGDocument(svg('<rect width="10" height="10" fill="#ff0000"/>'));
     expect(out.viewBox).toBeNull();
@@ -303,5 +384,40 @@ describe('normalizeColor', () => {
     expect(normalizeColor('none')).toBeNull();
     expect(normalizeColor('transparent')).toBeNull();
     expect(normalizeColor(null)).toBeNull();
+  });
+});
+
+/**
+ * The reported bug, end to end: our own 266x185mm footrest template, edited in Affinity and
+ * re-exported. The viewBox is gone, the size is "755px x 525px" at the document's 72dpi, and the
+ * mm coordinates survive only inside a matrix(72/25.4) group. Read as 96dpi px the artwork landed
+ * at 199.8mm, exactly 75% of the face. The 0.35mm shortfall now is Affinity rounding the sheet
+ * from 754.02px up to a whole 755.
+ */
+describe('an Affinity re-export of a design template', () => {
+  const affinityFootrest = () =>
+    parseSVGDocument(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="755px" height="525px">' +
+        '<g transform="matrix(2.834646,0,0,2.834646,0,0)">' +
+        '<path d="M0,0L266,0L266,185L0,185Z" style="fill:rgb(200,200,200);"/>' +
+        '</g></svg>',
+    );
+
+  it('lands life-size on the footrest face instead of at 75%', () => {
+    const parsed = affinityFootrest();
+    const placed = placedFootprintMM(parsed, 1, 0, {
+      isRect: true,
+      radius: 138,
+      designFace: () => ({ w: 266, h: 185 }),
+    });
+    expect(placed.w).toBeCloseTo(265.65, 2);
+    expect(placed.h).toBeCloseTo(184.76, 2);
+    expect(placed.w).not.toBeCloseTo(199.8, 1); // the regression this replaces
+  });
+
+  it('anchors on the sheet, so the design keeps where it sat on the page', () => {
+    // canvasAnchor centres on the 755x525 sheet, not on the drawn content, so a mark in one
+    // corner of the page still lands in that corner of the face.
+    expect(designAnchor(affinityFootrest(), true)).toEqual({ cx: 377.5, cy: 262.5, r: 377.5 });
   });
 });

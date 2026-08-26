@@ -328,6 +328,17 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
 
 ### Fixed
 
+- **An edited template no longer loads a quarter too small.** Download the
+  footrest template, edit it in Affinity, load it back, and the artwork landed at
+  199.8mm on a 266mm face: exactly 75%, with nothing on screen saying so. The
+  export writes the size as `755px`, and px means a different real size in every
+  editor (Affinity writes 72 to the inch, the web standard says 96). The app now
+  treats a size given only in pixels as no size at all and fits the page to the
+  part face, which puts that template back at 265.7mm, and says it did. Ticking
+  "Set viewBox" on export did not help and was its own quiet 75%. To get an
+  exact size rather than a fit, set the document units to millimeters before
+  exporting. A file that gives its size in mm, cm, or inches is unaffected.
+
 - **A depth of 0 no longer reads as 0 when the app is using 0.20.** The field
   kept showing what you typed, and the only place the real number appeared was a
   warning that goes away when dismissed. The row now says `raised to 0.20` beside
