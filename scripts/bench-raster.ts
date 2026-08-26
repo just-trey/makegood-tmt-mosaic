@@ -978,7 +978,7 @@ const PLACEMENTS: { name: string; mmPerPixel: (img: RasterImage) => number }[] =
     name: 'wheel 100%',
     mmPerPixel: (img) =>
       designMmPerUnit(
-        { userUnitMM: null, viewBox: { w: img.w, h: img.h }, origin: 'raster' },
+        { userUnitMM: null, canvas: { w: img.w, h: img.h }, origin: 'raster' },
         1,
         Math.max(img.w, img.h) / 2,
         {
@@ -1007,7 +1007,7 @@ const PLACEMENTS: { name: string; mmPerPixel: (img: RasterImage) => number }[] =
 
 function rectMmPerPixel(img: RasterImage, faceW: number, faceH: number, scaleMult: number): number {
   return designMmPerUnit(
-    { userUnitMM: null, viewBox: { w: img.w, h: img.h }, origin: 'raster' },
+    { userUnitMM: null, canvas: { w: img.w, h: img.h }, origin: 'raster' },
     scaleMult,
     Math.max(img.w, img.h) / 2,
     { isRect: true, radius: 0, designFace: () => ({ w: faceW, h: faceH }) },

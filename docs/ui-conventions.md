@@ -223,6 +223,7 @@ every row obeys 36: the replacement is shorter than or the same length as what i
 | traces the edges                     | traces the result back to outlines | help dialog                 |
 | Rebuilding the part…                 | Rebuilding geometry…               | `scheduler.ts` overlay      |
 | Couldn't cut color <hex> into <part> | Couldn't build the cut solid       | assembly CSG warnings       |
+| no size in millimeters               | no absolute width/height in mm     | SVG auto-fit notices        |
 
 Two terms were on this table and came off it. `tileable` and `bounding box` are both free by the
 test above, and both replacements ran longer, which is 36. Leave them alone.

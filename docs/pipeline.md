@@ -242,9 +242,18 @@ Two fields tune non-wheel parts:
   patch overall. The footrest needs it: its flat back outsizes its seat.
 - **`AssemblyKind.designFit: 'rect'`** maps the SVG 1:1 in millimetres and
   centres it on the detected face, instead of the wheel's Design-radius circle
-  model. Where an SVG declares no absolute mm size, rect placement fits the
-  viewBox to the face so a template trace still lands life-size. The Footrest
+  model. Where an SVG declares no mm size, rect placement fits the document
+  canvas to the face so a template trace still lands life-size. The Footrest
   kind uses both fields.
+
+  A size given only in `px` counts as no size, viewBox or not. A `px` is 1/96
+  inch per the SVG spec but whatever the editor's DPI in practice, and Affinity
+  re-exports our 266mm footrest template as `width="755px"` at 72: read at 96
+  that is 199.8mm, exactly 75%. A matching `viewBox="0 0 755 525"` does not
+  rescue it, since 755px over 755 units cancels to the same 96dpi constant. Only
+  an axis in `mm`/`cm`/`in`/`pt`/`pc` sets `userUnitMM`, with no exceptions: a
+  lone px axis leaves no canvas either, so it lands on the 1:1 branch and is
+  visibly 3x oversized rather than quietly 25% small.
 
 The full procedure, including packing the mesh and baking placement, is the
 `add-part` skill.

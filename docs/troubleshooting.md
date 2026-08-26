@@ -341,11 +341,70 @@ files are almost always a meaningless 72 or 96, and honouring one would size a
 phone photo at over a metre. The image is fitted to the part's design face and
 `Scale` adjusts from there.
 
-The SVG counterpart of this notice ("This SVG has no absolute width/height in
-mm…") asks you to set the document size in millimetres, which is right there
+The SVG counterpart of this notice ("This SVG has no size in millimeters…")
+asks you to set the document size in millimetres, which is right there
 and impossible for an image; hence two messages. There is
 no way to give an image an exact real-world size on load. Use the Part section's
 design template to check the fit, and `Scale`/`Offset` to place it.
+
+## Troubleshooting: "This SVG has no size in millimeters…"
+
+Full text: _"This SVG has no size in millimeters, so it was auto-fit to the part
+face. Set the document size in millimeters for an exact size, or use Scale to
+fine-tune."_
+
+**Expected on every artwork the app ships, and on most editor exports.** The
+document sheet is fitted to the part's design face, so a template round-trip
+still lands 1:1.
+
+Three files reach it:
+
+| The file says                    | Why it can't be trusted                           |
+| -------------------------------- | ------------------------------------------------- |
+| `width="100%"`                   | No size at all. Affinity's default SVG export     |
+| `width="755px"`, viewBox or not  | Pixels at the editor's own DPI, not a measurement |
+| neither width/height nor viewBox | Nothing to fit; the design is placed 1:1 (below)  |
+
+**The px case used to be silently wrong.** A `px` length means 1/96 inch per the
+SVG spec, but Affinity writes px at the document's DPI. Our own 266mm footrest
+template, edited in Affinity and re-exported at 72 DPI, comes back as
+`width="755px"`. Read at 96 DPI that is 199.8mm, exactly 75%, and the design
+printed a quarter too small with no warning. The app now treats a size given
+only in pixels as no size at all and fits the sheet to the face instead.
+
+**Ticking "Set viewBox" on export does not fix this.** It writes
+`viewBox="0 0 755 525"` beside the same `755px`, and 755px over 755 units is
+just the 96 DPI assumption again: same 199.5mm, same silence. Both shapes are
+rejected now.
+
+**To get an exact size instead of a fit**, set the document units to millimetres
+before exporting: Document Setup in Affinity, Document Properties in Inkscape,
+Artboard settings in Illustrator. `cm`, `in`, `pt` and `pc` are trusted too.
+
+If the sheet and the part face have the same proportions (they do for every
+template the app ships), the fit is exact anyway.
+
+**It can scale up as well as down.** The sheet is fitted to the face, so a small
+mark on a large px page grows with the page: a 200px icon on a 200px page lands
+at 185mm on the footrest, not 52.9mm. That is the same rule working in the other
+direction, and `Scale` brings it back. A saved session re-reads the file on
+reload, so a design placed before this changed comes back at the new size.
+
+### The 1:1 variant
+
+Full text: _"This SVG has no size in millimeters, so its true print size is
+unknown. It was placed 1:1 with its coordinate units. Set the document size in
+millimeters, or use Scale to correct the fit."_
+
+The file gives no sheet to fit: no `viewBox`, and not both of width and height.
+A lone `width="755px"` lands here, and so does `width="755px" height="100%"`.
+Each coordinate unit is placed as 1mm, which is a guess and usually a large one.
+Set the document size in millimetres, or use `Scale` to correct it by eye
+against the design template.
+
+Being visibly wrong here is deliberate. Reading that lone `755px` at 96 DPI
+instead would put the design at 199.5mm on a 266mm face: plausible, printable,
+and 25% wrong with nothing said. A design three times too big gets noticed.
 
 ## Troubleshooting: "The hubcap disc is too small to reach its mounting clips"
 

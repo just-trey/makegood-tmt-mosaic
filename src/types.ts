@@ -29,23 +29,24 @@ export interface ParsedSVG {
   /**
    * Millimeters per SVG user (viewBox) unit, from the document's physical width/height. Only rect
    * assembly placement reads it, to map artwork 1:1 in mm whatever the file's internal resolution.
-   * Null when the SVG declares no absolute size. Wheel mode scales off the design circle instead.
+   * Null when the SVG declares no size a printer could act on, which includes a px-only size with
+   * no viewBox (px is the editor's DPI, not a measurement). Wheel mode scales off the circle.
    */
   userUnitMM?: number | null;
   /**
-   * The viewBox extent in user units, null when the document declares no viewBox. Rect placement's
-   * last resort when `userUnitMM` is null: an editor that dropped the physical size (Affinity
-   * exporting `width="100%"`) still keeps the viewBox, so fitting it to the face recovers scale.
+   * The viewBox extent in user units, null when the document declares no viewBox. The fill tile
+   * period: one repeat of a pattern, falling back to the artwork bbox when absent.
    */
   viewBox?: { w: number; h: number } | null;
   /**
    * The document's canvas in user units, origin at (0,0): the viewBox extent when declared, else
-   * the physical width/height at the same 96dpi `userUnitMM` assumes. Rect placement anchors on
-   * this, not the drawn content, so a design positioned within its sheet keeps that position.
-   * Null when the file declares neither, leaving only the content to anchor on.
+   * the declared width/height at 96dpi (with no viewBox a user unit is a px by definition). Rect
+   * placement anchors on this, not the drawn content, so a design positioned within its sheet
+   * keeps that position, and fits it to the design face when `userUnitMM` is null. Null when the
+   * file declares neither, leaving only the content to anchor on.
    *
-   * Distinct from `viewBox`, which stays the viewBox alone because the scale fallback and the fill
-   * tile cell both mean specifically that.
+   * Distinct from `viewBox`, which stays the viewBox alone because the fill tile cell means
+   * specifically that.
    */
   canvas?: { w: number; h: number } | null;
   /**
