@@ -111,6 +111,34 @@ string needs a term that isn't in it, add the row, and make the replacement obey
 The existing copy that already fails is a tracked tech-debt item, and widening
 the diff to fix it is how a focused PR stops being one.
 
+## 2c. A bug fix ships with a test that failed first
+
+Only if the diff fixes a bug. Skip it for a new feature, a refactor, or a docs
+change, and say you did.
+
+> Every bug fix ships with a test proven to fail pre-fix. Write the test first,
+> run it against the old code, and confirm it fails. Only then apply the fix. A
+> test that was never shown to fail proves nothing.
+
+**"Proven" means you read the failure output**, not that a test exists and now
+passes. A test written after the fix passes on the first run whether or not it
+touches the bug, and there is no way to tell those apart afterwards.
+
+The order that satisfies this:
+
+1. Write the test against the bug as reported.
+2. Run it on the unfixed code. Keep the failure message.
+3. Apply the fix.
+4. Run it again. It passes.
+
+Say the failure you saw at step 2, in terms of expected against actual. "It
+failed" is not the claim; the wrong number it returned is.
+
+If the bug cannot be reached from a test (a WebGL path, a real printer), say so
+and name the driven check or the live run that stands in for it. That is a
+different claim, and it needs the same evidence: what it reported before, and
+what it reports now.
+
 ## 3. Code review
 
 ```bash
