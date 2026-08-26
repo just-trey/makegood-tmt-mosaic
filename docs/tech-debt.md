@@ -1563,16 +1563,20 @@ holds and what does not:
 **Enforced.** `strict: true`, plus the five type-aware
 `@typescript-eslint/no-unsafe-*` rules on `src/**/*.ts`. Those caught 12 real
 cases of untrusted input reaching typed state, all fixed. ESLint's built-in
-`radix` rule also catches a `parseInt` with no base, which read a pasted `0x`
-value as hex at one site.
+`radix` rule also catches a `parseInt` with no base. The one site it found reads
+an app-generated `<select>` value, so it was latent, not live.
 
 **Not enforced.** `parseFloat` / `Number` / unary `+` coercion. No lint rule in
 the current plugin ecosystem covers the pattern, and a custom parser rule was
 ruled out as too much machinery for one check. Nothing catches a `parseFloat`
-whose `NaN` is never guarded. Around 6 sites parse an external number without a
-finite check, in [svg/path.ts](../src/svg/path.ts),
-[svg/parse.ts](../src/svg/parse.ts), [ui/dom.ts](../src/ui/dom.ts) and
-[ui/colorList.ts](../src/ui/colorList.ts).
+whose `NaN` is never guarded.
+
+Counted 2026-08-26: **2 sites** parse an external number with no finite check,
+[svg/path.ts:138](../src/svg/path.ts) and
+[svg/parse.ts:284](../src/svg/parse.ts). The other three (`ui/dom.ts:14`,
+`ui/colorList.ts:428`, `svg/parse.ts:59`) all guard on the next line, so the
+exposure is narrower than the call count suggests. Count the guards, not the
+calls.
 
 **Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
 on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
@@ -1596,21 +1600,23 @@ counted per sentence: per string flagged 11, of which 10 were correct
 multi-sentence copy, because splitting a run-on raises the per-string count
 while improving the writing.
 
-A markup string is not skipped. Each element's text, and each `title`,
-`aria-label` and `placeholder`, is pulled out and measured as its own unit.
-Measuring a whole string with its tags stripped was tried and rejected: it
-joins unrelated elements, so a `</div><label>` boundary reads as a lowercase
-word after a full stop. That invented two defects and found none.
+A markup string is not skipped. It is split on tags into text runs, and each
+run, plus each `title`, `aria-label` and `placeholder`, is measured as its own
+unit. Stripping the tags out of the whole string instead was tried and
+rejected: it joins unrelated elements, so a `</div><label>` boundary reads as a
+lowercase word after a full stop. That invented two defects and found none.
 
-**Known gaps**, all measured:
+**Known gaps**, all measured 2026-08-26 against the 220 prose strings `src/`
+admits.
 
-| Gap                                    | Size                                                                                                                                                            |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Prose filter is a heuristic            | Under 25 characters is unchecked. Lowering to 20 admits 14 more strings, none of them defects today                                                             |
-| `index.html` shape checks are off      | Em dash only, see the section below                                                                                                                             |
-| Imperative list is closed              | An instruction using a verb outside it reads as clean                                                                                                           |
-| An interpolation counts as one word    | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts                     |
-| Constants resolve within one file only | A suffix imported from another module is still collapsed to one token. Both defects this found were same-file; going cross-file needs a full `ts.createProgram` |
+| Gap                                    | Size                                                                                                                                                                                                              |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Markup still yields no units at all    | 78 of the 220 are markup. They yield 39 readable units, and **51 yield none**: mostly 3MF XML in [threemf.ts](../src/export/threemf.ts), which has no prose in it. Splitting on tags took this from 4 units to 39 |
+| Prose filter is a heuristic            | A whole string of 25 characters or fewer is unchecked. Admitting 21 to 25 adds 14 strings, none of them defects, and at least two are not copy (`#automerge-labels span`, `<model_instance>`)                     |
+| `index.html` shape checks are off      | Em dash only, see the section below                                                                                                                                                                               |
+| Imperative list is closed              | An instruction using a verb outside it reads as clean                                                                                                                                                             |
+| An interpolation counts as one word    | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts                                                                       |
+| Constants resolve within one file only | A suffix imported from another module is still one token. A name bound twice, or bound with `let`, is skipped rather than guessed: a wrong substitution invents defects that are not there                        |
 
 The last one is the shape of a gap that already cost something. `flatten()` used
 to collapse **every** non-literal operand, so a message finished by a shared

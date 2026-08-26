@@ -14,8 +14,8 @@
 //   - visible markup of index.html, with <!-- --> blanked
 //   - visible <text> of public/templates/*.svg, which users download and print
 //
-// A markup string is not skipped: its readable parts (each element's text, and title/aria-label/
-// placeholder) are pulled out and measured one at a time. Measuring the tags stripped out of the
+// A markup string is not skipped: it is split on tags into text runs, and each run, plus each
+// title/aria-label/placeholder, is measured on its own. Measuring the tags stripped out of the
 // whole string instead joins unrelated elements and invents defects.
 //
 // Thresholds are measured, not picked. The gate admits 220 prose strings from src/. Against that
@@ -65,16 +65,24 @@ const isMarkup = (t) => /<\/?[a-zA-Z][\w-]*[\s>/]/.test(t);
 // A literal that is nothing but a dash is a placeholder for "no value", not writing.
 const isGlyph = (t) => t.trim() === EM_DASH;
 
-// The readable copy inside a markup string: one unit per element's text, plus the attributes a
-// user actually reads. Per element, never the whole string with tags stripped: stripping joins
-// unrelated elements, and "</div><label>pivot X" then reads as a lowercase word after a full
-// stop. That invented two defects and found none.
-const READABLE_ATTR = /\b(?:title|aria-label|placeholder)="([^"]{20,})"/g;
+// The readable copy inside a markup string: each run of text between tags, plus the attributes a
+// user actually reads. Split into runs rather than stripping the tags out of the whole string:
+// stripping joins unrelated elements, so a "</div><label>pivot X" boundary reads as a lowercase
+// word after a full stop. That invented two defects and found none.
+//
+// Splitting also reaches text before the first tag and after the last, which a `>text<` match
+// cannot see. src/svg/parse.ts builds "Skipped a <" + tag + "> with a gradient fill", a plain
+// warning that counts as markup only because it names an SVG element; its whole second half was
+// unmeasured.
+const READABLE_ATTR = /\b(?:title|aria-label|placeholder)="([^"]+)"/g;
+// A readable unit is shorter than a whole string: an attribute is a clause, not a paragraph.
+const MIN_UNIT_CHARS = 12;
 function textUnits(markup) {
-  const out = [];
-  for (const m of markup.matchAll(/>([^<>]{26,})</g)) out.push(m[1].replace(/\s+/g, ' ').trim());
-  for (const m of markup.matchAll(READABLE_ATTR)) out.push(m[1].replace(/\s+/g, ' ').trim());
-  return out.filter((t) => /\s/.test(t) && /[a-z]{3}/.test(t));
+  const out = markup.split(/<[^>]*>/);
+  for (const m of markup.matchAll(READABLE_ATTR)) out.push(m[1]);
+  return out
+    .map((t) => t.replace(/\s+/g, ' ').trim())
+    .filter((t) => t.length >= MIN_UNIT_CHARS && /\s/.test(t) && /[a-z]{3}/.test(t));
 }
 
 // The four sentence-shape checks. Kept apart from the em dash check so markup can run these per
@@ -139,17 +147,31 @@ const add = (file, line, why, text) => hits.push({ file, line: line + 1, why, te
 // Every `const NAME = 'literal'` in one file, so a message finished by a shared suffix can be
 // measured whole. Same file only: both defects this closes were same-file, and resolving across
 // files needs a full ts.createProgram, which is a far heavier gate for the reach it adds.
+//
+// Two deliberate narrowings, because a wrong substitution invents defects that are not there:
+//   - `const` only. A `let` is reassigned later, so its initializer is not what ships. Several
+//     are `let x = ''` accumulators, and substituting the empty seed measures the wrong string.
+//   - a name bound more than once anywhere in the file is dropped rather than guessed. This is
+//     one flat map with no scope tracking, so two functions with their own `const label` would
+//     otherwise resolve to whichever was seen last.
 function stringConsts(src) {
   const binds = new Map();
+  const ambiguous = new Set();
   const walk = (n) => {
     if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
+      const isConst = !!(ts.getCombinedNodeFlags(n) & ts.NodeFlags.Const);
       const i = n.initializer;
-      if (ts.isStringLiteral(i) || ts.isNoSubstitutionTemplateLiteral(i))
+      if (isConst && (ts.isStringLiteral(i) || ts.isNoSubstitutionTemplateLiteral(i))) {
+        if (binds.has(n.name.text) && binds.get(n.name.text) !== i.text) ambiguous.add(n.name.text);
         binds.set(n.name.text, i.text);
+      } else {
+        ambiguous.add(n.name.text);
+      }
     }
     ts.forEachChild(n, walk);
   };
   walk(src);
+  for (const name of ambiguous) binds.delete(name);
   return binds;
 }
 
