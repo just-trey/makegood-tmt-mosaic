@@ -31,7 +31,7 @@ import { alertDialog } from './dialogs';
 export const PLACEMENT_WARNING_SUFFIXES = [
   'even at its best-fit rotation.',
   'double-check for overlap in your slicer.',
-  'reposition it in your slicer before printing.',
+  'Reposition it in your slicer before printing.',
   // both arms of the blocked-tower message (threemf.ts), which differ by whether a position
   // was saved at all
   'so your slicer will place it. Check it before printing.',

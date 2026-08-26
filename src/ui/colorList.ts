@@ -349,7 +349,7 @@ export function renderColorList(
       rightControlHtml = `<button class="btn small" data-add-base="${c.members.join(',')}" title="Print this group in the body instead of cutting it">→ base</button>`;
     } else {
       const pinned = state.keptApart.includes(c.color);
-      swatchHtml = `<div class="swatch${pinned ? ' pinned' : ''}" style="background:${c.color}" ${pinned ? 'title="Pulled out of auto-merge, click to re-allow merging"' : ''}></div>`;
+      swatchHtml = `<div class="swatch${pinned ? ' pinned' : ''}" style="background:${c.color}" ${pinned ? 'title="Pulled out of auto-merge. Click to re-allow merging"' : ''}></div>`;
       labelHtml = c.color;
       rightControlHtml = `<button class="btn small" data-add-base="${c.color}" title="Print this color in the body instead of cutting it">→ base</button>`;
     }

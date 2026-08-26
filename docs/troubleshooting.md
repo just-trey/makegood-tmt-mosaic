@@ -408,7 +408,7 @@ and 25% wrong with nothing said. A design three times too big gets noticed.
 
 ## Troubleshooting: "The hubcap disc is too small to reach its mounting clips"
 
-Full text: _"The hubcap disc is too small to reach its mounting clips, they
+Full text: _"The hubcap disc is too small to reach its mounting clips. They
 would print as four loose pieces. Increase the diameter."_
 
 The hubcap is generated rather than loaded: only its four clips ship as a mesh,
@@ -436,7 +436,7 @@ this is a hard floor rather than advice.
 ## Troubleshooting: "The hubcap is set to follow your artwork's shape, but no artwork is loaded"
 
 Full text: _"The hubcap is set to follow your artwork's shape, but no artwork
-is loaded, it stays round until you add one."_
+is loaded. It stays round until you add one."_
 
 The **Cut to artwork shape** checkbox and the artwork on the part are the same
 object by design: there is no separate silhouette upload, so with nothing loaded
@@ -534,8 +534,8 @@ the rest of the design was thrown off the part in silence.
 
 ## Troubleshooting: "This shape was too big for the wheel, so it was scaled down to fit"
 
-Full text: _"This shape was too big for the wheel, so it was scaled down to fit,
-the hubcap and the artwork on it are both smaller than the size you set. Reduce
+Full text: _"This shape was too big for the wheel, so it was scaled down to fit.
+The hubcap and the artwork on it are both smaller than the size you set. Reduce
 the size or the scale to take control of it yourself."_
 
 Nothing may overhang the wheel the hubcap mounts on, which is 280mm across. A
@@ -551,8 +551,8 @@ clears puts you back in control.
 
 ## Troubleshooting: "Some of this shape is thinner than 1mm"
 
-Full text: _"Some of this shape is thinner than 1mm, which is about one
-nozzle wide, so those parts will be fragile. Simplifying the artwork or making
+Full text: _"Some of this shape is thinner than 1mm, about one
+nozzle wide. Those parts will be fragile. Simplifying the artwork or making
 the hubcap bigger will thicken them."_
 
 Unlike the other silhouette warnings this one does **not** fall back to a

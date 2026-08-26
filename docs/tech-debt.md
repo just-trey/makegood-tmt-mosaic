@@ -1585,10 +1585,39 @@ are counted per sentence: per string flagged 11, of which 10 were correct
 multi-sentence copy, because splitting a run-on raises the per-string count
 while improving the writing.
 
-**Known gap.** The prose filter is a heuristic (has a space, has a word, over
-25 characters, not markup). A user-facing string shorter than that is not
-checked. No instance found, but nothing prevents one.
+**Known gaps.** The prose filter is a heuristic (has a space, has a word, over
+25 characters, not markup), so a shorter user-facing string is not checked. No
+instance found, but nothing prevents one. `index.html` gets the em dash check
+only, for the reason in the section below. The imperative list in the comma
+splice check is closed, so an instruction using a verb outside it reads as
+clean.
 
 **Closing it** would take either a custom ESLint rule for the coercion pattern,
 or a convention that all external numbers land through one parsing helper that
 the type system can then police.
+
+## The help dialog is exempt from the copy shape checks
+
+`npm run check:copy` runs all five checks on warning strings and on template
+`<text>`. On `index.html` it runs the em dash check only.
+
+Measured 2026-08-26 by pointing `problems()` at the help dialog: **26 problems
+across 4 blocks.**
+
+| Block              | Worst finding                  |
+| ------------------ | ------------------------------ |
+| Depth explainer    | 2 joins in one sentence        |
+| Slot budget        | 35-word sentence, comma splice |
+| Cancel semantics   | 25-word sentence               |
+| Export summary box | 33-word sentence, 2 joins      |
+
+Deferred rather than swept, on purpose. The four warning strings this branch
+damaged were all damaged by exactly this: substituting punctuation into copy
+without re-reading the sentence. The help dialog is long-form explanation, not
+an interruption, and it is denser than anything the sweep touched.
+
+**Closing it** is one copy pass over those 4 blocks, then deleting the
+`if (!text.includes(EM_DASH))` line in `scripts/check-copy.mjs` so
+`problems(text)` runs on `index.html` the way it already does on warnings.
+Check convention 36 after: the rewrite must not be longer than what it
+replaced.

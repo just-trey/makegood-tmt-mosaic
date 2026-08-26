@@ -406,7 +406,7 @@ describe('multi-plate world layout', () => {
         },
       );
       expect(warnings.join(' ')).toContain('"Overhang" is placed ~14mm past the edge');
-      expect(warnings.join(' ')).toContain('reposition it in your slicer');
+      expect(warnings.join(' ')).toContain('Reposition it in your slicer');
       expect(warnings.join(' ')).not.toContain('best-fit rotation');
     });
   });

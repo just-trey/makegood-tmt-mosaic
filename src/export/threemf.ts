@@ -706,7 +706,7 @@ export async function build3MFCombined(
         warnings.push(
           `"${pl.part.name}" is placed ~${Math.ceil(over)}mm past the edge of ` +
             `${plates.length > 1 ? `plate ${pi + 1}` : 'the plate'} on this ` +
-            `${plateW}×${plateD}mm bed, reposition it in your slicer before printing.`,
+            `${plateW}×${plateD}mm bed. Reposition it in your slicer before printing.`,
         );
     });
   });
@@ -870,8 +870,8 @@ ${items.join('\n')}
   // it; when nothing was written there is no position to move and the slicer decides.
   blockedTowers.forEach(({ names, plate, at }) =>
     warnings.push(
-      `The prime tower on the plate holding ${names} has no verified position, and every corner ` +
-        `of the ${plate} plate overlaps a part. ` +
+      `The prime tower on the plate holding ${names} has no verified position. ` +
+        `Every corner of the ${plate} plate overlaps a part. ` +
         (allBlocked
           ? 'No tower position was saved, so your slicer will place it. Check it before printing.'
           : // Named, because this arm fires precisely when a position WAS written. Telling someone

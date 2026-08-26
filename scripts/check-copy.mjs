@@ -31,8 +31,19 @@ const EM_DASH = '—';
 const MAX_WORDS = 20;
 const MAX_JOINS = 1;
 
-// A clause opener that turns a comma into a splice when a full sentence precedes it.
-const SPLICE = /^(.*?),\s+(they|it|this|that|these|those|you|we|there)\s+\w/;
+// A clause opener that turns a comma into a splice when a full sentence precedes it: a pronoun
+// subject, or a bare imperative. The verb list is closed on purpose, covering the verbs this
+// app's copy actually gives instructions with.
+const PRONOUN = 'they|it|this|that|these|those|you|we|there';
+const IMPERATIVE =
+  'reposition|check|move|use|make|remove|add|try|pick|repair|simplify|turn|load|keep|raise|' +
+  'set|increase|reduce|resize|reload|select|drag|slice|assign|import|click|open|save|export|' +
+  'choose|enter|type';
+const SPLICE = new RegExp(`^(.*?),\\s+(${PRONOUN}|${IMPERATIVE})\\s+\\w`, 'i');
+// A sentence that opens with one of these is a dependent phrase, not a clause, so the comma
+// after it is correct: "In the object list, click each part".
+const DEPENDENT_OPENER =
+  /^(in|on|at|after|before|when|if|while|for|with|to|from|under|once|since|unless|because|although)\b/i;
 const JOIN = [/[;:—]/g, /,\s+(and|but|so|or|yet|which|because)\b/g];
 
 const sentences = (t) =>
@@ -54,8 +65,11 @@ function problems(text) {
     out.push('em dash. Use commas, colons, parentheses, or separate sentences');
   if (isMarkup(text)) return out;
   if (/[.!?]\s+[a-z]/.test(text)) out.push('a sentence starts with a lowercase word');
-  const m = text.match(SPLICE);
-  if (m && words(m[1]) >= 4) out.push('comma splice. Make it two sentences');
+  for (const s of sentences(text)) {
+    const m = s.match(SPLICE);
+    if (m && words(m[1]) >= 4 && !DEPENDENT_OPENER.test(m[1].trim()))
+      out.push('comma splice. Make it two sentences');
+  }
   for (const s of sentences(text)) {
     if (words(s) > MAX_WORDS) out.push(`a ${words(s)}-word sentence (limit ${MAX_WORDS})`);
     if (joins(s) > MAX_JOINS) out.push(`${joins(s)} joins in one sentence (limit ${MAX_JOINS})`);
@@ -96,20 +110,25 @@ function flatten(n) {
   if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return n.text;
   if (ts.isTemplateExpression(n))
     return n.head.text + n.templateSpans.map((s) => 'X' + s.literal.text).join('');
-  if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-    const l = flatten(n.left);
-    const r = flatten(n.right);
-    return l === null || r === null ? null : l + r;
-  }
+  if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.PlusToken)
+    return flatten(n.left) + flatten(n.right);
   if (ts.isParenthesizedExpression(n)) return flatten(n.expression);
-  return null;
+  // A non-literal operand is an interpolation like any other, so it collapses to one token. It
+  // used to return null, which made visit() skip the whole expression: 23 of 267 prose strings,
+  // including every confirm dialog and the blocked-tower warning, were never checked at all.
+  return 'X';
 }
+// Only an expression that actually contains a literal counts. Treating every parenthesized
+// expression as stringy made `!(await confirmDialog(\`...\`))` flatten to one token and return,
+// so visit() never descended into the call: every confirm dialog went unchecked.
 const isStringy = (n) =>
   ts.isStringLiteral(n) ||
   ts.isNoSubstitutionTemplateLiteral(n) ||
   ts.isTemplateExpression(n) ||
-  (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.PlusToken) ||
-  ts.isParenthesizedExpression(n);
+  (ts.isBinaryExpression(n) &&
+    n.operatorToken.kind === ts.SyntaxKind.PlusToken &&
+    (isStringy(n.left) || isStringy(n.right))) ||
+  (ts.isParenthesizedExpression(n) && isStringy(n.expression));
 
 for (const file of sources('src/**/*.ts', 'src/*.ts')) {
   const text = read(file);
@@ -123,22 +142,29 @@ for (const file of sources('src/**/*.ts', 'src/*.ts')) {
         const { line } = src.getLineAndCharacterOfPosition(n.getStart(src));
         for (const why of problems(t)) add(file, line, why, t);
       }
-      return;
+      // Keep descending. A literal inside a ternary arm (`a + (c ? 'x' : 'y')`) is not part of
+      // this chain, so returning here left both arms of the blocked-tower warning unchecked.
+      // A literal that IS part of the chain is skipped by the isStringy(parent) guard above.
     }
     ts.forEachChild(n, visit);
   };
   visit(src);
 }
 
+// index.html gets the em dash check only, for now. The full shape checks flag 26 problems in the
+// help dialog, which is long-form explanation rather than a warning, and rewriting it is a copy
+// pass of its own (docs/tech-debt.md). Widen this to `problems(text)` when that pass lands.
 for (const file of sources('index.html')) {
   const html = read(file);
   if (html === null) continue;
-  const lines = html.split('\n');
-  blankComments(html)
-    .split('\n')
-    .forEach((line, i) => {
-      if (line.includes(EM_DASH)) add(file, i, 'em dash in visible page copy', lines[i].trim());
-    });
+  const stripped = blankComments(html);
+  for (const m of stripped.matchAll(/>([^<>]{26,})</g)) {
+    const text = m[1].replace(/\s+/g, ' ').trim();
+    if (!/\s/.test(text) || !/[a-z]{3}/.test(text)) continue;
+    if (!text.includes(EM_DASH) || isGlyph(text)) continue;
+    const line = stripped.slice(0, m.index).split('\n').length - 1;
+    add(file, line, 'em dash in visible page copy', text);
+  }
 }
 
 for (const file of sources('public/templates/*.svg')) {
@@ -146,9 +172,10 @@ for (const file of sources('public/templates/*.svg')) {
   if (svg === null) continue;
   const stripped = blankComments(svg);
   for (const m of stripped.matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/g)) {
-    if (!m[1].includes(EM_DASH)) continue;
-    const line = stripped.slice(0, m.index + m[0].indexOf(EM_DASH)).split('\n').length - 1;
-    add(file, line, 'em dash on a template users print', m[1].trim());
+    const text = m[1].replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const line = stripped.slice(0, m.index).split('\n').length - 1;
+    for (const why of problems(text)) add(file, line, why, text);
   }
 }
 
