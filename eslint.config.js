@@ -32,6 +32,9 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // parseInt without a radix reads a leading 0x as hex, so a pasted field value can silently
+      // parse as a different number than it looks like.
+      radix: 'error',
     },
   },
   {

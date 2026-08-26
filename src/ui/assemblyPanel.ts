@@ -429,7 +429,7 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
     inp.addEventListener('change', (e) => {
       const t = e.target as HTMLInputElement;
       const field = t.dataset.asm as 'pivotX' | 'pivotZ' | 'angleDeg' | 'baseDepth' | 'patchIdx';
-      const val = field === 'patchIdx' ? parseInt(t.value) : parseFloat(t.value);
+      const val = field === 'patchIdx' ? parseInt(t.value, 10) : parseFloat(t.value);
       if (!Number.isFinite(val)) {
         // A cleared field yields '' -> NaN, which reaches three.js as a NaN transform and
         // blanks the whole viewport (Box3.isEmpty() is false on NaN bounds) — snap back instead.

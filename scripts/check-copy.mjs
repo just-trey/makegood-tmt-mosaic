@@ -14,14 +14,16 @@
 //   - visible markup of index.html, with <!-- --> blanked
 //   - visible <text> of public/templates/*.svg, which users download and print
 //
-// Thresholds are measured, not picked. The gate admits 220 prose strings from src/, of which 142
-// get the full shape checks and 78 are markup and get the em dash check only. Against that set:
+// A markup string is not skipped: its readable parts (each element's text, and title/aria-label/
+// placeholder) are pulled out and measured one at a time. Measuring the tags stripped out of the
+// whole string instead joins unrelated elements and invents defects.
+//
+// Thresholds are measured, not picked. The gate admits 220 prose strings from src/. Against that
+// set:
 //   - MAX_WORDS 20 is CLAUDE.md's existing sentence limit for docs, not a new number
 //   - joins are counted per SENTENCE, not per string: per-string flagged 11, of which 10 were
 //     correct multi-sentence copy. Splitting a run-on in two RAISES the per-string count while
 //     improving the writing, so the string is the wrong denominator
-//   - markup is exempt from the shape checks because a tag soup has no sentences to measure. That
-//     is 78 of the 220, mostly title= tooltips, and it is the widest hole in this gate
 //   - the comma-splice check needs 4+ words before the comma, or it flags "Thanks, we got it."
 //
 // Usage:
@@ -57,16 +59,28 @@ const sentences = (t) =>
 const words = (s) => s.split(/\s+/).filter(Boolean).length;
 const joins = (s) => JOIN.reduce((n, re) => n + (s.match(re) ?? []).length, 0);
 
-// Markup is not prose: a template's HTML has no sentences to measure.
+// Markup is not prose: a tag soup has no sentences to measure. Its readable parts are pulled out
+// and measured on their own by textUnits() below.
 const isMarkup = (t) => /<\/?[a-zA-Z][\w-]*[\s>/]/.test(t);
 // A literal that is nothing but a dash is a placeholder for "no value", not writing.
 const isGlyph = (t) => t.trim() === EM_DASH;
 
-function problems(text) {
+// The readable copy inside a markup string: one unit per element's text, plus the attributes a
+// user actually reads. Per element, never the whole string with tags stripped: stripping joins
+// unrelated elements, and "</div><label>pivot X" then reads as a lowercase word after a full
+// stop. That invented two defects and found none.
+const READABLE_ATTR = /\b(?:title|aria-label|placeholder)="([^"]{20,})"/g;
+function textUnits(markup) {
   const out = [];
-  if (text.includes(EM_DASH) && !isGlyph(text))
-    out.push('em dash. Use commas, colons, parentheses, or separate sentences');
-  if (isMarkup(text)) return out;
+  for (const m of markup.matchAll(/>([^<>]{26,})</g)) out.push(m[1].replace(/\s+/g, ' ').trim());
+  for (const m of markup.matchAll(READABLE_ATTR)) out.push(m[1].replace(/\s+/g, ' ').trim());
+  return out.filter((t) => /\s/.test(t) && /[a-z]{3}/.test(t));
+}
+
+// The four sentence-shape checks. Kept apart from the em dash check so markup can run these per
+// readable unit while the dash is still looked for across the whole string.
+function shapeProblems(text) {
+  const out = [];
   if (/[.!?]\s+[a-z]/.test(text)) out.push('a sentence starts with a lowercase word');
   for (const s of sentences(text)) {
     // Every comma, not just the first: one excused comma used to hide every splice after it.
@@ -77,11 +91,21 @@ function problems(text) {
       const excused = !before.includes(',') && DEPENDENT_OPENER.test(before);
       if (words(before) >= 4 && !excused) out.push('comma splice. Make it two sentences');
     }
-  }
-  for (const s of sentences(text)) {
     if (words(s) > MAX_WORDS) out.push(`a ${words(s)}-word sentence (limit ${MAX_WORDS})`);
     if (joins(s) > MAX_JOINS) out.push(`${joins(s)} joins in one sentence (limit ${MAX_JOINS})`);
   }
+  return out;
+}
+
+function problems(text) {
+  const out = [];
+  if (text.includes(EM_DASH) && !isGlyph(text))
+    out.push('em dash. Use commas, colons, parentheses, or separate sentences');
+  if (isMarkup(text)) {
+    for (const unit of textUnits(text)) out.push(...shapeProblems(unit));
+    return out;
+  }
+  out.push(...shapeProblems(text));
   return out;
 }
 
@@ -112,15 +136,39 @@ const blankComments = (t) => t.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\
 const hits = [];
 const add = (file, line, why, text) => hits.push({ file, line: line + 1, why, text });
 
+// Every `const NAME = 'literal'` in one file, so a message finished by a shared suffix can be
+// measured whole. Same file only: both defects this closes were same-file, and resolving across
+// files needs a full ts.createProgram, which is a far heavier gate for the reach it adds.
+function stringConsts(src) {
+  const binds = new Map();
+  const walk = (n) => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
+      const i = n.initializer;
+      if (ts.isStringLiteral(i) || ts.isNoSubstitutionTemplateLiteral(i))
+        binds.set(n.name.text, i.text);
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(src);
+  return binds;
+}
+
 // A message is usually assembled: 'a' + `b ${x} c` + 'd'. Checking one fragment at a time cannot
 // see a sentence, so flatten the whole expression and collapse each interpolation to one token.
-function flatten(n) {
+function flatten(n, binds) {
   if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return n.text;
   if (ts.isTemplateExpression(n))
-    return n.head.text + n.templateSpans.map((s) => 'X' + s.literal.text).join('');
+    return (
+      n.head.text +
+      n.templateSpans.map((s) => flatten(s.expression, binds) + s.literal.text).join('')
+    );
   if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.PlusToken)
-    return flatten(n.left) + flatten(n.right);
-  if (ts.isParenthesizedExpression(n)) return flatten(n.expression);
+    return flatten(n.left, binds) + flatten(n.right, binds);
+  if (ts.isParenthesizedExpression(n)) return flatten(n.expression, binds);
+  // A shared suffix is part of the sentence, so substitute it. Collapsing it to a token measured
+  // every such message in halves, which is how a two-join sentence and a dangling clause both
+  // shipped past this gate.
+  if (ts.isIdentifier(n) && binds.has(n.text)) return binds.get(n.text);
   // A non-literal operand is an interpolation like any other, so it collapses to one token. It
   // used to return null, which made visit() skip the whole expression: 23 of 267 prose strings,
   // including every confirm dialog and the blocked-tower warning, were never checked at all.
@@ -142,9 +190,10 @@ for (const file of sources('src/**/*.ts', 'src/*.ts')) {
   const text = read(file);
   if (text === null) continue;
   const src = ts.createSourceFile(file, text, ts.ScriptTarget.ES2022, true);
+  const binds = stringConsts(src);
   const visit = (n) => {
     if (isStringy(n) && !(n.parent && isStringy(n.parent))) {
-      const t = flatten(n);
+      const t = flatten(n, binds);
       // Short fragments are ids, keys and selectors, not copy. 25 chars is where prose starts.
       if (t && /\s/.test(t) && /[a-z]{3}/.test(t) && t.length > 25) {
         const { line } = src.getLineAndCharacterOfPosition(n.getStart(src));
@@ -165,15 +214,15 @@ for (const file of sources('src/**/*.ts', 'src/*.ts')) {
 // title, the narrow-viewport notice and the empty states ride on it too. Flip to false when that
 // pass lands; nothing else needs changing.
 //
-// Attribute copy (title=, aria-label=, placeholder=) is not read here at all, in index.html or in
-// markup strings. That is the gate's other hole, and it is in the Known gaps list.
 const INDEX_HTML_EM_DASH_ONLY = true;
 
 for (const file of sources('index.html')) {
   const html = read(file);
   if (html === null) continue;
   const stripped = blankComments(html);
-  for (const m of stripped.matchAll(/>([^<>]{26,})</g)) {
+  // Element text and the attributes a user reads, each measured as its own unit.
+  const units = [...stripped.matchAll(/>([^<>]{26,})</g), ...stripped.matchAll(READABLE_ATTR)];
+  for (const m of units) {
     const text = m[1].replace(/\s+/g, ' ').trim();
     if (!/\s/.test(text) || !/[a-z]{3}/.test(text)) continue;
     const line = stripped.slice(0, m.index).split('\n').length - 1;
