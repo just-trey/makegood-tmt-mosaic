@@ -679,3 +679,23 @@ boxes, which over-reports a round part: a disc can be reported as blocking a
 corner it does not reach. That is deliberate for now, since a tower printed
 through a part is worse than one you place yourself, and it is written up in
 [tech-debt.md](tech-debt.md).
+
+## Troubleshooting: "Couldn't send that" in the feedback panel
+
+The Feedback panel posts to Formspree. Two failures show there, and neither
+touches your work: the app keeps running and the note stays in the box.
+
+| Message                                                             | What happened                                                       |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `Couldn't send that. Check your connection.`                        | The request never reached Formspree, or took longer than 15 seconds |
+| `Couldn't send that (HTTP 429). Use the GitHub link below instead.` | Formspree answered and refused. `429` is the monthly submission cap |
+
+- **Your note is still there.** Send again once you are back online. Nothing is
+  cleared until a send succeeds.
+- **A 4xx code means the form refused, and retrying will not clear it.** `429`
+  is the monthly cap, `403` a form switched off. The message says to use
+  **Report a bug on GitHub** in the same panel, and that is the fix.
+- **A 5xx code is Formspree being down.** That one is worth retrying.
+- **No Feedback button at all** means the build was made without
+  `FEEDBACK_ENDPOINT` set, which is every fork. See
+  [.env.example](../.env.example).

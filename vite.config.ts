@@ -36,6 +36,7 @@ export default defineConfig(({ mode }) => {
   // prefix lets loadEnv return non-VITE_ vars for build-time use (it isn't exposed to the client).
   const env = loadEnv(mode, process.cwd(), '');
   const umamiWebsiteId = process.env.UMAMI_WEBSITE_ID || env.UMAMI_WEBSITE_ID || '';
+  const feedbackEndpoint = process.env.FEEDBACK_ENDPOINT || env.FEEDBACK_ENDPOINT || '';
 
   return {
     // Relative base so the built site works at any GitHub Pages path
@@ -50,6 +51,7 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version || 'dev'),
+      __FEEDBACK_ENDPOINT__: JSON.stringify(feedbackEndpoint),
     },
     build: {
       rollupOptions: {

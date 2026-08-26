@@ -1541,3 +1541,32 @@ Closing this again means clearing, at minimum:
   perimeter without a fuller tally. Two of the three attempts got this wrong.
 - The no-op regime: mean width is never under 0.5 (a lone pixel is 2*1/4), so any threshold
   at or under 0.5 must skip the O(w*h) perimeter scan entirely.
+
+## An open feedback panel covers a warning pill's dismiss button
+
+The trigger and the warnings column were made to share the viewport's bottom
+edge (`#right.has-feedback #warnings` lifts the column to `bottom: 44px`). The
+**open popover** was not, and it re-creates the same overlap the lift fixed.
+
+Measured at the app's 900px minimum width, so `#right` is 560px:
+
+| Element             | Horizontal span                       |
+| ------------------- | ------------------------------------- |
+| `#feedback-popover` | 248–548px (300px wide, `right: 12px`) |
+| `.warn-pill`        | 12–532px (`max-width: 520px`)         |
+| `.warn-dismiss`     | ~520px, inside the popover's span     |
+
+Both sit at `bottom: 44px`; the popover is `z-index: 4` against `#warnings`'
+`auto`, so it paints over the pill's right edge. A warning arriving while the
+panel is open cannot be dismissed until the panel is closed.
+
+**Why it was deferred, not patched.** Unlike the trigger, the popover is
+transient and the user opened it: closing it restores the ×, and it is one
+Escape away. The obvious patch (shrinking `#warnings` to `right: 324px` while
+the panel is open) leaves pills 224px wide at 900px, which is worse for reading
+the warning than the overlap is for dismissing it.
+
+**Closing it means deciding where a bottom-right panel and a bottom-left
+warnings column both live**, probably by moving warnings out of the viewport's
+bottom edge entirely. That is a layout question for the whole viewport, not a
+rule on this widget.

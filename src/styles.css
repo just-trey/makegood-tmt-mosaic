@@ -462,6 +462,7 @@ details.sec > summary::after {
 }
 input[type='number'],
 input[type='text'],
+input[type='email'],
 select {
   width: 100%;
   background: var(--panel-2);
@@ -475,7 +476,26 @@ select {
 }
 input[type='number']:focus,
 input[type='text']:focus,
+input[type='email']:focus,
 select:focus {
+  border-color: var(--accent);
+}
+/* Same surface as the fields above, but sans at body size rather than their mono/--text-meta:
+   that pairing is sized for a hex or a dimension, and this one holds sentences. */
+textarea {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: var(--space-tight) var(--space-row);
+  border-radius: var(--radius-md);
+  font-family: var(--sans);
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+  resize: vertical;
+  outline: none;
+}
+textarea:focus {
   border-color: var(--accent);
 }
 input[type='number'].invalid {
@@ -1048,6 +1068,94 @@ input[type='checkbox'] {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Set by initFeedbackWidget, so a build with no FEEDBACK_ENDPOINT (any fork) renders no trigger
+   and reserves no strip for one. The warnings column clears the trigger's row rather than sharing
+   it: at 900px, the app's narrowest supported width, a full-width pill ran under the trigger,
+   which then covered the pill's own dismiss × and made the warning impossible to dismiss. Keyed
+   to the button's height, not its label's width, which changes with the text. */
+#right.has-feedback #warnings {
+  bottom: 44px;
+}
+/* z-index 4 sits under #loading-overlay's 5 on purpose: a rebuild curtains the widget along with
+   the rest of the viewport rather than leaving a live control over a busy app. */
+.feedback-trigger {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 4;
+  background: var(--panel);
+  color: var(--text-dim);
+}
+.feedback-trigger:hover {
+  color: var(--text);
+}
+#feedback-popover {
+  position: absolute;
+  right: 12px;
+  bottom: 44px;
+  z-index: 4;
+  width: min(300px, calc(100% - 24px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--space-section);
+  box-shadow: 0 24px 48px rgba(4, 6, 14, 0.45);
+}
+.feedback-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-row);
+  margin-bottom: var(--space-section);
+}
+.feedback-head h2 {
+  font-family: var(--heading);
+  font-size: var(--text-emphasis);
+  margin: 0;
+  flex: 1;
+}
+#feedback-form label {
+  display: block;
+  color: var(--text-dim);
+  font-size: var(--text-label);
+  margin-bottom: var(--space-tight);
+}
+#feedback-form textarea,
+#feedback-form input[type='email'] {
+  margin-bottom: var(--space-row);
+}
+/* Never display:none and never [hidden], at any point: a live region toggled in and out of the
+   accessibility tree is the shape screen readers fail to announce, which is the whole reason this
+   element exists. Empty, it carries no box and takes no space; `.show` puts the box back. */
+#feedback-status {
+  margin: 0;
+}
+#feedback-status.show {
+  margin: var(--space-row) 0 0;
+  padding: var(--space-tight) var(--space-row);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--accent);
+  background: var(--accent-wash);
+  color: var(--text);
+  line-height: var(--leading-normal);
+}
+#feedback-status.error {
+  border-color: var(--danger-border);
+  background: var(--danger-wash);
+  color: var(--danger-text);
+}
+.feedback-issue {
+  display: inline-block;
+  margin-top: var(--space-section);
+  font-family: var(--mono);
+  font-size: var(--text-meta);
+  color: var(--text-dim);
+  text-decoration: none;
+}
+.feedback-issue:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 ::-webkit-scrollbar {

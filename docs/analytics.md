@@ -175,6 +175,16 @@ either direction.
 - **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `applyHubcapSilhouette`, called from the `#p-asm-silhouette` change handler in `initPartPanel`.
 - **Props:** `{ kind: string }` (`state.assembly.kindId`, always `hubcap` today but kept consistent with `build_param_changed`), `on: boolean`.
 
+### `feedback_sent`
+
+Fired when the in-app feedback widget finishes a submit, either way. The
+message and the email are never in the props: they go to Formspree and nowhere
+else.
+
+- **Where:** [src/ui/feedbackWidget.ts](../src/ui/feedbackWidget.ts) — the `#feedback-form` submit handler.
+- **Props:** `{ status: 'ok' | 'error' }`. `'error'` covers both a non-2xx from Formspree and a failed connection; which one is not recorded.
+- **Dormant:** cannot fire unless `FEEDBACK_ENDPOINT` was set at build time — the widget renders nothing without it, so a fork never reaches this.
+
 ## Future / not yet wired
 
 Candidates for a later pass, roughly in order of likely value. Follow the same
@@ -187,6 +197,7 @@ pattern: wire at the DOM handler, add the entry here, keep props PII-free.
 - `depth_override` / `depth_reset` — `src/ui/colorList.ts`, a row's depth field committing a value and its "↺" clearing one. Prop: whether the value was deeper or shallower than the global. Worth knowing together: how often per-row depths get set at all is what says whether the affordance marking them earns its space.
 - `fit_reset` — `src/ui/fitPanel.ts`, `#btn-reset-fit`.
 - `fit_flip` — `src/ui/fitPanel.ts`, flip checkboxes.
+- `feedback_opened` — `src/ui/feedbackWidget.ts`, the `#feedback-trigger` click. Props: none. Worth wiring against `feedback_sent` to see how many people open the form and then abandon it, which is the number that says whether the form is too long.
 
 ## Adding a new event
 
