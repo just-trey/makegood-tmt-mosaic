@@ -1580,7 +1580,8 @@ formatting glyphs are all deliberately out of scope.
 It checks five things, all one rule: a warning is short sentences that each do
 one job. Em dash, sentence over 20 words, more than one joining mark in a
 sentence, a comma splice, and a lowercase word after a full stop. Thresholds
-were measured against the 127 prose strings the app ships, not picked. Joins
+were measured, not picked: the gate admits 220 strings from `src/`, of which
+142 get the full shape checks and 78 are markup. Joins
 are counted per sentence: per string flagged 11, of which 10 were correct
 multi-sentence copy, because splitting a run-on raises the per-string count
 while improving the writing.
@@ -1608,24 +1609,31 @@ the type system can then police.
 ## The help dialog is exempt from the copy shape checks
 
 `npm run check:copy` runs all five checks on warning strings and on template
-`<text>`. On `index.html` it runs the em dash check only.
+`<text>`. On `index.html` it runs the em dash check only, for every block, not
+just the help dialog.
 
-Measured 2026-08-26 by pointing `problems()` at the help dialog: **26 problems
-across 4 blocks.**
+Measured 2026-08-26 by flipping the flag: **26 problems across 10 blocks**, at
+these lines in `index.html`.
 
-| Block              | Worst finding                  |
-| ------------------ | ------------------------------ |
-| Depth explainer    | 2 joins in one sentence        |
-| Slot budget        | 35-word sentence, comma splice |
-| Cancel semantics   | 25-word sentence               |
-| Export summary box | 33-word sentence, 2 joins      |
+| Line | Block                | Worst finding                  |
+| ---- | -------------------- | ------------------------------ |
+| 109  | Sticker against Fill | joins                          |
+| 119  | Design face reuse    | long sentence                  |
+| 169  | Detail slider        | joins                          |
+| 192  | Cut to artwork shape | long sentence                  |
+| 204  | Direct manipulation  | long sentence                  |
+| 223  | Verified plate sizes | long sentence                  |
+| 235  | Depth explainer      | 2 joins in one sentence        |
+| 277  | Slot budget          | 35-word sentence, comma splice |
+| 300  | Cancel semantics     | 25-word sentence               |
+| 307  | Export summary box   | 33-word sentence, 2 joins      |
 
 Deferred rather than swept, on purpose. The four warning strings this branch
 damaged were all damaged by exactly this: substituting punctuation into copy
 without re-reading the sentence. The help dialog is long-form explanation, not
 an interruption, and it is denser than anything the sweep touched.
 
-**Closing it** is one copy pass over those 4 blocks, then flipping
-`HELP_DIALOG_EM_DASH_ONLY` to `false` in `scripts/check-copy.mjs`, which runs
+**Closing it** is one copy pass over those 10 blocks, then flipping
+`INDEX_HTML_EM_DASH_ONLY` to `false` in `scripts/check-copy.mjs`, which runs
 `problems()` on `index.html` the way it already does on warnings. Check
 convention 36 after: the rewrite must not be longer than what it replaced.

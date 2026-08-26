@@ -159,10 +159,15 @@ for (const file of sources('src/**/*.ts', 'src/*.ts')) {
   visit(src);
 }
 
-// The help dialog is long-form explanation rather than a warning, and the full checks flag 26
-// problems in it. Rewriting it is a copy pass of its own (docs/tech-debt.md), so for now only the
-// em dash check applies. Flip this to false when that pass lands; nothing else needs changing.
-const HELP_DIALOG_EM_DASH_ONLY = true;
+// index.html is long-form explanation rather than warnings, and the full checks flag 26 problems
+// across 10 of its blocks. Rewriting it is a copy pass of its own (docs/tech-debt.md), so for now
+// only the em dash check applies. This covers ALL of index.html, not just the help dialog: the
+// title, the narrow-viewport notice and the empty states ride on it too. Flip to false when that
+// pass lands; nothing else needs changing.
+//
+// Attribute copy (title=, aria-label=, placeholder=) is not read here at all, in index.html or in
+// markup strings. That is the gate's other hole, and it is in the Known gaps list.
+const INDEX_HTML_EM_DASH_ONLY = true;
 
 for (const file of sources('index.html')) {
   const html = read(file);
@@ -172,7 +177,7 @@ for (const file of sources('index.html')) {
     const text = m[1].replace(/\s+/g, ' ').trim();
     if (!/\s/.test(text) || !/[a-z]{3}/.test(text)) continue;
     const line = stripped.slice(0, m.index).split('\n').length - 1;
-    const why = HELP_DIALOG_EM_DASH_ONLY
+    const why = INDEX_HTML_EM_DASH_ONLY
       ? text.includes(EM_DASH) && !isGlyph(text)
         ? ['em dash in visible page copy']
         : []
