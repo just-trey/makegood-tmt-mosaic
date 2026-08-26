@@ -76,9 +76,9 @@ the _previous_ build while the next is scheduled and running. Wait for the
 
 The browser plumbing (`startPreview`, `launchBrowser`, `newPage`) is factored
 out in [harness.mjs](../../../scripts/lib/harness.mjs); reuse it rather than
-re-deriving a Playwright launch. It also filters the `cloudflareinsights.com`
-CORS noise that appears on localhost, so console-error assertions built on it
-need no special case.
+re-deriving a Playwright launch. It also filters the Google Fonts noise that
+appears on localhost, so console-error assertions built on it need no special
+case.
 
 ## Stale builds, the failure this repo keeps hitting
 
