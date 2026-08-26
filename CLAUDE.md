@@ -330,3 +330,54 @@ planning time instead of re-litigated every session.
 Split a PR across both when it has a geometry half and a UI half.
 
 Verify by running the app, not only by running the tests.
+
+## Code rules (check before finishing any change)
+
+These are judgment rules a linter cannot catch. Verify each one
+explicitly before you consider a change done. If a rule cannot apply
+to this change, say so in your summary instead of skipping it
+silently.
+
+### 1. Never silently drop or skip user content
+
+If a part, shape, color, or input is excluded from output for any
+reason (empty result after a CSG op, mesh mismatch, failed
+operation), surface a named warning that identifies what was dropped
+and why. Silent exclusion is always a bug, even when the exclusion
+itself is correct.
+
+Before finishing, ask: does any code path in this change discard
+something without telling the user? If yes, add the warning.
+
+### 2. Route new cases through the existing shared pipeline
+
+When adding a case (a new SVG element type, a new export path, a new
+shape handler), it must go through the same traversal, transform,
+and exclusion logic every existing case uses. Do not write a
+parallel one-off query or shortcut: it will silently miss
+transforms, defs/clipPath exclusions, or other rules the shared path
+already handles.
+
+Before finishing, ask: did I add any lookup or handler that bypasses
+the shared pipeline? If yes, fold it in.
+
+### 3. Failures degrade per-unit, not globally
+
+If one color, part, or shape can fail destructively (crash, corrupt
+output), catch it at that unit's boundary so the rest of the
+operation completes and the failure is reported for that unit only.
+A single bad input must never abort or corrupt the whole export.
+
+### 4. No perf claims without a measurement
+
+Do not propose an optimization or file a perf finding based on code
+shape alone. Benchmark against real sample files first. Unmeasured
+suspicions go in tech-debt.md marked "unmeasured", not in findings
+or fixes.
+
+---
+
+Mechanical rules (numeric input guards, em dash bans, formatting)
+are enforced by lint/CI, not this file. Workflow rules (test proven
+to fail pre-fix) live in the review and ship skills. Do not
+duplicate them here.
