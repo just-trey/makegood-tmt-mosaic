@@ -31,13 +31,24 @@ function setFilaments(list: Filament[]): void {
   filamentLabs = list.map((f) => hexToLab(f.hex));
 }
 
+function isFilamentList(v: unknown): v is Filament[] {
+  return (
+    Array.isArray(v) &&
+    (v as unknown[]).every((f) => {
+      if (typeof f !== 'object' || f === null) return false;
+      const c = f as Partial<Filament>;
+      return Boolean(c.id && c.name && c.hex);
+    })
+  );
+}
+
 /** Load the owned-filament palette from public/filaments.json (editable without code changes). */
 export async function loadFilaments(): Promise<Filament[]> {
   try {
     const res = await fetch('filaments.json');
     if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length && data.every((f) => f && f.id && f.name && f.hex)) {
+      const data: unknown = await res.json();
+      if (isFilamentList(data) && data.length) {
         setFilaments(data);
       }
     }

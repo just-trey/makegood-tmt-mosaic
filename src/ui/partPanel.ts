@@ -219,8 +219,8 @@ function bindShapeInput(sel: string, apply: (v: number) => void): void {
     if (!isValid(v)) {
       el.classList.add('invalid');
       el.title = Number.isFinite(min)
-        ? `Needs a number of at least ${min} — the last valid value stays in use until this is fixed.`
-        : 'Needs a number — the last valid value stays in use until this is fixed.';
+        ? `Needs a number of at least ${min}. The last valid value stays in use until this is fixed.`
+        : 'Needs a number. The last valid value stays in use until this is fixed.';
       return; // don't apply a nonsensical dimension — leave the last good value in state
     }
     el.classList.remove('invalid');

@@ -436,7 +436,7 @@ async function rebuildAssemblyScene(): Promise<void> {
         ? `Placed on "${boundNames[0]}"`
         : `${zoneCovered} of ${zoneTotal} zones have artwork`;
     noticeBuild(
-      `${where} — ${blank} of ${zoneTotal} zone${zoneTotal === 1 ? '' : 's'} still blank. Add more from the zone dropdown, or pick "All zones" to cover every zone.`,
+      `${where}: ${blank} of ${zoneTotal} zone${zoneTotal === 1 ? '' : 's'} still blank. Add more from the zone dropdown, or pick "All zones" to cover every zone.`,
     );
   }
   // A cancel is caught here, not left to the scheduler, and lands on the `!built` path below.

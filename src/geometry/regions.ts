@@ -472,7 +472,7 @@ export function safeIntersectChecked(
   const r = boolOpWithRetry((x, y) => turf.intersect(x, y) as PolyFeature | null, a, b);
   if (r.ok) return { feat: r.val ?? null, clipped: true };
   warnBool(
-    `Clipping color region to the design face failed${label ? ` for ${label}` : ''} — region left unclipped, may extend past the face edge.`,
+    `Clipping color region to the design face failed${label ? ` for ${label}` : ''}. Region left unclipped, may extend past the face edge.`,
   );
   return { feat: a, clipped: false };
 }

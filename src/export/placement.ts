@@ -145,7 +145,7 @@ export function placementNotice(
   resolution: PlacementResolution,
 ): { message: string; level: 'warn' | 'info' } | null {
   if (resolution.verified) return null;
-  const tail = 'so it was placed automatically — check it in your slicer before printing.';
+  const tail = 'so it was placed automatically. Check it in your slicer before printing.';
   switch (resolution.reason) {
     case 'unknown-part':
       return {

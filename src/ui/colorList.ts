@@ -97,7 +97,7 @@ function renderBaseRow(list: HTMLElement, c: ColorListEntry): void {
   row.innerHTML = `
     <div class="top">
       <div class="swatch" style="background:${c.color}" title="Prints as this color (the base's dominant member)"></div>
-      <div class="hex">Base — prints as the body</div>
+      <div class="hex">Base: prints as the body</div>
       <div class="area">${c.areaPct.toFixed(1)}%</div>
     </div>
     ${membersHtml}`;
@@ -349,7 +349,7 @@ export function renderColorList(
       rightControlHtml = `<button class="btn small" data-add-base="${c.members.join(',')}" title="Print this group in the body instead of cutting it">→ base</button>`;
     } else {
       const pinned = state.keptApart.includes(c.color);
-      swatchHtml = `<div class="swatch${pinned ? ' pinned' : ''}" style="background:${c.color}" ${pinned ? 'title="Pulled out of auto-merge — click to re-allow merging"' : ''}></div>`;
+      swatchHtml = `<div class="swatch${pinned ? ' pinned' : ''}" style="background:${c.color}" ${pinned ? 'title="Pulled out of auto-merge, click to re-allow merging"' : ''}></div>`;
       labelHtml = c.color;
       rightControlHtml = `<button class="btn small" data-add-base="${c.color}" title="Print this color in the body instead of cutting it">→ base</button>`;
     }
@@ -360,7 +360,7 @@ export function renderColorList(
     const ownKey = c.members.join(',');
     const otherTargets = c.isBackground ? [] : mergeTargets.filter((t) => t.key !== ownKey);
     const mergeSelectHtml = otherTargets.length
-      ? `<select class="merge-with" title="Merge this color with another — same as dragging one onto the other" aria-label="Merge ${c.isMergeGroup ? `Merged (${c.members.length})` : c.color} with another color">
+      ? `<select class="merge-with" title="Merge this color with another, same as dragging one onto the other" aria-label="Merge ${c.isMergeGroup ? `Merged (${c.members.length})` : c.color} with another color">
           <option value="">Merge with…</option>
           ${otherTargets.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
         </select>`
@@ -382,7 +382,7 @@ export function renderColorList(
         <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}" title="${
           isOverridden
             ? `Using its own depth (${shownDepth.toFixed(2)} mm) instead of the ${state.globalDepth.toFixed(2)} mm default`
-            : 'Following the default depth set in Depth — type here to give this row its own'
+            : 'Following the default depth set in Depth. Type here to give this row its own'
         }">
         <span class="hint">mm</span>
         ${
@@ -391,7 +391,7 @@ export function renderColorList(
             : ''
         }
         ${raisedFromZero ? `<span class="hint">raised to ${MIN_CUT_DEPTH_MM.toFixed(2)}</span>` : ''}
-        <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
+        <span class="preset">${c.isBackground ? '–' : '≈ ' + nearestFilamentName(c.color)}</span>
       </div>
       ${mergeSelectHtml ? `<div class="merge-row">${mergeSelectHtml}</div>` : ''}`;
 

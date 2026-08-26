@@ -514,7 +514,7 @@ export function fillRefusalMessage(
   switch (reason) {
     case 'too-many-tiles':
       return (
-        `${design} is too small to fill "${partName}" — it would take more than ` +
+        `${design} is too small to fill "${partName}": it would take more than ` +
         `${MAX_FILL_TILES} tiles. ${placed} Raise Scale to fill it with fewer, larger tiles.`
       );
     // Not a missing viewBox: tileCellOf already falls back to the artwork bbox when the viewBox
@@ -701,7 +701,7 @@ export async function buildAssemblyGeometry(
     wasm = await getManifold();
   } catch (e) {
     warnBuild(
-      'Could not load the Manifold boolean engine — assembly cutting is unavailable. ' +
+      'Could not load the Manifold boolean engine, so assembly cutting is unavailable. ' +
         (e as Error).message,
     );
     return null;
@@ -807,7 +807,7 @@ export async function buildAssemblyGeometry(
       const nrm = mappers[0].faceNormal;
       if (nrm && Math.abs(nrm[1]) < 0.9) {
         warnBuild(
-          `Part "${part.name}": detected face normal (${nrm.map((v) => v.toFixed(2)).join(', ')}) isn't vertical. Assembly cutting assumes a horizontal face — pick a different face or the cut may be wrong.`,
+          `Part "${part.name}": detected face normal (${nrm.map((v) => v.toFixed(2)).join(', ')}) isn't vertical. Assembly cutting assumes a horizontal face. Pick a different face or the cut may be wrong.`,
         );
       }
     }
@@ -1136,7 +1136,7 @@ export async function buildAssemblyGeometry(
     if (!manifoldIsValid(partMan)) {
       prismEntries.forEach(([pci]) => landedColors.add(pci));
       warnBuild(
-        `Part "${part.name}" isn't a watertight/manifold mesh, so it can't be cut cleanly — repair it (close holes, fix flipped faces) and retry. Exporting it uncut for now.`,
+        `Part "${part.name}" isn't a watertight/manifold mesh, so it can't be cut cleanly. Repair it (close holes, fix flipped faces) and retry. Exporting it uncut for now.`,
       );
       partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
       manifoldDelete(partMan);
@@ -1226,7 +1226,7 @@ export async function buildAssemblyGeometry(
         // the color and say the recess ships empty, so the warning is actionable.
         landedColors.add(ci);
         warnBuild(
-          `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}" — its pocket ` +
+          `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}": its pocket ` +
             `is cut into the body but will print as an empty recess.`,
         );
       } finally {

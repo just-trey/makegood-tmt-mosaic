@@ -1083,7 +1083,7 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
     // nothing while still costing an AMS slot
     expect(r.min).toBeCloseTo(9.8, 4);
     expect(WARNINGS.map((w) => w.message)).toContain(
-      'Depth for "#ff0000" was set to 0.00 mm, which is not a depth that can cut — it was raised to 0.20 mm.',
+      'Depth for "#ff0000" was set to 0.00 mm, which is not a depth that can cut, it was raised to 0.20 mm.',
     );
   });
 

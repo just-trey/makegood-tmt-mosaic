@@ -164,8 +164,8 @@ export function initBeforeUnloadGuard(): void {
     if (!lastSaveFailed && !lastSaveDropped) return;
     e.preventDefault();
     e.returnValue = lastSaveFailed
-      ? "TMT Mosaic couldn't save this session — leaving now loses it."
-      : 'TMT Mosaic saved this session, but an image could not be saved — leaving now means ' +
+      ? "TMT Mosaic couldn't save this session. Leaving now loses it."
+      : 'TMT Mosaic saved this session, but an image could not be saved. Leaving now means ' +
         're-dropping it.';
   });
   // beforeunload is skipped outright on mobile backgrounding and bfcache eviction, so this is the
@@ -675,7 +675,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     } catch {
       lostSources.add(s.id);
       warn(
-        `"${s.name}" could not be restored from the saved session — load the image again to put ` +
+        `"${s.name}" could not be restored from the saved session. Load the image again to put ` +
           `it back. Everything else in the session was restored.`,
       );
     }

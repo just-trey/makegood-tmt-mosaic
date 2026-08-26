@@ -9,6 +9,27 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   prettierConfig,
   {
+    // Type-aware linting, scoped to .ts: the .mjs and .config.js blocks below are outside
+    // tsconfig's `include`, and projectService errors on files it can't find a project for.
+    files: ['**/*.ts'],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+  },
+  {
+    // src only. tests/ imports untyped .mjs tooling behind @ts-expect-error (zonebake, harness),
+    // so everything downstream of those reads as `any` and buries the real findings: 417 there
+    // against 12 here. Typing that tooling is what would widen this.
+    files: ['src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-argument': 'error',
+      '@typescript-eslint/no-unsafe-assignment': 'error',
+      '@typescript-eslint/no-unsafe-call': 'error',
+      '@typescript-eslint/no-unsafe-member-access': 'error',
+      '@typescript-eslint/no-unsafe-return': 'error',
+    },
+  },
+  {
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },

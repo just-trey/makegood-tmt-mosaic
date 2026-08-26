@@ -95,7 +95,7 @@ export async function decodeImageFile(file: Blob): Promise<RasterImage> {
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   } catch {
     throw new Error(
-      'This image could not be decoded — the browser cannot read this format, or the file is ' +
+      'This image could not be decoded. The browser cannot read this format, or the file is ' +
         'damaged. PNG, JPG and WebP always work; TIFF never does. Re-export it as a PNG.',
     );
   }

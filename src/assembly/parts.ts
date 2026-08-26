@@ -269,7 +269,7 @@ export async function asmLoadPartBuffer(
     // artwork against UVs for geometry that is gone. Leaving it lets the fingerprint check see a
     // mismatch, drop the zones, and say so.
   } else {
-    throw new Error('Unsupported file type — use .stl or .3mf');
+    throw new Error('Unsupported file type: use .stl or .3mf');
   }
   await asmAdoptMesh(part, positions, {}, indexed);
 }
@@ -456,7 +456,7 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
     sidecar = await loadZonesSidecar(zonesFile);
   } catch (e) {
     warn(
-      `Couldn't load the design zones for "${part.name}" (${zonesFile}: ${(e as Error).message}) — it will load without design zones.`,
+      `Couldn't load the design zones for "${part.name}" (${zonesFile}: ${(e as Error).message}). It will load without design zones.`,
     );
     // Zoneless, not sidecar-less: leaving this undefined would fall back to the implicit flat zone
     // and stamp the artwork orthographically onto the part's largest flat patch.
