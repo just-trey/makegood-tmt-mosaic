@@ -77,8 +77,11 @@ const isGlyph = (t) => t.trim() === EM_DASH;
 const READABLE_ATTR = /\b(?:title|aria-label|placeholder)="([^"]+)"/g;
 // A readable unit is shorter than a whole string: an attribute is a clause, not a paragraph.
 const MIN_UNIT_CHARS = 12;
+// Quote-aware, so a `>` inside an attribute does not end the tag early and leak the rest of it
+// (`style="width:56px;"`) into a measured unit, where the CSS colon and semicolon read as joins.
+const TAG = /<(?:"[^"]*"|'[^']*'|[^'">])*>/g;
 function textUnits(markup) {
-  const out = markup.split(/<[^>]*>/);
+  const out = markup.split(TAG);
   for (const m of markup.matchAll(READABLE_ATTR)) out.push(m[1]);
   return out
     .map((t) => t.replace(/\s+/g, ' ').trim())
@@ -151,9 +154,20 @@ const add = (file, line, why, text) => hits.push({ file, line: line + 1, why, te
 // Two deliberate narrowings, because a wrong substitution invents defects that are not there:
 //   - `const` only. A `let` is reassigned later, so its initializer is not what ships. Several
 //     are `let x = ''` accumulators, and substituting the empty seed measures the wrong string.
-//   - a name bound more than once anywhere in the file is dropped rather than guessed. This is
-//     one flat map with no scope tracking, so two functions with their own `const label` would
-//     otherwise resolve to whichever was seen last.
+//   - a name introduced any OTHER way in the file is dropped rather than guessed. This is one
+//     flat map with no scope tracking, so two functions with their own `const label`, or a
+//     parameter named `tail` shadowing a file-level one, would otherwise resolve to whichever
+//     was seen last and report joins against a string that never exists.
+const DECLARES_A_NAME = [
+  ts.isParameter,
+  ts.isBindingElement,
+  ts.isImportSpecifier,
+  ts.isImportClause,
+  ts.isNamespaceImport,
+  ts.isVariableDeclaration,
+  ts.isFunctionDeclaration,
+  ts.isClassDeclaration,
+];
 function stringConsts(src) {
   const binds = new Map();
   const ambiguous = new Set();
@@ -164,10 +178,12 @@ function stringConsts(src) {
       if (isConst && (ts.isStringLiteral(i) || ts.isNoSubstitutionTemplateLiteral(i))) {
         if (binds.has(n.name.text) && binds.get(n.name.text) !== i.text) ambiguous.add(n.name.text);
         binds.set(n.name.text, i.text);
-      } else {
-        ambiguous.add(n.name.text);
+        ts.forEachChild(n, walk);
+        return;
       }
     }
+    if (DECLARES_A_NAME.some((is) => is(n)) && n.name && ts.isIdentifier(n.name))
+      ambiguous.add(n.name.text);
     ts.forEachChild(n, walk);
   };
   walk(src);
@@ -235,7 +251,6 @@ for (const file of sources('src/**/*.ts', 'src/*.ts')) {
 // only the em dash check applies. This covers ALL of index.html, not just the help dialog: the
 // title, the narrow-viewport notice and the empty states ride on it too. Flip to false when that
 // pass lands; nothing else needs changing.
-//
 const INDEX_HTML_EM_DASH_ONLY = true;
 
 for (const file of sources('index.html')) {

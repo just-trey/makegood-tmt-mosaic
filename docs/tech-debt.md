@@ -1571,12 +1571,10 @@ the current plugin ecosystem covers the pattern, and a custom parser rule was
 ruled out as too much machinery for one check. Nothing catches a `parseFloat`
 whose `NaN` is never guarded.
 
-Counted 2026-08-26: **2 sites** parse an external number with no finite check,
+Counted 2026-08-26: of 8 `parseFloat` sites in `src/`, **2** parse an external number with no finite check,
 [svg/path.ts:138](../src/svg/path.ts) and
-[svg/parse.ts:284](../src/svg/parse.ts). The other three (`ui/dom.ts:14`,
-`ui/colorList.ts:428`, `svg/parse.ts:59`) all guard on the next line, so the
-exposure is narrower than the call count suggests. Count the guards, not the
-calls.
+[svg/parse.ts:284](../src/svg/parse.ts). The other six guard, most on the next line, so the exposure is
+narrower than the call count suggests. Count the guards, not the calls.
 
 **Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
 on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
@@ -1609,14 +1607,15 @@ lowercase word after a full stop. That invented two defects and found none.
 **Known gaps**, all measured 2026-08-26 against the 220 prose strings `src/`
 admits.
 
-| Gap                                    | Size                                                                                                                                                                                                              |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Markup still yields no units at all    | 78 of the 220 are markup. They yield 39 readable units, and **51 yield none**: mostly 3MF XML in [threemf.ts](../src/export/threemf.ts), which has no prose in it. Splitting on tags took this from 4 units to 39 |
-| Prose filter is a heuristic            | A whole string of 25 characters or fewer is unchecked. Admitting 21 to 25 adds 14 strings, none of them defects, and at least two are not copy (`#automerge-labels span`, `<model_instance>`)                     |
-| `index.html` shape checks are off      | Em dash only, see the section below                                                                                                                                                                               |
-| Imperative list is closed              | An instruction using a verb outside it reads as clean                                                                                                                                                             |
-| An interpolation counts as one word    | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts                                                                       |
-| Constants resolve within one file only | A suffix imported from another module is still one token. A name bound twice, or bound with `let`, is skipped rather than guessed: a wrong substitution invents defects that are not there                        |
+| Gap                                                | Size                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Markup still yields no units at all                | 78 of the 220 are markup. They yield 39 readable units, and **51 yield none**: mostly 3MF XML in [threemf.ts](../src/export/threemf.ts), which has no prose in it. Splitting on tags took this from 4 units to 39                                                                                |
+| Prose filter is a heuristic                        | A whole string of 25 characters or fewer is unchecked. Admitting 21 to 25 takes the gate from 220 strings to 239, so 19 more, none of them defects. Measure on flattened strings: counting raw literals gives 14, a different universe                                                           |
+| `index.html` shape checks are off                  | Em dash only, see the section below                                                                                                                                                                                                                                                              |
+| Imperative list is closed                          | An instruction using a verb outside it reads as clean                                                                                                                                                                                                                                            |
+| An interpolation counts as one word                | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts                                                                                                                                                      |
+| A sentence spanning two tags is measured in halves | `<span>It ends here.</span><span>and this starts lowercase</span>` reads clean, because each run is its own unit. This is the same blind spot the `flatten()` fix closes for constants, kept on purpose: joining the runs instead reports a `</div><label>` boundary as a defect, which is worse |
+| Constants resolve within one file only             | A suffix imported from another module is still one token. A name bound twice, or bound with `let`, is skipped rather than guessed: a wrong substitution invents defects that are not there                                                                                                       |
 
 The last one is the shape of a gap that already cost something. `flatten()` used
 to collapse **every** non-literal operand, so a message finished by a shared
