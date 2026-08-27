@@ -40,6 +40,20 @@ try {
   const kind = await page.$eval('#shape-kind', (n) => n.value);
   if (kind !== 'asm:wheel') errors.push(`expected the wheel to auto-load, got kind "${kind}"`);
   console.log(`   ${kind} loaded:`, await page.textContent('#stat-tris'));
+
+  // The only production path that hides "Recess bg too" is setShapeKind's refreshDepthControls
+  // call, which no unit test reaches — tests/depthPanel.test.ts covers the gate, not its caller.
+  // Presence is asserted first because isVisible() also returns false for an element that isn't
+  // there, so a renamed id would otherwise pass this as a hidden row.
+  const recessRow = await page.evaluate(() => {
+    const row = document.querySelector('#p-recess-bg-row');
+    return { present: !!row, height: row ? row.getBoundingClientRect().height : -1 };
+  });
+  if (!recessRow.present) errors.push('#p-recess-bg-row is missing from the DOM, not hidden');
+  else if (recessRow.height > 0)
+    errors.push(`"Recess bg too" is on screen on ${kind}, where it cannot cut anything`);
+  else console.log('   inert "Recess bg too" row stays hidden');
+
   await page.screenshot({ path: path.join(OUT, '1-assembly-loaded.png') });
 
   // The left panel is a fixed 340px, so a control row that doesn't fit is clipped at every window
@@ -123,7 +137,8 @@ try {
   // export the per-color STL zip — drove UI that no longer exists. `tests/flat.test.ts` and
   // `tests/depth.test.ts` still cover that geometry. "Recess bg too" went with them rather than
   // moving to the assembly part: `recessBg` is read only inside flat.ts, so the Background row it
-  // waits for is never produced on a real part (see docs/tech-debt.md).
+  // waits for is never produced on a real part. The checkbox is now hidden there too, which
+  // `tests/depthPanel.test.ts` covers.
 
   console.log('5. loading a PNG as artwork (browser decode + quantize + trace)…');
   // The sample SVG from step 2 comes off first. Designs stack rather than replace, so leaving it

@@ -193,9 +193,11 @@ type, spacing/radius, brand mark) and open directly in a browser.
   written into the dropdown, so do not spec UI for them.
 - **Panel: Artwork** — Dropzone + "Load sample artwork" button (small, full width) + hint text
   about flat-color-only support.
-- **Panel: Artwork fit** — Margin and Scale sliders with live `%` value labels + "Reset to
-  auto-fit" button.
-- **Panel: Depth** — Default depth number input (mm) + "Recess bg too" checkbox.
+- **Panel: Artwork fit** — Margin and Scale sliders with live `%` value labels + Flip H / Flip V
+  checkboxes + "Reset to auto-fit" button. Margin is hidden on an assembly part, which is every
+  part the dropdown offers.
+- **Panel: Depth** — Default depth number input (mm). The "Recess bg too" checkbox is hidden on an
+  assembly part: it only ever cut a background on the flat plate modes.
 - **Panel: Colors detected** — a stacked ColorRow list (drag grip, swatch, hex, area %,
   "Merge with…" select, per-row depth input) + hint text. There is no bulk-select checkbox and
   no "Merge selected" button; merging is per-row. See `ColorRow.prompt.md`.

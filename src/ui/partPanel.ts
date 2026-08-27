@@ -18,6 +18,7 @@ import {
   syncAssemblyKindControls,
 } from './assemblyPanel';
 import { updateOffsetSliderRanges } from './fitPanel';
+import { refreshDepthControls } from './depthPanel';
 import { refreshShapeThumb } from './shapeThumb';
 import { clearStalePlacementNotices } from './exportPanel';
 import { renderWarnings } from './warningsView';
@@ -116,6 +117,7 @@ export function setShapeKind(kind: ShapeKind): void {
       : 'The 3MF is print-ready for Bambu Studio, OrcaSlicer, or Snapmaker Orca, with colors pre-assigned to filament slots. The STL set is the fallback for other slicers.';
   setShapeThumb(kind);
   updateOffsetSliderRanges();
+  refreshDepthControls();
   requestFrame();
   scheduleRebuild();
 }
