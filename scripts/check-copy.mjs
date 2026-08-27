@@ -194,6 +194,12 @@ function shapeProblems(text) {
   return out;
 }
 
+function emDashProblems(text) {
+  return text.includes(EM_DASH) && !isGlyph(text)
+    ? ['em dash. Use commas, colons, parentheses, or separate sentences']
+    : [];
+}
+
 // For text that structurally cannot still contain a tag: only htmlTextUnits()'s output qualifies,
 // because parse5 parsed the real tree and this is what's left over after removing every element.
 // It must not be routed back through the isMarkup check below, because parse5 also decodes
@@ -203,11 +209,7 @@ function shapeProblems(text) {
 // regex on `<text>...</text>` that does not strip a nested tag (a <tspan>, say), so a real one
 // still needs the isMarkup fallback problems() provides.
 function proseProblems(text) {
-  const out = [];
-  if (text.includes(EM_DASH) && !isGlyph(text))
-    out.push('em dash. Use commas, colons, parentheses, or separate sentences');
-  out.push(...shapeProblems(text));
-  return out;
+  return [...emDashProblems(text), ...shapeProblems(text)];
 }
 
 // For text that was pulled out by a regex rather than a real parser, and so might still contain a
@@ -216,9 +218,7 @@ function proseProblems(text) {
 // proseProblems() once markup is ruled out, so the em-dash rule lives in one place.
 function problems(text) {
   if (isMarkup(text)) {
-    const out = [];
-    if (text.includes(EM_DASH) && !isGlyph(text))
-      out.push('em dash. Use commas, colons, parentheses, or separate sentences');
+    const out = [...emDashProblems(text)];
     for (const unit of textUnits(text)) out.push(...shapeProblems(unit));
     return out;
   }
