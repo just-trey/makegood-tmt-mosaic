@@ -85,7 +85,11 @@ const isGlyph = (t) => t.trim() === EM_DASH;
 // What that costs is in docs/tech-debt.md: the element text of 78 markup strings goes unchecked,
 // including a plain warning in src/svg/parse.ts that counts as markup only because it names an
 // SVG element.
-const READABLE_ATTR = /\b(?:title|aria-label|placeholder)="([^"]+)"/g;
+// The attributes a user actually reads, wherever they show up: a markup string's own extraction
+// below, and htmlTextUnits()' parse5 walk further down. One list, so adding a fourth can't land on
+// only one of the two paths.
+const READABLE_ATTR_NAMES = ['title', 'aria-label', 'placeholder'];
+const READABLE_ATTR = new RegExp(`\\b(?:${READABLE_ATTR_NAMES.join('|')})="([^"]+)"`, 'g');
 // A readable unit is shorter than a whole string: an attribute is a clause, not a paragraph.
 const MIN_UNIT_CHARS = 12;
 function textUnits(markup) {
@@ -139,8 +143,6 @@ function inlineTextContent(node) {
   return out;
 }
 
-const READABLE_ATTR_NAMES = ['title', 'aria-label', 'placeholder'];
-
 // One unit per non-inline element's visible text, plus one per readable attribute on any element,
 // each at the line it starts on. Both come off the same parse5 tree: the tree already carries
 // every attribute with its own value and location, so a second pass over the raw string (regex,
@@ -192,12 +194,14 @@ function shapeProblems(text) {
   return out;
 }
 
-// For text that is already known to be prose, never a raw markup string: html/svg extraction has
-// already isolated it from its tags, so it must not be routed back through the isMarkup check
-// below. That check is necessary for the src/**/*.ts path (see problems()), but parse5 decodes
-// entities, so a literal example like "Type &lt;return&gt;" becomes the text "Type <return>" here
-// — isMarkup's regex would match that decoded "<return>" as a tag and silently skip four of the
-// five checks. Text that came from a real parser is never at risk of that misread.
+// For text that structurally cannot still contain a tag: only htmlTextUnits()'s output qualifies,
+// because parse5 parsed the real tree and this is what's left over after removing every element.
+// It must not be routed back through the isMarkup check below, because parse5 also decodes
+// entities — a literal example like "Type &lt;return&gt;" becomes the text "Type <return>" here,
+// and isMarkup's regex would match that decoded "<return>" as a tag and silently skip four of the
+// five checks. Do not reuse this for the public/templates/*.svg path: that extraction is a plain
+// regex on `<text>...</text>` that does not strip a nested tag (a <tspan>, say), so a real one
+// still needs the isMarkup fallback problems() provides.
 function proseProblems(text) {
   const out = [];
   if (text.includes(EM_DASH) && !isGlyph(text))
@@ -206,19 +210,19 @@ function proseProblems(text) {
   return out;
 }
 
-// For a raw src/**/*.ts string literal, which may or may not itself contain markup (a template
-// literal building an innerHTML string, for instance). Never use this on text a parser already
-// extracted from real markup — see proseProblems() above for why.
+// For text that was pulled out by a regex rather than a real parser, and so might still contain a
+// tag: a raw src/**/*.ts string literal (which may be building an innerHTML string), or a
+// public/templates/*.svg <text> capture (which does not strip a nested element). Delegates to
+// proseProblems() once markup is ruled out, so the em-dash rule lives in one place.
 function problems(text) {
-  const out = [];
-  if (text.includes(EM_DASH) && !isGlyph(text))
-    out.push('em dash. Use commas, colons, parentheses, or separate sentences');
   if (isMarkup(text)) {
+    const out = [];
+    if (text.includes(EM_DASH) && !isGlyph(text))
+      out.push('em dash. Use commas, colons, parentheses, or separate sentences');
     for (const unit of textUnits(text)) out.push(...shapeProblems(unit));
     return out;
   }
-  out.push(...shapeProblems(text));
-  return out;
+  return proseProblems(text);
 }
 
 // --cached plus --others catches a file that is new and not yet staged; --exclude-standard keeps
@@ -368,7 +372,7 @@ for (const file of sources('public/templates/*.svg')) {
     const text = m[1].replace(/\s+/g, ' ').trim();
     if (!text) continue;
     const line = stripped.slice(0, m.index).split('\n').length - 1;
-    for (const why of proseProblems(text)) add(file, line, why, text);
+    for (const why of problems(text)) add(file, line, why, text);
   }
 }
 

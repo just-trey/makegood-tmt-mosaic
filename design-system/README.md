@@ -180,7 +180,8 @@ type, spacing/radius, brand mark) and open directly in a browser.
 - **Header**: MakeGood logo (34px tall) + "TMT Mosaic" wordmark (Outfit, `--text-display`
   20px/600) + a version tag linking the changelog + subtitle ("for the MakeGood TMT · SVG or
   image → multicolor recess geometry") + two right-aligned monospace stat readouts (triangle
-  count, color count) + a circular "?" help button. The stats are plain `<span class="stat">` —
+  count, color count) + a labeled "Help" button (`.btn.small`, matching the Feedback trigger's
+  treatment). The stats are plain `<span class="stat">` —
   mono, `--text-meta` (11px), `--text-dim`, no border or fill and no per-stat tone. `preview.html`
   draws them as bordered two-tone badges instead; that is mockup-only, and the `Badge` spec it
   implies was deleted (see Fidelity).

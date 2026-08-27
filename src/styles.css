@@ -124,6 +124,11 @@ header .stat {
 #btn-help {
   position: relative;
 }
+/* .btn:hover only tints the border; the icon button this replaced also tinted its glyph, so this
+   keeps that same two-part hover feedback on the label. */
+#btn-help:hover {
+  color: var(--accent);
+}
 #btn-help .badge {
   position: absolute;
   top: -2px;
