@@ -14,9 +14,9 @@
 //   - visible markup of index.html, with <!-- --> blanked
 //   - visible <text> of public/templates/*.svg, which users download and print
 //
-// A markup string is not skipped: it is split on tags into text runs, and each run, plus each
-// title/aria-label/placeholder, is measured on its own. Measuring the tags stripped out of the
-// whole string instead joins unrelated elements and invents defects.
+// A markup string gets the em dash check, plus the shape checks on each title/aria-label/
+// placeholder. Its element text is not measured: see textUnits() for why that was cut, and
+// docs/tech-debt.md for what it leaves uncovered.
 //
 // Thresholds are measured, not picked. The gate admits 220 prose strings from src/. Against that
 // set:
@@ -65,27 +65,25 @@ const isMarkup = (t) => /<\/?[a-zA-Z][\w-]*[\s>/]/.test(t);
 // A literal that is nothing but a dash is a placeholder for "no value", not writing.
 const isGlyph = (t) => t.trim() === EM_DASH;
 
-// The readable copy inside a markup string: each run of text between tags, plus the attributes a
-// user actually reads. Split into runs rather than stripping the tags out of the whole string:
-// stripping joins unrelated elements, so a "</div><label>pivot X" boundary reads as a lowercase
-// word after a full stop. That invented two defects and found none.
+// The readable copy inside a markup string: the attributes a user actually reads, and nothing
+// else. The element text between the tags is NOT measured, on purpose.
 //
-// Splitting also reaches text before the first tag and after the last, which a `>text<` match
-// cannot see. src/svg/parse.ts builds "Skipped a <" + tag + "> with a gradient fill", a plain
-// warning that counts as markup only because it names an SVG element; its whole second half was
-// unmeasured.
+// Splitting markup into text runs was built and reverted. Three review rounds each found a defect
+// in it: a `>text<` match missed prose before the first tag and after the last, then a quote-aware
+// tag pattern leaked the rest of a tag on `title="depth > 0"`, then the same pattern broke on the
+// apostrophe in "its artwork's shape" and measured a whole <!-- --> comment as copy. Each fix was
+// correct and each uncovered the next. The area was cut rather than patched a fourth time.
+//
+// What that costs is in docs/tech-debt.md: the element text of 78 markup strings goes unchecked,
+// including a plain warning in src/svg/parse.ts that counts as markup only because it names an
+// SVG element.
 const READABLE_ATTR = /\b(?:title|aria-label|placeholder)="([^"]+)"/g;
 // A readable unit is shorter than a whole string: an attribute is a clause, not a paragraph.
 const MIN_UNIT_CHARS = 12;
-// A quote-aware tag pattern was tried and reverted: an apostrophe in prose ("its artwork's shape")
-// opened a quote that never closed, so the tag stopped matching and a whole <!-- --> comment was
-// measured as copy. Blanking comments first and keeping the tag pattern dumb is what survives real
-// strings. The cost is that a `>` inside a quoted attribute ends the tag early, which no site does.
-const TAG = /<[^>]*>/g;
 function textUnits(markup) {
-  const live = blankComments(markup);
-  const out = live.split(TAG);
-  for (const m of live.matchAll(READABLE_ATTR)) out.push(m[1]);
+  const out = [];
+  // Blanked first, so a title= inside a commented out block is not treated as copy.
+  for (const m of blankComments(markup).matchAll(READABLE_ATTR)) out.push(m[1]);
   return out
     .map((t) => t.replace(/\s+/g, ' ').trim())
     .filter((t) => t.length >= MIN_UNIT_CHARS && /\s/.test(t) && /[a-z]{3}/.test(t));
