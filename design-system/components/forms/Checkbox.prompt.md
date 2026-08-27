@@ -1,5 +1,5 @@
-A checkbox with an inline label, blue accent — used for toggles like "recess background too" and multi-select in the color list.
+A checkbox with an inline label, blue accent — used for toggles like the artwork mirrors and multi-select in the color list.
 
 ```jsx
-<Checkbox checked={recessBg} onChange={setRecessBg} label="Recess bg too" />
+<Checkbox checked={flipX} onChange={setFlipX} label="Flip H" />
 ```

@@ -216,10 +216,6 @@
               individual ones in Colors detected for fine detail.
             </p>
             <p>
-              Check "Recess bg too" to cut the background instead of leaving it flush. It then
-              prints as its own color and takes a filament slot.
-            </p>
-            <p>
               A color with its own depth is highlighted in the list. "Reset all" clears every
               override, and a row's own "↺" clears just that one.
             </p>
@@ -698,7 +694,7 @@
             <span class="hint">mm</span>
           </div>
           <div class="depth-overrides" id="depth-overrides" hidden></div>
-          <div class="row">
+          <div class="row" id="p-recess-bg-row">
             <label for="p-recess-bg">Recess bg too</label>
             <div class="field" style="flex: 0"><input type="checkbox" id="p-recess-bg" /></div>
             <span class="hint" id="bg-depth-hint" style="display: none"

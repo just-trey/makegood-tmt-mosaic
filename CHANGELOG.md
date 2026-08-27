@@ -343,6 +343,13 @@ failed` is `Couldn't merge the shapes`. Seven warnings in all, none of them
 
 ### Fixed
 
+- **The "Recess bg too" checkbox no longer sits in the Depth panel doing
+  nothing.** It only ever cut a background on the flat plate modes, which this
+  release stopped offering, so ticking it on a real part changed nothing and
+  added no color row while still triggering a full rebuild. It is now hidden
+  whenever a part is selected, the way the Margin slider already was, and the
+  help dialog no longer describes it.
+
 - **An edited template no longer loads a quarter too small.** Download the
   footrest template, edit it in Affinity, load it back, and the artwork landed at
   199.8mm on a 266mm face: exactly 75%, with nothing on screen saying so. The

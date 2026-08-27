@@ -659,7 +659,8 @@
         const [margin, setMargin] = React.useState(5);
         const [scale, setScale] = React.useState(100);
         const [depth, setDepth] = React.useState(1.0);
-        const [recessBg, setRecessBg] = React.useState(false);
+        const [flipX, setFlipX] = React.useState(false);
+        const [flipY, setFlipY] = React.useState(false);
         const [topPart, setTopPart] = React.useState('wheel-top');
         const [capPart, setCapPart] = React.useState('wheel-cap');
         const [colors, setColors] = React.useState([
@@ -917,6 +918,17 @@
                   }),
                 ),
               ),
+              e(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 } },
+                e(
+                  'label',
+                  { style: { color: 'var(--text-dim)', fontSize: 12, minWidth: 82 } },
+                  'Mirror',
+                ),
+                e(Checkbox, { checked: flipX, onChange: setFlipX, label: 'Flip H' }),
+                e(Checkbox, { checked: flipY, onChange: setFlipY, label: 'Flip V' }),
+              ),
               e(Button, { size: 'small', fullWidth: true }, 'Reset to auto-fit'),
             ),
             e(
@@ -943,7 +955,6 @@
                 ),
                 e('span', { className: 'hint' }, 'mm'),
               ),
-              e(Checkbox, { checked: recessBg, onChange: setRecessBg, label: 'Recess bg too' }),
             ),
             e(
               Panel,

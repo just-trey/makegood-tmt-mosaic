@@ -255,7 +255,10 @@ async function main() {
       // hover) run against it. #p-depth is never shape-conditional.
       textInput: await elementSnapshot(page, '#p-depth'),
       select: await elementSnapshot(page, '#shape-kind'),
-      checkbox: await elementSnapshot(page, '#p-recess-bg'),
+      // #p-flip-x for the same reason: #p-recess-bg's row is `display:none` on an assembly part,
+      // so a spec measured off it would describe a checkbox no user can reach. Mirror is never
+      // shape-conditional.
+      checkbox: await elementSnapshot(page, '#p-flip-x'),
       slider: await elementSnapshot(page, '#p-scale'),
       panel: await elementSnapshot(page, '#left > details.sec:first-of-type'),
       dropzone: await elementSnapshot(page, '#dropzone'),

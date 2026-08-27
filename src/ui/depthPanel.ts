@@ -8,6 +8,10 @@ export function refreshDepthControls(): void {
   input('#p-depth').value = String(state.globalDepth);
   input('#p-recess-bg').checked = state.recessBg;
   $('#bg-depth-hint').style.display = state.recessBg ? 'inline' : 'none';
+  // state.recessBg is read only by buildGeometry (geometry/flat.ts), and assembly mode never calls
+  // it — so the checkbox cannot change what an assembly part prints. Hidden rather than cleared:
+  // flat.ts still honors the value, and clearing it would discard the setting silently.
+  $('#p-recess-bg-row').style.display = state.shapeKind === 'assembly' ? 'none' : '';
 }
 
 /**
