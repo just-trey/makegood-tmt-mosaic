@@ -1601,28 +1601,37 @@ counted per sentence: per string flagged 11, of which 10 were correct
 multi-sentence copy, because splitting a run-on raises the per-string count
 while improving the writing.
 
-A markup string gets the em dash check, plus the shape checks on each `title`,
-`aria-label` and `placeholder`. Its element text is **not** measured.
+A markup string in `src/**/*.ts` gets the em dash check, plus the shape checks
+on each `title`, `aria-label` and `placeholder`. Its element text is **not**
+measured.
 
-Splitting markup into text runs was built and reverted. Three review rounds each
-found a defect in it: a `>text<` match missed prose before the first tag and
-after the last, then a quote-aware tag pattern leaked the rest of a tag on
-`title="depth > 0"`, then that same pattern broke on the apostrophe in "its
-artwork's shape" and measured a whole `<!-- -->` comment as user copy. Each fix
-was correct and each uncovered the next, so the area was cut rather than patched
-a fourth time. Reopening it means a real HTML parser, not another regex.
+Splitting markup into text runs was built and reverted there. Three review
+rounds each found a defect in it: a `>text<` match missed prose before the
+first tag and after the last, then a quote-aware tag pattern leaked the rest of
+a tag on `title="depth > 0"`, then that same pattern broke on the apostrophe in
+"its artwork's shape" and measured a whole `<!-- -->` comment as user copy.
+Each fix was correct and each uncovered the next, so the area was cut rather
+than patched a fourth time.
+
+`index.html` no longer shares that hole. Its element text is parsed with
+`parse5` instead of pattern-matched, so nested tags don't leak or fragment a
+sentence, and every visible block runs the full checks. That is what closed
+the help dialog's former exemption (the copy was rewritten and now passes all
+five checks, not just the em dash one). Reopening the `src/**/*.ts` hole would
+take the same parser treatment, but is a separate project: those strings are
+template literals inside TypeScript, not a standalone HTML document, so
+parsing one means locating and extracting the markup fragment first.
 
 **Known gaps**, all measured 2026-08-26 against the 220 prose strings `src/`
 admits.
 
-| Gap                                    | Size                                                                                                                                                                                                                                                                                                             |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Markup element text is unchecked       | 78 of the 220 are markup. Only their attributes are read, giving 23 units, and **62 yield nothing at all**. The case that matters is [svg/parse.ts](../src/svg/parse.ts), a plain warning that counts as markup only because it names an SVG element. Reopening this means a real HTML parser, not another regex |
-| Prose filter is a heuristic            | A whole string of 25 characters or fewer is unchecked. Admitting 21 to 25 takes the gate from 220 strings to 239, so 19 more, none of them defects. Measure on flattened strings: counting raw literals gives 14, a different universe                                                                           |
-| `index.html` shape checks are off      | Em dash only, see the section below                                                                                                                                                                                                                                                                              |
-| Imperative list is closed              | An instruction using a verb outside it reads as clean                                                                                                                                                                                                                                                            |
-| An interpolation counts as one word    | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts                                                                                                                                                                      |
-| Constants resolve within one file only | A suffix imported from another module is still one token. A name bound twice, or bound with `let`, is skipped rather than guessed: a wrong substitution invents defects that are not there                                                                                                                       |
+| Gap                                                   | Size                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Markup element text is unchecked (`src/**/*.ts` only) | 78 of the 220 are markup. Only their attributes are read, giving 23 units, and **62 yield nothing at all**. The case that matters is [svg/parse.ts](../src/svg/parse.ts), a plain warning that counts as markup only because it names an SVG element. Reopening this means locating and parsing the markup fragment inside each template literal |
+| Prose filter is a heuristic                           | A whole string of 25 characters or fewer is unchecked. Admitting 21 to 25 takes the gate from 220 strings to 239, so 19 more, none of them defects. Measure on flattened strings: counting raw literals gives 14, a different universe                                                                                                           |
+| Imperative list is closed                             | An instruction using a verb outside it reads as clean                                                                                                                                                                                                                                                                                            |
+| An interpolation counts as one word                   | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts                                                                                                                                                                                                      |
+| Constants resolve within one file only                | A suffix imported from another module is still one token. A name bound twice, or bound with `let`, is skipped rather than guessed: a wrong substitution invents defects that are not there                                                                                                                                                       |
 
 The last one is the shape of a gap that already cost something. `flatten()` used
 to collapse **every** non-literal operand, so a message finished by a shared
@@ -1630,35 +1639,3 @@ suffix was only ever measured in halves. Two defects shipped through it, a
 two-join sentence in [placement.ts](../src/export/placement.ts) and a dangling
 clause in [exportPanel.ts](../src/ui/exportPanel.ts), and seven review rounds
 did not catch either. A reviewer reading the composed string by hand did.
-
-## The help dialog is exempt from the copy shape checks
-
-`npm run check:copy` runs all five checks on warning strings and on template
-`<text>`. On `index.html` it runs the em dash check only, for every block, not
-just the help dialog.
-
-Measured 2026-08-26 by flipping the flag: **26 problems across 10 blocks**, at
-these lines in `index.html`.
-
-| Line | Block                | Worst finding                  |
-| ---- | -------------------- | ------------------------------ |
-| 109  | Sticker against Fill | joins                          |
-| 119  | Design face reuse    | long sentence                  |
-| 169  | Detail slider        | joins                          |
-| 192  | Cut to artwork shape | long sentence                  |
-| 204  | Direct manipulation  | long sentence                  |
-| 223  | Verified plate sizes | long sentence                  |
-| 235  | Depth explainer      | 2 joins in one sentence        |
-| 277  | Slot budget          | 35-word sentence, comma splice |
-| 300  | Cancel semantics     | 25-word sentence               |
-| 307  | Export summary box   | 33-word sentence, 2 joins      |
-
-Deferred rather than swept, on purpose. The four warning strings this branch
-damaged were all damaged by exactly this: substituting punctuation into copy
-without re-reading the sentence. The help dialog is long-form explanation, not
-an interruption, and it is denser than anything the sweep touched.
-
-**Closing it** is one copy pass over those 10 blocks, then flipping
-`INDEX_HTML_EM_DASH_ONLY` to `false` in `scripts/check-copy.mjs`, which runs
-`problems()` on `index.html` the way it already does on warnings. Check
-convention 36 after: the rewrite must not be longer than what it replaced.

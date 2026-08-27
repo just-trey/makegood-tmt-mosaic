@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Help, easier to find and to read.** The header's help control is now a
+  labeled "Help" button instead of an unlabeled "?" circle. The dialog's copy
+  is rewritten throughout for length and clarity, with lists and a small table
+  replacing dense paragraphs where the content is a set of choices or facts.
+  Opening the dialog and clicking a table-of-contents topic are now tracked
+  (`help_opened`, `help_topic_selected`).
 - **Send feedback without leaving the app.** A Feedback button in the bottom
   right of the 3D view opens a short form: what happened, and an email if you
   want a reply. It posts straight to us, with the app version attached so a

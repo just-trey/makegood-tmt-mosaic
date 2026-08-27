@@ -185,6 +185,20 @@ else.
 - **Props:** `{ status: 'ok' | 'error' }`. `'error'` covers both a non-2xx from Formspree and a failed connection; which one is not recorded.
 - **Dormant:** cannot fire unless `FEEDBACK_ENDPOINT` was set at build time — the widget renders nothing without it, so a fork never reaches this.
 
+### `help_opened`
+
+Fired when the user opens the help dialog.
+
+- **Where:** [src/ui/helpPanel.ts](../src/ui/helpPanel.ts) — `#btn-help` click handler.
+- **Props:** none.
+
+### `help_topic_selected`
+
+Fired when the user clicks a table-of-contents pill inside the help dialog.
+
+- **Where:** [src/ui/helpPanel.ts](../src/ui/helpPanel.ts) — one delegated click handler on `.help-toc`.
+- **Props:** `{ topic: string }` — the section id with its `h-` prefix stripped (`workflow`, `part`, `artwork`, `fit`, `depth`, `colors`, `export`, `about`).
+
 ## Future / not yet wired
 
 Candidates for a later pass, roughly in order of likely value. Follow the same

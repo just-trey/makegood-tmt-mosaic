@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { initHelpPanel } from '../src/ui/helpPanel';
+import { track } from '../src/analytics/track';
+
+vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 
 /** The parts of index.html's help block this module touches, and nothing else. */
 function mountHelpDom(): void {
@@ -8,7 +11,7 @@ function mountHelpDom(): void {
     <button id="btn-help"><span id="btn-help-badge"></span></button>
     <dialog id="help-dialog">
       <button id="btn-help-close"></button>
-      <nav><a href="#h-part">Part</a><a href="#h-export">Export</a></nav>
+      <nav class="help-toc"><a href="#h-part">Part</a><a href="#h-export">Export</a></nav>
       <section id="h-part"></section>
       <section id="h-export"></section>
     </dialog>`;
@@ -28,6 +31,7 @@ const back = (hash: string) => {
 };
 
 beforeEach(() => {
+  vi.clearAllMocks();
   mountHelpDom();
   localStorage.clear();
   location.hash = '';
@@ -83,5 +87,24 @@ describe('the help dialog itself', () => {
     dialog().dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(dialog().open).toBe(false);
+  });
+});
+
+describe('help analytics', () => {
+  it('fires help_opened from the header button', () => {
+    expect(track).toHaveBeenCalledWith('help_opened');
+  });
+
+  it('fires help_topic_selected with the section id when a TOC pill is clicked', () => {
+    document.querySelector<HTMLAnchorElement>('a[href="#h-part"]')!.click();
+
+    expect(track).toHaveBeenCalledWith('help_topic_selected', { topic: 'part' });
+  });
+
+  it('does not fire help_topic_selected on close or backdrop clicks', () => {
+    document.querySelector<HTMLButtonElement>('#btn-help-close')!.click();
+    dialog().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(track).not.toHaveBeenCalledWith('help_topic_selected', expect.anything());
   });
 });

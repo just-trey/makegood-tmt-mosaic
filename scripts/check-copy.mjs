@@ -11,7 +11,8 @@
 // in docs/, which are working notes rather than copy anyone reads in the app:
 //   - string literals in src/**/*.ts, via the TypeScript AST, so a comment above a warning is
 //     never mistaken for the warning
-//   - visible markup of index.html, with <!-- --> blanked
+//   - visible markup of index.html, parsed with parse5 (see htmlTextUnits()) so nested tags don't
+//     fragment a sentence
 //   - visible <text> of public/templates/*.svg, which users download and print
 //
 // A markup string gets the em dash check, plus the shape checks on each title/aria-label/
@@ -31,6 +32,7 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
+import { parse as parseHtml } from 'parse5';
 
 const EM_DASH = '—';
 const MAX_WORDS = 20;
@@ -89,6 +91,60 @@ function textUnits(markup) {
   return out
     .map((t) => t.replace(/\s+/g, ' ').trim())
     .filter((t) => t.length >= MIN_UNIT_CHARS && /\s/.test(t) && /[a-z]{3}/.test(t));
+}
+
+// index.html's element text used to be pulled with a regex (`>text<`), which was built and
+// reverted for src/ markup strings for the reasons docs/tech-debt.md records: it missed prose
+// before the first tag and after the last, a quote-aware version leaked past `title="depth > 0"`,
+// and a fix for that broke on the apostrophe in "its artwork's shape". A real parser has none of
+// those failure modes, because it already knows where a tag starts and ends.
+//
+// Only inline, prose-formatting tags fold into their parent's text: a run split across <b> or <a>
+// is one sentence to the reader, so it must be one unit here. Anything else (p, li, div, h3...) is
+// itself a separate unit, so a paragraph and its heading are never measured as running text.
+const INLINE_TAGS = new Set([
+  'a',
+  'b',
+  'strong',
+  'em',
+  'i',
+  'code',
+  'kbd',
+  'sub',
+  'sup',
+  'u',
+  'br',
+]);
+
+function inlineTextContent(node) {
+  let out = '';
+  for (const child of node.childNodes ?? []) {
+    if (child.nodeName === '#text') out += child.value;
+    else if (INLINE_TAGS.has(child.tagName)) out += inlineTextContent(child);
+    // A non-inline child (block-ish) contributes nothing here: it gets its own unit below.
+  }
+  return out;
+}
+
+// One unit per non-inline element that has visible text, at the line it starts on. Recurses
+// unconditionally, so a block nested inside another (a <p> inside a <section>) still gets its own
+// unit; the outer element's own unit only ever gathers its own direct inline/text runs.
+function htmlTextUnits(html) {
+  const doc = parseHtml(html, { sourceCodeLocationInfo: true });
+  const units = [];
+  const walk = (node) => {
+    for (const child of node.childNodes ?? []) {
+      if (child.nodeName === '#text' || child.nodeName === '#comment') continue;
+      if (child.tagName === 'script' || child.tagName === 'style') continue;
+      if (!INLINE_TAGS.has(child.tagName)) {
+        const text = inlineTextContent(child).replace(/\s+/g, ' ').trim();
+        if (text) units.push({ text, line: (child.sourceCodeLocation?.startLine ?? 1) - 1 });
+      }
+      walk(child);
+    }
+  };
+  walk(doc);
+  return units;
 }
 
 // The four sentence-shape checks. Kept apart from the em dash check so markup can run these per
@@ -248,29 +304,22 @@ for (const file of sources('src/**/*.ts', 'src/*.ts')) {
   visit(src);
 }
 
-// index.html is long-form explanation rather than warnings, and the full checks flag 26 problems
-// across 10 of its blocks. Rewriting it is a copy pass of its own (docs/tech-debt.md), so for now
-// only the em dash check applies. This covers ALL of index.html, not just the help dialog: the
-// title, the narrow-viewport notice and the empty states ride on it too. Flip to false when that
-// pass lands; nothing else needs changing.
-const INDEX_HTML_EM_DASH_ONLY = true;
-
 for (const file of sources('index.html')) {
   const html = read(file);
   if (html === null) continue;
+  // Element text, parsed rather than pattern-matched (see htmlTextUnits()).
+  for (const { text, line } of htmlTextUnits(html)) {
+    if (!/\s/.test(text) || !/[a-z]{3}/.test(text) || text.length <= 25) continue;
+    for (const w of problems(text)) add(file, line, w, text);
+  }
+  // Attributes a user reads. Regex is fine here: an attribute value has no nested tags to leak
+  // past, which is what forced the parser for element text above.
   const stripped = blankComments(html);
-  // Element text and the attributes a user reads, each measured as its own unit.
-  const units = [...stripped.matchAll(/>([^<>]{26,})</g), ...stripped.matchAll(READABLE_ATTR)];
-  for (const m of units) {
+  for (const m of stripped.matchAll(READABLE_ATTR)) {
     const text = m[1].replace(/\s+/g, ' ').trim();
     if (!/\s/.test(text) || !/[a-z]{3}/.test(text)) continue;
     const line = stripped.slice(0, m.index).split('\n').length - 1;
-    const why = INDEX_HTML_EM_DASH_ONLY
-      ? text.includes(EM_DASH) && !isGlyph(text)
-        ? ['em dash in visible page copy']
-        : []
-      : problems(text);
-    for (const w of why) add(file, line, w, text);
+    for (const w of problems(text)) add(file, line, w, text);
   }
 }
 
