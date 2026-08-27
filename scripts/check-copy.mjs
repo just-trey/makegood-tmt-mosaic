@@ -77,12 +77,15 @@ const isGlyph = (t) => t.trim() === EM_DASH;
 const READABLE_ATTR = /\b(?:title|aria-label|placeholder)="([^"]+)"/g;
 // A readable unit is shorter than a whole string: an attribute is a clause, not a paragraph.
 const MIN_UNIT_CHARS = 12;
-// Quote-aware, so a `>` inside an attribute does not end the tag early and leak the rest of it
-// (`style="width:56px;"`) into a measured unit, where the CSS colon and semicolon read as joins.
-const TAG = /<(?:"[^"]*"|'[^']*'|[^'">])*>/g;
+// A quote-aware tag pattern was tried and reverted: an apostrophe in prose ("its artwork's shape")
+// opened a quote that never closed, so the tag stopped matching and a whole <!-- --> comment was
+// measured as copy. Blanking comments first and keeping the tag pattern dumb is what survives real
+// strings. The cost is that a `>` inside a quoted attribute ends the tag early, which no site does.
+const TAG = /<[^>]*>/g;
 function textUnits(markup) {
-  const out = markup.split(TAG);
-  for (const m of markup.matchAll(READABLE_ATTR)) out.push(m[1]);
+  const live = blankComments(markup);
+  const out = live.split(TAG);
+  for (const m of live.matchAll(READABLE_ATTR)) out.push(m[1]);
   return out
     .map((t) => t.replace(/\s+/g, ' ').trim())
     .filter((t) => t.length >= MIN_UNIT_CHARS && /\s/.test(t) && /[a-z]{3}/.test(t));
