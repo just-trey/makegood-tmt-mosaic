@@ -59,6 +59,8 @@ const sentences = (t) =>
 const words = (s) => s.split(/\s+/).filter(Boolean).length;
 const joins = (s) => JOIN.reduce((n, re) => n + (s.match(re) ?? []).length, 0);
 
+const blankComments = (t) => t.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+
 // Markup is not prose: a tag soup has no sentences to measure. Its readable parts are pulled out
 // and measured on their own by textUnits() below.
 const isMarkup = (t) => /<\/?[a-zA-Z][\w-]*[\s>/]/.test(t);
@@ -144,7 +146,6 @@ function read(file) {
   }
 }
 
-const blankComments = (t) => t.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
 const hits = [];
 const add = (file, line, why, text) => hits.push({ file, line: line + 1, why, text });
 

@@ -1601,11 +1601,16 @@ counted per sentence: per string flagged 11, of which 10 were correct
 multi-sentence copy, because splitting a run-on raises the per-string count
 while improving the writing.
 
-A markup string is not skipped. It is split on tags into text runs, and each
-run, plus each `title`, `aria-label` and `placeholder`, is measured as its own
-unit. Stripping the tags out of the whole string instead was tried and
-rejected: it joins unrelated elements, so a `</div><label>` boundary reads as a
-lowercase word after a full stop. That invented two defects and found none.
+A markup string gets the em dash check, plus the shape checks on each `title`,
+`aria-label` and `placeholder`. Its element text is **not** measured.
+
+Splitting markup into text runs was built and reverted. Three review rounds each
+found a defect in it: a `>text<` match missed prose before the first tag and
+after the last, then a quote-aware tag pattern leaked the rest of a tag on
+`title="depth > 0"`, then that same pattern broke on the apostrophe in "its
+artwork's shape" and measured a whole `<!-- -->` comment as user copy. Each fix
+was correct and each uncovered the next, so the area was cut rather than patched
+a fourth time. Reopening it means a real HTML parser, not another regex.
 
 **Known gaps**, all measured 2026-08-26 against the 220 prose strings `src/`
 admits.
