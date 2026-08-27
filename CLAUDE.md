@@ -380,7 +380,9 @@ or fixes.
 
 ---
 
-Mechanical rules (numeric input guards, em dash bans, formatting)
-are enforced by lint/CI, not this file. Workflow rules (test proven
-to fail pre-fix) live in the review and ship skills. Do not
-duplicate them here.
+Mechanical rules are enforced by lint/CI, not this file: the shape
+of user-facing copy by `npm run check:copy`, unsafe `any` flow and
+`parseInt` radix by ESLint, formatting by Prettier. Numeric input
+guards are only partly covered, and `docs/tech-debt.md` says which
+part. Workflow rules (test proven to fail pre-fix) live in the
+review and ship skills. Do not duplicate them here.

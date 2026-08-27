@@ -1562,12 +1562,22 @@ holds and what does not:
 
 **Enforced.** `strict: true`, plus the five type-aware
 `@typescript-eslint/no-unsafe-*` rules on `src/**/*.ts`. Those caught 12 real
-cases of untrusted input reaching typed state, all fixed.
+cases of untrusted input reaching typed state, all fixed. ESLint's built-in
+`radix` rule also catches a `parseInt` with no base. The one site it found reads
+an app-generated `<select>` value, so it was latent, not live.
 
 **Not enforced.** `parseFloat` / `Number` / unary `+` coercion. No lint rule in
 the current plugin ecosystem covers the pattern, and a custom parser rule was
 ruled out as too much machinery for one check. Nothing catches a `parseFloat`
 whose `NaN` is never guarded.
+
+Counted 2026-08-26: of 9 `parseFloat` sites in `src/`, **2** parse an external number with no finite check,
+[svg/path.ts:138](../src/svg/path.ts) and
+[svg/parse.ts:284](../src/svg/parse.ts). The rest guard, most on the next line, so the exposure is narrower
+than the call count suggests. Count the guards, not the calls. One of them,
+`ui/partPanel.ts:206`, guards against a value it parses from an authored `min=`
+attribute rather than from anything a user types, and a non-numeric one there
+would reject every input; that is a latent bug in the markup, not in the guard.
 
 **Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
 on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
@@ -1586,29 +1596,40 @@ formatting glyphs are all deliberately out of scope.
 It checks five things, all one rule: a warning is short sentences that each do
 one job. Em dash, sentence over 20 words, more than one joining mark in a
 sentence, a comma splice, and a lowercase word after a full stop. Thresholds
-were measured, not picked: the gate admits 220 strings from `src/`, of which
-142 get the full shape checks and 78 are markup. Joins
-are counted per sentence: per string flagged 11, of which 10 were correct
+were measured, not picked: the gate admits 220 strings from `src/`. Joins are
+counted per sentence: per string flagged 11, of which 10 were correct
 multi-sentence copy, because splitting a run-on raises the per-string count
 while improving the writing.
 
-**Known gaps.** The prose filter is a heuristic (has a space, has a word, over
-25 characters, not markup), so a shorter user-facing string is not checked. No
-instance found, but nothing prevents one. `index.html` gets the em dash check
-only, for the reason in the section below. The imperative list in the comma
-splice check is closed, so an instruction using a verb outside it reads as
-clean.
+A markup string gets the em dash check, plus the shape checks on each `title`,
+`aria-label` and `placeholder`. Its element text is **not** measured.
 
-The widest hole is markup: a string containing a tag is exempt from the four
-shape checks and gets the em dash check only, because a tag soup has no
-sentences to measure. That is **78 of the 220** strings the gate admits. Measured
-per file, the largest is [threemf.ts](../src/export/threemf.ts) at 23, which is
-3MF XML rather than copy, then [colorList.ts](../src/ui/colorList.ts) (19),
-[assemblyPanel.ts](../src/ui/assemblyPanel.ts) (12) and
-[artworkListPanel.ts](../src/ui/artworkListPanel.ts) (9), which are `title=`
-tooltips. Those four are 63 of the 78. Closing it means
-extracting the text out of the markup before measuring it, not loosening the
-exemption.
+Splitting markup into text runs was built and reverted. Three review rounds each
+found a defect in it: a `>text<` match missed prose before the first tag and
+after the last, then a quote-aware tag pattern leaked the rest of a tag on
+`title="depth > 0"`, then that same pattern broke on the apostrophe in "its
+artwork's shape" and measured a whole `<!-- -->` comment as user copy. Each fix
+was correct and each uncovered the next, so the area was cut rather than patched
+a fourth time. Reopening it means a real HTML parser, not another regex.
+
+**Known gaps**, all measured 2026-08-26 against the 220 prose strings `src/`
+admits.
+
+| Gap                                    | Size                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Markup element text is unchecked       | 78 of the 220 are markup. Only their attributes are read, giving 23 units, and **62 yield nothing at all**. The case that matters is [svg/parse.ts](../src/svg/parse.ts), a plain warning that counts as markup only because it names an SVG element. Reopening this means a real HTML parser, not another regex |
+| Prose filter is a heuristic            | A whole string of 25 characters or fewer is unchecked. Admitting 21 to 25 takes the gate from 220 strings to 239, so 19 more, none of them defects. Measure on flattened strings: counting raw literals gives 14, a different universe                                                                           |
+| `index.html` shape checks are off      | Em dash only, see the section below                                                                                                                                                                                                                                                                              |
+| Imperative list is closed              | An instruction using a verb outside it reads as clean                                                                                                                                                                                                                                                            |
+| An interpolation counts as one word    | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts                                                                                                                                                                      |
+| Constants resolve within one file only | A suffix imported from another module is still one token. A name bound twice, or bound with `let`, is skipped rather than guessed: a wrong substitution invents defects that are not there                                                                                                                       |
+
+The last one is the shape of a gap that already cost something. `flatten()` used
+to collapse **every** non-literal operand, so a message finished by a shared
+suffix was only ever measured in halves. Two defects shipped through it, a
+two-join sentence in [placement.ts](../src/export/placement.ts) and a dangling
+clause in [exportPanel.ts](../src/ui/exportPanel.ts), and seven review rounds
+did not catch either. A reviewer reading the composed string by hand did.
 
 ## The help dialog is exempt from the copy shape checks
 

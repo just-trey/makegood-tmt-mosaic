@@ -32,6 +32,10 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // parseInt without a radix reads a leading 0x as hex. The one site this found reads an
+      // app-generated <select> value, so it was latent rather than live, and the rule is here to
+      // keep it that way for the next field that isn't.
+      radix: 'error',
     },
   },
   {
