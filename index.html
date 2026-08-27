@@ -41,8 +41,8 @@
         <div class="spacer"></div>
         <span class="stat" id="stat-tris">0 tris</span>
         <span class="stat" id="stat-colors" style="display: none">0 colors</span>
-        <button class="icon-btn" id="btn-help" aria-haspopup="dialog" title="Help">
-          ?<span class="badge" id="btn-help-badge" aria-hidden="true"></span>
+        <button class="btn small" id="btn-help" aria-haspopup="dialog">
+          Help<span class="badge" id="btn-help-badge" aria-hidden="true"></span>
         </button>
       </header>
 
@@ -82,65 +82,54 @@
             <h3>Choosing a part</h3>
             <p>
               The dropdown lists real MakeGood TMT parts: Wheel, Hubcap and Footrest. Pick one and
-              the actual part loads, with pockets cut directly into it.
+              the part loads, with pockets cut directly into it.
             </p>
             <p>
-              <b>Body / blank color</b> is the fallback color of the physical part (neutral grey or
-              a plain filament). The body prints in it when no artwork color is grouped into the
-              base. To print an artwork color as the body instead, group it into the Base row in
-              Colors detected. An artwork base always wins over this fallback.
+              <b>Body / blank color</b> is the part's fallback: the neutral grey or plain filament
+              it prints in by default. Group a color into the Base row in Colors detected to print
+              it as the body instead. That choice always wins over this fallback.
             </p>
             <p>
-              <b>Download design template</b> gives you that part's design face as a true-to-size
-              (1:1 mm) SVG. It is the real printable outline, with any no-print gaps already punched
-              out. Draw over it in your editor, then load the result under Artwork. Where a design
-              face covers more than one printed piece, dashed lines mark the joins. Labels name the
-              piece each area lands on. Anything you draw across a dashed line is cut into both
-              pieces. It lines up as well as your print and assembly do.
+              <b>Download design template</b> gives that part's design face as a true-to-size SVG,
+              with any no-print gaps already cut out. Draw over it, then load the result under
+              Artwork. If a design face spans more than one printed piece, dashed lines mark the
+              joins and labels name each piece. Anything drawn across a dashed line is cut into
+              both.
             </p>
             <p>
-              <b>Hubcap diameter</b> appears for the Hubcap. It is built to the size you ask for,
-              instead of being a fixed mesh. The four mounting clips stay put. The disc around them
-              grows or shrinks, keeping its 1&nbsp;mm angled edge. The number is capped at your
-              printer's bed, so switching to a smaller machine may bring it down. It won't go below
-              the size that still covers the clips. Re-download the design template after changing
-              it: the template is drawn to whatever size is set.
+              <b>Hubcap diameter</b> appears only for the Hubcap: the part is built to the size you
+              set, not a fixed mesh. The four mounting clips stay put. The disc around them grows or
+              shrinks, keeping its 1&nbsp;mm angled edge. Your printer's bed caps the number, and it
+              won't drop below what the clips need. Re-download the design template after changing
+              it.
             </p>
             <p>
-              Its plate has been checked by hand up to 220&nbsp;mm, on 256&nbsp;mm and 270&nbsp;mm
-              beds. At those sizes the export puts the part and the prime tower where a real print
-              proved they both fit. Go bigger, or use another bed, and nothing has been verified. It
-              exports centred, and the prime tower goes in the freest corner. Where every corner
-              overlaps a part the app says so, and where that is true of every plate printing a
-              tower it saves no position at all and your slicer places it. Check both in your slicer
-              before printing.
+              <b>Plate placement</b> is verified by hand up to 220&nbsp;mm, on 256&nbsp;mm and
+              270&nbsp;mm beds. At those sizes, the part and the prime tower sit where a real print
+              proved they both fit. Larger sizes or other beds are unverified. The part exports
+              centred, and the tower goes in the free corner. If a plate is crowded, the app still
+              writes the tower at its least-bad corner and says so. Move it in your slicer. Only
+              when every plate is crowded does it save no position at all, and your slicer places
+              it. Check both before printing.
             </p>
             <p>
-              <b>Cut to artwork shape</b> replaces the round disc with the outline of the artwork
-              loaded on it. The picture and the part become the same shape. A character or a logo
-              prints as its own silhouette instead of sitting inside a circle. It needs exactly one
-              piece of artwork loaded (remove extras first), with a real transparent background.
-              That transparency is what defines the cutline, so a fully opaque image has no edge to
-              cut to. Only Sticker placement is offered while this is on: Fill has nothing to repeat
-              across a shape that keeps changing. Turn it off, or remove the artwork, and the part
-              reverts to a plain circle.
+              <b>Cut to artwork shape</b> replaces the round disc with the artwork's own outline. A
+              logo or character then prints as its own silhouette. It needs one piece of artwork
+              loaded, with a real transparent background. That transparency defines the cutline. An
+              opaque image has no edge to cut to. Only Sticker placement is offered while this is
+              on. Turn it off, or remove the artwork, to bring back a plain circle.
             </p>
             <p>
-              While it's on, the Fit controls reshape the part as well as the picture. Scale,
-              Rotation, the flips and Offset move the two together, because they are the same
-              object. Re-download the design template after any of them: it is drawn to the
-              silhouette, not to a disc. Nothing may overhang the 280&nbsp;mm wheel. A shape that
-              would is scaled down until it fits, artwork included. The app says so rather than
-              leaving the size control looking broken.
+              While it's on, Fit reshapes the part along with the artwork. Re-download the design
+              template after adjusting Fit, since they're now one shape. Nothing may overhang the
+              280&nbsp;mm wheel. A shape that would is scaled down until it fits, artwork included.
             </p>
             <p>
-              While it's on, any color that <b>reaches the outline</b> is cut the disc's full
-              3&nbsp;mm instead of being recessed. The rim of your shape then prints in that color.
-              Without it you'd see a band of base color from every angle but straight on. Colors in
+              Any color that <b>reaches the outline</b> is cut the disc's full 3&nbsp;mm depth,
+              instead of being recessed. That same color still cuts at whatever depth you set for
+              it, away from the edge. Its rim then prints in that color from every angle. Colors in
               the middle of the part still recess at their normal depth. The app lists which colors
-              this applied to. It overrides a depth you set by hand, at the edge only. That color's
-              interior regions still cut to your number. This is the shape's outside edge. If your
-              silhouette encloses a hole, the rim around the hole still prints in the base color.
+              this applied to.
             </p>
           </section>
 
@@ -148,65 +137,56 @@
             <div class="help-step">Left panel · Artwork</div>
             <h3>Preparing your artwork</h3>
             <p>
-              <strong>SVG</strong>, <strong>PNG/JPG</strong>, WebP, GIF and BMP all load directly.
-              The format is detected from the file itself, so the extension doesn't have to be
-              right. TIFF is the one thing no browser can open. Re-export it as a PNG.
+              SVG, PNG, JPG, WebP, GIF and BMP all load directly. The format is detected from the
+              file itself, so the extension doesn't need to be right. TIFF won't open in a browser:
+              re-export it as a PNG.
             </p>
             <p>
               For an SVG, use flat, distinct fill colors. Gradients and pattern fills are flagged
-              and skipped. Each unique fill becomes a candidate color region before you touch the
-              fit controls.
+              and skipped. Each unique fill becomes a candidate color region.
             </p>
             <p>
-              Photos work. An image has no flat colors to read, so the app reduces it to some and
-              traces the edges. Smoothing is set from the image's own detail, so a photo gets a
-              heavier hand than a logo. A transparent background cuts nothing.
+              Photos work too. The app reduces a photo to flat colors and traces the edges, with
+              smoothing set from the image's own detail. A transparent background cuts nothing.
             </p>
             <p>
-              A loaded image gets two sliders on its row. <strong>Colors</strong> is how many flat
-              colors to reduce to. The readout under it tells you how many it actually found, and
-              how many separate regions those came to. It can find fewer: a three-color logo stays
-              three however high you push the slider. <strong>Detail</strong> trades fineness
-              against printability. Lower merges small specks away and smooths outlines; higher
-              keeps them, and on a part, down to what your nozzle can print at the size the design
-              sits at. Both sliders re-trace the image when you let go, not while you drag. That is
-              also when the placed size is read, so after resizing the part or the design a long
-              way, nudge Colors or Detail to trace it again at the new size.
+              A loaded image gets two sliders. <b>Colors</b> sets how many flat colors to reduce to,
+              though a simple logo may find fewer than the slider allows. A readout under it shows
+              how many colors and regions it actually found. <b>Detail</b> trades fineness against
+              printability. Lower merges small specks away. Higher keeps them down to what your
+              nozzle can print. Both re-trace on release, not while dragging, so nudge either slider
+              again after resizing the part or the design.
             </p>
             <p>
-              Colors and Auto-merge do different jobs and don't fight. Colors decides which regions
-              exist. Auto-merge decides which of them share a filament slot. An image's colors come
-              out far enough apart that the "Slight" default has nothing left to do on one.
+              Colors and Auto-merge do different jobs. Colors decides which regions exist.
+              Auto-merge decides which of them share a filament slot.
             </p>
             <p>
-              For an assembly part, design over the template you downloaded in the Part section, so
-              the size is right. Set your editor document to millimeters. Some editors drop the mm
-              size on export (Affinity writes <code>width="100%"</code>). The app then scales the
-              drawing to fit the part face.
+              For an assembly part, design over the template from the Part section and set your
+              editor to millimeters. Some editors drop the mm size on export (Affinity writes
+              <code>width="100%"</code>). The app then scales the drawing to fit the part face.
             </p>
             <p>
-              Each design you load appears as a named row below the dropzone. Click × to remove it.
-              Click a row to make it the active design. The fit sliders and the on-face gizmo always
-              edit whichever row is active.
+              Each design you load appears as a named row below the dropzone. Click a row to make it
+              active: the fit sliders and the on-face gizmo always edit that design.
             </p>
             <p>
-              A design loaded onto a design face that already has one starts stepped across and
-              down, so it isn't hidden underneath. The step grows with the designs there, so small
-              ones often land clear. If they still overlap, a warning names both until you move,
-              rescale or separate them. Two recesses cut into the same spot export as two inlays
-              claiming the same space. A slicer resolves that however it likes, and won't stop you
-              exporting. Two designs both set to Fill always warn, and moving them can't help.
-              Switch one to Sticker. It also checks how much artwork reaches the other, so a logo
-              inside a frame no longer trips it.
+              A design placed where one already sits steps across and down, so it isn't hidden
+              underneath. If two designs still overlap, a warning names both until you move, rescale
+              or separate them. Two designs set to Fill always warn, since moving them can't help:
+              switch one to Sticker instead.
             </p>
+            <ul>
+              <li><b>Sticker</b> places the design once.</li>
+              <li>
+                <b>Fill</b> repeats it across the part as tiles, one tile per SVG document. Scale
+                sets each tile's size, and Offset shifts the pattern.
+              </li>
+            </ul>
             <p>
-              On an assembly part, each row also switches between <strong>Sticker</strong> and
-              <strong>Fill</strong>. Sticker places the design once. Fill repeats it across the
-              whole part as tiles, one tile per SVG document. A tileable design whose edges line up
-              comes out seamless. Scale sets how big each tile is, and Offset shifts the whole
-              pattern. When a fill can't be tiled, the app says why and leaves you one tile rather
-              than running to a halt. Colors still pool across every design in the scene. A black
-              pattern shares its filament slot with black artwork elsewhere.
+              If a fill can't be tiled, the app says why and leaves you one tile instead of
+              stopping. Colors still pool across every design in the scene: a black pattern shares
+              its filament slot with black artwork elsewhere.
             </p>
           </section>
 
@@ -214,18 +194,17 @@
             <div class="help-step">Left panel · Artwork fit</div>
             <h3>Positioning artwork on the part</h3>
             <p>
-              The design maps 1:1 onto the part face. Scale multiplies on top of that; over 100%
+              The design maps 1:1 onto the part face. Scale multiplies on top of that: over 100%
               bleeds past the part's edge. Rotation spins the artwork about its own center. Flip H
-              mirrors left to right, which helps when text reads backwards after import. Flip V
-              mirrors top to bottom. Both are mirrors, not rotations. To turn artwork the right way
-              up, use Rotation.
+              mirrors left to right, useful when text reads backwards after import. Flip V mirrors
+              top to bottom. Both are mirrors, not rotations, so use Rotation to turn artwork
+              upright.
             </p>
             <p>
-              You can also grab the artwork directly in the 3D view. Drag inside the selection frame
-              to move it, drag a corner handle to scale, or drag the green handle to rotate. The
-              sliders track the drag, and the drag tracks the sliders. The frame follows the design
-              face, so on a curved part it curves too. If it turns amber, the design's center has
-              moved off that face. Part of the artwork won't be cut.
+              You can also grab the artwork in the 3D view. Drag inside the frame to move it, a
+              corner handle to scale, or the green handle to rotate. The frame follows the design
+              face, so it curves on a curved part. If it turns amber, the design's center has moved
+              off that face, and part of the artwork won't be cut.
             </p>
           </section>
 
@@ -234,17 +213,28 @@
             <h3>How deep recesses cut</h3>
             <p>
               Depth is measured down from the top face. Set a default for all colors, then override
-              individual ones in Colors detected for fine detail work. Check "Recess bg too" to cut
-              the background as well, instead of leaving it flush. It then prints as its own color
-              and takes a filament slot. A color with its own depth is highlighted in the list, and
-              the Depth panel says how many are doing it, with a "Reset all" to put them back. Its
-              "↺" button does the same for one row. A depth of 0 cuts nothing at all, so it is
-              raised to 0.2mm. A depth below 0.2mm is cut exactly as asked. A note says it needs a
-              layer height finer than the usual 0.2mm. A depth deeper than the part has material for
-              is cut at the deepest it can take, and says so. That is the whole part, not its wall,
-              so a pocket deeper than a thin wall can still break through without a warning: check
-              the cut in the 3D view before printing. To stop cutting a color entirely, use "→ base"
-              on its row to print it in the body instead.
+              individual ones in Colors detected for fine detail.
+            </p>
+            <p>
+              Check "Recess bg too" to cut the background instead of leaving it flush. It then
+              prints as its own color and takes a filament slot.
+            </p>
+            <p>
+              A color with its own depth is highlighted in the list. "Reset all" clears every
+              override, and a row's own "↺" clears just that one.
+            </p>
+            <p>
+              A depth of 0 cuts nothing, so it is raised to 0.2&nbsp;mm. Anything below 0.2&nbsp;mm
+              still cuts as asked, but needs a layer height finer than the usual 0.2&nbsp;mm.
+            </p>
+            <p>
+              A depth deeper than the part has material for is cut at the deepest it can take. The
+              app says so. That limit is the whole part, not its wall. A pocket can still break
+              through a thin wall without a warning. Check the cut in the 3D view before printing.
+            </p>
+            <p>
+              To stop cutting a color entirely, use "→ base" on its row to print it in the body
+              instead.
             </p>
           </section>
 
@@ -252,41 +242,54 @@
             <div class="help-step">Left panel · Colors detected</div>
             <h3>Merging into filament slots</h3>
             <p>
-              The <b>Auto-merge</b> slider groups colors that look alike. None turns it off. Slight
-              (the default) catches near-identical copies of one color. Medium and Strong pull
-              gradients down to fewer filaments. It is fully reversible: drag the slider back down
-              and colors pull apart again. Click a merged color's "×" to pull just that one out,
-              leaving the rest of the group alone.
+              <b>Auto-merge</b> groups colors that look alike. None turns it off. Slight (the
+              default) catches near-identical copies of one color. Medium or Strong pull gradients
+              down to fewer filaments. It's fully reversible: drag the slider back down to pull
+              colors apart again.
             </p>
             <p>
-              You can also merge by hand. Drag one color onto another to combine them into a single
-              filament slot, sharing one depth. The ⠿ grip marks what's draggable. If dragging isn't
-              convenient, pick the other color from that row's "Merge with…" dropdown instead. Both
-              do the same thing. A merged slot prints in the group's main color, not a blended
-              average. To split a group back up, click its members' "×" swatches. Each pulled color
-              stays out until you re-merge it.
+              You can also merge by hand: drag one color onto another to combine them into a single
+              filament slot. They then share one depth. The ⠿ grip marks what's draggable, or pick
+              the other color from a row's "Merge with…" dropdown instead. A merged slot prints in
+              the group's main color, not a blended average. Click a merged color's "×" to pull it
+              back out.
             </p>
             <p>
               The <b>Base</b> row pinned at the top is a slot too. It prints as the body instead of
-              being cut as a recess. "→ base" on a color, or on a whole merged group, adds it to the
-              base. Dragging one onto the Base row does the same thing. The row shows every color
-              you've grouped in, and always prints the group's main color. Click a base color's "×"
-              to send it back to being cut. Empty the base and the body falls back to the Body /
-              blank color picker in Part.
+              being cut as a recess. "→ base" on a color, or a whole group, adds it to the base.
+              Click a base color's "×" to send it back to being cut. Empty the base and the body
+              falls back to the Body / blank color picker in Part.
             </p>
             <p>
-              The line below the color list ("N colors → M slots needed") always counts the body's
-              own slot. That is the "+1" you see even before anything is merged. Every AMS or
-              toolchanger unit holds 4. Past 4, the line stands out and a pill appears naming the
-              limit and offering to merge two colors. Merging is not the only way out: you can print
-              a color in the body with "→ base", add a second unit where the printer takes one, or
-              swap filament by hand at a pause. The pill names one because a warning that lists
-              every option is harder to act on, not because the others stopped working. The Bambus
-              daisy-chain up to 16, or 25 on an H2D across both nozzles. The Snapmaker U1's 4
-              toolheads are a hard ceiling. Only going past the printer's real maximum turns the
-              line red, and even then exporting still works. Both update the moment you switch
-              printers in Export, so you can compare before committing to a file. Dismissing the
-              pill keeps it gone until the count or the printer changes.
+              The line below the list ("N colors → M slots needed") always counts the body's own
+              slot. That's the "+1" you see before anything is merged. Every AMS or toolchanger unit
+              holds 4 slots.
+            </p>
+            <p>
+              Past 4, the line stands out and a pill offers to merge two colors. That's one option,
+              not the only one:
+            </p>
+            <ul>
+              <li>print a color in the body with "→ base"</li>
+              <li>add a second unit, where the printer takes one</li>
+              <li>swap filament by hand at a pause</li>
+            </ul>
+            <table>
+              <tbody>
+                <tr>
+                  <td>Bambu (daisy-chained)</td>
+                  <td>up to 16, or 25 on an H2D</td>
+                </tr>
+                <tr>
+                  <td>Snapmaker U1</td>
+                  <td>4 toolheads, a hard ceiling</td>
+                </tr>
+              </tbody>
+            </table>
+            <p>
+              Only going past your printer's real maximum turns the line red, and even then
+              exporting still works. Both update the moment you switch printers in Export.
+              Dismissing the pill hides it until the count or the printer changes.
             </p>
           </section>
 
@@ -295,23 +298,20 @@
             <h3>Getting a printable file</h3>
             <p>
               Pick your printer, then export. The 3MF is print-ready for Bambu Studio, OrcaSlicer,
-              or Snapmaker Orca with colors pre-assigned to filament slots.
+              or Snapmaker Orca, with colors pre-assigned to filament slots.
             </p>
             <p>
-              A long rebuild shows a curtain with a Cancel button, and most of the wait on a
-              detailed design stops the moment you press it. Once the cutting itself has started it
-              finishes the part it is on first, so the button reads "Cancelling…" for a moment. The
-              parts go back to showing uncut, and Export switches off until you build again. Your
-              settings are untouched, and still saved, which reloading the page never was.
+              A long rebuild shows a curtain with a Cancel button. Most of the wait stops the moment
+              you press it. A cut already in progress finishes first, so the button briefly reads
+              "Cancelling…". The parts go back to showing uncut, and Export switches off until you
+              build again. Your settings stay untouched and saved.
             </p>
             <p>
-              The box above the button says what you are about to get: how many parts, how many
-              plates, and a swatch per filament, with the parts listed plate by plate. It follows
-              the design on screen, so a color change or a merge updates it before you commit, and
-              you see the size of the print before the download starts rather than after. Parts
-              whose plates are not pinned in advance, a hubcap cut to artwork shape for instance,
-              are arranged as the file is written, so those show parts and filaments without a plate
-              count.
+              The box above the button shows what you're about to get. It lists how many parts, how
+              many plates, and a swatch per filament, plate by plate. It follows the design on
+              screen, so a change updates it before you commit. Parts whose plate isn't fixed in
+              advance show parts and filaments without a plate count. A hubcap cut to artwork shape
+              is one example.
             </p>
           </section>
 
@@ -319,9 +319,9 @@
             <div class="help-step">About</div>
             <h3>The TMT</h3>
             <p>
-              TMT Mosaic prepares color-inlay artwork for the Toddler Mobility Trainer (TMT). The
-              TMT is a free, open-source 3D-printable mobility device for children ages 1–8.
-              Printable part files and assembly instructions live at
+              TMT Mosaic prepares color-inlay artwork for the free, open-source Toddler Mobility
+              Trainer (TMT), a 3D-printable device for children ages 1–8. Printable part files and
+              assembly instructions live at
               <a href="https://3d-mobility.org" target="_blank" rel="noopener">3d-mobility.org</a>.
             </p>
             <h3>Telling us something went wrong</h3>
@@ -332,8 +332,8 @@
                 target="_blank"
                 rel="noopener"
                 >GitHub issues</a
-              >. On the hosted app there is also a <b>Feedback</b> button in the bottom right of the
-              3D view, which sends a note straight to us. Leave an email there if you want a reply.
+              >. On the hosted app, a <b>Feedback</b> button sits in the bottom right of the 3D
+              view. It sends a note straight to us. Leave an email if you want a reply.
             </p>
           </section>
         </div>

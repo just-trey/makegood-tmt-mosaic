@@ -11,12 +11,14 @@
 // in docs/, which are working notes rather than copy anyone reads in the app:
 //   - string literals in src/**/*.ts, via the TypeScript AST, so a comment above a warning is
 //     never mistaken for the warning
-//   - visible markup of index.html, with <!-- --> blanked
+//   - visible markup of index.html, parsed with parse5 (see htmlTextUnits()) so nested tags don't
+//     fragment a sentence
 //   - visible <text> of public/templates/*.svg, which users download and print
 //
-// A markup string gets the em dash check, plus the shape checks on each title/aria-label/
-// placeholder. Its element text is not measured: see textUnits() for why that was cut, and
-// docs/tech-debt.md for what it leaves uncovered.
+// A src/**/*.ts string that is itself markup (an innerHTML template literal) gets the em dash
+// check, plus the shape checks on each title/aria-label/placeholder. Its element text is not
+// measured: see textUnits() for why that was cut, and docs/tech-debt.md for what it leaves
+// uncovered. index.html does not share this hole: parse5 measures its element text directly.
 //
 // Thresholds are measured, not picked. The gate admits 220 prose strings from src/. Against that
 // set:
@@ -31,10 +33,14 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
+import { parse as parseHtml } from 'parse5';
 
 const EM_DASH = '—';
 const MAX_WORDS = 20;
 const MAX_JOINS = 1;
+// Below this, a string is an id, a key or a selector, not prose. Shared by every extraction path
+// so retuning it can't move for one kind of copy and not another.
+const MIN_PROSE_CHARS = 25;
 
 // A clause opener that turns a comma into a splice when a full sentence precedes it: a pronoun
 // subject, or a bare imperative. The verb list is closed on purpose, covering the verbs this
@@ -79,7 +85,11 @@ const isGlyph = (t) => t.trim() === EM_DASH;
 // What that costs is in docs/tech-debt.md: the element text of 78 markup strings goes unchecked,
 // including a plain warning in src/svg/parse.ts that counts as markup only because it names an
 // SVG element.
-const READABLE_ATTR = /\b(?:title|aria-label|placeholder)="([^"]+)"/g;
+// The attributes a user actually reads, wherever they show up: a markup string's own extraction
+// below, and htmlTextUnits()' parse5 walk further down. One list, so adding a fourth can't land on
+// only one of the two paths.
+const READABLE_ATTR_NAMES = ['title', 'aria-label', 'placeholder'];
+const READABLE_ATTR = new RegExp(`\\b(?:${READABLE_ATTR_NAMES.join('|')})="([^"]+)"`, 'g');
 // A readable unit is shorter than a whole string: an attribute is a clause, not a paragraph.
 const MIN_UNIT_CHARS = 12;
 function textUnits(markup) {
@@ -89,6 +99,79 @@ function textUnits(markup) {
   return out
     .map((t) => t.replace(/\s+/g, ' ').trim())
     .filter((t) => t.length >= MIN_UNIT_CHARS && /\s/.test(t) && /[a-z]{3}/.test(t));
+}
+
+// index.html's element text used to be pulled with a regex (`>text<`), which was built and
+// reverted for src/ markup strings for the reasons docs/tech-debt.md records: it missed prose
+// before the first tag and after the last, a quote-aware version leaked past `title="depth > 0"`,
+// and a fix for that broke on the apostrophe in "its artwork's shape". A real parser has none of
+// those failure modes, because it already knows where a tag starts and ends.
+//
+// parse5 directly, not the jsdom already in devDependencies (jsdom uses parse5 under the hood, so
+// this adds no new parsing engine, only a direct import of the one already in node_modules).
+// jsdom's DOM has no equivalent of sourceCodeLocationInfo: every finding this script reports needs
+// a line number, and jsdom doesn't expose where in the source a node came from.
+//
+// Only inline, prose-formatting tags fold into their parent's text: a run split across <b> or <a>
+// is one sentence to the reader, so it must be one unit here. Anything else (p, li, div, h3...) is
+// itself a separate unit, so a paragraph and its heading are never measured as running text.
+// `span` is deliberately excluded: index.html uses it only for non-prose chrome (header stats, a
+// hint's conditional clause), and folding those into whatever block happens to contain them would
+// measure unrelated fragments as one sentence. If a future edit ever wraps a run of help copy in
+// `<span>` for styling, that span becomes its own unit instead of joining its paragraph.
+const INLINE_TAGS = new Set([
+  'a',
+  'b',
+  'strong',
+  'em',
+  'i',
+  'code',
+  'kbd',
+  'sub',
+  'sup',
+  'u',
+  'br',
+]);
+
+function inlineTextContent(node) {
+  let out = '';
+  for (const child of node.childNodes ?? []) {
+    if (child.nodeName === '#text') out += child.value;
+    else if (INLINE_TAGS.has(child.tagName)) out += inlineTextContent(child);
+    // A non-inline child (block-ish) contributes nothing here: it gets its own unit below.
+  }
+  return out;
+}
+
+// One unit per non-inline element's visible text, plus one per readable attribute on any element,
+// each at the line it starts on. Both come off the same parse5 tree: the tree already carries
+// every attribute with its own value and location, so a second pass over the raw string (regex,
+// with its own comment-blanking) would only risk disagreeing with what this walk already knows.
+// Recurses unconditionally, so a block nested inside another (a <p> inside a <section>) still gets
+// its own unit; the outer element's own unit only ever gathers its own direct inline/text runs.
+function htmlTextUnits(html) {
+  const doc = parseHtml(html, { sourceCodeLocationInfo: true });
+  const units = [];
+  const walk = (node) => {
+    for (const child of node.childNodes ?? []) {
+      if (child.nodeName === '#text' || child.nodeName === '#comment') continue;
+      if (child.tagName === 'script' || child.tagName === 'style') continue;
+      if (!INLINE_TAGS.has(child.tagName)) {
+        const text = inlineTextContent(child).replace(/\s+/g, ' ').trim();
+        if (text)
+          units.push({ text, line: (child.sourceCodeLocation?.startLine ?? 1) - 1, kind: 'text' });
+      }
+      for (const attr of child.attrs ?? []) {
+        if (!READABLE_ATTR_NAMES.includes(attr.name)) continue;
+        const text = attr.value.replace(/\s+/g, ' ').trim();
+        const loc = child.sourceCodeLocation?.attrs?.[attr.name] ?? child.sourceCodeLocation;
+        if (text) units.push({ text, line: (loc?.startLine ?? 1) - 1, kind: 'attr' });
+      }
+      walk(child);
+    }
+  };
+  walk(doc);
+  return units;
 }
 
 // The four sentence-shape checks. Kept apart from the em dash check so markup can run these per
@@ -111,16 +194,35 @@ function shapeProblems(text) {
   return out;
 }
 
+function emDashProblems(text) {
+  return text.includes(EM_DASH) && !isGlyph(text)
+    ? ['em dash. Use commas, colons, parentheses, or separate sentences']
+    : [];
+}
+
+// For text that structurally cannot still contain a tag: only htmlTextUnits()'s output qualifies,
+// because parse5 parsed the real tree and this is what's left over after removing every element.
+// It must not be routed back through the isMarkup check below, because parse5 also decodes
+// entities — a literal example like "Type &lt;return&gt;" becomes the text "Type <return>" here,
+// and isMarkup's regex would match that decoded "<return>" as a tag and silently skip four of the
+// five checks. Do not reuse this for the public/templates/*.svg path: that extraction is a plain
+// regex on `<text>...</text>` that does not strip a nested tag (a <tspan>, say), so a real one
+// still needs the isMarkup fallback problems() provides.
+function proseProblems(text) {
+  return [...emDashProblems(text), ...shapeProblems(text)];
+}
+
+// For text that was pulled out by a regex rather than a real parser, and so might still contain a
+// tag: a raw src/**/*.ts string literal (which may be building an innerHTML string), or a
+// public/templates/*.svg <text> capture (which does not strip a nested element). Delegates to
+// proseProblems() once markup is ruled out, so the em-dash rule lives in one place.
 function problems(text) {
-  const out = [];
-  if (text.includes(EM_DASH) && !isGlyph(text))
-    out.push('em dash. Use commas, colons, parentheses, or separate sentences');
   if (isMarkup(text)) {
+    const out = [...emDashProblems(text)];
     for (const unit of textUnits(text)) out.push(...shapeProblems(unit));
     return out;
   }
-  out.push(...shapeProblems(text));
-  return out;
+  return proseProblems(text);
 }
 
 // --cached plus --others catches a file that is new and not yet staged; --exclude-standard keeps
@@ -234,8 +336,8 @@ for (const file of sources('src/**/*.ts', 'src/*.ts')) {
   const visit = (n) => {
     if (isStringy(n) && !(n.parent && isStringy(n.parent))) {
       const t = flatten(n, binds);
-      // Short fragments are ids, keys and selectors, not copy. 25 chars is where prose starts.
-      if (t && /\s/.test(t) && /[a-z]{3}/.test(t) && t.length > 25) {
+      // Short fragments are ids, keys and selectors, not copy.
+      if (t && /\s/.test(t) && /[a-z]{3}/.test(t) && t.length > MIN_PROSE_CHARS) {
         const { line } = src.getLineAndCharacterOfPosition(n.getStart(src));
         for (const why of problems(t)) add(file, line, why, t);
       }
@@ -248,29 +350,17 @@ for (const file of sources('src/**/*.ts', 'src/*.ts')) {
   visit(src);
 }
 
-// index.html is long-form explanation rather than warnings, and the full checks flag 26 problems
-// across 10 of its blocks. Rewriting it is a copy pass of its own (docs/tech-debt.md), so for now
-// only the em dash check applies. This covers ALL of index.html, not just the help dialog: the
-// title, the narrow-viewport notice and the empty states ride on it too. Flip to false when that
-// pass lands; nothing else needs changing.
-const INDEX_HTML_EM_DASH_ONLY = true;
-
 for (const file of sources('index.html')) {
   const html = read(file);
   if (html === null) continue;
-  const stripped = blankComments(html);
-  // Element text and the attributes a user reads, each measured as its own unit.
-  const units = [...stripped.matchAll(/>([^<>]{26,})</g), ...stripped.matchAll(READABLE_ATTR)];
-  for (const m of units) {
-    const text = m[1].replace(/\s+/g, ' ').trim();
+  // Element text and attributes, both off the one parse5 tree (see htmlTextUnits()). Element text
+  // keeps the same 25-char floor as the src/ path; an attribute is a clause, not a paragraph, so
+  // it keeps no floor beyond having a space and a real word, matching this gate's original reach
+  // into title=/aria-label= before parse5 replaced the regex extraction.
+  for (const { text, line, kind } of htmlTextUnits(html)) {
     if (!/\s/.test(text) || !/[a-z]{3}/.test(text)) continue;
-    const line = stripped.slice(0, m.index).split('\n').length - 1;
-    const why = INDEX_HTML_EM_DASH_ONLY
-      ? text.includes(EM_DASH) && !isGlyph(text)
-        ? ['em dash in visible page copy']
-        : []
-      : problems(text);
-    for (const w of why) add(file, line, w, text);
+    if (kind === 'text' && text.length <= MIN_PROSE_CHARS) continue;
+    for (const w of proseProblems(text)) add(file, line, w, text);
   }
 }
 

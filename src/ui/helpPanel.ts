@@ -1,4 +1,5 @@
 import { $ } from './dom';
+import { track } from '../analytics/track';
 
 const SEEN_KEY = 'tmt-mosaic:help-seen';
 
@@ -28,11 +29,19 @@ export function initHelpPanel(): void {
     dialog.showModal();
     badge.classList.remove('show');
     markHelpSeen();
+    track('help_opened');
   });
   $('#btn-help-close').addEventListener('click', () => dialog.close());
 
   dialog.addEventListener('click', (e) => {
     if (e.target === dialog) dialog.close();
+  });
+
+  // One delegated listener over the TOC rather than one per anchor: the set is fixed at eight,
+  // but a per-anchor listener would be the one place in this file that doesn't scale with it.
+  $('.help-toc').addEventListener('click', (e) => {
+    const a = (e.target as HTMLElement).closest('a[href^="#h-"]');
+    if (a) track('help_topic_selected', { topic: a.getAttribute('href')!.slice(3) });
   });
 
   // The dialog's table of contents is a list of `#h-…` anchors, so following one pushes a history

@@ -118,30 +118,18 @@ header .stat {
   margin-left: var(--space-section);
 }
 
-.icon-btn {
+/* The header's Help button is a plain .btn.small, same component as the Feedback trigger, so it
+   reads as a labeled control rather than an icon. position: relative is scoped to its id because
+   the badge dot is this button's alone — see design-system/README.md's Iconography note. */
+#btn-help {
   position: relative;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text-dim);
-  font-family: var(--heading);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  transition:
-    border-color var(--transition-fast),
-    color var(--transition-fast);
 }
-.icon-btn:hover {
-  border-color: var(--accent);
+/* .btn:hover only tints the border; the icon button this replaced also tinted its glyph, so this
+   keeps that same two-part hover feedback on the label. */
+#btn-help:hover {
   color: var(--accent);
 }
-.icon-btn .badge {
+#btn-help .badge {
   position: absolute;
   top: -2px;
   right: -2px;
@@ -152,7 +140,7 @@ header .stat {
   border: 1.5px solid var(--panel);
   display: none;
 }
-.icon-btn .badge.show {
+#btn-help .badge.show {
   display: block;
   animation: badge-pulse 1.8s ease-in-out infinite;
 }
@@ -166,7 +154,7 @@ header .stat {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .icon-btn .badge.show {
+  #btn-help .badge.show {
     animation: none;
   }
 }
@@ -306,6 +294,28 @@ header .stat {
 }
 .help-sec p:last-child {
   margin-bottom: 0;
+}
+.help-sec ul {
+  color: var(--text-dim);
+  line-height: var(--leading-prose);
+  margin: 0 0 var(--space-row);
+  padding-left: var(--space-section);
+}
+.help-sec table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 var(--space-row);
+  font-size: var(--text-body);
+}
+.help-sec td {
+  padding: var(--space-tight) 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-dim);
+}
+.help-sec td:first-child {
+  color: var(--text);
+  padding-right: var(--space-section);
+  white-space: nowrap;
 }
 
 #left {

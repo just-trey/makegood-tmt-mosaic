@@ -1,5 +1,13 @@
 # Roadmap ideas (not built)
 
+- Contextual help: short hints at the point people actually get stuck (a
+  control's own row), instead of relying only on the single global help
+  dialog. Not built in the 2026-08 help-dialog redesign because each hint is
+  its own placement decision governed by
+  [ui-conventions.md](ui-conventions.md) conventions 4-6 (a control's
+  explanation may not reference another panel; a concept belongs at the point
+  of use, a mechanism belongs in the help dialog) — it is a per-panel design
+  pass, not a copy change.
 - Snap a traced image's palette to the owned-filament list
   ([public/filaments.json](../public/filaments.json)) instead of to colors
   derived from the image, so an image's regions are filaments the user actually
