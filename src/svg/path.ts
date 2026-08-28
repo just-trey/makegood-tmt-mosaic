@@ -132,12 +132,8 @@ class MalformedPathData extends Error {}
 /**
  * Flatten an SVG path `d` string into polyline loops (one per subpath).
  * Handles M/L/H/V/C/S/Q/T/A/Z, relative commands, and implicit command repetition.
- *
- * Never throws. A missing or non-numeric coordinate drops the subpath being built when it hit
- * the bad data (token misalignment makes anything after it unrecoverable) and keeps every
- * subpath already closed — degrading per subpath (CLAUDE.md rule 3) rather than losing the whole
- * path to one bad number, or worse, silently shipping a NaN vertex. `onMalformed` fires once in
- * that case so the caller can warn.
+ * Never throws: a missing or non-numeric coordinate drops only the subpath being built when it
+ * hit the bad data, keeping every subpath already closed, and fires `onMalformed` once.
  */
 export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
   const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g) || [];
@@ -168,10 +164,13 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
       const rel: boolean = cmd === cmd.toLowerCase();
       const C = cmd.toUpperCase();
       if (C === 'M') {
+        // Flushed before parsing this M's own coordinates: a malformed M threw here while the
+        // flush still came after nums(), which discarded the already-closed previous subpath
+        // along with the broken one.
+        if (cur.length) loops.push(cur);
         const [x, y] = nums(2);
         const nx = rel ? cx + x : x,
           ny = rel ? cy + y : y;
-        if (cur.length) loops.push(cur);
         cur = [{ x: nx, y: ny }];
         cx = nx;
         cy = ny;

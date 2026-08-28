@@ -82,6 +82,19 @@ describe('parsePathD', () => {
     expect(onMalformed).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps an already-closed subpath even when the next M itself is malformed', () => {
+    const onMalformed = vi.fn();
+    const loops = parsePathD('M0 0 L10 0 L10 10 Z M20 L30 30', onMalformed);
+    expect(loops).toHaveLength(1); // the completed first square survives the broken M
+    expect(loops[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 0 },
+    ]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
   it('returns no loops (not a throw) when the only subpath is malformed', () => {
     const onMalformed = vi.fn();
     expect(parsePathD('M0 0 L10', onMalformed)).toEqual([]);

@@ -1834,3 +1834,24 @@ catch, currently harmless only because the sole reader is `opacity === 0`.
 **Closing the tokenizer gap** means matching flag digits as individual tokens
 when a boolean-flag position is expected, which needs the tokenizer to know
 which argument position it's on rather than tokenizing blind.
+
+## A total SVG load failure wipes the per-shape warnings that explain it
+
+`parseSVGDocument` (`svg/parse.ts`) calls `clearWarnings()` on entry, pushes a
+warning per dropped shape while walking the document, then throws `"No
+flat-filled shapes were found in this SVG"` if none survived. Both callers'
+catch blocks — `reportLoadFailure` (`ui/artworkPanel.ts:123-124`) and
+`applyPattern`'s catch (`ui/artworkPanel.ts:77`) — call `clearWarnings()`
+again before `warn()`-ing just that one generic message, discarding the
+per-shape warnings pushed moments earlier.
+
+So the one case where a user most needs to know which shapes were unreadable
+— every shape in the file failed — is the case where that detail doesn't
+reach the screen. Found while fixing the malformed-path warning (see "Numeric
+coercion has no lint rule"): that warning is real and pushed, just gone by the
+time `renderWarnings()` runs.
+
+**Closing it** means `reportLoadFailure` and `applyPattern`'s catch not
+clearing warnings that were pushed during the same failed load, which is a
+change to how those two call sites compose with `parseSVGDocument`'s own
+`clearWarnings()`, not a one-line fix in either file alone.
