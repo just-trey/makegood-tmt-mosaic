@@ -5,19 +5,19 @@
 Recurring workflows live in `.claude/skills/`. Read the skill instead of
 rebuilding the steps from memory.
 
-| Skill                 | Use it for                                        |
-| --------------------- | ------------------------------------------------- |
-| `ship-it`             | The pre-PR gate: six checks, four docs that drift |
-| `run-app`             | Launching the app, by hand or headless            |
-| `add-part`            | Adding a MakeGood TMT part as an assembly kind    |
-| `bake-zones`          | Baking design zones on a multi-surface part       |
-| `verify-new-bed-size` | Checking export placement on an unverified bed    |
-| `debug-csg-failure`   | Investigating an assembly-mode CSG warning        |
-| `release`             | Cutting and tagging a release                     |
+| Skill                 | Use it for                                          |
+| --------------------- | --------------------------------------------------- |
+| `ship-it`             | The pre-PR gate: seven checks, four docs that drift |
+| `run-app`             | Launching the app, by hand or headless              |
+| `add-part`            | Adding a MakeGood TMT part as an assembly kind      |
+| `bake-zones`          | Baking design zones on a multi-surface part         |
+| `verify-new-bed-size` | Checking export placement on an unverified bed      |
+| `debug-csg-failure`   | Investigating an assembly-mode CSG warning          |
+| `release`             | Cutting and tagging a release                       |
 
 ## Before opening a PR
 
-Run the `ship-it` skill. It carries the six CI gates (the same ones that
+Run the `ship-it` skill. It carries the seven CI gates (the same ones that
 block merge into `main`) and the four docs that drift silently.
 
 `/code-review` is **required**, not optional, on **every PR that changes code**.
@@ -399,7 +399,8 @@ one, which is the failure being prevented.
 ---
 
 Mechanical rules are enforced by lint/CI, not this file: the shape
-of user-facing copy by `npm run check:copy`, unsafe `any` flow and
+of user-facing copy by `npm run check:copy`, the troubleshooting quotes by
+`npm run check:troubleshooting`, unsafe `any` flow and
 `parseInt` radix by ESLint, formatting by Prettier. Numeric input
 guards are only partly covered, and `docs/tech-debt.md` says which
 part. Workflow rules (test proven to fail pre-fix) live in the

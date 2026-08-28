@@ -30,10 +30,8 @@
 //
 // Usage:
 //   npm run check:copy
-import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import ts from 'typescript';
 import { parse as parseHtml } from 'parse5';
+import { sources, read, eachMessage } from './lib/copy-strings.mjs';
 
 const EM_DASH = '—';
 const MAX_WORDS = 20;
@@ -225,129 +223,18 @@ function problems(text) {
   return proseProblems(text);
 }
 
-// --cached plus --others catches a file that is new and not yet staged; --exclude-standard keeps
-// gitignored and vendored trees out. Tracked-only missed a brand-new file entirely, which is
-// exactly when fresh copy gets written.
-function sources(...patterns) {
-  const out = execFileSync(
-    'git',
-    ['ls-files', '--cached', '--others', '--exclude-standard', '--', ...patterns],
-    { encoding: 'utf8' },
-  );
-  return [...new Set(out.split('\n').filter(Boolean))];
-}
-
-// git lists index entries, which can name a file that is not on disk (mid-rebase, moved, deleted
-// but unstaged). A missing file is nothing to check, not a reason to abort the whole gate chain.
-function read(file) {
-  try {
-    return readFileSync(file, 'utf8');
-  } catch (e) {
-    if (e.code === 'ENOENT') return null;
-    throw e;
-  }
-}
-
 const hits = [];
 const add = (file, line, why, text) => hits.push({ file, line: line + 1, why, text });
-
-// Every `const NAME = 'literal'` in one file, so a message finished by a shared suffix can be
-// measured whole. Same file only: both defects this closes were same-file, and resolving across
-// files needs a full ts.createProgram, which is a far heavier gate for the reach it adds.
-//
-// Two deliberate narrowings, because a wrong substitution invents defects that are not there:
-//   - `const` only. A `let` is reassigned later, so its initializer is not what ships. Several
-//     are `let x = ''` accumulators, and substituting the empty seed measures the wrong string.
-//   - a name introduced any OTHER way in the file is dropped rather than guessed. This is one
-//     flat map with no scope tracking, so two functions with their own `const label`, or a
-//     parameter named `tail` shadowing a file-level one, would otherwise resolve to whichever
-//     was seen last and report joins against a string that never exists.
-const DECLARES_A_NAME = [
-  ts.isParameter,
-  ts.isBindingElement,
-  ts.isImportSpecifier,
-  ts.isImportClause,
-  ts.isNamespaceImport,
-  ts.isVariableDeclaration,
-  ts.isFunctionDeclaration,
-  ts.isClassDeclaration,
-];
-function stringConsts(src) {
-  const binds = new Map();
-  const ambiguous = new Set();
-  const walk = (n) => {
-    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
-      const isConst = !!(ts.getCombinedNodeFlags(n) & ts.NodeFlags.Const);
-      const i = n.initializer;
-      if (isConst && (ts.isStringLiteral(i) || ts.isNoSubstitutionTemplateLiteral(i))) {
-        if (binds.has(n.name.text) && binds.get(n.name.text) !== i.text) ambiguous.add(n.name.text);
-        binds.set(n.name.text, i.text);
-        ts.forEachChild(n, walk);
-        return;
-      }
-    }
-    if (DECLARES_A_NAME.some((is) => is(n)) && n.name && ts.isIdentifier(n.name))
-      ambiguous.add(n.name.text);
-    ts.forEachChild(n, walk);
-  };
-  walk(src);
-  for (const name of ambiguous) binds.delete(name);
-  return binds;
-}
-
-// A message is usually assembled: 'a' + `b ${x} c` + 'd'. Checking one fragment at a time cannot
-// see a sentence, so flatten the whole expression and collapse each interpolation to one token.
-function flatten(n, binds) {
-  if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return n.text;
-  if (ts.isTemplateExpression(n))
-    return (
-      n.head.text +
-      n.templateSpans.map((s) => flatten(s.expression, binds) + s.literal.text).join('')
-    );
-  if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.PlusToken)
-    return flatten(n.left, binds) + flatten(n.right, binds);
-  if (ts.isParenthesizedExpression(n)) return flatten(n.expression, binds);
-  // A shared suffix is part of the sentence, so substitute it. Collapsing it to a token measured
-  // every such message in halves, which is how a two-join sentence and a dangling clause both
-  // shipped past this gate.
-  if (ts.isIdentifier(n) && binds.has(n.text)) return binds.get(n.text);
-  // A non-literal operand is an interpolation like any other, so it collapses to one token. It
-  // used to return null, which made visit() skip the whole expression: 23 of 267 prose strings,
-  // including every confirm dialog and the blocked-tower warning, were never checked at all.
-  return 'X';
-}
-// Only an expression that actually contains a literal counts. Treating every parenthesized
-// expression as stringy made `!(await confirmDialog(\`...\`))` flatten to one token and return,
-// so visit() never descended into the call: every confirm dialog went unchecked.
-const isStringy = (n) =>
-  ts.isStringLiteral(n) ||
-  ts.isNoSubstitutionTemplateLiteral(n) ||
-  ts.isTemplateExpression(n) ||
-  (ts.isBinaryExpression(n) &&
-    n.operatorToken.kind === ts.SyntaxKind.PlusToken &&
-    (isStringy(n.left) || isStringy(n.right))) ||
-  (ts.isParenthesizedExpression(n) && isStringy(n.expression));
 
 for (const file of sources('src/**/*.ts', 'src/*.ts')) {
   const text = read(file);
   if (text === null) continue;
-  const src = ts.createSourceFile(file, text, ts.ScriptTarget.ES2022, true);
-  const binds = stringConsts(src);
-  const visit = (n) => {
-    if (isStringy(n) && !(n.parent && isStringy(n.parent))) {
-      const t = flatten(n, binds);
-      // Short fragments are ids, keys and selectors, not copy.
-      if (t && /\s/.test(t) && /[a-z]{3}/.test(t) && t.length > MIN_PROSE_CHARS) {
-        const { line } = src.getLineAndCharacterOfPosition(n.getStart(src));
-        for (const why of problems(t)) add(file, line, why, t);
-      }
-      // Keep descending. A literal inside a ternary arm (`a + (c ? 'x' : 'y')`) is not part of
-      // this chain, so returning here left both arms of the blocked-tower warning unchecked.
-      // A literal that IS part of the chain is skipped by the isStringy(parent) guard above.
-    }
-    ts.forEachChild(n, visit);
-  };
-  visit(src);
+  eachMessage(file, text, (t, node, src) => {
+    // Short fragments are ids, keys and selectors, not copy.
+    if (!(t && /\s/.test(t) && /[a-z]{3}/.test(t) && t.length > MIN_PROSE_CHARS)) return;
+    const { line } = src.getLineAndCharacterOfPosition(node.getStart(src));
+    for (const why of problems(t)) add(file, line, why, t);
+  });
 }
 
 for (const file of sources('index.html')) {
