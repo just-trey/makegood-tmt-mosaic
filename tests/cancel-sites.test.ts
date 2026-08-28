@@ -8,9 +8,9 @@ import type { SVGShape } from '../src/types';
  * any of them left the suite green. That is how the 140.4s latency the 2026-08-24 cycle measured
  * survived a check being added at the wrong layer — the code looked cancellable and was not.
  *
- * These drive the layer that actually holds the time. The per-part and per-colour sites in
- * assembly.ts need the Manifold WASM engine and a loaded part, so they stay covered by the driven
- * check recorded in that cycle rather than here.
+ * These drive the layer that actually holds the time. The sites inside assembly.ts need the
+ * Manifold WASM engine and a loaded part, so they are covered in tests/assembly.test.ts, one case
+ * per site, next to the fixtures that build one.
  */
 
 /** Enough overlapping shapes that the paint-order loop runs past one yield budget. */

@@ -783,12 +783,6 @@ export async function buildAssemblyGeometry(
     viewSignSet = false; // Y direction of the first real part's design face
   for (const part of parts) {
     if (!part.loaded || !part.boundaryLoops || !part.positions) continue;
-    // Safe here because the previous part's solids are freed and this one's are not allocated
-    // yet. The second call site is per colour, inside the cutter loop below, which carries its own
-    // catch over `colorPrisms` — this one alone left cancel latency at a whole part, measured at
-    // 140.4s on a 6000-region wheel. Everywhere else inside a part, `owned` and `partMan` are
-    // released per branch with no outer finally, so a throw would leak WASM that repeated
-    // cancelling accumulates.
     throwIfCancelled();
 
     // Every design surface this part takes artwork on: one implicit flat zone for an ordinary
@@ -816,209 +810,211 @@ export async function buildAssemblyGeometry(
       viewSignSet = true;
     }
 
-    // A color can be cut on several zones of one part, so each collects a list of solids that is
-    // unioned before the body/inlay booleans.
-    const colorPrisms: Record<number, ManifoldSolid[]> = {};
-    // Staged edge-rule colors, merged into edgeCutColors only where the part succeeds (see `keep`).
-    const partEdgeColors = new Map<string, number>();
-    // A plain function, not inlined below, so its early `return`s mean "skip this color" without
-    // fighting the surrounding for-loop/await.
-    const buildColorPrism = async (
-      mapper: ZoneMapper,
-      boundaryPoly: PolyFeature | null,
-      place: (pt: number[]) => number[],
-      grid: TileGrid | null,
-      c: AssemblyPaletteEntry,
-      ci: number,
-      ai: number,
-      onProgress: (fraction: number) => void,
-    ): Promise<void> => {
-      const source = featuresByColor[ci][ai];
-      if (!source) return;
-      // Fill: repeat the regions across the grid *in SVG space*, before placement, so tiles
-      // inherit the placement's rotation/scale/offset and seam-straddling copies overlap where the
-      // union can weld them.
-      const tiled = grid
-        ? await tileFeature(source, grid, onProgress, `color ${c.hex} on ${part.name}`)
-        : source;
-      if (!tiled) return;
-      let feat: PolyFeature | null = mapFeatureCoords(tiled, place);
-      // Whether the region really is bounded by the face. On a clipper failure safeIntersect hands
-      // the region back *unclipped*, and the edge rule reads "reaches past the face boundary" as
-      // "stands on the part's outer wall": an unclipped region would read as all-edge and cut
-      // clean through instead of recessed. Tracked rather than assumed; see the mapper.
-      let clipped = true;
-      if (boundaryPoly) {
-        const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
-        feat = r.feat;
-        clipped = r.clipped;
-        if (!feat) return;
-        // Only a real clip proves the color reached this face. A cut-through zone has no clip
-        // boundary (its boolean against the mesh is what bounds the cut), so there a color counts
-        // as landed only when that boolean yields an inlay, in the intersection loop below.
-        landedColors.add(ci);
-      }
-      const requested = requestedDepth(colorSettings, globalDepth, c.key);
-      // A depth at or below zero cuts nothing and used to drop the color silently, deleting its
-      // color-list row and with it the depth field needed to fix it. Raise to a printable depth so
-      // the color stays on screen and stays fixable.
-      //
-      // The message reports the *setting* it raised, not the cut produced: what a part does with a
-      // depth is the mapper's business. Naming a cut depth here claimed 0.02 mm on a 3 mm
-      // through-cut. No part name either, so it dedupes to one warning per color.
-      const raised = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
-      // And bounded above by how far this part actually extends behind its design face. Without
-      // this, assembly mode had no upper bound at all: 20 mm and 9999 mm on the wheel both built
-      // and exported with no warning, while flat mode clamped and warned for the same input, and
-      // depth.ts's own comment claimed both did. The flat modes then left the UI, making the
-      // unbounded path the only one a user can reach.
-      //
-      // **Not a wall-thickness check.** A recess shallower than this can still break through a
-      // thin wall; measuring that is still owed (docs/tech-debt.md). This bounds the absurd.
-      const depthSetting = Math.min(raised, mapper.maxCutDepth());
-      const label = regionLabel(c.hex, c.isMerge, c.members.length);
-      // One entry per depth this zone wants, each carrying the slice cut at it, usually just one.
-      // An edge rule (a hubcap cut to its artwork's shape) splits the region into polygons
-      // standing on the outer wall, cut full thickness, and the rest, cut at the setting. The
-      // mapper owns that decision; this loop just extrudes what it is handed.
-      const regions = mapper.resolveCutRegions(feat, depthSetting, {
-        label: `color ${label}`,
-        clipped,
-      });
-      if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depthSetting));
-      // Gated on what the mapper did with the number, exactly like the sub-layer note below, and
-      // for the same reason: a cutThrough part discards the setting and holes the whole way
-      // through, so "it was cut at 24.25 mm instead" would be false there. Never test
-      // `part.cutThrough` here.
-      // Not on a rotated copy: it shares its source's mesh, face and topZ by construction
-      // (asmAddDuplicate), so its bound is the same number and the pill would differ only by
-      // "(rotated copy)". A two-half wheel with eight colours raised sixteen, half of them saying
-      // nothing new. zeroDepthWarning drops the part name outright for the same reason; this one
-      // keeps it, because the bound really is per-part wherever the parts differ.
-      else if (
-        !part.isDuplicateOf &&
-        depthDiffers(depthSetting, raised) &&
-        regions.some((r) => !depthDiffers(r.depth, depthSetting))
-      )
-        warnBuild(tooDeepWarning(label, part.name, raised, depthSetting));
-      // The warning above describes the setting and holds wherever the color lands. This one
-      // predicts the printed recess, so it must not be said about a part that discards the setting
-      // and cuts the whole way through: "too thin to show up" is wrong about a 3 mm hole. Ask the
-      // mapper what it did with the number; never test `part.cutThrough` here.
-      //
-      // Warnings dedupe by message, so gating per-part is right when a color sits on several: the
-      // note appears if any part cuts at the setting, and stays silent if none do.
-      //
-      // `some`, because a split color is cut at two depths at once: the interior slice deserves
-      // the note, the edge slice does not.
-      //
-      // noticeBuild, not warnBuild: the depth is honored, not overridden. Promoting it was
-      // proposed and rejected, see thinDepthNotice in depth.ts.
-      else if (
-        subLayerDepth(depthSetting) &&
-        regions.some((r) => !depthDiffers(r.depth, depthSetting))
-      )
-        noticeBuild(thinDepthNotice(label, depthSetting));
-      // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
-      // step); the snap tolerance is a property of the bake, so both modes take the same one.
-      const cutterOpts = grid ? { refineMM: FILL_REFINE_MM } : undefined;
-      // Each slice becomes its own prism, landing in the colorPrisms[ci] list the multi-zone case
-      // already fills, so the union below welds them into one solid per color.
-      //
-      // The edge notice promises the rim prints in this color, so it is staged per *part* and
-      // merged build-wide only once this part emits inlays. Every later failure (the per-color
-      // union, the body difference) returns early without merging, so the promise can't outlive
-      // the geometry. Recording build-wide put "the rim prints in that color" next to "exporting
-      // it uncut".
-      const keep = (man: ManifoldSolid, region: CutRegion): void => {
-        (colorPrisms[ci] ||= []).push(man);
-        if (region.edge) partEdgeColors.set(label, region.depth);
-      };
-      for (const region of regions) {
-        const soup = mapper.buildCutter(region.feat, region.depth, OVERSHOOT_MM, cutterOpts);
-        if (soup && soup.length) {
-          try {
-            const man = soupToManifold(wasm, soup);
-            // Freed rather than dropped: an un-watertight soup comes back as an *empty* solid
-            // rather than a throw, so this is the common path here, and a discarded solid is WASM
-            // memory that never reaches `owned`. The ladder below can discard one per rung.
-            if (!manifoldIsValid(man)) {
-              manifoldDelete(man);
-              throw new Error('empty manifold');
-            }
-            keep(man, region);
-            continue;
-          } catch {
-            /* retry below with self-intersections repaired */
-          }
-          // Clipping dense line-work to the part boundary can leave the region self-touching:
-          // valid to turf, non-watertight to Manifold. Repair with Manifold's own 2D boolean
-          // engine and retry, widening the erode when the narrow one does not clear it.
-          //
-          // The ladder is the fix for a real failure rather than defensive retrying: a gravel
-          // photograph on the wheel put eleven regions through here, and one of them needed the
-          // wider distance. Ordered smallest first so a region that repairs at 0.01mm never pays
-          // the extra geometry loss, and it stops well inside what a nozzle can resolve.
-          //
-          // An edge slice stands on the part's outer wall and `keep` records it in
-          // `partEdgeColors` as "the rim prints in this color". Eroding it pulls it off that rim
-          // and leaves a rind of body material, so the wider rungs are withheld there: an edge
-          // slice gets the original single attempt and warns exactly as it did before.
-          let repairedOk = false;
-          const rungs = region.edge ? REPAIR_ERODE_MM.slice(0, 1) : REPAIR_ERODE_MM;
-          // No notice when a wider rung is used. An inward offset of `e` removes only what is
-          // thinner than `2e`, so the 0.05mm rung cannot touch anything wider than a quarter of a
-          // 0.4mm nozzle: nothing printable is at stake. An earlier version raised one, and its
-          // test could never be false because an erode is monotone, so it fired on every
-          // escalation. See docs/findings/2026-08-20-extrude-repair-erode.md.
-          for (const erodeMm of rungs) {
-            try {
-              const repaired = repairSelfIntersections(wasm, region.feat, erodeMm);
-              const soup2 =
-                repaired && mapper.buildCutter(repaired, region.depth, OVERSHOOT_MM, cutterOpts);
-              if (soup2 && soup2.length) {
-                const man2 = soupToManifold(wasm, soup2);
-                if (manifoldIsValid(man2)) {
-                  keep(man2, region);
-                  repairedOk = true;
-                  break;
-                }
-                manifoldDelete(man2);
-              }
-            } catch {
-              /* try the next distance, then warn */
-            }
-          }
-          if (repairedOk) continue;
-        }
-        // The artwork survived the boundary clip but no cutter came out. On a conformal zone the
-        // warp found no surface under part of the region (usually a baked boundary claiming more
-        // area than the chart covers); on a flat one, a region too degenerate to extrude. Same
-        // user-facing outcome as a cutter that fails to become a solid, so they share this message
-        // (warnings dedupe by text). Silence would drop the color with no explanation.
-        //
-        // `continue`, not `return`: a color split across two depths must not lose its interior
-        // recess because the edge slice failed to extrude, or the other way round.
-        landedColors.add(ci);
-        warnBuild(`Couldn't cut color ${c.hex} into "${part.name}".`);
-      }
-    };
-    // Artworks landing on a zone: those bound to it by id, plus any unbound one. Unbound is the
-    // single-zone case (wheel, footrest), which goes wherever the part offers.
-    const artworksOn = (mapper: ZoneMapper): number[] =>
-      artworks.flatMap((a, ai) => (a.zoneId == null || a.zoneId === mapper.zoneId ? [ai] : []));
-
-    // +1 reserved for the body/inlay CSG stage below, so progress reaches 1 only once every color
-    // on every zone plus the final cuts are done.
-    const zoneWork = mappers.map(artworksOn);
-    const partUnits = palette.length * zoneWork.reduce((s, l) => s + l.length, 0) + 1;
-    let unitsDone = 0;
-    // Everything this loop allocates lives in `colorPrisms` and is not tracked by `owned`, which
-    // does not exist until after it. So a throw from inside here — the cancel check below is the
-    // only one — would leak every cutter built so far, which is the leak throwIfCancelled's own
-    // doc warns about. This catch is the owner for that window, and nothing else in the loop
-    // throws past it: buildColorPrism handles its own failures per colour.
+    // Every Manifold solid this part allocates, freed by the one finally at the end of the body.
+    // A Set because a solid is registered where it is created and the union/cut steps hand the
+    // same handle on, and because it is what lets throwIfCancelled be called anywhere below: with
+    // solids freed per branch instead, a cancel mid-cut leaked WASM that repeated cancelling
+    // accumulated, so the check could only sit where nothing was allocated.
+    const held = new Set<ManifoldSolid>();
     try {
+      // A color can be cut on several zones of one part, so each collects a list of solids that is
+      // unioned before the body/inlay booleans.
+      const colorPrisms: Record<number, ManifoldSolid[]> = {};
+      // Staged edge-rule colors, merged into edgeCutColors only where the part succeeds (see `keep`).
+      const partEdgeColors = new Map<string, number>();
+      // A plain function, not inlined below, so its early `return`s mean "skip this color" without
+      // fighting the surrounding for-loop/await.
+      const buildColorPrism = async (
+        mapper: ZoneMapper,
+        boundaryPoly: PolyFeature | null,
+        place: (pt: number[]) => number[],
+        grid: TileGrid | null,
+        c: AssemblyPaletteEntry,
+        ci: number,
+        ai: number,
+        onProgress: (fraction: number) => void,
+      ): Promise<void> => {
+        const source = featuresByColor[ci][ai];
+        if (!source) return;
+        // Fill: repeat the regions across the grid *in SVG space*, before placement, so tiles
+        // inherit the placement's rotation/scale/offset and seam-straddling copies overlap where the
+        // union can weld them.
+        const tiled = grid
+          ? await tileFeature(source, grid, onProgress, `color ${c.hex} on ${part.name}`)
+          : source;
+        if (!tiled) return;
+        let feat: PolyFeature | null = mapFeatureCoords(tiled, place);
+        // Whether the region really is bounded by the face. On a clipper failure safeIntersect hands
+        // the region back *unclipped*, and the edge rule reads "reaches past the face boundary" as
+        // "stands on the part's outer wall": an unclipped region would read as all-edge and cut
+        // clean through instead of recessed. Tracked rather than assumed; see the mapper.
+        let clipped = true;
+        if (boundaryPoly) {
+          const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
+          feat = r.feat;
+          clipped = r.clipped;
+          if (!feat) return;
+          // Only a real clip proves the color reached this face. A cut-through zone has no clip
+          // boundary (its boolean against the mesh is what bounds the cut), so there a color counts
+          // as landed only when that boolean yields an inlay, in the intersection loop below.
+          landedColors.add(ci);
+        }
+        const requested = requestedDepth(colorSettings, globalDepth, c.key);
+        // A depth at or below zero cuts nothing and used to drop the color silently, deleting its
+        // color-list row and with it the depth field needed to fix it. Raise to a printable depth so
+        // the color stays on screen and stays fixable.
+        //
+        // The message reports the *setting* it raised, not the cut produced: what a part does with a
+        // depth is the mapper's business. Naming a cut depth here claimed 0.02 mm on a 3 mm
+        // through-cut. No part name either, so it dedupes to one warning per color.
+        const raised = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
+        // And bounded above by how far this part actually extends behind its design face. Without
+        // this, assembly mode had no upper bound at all: 20 mm and 9999 mm on the wheel both built
+        // and exported with no warning, while flat mode clamped and warned for the same input, and
+        // depth.ts's own comment claimed both did. The flat modes then left the UI, making the
+        // unbounded path the only one a user can reach.
+        //
+        // **Not a wall-thickness check.** A recess shallower than this can still break through a
+        // thin wall; measuring that is still owed (docs/tech-debt.md). This bounds the absurd.
+        const depthSetting = Math.min(raised, mapper.maxCutDepth());
+        const label = regionLabel(c.hex, c.isMerge, c.members.length);
+        // One entry per depth this zone wants, each carrying the slice cut at it, usually just one.
+        // An edge rule (a hubcap cut to its artwork's shape) splits the region into polygons
+        // standing on the outer wall, cut full thickness, and the rest, cut at the setting. The
+        // mapper owns that decision; this loop just extrudes what it is handed.
+        const regions = mapper.resolveCutRegions(feat, depthSetting, {
+          label: `color ${label}`,
+          clipped,
+        });
+        if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depthSetting));
+        // Gated on what the mapper did with the number, exactly like the sub-layer note below, and
+        // for the same reason: a cutThrough part discards the setting and holes the whole way
+        // through, so "it was cut at 24.25 mm instead" would be false there. Never test
+        // `part.cutThrough` here.
+        // Not on a rotated copy: it shares its source's mesh, face and topZ by construction
+        // (asmAddDuplicate), so its bound is the same number and the pill would differ only by
+        // "(rotated copy)". A two-half wheel with eight colours raised sixteen, half of them saying
+        // nothing new. zeroDepthWarning drops the part name outright for the same reason; this one
+        // keeps it, because the bound really is per-part wherever the parts differ.
+        else if (
+          !part.isDuplicateOf &&
+          depthDiffers(depthSetting, raised) &&
+          regions.some((r) => !depthDiffers(r.depth, depthSetting))
+        )
+          warnBuild(tooDeepWarning(label, part.name, raised, depthSetting));
+        // The warning above describes the setting and holds wherever the color lands. This one
+        // predicts the printed recess, so it must not be said about a part that discards the setting
+        // and cuts the whole way through: "too thin to show up" is wrong about a 3 mm hole. Ask the
+        // mapper what it did with the number; never test `part.cutThrough` here.
+        //
+        // Warnings dedupe by message, so gating per-part is right when a color sits on several: the
+        // note appears if any part cuts at the setting, and stays silent if none do.
+        //
+        // `some`, because a split color is cut at two depths at once: the interior slice deserves
+        // the note, the edge slice does not.
+        //
+        // noticeBuild, not warnBuild: the depth is honored, not overridden. Promoting it was
+        // proposed and rejected, see thinDepthNotice in depth.ts.
+        else if (
+          subLayerDepth(depthSetting) &&
+          regions.some((r) => !depthDiffers(r.depth, depthSetting))
+        )
+          noticeBuild(thinDepthNotice(label, depthSetting));
+        // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
+        // step); the snap tolerance is a property of the bake, so both modes take the same one.
+        const cutterOpts = grid ? { refineMM: FILL_REFINE_MM } : undefined;
+        // Each slice becomes its own prism, landing in the colorPrisms[ci] list the multi-zone case
+        // already fills, so the union below welds them into one solid per color.
+        //
+        // The edge notice promises the rim prints in this color, so it is staged per *part* and
+        // merged build-wide only once this part emits inlays. Every later failure (the per-color
+        // union, the body difference) returns early without merging, so the promise can't outlive
+        // the geometry. Recording build-wide put "the rim prints in that color" next to "exporting
+        // it uncut".
+        const keep = (man: ManifoldSolid, region: CutRegion): void => {
+          held.add(man);
+          (colorPrisms[ci] ||= []).push(man);
+          if (region.edge) partEdgeColors.set(label, region.depth);
+        };
+        for (const region of regions) {
+          const soup = mapper.buildCutter(region.feat, region.depth, OVERSHOOT_MM, cutterOpts);
+          if (soup && soup.length) {
+            try {
+              const man = soupToManifold(wasm, soup);
+              // Freed rather than dropped: an un-watertight soup comes back as an *empty* solid
+              // rather than a throw, so this is the common path here, and a discarded solid is WASM
+              // memory that never reaches `held`. The ladder below can discard one per rung.
+              if (!manifoldIsValid(man)) {
+                manifoldDelete(man);
+                throw new Error('empty manifold');
+              }
+              keep(man, region);
+              continue;
+            } catch {
+              /* retry below with self-intersections repaired */
+            }
+            // Clipping dense line-work to the part boundary can leave the region self-touching:
+            // valid to turf, non-watertight to Manifold. Repair with Manifold's own 2D boolean
+            // engine and retry, widening the erode when the narrow one does not clear it.
+            //
+            // The ladder is the fix for a real failure rather than defensive retrying: a gravel
+            // photograph on the wheel put eleven regions through here, and one of them needed the
+            // wider distance. Ordered smallest first so a region that repairs at 0.01mm never pays
+            // the extra geometry loss, and it stops well inside what a nozzle can resolve.
+            //
+            // An edge slice stands on the part's outer wall and `keep` records it in
+            // `partEdgeColors` as "the rim prints in this color". Eroding it pulls it off that rim
+            // and leaves a rind of body material, so the wider rungs are withheld there: an edge
+            // slice gets the original single attempt and warns exactly as it did before.
+            let repairedOk = false;
+            const rungs = region.edge ? REPAIR_ERODE_MM.slice(0, 1) : REPAIR_ERODE_MM;
+            // No notice when a wider rung is used. An inward offset of `e` removes only what is
+            // thinner than `2e`, so the 0.05mm rung cannot touch anything wider than a quarter of a
+            // 0.4mm nozzle: nothing printable is at stake. An earlier version raised one, and its
+            // test could never be false because an erode is monotone, so it fired on every
+            // escalation. See docs/findings/2026-08-20-extrude-repair-erode.md.
+            for (const erodeMm of rungs) {
+              try {
+                const repaired = repairSelfIntersections(wasm, region.feat, erodeMm);
+                const soup2 =
+                  repaired && mapper.buildCutter(repaired, region.depth, OVERSHOOT_MM, cutterOpts);
+                if (soup2 && soup2.length) {
+                  const man2 = soupToManifold(wasm, soup2);
+                  if (manifoldIsValid(man2)) {
+                    keep(man2, region);
+                    repairedOk = true;
+                    break;
+                  }
+                  manifoldDelete(man2);
+                }
+              } catch {
+                /* try the next distance, then warn */
+              }
+            }
+            if (repairedOk) continue;
+          }
+          // The artwork survived the boundary clip but no cutter came out. On a conformal zone the
+          // warp found no surface under part of the region (usually a baked boundary claiming more
+          // area than the chart covers); on a flat one, a region too degenerate to extrude. Same
+          // user-facing outcome as a cutter that fails to become a solid, so they share this message
+          // (warnings dedupe by text). Silence would drop the color with no explanation.
+          //
+          // `continue`, not `return`: a color split across two depths must not lose its interior
+          // recess because the edge slice failed to extrude, or the other way round.
+          landedColors.add(ci);
+          warnBuild(`Couldn't cut color ${c.hex} into "${part.name}".`);
+        }
+      };
+      // Artworks landing on a zone: those bound to it by id, plus any unbound one. Unbound is the
+      // single-zone case (wheel, footrest), which goes wherever the part offers.
+      const artworksOn = (mapper: ZoneMapper): number[] =>
+        artworks.flatMap((a, ai) => (a.zoneId == null || a.zoneId === mapper.zoneId ? [ai] : []));
+
+      // +1 reserved for the body/inlay CSG stage below, so progress reaches 1 only once every color
+      // on every zone plus the final cuts are done.
+      const zoneWork = mappers.map(artworksOn);
+      const partUnits = palette.length * zoneWork.reduce((s, l) => s + l.length, 0) + 1;
+      let unitsDone = 0;
       for (let zi = 0; zi < mappers.length; zi++) {
         const mapper = mappers[zi];
         if (!zoneWork[zi].length) continue;
@@ -1083,167 +1079,159 @@ export async function buildAssemblyGeometry(
           }
         }
       }
-    } catch (e) {
-      Object.values(colorPrisms).forEach((list) => list.forEach(manifoldDelete));
-      throw e;
-    }
 
-    // Per color: the union of its cutters across every zone. `owned` tracks each solid exactly
-    // once (originals plus any union built from them) so the cleanup below frees all of them.
-    const owned: ManifoldSolid[] = [];
-    const prismEntries: [number, ManifoldSolid][] = [];
-    for (const [ci, list] of Object.entries(colorPrisms)) {
-      owned.push(...list);
-      let merged: ManifoldSolid;
-      try {
-        if (list.length === 1) {
-          merged = list[0];
-        } else {
-          csgFault('color-union');
-          merged = Manifold.union(list);
+      // Per color: the union of its cutters across every zone.
+      const prismEntries: [number, ManifoldSolid][] = [];
+      for (const [ci, list] of Object.entries(colorPrisms)) {
+        // Past the cutter loop a part is one atomic Manifold call after another, so this check,
+        // the one before the difference and the one in the inlay loop are the finest boundaries
+        // left in it. They are safe only because of the finally above.
+        throwIfCancelled();
+        let merged: ManifoldSolid;
+        try {
+          if (list.length === 1) {
+            merged = list[0];
+          } else {
+            csgFault('color-union');
+            merged = Manifold.union(list);
+          }
+        } catch {
+          // This color's cutters (different zones, same part) couldn't be merged. Drop just this
+          // color rather than losing the whole part's cut.
+          landedColors.add(+ci);
+          warnBuild(
+            `Couldn't merge color ${palette[+ci].hex} on "${part.name}". It won't print there.`,
+          );
+          continue;
         }
-      } catch {
-        // This color's cutters (different zones, same part) couldn't be merged. Drop just this
-        // color rather than losing the whole part's cut.
-        landedColors.add(+ci);
-        warnBuild(
-          `Couldn't merge color ${palette[+ci].hex} on "${part.name}". It won't print there.`,
-        );
+        if (merged !== list[0]) held.add(merged);
+        prismEntries.push([+ci, merged]);
+      }
+      if (!prismEntries.length) {
+        // No cuts landed (or none survived the merge above): emit the untouched body so the
+        // assembly still exports whole.
+        partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
+        finishPart();
         continue;
       }
-      if (merged !== list[0]) owned.push(merged);
-      prismEntries.push([+ci, merged]);
-    }
-    if (!prismEntries.length) {
-      // No cuts landed (or none survived the merge above): emit the untouched body so the
-      // assembly still exports whole.
-      partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
-      owned.forEach(manifoldDelete);
-      finishPart();
-      continue;
-    }
 
-    let partMan: ManifoldSolid;
-    try {
-      partMan = soupToManifold(wasm, part.positions);
-    } catch {
-      prismEntries.forEach(([pci]) => landedColors.add(pci));
-      warnBuild(`Couldn't read "${part.name}", so it is not exported.`);
-      owned.forEach(manifoldDelete);
-      finishPart();
-      continue;
-    }
-    if (!manifoldIsValid(partMan)) {
-      prismEntries.forEach(([pci]) => landedColors.add(pci));
-      warnBuild(
-        `Part "${part.name}" isn't a watertight/manifold mesh, so it can't be cut cleanly. Repair it (close holes, fix flipped faces) and retry. Exporting it uncut for now.`,
-      );
-      partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
-      manifoldDelete(partMan);
-      owned.forEach(manifoldDelete);
-      finishPart();
-      continue;
-    }
-
-    // full modified body = part - union(all color pockets)
-    const prismList = prismEntries.map(([, p]) => p);
-    let cutter: ManifoldSolid;
-    try {
-      if (prismList.length === 1) {
-        cutter = prismList[0];
-      } else {
-        csgFault('part-union');
-        cutter = Manifold.union(prismList);
-      }
-    } catch {
-      // Nothing to cut with. Same escape as the non-watertight branch above: export the untouched
-      // body rather than risk a half-cut/half-inlaid pair that would overlap.
-      prismEntries.forEach(([pci]) => landedColors.add(pci));
-      warnBuild(`Couldn't merge the recesses on "${part.name}". It exports with no artwork.`);
-      partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
-      manifoldDelete(partMan);
-      owned.forEach(manifoldDelete);
-      finishPart();
-      continue;
-    }
-    if (cutter !== prismList[0]) owned.push(cutter);
-    let bodySoup: Float32Array;
-    let bodyIndexed: AssemblyPartOutput['bodyIndexed'];
-    let bodyCutFailed = false;
-    // `body` is declared outside the try so the finally frees it even when the throw came from
-    // manifoldToMeshes rather than the boolean. Otherwise the solid leaks, unreachable.
-    let body: ManifoldSolid | null = null;
-    try {
-      csgFault('difference');
-      body = Manifold.difference(partMan, cutter);
-      // After the solid exists, before conversion: the only injection point exercising the
-      // finally's freed handle rather than just the degradation.
-      csgFault('body-mesh');
-      const meshes = manifoldToMeshes(body);
-      bodySoup = meshes.soup;
-      bodyIndexed = meshes.indexed;
-    } catch {
-      bodyCutFailed = true;
-      bodySoup = Float32Array.from(part.positions);
-    } finally {
-      manifoldDelete(body);
-    }
-    await maybeYield();
-
-    if (bodyCutFailed) {
-      // Body and inlays come from the same boolean pass. If the cut failed, building inlays anyway
-      // ships an uncut body plus inlay solids in the same volume, which a slicer resolves
-      // arbitrarily. Export uncut and inlay-less instead.
-      prismEntries.forEach(([pci]) => landedColors.add(pci));
-      warnBuild(
-        `Couldn't cut the recesses into "${part.name}". It exports with no artwork. ` +
-          `Cutting halfway would leave two colors claiming the same space.`,
-      );
-      partOutputs.push({ part, bodySoup, inlaySoups: {} });
-      owned.forEach(manifoldDelete);
-      manifoldDelete(partMan);
-      finishPart();
-      continue;
-    }
-
-    // per-color inlay = part ∩ prism (the part caps the overshoot, so the inlay top is flush)
-    const inlaySoups: Record<number, Float32Array> = {};
-    const inlayIndexed: Record<number, IndexedMesh> = {};
-    for (const [ci, prism] of prismEntries) {
-      let inl: ManifoldSolid | null = null;
+      let partMan: ManifoldSolid;
       try {
-        csgFault('intersection');
-        inl = Manifold.intersection(partMan, prism);
-        const { soup, indexed } = manifoldToMeshes(inl);
-        if (soup.length) {
-          inlaySoups[ci] = soup;
-          inlayIndexed[ci] = indexed;
-          landedColors.add(ci);
+        partMan = soupToManifold(wasm, part.positions);
+        held.add(partMan);
+      } catch {
+        prismEntries.forEach(([pci]) => landedColors.add(pci));
+        warnBuild(`Couldn't read "${part.name}", so it is not exported.`);
+        finishPart();
+        continue;
+      }
+      if (!manifoldIsValid(partMan)) {
+        prismEntries.forEach(([pci]) => landedColors.add(pci));
+        warnBuild(
+          `Part "${part.name}" isn't a watertight/manifold mesh, so it can't be cut cleanly. Repair it (close holes, fix flipped faces) and retry. Exporting it uncut for now.`,
+        );
+        partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
+        finishPart();
+        continue;
+      }
+
+      // full modified body = part - union(all color pockets)
+      const prismList = prismEntries.map(([, p]) => p);
+      let cutter: ManifoldSolid;
+      try {
+        if (prismList.length === 1) {
+          cutter = prismList[0];
+        } else {
+          csgFault('part-union');
+          cutter = Manifold.union(prismList);
         }
       } catch {
-        // Unlike the body-cut failure above, exporting uncut can't undo this: the body's pocket
-        // for this color is already cut, and redoing that difference is the expensive half. Name
-        // the color and say the recess ships empty, so the warning is actionable.
-        landedColors.add(ci);
-        warnBuild(
-          `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}". Its pocket ` +
-            `is cut into the body but will print as an empty recess.`,
-        );
+        // Nothing to cut with. Same escape as the non-watertight branch above: export the untouched
+        // body rather than risk a half-cut/half-inlaid pair that would overlap.
+        prismEntries.forEach(([pci]) => landedColors.add(pci));
+        warnBuild(`Couldn't merge the recesses on "${part.name}". It exports with no artwork.`);
+        partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
+        finishPart();
+        continue;
+      }
+      if (cutter !== prismList[0]) held.add(cutter);
+      throwIfCancelled();
+      let bodySoup: Float32Array;
+      let bodyIndexed: AssemblyPartOutput['bodyIndexed'];
+      let bodyCutFailed = false;
+      // `body` is declared outside the try so the finally frees it even when the throw came from
+      // manifoldToMeshes rather than the boolean. Otherwise the solid leaks, unreachable.
+      let body: ManifoldSolid | null = null;
+      try {
+        csgFault('difference');
+        body = Manifold.difference(partMan, cutter);
+        // After the solid exists, before conversion: the only injection point exercising the
+        // finally's freed handle rather than just the degradation.
+        csgFault('body-mesh');
+        const meshes = manifoldToMeshes(body);
+        bodySoup = meshes.soup;
+        bodyIndexed = meshes.indexed;
+      } catch {
+        bodyCutFailed = true;
+        bodySoup = Float32Array.from(part.positions);
       } finally {
-        manifoldDelete(inl);
+        manifoldDelete(body);
       }
       await maybeYield();
+
+      if (bodyCutFailed) {
+        // Body and inlays come from the same boolean pass. If the cut failed, building inlays anyway
+        // ships an uncut body plus inlay solids in the same volume, which a slicer resolves
+        // arbitrarily. Export uncut and inlay-less instead.
+        prismEntries.forEach(([pci]) => landedColors.add(pci));
+        warnBuild(
+          `Couldn't cut the recesses into "${part.name}". It exports with no artwork. ` +
+            `Cutting halfway would leave two colors claiming the same space.`,
+        );
+        partOutputs.push({ part, bodySoup, inlaySoups: {} });
+        finishPart();
+        continue;
+      }
+
+      // per-color inlay = part ∩ prism (the part caps the overshoot, so the inlay top is flush)
+      const inlaySoups: Record<number, Float32Array> = {};
+      const inlayIndexed: Record<number, IndexedMesh> = {};
+      for (const [ci, prism] of prismEntries) {
+        throwIfCancelled();
+        let inl: ManifoldSolid | null = null;
+        try {
+          csgFault('intersection');
+          inl = Manifold.intersection(partMan, prism);
+          const { soup, indexed } = manifoldToMeshes(inl);
+          if (soup.length) {
+            inlaySoups[ci] = soup;
+            inlayIndexed[ci] = indexed;
+            landedColors.add(ci);
+          }
+        } catch {
+          // Unlike the body-cut failure above, exporting uncut can't undo this: the body's pocket
+          // for this color is already cut, and redoing that difference is the expensive half. Name
+          // the color and say the recess ships empty, so the warning is actionable.
+          landedColors.add(ci);
+          warnBuild(
+            `Couldn't fit the inlay for color ${palette[ci].hex} on "${part.name}". Its pocket ` +
+              `is cut into the body but will print as an empty recess.`,
+          );
+        } finally {
+          manifoldDelete(inl);
+        }
+        await maybeYield();
+      }
+
+      // The part shipped with its inlays, so what the edge rule did is now true of the export and
+      // can be said. Merged, not assigned: a color can reach the edge on one part and not another.
+      for (const [l, d] of partEdgeColors) edgeCutColors.set(l, d);
+
+      partOutputs.push({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed });
+      finishPart();
+    } finally {
+      held.forEach(manifoldDelete);
     }
-
-    owned.forEach(manifoldDelete);
-    manifoldDelete(partMan);
-
-    // The part shipped with its inlays, so what the edge rule did is now true of the export and
-    // can be said. Merged, not assigned: a color can reach the edge on one part and not another.
-    for (const [l, d] of partEdgeColors) edgeCutColors.set(l, d);
-
-    partOutputs.push({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed });
-    finishPart();
   }
   // Once, after every part: one notice naming every color the edge rule took the full way through.
   // Grouped by cut depth, a single value in practice (one part has the rule) but per-part in the

@@ -378,58 +378,30 @@ operation (many small pieces unioned, rather than a growing accumulator subtract
 has not been taken. Do that first. A constant copied across from the other call site would close
 the finding without measuring anything, which is the failure this file exists to prevent.
 
-## Cancel still waits for the part being cut, once cutting has started
+## A cancel still waits for the one Manifold call already running
 
-Mostly closed by the 2026-08-24 cycle's **T0-7**, and reduced to a much smaller
-claim than this section used to make.
+The per-part body now has a `finally` over every solid it allocates, and checks
+at each boundary between its atomic Manifold calls, so a press during the cut
+aborts the part instead of waiting it out. Measured on a 6000-region wheel at
+**0.04-0.06s** for every cancel after the first, and **0.07-0.29s** for the first
+of a session, over five runs, with the WASM heap flat at 16.8 MB;
+[2026-08-28 cancel inside the cut](findings/2026-08-28-cancel-inside-the-cut.md)
+carries the run and the leak it was falsified against.
 
-**What was wrong.** The single check at the top of the part loop was in the wrong
-phase. The cycle measured 140.4s of latency on a 6000-region wheel with the button
-reading "Cancelling…" throughout, and read that as the per-part cut being
-uninterruptible. It was not. Driving the same fixture and clicking Cancel at a
-fixed t+10s, the readout stood at **11%** at the click, which is inside
-`computeNetRegionsByColor` ([regions.ts](../src/geometry/regions.ts)) — the 2D
-paint-order pass that runs before any Manifold solid exists. A check at its yield
-points takes that fixture from **140.4s to 0.3s**, and is safe precisely because
-that pass holds no solids.
+What is left is the floor: the checks sit between colours and between booleans,
+so the wait is whatever the step already running takes. That is one union,
+difference or intersection, or one colour's extrusions plus the repair ladder
+behind them.
 
-The cycle recorded the readout climbing 24%→40% on this fixture, so it is not
-stuck; the phase is simply long enough that a click at t+10s lands early in it.
-Every number here comes from
-[2026-08-25 cancel latency](findings/2026-08-25-cancel-latency.md), including the
-40-colour run that showed the first fix doing nothing.
-
-Two checks were added, and only one of them mattered. The per-colour one inside
-the cutter loop is correct and carries its own owner over `colorPrisms`, but on
-that fixture it never fired, because the time was not there. It is kept for the
-case where it is.
-
-**What is still open.** Once cutting has genuinely started, cancelling waits for
-the part being cut to finish: `owned` and `partMan` are freed by hand on each
-branch with no outer try/finally, so a check anywhere else in the per-part body
-leaks WASM that repeated cancelling accumulates.
-
-The 177.0 MB heap-flat figure quoted here previously was measured on 2026-08-17
-against the single original call site, and is not evidence about the two added
-since. Neither the `colorPrisms` catch nor the regions.ts sites have a heap
-measurement behind them: the first is reasoned from ownership, the second from
-there being nothing allocated to leak.
-
-**And `computeNetRegionsByColor` is memoized on the shapes array identity**, so a
-rebuild reusing a cached pass skips both of its checks. A second rebuild forced by
-a depth edit was measured and still cancelled in 0.3s, so the case did not
-reproduce, but that is not proof it cannot.
-
-- **A single-part assembly still cannot be cancelled mid-cut**, nor can a press
-  landing during the last part.
-- **`unionAllCooperative` is still not a safe place to check.** It is shared with
-  Fill's tiling, which runs inside the per-part body holding solids. This is the
-  trap [src/cancel.ts](../src/cancel.ts) records, and it is why the fix went where
-  it did rather than there.
-
-Closing the rest is still one job: give the per-part loop body a `finally` that
-releases what it holds. It is worth much less than it was, since the phase that
-actually took minutes is now interruptible.
+- **Unmeasured.** Only the wheel was driven, and its cut is short next to its
+  region pass. The case that would show the floor is the chair in Fill, whose cut
+  is heavy (93.6s for one zone, recorded on `showOverlay` in
+  [src/ui/overlay.ts](../src/ui/overlay.ts)).
+- Closing it needs the engine to yield mid-boolean, which Manifold does not
+  offer. Measuring it first is the cheap half, and needs
+  `scripts/check-cancel-latency.mjs` extended: it hardcodes a wheel fixture of
+  rects and takes only a region count and a repeat count, so a chair run means
+  teaching it a kind and a Fill mode.
 
 ## The depth field cannot show a clamp that depends on the part
 

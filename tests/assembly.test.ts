@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import {
   asmPartFaceNormal,
@@ -12,7 +12,9 @@ import {
   type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
-import { getManifold } from '../src/geometry/manifold';
+import { getManifold, type ManifoldAPI, type ManifoldSolid } from '../src/geometry/manifold';
+import { armCancel, RebuildCancelled, requestCancel } from '../src/cancel';
+import { setProgressSink } from '../src/progress';
 import { build3MFCombined, type ExportPart, type ExportSub } from '../src/export/threemf';
 import { getPrinter } from '../src/export/printers';
 import { partObjectSummaries } from './lib/threemf';
@@ -382,9 +384,9 @@ describe('buildAssemblyGeometry', () => {
         const unionSpy = vi.spyOn(wasm.Manifold, 'union').mockImplementation(() => {
           throw new Error('mock union failure');
         });
-        // `owned` (assembly.ts) tracks every solid created for this part and frees them all via
-        // manifoldDelete — including the two red prisms whose union failed, which are pushed
-        // into `owned` before the union is even attempted. Spying on the underlying .delete()
+        // `held` (assembly.ts) tracks every solid created for this part and its finally frees
+        // them all via manifoldDelete — including the two red prisms whose union failed, which
+        // are registered as they are built. Spying on the underlying .delete()
         // that manifoldDelete calls is the only way to observe that from outside the module.
         // The getPrototypeOf hop is load-bearing, not stylistic: `wasm.Manifold.prototype` itself
         // is an empty Embind shim object that real solids don't actually chain through, so
@@ -721,6 +723,176 @@ describe('buildAssemblyGeometry', () => {
       expect((b.minZ + b.maxZ) / 2).toBeCloseTo((a.minZ + a.maxZ) / 2, 3);
     },
   );
+});
+
+/**
+ * One case per cancel site inside the per-part body, because a site nothing arms is a site that
+ * can be deleted with the suite still green -- the failure tests/cancel-sites.test.ts records.
+ *
+ * Deleting any one of the three sites this covers (the per-color union, before the body
+ * difference, the inlay loop) fails exactly one case below. The two between-part sites (the top of
+ * the part loop, and the per-color step of the cutter loop) are redundant with each other for a
+ * part carrying artwork: whichever survives catches the press. Deleting BOTH fails the last case,
+ * with a fifth solid allocated for a part that should never have started.
+ */
+describe('cancelling once cutting has started', () => {
+  afterEach(() => {
+    armCancel();
+    setProgressSink(null);
+  });
+
+  /**
+   * Every solid the build allocates, and whether it was freed. Wrapping the class on the shared
+   * wasm object catches both routes one appears by: `new Manifold(...)` inside soupToManifold, and
+   * the statics that return a fresh solid. Nothing outside the module can see `held`, so watching
+   * the handles themselves is what makes a leak observable.
+   *
+   * `onStatic` is where a press is simulated from, so each test below can put the cancel in front
+   * of a different check rather than all landing on the same one.
+   */
+  function trackSolids(wasm: ManifoldAPI, onStatic: (name: string) => void = () => {}) {
+    const real = wasm.Manifold;
+    const live = new Set<ManifoldSolid>();
+    let created = 0;
+    const track = (solid: ManifoldSolid): ManifoldSolid => {
+      created++;
+      live.add(solid);
+      const free = solid.delete.bind(solid);
+      Object.defineProperty(solid, 'delete', {
+        configurable: true,
+        value: () => {
+          live.delete(solid);
+          free();
+        },
+      });
+      return solid;
+    };
+    const statics = new Set(['union', 'difference', 'intersection']);
+    wasm.Manifold = new Proxy(real, {
+      construct: (target, args: unknown[]) =>
+        track(Reflect.construct(target, args) as ManifoldSolid),
+      get: (target, prop) => {
+        const value: unknown = Reflect.get(target, prop);
+        if (typeof value !== 'function' || typeof prop !== 'string' || !statics.has(prop))
+          return value;
+        return (...args: unknown[]): ManifoldSolid => {
+          onStatic(prop);
+          return track((value as (...a: unknown[]) => ManifoldSolid).apply(target, args));
+        };
+      },
+    });
+    return {
+      live,
+      created: () => created,
+      restore: () => {
+        wasm.Manifold = real;
+      },
+    };
+  }
+
+  /** Press Cancel once the build reports progress past `fraction`, as the curtain's button does. */
+  function cancelAtProgress(fraction: number): void {
+    setProgressSink((f) => {
+      if (f > fraction) requestCancel();
+    });
+  }
+
+  async function expectCancelled(input: AssemblyBuildInput): Promise<void> {
+    await expect(buildAssemblyGeometry(input)).rejects.toBeInstanceOf(RebuildCancelled);
+  }
+
+  it(
+    'aborts before the body difference, freeing the cutter and the part mesh',
+    { timeout: 30000 },
+    async () => {
+      const wasm = await getManifold();
+      armCancel();
+      clearWarnings();
+      // Two colors, so the part-wide union of their prisms runs and the press can land on it: the
+      // moment the cut is assembled and about to be applied.
+      const tracker = trackSolids(wasm, (name) => {
+        if (name === 'union') requestCancel();
+      });
+      try {
+        await expectCancelled(baseInput({ parsed: twoColorSquaresParsed() }));
+
+        // Two prisms, the part mesh, and the union of the prisms. No difference was attempted.
+        expect(tracker.created()).toBe(4);
+        expect(tracker.live.size).toBe(0);
+      } finally {
+        tracker.restore();
+      }
+    },
+  );
+
+  it(
+    'aborts the part mid-cut and frees every solid that part allocated',
+    { timeout: 30000 },
+    async () => {
+      const wasm = await getManifold();
+      armCancel();
+      clearWarnings();
+      // As if the button were pressed while the body difference was running: the part holds its
+      // cutter and its own mesh at that moment, which is the state the finally has to survive.
+      const tracker = trackSolids(wasm, (name) => {
+        if (name === 'difference') requestCancel();
+      });
+      try {
+        await expectCancelled(baseInput());
+
+        // The cutter prism, the part mesh, and the cut body. The inlay intersection is never
+        // reached, which is the point: the press stopped the part rather than waiting it out.
+        expect(tracker.created()).toBe(3);
+        expect(tracker.live.size).toBe(0);
+      } finally {
+        tracker.restore();
+      }
+    },
+  );
+
+  it(
+    'aborts a single-color part after its cutter is built, before the part mesh is read',
+    { timeout: 30000 },
+    async () => {
+      const wasm = await getManifold();
+      armCancel();
+      clearWarnings();
+      // One color on one part: the case the cutter loop's own per-color check cannot catch,
+      // because there is no second color for it to run before. Progress passes 0.4 only once the
+      // part loop is running, and the first report past it is this color's finished cutter.
+      const tracker = trackSolids(wasm);
+      cancelAtProgress(0.4);
+      try {
+        await expectCancelled(baseInput());
+
+        expect(tracker.created()).toBe(1);
+        expect(tracker.live.size).toBe(0);
+      } finally {
+        tracker.restore();
+      }
+    },
+  );
+
+  it('does not start the next part once a press lands', { timeout: 30000 }, async () => {
+    const wasm = await getManifold();
+    armCancel();
+    clearWarnings();
+    const tracker = trackSolids(wasm);
+    // 0.7 is the report the first of two parts makes as it finishes, so the press arrives with
+    // that part complete and nothing of the second one allocated.
+    cancelAtProgress(0.69);
+    try {
+      await expectCancelled(
+        baseInput({ parts: [boxPart(), boxPart({ id: 2, name: 'second box' })] }),
+      );
+
+      // The first part's four solids and nothing after them: prism, part mesh, body, inlay.
+      expect(tracker.created()).toBe(4);
+      expect(tracker.live.size).toBe(0);
+    } finally {
+      tracker.restore();
+    }
+  });
 });
 
 describe('fillRefusalMessage', () => {
