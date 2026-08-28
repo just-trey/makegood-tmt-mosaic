@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`src/geometry/hubcap.ts` now uses ASCII apostrophes**, matching the other
+  75 of 76 `.ts` files in `src/` (`find src -type f -name "*.ts" -not -name
+"*.d.ts" -exec grep -l "’" {} \;`). The four hubcap warning strings read the
+  same to a user; the matching quotes in `docs/troubleshooting.md` are
+  updated in the same commit so `npm run check:troubleshooting` still passes.
+
 ## [0.7.0] - 2026-08-28
 
 ### Added

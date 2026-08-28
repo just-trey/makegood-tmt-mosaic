@@ -1699,20 +1699,3 @@ section would duplicate one warning across two.
 second is the harder half, and that difficulty is the reason this direction is
 still unguarded: deciding what counts as a user-visible warning has to be
 mechanical, and the set the copy gate admits is not the set worth a section.
-
-## `src/geometry/hubcap.ts` is the only file shipping typographic apostrophes
-
-It carries 4, against ASCII apostrophes everywhere else in `src/`, and it is
-the only one of 76 files that does. Nothing gates apostrophe style, so this was
-invisible until the quote gate landed.
-
-The five doc quotes corrected on that branch were corrected **to match the
-outlier**, because a shipped string is what the user sees and pastes into a
-search. That pins the docs to inconsistent copy rather than fixing it.
-
-**Closing it** means normalising `hubcap.ts` to ASCII and re-syncing those doc
-quotes in the same commit, since the gate would otherwise fail on the change.
-It was left out of the branch that found it: that branch had no measurement
-saying which style the app should use, and changing four user-facing strings to
-satisfy a tooling observation is the "never invent a constant to satisfy a
-reviewer" shape.
