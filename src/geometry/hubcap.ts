@@ -396,7 +396,7 @@ export const HUBCAP_MIN_CLIP_COVERAGE = 0.9;
 
 /** Silhouette asked for with nothing loaded to take one from. */
 export const HUBCAP_SILHOUETTE_NO_ARTWORK =
-  'The hubcap is set to follow your artwork’s shape, but no artwork is loaded. It stays round ' +
+  "The hubcap is set to follow your artwork's shape, but no artwork is loaded. It stays round " +
   'until you add one.';
 
 /**
@@ -404,7 +404,7 @@ export const HUBCAP_SILHOUETTE_NO_ARTWORK =
  * AssemblyPart.buildWarning); the size that caused it is in the control beside it.
  */
 export const HUBCAP_SILHOUETTE_MISSES_CLIPS =
-  'That shape doesn’t cover the hubcap’s mounting clips, so it stays round. Make it bigger, or ' +
+  "That shape doesn't cover the hubcap's mounting clips, so it stays round. Make it bigger, or " +
   'use artwork whose middle is filled in.';
 
 /**
@@ -424,7 +424,7 @@ export const HUBCAP_SILHOUETTE_TOO_MANY =
  */
 export const HUBCAP_SILHOUETTE_NO_TRANSPARENCY =
   'This image has no transparent background, so the hubcap came out as its rectangle. Export it ' +
-  'as a PNG with the background removed to cut it to the artwork’s real shape.';
+  "as a PNG with the background removed to cut it to the artwork's real shape.";
 
 /**
  * The outline shrank to clear the wheel's rim. Said rather than done silently: the visible symptom
