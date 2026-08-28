@@ -20,6 +20,10 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run check:copy
+      # Every warning docs/troubleshooting.md quotes must still be a warning src/ ships. A reworded
+      # message otherwise leaves its section unreachable by the one thing a user searches: the text
+      # they saw on screen. #240 re-synced 17 such quotes by hand, across three rounds.
+      - run: npm run check:troubleshooting
       - run: npm run typecheck
       # Coverage rather than plain `npm test`: same suite, one run, plus the per-directory
       # coverage floors in vite.config.ts. A breach fails this step with an

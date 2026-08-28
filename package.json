@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "smoke": "vite build && node scripts/smoke.mjs .smoke-out",
     "check:copy": "node scripts/check-copy.mjs",
+    "check:troubleshooting": "node scripts/check-troubleshooting.mjs",
     "check:type-scale": "node scripts/check-type-scale.mjs",
     "check:zone-occlusion": "node scripts/check-zone-occlusion.mjs",
     "typecheck": "tsc --noEmit",

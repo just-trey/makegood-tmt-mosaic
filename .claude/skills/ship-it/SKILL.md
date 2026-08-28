@@ -1,12 +1,12 @@
 ---
 name: ship-it
-description: 'Pre-PR gate for this repo: checks DECISIONS-NEEDED.md is drained, runs the six CI gates locally, then checks the four docs that drift silently (CHANGELOG, README, in-app help panel, analytics catalog) against the actual diff, checks any new user-facing string against the plain-language conventions, and watches CI without polling. Use before opening or updating a PR, or when asked "is this ready to push / ready for a PR".'
+description: 'Pre-PR gate for this repo: checks DECISIONS-NEEDED.md is drained, runs the seven CI gates locally, then checks the four docs that drift silently (CHANGELOG, README, in-app help panel, analytics catalog) against the actual diff, checks any new user-facing string against the plain-language conventions, and watches CI without polling. Use before opening or updating a PR, or when asked "is this ready to push / ready for a PR".'
 model: sonnet
 ---
 
 # Ship it
 
-The six gates below are exactly what `.github/workflows/ci.yml` runs, and `main`
+The seven gates below are exactly what `.github/workflows/ci.yml` runs, and `main`
 is protected, so a red gate blocks merge. Running them locally is cheaper than a
 round trip through GitHub.
 
@@ -32,7 +32,7 @@ and "the branch is done" are different claims.
 Run these together, in the background, and wait for the notification:
 
 ```bash
-npm run lint && npm run format:check && npm run check:copy && npm run typecheck && npm run test:coverage && npm run smoke
+npm run lint && npm run format:check && npm run check:copy && npm run check:troubleshooting && npm run typecheck && npm run test:coverage && npm run smoke
 ```
 
 `smoke` builds first, so expect minutes, not seconds. Don't poll it; the harness
@@ -231,7 +231,7 @@ watch costs 1×, flat, however long CI takes.
 Read the actual result text before calling it green. "No checks reported", a
 zero-duration pass, and an empty check list are all failures to verify.
 
-CI runs the same six gates as step 1, so if those passed locally this step is
+CI runs the same seven gates as step 1, so if those passed locally this step is
 confirmation rather than discovery. Worth it on release tags and on changes that
 could behave differently in CI's environment; optional otherwise. Say which case
 you think it is instead of watching reflexively.

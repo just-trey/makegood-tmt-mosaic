@@ -433,9 +433,9 @@ didn't bond looks normal in the viewport and exports a 3MF that slices without
 complaint. It only shows up as loose parts on the finished plate, which is why
 this is a hard floor rather than advice.
 
-## Troubleshooting: "The hubcap is set to follow your artwork's shape, but no artwork is loaded"
+## Troubleshooting: "The hubcap is set to follow your artwork’s shape, but no artwork is loaded"
 
-Full text: _"The hubcap is set to follow your artwork's shape, but no artwork
+Full text: _"The hubcap is set to follow your artwork’s shape, but no artwork
 is loaded. It stays round until you add one."_
 
 The **Cut to artwork shape** checkbox and the artwork on the part are the same
@@ -443,9 +443,9 @@ object by design: there is no separate silhouette upload, so with nothing loaded
 there is nothing to cut to. The part stays a plain circle at the **Hubcap
 diameter** size and reshapes the moment you add artwork.
 
-## Troubleshooting: "That shape doesn't cover the hubcap's mounting clips"
+## Troubleshooting: "That shape doesn’t cover the hubcap’s mounting clips"
 
-Full text: _"That shape doesn't cover the hubcap's mounting clips, so it stays
+Full text: _"That shape doesn’t cover the hubcap’s mounting clips, so it stays
 round. Make it bigger, or use artwork whose middle is filled in."_
 
 The clips need solid material under them, in a ring 10.6-16.0mm out from the
@@ -461,7 +461,7 @@ both fix it.
 ## Troubleshooting: "A hubcap cut to shape can only follow one design"
 
 Full text: _"A hubcap cut to shape can only follow one design. Remove the
-others, or turn 'Cut to artwork shape' off."_
+others, or turn \"Cut to artwork shape\" off."_
 
 With two designs loaded there is no single answer to "the shape": their union is
 one option, either one alone is another, and nothing says which was meant.
@@ -472,7 +472,7 @@ on its row, or turn the checkbox off to keep both as designs on a round part.
 
 Full text: _"This image has no transparent background, so the hubcap came out
 as its rectangle. Export it as a PNG with the background removed to cut it to
-the artwork's real shape."_
+the artwork’s real shape."_
 
 **Not a refusal.** A rectangular hubcap is a legitimate thing to want, so the
 part builds. This checks for the more likely case: a WebP or flattened PNG that
