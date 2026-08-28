@@ -69,6 +69,10 @@ describe('parsePathD', () => {
     expect(sharp.length).toBeGreaterThan(gentle.length);
   });
 
+  it('throws on malformed path data (a command missing a coordinate) instead of a NaN vertex', () => {
+    expect(() => parsePathD('M0 0 L10')).toThrow();
+  });
+
   it('flattens elliptical arcs ending at the target point (spec F.6.5 endpoint math)', () => {
     const loops = parsePathD('M0 0 A5 5 0 0 1 10 0');
     const pts = loops[0];

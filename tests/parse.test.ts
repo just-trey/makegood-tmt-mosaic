@@ -3,11 +3,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   SVG_LENGTH_UNIT_MM,
   normalizeColor,
+  parseFillOpacity,
   parseSVGDocument,
   svgLengthIsPhysical,
   svgLengthToMM,
 } from '../src/svg/parse';
 import { designAnchor, placedFootprintMM } from '../src/geometry/assembly';
+import { WARNINGS, clearWarnings } from '../src/warnings';
 
 // jsdom has no 2d canvas without the native `canvas` package, so normalizeColor's color
 // oracle would return null and every fill would collapse to #000000. Stub just enough of
@@ -76,6 +78,18 @@ describe('parseSVGDocument', () => {
     );
     expect(out.shapes).toHaveLength(1);
     expect(out.shapes[0].fill).toBe('#00ff00');
+  });
+
+  it('skips a <path> with malformed data and warns, instead of shipping a NaN vertex', () => {
+    clearWarnings();
+    const out = parseSVGDocument(
+      svg('<path d="M0 0 L10" fill="#ff0000"/><rect width="4" height="4" fill="#00ff00"/>'),
+    );
+    expect(out.shapes).toHaveLength(1);
+    expect(out.shapes[0].fill).toBe('#00ff00');
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(
+      expect.stringContaining('broken path data'),
+    );
   });
 
   it('resolves fills through <style> class rules, with inline style winning', () => {
@@ -356,6 +370,18 @@ describe('parseSVGDocument', () => {
       ),
     );
     expect(out.userUnitMM).toBeCloseTo(100 / 185, 9);
+  });
+});
+
+describe('parseFillOpacity', () => {
+  it('falls back to fully opaque on a non-numeric value, instead of NaN', () => {
+    expect(parseFillOpacity('abc')).toBe(1);
+    expect(parseFillOpacity(null)).toBe(1);
+  });
+
+  it('still reads a valid value through', () => {
+    expect(parseFillOpacity('0.5')).toBeCloseTo(0.5, 9);
+    expect(parseFillOpacity('0')).toBe(0);
   });
 });
 

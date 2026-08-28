@@ -1577,13 +1577,16 @@ the current plugin ecosystem covers the pattern, and a custom parser rule was
 ruled out as too much machinery for one check. Nothing catches a `parseFloat`
 whose `NaN` is never guarded.
 
-Counted 2026-08-26: of 9 `parseFloat` sites in `src/`, **2** parse an external number with no finite check,
-[svg/path.ts:138](../src/svg/path.ts) and
-[svg/parse.ts:284](../src/svg/parse.ts). The rest guard, most on the next line, so the exposure is narrower
-than the call count suggests. Count the guards, not the calls. One of them,
-`ui/partPanel.ts:206`, guards against a value it parses from an authored `min=`
-attribute rather than from anything a user types, and a non-numeric one there
-would reject every input; that is a latent bug in the markup, not in the guard.
+Counted 2026-08-28 (`grep -rn parseFloat src/ | wc -l`): of 9 `parseFloat` sites in `src/`, **0** parse an
+external number with no finite check. The last two, `svg/path.ts:138` and `svg/parse.ts:284`, were
+guarded in the same pass that closed this count: a malformed path coordinate now throws instead of
+shipping a NaN vertex, and `svg/parse.ts`'s catch around it warns and skips just that `<path>`; an
+unparseable `fill-opacity` now falls back to the SVG default (fully opaque) instead of an unguarded
+NaN. Every remaining site guards, most on the next line, so the exposure is narrower than the call
+count suggests. Count the guards, not the calls. One of them, `ui/partPanel.ts:206`, guards against
+a value it parses from an authored `min=` attribute rather than from anything a user types, and a
+non-numeric one there would reject every input; that is a latent bug in the markup, not in the
+guard.
 
 **Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
 on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.

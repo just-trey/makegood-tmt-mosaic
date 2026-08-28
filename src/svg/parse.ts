@@ -68,6 +68,12 @@ export function svgLengthToMM(value: string | null): number | null {
   return factor == null ? null : l.n * factor;
 }
 
+/** Invalid or missing fill-opacity falls back to the SVG default: fully opaque. */
+export function parseFillOpacity(raw: string | null): number {
+  const n = parseFloat(raw || '');
+  return Number.isFinite(n) ? n : 1;
+}
+
 /**
  * Whether an SVG length claims a real-world size, as opposed to screen pixels.
  *
@@ -281,7 +287,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
     const fillRaw = resolveProp(el, 'fill');
     const fillUrl = fillRaw && /url\(/.test(fillRaw);
-    const opacity = parseFloat(resolveProp(el, 'fill-opacity') || '');
+    const opacity = parseFillOpacity(resolveProp(el, 'fill-opacity'));
     const displayNone = resolveProp(el, 'display') === 'none';
 
     if (
@@ -308,7 +314,15 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
           let loops: Loop[] = [];
           if (tag === 'path') {
             const d = el.getAttribute('d');
-            if (d) loops = parsePathD(d);
+            if (d) {
+              try {
+                loops = parsePathD(d);
+              } catch {
+                warn(
+                  'Skipped a <path> with broken path data (a corrupted number), element ignored.',
+                );
+              }
+            }
           } else if (tag === 'rect') {
             const x = +(el.getAttribute('x') || 0),
               y = +(el.getAttribute('y') || 0);

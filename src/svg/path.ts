@@ -129,13 +129,19 @@ export function flattenArc(
 /**
  * Flatten an SVG path `d` string into polyline loops (one per subpath).
  * Handles M/L/H/V/C/S/Q/T/A/Z, relative commands, and implicit command repetition.
+ * Throws on malformed data (a missing or non-numeric coordinate) rather than
+ * returning a loop with a NaN vertex; the caller decides how to surface that.
  */
 export function parsePathD(d: string): Loop[] {
   const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g) || [];
   let i = 0;
   function nums(n: number): number[] {
     const r: number[] = [];
-    for (let k = 0; k < n; k++) r.push(parseFloat(tokens[i++]));
+    for (let k = 0; k < n; k++) {
+      const v = parseFloat(tokens[i++]);
+      if (!Number.isFinite(v)) throw new Error('Malformed path data');
+      r.push(v);
+    }
     return r;
   }
   const loops: Loop[] = [];
