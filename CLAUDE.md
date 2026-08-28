@@ -72,13 +72,20 @@ PR #147 is the worked example of stopping:
   when unsure. The numbers that decide whether a print succeeds (the verified
   plate constants) had been stable and live-verified since they landed.
 
-Two guards that matter more than the count:
+Three guards that matter more than the count:
 
 - **Never invent a constant to satisfy a reviewer.** A number that closes a
   finding without a measurement behind it is worse than the finding.
 - **If rounds keep finding real defects, suspect the diff.** A change that
   needs four rounds is usually too big rather than unsound. Splitting it is
   the fix, not another pass.
+- **A defect in the previous round's fix, in the same area, twice: cut the
+  area.** Revert it to what shipped, write the open threads into
+  `docs/tech-debt.md` with what each round found, and let the rest of the
+  change ship. #241 is the worked example: three rounds each found a defect
+  in the markup-splitting regex, and the area went rather than a fourth
+  patch. #230 is the counter-example: the same wrong-axis bug survived three
+  rounds because each fix got a third patch instead.
 
 ## Git workflow
 
