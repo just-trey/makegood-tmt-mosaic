@@ -111,10 +111,12 @@ string needs a term that isn't in it, add the row, and make the replacement obey
 The existing copy that already fails is a tracked tech-debt item, and widening
 the diff to fix it is how a focused PR stops being one.
 
-## 2c. A bug fix ships with a test that failed first
+## 2c. A bug fix, guard, clear, or check ships with a test seen to fail
 
-Only if the diff fixes a bug. Skip it for a new feature, a refactor, or a docs
-change, and say you did.
+Only if the diff fixes a bug **or adds a guard, a clear, a check, or a warning**
+(a clamp, a `return` on bad input, a `clearWarnings` site, a cancel check, a
+validation). Skip it for a pure feature, a refactor, or a docs change, and say
+you did.
 
 > Every bug fix ships with a test proven to fail pre-fix. Write the test first,
 > run it against the old code, and confirm it fails. Only then apply the fix. A
@@ -124,20 +126,36 @@ change, and say you did.
 passes. A test written after the fix passes on the first run whether or not it
 touches the bug, and there is no way to tell those apart afterwards.
 
-The order that satisfies this:
+The order that satisfies this for a bug fix:
 
 1. Write the test against the bug as reported.
 2. Run it on the unfixed code. Keep the failure message.
 3. Apply the fix.
 4. Run it again. It passes.
 
-Say the failure you saw at step 2, in terms of expected against actual. "It
-failed" is not the claim; the wrong number it returned is.
+**For a new guard there is no "unfixed code", so the proof is the mutation
+run**: stash or comment out the guard, run its test, read the failure, restore
+the guard, run it again. A guard whose test stays green with the guard removed
+has no test. This is the case the bug-fix wording used to miss, and it cost
+rounds on three PRs in one week:
+
+- #229: three tests passed with the feature stubbed out, one asserted about a
+  confirm it could not fire, and only mutation runs showed it.
+- #230: the same wrong-axis bug survived three rounds because each fixture
+  used a sign the guard happened to handle (`topZ: -90`, twice), and the first
+  test's `< 20` was satisfied by the degenerate 0.2mm it sat next to.
+- #231: two assertions matched strings no source emitted, so removing the
+  `needsTower` guard failed nothing.
+
+Say the failure you saw, in terms of expected against actual. "It failed" is
+not the claim; the wrong number it returned is. For a mutation run, say what
+you removed and what the test then reported.
 
 If the bug cannot be reached from a test (a WebGL path, a real printer), say so
 and name the driven check or the live run that stands in for it. That is a
 different claim, and it needs the same evidence: what it reported before, and
-what it reports now.
+what it reports now. #243's smoke assertion is the worked example: stashing
+each of the two source files failed a different check.
 
 ## 3. Code review
 
