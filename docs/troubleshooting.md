@@ -546,6 +546,27 @@ Being visibly wrong here is deliberate. Reading that lone `755px` at 96 DPI
 instead would put the design at 199.5mm on a 266mm face: plausible, printable,
 and 25% wrong with nothing said. A design three times too big gets noticed.
 
+## Troubleshooting: "Path N has broken data partway through its outline" warnings
+
+A `<path>` element's `d` attribute has a coordinate that isn't a number, most
+often a truncated or hand-edited file (a save interrupted mid-write, a value
+deleted while editing the raw XML). N is that path's position among the
+`<path>` elements in the file, counting only ones with a real fill — open the
+SVG's XML/code view in your editor to find it.
+
+**What happens.** Everything drawn up to the bad value is kept; everything
+after it, including the rest of that one path's outline, is dropped. Other
+shapes in the file are unaffected.
+
+**What to do.** Open the file in the tool you made it in and re-save, or
+re-export the design. If a shape looks like it is missing part of its outline
+after import, this is why: check that path first.
+
+If this fires on a normal arc command (`A`) that looks correctly formed, it
+may be a shorthand that glues two flags to the following coordinate with no
+space (e.g. `1110` meaning three separate values) — see "The path `d`
+tokenizer doesn't split glued arc flags" in [tech-debt.md](tech-debt.md).
+
 ## Troubleshooting: "The hubcap disc is too small to reach its mounting clips"
 
 Full text: _"The hubcap disc is too small to reach its mounting clips. They

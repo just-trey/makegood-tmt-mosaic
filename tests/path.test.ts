@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parsePathD, signedArea } from '../src/svg/path';
 
 describe('parsePathD', () => {
@@ -69,8 +69,29 @@ describe('parsePathD', () => {
     expect(sharp.length).toBeGreaterThan(gentle.length);
   });
 
-  it('throws on malformed path data (a command missing a coordinate) instead of a NaN vertex', () => {
-    expect(() => parsePathD('M0 0 L10')).toThrow();
+  it('drops only the subpath broken by a missing coordinate, instead of a NaN vertex or a throw', () => {
+    const onMalformed = vi.fn();
+    const loops = parsePathD('M0 0 L10 0 L10 10 Z M20 20 L30', onMalformed);
+    expect(loops).toHaveLength(1); // the completed first square survives
+    expect(loops[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 0 },
+    ]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns no loops (not a throw) when the only subpath is malformed', () => {
+    const onMalformed = vi.fn();
+    expect(parsePathD('M0 0 L10', onMalformed)).toEqual([]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
+  it('never calls onMalformed for well-formed data', () => {
+    const onMalformed = vi.fn();
+    parsePathD('M0 0 L10 0 L10 10 Z', onMalformed);
+    expect(onMalformed).not.toHaveBeenCalled();
   });
 
   it('flattens elliptical arcs ending at the target point (spec F.6.5 endpoint math)', () => {

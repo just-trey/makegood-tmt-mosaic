@@ -126,20 +126,27 @@ export function flattenArc(
   }
 }
 
+/** Internal control-flow signal only — caught before it ever leaves parsePathD. */
+class MalformedPathData extends Error {}
+
 /**
  * Flatten an SVG path `d` string into polyline loops (one per subpath).
  * Handles M/L/H/V/C/S/Q/T/A/Z, relative commands, and implicit command repetition.
- * Throws on malformed data (a missing or non-numeric coordinate) rather than
- * returning a loop with a NaN vertex; the caller decides how to surface that.
+ *
+ * Never throws. A missing or non-numeric coordinate drops the subpath being built when it hit
+ * the bad data (token misalignment makes anything after it unrecoverable) and keeps every
+ * subpath already closed — degrading per subpath (CLAUDE.md rule 3) rather than losing the whole
+ * path to one bad number, or worse, silently shipping a NaN vertex. `onMalformed` fires once in
+ * that case so the caller can warn.
  */
-export function parsePathD(d: string): Loop[] {
+export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
   const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g) || [];
   let i = 0;
   function nums(n: number): number[] {
     const r: number[] = [];
     for (let k = 0; k < n; k++) {
       const v = parseFloat(tokens[i++]);
-      if (!Number.isFinite(v)) throw new Error('Malformed path data');
+      if (!Number.isFinite(v)) throw new MalformedPathData();
       r.push(v);
     }
     return r;
@@ -152,105 +159,110 @@ export function parsePathD(d: string): Loop[] {
     startY = 0;
   let prevCmd: string | null = null,
     prevCtrl: Pt | null = null;
-  while (i < tokens.length) {
-    let cmd: string | null = tokens[i];
-    if (/^[a-zA-Z]$/.test(cmd)) i++;
-    else cmd = prevCmd; // implicit repeat
-    if (!cmd) break;
-    const rel: boolean = cmd === cmd.toLowerCase();
-    const C = cmd.toUpperCase();
-    if (C === 'M') {
-      const [x, y] = nums(2);
-      const nx = rel ? cx + x : x,
-        ny = rel ? cy + y : y;
-      if (cur.length) loops.push(cur);
-      cur = [{ x: nx, y: ny }];
-      cx = nx;
-      cy = ny;
-      startX = nx;
-      startY = ny;
-      prevCmd = rel ? 'l' : 'L';
-    } else if (C === 'L') {
-      const [x, y] = nums(2);
-      const nx = rel ? cx + x : x,
-        ny = rel ? cy + y : y;
-      cur.push({ x: nx, y: ny });
-      cx = nx;
-      cy = ny;
-      prevCmd = cmd;
-    } else if (C === 'H') {
-      const [x] = nums(1);
-      const nx = rel ? cx + x : x;
-      cur.push({ x: nx, y: cy });
-      cx = nx;
-      prevCmd = cmd;
-    } else if (C === 'V') {
-      const [y] = nums(1);
-      const ny = rel ? cy + y : y;
-      cur.push({ x: cx, y: ny });
-      cy = ny;
-      prevCmd = cmd;
-    } else if (C === 'C') {
-      const [x1, y1, x2, y2, x, y] = nums(6);
-      const p1 = { x: rel ? cx + x1 : x1, y: rel ? cy + y1 : y1 };
-      const p2 = { x: rel ? cx + x2 : x2, y: rel ? cy + y2 : y2 };
-      const p3 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
-      flattenCubic({ x: cx, y: cy }, p1, p2, p3, cur);
-      cx = p3.x;
-      cy = p3.y;
-      prevCtrl = p2;
-      prevCmd = cmd;
-    } else if (C === 'S') {
-      const [x2, y2, x, y] = nums(4);
-      const p1: Pt = prevCtrl
-        ? { x: 2 * cx - prevCtrl.x, y: 2 * cy - prevCtrl.y }
-        : { x: cx, y: cy };
-      const p2 = { x: rel ? cx + x2 : x2, y: rel ? cy + y2 : y2 };
-      const p3 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
-      flattenCubic({ x: cx, y: cy }, p1, p2, p3, cur);
-      cx = p3.x;
-      cy = p3.y;
-      prevCtrl = p2;
-      prevCmd = cmd;
-    } else if (C === 'Q') {
-      const [x1, y1, x, y] = nums(4);
-      const p1 = { x: rel ? cx + x1 : x1, y: rel ? cy + y1 : y1 };
-      const p2 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
-      flattenQuad({ x: cx, y: cy }, p1, p2, cur);
-      cx = p2.x;
-      cy = p2.y;
-      prevCtrl = p1;
-      prevCmd = cmd;
-    } else if (C === 'T') {
-      const [x, y] = nums(2);
-      const p1: Pt = prevCtrl
-        ? { x: 2 * cx - prevCtrl.x, y: 2 * cy - prevCtrl.y }
-        : { x: cx, y: cy };
-      const p2 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
-      flattenQuad({ x: cx, y: cy }, p1, p2, cur);
-      cx = p2.x;
-      cy = p2.y;
-      prevCtrl = p1;
-      prevCmd = cmd;
-    } else if (C === 'A') {
-      const [rx, ry, rot, laf, sf, x, y] = nums(7);
-      const p1 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
-      flattenArc({ x: cx, y: cy }, rx, ry, rot, !!laf, !!sf, p1, cur);
-      cx = p1.x;
-      cy = p1.y;
-      prevCmd = cmd;
-    } else if (C === 'Z') {
-      cur.push({ x: startX, y: startY });
-      cx = startX;
-      cy = startY;
-      prevCmd = cmd;
-    } else {
-      i++;
-      continue;
+  try {
+    while (i < tokens.length) {
+      let cmd: string | null = tokens[i];
+      if (/^[a-zA-Z]$/.test(cmd)) i++;
+      else cmd = prevCmd; // implicit repeat
+      if (!cmd) break;
+      const rel: boolean = cmd === cmd.toLowerCase();
+      const C = cmd.toUpperCase();
+      if (C === 'M') {
+        const [x, y] = nums(2);
+        const nx = rel ? cx + x : x,
+          ny = rel ? cy + y : y;
+        if (cur.length) loops.push(cur);
+        cur = [{ x: nx, y: ny }];
+        cx = nx;
+        cy = ny;
+        startX = nx;
+        startY = ny;
+        prevCmd = rel ? 'l' : 'L';
+      } else if (C === 'L') {
+        const [x, y] = nums(2);
+        const nx = rel ? cx + x : x,
+          ny = rel ? cy + y : y;
+        cur.push({ x: nx, y: ny });
+        cx = nx;
+        cy = ny;
+        prevCmd = cmd;
+      } else if (C === 'H') {
+        const [x] = nums(1);
+        const nx = rel ? cx + x : x;
+        cur.push({ x: nx, y: cy });
+        cx = nx;
+        prevCmd = cmd;
+      } else if (C === 'V') {
+        const [y] = nums(1);
+        const ny = rel ? cy + y : y;
+        cur.push({ x: cx, y: ny });
+        cy = ny;
+        prevCmd = cmd;
+      } else if (C === 'C') {
+        const [x1, y1, x2, y2, x, y] = nums(6);
+        const p1 = { x: rel ? cx + x1 : x1, y: rel ? cy + y1 : y1 };
+        const p2 = { x: rel ? cx + x2 : x2, y: rel ? cy + y2 : y2 };
+        const p3 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
+        flattenCubic({ x: cx, y: cy }, p1, p2, p3, cur);
+        cx = p3.x;
+        cy = p3.y;
+        prevCtrl = p2;
+        prevCmd = cmd;
+      } else if (C === 'S') {
+        const [x2, y2, x, y] = nums(4);
+        const p1: Pt = prevCtrl
+          ? { x: 2 * cx - prevCtrl.x, y: 2 * cy - prevCtrl.y }
+          : { x: cx, y: cy };
+        const p2 = { x: rel ? cx + x2 : x2, y: rel ? cy + y2 : y2 };
+        const p3 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
+        flattenCubic({ x: cx, y: cy }, p1, p2, p3, cur);
+        cx = p3.x;
+        cy = p3.y;
+        prevCtrl = p2;
+        prevCmd = cmd;
+      } else if (C === 'Q') {
+        const [x1, y1, x, y] = nums(4);
+        const p1 = { x: rel ? cx + x1 : x1, y: rel ? cy + y1 : y1 };
+        const p2 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
+        flattenQuad({ x: cx, y: cy }, p1, p2, cur);
+        cx = p2.x;
+        cy = p2.y;
+        prevCtrl = p1;
+        prevCmd = cmd;
+      } else if (C === 'T') {
+        const [x, y] = nums(2);
+        const p1: Pt = prevCtrl
+          ? { x: 2 * cx - prevCtrl.x, y: 2 * cy - prevCtrl.y }
+          : { x: cx, y: cy };
+        const p2 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
+        flattenQuad({ x: cx, y: cy }, p1, p2, cur);
+        cx = p2.x;
+        cy = p2.y;
+        prevCtrl = p1;
+        prevCmd = cmd;
+      } else if (C === 'A') {
+        const [rx, ry, rot, laf, sf, x, y] = nums(7);
+        const p1 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
+        flattenArc({ x: cx, y: cy }, rx, ry, rot, !!laf, !!sf, p1, cur);
+        cx = p1.x;
+        cy = p1.y;
+        prevCmd = cmd;
+      } else if (C === 'Z') {
+        cur.push({ x: startX, y: startY });
+        cx = startX;
+        cy = startY;
+        prevCmd = cmd;
+      } else {
+        i++;
+        continue;
+      }
+      if (C !== 'C' && C !== 'S' && C !== 'Q' && C !== 'T' && C !== 'A') prevCtrl = null;
     }
-    if (C !== 'C' && C !== 'S' && C !== 'Q' && C !== 'T' && C !== 'A') prevCtrl = null;
+    if (cur.length) loops.push(cur);
+  } catch (e) {
+    if (!(e instanceof MalformedPathData)) throw e;
+    onMalformed?.();
   }
-  if (cur.length) loops.push(cur);
   return loops;
 }
 

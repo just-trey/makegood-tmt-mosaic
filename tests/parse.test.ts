@@ -80,16 +80,36 @@ describe('parseSVGDocument', () => {
     expect(out.shapes[0].fill).toBe('#00ff00');
   });
 
-  it('skips a <path> with malformed data and warns, instead of shipping a NaN vertex', () => {
+  it('drops a fully malformed <path> and warns, instead of shipping a NaN vertex', () => {
     clearWarnings();
     const out = parseSVGDocument(
       svg('<path d="M0 0 L10" fill="#ff0000"/><rect width="4" height="4" fill="#00ff00"/>'),
     );
     expect(out.shapes).toHaveLength(1);
     expect(out.shapes[0].fill).toBe('#00ff00');
-    expect(WARNINGS.map((w) => w.message)).toContainEqual(
-      expect.stringContaining('broken path data'),
-    );
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(expect.stringContaining('broken data'));
+  });
+
+  it('keeps a <path>’s completed subpaths when only a later one is malformed', () => {
+    clearWarnings();
+    const out = parseSVGDocument(svg('<path d="M0 0 L10 0 L10 10 Z M20 20 L30" fill="#ff0000"/>'));
+    expect(out.shapes).toHaveLength(1);
+    expect(out.shapes[0].loops).toHaveLength(1);
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(expect.stringContaining('broken data'));
+  });
+
+  it('names two distinct malformed <path>s separately, so one warning does not hide the other', () => {
+    clearWarnings();
+    // Both paths are fully malformed, so no shape survives and parseSVGDocument itself throws;
+    // what this test checks is that it warned about each one, by name, before doing so.
+    expect(() =>
+      parseSVGDocument(
+        svg('<path d="M0 0 L10" fill="#ff0000"/><path d="M5 5 L20" fill="#00ff00"/>'),
+      ),
+    ).toThrow();
+    const messages = WARNINGS.map((w) => w.message);
+    expect(messages).toContainEqual(expect.stringContaining('Path 1'));
+    expect(messages).toContainEqual(expect.stringContaining('Path 2'));
   });
 
   it('resolves fills through <style> class rules, with inline style winning', () => {

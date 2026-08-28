@@ -210,6 +210,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
   const shapes: SVGShape[] = [];
   let order = 0;
+  // Counts every <path> reached here (valid or not), so a warning can name which one broke by
+  // position. warn() dedupes by exact message, so an unnumbered "Path has broken data" would
+  // collapse a second offender into the first one's pill and under-report how much was dropped.
+  let pathCount = 0;
 
   // Largest <circle> found by the same visible-subtree walk as shapes below (assembly mode's
   // design-boundary anchor) — tracked here, not via a separate querySelectorAll, so it inherits
@@ -315,11 +319,13 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
           if (tag === 'path') {
             const d = el.getAttribute('d');
             if (d) {
-              try {
-                loops = parsePathD(d);
-              } catch {
-                warn('Skipped a <path> with broken path data, element ignored.');
-              }
+              pathCount++;
+              const n = pathCount;
+              loops = parsePathD(d, () =>
+                warn(
+                  `Path ${n} has broken data partway through its outline. Everything from that point on was dropped.`,
+                ),
+              );
             }
           } else if (tag === 'rect') {
             const x = +(el.getAttribute('x') || 0),
