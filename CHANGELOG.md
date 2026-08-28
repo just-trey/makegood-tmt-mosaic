@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 "*.d.ts" -exec grep -l "’" {} \;`). The four hubcap warning strings read the
   same to a user; the matching quotes in `docs/troubleshooting.md` are
   updated in the same commit so `npm run check:troubleshooting` still passes.
+- **A session restore that fails part-way no longer leaves settings half
+  swapped.** `applyRestoredSession` used to write 24 fields (the printer,
+  base shape, depth, color grouping — count the keys `buildRestoredScalarState`
+  sets in `src/state/persist.ts`: 20 always, plus 4 conditional) straight into
+  state before re-parsing the saved sources, so a source that failed to parse
+  could leave the printer on the failed session's value while everything else
+  stayed on the one before it. Those fields are now built into a local object
+  and committed in one step, only after every source has come back.
 
 ## [0.7.0] - 2026-08-28
 

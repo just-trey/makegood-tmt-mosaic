@@ -619,9 +619,11 @@ regions, or nudging Scale, usually clears it.
 for it back, and it could not be read. The save has been removed so it will not
 be offered again.
 
-**What to do.** Reload the page before carrying on. The restore assigns settings
-as it goes, so a failure part-way can leave the printer set to one value while the
-picker shows another. A reload starts clean.
+**What to do.** Reload the page before carrying on. Most failures stop before
+touching your printer, shape or colour settings, so those are usually still what
+they were. The one case that can still change something is a failure while
+switching to the saved session's part: the part can already be the saved one
+while its designs never came back. A reload starts clean.
 
 **Why it happens.** The stored session is JSON in the browser's local storage for
 this site. It reads as valid JSON but describes something this build cannot use:
@@ -634,10 +636,12 @@ A save that is damaged outright, rather than merely unusable, does not reach thi
 message. It cannot be parsed at all, so it is discarded on load without a banner
 ever being offered.
 
-**What it does affect.** The restore had already applied some settings before it
-stopped, so what is on screen is a mix of the saved session and what you had. The
-app stops saving until you reload, so this mixed state is never written back, but
-it also means anything you do before reloading will not be saved. Reload first.
+**What it does affect.** The printer, shape and colour settings only change once
+every design in the session has come back, so a failed one usually leaves them
+exactly as they were. Switching to the saved session's part happens separately,
+and can still leave that part set while its designs do not come back. The app
+stops saving until you reload, so nothing gets written over what you had, but it
+also means anything you do before reloading will not be saved. Reload first.
 
 ## Troubleshooting: "… deeper than "Wheel top" goes. It was cut at … mm instead"
 
