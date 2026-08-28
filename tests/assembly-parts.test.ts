@@ -9,6 +9,7 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
 
 import {
+  applyAsmPatchChoice,
   asmAddDuplicate,
   asmCreateRolePart,
   asmLoadFullAssembly,
@@ -210,6 +211,49 @@ describe('asmAddDuplicate', () => {
   it('returns null for an id that is not in the parts list', () => {
     expect(asmAddDuplicate(999)).toBeNull();
     expect(state.assembly.parts).toHaveLength(0);
+  });
+});
+
+/**
+ * The source owns the design face; a copy's row offers pivot, angle and Remove but no face
+ * control. Picking a new face on the source used to leave the copy cutting the old one — a wrong
+ * cut, not a wrong label. `applyAsmPatchChoice` is exactly what the panel calls after writing
+ * `patchIdx` (src/ui/assemblyPanel.ts).
+ */
+describe('a rotated copy follows its source’s design face', () => {
+  it('re-derives every face-derived field when the source’s face changes', async () => {
+    state.assembly.kindId = 'wheel';
+    const src = asmCreateRolePart(role({ id: 'wheel-half' }));
+    await asmLoadPartBuffer(src, twoFacedMesh(), 'p.stl');
+    const dup = asmAddDuplicate(src.id)!;
+    expect(dup.patchNormal![2]).toBeCloseTo(1, 6); // both halves start on the +Z face
+
+    src.patchIdx = 1;
+    applyAsmPatchChoice(src);
+
+    // The -Z face: a different plane, a different outline, a different rest-of-mesh.
+    expect(dup.patchIdx).toBe(1);
+    expect(dup.patchNormal![2]).toBeCloseTo(-1, 6);
+    expect(dup.topZ).toBeCloseTo(src.topZ, 6);
+    expect(dup.topZ).not.toBeCloseTo(10, 6);
+    expect(dup.boundaryLoops).toBe(src.boundaryLoops);
+    expect(dup.restPositions).toBe(src.restPositions);
+  });
+
+  it('leaves a part that is not a copy of this source alone', async () => {
+    state.assembly.kindId = 'wheel';
+    const src = asmCreateRolePart(role({ id: 'wheel-half' }));
+    await asmLoadPartBuffer(src, twoFacedMesh(), 'p.stl');
+    const other = asmCreateRolePart(role({ id: 'wheel-half' }));
+    await asmLoadPartBuffer(other, twoFacedMesh(), 'p.stl');
+    const otherDup = asmAddDuplicate(other.id)!;
+
+    src.patchIdx = 1;
+    applyAsmPatchChoice(src);
+
+    expect(other.patchIdx).toBe(0);
+    expect(otherDup.patchIdx).toBe(0);
+    expect(otherDup.patchNormal![2]).toBeCloseTo(1, 6);
   });
 });
 
