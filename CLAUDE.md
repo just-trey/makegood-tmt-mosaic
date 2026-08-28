@@ -378,12 +378,23 @@ output), catch it at that unit's boundary so the rest of the
 operation completes and the failure is reported for that unit only.
 A single bad input must never abort or corrupt the whole export.
 
-### 4. No perf claims without a measurement
+### 4. No claims without a measurement
 
 Do not propose an optimization or file a perf finding based on code
 shape alone. Benchmark against real sample files first. Unmeasured
 suspicions go in tech-debt.md marked "unmeasured", not in findings
 or fixes.
+
+The same bar applies to every number in a write-up, not only a perf
+one. A count or figure in a PR body, a commit message, a tech-debt
+section or a findings report names the command or script that
+produced it, and re-running that command reproduces it. #240 cited
+127, 267 and 220 prose strings in one document, and "26 problems
+across 4 blocks" that was 26 across 10. #241 said 6 unguarded sites
+where there were 2, 14 strings where there were 19, and 5 parseFloat
+calls where there were 9. Each cost a full review round on counts
+alone. A number nobody can re-derive reads exactly like a measured
+one, which is the failure being prevented.
 
 ---
 
