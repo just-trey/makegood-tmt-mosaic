@@ -318,9 +318,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
               try {
                 loops = parsePathD(d);
               } catch {
-                warn(
-                  'Skipped a <path> with broken path data (a corrupted number), element ignored.',
-                );
+                warn('Skipped a <path> with broken path data, element ignored.');
               }
             }
           } else if (tag === 'rect') {

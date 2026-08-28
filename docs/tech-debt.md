@@ -1578,15 +1578,15 @@ ruled out as too much machinery for one check. Nothing catches a `parseFloat`
 whose `NaN` is never guarded.
 
 Counted 2026-08-28 (`grep -rn parseFloat src/ | wc -l`): of 9 `parseFloat` sites in `src/`, **0** parse an
-external number with no finite check. The last two, `svg/path.ts:138` and `svg/parse.ts:284`, were
-guarded in the same pass that closed this count: a malformed path coordinate now throws instead of
-shipping a NaN vertex, and `svg/parse.ts`'s catch around it warns and skips just that `<path>`; an
-unparseable `fill-opacity` now falls back to the SVG default (fully opaque) instead of an unguarded
-NaN. Every remaining site guards, most on the next line, so the exposure is narrower than the call
-count suggests. Count the guards, not the calls. One of them, `ui/partPanel.ts:206`, guards against
-a value it parses from an authored `min=` attribute rather than from anything a user types, and a
-non-numeric one there would reject every input; that is a latent bug in the markup, not in the
-guard.
+external number with no finite check. The last two were guarded in the same pass that closed this
+count: `parsePathD` (`svg/path.ts`) now throws on a malformed coordinate instead of shipping a NaN
+vertex, and `parseSVGDocument`'s catch around it (`svg/parse.ts`) warns and skips just that `<path>`;
+the new `parseFillOpacity` helper (`svg/parse.ts`) falls back to the SVG default (fully opaque)
+instead of an unguarded NaN. Every remaining site guards, most on the next line, so the exposure is
+narrower than the call count suggests. Count the guards, not the calls. One of them,
+`ui/partPanel.ts:206`, guards against a value it parses from an authored `min=` attribute rather
+than from anything a user types, and a non-numeric one there would reject every input; that is a
+latent bug in the markup, not in the guard.
 
 **Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
 on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
@@ -1788,3 +1788,23 @@ running app.
 too, or rebuilding a source's copies when it re-adopts. It stays open because
 the first role to pair `buildMesh` with `allowRotatedCopies` makes it real, and
 nothing today can produce a case to test against.
+
+## `warn()` dedupes by exact message, so two distinct dropped shapes show one pill
+
+Every "skipped a `<tag>`" warning in `svg/parse.ts` (gradient/pattern fill,
+malformed path data) is one static string with no per-element identifier.
+`warnings.ts`'s `push()` only appends a message the list doesn't already have,
+so a document with two independently-malformed `<path>` elements throws twice
+but shows one pill, silently under-reporting how much was dropped.
+
+This is not new: the gradient/pattern-fill warning has had the identical gap
+since it shipped. It surfaced now because the malformed-path-data warning
+added in the parseFloat-guard pass (see "Numeric coercion has no lint rule")
+follows the same shape.
+
+**Closing it** takes one of: naming the element in the message (the `order`
+counter `parseSVGDocument` already assigns each shape, or a computed index),
+or moving from exact-message dedup to a count ("skipped 3 `<path>` elements
+with broken data"). Either is a change to `warn()`'s dedup contract, which
+every other call site relies on, so it wants its own change rather than a
+one-off fix on the path warning alone.
