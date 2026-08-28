@@ -1654,69 +1654,97 @@ doc writes a real example where the app interpolates, so a number (`0.20 mm`,
 `HTTP 429`), a bare capital standing in for a count (`N filament slots`), a
 coordinate pair and the ellipsis all split the quote rather than being matched.
 
-Measured 2026-08-28 on `main` @ `d7b2bac`, by running the gate: of the **53**
-quotes the three forms find across both heading levels, **44 are checked**
-against 2565 shipped strings and **9 are skipped** as too short to pin. It found 6 real mismatches
-on its first run, all of them punctuation the doc had typed by hand. Five were
-an ASCII apostrophe where the message ships a typographic one (`artwork's`
-against `artwork’s`). The sixth was single quotes where the message ships
-double (`'Cut to artwork shape'` against `"Cut to artwork shape"`), which is
+Re-measured 2026-08-28 on this branch, by running `npm run check:troubleshooting`,
+after the sections closing "More shipped warnings have no troubleshooting
+section than the last count found" (above) landed: of the **73** quotes the
+three forms find across both heading levels, **62 are checked** against 2565
+shipped strings and **11 are skipped** as too short to pin. The gate found 6
+real mismatches on its first run, all of them punctuation the doc had typed by
+hand. Five were an ASCII apostrophe where the message ships a typographic one
+(`artwork's` against `artwork’s`). The sixth was single quotes where the
+message ships double (`'Cut to artwork shape'` against `"Cut to artwork
+shape"`), which is
 not the same substitution. A user pasting the message they saw would not have
 found any of those sections.
 
 **Known gaps.**
 
-| Gap                                        | Size and why                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Backticked spans are not read              | The feedback panel's two messages are quoted only in a table, so nothing pins them. Reading backticks was tried and reverted: in this file they also hold constant names (`HUBCAP_MIN_DIAMETER_MM`) and SVG attributes, which reported defects that were not there                                                                                                                                                                                         |
-| A quote with no 25-character fragment      | 9 of 53, and they cluster: **6 of the 34 sections end up with no checked quote at all**, including the assembly CSG one. `"Designs … overlap"` is mostly placeholder, so there is nothing long enough to pin without matching a phrase that appears in half the file. One of the six is a different cause: a heading with a nested quote (`"… deeper than "Wheel top" goes"`) is paired left to right, which splits it into two fragments too short to pin |
-| Only `src/**/*.ts` is searched             | A message assembled in `index.html` or a script is not a candidate                                                                                                                                                                                                                                                                                                                                                                                         |
-| A quote can match the wrong message        | The test is "some shipped string contains this", not "this section's message". Two messages sharing a long phrase would cover for each other                                                                                                                                                                                                                                                                                                               |
-| It checks one direction only               | A quote must still ship. Nothing checks the reverse, so a **new or reworded warning with no section at all** passes. Nothing covers that half mechanically: `ship-it`'s silent-drift table has no troubleshooting.md row, so it rests on CLAUDE.md's one-section-per-warning rule alone                                                                                                                                                                    |
-| A literal number is read as a placeholder  | Every digit run splits the quote, so a message that ships a real number is unpinned on it. `hubcap.ts` ships "thinner than 1mm"; changing that to 2mm leaves the gate green with the doc still saying 1mm. Telling a literal number from an interpolated one is not possible from the doc side                                                                                                                                                             |
-| A quoted UI label is read as a placeholder | Every quoted span is stripped, because the app renders an interpolated name as `"${label}"`. A label the message really ships is stripped identically, so renaming `"Cut to artwork shape"` in src/ leaves the gate green with the doc stale. That is one of the six mismatches this gate first found, and the one thing it cannot re-verify                                                                                                               |
-| A cross-file move reads as drift           | The only **false positive** class. `stringConsts` resolves a suffix within one file, so moving a message constant to another module, or rebinding it with `let`, collapses it to a token and the quote stops matching while the shipped copy is byte-identical. The failure text says to check for a move before rewriting the doc. Closing it needs a full `ts.createProgram`, which the copy gate rejected as too heavy                                  |
-| Any standalone capital splits a quote      | `\b[A-Z]\b` was meant for the `N` count placeholder and strips every one, including the leading "A " of 3 of the 44 anchors. It only shortens an anchor, so it can hide drift, never invent it                                                                                                                                                                                                                                                             |
-| Correlated ternaries expand independently  | One message with four ternaries on the same flag has 2 real wordings and `flattenAll` emits 16, so the gate accepts a doc quote mixing singular and plural. It only ever makes the gate more permissive, never wrong                                                                                                                                                                                                                                       |
+| Gap                                        | Size and why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backticked spans are not read              | The feedback panel's two messages are quoted only in a table, so nothing pins them. Reading backticks was tried and reverted: in this file they also hold constant names (`HUBCAP_MIN_DIAMETER_MM`) and SVG attributes, which reported defects that were not there                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| A quote with no 25-character fragment      | 11 of 73, and they cluster: **7 of the 42 sections end up with no checked quote at all**, including the assembly CSG one. `"Designs … overlap"` is mostly placeholder, so there is nothing long enough to pin without matching a phrase that appears in half the file. One of the seven is a different cause: a heading with a nested quote (`"… deeper than "Wheel top" goes"`) is paired left to right, which splits it into two fragments too short to pin. Another is the digit-run cause below applied to a literal file format name: `"Not a valid 3MF: missing 3D/3dmodel.model"` has no real number in it, but "3MF", "3D" and "3dmodel" each read as a digit run, shredding it the same way |
+| Only `src/**/*.ts` is searched             | A message assembled in `index.html` or a script is not a candidate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| A quote can match the wrong message        | The test is "some shipped string contains this", not "this section's message". Two messages sharing a long phrase would cover for each other                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| It checks one direction only               | A quote must still ship. Nothing checks the reverse, so a **new or reworded warning with no section at all** passes. Nothing covers that half mechanically: `ship-it`'s silent-drift table has no troubleshooting.md row, so it rests on CLAUDE.md's one-section-per-warning rule alone                                                                                                                                                                                                                                                                                                                                                                                                              |
+| A literal number is read as a placeholder  | Every digit run splits the quote, so a message that ships a real number is unpinned on it. `hubcap.ts` ships "thinner than 1mm"; changing that to 2mm leaves the gate green with the doc still saying 1mm. Telling a literal number from an interpolated one is not possible from the doc side                                                                                                                                                                                                                                                                                                                                                                                                       |
+| A quoted UI label is read as a placeholder | Every quoted span is stripped, because the app renders an interpolated name as `"${label}"`. A label the message really ships is stripped identically, so renaming `"Cut to artwork shape"` in src/ leaves the gate green with the doc stale. That is one of the six mismatches this gate first found, and the one thing it cannot re-verify                                                                                                                                                                                                                                                                                                                                                         |
+| A cross-file move reads as drift           | The only **false positive** class. `stringConsts` resolves a suffix within one file, so moving a message constant to another module, or rebinding it with `let`, collapses it to a token and the quote stops matching while the shipped copy is byte-identical. The failure text says to check for a move before rewriting the doc. Closing it needs a full `ts.createProgram`, which the copy gate rejected as too heavy                                                                                                                                                                                                                                                                            |
+| Any standalone capital splits a quote      | `\b[A-Z]\b` was meant for the `N` count placeholder and strips every one, including the leading "A " of 2 of the 62 checked quotes. It only shortens an anchor, so it can hide drift, never invent it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Correlated ternaries expand independently  | One message with four ternaries on the same flag has 2 real wordings and `flattenAll` emits 16, so the gate accepts a doc quote mixing singular and plural. It only ever makes the gate more permissive, never wrong                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **Closing the first one** means a quoting convention the gate can tell apart
 from a constant name, not a cleverer regex. That was the failure mode of the
 copy gate's markup splitting, three rounds running.
 
-## At least eight shipped warnings have no troubleshooting section
+## More shipped warnings have no troubleshooting section than the last count found
 
 CLAUDE.md wants one `docs/troubleshooting.md` section per user-visible warning
 string. `npm run check:troubleshooting` only checks the other direction: that a
 quote still ships. Nothing mechanical checks that a shipped warning has a
-section, so this drifted without anyone noticing.
+section, so this drifts without anyone noticing.
 
-Found by grepping a distinctive phrase of each against the doc, 2026-08-28 on
-`main` @ `d7b2bac`. Zero hits for each:
+The eight this section used to list (`Couldn't load this part…`, `Refusing to
+write a non-finite coordinate…`, `No opaque pixels were found in this image`,
+`No color regions survived tracing this image`, `This SVG has unusually deeply
+nested geometry`, `Part "…" has no verified print placement…`, `Not a valid
+3MF: missing 3D/3dmodel.model`, `Part "…" isn't a watertight/manifold mesh…`)
+now have sections.
 
-| Warning                                         | Ships from                                 |
-| ----------------------------------------------- | ------------------------------------------ |
-| `Couldn't load this part…`                      | `ui/assemblyPanel.ts`, `assembly/parts.ts` |
-| `Refusing to write a non-finite coordinate…`    | `export/threemf.ts`                        |
-| `No opaque pixels were found in this image`     | `raster/parse.ts`                          |
-| `No color regions survived tracing this image`  | `raster/parse.ts`                          |
-| `This SVG has unusually deeply nested geometry` | `geometry/regions.ts`                      |
-| `Part "…" has no verified print placement…`     | `export/placement.ts`                      |
-| `Not a valid 3MF: missing 3D/3dmodel.model`     | `geometry/meshparts.ts`                    |
-| `Part "…" isn't a watertight/manifold mesh…`    | `geometry/assembly.ts`                     |
+Closing that list meant re-running its own method — enumerate every call site,
+then grep the doc for a distinctive phrase of each — rather than trusting the
+count. It surfaced 13 more that were never on it:
 
-**This list is not exhaustive**, which is the point: it was assembled by hand
-from a review's spot checks and then re-grepped, not produced by a check. The
-count was first written as three and was wrong within a day.
+```bash
+grep -rln '\bwarn(\|\bwarnBuild(\|\bnotice(\|\bnoticeBuild(' src/ --include='*.ts' | grep -v '\.test\.ts'
+```
 
-`Raise Scale to fill it…` is **not** on it, though it reads like a missing
-section: it is the tail clause of the too-many-tiles message that the doc
-already covers under `### "… is too small to fill …"`. Writing it its own
-section would duplicate one warning across two.
+then, per call site found, `grep -n '<distinctive phrase>' docs/troubleshooting.md`.
+Run 2026-08-28 on this branch. Zero hits for each:
 
-**Closing it** means either writing the sections, or a src-to-doc check. The
-second is the harder half, and that difficulty is the reason this direction is
-still unguarded: deciding what counts as a user-visible warning has to be
-mechanical, and the set the copy gate admits is not the set worth a section.
+| Warning                                                                | Ships from             |
+| ---------------------------------------------------------------------- | ---------------------- |
+| `Clipping color region to the design face failed…`                     | `geometry/regions.ts`  |
+| `Could not load the Manifold boolean engine…`                          | `geometry/assembly.ts` |
+| `Part "…": detected face normal (…) isn't vertical…`                   | `geometry/assembly.ts` |
+| `Skipped a <tag> with a gradient/pattern fill…`                        | `svg/parse.ts`         |
+| `SVG could not be parsed. Check the file is valid XML.`                | `svg/parse.ts`         |
+| `No flat-filled shapes were found in this SVG.`                        | `svg/parse.ts`         |
+| `Couldn't load the design zones for "…"…`                              | `assembly/parts.ts`    |
+| `Part "…" doesn't match the mesh its design zones were baked against…` | `assembly/parts.ts`    |
+| `Design zone "…" couldn't be applied to "…"…`                          | `assembly/parts.ts`    |
+| `Rebuild failed: …`                                                    | `app/scheduler.ts`     |
+| `Exporting with artwork on … of … zones…`                              | `ui/exportPanel.ts`    |
+| `…: … of … zone(s) still blank. Add more from the zone dropdown…`      | `app/rebuild.ts`       |
+| `"…" could not be restored from the saved session…`                    | `state/persist.ts`     |
+
+**Still not exhaustive.** The `?csgfault` debug messages (`geometry/csgFault.ts`)
+were left off on purpose: they exist for a maintainer forcing a CSG failure
+from the URL bar (see the `debug-csg-failure` skill), not for a volunteer's
+normal session, so they aren't "user-visible" in the sense this rule means.
+Whether that line is right is itself a judgment call nobody has re-examined.
+
+The count went 3 → 8 → 13-more-on-top in three passes. Each pass trusted its
+own count until the next re-grep found more; nothing suggests this one is
+final either.
+
+`Raise Scale to fill it…` is **not** on either list: it is the tail clause of
+the too-many-tiles message the doc already covers under
+`### "… is too small to fill …"`. Writing it its own section would duplicate
+one warning across two.
+
+**Closing it for good** means either writing the 13 sections above, or a
+src-to-doc check — see "The troubleshooting-quote gate's scope and known
+gaps" for why the check is the harder half and remains unbuilt.
 
 ## A regenerated source mesh would leave its rotated copies on the old geometry
 
