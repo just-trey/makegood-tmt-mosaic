@@ -175,26 +175,6 @@ group that made the viewport not behave like the direct-manipulation surface it 
 other one, "Zone picking has no occlusion test," is closed (`npm run check:zone-occlusion`
 re-measures it — by hand, it is not in CI).
 
-## Changing a part's design face leaves its rotated duplicate on the old one
-
-The wheel's Bottom half is a rotated duplicate of its Top. `asmAddDuplicate`
-([src/assembly/parts.ts](../src/assembly/parts.ts)) copies `patchIdx`, `patchNormal`, `topZ`,
-`boundaryLoops` and `restPositions` into the duplicate at the moment it is created, and a
-duplicate's row offers pivot, angle and Remove but no design-face control of its own. Nothing
-re-derives those fields afterwards, so picking a different face on the source cuts the two halves
-on different faces.
-
-Not measured beyond reading the copy list: found while reviewing the frame-angle change
-(2026-08-24), which fixed the neighbouring "the panel says the wrong face" bug and made the
-question obvious. This one is a wrong cut rather than a wrong label, so it is the more serious of
-the pair.
-
-Closing it means deciding what a duplicate _is_: re-derive its face from its source on every
-change (the source becomes the single owner, and the copied fields become a cache), or give the
-duplicate its own face control and let the two differ on purpose. The first matches how
-`asmPartFaceNormal` already falls back to the source when a duplicate has no `patchNormal`. The
-second is the bigger change and nothing has asked for it.
-
 ## The chair's prime-tower positions have only been verified on one bed size
 
 All of its export placement — plate assignment, rotation, position,
@@ -1737,3 +1717,39 @@ section would duplicate one warning across two.
 second is the harder half, and that difficulty is the reason this direction is
 still unguarded: deciding what counts as a user-visible warning has to be
 mechanical, and the set the copy gate admits is not the set worth a section.
+
+## A regenerated source mesh would leave its rotated copies on the old geometry
+
+`asmAddDuplicate` ([src/assembly/parts.ts](../src/assembly/parts.ts)) shares
+`positions`, `vertices`, `indexed`, `patches` and `zones` with the source by
+reference. `asmAdoptMesh` assigns _new_ arrays to those on the source, so a
+re-adopted source would keep its copies pointing at the previous mesh.
+
+**The mismatch is inconsistent, not merely stale.** `syncDuplicateFaces` pushes
+`boundaryLoops` and `restPositions` derived from the source's _new_ mesh onto a
+copy whose `positions` still reference the _old_ one, so the copy carries a face
+outline that does not belong to its own geometry. Before that sync existed the
+copy was at least self-consistent on the previous mesh.
+
+**Unreachable today**, on two greps of `src/assembly/kinds.ts`:
+
+- `grep -n "allowRotatedCopies: true"` → 1 hit, the `wheel-half` role.
+- `grep -n "buildMesh:"` → 1 hit, the `hubcap` role, which sets
+  `allowRotatedCopies: false`.
+
+So the only role with copies never re-adopts a mesh. `asmAdoptMesh` re-runs on
+an already-loaded part by three routes, and each is closed:
+
+| Route                      | Why it can't hit a copy                                                                                         |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `asmRebuildGeneratedParts` | Needs `buildMesh`, which only the copy-less hubcap has                                                          |
+| `asmLoadFullAssembly`      | Clears `state.assembly.parts` before loading anything                                                           |
+| `switchChairVariant`       | Filters the variant roles' parts out first, copies with them; every chair role sets `allowRotatedCopies: false` |
+
+Found while enumerating readers for the design-face fix, not measured against a
+running app.
+
+**Closing it** means either extending `syncDuplicateFaces` to the mesh fields
+too, or rebuilding a source's copies when it re-adopts. It stays open because
+the first role to pair `buildMesh` with `allowRotatedCopies` makes it real, and
+nothing today can produce a case to test against.

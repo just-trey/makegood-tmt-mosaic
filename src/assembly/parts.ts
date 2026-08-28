@@ -186,6 +186,9 @@ export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPa
     indexed: src.indexed,
     libraryPartId: src.libraryPartId,
     patches: src.patches,
+    // These three, plus `topZ` and `patchNormal` further down, are the source's face: seeded here
+    // and re-pushed by `syncDuplicateFaces` on every later face change. Change one list, change
+    // both.
     patchIdx: src.patchIdx,
     boundaryLoops: src.boundaryLoops,
     restPositions: src.restPositions,
@@ -504,6 +507,22 @@ function loopXZArea(loop: number[][]): number {
   return Math.abs(a) / 2;
 }
 
+/**
+ * Push a source's face onto its rotated copies. A copy shares the source's mesh and has no face
+ * control of its own, so these five fields are a cache of the source's choice rather than state a
+ * copy owns: without this, re-picking the face cut the two halves on different faces.
+ */
+function syncDuplicateFaces(src: AssemblyPart): void {
+  for (const dup of state.assembly.parts) {
+    if (dup.isDuplicateOf !== src.id) continue;
+    dup.patchIdx = src.patchIdx;
+    dup.topZ = src.topZ;
+    dup.patchNormal = src.patchNormal;
+    dup.boundaryLoops = src.boundaryLoops;
+    dup.restPositions = src.restPositions;
+  }
+}
+
 export function applyAsmPatchChoice(part: AssemblyPart): void {
   if (!part.patches || !part.patches.length || !part.positions) return;
   const patch = part.patches[part.patchIdx];
@@ -517,6 +536,7 @@ export function applyAsmPatchChoice(part: AssemblyPart): void {
   loops.sort((a, b) => loopXZArea(b) - loopXZArea(a));
   part.boundaryLoops = loops.length ? loops : null;
   part.restPositions = excludeTriangles(part.positions, patch.triIndices);
+  syncDuplicateFaces(part);
 }
 
 /**

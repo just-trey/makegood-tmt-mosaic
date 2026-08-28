@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   could leave the printer on the failed session's value while everything else
   stayed on the one before it. Those fields are now built into a local object
   and committed in one step, only after every source has come back.
+- **Both wheel halves now cut on the same face.** The wheel's Bottom half is a
+  rotated copy of its Top, and it took its design face from the Top at the
+  moment it was created and never again. Picking a different face under
+  "Advanced: per-part face & alignment" moved the Top and left the Bottom
+  cutting the old one, with nothing on screen saying the two disagreed. The
+  copy now follows its source on every face change.
 
 ## [0.7.0] - 2026-08-28
 
