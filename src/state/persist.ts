@@ -414,10 +414,11 @@ let restoring = false;
 /**
  * Set when a restore failed part-way, and never cleared: writes stay off until the page reloads.
  *
- * The failure message tells the user to reload precisely because the restore assigns state as it
- * goes, so what is in memory at that point is inconsistent. Without this the next rebuild's
- * debounced save wrote exactly that state back over the session the catch had just cleared, and
- * the next visit offered a session built from the thing that had failed.
+ * The failure message tells the user to reload precisely because a throw from asmLoadFullAssembly
+ * can still leave state.assembly.kindId pointing at the restored part while its sources and
+ * artwork never got applied, so what is in memory at that point can be inconsistent. Without this
+ * the next rebuild's debounced save wrote exactly that state back over the session the catch had
+ * just cleared, and the next visit offered a session built from the thing that had failed.
  */
 let writesDisabledAfterFailedRestore = false;
 
@@ -488,11 +489,10 @@ function isPersistedSession(v: unknown): v is PersistedSession {
  *
  * **Repaired rather than rejected, deliberately.** Seven single-field corruptions used to pass the
  * gate above and throw part-way through the restore (measured 2026-08-24); three left the app
- * unable to build at all, showing the raw exception text, recoverable only by F5 — because the
- * restore assigns state as it goes, so a throw leaves it half applied. Tightening the gate to
- * reject them was the first fix and was wrong: a session written by an older build, before one of
- * these fields existed, is not corrupt and still carries the user's artwork. Discarding it to
- * avoid a crash trades one kind of lost work for another.
+ * unable to build at all, showing the raw exception text, recoverable only by F5. Tightening the
+ * gate to reject them was the first fix and was wrong: a session written by an older build, before
+ * one of these fields existed, is not corrupt and still carries the user's artwork. Discarding it
+ * to avoid a crash trades one kind of lost work for another.
  *
  * So each container is replaced only when it is not the shape the restore needs, and every default
  * here is the same "nothing set" the app boots with.
@@ -525,6 +525,71 @@ function repairSessionContainers(s: PersistedSession): PersistedSession {
  */
 export function restoredColorSettings(session: PersistedSession): AppState['colorSettings'] {
   return session.explicitDepths ? session.colorSettings : {};
+}
+
+/**
+ * The scalar and settings fields a restore adopts, computed without touching `state` — see the
+ * comment on `pending` in applyRestoredSessionInner for why.
+ */
+function buildRestoredScalarState(session: PersistedSession): Partial<AppState> {
+  // Coerced to a printer that exists, not adopted verbatim. An unknown id (an older build's, a
+  // hand-edited session) left `#p-printer` blank while getPrinter() silently fell back to the
+  // default bed — and the bed is what every verified placement is checked against, so the export
+  // would use one printer's plate while the picker named none.
+  const printerId = getPrinter(session.printerId).id;
+  const pending: Partial<AppState> = {
+    disc: session.disc,
+    rect: session.rect,
+    round: session.round,
+    stlPlate: session.stlPlate,
+    marginPct: session.marginPct,
+    scalePct: session.scalePct,
+    offsetX: session.offsetX,
+    offsetY: session.offsetY,
+    flipX: session.flipX,
+    flipY: session.flipY,
+    rotationDeg: session.rotationDeg,
+    recessBg: session.recessBg,
+    printerId,
+    baseFilamentId: session.baseFilamentId,
+    autoMergeLevel: session.autoMergeLevel,
+    baseColorKey: session.baseColorKey,
+    baseColorMembers: session.baseColorMembers,
+    mergeGroups: session.mergeGroups,
+    colorSettings: restoredColorSettings(session),
+    keptApart: session.keptApart,
+  };
+  // Guarded like asmRadius below. isPersistedSession checks four fields and repairSessionContainers
+  // repairs containers, never scalars, so a session missing this reached colorList's
+  // `shownDepth.toFixed(2)` and threw mid-restore — the half-applied failure this path exists to
+  // avoid.
+  if (Number.isFinite(session.globalDepth)) pending.globalDepth = session.globalDepth;
+  // The same floor the field enforces, from the same constant: a looser guard here let a session
+  // carrying 0.2 through, and the field then snapped itself to its default while state kept 0.2.
+  // A session saved by an earlier build can carry 0 or a negative, so the guard has to be here too
+  // or a reload walks straight past the field's.
+  if (Number.isFinite(session.asmRadius) && session.asmRadius >= MIN_DESIGN_RADIUS_MM)
+    pending.asmRadius = session.asmRadius;
+  // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
+  //
+  // Clamped at BOTH ends here, against the printer resolved above. A stored value never comes
+  // through the control that normally bounds it: below the floor the disc misses its mounting
+  // clips entirely, and above the plate it is a part the machine cannot print. An earlier version
+  // of this only floored, on the grounds that the ceiling would be re-applied once the printer was
+  // known — but no restore path calls that, so a session saved on a big bed came back oversized on
+  // a small one.
+  if (typeof session.hubcapDiameterMm === 'number' && Number.isFinite(session.hubcapDiameterMm)) {
+    const plate = getPrinter(printerId).plate;
+    pending.hubcapDiameterMm = Math.min(
+      Math.min(plate.w, plate.d),
+      Math.max(HUBCAP_MIN_DIAMETER_MM, session.hubcapDiameterMm),
+    );
+  }
+  // No clamp to match: the shape checks all run at rebuild, and every one of them falls back to a
+  // circle with a message rather than to something unprintable.
+  if (typeof session.hubcapSilhouette === 'boolean')
+    pending.hubcapSilhouette = session.hubcapSilhouette;
+  return pending;
 }
 
 export function loadSavedSession(): PersistedSession | null {
@@ -572,60 +637,12 @@ export async function applyRestoredSession(session: PersistedSession): Promise<v
 }
 
 async function applyRestoredSessionInner(session: PersistedSession): Promise<void> {
-  state.disc = session.disc;
-  state.rect = session.rect;
-  state.round = session.round;
-  state.stlPlate = session.stlPlate;
-  state.marginPct = session.marginPct;
-  state.scalePct = session.scalePct;
-  state.offsetX = session.offsetX;
-  state.offsetY = session.offsetY;
-  state.flipX = session.flipX;
-  state.flipY = session.flipY;
-  state.rotationDeg = session.rotationDeg;
-  // Guarded like asmRadius below. isPersistedSession checks four fields and repairSessionContainers
-  // repairs containers, never scalars, so a session missing this reached colorList's
-  // `shownDepth.toFixed(2)` and threw mid-restore — the half-applied failure this path exists to
-  // avoid.
-  if (Number.isFinite(session.globalDepth)) state.globalDepth = session.globalDepth;
-  state.recessBg = session.recessBg;
-  // Coerced to a printer that exists, not adopted verbatim. An unknown id (an older build's, a
-  // hand-edited session) left `#p-printer` blank while getPrinter() silently fell back to the
-  // default bed — and the bed is what every verified placement is checked against, so the export
-  // would use one printer's plate while the picker named none.
-  state.printerId = getPrinter(session.printerId).id;
-  // The same floor the field enforces, from the same constant: a looser guard here let a session
-  // carrying 0.2 through, and the field then snapped itself to its default while state kept 0.2.
-  // A session saved by an earlier build can carry 0 or a negative, so the guard has to be here too
-  // or a reload walks straight past the field's.
-  if (Number.isFinite(session.asmRadius) && session.asmRadius >= MIN_DESIGN_RADIUS_MM)
-    state.asmRadius = session.asmRadius;
-  // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
-  //
-  // Clamped at BOTH ends here, against the printer restored on the line above. A stored value
-  // never comes through the control that normally bounds it: below the floor the disc misses its
-  // mounting clips entirely, and above the plate it is a part the machine cannot print. An earlier
-  // version of this only floored, on the grounds that the ceiling would be re-applied once the
-  // printer was known — but no restore path calls that, so a session saved on a big bed came back
-  // oversized on a small one.
-  if (typeof session.hubcapDiameterMm === 'number' && Number.isFinite(session.hubcapDiameterMm)) {
-    const plate = getPrinter(state.printerId).plate;
-    state.hubcapDiameterMm = Math.min(
-      Math.min(plate.w, plate.d),
-      Math.max(HUBCAP_MIN_DIAMETER_MM, session.hubcapDiameterMm),
-    );
-  }
-  // No clamp to match: the shape checks all run at rebuild, and every one of them falls back to a
-  // circle with a message rather than to something unprintable.
-  if (typeof session.hubcapSilhouette === 'boolean')
-    state.hubcapSilhouette = session.hubcapSilhouette;
-  state.baseFilamentId = session.baseFilamentId;
-  state.autoMergeLevel = session.autoMergeLevel;
-  state.baseColorKey = session.baseColorKey;
-  state.baseColorMembers = session.baseColorMembers;
-  state.mergeGroups = session.mergeGroups;
-  state.colorSettings = restoredColorSettings(session);
-  state.keptApart = session.keptApart;
+  // Built rather than assigned straight into `state`, so the source loop below — where a failure
+  // is most likely, an SVG that no longer parses being the common case — cannot leave these
+  // committed while the sources they describe never come back. Committed in one shot once that
+  // loop has run clean, the same "build it, then commit" shape applyRasterFile and the loop itself
+  // already follow.
+  const pending = buildRestoredScalarState(session);
 
   // A raster source is decoded and re-traced; an SVG one is re-parsed. Both are rebuilt before any
   // state is touched, matching the rest of this function and applyRasterFile: a source that fails
@@ -680,6 +697,12 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       );
     }
   }
+
+  // Nothing above this point can throw, so it is safe to commit: a source that fails to parse or
+  // decode is caught (per-image) or has already propagated (an SVG's parseSVGDocument, uncaught by
+  // design — see the comment on `sources`), and either way this line is never reached with `state`
+  // still holding the pre-restore values it would otherwise be a mix of.
+  Object.assign(state, pending);
 
   const kind =
     session.shapeKind === 'assembly' && session.assembly.kindId

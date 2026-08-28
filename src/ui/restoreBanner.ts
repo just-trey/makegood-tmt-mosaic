@@ -82,9 +82,10 @@ export function initRestoreBanner(): void {
         // pushes onto the list; this path returns before setShapeKind(), which is the only call
         // on it that would otherwise reach renderWarnings().
         //
-        // "Reload the page" is not boilerplate: applyRestoredSession assigns state as it goes, so
-        // a throw part-way leaves it half applied — the printer can be one value while the picker
-        // shows another. Making that application atomic is still owed (docs/tech-debt.md).
+        // "Reload the page" is not boilerplate: the printer, depth and color grouping commit
+        // atomically now, but the assembly-kind switch below that commit still doesn't —
+        // asmLoadFullAssembly() can throw after state.assembly.kindId has already moved, leaving
+        // the part changed while the sources and artwork list never got their turn.
         warn(SESSION_WRITES_DISABLED_MSG);
         renderWarnings();
         clearSavedSession();

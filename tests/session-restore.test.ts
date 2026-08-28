@@ -411,4 +411,41 @@ describe('applyRestoredSession: failure handling', () => {
     await expect(applyRestoredSession(session())).resolves.toBeUndefined();
     expect(state.activeArtworkId).toBe('a1');
   });
+
+  // applyRestoredSessionInner used to assign its scalar fields straight into `state` before this
+  // loop ran, so a source that fails to parse here — the common real-world case, an older SVG a
+  // newer parser rejects — left the printer (and everything else assigned alongside it) on the
+  // saved session's values while every source and artwork stayed on the pre-restore ones.
+  it('leaves state exactly as it was when a source fails to parse part-way through', async () => {
+    state.printerId = 'bambu-x1c';
+    state.disc = { diameter: 42, thickness: 3 };
+    state.asmRadius = 130;
+    state.baseColorKey = '#111111';
+    state.keptApart = ['#222222'];
+    const before = {
+      printerId: state.printerId,
+      disc: { ...state.disc },
+      asmRadius: state.asmRadius,
+      baseColorKey: state.baseColorKey,
+      keptApart: [...state.keptApart],
+    };
+
+    const bad = session({
+      // Different from `before` on every field captured above, so a leak from any of them shows.
+      printerId: 'snapmaker-u1',
+      disc: { diameter: 999, thickness: 999 },
+      asmRadius: 999,
+      baseColorKey: '#ff0000',
+      keptApart: ['#00ff00'],
+      sources: [{ id: 's1', kind: 'upload', name: 'a.svg', svgText: null as unknown as string }],
+    });
+
+    await expect(applyRestoredSession(bad)).rejects.toBeTruthy();
+
+    expect(state.printerId).toBe(before.printerId);
+    expect(state.disc).toEqual(before.disc);
+    expect(state.asmRadius).toBe(before.asmRadius);
+    expect(state.baseColorKey).toBe(before.baseColorKey);
+    expect(state.keptApart).toEqual(before.keptApart);
+  });
 });

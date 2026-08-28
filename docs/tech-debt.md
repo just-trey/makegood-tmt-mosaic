@@ -726,38 +726,49 @@ Closing it means one message with the right remedies for both causes, and one id
 retracting it. Three review rounds on this branch each produced a new defect in it, which is why it
 was cut rather than patched again.
 
-## A restore assigns state as it goes, so a throw leaves it half applied
+## A restored session's assembly-kind switch still isn't atomic
 
-What is left of the restore-confirm item, after the wrong-part export it caused
-was fixed. Kept because the underlying shape is unchanged.
+What is left of the restore-atomicity item after `applyRestoredSessionInner`'s
+scalar fields (printer, base shape, depth, colour grouping — about twenty of
+them) were made atomic: built into a local object and committed in one
+`Object.assign` only once every source in the session has come back
+([src/state/persist.ts](../src/state/persist.ts)).
 
-`applyRestoredSession` writes about twenty fields into `state` before the source
-loop where a failure is most likely, and its caller's catch skips every DOM
-refresher. So a restore that throws part-way can leave the printer set to one
-value while `#p-printer` shows another, which is the same desync class as the
-unknown-printer bug fixed alongside it.
+The switch to the saved session's assembly kind still assigns straight into
+`state` before the one thing in that branch that can throw:
+`state.shapeKind`, `state.assembly.kindId`, `state.assembly.variantId` and
+`state.assembly.parts = []` are all set, then `await asmLoadFullAssembly()`
+runs. If it throws (an unreachable parts library, e.g.), the part has already
+switched but the sources and artwork list — computed after this await
+returns — never get applied. A reload shows a session that thinks it's the
+saved part with none of that part's designs on it.
 
-Two things reduced the blast radius rather than closing it: the containers the
-restore dereferences are now repaired at load (seven single-field corruptions
-used to throw here, three of them wedging the app until F5), and the failure now
-says so on screen and tells the user to reload. Neither makes the application
-atomic.
+Not the same bug this item started as: it can no longer put a value from the
+session into one of the twenty scalar fields while the picker or the model
+shows something else. Only the assembly kind and its parts can lag behind.
 
-Closing it means building the restored state into a local object and committing
-it to `state` only once nothing further can throw, the way `applyRasterFile` and
-the source loop inside this same function already do.
+Closing it would mean giving `asmLoadFullAssembly` a way to report success
+without having already mutated `state.assembly.parts` piecemeal as it loads
+each role — a bigger change to a function whose job is that live progressive
+load (the confirm dialog and the mid-load kind-switch guard both depend on
+`state.assembly.parts` being the live list). Deferred rather than folded into
+the fields fix, which does not touch `asmLoadFullAssembly`'s contract.
 
-**A related notice is lost the same way.** When one source of several fails to
-restore, the per-image "could not be restored from the saved session" warning is
-wiped by the next SVG source in the list: `parseSVGDocument`
-([src/svg/parse.ts](../src/svg/parse.ts)) opens with `clearWarnings()`. So a
-partial failure, the case that warning exists for, is the case least likely to
-show it. Pre-existing, and the fix is in that `clearWarnings()` contract rather
-than in the restore.
+## A restore's per-image notice is lost the same way a stale one used to be
 
-Related, from the section this replaced: the 2026-08-08 cycle's **A2** (switching
-part shape carries artwork across with no confirmation) is the opposite failure in
-the same control. It is graded FIXED in
+When one source of several fails to restore, the per-image "could not be
+restored from the saved session" warning is wiped by the next SVG source in
+the list: `parseSVGDocument` ([src/svg/parse.ts](../src/svg/parse.ts)) opens
+with `clearWarnings()`. So a partial failure, the case that warning exists
+for, is the case least likely to show it.
+
+Closing it means changing what `clearWarnings()`'s contract allows a caller to
+rely on, not the restore itself — `applyRestoredSession` is just one caller
+that gets bitten by it.
+
+Related, from the section this replaced: the 2026-08-08 cycle's **A2**
+(switching part shape carries artwork across with no confirmation) is the
+opposite failure in the same control. It is graded FIXED in
 [review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md), and that
 cycle's **C1** records why the confirm's wording is still wrong.
 
