@@ -239,4 +239,34 @@ describe('a saved image that will not come back', () => {
     expect(state.activeArtworkId).toBe(state.artworks[0].id);
     expect(state.parsed).not.toBeNull();
   });
+
+  // The restore-failure warning is templated from the file name, same as the capped/traced
+  // notices — and, like those, has to be keyed by source id rather than deduped by that text, or
+  // the second of two same-named lost sources reports as nothing lost at all.
+  it('two sources sharing a name that both fail to restore are both reported', async () => {
+    class FailingImage {
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      set src(_v: string) {
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    vi.stubGlobal('Image', FailingImage);
+    clearWarnings();
+
+    loadRaster('img.png');
+    loadRaster('img.png');
+    saveSession();
+
+    const raw = JSON.parse(localStorage.getItem('tmt-mosaic:session:v1')!);
+    raw.sources = raw.sources.map((x: { raster?: { png: string } }) =>
+      x.raster ? { ...x, raster: { ...x.raster, png: 'data:image/png;base64,NOTVALID' } } : x,
+    );
+    localStorage.setItem('tmt-mosaic:session:v1', JSON.stringify(raw));
+
+    const session = loadSavedSession()!;
+    await expect(applyRestoredSession(session)).resolves.toBeUndefined();
+
+    expect(WARNINGS.filter((w) => /could not be restored/i.test(w.message))).toHaveLength(2);
+  });
 });

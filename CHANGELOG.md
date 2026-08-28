@@ -35,6 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the audit's own method turned up 13 more still missing a section; those are
   listed in [docs/tech-debt.md](docs/tech-debt.md) rather than written up here,
   to keep this change reviewable.
+- **Two raster images sharing a filename no longer step on each other's
+  status notice.** The capped/traced notice, and the "could not be restored"
+  warning on a session restore, were deduped and retracted by their displayed
+  text, which names the file; two sources loaded (or lost on restore) under
+  the same name could stand on opposite sides of the capped/traced split, or
+  have one source's removal, re-quantize, or restore failure retract or hide
+  the other's still-true notice. `notice()`, `dismissNotice()`, and `warn()`
+  now take an optional dedupe key, and the raster call sites
+  (`src/ui/artworkPanel.ts`, `src/ui/artworkListPanel.ts`,
+  `src/state/persist.ts`, both for the load-time notice and the
+  restore-failure warning) key on the source id. Every other caller is
+  unaffected — dedupe still falls back to message text when no key is given.
 
 ## [0.7.0] - 2026-08-28
 

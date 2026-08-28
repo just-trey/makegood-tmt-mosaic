@@ -679,8 +679,8 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       const result = parseRasterImage(image, opts);
       // The same notice the first load gave. Without it a design that comes back simplified looks
       // like the app quietly changed it.
-      if (result.capped) notice(rasterCappedMessage(s.name));
-      else notice(rasterTracedMessage(s.name));
+      if (result.capped) notice(rasterCappedMessage(s.name), s.id);
+      else notice(rasterTracedMessage(s.name), s.id);
       sources.push({
         id: s.id,
         kind: s.kind,
@@ -694,6 +694,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       warn(
         `"${s.name}" could not be restored from the saved session. Load the image again to put ` +
           `it back. Everything else in the session was restored.`,
+        s.id,
       );
     }
   }

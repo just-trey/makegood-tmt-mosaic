@@ -149,14 +149,14 @@ async function applyRasterFile(file: File): Promise<void> {
     const result = parseRasterImage(image, opts);
     // No svgText: an image's source of truth is its pixels. Session persistence round-trips those
     // separately, as the working copy re-encoded to PNG (see raster/store.ts).
-    loadArtworkSource(result.parsed, file.name, 'raster', 'sticker', '', {
+    const instance = loadArtworkSource(result.parsed, file.name, 'raster', 'sticker', '', {
       image,
       ...opts,
       palette: result.palette,
       regions: result.componentCount,
     });
-    if (result.capped) notice(rasterCappedMessage(file.name));
-    else notice(rasterTracedMessage(file.name));
+    if (result.capped) notice(rasterCappedMessage(file.name), instance.sourceId);
+    else notice(rasterTracedMessage(file.name), instance.sourceId);
     afterArtworkLoaded(file.name);
     renderWarnings();
     track('artwork_load', { source: 'raster' });
