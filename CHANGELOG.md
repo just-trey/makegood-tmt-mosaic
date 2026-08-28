@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   "Advanced: per-part face & alignment" moved the Top and left the Bottom
   cutting the old one, with nothing on screen saying the two disagreed. The
   copy now follows its source on every face change.
+- **`docs/troubleshooting.md` gained 8 sections** for warnings that shipped
+  with no write-up: the assembly-mode watertight-mesh check, the parts-library
+  load failures, both raster trace-to-nothing errors, the deeply-nested-SVG
+  guard, and the export-placement and non-finite-coordinate guards. Re-running
+  the audit's own method turned up 13 more still missing a section; those are
+  listed in [docs/tech-debt.md](docs/tech-debt.md) rather than written up here,
+  to keep this change reviewable.
 
 ## [0.7.0] - 2026-08-28
 

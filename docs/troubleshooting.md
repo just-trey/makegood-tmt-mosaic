@@ -70,6 +70,72 @@ landing on it. What they are _not_ is silent: before this handling existed, the
 same failures either blanked the viewport or shipped an uncut body alongside
 inlays occupying the same space, which a slicer resolves arbitrarily.
 
+## Troubleshooting: "isn't a watertight/manifold mesh" warnings (assembly mode)
+
+Full text: _"Part "Top" isn't a watertight/manifold mesh, so it can't be cut
+cleanly. Repair it (close holes, fix flipped faces) and retry. Exporting it
+uncut for now."_
+
+**This fails earlier than the cut warnings above.** Those happen when a clipped
+_region_ comes out non-watertight. This one fires when the part's own base
+mesh — before any cutting is attempted — doesn't pass Manifold's own
+watertight check: an open edge, a flipped face, or some other non-manifold
+defect in the mesh itself.
+
+**What you get.** That part exports uncut: its full, unmodified shape, with no
+colour recesses or inlays. Every other part in the assembly still cuts and
+exports normally — this failure is per-part, not per-build.
+
+**What to do.** You cannot fix this from the app; there is no mesh-repair tool
+here. Every part comes from the built-in library (the free-form mesh upload
+path was removed — see [tech-debt.md](tech-debt.md), "The custom-mesh upload
+path was removed, and took a placement guard with it"), so a shipped part
+failing this check is a packaging defect, not something your artwork caused.
+Report it via **Feedback** or **Report a bug on GitHub**, naming the part.
+
+## Troubleshooting: "Couldn't load this part. Reload the page to try again."
+
+Full text: _"Couldn't load this part. Reload the page to try again."_
+
+Shown two ways for the same cause: as a banner in the part panel once the parts
+library manifest has settled, or as a dialog if you click **Load full
+assembly** while it's still unreachable.
+
+Both mean the manifest (`stl/parts.json`) either never loaded, or loaded
+without an entry the selected assembly kind's roles need. Either way it is a
+**broken deployment**, not a mistake you made: the app used to offer a
+mesh-drop fallback here, but it was removed because the app has no way to
+check an arbitrary mesh is the part it claims to be, and every verified export
+placement is baked against the shipped one (see [tech-debt.md](tech-debt.md),
+"The custom-mesh upload path was removed, and took a placement guard with
+it").
+
+**What to do.** Reload the page — a flaky connection on first load is the
+common case. If it keeps happening, report it via **Feedback** or **Report a
+bug on GitHub**; there is nothing to fix on your end.
+
+## Troubleshooting: "Not a valid 3MF: missing 3D/3dmodel.model"
+
+Full text: _"Not a valid 3MF: missing 3D/3dmodel.model"_
+
+You see it wrapped inside a load failure that names the part and file, for
+example `Could not load library part "Footrest" from stl/footrest.3mf: Not a
+valid 3MF: missing 3D/3dmodel.model`.
+
+The app's 3MF reader expects a zip archive containing `3D/3dmodel.model`, the
+XML file every 3MF must have. This fires when the fetched file isn't that: a
+corrupted or truncated download, or a file at that path that isn't actually a
+3MF (a renamed STL, a differently-packaged zip).
+
+Every part the app loads comes from its own library over a normal fetch — there
+is no path for you to hand it a bad file (see the previous section on the
+custom-mesh upload path's removal). So like the "Couldn't load this part"
+message, this is either a one-off network hiccup or a broken deployment, not
+something your artwork or settings caused.
+
+**What to do.** Reload the page. If it recurs on the same part, report it via
+**Feedback** or **Report a bug on GitHub**, naming the part.
+
 ## Troubleshooting: "N filament slots needed, but … tops out at M" warnings
 
 The design needs more filament slots than the printer can address in one print.
@@ -309,6 +375,54 @@ To get a result you are happier with:
 - **Crop or simplify the source.** A busy background the design doesn't need is
   what usually blows the budget.
 
+## Troubleshooting: "No opaque pixels were found in this image…"
+
+Full text: _"No opaque pixels were found in this image. There is nothing to
+cut."_
+
+The image decoded fine, but every pixel in it fell below the alpha threshold
+the quantizer uses to tell artwork from background. The load fails as a no-op:
+whatever design was already loaded stays exactly as it was.
+
+- **A fully transparent PNG.** Nothing was ever drawn on it, or every layer
+  that was got flattened out before export.
+- **A background that reads as "empty" to the app but not to your eyes.** A
+  checkerboard pattern baked into the pixels by an export preview, rather than
+  real alpha, still counts as opaque background — see "This image has no
+  transparent background…" under the hubcap section for the same distinction
+  on a related path.
+
+**What to do.** Re-export the image with a real transparent background (most
+editors call it "export with alpha" or "transparent canvas"), and confirm
+something is actually drawn on it before re-loading.
+
+## Troubleshooting: "No color regions survived tracing this image…"
+
+Full text: _"No color regions survived tracing this image. Try raising
+Detail, or use a less noisy image."_
+
+The image had opaque pixels — it is not the case above — but after despeckling,
+every traced region was smaller than the despeckle floor, so nothing survived
+to build shapes from. Like the previous message, the load fails as a no-op and
+whatever was already loaded is untouched.
+
+This is the far end of "Some detail … was too fine to print…" below: that
+notice means _most_ of the image survived and a little texture was merged
+away; this error means the despeckle floor ate the whole image, usually
+because it is uniformly noisy (a busy photograph, heavy film grain, a scan with
+visible dither) rather than made of a few solid-coloured regions.
+
+**What to do**, in order of how much it usually helps:
+
+- **Raise Detail.** This lowers the despeckle floor (see the Detail note under
+  "Some detail … was too fine to print…" for why the name reads backwards), so
+  smaller regions are allowed to survive.
+- **Lower Colors.** Fewer palette entries means fewer, larger regions per
+  colour, which is more likely to clear the floor.
+- **Use a less noisy image**, or crop to the part that actually has distinct
+  colour blocks. A photograph with soft gradients everywhere and no flat areas
+  will keep failing here regardless of these settings.
+
 ## Troubleshooting: "This image could not be decoded…"
 
 Full text: _"This image could not be decoded. The browser cannot read this
@@ -346,6 +460,32 @@ asks you to set the document size in millimetres, which is right there
 and impossible for an image; hence two messages. There is
 no way to give an image an exact real-world size on load. Use the Part section's
 design template to check the fit, and `Scale`/`Offset` to place it.
+
+## Troubleshooting: "This SVG has unusually deeply nested geometry…"
+
+Full text: _"This SVG has unusually deeply nested geometry (rings nested past
+a normal depth) and couldn't be processed."_
+
+The app resolves which shapes are holes inside which other shapes by nesting
+depth — a ring inside a ring inside a ring, and so on. That resolution recurses
+once per level of nesting, and this message replaces the raw "Maximum call
+stack size exceeded" a browser would otherwise show when the recursion runs the
+JS call stack out, so the failure names what was nested too deep instead of
+reading as a crash.
+
+**What causes it.** Thousands of concentric rings (holes-within-holes) or, for
+the sibling message from the SVG parser itself — full text: _"This SVG has
+unusually deeply nested groups (elements nested past a normal depth) and
+couldn't be processed."_ — `<g>` elements nested hundreds of layers deep. Both
+are pathological rather than something a normal export produces: a
+hand-authored SVG, a generator script gone wrong, or an editor's "expand"
+operation applied recursively.
+
+**What to do.** Flatten the file in your editor (Illustrator/Inkscape's
+ungroup, applied repeatedly, or Object → Flatten) before loading it. There is
+no setting in the app that raises this — the recursion depth isn't currently
+bounded on purpose, only caught after the fact, so a merely deep-but-normal
+file (thousands of independent shapes, not nested ones) does not trip it.
 
 ## Troubleshooting: "This SVG has no size in millimeters…"
 
@@ -659,6 +799,44 @@ cannot measure a depth against, or a part too thin to hold the minimum. Look at
 the cut in the 3D view, and in your slicer's preview, before printing. See
 [tech-debt.md](tech-debt.md).
 
+## Troubleshooting: "has no verified print placement" warnings
+
+Full text: _"Part "Footrest" has no verified print placement under its part id
+"footrest", so it was placed automatically. Check it in your slicer before
+printing."_
+
+**What it means.** Every shipped part's pose on the plate is normally baked
+from a reference file a human checked in a slicer. This part exported without
+that check, so whatever automatic placement the app fell back to has never been
+verified to avoid overlaps or print cleanly. It still exports — this is a
+warning, not a failure — but check it before printing.
+
+The message ends the same way for two different reasons, and one of them is not
+a defect:
+
+- **"…has no verified print placement under its part id…"** — this part id has
+  no baked placement at all. Either a new part kind hasn't had its pose baked
+  yet, or the id itself is wrong. See [tech-debt.md](tech-debt.md), "Per-part
+  export placement is a lookup table … not part of the part definition".
+- **"…doesn't match the mesh its verified print placement was baked
+  against…"** — a placement exists, but the loaded mesh's fingerprint doesn't
+  match what it was baked against. This happens when a shipped part's mesh is
+  re-packed without re-running `bake-part-fingerprints.mjs` afterward (see the
+  `add-part` skill, "run this after every re-pack of a shipped part, not just
+  new ones"). It is deliberately loud rather than silently trusting a stale
+  pose — see [tech-debt.md](tech-debt.md), "The export-placement seal proves a
+  mesh hasn't changed, not that anyone re-verified it".
+- **"…is generated to the size you chose. No pre-verified print placement
+  applies…"** is the third and unremarkable case: a part like the hubcap that
+  is built to the dimensions you set has no fixed mesh for a pose to be
+  verified against, by design. It shows as an informational notice, not a
+  warning.
+
+**What to do.** Check the part's position and rotation in your slicer before
+printing, same as the prime-tower warning below. If you're a maintainer seeing
+the mesh-mismatch form on a shipped part, that part needs its placement
+re-baked, not a workaround on your end.
+
 ## Troubleshooting: "The prime tower … has no verified position. Every corner … overlaps a part"
 
 **What it means.** The plate is crowded enough that the prime tower has nowhere
@@ -683,6 +861,31 @@ boxes, which over-reports a round part: a disc can be reported as blocking a
 corner it does not reach. That is deliberate for now, since a tower printed
 through a part is worse than one you place yourself, and it is written up in
 [tech-debt.md](tech-debt.md).
+
+## Troubleshooting: "Refusing to write a non-finite coordinate into the exported 3MF."
+
+Full text: _"Refusing to write a non-finite coordinate into the exported
+3MF."_
+
+You see it as `Export failed: Refusing to write a non-finite coordinate into
+the exported 3MF.` — the export button's generic failure dialog wrapping this
+specific refusal.
+
+**This is a last-line-of-defense guard, not something your artwork can
+trigger directly.** Every vertex coordinate is checked as the file is written,
+and a `NaN` or `Infinity` anywhere refuses the write outright rather than
+shipping a 3MF a slicer could silently mis-render or reject. The same check
+also covers the prime tower's saved position and each plate's transform.
+
+**What it means when it fires.** A geometry operation upstream — a boolean cut,
+a mesh transform, a degenerate zero-area shape — produced a coordinate that
+isn't a real number, and nothing caught it before export. This should not
+happen on ordinary artwork.
+
+**What to do.** Note what you last changed (which part, which colour, which
+setting) and report it via **Feedback** or **Report a bug on GitHub** with that
+detail — the message itself does not say which vertex or part is at fault, so
+reproducing it is what makes the report useful.
 
 ## Troubleshooting: "Couldn't send that" in the feedback panel
 
