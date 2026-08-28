@@ -1,7 +1,7 @@
 # TMT Mosaic — Multicolor Color-Inlay Generator
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.0--beta-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.0--beta-orange.svg)](CHANGELOG.md)
 
 A browser app that turns flat-color SVG artwork — or a PNG/JPG/WebP image — into
 per-color recess geometry for multicolor/AMS 3D printing, and exports a print-ready project 3MF — parts
