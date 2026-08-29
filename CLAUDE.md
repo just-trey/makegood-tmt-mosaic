@@ -14,6 +14,7 @@ rebuilding the steps from memory.
 | `verify-new-bed-size` | Checking export placement on an unverified bed      |
 | `debug-csg-failure`   | Investigating an assembly-mode CSG warning          |
 | `release`             | Cutting and tagging a release                       |
+| `fix-campaign`        | Several tech-debt items at once, merged on green    |
 
 ## Before opening a PR
 
