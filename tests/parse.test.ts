@@ -9,7 +9,7 @@ import {
   svgLengthToMM,
 } from '../src/svg/parse';
 import { designAnchor, placedFootprintMM } from '../src/geometry/assembly';
-import { WARNINGS, clearWarnings } from '../src/warnings';
+import { WARNINGS, clearWarnings, warn } from '../src/warnings';
 
 // jsdom has no 2d canvas without the native `canvas` package, so normalizeColor's color
 // oracle would return null and every fill would collapse to #000000. Stub just enough of
@@ -412,6 +412,17 @@ describe('parseSVGDocument', () => {
       ),
     );
     expect(out.userUnitMM).toBeCloseTo(100 / 185, 9);
+  });
+
+  // A parser must not own UI state: clearing WARNINGS is the caller's job (the user-initiated
+  // load in ui/artworkPanel.ts), not this function's. The restore loop in state/persist.ts calls
+  // this once per SVG source and must not have an earlier source's standing warning wiped by a
+  // later one's parse.
+  it('does not clear a warning that was already standing before it ran', () => {
+    clearWarnings();
+    warn('a standing warning from something else entirely', 'pre-existing');
+    parseSVGDocument(svg('<rect width="4" height="4" fill="#00ff00"/>'));
+    expect(WARNINGS.some((w) => w.key === 'pre-existing')).toBe(true);
   });
 });
 

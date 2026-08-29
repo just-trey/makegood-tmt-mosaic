@@ -8,7 +8,7 @@ import {
   markSavedSessionAnswered,
   type PersistedSession,
 } from '../state/persist';
-import { warn } from '../warnings';
+import { clearWarnings, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
 import { setShapeKind, renderBaseColorSwatches, refreshShapeParamInputs } from './partPanel';
@@ -86,6 +86,12 @@ export function initRestoreBanner(): void {
         // atomically now, but the assembly-kind switch below that commit still doesn't —
         // asmLoadFullAssembly() can throw after state.assembly.kindId has already moved, leaving
         // the part changed while the sources and artwork list never got their turn.
+        //
+        // Cleared first: applyRestoredSessionInner's own per-source loop can warn about a source
+        // (a raster that failed to decode) before hitting the one that threw, and `state` was never
+        // committed to match — so that warning is left describing a source that isn't part of
+        // anything on screen once this catch runs.
+        clearWarnings();
         warn(SESSION_WRITES_DISABLED_MSG);
         renderWarnings();
         clearSavedSession();

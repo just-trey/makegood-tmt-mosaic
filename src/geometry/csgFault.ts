@@ -57,11 +57,11 @@ let fired = 0;
 /**
  * (Re-)state the armed notice. warn() dedupes by message, so calling it per build is free.
  *
- * It has to be re-emitted rather than pushed once at import: loading an SVG calls clearWarnings()
- * (src/svg/parse.ts), which drops standing notices as well as build ones — so a notice pushed at
- * import survives only until the first artwork lands, and is gone by the build where the fault
- * actually fires. That is the one state where "a rigged build can't be mistaken for a broken one"
- * has to hold.
+ * It has to be re-emitted rather than pushed once at import: a user-initiated SVG load calls
+ * clearWarnings() (applyParsedSVG, src/ui/artworkPanel.ts), which drops standing notices as well as
+ * build ones — so a notice pushed at import survives only until the first artwork lands, and is
+ * gone by the build where the fault actually fires. That is the one state where "a rigged build
+ * can't be mistaken for a broken one" has to hold.
  */
 function announce(): void {
   if (announcement) warn(announcement);

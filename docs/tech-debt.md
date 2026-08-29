@@ -711,26 +711,22 @@ load (the confirm dialog and the mid-load kind-switch guard both depend on
 `state.assembly.parts` being the live list). Deferred rather than folded into
 the fields fix, which does not touch `asmLoadFullAssembly`'s contract.
 
-## A restore's per-image notice is lost the same way a stale one used to be
+## The part-switch confirm describes parts, not the artwork the user actually cares about
 
-When one source of several fails to restore, the per-image "could not be
-restored from the saved session" warning is wiped by the next SVG source in
-the list: `parseSVGDocument` ([src/svg/parse.ts](../src/svg/parse.ts)) opens
-with `clearWarnings()`. So a partial failure, the case that warning exists
-for, is the case least likely to show it.
+`src/ui/partPanel.ts` asks `Switching parts will clear the currently loaded
+ones. Continue?` on every switch since the beta narrowing removed Disc (every
+switch is now assembly→assembly, so this always fires). The parts it names
+are cleared and silently reloaded; the artwork the user actually placed
+survives. Read as written, it says the opposite of what happens.
 
-Closing it means changing what `clearWarnings()`'s contract allows a caller to
-rely on, not the restore itself — `applyRestoredSession` is just one caller
-that gets bitten by it. `svg/parse.ts`'s per-path "Path N has broken data"
-warning (see "Numeric coercion has no lint rule") is subject to the same
-contract: `ui/artworkPanel.ts`'s load-failure handlers clear it the same way
-when every shape in a document fails to parse.
-
-Related, from the section this replaced: the 2026-08-08 cycle's **A2**
-(switching part shape carries artwork across with no confirmation) is the
-opposite failure in the same control. It is graded FIXED in
-[review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md), and that
-cycle's **C1** records why the confirm's wording is still wrong.
+Recorded as **C1** in
+[review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md): the
+2026-08-08 cycle's **A2** wanted a confirm here at all (it fired only on the
+Wheel→Disc flat-branch case then), and removing Disc closed A2 mechanically
+without anyone writing a real one. That cycle's resolution: say what actually
+happens to the design, or drop the modal, having established nothing the user
+values is lost. Don't just delete it without re-checking A2's repro, or the
+next cycle re-files A2.
 
 ## `export-chair-examples.mjs` cannot reach Fill any more
 

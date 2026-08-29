@@ -45,7 +45,10 @@ export function applyParsedSVG(
   mode: ArtworkInstance['mode'] = 'sticker',
 ): void {
   // Parse first: parseSVGDocument throws on a malformed/empty SVG, and a failed load must be a
-  // no-op that leaves whatever's already loaded untouched.
+  // no-op that leaves whatever's already loaded untouched. clearWarnings() lives here, not inside
+  // parseSVGDocument — a parser must not own UI state, and the session-restore loop parses one SVG
+  // source per source without wanting each to wipe the one before it (see state/persist.ts).
+  clearWarnings();
   const parsed = parseSVGDocument(svgText);
   loadArtworkSource(parsed, fname, kind, mode, svgText); // adds a new source+instance alongside any already loaded
   afterArtworkLoaded(fname);

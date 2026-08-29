@@ -21,6 +21,7 @@ import { firstOfferedKind } from '../src/assembly/kinds';
 import { getPrinter } from '../src/export/printers';
 import { state } from '../src/state/store';
 import { confirmDialog } from '../src/ui/dialogs';
+import { WARNINGS, clearWarnings, warn } from '../src/warnings';
 
 /**
  * svg/parse.ts normalizes every CSS color through a canvas 2D context. jsdom has no canvas, so
@@ -447,5 +448,73 @@ describe('applyRestoredSession: failure handling', () => {
     expect(state.asmRadius).toBe(before.asmRadius);
     expect(state.baseColorKey).toBe(before.baseColorKey);
     expect(state.keptApart).toEqual(before.keptApart);
+  });
+});
+
+describe('applyRestoredSession: a raster restore failure survives a later SVG source', () => {
+  // The per-image restore-failure warning is pushed while the loop is on the raster source,
+  // *before* the SVG source after it is reached. If parsing that SVG source clears warnings
+  // (parseSVGDocument used to), the one notice this failure exists to show is gone by the time
+  // the restore finishes — the exact partial-failure case the warning is for.
+  it('keeps the raster restore-failure warning once a later SVG source has parsed', async () => {
+    class FailingImage {
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      set src(_v: string) {
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    vi.stubGlobal('Image', FailingImage);
+    clearWarnings();
+
+    await applyRestoredSession(
+      session({
+        sources: [
+          {
+            id: 'r1',
+            kind: 'raster',
+            name: 'photo.png',
+            svgText: '',
+            raster: { png: 'data:image/png;base64,NOTVALID', colors: 4, detail: 50 },
+          },
+          { id: 's1', kind: 'upload', name: 'a.svg', svgText: SQUARE_SVG },
+        ],
+        artworks: [
+          {
+            id: 'a1',
+            sourceId: 's1',
+            zoneId: null,
+            offsetU: 0,
+            offsetV: 0,
+            scalePct: 100,
+            rotationDeg: 0,
+            flipX: false,
+            flipY: false,
+            mode: 'sticker',
+          },
+        ],
+        activeArtworkId: 'a1',
+      }),
+    );
+
+    expect(WARNINGS.some((w) => w.key === 'r1' && /could not be restored/i.test(w.message))).toBe(
+      true,
+    );
+  });
+});
+
+describe('applyRestoredSession: a warning standing from before the restore', () => {
+  // A restore swaps `state.sources` wholesale (restoreArtworkPool), so a per-image notice tied to
+  // an old source id (a capped/traced notice, or a leftover "could not be restored" from a
+  // previous restore attempt) outlives every source it could still describe once this one commits.
+  // Nothing else clears it: a rebuild only drops build-scoped warnings (clearBuildWarnings), and
+  // this loop's own per-source warn()/notice() calls only ever add.
+  it('does not survive a restore that replaces every source', async () => {
+    clearWarnings();
+    warn('a notice about a source this restore is about to replace', 'stale-source-id');
+
+    await applyRestoredSession(session());
+
+    expect(WARNINGS.some((w) => w.key === 'stale-source-id')).toBe(false);
   });
 });
