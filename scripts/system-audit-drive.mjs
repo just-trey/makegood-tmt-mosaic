@@ -183,6 +183,9 @@ async function elementSnapshot(page, selector) {
     const props = [
       'color',
       'backgroundColor',
+      // the Checkbox spec's whole claim is "blue accent", and nothing else in this list carries
+      // it: a checkbox draws its fill from accent-color, not from color or backgroundColor
+      'accentColor',
       'borderColor',
       'borderWidth',
       'borderRadius',
@@ -276,6 +279,12 @@ async function main() {
     await page.waitForTimeout(HOVER_SETTLE_MS);
     result.states.initial.dropzoneHover = await elementSnapshot(page, '#dropzone');
 
+    // move the pointer off first: the hover snapshot above leaves it on #dropzone, and hover
+    // already renders every value the drag-over spec claims, so a drag-over read taken while
+    // still hovering cannot tell the two states apart
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(HOVER_SETTLE_MS);
+
     // drag-over: dispatch a real dragover event at #dropzone (native drag can't be scripted
     // headlessly the way a mouse can, but this exercises the app's own listener, not a class
     // toggle we invented)
@@ -293,6 +302,10 @@ async function main() {
         .querySelector('#dropzone')
         .dispatchEvent(new DragEvent('dragleave', { bubbles: true, dataTransfer: dt }));
     });
+    // #dropzone fades accent -> --text-dim over 0.12s here, and the census in the next state
+    // tallies computed colour: without this wait it catches #dropzone and its two children part
+    // way through, adding an interpolated colour that is in no token and differs every run.
+    await page.waitForTimeout(HOVER_SETTLE_MS);
 
     // focus — #p-depth (Depth panel), always visible regardless of shape kind
     await page.focus('#p-depth');
