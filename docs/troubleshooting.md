@@ -527,12 +527,17 @@ different ways back.
   what "Some detail … was too fine to print…" above asks for, and the two never
   show on the same image: a capped trace keeps that notice and never raises
   this one.
-- **On a part it ends differently.** The last sentence reads
-  **"Make the design or the part bigger."** The design's placed size puts a
-  nozzle-width floor under the fractional one, and Detail does not scale that
-  half: the color is gone at Detail 0, 50 and 100 alike, so the notice does not
-  offer Detail. Same split as "Nothing in … is big enough to print at this size"
-  below.
+- **Placed small, it ends differently.** The last sentence reads
+  **"Make the design or the part bigger."** whenever the placement's
+  nozzle-width floor is the binding one. Detail does not scale that half, so the
+  color is gone at Detail 0, 50 and 100 alike. Same split as "Nothing in … is
+  big enough to print at this size" below.
+- **Not "on a part": part scale runs the other way.** 128px across 12.8mm has a
+  printable floor of 16px² against a fractional 2, and asks for the size. The
+  same image at 512px across 185mm has a sub-pixel printable floor against a
+  fractional 39, and still asks for Detail. Both measured by
+  `npx vitest run tests/raster-parse.test.ts -t "printable floor"` and
+  `-t "part scale"`.
 - **The count is against the colors that labelled pixels, not the slider.** An
   image that simply has fewer colors than Colors asks for (a three-color logo at
   Colors 8) has lost nothing, and never raises this. Neither does a color that

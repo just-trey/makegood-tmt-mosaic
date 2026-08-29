@@ -11,6 +11,7 @@ import {
   measureImage,
   autoParams,
   despeckleFloorPx,
+  fracFloorPx,
   printableFloorPx,
   DETAIL_DEFAULT,
 } from '../src/raster/stats';
@@ -37,9 +38,7 @@ function bands(w: number, h: number, colors: string[], alpha = 255): RasterImage
  * Blue and green bands under a red sprinkle: enough red pixels to win a palette entry, every one
  * of them a lone speck. Deterministic placement — the assertions on it must not flake.
  */
-function sprinkled(): RasterImage {
-  const w = 64,
-    h = 64;
+function sprinkled(w = 64, h = w): RasterImage {
   const img = bands(w, h, ['#0000ff', '#00c000']);
   for (let p = 0; p < w * h; p++) {
     const x = p % w,
@@ -283,20 +282,12 @@ describe('parseRasterImage', () => {
       }
     });
 
-    // A placement puts a nozzle-width floor under the fractional one, and Detail never scales that
-    // half: the color is gone at Detail 0, 50 and 100 alike, so the notice must not offer Detail.
+    // Placed small, the nozzle-width floor sits above the fractional one, and Detail never scales
+    // that half: the color is gone at Detail 0, 50 and 100 alike, so the notice must not offer it.
+    // 128px across 12.8mm gives a printable floor of 16px² against a fractional 2 at Detail 50.
     it('sends the user to the size, not to Detail, under a printable floor', () => {
       for (const detail of [0, 50, 100]) {
-        const img = bands(128, 128, ['#0000ff', '#00c000']);
-        for (let p = 0; p < 128 * 128; p++) {
-          const x = p % 128,
-            y = (p / 128) | 0;
-          if ((x * 5 + y * 3) % 17 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
-          const i = p * 4;
-          img.data[i] = 255;
-          img.data[i + 1] = 0;
-          img.data[i + 2] = 0;
-        }
+        const img = sprinkled(128);
         const result = parseRasterImage(img, { colors: 4, detail, mmPerPixel: 0.1 });
 
         expect(result.droppedColors).toBe(1);
@@ -306,6 +297,23 @@ describe('parseRasterImage', () => {
         expect(text).toContain('Make the design or the part bigger.');
         expect(text).not.toContain('Detail');
       }
+    });
+
+    // Not "on a part": a part-scale placement runs the other way. 512px across 185mm (0.361mm per
+    // pixel) has a sub-pixel printable floor against a fractional 39, so Detail is still the answer.
+    it('still asks for Detail at part scale, where the fractional floor binds', () => {
+      const result = parseRasterImage(sprinkled(512), {
+        colors: 4,
+        detail: DETAIL_DEFAULT,
+        mmPerPixel: 0.361,
+      });
+
+      expect(printableFloorPx(0.361)).toBeLessThan(
+        fracFloorPx(autoParams(measureImage(sprinkled(512)), DETAIL_DEFAULT, true), 512, 512),
+      );
+      expect(result.droppedColors).toBe(1);
+      expect(result.floorReason).toBe('noise');
+      expect(rasterColorLossMessage('a.png', 1, result.floorReason)).toContain('Raise Detail');
     });
 
     it('names one dropped color in the singular and more in the plural', () => {

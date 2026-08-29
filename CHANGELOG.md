@@ -34,10 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   that labelled pixels and then painted none of them, so an image with fewer
   colors than Colors asks for stays quiet, and so does a color that won a
   cluster and labelled nothing. A capped trace keeps its own notice rather than
-  getting a second one with the opposite remedy; `docs/tech-debt.md` carries
-  what that leaves open
+  getting a second one with the opposite remedy, so that one case still says
+  nothing about the color it dropped; `docs/tech-debt.md` carries it
   (`npx vitest run tests/raster-parse.test.ts tests/artworkListPanel.test.ts`,
-  36 tests).
+  37 tests).
 - **The prime tower now gets a suggested corner on a round part.** The corner
   search scored each part by its bounding box, which reports a disc as filling
   corners a circle never reaches. A 220mm hubcap on the 350×320 H2D bed read as
