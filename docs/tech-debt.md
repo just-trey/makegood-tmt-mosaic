@@ -711,32 +711,6 @@ load (the confirm dialog and the mid-load kind-switch guard both depend on
 `state.assembly.parts` being the live list). Deferred rather than folded into
 the fields fix, which does not touch `asmLoadFullAssembly`'s contract.
 
-## A restored hubcap diameter is clamped looser than the live control allows
-
-`buildRestoredScalarState`'s hubcap clamp
-([src/state/persist.ts](../src/state/persist.ts)) caps a restored
-`hubcapDiameterMm` at the smaller of the plate's width and depth. The live
-control's ceiling, `buildParamMax`
-([src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts)), is the smaller of
-the kind's own `maxMm` and each plate axis minus twice
-`PLATE_EDGE_MARGIN_MM` (5mm). Subtracted from both sides, that puts the
-control's ceiling 10mm below the restore's on a given plate, and the control
-also respects `maxMm`, which the restore ignores entirely.
-
-Pre-existing, not introduced by the atomic-restore fix: byte-identical to the
-clamp on `main` before it (`git show main:src/state/persist.ts`), just with
-`state.printerId` read as a local `printerId` instead. Not fixed here to
-keep that change scoped to the atomicity bug it was measuring.
-
-Effect: a session saved on a bigger bed, or on a build param whose `maxMm` is
-below the plate, can restore a hubcap up to 10mm larger than the field would
-ever let a user type — inside the clearance `PLATE_EDGE_MARGIN_MM` exists to
-keep clear of the plate edge.
-
-Closing it: give `buildRestoredScalarState` the same ceiling `buildParamMax`
-computes (needs `kind.buildParam`, not just the plate, since that is where
-`maxMm` lives) instead of re-deriving a looser one from the plate alone.
-
 ## A restore's per-image notice is lost the same way a stale one used to be
 
 When one source of several fails to restore, the per-image "could not be

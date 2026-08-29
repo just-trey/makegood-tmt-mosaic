@@ -8,7 +8,7 @@ import {
   setActiveArtwork,
   setArtworkZone,
 } from './artwork';
-import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
+import { ASSEMBLY_KINDS, buildParamMax, firstOfferedKind } from '../assembly/kinds';
 import { HUBCAP_MIN_DIAMETER_MM } from '../geometry/hubcap';
 import { getPrinter } from '../export/printers';
 import { asmLoadFullAssembly } from '../assembly/parts';
@@ -579,9 +579,21 @@ function buildRestoredScalarState(session: PersistedSession): Partial<AppState> 
   // known — but no restore path calls that, so a session saved on a big bed came back oversized on
   // a small one.
   if (typeof session.hubcapDiameterMm === 'number' && Number.isFinite(session.hubcapDiameterMm)) {
+    // The same ceiling the live field enforces (buildParamMax), not a looser one re-derived from
+    // the plate alone — that used to let a restore land up to 10mm inside the clearance
+    // PLATE_EDGE_MARGIN_MM exists to keep clear of the plate edge, and skip a kind's own maxMm
+    // entirely. Needs the restored kind's buildParam, which is where maxMm lives; a kind with none
+    // (or a kind that no longer exists) keeps the plate-only clamp so that restore is unaffected.
+    const restoredKind =
+      session.shapeKind === 'assembly' && session.assembly.kindId
+        ? ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId)
+        : undefined;
     const plate = getPrinter(printerId).plate;
+    const ceiling = restoredKind?.buildParam
+      ? buildParamMax(restoredKind.buildParam, printerId)
+      : Math.min(plate.w, plate.d);
     pending.hubcapDiameterMm = Math.min(
-      Math.min(plate.w, plate.d),
+      ceiling,
       Math.max(HUBCAP_MIN_DIAMETER_MM, session.hubcapDiameterMm),
     );
   }

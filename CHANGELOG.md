@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   bounding box scores exactly as it did before, no part scores higher, and a
   concave one is still over-reported by its concavity; `docs/tech-debt.md`
   carries the measurement.
+- **A restored hubcap diameter is clamped to the same ceiling the live field
+  uses**, not a looser one re-derived from the plate alone. The live field's
+  ceiling (`buildParamMax`, now shared from `src/assembly/kinds.ts`) is the
+  plate minus 2×5mm edge margin on each axis, and a kind's own `maxMm` when
+  it has one; the restore clamp used to skip both, so a session saved on a
+  bigger bed or against a `maxMm` below the plate could come back up to 10mm
+  larger than the field would ever let a user type. `npm run test -- tests/persist-hubcap.test.ts`
+  (6 tests, all passing) covers the fix.
 - **`src/geometry/hubcap.ts` now uses ASCII apostrophes**, matching the other
   75 of 76 `.ts` files in `src/` (`find src -type f -name "*.ts" -not -name
 "*.d.ts" -exec grep -l "’" {} \;`). The four hubcap warning strings read the
