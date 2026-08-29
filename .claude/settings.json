@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git merge-base *)",
+      "Bash(git merge-tree *)",
+      "Bash(gh pr merge *)",
+      "Bash(git rebase *)",
+      "Bash(git reset *)",
+      "Bash(git branch -D *)",
+      "Bash(git branch -d *)",
+      "Bash(git worktree *)",
+      "Bash(git push --force-with-lease *)",
+      "Bash(cp *)",
+      "Bash(mkdir *)",
+      "Bash(sed -i *)",
+      "Bash(rm /tmp/claude-1000/-home-twentz-projects-makegood-tmt-mosaic/*)",
+      "Bash(rm -f /tmp/claude-1000/-home-twentz-projects-makegood-tmt-mosaic/*)",
+      "Bash(rm -r /tmp/claude-1000/-home-twentz-projects-makegood-tmt-mosaic/*)",
+      "Bash(rm -rf /tmp/claude-1000/-home-twentz-projects-makegood-tmt-mosaic/*)",
+      "Bash(rm -rf /home/twentz/projects/makegood-tmt-mosaic/.claude/worktrees/*)",
+      "Bash(rm -rf /home/twentz/projects/makegood-tmt-mosaic/.smoke-out*)"
+    ]
+  }
+}
