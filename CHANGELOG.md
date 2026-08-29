@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   that survives — your artwork stays right where you left it, and the part
   itself just swaps in. Nothing here was ever worth stopping to ask about, so
   the confirm is gone (`npx vitest run tests/part-switch-confirm.test.ts`).
+- **13 shipped warnings had no `docs/troubleshooting.md` section.** Found by
+  re-running the doc's own audit method (`grep -rln` every `warn(`/`warnBuild(`/
+  `notice(`/`noticeBuild(` call site, then `grep` the doc for a distinctive
+  phrase of each): the Manifold engine load failure, the design-face clip
+  failure, the sideways-face-normal note, three SVG parse-time failures, three
+  design-zone load failures, the catch-all rebuild failure, the two zone-
+  coverage notices, and the per-source session-restore failure. All 13 now
+  have sections (`npm run check:troubleshooting` still passes, 85 quotes
+  checked against 65 before this change).
 - **The prime tower now gets a suggested corner on a round part.** The corner
   search scored each part by its bounding box, which reports a disc as filling
   corners a circle never reaches. A 220mm hubcap on the 350×320 H2D bed read as
