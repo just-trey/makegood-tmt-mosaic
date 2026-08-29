@@ -400,7 +400,18 @@ parts intrude on least, warning when every corner is occupied. That search runs
 for **any** plate with no baked tower position, not just hinted ones: while it
 didn't, an unhinted plate wrote no `wipe_tower_x/y` at all and the slicer fell
 back to its own preset default, quite possibly through the part the export had
-just centred there. The corner probe tests each
-part's _bounding box_, so a round part is reported as blocking corners it
-actually leaves free: conservative in the right direction, but it means the
-warning fires for every hubcap on a bed near its size.
+just centred there. The corner probe tests each part's measured footprint, not
+its bounding box: sixteen support directions off every body vertex
+(`FOOTPRINT_AXIS`), whose thirty-two half-planes wrap the part's **convex hull**
+to within 0.48%. Always a superset of the body soup, never a subset, so a corner
+is only called free when it is. Same soup the bounding box used, so the same
+caveat: an inlay filling an edge cut-through is not in it.
+
+| Part                                          | Scored footprint                                                                   |
+| --------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Fills its bounding box (a rectangle)          | Exactly that box, as before                                                        |
+| Round (220mm hubcap, 350x320 H2D)             | Frees the back-right corner it clears by 14mm, where the box read all four blocked |
+| Concave (`chair-caster-std-left`, baked pose) | 1.70x its true area, and lower than the box — see `docs/tech-debt.md`              |
+
+Axis-aligned is not the test: a caster's pose is a signed permutation and it
+still scores 27% under its own bounding box.

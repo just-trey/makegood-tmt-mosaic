@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The prime tower now gets a suggested corner on a round part.** The corner
+  search scored each part by its bounding box, which reports a disc as filling
+  corners a circle never reaches. A 220mm hubcap on the 350×320 H2D bed read as
+  blocking all four, so the export wrote no `wipe_tower_x/y` at all and left the
+  tower to the slicer's own default. It now measures each part's own footprint
+  along 16 directions, wrapping its convex hull to within 0.48%, and suggests the
+  back-right corner the disc clears by 14.2mm
+  (`npx vitest run tests/generated-parts.test.ts -t 'corners the round hubcap'`).
+  Still a superset of the part's body mesh, the same thing the bounding box
+  measured, so a corner is only called free when it is. A part that fills its
+  bounding box scores exactly as it did before, no part scores higher, and a
+  concave one is still over-reported by its concavity; `docs/tech-debt.md`
+  carries the measurement.
 - **`src/geometry/hubcap.ts` now uses ASCII apostrophes**, matching the other
   75 of 76 `.ts` files in `src/` (`find src -type f -name "*.ts" -not -name
 "*.d.ts" -exec grep -l "’" {} \;`). The four hubcap warning strings read the

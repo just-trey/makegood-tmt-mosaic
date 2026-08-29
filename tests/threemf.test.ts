@@ -200,17 +200,19 @@ describe('multi-plate world layout', () => {
     expect(warnings.join(' ')).toContain('double-check for overlap');
   });
 
-  // A right triangle from the origin, so the part's plate footprint is exactly fixedPos..+w/+d.
+  // A filled rectangle from the origin, so the part's plate footprint is exactly fixedPos..+w/+d.
+  // Two triangles, not one: a right triangle has the same bounding box and only half the area, so
+  // it left the far corner genuinely free while every assertion here reads it as occupied.
   // Two materials, because a plate down to one filament prints no tower to position.
   const box = (name: string, w: number, d: number, x: number, y: number): ExportPart => {
-    const tri = new Float32Array([0, 0, 0, w, 0, 0, 0, d, 0]);
+    const quad = new Float32Array([0, 0, 0, w, 0, 0, w, d, 0, 0, 0, 0, w, d, 0, 0, d, 0]);
     return {
       ...part(0),
       name,
-      bodySoup: tri,
+      bodySoup: quad,
       subs: [
-        { name: 'Body', matIndex: 0, soup: tri },
-        { name: 'Red', matIndex: 1, soup: tri },
+        { name: 'Body', matIndex: 0, soup: quad },
+        { name: 'Red', matIndex: 1, soup: quad },
       ],
       fixedPos: { x, y },
     };

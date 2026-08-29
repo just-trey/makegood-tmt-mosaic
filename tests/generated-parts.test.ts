@@ -53,6 +53,8 @@ import {
   HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL,
   HUBCAP_VERIFIED_DIAMETER_MM,
   HUBCAP_WHEEL_DIAMETER_MM,
+  buildHubcapBody,
+  hubcapDiscSoup,
 } from '../src/geometry/hubcap';
 import { alertDialog } from '../src/ui/dialogs';
 import { state } from '../src/state/store';
@@ -1155,6 +1157,160 @@ describe('a bed-specific plate position in the exporter', () => {
     const y = Number((p.wipe_tower_y as string[])[0]);
     expect(x).toBeGreaterThan(350 / 2);
     expect(y).toBeGreaterThan(320 / 2);
+  });
+
+  it('frees the corners the round hubcap never reaches', async () => {
+    // Scored by bounding box, the default 220mm disc read as blocking all four corners of the H2D
+    // bed — the one bed with no verified HUBCAP_PLATE entry — so the export wrote no
+    // wipe_tower_x/y at all and left the tower to whatever the slicer's preset does, quite
+    // possibly through the part just centred there. The disc clears the back-right corner by 14mm.
+    const clips = await readMesh(resolve(REPO, 'public/stl/hubcap-clips.3mf'));
+    const body = await buildHubcapBody(
+      { kind: 'circle', diameterMm: HUBCAP_DEFAULT_DIAMETER_MM },
+      clips,
+    );
+    const printer = getPrinter('bambu-h2d');
+    const { blob, warnings } = await build3MFCombined(
+      materials,
+      [
+        {
+          name: 'Hub cap',
+          nsign: 1,
+          bodySoup: body.positions,
+          subs: [
+            { name: 'Body', matIndex: 0, soup: body.positions },
+            { name: 'Red', matIndex: 1, soup: body.positions },
+          ],
+        },
+      ],
+      { printer },
+    );
+
+    const p = await proj(blob);
+    expect(p.wipe_tower_x, 'no tower position was written for the disc').toBeDefined();
+    const x = Number((p.wipe_tower_x as string[])[0]);
+    const y = Number((p.wipe_tower_y as string[])[0]);
+    expect(warnings.join(' ')).not.toContain('No tower position was saved');
+
+    // The clearance, measured rather than asserted. The disc is centred on the mounting axis, so
+    // the item transform IS its centre, and the gap is the distance from there to the tower
+    // square's nearest corner, less the disc's radius.
+    const TOWER = 60;
+    const c = await itemXY(blob);
+    const near = {
+      x: Math.max(x, Math.min(c.x, x + TOWER)),
+      y: Math.max(y, Math.min(c.y, y + TOWER)),
+    };
+    const gap = Math.hypot(c.x - near.x, c.y - near.y) - HUBCAP_DEFAULT_DIAMETER_MM / 2;
+    expect(gap, 'the suggested corner clears the disc by ~14mm').toBeCloseTo(14.2, 1);
+  }, 30000);
+
+  it('keeps the corner order when a round part blocks all four equally', async () => {
+    // A disc centred on its plate overlaps every corner by the same area, so the ordering decides
+    // — front-left last, out of the nozzle-wipe exclusion. Measuring a clipped polygon's area
+    // rather than a box's puts a ~1e-12mm² rounding difference between four numbers that are equal
+    // by symmetry, which TIE_MM2 absorbs. Swept rather than sampled: with TIE_MM2 at 0, 62 of these
+    // 193 diameters take some other corner, and no single one of them is a natural fixture.
+    const off: number[] = [];
+    for (let dia = 150; dia <= 246; dia += 0.5) {
+      const soup = hubcapDiscSoup(dia);
+      const disc: ExportPart = {
+        name: 'Disc',
+        nsign: 1,
+        bodySoup: soup,
+        subs: [
+          { name: 'Body', matIndex: 0, soup },
+          { name: 'Red', matIndex: 1, soup },
+        ],
+        plateHint: 1,
+      };
+      // A second plate with a verified tower, so plate 1's blocked corner is still written out.
+      const { blob } = await build3MFCombined(
+        materials,
+        [disc, part({ plateHint: 2, primeTowerDelta: { x: 10, y: 10 } })],
+        { printer: getPrinter('bambu-x1c') },
+      );
+      const p = await proj(blob);
+      const x = Number((p.wipe_tower_x as string[])[0]);
+      const y = Number((p.wipe_tower_y as string[])[0]);
+      if (x !== 176 || y !== 176) off.push(dia);
+    }
+    expect(off, 'diameters that took a corner other than back-right').toEqual([]);
+  }, 120000);
+
+  it('scores a rectangular part exactly as its bounding box', async () => {
+    // A rectangle IS its bounding box, so the footprint search has to agree with the old box
+    // arithmetic on it down to the digit — corner, tie-break and all. The expected value is that
+    // arithmetic, run here, rather than a number copied out of a previous run.
+    //
+    // Two fixtures, because they exercise different halves of the search. The first leaves a
+    // corner genuinely free, where the overlap only has to be zero. The second blocks all four by
+    // different amounts, so the winner comes out of RANKING the areas — the arm a scorer that
+    // returns any constant still passes.
+    const TOWER = 60;
+    const EDGE = 20;
+    const printer = getPrinter('bambu-x1c'); // 256x256, the plate a fixedPos is taken verbatim on
+    const far = (span: number) => Math.max(EDGE, span - TOWER - EDGE);
+    const corners = [
+      { x: far(printer.plate.w), y: far(printer.plate.d) },
+      { x: EDGE, y: far(printer.plate.d) },
+      { x: far(printer.plate.w), y: EDGE },
+      { x: EDGE, y: EDGE },
+    ];
+
+    for (const { w, d, at, free } of [
+      { w: 150, d: 236, at: { x: 0, y: 0 }, free: true },
+      { w: 150, d: 150, at: { x: 70, y: 70 }, free: false },
+    ]) {
+      const quad = new Float32Array([0, 0, 0, w, 0, 0, w, 0, d, 0, 0, 0, w, 0, d, 0, 0, d]);
+      const slab: ExportPart = {
+        name: 'Slab',
+        nsign: 1,
+        bodySoup: quad,
+        subs: [
+          { name: 'Body', matIndex: 0, soup: quad },
+          { name: 'Red', matIndex: 1, soup: quad },
+        ],
+        plateHint: 1,
+        fixedPos: at,
+      };
+      // A second plate carrying a verified tower, so a blocked plate 1 still gets its ranked
+      // corner written: the omission is all-or-nothing across the file.
+      const { blob } = await build3MFCombined(
+        materials,
+        [slab, part({ plateHint: 2, primeTowerDelta: { x: 10, y: 10 } })],
+        { printer },
+      );
+
+      const overlap = (c: { x: number; y: number }): number => {
+        const ox = Math.min(at.x + w, c.x + TOWER) - Math.max(at.x, c.x);
+        const oy = Math.min(at.y + d, c.y + TOWER) - Math.max(at.y, c.y);
+        return Math.max(0, ox) * Math.max(0, oy);
+      };
+      const want = corners.reduce((a, b) => (overlap(b) < overlap(a) ? b : a));
+      const label = `${w}x${d} at (${at.x}, ${at.y})`;
+      if (free) {
+        expect(overlap(want), `${label}: this fixture must leave a corner free`).toBe(0);
+      } else {
+        // Every corner blocked, the winner strictly the least so, and not the one `reduce` would
+        // keep on a tie — otherwise a scorer that cannot tell the corners apart passes anyway.
+        expect(
+          Math.min(...corners.map(overlap)),
+          `${label}: no corner may be free`,
+        ).toBeGreaterThan(0);
+        expect(
+          corners.filter((c) => overlap(c) === overlap(want)),
+          label,
+        ).toHaveLength(1);
+        expect(want, `${label}: the tie-break winner must not also be the ranked one`).not.toEqual(
+          corners[0],
+        );
+      }
+
+      const p = await proj(blob);
+      expect(Number((p.wipe_tower_x as string[])[0]), `${label} tower x`).toBe(want.x);
+      expect(Number((p.wipe_tower_y as string[])[0]), `${label} tower y`).toBe(want.y);
+    }
   });
 
   it('writes no tower position at all when every corner is blocked', async () => {
