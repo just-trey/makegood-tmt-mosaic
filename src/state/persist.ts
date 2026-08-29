@@ -15,7 +15,7 @@ import { asmLoadFullAssembly } from '../assembly/parts';
 import { parseSVGDocument } from '../svg/parse';
 import { decodeWorkingImage, encodeWorkingImage } from '../raster/store';
 import { parseRasterImage, rasterCappedMessage, rasterTracedMessage } from '../raster/parse';
-import { notice, warn } from '../warnings';
+import { clearWarnings, notice, warn } from '../warnings';
 import type { RasterImage } from '../raster/types';
 
 const STORAGE_KEY = 'tmt-mosaic:session:v1';
@@ -350,9 +350,10 @@ export function saveSession(): void {
     // `lastSaveFailed` drives the beforeunload prompt, so leaving it false meant the guard went
     // quiet exactly when nothing is being saved: work for ten minutes, close the tab, no prompt.
     lastSaveFailed = true;
-    // And the notice is re-stated, because loading an SVG calls clearWarnings() (src/svg/parse.ts)
-    // and drops it, leaving an app that looks healthy while persisting nothing. warn() dedupes by
-    // message, so this is free. Same reason csgFault.ts re-announces rather than pushing once.
+    // And the notice is re-stated, because a user-initiated SVG load calls clearWarnings()
+    // (applyParsedSVG, src/ui/artworkPanel.ts) and drops it, leaving an app that looks healthy
+    // while persisting nothing. warn() dedupes by message, so this is free. Same reason csgFault.ts
+    // re-announces rather than pushing once.
     // It lands one render late, since this runs on the debounced save rather than inside a build.
     warn(SESSION_WRITES_DISABLED_MSG);
     return;
@@ -649,6 +650,13 @@ export async function applyRestoredSession(session: PersistedSession): Promise<v
 }
 
 async function applyRestoredSessionInner(session: PersistedSession): Promise<void> {
+  // Once, here, before any source is touched — not inside the loop (that wiped a raster failure's
+  // own warning the moment the next SVG source parsed; see parseSVGDocument) and not per source.
+  // `restoreArtworkPool` below replaces `state.sources` wholesale, so a notice keyed to an old
+  // source id (a capped/traced notice, or a "could not be restored" left over from a previous
+  // restore attempt) would otherwise describe a source that no longer exists once this one commits.
+  clearWarnings();
+
   // Built rather than assigned straight into `state`, so the source loop below — where a failure
   // is most likely, an SVG that no longer parses being the common case — cannot leave these
   // committed while the sources they describe never come back. Committed in one shot once that

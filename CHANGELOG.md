@@ -30,6 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   bigger bed or against a `maxMm` below the plate could come back up to 10mm
   larger than the field would ever let a user type. `npm run test -- tests/persist-hubcap.test.ts`
   (6 tests, all passing) covers the fix.
+- **A restored session's "could not be restored" warning survives the rest of
+  the restore, and stale warnings from before a restore no longer linger
+  after one.** `parseSVGDocument` cleared every standing warning on entry, so
+  a raster source that failed to decode during `applyRestoredSession` had its
+  warning wiped by the next SVG source's own parse — the partial-failure case
+  the warning exists for was the one case it never showed. The clear now
+  lives at the user-initiated load call site (`applyParsedSVG` in
+  `src/ui/artworkPanel.ts`), not inside the parser, so a fresh load behaves
+  the same while the restore loop's per-source warnings all survive. The
+  restore loop and its failure path (`src/ui/restoreBanner.ts`) each gained
+  their own single `clearWarnings()` instead: one before the loop starts, so
+  a notice tied to a source a restore is about to replace doesn't outlive it,
+  and one in the failure catch, so a source warned about before the restore
+  aborted doesn't linger next to the "could not be opened" message
+  (`npx vitest run tests/session-restore.test.ts tests/parse.test.ts
+tests/restoreBanner.test.ts`).
 - **`src/geometry/hubcap.ts` now uses ASCII apostrophes**, matching the other
   75 of 76 `.ts` files in `src/` (`find src -type f -name "*.ts" -not -name
 "*.d.ts" -exec grep -l "’" {} \;`). The four hubcap warning strings read the

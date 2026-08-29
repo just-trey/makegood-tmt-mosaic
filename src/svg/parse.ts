@@ -1,7 +1,7 @@
 import type { Loop, Mat6, ParsedSVG, SVGShape } from '../types';
 import { Mat, parseTransformAttr } from './matrix';
 import { ellipsePoints, parsePathD } from './path';
-import { clearWarnings, warn } from '../warnings';
+import { warn } from '../warnings';
 import { rethrowStackOverflowAs } from '../errors';
 
 // Normalize any CSS color string to "#rrggbb" using a canvas as an oracle.
@@ -135,7 +135,6 @@ function parseClassRules(doc: Document): Map<string, Record<string, string>> {
  * with all transforms (including viewBox translation) baked in.
  */
 export function parseSVGDocument(svgText: string): ParsedSVG {
-  clearWarnings();
   const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
   const perr = doc.querySelector('parsererror');
   if (perr) throw new Error('SVG could not be parsed. Check the file is valid XML.');
