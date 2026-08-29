@@ -209,7 +209,11 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
       colors.value = String(source.raster.colors);
       detail.value = String(source.raster.detail);
       readout.textContent = describe();
-      warn((e as Error).message);
+      // Same key as the capped/traced notices this source's row carries: clear whichever of them
+      // currently stands, or push() would skip the new warn as a duplicate key and leave the old,
+      // now-false notice standing instead. The message passed doesn't matter once a key is given.
+      dismissNotice(rasterCappedMessage(source.name), source.id);
+      warn((e as Error).message, source.id);
       renderWarnings();
       return false;
     }

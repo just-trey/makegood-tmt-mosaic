@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   aborted doesn't linger next to the "could not be opened" message
   (`npx vitest run tests/session-restore.test.ts tests/parse.test.ts
 tests/restoreBanner.test.ts`).
+- **An empty trace now names the image and says the right remedy, and the
+  Detail/Colors sliders' pill for it actually retracts.** `parseRasterImage`
+  used to throw the same "try raising Detail" message whether a noisy image
+  or the design's placed size emptied the trace, but Detail cannot help the
+  second case (`npx vitest run tests/raster-parse.test.ts -t "empty trace"`:
+  identical at Detail 0/50/100 on a 256px confetti image at 0.05mm per
+  pixel). It now says "Nothing … is big enough to print at this size. Make
+  the design or the part bigger." when the placement is the cause, and names
+  the file either way. The sliders' pill for it is now keyed by source id, so
+  a later clean trace retracts it instead of leaving it standing forever
+  (`npx vitest run tests/artworkListPanel.test.ts`).
 - **`src/geometry/hubcap.ts` now uses ASCII apostrophes**, matching the other
   75 of 76 `.ts` files in `src/` (`find src -type f -name "*.ts" -not -name
 "*.d.ts" -exec grep -l "’" {} \;`). The four hubcap warning strings read the

@@ -1,5 +1,5 @@
 import type { Loop, ParsedSVG, SVGShape } from '../types';
-import { autoParams, despeckleFloorPx, measureImage } from './stats';
+import { autoParams, despeckleFloorPx, fracFloorPx, measureImage } from './stats';
 import { MEASURE_EDGE } from './decode';
 import { quantize } from './quantize';
 import { traceLabelMap } from './trace';
@@ -98,10 +98,14 @@ export function parseRasterImage(
 
   const floor = despeckleFloorPx(params, img.w, img.h, stats, opts.detail, opts.mmPerPixel ?? 0);
   const { components, capped, floorPx } = traceLabelMap(map, params, floor);
-  if (!components.length)
-    throw new Error(
-      'No color regions survived tracing this image. Try raising Detail, or use a less noisy image.',
-    );
+  if (!components.length) {
+    // What the floor would have been with no placement, i.e. the fractional floor alone (see
+    // despeckleFloorPx's mmPerPixel<=0 branch). If the real floor is above that, the placement —
+    // not Detail, which never scales the printable half — is what emptied the trace.
+    const unplacedFloor = fracFloorPx(params, img.w, img.h);
+    const reason: EmptyTraceReason = floorPx > unplacedFloor ? 'printable' : 'noise';
+    throw new EmptyTraceError(opts.name ?? 'this image', reason);
+  }
 
   const shapes =
     granularity === 'component'
@@ -172,4 +176,28 @@ export function rasterCappedMessage(name: string): string {
  */
 export function rasterTracedMessage(name: string): string {
   return `"${name}" was traced from a photo. An SVG would come out cleaner.`;
+}
+
+/** Why a trace came back with nothing — see rasterEmptyTraceMessage and EmptyTraceError. */
+export type EmptyTraceReason = 'printable' | 'noise';
+
+/**
+ * The empty-trace message for either cause: 'printable' means the placement's nozzle-width floor
+ * emptied it and Detail can't help (that floor is never scaled by Detail); 'noise' means the
+ * fractional floor did, which Detail does scale.
+ */
+export function rasterEmptyTraceMessage(name: string, reason: EmptyTraceReason): string {
+  return reason === 'printable'
+    ? `Nothing in "${name}" is big enough to print at this size. Make the design or the part bigger.`
+    : `No color regions survived tracing "${name}". Try raising Detail, or use a less noisy image.`;
+}
+
+/** Thrown by parseRasterImage when the despeckle floor removes every component. */
+export class EmptyTraceError extends Error {
+  readonly reason: EmptyTraceReason;
+  constructor(name: string, reason: EmptyTraceReason) {
+    super(rasterEmptyTraceMessage(name, reason));
+    this.name = 'EmptyTraceError';
+    this.reason = reason;
+  }
 }

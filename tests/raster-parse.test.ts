@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRasterImage } from '../src/raster/parse';
+import { parseRasterImage, EmptyTraceError, rasterEmptyTraceMessage } from '../src/raster/parse';
 import {
   measureImage,
   autoParams,
@@ -70,6 +70,64 @@ describe('parseRasterImage', () => {
 
   it('throws on a fully transparent image rather than loading an empty design', () => {
     expect(() => parseRasterImage(bands(8, 8, ['#ff0000'], 0), opts)).toThrow(/nothing to cut/);
+  });
+
+  describe('empty trace', () => {
+    /** A single small opaque square on an otherwise transparent canvas. */
+    function dot(w: number, h: number, size = 2): RasterImage {
+      const data = new Uint8ClampedArray(w * h * 4);
+      const x0 = (w - size) >> 1,
+        y0 = (h - size) >> 1;
+      for (let dy = 0; dy < size; dy++)
+        for (let dx = 0; dx < size; dx++) {
+          const i = ((y0 + dy) * w + (x0 + dx)) * 4;
+          data[i] = 255;
+          data[i + 3] = 255;
+        }
+      return { data, w, h };
+    }
+
+    // 0.05mm per working pixel puts the printable floor (64px²) well above both the dot (4px²)
+    // and the fractional floor at any Detail, so the placement — not Detail — is what empties it.
+    // Measured: `npx vitest run tests/raster-parse.test.ts -t "printable-floor"`.
+    it('gives the printable-floor message when the placement, not Detail, emptied it', () => {
+      const img = dot(256, 256, 2);
+      for (const detail of [0, 50, 100]) {
+        let err: unknown;
+        try {
+          parseRasterImage(img, { colors: 4, detail, mmPerPixel: 0.05, name: 'confetti.png' });
+        } catch (e) {
+          err = e;
+        }
+        expect(err).toBeInstanceOf(EmptyTraceError);
+        expect((err as EmptyTraceError).reason).toBe('printable');
+        expect((err as Error).message).toBe(rasterEmptyTraceMessage('confetti.png', 'printable'));
+      }
+    });
+
+    // No placement (mmPerPixel unset) leaves only the fractional floor, which Detail does scale:
+    // full-left quadruples it and despeckles the same dot that full-right leaves alone.
+    it('gives the noise message when the fractional floor, not a placement, emptied it', () => {
+      const img = dot(90, 90, 2);
+      expect(
+        parseRasterImage(img, { colors: 4, detail: 100, name: 'speck.png' }).componentCount,
+      ).toBe(1);
+
+      let err: unknown;
+      try {
+        parseRasterImage(img, { colors: 4, detail: 0, name: 'speck.png' });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(EmptyTraceError);
+      expect((err as EmptyTraceError).reason).toBe('noise');
+      expect((err as Error).message).toBe(rasterEmptyTraceMessage('speck.png', 'noise'));
+    });
+
+    it('falls back to a generic name when the caller has none', () => {
+      const img = dot(90, 90, 2);
+      expect(() => parseRasterImage(img, { colors: 4, detail: 0 })).toThrow(/this image/);
+    });
   });
 
   // `palette` used to be the quantizer's own, taken before tracing, so a color that won a cluster

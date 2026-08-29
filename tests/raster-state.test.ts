@@ -56,6 +56,23 @@ beforeEach(() => {
 });
 
 describe('raster sources in app state', () => {
+  // Mirrors applyRasterFile's shape (src/ui/artworkPanel.ts): `name` is passed to
+  // parseRasterImage alongside `opts`, never folded into it, because `opts` is what gets spread
+  // into the stored RasterState — which has no name field of its own.
+  it('does not leak the load-time name onto the stored RasterState', () => {
+    const image = banded();
+    const opts = { colors: 6, detail: DETAIL_DEFAULT, mmPerPixel: rasterMmPerPixel(image) };
+    const result = parseRasterImage(image, { ...opts, name: 'photo.png' });
+    loadArtworkSource(result.parsed, 'photo.png', 'raster', 'sticker', '', {
+      image,
+      ...opts,
+      palette: result.palette,
+      regions: result.componentCount,
+    });
+    const source = state.sources[state.sources.length - 1];
+    expect(source.raster).not.toHaveProperty('name');
+  });
+
   it('registers decoded pixels alongside the parsed design', () => {
     const source = loadRaster();
     expect(source.kind).toBe('raster');

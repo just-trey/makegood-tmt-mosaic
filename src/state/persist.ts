@@ -696,7 +696,10 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
         // prevent. `requantizeSource` is the other half, and re-derives.
         mmPerPixel: s.raster.mmPerPixel,
       };
-      const result = parseRasterImage(image, opts);
+      // name is passed alongside opts, not folded into it: opts is spread into the stored
+      // RasterState below, which has no name field of its own — the source's own name already
+      // covers it.
+      const result = parseRasterImage(image, { ...opts, name: s.name });
       // The same notice the first load gave. Without it a design that comes back simplified looks
       // like the app quietly changed it.
       if (result.capped) notice(rasterCappedMessage(s.name), s.id);

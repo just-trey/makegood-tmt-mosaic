@@ -149,7 +149,9 @@ async function applyRasterFile(file: File): Promise<void> {
       mmPerPixel: rasterMmPerPixel(image),
     };
     // Decode and trace before touching state, for the same reason applyParsedSVG parses first.
-    const result = parseRasterImage(image, opts);
+    // name is passed alongside opts, not folded into it: opts is spread into the RasterState
+    // stored on the source below, which has no name field of its own (see state/persist.ts).
+    const result = parseRasterImage(image, { ...opts, name: file.name });
     // No svgText: an image's source of truth is its pixels. Session persistence round-trips those
     // separately, as the working copy re-encoded to PNG (see raster/store.ts).
     const instance = loadArtworkSource(result.parsed, file.name, 'raster', 'sticker', '', {

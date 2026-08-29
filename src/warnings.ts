@@ -16,9 +16,9 @@ export interface Notice {
    * Dedupe/retraction identity, separate from the displayed text. Needed wherever the message is
    * templated from user data (a filename) that two different sources can share — two raster
    * sources named the same can otherwise collide on message-equality and drop or cross-retract
-   * each other's notice. Unset for every caller but the raster capped/traced pair and the matching
-   * restore-failure warning, which is the only place two live entries can otherwise render
-   * identical text. Defaults to `message` when omitted.
+   * each other's notice. Unset for every caller but the raster capped/traced pair, the empty-trace
+   * warning the sliders raise, and the matching restore-failure warning — the only places two live
+   * entries can otherwise render identical text. Defaults to `message` when omitted.
    */
   key?: string;
 }
