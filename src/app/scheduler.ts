@@ -82,8 +82,8 @@ async function runNow(): Promise<void> {
     // The reason recorded here used to be that flat had no safe abort point, and that is no longer
     // true twice over: the check went into computeNetRegionsByColor, which both paths run and
     // which holds no Manifold solids, and Fill's tiling — the case that made
-    // `unionAllCooperative` unsafe — now runs inside the cutter loop's own catch over
-    // `colorPrisms`. flat.ts imports no Manifold at all. So offering flat a Cancel is untested
+    // `unionAllCooperative` unsafe — now runs inside the per-part body's finally over its
+    // solids. flat.ts imports no Manifold at all. So offering flat a Cancel is untested
     // rather than unsafe, and there is no reachable flat mode to test it on
     // (docs/tech-debt.md).
     showOverlay('Rebuilding geometry…', { cancellable: state.shapeKind === 'assembly' });

@@ -28,11 +28,11 @@ export function hideOverlay(): void {
 }
 
 /**
- * Cancel is acknowledged immediately and takes effect at the next safe point. On a detailed
- * design that is within a fraction of a second, since most of the wait is the 2D region pass;
- * once the cutting itself has started it is the end of the part being cut. Saying "Cancelling…"
- * is the difference between a button that looks broken for a few seconds and one that is visibly
- * working.
+ * Cancel is acknowledged immediately and takes effect at the next safe point: a yield in the 2D
+ * region pass, or the boundary between two of a part's Manifold calls. On a 6000-region wheel that
+ * is 0.3s in the region pass (docs/findings/2026-08-25-cancel-latency.md) and 0.04-0.06s in the
+ * cut, or up to 0.29s for the first cancel of a session (scripts/check-cancel-latency.mjs). Saying "Cancelling…" is still the difference between a button
+ * that looks broken on a heavy part and one that is visibly working.
  */
 function setCancelState(pending: boolean): void {
   const btn = $<HTMLButtonElement>('#loading-cancel');

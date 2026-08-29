@@ -57,6 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   separately instead of collapsing into one warning. An unparseable
   `fill-opacity` now falls back to the SVG default (fully opaque) instead of
   an unguarded `NaN`.
+- **Cancel now stops a rebuild that has reached the cutting.** Before, pressing
+  it once the cut had started waited for the part being cut to finish, and on a
+  single-part assembly that meant waiting the whole cut out. Measured on a wheel
+  carrying 6000 regions: the press now lands in **0.04 to 0.06 seconds**, or up
+  to **0.29 seconds** for the first cancel of a session, and repeating it leaves
+  the engine's memory flat at 16.8 MB. Five runs of
+  `MOSAIC_GPU=1 node scripts/check-cancel-latency.mjs 6000 6`, after a build.
+  The long wait was already fixed in 0.7.0; this is the part of it that was left.
 
 ## [0.7.0] - 2026-08-28
 
