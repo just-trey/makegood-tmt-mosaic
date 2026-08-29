@@ -91,28 +91,21 @@ gh pr view <n> --json mergeable,mergeStateStatus -q '.mergeable+" "+.mergeStateS
 
 - `MERGEABLE` and checks pending: watch once, in the background, never a
   poll loop. Foreground `sleep` is blocked in this harness, so run the wait
-  as one `run_in_background: true` Bash call, not inline. Cap the
-  registration wait like `ship-it`'s own loop does, and hard-fail rather
-  than hang if CI never registers (it has happened in this repo — #236 shows
-  a `pull_request` webhook that never fired):
-
-  ```bash
-  # <pr> is the PR number; i is the loop's own retry count, kept distinct so a
-  # naive substitution of <pr> can't collide with the counter it prints.
-  # --json name --jq length, not a plain-text grep: gh's plain output has a
-  # "no checks reported" string that can itself make a bare grep -q . match
-  # (ship-it's SKILL.md step 4 documents this exact false-positive, #124).
-  i=0
-  until [ "$(gh pr checks <pr> --json name --jq length 2>/dev/null || echo 0)" -gt 0 ]; do
-    i=$((i + 1))
-    [ $i -ge 30 ] && { echo "no checks registered after 150s on #<pr>"; exit 1; }
-    sleep 5
-  done
-  gh pr checks <pr> --watch --fail-fast
-  ```
+  as one `run_in_background: true` Bash call, not inline. **Use exactly
+  `ship-it`'s own registration-wait loop** (its SKILL.md step 4: the
+  `--json name --jq length` check, the 30-try/150s cap, and the rationale —
+  a plain-text `gh pr checks` can print a "no checks reported" string that
+  itself satisfies a bare `grep -q .`, #124), parameterized on `<pr>` in
+  place of ship-it's implicit current-branch PR. Don't re-paste the script;
+  one copy drifting out of sync with the other is worse than a cross-file
+  reference.
 
   Then `gh pr view <n> --json mergeStateStatus` must say `CLEAN` before
-  `gh pr merge <n> --squash --delete-branch`.
+  `gh pr merge <n> --squash --delete-branch`. **`gh pr merge`'s allowlist
+  entry isn't scoped to those flags** — `--admin` would bypass the
+  CI-green gate this step just checked, and no permission-glob syntax here
+  can exclude one flag while allowing the rest. Never pass `--admin`; there
+  is no mechanical guard against it.
 
 - `CONFLICTING`: rebase it yourself in a scratch worktree. The agent's
   worktree may hold the branch, so use a temp local name. **Fetch first** —
@@ -188,7 +181,9 @@ fresh `dist/`. Traps that cost a run each in the worked example:
   already has) waits its full timeout.
 - `settledAfterRebuild` hangs while `#btn-export` is legitimately disabled,
   which it is before any artwork loads. Load artwork first, then change the
-  part.
+  part — one symptom of what `run-app`'s SKILL.md names as the actual rule:
+  `#btn-export` staying enabled or disabled is not a settled-rebuild signal
+  at all; wait on `#loading-overlay` instead.
 - An assertion written from the _old_ behaviour's symptom ("identical at
   Detail 0/50/100") can fail against correct new behaviour. Read the output
   before calling the app wrong.
