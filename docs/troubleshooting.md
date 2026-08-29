@@ -509,6 +509,8 @@ To get a result you are happier with:
 Full text: _"3 colors in "yourfile.png" were dropped. Every piece was too small
 to print. Raise Detail to keep more."_
 
+One color reads in the singular: **"1 color in "yourfile.png" was dropped."**
+
 **An informational notice, not a failure.** The image loaded and cut normally.
 
 The Colors slider asks the quantizer for a number of colors. Tracing then keeps

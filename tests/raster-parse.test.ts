@@ -239,6 +239,19 @@ describe('parseRasterImage', () => {
       expect(result.capped).toBe(true);
       expect(result.droppedColors).toBe(1);
       expect(rasterLostColors(result)).toBe(false);
+      // The cap raise puts `floorPx` (33) above the fractional floor (24) on its own. Reading the
+      // reason off it would call a placement in force on an image that has none.
+      expect(result.floorPx).toBeGreaterThan(
+        despeckleFloorPx(
+          autoParams(measureImage(img), 100, false),
+          320,
+          320,
+          measureImage(img),
+          100,
+          0,
+        ),
+      );
+      expect(result.floorReason).toBe('noise');
     });
 
     // A centroid can win a cluster from the source histogram and label no pixel at all, because

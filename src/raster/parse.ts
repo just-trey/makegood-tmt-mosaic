@@ -107,11 +107,15 @@ export function parseRasterImage(
 
   const floor = despeckleFloorPx(params, img.w, img.h, stats, opts.detail, opts.mmPerPixel ?? 0);
   const { components, capped, floorPx } = traceLabelMap(map, params, floor);
-  // Which floor is actually in force, against what it would have been with no placement — the
-  // fractional floor alone (see despeckleFloorPx's mmPerPixel<=0 branch). Above that, the placement
-  // is what removed the pixels, and Detail — which never scales the printable half — cannot undo it.
+  // Which floor is in force, against what it would have been with no placement — the fractional
+  // floor alone (see despeckleFloorPx's mmPerPixel<=0 branch). Above that, the placement is what
+  // removed the pixels, and Detail — which never scales the printable half — cannot undo it.
+  //
+  // Read off `floor`, the floor asked for, never the `floorPx` the trace came back with: a cap
+  // raise puts that one above the fraction on its own, so a capped trace with no placement at all
+  // would read as 'printable' and send the user off to resize a design that is not the problem.
   const floorReason: FloorReason =
-    floorPx > fracFloorPx(params, img.w, img.h) ? 'printable' : 'noise';
+    floor > fracFloorPx(params, img.w, img.h) ? 'printable' : 'noise';
   if (!components.length) throw new EmptyTraceError(opts.name ?? 'this image', floorReason);
 
   const shapes =
