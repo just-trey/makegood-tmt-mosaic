@@ -37,6 +37,29 @@ come out blank. Fix by simplifying the design (fewer, larger shapes) or using
 Sticker. Numbers in [tech-debt.md](tech-debt.md), "Turf's tile union has a
 vertex ceiling".
 
+## Troubleshooting: "Could not load the Manifold boolean engine, so assembly cutting is unavailable"
+
+Full text: _"Could not load the Manifold boolean engine, so assembly cutting is
+unavailable. "_ — followed by the browser's own error.
+
+Assembly mode's whole cutting pipeline — clipping colors to a face, cutting
+pockets, building inlays — runs on Manifold, a WebAssembly boolean engine
+loaded once per session, the first time a rebuild needs it. This fires when
+that load itself fails, before any part-specific work starts.
+
+**What it means.** The dynamic load of the boolean engine didn't come back:
+an interrupted or blocked network fetch, a browser or extension blocking
+WebAssembly, or an unsupported browser. The text appended after this message
+is the browser's own error, and is the actual detail worth reading.
+
+**What you get.** The rebuild stops there and returns nothing: the viewport
+falls back to the parts exactly as loaded, uncut. No colors cut in, nothing
+exports usable geometry, until a rebuild manages to load the engine.
+
+**What to do.** Reload the page — a slow or interrupted first load is the
+common cause. If it keeps happening, note the appended error text and report
+it via **Feedback** or **Report a bug on GitHub**.
+
 ## Troubleshooting: "Couldn't cut color … into …" warnings (assembly mode)
 
 Assembly mode clips each colour's region to the part's face, then extrudes it
@@ -69,6 +92,54 @@ less reliably the fix. Suspect the part mesh and the amount of fine detail
 landing on it. What they are _not_ is silent: before this handling existed, the
 same failures either blanked the viewport or shipped an uncut body alongside
 inlays occupying the same space, which a slicer resolves arbitrarily.
+
+## Troubleshooting: "Clipping color region to the design face failed…" (assembly mode)
+
+Full text: _"Clipping color region to the design face failed for …. Region
+left unclipped, may extend past the face edge."_
+
+**What it means.** Before a color's shapes are cut into a part, assembly mode
+clips them to the part's design face — the same 2D polygon math behind
+"Couldn't merge the shapes" and "Couldn't cut color … into …" above, applied
+one step earlier. When that clip itself fails (dense or self-touching
+line-work is the usual cause), the region is used unclipped rather than
+dropped.
+
+**What you get.** That region is not dropped, but it is also not proven to
+stay inside the part's face: it may reach past the edge into space the part
+doesn't have. An unclipped region is treated as if it reaches the part's
+outer edge, so it can be cut all the way through instead of recessed to its
+usual depth — see "… reaches the part's outer edge…" further down for what
+that looks like. Everything else on the part is unaffected.
+
+**What to do.** Same fix as the other clip failures above: simplify that
+color's source path (Illustrator/Inkscape's Path → Union), or nudge Scale.
+Check the part in the 3D preview afterward — the warning doesn't say which
+outcome you got.
+
+## Troubleshooting: "detected face normal … isn't vertical" warnings (assembly mode)
+
+Full text: _"Part "…": detected face normal (…) isn't vertical. Assembly
+cutting assumes a horizontal face. Pick a different face or the cut may be
+wrong."_
+
+**What it means.** A part with no baked design zones is cut on the "flat"
+path, which assumes its chosen design face points straight up and measures
+every cut depth straight down from it. The numbers in parentheses are that
+face's measured normal vector; anything under 0.9 in the vertical component
+trips this.
+
+**What to do.** If the part offers more than one face — behind the
+"Advanced: per-part face & alignment" disclosure — pick a different one. If
+it doesn't, or the flagged face is the one you actually want, check the part
+in the 3D preview and in your slicer before printing: the cut is attempted,
+not guaranteed correct.
+
+**Why it's rare in practice.** Every shipped part's default face is
+horizontal, so ordinary use never reaches this. See
+[tech-debt.md](tech-debt.md), "The placement frame's angle is unrelated to
+the face it acts on…", for which of the library's other face choices land
+here and what they cut when they do.
 
 ## Troubleshooting: "isn't a watertight/manifold mesh" warnings (assembly mode)
 
@@ -135,6 +206,64 @@ something your artwork or settings caused.
 
 **What to do.** Reload the page. If it recurs on the same part, report it via
 **Feedback** or **Report a bug on GitHub**, naming the part.
+
+## Troubleshooting: "Couldn't load the design zones for "…"…"
+
+Full text: _"Couldn't load the design zones for "…" (…: …). It will load
+without design zones."_
+
+**What it means.** Some parts carry design zones baked separately from their
+mesh: a sidecar file the part loads alongside its geometry (chair-body is
+the only shipped part with one today). This fires when that sidecar can't be
+fetched at all — a network hiccup, or a broken deployment missing the file.
+
+**What you get.** The part still loads and displays normally, just without
+any of its baked design zones: it falls back to the implicit flat zone every
+part has, so it can still take a Sticker or Fill design on its largest flat
+face, only not the per-surface zones the part was meant to offer.
+
+**What to do.** Reload the page — a one-off network failure is the common
+case. If it recurs, report it via **Feedback** or **Report a bug on
+GitHub**, naming the part; a shipped sidecar failing on every attempt is a
+packaging defect, not something you did.
+
+## Troubleshooting: "…doesn't match the mesh its design zones were baked against"
+
+Full text: _"Part "…" doesn't match the mesh its design zones were baked
+against, so its design zones are unavailable. Re-run the zone bake for this
+part."_
+
+**What it means.** A part's design zones are baked against one specific
+mesh — the same kind of fingerprint check "has no verified print placement"
+further down uses for plate position, applied here to zones instead. This
+fires when the loaded mesh doesn't match what its zones were baked against,
+usually because the mesh was re-packed after the bake without re-running it.
+
+**What you get.** The same fallback as the message above: the part loads
+with no design zones and takes artwork only on its implicit flat zone.
+
+**What to do.** This is a packaging defect on a shipped part, not something
+fixable from the app. If you're a maintainer, re-run the zone bake (the
+`bake-zones` skill) for this part after any re-pack. If you're a volunteer
+seeing this on a shipped part, report it via **Feedback** or **Report a bug
+on GitHub**, naming the part.
+
+## Troubleshooting: "Design zone "…" couldn't be applied to "…""
+
+Full text: _"Design zone "…" couldn't be applied to "…": …"_
+
+**What it means.** Even once a part's zone sidecar loads and its mesh
+fingerprint checks out, each zone still has to be rebuilt against the part's
+actual vertices. This fires when that step fails for one zone specifically —
+a defect in that zone's stored chart data, or a mismatch narrower than what
+the whole-mesh fingerprint check above catches.
+
+**What you get.** Only that one zone is left off the part; every other zone
+it carries still loads and takes artwork normally.
+
+**What to do.** Same as the two messages above: a packaging defect, not
+something to fix from the app. Report it via **Feedback** or **Report a bug
+on GitHub**, naming the part and the zone.
 
 ## Troubleshooting: "N filament slots needed, but … tops out at M" warnings
 
@@ -483,6 +612,65 @@ and impossible for an image; hence two messages. There is
 no way to give an image an exact real-world size on load. Use the Part section's
 design template to check the fit, and `Scale`/`Offset` to place it.
 
+## Troubleshooting: "SVG could not be parsed. Check the file is valid XML."
+
+Full text: _"SVG could not be parsed. Check the file is valid XML."_
+
+**What it means.** The browser's own XML parser rejected the file before the
+app ever looked at its shapes: an unclosed tag, an unescaped `&`, mismatched
+quotes, or a file that isn't really XML despite the `.svg` extension.
+
+**What to do.** Open the file in a text or code editor and look for broken
+markup, or re-export it from the tool that made it — a normal SVG export
+rarely produces broken XML, so a hand-edited file is the likelier cause.
+
+As "This image could not be decoded…" above notes, format is decided from
+the file's own bytes, not its extension, so a non-SVG file renamed to `.svg`
+lands here too: check the file really is SVG XML if this message otherwise
+makes no sense for what you dropped in.
+
+## Troubleshooting: "Shape … has a gradient/pattern fill…" warnings
+
+Full text: _"Shape … (a <…>) has a gradient/pattern fill (not a flat color),
+so it was skipped."_
+
+**What it means.** The app only works in flat colors — that's what becomes a
+printable region — so it cannot trace an element filled with a gradient or a
+pattern. Rather than guess at an average color, that one shape is left out.
+
+**What you get.** Only that shape is skipped. The number in the message
+counts filled shapes in document order, so opening the file's XML/code view
+and counting down to it finds the shape. Everything else in the file loads
+and cuts normally.
+
+**What to do.** In your editor, flatten the gradient or pattern to a single
+flat fill (a "rasterize" or "expand" style operation, or a manual re-fill),
+or accept the shape is left out — a gradient rarely reads as intended on a
+3-4 color print anyway.
+
+## Troubleshooting: "No flat-filled shapes were found in this SVG."
+
+Full text: _"No flat-filled shapes were found in this SVG."_
+
+**What it means.** The file parsed as valid XML, but nothing usable was left
+after skipping elements with a gradient or pattern fill (see the message
+above) and elements with no fill at all. Like the raster messages "No opaque
+pixels were found…" and "No color regions survived tracing…" earlier in this
+doc, the load fails as a no-op: whatever design was already loaded stays
+exactly as it was.
+
+**Usual causes.**
+
+- Stroke-only line art. The app ignores strokes everywhere and looks only at
+  fills.
+- Every shape uses a gradient or pattern fill, and all of them were skipped.
+- Everything meaningful sits inside a `<defs>` or `<clipPath>` and nothing is
+  actually drawn from it.
+
+**What to do.** Open the file in your editor and confirm it has filled
+shapes, not just outlines: select all and check the Fill/Stroke panel. Give
+outline-only art a flat fill first if that's what you want printed.
+
 ## Troubleshooting: "This SVG has unusually deeply nested geometry…"
 
 Full text: _"This SVG has unusually deeply nested geometry (rings nested past
@@ -830,6 +1018,22 @@ and can still leave that part set while its designs do not come back. The app
 stops saving until you reload, so nothing gets written over what you had, but it
 also means anything you do before reloading will not be saved. Reload first.
 
+## Troubleshooting: "… could not be restored from the saved session…"
+
+Full text: _"…" could not be restored from the saved session. Load the image
+again to put it back. Everything else in the session was restored."_
+
+**What it means.** This is different from "That saved session could not be
+opened…" above: the session itself was read fine, but one image inside it
+failed while the app tried to decode it and re-run Colors/Detail on it —
+usually a corrupted or truncated saved copy. Only that one source is lost;
+every other design, and every setting, comes back normally.
+
+**What to do.** Load that image again from your original file to put it
+back. There is nothing else to fix — the rest of the session is unaffected,
+name and all, so re-adding the design in the same spot is the whole
+recovery.
+
 ## Troubleshooting: "… deeper than "Wheel top" goes. It was cut at … mm instead"
 
 **What it means.** The depth you asked for is more than that part has material
@@ -845,6 +1049,43 @@ without any warning. Some parts raise no limit at all: a design face the app
 cannot measure a depth against, or a part too thin to hold the minimum. Look at
 the cut in the 3D view, and in your slicer's preview, before printing. See
 [tech-debt.md](tech-debt.md).
+
+## Troubleshooting: "… zones still blank" notices (assembly mode)
+
+Full text: _"…: … of … zones still blank. Add more from the zone dropdown, or
+pick "All zones" to cover every zone."_ ("zone", singular, when only one is
+missing.)
+
+**An informational notice, not a warning**, on a part offering more than one
+design zone (the chair body is the only shipped example today). By default,
+loading a design binds it to one zone only, since binding every zone would
+recut the whole part on every nudge. This notice exists because that default
+is easy to miss: a design bound to one zone of five looks like a finished
+part in the viewport, right up until it's opened in a slicer and most of it
+prints in the base color.
+
+**What to do.** Either is fine, depending on what you want:
+
+- **Add more designs**, one per zone, from each zone's dropdown.
+- **Pick "All zones"** on one design to cover every zone with it.
+- **Leave it as is**, if you only meant to decorate part of the piece. The
+  notice just makes the coverage visible; it doesn't ask you to change
+  anything.
+
+## Troubleshooting: "Exporting with artwork on … of … zones…" warnings
+
+Full text: _"Exporting with artwork on … of … zones. The other … zones will
+print body-colored with no design."_ ("zone", singular, for one.)
+
+This is the same coverage gap as the notice above, escalated to a red pill at
+the last moment before an export downloads — easy to have scrolled past
+earlier, harder to miss right before the file. It does not block the export:
+the file is valid and prints fine, just with blank zones on it.
+
+**What to do.** Same as above: add more designs, or switch one to "All
+zones", if the blank zones weren't intentional. If they were — you're
+decorating one panel and leaving the rest plain — there's nothing to change;
+the export proceeds either way.
 
 ## Troubleshooting: "has no verified print placement" warnings
 
@@ -909,6 +1150,33 @@ it is drawn quite a lot wider, so it can be reported as blocking a corner it
 leaves open. That is on purpose. A tower printed through a part is worse than
 one you place yourself. The tower size the check assumes is nominal, so check
 the real one in your slicer either way.
+
+## Troubleshooting: "Rebuild failed: …"
+
+Full text: _"Rebuild failed: …"_ — followed by whatever error the rebuild
+threw.
+
+**This is the app's last-resort catch, not a specific diagnosis.** Every
+other warning in this doc is raised deliberately by code that expected the
+failure it's reporting and degraded gracefully. This one instead means an
+exception escaped all of that: something the rebuild didn't expect to throw,
+did.
+
+**What it means.** The text after the colon is the actual JavaScript error
+message, and it's also logged to the browser console with a full stack
+trace. Neither is written for a volunteer to read; both are there for
+whoever investigates the report.
+
+**What you get.** The rebuild for that attempt is abandoned. Depending on
+when it threw, the viewport may show the previous build, a partial one, or
+the bare uncut parts — there's no single guaranteed state, since this is
+the path for the unexpected.
+
+**What to do.** Try the rebuild again (nudge a setting, or reload the page)
+— many causes are one-off. If it keeps happening, open the browser console,
+copy the full error and stack trace, and report it via **Feedback** or
+**Report a bug on GitHub** with that detail and what you were doing right
+before it happened.
 
 ## Troubleshooting: "Refusing to write a non-finite coordinate into the exported 3MF."
 

@@ -1658,66 +1658,6 @@ found any of those sections.
 from a constant name, not a cleverer regex. That was the failure mode of the
 copy gate's markup splitting, three rounds running.
 
-## More shipped warnings have no troubleshooting section than the last count found
-
-CLAUDE.md wants one `docs/troubleshooting.md` section per user-visible warning
-string. `npm run check:troubleshooting` only checks the other direction: that a
-quote still ships. Nothing mechanical checks that a shipped warning has a
-section, so this drifts without anyone noticing.
-
-The eight this section used to list (`Couldn't load this part…`, `Refusing to
-write a non-finite coordinate…`, `No opaque pixels were found in this image`,
-`No color regions survived tracing this image`, `This SVG has unusually deeply
-nested geometry`, `Part "…" has no verified print placement…`, `Not a valid
-3MF: missing 3D/3dmodel.model`, `Part "…" isn't a watertight/manifold mesh…`)
-now have sections.
-
-Closing that list meant re-running its own method — enumerate every call site,
-then grep the doc for a distinctive phrase of each — rather than trusting the
-count. It surfaced 13 more that were never on it:
-
-```bash
-grep -rln '\bwarn(\|\bwarnBuild(\|\bnotice(\|\bnoticeBuild(' src/ --include='*.ts' | grep -v '\.test\.ts'
-```
-
-then, per call site found, `grep -n '<distinctive phrase>' docs/troubleshooting.md`.
-Run 2026-08-28 on this branch. Zero hits for each:
-
-| Warning                                                                | Ships from             |
-| ---------------------------------------------------------------------- | ---------------------- |
-| `Clipping color region to the design face failed…`                     | `geometry/regions.ts`  |
-| `Could not load the Manifold boolean engine…`                          | `geometry/assembly.ts` |
-| `Part "…": detected face normal (…) isn't vertical…`                   | `geometry/assembly.ts` |
-| `Skipped a <tag> with a gradient/pattern fill…`                        | `svg/parse.ts`         |
-| `SVG could not be parsed. Check the file is valid XML.`                | `svg/parse.ts`         |
-| `No flat-filled shapes were found in this SVG.`                        | `svg/parse.ts`         |
-| `Couldn't load the design zones for "…"…`                              | `assembly/parts.ts`    |
-| `Part "…" doesn't match the mesh its design zones were baked against…` | `assembly/parts.ts`    |
-| `Design zone "…" couldn't be applied to "…"…`                          | `assembly/parts.ts`    |
-| `Rebuild failed: …`                                                    | `app/scheduler.ts`     |
-| `Exporting with artwork on … of … zones…`                              | `ui/exportPanel.ts`    |
-| `…: … of … zone(s) still blank. Add more from the zone dropdown…`      | `app/rebuild.ts`       |
-| `"…" could not be restored from the saved session…`                    | `state/persist.ts`     |
-
-**Still not exhaustive.** The `?csgfault` debug messages (`geometry/csgFault.ts`)
-were left off on purpose: they exist for a maintainer forcing a CSG failure
-from the URL bar (see the `debug-csg-failure` skill), not for a volunteer's
-normal session, so they aren't "user-visible" in the sense this rule means.
-Whether that line is right is itself a judgment call nobody has re-examined.
-
-The count went 3 → 8 → 13-more-on-top in three passes. Each pass trusted its
-own count until the next re-grep found more; nothing suggests this one is
-final either.
-
-`Raise Scale to fill it…` is **not** on either list: it is the tail clause of
-the too-many-tiles message the doc already covers under
-`### "… is too small to fill …"`. Writing it its own section would duplicate
-one warning across two.
-
-**Closing it for good** means either writing the 13 sections above, or a
-src-to-doc check — see "The troubleshooting-quote gate's scope and known
-gaps" for why the check is the harder half and remains unbuilt.
-
 ## A regenerated source mesh would leave its rotated copies on the old geometry
 
 `asmAddDuplicate` ([src/assembly/parts.ts](../src/assembly/parts.ts)) shares
