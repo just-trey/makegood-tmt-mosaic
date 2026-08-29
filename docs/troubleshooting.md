@@ -554,9 +554,11 @@ deleted while editing the raw XML). N is that path's position among the
 `<path>` elements in the file, counting only ones with a real fill — open the
 SVG's XML/code view in your editor to find it.
 
-**What happens.** Everything drawn up to the bad value is kept; everything
-after it, including the rest of that one path's outline, is dropped. Other
-shapes in the file are unaffected.
+**What happens.** The one subpath (the run of drawing commands between one
+`M`/moveto and the next) that hit the bad value is dropped whole, not just the
+part after it — a subpath cut off mid-draw and closed on its own would be a
+shape you never drew. Any subpath completed before it is kept. Other shapes
+in the file are unaffected.
 
 **What to do.** Open the file in the tool you made it in and re-save, or
 re-export the design. If a shape looks like it is missing part of its outline

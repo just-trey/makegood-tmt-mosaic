@@ -214,6 +214,9 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   // position. warn() dedupes by exact message, so an unnumbered "Path has broken data" would
   // collapse a second offender into the first one's pill and under-report how much was dropped.
   let pathCount = 0;
+  // Same reason, for every visible candidate shape of any of the 6 tags below: two
+  // gradient/pattern-filled elements would otherwise collapse into one warning too.
+  let shapeCount = 0;
 
   // Largest <circle> found by the same visible-subtree walk as shapes below (assembly mode's
   // design-boundary anchor) — tracked here, not via a separate querySelectorAll, so it inherits
@@ -303,11 +306,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       tag === 'polyline'
     ) {
       if (!displayNone) {
+        shapeCount++;
         if (fillUrl) {
           warn(
-            'Skipped a <' +
-              tag +
-              '> with a gradient/pattern fill (not a flat color), element ignored.',
+            `Shape ${shapeCount} (a <${tag}>) has a gradient/pattern fill (not a flat color), so it was skipped.`,
           );
         } else if (fillRaw === 'none') {
           // no fill, e.g. stroke-only outline — ignored for inlay purposes
@@ -317,10 +319,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
           const hex = normalizeColor(fillRaw || getAncestorFill(el) || '#000000');
           let loops: Loop[] = [];
           if (tag === 'path') {
+            pathCount++;
+            const n = pathCount;
             const d = el.getAttribute('d');
             if (d) {
-              pathCount++;
-              const n = pathCount;
               loops = parsePathD(d, () =>
                 warn(
                   `Path ${n} has broken data partway through its outline. Everything from that point on was dropped.`,

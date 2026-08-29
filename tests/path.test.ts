@@ -95,6 +95,16 @@ describe('parsePathD', () => {
     expect(onMalformed).toHaveBeenCalledTimes(1);
   });
 
+  it('drops an unclosed subpath whole, even one with several good points already drawn', () => {
+    const onMalformed = vi.fn();
+    // Three good points (0,0 / 10,0 / 10,10) precede the break, but the subpath was never
+    // closed or flushed by a later M, so none of it survives — a truncated loop closed on its
+    // own would be a shape never drawn, which is worse than losing the piece.
+    const loops = parsePathD('M0 0 L10 0 L10 10 L20', onMalformed);
+    expect(loops).toEqual([]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
   it('returns no loops (not a throw) when the only subpath is malformed', () => {
     const onMalformed = vi.fn();
     expect(parsePathD('M0 0 L10', onMalformed)).toEqual([]);

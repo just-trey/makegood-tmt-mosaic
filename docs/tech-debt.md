@@ -775,7 +775,10 @@ for, is the case least likely to show it.
 
 Closing it means changing what `clearWarnings()`'s contract allows a caller to
 rely on, not the restore itself — `applyRestoredSession` is just one caller
-that gets bitten by it.
+that gets bitten by it. `svg/parse.ts`'s per-path "Path N has broken data"
+warning (see "Numeric coercion has no lint rule") is subject to the same
+contract: `ui/artworkPanel.ts`'s load-failure handlers clear it the same way
+when every shape in a document fails to parse.
 
 Related, from the section this replaced: the 2026-08-08 cycle's **A2**
 (switching part shape carries artwork across with no confirmation) is the
@@ -1580,16 +1583,17 @@ whose `NaN` is never guarded.
 Counted 2026-08-28 (`grep -rn parseFloat src/ | wc -l`): of 9 `parseFloat` sites in `src/`, **0** parse an
 external number with no finite check. The last two were guarded in the same pass that closed this
 count: `parsePathD` (`svg/path.ts`) never throws; on a malformed coordinate it drops the subpath it
-was building (token misalignment makes anything after that point unrecoverable) and keeps every
-subpath already closed, and `parseSVGDocument` (`svg/parse.ts`) warns naming which `<path>` it was
-(a per-document count, since two malformed paths would otherwise collapse into one warning under
-`warn()`'s exact-message dedup — see "`warn()` dedupes by exact message" below). The new
-`parseFillOpacity` helper (`svg/parse.ts`) falls back to the SVG default (fully opaque) instead of
-an unguarded NaN. Every remaining site guards, most on the next line, so the exposure is narrower
-than the call count suggests. Count the guards, not the calls. One of them, `ui/partPanel.ts:206`,
-guards against a value it parses from an authored `min=` attribute rather than from anything a user
-types, and a non-numeric one there would reject every input; that is a latent bug in the markup,
-not in the guard.
+was building whole (token misalignment makes anything after that point unrecoverable, and closing
+a truncated loop into a shape the artist never drew would be worse) and keeps every subpath already
+closed, and `parseSVGDocument` (`svg/parse.ts`) warns naming which `<path>` it was — a per-document
+count, since two malformed paths would otherwise collapse into one warning under `warn()`'s
+exact-message dedup, which is also why the sibling gradient/pattern-fill warning in the same
+function now names its element the same way. The new `parseFillOpacity` helper (`svg/parse.ts`)
+falls back to the SVG default (fully opaque) instead of an unguarded NaN. Every remaining site
+guards, most on the next line, so the exposure is narrower than the call count suggests. Count the
+guards, not the calls. One of them, `ui/partPanel.ts:208`, guards against a value it parses from an
+authored `min=` attribute rather than from anything a user types, and a non-numeric one there would
+reject every input; that is a latent bug in the markup, not in the guard.
 
 **Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
 on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
@@ -1792,24 +1796,6 @@ too, or rebuilding a source's copies when it re-adopts. It stays open because
 the first role to pair `buildMesh` with `allowRotatedCopies` makes it real, and
 nothing today can produce a case to test against.
 
-## `warn()` dedupes by exact message, so identical warnings collapse into one pill
-
-`warnings.ts`'s `push()` only appends a message the list doesn't already have.
-That's correct for a warning that names what it's about ("Path 2 has broken
-data..." from `parsePathD`'s malformed-data guard names which `<path>`), but
-the gradient/pattern-fill warning in `svg/parse.ts` (`"Skipped a <rect> with a
-gradient/pattern fill..."`) has no per-element identifier: a document with two
-independently gradient-filled elements shows one pill, silently
-under-reporting how much was dropped. This has been true since that warning
-shipped.
-
-**Closing it** means naming the element the same way the malformed-path
-warning now does (a per-document position count) in every other "skipped a
-`<tag>`" warning in that file. Small, but it's a change to a warning every
-existing test and troubleshooting-doc quote pins by exact text, so it wants
-its own change rather than folding into whatever else happens to touch that
-file next.
-
 ## The path `d` tokenizer doesn't split glued arc flags
 
 `parsePathD`'s tokenizer regex (`svg/path.ts`) reads a run of digits as one
@@ -1834,24 +1820,3 @@ catch, currently harmless only because the sole reader is `opacity === 0`.
 **Closing the tokenizer gap** means matching flag digits as individual tokens
 when a boolean-flag position is expected, which needs the tokenizer to know
 which argument position it's on rather than tokenizing blind.
-
-## A total SVG load failure wipes the per-shape warnings that explain it
-
-`parseSVGDocument` (`svg/parse.ts`) calls `clearWarnings()` on entry, pushes a
-warning per dropped shape while walking the document, then throws `"No
-flat-filled shapes were found in this SVG"` if none survived. Both callers'
-catch blocks — `reportLoadFailure` (`ui/artworkPanel.ts:123-124`) and
-`applyPattern`'s catch (`ui/artworkPanel.ts:77`) — call `clearWarnings()`
-again before `warn()`-ing just that one generic message, discarding the
-per-shape warnings pushed moments earlier.
-
-So the one case where a user most needs to know which shapes were unreadable
-— every shape in the file failed — is the case where that detail doesn't
-reach the screen. Found while fixing the malformed-path warning (see "Numeric
-coercion has no lint rule"): that warning is real and pushed, just gone by the
-time `renderWarnings()` runs.
-
-**Closing it** means `reportLoadFailure` and `applyPattern`'s catch not
-clearing warnings that were pushed during the same failed load, which is a
-change to how those two call sites compose with `parseSVGDocument`'s own
-`clearWarnings()`, not a one-line fix in either file alone.

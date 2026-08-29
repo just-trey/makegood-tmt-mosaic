@@ -80,6 +80,20 @@ describe('parseSVGDocument', () => {
     expect(out.shapes[0].fill).toBe('#00ff00');
   });
 
+  it('names two distinct gradient-filled elements separately, so one warning does not hide the other', () => {
+    clearWarnings();
+    parseSVGDocument(
+      svg(
+        '<rect width="4" height="4" fill="url(#a)"/>' +
+          '<circle r="4" fill="url(#b)"/>' +
+          '<rect width="4" height="4" fill="#00ff00"/>',
+      ),
+    );
+    const messages = WARNINGS.map((w) => w.message);
+    expect(messages).toContainEqual(expect.stringContaining('Shape 1'));
+    expect(messages).toContainEqual(expect.stringContaining('Shape 2'));
+  });
+
   it('drops a fully malformed <path> and warns, instead of shipping a NaN vertex', () => {
     clearWarnings();
     const out = parseSVGDocument(
@@ -110,6 +124,14 @@ describe('parseSVGDocument', () => {
     const messages = WARNINGS.map((w) => w.message);
     expect(messages).toContainEqual(expect.stringContaining('Path 1'));
     expect(messages).toContainEqual(expect.stringContaining('Path 2'));
+  });
+
+  it('counts a real-fill <path> with no d attribute, so a later broken one is still named correctly', () => {
+    clearWarnings();
+    expect(() =>
+      parseSVGDocument(svg('<path fill="#ff0000"/><path d="M0 0 L10" fill="#00ff00"/>')),
+    ).toThrow();
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(expect.stringContaining('Path 2'));
   });
 
   it('resolves fills through <style> class rules, with inline style winning', () => {
