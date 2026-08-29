@@ -452,7 +452,12 @@ export function requantizeSource(
     state.shapeKind === 'assembly'
       ? (rasterMmPerPixel(source.raster.image, source.id) ?? source.raster.mmPerPixel)
       : undefined;
-  const result = parseRasterImage(source.raster.image, { colors, detail, mmPerPixel });
+  const result = parseRasterImage(source.raster.image, {
+    colors,
+    detail,
+    mmPerPixel,
+    name: source.name,
+  });
   const oldPalette = source.raster.palette;
   // A brand-new ParsedSVG with a brand-new `shapes` array, never a mutation of the old one:
   // computeNetRegionsByColor memoizes on that array's identity, so an in-place edit would serve

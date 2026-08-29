@@ -396,9 +396,9 @@ whatever design was already loaded stays exactly as it was.
 editors call it "export with alpha" or "transparent canvas"), and confirm
 something is actually drawn on it before re-loading.
 
-## Troubleshooting: "No color regions survived tracing this image…"
+## Troubleshooting: "No color regions survived tracing …"
 
-Full text: _"No color regions survived tracing this image. Try raising
+Full text: _"No color regions survived tracing "yourfile.png". Try raising
 Detail, or use a less noisy image."_
 
 The image had opaque pixels — it is not the case above — but after despeckling,
@@ -412,6 +412,10 @@ away; this error means the despeckle floor ate the whole image, usually
 because it is uniformly noisy (a busy photograph, heavy film grain, a scan with
 visible dither) rather than made of a few solid-coloured regions.
 
+If the design's placed size, not noise, is what emptied it, the app shows
+"Nothing … is big enough to print at this size" instead — see the next
+section. Raising Detail cannot help there, so it isn't offered.
+
 **What to do**, in order of how much it usually helps:
 
 - **Raise Detail.** This lowers the despeckle floor (see the Detail note under
@@ -422,6 +426,24 @@ visible dither) rather than made of a few solid-coloured regions.
 - **Use a less noisy image**, or crop to the part that actually has distinct
   colour blocks. A photograph with soft gradients everywhere and no flat areas
   will keep failing here regardless of these settings.
+
+## Troubleshooting: "Nothing in … is big enough to print at this size"
+
+Full text: _"Nothing in "yourfile.png" is big enough to print at this size.
+Make the design or the part bigger."_
+
+Like the previous message, every traced region was smaller than the despeckle
+floor and nothing survived. The difference is which floor did it: at this
+design's placed size, the nozzle-width floor
+([`printableFloorPx`](../src/raster/stats.ts)) was already above the ordinary
+noise floor before despeckling ran, so raising Detail cannot help — Detail
+never scales that half, on purpose.
+
+- **Make the design bigger.** Scale it up on the part, or place it on a
+  larger design zone if the part offers more than one.
+- **Make the part bigger**, if the shape allows it (a larger disc or plate).
+- A photograph or a very small logo placed very small is the usual trigger:
+  the same image loads fine at a larger size or on a bigger part.
 
 ## Troubleshooting: "This image could not be decoded…"
 

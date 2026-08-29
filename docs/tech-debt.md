@@ -660,28 +660,6 @@ the untested candidate rather than a rejected one. Whatever the test, it needs r
 resampled to several sizes on disk, since no mode here can produce them, and the traces need looking
 at rather than counting: region count cannot tell a cleaner trace from a coarser one.
 
-## An empty trace says the wrong thing, and its pill never leaves
-
-`parseRasterImage` throws when nothing survives the despeckle floor, and the printable floor
-(2026-08-20) made that reachable from a placement rather than only from a noisy image: a
-transparent-background image of small marks on a 32mm hubcap can come back with nothing. The
-sliders no longer die on it (`artworkListPanel`'s catch puts them back), but everything the user
-then reads is off:
-
-- **The message is "try raising Detail, or use a less noisy image".** Detail cannot help when the
-  printable floor is what emptied the trace, since Detail deliberately does not scale that half.
-  Measured on a 256px confetti image at 0.05mm per pixel: it throws identically at Detail 0, 50 and 100. The remedy that works, make the part or the design bigger, is not offered.
-- **The pill it raises is a `warn()` that nothing retracts**, so it outlives the setting that
-  caused it. The capped notice next to it shows the pattern (`dismissNotice` on the next clean
-  trace), keyed by source id (`Notice.key`, [src/warnings.ts](../src/warnings.ts)) so two files of
-  the same name don't collide — this pill still has no such identity to key on.
-- **The load path and the slider path disagree**: a fresh load reports through `reportLoadFailure`,
-  which names the file in a dialog, while the slider raises an unnamed pill.
-
-Closing it means one message with the right remedies for both causes, keyed by source id the same
-way the capped/traced notices are. Three review rounds on this branch each produced a new defect in
-it, which is why it was cut rather than patched again.
-
 ## A restored session's assembly-kind switch still isn't atomic
 
 What is left of the restore-atomicity item after `applyRestoredSessionInner`'s

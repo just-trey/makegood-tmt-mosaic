@@ -73,4 +73,10 @@ export interface RasterOptions {
    * session restored from before it was saved, and those keep the fractional floor.
    */
   mmPerPixel?: number;
+  /**
+   * The image's name, used only to name it in the empty-trace error message if this trace comes
+   * back with nothing. Optional so a bench sweep or a unit fixture that never surfaces that error
+   * doesn't have to invent one.
+   */
+  name?: string;
 }
