@@ -1,7 +1,12 @@
-import type { AssemblyKind, AssemblyPart } from '../types';
+import type { AssemblyPart } from '../types';
 import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
-import { asmKindCanAutoLoad, currentAssemblyKind, currentVariantId } from '../assembly/kinds';
+import {
+  asmKindCanAutoLoad,
+  buildParamMax,
+  currentAssemblyKind,
+  currentVariantId,
+} from '../assembly/kinds';
 import {
   applyAsmPatchChoice,
   asmLoadFullAssembly,
@@ -11,7 +16,6 @@ import {
   partsLibrarySettled,
   switchChairVariant,
 } from '../assembly/parts';
-import { getPrinter } from '../export/printers';
 import { HUBCAP_WHEEL_DIAMETER_MM } from '../geometry/hubcap';
 import { availableZones, clampArtworkModes } from '../state/artwork';
 import { track } from '../analytics/track';
@@ -95,7 +99,7 @@ export function syncBuildParamControl(): void {
   if (!param) return;
   label.textContent = param.label;
   input.min = String(round2(param.minMm));
-  input.max = String(round2(buildParamMax(param)));
+  input.max = String(round2(buildParamMax(param, state.printerId)));
   // `any`, not a fixed step: `min` is the step base, so any real step would put the valid values
   // on a grid offset by a measured constant (32.09mm), so round diameters land between two of
   // them — the field reports :invalid and the spinner walks x.09, x.59. A diameter is a
@@ -159,27 +163,6 @@ export function renderBuildParamSize(): void {
   // moment the number in the field is only one of the part's two dimensions.
   const unit = $('#asm-buildparam-unit');
   if (unit) unit.textContent = kind.buildParam && state.hubcapSilhouette ? 'longest side' : 'mm';
-}
-
-/**
- * Clearance kept between a generated part and the edge of the bed.
- *
- * Without it the ceiling is the plate exactly, so a 320mm disc on a 320mm bed touches both edges
- * and every downstream check waves it through — the overhang warning allows 0.5mm, which is float
- * slop rather than clearance, and a part 0.03mm inside the border slips under it silently. No bed
- * is usable to its border anyway: brims, bed-exclusion zones and the nozzle's own reach all live
- * in the last few millimetres. A round number and a usability margin, not a measured one.
- */
-const PLATE_EDGE_MARGIN_MM = 5;
-
-/** The largest this parameter may go on the current printer. */
-function buildParamMax(param: NonNullable<AssemblyKind['buildParam']>): number {
-  const plate = getPrinter(state.printerId).plate;
-  return Math.min(
-    param.maxMm ?? Infinity,
-    plate.w - 2 * PLATE_EDGE_MARGIN_MM,
-    plate.d - 2 * PLATE_EDGE_MARGIN_MM,
-  );
 }
 
 /**
@@ -263,7 +246,7 @@ export async function applyHubcapSilhouette(on: boolean): Promise<void> {
 async function commitBuildParam(raw: number): Promise<number | undefined> {
   const param = currentAssemblyKind()?.buildParam;
   if (!param) return undefined;
-  const next = Math.min(buildParamMax(param), Math.max(param.minMm, raw));
+  const next = Math.min(buildParamMax(param, state.printerId), Math.max(param.minMm, raw));
   const previous = state[param.id];
   if (next === previous) return undefined;
   state[param.id] = next;

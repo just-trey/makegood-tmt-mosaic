@@ -312,6 +312,39 @@ export function roleLibraryPartId(
 }
 
 /**
+ * Clearance kept between a generated part and the edge of the bed.
+ *
+ * Without it the ceiling is the plate exactly, so a 320mm disc on a 320mm bed touches both edges
+ * and every downstream check waves it through — the overhang warning allows 0.5mm, which is float
+ * slop rather than clearance, and a part 0.03mm inside the border slips under it silently. No bed
+ * is usable to its border anyway: brims, bed-exclusion zones and the nozzle's own reach all live
+ * in the last few millimetres. A round number and a usability margin, not a measured one.
+ */
+const PLATE_EDGE_MARGIN_MM = 5;
+
+/**
+ * The largest a kind's build parameter may go on a given printer: its own `maxMm` if it has one,
+ * bounded by the plate minus the edge margin on both axes.
+ *
+ * Pure — takes `printerId` rather than reading `state.printerId` — so both the live control
+ * (assemblyPanel.ts, against `state.printerId`) and a session restore (persist.ts, against the
+ * printer the session names) compute the identical ceiling. A restore that re-derived a looser
+ * one from the plate alone used to land a hubcap up to 10mm larger than this field would ever let
+ * a user type, inside the clearance PLATE_EDGE_MARGIN_MM exists to keep clear of the plate edge.
+ */
+export function buildParamMax(
+  param: NonNullable<AssemblyKind['buildParam']>,
+  printerId: string,
+): number {
+  const plate = getPrinter(printerId).plate;
+  return Math.min(
+    param.maxMm ?? Infinity,
+    plate.w - 2 * PLATE_EDGE_MARGIN_MM,
+    plate.d - 2 * PLATE_EDGE_MARGIN_MM,
+  );
+}
+
+/**
  * The active variant for the current kind: the user's choice when it's valid for the kind,
  * otherwise the kind's first (default) variant. Null for a kind with no variants. Defaulting here
  * (rather than trusting state) keeps part resolution correct before the variant UI ever runs.
