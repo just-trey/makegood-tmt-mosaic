@@ -91,14 +91,26 @@ gh pr view <n> --json mergeable,mergeStateStatus -q '.mergeable+" "+.mergeStateS
 
 - `MERGEABLE` and checks pending: watch once, in the background, never a
   poll loop. Foreground `sleep` is blocked in this harness, so run the wait
-  as one `run_in_background: true` Bash call, not inline. **Use exactly
-  `ship-it`'s own registration-wait loop** (its SKILL.md step 4: the
-  `--json name --jq length` check, the 30-try/150s cap, and the rationale —
-  a plain-text `gh pr checks` can print a "no checks reported" string that
-  itself satisfies a bare `grep -q .`, #124), parameterized on `<pr>` in
-  place of ship-it's implicit current-branch PR. Don't re-paste the script;
-  one copy drifting out of sync with the other is worse than a cross-file
-  reference.
+  as one `run_in_background: true` Bash call, not inline. Same recipe as
+  `ship-it`'s SKILL.md step 4 (the `--json name --jq length` check, not a
+  plain-text grep: `gh pr checks`'s own "no checks reported" string can
+  satisfy a bare `grep -q .`, #124) — read that step for the why, since
+  restating the rationale twice is what drifts out of sync, not the two
+  lines of shell:
+
+  ```bash
+  i=0
+  until [ "$(gh pr checks <pr> --json name --jq length 2>/dev/null || echo 0)" -gt 0 ]; do
+    i=$((i + 1))
+    [ $i -ge 30 ] && { echo "no checks registered after 150s on #<pr>"; exit 1; }
+    sleep 5
+  done
+  gh pr checks <pr> --watch --fail-fast
+  ```
+
+  **Every `gh pr checks` in this loop takes `<pr>`**, not just the last
+  one — parameterizing only the trailing `--watch --fail-fast` call leaves
+  the registration check polling the wrong PR.
 
   Then `gh pr view <n> --json mergeStateStatus` must say `CLEAN` before
   `gh pr merge <n> --squash --delete-branch`. **`gh pr merge`'s allowlist
@@ -181,9 +193,11 @@ fresh `dist/`. Traps that cost a run each in the worked example:
   already has) waits its full timeout.
 - `settledAfterRebuild` hangs while `#btn-export` is legitimately disabled,
   which it is before any artwork loads. Load artwork first, then change the
-  part — one symptom of what `run-app`'s SKILL.md names as the actual rule:
-  `#btn-export` staying enabled or disabled is not a settled-rebuild signal
-  at all; wait on `#loading-overlay` instead.
+  part. `run-app`'s SKILL.md names the general rule for the button's
+  _enabled_ case (staying enabled is not a settled-rebuild signal; wait on
+  `#loading-overlay` instead) — the disabled case here is the same
+  unreliable signal from its other side, not something run-app already
+  states.
 - An assertion written from the _old_ behaviour's symptom ("identical at
   Detail 0/50/100") can fail against correct new behaviour. Read the output
   before calling the app wrong.
