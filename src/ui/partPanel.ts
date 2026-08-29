@@ -24,7 +24,6 @@ import { clearStalePlacementNotices } from './exportPanel';
 import { renderWarnings } from './warningsView';
 import { $, input, numVal } from './dom';
 import { track } from '../analytics/track';
-import { confirmDialog } from './dialogs';
 
 /**
  * Thumbnails for the flat primitive modes, which have no mesh to draw from until they are built —
@@ -279,48 +278,38 @@ function currentAsmOptionValue(): string {
 export function initPartPanel(): void {
   renderShapeKindOptions();
   $<HTMLSelectElement>('#shape-kind').addEventListener('change', (e) => {
-    void (async () => {
-      const sel = e.target as HTMLSelectElement;
-      // Every option this select holds is an assembly kind (renderShapeKindOptions), so there is
-      // no flat-mode branch to take here.
-      const newKindId = sel.value.slice(4);
-      const switchingKind = state.assembly.kindId !== newKindId;
-      if (
-        switchingKind &&
-        state.assembly.parts.length > 0 &&
-        !(await confirmDialog('Switching parts will clear the currently loaded ones. Continue?'))
-      ) {
-        sel.value = currentAsmOptionValue() || 'asm:' + firstOfferedKind().id;
-        return;
-      }
-      if (switchingKind) {
-        state.assembly.kindId = newKindId;
-        state.assembly.parts = [];
-        // The new kind's parts are an entirely different mesh — a zone binding from the old kind
-        // would either match nothing or (worse) silently match a same-named zone on an unrelated
-        // part, so every instance goes back to "every zone the part offers" for the user to
-        // re-target from the list.
-        clearArtworkZoneBindings();
-      }
-      // Every placement message names a part, so switching kinds invalidates all of them. They
-      // used to be cleared only by the next export, which left pills naming the previous part
-      // standing over the new one.
-      clearStalePlacementNotices();
-      // Rendered here, not left to the rebuild this schedules: a cancel honoured inside the
-      // debounce window clears both the dirty flag and the armed timer (app/scheduler.ts), which
-      // would leave pills on screen that WARNINGS no longer holds.
-      renderWarnings();
-      setShapeKind('assembly');
-      track('mode_switch', { kind: 'assembly' });
-      // Artwork outlives a part switch, so a design left in Fill by the previous kind has to be
-      // re-clamped against the new one before it reaches a rebuild — hiding the control alone would
-      // leave the old mode live and still cut through the withheld path.
-      clampArtworkModes();
-      // Zone bindings above, and the assembly-only Sticker/Fill control, both change with the
-      // part — so the rows re-render on every switch, not just when the assembly kind changed.
-      renderArtworkList();
-      renderPatternPicker();
-    })();
+    const sel = e.target as HTMLSelectElement;
+    // Every option this select holds is an assembly kind (renderShapeKindOptions), so there is
+    // no flat-mode branch to take here.
+    const newKindId = sel.value.slice(4);
+    const switchingKind = state.assembly.kindId !== newKindId;
+    if (switchingKind) {
+      state.assembly.kindId = newKindId;
+      state.assembly.parts = [];
+      // The new kind's parts are an entirely different mesh — a zone binding from the old kind
+      // would either match nothing or (worse) silently match a same-named zone on an unrelated
+      // part, so every instance goes back to "every zone the part offers" for the user to
+      // re-target from the list.
+      clearArtworkZoneBindings();
+    }
+    // Every placement message names a part, so switching kinds invalidates all of them. They
+    // used to be cleared only by the next export, which left pills naming the previous part
+    // standing over the new one.
+    clearStalePlacementNotices();
+    // Rendered here, not left to the rebuild this schedules: a cancel honoured inside the
+    // debounce window clears both the dirty flag and the armed timer (app/scheduler.ts), which
+    // would leave pills on screen that WARNINGS no longer holds.
+    renderWarnings();
+    setShapeKind('assembly');
+    track('mode_switch', { kind: 'assembly' });
+    // Artwork outlives a part switch, so a design left in Fill by the previous kind has to be
+    // re-clamped against the new one before it reaches a rebuild — hiding the control alone would
+    // leave the old mode live and still cut through the withheld path.
+    clampArtworkModes();
+    // Zone bindings above, and the assembly-only Sticker/Fill control, both change with the
+    // part — so the rows re-render on every switch, not just when the assembly kind changed.
+    renderArtworkList();
+    renderPatternPicker();
   });
   setShapeThumb(state.shapeKind); // reflect the initial selection
 

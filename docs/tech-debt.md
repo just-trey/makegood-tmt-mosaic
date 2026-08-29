@@ -689,23 +689,6 @@ load (the confirm dialog and the mid-load kind-switch guard both depend on
 `state.assembly.parts` being the live list). Deferred rather than folded into
 the fields fix, which does not touch `asmLoadFullAssembly`'s contract.
 
-## The part-switch confirm describes parts, not the artwork the user actually cares about
-
-`src/ui/partPanel.ts` asks `Switching parts will clear the currently loaded
-ones. Continue?` on every switch since the beta narrowing removed Disc (every
-switch is now assembly→assembly, so this always fires). The parts it names
-are cleared and silently reloaded; the artwork the user actually placed
-survives. Read as written, it says the opposite of what happens.
-
-Recorded as **C1** in
-[review-cycles/2026-08-24-beta.md](review-cycles/2026-08-24-beta.md): the
-2026-08-08 cycle's **A2** wanted a confirm here at all (it fired only on the
-Wheel→Disc flat-branch case then), and removing Disc closed A2 mechanically
-without anyone writing a real one. That cycle's resolution: say what actually
-happens to the design, or drop the modal, having established nothing the user
-values is lost. Don't just delete it without re-checking A2's repro, or the
-next cycle re-files A2.
-
 ## `export-chair-examples.mjs` cannot reach Fill any more
 
 Broken since #137, not by the beta narrowing, though that branch touched the

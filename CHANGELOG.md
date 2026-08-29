@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Switching parts no longer asks you to confirm.** The dialog said
+  switching would "clear the currently loaded" parts, naming the one thing
+  that survives — your artwork stays right where you left it, and the part
+  itself just swaps in. Nothing here was ever worth stopping to ask about, so
+  the confirm is gone (`npx vitest run tests/part-switch-confirm.test.ts`).
 - **The prime tower now gets a suggested corner on a round part.** The corner
   search scored each part by its bounding box, which reports a disc as filling
   corners a circle never reaches. A 220mm hubcap on the 350×320 H2D bed read as
