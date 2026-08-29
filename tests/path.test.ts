@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parsePathD, signedArea } from '../src/svg/path';
 
 describe('parsePathD', () => {
@@ -67,6 +67,54 @@ describe('parsePathD', () => {
     const gentle = parsePathD('M0 0 C25 1 75 -1 100 0')[0];
     const sharp = parsePathD('M0 0 C0 100 100 -100 100 0')[0];
     expect(sharp.length).toBeGreaterThan(gentle.length);
+  });
+
+  it('drops only the subpath broken by a missing coordinate, instead of a NaN vertex or a throw', () => {
+    const onMalformed = vi.fn();
+    const loops = parsePathD('M0 0 L10 0 L10 10 Z M20 20 L30', onMalformed);
+    expect(loops).toHaveLength(1); // the completed first square survives
+    expect(loops[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 0 },
+    ]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an already-closed subpath even when the next M itself is malformed', () => {
+    const onMalformed = vi.fn();
+    const loops = parsePathD('M0 0 L10 0 L10 10 Z M20 L30 30', onMalformed);
+    expect(loops).toHaveLength(1); // the completed first square survives the broken M
+    expect(loops[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 0 },
+    ]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops an unclosed subpath whole, even one with several good points already drawn', () => {
+    const onMalformed = vi.fn();
+    // Three good points (0,0 / 10,0 / 10,10) precede the break, but the subpath was never
+    // closed or flushed by a later M, so none of it survives — a truncated loop closed on its
+    // own would be a shape never drawn, which is worse than losing the piece.
+    const loops = parsePathD('M0 0 L10 0 L10 10 L20', onMalformed);
+    expect(loops).toEqual([]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns no loops (not a throw) when the only subpath is malformed', () => {
+    const onMalformed = vi.fn();
+    expect(parsePathD('M0 0 L10', onMalformed)).toEqual([]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
+  it('never calls onMalformed for well-formed data', () => {
+    const onMalformed = vi.fn();
+    parsePathD('M0 0 L10 0 L10 10 Z', onMalformed);
+    expect(onMalformed).not.toHaveBeenCalled();
   });
 
   it('flattens elliptical arcs ending at the target point (spec F.6.5 endpoint math)', () => {

@@ -47,6 +47,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `src/state/persist.ts`, both for the load-time notice and the
   restore-failure warning) key on the source id. Every other caller is
   unaffected — dedupe still falls back to message text when no key is given.
+- **A malformed SVG path no longer ships a NaN vertex.** A `<path>` with
+  truncated or non-numeric coordinate data now drops the one subpath that hit
+  the bad number, whole (a truncated loop closed on its own would be a shape
+  the artist never drew), keeps every subpath completed before it, and warns
+  naming which path it was (e.g. "Path 2 has broken data partway through its
+  outline"), instead of silently corrupting that shape's geometry. Two
+  independently gradient/pattern-filled elements are also now named
+  separately instead of collapsing into one warning. An unparseable
+  `fill-opacity` now falls back to the SVG default (fully opaque) instead of
+  an unguarded `NaN`.
 
 ## [0.7.0] - 2026-08-28
 

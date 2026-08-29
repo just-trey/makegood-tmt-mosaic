@@ -775,7 +775,10 @@ for, is the case least likely to show it.
 
 Closing it means changing what `clearWarnings()`'s contract allows a caller to
 rely on, not the restore itself — `applyRestoredSession` is just one caller
-that gets bitten by it.
+that gets bitten by it. `svg/parse.ts`'s per-path "Path N has broken data"
+warning (see "Numeric coercion has no lint rule") is subject to the same
+contract: `ui/artworkPanel.ts`'s load-failure handlers clear it the same way
+when every shape in a document fails to parse.
 
 Related, from the section this replaced: the 2026-08-08 cycle's **A2**
 (switching part shape carries artwork across with no confirmation) is the
@@ -1577,13 +1580,20 @@ the current plugin ecosystem covers the pattern, and a custom parser rule was
 ruled out as too much machinery for one check. Nothing catches a `parseFloat`
 whose `NaN` is never guarded.
 
-Counted 2026-08-26: of 9 `parseFloat` sites in `src/`, **2** parse an external number with no finite check,
-[svg/path.ts:138](../src/svg/path.ts) and
-[svg/parse.ts:284](../src/svg/parse.ts). The rest guard, most on the next line, so the exposure is narrower
-than the call count suggests. Count the guards, not the calls. One of them,
-`ui/partPanel.ts:206`, guards against a value it parses from an authored `min=`
-attribute rather than from anything a user types, and a non-numeric one there
-would reject every input; that is a latent bug in the markup, not in the guard.
+Counted 2026-08-28 (`grep -rn parseFloat src/ | wc -l`): of 9 `parseFloat` sites in `src/`, **0** parse an
+external number with no finite check. The last two were guarded in the same pass that closed this
+count: `parsePathD` (`svg/path.ts`) never throws; on a malformed coordinate it drops the subpath it
+was building whole (token misalignment makes anything after that point unrecoverable, and closing
+a truncated loop into a shape the artist never drew would be worse) and keeps every subpath already
+closed, and `parseSVGDocument` (`svg/parse.ts`) warns naming which `<path>` it was — a per-document
+count, since two malformed paths would otherwise collapse into one warning under `warn()`'s
+exact-message dedup, which is also why the sibling gradient/pattern-fill warning in the same
+function now names its element the same way. The new `parseFillOpacity` helper (`svg/parse.ts`)
+falls back to the SVG default (fully opaque) instead of an unguarded NaN. Every remaining site
+guards, most on the next line, so the exposure is narrower than the call count suggests. Count the
+guards, not the calls. One of them, `ui/partPanel.ts:208`, guards against a value it parses from an
+authored `min=` attribute rather than from anything a user types, and a non-numeric one there would
+reject every input; that is a latent bug in the markup, not in the guard.
 
 **Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
 on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
@@ -1785,3 +1795,28 @@ running app.
 too, or rebuilding a source's copies when it re-adopts. It stays open because
 the first role to pair `buildMesh` with `allowRotatedCopies` makes it real, and
 nothing today can produce a case to test against.
+
+## The path `d` tokenizer doesn't split glued arc flags
+
+`parsePathD`'s tokenizer regex (`svg/path.ts`) reads a run of digits as one
+number, so a shorthand arc command that omits the whitespace between its two
+0/1 flags and the following coordinate — legal per the SVG spec and emitted by
+some minifiers, e.g. `A5 5 0 1110 0` for large-arc=1, sweep=1, x=10, y=0 —
+tokenizes `1110` as a single number instead of `1`, `1`, `10`. Verified
+2026-08-28: `d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g)` on that string
+returns `['M','0','0','A','5','5','0','1110','0']`, five tokens for the arc's
+seven arguments.
+
+Since the finite-check guard (see "Numeric coercion has no lint rule") now
+runs out of tokens partway through that command, this presents to the user as
+"Path N has broken data" — accurate about the parse failing, wrong about a
+valid path being the cause. Pre-existing; not something the finite-check pass
+introduced or is positioned to fix.
+
+Related and smaller: `svg/parse.ts`'s `fill-opacity="50%"` parses to `50` via
+`parseFloat`, not `0.5` — a finite, valid-looking number the guard doesn't
+catch, currently harmless only because the sole reader is `opacity === 0`.
+
+**Closing the tokenizer gap** means matching flag digits as individual tokens
+when a boolean-flag position is expected, which needs the tokenizer to know
+which argument position it's on rather than tokenizing blind.

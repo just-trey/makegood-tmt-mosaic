@@ -68,6 +68,12 @@ export function svgLengthToMM(value: string | null): number | null {
   return factor == null ? null : l.n * factor;
 }
 
+/** Invalid or missing fill-opacity falls back to the SVG default: fully opaque. */
+export function parseFillOpacity(raw: string | null): number {
+  const n = parseFloat(raw || '');
+  return Number.isFinite(n) ? n : 1;
+}
+
 /**
  * Whether an SVG length claims a real-world size, as opposed to screen pixels.
  *
@@ -204,6 +210,13 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
   const shapes: SVGShape[] = [];
   let order = 0;
+  // Counts every <path> reached here (valid or not), so a warning can name which one broke by
+  // position. warn() dedupes by exact message, so an unnumbered "Path has broken data" would
+  // collapse a second offender into the first one's pill and under-report how much was dropped.
+  let pathCount = 0;
+  // Same reason, for every visible candidate shape of any of the 6 tags below: two
+  // gradient/pattern-filled elements would otherwise collapse into one warning too.
+  let shapeCount = 0;
 
   // Largest <circle> found by the same visible-subtree walk as shapes below (assembly mode's
   // design-boundary anchor) — tracked here, not via a separate querySelectorAll, so it inherits
@@ -281,7 +294,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
     const fillRaw = resolveProp(el, 'fill');
     const fillUrl = fillRaw && /url\(/.test(fillRaw);
-    const opacity = parseFloat(resolveProp(el, 'fill-opacity') || '');
+    const opacity = parseFillOpacity(resolveProp(el, 'fill-opacity'));
     const displayNone = resolveProp(el, 'display') === 'none';
 
     if (
@@ -293,11 +306,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       tag === 'polyline'
     ) {
       if (!displayNone) {
+        shapeCount++;
         if (fillUrl) {
           warn(
-            'Skipped a <' +
-              tag +
-              '> with a gradient/pattern fill (not a flat color), element ignored.',
+            `Shape ${shapeCount} (a <${tag}>) has a gradient/pattern fill (not a flat color), so it was skipped.`,
           );
         } else if (fillRaw === 'none') {
           // no fill, e.g. stroke-only outline — ignored for inlay purposes
@@ -307,8 +319,16 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
           const hex = normalizeColor(fillRaw || getAncestorFill(el) || '#000000');
           let loops: Loop[] = [];
           if (tag === 'path') {
+            pathCount++;
+            const n = pathCount;
             const d = el.getAttribute('d');
-            if (d) loops = parsePathD(d);
+            if (d) {
+              loops = parsePathD(d, () =>
+                warn(
+                  `Path ${n} has broken data partway through its outline. Everything from that point on was dropped.`,
+                ),
+              );
+            }
           } else if (tag === 'rect') {
             const x = +(el.getAttribute('x') || 0),
               y = +(el.getAttribute('y') || 0);
