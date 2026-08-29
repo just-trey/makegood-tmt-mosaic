@@ -59,6 +59,9 @@ needing:
 - **Rebase onto `origin/main` before pushing.** Every PR touches
   `CHANGELOG.md`'s Fixed list and `docs/tech-debt.md`; the first one to merge
   conflicts with all the others.
+- **Draft the PR body in a worktree-local path, not the shared scratchpad.**
+  Parallel agents share the scratchpad; one agent's draft overwrote
+  another's there in the worked example.
 - Do not watch CI. Report the PR URL and the Rounds table, then stop.
 
 Spawn with `isolation: "worktree"`, `run_in_background: true`, the `model`
@@ -121,13 +124,25 @@ gh pr view <n> --json mergeable,mergeStateStatus -q '.mergeable+" "+.mergeStateS
   git fetch -q origin
   S=<scratchpad>/rb<n>
   git worktree add -q -b rb<n>-tmp $S origin/<branch>
-  git -C $S rebase origin/main
+  ```
+
+  **`cd "$S"` before every git/npm/node command in this recipe from here
+  on, rather than `git -C $S`.** `git -C <path> <cmd>` doesn't match a plain
+  `Bash(git rebase *)`/`Bash(git add *)` allow rule — the pattern matches on
+  the command's literal leading tokens, and `.claude/settings.local.json`
+  already carries a one-off exact-string entry for exactly this gap
+  (`git -C <worktree-path> checkout ...`) rather than a reusable prefix.
+  `cd` first and every subsequent command matches the plain rule.
+
+  ```bash
+  cd "$S" && git rebase origin/main
   ```
 
   Resolve `CHANGELOG.md` by keeping both sides' bullets. Resolve
   `docs/tech-debt.md` by dropping every heading of a section that is already
   closed on `main` and keeping headings the branch added. Symlink
-  `node_modules` from the main checkout into `$S` now — `npx prettier`,
+  `node_modules` from the main checkout into `$S` now (`ln -s
+<main-checkout>/node_modules node_modules`, allowlisted) — `npx prettier`,
   `node scripts/check-troubleshooting.mjs`, and the PR's own vitest command
   all need it to resolve at all in a bare `git worktree add` checkout, not
   just the first of the three. Run all three, `git add CHANGELOG.md
@@ -137,10 +152,11 @@ docs/tech-debt.md` — `rebase --continue` refuses unstaged conflict
   `--continue`, check `git status` for "rebase in progress" and repeat the
   resolve-add-continue cycle until it reports a clean tree. Only then remove
   the `node_modules` symlink and `git push --force-with-lease origin
-rb<n>-tmp:<branch>`, remove the scratch worktree, **delete the local
-  `rb<n>-tmp` branch** (`git worktree remove` drops the directory, not the
-  branch ref — confirmed by creating and removing one), re-arm the watch
-  above.
+rb<n>-tmp:<branch>` (`cd` back to the main checkout first — `-C` only bites
+  when it's the leading token the allowlist tries to match), remove the
+  scratch worktree, **delete the local `rb<n>-tmp` branch** (`git worktree
+remove` drops the directory, not the branch ref — confirmed by creating
+  and removing one), re-arm the watch above.
 
 - Right after a merge, GitHub reports the next PR `UNKNOWN` for ~30s, then
   `CONFLICTING`. That is expected: rebase it as above. Merges are therefore
@@ -153,10 +169,10 @@ rb<n>-tmp:<branch>`, remove the scratch worktree, **delete the local
 skill is the user's approval for every merge it performs — that is the
 contract, not a per-PR prompt. The project's `.claude/settings.json`
 allowlists `gh pr merge`, `git rebase`, `git reset`, `git branch -D`/`-d`,
-`git worktree`, `git push --force-with-lease` (the rebase-conflict recovery
-step needs this one specifically), `git merge-base`/`merge-tree`, `cp`,
-`mkdir`, `sed -i`, and a scratch-scoped `rm -rf`, so this skill (and
-anything else running in the
+`git worktree`, `git push --force-with-lease` and `ln -s` (the
+rebase-conflict recovery step needs both specifically), `git
+merge-base`/`merge-tree`, `cp`, `mkdir`, `sed -i`, and a scratch-scoped
+`rm -rf`, so this skill (and anything else running in the
 repo) does not stop for them. That grant is repo-wide and persists between
 runs — a deliberate tradeoff the user made, not one scoped to a single
 invocation or to only the commands this skill happens to use.
