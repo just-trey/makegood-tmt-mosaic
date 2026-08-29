@@ -19,6 +19,31 @@ survives as its own section; only the closed part goes. Checking that the diff
 removed only the lines you meant to remove is _not_ this check: it confirms the
 scope of the edit, not that what left was finished.
 
+## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted
+
+`rasterControls().apply()` ([src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts)) must call
+`dismissNotice()` before `notice()` when flipping a source's keyed capped/traced notice. `push()`
+([src/warnings.ts](../src/warnings.ts)) skips a new entry when its key is already taken, so calling
+`notice()` first drops the replacement, and the following `dismissNotice()` then removes it —
+leaving nothing standing for that source.
+
+A `push()` that upserts a same-key entry in place, removing the ordering requirement, was tried and
+reverted after three rounds each found a real defect:
+
+- **Unconfined to keyed entries**: overwriting any same-message match changed every unkeyed
+  `warn()`/`notice()`/`warnBuild()`/`noticeBuild()` caller from skip-if-present to
+  overwrite-if-present, and could flip an existing entry's `build` flag.
+- **Confined to keyed entries, but swapping in a new object**: broke
+  [src/ui/warningsView.ts](../src/ui/warningsView.ts)'s dismiss button, which finds its pill's
+  entry by reference (`WARNINGS.indexOf(w)`) — a swapped object left that reference dangling and
+  the × silently did nothing.
+- **Confined and mutating fields in place instead of swapping**: fixed the reference bug, but was
+  the third round in a row to need a real fix in the same mechanism — the signal to cut the area
+  rather than patch a fourth time.
+
+Closing this means either documenting the ordering constraint as permanent, or re-attempting the
+upsert with a test for each of the three failure modes above written before the fix.
+
 ## A Fill tile with no mm size is stretched to one repeat, which is what forceRect exists to prevent
 
 `designMmPerUnit` ([src/geometry/assembly.ts](../src/geometry/assembly.ts))
@@ -49,27 +74,6 @@ real product question and not a constant to invent: the design face is wrong,
 1:1 is a guess, and the honest answer may be to refuse Fill and say so. It is a
 different change from sizing a Sticker, which is why it is written down instead
 of bolted onto that one.
-
-## Raster status notices dedupe by filename, not by source id
-
-`rasterCappedMessage`/`rasterTracedMessage` in
-[src/raster/parse.ts](../src/raster/parse.ts) key their `notice()`/
-`dismissNotice()` calls off the loaded file's name, because the message text
-itself names the file for the user. Two different raster sources that happen
-to share a filename (re-loading a same-named export, two different photos
-both called `IMG_0001.jpg`) can land on opposite sides of the capped/traced
-split, and both notices then stand at once, reading as contradictory advice
-about what looks like one file.
-
-Fixing it means separating the dedupe key from the display text (an id-keyed
-entry whose rendered message still names the file), which touches every call
-site of `notice`/`dismissNotice` for these two messages
-(`src/ui/artworkPanel.ts`, `src/ui/artworkListPanel.ts`,
-`src/state/persist.ts`) plus the `Notice` shape in
-[src/warnings.ts](../src/warnings.ts). Deferred: the collision needs two
-sources with an identical name loaded in the same session, which is rare, and
-the existing capped-only notice already carried the same limitation before
-`rasterTracedMessage` was added.
 
 ## Two of convention 19's neighbours are open, and one has a second instance
 
@@ -697,14 +701,14 @@ then reads is off:
   Measured on a 256px confetti image at 0.05mm per pixel: it throws identically at Detail 0, 50 and 100. The remedy that works, make the part or the design bigger, is not offered.
 - **The pill it raises is a `warn()` that nothing retracts**, so it outlives the setting that
   caused it. The capped notice next to it shows the pattern (`dismissNotice` on the next clean
-  trace), but that needs a per-source identity the message does not have: it carries no image name,
-  and adding one collides for two files of the same name.
+  trace), keyed by source id (`Notice.key`, [src/warnings.ts](../src/warnings.ts)) so two files of
+  the same name don't collide — this pill still has no such identity to key on.
 - **The load path and the slider path disagree**: a fresh load reports through `reportLoadFailure`,
   which names the file in a dialog, while the slider raises an unnamed pill.
 
-Closing it means one message with the right remedies for both causes, and one identity scheme for
-retracting it. Three review rounds on this branch each produced a new defect in it, which is why it
-was cut rather than patched again.
+Closing it means one message with the right remedies for both causes, keyed by source id the same
+way the capped/traced notices are. Three review rounds on this branch each produced a new defect in
+it, which is why it was cut rather than patched again.
 
 ## A restored session's assembly-kind switch still isn't atomic
 

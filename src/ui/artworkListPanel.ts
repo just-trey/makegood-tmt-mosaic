@@ -134,11 +134,12 @@ export function renderArtworkList(): void {
     row.querySelector<HTMLButtonElement>('.artwork-remove')!.addEventListener('click', (e) => {
       e.stopPropagation();
       removeArtworkInstance(a.id);
-      // A capped notice names its image, so it has to go with the last instance of it — otherwise
-      // it stands there pointing at a file that is no longer loaded.
+      // A capped/traced notice names its image, so it has to go with the last instance of it —
+      // otherwise it stands there pointing at a file that is no longer loaded. One dismiss keyed
+      // on the source id removes whichever of the two it currently holds; the message text passed
+      // doesn't matter once a key is given.
       if (source && !state.sources.some((s) => s.id === source.id)) {
-        dismissNotice(rasterCappedMessage(source.name));
-        dismissNotice(rasterTracedMessage(source.name));
+        dismissNotice(rasterCappedMessage(source.name), source.id);
       }
       renderWarnings();
       $('#svg-fname').textContent = '';
@@ -213,12 +214,15 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
       return false;
     }
     if (!result) return false;
+    // dismissNotice() before notice(), not after: push() skips a new entry whose key is already
+    // taken, so notice()-then-dismissNotice() on the same key would drop the replacement and then
+    // remove it, leaving nothing standing for this source at all.
     if (result.capped) {
-      notice(rasterCappedMessage(source.name));
-      dismissNotice(rasterTracedMessage(source.name));
+      dismissNotice(rasterTracedMessage(source.name), source.id);
+      notice(rasterCappedMessage(source.name), source.id);
     } else {
-      dismissNotice(rasterCappedMessage(source.name));
-      notice(rasterTracedMessage(source.name));
+      dismissNotice(rasterCappedMessage(source.name), source.id);
+      notice(rasterTracedMessage(source.name), source.id);
     }
     renderWarnings();
     readout.textContent = describe();

@@ -152,6 +152,38 @@ describe('rasterTracedMessage', () => {
   });
 });
 
+describe('raster notices from two sources sharing a filename', () => {
+  beforeEach(() => clearWarnings());
+
+  // Two different sources loaded under the same name (a re-loaded same-named export, two photos
+  // both called IMG_0001.jpg) can land on opposite sides of the capped/traced split. Removing one
+  // must retract only its own notice, keyed by source id — not the other source's, which happens
+  // to render identical text for its opposite state.
+  it('dismissing one source leaves the other source’s notice standing', () => {
+    notice(rasterCappedMessage('img.png'), 'source-1');
+    notice(rasterTracedMessage('img.png'), 'source-2');
+    expect(WARNINGS).toHaveLength(2);
+
+    // source-1 is removed: src/ui/artworkListPanel.ts's remove handler dismisses by key alone, so
+    // the message text passed doesn't have to match which of capped/traced this source held.
+    dismissNotice(rasterCappedMessage('img.png'), 'source-1');
+
+    expect(WARNINGS.map((w) => w.message)).toEqual([rasterTracedMessage('img.png')]);
+  });
+
+  // Mirrors src/ui/artworkListPanel.ts's rasterControls().apply(): both messages share one key,
+  // so the old one has to be dismissed before the new one is added. Reversed, the new notice's
+  // push is a no-op (the key is already taken) and the dismiss then wipes it, leaving nothing.
+  it('re-quantizing a source from traced to capped replaces its notice, not clears it', () => {
+    notice(rasterTracedMessage('img.png'), 'source-1');
+
+    dismissNotice(rasterTracedMessage('img.png'), 'source-1');
+    notice(rasterCappedMessage('img.png'), 'source-1');
+
+    expect(WARNINGS.map((w) => w.message)).toEqual([rasterCappedMessage('img.png')]);
+  });
+});
+
 describe('applyPattern', () => {
   beforeEach(() => {
     global.fetch = vi.fn().mockResolvedValue({

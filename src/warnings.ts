@@ -1,4 +1,7 @@
-/** Session notice list, rendered as pills over the viewport. Deduplicated by message. */
+/**
+ * Session notice list, rendered as pills over the viewport. Deduplicated by `key` when given,
+ * falling back to `message` — most callers have one notice per message and never set `key`.
+ */
 export interface Notice {
   message: string;
   level: 'warn' | 'info';
@@ -9,21 +12,34 @@ export interface Notice {
    * re-derives those every rebuild.
    */
   build?: boolean;
+  /**
+   * Dedupe/retraction identity, separate from the displayed text. Needed wherever the message is
+   * templated from user data (a filename) that two different sources can share — two raster
+   * sources named the same can otherwise collide on message-equality and drop or cross-retract
+   * each other's notice. Unset for every caller but the raster capped/traced pair and the matching
+   * restore-failure warning, which is the only place two live entries can otherwise render
+   * identical text. Defaults to `message` when omitted.
+   */
+  key?: string;
 }
 export const WARNINGS: Notice[] = [];
 
 function push(n: Notice): void {
-  if (!WARNINGS.some((w) => w.message === n.message)) WARNINGS.push(n);
+  const key = n.key ?? n.message;
+  if (!WARNINGS.some((w) => (w.key ?? w.message) === key)) WARNINGS.push(n);
 }
 
-/** Something failed or degraded — rendered as a red pill. */
-export function warn(message: string): void {
-  push({ message, level: 'warn' });
+/** Something failed or degraded — rendered as a red pill. Pass `key` per Notice.key. */
+export function warn(message: string, key?: string): void {
+  push({ message, level: 'warn', key });
 }
 
-/** Expected/informational — rendered as a quiet pill, not an error. */
-export function notice(message: string): void {
-  push({ message, level: 'info' });
+/**
+ * Expected/informational — rendered as a quiet pill, not an error. Pass `key` when `message`
+ * alone can collide across sources (see Notice.key).
+ */
+export function notice(message: string, key?: string): void {
+  push({ message, level: 'info', key });
 }
 
 /** Build-scoped counterpart to warn() — use inside code that runs fresh every rebuild. */
@@ -41,15 +57,17 @@ export function clearWarnings(): void {
 }
 
 /**
- * Retract one specific notice by its exact message.
+ * Retract one specific notice, matched by `key` when given (see Notice.key), else by its exact
+ * message.
  *
  * For a standing diagnostic that a later user action can genuinely resolve — re-quantizing an image
  * at a setting that no longer needs its detail capped, say. Neither clearWarnings() (too broad, it
  * drops unrelated standing facts) nor clearBuildWarnings() (wrong scope, nothing re-derives these
  * per rebuild) fits that case.
  */
-export function dismissNotice(message: string): void {
-  const i = WARNINGS.findIndex((w) => w.message === message);
+export function dismissNotice(message: string, key?: string): void {
+  const k = key ?? message;
+  const i = WARNINGS.findIndex((w) => (w.key ?? w.message) === k);
   if (i >= 0) WARNINGS.splice(i, 1);
 }
 

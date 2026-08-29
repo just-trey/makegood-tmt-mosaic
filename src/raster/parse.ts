@@ -142,10 +142,11 @@ export function parseRasterImage(
 /**
  * The capped notice, named for the image it is about.
  *
- * Per image rather than one shared string, because notices dedupe by message and the list panel
- * retracts this one by exact text: with a single message, re-quantizing an *uncapped* image pulled
- * down a still-true notice belonging to a different, capped one. The filename is what tells the two
- * apart in the pill, too, once more than one image is loaded.
+ * Per image rather than one shared string, so the pill names which image it's about once more
+ * than one is loaded. Every notice()/dismissNotice() call for this message is keyed by the
+ * source's id (warnings.ts's Notice.key), not by this text — two sources can share a filename,
+ * and keying by the rendered string would let one land on the wrong side of the capped/traced
+ * split or cross-retract the other's still-true notice.
  *
  * Both suggestions lower the component count. Detail is the counter-intuitive one: `autoParams`
  * scales the despeckle floor by 4^((50-detail)/50), so *raising* Detail quarters the floor and lets
@@ -166,7 +167,7 @@ export function rasterCappedMessage(name: string): string {
  * Shown once a photo has traced without hitting the cap above. An SVG is already flat color;
  * a photo has to be quantized and traced to get there, so it never comes out as sharp.
  *
- * Same shape as rasterCappedMessage: filename-keyed and mutually exclusive with it per source,
+ * Same shape as rasterCappedMessage: keyed by source id, mutually exclusive with it per source,
  * so a row shows exactly one status line once it has traced.
  */
 export function rasterTracedMessage(name: string): string {
