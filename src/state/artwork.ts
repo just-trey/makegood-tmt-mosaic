@@ -437,7 +437,7 @@ function remapSettingsToPalette(oldPalette: string[], newPalette: string[]): voi
 export function requantizeSource(
   sourceId: string,
   patch: { colors?: number; detail?: number },
-): { capped: boolean } | null {
+): { capped: boolean; droppedColors: number } | null {
   const source = state.sources.find((s) => s.id === sourceId);
   if (!source || !isRasterSource(source)) return null;
   const colors = patch.colors ?? source.raster.colors;
@@ -476,7 +476,7 @@ export function requantizeSource(
   if (active && active.sourceId === source.id) state.parsed = source.parsed;
   remapSettingsToPalette(oldPalette, result.palette);
   pruneSettingsToPalette();
-  return { capped: result.capped };
+  return { capped: result.capped, droppedColors: result.droppedColors };
 }
 
 /**

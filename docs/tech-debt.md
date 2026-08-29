@@ -1088,23 +1088,6 @@ placement given the two designs' actual placed footprints, rather than stepping
 a fixed distance and testing for an exact-spot collision. That is a real
 placement search and wants its own change, not a wider constant.
 
-## A traced image can lose a color with nothing said
-
-`parseRasterImage` narrows the palette to the colors that actually paint something, and since
-2026-08-20 the despeckle floor removes far more than it used to
-([2026-08-20 despeckle floor](findings/2026-08-20-despeckle-floor.md)). Five of nineteen corpus
-sources come back with fewer colors than the Colors slider asked for: gravel 8 to 5, foliage 8 to
-7, dalmatian and zebra 4 to 2 and 3, the cartoon 6 to 5.
-
-- **Correct, and silent.** Those colors were only ever painted in pieces under the printable floor,
-  so the narrower list is the honest one. Nothing says so: the readout shows the number it found,
-  and the user has to notice it differs from the number they asked for.
-- The `capped` notice ("Some detail was too fine to print and was merged") covers the
-  `MAX_COMPONENTS` case only, which now fires much less often, and its remedy (lower Colors, lower
-  Detail) is backwards for this one.
-- Closing it means deciding whether a dropped color is worth a notice at all, and if it is, saying
-  it in a way that does not fire on every photograph. Raising Detail is the remedy that fits.
-
 ## `MAX_COMPONENTS` is a target, not the bound its name implies
 
 `traceLabelMap` ([src/raster/trace.ts](../src/raster/trace.ts)) raises the despeckle floor when the

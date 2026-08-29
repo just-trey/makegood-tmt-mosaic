@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseRasterImage, EmptyTraceError, rasterEmptyTraceMessage } from '../src/raster/parse';
+import {
+  parseRasterImage,
+  EmptyTraceError,
+  rasterCappedMessage,
+  rasterColorLossMessage,
+  rasterEmptyTraceMessage,
+  rasterLostColors,
+} from '../src/raster/parse';
 import {
   measureImage,
   autoParams,
@@ -24,6 +31,26 @@ function bands(w: number, h: number, colors: string[], alpha = 255): RasterImage
       data[i + 3] = alpha;
     }
   return { data, w, h };
+}
+
+/**
+ * Blue and green bands under a red sprinkle: enough red pixels to win a palette entry, every one
+ * of them a lone speck. Deterministic placement — the assertions on it must not flake.
+ */
+function sprinkled(): RasterImage {
+  const w = 64,
+    h = 64;
+  const img = bands(w, h, ['#0000ff', '#00c000']);
+  for (let p = 0; p < w * h; p++) {
+    const x = p % w,
+      y = (p / w) | 0;
+    if ((x * 5 + y * 3) % 17 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
+    const i = p * 4;
+    img.data[i] = 255;
+    img.data[i + 1] = 0;
+    img.data[i + 2] = 0;
+  }
+  return img;
 }
 
 const opts = { colors: 4, detail: DETAIL_DEFAULT };
@@ -135,20 +162,7 @@ describe('parseRasterImage', () => {
   // "3 colors · 2 regions", the smoke's `shown === traced` check compared a 3 against a color list
   // holding 2, and remapSettingsToPalette could carry a depth onto a hex nothing paints.
   it('reports only the colors the traced shapes actually paint', () => {
-    // A red sprinkle: enough pixels to win a palette entry, every one of them a lone speck the
-    // despeckle floor absorbs. Deterministic placement — this assertion must not flake.
-    const w = 64,
-      h = 64;
-    const img = bands(w, h, ['#0000ff', '#00c000']);
-    for (let p = 0; p < w * h; p++) {
-      const x = p % w,
-        y = (p / w) | 0;
-      if ((x * 5 + y * 3) % 17 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
-      const i = p * 4;
-      img.data[i] = 255;
-      img.data[i + 1] = 0;
-      img.data[i + 2] = 0;
-    }
+    const img = sprinkled();
     // Detail full-left quadruples the despeckle floor, so a one-pixel speck cannot survive it.
     const detail = 0;
     const { parsed, palette } = parseRasterImage(img, { colors: 4, detail });
@@ -159,6 +173,83 @@ describe('parseRasterImage', () => {
     // …and the fixture really does exercise it: the quantizer found a color the trace then lost.
     const quantized = quantize(img, 4, autoParams(measureImage(img), detail).blurRadius);
     expect(quantized.palette.length).toBeGreaterThan(palette.length);
+  });
+
+  // Five of nineteen corpus sources traced with fewer colors than the Colors slider asked for and
+  // said nothing (docs/tech-debt.md, deleted with this change). The trigger is measured against
+  // the quantizer's palette, never the slider.
+  describe('dropped colors', () => {
+    it('counts a color the quantizer found and the trace painted nothing with', () => {
+      const img = sprinkled();
+      const detail = 0;
+      const result = parseRasterImage(img, { colors: 4, detail });
+      const quantized = quantize(img, 4, autoParams(measureImage(img), detail).blurRadius);
+
+      expect(quantized.palette.length).toBe(3);
+      expect(result.palette.length).toBe(2);
+      expect(result.droppedColors).toBe(1);
+      expect(rasterLostColors(result)).toBe(true);
+    });
+
+    it('counts nothing when every color the quantizer found survives', () => {
+      // The same sprinkle at the default Detail, where the floor leaves the specks alone.
+      const result = parseRasterImage(sprinkled(), opts);
+      expect(result.palette.length).toBe(3);
+      expect(result.droppedColors).toBe(0);
+      expect(rasterLostColors(result)).toBe(false);
+    });
+
+    it('counts nothing when the image just has fewer colors than Colors asked for', () => {
+      // Two bands at Colors 4. The palette is short of the slider and nothing was lost: no Detail
+      // setting invents a third color, so the notice must not offer one.
+      const result = parseRasterImage(bands(64, 64, ['#0000ff', '#00c000']), {
+        colors: 4,
+        detail: 0,
+      });
+      expect(result.palette.length).toBe(2);
+      expect(result.droppedColors).toBe(0);
+      expect(rasterLostColors(result)).toBe(false);
+    });
+
+    it('leaves a capped trace to its own notice', () => {
+      // 1024 six-pixel blocks over two bands, plus one-pixel yellow specks: past MAX_COMPONENTS,
+      // so the floor is raised, and the raise takes the yellow with it. Both notices at once would
+      // tell one image to lower Detail and raise it in the same breath.
+      const img = bands(320, 320, ['#0000ff', '#00c000']);
+      for (let y = 1; y + 6 < 320; y += 10)
+        for (let x = 1; x + 6 < 320; x += 10)
+          for (let dy = 0; dy < 6; dy++)
+            for (let dx = 0; dx < 6; dx++) {
+              const i = ((y + dy) * 320 + (x + dx)) * 4;
+              img.data[i] = 255;
+              img.data[i + 1] = 0;
+              img.data[i + 2] = 0;
+            }
+      for (let p = 0; p < 320 * 320; p++) {
+        const x = p % 320,
+          y = (p / 320) | 0;
+        if ((x * 5 + y * 3) % 53 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
+        const i = p * 4;
+        img.data[i] = 255;
+        img.data[i + 1] = 255;
+        img.data[i + 2] = 0;
+      }
+      const result = parseRasterImage(img, { colors: 5, detail: 100 });
+
+      expect(result.capped).toBe(true);
+      expect(result.droppedColors).toBe(1);
+      expect(rasterLostColors(result)).toBe(false);
+    });
+
+    it('names one dropped color in the singular and more in the plural', () => {
+      expect(rasterColorLossMessage('a.png', 1)).toContain('1 color in "a.png" was dropped.');
+      expect(rasterColorLossMessage('a.png', 3)).toContain('3 colors in "a.png" were dropped.');
+    });
+
+    it('tells the user to raise Detail, the opposite of the capped notice', () => {
+      expect(rasterColorLossMessage('a.png', 1)).toContain('Raise Detail');
+      expect(rasterCappedMessage('a.png')).toContain('lower Detail');
+    });
   });
 
   it('keeps the palette in the quantizer order it narrows', () => {

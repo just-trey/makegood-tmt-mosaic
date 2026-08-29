@@ -12,7 +12,13 @@ import {
 } from '../state/artwork';
 import { fillModeOffered } from '../assembly/kinds';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
-import { rasterCappedMessage, rasterTracedMessage } from '../raster/parse';
+import {
+  rasterCappedMessage,
+  rasterColorLossKey,
+  rasterColorLossMessage,
+  rasterLostColors,
+  rasterTracedMessage,
+} from '../raster/parse';
 import { dismissNotice, notice, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { scheduleRebuild } from '../app/scheduler';
@@ -20,6 +26,14 @@ import { refreshFitInputsFromState } from './fitPanel';
 import { refreshGizmo } from '../scene/designGizmo';
 import { track } from '../analytics/track';
 import { $ } from './dom';
+
+/**
+ * Retract a source's dropped-color notice. The text is passed empty because the key decides which
+ * entry goes (warnings.ts), and the count that notice named is not known at either call site.
+ */
+function dismissColorLoss(sourceId: string): void {
+  dismissNotice('', rasterColorLossKey(sourceId));
+}
 
 /**
  * The loaded-artwork list under the dropzone: one row per ArtworkInstance (not per source — a
@@ -140,6 +154,7 @@ export function renderArtworkList(): void {
       // doesn't matter once a key is given.
       if (source && !state.sources.some((s) => s.id === source.id)) {
         dismissNotice(rasterCappedMessage(source.name), source.id);
+        dismissColorLoss(source.id);
       }
       renderWarnings();
       $('#svg-fname').textContent = '';
@@ -213,6 +228,7 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
       // currently stands, or push() would skip the new warn as a duplicate key and leave the old,
       // now-false notice standing instead. The message passed doesn't matter once a key is given.
       dismissNotice(rasterCappedMessage(source.name), source.id);
+      dismissColorLoss(source.id);
       warn((e as Error).message, source.id);
       renderWarnings();
       return false;
@@ -228,6 +244,14 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
       dismissNotice(rasterCappedMessage(source.name), source.id);
       notice(rasterTracedMessage(source.name), source.id);
     }
+    // Its own key, so it stands beside whichever of those two this source holds — and so the same
+    // dismiss-then-notice order applies to it separately.
+    dismissColorLoss(source.id);
+    if (rasterLostColors(result))
+      notice(
+        rasterColorLossMessage(source.name, result.droppedColors),
+        rasterColorLossKey(source.id),
+      );
     renderWarnings();
     readout.textContent = describe();
     scheduleRebuild();

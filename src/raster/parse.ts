@@ -11,6 +11,12 @@ export interface RasterParseResult {
   /** The colors the traced shapes actually paint with — can be shorter than the requested count,
    * and shorter than the quantizer's own palette. */
   palette: string[];
+  /**
+   * How many colors the quantizer found that the trace then painted nothing with. Counted against
+   * the quantizer's palette, never against `opts.colors`: an image with fewer colors than the
+   * slider asks for lost nothing, and no Detail setting invents a color it never had.
+   */
+  droppedColors: number;
   /** Traced components, for the panel's live readout and the bench. */
   componentCount: number;
   /** True when the despeckle floor was raised to stay under MAX_COMPONENTS. */
@@ -137,6 +143,7 @@ export function parseRasterImage(
       origin: 'raster',
     },
     palette,
+    droppedColors: map.palette.length - palette.length,
     componentCount: components.length,
     capped,
     floorPx,
@@ -176,6 +183,41 @@ export function rasterCappedMessage(name: string): string {
  */
 export function rasterTracedMessage(name: string): string {
   return `"${name}" was traced from a photo. An SVG would come out cleaner.`;
+}
+
+/**
+ * Shown when tracing painted nothing with a color the quantizer had found, so the readout comes
+ * back under the Colors slider with nothing saying why.
+ *
+ * Raising Detail is the remedy, the opposite of rasterCappedMessage's: the floor that absorbed
+ * these colors is the one autoParams scales by 4^((50-detail)/50), so raising Detail quarters it.
+ */
+export function rasterColorLossMessage(name: string, dropped: number): string {
+  return (
+    `${dropped === 1 ? '1 color' : `${dropped} colors`} in "${name}" ` +
+    `${dropped === 1 ? 'was' : 'were'} dropped. Every piece was too small to print. ` +
+    'Raise Detail to keep more.'
+  );
+}
+
+/**
+ * The notice key for rasterColorLossMessage, deliberately not the bare source id the capped/traced
+ * pair uses: this one stands *beside* the traced notice, and sharing their key would make push()
+ * skip whichever arrived second and dismissNotice() retract the wrong one.
+ */
+export function rasterColorLossKey(sourceId: string): string {
+  return `${sourceId}:colors`;
+}
+
+/**
+ * Whether a finished trace should raise rasterColorLossMessage. Not simply `droppedColors > 0`: a
+ * capped trace already carries rasterCappedMessage, and showing both would tell one image to lower
+ * Detail and raise it at the same time.
+ */
+export function rasterLostColors(
+  result: Pick<RasterParseResult, 'capped' | 'droppedColors'>,
+): boolean {
+  return !result.capped && result.droppedColors > 0;
 }
 
 /** Why a trace came back with nothing — see rasterEmptyTraceMessage and EmptyTraceError. */

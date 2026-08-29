@@ -7,7 +7,13 @@ import { beginWork, endWork } from '../app/idle';
 import { requestFrame } from '../scene/viewport';
 import { parseSVGDocument } from '../svg/parse';
 import { decodeImageFile, isRasterBuffer } from '../raster/decode';
-import { rasterCappedMessage, rasterTracedMessage } from '../raster/parse';
+import {
+  rasterCappedMessage,
+  rasterColorLossKey,
+  rasterColorLossMessage,
+  rasterLostColors,
+  rasterTracedMessage,
+} from '../raster/parse';
 import { parseRasterImage } from '../raster/parse';
 import { DETAIL_DEFAULT } from '../raster/stats';
 import { clearWarnings, notice, warn } from '../warnings';
@@ -162,6 +168,11 @@ async function applyRasterFile(file: File): Promise<void> {
     });
     if (result.capped) notice(rasterCappedMessage(file.name), instance.sourceId);
     else notice(rasterTracedMessage(file.name), instance.sourceId);
+    if (rasterLostColors(result))
+      notice(
+        rasterColorLossMessage(file.name, result.droppedColors),
+        rasterColorLossKey(instance.sourceId),
+      );
     afterArtworkLoaded(file.name);
     renderWarnings();
     track('artwork_load', { source: 'raster' });

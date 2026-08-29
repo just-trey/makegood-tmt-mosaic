@@ -504,6 +504,31 @@ To get a result you are happier with:
 - **Crop or simplify the source.** A busy background the design doesn't need is
   what usually blows the budget.
 
+## Troubleshooting: "… colors in … were dropped…"
+
+Full text: _"3 colors in "yourfile.png" were dropped. Every piece was too small
+to print. Raise Detail to keep more."_
+
+**An informational notice, not a failure.** The image loaded and cut normally.
+
+The Colors slider asks the quantizer for a number of colors. Tracing then keeps
+only the ones that still paint something once the despeckle floor has run
+([parse.ts](../src/raster/parse.ts)), and a color whose every piece sits under
+that floor leaves the palette. The readout used to show the smaller number with
+nothing saying it differed from what was asked for.
+
+- **Raise Detail.** It sets how small a speck survives, so raising it quarters
+  the floor and lets the smaller pieces back through. That is the opposite of
+  what "Some detail … was too fine to print…" above asks for, and the two never
+  show on the same image: a capped trace keeps that notice and never raises
+  this one.
+- **The count is against the quantizer's palette, not the slider.** An image
+  that simply has fewer colors than Colors asks for (a three-color logo at
+  Colors 8) has lost nothing, and never raises this.
+- **On a part, Detail cannot go below the printable floor.** The design's
+  placed size sets a floor Detail does not move. A color dropped at that floor
+  comes back only by making the design or the part bigger.
+
 ## Troubleshooting: "No opaque pixels were found in this image…"
 
 Full text: _"No opaque pixels were found in this image. There is nothing to

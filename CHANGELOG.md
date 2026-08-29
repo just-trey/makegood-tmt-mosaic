@@ -23,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   coverage notices, and the per-source session-restore failure. All 13 now
   have sections (`npm run check:troubleshooting` still passes, 85 quotes
   checked against 65 before this change).
+- **A traced image that comes back missing a color now says so.**
+  `parseRasterImage` narrows its palette to the colors the traced shapes
+  actually paint, and a color whose every piece fell under the despeckle floor
+  simply vanished from the readout: five of nineteen corpus sources trace short
+  of the Colors slider (`docs/tech-debt.md`, now deleted with the fix). The
+  trace now reports how many colors it dropped, and the panel raises a notice
+  naming the image and pointing at Detail, which is the control that scales
+  that floor. It is measured against the quantizer's palette, not the slider,
+  so an image that simply has fewer colors than Colors asks for stays quiet; a
+  capped trace keeps its own notice rather than getting a second one telling it
+  to raise the Detail the first told it to lower
+  (`npx vitest run tests/raster-parse.test.ts tests/artworkListPanel.test.ts`,
+  34 tests).
 - **The prime tower now gets a suggested corner on a round part.** The corner
   search scored each part by its bounding box, which reports a disc as filling
   corners a circle never reaches. A 220mm hubcap on the 350×320 H2D bed read as
