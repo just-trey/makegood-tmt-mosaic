@@ -1884,3 +1884,57 @@ that PR to one finding.
 **Closing it** is one character class: `(?:[eE][-+]?\d+)?`, plus the two-row
 test above. Worth checking the same regex's other assumptions in the same pass,
 since this is the second gap found in it.
+
+## `#dropzone` renders its full drag-over appearance on plain hover
+
+`design-system/README.md` → States separates the two: hover is "border brightens
+to accent blue", drag-over is "border + text turn blue, faint blue wash fills
+background". `Dropzone.prompt.md` says the target "lights up blue on drag-over".
+
+Measured 2026-08-29 by the `system` lens at `32c7ebf`, drive-script hash
+`d3b61ea4b35c37e4`, with the pointer moved off between reads so the two states
+are isolated:
+
+| Property          | Base (no pointer)    | `:hover`                    | drag-over                   |
+| ----------------- | -------------------- | --------------------------- | --------------------------- |
+| `color`           | `rgb(170, 179, 207)` | `rgb(109, 147, 255)`        | `rgb(109, 147, 255)`        |
+| `backgroundColor` | `rgba(0, 0, 0, 0)`   | `rgba(109, 147, 255, 0.06)` | `rgba(109, 147, 255, 0.06)` |
+| `borderColor`     | `rgb(43, 52, 87)`    | `rgb(109, 147, 255)`        | `rgb(109, 147, 255)`        |
+
+The hover and drag-over snapshots are identical across all 16 captured
+properties. Hovering spends the whole accent treatment, so arriving over the
+dropzone holding a file changes nothing on screen.
+
+Deferred because the fix is a behaviour call, not a token one — every value
+already references `--accent` / `--accent-glow` correctly.
+
+**Closing it** means picking a side: hold `#dropzone:hover` to the border-only
+treatment its own README rule describes and leave the wash to `.dragover`, or
+drop the two-state claim from the README and `Dropzone.prompt.md`. Whichever
+way, `ZoneListRow.prompt.md` documents the same drag-over treatment for a
+proposed component and should follow it. The full report is
+[docs/system-audit.md](system-audit.md), Finding 1.
+
+## The system audit's drive-script hash covers the whole file, not the driven sequence
+
+`docs/system-audit.md`'s header pins `scripts/system-audit-drive.mjs` by sha256,
+and every state-sensitive (`†`) row is incomparable between two runs whose
+hashes differ. The intent is stated in the script's own header: "a hash diff now
+means the sequence changed, which is the only thing this clause was ever trying
+to signal."
+
+It does not. Two consecutive runs have now voided every `†` row for a change
+that drove the identical seven states:
+
+| Run       | What moved the hash                                       | States driven |
+| --------- | --------------------------------------------------------- | ------------- |
+| `2c28f54` | #243 repointed the Checkbox sample to a reachable control | same seven    |
+| `32c7ebf` | added one captured property and two transition settles    | same seven    |
+
+Deferred because the fix changes what the header's headline number means, which
+should ride a run whose job is that change.
+
+**Closing it** means hashing the driven sequence rather than the file — the
+ordered list of reported states plus the selectors snapshotted, emitted by the
+script into its own output so it cannot drift from what actually ran — and
+saying in the report which hash is which.
