@@ -113,6 +113,22 @@ tests/restoreBanner.test.ts`).
   the engine's memory flat at 16.8 MB. Five runs of
   `MOSAIC_GPU=1 node scripts/check-cancel-latency.mjs 6000 6`, after a build.
   The long wait was already fixed in 0.7.0; this is the part of it that was left.
+- **A minified SVG arc is no longer reported as broken data.** SVGO's
+  `convertPathData`, and minifiers like it, glue an arc's two 0/1 flags to the
+  coordinate after them, which is legal: `A5 5 0 1110 0` means large-arc 1,
+  sweep 1, then 10 0. `parsePathD` tokenized `1110` as one number, so it got 5
+  tokens for its 7 arguments and the subpath was dropped with a "Path N has
+  broken data" warning. `node -e "console.log('M0 0 A5 5 0 1110 0'.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g))"`
+  prints those 9 tokens. The two flag positions now read one character at a
+  time and leave the rest of the token as the next number. A flag that is not
+  the single character `0` or `1` is now reported as broken data instead of
+  being taken as true. That is stricter than before in one case: a large-arc
+  flag written `1.0` used to draw, and now warns and drops the rest of that
+  path, the way any other broken value in a `d` does. The grammar reads a flag
+  as one character, so the `.0` left over is not one. The same `1.0` in
+  the sweep position still parses, as `1` then the coordinate `.0`, which is
+  what the grammar says it is. `npx vitest run tests/path.test.ts` covers both;
+  8 of the 9 new arc cases fail on the previous code.
 
 ## [0.7.0] - 2026-08-28
 

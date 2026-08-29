@@ -579,17 +579,19 @@ SVG's XML/code view in your editor to find it.
 **What happens.** The one subpath (the run of drawing commands between one
 `M`/moveto and the next) that hit the bad value is dropped whole, not just the
 part after it — a subpath cut off mid-draw and closed on its own would be a
-shape you never drew. Any subpath completed before it is kept. Other shapes
-in the file are unaffected.
+shape you never drew. Any subpath completed before it is kept. Any subpath
+**after** it in the same path goes too, which is what "everything from that
+point on" means. Other shapes in the file are unaffected.
 
 **What to do.** Open the file in the tool you made it in and re-save, or
 re-export the design. If a shape looks like it is missing part of its outline
 after import, this is why: check that path first.
 
-If this fires on a normal arc command (`A`) that looks correctly formed, it
-may be a shorthand that glues two flags to the following coordinate with no
-space (e.g. `1110` meaning three separate values) — see "The path `d`
-tokenizer doesn't split glued arc flags" in [tech-debt.md](tech-debt.md).
+An arc command (`A`) also lands here when a flag position holds something
+other than `0` or `1`. Its large-arc flag written `1.0` is the common one: the
+grammar reads a flag as one character, so the `.0` left over is not a flag.
+The shorthand that glues a flag to the coordinate after it (`A5 5 0 1110 0`)
+is fine and parses.
 
 ## Troubleshooting: "The hubcap disc is too small to reach its mounting clips"
 

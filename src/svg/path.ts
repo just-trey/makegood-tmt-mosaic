@@ -147,6 +147,21 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
     }
     return r;
   }
+  // An arc flag is one character, so `1110` is flag 1, flag 1, then the coordinate 10 — the
+  // blind tokenizer reads it as one number. Split the leading digit off and leave the rest in
+  // place as the next token, which nums() then validates (a remainder like `e2`, from a token
+  // that carried an exponent, is not a number and drops the subpath the way any bad one does).
+  function flag(): number {
+    const t = tokens[i];
+    if (t === undefined) throw new MalformedPathData();
+    if (t.length > 1 && (t[0] === '0' || t[0] === '1')) {
+      tokens[i] = t.slice(1);
+      return t[0] === '1' ? 1 : 0;
+    }
+    i++;
+    if (t !== '0' && t !== '1') throw new MalformedPathData();
+    return t === '1' ? 1 : 0;
+  }
   const loops: Loop[] = [];
   let cur: Loop = [];
   let cx = 0,
@@ -240,7 +255,10 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
         prevCtrl = p1;
         prevCmd = cmd;
       } else if (C === 'A') {
-        const [rx, ry, rot, laf, sf, x, y] = nums(7);
+        const [rx, ry, rot] = nums(3);
+        const laf = flag(),
+          sf = flag();
+        const [x, y] = nums(2);
         const p1 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
         flattenArc({ x: cx, y: cy }, rx, ry, rot, !!laf, !!sf, p1, cur);
         cx = p1.x;
