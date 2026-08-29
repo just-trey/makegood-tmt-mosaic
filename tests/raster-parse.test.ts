@@ -175,9 +175,9 @@ describe('parseRasterImage', () => {
     expect(quantized.palette.length).toBeGreaterThan(palette.length);
   });
 
-  // Five of nineteen corpus sources traced with fewer colors than the Colors slider asked for and
-  // said nothing (docs/tech-debt.md, deleted with this change). The trigger is measured against
-  // the quantizer's palette, never the slider.
+  // `painted` drops on five of nineteen corpus sources and nothing said so
+  // (docs/findings/2026-08-20-despeckle-floor.md). The trigger is measured against the colors the
+  // quantizer actually labelled pixels with, never against the slider.
   describe('dropped colors', () => {
     it('counts a color the quantizer found and the trace painted nothing with', () => {
       const img = sprinkled();
@@ -241,13 +241,73 @@ describe('parseRasterImage', () => {
       expect(rasterLostColors(result)).toBe(false);
     });
 
-    it('names one dropped color in the singular and more in the plural', () => {
-      expect(rasterColorLossMessage('a.png', 1)).toContain('1 color in "a.png" was dropped.');
-      expect(rasterColorLossMessage('a.png', 3)).toContain('3 colors in "a.png" were dropped.');
+    // A centroid can win a cluster from the source histogram and label no pixel at all, because
+    // assignment resolves against the blurred copy. Nothing of it was ever traced, so there were no
+    // pieces to lose and no floor to raise: counting it would offer a remedy that does nothing.
+    it('counts nothing for a color that never labelled a pixel', () => {
+      const img = bands(768, 768, ['#0000ff', '#00c000']);
+      for (let p = 0; p < 768 * 768; p++) {
+        const x = p % 768,
+          y = (p / 768) | 0;
+        if ((x * 5 + y * 3) % 101 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
+        const i = p * 4;
+        img.data[i] = 255;
+        img.data[i + 1] = 0;
+        img.data[i + 2] = 0;
+      }
+      for (const detail of [0, 50, 100]) {
+        const params = autoParams(measureImage(img), detail, true);
+        const map = quantize(img, 4, params.blurRadius);
+        const labelled = new Set(map.labels);
+        const result = parseRasterImage(img, { colors: 4, detail });
+
+        // The fixture really does exercise it: one centroid carries no pixel in the label map.
+        expect(map.palette.length).toBe(3);
+        expect(map.palette.filter((_, i) => !labelled.has(i))).toHaveLength(1);
+        expect(result.palette.length).toBe(2);
+        expect(result.droppedColors).toBe(0);
+        expect(rasterLostColors(result)).toBe(false);
+      }
     });
 
-    it('tells the user to raise Detail, the opposite of the capped notice', () => {
-      expect(rasterColorLossMessage('a.png', 1)).toContain('Raise Detail');
+    // A placement puts a nozzle-width floor under the fractional one, and Detail never scales that
+    // half: the color is gone at Detail 0, 50 and 100 alike, so the notice must not offer Detail.
+    it('sends the user to the size, not to Detail, under a printable floor', () => {
+      for (const detail of [0, 50, 100]) {
+        const img = bands(128, 128, ['#0000ff', '#00c000']);
+        for (let p = 0; p < 128 * 128; p++) {
+          const x = p % 128,
+            y = (p / 128) | 0;
+          if ((x * 5 + y * 3) % 17 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
+          const i = p * 4;
+          img.data[i] = 255;
+          img.data[i + 1] = 0;
+          img.data[i + 2] = 0;
+        }
+        const result = parseRasterImage(img, { colors: 4, detail, mmPerPixel: 0.1 });
+
+        expect(result.droppedColors).toBe(1);
+        expect(result.floorReason).toBe('printable');
+        expect(rasterLostColors(result)).toBe(true);
+        const text = rasterColorLossMessage('a.png', result.droppedColors, result.floorReason);
+        expect(text).toContain('Make the design or the part bigger.');
+        expect(text).not.toContain('Detail');
+      }
+    });
+
+    it('names one dropped color in the singular and more in the plural', () => {
+      expect(rasterColorLossMessage('a.png', 1, 'noise')).toContain(
+        '1 color in "a.png" was dropped.',
+      );
+      expect(rasterColorLossMessage('a.png', 3, 'noise')).toContain(
+        '3 colors in "a.png" were dropped.',
+      );
+    });
+
+    it('tells the user to raise Detail under the floor Detail scales', () => {
+      expect(parseRasterImage(sprinkled(), { colors: 4, detail: 0 }).floorReason).toBe('noise');
+      expect(rasterColorLossMessage('a.png', 1, 'noise')).toContain('Raise Detail');
+      // …which is the opposite of what the capped notice, its mutually exclusive sibling, asks for.
       expect(rasterCappedMessage('a.png')).toContain('lower Detail');
     });
   });

@@ -100,7 +100,7 @@ function loadRasterSource(
   else notice(rasterTracedMessage(name), instance.sourceId);
   if (rasterLostColors(result))
     notice(
-      rasterColorLossMessage(name, result.droppedColors),
+      rasterColorLossMessage(name, result.droppedColors, result.floorReason),
       rasterColorLossKey(instance.sourceId),
     );
   return state.sources.find((s) => s.id === instance.sourceId)!;
@@ -200,7 +200,7 @@ describe('rasterControls Detail slider — dropped colors', () => {
     expect(WARNINGS).toEqual([
       { message: rasterTracedMessage('sprinkle.png'), level: 'info', key: source.id },
       {
-        message: rasterColorLossMessage('sprinkle.png', 1),
+        message: rasterColorLossMessage('sprinkle.png', 1, 'noise'),
         level: 'info',
         key: rasterColorLossKey(source.id),
       },
@@ -241,7 +241,7 @@ describe('rasterControls Detail slider — dropped colors', () => {
     // The dropped-color notice names colors the image no longer has any trace of, so it cannot be
     // left standing next to the empty-trace warning that replaced its row's status line.
     const source = loadDotSource('speck.png');
-    notice(rasterColorLossMessage('speck.png', 1), rasterColorLossKey(source.id));
+    notice(rasterColorLossMessage('speck.png', 1, 'noise'), rasterColorLossKey(source.id));
     render();
 
     detailInput(source.id).value = '0';

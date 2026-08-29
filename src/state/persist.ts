@@ -712,7 +712,10 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       if (result.capped) notice(rasterCappedMessage(s.name), s.id);
       else notice(rasterTracedMessage(s.name), s.id);
       if (rasterLostColors(result))
-        notice(rasterColorLossMessage(s.name, result.droppedColors), rasterColorLossKey(s.id));
+        notice(
+          rasterColorLossMessage(s.name, result.droppedColors, result.floorReason),
+          rasterColorLossKey(s.id),
+        );
       sources.push({
         id: s.id,
         kind: s.kind,

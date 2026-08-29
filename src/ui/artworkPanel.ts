@@ -170,7 +170,7 @@ async function applyRasterFile(file: File): Promise<void> {
     else notice(rasterTracedMessage(file.name), instance.sourceId);
     if (rasterLostColors(result))
       notice(
-        rasterColorLossMessage(file.name, result.droppedColors),
+        rasterColorLossMessage(file.name, result.droppedColors, result.floorReason),
         rasterColorLossKey(instance.sourceId),
       );
     afterArtworkLoaded(file.name);

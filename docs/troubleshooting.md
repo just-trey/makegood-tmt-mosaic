@@ -517,17 +517,26 @@ only the ones that still paint something once the despeckle floor has run
 that floor leaves the palette. The readout used to show the smaller number with
 nothing saying it differed from what was asked for.
 
+The last sentence is the one that changes, because the two floors have
+different ways back.
+
 - **Raise Detail.** It sets how small a speck survives, so raising it quarters
   the floor and lets the smaller pieces back through. That is the opposite of
   what "Some detail … was too fine to print…" above asks for, and the two never
   show on the same image: a capped trace keeps that notice and never raises
   this one.
-- **The count is against the quantizer's palette, not the slider.** An image
-  that simply has fewer colors than Colors asks for (a three-color logo at
-  Colors 8) has lost nothing, and never raises this.
-- **On a part, Detail cannot go below the printable floor.** The design's
-  placed size sets a floor Detail does not move. A color dropped at that floor
-  comes back only by making the design or the part bigger.
+- **On a part it ends differently.** The last sentence reads
+  **"Make the design or the part bigger."** The design's placed size puts a
+  nozzle-width floor under the fractional one, and Detail does not scale that
+  half: the color is gone at Detail 0, 50 and 100 alike, so the notice does not
+  offer Detail. Same split as "Nothing in … is big enough to print at this size"
+  below.
+- **The count is against the colors that labelled pixels, not the slider.** An
+  image that simply has fewer colors than Colors asks for (a three-color logo at
+  Colors 8) has lost nothing, and never raises this. Neither does a color that
+  won a cluster and then labelled no pixel at all, which the blur before
+  clustering can produce: nothing of it was ever traced, so there is nothing to
+  bring back.
 
 ## Troubleshooting: "No opaque pixels were found in this image…"
 

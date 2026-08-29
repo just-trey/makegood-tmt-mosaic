@@ -1088,6 +1088,29 @@ placement given the two designs' actual placed footprints, rather than stepping
 a fixed distance and testing for an exact-spot collision. That is a real
 placement search and wants its own change, not a wider constant.
 
+## A capped trace that also drops a color says nothing about the color
+
+`rasterLostColors` ([src/raster/parse.ts](../src/raster/parse.ts)) suppresses the dropped-color
+notice whenever `capped` is set. A trace that both raised its floor and lost a whole color shows
+only `rasterCappedMessage`, which says detail "was merged into its surroundings" and never that a
+color left the palette. This is the half of "a traced image can lose a color with nothing said" that
+the notice did not close.
+
+- **Reproduced synthetically, not on the corpus.** 1024 six-pixel blocks over two flat bands plus
+  one-pixel specks, 320x320 at Colors 5 and Detail 100, gives `capped: true` with
+  `droppedColors: 1` (`npx vitest run tests/raster-parse.test.ts -t "leaves a capped trace"`). No
+  corpus source has been measured doing it. The section below is why it is not ruled out: the cap
+  is a target, not a bound, and the raise can still swallow a color.
+- **Why it is suppressed.** The two notices give opposite remedies. Capped says lower Colors or
+  lower Detail; dropped-color says raise Detail. Both on one image contradict each other.
+- **The same split gives a round trip.** Raising Detail on a dropped-color notice lowers the floor,
+  which raises the component count, which can trip the cap. The next trace is capped, the
+  dropped-color notice is retracted, and the user is told to lower the Detail they just raised —
+  with the color still gone and now unmentioned.
+- Closing it takes one message carrying both facts, or a measured rule for which remedy wins when a
+  trace is capped and short of colors at once. Not a wording change: it needs an answer to whether
+  raising Detail can recover a color on a capped trace at all.
+
 ## `MAX_COMPONENTS` is a target, not the bound its name implies
 
 `traceLabelMap` ([src/raster/trace.ts](../src/raster/trace.ts)) raises the despeckle floor when the

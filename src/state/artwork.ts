@@ -2,6 +2,7 @@ import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState } from '../t
 import { clearBaseColor, state } from './store';
 import { deltaE, hexToLab } from '../color';
 import { parseRasterImage } from '../raster/parse';
+import type { FloorReason } from '../raster/parse';
 import type { RasterImage } from '../raster/types';
 import { currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
@@ -437,7 +438,7 @@ function remapSettingsToPalette(oldPalette: string[], newPalette: string[]): voi
 export function requantizeSource(
   sourceId: string,
   patch: { colors?: number; detail?: number },
-): { capped: boolean; droppedColors: number } | null {
+): { capped: boolean; droppedColors: number; floorReason: FloorReason } | null {
   const source = state.sources.find((s) => s.id === sourceId);
   if (!source || !isRasterSource(source)) return null;
   const colors = patch.colors ?? source.raster.colors;
@@ -476,7 +477,11 @@ export function requantizeSource(
   if (active && active.sourceId === source.id) state.parsed = source.parsed;
   remapSettingsToPalette(oldPalette, result.palette);
   pruneSettingsToPalette();
-  return { capped: result.capped, droppedColors: result.droppedColors };
+  return {
+    capped: result.capped,
+    droppedColors: result.droppedColors,
+    floorReason: result.floorReason,
+  };
 }
 
 /**
