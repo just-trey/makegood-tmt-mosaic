@@ -1,10 +1,10 @@
-# 2026-08-28 tech-debt sweep: 8 items, net section count unchanged
+# 2026-08-28 tech-debt sweep: 8 items, net −2 by section count
 
-**Result:** 8 items from `docs/tech-debt.md` dispatched, 8 PRs merged (#250–#257). Section count **55 → 55**. Five items closed outright, three split or shrunk, five new narrower sections logged. Zero new TODOs, zero new suppressions.
+**Result:** 8 items from `docs/tech-debt.md` dispatched, 8 PRs merged (#250–#257). Section count **53 → 55**. Five items closed outright, three split or shrunk, seven new narrower sections logged. Zero new TODOs, zero new suppressions.
 
 Baseline and final both measured on `main` (d61529b before, f19616e after) with:
 
-- `grep -c '^## ' docs/tech-debt.md` → 55 / 55
+- `grep -c '^## ' docs/tech-debt.md` → 53 / 55 (an earlier draft of this report said 55 / 55; that 55 was read off a working tree before the baseline commit was checked out, and `git show d61529b:docs/tech-debt.md | grep -c '^## '` gives 53)
 - `wc -l docs/tech-debt.md` → 1718 / 1849
 - `grep -rnE 'TODO|FIXME|XXX|HACK' src scripts tests | wc -l` → 0 / 0
 - `grep -rnE 'eslint-disable|@ts-expect-error|@ts-ignore' src scripts tests | wc -l` → 13 / 13 (all the same pre-existing `@ts-expect-error` for plain-JS tooling imports)
@@ -18,11 +18,11 @@ Items split / shrunk:      3   (B, C, H)
 Items skipped:             0   of the 8 selected; 47 sections not attempted, reasons below
 New TODOs/FIXMEs added:    0
 New lint suppressions:     0
-New items logged in doc:   5   (+1 thread carried out of a split section, +1 narrower replacement)
-Net debt change:           0   by section count (5 closed − 5 logged)
+New items logged in doc:   7   (5 new, 1 thread carried out of a split section, 1 narrower replacement)
+Net debt change:          −2   by section count (5 closed − 7 logged)
 ```
 
-By count the sweep is net zero. By content it is not: every closed item was a shipping defect (a wrong cut, a WASM leak, a silent NaN in path data, a missing prime-tower position), and every logged section is narrower than the one it came out of. The count is the wrong instrument for that, and this report says so rather than inflating the closed number.
+By count the sweep is net negative. By content it is not: every closed item was a shipping defect (a wrong cut, a WASM leak, a silent NaN in path data, a missing prime-tower position), and every logged section is narrower than the one it came out of. The count is the wrong instrument for that, and this report says so rather than inflating the closed number.
 
 ## Per item
 
