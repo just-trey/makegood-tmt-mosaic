@@ -879,11 +879,12 @@ The message ends one of two ways, and they ask for different things:
 two similar colors in Colors detected, or sending one to the base, frees space.
 A smaller part on the plate does too, where the size is yours to choose.
 
-**Why it happens.** The check measures each corner against the parts' bounding
-boxes, which over-reports a round part: a disc can be reported as blocking a
-corner it does not reach. That is deliberate for now, since a tower printed
-through a part is worse than one you place yourself, and it is written up in
-[tech-debt.md](tech-debt.md).
+**Why it happens.** The check measures each corner against each part's own
+footprint, drawn a little wider than the real shape. A part with a deep notch in
+it is drawn quite a lot wider, so it can be reported as blocking a corner it
+leaves open. That is on purpose. A tower printed through a part is worse than
+one you place yourself. The tower size the check assumes is nominal, so check
+the real one in your slicer either way.
 
 ## Troubleshooting: "Refusing to write a non-finite coordinate into the exported 3MF."
 

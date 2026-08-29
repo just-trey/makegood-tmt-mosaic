@@ -41,9 +41,9 @@ const TEST_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60">
 
 /**
  * Largest square prime tower that tucks into a plate corner clear of a centred disc. The app's own
- * suggestTowerPos probes a part's BOUNDING BOX, which for a circle always reports every corner
- * occupied; this reports what a round part actually leaves, which is the number the human pass
- * needs. Printed alongside the warning rather than replacing it.
+ * suggestTowerPos measures the real footprint but only ever probes its nominal 60mm square, so it
+ * answers "does a tower fit here" and not "how big"; the human pass needs the size. Printed
+ * alongside whatever the export decided rather than replacing it.
  */
 const cornerTower = (bedW, bedD, diameter) =>
   (Math.hypot(bedW / 2, bedD / 2) - diameter / 2) / Math.SQRT2;

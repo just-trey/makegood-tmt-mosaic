@@ -341,6 +341,61 @@ export const HUBCAP_PLATE: Record<
 };
 
 /**
+ * Directions a part's plate footprint is measured along, for the prime-tower corner search.
+ *
+ * Sixteen axes, so thirty-two supporting half-planes whose intersection wraps the part's CONVEX
+ * HULL to 1/cos(180°/32), 0.48% — on a 220mm hubcap, 0.5mm of radius. Against a concave part it
+ * over-reports by the whole concavity on top of that: `chair-caster-std-left` in its baked pose
+ * measures 1.70x its true footprint (docs/tech-debt.md carries the measurement). Always a superset
+ * of the BODY SOUP, never a subset — the same thing the bounding box measured, and the same
+ * caveat: an inlay filling an edge cut-through is not in the body and can reach a hair past it.
+ *
+ * Derived by quarter-turn rotation rather than from `Math.cos(k * Math.PI / 16)`, because that
+ * gives 6.1e-17 rather than 0 at a right angle. Exact axes are what make a part that FILLS its
+ * bounding box — a rectangle, not merely an axis-aligned one — measure that box rather than
+ * something 1e-14mm² off it. TIE_MM2 would absorb that difference anyway; the axes are exact so
+ * that the equality is a property of the geometry rather than of the tolerance. Any other part
+ * scores no higher, and lower wherever a corner falls in the gap between the hull and the box.
+ */
+const FOOTPRINT_AXIS: { x: number; y: number }[] = [];
+for (let k = 0; k < 8; k++) {
+  const a = (Math.PI * k) / 16;
+  FOOTPRINT_AXIS.push({ x: Math.cos(a), y: Math.sin(a) });
+}
+for (let k = 0; k < 8; k++)
+  FOOTPRINT_AXIS.push({ x: -FOOTPRINT_AXIS[k].y, y: FOOTPRINT_AXIS[k].x });
+
+/** Sutherland-Hodgman: the part of `poly` on the `sign` side of `p·d = limit`. */
+function clipToHalfPlane(
+  poly: { x: number; y: number }[],
+  d: { x: number; y: number },
+  limit: number,
+  sign: number,
+): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i],
+      q = poly[(i + 1) % poly.length];
+    const fp = sign * (p.x * d.x + p.y * d.y - limit);
+    const fq = sign * (q.x * d.x + q.y * d.y - limit);
+    if (fp <= 0) out.push(p);
+    if ((fp < 0 && fq > 0) || (fp > 0 && fq < 0)) {
+      const t = fp / (fp - fq);
+      out.push({ x: p.x + t * (q.x - p.x), y: p.y + t * (q.y - p.y) });
+    }
+  }
+  return out;
+}
+
+/** Absolute shoelace area, so winding doesn't decide the sign. */
+function polygonArea(poly: { x: number; y: number }[]): number {
+  let a = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++)
+    a += poly[j].x * poly[i].y - poly[i].x * poly[j].y;
+  return Math.abs(a) / 2;
+}
+
+/**
  * One combined print-ready .3mf, written as a Bambu Studio *project*. A generic core-spec 3MF
  * makes Bambu Studio pop the "not from Bambu Lab" dialog, drop material colors, auto-rename parts,
  * and pile everything onto one plate, so we write the vendor format it honors:
@@ -401,6 +456,9 @@ export async function build3MFCombined(
     cx: number;
     cy: number;
     minZ: number;
+    /** Support distances along FOOTPRINT_AXIS, in the same rotated frame as cx/cy/w/d. */
+    supportMin: number[];
+    supportMax: number[];
     tx?: number;
     ty?: number;
     tz?: number;
@@ -416,10 +474,21 @@ export async function build3MFCombined(
   function footprintFor(
     part: ExportPart,
     angleDeg: number,
-  ): { R: number[][]; w: number; d: number; cx: number; cy: number; minZ: number } {
+  ): {
+    R: number[][];
+    w: number;
+    d: number;
+    cx: number;
+    cy: number;
+    minZ: number;
+    supportMin: number[];
+    supportMax: number[];
+  } {
     const R = part.plateR ?? rotXthenZ(-90 * part.nsign, angleDeg);
     const tmn = [Infinity, Infinity, Infinity],
       tmx = [-Infinity, -Infinity, -Infinity];
+    const smn = FOOTPRINT_AXIS.map(() => Infinity),
+      smx = FOOTPRINT_AXIS.map(() => -Infinity);
     for (let i = 0; i < part.bodySoup.length; i += 3) {
       const x = part.bodySoup[i],
         y = part.bodySoup[i + 1],
@@ -432,6 +501,11 @@ export async function build3MFCombined(
       for (let k = 0; k < 3; k++) {
         if (p[k] < tmn[k]) tmn[k] = p[k];
         if (p[k] > tmx[k]) tmx[k] = p[k];
+      }
+      for (let a = 0; a < FOOTPRINT_AXIS.length; a++) {
+        const t = p[0] * FOOTPRINT_AXIS[a].x + p[1] * FOOTPRINT_AXIS[a].y;
+        if (t < smn[a]) smn[a] = t;
+        if (t > smx[a]) smx[a] = t;
       }
     }
     // Flush height must account for every sub-mesh, not just the body: a recess cuts into the
@@ -456,6 +530,8 @@ export async function build3MFCombined(
       cx: (tmn[0] + tmx[0]) / 2,
       cy: (tmn[1] + tmx[1]) / 2,
       minZ,
+      supportMin: smn,
+      supportMax: smx,
     };
   }
 
@@ -569,25 +645,41 @@ export async function build3MFCombined(
     // front" can meet inside the very part they measured around. Score against each part's own
     // footprint, not the group bounding box, since two parts with a gap between them (the caster
     // plate) leave corners free that their combined box calls occupied.
-    const overlap = (c: { x: number; y: number }) =>
-      items.reduce((sum, pl) => {
-        const ox =
-          Math.min(pl.tx! + pl.cx + pl.w / 2, c.x + TOWER) -
-          Math.max(pl.tx! + pl.cx - pl.w / 2, c.x);
-        const oy =
-          Math.min(pl.ty! + pl.cy + pl.d / 2, c.y + TOWER) -
-          Math.max(pl.ty! + pl.cy - pl.d / 2, c.y);
-        return sum + Math.max(0, ox) * Math.max(0, oy);
-      }, 0);
+    //
+    // The footprint is FOOTPRINT_AXIS's supporting polygon, not the bounding box, which used to
+    // read a disc as filling the corners a circle never reaches: a 220mm hubcap centred on the
+    // 350x320 H2D bed clears every corner by 14mm and was reported as blocking all four.
+    const one = (pl: Placed, c: { x: number; y: number }): number => {
+      // the square in the part's own rotated frame, where its support distances are measured
+      const x0 = c.x - pl.tx!,
+        y0 = c.y - pl.ty!;
+      let poly = [
+        { x: x0, y: y0 },
+        { x: x0 + TOWER, y: y0 },
+        { x: x0 + TOWER, y: y0 + TOWER },
+        { x: x0, y: y0 + TOWER },
+      ];
+      for (let a = 0; a < FOOTPRINT_AXIS.length; a++) {
+        poly = clipToHalfPlane(poly, FOOTPRINT_AXIS[a], pl.supportMax[a], 1);
+        if (!poly.length) return 0;
+        poly = clipToHalfPlane(poly, FOOTPRINT_AXIS[a], pl.supportMin[a], -1);
+        if (!poly.length) return 0;
+      }
+      return polygonArea(poly);
+    };
+    const overlap = (c: { x: number; y: number }) => items.reduce((sum, pl) => sum + one(pl, c), 0);
     // Inset from the plate edge, and try front-left LAST. A tower at (0, 0) is a position no plate
     // can honour: the front-left of a Bambu bed carries the nozzle-wipe exclusion (roughly
     // 18x28mm). Ordering matters more than the inset, since `reduce` keeps the earlier candidate
     // on a tie, so front-left wins only when strictly freer than all three alternatives.
     //
-    // 20mm, not more, because the margin is not free. Measured against a disc centred on each bed:
-    // on the 256 and 270 plates every corner is blocked even flush, so the inset costs nothing; on
-    // the 350x320 it is the difference between suggesting the free back corner and suggesting
-    // nothing at all.
+    // 20mm, not more, because the margin is not free. It does not clear the exclusion above on
+    // its own — 18mm in X, but the zone runs 28mm deep in Y — so ordering front-left last is
+    // still what keeps the tower out of it, and this is a general "off the border" margin.
+    // Measured against a 220mm disc centred on each bed, back-right corner, `Math.hypot` from the
+    // plate centre to the tower's nearest corner minus the 110mm radius: 256 and 270 stay blocked
+    // even flush (-13.8mm, -3.9mm), and the 350x320 clears either way (+14.2mm inset, +42.4mm
+    // flush). So the inset costs no suggestion on any registered bed.
     const EDGE = 20;
     const far = (span: number) => Math.max(EDGE, span - TOWER - EDGE);
     const corners = [
@@ -596,14 +688,27 @@ export async function build3MFCombined(
       { x: far(plateW), y: EDGE }, // front-right
       { x: EDGE, y: EDGE }, // front-left, the excluded one, last resort
     ];
-    const best = corners.reduce((a, b) => (overlap(b) < overlap(a) ? b : a));
+    // Two corners count as tied unless they differ by more than this, in mm². A round part centred
+    // on its plate overlaps all four corners equally, and the ordering above is only a tie-break
+    // if the arithmetic still says "equal" — a clipped polygon's shoelace area does not, where the
+    // old box arithmetic did. Set at 0, 62 of the 193 discs from 150 to 246mm at 0.5mm steps take
+    // some other corner, front-left — the nozzle-wipe exclusion — included; the "keeps the corner
+    // order" test in tests/generated-parts.test.ts is that sweep. Logging the four areas over it
+    // put the 99 geometric ties within 2.3e-12mm² of each other and the 94 real differences at
+    // 0.157mm² or more, so this sits between the two with ~10^5 to spare either way.
+    const TIE_MM2 = 1e-6;
+    const scored = corners.map((c) => ({ c, area: overlap(c) }));
+    const best = scored.reduce((a, b) => (b.area < a.area - TIE_MM2 ? b : a));
     // A starting point for the human pass, not a promise of clearance: the slicer sizes the real
-    // tower per filament count so TOWER is nominal, and a part's footprint here is its bounding
-    // box, which over-reports a round part. A crowded plate gets a warning rather than a position
-    // that quietly prints through a part. A one-filament plate (the caster plate, no artwork)
-    // prints no tower, so whatever this returns for it is never used.
+    // tower per filament count, so TOWER is nominal and the measured footprint is a superset. A
+    // crowded plate gets a warning rather than a position that quietly prints through a part. A
+    // one-filament plate (the caster plate, no artwork) prints no tower, so whatever this returns
+    // for it is never used.
     const needsTower = platePrintsTower(items);
-    const clear = overlap(best) === 0;
+    // Same tolerance as the ranking, or the two disagree: an earlier corner holding a sub-TIE_MM2
+    // sliver wins the tie against a later corner at exactly 0, and this would then call the plate
+    // blocked while a free corner sits on it. 1e-6mm² is a micron square, which is clear.
+    const clear = best.area <= TIE_MM2;
     // Recorded, not announced. What to tell the user depends on whether the file ends up carrying
     // this position, and that is decided once for the whole export by the `towerBlocked` gate at
     // the bottom of this function: a lone blocked plate still gets its corner written, while a
@@ -613,9 +718,9 @@ export async function build3MFCombined(
       blockedTowers.push({
         names: items.map((pl) => `"${pl.part.name}"`).join(', '),
         plate: `${plateW}×${plateD}mm`,
-        at: best,
+        at: best.c,
       });
-    return { ...best, clear };
+    return { ...best.c, clear };
   }
 
   const useHints = placed.some((pl) => pl.part.plateHint != null);

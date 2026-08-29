@@ -1377,28 +1377,83 @@ budget above a performance concern rather than a correctness one. Upgrading
 turf past 6.5 may move the ceiling but is separately blocked — see the
 `@turf/turf` pin section.
 
-## A round part is scored by its bounding box when placing the prime tower
+## A concave part's prime-tower footprint is scored as its convex hull
 
-`suggestTowerPos` measures each corner's overlap against a part's bounding box,
-which over-reports a disc by the corners the circle never reaches. On the default
-220mm hubcap on the H2D that reads every corner as blocked, so the export writes
-no `wipe_tower_x/y` at all and leaves the slicer to place the tower, when the disc
-in fact clears the back-right corner by **14mm**.
+`suggestTowerPos` ([src/export/threemf.ts](../src/export/threemf.ts)) measures
+each part along `FOOTPRINT_AXIS`'s 16 directions and scores the tower corner
+against the 32 supporting half-planes that result. That wraps a **convex** part
+to 0.48%, which is what closed the round-hubcap item. A concave part is
+over-reported by its whole concavity on top of that.
 
-Measured by review on 2026-08-25, while checking the T0-4 message fix. That fix
-made the app tell the truth about which case happened; it did not make the case
-correct. The 2026-08-24 cycle's **T0-4** is closed on the copy and open here on
-the geometry.
+Shipped chair parts in their baked `plateR` poses. The four casters are the only
+ones that reach `suggestTowerPos`: `chairPlacement.ts`'s generated header says
+two plates have no `primeTowerDelta` and fall back to it, and reading the entries
+shows those are plates 9 and 10, the caster plates. `chair-seat-center` is worse
+and never reaches the search, so it is here as the ceiling rather than as a case
+that bites.
 
-Its own code comment already owns the approximation ("a part's footprint here is
-its bounding box, which over-reports a round part"), and the fallback is
-deliberately conservative: a tower parked through a part is worse than one the
-slicer places. So this is a precision item, not a correctness one, and it costs
-the user a verified position they could have had.
+| Part                     | True projection | Support polygon | Bounding box    |
+| ------------------------ | --------------- | --------------- | --------------- |
+| `chair-caster-std-left`  | 8372 mm²        | 14223 mm² 1.70x | 19422 mm² 2.32x |
+| `chair-caster-std-right` | 8372 mm²        | 14223 mm² 1.70x | 19422 mm² 2.32x |
+| `chair-caster-kit-left`  | 8372 mm²        | 14223 mm² 1.70x | 19422 mm² 2.32x |
+| `chair-caster-kit-right` | 8372 mm²        | 14223 mm² 1.70x | 19422 mm² 2.32x |
+| `chair-seat-center`      | 7868 mm²        | 15191 mm² 1.93x | 44810 mm² 5.70x |
 
-Closing it means scoring the overlap against the part's real footprint rather
-than its bbox, for the parts that have one, most cheaply via the outline
-`hubcapOutline.ts` already computes for the silhouette path.
+**It costs nothing on any shipping part today.** Those two caster plates print
+one filament, so no tower is placed there at all. The reachable case is a hubcap
+**cut to its artwork shape**: a silhouette with a deep notch can be told its
+corners are blocked when the notch leaves one open. Conservative in the right
+direction — a tower parked through a part is worse than one the slicer places —
+so this is a precision item, not a correctness one.
+
+Closing it means a real 2D footprint rather than a support polygon: the
+silhouette outline `hubcapOutline.ts` already builds, mapped through the part's
+plate rotation, with a polygon-polygon overlap in place of the half-plane clip.
+That only helps parts that carry an outline, which is the hubcap and nothing
+else, so it is worth doing when a second concave part reaches the fallback.
+
+Reproduce the table from the repo root:
+
+```bash
+node --input-type=module -e "
+import { readMesh } from './scripts/lib/mesh.mjs';
+const PARTS = [                                             // part, and its baked plateR
+  ['chair-caster-std-left', [[0,0,-1],[0,1,0],[1,0,0]]],
+  ['chair-caster-std-right', [[0,0,1],[0,-1,0],[1,0,0]]],
+  ['chair-caster-kit-left', [[0,0,-1],[0,1,0],[1,0,0]]],
+  ['chair-caster-kit-right', [[0,0,1],[0,-1,0],[1,0,0]]],
+  ['chair-seat-center', [[0,0,-1],[0.707107,0.707107,0],[0.707107,-0.707107,0]]]];
+const AX=[]; for (let k=0;k<8;k++) { const a=Math.PI*k/16; AX.push({x:Math.cos(a),y:Math.sin(a)}); }
+for (let k=0;k<8;k++) AX.push({x:-AX[k].y,y:AX[k].x});      // FOOTPRINT_AXIS, verbatim
+const clip=(P,d,l,s)=>{ const o=[]; for (let i=0;i<P.length;i++) { const A=P[i], B=P[(i+1)%P.length];
+  const fa=s*(A.x*d.x+A.y*d.y-l), fb=s*(B.x*d.x+B.y*d.y-l); if (fa<=0) o.push(A);
+  if ((fa<0&&fb>0)||(fa>0&&fb<0)) { const t=fa/(fa-fb); o.push({x:A.x+t*(B.x-A.x), y:A.y+t*(B.y-A.y)}); } } return o; };
+for (const [id, R] of PARTS) {
+  const v = await readMesh('public/stl/' + id + '.3mf'), p = [];
+  for (let i = 0; i < v.length; i += 3)
+    p.push([v[i]*R[0][0]+v[i+1]*R[1][0]+v[i+2]*R[2][0], v[i]*R[0][1]+v[i+1]*R[1][1]+v[i+2]*R[2][1]]);
+  const x0=Math.min(...p.map(q=>q[0])), x1=Math.max(...p.map(q=>q[0]));
+  const y0=Math.min(...p.map(q=>q[1])), y1=Math.max(...p.map(q=>q[1]));
+  const N=1200, g=new Uint8Array(N*N);                      // true area: rasterise the projection
+  for (let t=0; t<p.length; t+=3) { const [a,b,c]=[p[t],p[t+1],p[t+2]];
+    const gi=(u,lo,hi)=>Math.round((u-lo)/(hi-lo)*N);
+    for (let gy=Math.max(0,gi(Math.min(a[1],b[1],c[1]),y0,y1)-1); gy<=Math.min(N-1,gi(Math.max(a[1],b[1],c[1]),y0,y1)+1); gy++)
+    for (let gx=Math.max(0,gi(Math.min(a[0],b[0],c[0]),x0,x1)-1); gx<=Math.min(N-1,gi(Math.max(a[0],b[0],c[0]),x0,x1)+1); gx++) {
+      const X=x0+((gx+0.5)/N)*(x1-x0), Y=y0+((gy+0.5)/N)*(y1-y0);
+      const d1=(X-b[0])*(a[1]-b[1])-(a[0]-b[0])*(Y-b[1]), d2=(X-c[0])*(b[1]-c[1])-(b[0]-c[0])*(Y-c[1]),
+            d3=(X-a[0])*(c[1]-a[1])-(c[0]-a[0])*(Y-a[1]);
+      if (!((d1<0||d2<0||d3<0)&&(d1>0||d2>0||d3>0))) g[gy*N+gx]=1; } }
+  const mn=AX.map(()=>Infinity), mx=AX.map(()=>-Infinity);
+  for (const q of p) AX.forEach((d,a)=>{ const t=q[0]*d.x+q[1]*d.y; mn[a]=Math.min(mn[a],t); mx[a]=Math.max(mx[a],t); });
+  let P=[{x:x0,y:y0},{x:x1,y:y0},{x:x1,y:y1},{x:x0,y:y1}];
+  AX.forEach((d,a)=>{ P=clip(P,d,mx[a],1); P=clip(P,d,mn[a],-1); });
+  let ar=0; for (let i=0,j=P.length-1;i<P.length;j=i++) ar+=P[j].x*P[i].y-P[i].x*P[j].y;
+  const A0=g.reduce((s,q)=>s+q,0)*((x1-x0)/N)*((y1-y0)/N), A1=Math.abs(ar)/2, A2=(x1-x0)*(y1-y0);
+  console.log(id, { true_mm2:+A0.toFixed(0), support_mm2:+A1.toFixed(0), bbox_mm2:+A2.toFixed(0),
+    support_over:+(A1/A0).toFixed(2), bbox_over:+(A2/A0).toFixed(2) }); }
+"
+```
 
 ## The hubcap's plate is verified on two beds and up to one diameter
 
