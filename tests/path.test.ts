@@ -128,6 +128,70 @@ describe('parsePathD', () => {
       expect(Math.hypot(p.x - 5, p.y - 0)).toBeCloseTo(5, 3);
     }
   });
+
+  it('reads arc flags glued to the following coordinate (SVGO/Illustrator shorthand)', () => {
+    const onMalformed = vi.fn();
+    const glued = parsePathD('M0 0 A5 5 0 1110 0', onMalformed);
+    expect(glued).toEqual(parsePathD('M0 0 A5 5 0 1 1 10 0'));
+    expect(glued[0].length).toBeGreaterThan(1);
+    expect(onMalformed).not.toHaveBeenCalled();
+  });
+
+  it('reads a glued zero flag the same way', () => {
+    const onMalformed = vi.fn();
+    const glued = parsePathD('M0 0 A5 5 0 01 10 0', onMalformed);
+    expect(glued).toEqual(parsePathD('M0 0 A5 5 0 0 1 10 0'));
+    expect(onMalformed).not.toHaveBeenCalled();
+  });
+
+  it('leaves a decimal remainder after a glued flag as the next coordinate', () => {
+    const onMalformed = vi.fn();
+    const glued = parsePathD('M0 0 A5 5 0 11.5 10', onMalformed);
+    expect(glued).toEqual(parsePathD('M0 0 A5 5 0 1 1 0.5 10'));
+    expect(onMalformed).not.toHaveBeenCalled();
+  });
+
+  it('reads glued flags on a relative arc', () => {
+    const onMalformed = vi.fn();
+    const glued = parsePathD('m5 5 a5 5 0 1110 0', onMalformed);
+    expect(glued).toEqual(parsePathD('m5 5 a5 5 0 1 1 10 0'));
+    expect(glued[0][0]).toEqual({ x: 5, y: 5 });
+    expect(onMalformed).not.toHaveBeenCalled();
+  });
+
+  it('still repeats an arc implicitly after a glued one', () => {
+    const onMalformed = vi.fn();
+    const glued = parsePathD('M0 0 A5 5 0 1110 0 5 5 0 110 0', onMalformed);
+    expect(glued).toEqual(parsePathD('M0 0 A5 5 0 1 1 10 0 A5 5 0 1 1 0 0'));
+    expect(onMalformed).not.toHaveBeenCalled();
+  });
+
+  it('reports a flag that is neither 0 nor 1 as broken data', () => {
+    const onMalformed = vi.fn();
+    expect(parsePathD('M0 0 A5 5 0 2 1 10 0', onMalformed)).toEqual([]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a large-arc flag written as a decimal as broken data', () => {
+    // the grammar reads a flag as one character, so `1.0` leaves `.0`, which is not a flag
+    const onMalformed = vi.fn();
+    expect(parsePathD('M0 0 A5 5 0 1.0 1 10 0', onMalformed)).toEqual([]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the same decimal in the sweep position as a flag and a coordinate', () => {
+    const onMalformed = vi.fn();
+    // `1.0 10` is sweep 1 then the coordinate pair `.0 10`, which is what the grammar says
+    const decimal = parsePathD('M0 0 A5 5 0 1 1.0 10', onMalformed);
+    expect(decimal).toEqual(parsePathD('M0 0 A5 5 0 1 1 0 10'));
+    expect(onMalformed).not.toHaveBeenCalled();
+  });
+
+  it('reports an arc that runs out of tokens at a flag as broken data', () => {
+    const onMalformed = vi.fn();
+    expect(parsePathD('M0 0 A5 5 0', onMalformed)).toEqual([]);
+    expect(onMalformed).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('signedArea', () => {
