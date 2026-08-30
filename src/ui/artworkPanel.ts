@@ -168,7 +168,7 @@ async function applyRasterFile(file: File): Promise<void> {
     });
     if (result.capped) notice(rasterCappedMessage(file.name), instance.sourceId);
     else notice(rasterTracedMessage(file.name), instance.sourceId);
-    if (rasterLostColors(result, opts.detail))
+    if (rasterLostColors(result))
       notice(
         rasterColorLossMessage(file.name, result.droppedColors),
         rasterColorLossKey(instance.sourceId),

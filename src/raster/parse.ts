@@ -18,8 +18,13 @@ export interface RasterParseResult {
    * nothing, and no Detail setting invents a color it never had.
    */
   droppedColors: number;
-  /** Which floor the trace ran under, which decides what a dropped color can be recovered by. */
-  floorReason: FloorReason;
+  /**
+   * Whether raising Detail lowers the floor this trace ran under at all, measured rather than
+   * inferred: the floor the same image would get at DETAIL_MAX, against the one it got. False when
+   * a placement's nozzle-width floor pins it (Detail never scales that half) and false at
+   * DETAIL_MAX itself, which is every case where "raise Detail" is not an instruction.
+   */
+  detailLowersFloor: boolean;
   /** Traced components, for the panel's live readout and the bench. */
   componentCount: number;
   /** True when the despeckle floor was raised to stay under MAX_COMPONENTS. */
@@ -118,6 +123,19 @@ export function parseRasterImage(
     floor > fracFloorPx(params, img.w, img.h) ? 'printable' : 'noise';
   if (!components.length) throw new EmptyTraceError(opts.name ?? 'this image', floorReason);
 
+  // What the dropped-color notice's remedy is worth here, asked directly rather than inferred from
+  // which floor binds: the floor this image would get at DETAIL_MAX, against the one it got. A
+  // placement's nozzle floor pinning it and the slider already being at its end are the same answer.
+  const detailLowersFloor =
+    despeckleFloorPx(
+      autoParams(stats, DETAIL_MAX, ranDetailPass),
+      img.w,
+      img.h,
+      stats,
+      DETAIL_MAX,
+      opts.mmPerPixel ?? 0,
+    ) < floor;
+
   const shapes =
     granularity === 'component'
       ? shapesByComponent(components, map.palette)
@@ -158,7 +176,7 @@ export function parseRasterImage(
     },
     palette,
     droppedColors,
-    floorReason,
+    detailLowersFloor,
     componentCount: components.length,
     capped,
     floorPx,
@@ -231,17 +249,15 @@ export function rasterColorLossKey(sourceId: string): string {
  * Whether a finished trace should raise rasterColorLossMessage. Not simply `droppedColors > 0`: it
  * only fires where raising Detail is an answer the user can actually give.
  *
- * Three cases where it is not: a capped trace already carries rasterCappedMessage, whose remedy is
- * the opposite one; under a placement's printable floor Detail moves nothing at all; and at
- * DETAIL_MAX there is no raising left to do. All three stay silent about the color they dropped,
+ * Two cases where it is not: a capped trace already carries rasterCappedMessage, whose remedy is
+ * the opposite one, and a trace whose floor Detail cannot lower — a placement's nozzle-width floor
+ * pinning it, or the slider already at DETAIL_MAX. Both stay silent about the color they dropped,
  * which docs/tech-debt.md carries.
  */
 export function rasterLostColors(
-  result: Pick<RasterParseResult, 'capped' | 'droppedColors' | 'floorReason'>,
-  detail: number,
+  result: Pick<RasterParseResult, 'capped' | 'droppedColors' | 'detailLowersFloor'>,
 ): boolean {
-  if (result.capped || result.floorReason !== 'noise' || detail >= DETAIL_MAX) return false;
-  return result.droppedColors > 0;
+  return !result.capped && result.detailLowersFloor && result.droppedColors > 0;
 }
 
 /**

@@ -188,7 +188,7 @@ describe('parseRasterImage', () => {
       expect(quantized.palette.length).toBe(3);
       expect(result.palette.length).toBe(2);
       expect(result.droppedColors).toBe(1);
-      expect(rasterLostColors(result, detail)).toBe(true);
+      expect(rasterLostColors(result)).toBe(true);
     });
 
     it('counts nothing when every color the quantizer found survives', () => {
@@ -196,7 +196,7 @@ describe('parseRasterImage', () => {
       const result = parseRasterImage(sprinkled(), opts);
       expect(result.palette.length).toBe(3);
       expect(result.droppedColors).toBe(0);
-      expect(rasterLostColors(result, DETAIL_DEFAULT)).toBe(false);
+      expect(rasterLostColors(result)).toBe(false);
     });
 
     it('counts nothing when the image just has fewer colors than Colors asked for', () => {
@@ -208,7 +208,7 @@ describe('parseRasterImage', () => {
       });
       expect(result.palette.length).toBe(2);
       expect(result.droppedColors).toBe(0);
-      expect(rasterLostColors(result, 0)).toBe(false);
+      expect(rasterLostColors(result)).toBe(false);
     });
 
     it('leaves a capped trace to its own notice', () => {
@@ -238,9 +238,10 @@ describe('parseRasterImage', () => {
 
       expect(result.capped).toBe(true);
       expect(result.droppedColors).toBe(1);
-      expect(rasterLostColors(result, 100)).toBe(false);
-      // The cap raise puts `floorPx` (33) above the fractional floor (24) on its own. Reading the
-      // reason off it would call a placement in force on an image that has none.
+      expect(rasterLostColors(result)).toBe(false);
+      // The cap raise puts `floorPx` (33) above the floor that was asked for (24) on its own, so
+      // reading the empty-trace reason off it would call a placement in force on an image that has
+      // none.
       expect(result.floorPx).toBeGreaterThan(
         despeckleFloorPx(
           autoParams(measureImage(img), 100, false),
@@ -251,7 +252,10 @@ describe('parseRasterImage', () => {
           0,
         ),
       );
-      expect(result.floorReason).toBe('noise');
+      // `capped` carries the suppression on its own, not by borrowing another rule's answer.
+      expect(rasterLostColors({ capped: true, droppedColors: 1, detailLowersFloor: true })).toBe(
+        false,
+      );
     });
 
     // A centroid can win a cluster from the source histogram and label no pixel at all, because
@@ -279,7 +283,7 @@ describe('parseRasterImage', () => {
         expect(map.palette.filter((_, i) => !labelled.has(i))).toHaveLength(1);
         expect(result.palette.length).toBe(2);
         expect(result.droppedColors).toBe(0);
-        expect(rasterLostColors(result, detail)).toBe(false);
+        expect(rasterLostColors(result)).toBe(false);
       }
     });
 
@@ -292,8 +296,8 @@ describe('parseRasterImage', () => {
         const result = parseRasterImage(sprinkled(128), { colors: 4, detail, mmPerPixel: 0.1 });
 
         expect(result.droppedColors).toBe(1);
-        expect(result.floorReason).toBe('printable');
-        expect(rasterLostColors(result, detail)).toBe(false);
+        expect(result.detailLowersFloor).toBe(false);
+        expect(rasterLostColors(result)).toBe(false);
       }
     });
 
@@ -311,21 +315,29 @@ describe('parseRasterImage', () => {
       expect(printableFloorPx(0.361)).toBe(1);
       expect(fracFloorPx(autoParams(measureImage(img), DETAIL_DEFAULT, true), 512, 512)).toBe(39);
       expect(result.droppedColors).toBe(1);
-      expect(result.floorReason).toBe('noise');
-      expect(rasterLostColors(result, DETAIL_DEFAULT)).toBe(true);
+      expect(result.detailLowersFloor).toBe(true);
+      expect(rasterLostColors(result)).toBe(true);
     });
 
-    // At the slider's own maximum the message asks for something the panel cannot do. 256px and
-    // 384px both still drop a color there, so it is not a hypothetical.
+    // At the slider's own maximum the message asks for something the panel cannot do, and the same
+    // comparison answers it: the floor at DETAIL_MAX is the floor already in force. 256px and 384px
+    // both still drop a color there, so it is not a hypothetical.
     it('stays silent at DETAIL_MAX, where there is no raising left', () => {
       for (const size of [256, 384]) {
-        const result = parseRasterImage(sprinkled(size), { colors: 4, detail: DETAIL_MAX });
+        const atTop = parseRasterImage(sprinkled(size), { colors: 4, detail: DETAIL_MAX });
+        // Two steps down, not one: at 384px the floor rounds to 6 at both 95 and 100, so 95 is
+        // already a no-op and the notice is withheld there too — the predicate measures the floor
+        // rather than assuming the slider's last step moves it.
+        const below = parseRasterImage(sprinkled(size), { colors: 4, detail: DETAIL_MAX - 10 });
 
-        expect(result.droppedColors).toBe(1);
-        expect(result.capped).toBe(false);
-        expect(result.floorReason).toBe('noise');
-        expect(rasterLostColors(result, DETAIL_MAX)).toBe(false);
-        expect(rasterLostColors(result, DETAIL_MAX - 5)).toBe(true);
+        expect(atTop.droppedColors).toBe(1);
+        expect(atTop.capped).toBe(false);
+        expect(atTop.detailLowersFloor).toBe(false);
+        expect(rasterLostColors(atTop)).toBe(false);
+
+        expect(below.droppedColors).toBe(1);
+        expect(below.detailLowersFloor).toBe(true);
+        expect(rasterLostColors(below)).toBe(true);
       }
     });
 

@@ -1088,18 +1088,17 @@ placement given the two designs' actual placed footprints, rather than stepping
 a fixed distance and testing for an exact-spot collision. That is a real
 placement search and wants its own change, not a wider constant.
 
-## Three traces still drop a color and say nothing about it
+## Two traces still drop a color and say nothing about it
 
 `rasterLostColors` ([src/raster/parse.ts](../src/raster/parse.ts)) raises the dropped-color notice
-only where its one sentence — raise Detail — is both true and available. Three cases are left
-silent, all `droppedColors > 0`. They are the half of "a traced image can lose a color with nothing
-said" that the notice did not close.
+only where its one sentence — raise Detail — is both true and available. Two cases are left silent,
+both `droppedColors > 0`. They are the half of "a traced image can lose a color with nothing said"
+that the notice did not close.
 
-| Case                       | Suppressed by                 | Reproduced by                                                       |
-| -------------------------- | ----------------------------- | ------------------------------------------------------------------- |
-| Capped, and short a color  | `capped`                      | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"`    |
-| A placement's nozzle floor | `floorReason === 'printable'` | `npx vitest run tests/raster-parse.test.ts -t "stays silent under"` |
-| Detail already at the top  | `detail >= DETAIL_MAX`        | `npx vitest run tests/raster-parse.test.ts -t "stays silent at"`    |
+| Case                        | Suppressed by        | Reproduced by                                                    |
+| --------------------------- | -------------------- | ---------------------------------------------------------------- |
+| Capped, and short a color   | `capped`             | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"` |
+| A floor Detail cannot lower | `!detailLowersFloor` | `npx vitest run tests/raster-parse.test.ts -t "stays silent"`    |
 
 - **Capped**: the trace shows `rasterCappedMessage` only, which says detail "was merged into its
   surroundings" and never that a color left the palette. The two remedies are opposites — capped
@@ -1107,23 +1106,29 @@ said" that the notice did not close.
   each other. Reproduced synthetically (1024 six-pixel blocks over two flat bands plus one-pixel
   specks, 320x320 at Colors 5 and Detail 100: `capped: true`, `droppedColors: 1`), never on the
   corpus. The section below is why it is not ruled out: the cap is a target, not a bound.
-- **Printable floor**: a small placement puts the nozzle-width floor above the fractional one, and
-  Detail does not scale that half, so the notice's only sentence would be false. 128px across
-  12.8mm drops a color at Detail 0, 50 and 100 alike. Saying it needs a second message, and that
-  message's remedy is a resize, which does not re-trace — see "The printable despeckle floor is
-  fixed at the moment of the trace" for why the notice would then stand stale.
-- **Detail at its maximum**: the slider is `DETAIL_MIN`-`DETAIL_MAX`, so at the top the remedy is
-  not available and the notice would name an action the panel cannot take. Both 256px and 384px of
-  the sprinkle fixture still drop a color there, so it is not hypothetical. Saying it needs a
-  different sentence — lower Colors, or use a cleaner image — which is `rasterCappedMessage`'s
-  advice arriving by another route, and nothing has measured whether it helps here.
+- **A floor Detail cannot lower** covers two shapes of the same thing, and `detailLowersFloor`
+  measures both rather than inferring either: a placement's nozzle-width floor pinning the floor
+  (128px across 12.8mm drops a color at Detail 0, 50 and 100 alike), and the slider already at
+  `DETAIL_MAX`. Saying either needs a second message, and the placement one's remedy is a resize,
+  which does not re-trace — see "The printable despeckle floor is fixed at the moment of the trace".
+- **A partly-pinned floor still fires, with a weak remedy.** Where the nozzle floor sits just under
+  the fractional one, raising Detail lowers the floor by a little and may not bring the color back.
+  The notice is still true — it says what Detail does, never that the color returns — and no notice
+  can promise recovery, since a quartered floor can still be above a color's pieces. Drawing a "how
+  much movement is enough" line would be an invented constant, so it is left as is. **Unmeasured**:
+  how often that band is where real artwork lands.
 - **The capped split also gives a round trip.** Raising Detail on a dropped-color notice lowers the
   floor, raises the component count, and can trip the cap. The next trace is capped, the notice is
   retracted, and the user is told to lower the Detail they just raised, with the color still gone.
+- **The trigger has never been run against the corpus.** Every test uses a synthetic fixture, and
+  the five sources the notice exists for (dalmatian, zebra, cartoon, gravel, foliage) sit in the
+  gitignored `stubs/`. `scripts/bench-raster.ts` already reports `painted` per source and is where a
+  `droppedColors`/`detailLowersFloor` column would go, which would answer whether the two
+  suppressions above silence any of those five at their own placements. **Unmeasured.**
 - Closing either takes a message carrying both facts, or a measured rule for which remedy wins.
-  None is a wording change: the capped one needs an answer to whether raising Detail can recover a
-  color on a capped trace at all, the printable one needs the re-trace-on-resize item first, and the
-  Detail-at-maximum one needs a measured second remedy.
+  Neither is a wording change: the capped one needs an answer to whether raising Detail can recover
+  a color on a capped trace at all, and the pinned-floor one needs the re-trace-on-resize item
+  first.
 
 ## `MAX_COMPONENTS` is a target, not the bound its name implies
 

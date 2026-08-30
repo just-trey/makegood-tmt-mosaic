@@ -32,11 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Detail. It counts only colors that labelled pixels and then painted none of
   them, so an image with fewer colors than Colors asks for stays quiet, and so
   does a color that won a cluster and labelled nothing. It is raised only where
-  raising Detail is an answer the user can give: not on a capped trace, which
-  keeps its own notice and the opposite remedy; not on a placement small enough
-  that the nozzle-width floor binds, which Detail does not scale; and not at the
-  slider's own maximum. Those three still say nothing about the color they
-  dropped, and `docs/tech-debt.md` carries all of them
+  raising Detail is an answer the user can give, which the trace measures rather
+  than assumes: the floor the same image would get at the top of the slider,
+  against the floor it got. A capped trace keeps its own notice and the opposite
+  remedy. Those two cases still say nothing about the color they dropped, and
+  `docs/tech-debt.md` carries both
   (`npx vitest run tests/raster-parse.test.ts tests/artworkListPanel.test.ts`,
   38 tests).
 - **The prime tower now gets a suggested corner on a round part.** The corner

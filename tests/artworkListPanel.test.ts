@@ -98,7 +98,7 @@ function loadRasterSource(
   // The notices a real load raises (see applyRasterFile) — loadArtworkSource itself is pure state.
   if (result.capped) notice(rasterCappedMessage(name), instance.sourceId);
   else notice(rasterTracedMessage(name), instance.sourceId);
-  if (rasterLostColors(result, opts.detail))
+  if (rasterLostColors(result))
     notice(
       rasterColorLossMessage(name, result.droppedColors),
       rasterColorLossKey(instance.sourceId),

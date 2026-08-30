@@ -519,11 +519,12 @@ only the ones that still paint something once the despeckle floor has run
 that floor leaves the palette. The readout used to show the smaller number with
 nothing saying it differed from what was asked for.
 
-- **Raise Detail.** It sets how small a speck survives, so raising it quarters
-  the floor and lets the smaller pieces back through. That is the opposite of
-  what "Some detail … was too fine to print…" above asks for, and the two never
-  show on the same image: a capped trace keeps that notice and never raises
-  this one.
+- **Raise Detail.** It sets how small a speck survives, so raising it lowers
+  the floor and lets the smaller pieces back through. Up to 4x lower at the top
+  of the slider, and less than that wherever a placement's own floor is already
+  close. That is the opposite of what "Some detail … was too fine to print…"
+  above asks for, and the two never show on the same image: a capped trace keeps
+  that notice and never raises this one.
 - **It does not say the pieces were unprintable, because usually they were
   not.** The floor it fires under is a fraction of the image, not a nozzle
   width. At part scale that fraction is millimetres across.
@@ -533,15 +534,13 @@ nothing saying it differed from what was asked for.
   won a cluster and then labelled no pixel at all, which the blur before
   clustering can produce: nothing of it was ever traced, so there is nothing to
   bring back.
-- **At Detail 100 it is not shown either**, since there is no raising left to
-  do. The color is still dropped, so the readout is still short of the slider.
-- **Placed small, nothing is said at all.** Below roughly a nozzle width per
-  working pixel the placement floor binds instead, Detail moves nothing, and the
-  notice would be false, so it is withheld: 128px across 12.8mm has a printable
-  floor of 16px² against a fractional 2, and drops a color silently at every
-  Detail. The same image at 512px across 185mm has a printable floor of 1px²,
-  the no-op, against a fractional 39, and does raise the notice. Both measured
-  by `npx vitest run tests/raster-parse.test.ts -t "stays silent"` and
+- **Where Detail cannot lower the floor, nothing is said at all.** Two cases:
+  the design is placed small enough that the nozzle-width floor pins the floor
+  (128px across 12.8mm has a printable floor of 16px² against a fractional 2,
+  and drops a color silently at every Detail), or Detail is already at 100. The
+  same image at 512px across 185mm has a printable floor of 1px², the no-op,
+  against a fractional 39, and does raise the notice. Measured by
+  `npx vitest run tests/raster-parse.test.ts -t "stays silent"` and
   `-t "part scale"`. `docs/tech-debt.md` carries it, with the capped case.
 
 ## Troubleshooting: "No opaque pixels were found in this image…"

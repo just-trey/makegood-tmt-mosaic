@@ -248,7 +248,7 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
     // Its own key, so it stands beside whichever of those two this source holds — and so the same
     // dismiss-then-notice order applies to it separately.
     dismissColorLoss(source.id);
-    if (rasterLostColors(result, source.raster.detail))
+    if (rasterLostColors(result))
       notice(
         rasterColorLossMessage(source.name, result.droppedColors),
         rasterColorLossKey(source.id),
