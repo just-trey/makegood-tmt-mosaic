@@ -174,10 +174,32 @@ A zone's spread of surface directions must stay tight enough that flattening
 doesn't fold the surface onto itself, which `flipped == 0` does not check:
 merging left/back/right into one chart makes it fold onto itself over 4.85% of
 its area. Widening one zone is capped by stretch first, which doubles for 5°
-more on the chair's flanks. Measure both before changing the split; numbers in
-[tech-debt.md](tech-debt.md). Don't assume the boundary between two zones is a
-curve you could register across: on the chair, `left` and `back` share 22mm of
-it.
+more on the chair's flanks. Don't assume the boundary between two zones is a
+curve you could register across: on the chair, `left` and `back` share only
+22mm of it in a shared-vertex sense, and zero on the storage boxes, where an
+89.6° corner opens a wedge of surface orientation neither zone's angle limit
+accepts.
+
+Three ways to remove the split were prototyped against the shipped bake and
+measured dead ends, so nobody re-derives them:
+
+- **A cylindrical band** (unwrap left→back→right around the chair like a
+  bottle label) loses too much: only 69.6% of today's surface fits inside
+  `DISTORTION_WARN`, because the chair isn't a cylinder (per-part radii run
+  0.73–1.62× the best-fit R₀).
+- **One merged LSCM zone** unwraps cleanly by every stretch metric (0 flipped
+  triangles, max stretch 1.54) but fails on UV injectivity instead: 4.85% of
+  the chart area is covered by more than one triangle, so a cutter can land on
+  the wrong sheet of surface — worse than the seam it removes.
+- **Cross-chart registration** (keep three charts, give each a rigid offset
+  into a shared UV coordinate) has a real transform (−0.1° rotation, scale
+  1.0074, 1.26mm rms from `left` to `back`) but fails on geometry, not maths:
+  `left`/`back` share only 10 vertices, on a ~22mm stretch of one handle
+  fillet, and zero on the storage boxes.
+
+What's left is a different parameterization family (cone-singularity methods
+like BFF/OptCuts, rather than plain LSCM) — a substantially bigger change than
+any of the three above, and nothing today needs it.
 
 **Hardware variants** (the chair's Standard/Kit caster mounts) show a version
 picker above the part list. Switching reloads only the parts that differ.

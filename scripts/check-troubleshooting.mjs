@@ -8,7 +8,14 @@
 //
 // The check is a substring test, not a rewrite: a doc quote must appear verbatim inside some
 // string src/ ships. Extraction is shared with check-copy.mjs (scripts/lib/copy-strings.mjs) so
-// a message one gate can see is a message the other can see.
+// a message one gate can see is a message the other can see. Only src/**/*.ts is searched, so a
+// message assembled in index.html or a script is not a candidate, and the test is "some shipped
+// string contains this", not "this section's message" -- two messages sharing a long phrase would
+// cover for each other.
+//
+// It checks one direction only. A quote must still ship; nothing checks the reverse, so a new or
+// reworded warning with no doc section at all passes silently -- ship-it's silent-drift table has
+// no row for this file, so that rests on CLAUDE.md's one-section-per-warning rule alone.
 //
 // Usage:
 //   npm run check:troubleshooting
@@ -23,21 +30,32 @@ const ELLIPSIS = '…';
 // drift, so they split the quote instead of being matched, and what survives between them is
 // literal copy that must still ship.
 //
+// Every digit run splits the quote the same way, so a message shipping a REAL number is just as
+// unpinned as an interpolated one: hubcap.ts ships "thinner than 1mm"; changing that to 2mm leaves
+// this gate green with the doc still saying 1mm. Telling a literal number from an interpolated one
+// is not possible from the doc side. `\b[A-Z]\b` was meant for the N-count placeholder and strips
+// every standalone capital, including a checked quote's leading "A " -- it only shortens an
+// anchor, so it can hide drift, never invent it.
+//
 // A quoted span goes too, because this app renders an interpolated name in quotes: `"${label}"`.
 // It is not free. A quoted UI label the message really does ship ("Cut to artwork shape") is
 // stripped the same way, so renaming one in src/ leaves this gate green with the doc stale. That
 // is the sixth mismatch this gate first found, and it is now the one thing it cannot re-verify.
-// Telling the two apart is not possible from the doc side, since both read as a quoted span, so
-// the cost is recorded in docs/tech-debt.md rather than guessed at.
+// Telling the two apart is not possible from the doc side, since both read as a quoted span.
 const PLACEHOLDER = new RegExp(
   `\\s*(?:${ELLIPSIS}|\\([a-z], [a-z]\\)|[\\d.]*\\d[\\d.]*|\\b[A-Z]\\b|"[^"]*")\\s*`,
   'g',
 );
 
 // Below this a fragment is a phrase like "It was put at", which appears in half the file and
-// would pass whatever the app says. Measured by running the gate on 2026-08-28: of the 53 quotes
-// the three forms find, 44 have a fragment this long and 9 do not. What that leaves unpinned is
-// in docs/tech-debt.md.
+// would pass whatever the app says. Re-measured 2026-08-29 (every shipped warn/warnBuild/notice/
+// noticeBuild call site now has its own doc section): of the 104 quotes the three forms find, 85
+// are checked and 19 are skipped, clustering in 9 of 57 sections that end up with no checked quote
+// at all -- including the assembly CSG one, where `"Designs … overlap"` is mostly placeholder.
+// Two are a different cause: a heading with a nested quote (`"… deeper than "Wheel top" goes"`)
+// pairs left-to-right into two fragments too short to pin, and the digit-run rule above applied to
+// a literal format name -- `"Not a valid 3MF: missing 3D/3dmodel.model"` has no real number, but
+// "3MF", "3D" and "3dmodel" each read as digit runs.
 const MIN_ANCHOR = 25;
 
 const norm = (s) => s.replace(/\s+/g, ' ').trim();
@@ -61,8 +79,8 @@ function anchorOf(quote) {
 //
 // Backticked spans are NOT read. In this file they also hold constant names
 // (`HUBCAP_MIN_DIAMETER_MM`), SVG attributes (`viewBox="0 0 755 525"`) and prose fragments, so
-// reading them reported defects that were not there. docs/tech-debt.md records what that leaves
-// unchecked: the feedback panel's two messages are quoted only in a table.
+// reading them reported defects that were not there. That leaves the feedback panel's two
+// messages unchecked, since they're quoted only in a table there.
 const DQUOTES = '"“”';
 const HEADING_QUOTE = new RegExp(`[${DQUOTES}]([^${DQUOTES}]+)[${DQUOTES}]`, 'g');
 const BOLD_QUOTE = new RegExp(`\\*\\*[${DQUOTES}]([^${DQUOTES}]{20,})[${DQUOTES}]\\*\\*`, 'g');

@@ -17,16 +17,25 @@
 //
 // A src/**/*.ts string that is itself markup (an innerHTML template literal) gets the em dash
 // check, plus the shape checks on each title/aria-label/placeholder. Its element text is not
-// measured: see textUnits() for why that was cut, and docs/tech-debt.md for what it leaves
-// uncovered. index.html does not share this hole: parse5 measures its element text directly.
+// measured: see textUnits() for why that was cut. index.html does not share this hole: parse5
+// measures its element text directly. Measured 2026-08-26 against the 220 prose strings src/
+// admits: 78 are markup, only their attributes are read (23 units), and 62 yield nothing at all --
+// including a plain warning in src/svg/parse.ts that counts as markup only because it names an SVG
+// element. Reopening this means locating and parsing the markup fragment inside each template
+// literal, the same parser treatment index.html already gets.
 //
 // Thresholds are measured, not picked. The gate admits 220 prose strings from src/. Against that
 // set:
-//   - MAX_WORDS 20 is CLAUDE.md's existing sentence limit for docs, not a new number
+//   - MAX_WORDS 20 is CLAUDE.md's existing sentence limit for docs, not a new number. It undercounts
+//     a message built from a joined list, since an interpolation is always one word to this gate
+//     (see the MAX_WORDS constant below) -- e.g. `join(', ')`, 9 sites in src/, 5 unbounded
+//     (2026-08-29)
 //   - joins are counted per SENTENCE, not per string: per-string flagged 11, of which 10 were
 //     correct multi-sentence copy. Splitting a run-on in two RAISES the per-string count while
 //     improving the writing, so the string is the wrong denominator
 //   - the comma-splice check needs 4+ words before the comma, or it flags "Thanks, we got it."
+//   - the 25-char prose floor (MIN_PROSE_CHARS below) is measured too: widening it to 21 chars
+//     takes the gate from 220 strings to 239, and none of the 19 more are defects
 //
 // Usage:
 //   npm run check:copy
@@ -34,6 +43,12 @@ import { parse as parseHtml } from 'parse5';
 import { sources, read, eachMessage } from './lib/copy-strings.mjs';
 
 const EM_DASH = '—';
+// flatten()/flattenAll() (copy-strings.mjs) collapse every interpolation to one token, so a message
+// built from a joined list undercounts here. Replicating this gate's own sentences()/words() on `n`
+// hex labels: zeroDepthWarning and edgeCutThroughNotice both run 16/20/21/25 words at n=1/5/6/10,
+// and 21 words at three "Merged (N)" rows. DEFAULT_RASTER_COLORS is six, so an imported photo
+// reaches it. Not a false negative on its own -- the words this gate can see are still real -- but
+// the interpolation itself might have pushed the true count over MAX_WORDS.
 const MAX_WORDS = 20;
 const MAX_JOINS = 1;
 // Below this, a string is an id, a key or a selector, not prose. Shared by every extraction path
@@ -78,11 +93,8 @@ const isGlyph = (t) => t.trim() === EM_DASH;
 // in it: a `>text<` match missed prose before the first tag and after the last, then a quote-aware
 // tag pattern leaked the rest of a tag on `title="depth > 0"`, then the same pattern broke on the
 // apostrophe in "its artwork's shape" and measured a whole <!-- --> comment as copy. Each fix was
-// correct and each uncovered the next. The area was cut rather than patched a fourth time.
-//
-// What that costs is in docs/tech-debt.md: the element text of 78 markup strings goes unchecked,
-// including a plain warning in src/svg/parse.ts that counts as markup only because it names an
-// SVG element.
+// correct and each uncovered the next. The area was cut rather than patched a fourth time. What
+// that costs is measured at the top of this file, next to the other gate thresholds.
 // The attributes a user actually reads, wherever they show up: a markup string's own extraction
 // below, and htmlTextUnits()' parse5 walk further down. One list, so adding a fourth can't land on
 // only one of the two paths.
@@ -100,10 +112,10 @@ function textUnits(markup) {
 }
 
 // index.html's element text used to be pulled with a regex (`>text<`), which was built and
-// reverted for src/ markup strings for the reasons docs/tech-debt.md records: it missed prose
-// before the first tag and after the last, a quote-aware version leaked past `title="depth > 0"`,
-// and a fix for that broke on the apostrophe in "its artwork's shape". A real parser has none of
-// those failure modes, because it already knows where a tag starts and ends.
+// reverted for src/ markup strings for the same three-round reasons recorded above: it missed
+// prose before the first tag and after the last, a quote-aware version leaked past
+// `title="depth > 0"`, and a fix for that broke on the apostrophe in "its artwork's shape". A real
+// parser has none of those failure modes, because it already knows where a tag starts and ends.
 //
 // parse5 directly, not the jsdom already in devDependencies (jsdom uses parse5 under the hood, so
 // this adds no new parsing engine, only a direct import of the one already in node_modules).

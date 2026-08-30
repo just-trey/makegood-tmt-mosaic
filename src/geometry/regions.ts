@@ -670,6 +670,13 @@ export async function computeNetRegionsByColor(
  * near-duplicate reds sit at ΔE 0.4) without touching real differences (snoopy.svg's closest pair
  * is ΔE 91.7). Medium starts banding intentional shading ramps; Strong collapses toward hue
  * families.
+ *
+ * This is a similarity control; the audience's actual question (docs/audience.md) is a slot-count
+ * one -- "I have a 4-slot AMS Lite, make this fit." Measured on two real volunteer SVGs: a 7-color
+ * chair design went None/Slight/Medium/Strong -> 7/7/7/6 slots, a 7-color wheel design -> 8/7/7/7.
+ * Closing that properly means re-deriving these thresholds against a wider sample and either
+ * replacing this slider with a "fit N slots" input that binary-searches a threshold, or adding one
+ * alongside it -- needs real artwork to tune against, not the two samples above.
  */
 export const AUTO_MERGE_LEVELS = [
   { label: 'None', threshold: 0 },

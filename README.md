@@ -115,7 +115,7 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - A design crossing a printed join lines up only as well as the print does.
 - A design can't flow across a zone boundary. Three ways of making it continuous
   were prototyped and measured as dead ends; the numbers are in
-  [docs/tech-debt.md](docs/tech-debt.md).
+  [docs/pipeline.md](docs/pipeline.md).
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.
 - Input parts must be watertight/manifold for assembly cutting.

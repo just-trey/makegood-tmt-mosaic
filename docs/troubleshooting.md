@@ -177,9 +177,8 @@ without an entry the selected assembly kind's roles need. Either way it is a
 **broken deployment**, not a mistake you made: the app used to offer a
 mesh-drop fallback here, but it was removed because the app has no way to
 check an arbitrary mesh is the part it claims to be, and every verified export
-placement is baked against the shipped one (see [tech-debt.md](tech-debt.md),
-"The custom-mesh upload path was removed, and took a placement guard with
-it").
+placement is baked against the shipped one (see the `PlacementReason` comment
+in [src/export/placement.ts](../src/export/placement.ts)).
 
 **What to do.** Reload the page — a flaky connection on first load is the
 common case. If it keeps happening, report it via **Feedback** or **Report a
@@ -1148,16 +1147,17 @@ a defect:
 
 - **"…has no verified print placement under its part id…"** — this part id has
   no baked placement at all. Either a new part kind hasn't had its pose baked
-  yet, or the id itself is wrong. See [tech-debt.md](tech-debt.md), "Per-part
-  export placement is a lookup table … not part of the part definition".
+  yet, or the id itself is wrong. See the `PLACEMENT` provenance comment in
+  [src/export/placement.ts](../src/export/placement.ts) for why it's a
+  lookup table keyed by part id rather than data on the part definition.
 - **"…doesn't match the mesh its verified print placement was baked
   against…"** — a placement exists, but the loaded mesh's fingerprint doesn't
   match what it was baked against. This happens when a shipped part's mesh is
   re-packed without re-running `bake-part-fingerprints.mjs` afterward (see the
   `add-part` skill, "run this after every re-pack of a shipped part, not just
   new ones"). It is deliberately loud rather than silently trusting a stale
-  pose — see [tech-debt.md](tech-debt.md), "The export-placement seal proves a
-  mesh hasn't changed, not that anyone re-verified it".
+  pose — see the header comment in
+  [scripts/bake-part-fingerprints.mjs](../scripts/bake-part-fingerprints.mjs).
 - **"…is generated to the size you chose. No pre-verified print placement
   applies…"** is the third and unremarkable case: a part like the hubcap that
   is built to the dimensions you set has no fixed mesh for a pose to be

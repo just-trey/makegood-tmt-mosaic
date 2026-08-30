@@ -114,8 +114,8 @@ const ANGLES = [
  * 5px is not chosen to make a number pass: it is `CLICK_MOVE_TOLERANCE_PX` in zonePick.ts, the
  * pointer slop the click model already treats as the same place. A dead line narrower than that is
  * inside the aim tolerance the interaction is built on; anything wider is a region the user cannot
- * select and fails. The run width is measured and reported either way — see
- * docs/tech-debt.md, "A part seam is a hairline the zone pick can't be aimed into".
+ * select and fails. The run width is measured and reported either way — see the OCCLUSION_TOL_MM
+ * comment in zonePick.ts for why the seam is a hairline in the first place.
  */
 const HAIRLINE_MAX_PX = 5;
 /** How far out to walk looking for the far side of a null run before calling it unbounded. */

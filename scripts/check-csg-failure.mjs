@@ -8,7 +8,7 @@
 // that reaches the file.
 //
 // What stays untested either way is genuinely malformed mesh input: forcing a fault proves the
-// handler, not that Manifold rejects any particular real mesh. See docs/tech-debt.md.
+// handler, not that Manifold rejects any particular real mesh. There is no fixture for it.
 //
 // Usage:
 //   npm run build && node scripts/check-csg-failure.mjs [outDir]

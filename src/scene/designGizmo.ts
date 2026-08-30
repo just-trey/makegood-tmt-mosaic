@@ -80,7 +80,14 @@ function tokenColor(name: string, fallback: number): number {
  * so the frame is faint where it crosses a light part or a light design. Convention 19 offers
  * three mechanisms and this uses one of them; the one that would fix this case is "contrast
  * against dimmed surroundings", which is a change to the model's materials rather than the
- * gizmo's. Written up in docs/tech-debt.md rather than guessed at here.
+ * gizmo's. Not attempted: the body already renders that same `#b9c0c6`, a grey somebody prints in
+ * (convention 20's "excluded geometry must not look like geometry printing in grey" is untested
+ * either way), so dimming the surroundings risks the exact collision that convention warns
+ * against. How much dim, and only while something is selected, is a decision, not a tweak.
+ *
+ * Convention 21 is also unmet on OFF_SURFACE_COLOR below: it distinguishes itself by hue alone,
+ * which is deliberate (see its own comment) but a conventions review of the shipped screenshots
+ * still flagged it as two different frame treatments in one widget, one on-token and one not.
  *
  * The rotate handle keeps a hue of its own. That is not selection — it is one control among
  * several, and convention 14 wants the manipulation affordances telling themselves apart. It was

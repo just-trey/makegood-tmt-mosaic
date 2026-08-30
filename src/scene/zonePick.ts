@@ -29,6 +29,14 @@ const CLICK_MOVE_TOLERANCE_PX = 5;
  * at most that engine's own tolerance (~1e-4 mm on a part this size). 0.05 mm covers both with
  * room to spare and is an eighth of a nozzle width, so it cannot hide an overlap anyone could
  * print, let alone see.
+ *
+ * A seam between two parts is a hairline this can't be aimed into: each part's chart stops at its
+ * own edge, so a ray down the seam lands on the far part's chart with the near part's edge wall in
+ * front of it and is correctly rejected. Measured 2026-08-08 (`npm run check:zone-occlusion` on the
+ * chair): one 3px-wide unpickable sample at one of four viewpoints, on the back panel centreline.
+ * Not worth fixing at that width — widening this tolerance past the seam clearance would also stop
+ * a genuinely adjacent part from occluding anything. Revisit if a future part's seam clearance
+ * grows enough to make the line visible.
  */
 const OCCLUSION_TOL_MM = 0.05;
 

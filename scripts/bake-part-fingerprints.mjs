@@ -4,9 +4,13 @@
 // derive at runtime" rule as bake-chair-placement.mjs and bake-zones.mjs.
 //
 // This does NOT re-verify placement — it only records the fingerprint of whatever is currently in
-// public/stl/. Re-pack a part (scripts/pack-part.mjs) or change its placement in
-// src/export/chairPlacement.ts / src/export/threemf.ts, re-verify the print pose in the slicer
-// FIRST, then re-run this to reseal:
+// public/stl/, and re-running it will happily re-bless a mesh whose print pose nobody re-checked.
+// Deliberately not wired into pack-part.mjs for that reason (auto-resealing would delete the
+// tripwire). Closing that gap properly means recording *what* was verified -- the reference file
+// and its hash -- alongside the fingerprint, so a reseal against an unchanged reference is
+// distinguishable from one that silently redefines the verified pose. Re-pack a part
+// (scripts/pack-part.mjs) or change its placement in src/export/chairPlacement.ts /
+// src/export/threemf.ts, re-verify the print pose in the slicer FIRST, then re-run this to reseal:
 //
 //   npx vite-node scripts/bake-part-fingerprints.mjs
 //

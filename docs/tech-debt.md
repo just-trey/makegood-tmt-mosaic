@@ -19,6 +19,11 @@ survives as its own section; only the closed part goes. Checking that the diff
 removed only the lines you meant to remove is _not_ this check: it confirms the
 scope of the edit, not that what left was finished.
 
+**A section is a work item, not an archive.** The record of a measurement or an
+approach that lost belongs in a comment next to the code it constrains, or in
+[docs/pipeline.md](pipeline.md) for the geometry pipeline — not here. What stays
+here is closeable: it names code work under a “Closing it” line.
+
 ## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted
 
 `rasterControls().apply()` ([src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts)) must call
@@ -43,95 +48,6 @@ reverted after three rounds each found a real defect:
 
 Closing this means either documenting the ordering constraint as permanent, or re-attempting the
 upsert with a test for each of the three failure modes above written before the fix.
-
-## A Fill tile with no mm size is stretched to one repeat, which is what forceRect exists to prevent
-
-`designMmPerUnit` ([src/geometry/assembly.ts](../src/geometry/assembly.ts))
-auto-fits the document canvas to the design face whenever `userUnitMM` is null,
-and that branch runs for `forceRect` (Fill) too. Its own docstring says the
-opposite: "a tile is a real-world period: radius-driven scaling would stretch
-one period across the whole design."
-
-**Measured** on a 60-unit two-color tile against the footrest's 266x185mm face:
-
-| The tile declares               | mm per unit | Tile period |
-| ------------------------------- | ----------- | ----------- |
-| `width="60mm"`                  | 1.0000      | 60.0mm      |
-| `width="100%"` + viewBox        | 3.0833      | 185.0mm     |
-| `width="60px"` (viewBox or not) | 3.0833      | 185.0mm     |
-
-185mm on a 185mm face is a single repeat, so Fill produces a stretched sticker.
-
-- **Pre-existing**, not introduced by the px-size fix. The `width="100%"` row is
-  what an Affinity export has always done.
-- **Not reachable with a shipped pattern.** All four in `public/patterns/` declare
-  `width="60mm"`, so only a user's own tile hits it.
-- The px-size fix widened the set of files that land here, which is how it was
-  found.
-
-Closing it means deciding what a periodless tile should repeat at, which is a
-real product question and not a constant to invent: the design face is wrong,
-1:1 is a guess, and the honest answer may be to refuse Fill and say so. It is a
-different change from sizing a Sticker, which is why it is written down instead
-of bolted onto that one.
-
-## Two of convention 19's neighbours are open, and one has a second instance
-
-Convention 19 itself is closed in both halves. The viewport frame and its handles are `--text`,
-and the three DOM instances are neutral as of the base-and-selection pass: the filament swatch
-takes a two-tone ring, the artwork row takes `--text` plus `--panel-2`, and the auto-merge label
-keeps its weight and drops `--accent-2`. Every measurement behind the viewport half is on
-`FRAME_COLOR` in [src/scene/designGizmo.ts](../src/scene/designGizmo.ts).
-
-**Convention 20**: greyed-back excluded geometry must not look like geometry printing in grey.
-Untested either way, and the body renders `#b9c0c6`, which is a grey somebody prints in.
-
-**Convention 21**: a meaning-carrying overlay has to be distinguishable from artwork by pattern or
-motion rather than hue alone, and the placement frame's off-surface warning state is still hue
-alone (amber `0xe0a33a`, which matches no token). That one is deliberately as it is: it is a
-warning rather than a selection, and the comment on it defends the choice against a desaturated
-alternative. The sharper version, from a conventions review of the shipped screenshots: with the
-resting frame `--text` and the off-surface frame amber, **the app has two different frame
-treatments in the same widget**, one on-token and one not.
-
-**Dimming the unselected surroundings is the mechanism nobody has used**, and it is what
-convention 20 asks for on its own account. Deliberately not attempted: it changes the model's
-materials in an app whose subject is showing true colour. Convention 20 is the reason: the body
-already renders a grey somebody prints in, so dimming risks creating the exact collision the
-next convention names. "How much dim, and only while something is selected?" is a decision, not a
-tweak.
-
-**Legibility is not the thing to trade against here.** On the part thumbnail
-(`src/ui/shapeThumb.ts`), the neutral measured _more_ legible than the accent it replaced: 7.3:1
-against 5.3:1, where the accent's farthest shaded surface was 2.9:1, under WCAG's 3:1 non-text
-minimum.
-
-## Colors detected needs a paragraph of prose because none of its mechanisms are visible
-
-Convention 5 of [ui-conventions.md](ui-conventions.md): prose in a panel is a symptom, and a panel
-needing several sentences to explain what its controls do to each other is describing a
-relationship that should be visible instead. This is the rubric's own worked example.
-
-Measured before the copy-tightening pass: the hint ran 96 words and carried six mechanisms. Five
-are still carried by copy rather than shown:
-
-| Mechanism                                            | Why copy is carrying it                            |
-| ---------------------------------------------------- | -------------------------------------------------- |
-| Drag one row onto another to merge                   | Drag targets are not indicated                     |
-| The ⠿ grip marks what is draggable                   | A glyph that has to be named in prose              |
-| The "Merge with…" dropdown does the same thing       | Two paths to one result, neither obviously primary |
-| A merged group shares one depth                      | Not shown on the group                             |
-| A merged group prints in its dominant member's color | Not shown on the group                             |
-
-The hint is now two sentences and the detail lives in the help dialog, which is where mechanism
-belongs (convention 6). That is the copy fix and it is done. What remains is the reason the copy
-existed: closing this means making these five legible.
-
-**The sixth is closed.** "→ base" replaced the base while dragging a row onto the Base row added
-to it: two gestures, opposite semantics, same target, and the destructive one was the button, with
-the only warning in a `title` tooltip. Both now add. Nothing was lost by dropping replace, because
-removing a member is what the "×" on each Base row member already does: it was a shortcut that
-destroyed work without saying so, not a capability. `replaceBase` went with it.
 
 ## The placement frame's angle is unrelated to the face it acts on, and it shares the viewport with a second affordance
 
@@ -211,30 +127,6 @@ center or its origin corner isn't pinned down, so the export script only
 checks that a tower lands on the bed, not that a given footprint clears the
 edge. Both reference files put a tower at exactly x = 15 on a 256mm bed,
 which a center-based check would wrongly reject.
-
-## The caster mounts have no design zone, and settling that means settling what the "central rear brace" is
-
-They are absent from
-[scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json)'s
-part list — the other eleven pieces are all in it — on the chair body plan's
-call that "caster mounts and wheel mounts are structural-only". (That plan was
-deleted once the chair shipped; it is in git history.) That call was already
-revised for half of
-it: the wheel mounts now carry `left`, `right`, and `seat`. The casters are
-decoratable too (10,395 mm² of flat upward face at y = 120, the same in both
-variants), so this is worth revisiting.
-What makes it more than adding four lines to the config: that file's `_note`
-reserves a volume for "the central rear brace in the CAD assembly ... the app
-has no part for it, so a zone must never grow onto it", and the bounds it
-quotes (x −90..90, y 92..186, z −663..−455) are exactly the two caster
-mounts' combined bounding box (x −89.9..89.9, y 92..185.6, z −662.5..−454.9,
-the note's numbers rounded outward). Either the note is describing the
-casters — in which case the 1.008 mm gap it protects is the gap _to_ them,
-and raising `seamWeldTolMm` past it would grow a neighbouring zone onto them
-as intended — or there really is an unshipped brace inside that same volume
-and the note stands as written. Resolve that against the CAD assembly before
-touching the tolerance, because it is the tolerance the existing seven zones'
-measured coverage was tuned against; changing it re-bakes all of them.
 
 ## Assembly mode bounds a depth by the part, not by its wall
 
@@ -325,9 +217,10 @@ zone-binding-default comment already warns about) did not finish inside a
 900s timeout. This is the conformal-wrap + per-part CSG path specifically,
 not the flat-mode boolean pass measured above — the per-part cut solids and
 the cross-part zone triangulation both scale with triangle count, and the
-chair's zones carry hundreds of thousands of triangles (see the "1.7 MB raw"
-sidecar-size section below). See the next section for the interaction
-consequence.
+chair's zones carry hundreds of thousands of triangles (size and composition
+are recorded next to the sidecar writer in
+[scripts/bake-zones.mjs](../scripts/bake-zones.mjs)). See the next section for
+the interaction consequence.
 
 **Partly superseded, 2026-08-03.** Those numbers were taken against a zebra
 asset carrying 13.6k vertices per tile, most of which were marching-squares
@@ -346,7 +239,8 @@ result has not been re-measured.
 `withholdFill` (`src/types.ts`), so Fill and the pattern strip are not offered
 on it and no user can reach the numbers above. This is a gate, not a fix: the
 path is unchanged and every measurement here still stands. Clearing the flag
-needs the accumulator-or-worker fix and the "Handle (left)" color loss below.
+needs the accumulator-or-worker fix and the "Handle (left)" color loss (defect
+3 of "Two open defects in the chair / pattern-library workflow", below).
 Sticker on the chair is unaffected and was measured at 19.5s for a full
 five-zone rebuild on the same box, which is why only Fill was withheld.
 
@@ -504,27 +398,7 @@ Closing it means the `addZeroDepthRaise` treatment applied to both, with the
 assembly grouping carrying the part name. Deferred as a second collection
 mechanic rather than bolted onto the PR that landed the first.
 
-## Auto-merge is a similarity control; the user's actual constraint is a slot count
-
-The slider (`None`/`Slight`/`Medium`/`Strong` — `src/ui/colorList.ts`,
-`initColorListPanel`) walks a ΔE similarity threshold, merging colors that
-look alike. Measured against a real 7-color volunteer SVG on the chair,
-2026-08-02: `None` → 7 AMS slots, `Slight` (the default) → 7, `Medium` → 7,
-`Strong` → 6. Second data point, 2026-08-16, a 7-color test SVG on the wheel:
-`None` 8, `Slight` 7, `Medium` 7, `Strong` 7. The audience's actual question — per
-[docs/audience.md](audience.md) — is "I have a 4-slot AMS Lite, make this
-fit," a target-count constraint, not a similarity tolerance. The near-term
-fix landing now (see the plan that added this section) reconciles the
-computed slot count against the selected printer's capacity and warns when
-it's over, which makes the mismatch visible; it does not change what the
-slider controls. Closing this properly means re-deriving the ΔE thresholds
-against a wider sample of real volunteer SVGs and either replacing the
-aggressiveness slider with a "fit N slots" input that binary-searches a
-threshold, or adding one alongside it. Needs real artwork to tune against,
-not just the one measured sample — that's the reason it's deferred rather
-than done alongside the reconciliation warning.
-
-## Two open defects in the chair / pattern-library workflow
+## Two open defects in the chair / pattern-library workflow, and what's blocked on them
 
 Two of four defects the maintainer named on 2026-08-05; the other two are fixed.
 Both features are withheld from the UI for the beta: `chair-body` carries
@@ -547,68 +421,44 @@ maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
    clips to. Note the repo already has curve fitting for the raster tracer
    (`src/raster/curve.ts`); nothing equivalent runs on a zone boundary.
 
+3. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
+   Measured on `MOSAIC_GPU=1` production build, 2026-08-03: zebra in Fill mode
+   on the chair's Left side settles clean apart from a single `Couldn't cut
+color #0a0a0a into "Handle (left)"`, so that part prints without the black.
+   Net improvement over the pre-thinning asset (8 union failures across 4
+   parts down to 1 CSG failure on 1 part), but "one part quietly loses a
+   color" is still the outcome. Different layer from the union problem (this
+   one is Manifold, not turf 6.5). Closing it means reproducing against
+   `?csgfault` (see the `debug-csg-failure` skill) and narrowing to the
+   specific solid Manifold rejects; worth trying first whether the handle's
+   own mesh density or a near-tangent cut at its curvature is what trips it.
+
+4. **The extrude repair never runs on a conformal zone — related,
+   unmeasured on the chair.** `ConformalZoneMapper.buildCutter` absorbs an
+   invalid prism and returns `null`, so the escalating erode ladder that
+   fixed a lost color on the wheel (a `FlatZoneMapper`) buys the chair body
+   nothing: a conformal zone gets no repair attempt and goes straight to the
+   warning in defect 3. Whether the chair body actually hits self-touching
+   regions is unmeasured — nobody has driven dense artwork through a
+   conformal zone to find out. Closing it means either giving the conformal
+   mapper the same retry, or establishing that its null return means
+   something different enough that a retry would be wrong.
+
+5. **`export-chair-examples.mjs` cannot reach Fill — tooling, broken since
+   #137.** The script sets `.artwork-mode` to `fill` and asserts it took, but
+   `chair-body` carries `withholdFill: true` so `artworkListPanel` never
+   renders that select: the step times out. Not a selector to update — the
+   script exists to put several colours on every part so each plate's prime
+   tower sees real swaps, and Sticker on one zone isn't that. Either the Fill
+   defects above close and `withholdFill` comes off, or the script needs a
+   different way to put several colours on every part.
+
 `?kind=chair-body` still reaches the chair, which the `bake-zones` and
 `debug-csg-failure` skills and every chair drive script depend on. Nothing
 public names that parameter: it is out of the README's `?kind=` example list.
 
-Neither flag is the fix. Restoring the chair needs the two defects above closed;
-restoring the pattern library needs the Zebra/Fill color loss below.
-
-## A library part shipped as an STL would shade the slow way
-
-Display shading reads a mesh's own vertex index where one exists
-([src/geometry/creasedNormals.ts](../src/geometry/creasedNormals.ts)): Manifold
-returns one from every boolean, and a packed 3MF carries one in the file.
-Measured in Chrome, that is **8.7x** on five chair parts (234.8ms -> 26.9ms), with
-616 of 864,800 pixels changed in the render and a max channel delta of 8/255:
-[docs/findings/2026-08-23-indexed-crease-normals.md](findings/2026-08-23-indexed-crease-normals.md),
-with the Node attribution behind it in
-[docs/findings/2026-08-23-boolean-pass-and-weld.md](findings/2026-08-23-boolean-pass-and-weld.md).
-
-The larger half of this item closed with that change, and the rest closed with
-the custom-mesh upload path (below): every mesh the app now takes comes from
-`public/stl/parts.json`, all 19 entries are 3MF, and all of them carry an index.
-
-**What is left is one live branch nothing exercises.** `asmLoadPartBuffer`
-offers no index for an `.stl`, because an STL records no sharing at all. Adding
-an STL to the manifest would therefore put that part on three's
-`toCreasedNormals`, which rediscovers the sharing by hashing every corner twice.
-Pack parts as 3MF and it never comes up. Nothing enforces that.
-
-Closing it properly means welding first, and the weld is the expensive half:
-keying a soup's corners is the same work the bench prices at 358ms for the
-chair, so that path lands about **1.5x** rather than 8.7x.
-
-Whatever replaces it has to keep the crease behaviour rather than drop it. A
-blanket weld plus `computeVertexNormals()` was measured and rejected: it melted
-the embossed logo on the storage box. See `CREASE_ANGLE_RAD`.
-
-## The custom-mesh upload path was removed, and took a placement guard with it
-
-Until this release, a failed `fetch('stl/parts.json')` put the assembly panel
-into a manual mode: per-role "+ Add …" buttons and an STL/3MF drop target on
-every part row. It was the only way to reach `asmLoadPartFile`, and so the only
-producer of `AssemblyPart.meshFromUpload`.
-
-Removed because the app cannot check that an arbitrary mesh is the part it
-claims to be, and every verified export pose is keyed to the shipped one. A
-broken deployment was the only route there, so it now reports an error instead.
-
-**What went with it, and is worth knowing before anyone reopens the path:**
-
-- `resolvePlacement`'s `'unverified-upload'` and `'no-baked-placement'` reasons
-  ([src/export/placement.ts](../src/export/placement.ts)). They existed to tell
-  "the user brought their own mesh", a supported case worth a quiet info, from
-  "our own asset drifted", a defect worth a warning. With no uploads the split
-  has no meaning: a foreign mesh on a sealed role is now `'mesh-mismatch'`, and
-  an unsealed one is `'unknown-part'`. Both warn. **Reopening uploads without
-  restoring that split would report every user mesh as a repo defect.**
-- The provenance ordering in `resolvePlacement`, which checked
-  `meshFromUpload` _before_ `libraryPartId` precisely because a drop onto an
-  auto-loaded part deliberately left the old id in place.
-- `asmAdoptMesh`'s upload branch, which cleared `assetPositions`,
-  `edgeCutThroughDepth` and `buildWarning` so a mesh dropped onto a generated
-  role (the hubcap) replaced the part rather than being fed to its builder.
+Neither flag is the fix. Restoring the chair needs defects 1-2 closed;
+restoring the pattern library needs defect 3 closed.
 
 ## The raster edge-density reading depends on how big the file is
 
@@ -762,23 +612,6 @@ load (the confirm dialog and the mid-load kind-switch guard both depend on
 `state.assembly.parts` being the live list). Deferred rather than folded into
 the fields fix, which does not touch `asmLoadFullAssembly`'s contract.
 
-## `export-chair-examples.mjs` cannot reach Fill any more
-
-Broken since #137, not by the beta narrowing, though that branch touched the
-file to fix a different break in it (it selected an option the Part dropdown no
-longer offers).
-
-The script sets `.artwork-mode` to `fill`, and asserts it took. `chair-body`
-carries `withholdFill: true`, so `artworkListPanel` never renders that select
-at all: the step times out, and the explicit `bound.mode !== 'fill'` guard below
-it would throw regardless.
-
-What the script exists for is a Fill design across every zone, sized so each
-plate's prime tower sees the swaps it really will. Sticker on one zone is not
-that. So this is not a selector to update: either the chair's Fill defects close
-and `withholdFill` comes off (see above), or the script needs a different way to
-put several colours on every part.
-
 ## The flat-plate modes ship compiled and unrendered
 
 `disc`, `rect`, `round` and `stl` are all still `ShapeKind`s, with their param
@@ -875,55 +708,6 @@ scale before the one just typed.
   debounce and the cancel path the Colors and Detail sliders already have, or a notice that says
   the design was traced for a different size.
 
-## Restoring a session re-traces every loaded image
-
-Session restore used to do no image work at all, because images were not saved. They are now, as
-the working copy re-encoded to PNG, so restore has to run quantize and trace over each one before
-the app is usable. On a 512px photograph that stage measured ~830ms
-([bench-raster.ts](../scripts/bench-raster.ts)); the round trip on a 96px test image is
-imperceptible. Several photographs in one session would add up.
-
-It happens inside the overlay the restore already shows, so it reads as a slower restore rather
-than a hang. Closing it means caching the traced result alongside the pixels, which is a much
-larger payload (the parsed regions, not a PNG) and would put the 4MB `MAX_BYTES` ceiling back in
-play, so this is a deliberate trade rather than an oversight.
-
-Sizes behind the choice, measured 2026-08-17 in this app: raw RGBA at 1024x1024 is 4.0MB, which is
-the whole session budget. The same pixels as PNG are **24KB** for flat art and **703KB** for a
-photograph; as WebP q92, 4KB and 108KB. PNG ships because it is lossless: a lossy copy would shift
-colours before the quantizer sees them, and the design could come back with a palette, and so a
-filament list, the user never chose.
-
-## The chair's zone sidecar is 1.7 MB raw / 638 KB gzipped
-
-(`public/stl/chair-body-zones.json`), up from 125 KB gzipped when each zone
-stopped at one part. Zones that span the whole chair simply carry more
-triangles. Measured composition: 41% `chartTris`, 30% `uv`, 16% `tris`, 9%
-`verts` — so it is mostly index arrays, and rounding the UVs buys little.
-The real fix is delta-encoding the index arrays and/or a binary format;
-brotli alone would take it to 349 KB if the host serves it. Not urgent (it
-loads async, after first paint, and only for the chair) but it is the
-largest asset in the app. Don't quantise UVs below ~0.01 mm to chase this:
-two chart vertices closer than the quantum would collapse into a
-degenerate UV triangle and the warp's barycentric lookup divides by its
-area.
-
-## `CHART_SNAP_MM` tracks a bake artifact instead of guarding placement
-
-A
-part's baked claim on a zone (`subRegions`) is slightly more generous than the
-triangulation inside it, so the claim outline pokes narrow tendrils past the
-end of the chart. Cutter vertices landing in one are legitimate artwork with
-no triangle under them, so the snap tolerance has to be wide enough to absorb
-the deepest one — 2.150 mm on the shipped bake — which is why it is 3 mm
-rather than the sub-millimetre value a pure misplacement guard would want.
-Fix: re-bake so each claim matches its triangulation, then tighten the
-constant. Deferred because it invalidates every downloaded template and the
-sidecar. Until then `tests/chair-zones.test.ts` pins the measured worst case;
-**measure it by hill-climbing, not by rastering** — the depth is a distance
-function, so a step-_h_ grid under-reports the peak by up to _h_/√2, and a
-1 mm raster put the worst at 1.915 mm against a true 2.150 mm.
-
 ## A seam sliver warns as if artwork were lost
 
 Where two parts' claims on
@@ -956,145 +740,6 @@ counts so "no warnings" is a statement about a build that demonstrably ran. Zero
 cut-solid warnings throughout. That is not proof the remnant can't warn, but it
 is the cheap attempts already spent — read it before repeating them.
 
-## Artwork can't wrap unbroken from one flank around the back to the other, and three ways of fixing it are measured dead ends
-
-The chair carries `left`, `right` and `back` as three zones, so a design
-placed on one stops at the zone boundary. Two approaches were prototyped and
-measured against the shipped bake; both lose, for different reasons, and the
-numbers are recorded here so nobody re-derives them.
-
-**A cylindrical band** (unwrap left→back→right about the chair's vertical
-axis, like a label on a bottle). The geometry cooperates in one respect: a θ
-histogram over the three zones' 35,320 triangles shows a **64°-wide empty
-sector centred on +Z**, the chair's front opening, so the wrap seam lands
-where there is no surface. The best-fit axis is x −0.26 (on the centreline,
-as symmetry demands), z −297.27, with an area-weighted mean radius R₀ of
-231.29 mm. But the chair is not a cylinder: only **39.8%** of the band lies
-within ±10% of R₀ and per-part radii run 0.73–1.62 × R₀. Real per-edge
-stretch, measured with the same metric `orientChart` reports, at a 45°
-outward limit: **max 2.113, mean 1.0800, 27% of edges past the
-`DISTORTION_WARN = 1.1` the bake already flags** — and that buys only
-**69.6%** of the surface the three zones carry today. A radius-profile
-variant (u = r̄(y)·θ) is far worse (max 11–16): r̄ changes too fast where the
-wheel mounts give way to the storage boxes.
-
-**One merged LSCM zone.** The standing objection to this — "the exterior
-wraps into a U and `lscm` needs disk topology" — is **wrong**: the same 64°
-gap means the band never closes, so it is a strip, and a strip is a disk. It
-does unwrap, cleanly by every metric the bake reports: one island, **0
-flipped triangles**, max stretch **1.540** / mean **1.0242** over 100% of the
-surface (p99 is 1.152; only 2.14% of edges exceed 1.1), sidecar _smaller_ at
-1675 KB. It still fails, on something the bake does not measure — **UV
-injectivity**. LSCM is only locally conformal, so `flipped == 0` rules out
-local inversion but not the chart folding onto itself globally. Chart area
-covered by more than one triangle:
-
-| zone                                  | self-overlap           |
-| ------------------------------------- | ---------------------- |
-| shipped `left` / `right` / `back`     | 0.11% / 0.04% / 0.03%  |
-| `front` / `seat` (untouched controls) | 0.01% / 0.01%          |
-| merged band                           | **4.85%** (15,976 mm²) |
-
-On that 4.85%, `ConformalZoneMapper.lookup` finds two triangles and takes
-whichever its grid search reaches first, so artwork cuts onto the wrong sheet
-of surface — worse than the seam it removes. 91% of the overlap is _self_
-overlap within four parts (the two handles and two storage boxes), not
-part-against-part.
-
-**There is no angle window between the two failures.** At the shipped
-45/35/45 the band is connected and overlaps 4.85%; at 40/32/40 it is still
-connected and still overlaps 4.58%, for 12% less surface; at 32/28/32
-`assertSingleIsland` fails with 10,891 of 25,515 triangles reachable. Loose
-enough to stay one island means it folds; tight enough not to fold means it
-severs. The link between each flank and the back runs through the handle's
-curved corner, which is both what forces the fold and what only survives at
-loose angles.
-
-**Cross-chart registration** — keep the three charts, but let one placement
-span them by giving each chart a rigid offset into a shared band coordinate,
-so continuity is carried across the boundary instead of by a single injective
-unwrap. This is the option the two failures above leave open, and the one
-that does not need the band to be a single chart at all.
-The transform is real: the best-fit rigid UV motion from `left` to
-`back` comes out at **−0.1° rotation, scale 1.0074, 1.26 mm rms** (`right`
-0.0°, 1.0062, 1.26 mm), all comfortably inside `CHART_SNAP_MM` and plausibly
-inside what the printed assembly delivers anyway.
-
-It fails on the boundary, not the maths. `left` and `back` share **10
-vertices** — two ~11 mm fillet arcs at y≈346 and y≈454 on one handle, about
-22 mm of contact on zones spanning 500 mm of height. They share **zero**
-vertices on the storage boxes, the largest flank surface, because that corner
-turns **89.6°** (86.3° on the handle) while the two zones' limits sum to 80°:
-there is a wedge of surface orientation neither zone accepts, ~28 cm² on the
-storage box and ~92 cm² on the handle, and that unclaimed wedge is what keeps
-them apart. Widening `back` 35°→45° so the limits sum past the corner
-densifies the contact to 55–64 shared vertices and tightens the fit to
-**0.97–1.03 mm rms**, but does not lengthen it by a millimetre: it stays
-inside y 337–462 with **17 gaps over 8 mm** in it. A design registered across
-that would flow through the handle posts and stop everywhere else — which
-reads as broken, where today's clean stop reads as deliberate.
-
-**Correction to the paragraph above: for a single zone, stretch binds long
-before injectivity does.** Injectivity is the constraint on _merging_ zones,
-not on widening one. Widening the flanks 45°→50°, measured against the
-shipped bake:
-
-| zone        | max stretch | mean stretch | UV self-overlap |
-| ----------- | ----------- | ------------ | --------------- |
-| `left` 45°  | 1.224       | 1.0142       | 0.11%           |
-| `left` 50°  | **2.543**   | **1.2342**   | 0.06%           |
-| `right` 45° | 1.226       | 1.0159       | 0.04%           |
-| `right` 50° | **3.470**   | 1.1170       | 0.05%           |
-
-Overlap stays clean at every setting; stretch doubles for 5°. So the config's
-own coverage-against-stretch framing is right for the per-zone angles after
-all — it is only the _three-way split_ that injectivity explains. Widening
-`back` alone is likewise not the free win it looks like: 35°→45° adds 30% more
-triangles but only **+5.4% area** (960 → 1012 cm², the extra triangles being
-fillet detail) while max stretch goes 1.134 → 1.581.
-
-What is left is a different parameterization family — cone-singularity methods
-(BFF, OptCuts) rather than plain LSCM, aimed at low stretch under wide normal
-spread. That is a substantially bigger change than any of the three
-prototypes, and nothing today needs it: `left`/`right`/`back` at the shipped
-angles are close to the best plain LSCM does on this geometry.
-
-One latent bug found and deliberately **not** fixed: `classifyRegions` in
-[scripts/lib/zonebake.mjs](../scripts/lib/zonebake.mjs) decides outer-vs-hole
-by containment depth parity, which is right for nested SVG subpaths but wrong
-for triangulation boundary loops — a concave part slice has solid lobes
-sitting inside another loop's ring, and parity calls them holes. It cost the
-merged zone 26% and 60% of the two handles' claims. Every shipped claim
-matches its triangulation within 0.3%, so it does not affect the current
-bake; classifying by winding sign instead is the fix if a future zone ever
-trips it.
-
-## A part seam is a hairline the zone pick can't be aimed into
-
-Introduced by the occlusion test in [src/scene/zonePick.ts](../src/scene/zonePick.ts), and the
-price of it. Each part's zone chart stops at that part's own edge, and the chair's parts meet
-across a printed clearance whose widest measured value is 0.530mm — the chair's real seat-centre to
-seat-back gap, recorded in the `_note` of
-[scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json). Not
-`seamWeldTolMm`, which is **0.6**: that is the tolerance picked to clear the gap, and anyone sizing
-a bound against the wrong one of the two gets it wrong by 70 microns. A ray aimed
-exactly down a seam therefore passes _between_ the two charts, lands on the far part's chart, and
-finds the near part's edge wall in front of it — so the pick is correctly rejected, on a surface
-that renders as continuous. The result is a thin dead line along every seam.
-
-Measured 2026-08-08 by `npm run check:zone-occlusion` on the chair, `MOSAIC_GPU=1`, ANGLE D3D12
-(RTX 2060), 1748-sample grid at four viewpoints: **one** sample, at the centreline seam of the
-back panel, **3 px** of unpickable width. Nothing at the other three viewpoints. That check
-excuses a run up to `CLICK_MOVE_TOLERANCE_PX` (5px, the pointer slop the click model already
-treats as the same place) and fails anything wider, reporting the measured width either way — so
-this getting worse is a failing check, not a silent drift.
-
-Not worth fixing at 3px, and the two ways to would both cost more than they buy: widening
-`OCCLUSION_TOL_MM` past the seam clearance would also stop a genuinely adjacent part from
-occluding anything, and closing the gap in the pick surface means welding the charts across seams
-at runtime, which is the bake's job and would re-open the injectivity questions the zone split
-exists to avoid. Revisit if a future part's clearance is large enough to make the line visible.
-
 ## A Fill under a sticker overlaps just like two stickers do, and isn't checked
 
 The overlap check in
@@ -1126,40 +771,6 @@ comparison each design's placed cut regions. A fill's are the tiled ones, so
 this still needs the grid, and the check would have to stop skipping the
 mixed pair. Start by measuring (1) on the wheel, where the fill region is
 small enough to time honestly.
-
-## The instance cascade still seeds a silent overlap in two measured cases
-
-`cascadedOffset` ([src/state/artwork.ts](../src/state/artwork.ts)) steps a new
-design diagonally off one already at that spot. The step used to be a flat 8mm;
-it now scales to the largest design on the surface, capped at
-`CASCADE_CLEAR_MAX_MM` (11.7mm, derived from `INSTANCE_CASCADE_MM` and
-`OVERLAP_WARN_FRACTION`). Where that applies, every pair on the surface lands
-clear. Two cases it does not reach, both measured:
-
-| Case                                    | What happens                                                                                                                                                                                                                                                                             |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Anything over 11.7mm shares the surface | The step falls back to 8mm for everything on it. Two 10mm designs beside the wheel's 276mm default land 8mm apart, 4% covered, under the warn threshold                                                                                                                                  |
-| Two designs of opposite proportions     | Both measure the same across their narrow axis, so no clearance derived from that parts them. It does not take extreme shapes: an 8x11.5mm design and an 11.5x8mm one both read 8mm, step 8mm, and cross in 3.06mm², 3.3% of either. A 5x200mm bar against a 200x5mm bar crosses in 2.5% |
-
-Neither is a regression: both behave exactly as the flat 8mm step did.
-
-**Why a bigger or smarter constant does not close it.** Any single step `s`
-leaves a silent band from `s` to `1.4625s`, since two `w`-wide designs only
-reach `OVERLAP_WARN_FRACTION` at `w >= s/(1-sqrt(fraction))`. One step per
-surface is forced: a step chosen per design puts a later small one between an
-earlier big one's lattice spots and wholly inside it (measured, and pinned by
-"does not park a small design inside one already cascaded past it" in
-`tests/artwork.test.ts`). So the band can be moved but not removed.
-
-Reading the clearance off the wider axis instead of the narrower one parts the
-opposite-proportions pair, at the cost of moving every shaped-alike pair further
-than it needs to go. It is a defensible swap, not a fix: the band above stays
-either way.
-
-**What closing it takes.** Drop the lattice. Search for the nearest free
-placement given the two designs' actual placed footprints, rather than stepping
-a fixed distance and testing for an exact-spot collision. That is a real
-placement search and wants its own change, not a wider constant.
 
 ## Two traces still drop a color and say nothing about it
 
@@ -1260,25 +871,6 @@ it. Two ways past the cap, both after the count was taken:
   ring collapsed are already gone. A transparent speck left under the floor would be a real defect,
   and this guard would miss it.
 
-## The extrude repair never runs on a conformal zone
-
-`ConformalZoneMapper.buildCutter` absorbs an invalid prism inside `tryWarp` and returns `null`, so
-`soup` is falsy and the whole repair block in
-[assembly.ts](../src/geometry/assembly.ts) is skipped. The escalating erode ladder that fixed a
-lost color on the wheel therefore buys the chair body nothing: a flat zone gets two attempts at
-repairing a self-touching region, a conformal one gets none and goes straight to the warning.
-
-- Surfaced by the fix for "Couldn't cut color … into …" on the wheel, which is a
-  `FlatZoneMapper`. Measurements and wrong turns:
-  [2026-08-20 extrude repair erode](findings/2026-08-20-extrude-repair-erode.md).
-- The asymmetry is pre-existing and is acknowledged by the comment beside the warning, which
-  describes the conformal case as "the warp found no surface under part of the region".
-- Whether the chair body actually hits self-touching regions is **unmeasured**. The pattern library
-  and chair body are both hidden from the UI, so nobody has driven dense artwork through a
-  conformal zone to find out.
-- Closing it means either giving the conformal mapper the same retry, or establishing that its
-  null return means something different enough that a retry would be wrong.
-
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
 A 7.3.5 upgrade was fully implemented and benchmarked (2026-07):
@@ -1298,87 +890,6 @@ standing `bench-geometry` script is deliberately not built: it would only ever b
 active turf upgrade, and writing it now costs about what re-deriving it later costs. When an
 upgrade becomes live work it is step one rather than an afterthought, over the
 union-accumulation path at a few shape counts, with the numbers above as the baseline to beat.
-
-## The export-placement seal proves a mesh hasn't changed, not that anyone re-verified it
-
-`PART_FINGERPRINTS` is generated
-([scripts/bake-part-fingerprints.mjs](../scripts/bake-part-fingerprints.mjs)),
-and re-packing a part without resealing is caught loudly — the seal test
-in [tests/placement.test.ts](../tests/placement.test.ts) fails. The gap is the
-step after: resealing is a single command that will happily re-bless a mesh
-whose print pose nobody re-checked in the slicer, which is exactly the
-motion someone takes to make the failing test go away. It is deliberately
-_not_ wired into `pack-part.mjs` for that reason (auto-resealing would
-delete the tripwire), so the guarantee rests on the reminder that script
-prints and on the add-part skill. Closing this properly means recording
-_what_ was verified — the reference file and its hash — alongside the mesh
-fingerprint, so a reseal against an unchanged reference is distinguishable
-from one that silently redefines the verified pose.
-
-## Per-part export placement is a lookup table in [src/export/placement.ts](../src/export/placement.ts), not part of the part definition
-
-It used to be an `if (roleId === …) else if …` chain; the
-chair's fifteen pieces turned that into a `PLACEMENT` record keyed by
-library part id, so adding a part is now a data change rather than a code
-one. It still lives apart from the role it describes, though, which looks
-like it belongs as data on the `AssemblyKind` / role definition instead,
-matching the "one array entry" goal in
-[src/assembly/kinds.ts](../src/assembly/kinds.ts).
-
-**That move fights a deliberate choice, so it is a decision, not a refactor.**
-The table's own provenance comment
-([src/export/placement.ts:33](../src/export/placement.ts#L33)) explains why it
-is keyed by library part id rather than role: the chair's two caster roles
-resolve to a different mesh per hardware variant, and Standard/Kit sit on
-different plates, so a role-keyed table would collapse two verified
-placements into one slot. Moving placement onto the role either has to solve
-that collision or accept losing the per-variant distinction. Re-scope with
-that in mind, or close this as won't-do and let the comment stand as the
-answer.
-
-## Real malformed input never reaches the CSG failure branches
-
-Every branch is now driven against the real Manifold engine:
-[src/geometry/csgFault.ts](../src/geometry/csgFault.ts) arms a forced failure from the URL
-(`?csgfault=difference`, `?csgfault=color-union:1`) at the five points where a real one
-originates, and [scripts/check-csg-failure.mjs](../scripts/check-csg-failure.mjs) drives the app
-through each, exports a real 3MF, and asserts the degradation that reaches the file against an
-undamaged baseline. Run it with `npm run build && node scripts/check-csg-failure.mjs`; the
-`debug-csg-failure` skill is the walkthrough, and that script carries the first run's measured
-numbers.
-
-What that does not prove: the fault points force the _handler_ to run, so they establish the
-degradation and the cleanup, not that Manifold fails on any particular real mesh. Genuinely
-malformed input is still untested, and there is no fixture for it.
-
-## Zebra + Fill still loses one color on "Handle (left)"
-
-**Not currently reachable:** the chair body carries `withholdFill`, so Fill and
-the pattern strip are both withheld there — this needs fixing before that flag
-comes off, not before the next release. The defect below is unchanged.
-
-Left over after the vertex-count fix below, measured on `MOSAIC_GPU=1`
-production build, 2026-08-03: zebra in Fill mode on the chair's Left side
-settles clean apart from a single
-`Couldn't cut color #0a0a0a into "Handle (left)"` (the wording at the time named
-the cut solid) — so that part prints without the black, per the handling described in
-[troubleshooting.md](troubleshooting.md).
-
-This is not a regression from the thinning, but the thinning is what exposed
-it. On the old asset the same part failed _earlier_, at the 2D union
-(now `Couldn't merge the shapes for color #0a0a0a on Handle (left)`), and fell back to
-the unmerged shape — a coarser input that the 3D boolean then swallowed
-without complaint. With the union succeeding, the full-detail pattern reaches
-Manifold and that is where it now fails. Net it is 8 union failures across 4
-parts down to 1 CSG failure on 1 part, but "one part quietly loses a color"
-is still the outcome.
-
-Different layer from the union problem — this one is Manifold, not turf 6.5 —
-so the fix is likely different too. Worth trying first: whether the handle's
-own mesh density or a near-tangent cut at its curvature is what trips it, by
-re-running with the pattern scaled up (fewer, larger stripes on that part).
-Closing it means reproducing against `?csgfault` (see "The CSG failure
-branches" above) and narrowing to the specific solid Manifold rejects.
 
 ## Turf's tile union has a vertex ceiling, and nothing enforces it at runtime
 
@@ -1616,35 +1127,6 @@ Closing this again means clearing, at minimum:
 - The no-op regime: mean width is never under 0.5 (a lone pixel is 2*1/4), so any threshold
   at or under 0.5 must skip the O(w*h) perimeter scan entirely.
 
-## An open feedback panel covers a warning pill's dismiss button
-
-The trigger and the warnings column were made to share the viewport's bottom
-edge (`#right.has-feedback #warnings` lifts the column to `bottom: 44px`). The
-**open popover** was not, and it re-creates the same overlap the lift fixed.
-
-Measured at the app's 900px minimum width, so `#right` is 560px:
-
-| Element             | Horizontal span                       |
-| ------------------- | ------------------------------------- |
-| `#feedback-popover` | 248–548px (300px wide, `right: 12px`) |
-| `.warn-pill`        | 12–532px (`max-width: 520px`)         |
-| `.warn-dismiss`     | ~520px, inside the popover's span     |
-
-Both sit at `bottom: 44px`; the popover is `z-index: 4` against `#warnings`'
-`auto`, so it paints over the pill's right edge. A warning arriving while the
-panel is open cannot be dismissed until the panel is closed.
-
-**Why it was deferred, not patched.** Unlike the trigger, the popover is
-transient and the user opened it: closing it restores the ×, and it is one
-Escape away. The obvious patch (shrinking `#warnings` to `right: 324px` while
-the panel is open) leaves pills 224px wide at 900px, which is worse for reading
-the warning than the overlap is for dismissing it.
-
-**Closing it means deciding where a bottom-right panel and a bottom-left
-warnings column both live**, probably by moving warnings out of the viewport's
-bottom edge entirely. That is a layout question for the whole viewport, not a
-rule on this widget.
-
 ## Numeric coercion has no lint rule
 
 Numeric input guards are enforced by lint and CI in part, not in full. What
@@ -1682,104 +1164,6 @@ on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
 **Closing it** would take either a custom ESLint rule for the coercion pattern,
 or a convention that all external numbers land through one parsing helper that
 the type system can then police.
-
-## The copy gate's scope and known gaps
-
-`npm run check:copy` covers string literals in
-`src/**/*.ts`, visible `index.html` markup, and `<text>` in
-`public/templates/*.svg`. Code, comments, `docs/`, `design-system/` and
-formatting glyphs are all deliberately out of scope.
-
-It checks five things, all one rule: a warning is short sentences that each do
-one job. Em dash, sentence over 20 words, more than one joining mark in a
-sentence, a comma splice, and a lowercase word after a full stop. Thresholds
-were measured, not picked: the gate admits 220 strings from `src/`. Joins are
-counted per sentence: per string flagged 11, of which 10 were correct
-multi-sentence copy, because splitting a run-on raises the per-string count
-while improving the writing.
-
-A markup string in `src/**/*.ts` gets the em dash check, plus the shape checks
-on each `title`, `aria-label` and `placeholder`. Its element text is **not**
-measured.
-
-Splitting markup into text runs was built and reverted there. Three review
-rounds each found a defect in it: a `>text<` match missed prose before the
-first tag and after the last, then a quote-aware tag pattern leaked the rest of
-a tag on `title="depth > 0"`, then that same pattern broke on the apostrophe in
-"its artwork's shape" and measured a whole `<!-- -->` comment as user copy.
-Each fix was correct and each uncovered the next, so the area was cut rather
-than patched a fourth time.
-
-`index.html` no longer shares that hole. Its element text is parsed with
-`parse5` instead of pattern-matched, so nested tags don't leak or fragment a
-sentence, and every visible block runs the full checks. That is what closed
-the help dialog's former exemption (the copy was rewritten and now passes all
-five checks, not just the em dash one). Reopening the `src/**/*.ts` hole would
-take the same parser treatment, but is a separate project: those strings are
-template literals inside TypeScript, not a standalone HTML document, so
-parsing one means locating and extracting the markup fragment first.
-
-**Known gaps**, all measured 2026-08-26 against the 220 prose strings `src/`
-admits.
-
-| Gap                                                   | Size                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Markup element text is unchecked (`src/**/*.ts` only) | 78 of the 220 are markup. Only their attributes are read, giving 23 units, and **62 yield nothing at all**. The case that matters is [svg/parse.ts](../src/svg/parse.ts), a plain warning that counts as markup only because it names an SVG element. Reopening this means locating and parsing the markup fragment inside each template literal                                                                                                                                                    |
-| Prose filter is a heuristic                           | A whole string of 25 characters or fewer is unchecked. Admitting 21 to 25 takes the gate from 220 strings to 239, so 19 more, none of them defects. Measure on flattened strings: counting raw literals gives 14, a different universe                                                                                                                                                                                                                                                              |
-| Imperative list is closed                             | An instruction using a verb outside it reads as clean                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| An interpolation counts as one word                   | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts. `grep -rn "join(', ')" src/` finds 9 sites, 5 of them unbounded (2026-08-29). Replicating the gate's own `sentences()`/`words()` on `n` hex labels: `zeroDepthWarning` and `edgeCutThroughNotice` both run 16/20/21/25 words at n=1/5/6/10, and 21 at three `Merged (N)` rows. Six colours is `DEFAULT_RASTER_COLORS`, so an imported photo reaches it |
-| Constants resolve within one file only                | A suffix imported from another module is still one token. A name bound twice, or bound with `let`, is skipped rather than guessed: a wrong substitution invents defects that are not there                                                                                                                                                                                                                                                                                                          |
-
-The last one is the shape of a gap that already cost something. `flatten()` used
-to collapse **every** non-literal operand, so a message finished by a shared
-suffix was only ever measured in halves. Two defects shipped through it, a
-two-join sentence in [placement.ts](../src/export/placement.ts) and a dangling
-clause in [exportPanel.ts](../src/ui/exportPanel.ts), and seven review rounds
-did not catch either. A reviewer reading the composed string by hand did.
-
-## The troubleshooting-quote gate's scope and known gaps
-
-`npm run check:troubleshooting` pins every message
-[docs/troubleshooting.md](troubleshooting.md) quotes to a string `src/` still
-ships. It reads three quoting forms: the `## Troubleshooting:` heading, the
-italic `Full text: _"..."_` quote, and a bold quoted sentence.
-
-Matching is a substring test on the quote's **longest literal fragment**. The
-doc writes a real example where the app interpolates, so a number (`0.20 mm`,
-`HTTP 429`), a bare capital standing in for a count (`N filament slots`), a
-coordinate pair and the ellipsis all split the quote rather than being matched.
-
-Re-measured 2026-08-29, by running `npm run check:troubleshooting` after every
-shipped `warn`/`warnBuild`/`notice`/`noticeBuild` call site got its own doc
-section (13 landed in this pass): of the **104** quotes the three forms find
-across both heading levels, **85 are checked** against 2577 shipped strings
-and **19 are skipped** as too short to pin. The gate found 6
-real mismatches on its first run, all of them punctuation the doc had typed by
-hand. Five were an ASCII apostrophe where the message ships a typographic one
-(`artwork's` against `artwork’s`). The sixth was single quotes where the
-message ships double (`'Cut to artwork shape'` against `"Cut to artwork
-shape"`), which is
-not the same substitution. A user pasting the message they saw would not have
-found any of those sections.
-
-**Known gaps.**
-
-| Gap                                        | Size and why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Backticked spans are not read              | The feedback panel's two messages are quoted only in a table, so nothing pins them. Reading backticks was tried and reverted: in this file they also hold constant names (`HUBCAP_MIN_DIAMETER_MM`) and SVG attributes, which reported defects that were not there                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| A quote with no 25-character fragment      | 19 of 104, and they cluster: **9 of the 57 sections end up with no checked quote at all**, including the assembly CSG one. `"Designs … overlap"` is mostly placeholder, so there is nothing long enough to pin without matching a phrase that appears in half the file. One of the nine is a different cause: a heading with a nested quote (`"… deeper than "Wheel top" goes"`) is paired left to right, which splits it into two fragments too short to pin. Another is the digit-run cause below applied to a literal file format name: `"Not a valid 3MF: missing 3D/3dmodel.model"` has no real number in it, but "3MF", "3D" and "3dmodel" each read as a digit run, shredding it the same way |
-| Only `src/**/*.ts` is searched             | A message assembled in `index.html` or a script is not a candidate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| A quote can match the wrong message        | The test is "some shipped string contains this", not "this section's message". Two messages sharing a long phrase would cover for each other                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| It checks one direction only               | A quote must still ship. Nothing checks the reverse, so a **new or reworded warning with no section at all** passes. Nothing covers that half mechanically: `ship-it`'s silent-drift table has no troubleshooting.md row, so it rests on CLAUDE.md's one-section-per-warning rule alone                                                                                                                                                                                                                                                                                                                                                                                                              |
-| A literal number is read as a placeholder  | Every digit run splits the quote, so a message that ships a real number is unpinned on it. `hubcap.ts` ships "thinner than 1mm"; changing that to 2mm leaves the gate green with the doc still saying 1mm. Telling a literal number from an interpolated one is not possible from the doc side                                                                                                                                                                                                                                                                                                                                                                                                       |
-| A quoted UI label is read as a placeholder | Every quoted span is stripped, because the app renders an interpolated name as `"${label}"`. A label the message really ships is stripped identically, so renaming `"Cut to artwork shape"` in src/ leaves the gate green with the doc stale. That is one of the six mismatches this gate first found, and the one thing it cannot re-verify                                                                                                                                                                                                                                                                                                                                                         |
-| A cross-file move reads as drift           | The only **false positive** class. `stringConsts` resolves a suffix within one file, so moving a message constant to another module, or rebinding it with `let`, collapses it to a token and the quote stops matching while the shipped copy is byte-identical. The failure text says to check for a move before rewriting the doc. Closing it needs a full `ts.createProgram`, which the copy gate rejected as too heavy                                                                                                                                                                                                                                                                            |
-| Any standalone capital splits a quote      | `\b[A-Z]\b` was meant for the `N` count placeholder and strips every one, including the leading "A " of 2 of the 85 checked quotes. It only shortens an anchor, so it can hide drift, never invent it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Correlated ternaries expand independently  | One message with four ternaries on the same flag has 2 real wordings and `flattenAll` emits 16, so the gate accepts a doc quote mixing singular and plural. It only ever makes the gate more permissive, never wrong                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-
-**Closing the first one** means a quoting convention the gate can tell apart
-from a constant name, not a cleverer regex. That was the failure mode of the
-copy gate's markup splitting, three rounds running.
 
 ## A regenerated source mesh would leave its rotated copies on the old geometry
 

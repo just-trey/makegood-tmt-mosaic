@@ -71,6 +71,11 @@ export const PLACEMENT: Record<string, PartPlacement> = {
  *     sync with constants a human verified, which tests/placement.test.ts refuses to let ship —
  *     loud warning if one ever escapes anyway.
  */
+// Before the custom-mesh upload path was removed (no way left to check an arbitrary mesh is the
+// part it claims to be), 'unverified-upload' and 'no-baked-placement' split "the user brought
+// their own mesh" (a supported case, quiet info) from "our own asset drifted" (a defect, warned).
+// Reopening uploads without restoring that split would report every user mesh as a repo defect —
+// 'mesh-mismatch' below is not a safe stand-in for it.
 export type PlacementReason =
   | 'unknown-part'
   | 'mesh-mismatch'
