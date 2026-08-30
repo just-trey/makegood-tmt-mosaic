@@ -192,6 +192,61 @@ describe('parsePathD', () => {
     expect(parsePathD('M0 0 A5 5 0', onMalformed)).toEqual([]);
     expect(onMalformed).toHaveBeenCalledTimes(1);
   });
+
+  // The flattened tail from the last visit to (20,20), which is where the command under test
+  // starts, plus how far that tail bows off the straight chord y = x it should be sitting on.
+  function tailFrom20(d: string): { points: number; maxOffChord: number } {
+    const pts = parsePathD(d)[0];
+    let start = -1;
+    pts.forEach((p, k) => {
+      if (Math.abs(p.x - 20) < 1e-9 && Math.abs(p.y - 20) < 1e-9) start = k;
+    });
+    const tail = pts.slice(start);
+    return {
+      points: tail.length,
+      maxOffChord: Math.max(...tail.map((p) => Math.abs(p.x - p.y) / Math.SQRT2)),
+    };
+  }
+
+  it('does not reflect a control point across an arc into an S', () => {
+    // Spec: an S whose previous command is not C/c/S/s starts at the current point. The L path
+    // is the shape both should have; before the fix the arc left C's control point live and the
+    // S bowed 15.67 units off the chord over 16 points.
+    const viaArc = tailFrom20('M0 0 C0 50 0 50 10 10 A5 5 0 0 1 20 20 S30 30 40 40');
+    const viaLine = tailFrom20('M0 0 C0 50 0 50 10 10 L20 20 S30 30 40 40');
+    expect(viaLine).toEqual({ points: 2, maxOffChord: 0 });
+    expect(viaArc).toEqual(viaLine);
+  });
+
+  it('does not reflect a control point across an arc into a T', () => {
+    const viaArc = tailFrom20('M0 0 Q0 50 10 10 A5 5 0 0 1 20 20 T40 40');
+    const viaLine = tailFrom20('M0 0 Q0 50 10 10 L20 20 T40 40');
+    expect(viaLine).toEqual({ points: 2, maxOffChord: 0 });
+    expect(viaArc).toEqual(viaLine);
+  });
+
+  it('starts an S after a quadratic at the current point, not at the quadratic control point', () => {
+    // S only reflects after C/c/S/s. After a Q the first control point is the current point,
+    // which is exactly what this explicit C spells out.
+    expect(parsePathD('M0 0 Q0 20 10 10 S30 0 40 10')).toEqual(
+      parsePathD('M0 0 Q0 20 10 10 C10 10 30 0 40 10'),
+    );
+  });
+
+  it('starts a T after a cubic at the current point, not at the cubic control point', () => {
+    expect(parsePathD('M0 0 C0 20 10 20 10 10 T20 10')).toEqual(
+      parsePathD('M0 0 C0 20 10 20 10 10 Q10 10 20 10'),
+    );
+  });
+
+  it('reads an exponent in either case', () => {
+    const onMalformed = vi.fn();
+    const lower = parsePathD('M0 0 L1e2 0', onMalformed);
+    const upper = parsePathD('M0 0 L1E2 0', onMalformed);
+    expect(lower[0][1]).toEqual({ x: 100, y: 0 });
+    expect(upper).toEqual(lower);
+    expect(onMalformed).not.toHaveBeenCalled();
+  });
 });
 
 describe('signedArea', () => {

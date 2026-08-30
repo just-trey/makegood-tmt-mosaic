@@ -136,7 +136,7 @@ class MalformedPathData extends Error {}
  * hit the bad data, keeping every subpath already closed, and fires `onMalformed` once.
  */
 export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
-  const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g) || [];
+  const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:[eE][-+]?\d+)?/g) || [];
   let i = 0;
   function nums(n: number): number[] {
     const r: number[] = [];
@@ -170,6 +170,9 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
     startY = 0;
   let prevCmd: string | null = null,
     prevCtrl: Pt | null = null;
+  // S reflects only after C/c/S/s and T only after Q/q/T/t (SVG 1.1 8.3.6): the smooth
+  // shorthands do not read each other's control point across families.
+  let prevCtrlKind: 'cubic' | 'quad' | null = null;
   try {
     while (i < tokens.length) {
       let cmd: string | null = tokens[i];
@@ -221,18 +224,21 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
         cx = p3.x;
         cy = p3.y;
         prevCtrl = p2;
+        prevCtrlKind = 'cubic';
         prevCmd = cmd;
       } else if (C === 'S') {
         const [x2, y2, x, y] = nums(4);
-        const p1: Pt = prevCtrl
-          ? { x: 2 * cx - prevCtrl.x, y: 2 * cy - prevCtrl.y }
-          : { x: cx, y: cy };
+        const p1: Pt =
+          prevCtrl && prevCtrlKind === 'cubic'
+            ? { x: 2 * cx - prevCtrl.x, y: 2 * cy - prevCtrl.y }
+            : { x: cx, y: cy };
         const p2 = { x: rel ? cx + x2 : x2, y: rel ? cy + y2 : y2 };
         const p3 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
         flattenCubic({ x: cx, y: cy }, p1, p2, p3, cur);
         cx = p3.x;
         cy = p3.y;
         prevCtrl = p2;
+        prevCtrlKind = 'cubic';
         prevCmd = cmd;
       } else if (C === 'Q') {
         const [x1, y1, x, y] = nums(4);
@@ -242,17 +248,20 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
         cx = p2.x;
         cy = p2.y;
         prevCtrl = p1;
+        prevCtrlKind = 'quad';
         prevCmd = cmd;
       } else if (C === 'T') {
         const [x, y] = nums(2);
-        const p1: Pt = prevCtrl
-          ? { x: 2 * cx - prevCtrl.x, y: 2 * cy - prevCtrl.y }
-          : { x: cx, y: cy };
+        const p1: Pt =
+          prevCtrl && prevCtrlKind === 'quad'
+            ? { x: 2 * cx - prevCtrl.x, y: 2 * cy - prevCtrl.y }
+            : { x: cx, y: cy };
         const p2 = { x: rel ? cx + x : x, y: rel ? cy + y : y };
         flattenQuad({ x: cx, y: cy }, p1, p2, cur);
         cx = p2.x;
         cy = p2.y;
         prevCtrl = p1;
+        prevCtrlKind = 'quad';
         prevCmd = cmd;
       } else if (C === 'A') {
         const [rx, ry, rot] = nums(3);
@@ -273,7 +282,10 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
         i++;
         continue;
       }
-      if (C !== 'C' && C !== 'S' && C !== 'Q' && C !== 'T' && C !== 'A') prevCtrl = null;
+      if (C !== 'C' && C !== 'S' && C !== 'Q' && C !== 'T') {
+        prevCtrl = null;
+        prevCtrlKind = null;
+      }
     }
     if (cur.length) loops.push(cur);
   } catch (e) {

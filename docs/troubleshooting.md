@@ -687,10 +687,10 @@ so it was skipped."_
 printable region — so it cannot trace an element filled with a gradient or a
 pattern. Rather than guess at an average color, that one shape is left out.
 
-**What you get.** Only that shape is skipped. The number in the message
-counts filled shapes in document order, so opening the file's XML/code view
-and counting down to it finds the shape. Everything else in the file loads
-and cuts normally.
+**What you get.** Only that shape is skipped. The number in the message counts
+every shape element in document order — hidden ones and clip-mask ones
+included — so opening the file's XML/code view and counting down from the top
+finds the shape. Everything else in the file loads and cuts normally.
 
 **What to do.** In your editor, flatten the gradient or pattern to a single
 flat fill (a "rasterize" or "expand" style operation, or a manual re-fill),
@@ -809,9 +809,9 @@ and 25% wrong with nothing said. A design three times too big gets noticed.
 
 A `<path>` element's `d` attribute has a coordinate that isn't a number, most
 often a truncated or hand-edited file (a save interrupted mid-write, a value
-deleted while editing the raw XML). N is that path's position among the
-`<path>` elements in the file, counting only ones with a real fill — open the
-SVG's XML/code view in your editor to find it.
+deleted while editing the raw XML). N is that path's position among **all** the
+`<path>` elements in the file, hidden ones and clip-mask ones included — open
+the SVG's XML/code view in your editor and count from the top to find it.
 
 **What happens.** The one subpath (the run of drawing commands between one
 `M`/moveto and the next) that hit the bad value is dropped whole, not just the
