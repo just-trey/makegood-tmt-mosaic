@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { state } from '../state/store';
+import { SCALE_MAX_PCT, SCALE_MIN_PCT, state } from '../state/store';
 import { scheduleRebuild, isRebuildLikelySlow } from '../app/scheduler';
 import {
   addSceneOverlay,
@@ -12,11 +12,6 @@ import {
 } from './viewport';
 import { computeFaceFrame, type FaceFrame } from './faceFrame';
 import { track } from '../analytics/track';
-
-// Scale is a clamped slider pair (25–400%) — keep gizmo drags inside the same range so the thumb
-// and the value never disagree.
-const SCALE_MIN = 25;
-const SCALE_MAX = 400;
 
 type DragMode = 'move' | 'scale' | 'rotate';
 
@@ -459,7 +454,7 @@ function onPointerMove(e: PointerEvent): void {
   } else if (drag.mode === 'scale') {
     const dist = Math.hypot(du, dv);
     const ratio = drag.startDist > 1e-3 ? dist / drag.startDist : 1;
-    state.scalePct = Math.min(Math.max(drag.startScalePct * ratio, SCALE_MIN), SCALE_MAX);
+    state.scalePct = Math.min(Math.max(drag.startScalePct * ratio, SCALE_MIN_PCT), SCALE_MAX_PCT);
     const k = state.scalePct / f.scalePct;
     pose.halfW = f.halfW * k;
     pose.halfH = f.halfH * k;

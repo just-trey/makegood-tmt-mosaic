@@ -87,6 +87,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   sixth one "Path 1". Both messages now count every element of that kind from the top of
   the file, which is what someone reading the file in their editor can do
   (`npx vitest run tests/parse.test.ts`).
+- **A Fill design too detailed to repeat now says so, instead of coming back
+  missing geometry.** turf 6.5 gives up on a big union without throwing: it
+  returns a partial result, so the part loses shapes behind a "Couldn't merge
+  the shapes" warning that names no cause. Bundled patterns have had a
+  build-time budget since 2026-08-03; a volunteer's own SVG was checked by
+  nothing. `tileCoverage` now multiplies the real tile count by the busiest
+  color's points and refuses past `TILE_UNION_VERTEX_BUDGET`, through the
+  refusal path the other four causes already use, so you get one tile and a
+  message naming the numbers. Where winding Scale to its maximum would still be
+  over the budget the message drops "Raise Scale" and asks you to simplify the
+  design instead. The budget is measured, not inherited: sweeping the two
+  patterns dense enough to reach the ceiling puts the first failures at 537,199
+  and 600,201 points, not the 800k this repo quoted, so 500k it is. The sweep is
+  `scripts/bench-tile-union.ts` and the tables are in
+  `docs/findings/2026-08-30-tile-union-ceiling.md`. Batching the union, which
+  would remove the ceiling rather than cap it, stays open in
+  `docs/tech-debt.md` (`npx vitest run tests/patterns.test.ts tests/assembly.test.ts`).
 - **Switching parts no longer asks you to confirm.** The dialog said
   switching would "clear the currently loaded" parts, naming the one thing
   that survives — your artwork stays right where you left it, and the part

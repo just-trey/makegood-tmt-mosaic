@@ -48,9 +48,9 @@ const PLACEHOLDER = new RegExp(
 );
 
 // Below this a fragment is a phrase like "It was put at", which appears in half the file and
-// would pass whatever the app says. Re-measured 2026-08-29 (every shipped warn/warnBuild/notice/
-// noticeBuild call site now has its own doc section): of the 104 quotes the three forms find, 85
-// are checked and 19 are skipped, clustering in 9 of 57 sections that end up with no checked quote
+// would pass whatever the app says. Re-measured 2026-08-30 (`npm run check:troubleshooting`, whose
+// own summary line prints these): of the 108 quotes the three forms find, 87 are checked and 21 are
+// skipped, clustering in 9 of 59 sections that end up with no checked quote
 // at all -- including the assembly CSG one, where `"Designs … overlap"` is mostly placeholder.
 // Two are a different cause: a heading with a nested quote (`"… deeper than "Wheel top" goes"`)
 // pairs left-to-right into two fragments too short to pin, and the digit-run rule above applied to
@@ -101,7 +101,7 @@ function sections(md) {
   const lines = md.split('\n');
   const out = [];
   lines.forEach((line, i) => {
-    // Both levels. The fill-warning family documents six messages under `### "..."` sub-headings,
+    // Both levels. The fill-warning family documents seven messages under `### "..."` sub-headings,
     // and reading only `##` left every one of them unchecked and unreported.
     const heading =
       line.match(/^## Troubleshooting: (.+)$/) ?? line.match(new RegExp(`^### ([${DQUOTES}].+)$`));

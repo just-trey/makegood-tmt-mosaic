@@ -773,20 +773,31 @@ active turf upgrade, and writing it now costs about what re-deriving it later co
 upgrade becomes live work it is step one rather than an afterthought, over the
 union-accumulation path at a few shape counts, with the numbers above as the baseline to beat.
 
-## Turf's tile union has a vertex ceiling, and nothing enforces it at runtime
+## Turf's tile union has a vertex ceiling, and the fix is a refusal rather than a batch
 
-Measured 2026-08-03 while fixing the bundled zebra pattern. Fill mode unions
-one copy of the pattern per tile, and `@turf/turf` 6.5's polygon clipping
-starts failing somewhere around **800k vertices in a single operation**. It
-does not throw at that point — it drops tiles, and the only surface signal is
-`Couldn't merge the shapes …`. That message used to assert a cause it could not
-know ("likely a self-intersecting path in the source SVG"), which was wrong here:
-the paths were fine, there were simply too many of them. It is now cause-neutral
-and [troubleshooting.md](troubleshooting.md) carries both causes, so what is left
-open is that nothing tells the user _which_ one they hit.
+Fill mode unions one copy of the design per tile, and `@turf/turf` 6.5's polygon
+clipping gives up on a big union without throwing: it returns a partial result,
+so the part loses geometry behind a `Couldn't merge the shapes …` warning naming
+no cause. That message used to assert a cause it could not know ("likely a
+self-intersecting path in the source SVG"), which was wrong here: the paths were
+fine, there were simply too many of them.
 
-The numbers that made it concrete, zebra in Fill mode on one chair zone
-(`MOSAIC_GPU=1` production build):
+**Where the ceiling is: a 503k-600k band, swept 2026-08-30.** Not the 800k this
+section used to quote, which was an estimate off one live build.
+[2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md)
+carries both sweeps and the command.
+
+| pattern   | points per tile | highest clean | lowest failure |
+| --------- | --------------- | ------------- | -------------- |
+| zebra     | 1361            | 544,400       | 600,201        |
+| dalmatian | 559             | 503,100       | 537,199        |
+
+The two overlap, so no point count separates clean from failing, and neither
+does tile count. The band replaces the 800k figure in `scripts/gen-patterns.mjs`
+and `tests/patterns-assets.test.ts`; their constants and assertions are untouched.
+
+The original 2026-08-03 observation, zebra in Fill mode on one chair zone
+(`MOSAIC_GPU=1` production build), is what made it concrete:
 
 |                                      | 13.6k verts/tile  | 1.3k verts/tile |
 | ------------------------------------ | ----------------- | --------------- |
@@ -795,34 +806,44 @@ The numbers that made it concrete, zebra in Fill mode on one chair zone
 | triangles produced                   | 853k              | 2.07M           |
 | rebuild                              | 468.7s            | 93.6s           |
 
-The doubled triangle count is the tell that this was silent data loss rather
-than slowness: the failing run produced _less_ geometry because four parts
-fell back to unmerged shapes.
+The doubled triangle count is the tell that this was data loss rather than
+slowness: the failing run produced _less_ geometry because four parts fell back
+to unmerged shapes.
 
-What is fixed: the asset. `scripts/gen-patterns.mjs` thins zebra's contours
-(`simplifyEps`), and `tests/patterns-assets.test.ts` fails any bundled pattern
-whose vertex count times a chair zone's tile count would approach the ceiling.
-That test's `TILES_PER_CHAIR_ZONE = 143` is this measurement frozen into a
-constant, not derived from live zone geometry (`tileCoverage()` in
-`src/geometry/patterns.ts` needs a real placer + extent, which only exists
-mid-build) — deliberately: pulling the full chair build into what is
-otherwise a fast, dependency-light asset test isn't worth it while the
-budget (300k) already sits well under the failure point (~800k), a 2.6x
-margin a moderately larger future zone would not eat through. If a real
-zone's tile count ever grows enough to close that gap, this constant needs
-re-measuring by hand — nothing will flag it automatically.
+**Fixed: nothing crosses the ceiling unannounced now.** Two mechanisms, one per
+source of tiles.
 
-What is not fixed: **user-supplied** SVGs get no such check. A volunteer's
-detailed drawing in Fill mode on a chair can cross the same line, and will get
-the same misleading self-intersection warning and the same partly-blank
-surface. Closing that means either counting vertices before the tile union and
-warning honestly ("this design is too detailed to repeat across this surface —
-N tiles × M vertices"), or chunking the union into batches small enough to
-stay under the ceiling and merging the results. The batching option also
-removes the ceiling for the bundled patterns, which would make the asset
-budget above a performance concern rather than a correctness one. Upgrading
-turf past 6.5 may move the ceiling but is separately blocked — see the
-`@turf/turf` pin section.
+- Bundled patterns, at build time. `scripts/gen-patterns.mjs` thins zebra's
+  contours (`simplifyEps`), and `tests/patterns-assets.test.ts` fails any
+  pattern whose vertex count times a chair zone's tile count would approach the
+  ceiling.
+- User SVGs, at build time in the app. `tileCoverage()`
+  ([patterns.ts](../src/geometry/patterns.ts)) multiplies the real tile count by
+  the heaviest colour's points, refuses past `TILE_UNION_VERTEX_BUDGET` (500k),
+  and reports `too-detailed` through the same refusal path the other four causes
+  use. The user gets one tile and a message naming the numbers.
+
+**Still open: a refusal is a cap, not a cure.** 500k gives up two measured
+successes (zebra's 544,400 and dalmatian's 503,100). A volunteer who wants that
+fill has no way to get it. A design that is over budget even with Scale wound to
+its 400% maximum is refused outright, and the message says so rather than
+sending the user up the slider.
+
+Closing it means chunking the union into batches small enough to stay under the
+ceiling and merging the results. That removes the ceiling for the bundled
+patterns too, which would make the asset budget a performance concern rather
+than a correctness one. Upgrading turf past 6.5 may move the ceiling but is
+separately blocked — see the `@turf/turf` pin section.
+
+**`TILES_PER_CHAIR_ZONE = 143` is still frozen by hand**, not derived from live
+zone geometry: `tileCoverage()` needs a real placer and extent, which only exist
+mid-build, and pulling the full chair build into an otherwise fast,
+dependency-light asset test is not worth it. Its 300k budget is a 1.8x margin
+under the measured onset. What changed is the consequence of letting it rot. A
+zone that outgrows 143 tiles now reaches the runtime refusal instead of dropping
+tiles, so a shipped pattern stops filling and says so. That is a visible
+regression for the user rather than a hidden one, and still nothing flags the
+stale constant to the maintainer.
 
 ## A concave part's prime-tower footprint is scored as its convex hull
 

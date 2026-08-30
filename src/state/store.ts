@@ -45,6 +45,7 @@ export interface AppState {
 
   // artwork fit
   marginPct: number;
+  /** Bounded by SCALE_MIN_PCT/SCALE_MAX_PCT below. */
   scalePct: number;
   offsetX: number;
   offsetY: number;
@@ -155,6 +156,18 @@ export const state: AppState = {
  * what these guards exist to stop.
  */
 export const MIN_DESIGN_RADIUS_MM = 0.5;
+
+/**
+ * What Scale can be set to, in percent. Duplicated in index.html's `#p-scale` min/max attributes,
+ * which are what actually clamp the slider pair; nothing pins the two together.
+ *
+ * Not only a slider range. The gizmo clamps drags to it, and the assembly build is handed the max
+ * as `maxScaleMult` to decide whether a fill refused for detail says "Raise Scale" or "at any
+ * Scale". Raise the markup and not this and the app tells users a fill is impossible at a Scale
+ * the slider now reaches. Change both in one commit.
+ */
+export const SCALE_MIN_PCT = 25;
+export const SCALE_MAX_PCT = 400;
 
 export const DEFAULT_BASE_COLOR = '#b9c0c6';
 

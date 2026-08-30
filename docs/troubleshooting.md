@@ -10,7 +10,7 @@ each region in batches, and a batch holds whatever colours fell in it, so a
 failure there names none. Treat it as "somewhere in this design" and read on.
 There are two causes and the warning does not guess between them: a
 **self-intersecting path** in the source SVG (much the commoner one), or sheer
-size in Fill mode (below).
+size, which Fill mostly refuses before it gets here (below).
 
 The app already tries to fix this: near-duplicate points are removed before the
 maths runs (usually two curve segments meeting at a seam a fraction of a unit
@@ -24,18 +24,19 @@ lower precision. If the warning still appears:
 - Common causes: strokes converted to outlines (sharp mitre joins), leftover
   boolean results from the design tool, hand-edited paths with crossed segments.
 
-**In Fill mode, suspect size before the path.** Fill merges one copy of the
-design per tile, and the polygon library also fails on sheer size, around 800k
-points in one operation, with the identical warning. A design that
-unions cleanly as a Sticker but fails once repeated across a chair zone (143
-tiles of a 60mm pattern) has hit the size limit, not a bad path, and Path →
-Union will change nothing.
+**In Fill mode, size is usually caught before the merge.** Fill repeats one
+design per tile, and the polygon library fails on sheer size as well as on bad
+paths, in a band swept at 503k-600k points in one operation. A fill whose copies
+would come near that is turned away up front with "… is too detailed to fill …"
+(below), so most size failures no longer arrive here.
 
-The tell: failures arrive per-part in a batch rather than on one colour, and the
-model carries visibly _less_ geometry than it should, so parts of the surface
-come out blank. Fix by simplifying the design (fewer, larger shapes) or using
-Sticker. Numbers in [tech-debt.md](tech-debt.md), "Turf's tile union has a
-vertex ceiling".
+Two cases still do. The budget is a margin under a band rather than a line, so a
+fill just under it can still fail. And each colour's own shapes are merged before
+any tiling, which the budget does not cover at all. The tell is the same either
+way: failures arrive per-part in a batch rather than on one colour, and the model
+carries visibly _less_ geometry than it should, so parts of the design come out
+blank. Fix by simplifying the design (fewer, larger shapes). Numbers in
+[tech-debt.md](tech-debt.md), "Turf's tile union has a vertex ceiling".
 
 ## Troubleshooting: "Could not load the Manifold boolean engine, so assembly cutting is unavailable"
 
@@ -337,8 +338,9 @@ where the sticker's colours differ from the pattern's. Known gap, also in
 ## Troubleshooting: Fill warnings, "You have one tile instead"
 
 Fill repeats one design across a whole part. When it can't work out how, it
-places the design once and says why. Only the first reason below is fixed by
-changing Scale; the last two mean a bug rather than a problem with your design.
+places the design once and says why. The first reason below is fixed by changing
+Scale and the second sometimes is, which its own message tells you. The last two
+mean a bug rather than a problem with your design.
 
 ### "… is too small to fill …: it would take more than 1024 tiles."
 
@@ -348,6 +350,31 @@ refuses instead of freezing.
 
 **Raise Scale** until the count comes down. A larger tile is usually what you
 wanted anyway: a pattern at 5% reads as texture, not as a pattern.
+
+### "… is too detailed to fill …"
+
+**"Repeating its busiest color means merging 529 tiles of 1201 points each."**
+The tile count is fine; the points inside it are not. The polygon maths behind
+Fill was swept as failing from 503k-600k points in one operation, and it fails by
+dropping tiles rather than by stopping, so the app refuses past 500k rather than
+ship a part that is quietly half blank. The points figure is per tile and for
+one colour, the busiest one, because the merge runs once per colour.
+
+**Raise Scale.** Fewer, larger tiles multiply out to fewer points, and the
+message says so whenever that can work.
+
+**When it says "at any Scale", it cannot.** The app checks the grid your design
+would need with Scale wound to its maximum. When that is still over the limit the
+message drops the Scale advice and asks you to simplify the design instead: fewer
+nodes and fewer shapes in Illustrator or Inkscape. Placing it as a Sticker also
+works, at the cost of the repeat.
+
+This is the same limit as the size half of "Couldn't merge the shapes" at the
+top of this file, caught before the merge rather than after, so nothing is
+dropped. Bundled patterns get a separate build-time check in
+`tests/patterns-assets.test.ts`, against a stricter budget and a fixed tile
+count. Numbers and the sweep behind them:
+[tech-debt.md](tech-debt.md), "Turf's tile union has a vertex ceiling".
 
 ### "… measures zero in one direction, so there is no tile to repeat across …"
 
