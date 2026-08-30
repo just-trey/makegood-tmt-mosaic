@@ -325,6 +325,10 @@ export async function exportPrintReady3MF(): Promise<void> {
       printer: state.printerId,
       colors: materials.length - 1,
       warnings: placementWarnings.length,
+      // flat mode has no assembly kind to name
+      ...(state.shapeKind === 'assembly' && state.assembly.kindId
+        ? { kind: state.assembly.kindId }
+        : {}),
     });
     download(blob, fname);
   } catch (e) {

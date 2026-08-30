@@ -131,6 +131,7 @@ Fired on a successful export, just before the file download starts.
   - `printer: string` (`state.printerId`)
   - `colors: number` (material/color count)
   - `warnings: number` (3MF only — placement warnings emitted)
+  - `kind: string` (3MF, assembly mode only — `state.assembly.kindId`, e.g. `wheel` / `footrest` / `hubcap`: which part was exported. Absent in flat mode, which has no assembly kind, on `stl_zip`, which is flat-only, and in the unreachable case where a kind hasn't loaded yet.)
 
 ### `export_failed`
 
