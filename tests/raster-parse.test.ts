@@ -151,6 +151,101 @@ describe('parseRasterImage', () => {
       expect((err as Error).message).toBe(rasterEmptyTraceMessage('speck.png', 'noise'));
     });
 
+    /** A field of one-pixel opaque specks, every one of them under any floor above 1. */
+    function specks(w: number, h: number, step = 4): RasterImage {
+      const data = new Uint8ClampedArray(w * h * 4);
+      for (let y = 1; y < h; y += step)
+        for (let x = 1; x < w; x += step) {
+          const i = (y * w + x) * 4;
+          data[i] = 255;
+          data[i + 3] = 255;
+        }
+      return { data, w, h };
+    }
+
+    // The nozzle floor tying the fractional one, rather than exceeding it. `floor > frac` reads
+    // that as 'noise' and offers a Detail slider that cannot move it: 128px at 0.28mm per pixel
+    // puts both floors on 2, and DETAIL_MAX quarters the fraction to 1 while the nozzle half holds
+    // 2. Measured: `npx vitest run tests/raster-parse.test.ts -t "the nozzle floor ties"`.
+    it('gives the printable-floor message when the nozzle floor ties the fractional one', () => {
+      const img = specks(128, 128);
+      for (const mmPerPixel of [0.28, 0.29, 0.3]) {
+        const stats = measureImage(img);
+        const params = autoParams(stats, DETAIL_DEFAULT, false);
+        expect(fracFloorPx(params, 128, 128)).toBe(2);
+        expect(printableFloorPx(mmPerPixel)).toBe(2);
+
+        let err: unknown;
+        try {
+          parseRasterImage(img, {
+            colors: 4,
+            detail: DETAIL_DEFAULT,
+            mmPerPixel,
+            name: 'specks.png',
+          });
+        } catch (e) {
+          err = e;
+        }
+        expect(err).toBeInstanceOf(EmptyTraceError);
+        expect((err as EmptyTraceError).reason).toBe('printable');
+        expect((err as Error).message).not.toMatch(/Detail/);
+      }
+    });
+
+    // Detail spent with no placement at all: nothing about the part is holding the floor up, so
+    // "make it bigger" would be the wrong remedy and the noise arm keeps it. 224px puts the
+    // fraction on 2 at DETAIL_MAX, which one-pixel specks cannot clear.
+    // Measured: `npx vitest run tests/raster-parse.test.ts -t "Detail is spent"`.
+    it('keeps the noise message when Detail is spent and no placement holds the floor', () => {
+      const img = specks(224, 224);
+      const stats = measureImage(img);
+      expect(fracFloorPx(autoParams(stats, DETAIL_MAX, false), 224, 224)).toBe(2);
+
+      let err: unknown;
+      try {
+        parseRasterImage(img, { colors: 4, detail: DETAIL_MAX, name: 'specks.png' });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(EmptyTraceError);
+      expect((err as EmptyTraceError).reason).toBe('noise');
+      expect((err as Error).message).toBe(rasterEmptyTraceMessage('specks.png', 'noise'));
+    });
+
+    // A placement floor that survives to DETAIL_MAX is not on its own an answer: Detail has to be
+    // spent too. 0.15mm per pixel puts the nozzle floor on 7 against a fraction of 10 now and 2 at
+    // DETAIL_MAX, so the slider still moves the floor 10 → 7 and recovers a 9px² dot.
+    // Measured: `npx vitest run tests/raster-parse.test.ts -t "Detail still moves"`.
+    it('keeps the noise message when Detail still moves a floor a placement will end up holding', () => {
+      const img = dot(256, 256, 3);
+      const stats = measureImage(img);
+      expect(printableFloorPx(0.15)).toBe(7);
+      expect(fracFloorPx(autoParams(stats, DETAIL_DEFAULT, false), 256, 256)).toBe(10);
+      expect(fracFloorPx(autoParams(stats, DETAIL_MAX, false), 256, 256)).toBe(2);
+
+      let err: unknown;
+      try {
+        parseRasterImage(img, {
+          colors: 4,
+          detail: DETAIL_DEFAULT,
+          mmPerPixel: 0.15,
+          name: 'dot.png',
+        });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(EmptyTraceError);
+      expect((err as EmptyTraceError).reason).toBe('noise');
+      expect(
+        parseRasterImage(img, {
+          colors: 4,
+          detail: DETAIL_MAX,
+          mmPerPixel: 0.15,
+          name: 'dot.png',
+        }).componentCount,
+      ).toBe(1);
+    });
+
     it('falls back to a generic name when the caller has none', () => {
       const img = dot(90, 90, 2);
       expect(() => parseRasterImage(img, { colors: 4, detail: 0 })).toThrow(/this image/);

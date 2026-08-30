@@ -605,11 +605,17 @@ Full text: _"Nothing in "yourfile.png" is big enough to print at this size.
 Make the design or the part bigger."_
 
 Like the previous message, every traced region was smaller than the despeckle
-floor and nothing survived. The difference is which floor did it: at this
-design's placed size, the nozzle-width floor
-([`printableFloorPx`](../src/raster/stats.ts)) was already above the ordinary
-noise floor before despeckling ran, so raising Detail cannot help — Detail
-never scales that half, on purpose.
+floor and nothing survived. The difference is what raising Detail would buy,
+which the app measures rather than guesses: it re-derives the floor this image
+would get at full Detail. This message needs both halves of that answer — the
+floor at full Detail is no lower than the one the trace ran under, **and** the
+placed size is what holds it above the noise floor. Where Detail still moves
+the floor at all, even a little, the previous message is shown instead.
+
+The nozzle-width floor ([`printableFloorPx`](../src/raster/stats.ts)) is the
+half Detail never scales, on purpose. A nozzle floor merely level with the
+noise floor counts: full Detail quarters the noise half and the nozzle half
+stays put, so the placed size is all that is left.
 
 - **Make the design bigger.** Scale it up on the part, or place it on a
   larger design zone if the part offers more than one.

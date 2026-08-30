@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   driven and the selectors snapshotted within each, emitted by the script
   itself (`scripts/lib/driveSequenceHash.mjs`,
   `npx vitest run scripts/lib/driveSequenceHash.test.mjs`).
+- **An emptied trace no longer tells you to raise Detail when Detail cannot
+  move the floor.** The message picked its arm from which floor bound at the
+  current setting, so a nozzle floor that merely tied the noise floor read as
+  noise: a 128px image at 0.28 to 0.30mm per pixel puts both floors on 2, and
+  full Detail quarters the noise half while the nozzle half holds 2. It now
+  measures the same thing the dropped-color notice already did: the floor the
+  image would get at full Detail. It points at the placed size only when that
+  floor is no lower than the one the trace ran under _and_ the placement is
+  what holds it up there. Where Detail still moves the floor at all, or where
+  there is no placement to blame, the noise wording stands
+  (`npx vitest run tests/raster-parse.test.ts -t "empty trace"`).
 - **Switching parts no longer asks you to confirm.** The dialog said
   switching would "clear the currently loaded" parts, naming the one thing
   that survives — your artwork stays right where you left it, and the part
