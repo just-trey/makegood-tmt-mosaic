@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { AssemblyBuild, IndexedMesh } from '../types';
-import { baseColorHex, currentBaseParams, state } from '../state/store';
+import { baseColorHex, currentBaseParams, SCALE_MAX_PCT, state } from '../state/store';
 import {
   activeArtworkInstance,
   availableZones,
@@ -397,6 +397,7 @@ async function rebuildAssemblyScene(): Promise<void> {
         name: source?.name,
         zoneId: a.zone?.zoneId ?? null,
         scaleMult: a.scalePct / 100,
+        maxScaleMult: SCALE_MAX_PCT / 100,
         offX: a.offsetU,
         offZ: a.offsetV,
         flipX: a.flipX,
@@ -414,6 +415,7 @@ async function rebuildAssemblyScene(): Promise<void> {
       parsed: state.parsed,
       zoneId: null,
       scaleMult: state.scalePct / 100,
+      maxScaleMult: SCALE_MAX_PCT / 100,
       offX: state.offsetX,
       offZ: state.offsetY,
       flipX: state.flipX,

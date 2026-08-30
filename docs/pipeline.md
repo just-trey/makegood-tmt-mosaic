@@ -210,6 +210,12 @@ design's own SVG coordinates, so it stays correct under whatever rotation and
 scale the zone applies ([patterns.ts](../src/geometry/patterns.ts)). Four
 tileable patterns ship (Cow, Dalmatian, Zebra, Tiger) and default to Fill.
 
+A fill is refused before it runs when the copies would carry more points than
+the polygon clipper merges reliably, or would need more than `MAX_FILL_TILES` of
+them. Either way the design is placed once and the pill names which limit it
+hit. The ceiling was swept in
+[2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md).
+
 ### 6. Export
 
 A Bambu Studio _project_ 3MF, with the vendor metadata that makes it import

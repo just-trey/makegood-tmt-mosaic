@@ -56,12 +56,14 @@ import {
 import { zoneMappersFor } from './zoneMappers';
 import { FILL_REFINE_MM } from './conformal';
 import {
+  featureVertexCount,
   MAX_FILL_TILES,
   tileCoverage,
   tileFeature,
   type TileCell,
   type TileGrid,
   type TileRefusal,
+  type TileRefusalReport,
 } from './patterns';
 import { overlappingDesignPairs, type InkPolygon, type PlacedDesign } from './designOverlap';
 import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
@@ -134,6 +136,12 @@ export interface ArtworkBuildInput {
   /** `DesignZone.id` to cut onto. `null` means every zone the part offers (the single-zone case). */
   zoneId?: string | null;
   scaleMult: number;
+  /**
+   * The largest `scaleMult` the Scale control allows. Supplied rather than assumed because the
+   * bound is the panel's, and a fill refused for detail needs it to tell "raise Scale" from
+   * "raising Scale will not reach". Defaults to `scaleMult`, which reads as "no headroom".
+   */
+  maxScaleMult?: number;
   offX: number;
   offZ: number;
   /** user horizontal mirror (fixes artwork that reads back-to-front on the face) */
@@ -511,14 +519,15 @@ const FILL_FELL_BACK_TO_ONE_TILE = 'You have one tile instead.';
 /**
  * What to tell the user when a Fill couldn't be repeated across a part, per cause.
  *
- * `tileCoverage` refuses four ways, and one shared message told everybody to raise Scale. That is
- * the remedy for one of them only. Conventions 2 and 3 of docs/ui-conventions.md: name something
+ * `tileCoverage` refuses five ways, and one shared message told everybody to raise Scale. That is
+ * the remedy for two of them only. Conventions 2 and 3 of docs/ui-conventions.md: name something
  * the user can act on, one problem with one primary remedy.
  */
 export function fillRefusalMessage(
   designName: string,
   partName: string,
   reason: TileRefusal | undefined,
+  detail?: NonNullable<TileRefusalReport['detail']> & { scalable: boolean },
 ): string {
   const placed = FILL_FELL_BACK_TO_ONE_TILE;
   const design = `"${designName}"`;
@@ -528,6 +537,25 @@ export function fillRefusalMessage(
         `${design} is too small to fill "${partName}": it would take more than ` +
         `${MAX_FILL_TILES} tiles. ${placed} Raise Scale to fill it with fewer, larger tiles.`
       );
+    // Two arms, because a design can be over budget at every Scale the panel offers. Telling that
+    // user to raise Scale sends them up the slider to the same warning (convention 2: name
+    // something that can be acted on). `scalable` is the caller's answer, since only it has the
+    // placer at maximum Scale.
+    //
+    // The point count is the busiest color's, not the tile's, and the wording has to say so: the
+    // tile of a four-color design holds several times what this number reports.
+    //
+    // Falls through to the default without its numbers: a limit named without them is unactionable.
+    case 'too-detailed':
+      if (detail)
+        return detail.scalable
+          ? `${design} is too detailed to fill "${partName}". Repeating its busiest color means ` +
+              `merging ${detail.tiles} tiles of ${detail.points} points each. ${placed} Raise ` +
+              'Scale to fill it with fewer, larger tiles.'
+          : `${design} is too detailed to fill "${partName}" at any Scale. Its busiest color ` +
+              `carries ${detail.points} points per tile. ${placed} Simplify the design in ` +
+              'Illustrator or Inkscape.';
+      break;
     // Not a missing viewBox: tileCellOf already falls back to the artwork bbox when the viewBox
     // isn't positive in both axes. Reaching here means the DRAWING has no extent in one direction.
     case 'no-tile-size':
@@ -545,14 +573,14 @@ export function fillRefusalMessage(
         `"${partName}" curves too much for ${design} to tile evenly across it. ${placed} Place ` +
         'separate designs on it instead of filling it.'
       );
-    // Only reachable if a future refusal path forgets to name itself. Says so rather than guessing
-    // a cause, since guessing wrong is what this function exists to stop.
-    default:
-      return (
-        `${design} couldn't be tiled across "${partName}", for a reason the app didn't record. ` +
-        `${placed} Please report this.`
-      );
   }
+  // Reached when a refusal path forgets to name itself, or names itself without what its message
+  // needs. Says so rather than guessing a cause, since guessing wrong is what this function exists
+  // to stop.
+  return (
+    `${design} couldn't be tiled across "${partName}", for a reason the app didn't record. ` +
+    `${placed} Please report this.`
+  );
 }
 
 /**
@@ -734,6 +762,13 @@ export async function buildAssemblyGeometry(
   };
   const tileCells = artworks.map((a) => tileCellOf(a.parsed));
 
+  // Points one tile of each artwork costs the union, taken over its biggest single color: the tile
+  // union runs per color, so that is what tileCoverage's ceiling applies to. Hoisted out of the
+  // part/zone loops below, which would otherwise re-walk every ring once per part per zone.
+  const tileVerts = artworks.map((_a, ai) =>
+    featuresByColor.reduce((n, perArtwork) => Math.max(n, featureVertexCount(perArtwork[ai])), 0),
+  );
+
   const placements: DesignPlacement[] = artworks.map((a, ai) => {
     // A fill anchors on its tile, not the boundary circle: circle anchoring fits one design to the
     // Design radius, which for a pattern scales a single period up to the whole wheel.
@@ -751,6 +786,26 @@ export async function buildAssemblyGeometry(
       offZ: a.offZ,
       rotationDeg: a.rotationDeg,
     };
+  });
+
+  // The same placement with Scale wound to its maximum. A fill refused for detail is asked again
+  // against this one, so "raise Scale" is only offered where the panel can actually reach a grid
+  // small enough. Predicting it from the smallest grid the padding rule allows (3x3) was wrong for
+  // the band in between: a design can be over budget at every Scale the slider offers and still be
+  // under it at a hypothetical 3x3.
+  //
+  // Built on demand, and with designMmPerUnit's default no-op notice sink rather than noticeBuild:
+  // this placement is a question about a Scale the user never set, so its auto-fit notices are not
+  // theirs to see.
+  const maxScalePlacement = (ai: number): DesignPlacement => ({
+    ...placements[ai],
+    mmPerUnit: designMmPerUnit(
+      artworks[ai].parsed,
+      artworks[ai].maxScaleMult ?? artworks[ai].scaleMult,
+      placements[ai].svgC.r,
+      scaleCtx,
+      true,
+    ),
   });
 
   // Overlap is a property of a zone, not of a part, and the loop below walks zones once per part.
@@ -1077,8 +1132,8 @@ export async function buildAssemblyGeometry(
                   `can't be tiled across it. ${FILL_FELL_BACK_TO_ONE_TILE} Please report this.`,
               );
             } else {
-              const refusal: { reason?: TileRefusal } = {};
-              grid = tileCoverage(place, tileCells[ai], extent, refusal);
+              const refusal: TileRefusalReport = {};
+              grid = tileCoverage(place, tileCells[ai], extent, tileVerts[ai], refusal);
               // Named per design, not just per part: a part can carry several, both remedies write
               // fit state reaching only the ACTIVE one, and warnings dedupe on the exact string. Two
               // designs failing the same way would otherwise become one pill pointing at neither.
@@ -1086,7 +1141,22 @@ export async function buildAssemblyGeometry(
               // those needs warnOverlappingDesigns's counted phrasing, which nothing asks for yet.
               if (!grid)
                 warnBuild(
-                  fillRefusalMessage(artworks[ai].name || 'design', part.name, refusal.reason),
+                  fillRefusalMessage(
+                    artworks[ai].name || 'design',
+                    part.name,
+                    refusal.reason,
+                    refusal.detail && {
+                      ...refusal.detail,
+                      // Asked, not derived: the same refusal path answers it, so a future change to
+                      // how a grid is laid can't leave the remedy behind.
+                      scalable: !!tileCoverage(
+                        mapper.placer(maxScalePlacement(ai)),
+                        tileCells[ai],
+                        extent,
+                        tileVerts[ai],
+                      ),
+                    },
+                  ),
                 );
             }
           }

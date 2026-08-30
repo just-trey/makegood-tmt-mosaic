@@ -13,6 +13,7 @@ import {
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
 import { getManifold, type ManifoldAPI, type ManifoldSolid } from '../src/geometry/manifold';
+import { TILE_UNION_VERTEX_BUDGET } from '../src/geometry/patterns';
 import { armCancel, RebuildCancelled, requestCancel } from '../src/cancel';
 import { setProgressSink } from '../src/progress';
 import { build3MFCombined, type ExportPart, type ExportSub } from '../src/export/threemf';
@@ -168,6 +169,7 @@ function baseInput(overrides: BaseOverrides = {}): AssemblyBuildInput {
     parsed,
     zoneId,
     scaleMult,
+    maxScaleMult,
     offX,
     offZ,
     flipX,
@@ -183,6 +185,9 @@ function baseInput(overrides: BaseOverrides = {}): AssemblyBuildInput {
         parsed: parsed ?? redSquareParsed(),
         zoneId: zoneId ?? null,
         scaleMult: scaleMult ?? 1,
+        // The panel's own cap (400%), so a fill refused for detail is asked the same question the
+        // app asks rather than one with no headroom at all.
+        maxScaleMult: maxScaleMult ?? 4,
         offX: offX ?? 0,
         offZ: offZ ?? 0,
         flipX: flipX ?? false,
@@ -920,10 +925,26 @@ describe('cancelling once cutting has started', () => {
 describe('fillRefusalMessage', () => {
   // docs/ui-conventions.md 2 and 3: name something the user can act on, one problem and one
   // primary remedy. One message for four causes advised raising Scale for all of them.
-  const reasons = ['too-many-tiles', 'no-tile-size', 'not-invertible', 'not-affine'] as const;
+  //
+  // Two of the five now do offer Raise Scale, and they are not a regression to that: both are
+  // fixed by tiling fewer, larger copies, and they say different things about why. The
+  // too-detailed one offers it only where the caller has checked that Scale can reach.
+  const reasons = [
+    'too-many-tiles',
+    'no-tile-size',
+    'not-invertible',
+    'not-affine',
+    'too-detailed',
+  ] as const;
+  // Only 'too-detailed' reads it; the rest are describable from the reason alone.
+  // A product over TILE_UNION_VERTEX_BUDGET, so the example a reader multiplies out is one the
+  // app would really refuse. troubleshooting.md quotes the same pair.
+  const DETAIL = { tiles: 529, points: 1201, scalable: true };
+  const message = (design: string, part: string, r: (typeof reasons)[number]): string =>
+    fillRefusalMessage(design, part, r, DETAIL);
 
   it('gives every cause its own wording, naming the part', () => {
-    const msgs = reasons.map((r) => fillRefusalMessage('zebra.svg', 'Handle (left)', r));
+    const msgs = reasons.map((r) => message('zebra.svg', 'Handle (left)', r));
     expect(new Set(msgs).size).toBe(reasons.length);
     msgs.forEach((m) => expect(m).toContain('Handle (left)'));
     // Both remedies write fit state that only reaches the active design, so a pill that names
@@ -932,13 +953,13 @@ describe('fillRefusalMessage', () => {
   });
 
   it('offers "Raise Scale" only where scaling up is what fixes it', () => {
-    const scaled = reasons.filter((r) => /Raise Scale/.test(fillRefusalMessage('d.svg', 'P', r)));
-    expect(scaled).toEqual(['too-many-tiles']);
+    const scaled = reasons.filter((r) => /Raise Scale/.test(message('d.svg', 'P', r)));
+    expect(scaled).toEqual(['too-many-tiles', 'too-detailed']);
   });
 
   it('states one remedy per message, not a list', () => {
     for (const r of reasons) {
-      const m = fillRefusalMessage('d.svg', 'P', r);
+      const m = message('d.svg', 'P', r);
       // One remedy each, and every cause has to carry one — a message with none is a report
       // rather than something the user can act on (convention 2).
       const offers = [
@@ -946,6 +967,7 @@ describe('fillRefusalMessage', () => {
         /Reset to auto-fit/,
         /Place separate designs/,
         /Use a design with/,
+        /Simplify the design/,
       ].filter((re) => re.test(m)).length;
       // Convention 1: one term per concept. "tile" is the repeated thing; "copy" was a second
       // word for it in the same sentence pair.
@@ -963,6 +985,35 @@ describe('fillRefusalMessage', () => {
 
   it('says so rather than guessing when no cause was recorded', () => {
     const m = fillRefusalMessage('d.svg', 'P', undefined);
+    expect(m).not.toMatch(/Raise Scale/);
+    expect(m).toContain("didn't record");
+  });
+
+  it('gives the too-detailed refusal both numbers it hit', () => {
+    const m = message('d.svg', 'P', 'too-detailed');
+    expect(m).toContain('529 tiles of 1201 points each');
+    // The count is the busiest colour's, not the tile's. A message that does not say so hands the
+    // user a number they cannot reconcile with anything their editor shows them.
+    expect(m).toContain('busiest color');
+  });
+
+  // A design can be over budget at every Scale the panel offers. "Raise Scale" there walks the
+  // user up the slider to the same warning.
+  it('drops "Raise Scale" when no Scale setting can get under the budget', () => {
+    const m = fillRefusalMessage('d.svg', 'P', 'too-detailed', {
+      tiles: 529,
+      points: 1201,
+      scalable: false,
+    });
+    expect(m).not.toMatch(/Raise Scale/);
+    expect(m).toContain('at any Scale');
+    expect(m).toMatch(/Simplify the design/);
+  });
+
+  // A limit named without the numbers behind it is a report, not something to act on, so it takes
+  // the same treatment as a refusal that never named itself at all.
+  it('falls back to "didn\'t record" when too-detailed arrives without its numbers', () => {
+    const m = fillRefusalMessage('d.svg', 'P', 'too-detailed');
     expect(m).not.toMatch(/Raise Scale/);
     expect(m).toContain("didn't record");
   });
@@ -1046,6 +1097,67 @@ describe('fill mode', () => {
       expect(WARNINGS.some((w) => /more than \d+ tiles/.test(w.message))).toBe(true);
       const r = xzRange(built.partOutputs[0].inlaySoups[0]);
       expect(r.maxX - r.minX).toBeCloseTo(0.2, 3); // the lone 4mm square at 5%
+    },
+  );
+
+  /** One tile holding a single `pts`-point circle: a stand-in for a hand-drawn design with detail. */
+  function densePetalParsed(pts: number): ParsedSVG {
+    const ring = Array.from({ length: pts }, (_, k) => {
+      const t = (2 * Math.PI * k) / pts;
+      return { x: 5 + 2 * Math.cos(t), y: 5 + 2 * Math.sin(t) };
+    });
+    return {
+      shapes: [{ fill: '#ff0000', loops: [[...ring, ring[0]]], order: 0 }],
+      bbox: { minX: 3, minY: 3, maxX: 7, maxY: 7 },
+      rawSVGCircle: null,
+      userUnitMM: 1,
+      viewBox: { w: 10, h: 10 },
+    };
+  }
+
+  it(
+    'refuses a design too detailed to union across its tiles, warns, and places a single copy',
+    { timeout: 600000 },
+    async () => {
+      clearWarnings();
+      // A 2mm tile pitch over the 40mm face, at 1201 points a tile. The message carries the two
+      // numbers, so the test reads the product off it rather than pinning a tile count by hand.
+      const built = (await buildAssemblyGeometry(
+        baseInput({ parsed: densePetalParsed(1200), mode: 'fill', scaleMult: 0.2 }),
+      ))!;
+      const hit = WARNINGS.filter((w) => /too detailed/.test(w.message));
+      expect(hit).toHaveLength(1);
+      const [, tiles, points] = /(\d+) tiles of (\d+) points/.exec(hit[0].message)!;
+      expect(Number(tiles) * Number(points)).toBeGreaterThan(TILE_UNION_VERTEX_BUDGET);
+      // 1201 points a tile is under a ninth of the budget, so raising Scale really is the remedy.
+      expect(hit[0].message).toMatch(/Raise Scale/);
+      // The point of the refusal: not the misleading warning that silent tile-dropping produced.
+      expect(WARNINGS.some((w) => /Couldn't merge the shapes/.test(w.message))).toBe(false);
+      const r = xzRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.maxX - r.minX).toBeCloseTo(0.8, 1); // the lone 4mm circle at 20%
+    },
+  );
+
+  // The same design and the same refusal, with the Scale cap moved down so that winding Scale to
+  // its maximum still would not get under the budget. The remedy has to change with it.
+  it(
+    'says "at any Scale" when the Scale cap cannot reach a small enough grid',
+    { timeout: 600000 },
+    async () => {
+      clearWarnings();
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parsed: densePetalParsed(1200),
+          mode: 'fill',
+          scaleMult: 0.2,
+          maxScaleMult: 0.22,
+        }),
+      ))!;
+      const hit = WARNINGS.filter((w) => /too detailed/.test(w.message));
+      expect(hit).toHaveLength(1);
+      expect(hit[0].message).toContain('at any Scale');
+      expect(hit[0].message).not.toMatch(/Raise Scale/);
+      expect(built.partOutputs[0].inlaySoups[0].length).toBeGreaterThan(0);
     },
   );
 });
