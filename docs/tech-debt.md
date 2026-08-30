@@ -1117,6 +1117,10 @@ that the notice did not close.
   can promise recovery, since a quartered floor can still be above a color's pieces. Drawing a "how
   much movement is enough" line would be an invented constant, so it is left as is. **Unmeasured**:
   how often that band is where real artwork lands.
+- **The notice can also vanish mid-remedy, which reads as fixed.** Its presence tracks "Detail can
+  still move this floor", not "a color is missing". On `sprinkled(384)` with no placement, Detail 90
+  gives floor 7 and the notice; Detail 95 gives floor 6, `detailLowersFloor` false, and the notice is
+  retracted — with `droppedColors` still 1 and the readout still one color short.
 - **The capped split also gives a round trip.** Raising Detail on a dropped-color notice lowers the
   floor, raises the component count, and can trip the cap. The next trace is capped, the notice is
   retracted, and the user is told to lower the Detail they just raised, with the color still gone.
@@ -1129,6 +1133,23 @@ that the notice did not close.
   Neither is a wording change: the capped one needs an answer to whether raising Detail can recover
   a color on a capped trace at all, and the pinned-floor one needs the re-trace-on-resize item
   first.
+
+## The empty-trace message infers whether Detail can help, where the dropped-color notice measures it
+
+`rasterEmptyTraceMessage` ([src/raster/parse.ts](../src/raster/parse.ts)) picks its arm from
+`FloorReason`, which asks _which_ floor binds (`floor > fracFloorPx`). `rasterLostColors` asks the
+question directly instead, via `detailLowersFloor`: the floor the same image would get at
+`DETAIL_MAX`, against the floor in force. The two disagree where the nozzle floor ties the fractional
+one rather than exceeding it.
+
+- **Measured on a 128px image at `mmPerPixel` 0.28 to 0.30**: `printableFloorPx` and `fracFloorPx`
+  are both 2, so `floor > frac` is false and the reason reads `'noise'`. An emptied trace there says
+  "Try raising Detail, or use a less noisy image", while the floor at `DETAIL_MAX` is still pinned at
+  2 by the nozzle half and Detail moves nothing.
+- Pre-existing: the inference is what shipped, and the dropped-color work only put a measurement next
+  to it. Left alone deliberately, since changing it changes an unrelated shipped message.
+- Closing it: hand the same `detailLowersFloor` comparison to the empty-trace message, and re-check
+  the two tests that pin its arms (`-t "printable-floor"`, `-t "the noise message"`).
 
 ## `MAX_COMPONENTS` is a target, not the bound its name implies
 

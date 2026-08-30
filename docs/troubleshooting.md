@@ -520,11 +520,12 @@ that floor leaves the palette. The readout used to show the smaller number with
 nothing saying it differed from what was asked for.
 
 - **Raise Detail.** It sets how small a speck survives, so raising it lowers
-  the floor and lets the smaller pieces back through. Up to 4x lower at the top
-  of the slider, and less than that wherever a placement's own floor is already
-  close. That is the opposite of what "Some detail … was too fine to print…"
-  above asks for, and the two never show on the same image: a capped trace keeps
-  that notice and never raises this one.
+  the floor and lets the smaller pieces back through. The floor scales 4x at
+  Detail 0 down to 1/4 at Detail 100, so 16x across the slider's full travel,
+  and less than that wherever a placement's own floor is already close. That is
+  the opposite of what "Some detail … was too fine to print…" above asks for,
+  and the two never show on the same image: a capped trace keeps that notice and
+  never raises this one.
 - **It does not say the pieces were unprintable, because usually they were
   not.** The floor it fires under is a fraction of the image, not a nozzle
   width. At part scale that fraction is millimetres across.
