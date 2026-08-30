@@ -14,6 +14,21 @@ Open questions with no obvious answer, where the measurement behind the question
 - Does the caster mounts' design-zone gap describe the chair's real "central rear brace", or is the
   brace note actually describing the casters themselves? See the `_note` in
   [scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json).
+- A "fit N slots" input beside or instead of the Auto-merge similarity slider, so the control
+  matches the audience's actual question. Measurement:
+  [AUTO_MERGE_LEVELS](../src/geometry/regions.ts).
+- Make the Colors-detected panel's five copy-carried mechanisms (drag targets, the grip glyph, the
+  "Merge with…" dropdown, a merged group's shared depth and print color) visible instead of
+  explained. See the comment above the Auto-merge hint in [index.html](../index.html).
+- Delta-encode the index arrays, or a binary format, for the chair's zone sidecar. Measurement:
+  the comment above the sidecar write in [scripts/bake-zones.mjs](../scripts/bake-zones.mjs).
+- Replace the instance-cascade lattice with a real nearest-free-placement search over the two
+  designs' actual footprints. Measurement:
+  [CASCADE_CLEAR_MAX_MM](../src/state/artwork.ts).
+- Record what was verified — the reference file and its hash — alongside the part fingerprint, so
+  a reseal against an unchanged reference is distinguishable from one that silently redefines the
+  verified pose. See the header comment in
+  [scripts/bake-part-fingerprints.mjs](../scripts/bake-part-fingerprints.mjs).
 
 - Contextual help: short hints at the point people actually get stuck (a
   control's own row), instead of relying only on the single global help

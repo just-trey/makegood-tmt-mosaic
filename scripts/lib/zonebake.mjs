@@ -880,6 +880,11 @@ const loopInsideLoop = (inner, outer) => {
  * several disjoint islands (a stripe of surface interrupted by a bolt boss, say), so "largest loop
  * is the outline, everything else is a hole" isn't good enough here; depth is the same rule
  * shapeToFeature applies to SVG subpaths at runtime.
+ *
+ * Parity is right for nested SVG subpaths, wrong for triangulation loops: a concave slice has
+ * solid lobes inside another loop's ring, and parity calls them holes. Cost a merged-zone
+ * prototype 26%/60% of two handles' claims; every shipped claim matches its triangulation within
+ * 0.3%, so today's bake is unaffected. Classify by winding sign instead if a future zone trips it.
  */
 function classifyRegions(loops) {
   const n = loops.length;
