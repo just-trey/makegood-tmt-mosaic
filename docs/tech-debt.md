@@ -1314,27 +1314,3 @@ that PR to one finding.
 **Closing it** is one character class: `(?:[eE][-+]?\d+)?`, plus the two-row
 test above. Worth checking the same regex's other assumptions in the same pass,
 since this is the second gap found in it.
-
-## The system audit's drive-script hash covers the whole file, not the driven sequence
-
-`docs/system-audit.md`'s header pins `scripts/system-audit-drive.mjs` by sha256,
-and every state-sensitive (`†`) row is incomparable between two runs whose
-hashes differ. The intent is stated in the script's own header: "a hash diff now
-means the sequence changed, which is the only thing this clause was ever trying
-to signal."
-
-It does not. Two consecutive runs have now voided every `†` row for a change
-that drove the identical seven states:
-
-| Run       | What moved the hash                                       | States driven |
-| --------- | --------------------------------------------------------- | ------------- |
-| `2c28f54` | #243 repointed the Checkbox sample to a reachable control | same seven    |
-| `32c7ebf` | added one captured property and two transition settles    | same seven    |
-
-Deferred because the fix changes what the header's headline number means, which
-should ride a run whose job is that change.
-
-**Closing it** means hashing the driven sequence rather than the file — the
-ordered list of reported states plus the selectors snapshotted, emitted by the
-script into its own output so it cannot drift from what actually ran — and
-saying in the report which hash is which.

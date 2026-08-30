@@ -10,11 +10,15 @@
 // Usage:
 //   npm run build && MOSAIC_GPU=1 node scripts/system-audit-drive.mjs [outFile]
 //
-// Re-run this unchanged to regenerate the same measurements; a diff in its own content hash
-// (recorded in the report header) means a later run walked a different drive sequence and its
-// state-sensitive (†) rows are not comparable to this one's. A token rename no longer moves this
-// file's hash (see DESIGN_TOKENS below) — a hash diff now means the sequence changed, which is
-// the only thing this clause was ever trying to signal.
+// Re-run this unchanged to regenerate the same measurements; a diff in the emitted
+// `meta.driveSequenceHash` (recorded in the report header) means a later run walked a different
+// drive sequence and its state-sensitive (†) rows are not comparable to this one's. The hash
+// covers the ordered list of states driven and the selectors snapshotted within each
+// (scripts/lib/driveSequenceHash.mjs), not this file's raw bytes: a docstring edit, a repointed
+// sample, or an added captured property used to move a whole-file hash without changing what
+// actually ran, which voided every † row across two consecutive runs that drove the identical
+// seven states. Hashing the sequence the script itself emits means the hash can't drift from
+// what actually ran.
 //
 // chore/harden-audit-drive (see docs/system-audit.md, Findings 1 and 9): extended the run replayed
 // for the report at commit 5f8192b (content hash `d5a3d954…`) with two changes, so that report's
@@ -26,6 +30,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { startPreview, launchBrowser, glRenderer, useGpu } from './lib/harness.mjs';
+import { driveSequenceOf, hashDriveSequence } from './lib/driveSequenceHash.mjs';
 
 const OUT = process.argv[2] || 'system-audit-drive-output.json';
 const PORT = 4174; // don't collide with an interactive `npm run preview` on 4173
@@ -469,7 +474,12 @@ async function main() {
     await preview.stop();
   }
 
+  const driveSequence = driveSequenceOf(result.states);
+  result.meta.driveSequence = driveSequence;
+  result.meta.driveSequenceHash = hashDriveSequence(driveSequence);
+
   console.log(`[system-audit-drive] states driven: ${Object.keys(result.states).join(', ')}`);
+  console.log(`[system-audit-drive] drive sequence hash: ${result.meta.driveSequenceHash}`);
   writeFileSync(OUT, JSON.stringify(result, null, 2));
   console.log(`[system-audit-drive] wrote ${OUT}`);
 }

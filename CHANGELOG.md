@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   against `#dropzone`'s computed styles — hover and drag-over now differ on
   `color` and `backgroundColor`, matching before the fix only on
   `borderColor`).
+- **The system audit's drive-script hash no longer voids on incidental file
+  changes.** `docs/system-audit.md`'s header pinned `scripts/system-audit-drive.mjs`
+  by a whole-file sha256, so a docstring edit or a repointed sample changed the
+  hash without changing what the script drove, voiding every state-sensitive
+  (`†`) row for a no-op change. The hash now covers the ordered list of states
+  driven and the selectors snapshotted within each, emitted by the script
+  itself (`scripts/lib/driveSequenceHash.mjs`,
+  `npx vitest run scripts/lib/driveSequenceHash.test.mjs`).
 - **Switching parts no longer asks you to confirm.** The dialog said
   switching would "clear the currently loaded" parts, naming the one thing
   that survives — your artwork stays right where you left it, and the part
