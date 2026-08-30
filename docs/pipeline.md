@@ -96,7 +96,9 @@ The plate is a stack of flat slabs between depth boundaries. Pure 2D maths, no
 - Depth is capped at the plate thickness less a 0.05 mm floor, so a recess
   cannot cut through.
 - Zero or less is raised to 0.2 mm, one typical layer.
-- Both cases warn, naming the region and both numbers.
+- Both cases warn, naming the region and both numbers. The zero case collects
+  across the build: one warning per distinct pair of numbers, naming every
+  region raised to that pair.
 - A positive depth thinner than a layer is honoured and only noted: a real
   choice on a fine-layer profile.
 

@@ -107,6 +107,28 @@ function twoColorSquaresParsed(): ParsedSVG {
   };
 }
 
+/** Three non-overlapping bars of different widths, for the messages that name several colors. */
+function threeColorSquaresParsed(): ParsedSVG {
+  const bar = (x0: number, x1: number) => [
+    [
+      { x: x0, y: 0 },
+      { x: x1, y: 0 },
+      { x: x1, y: 10 },
+      { x: x0, y: 10 },
+      { x: x0, y: 0 },
+    ],
+  ];
+  return {
+    shapes: [
+      { fill: '#ff0000', loops: bar(0, 12), order: 0 },
+      { fill: '#0000ff', loops: bar(12, 21), order: 1 },
+      { fill: '#00ff00', loops: bar(21, 27), order: 2 },
+    ],
+    bbox: { minX: 0, minY: 0, maxX: 27, maxY: 10 },
+    rawSVGCircle: { cx: 13.5, cy: 5, r: 13.5 },
+  };
+}
+
 /**
  * Two colors placed against a 40mm-square design face at `radius: 20` (mmPerUnit 1, centred on
  * (20, 20)): red is a tall bar flush against one wall of the face, blue a small island in the
@@ -1257,6 +1279,45 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
     expect(WARNINGS.map((w) => w.message)).toContain(
       'Depth for "#ff0000" was set to 0.00 mm, which is not a depth that can cut. It was raised to 0.20 mm.',
     );
+  });
+
+  it(
+    'says it once for every color at that depth, not once per color',
+    { timeout: 30000 },
+    async () => {
+      await buildAssemblyGeometry(baseInput({ parsed: threeColorSquaresParsed(), globalDepth: 0 }));
+
+      const zero = WARNINGS.filter((w) => w.message.includes('is not a depth that can cut'));
+      expect(zero.map((w) => w.message)).toEqual([
+        'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 0.00 mm, which is not a depth ' +
+          'that can cut. They were raised to 0.20 mm.',
+      ]);
+      expect(zero[0].level).toBe('warn');
+      expect(zero[0].build).toBe(true);
+    },
+  );
+
+  it('still says it once when the same colors sit on two parts', { timeout: 30000 }, async () => {
+    // The message carries no part name on purpose, so a wheel's two halves must not stack a
+    // second copy of it. Collecting build-wide is what keeps that true.
+    await buildAssemblyGeometry(
+      baseInput({
+        parsed: threeColorSquaresParsed(),
+        globalDepth: 0,
+        parts: [boxPart(), boxPart({ id: 2, name: 'second box' })],
+      }),
+    );
+
+    // Asserted on the text, not the pill count: collecting build-wide gives a count of 1 whether
+    // or not the labels dedupe, so a count alone passes while the message names each color twice.
+    expect(
+      WARNINGS.filter((w) => w.message.includes('is not a depth that can cut')).map(
+        (w) => w.message,
+      ),
+    ).toEqual([
+      'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 0.00 mm, which is not a depth ' +
+        'that can cut. They were raised to 0.20 mm.',
+    ]);
   });
 
   it(

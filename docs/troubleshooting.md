@@ -427,12 +427,12 @@ no layer to put it in, so it prints as bare body.
   be predicting a problem that can't happen. If the same colour is also on a
   part that cuts to depth, the note appears, and it is about that part.
 
-## Troubleshooting: "Depth for … is not a depth that can cut" warnings
+## Troubleshooting: "… is not a depth that can cut" warnings
 
 Zero or less cuts no pocket at all, and says nothing about what was wanted. Both
-modes raise it to 0.20 mm, one typical layer, naming the colour and both
-numbers. In assembly mode this used to drop the colour silently: no recess, no
-inlay, no message.
+modes raise it to 0.20 mm, one typical layer, naming every colour they raised
+and both numbers. In assembly mode this used to drop the colour silently: no
+recess, no inlay, no message.
 
 - **Nothing is dropped.** The colour cuts, just shallowly. That matters: a
   colour cut nowhere gets no row in the colour list, which would remove the very
@@ -442,14 +442,15 @@ inlay, no message.
   you set, so no single number is true of every part.
 - To remove the colour, use "→ base" on its row. To cut it, give it a real
   depth.
-- One warning per colour, not per part: depth is a per-colour setting, so a
-  global **Depth** of 0 reports each affected colour once however many parts
-  carry it.
-- **Assembly mode bounds only the shallow end.** There is no upper limit and no
-  check against the wall, which varies across a part, so a depth deeper than the
-  wall in one spot cuts a hole and exports silently. "Part … has no geometry to
-  export" only fires when the cut consumed the _whole_ part, so its absence is
-  not a report that the depth was safe.
+- One warning, naming every colour it raised, however many parts they sit on. A
+  global **Depth** of 0 raises every row and still says it once. It opens
+  `Depth for` with one colour and `Depths for` with several.
+- Two warnings only when two different depths were asked for: 0 on one row and
+  -1 on another are separate facts, and each names its own colours.
+- **Nothing checks the depth against the wall**, which varies across a part, so
+  a depth deeper than the wall in one spot cuts a hole and exports silently.
+  "Part … has no geometry to export" only fires when the cut consumed the
+  _whole_ part, so its absence is not a report that the depth was safe.
 
 ## Troubleshooting: "TMT Mosaic couldn't save this session. Leaving now loses it" warnings
 
