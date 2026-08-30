@@ -73,7 +73,7 @@ PR #147 is the worked example of stopping:
   when unsure. The numbers that decide whether a print succeeds (the verified
   plate constants) had been stable and live-verified since they landed.
 
-Three guards that matter more than the count:
+Four guards that matter more than the count:
 
 - **Never invent a constant to satisfy a reviewer.** A number that closes a
   finding without a measurement behind it is worse than the finding.
@@ -87,6 +87,15 @@ Three guards that matter more than the count:
   in the markup-splitting regex, and the area went rather than a fourth
   patch. #230 is the counter-example: the same wrong-axis bug survived three
   rounds because each fix got a third patch instead.
+- **Prose has no stop signal, so it gets one pass, at the end.** Code rounds
+  review the code diff; a finding on a comment, a CHANGELOG bullet, a
+  tech-debt section, a troubleshooting entry, or the PR body is applied
+  without re-entering review. After the last clean code round, one
+  `/code-review low` pass over the prose, applied, then ship. #270 ran ten
+  rounds and rounds 2-10 were all prose, with the code correct after round
+  1; #269 repeated it in rounds 7-8; #264 took 15 rounds on 3 prose files.
+  "There is no round cap" above still holds — what changed is what counts as
+  a round.
 
 ## Git workflow
 
@@ -247,6 +256,13 @@ measured, why it was deferred, and what closing it would take. This is where
 - This rule's first use got it wrong. #140 deleted the flat-shading section
   along with the "index the display meshes" follow-up inside it, and a review
   had to put it back.
+
+**And grep for what points at it.** The rule above covers what the section
+still owes; it does not cover what points at the section from outside.
+Before deleting, grep `docs/tech-debt.md` for `(above)`, `(below)`, the
+section's title words, and any count it contributed to a surviving section.
+#268 deleted a closed section and orphaned an `(above)` in the surviving
+quote-gate section, which also still cited four counts that PR had moved.
 
 Keep a closed item only when it is still load-bearing for something open, for
 example an entry in a list whose own conclusion is that an audit is owed.
