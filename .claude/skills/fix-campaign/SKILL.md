@@ -28,8 +28,29 @@ rather than assuming this date.
   agent E was re-implementing it. Check the branch and any open PR before
   spawning; if work exists, finish that branch instead of starting a new one.
 - Plan mode first. The plan names, per item: the tech-debt section, the
-  model, the branch, the files, the trap file to read first, and the test
-  that must be shown failing on `main`.
+  branch, the files, the trap file to read first, and the test that must be
+  shown failing on `main` — plus the agent, model, effort, and review level
+  from this table:
+
+  | Item kind                                                | Agent (`.claude/agents/`) | Model  | Effort | Code rounds                 | Prose pass                    |
+  | -------------------------------------------------------- | ------------------------- | ------ | ------ | --------------------------- | ----------------------------- |
+  | `src/geometry/`, `src/export/`, placement                | `opus-high`               | Opus   | high   | first `high`, later `low`   | one, `low`, at the end        |
+  | `src/ui/`, state plumbing, config                        | `sonnet-medium`           | Sonnet | medium | first `medium`, later `low` | one, `low`, at the end        |
+  | docs, one fixed target                                   | `sonnet-medium`           | Sonnet | medium | none                        | one, `low`                    |
+  | docs, judgment per section (triage, moving measurements) | `sonnet-high`             | Sonnet | high   | none                        | none; orchestrator read (VIS) |
+
+  Why: effort is only settable in an agent definition; the user's global
+  `effortLevel: xhigh` is otherwise inherited by every subagent. `low`
+  returns fewer, high-confidence findings, the set worth acting on. Pass the
+  level explicitly every time — `/code-review` reuses the last level typed
+  when none is given.
+
+- `.claude/agents/` definitions load only when a session starts, so a
+  definition written mid-session is not spawnable until the next one
+  (`Agent type 'sonnet-medium' not found`, measured 2026-08-29) — write or
+  check the three agent files before starting the session that runs the
+  campaign, and fall back to `general-purpose` with `model` passed (inherits
+  the global effort) if one is missing mid-run.
 
 ## 1. The brief
 
@@ -41,21 +62,48 @@ needing:
   with a misleading Manifold error). **Never `git stash`** (shared across
   worktrees). Rename the branch to the one the plan names. Do not remove the
   worktree; the orchestrator does.
-- One finding per PR. A second defect found on the way becomes its own
-  tech-debt section, not a fix.
+- Triage a second defect found on the way: **fix in the same PR** when it's
+  in a file the PR already touches, the fix is small (a regex branch, a
+  list entry, a missing clear), and it gets its own failing test and
+  CHANGELOG bullet. **Own tech-debt section** only when it needs a decision,
+  a measurement, or a different area of the code. #262's uppercase `E`
+  exponent and its `S`/`T`-after-arc promotion should have been fixed
+  inline: each was a one-line fix that became a 24- and 31-line section
+  (`docs/tech-debt.md`, "The path `d` tokenizer rejects an uppercase `E`
+  exponent" and "An `S`/`T` after an arc…"; `grep -n '^## ' docs/tech-debt.md`
+  for the boundaries).
 - Levers, so the report can score them: test first and shown failing on
   `main`; mutation run for every new guard/clear/dismiss; state sketch in the
   PR body before the first edit (anything touching warning lifecycle or
   persistence); every number cites its command; read the named trap file;
   cut the area on the second repeat.
-- `/code-review` before pushing and again after acting on findings. Stop on
-  taste. Never add a `replaceNotice`/upsert to `src/warnings.ts` (tech-debt's
-  first section: tried, three rounds, reverted).
+- **Prose is reviewed once, at the end, never per round.** Code rounds
+  review the code diff, at the levels the step 0 table names (first round
+  high or medium, later rounds `low`). A DOC/NUM/CTX finding on comments,
+  CHANGELOG, tech-debt, troubleshooting or the PR body is applied without a
+  new round. After the last clean code round, one `low` pass over the prose;
+  apply, ship. #270 ran ten rounds, of which 2-10 were all prose with the
+  code correct after round 1; #269's rounds 7-8 were the same; #264 took 15
+  rounds on 3 files. Never add a `replaceNotice`/upsert to `src/warnings.ts`
+  (tech-debt's first section: tried, three rounds, reverted).
+- **Run the gate chain in the foreground** — `ship-it`, vitest, and the CI
+  watch each as a foreground Bash call with a 600000 timeout, never as a
+  background task you then wait on. 3 of 5 agents stalled on this in the
+  2026-08-28 campaign, 3 of 4 in the 2026-08-29 campaign. Step 2's recovery
+  (`SendMessage` an agent waiting on its own background task) stays for when
+  it still happens; this is where the agent reading the brief sees it first.
 - `ship-it`, then `gh pr create` with a `## Rounds` table: one row per review
-  round including the clean final one, columns Round / Correction / Cause
-  code / Introduced by previous round's fix?. Cause codes: FIX VAC NUM DOC
-  PIPE CTX SCOPE DIAG HARD GATE TASTE VIS (VIS: caught by a human looking at
-  the PR, not by `/code-review` — step 5 tallies this one specifically).
+  round including the clean final one, columns Round / Correction / Layer /
+  Cause code / Introduced by previous round's fix?. Layer is `behaviour`
+  (shipped code) or `prose` (comments, CHANGELOG, tech-debt, troubleshooting,
+  PR body) — #270's author added it unprompted, and it is the only reason
+  its prose-heavy rounds were measurable. Cause codes: FIX VAC NUM DOC PIPE
+  CTX SCOPE DIAG HARD GATE TASTE VIS (VIS: caught by a human looking at the
+  PR, not by `/code-review` — step 5 tallies this one specifically).
+- **Before deleting a tech-debt section, grep the file for what points at
+  it**: `(above)`, `(below)`, the section's title words, and any count it
+  contributed to a surviving section. #268 orphaned an `(above)` and left
+  four counts stale; #260 and #270 hit the same shape.
 - **Rebase onto `origin/main` before pushing.** Every PR touches
   `CHANGELOG.md`'s Fixed list and `docs/tech-debt.md`; the first one to merge
   conflicts with all the others.
@@ -64,8 +112,9 @@ needing:
   another's there in the worked example.
 - Do not watch CI. Report the PR URL and the Rounds table, then stop.
 
-Spawn with `isolation: "worktree"`, `run_in_background: true`, the `model`
-the plan names. No subagent spawns subagents.
+Spawn with `isolation: "worktree"`, `run_in_background: true`,
+`subagent_type` set to the agent the step 0 table names — `model` no longer
+needs passing. No subagent spawns subagents.
 
 ## 2. While they run
 
@@ -117,7 +166,10 @@ gh pr view <n> --json mergeable,mergeStateStatus -q '.mergeable+" "+.mergeStateS
   entry isn't scoped to those flags** — `--admin` would bypass the
   CI-green gate this step just checked, and no permission-glob syntax here
   can exclude one flag while allowing the rest. Never pass `--admin`; there
-  is no mechanical guard against it.
+  is no mechanical guard against it. The `--delete-branch` step can error on
+  its own — when an agent worktree still holds the branch, deletion fails
+  while the merge itself succeeded; verify with `gh pr view <n> --json
+state`, and delete the branch after the worktree is removed.
 
 - `CONFLICTING`: rebase it yourself in a scratch worktree. The agent's
   worktree may hold the branch, so use a temp local name. **Fetch first** —
@@ -215,12 +267,14 @@ levers each PR applied. **TASTE has no baseline counterpart** — the
 original review didn't track "found, judged not worth fixing" as its own
 code, so tally TASTE rows separately rather than folding them into any
 baseline bucket, and say so in the report rather than silently comparing two
-different taxonomies. The baseline's VIS row (0, since #229-#243 all merged
-within minutes with no human look) is not expected to reappear here either:
-this campaign's PRs get a human look before merge, which VIS measured the
-absence of. First line states whether the round-count and cause-tally
-numbers moved. Include the null results and anything a live check caught
-that review did not. Pull the
+different taxonomies. VIS is the gate for docs-only PRs, which take no
+`/code-review` and otherwise reach `main` unreviewed: #268 is the worked
+example, an orphaned `(above)` and four stale counts caught only by the
+orchestrator read. Score each PR as defects closed / sections opened / fixed
+inline / behaviour rounds / prose rounds — not the tech-debt section count.
+First line states whether the round-count and cause-tally numbers moved.
+Include the null results and anything a live check caught that review did
+not. Pull the
 bodies with `gh pr view <n> --json body`; the report cites that command.
 Docs-only, so it ships without `/code-review`, but it still goes through
 `ship-it` and a PR.
