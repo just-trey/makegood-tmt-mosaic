@@ -822,23 +822,6 @@ that the notice did not close.
   a color on a capped trace at all, and the pinned-floor one needs the re-trace-on-resize item
   first.
 
-## The empty-trace message infers whether Detail can help, where the dropped-color notice measures it
-
-`rasterEmptyTraceMessage` ([src/raster/parse.ts](../src/raster/parse.ts)) picks its arm from
-`FloorReason`, which asks _which_ floor binds (`floor > fracFloorPx`). `rasterLostColors` asks the
-question directly instead, via `detailLowersFloor`: the floor the same image would get at
-`DETAIL_MAX`, against the floor in force. The two disagree where the nozzle floor ties the fractional
-one rather than exceeding it.
-
-- **Measured on a 128px image at `mmPerPixel` 0.28 to 0.30**: `printableFloorPx` and `fracFloorPx`
-  are both 2, so `floor > frac` is false and the reason reads `'noise'`. An emptied trace there says
-  "Try raising Detail, or use a less noisy image", while the floor at `DETAIL_MAX` is still pinned at
-  2 by the nozzle half and Detail moves nothing.
-- Pre-existing: the inference is what shipped, and the dropped-color work only put a measurement next
-  to it. Left alone deliberately, since changing it changes an unrelated shipped message.
-- Closing it: hand the same `detailLowersFloor` comparison to the empty-trace message, and re-check
-  the two tests that pin its arms (`-t "printable-floor"`, `-t "the noise message"`).
-
 ## `MAX_COMPONENTS` is a target, not the bound its name implies
 
 `traceLabelMap` ([src/raster/trace.ts](../src/raster/trace.ts)) raises the despeckle floor when the

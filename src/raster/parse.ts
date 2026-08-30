@@ -112,29 +112,33 @@ export function parseRasterImage(
 
   const floor = despeckleFloorPx(params, img.w, img.h, stats, opts.detail, opts.mmPerPixel ?? 0);
   const { components, capped, floorPx } = traceLabelMap(map, params, floor);
-  // Which floor is in force, against what it would have been with no placement — the fractional
-  // floor alone (see despeckleFloorPx's mmPerPixel<=0 branch). Above that, the placement is what
-  // removed the pixels, and Detail — which never scales the printable half — cannot undo it.
-  //
-  // Read off `floor`, the floor asked for, never the `floorPx` the trace came back with: a cap
-  // raise puts that one above the fraction on its own, so a capped trace with no placement at all
-  // would read as 'printable' and send the user off to resize a design that is not the problem.
-  const floorReason: FloorReason =
-    floor > fracFloorPx(params, img.w, img.h) ? 'printable' : 'noise';
-  if (!components.length) throw new EmptyTraceError(opts.name ?? 'this image', floorReason);
-
   // What the dropped-color notice's remedy is worth here, asked directly rather than inferred from
   // which floor binds: the floor this image would get at DETAIL_MAX, against the one it got. A
   // placement's nozzle floor pinning it and the slider already being at its end are the same answer.
-  const detailLowersFloor =
-    despeckleFloorPx(
-      autoParams(stats, DETAIL_MAX, ranDetailPass),
-      img.w,
-      img.h,
-      stats,
-      DETAIL_MAX,
-      opts.mmPerPixel ?? 0,
-    ) < floor;
+  //
+  // Read off `floor`, the floor asked for, never the `floorPx` the trace came back with: a cap
+  // raise puts that one above `floor` on its own, so a capped trace at DETAIL_MAX would come back
+  // claiming Detail has room it does not have.
+  const maxParams = autoParams(stats, DETAIL_MAX, ranDetailPass);
+  const floorAtMax = despeckleFloorPx(
+    maxParams,
+    img.w,
+    img.h,
+    stats,
+    DETAIL_MAX,
+    opts.mmPerPixel ?? 0,
+  );
+  const detailLowersFloor = floorAtMax < floor;
+
+  // The empty-trace remedy comes off the same measurement, so it stops pointing at Detail wherever
+  // the placed size is the real answer. 'printable' needs both halves: Detail has no room left on
+  // this floor, *and* the placement is what holds it above the fraction at DETAIL_MAX. Asking
+  // `floor > fracFloorPx` instead read a nozzle floor that ties the fraction rather than exceeding
+  // it as 'noise', with the floor pinned at 2 and Detail unable to move it. With no placement the
+  // second half fails and 'noise' stands: no part size is the answer there, and a cleaner source is.
+  const floorReason: FloorReason =
+    !detailLowersFloor && floorAtMax > fracFloorPx(maxParams, img.w, img.h) ? 'printable' : 'noise';
+  if (!components.length) throw new EmptyTraceError(opts.name ?? 'this image', floorReason);
 
   const shapes =
     granularity === 'component'
@@ -261,16 +265,17 @@ export function rasterLostColors(
 }
 
 /**
- * Which despeckle floor a trace ran under. 'printable' is the placement's nozzle-width floor, which
- * Detail never scales; 'noise' is the fractional floor, which it does. It decides what a lost color
- * or an emptied trace can be recovered by — see rasterColorLossMessage and rasterEmptyTraceMessage.
+ * Which remedy an emptied trace gets. 'printable' means the placement holds the floor up even at
+ * DETAIL_MAX, so only a bigger part or design moves it; 'noise' means Detail still has room, or
+ * there is no placement to blame. Measured in parseRasterImage, never inferred from which floor
+ * binds now — see rasterEmptyTraceMessage.
  */
 export type FloorReason = 'printable' | 'noise';
 
 /**
- * The empty-trace message for either cause: 'printable' means the placement's nozzle-width floor
- * emptied it and Detail can't help (that floor is never scaled by Detail); 'noise' means the
- * fractional floor did, which Detail does scale.
+ * The empty-trace message for either cause: 'printable' offers the only lever left, the size the
+ * design is placed at; 'noise' offers Detail, which scales the fractional floor, and a cleaner
+ * source. Which arm a trace gets is measured rather than inferred — see FloorReason.
  */
 export function rasterEmptyTraceMessage(name: string, reason: FloorReason): string {
   return reason === 'printable'
