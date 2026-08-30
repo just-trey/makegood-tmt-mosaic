@@ -276,7 +276,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       // puts real <path> elements in <defs>, and someone opening the file to find the element we
       // named counts those too.
       shapeCount += el.querySelectorAll(SHAPE_SELECTOR).length;
-      pathCount += el.getElementsByTagName('path').length;
+      pathCount += el.querySelectorAll('path').length;
       return;
     }
 

@@ -83,8 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   count.** Both that warning and "Shape 3 has a gradient/pattern fill" numbered
   their element among the ones the import kept, not among the ones in the file,
   so anything hidden, unfilled, or sitting in a clip mask shifted the count. A
-  file whose first five paths are hidden or clip-mask paths named its sixth one
-  "Path 1". Both messages now count every element of that kind from the top of
+  file whose first five paths were skipped for one of those reasons named its
+  sixth one "Path 1". Both messages now count every element of that kind from the top of
   the file, which is what someone reading the file in their editor can do
   (`npx vitest run tests/parse.test.ts`).
 - **Switching parts no longer asks you to confirm.** The dialog said
