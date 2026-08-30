@@ -49,6 +49,9 @@ reverted after three rounds each found a real defect:
 Closing this means either documenting the ordering constraint as permanent, or re-attempting the
 upsert with a test for each of the three failure modes above written before the fix.
 
+**Decided 2026-08-30**: re-attempt, with the test for each of the three failure modes above written
+first. Not yet scheduled.
+
 ## The placement frame's angle is unrelated to the face it acts on, and it shares the viewport with a second affordance
 
 Conventions 13–14 of [ui-conventions.md](ui-conventions.md): a gizmo is aligned to the frame of
@@ -543,6 +546,11 @@ Everything here still compiles and is still covered by `tests/flat.test.ts` and
 building) rather than a bug. The option list is what to touch if a future part
 wants a flat mode again.
 
+**Decided 2026-08-30**: delete the code — `flat.ts`, the per-color STL-set export, and their
+branches in `store.ts`/`rebuild.ts`, plus `tests/flat.test.ts` and `tests/depth.test.ts`'s
+flat-only coverage. Not yet scheduled. Closing this also closes the next section ("Flat plate
+modes have no printable despeckle floor"), which is only reachable through these panels.
+
 **What `npm run smoke` no longer covers.** Four of its steps drove the disc:
 switch to flat mode, override the background recess depth, export a flat 3MF,
 export the per-color STL zip. They came out, since they drove UI that no longer
@@ -555,6 +563,9 @@ not flat-specific and was kept, now running against the assembly part.
 **Unreachable as of the beta** (see "The flat-plate modes ship compiled and
 unrendered"), so nothing can hit this today. Kept because reopening any flat
 mode reopens it, unfixed.
+
+**Decided 2026-08-30**: the flat-plate modes are slated for deletion, not reopening (see the
+section above). Once that lands, this section goes with it rather than staying open.
 
 The floor that stops the trace keeping detail under one nozzle width
 ([2026-08-20 printable floor](findings/2026-08-20-printable-floor.md)) applies on assembly kinds
@@ -670,6 +681,10 @@ comparison each design's placed cut regions. A fill's are the tiled ones, so
 this still needs the grid, and the check would have to stop skipping the
 mixed pair. Start by measuring (1) on the wheel, where the fill region is
 small enough to time honestly.
+
+**Decided 2026-08-30**: go with (1), make it correct — subtract the sticker's pockets from the
+fill's before the inlay intersection. Not yet scheduled; still needs the wheel measurement above
+before committing to the full-tiled-region cost on the chair.
 
 ## Two traces still drop a color and say nothing about it
 
@@ -1068,6 +1083,9 @@ on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
 or a convention that all external numbers land through one parsing helper that
 the type system can then police.
 
+**Decided 2026-08-30**: the parsing-helper convention, not a custom lint rule. `parsePathD` and
+`parseFillOpacity` are already converging on that shape. Not yet scheduled.
+
 ## A regenerated source mesh would leave its rotated copies on the old geometry
 
 `asmAddDuplicate` ([src/assembly/parts.ts](../src/assembly/parts.ts)) shares
@@ -1169,3 +1187,7 @@ is silent. `fill-opacity="0"` on one shape is silent on purpose, for the reason
 in the comment on the `opacity === 0` branch of `walk`. A hidden layer is much
 more artwork to drop with nothing said, and CLAUDE.md code rule 1 wants a named
 warning for it.
+
+**Decided 2026-08-30**: warn, named, per CLAUDE.md code rule 1 — a hidden layer is enough content
+to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
+scheduled.
