@@ -247,7 +247,10 @@ function snapshotSession(): PersistedSession {
     // pixels — so it carries its working image re-encoded as PNG, which restore decodes and
     // re-traces. Raw pixels were rejected here and still are: 1024x1024 RGBA is 4.0MB against a
     // MAX_BYTES of 4MB, while the same pixels as PNG measure 24KB for flat art and 703KB for a
-    // photograph (see raster/store.ts for why PNG and why the working image).
+    // photograph (see raster/store.ts for why PNG and why the working image). The re-trace itself
+    // measured ~830ms on a 512px photograph (scripts/bench-raster.ts); caching the traced result
+    // instead would mean caching parsed regions, not pixels, a much larger payload that would put
+    // MAX_BYTES back in play — a deliberate trade, not an oversight.
     sources: persistedSources.map((s) => ({
       id: s.id,
       kind: s.kind,

@@ -54,11 +54,18 @@ function sharesSurface(a: string | null, b: string | null): boolean {
  * Scaling the step all the way up instead is what INSTANCE_CASCADE_MM already rejects: the wheel's
  * default design is a 276mm circle, and a step sized to clear that throws the design off the face.
  *
- * What this buys is bounded, and docs/tech-debt.md carries the two cases it does not reach. Any
- * single step has a silent band from itself up to 1.4625× itself, and one step per surface is
- * forced (a step chosen per design puts a later small one between an earlier big one's spots). So
- * a surface carrying anything over this size is back on the constant, and designs of opposite
- * proportions defeat the clearance measure whatever it is set to.
+ * What this buys is bounded. Any single step has a silent band from itself up to 1.4625× itself,
+ * and one step per surface is forced (a step chosen per design puts a later small one between an
+ * earlier big one's spots — pinned by "does not park a small design inside one already cascaded
+ * past it" in tests/artwork.test.ts). So a surface carrying anything over this size is back on the
+ * constant, and designs of opposite proportions (an 8x11.5mm design against an 11.5x8mm one, both
+ * reading 8mm on their narrow axis) defeat the clearance measure whatever it is set to — reading
+ * the wider axis instead would part that pair at the cost of moving every shaped-alike pair
+ * further than it needs to go, a defensible swap rather than a fix.
+ *
+ * Closing the band for real means dropping the lattice: search for the nearest free placement
+ * given the two designs' actual footprints, instead of stepping a fixed distance and testing for
+ * an exact-spot collision. That is a real placement search and wants its own change.
  */
 export const CASCADE_CLEAR_MAX_MM = INSTANCE_CASCADE_MM / (1 - Math.sqrt(OVERLAP_WARN_FRACTION));
 

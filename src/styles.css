@@ -1101,6 +1101,12 @@ input[type='checkbox'] {
 .feedback-trigger:hover {
   color: var(--text);
 }
+/* Open, this covers a warning pill's dismiss button: both sit at bottom: 44px and this wins
+   z-index. Measured at the 900px minimum width: popover 248-548px, .warn-dismiss ~520px, inside
+   its span. Not patched -- the popover is transient (Escape/close restores the x) and shrinking
+   #warnings while open leaves pills 224px wide, worse for reading than the overlap is for
+   dismissing. Closing it means deciding where a bottom-right panel and a bottom-left warnings
+   column both live. See docs/roadmap.md. */
 #feedback-popover {
   position: absolute;
   right: 12px;

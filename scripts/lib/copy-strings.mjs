@@ -57,6 +57,13 @@ const DECLARES_A_NAME = [
   ts.isFunctionDeclaration,
   ts.isClassDeclaration,
 ];
+// Resolves within one file only, by design: a suffix imported from another module is still one
+// token (an unindexed import has no local declaration to walk), and a name bound twice or bound
+// with `let` is skipped rather than guessed -- a wrong substitution invents defects that are not
+// there. The one place this reads as a false positive rather than a gap: moving a message constant
+// to another module, or rebinding it with `let`, collapses it to a token here even though the
+// shipped copy is byte-identical, so both gates report drift where there is none. Closing it needs
+// a full ts.createProgram, which was rejected as too heavy for what these gates check.
 export function stringConsts(src) {
   const binds = new Map();
   const ambiguous = new Set();

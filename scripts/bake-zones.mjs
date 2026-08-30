@@ -58,6 +58,13 @@ try {
   die(e.message);
 }
 
+// The chair's sidecar is 1.7MB raw / 638KB gzipped, up from 125KB when each zone stopped at one
+// part -- a zone spanning the whole chair simply carries more triangles. Measured composition: 41%
+// chartTris, 30% uv, 16% tris, 9% verts, so it is mostly index arrays and rounding the UVs buys
+// little. Real fix is delta-encoding the index arrays or a binary format; not urgent, it loads
+// async after first paint. Don't quantise UVs below ~0.01mm chasing this: two chart vertices closer
+// than the quantum would collapse into a degenerate UV triangle and the warp's barycentric lookup
+// divides by its area.
 const sidecarPath = path.resolve(REPO, 'public/stl', `${config.kindId}-zones.json`);
 fs.writeFileSync(sidecarPath, JSON.stringify(result.sidecar));
 console.log(

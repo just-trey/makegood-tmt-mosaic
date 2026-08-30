@@ -60,7 +60,8 @@ export const FILL_REFINE_MM = 3;
  * colors off the chair's seat-back parts.
  *
  * The real fix is re-baking so each claim matches its triangulation, which would let this go back
- * to a tight misplacement guard instead of tracking a bake artifact. See README tech debt.
+ * to a tight misplacement guard instead of tracking a bake artifact. Deferred: it invalidates
+ * every downloaded template and the sidecar.
  */
 export const CHART_SNAP_MM = 3;
 

@@ -1,5 +1,20 @@
 # Roadmap ideas (not built)
 
+Open questions with no obvious answer, where the measurement behind the question lives elsewhere:
+
+- What should a Fill tile with no declared mm size repeat at? The design face is wrong and 1:1 is a
+  guess; the honest answer may be to refuse Fill and say so. Measurement:
+  [designMmPerUnit](../src/geometry/assembly.ts)'s docstring.
+- Should per-part export placement ([src/export/placement.ts](../src/export/placement.ts)) move
+  onto the `AssemblyKind`/role definition instead of staying a lookup table keyed by part id?
+  Blocked on the chair's two caster roles resolving to a different mesh per hardware variant — see
+  the `PLACEMENT` provenance comment there.
+- Where should the open feedback popover live, given it covers a warning pill's dismiss button
+  while open? See the comment above `#feedback-popover` in [src/styles.css](../src/styles.css).
+- Does the caster mounts' design-zone gap describe the chair's real "central rear brace", or is the
+  brace note actually describing the casters themselves? See the `_note` in
+  [scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json).
+
 - Contextual help: short hints at the point people actually get stuck (a
   control's own row), instead of relying only on the single global help
   dialog. Not built in the 2026-08 help-dialog redesign because each hint is

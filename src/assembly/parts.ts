@@ -264,7 +264,11 @@ export async function asmLoadPartBuffer(
     const geo = new STLLoader().parse(buf);
     positions = geo.attributes.position.array as Float32Array;
     // An STL is soup with no vertex sharing recorded at all, so no index is offered below. Every
-    // shipped manifest entry is a 3MF; this branch is here for one that isn't.
+    // shipped manifest entry is a 3MF; this branch is here for one that isn't. Adding one would put
+    // it on three's toCreasedNormals fallback (1x, not the 8.7x indexed parts get -- see
+    // CREASE_ANGLE_RAD). Welding first would recover most of that, but welding is the expensive
+    // half: keying a soup's corners costs about what toCreasedNormals's own hashing costs (358ms
+    // bench on the chair), so a welded fallback would land near 1.5x, not 8.7x.
     //
     // **`part.vertices` deliberately stays.** Clearing it looks like the same tidy-up and is not:
     // `attachBakedZones` returns at its `!part.vertices` guard *before* it clears `part.zones`, so

@@ -55,9 +55,8 @@ function slotBudgetMessage(
   //
   // Hand-merging is the primary on purpose, and auto-merge is deliberately not named: it walks a
   // similarity threshold rather than a target count, and against the one real 7-color volunteer
-  // SVG measured so far it moved 7 slots to 6, and only at Strong (see docs/tech-debt.md,
-  // "Auto-merge is a similarity control"). Leading with it would send people to the control least
-  // likely to work.
+  // SVG measured so far it moved 7 slots to 6, and only at Strong (see AUTO_MERGE_LEVELS in
+  // geometry/regions.ts). Leading with it would send people to the control least likely to work.
   if (tier === 'over-max') {
     return {
       level: 'warn',

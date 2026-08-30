@@ -388,6 +388,13 @@ export interface DesignScaleContext {
  * Reads the document and not its content: everything about the artwork itself arrives as `anchorR`.
  * That is what lets the raster stage ask what scale a trace will be placed at before it has traced
  * anything (state/artwork.ts).
+ *
+ * **A Fill tile with no declared mm size still hits the auto-fit branch above**, contradicting the
+ * `forceRect` paragraph: measured on a 60-unit tile against the footrest's 266x185mm face,
+ * `width="100%"` + viewBox and unitless `width="60px"` both read 3.0833 mm/unit — a 185mm period,
+ * one repeat across the whole face. `width="60mm"` reads correctly (1.0000, 60mm). None of the four
+ * shipped patterns hit this (all declare `width="60mm"`); a user's own tile can. What a periodless
+ * tile should repeat at is a product decision — see docs/roadmap.md.
  */
 export function designMmPerUnit(
   parsed: Pick<ParsedSVG, 'userUnitMM' | 'canvas' | 'origin'>,
