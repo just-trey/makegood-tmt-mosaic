@@ -260,14 +260,43 @@ export function registerCovers(config, parts, objects) {
 }
 
 /**
- * Occlusion range (mm) for dead-surface classification: a zone triangle is covered when a cover
- * mesh lies within this distance straight out along its normal. Measured on the chair's covers
- * file (2026-08-16): the seat and back cushions sit in true contact (hits at 0-2mm), the wheel
- * disc stands 3-10mm off the mounts, and recessed mount surface behind the wheel reads up to
- * ~20mm. The 30-60mm band beyond is fender-arch interior that no zone contains, which is what
- * this cap exists to leave out.
+ * How far one visibility ray looks (mm) before it counts as escaping. Not a proximity limit: a
+ * sample is hidden when its whole outward hemisphere is blocked, and this only bounds the search.
+ *
+ * Measured on the chair's covers file (2026-08-30, scratch sweep over ray length at 48 directions,
+ * threshold 0.90): every zone's hidden area settles by 100mm and 100 -> 300mm then moves the flanks
+ * by 0.02% and the cushioned zones by 0.5%. Below 80mm it collapses — the wheel is a dish, its
+ * outer wall sits ~40mm behind the mount face, and grazing paths to that wall are longer still, so
+ * a short ray reports the wheel's shadow as a hollow ring (left flank 11,315mm² at 25mm against
+ * 32,896mm² at 120mm). Stopping at 120 rather than running unbounded keeps a ray from crossing the
+ * 340mm-wide chair and being blocked by a cover on the far side.
  */
-export const COVER_RAY_MM = 25;
+export const COVER_RAY_MM = 120;
+/**
+ * Directions per hemisphere sample, cosine-weighted (see HEMI_DIRS). Converged: 24 through 192
+ * directions agree within 0.6% on every chair zone, 12 is 1.4% off. 32 costs ~2.2s of the bake.
+ */
+const COVER_HEMI_DIRS = 32;
+/**
+ * Fraction of a sample's outward hemisphere that must be blocked for it to count as hidden.
+ *
+ * Chosen on the chair's mirrored flanks, which are the only pair whose two answers must agree:
+ * `left` and `right` disagree by 3.2% at 1.00, 4.3% at 0.95 and 1.5% at 0.90, then drop to 1.3% at
+ * 0.85 and flatten (0.6% at 0.80, 0.5% at 0.70). 0.85 is the strictest value past that knee, and
+ * stricter is the safe direction: over-claiming deletes surface a user can see, under-claiming only
+ * leaves artwork somewhere nobody looks. It lands at 90% of the wheels' straight-on projected
+ * shadow (33,746 against 37,456mm² on `left`), the missing tenth being the rim you can see into at
+ * a grazing angle.
+ */
+const COVER_HIDDEN_FRACTION = 0.85;
+/**
+ * Target area (mm²) of one classification sample. The chair's CAD faces arrive as coarse fans —
+ * ten triangles carry 68% of the left wheel mount's 37,443mm², the largest 8,430mm² — so a
+ * per-triangle verdict cannot draw a shadow edge at all. Converged: 100 down to 3mm² moves every
+ * zone under 1.5%, while a per-triangle verdict is 7% high on the flanks and 7% high on `front`.
+ * 25mm² is a ~5mm boundary resolution against the 20mm bleed, at 67k samples for the whole chair.
+ */
+const COVER_SAMPLE_MM2 = 25;
 /**
  * Dead islands under this (mm²) are dropped. Deliberately looser than MIN_ISLAND_AREA_MM2:
  * dropping a dead sliver only means a speck of hidden surface still takes artwork, the safe
@@ -277,72 +306,215 @@ const MIN_DEAD_AREA_MM2 = 15;
 
 const CELL_MM = 8;
 
-function coverGrid(cover) {
-  const grid = new Map();
-  cover.tris.forEach((t, ti) => {
-    const vs = t.map((i) => cover.verts[i]);
-    const mn = [0, 1, 2].map((k) => Math.floor(Math.min(...vs.map((v) => v[k])) / CELL_MM));
-    const mx = [0, 1, 2].map((k) => Math.floor(Math.max(...vs.map((v) => v[k])) / CELL_MM));
-    for (let i = mn[0]; i <= mx[0]; i++)
-      for (let j = mn[1]; j <= mx[1]; j++)
-        for (let k = mn[2]; k <= mx[2]; k++) {
-          const key = `${i},${j},${k}`;
-          if (!grid.has(key)) grid.set(key, []);
-          grid.get(key).push(ti);
+// Cell hash. Collisions merge two cells' triangle lists, which only ever adds candidates a ray
+// then rejects exactly — a hit can't be lost, so the hash needs no perfectness.
+const cellKey = (i, j, k) => (i * 73856093) ^ (j * 19349663) ^ (k * 83492791);
+
+/**
+ * Every cover body's triangles in ONE 8mm cell grid, flattened to a Float64Array. One grid rather
+ * than one per body because the question is only ever "does any cover block this ray", so a single
+ * walk answers it; `seen` stamps a triangle per ray, since a triangle sits in every cell its bbox
+ * spans. Measured 67x faster than the per-body sampled march it replaces, over 16,031 chair zone
+ * triangles, with zero verdicts changed.
+ */
+function coverIndex(covers) {
+  const pts = [];
+  for (const c of covers)
+    for (const t of c.tris) pts.push(c.verts[t[0]], c.verts[t[1]], c.verts[t[2]]);
+  const count = pts.length / 3;
+  const xyz = new Float64Array(pts.length * 3);
+  pts.forEach((v, i) => xyz.set(v, i * 3));
+  const cells = new Map();
+  for (let t = 0; t < count; t++) {
+    const o = t * 9;
+    for (
+      let i = Math.floor(Math.min(xyz[o], xyz[o + 3], xyz[o + 6]) / CELL_MM);
+      i <= Math.floor(Math.max(xyz[o], xyz[o + 3], xyz[o + 6]) / CELL_MM);
+      i++
+    )
+      for (
+        let j = Math.floor(Math.min(xyz[o + 1], xyz[o + 4], xyz[o + 7]) / CELL_MM);
+        j <= Math.floor(Math.max(xyz[o + 1], xyz[o + 4], xyz[o + 7]) / CELL_MM);
+        j++
+      )
+        for (
+          let k = Math.floor(Math.min(xyz[o + 2], xyz[o + 5], xyz[o + 8]) / CELL_MM);
+          k <= Math.floor(Math.max(xyz[o + 2], xyz[o + 5], xyz[o + 8]) / CELL_MM);
+          k++
+        ) {
+          const key = cellKey(i, j, k);
+          let cell = cells.get(key);
+          if (!cell) cells.set(key, (cell = []));
+          cell.push(t);
         }
-  });
-  return grid;
+  }
+  return { xyz, cells, seen: new Int32Array(count).fill(-1), ray: 0 };
 }
 
-function rayTriDist(p, dir, a, b, c) {
-  const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-  const e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-  const h = [
-    dir[1] * e2[2] - dir[2] * e2[1],
-    dir[2] * e2[0] - dir[0] * e2[2],
-    dir[0] * e2[1] - dir[1] * e2[0],
-  ];
-  const det = e1[0] * h[0] + e1[1] * h[1] + e1[2] * h[2];
-  if (Math.abs(det) < 1e-9) return Infinity;
+/** Möller-Trumbore against cover triangle `t`; distance along dir, or Infinity. */
+function rayTriDist(xyz, t, px, py, pz, dx, dy, dz) {
+  const o = t * 9;
+  const ax = xyz[o],
+    ay = xyz[o + 1],
+    az = xyz[o + 2];
+  const e1x = xyz[o + 3] - ax,
+    e1y = xyz[o + 4] - ay,
+    e1z = xyz[o + 5] - az;
+  const e2x = xyz[o + 6] - ax,
+    e2y = xyz[o + 7] - ay,
+    e2z = xyz[o + 8] - az;
+  const hx = dy * e2z - dz * e2y,
+    hy = dz * e2x - dx * e2z,
+    hz = dx * e2y - dy * e2x;
+  const det = e1x * hx + e1y * hy + e1z * hz;
+  if (det > -1e-9 && det < 1e-9) return Infinity;
   const inv = 1 / det;
-  const s = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
-  const u = (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]) * inv;
+  const sx = px - ax,
+    sy = py - ay,
+    sz = pz - az;
+  const u = (sx * hx + sy * hy + sz * hz) * inv;
   if (u < 0 || u > 1) return Infinity;
-  const q = [s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]];
-  const v = (dir[0] * q[0] + dir[1] * q[1] + dir[2] * q[2]) * inv;
+  const qx = sy * e1z - sz * e1y,
+    qy = sz * e1x - sx * e1z,
+    qz = sx * e1y - sy * e1x;
+  const v = (dx * qx + dy * qy + dz * qz) * inv;
   if (v < 0 || u + v > 1) return Infinity;
-  const t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv;
-  return t > 1e-6 ? t : Infinity;
+  const t0 = (e2x * qx + e2y * qy + e2z * qz) * inv;
+  return t0 > 1e-6 ? t0 : Infinity;
 }
 
-/** Whether any cover lies within COVER_RAY_MM of `p` along `dir`, via each cover's cell grid. */
-function coverOccludes(grids, p, dir) {
-  for (const { cover, grid } of grids) {
-    let hit = Infinity;
-    const seen = new Set();
-    for (let s = 0; s <= COVER_RAY_MM + CELL_MM; s += CELL_MM * 0.9) {
-      const q = [p[0] + dir[0] * s, p[1] + dir[1] * s, p[2] + dir[2] * s];
-      for (let di = -1; di <= 1; di++)
-        for (let dj = -1; dj <= 1; dj++)
-          for (let dk = -1; dk <= 1; dk++) {
-            const key = `${Math.floor(q[0] / CELL_MM) + di},${Math.floor(q[1] / CELL_MM) + dj},${
-              Math.floor(q[2] / CELL_MM) + dk
-            }`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            const cell = grid.get(key);
-            if (!cell) continue;
-            for (const ti of cell) {
-              const [a, b, c] = cover.tris[ti].map((x) => cover.verts[x]);
-              const d = rayTriDist(p, dir, a, b, c);
-              if (d < hit) hit = d;
-            }
-          }
-      if (hit < s) break;
+/**
+ * Whether any cover blocks the ray from `p` along `dir` within COVER_RAY_MM, by walking the grid
+ * cell by cell (3D DDA). Each cell is entered once, so no de-duplication beyond the per-ray
+ * triangle stamp is needed.
+ */
+function coverOccludes(index, p, dir) {
+  index.ray++;
+  const { xyz, cells, seen } = index;
+  let ix = Math.floor(p[0] / CELL_MM),
+    iy = Math.floor(p[1] / CELL_MM),
+    iz = Math.floor(p[2] / CELL_MM);
+  const sx = dir[0] > 0 ? 1 : -1,
+    sy = dir[1] > 0 ? 1 : -1,
+    sz = dir[2] > 0 ? 1 : -1;
+  const bound = (i, s, k) => (s > 0 ? (i + 1) * CELL_MM : i * CELL_MM) - p[k];
+  let tx = dir[0] !== 0 ? bound(ix, sx, 0) / dir[0] : Infinity;
+  let ty = dir[1] !== 0 ? bound(iy, sy, 1) / dir[1] : Infinity;
+  let tz = dir[2] !== 0 ? bound(iz, sz, 2) / dir[2] : Infinity;
+  const dx = dir[0] !== 0 ? Math.abs(CELL_MM / dir[0]) : Infinity;
+  const dy = dir[1] !== 0 ? Math.abs(CELL_MM / dir[1]) : Infinity;
+  const dz = dir[2] !== 0 ? Math.abs(CELL_MM / dir[2]) : Infinity;
+  for (let entry = 0; entry <= COVER_RAY_MM;) {
+    const cell = cells.get(cellKey(ix, iy, iz));
+    if (cell)
+      for (let a = 0; a < cell.length; a++) {
+        const t = cell[a];
+        if (seen[t] === index.ray) continue;
+        seen[t] = index.ray;
+        if (rayTriDist(xyz, t, p[0], p[1], p[2], dir[0], dir[1], dir[2]) <= COVER_RAY_MM)
+          return true;
+      }
+    if (tx < ty && tx < tz) {
+      entry = tx;
+      ix += sx;
+      tx += dx;
+    } else if (ty < tz) {
+      entry = ty;
+      iy += sy;
+      ty += dy;
+    } else {
+      entry = tz;
+      iz += sz;
+      tz += dz;
     }
-    if (hit <= COVER_RAY_MM) return true;
   }
   return false;
+}
+
+/**
+ * Directions over the hemisphere about +Z, spiralled by the golden angle and cosine-weighted, so
+ * each one stands for the same slice of PROJECTED area and a grazing view counts for as little as
+ * it shows. Index 0 is the pole, which lets a sample that can see straight out escape on its first
+ * ray. Fixed and deterministic: the bake must be reproducible, so no RNG.
+ */
+const HEMI_DIRS = (() => {
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const out = [];
+  for (let i = 0; i < COVER_HEMI_DIRS; i++) {
+    const z = Math.sqrt(1 - (i + 0.5) / COVER_HEMI_DIRS);
+    const r = Math.sqrt(Math.max(0, 1 - z * z));
+    out.push([r * Math.cos(i * golden), r * Math.sin(i * golden), z]);
+  }
+  return out;
+})();
+/** Escaping directions a hidden sample is still allowed. 32 - ceil(0.85 * 32) = 4. */
+const HEMI_ESCAPE_BUDGET = COVER_HEMI_DIRS - Math.ceil(COVER_HIDDEN_FRACTION * COVER_HEMI_DIRS);
+
+/**
+ * Whether `p`, on surface facing `n`, is hidden once the covers are on: all but
+ * HEMI_ESCAPE_BUDGET of its outward hemisphere runs into a cover. The part's own surface is
+ * ignored — assembling the covers is what changes visibility, and a zone that is already
+ * self-occluded was never printable artwork in the first place.
+ */
+function hemisphereBlocked(index, p, n) {
+  // any vector not parallel to n; the pair only has to be orthonormal, not aligned to anything
+  let ux, uy, uz;
+  if (Math.abs(n[2]) < 0.9) {
+    ux = -n[1];
+    uy = n[0];
+    uz = 0;
+  } else {
+    ux = 0;
+    uy = -n[2];
+    uz = n[1];
+  }
+  const ul = Math.hypot(ux, uy, uz) || 1;
+  ux /= ul;
+  uy /= ul;
+  uz /= ul;
+  const vx = n[1] * uz - n[2] * uy,
+    vy = n[2] * ux - n[0] * uz,
+    vz = n[0] * uy - n[1] * ux;
+  let escaped = 0;
+  const w = [0, 0, 0];
+  for (let i = 0; i < HEMI_DIRS.length; i++) {
+    const d = HEMI_DIRS[i];
+    w[0] = ux * d[0] + vx * d[1] + n[0] * d[2];
+    w[1] = uy * d[0] + vy * d[1] + n[1] * d[2];
+    w[2] = uz * d[0] + vz * d[1] + n[2] * d[2];
+    if (!coverOccludes(index, p, w) && ++escaped > HEMI_ESCAPE_BUDGET) return false;
+  }
+  return true;
+}
+
+/**
+ * Barycentric sub-triangles of one triangle, `k` to a side. Cached: the same handful of `k` values
+ * covers a whole bake, and rebuilding the 24x24 case per triangle would cost more than the rays.
+ */
+const SUB_CELLS = new Map();
+/** 24 to a side is 576 samples, which the chair's largest triangle (8,430mm²) already sits under. */
+const SUB_CELLS_MAX = 24;
+function subCells(k) {
+  let cached = SUB_CELLS.get(k);
+  if (cached) return cached;
+  const out = [];
+  for (let i = 0; i < k; i++)
+    for (let j = 0; j < k - i; j++) {
+      out.push([
+        [i, j],
+        [i + 1, j],
+        [i, j + 1],
+      ]);
+      if (j < k - i - 1)
+        out.push([
+          [i + 1, j],
+          [i + 1, j + 1],
+          [i, j + 1],
+        ]);
+    }
+  cached = out.map((tri) => tri.map(([a, b]) => [a / k, b / k]));
+  SUB_CELLS.set(k, cached);
+  return cached;
 }
 
 /**
@@ -1431,9 +1603,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     throw new Error('parts array does not match config.parts (same ids, same order, required)');
   if (config.covers && !(opts.covers && opts.wasm))
     throw new Error('config declares covers but the bake was given no cover meshes / Manifold');
-  const coverGrids = config.covers
-    ? opts.covers.map((cover) => ({ cover, grid: coverGrid(cover) }))
-    : null;
+  const coverIdx = config.covers ? coverIndex(opts.covers) : null;
   const warnings = [];
   const weld = weldParts(parts, config.weldTolMm ?? WELD_TOL_MM, config.seamWeldTolMm ?? 0);
   const triGeom = weld.tris.map((t) => triNormalArea(weld.verts, t));
@@ -1523,25 +1693,52 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     // no visible artwork to continue. Every region here is unioned straight from UV triangles:
     // the zone-level boundary loops are the display-only outline that fans into spikes across
     // stitched seams, and a visible region derived from them eats real dead surface.
+    //
+    // Classification runs per COVER_SAMPLE_MM2 patch, not per triangle: a triangle here can be
+    // 8,430mm² of one flat CAD face, and its verdict would be the whole face either way.
+    //
+    // Both sets are unioned from the SAME patches. `zone minus covered` looks equivalent and is
+    // not: the two unions are triangulated differently along every shared edge, so the difference
+    // keeps hairline slivers of no area but full length, and dilating one by 20mm sweeps away the
+    // dead region around it. Measured on the seat: identical areas either way (5,780 against
+    // 5,786mm² visible), 5,999mm² of dead surface by subtraction against 22,354mm² by union.
     const triRing = (zt) => zt.map((z) => uvOf(z));
     let deadCS = null;
-    if (coverGrids) {
-      const coveredZ = [];
+    if (coverIdx) {
+      const coveredRings = [];
+      const visibleRings = [];
       zoneTris.forEach((ti, k) => {
-        const t = weld.tris[ti];
-        const c = [0, 1, 2].map(
-          (a) => (weld.verts[t.v[0]][a] + weld.verts[t.v[1]][a] + weld.verts[t.v[2]][a]) / 3,
-        );
-        if (coverOccludes(coverGrids, c, triGeom[ti].normal)) coveredZ.push(zTris[k]);
+        const p3 = weld.tris[ti].v.map((g) => weld.verts[g]);
+        const q = triRing(zTris[k]);
+        const uvArea =
+          Math.abs(
+            (q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1]),
+          ) / 2;
+        const n = triGeom[ti].normal;
+        for (const cell of subCells(
+          Math.max(1, Math.min(SUB_CELLS_MAX, Math.ceil(Math.sqrt(uvArea / COVER_SAMPLE_MM2)))),
+        )) {
+          const a = (cell[0][0] + cell[1][0] + cell[2][0]) / 3;
+          const b = (cell[0][1] + cell[1][1] + cell[2][1]) / 3;
+          const at = (v0, v1, v2, s, t) => v0.map((x, i) => x + (v1[i] - x) * s + (v2[i] - x) * t);
+          const hidden = hemisphereBlocked(coverIdx, at(p3[0], p3[1], p3[2], a, b), n);
+          (hidden ? coveredRings : visibleRings).push(
+            cell.map(([s, t]) => at(q[0], q[1], q[2], s, t)),
+          );
+        }
       });
-      if (coveredZ.length) {
+      if (coveredRings.length) {
         const wasm = opts.wasm;
-        const zoneCS = new wasm.CrossSection(zTris.map(triRing), 'NonZero');
-        const covCS = new wasm.CrossSection(coveredZ.map(triRing), 'NonZero');
-        const visible = zoneCS.subtract(covCS);
+        const covCS = new wasm.CrossSection(coveredRings, 'NonZero');
+        const visible = new wasm.CrossSection(visibleRings, 'NonZero');
+        // Miter, though Round is the truer dilation-by-a-disc: a miter join over-reaches past a
+        // convex corner, and on the staircase boundary the samples leave that is every corner.
+        // Tried Round and measured it worse where it counts — the marked slivers in the front
+        // sheet's top corners went from 27mm² back to 146mm², past even the 138mm² they had
+        // before this change, in exchange for tidier spikes around the seat's two through-holes.
         const grown = visible.offset(config.covers.bleedMm, 'Miter', 2, 16);
         deadCS = covCS.subtract(grown);
-        for (const cs of [zoneCS, covCS, visible, grown]) cs.delete();
+        for (const cs of [covCS, visible, grown]) cs.delete();
       }
     }
 
@@ -1619,7 +1816,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         chartTris,
         subRegions,
       };
-      if (coverGrids) {
+      if (coverIdx) {
         chart.deadRegions = [];
         if (deadCS) {
           const chartCS = new opts.wasm.CrossSection(
@@ -1728,7 +1925,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       file: zone.templateFile,
       svg: zoneTemplateSVG(zone, config.kindId, { maxU, maxV }),
     });
-    const deadArea = coverGrids
+    const deadArea = coverIdx
       ? charts.reduce(
           (s, c) =>
             s +
@@ -1747,7 +1944,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         `${zoneRegions.length} lobe(s), ${zone.holes.length} hole(s), ${seams.length} seam(s), ` +
         `stretch max ${zone.distortion.max} mean ${zone.distortion.mean}, ` +
         `scale ${stats.scale.toFixed(5)}` +
-        (coverGrids ? `, dead ${deadArea.toFixed(0)}mm²` : ''),
+        (coverIdx ? `, dead ${deadArea.toFixed(0)}mm²` : ''),
     );
   }
 

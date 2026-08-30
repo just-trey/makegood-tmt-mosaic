@@ -635,3 +635,150 @@ describe('the mesh fingerprint survives the double-to-float32 narrowing', () => 
     expect(bakeFingerprint(part)).toEqual(runtimeFingerprint(f32, part.tris.length));
   });
 });
+
+// Dead-surface classification, on shapes whose hidden area is known in closed form. Every case is
+// the same 200x200 plate; what changes is the cover and the plate's tessellation.
+describe('hidden surface classification', () => {
+  let wasm: ManifoldAPI;
+  beforeAll(async () => {
+    wasm = await getManifold();
+  }, 30000);
+
+  type Cover = { verts: number[][]; tris: number[][] };
+
+  /** Axis-aligned box, outward-wound. */
+  function boxCover(lo: number[], hi: number[]): Cover {
+    const verts: number[][] = [];
+    for (let i = 0; i < 8; i++)
+      verts.push([i & 1 ? hi[0] : lo[0], i & 2 ? hi[1] : lo[1], i & 4 ? hi[2] : lo[2]]);
+    const v = (x: number, y: number, z: number): number => x + y * 2 + z * 4;
+    const quads = [
+      [v(1, 0, 0), v(1, 1, 0), v(1, 1, 1), v(1, 0, 1)],
+      [v(0, 0, 0), v(0, 0, 1), v(0, 1, 1), v(0, 1, 0)],
+      [v(0, 1, 0), v(0, 1, 1), v(1, 1, 1), v(1, 1, 0)],
+      [v(0, 0, 0), v(1, 0, 0), v(1, 0, 1), v(0, 0, 1)],
+      [v(0, 0, 1), v(1, 0, 1), v(1, 1, 1), v(0, 1, 1)],
+      [v(0, 0, 0), v(0, 1, 0), v(1, 1, 0), v(1, 0, 0)],
+    ];
+    return {
+      verts,
+      tris: quads.flatMap((q) => [
+        [q[0], q[1], q[2]],
+        [q[0], q[2], q[3]],
+      ]),
+    };
+  }
+
+  /**
+   * A dish: annular front face at `zFront` with a bore of radius `ri`, a solid back wall at
+   * `zBack`, and the rim between them. This is the chair wheel in miniature — the surface under
+   * the bore has nothing within 25mm of it along its own normal, and is still hidden.
+   */
+  function dishCover(
+    cx: number,
+    cy: number,
+    ri: number,
+    ro: number,
+    zFront: number,
+    zBack: number,
+  ): Cover {
+    const N = 64;
+    const verts: number[][] = [];
+    const ring = (r: number, z: number): number => {
+      const base = verts.length;
+      for (let i = 0; i < N; i++)
+        verts.push([
+          cx + r * Math.cos((2 * Math.PI * i) / N),
+          cy + r * Math.sin((2 * Math.PI * i) / N),
+          z,
+        ]);
+      return base;
+    };
+    const inF = ring(ri, zFront);
+    const outF = ring(ro, zFront);
+    const outB = ring(ro, zBack);
+    const inB = ring(ri, zBack);
+    const hub = verts.length;
+    verts.push([cx, cy, zBack]);
+    const tris: number[][] = [];
+    const band = (a: number, b: number): void => {
+      for (let i = 0; i < N; i++) {
+        const j = (i + 1) % N;
+        tris.push([a + i, b + i, b + j], [a + i, b + j, a + j]);
+      }
+    };
+    band(inF, outF); // front annulus
+    band(outF, outB); // rim
+    band(outB, inB); // back wall, outer part
+    for (let i = 0; i < N; i++) tris.push([inB + i, hub, inB + ((i + 1) % N)]);
+    return { verts, tris };
+  }
+
+  const COVER_CFG = { file: '-', referenceColor: '#FFFFFF', bleedMm: 10 };
+  const ZONE = { id: 'face', name: 'Face', seedNormal: [0, 0, 1], maxAngleDeg: 20, up: [0, 1, 0] };
+  /** 200x200 plate as two triangles: the chair's CAD faces arrive this coarse. */
+  const coarsePlate: Part = {
+    libraryPartId: 'coarse',
+    verts: [
+      [0, 0, 0],
+      [200, 0, 0],
+      [200, 200, 0],
+      [0, 200, 0],
+    ],
+    tris: [
+      [0, 1, 2],
+      [0, 2, 3],
+    ],
+  };
+  const finePlate = platePart('fine', 20, () => false);
+
+  const bake = (part: Part, covers: Cover[]): ReturnType<typeof bakeZones> =>
+    bakeZones(config([part], [ZONE], { covers: COVER_CFG }), [part], () => {}, { covers, wasm });
+  const deadOf = (
+    baked: ReturnType<typeof bakeZones>,
+  ): { outer: number[][]; holes: number[][][] }[] =>
+    baked.sidecar.zones[0].charts[0].deadRegions ?? [];
+  const deadArea = (baked: ReturnType<typeof bakeZones>): number =>
+    deadOf(baked).reduce(
+      (s, r) =>
+        s + Math.abs(loopArea(r.outer)) - r.holes.reduce((h, l) => h + Math.abs(loopArea(l)), 0),
+      0,
+    );
+
+  it('a flush box on a finely meshed plate leaves one clean patch, inset by the bleed', () => {
+    const baked = bake(finePlate, [boxCover([50, 50, 1], [150, 150, 31])]);
+    const dead = deadOf(baked);
+    expect(dead).toHaveLength(1);
+    expect(dead[0].holes).toHaveLength(0);
+    // 100x100 hidden, minus the 10mm bleed dilated in from every side
+    expect(deadArea(baked)).toBeCloseTo(80 * 80, -2);
+  });
+
+  it('the same box on a two-triangle plate hides the same 80x80, not the whole plate', () => {
+    // Classifying whole triangles cannot answer this: both triangle centroids are under the box,
+    // so a per-triangle verdict has only "all 40,000mm²" and "nothing" to choose between.
+    const baked = bake(coarsePlate, [boxCover([50, 50, 1], [150, 150, 31])]);
+    const dead = deadOf(baked);
+    expect(dead).toHaveLength(1);
+    expect(deadArea(baked)).toBeCloseTo(80 * 80, -2);
+  });
+
+  it('a dished cover hides the surface under its bore, which no ray along the normal reaches', () => {
+    // Bore radius 30 at 5mm, back wall at 45mm: straight out, the plate centre sees nothing until
+    // 45mm. It is still hidden — the rim and back wall close off every other direction.
+    const baked = bake(finePlate, [dishCover(100, 100, 30, 60, 5, 45)]);
+    const dead = deadOf(baked);
+    expect(dead).toHaveLength(1);
+    expect(dead[0].holes).toHaveLength(0);
+    // Bounded, not pinned: the bore's own 30mm radius has to be inside the patch, and the rim's
+    // 60mm shadow inset by the 10mm bleed bounds it from above. Where the edge falls between the
+    // two is how far under the rim you can still see, which is the thing being measured.
+    expect(deadArea(baked)).toBeGreaterThan(Math.PI * 30 * 30);
+    expect(deadArea(baked)).toBeLessThan(Math.PI * 50 * 50);
+  });
+
+  it('a cover beside the plate hides nothing', () => {
+    const baked = bake(finePlate, [boxCover([260, 50, 1], [360, 150, 31])]);
+    expect(deadOf(baked)).toHaveLength(0);
+  });
+});
