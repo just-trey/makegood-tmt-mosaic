@@ -40,6 +40,7 @@ import { refreshSlotBudgetNotice, SLOT_PILL_SUFFIX } from '../src/ui/slotBudget'
 import { getPrinter } from '../src/export/printers';
 import { getLastAssemblyBuild } from '../src/app/rebuild';
 import { build3MFCombined } from '../src/export/threemf';
+import { track } from '../src/analytics/track';
 import { state } from '../src/state/store';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 
@@ -178,6 +179,26 @@ describe('exportPrintReady3MF — filament slot budget', () => {
     await exportPrintReady3MF();
 
     expect(slotNotices()).toEqual([]);
+  });
+});
+
+describe('exportPrintReady3MF — analytics kind', () => {
+  it('reports the kind the export was built from, not one picked mid-export', async () => {
+    // #shape-kind stays clickable through the awaited build3MFCombined call (only the export
+    // button disables itself), so a user can switch kinds before it resolves
+    state.assembly.kindId = 'wheel';
+    buildWithPalette(1);
+    vi.mocked(build3MFCombined).mockImplementationOnce(async () => {
+      state.assembly.kindId = 'footrest';
+      return { blob: new Blob(), warnings: [] };
+    });
+
+    await exportPrintReady3MF();
+
+    expect(vi.mocked(track)).toHaveBeenCalledWith(
+      'export',
+      expect.objectContaining({ kind: 'wheel' }),
+    );
   });
 });
 
