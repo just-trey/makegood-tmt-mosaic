@@ -171,6 +171,16 @@ gh pr view <n> --json mergeable,mergeStateStatus -q '.mergeable+" "+.mergeStateS
   while the merge itself succeeded; verify with `gh pr view <n> --json
 state`, and delete the branch after the worktree is removed.
 
+  **That error takes the remote branch down with it.** `--delete-branch`
+  deletes local and remote together, so the local failure aborts both and
+  the merged branch stays on `origin` — silently, since the merge it
+  reports is the part that worked. Every campaign PR hits this, because
+  the agent worktree always still holds its branch at merge time. The
+  2026-08-30 run merged six PRs and left all six branches on the remote;
+  the same `fetch --prune` cleared ten more from earlier runs, so this had
+  been leaking for several campaigns unnoticed. Step 6 is where it gets
+  swept, and it is not optional.
+
 - `CONFLICTING`: rebase it yourself in a scratch worktree. The agent's
   worktree may hold the branch, so use a temp local name. **Fetch first** —
   `gh pr merge` is a remote call and never updates the local `origin/main`
@@ -284,6 +294,24 @@ Docs-only, so it ships without `/code-review`, but it still goes through
 - Every agent worktree removed, every `worktree-agent-*` and merged
   `fix/*` local branch deleted, `git worktree prune`.
 - Scratch worktrees under the scratchpad removed.
+- **Every merged branch deleted from `origin`, then `git fetch --prune`.**
+  Step 3's `--delete-branch` did not do it (see the note there), so the
+  branches are still on the remote and nothing else in this skill removes
+  them. Delete a branch only after confirming its PR actually merged, so a
+  branch whose PR is still open is never swept:
+
+  ```bash
+  for b in <the campaign's branches>; do
+    n=$(gh pr list --state merged --head "$b" --json number -q '.[0].number')
+    [ -n "$n" ] && git push origin --delete "$b" && echo "deleted $b (#$n)"
+  done
+  git fetch --prune origin
+  ```
+
+  `--state merged` is the guard that matters: `--head` alone would also
+  match an open PR, and `dead-zones` (PR #193, open since 2026-08-17) sits
+  on the remote across every campaign waiting to be deleted by mistake.
+
 - `git pull --ff-only origin main` in the main checkout.
 - Leave worktrees you did not create alone unless the user says otherwise.
 - **`rm` only the specific paths this run created** (its own agent worktree
