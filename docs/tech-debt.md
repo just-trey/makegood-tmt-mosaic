@@ -74,6 +74,34 @@ almost nothing and prints as a sliver on the lip.
 - Deferred out of this change because it moves placement for every zone on
   every kind, which is a bigger blast radius than the clip itself.
 
+## The covers reference has no tires, so each flank keeps artwork the tire hides — unmeasured
+
+`stubs/dead-zones.3mf` carries the printed wheel only: two halves plus the cap.
+The assembled chair runs a tire ring outside that, and the bake has never seen
+it, so the flanks treat the band under the tire as printable.
+
+Measured on the stub (2026-08-30), against the photo-scaled tire:
+
+|                                               | `left`    | `right`   |
+| --------------------------------------------- | --------- | --------- |
+| straight-on wheel shadow on the zone          | 36,619mm² | 36,730mm² |
+| baked dead there (the rest is the 20mm bleed) | 12,891mm² | 14,489mm² |
+| what a 30mm tire ring would add               | 22,447mm² | 23,215mm² |
+
+- **The tire figures are unmeasured.** 30mm is scaled off a photo — the hub
+  reads ~340px for a stub-measured 280mm, the band ~37px. Read the last row as
+  "about as much again as the stub covers", never as a number to build on. The
+  stub rows above it are measured.
+- The direction is safe: surface under the tire is treated as printable, so it
+  costs a filament change on plastic nobody sees. It never leaves blank plastic
+  where artwork was expected, which is the failure that would matter.
+- Closing it: re-export `stubs/dead-zones.3mf` with tire bodies on the four
+  casters, rebake, and the shadow falls out of the existing classifier with no
+  code change. Deliberately not approximated in code — inventing an annulus
+  from a photo is the sort of unmeasured constant this file exists to keep out
+  of the bake.
+- The owner has seen the trade and chose to leave tires out for now.
+
 ## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
 
 ## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted
@@ -370,7 +398,7 @@ maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
    clips to. Note the repo already has curve fitting for the raster tracer
    (`src/raster/curve.ts`); nothing equivalent runs on a zone boundary.
 
-3. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
+2. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
    Measured on `MOSAIC_GPU=1` production build, 2026-08-03: zebra in Fill mode
    on the chair's Left side settles clean apart from a single `Couldn't cut
 color #0a0a0a into "Handle (left)"`, so that part prints without the black.
@@ -382,7 +410,7 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
    specific solid Manifold rejects; worth trying first whether the handle's
    own mesh density or a near-tangent cut at its curvature is what trips it.
 
-4. **The extrude repair never runs on a conformal zone — related,
+3. **The extrude repair never runs on a conformal zone — related,
    unmeasured on the chair.** `ConformalZoneMapper.buildCutter` absorbs an
    invalid prism and returns `null`, so the escalating erode ladder that
    fixed a lost color on the wheel (a `FlatZoneMapper`) buys the chair body
@@ -393,7 +421,7 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
    mapper the same retry, or establishing that its null return means
    something different enough that a retry would be wrong.
 
-5. **`export-chair-examples.mjs` cannot reach Fill — tooling, broken since
+4. **`export-chair-examples.mjs` cannot reach Fill — tooling, broken since
    #137.** The script sets `.artwork-mode` to `fill` and asserts it took, but
    `chair-body` carries `withholdFill: true` so `artworkListPanel` never
    renders that select: the step times out. Not a selector to update — the
