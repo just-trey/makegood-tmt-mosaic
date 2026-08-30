@@ -527,8 +527,11 @@ nothing saying it differed from what was asked for.
   and the two never show on the same image: a capped trace keeps that notice and
   never raises this one.
 - **It does not say the pieces were unprintable, because usually they were
-  not.** The floor it fires under is a fraction of the image, not a nozzle
-  width. At part scale that fraction is millimetres across.
+  not.** With a placement, the floor that normally binds is the smallest feature
+  flat art keeps: a 1.6mm square, four nozzle widths (`DESPECKLE_FEATURE_MM`).
+  At 512px across 185mm that is 20px², under the fractional floor's 39. With no
+  placement it is that fraction instead. Neither is a nozzle width, and where
+  the nozzle floor does bind this notice is withheld.
 - **The count is against the colors that labelled pixels, not the slider.** An
   image that simply has fewer colors than Colors asks for (a three-color logo at
   Colors 8) has lost nothing, and never raises this. Neither does a color that

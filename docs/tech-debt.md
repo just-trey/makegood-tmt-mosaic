@@ -1117,6 +1117,10 @@ that the notice did not close.
   can promise recovery, since a quartered floor can still be above a color's pieces. Drawing a "how
   much movement is enough" line would be an invented constant, so it is left as is. **Unmeasured**:
   how often that band is where real artwork lands.
+- **The claim also goes stale on a resize**, since nothing re-traces on a placement change: a notice
+  raised at part scale keeps standing after the design is scaled down onto a face where the nozzle
+  floor pins the floor, which is the case `detailLowersFloor` exists to suppress. Same root as "The
+  printable despeckle floor is fixed at the moment of the trace", and closed by the same fix.
 - **The notice can also vanish mid-remedy, which reads as fixed.** Its presence tracks "Detail can
   still move this floor", not "a color is missing". On `sprinkled(384)` with no placement, Detail 90
   gives floor 7 and the notice; Detail 95 gives floor 6, `detailLowersFloor` false, and the notice is
