@@ -750,8 +750,24 @@ describe('hidden surface classification', () => {
     const dead = deadOf(baked);
     expect(dead).toHaveLength(1);
     expect(dead[0].holes).toHaveLength(0);
-    // 100x100 hidden, minus the 10mm bleed dilated in from every side
-    expect(deadArea(baked)).toBeCloseTo(80 * 80, -2);
+    // 100x100 hidden, minus the 10mm bleed dilated in from every side, minus the four corners the
+    // DEAD_SMOOTH_MM open-close rounds off (r² - πr²/4 apiece at r = 5)
+    const rounded = 80 * 80 - 4 * (25 - Math.PI * 6.25);
+    expect(deadArea(baked)).toBeGreaterThan(rounded - 15);
+    expect(deadArea(baked)).toBeLessThan(rounded + 15);
+  });
+
+  it('drops a dead island the bleed margin would swallow, and keeps the real patch', () => {
+    // Two covers: a 100x100 that survives the bleed with 80x80 to spare, and a 37x37 whose 17x17
+    // remnant is wide enough to survive the open but under the bleed's own footprint (a disc of
+    // bleedMm, 314mm²), so it carries no signal worth hatching.
+    const baked = bake(finePlate, [
+      boxCover([10, 10, 1], [110, 110, 31]),
+      boxCover([150, 150, 1], [187, 187, 31]),
+    ]);
+    const dead = deadOf(baked);
+    expect(dead).toHaveLength(1);
+    expect(deadArea(baked)).toBeGreaterThan(6000);
   });
 
   it('the same box on a two-triangle plate hides the same 80x80, not the whole plate', () => {

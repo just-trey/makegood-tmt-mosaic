@@ -303,6 +303,24 @@ const COVER_SAMPLE_MM2 = 25;
  * direction, where dropping a clip-region island deletes design surface.
  */
 const MIN_DEAD_AREA_MM2 = 15;
+/**
+ * Radius (mm) of the morphological open-then-close that smooths the dead region in UV.
+ *
+ * The classifier is piecewise-constant on COVER_SAMPLE_MM2 patches, so its boundary is a staircase
+ * about one patch tall (a 25mm² triangle is 6.6mm on the long side), and the bleed's miter joins
+ * turn every step of it into a spike. Opening first removes the spikes and slivers, closing then
+ * fills the notches; both are Round, so the structuring element is a real disc.
+ *
+ * 5mm is where the zone-level component histogram separates (2026-08-30 sweep). Raw, each zone is a
+ * continuum — the left flank runs 12,348 / 708 / 668 / 666 / 277 / 256 / 142 / … mm². At 5mm every
+ * zone is one large patch and exactly one straggler, with nothing between: left 12,620 + 316, right
+ * 13,886 + 460, front 13,489 + 334, seat 20,792 + 313. Smaller does not separate them; larger only
+ * costs area (8mm gives up another 8% and splits the seat in two).
+ *
+ * It is also what finally clears the slivers the owner marked on the Front sheet: 138 / 154 / 912 /
+ * 1,068mm² in the four marked boxes before any of this work, and 0 / 0 / 0 / 0 after.
+ */
+const DEAD_SMOOTH_MM = 5;
 
 const CELL_MM = 8;
 
@@ -1325,6 +1343,38 @@ function classifyRegions(loops) {
   return regions;
 }
 
+/**
+ * Morphological open-then-close at DEAD_SMOOTH_MM. Both halves shrink before they grow, so the
+ * result is contained in the input dilated by the radius and can never reach further onto surface
+ * the classifier called visible than the radius itself.
+ */
+function smoothDead(cs) {
+  if (DEAD_SMOOTH_MM <= 0) return cs;
+  let cur = cs;
+  for (const d of [-DEAD_SMOOTH_MM, DEAD_SMOOTH_MM, DEAD_SMOOTH_MM, -DEAD_SMOOTH_MM]) {
+    const next = cur.offset(d, 'Round', 2, 32);
+    if (cur !== cs) cur.delete();
+    cur = next;
+  }
+  return cur;
+}
+
+/** Drop whole outer-plus-holes regions under `minAreaMm2`; returns `cs` itself if none qualify. */
+function dropSmallRegions(cs, minAreaMm2, wasm) {
+  const rings = cs.toPolygons().map((r) => r.map(([x, y]) => [x, y]));
+  const regions = classifyRegions(rings);
+  const keep = regions.filter(
+    (r) =>
+      Math.abs(loopArea(r.outer)) - r.holes.reduce((s, h) => s + Math.abs(loopArea(h)), 0) >=
+      minAreaMm2,
+  );
+  if (keep.length === regions.length) return cs;
+  return new wasm.CrossSection(
+    keep.flatMap((r) => [r.outer, ...r.holes]),
+    'EvenOdd',
+  );
+}
+
 /** Chain undirected [a,b] vertex-pair edges into open paths and cycles. */
 function chainEdges(edges) {
   const adj = new Map();
@@ -1737,8 +1787,20 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         // sheet's top corners went from 27mm² back to 146mm², past even the 138mm² they had
         // before this change, in exchange for tidier spikes around the seat's two through-holes.
         const grown = visible.offset(config.covers.bleedMm, 'Miter', 2, 16);
-        deadCS = covCS.subtract(grown);
+        const rough = covCS.subtract(grown);
+        deadCS = smoothDead(rough);
+        rough.delete();
         for (const cs of [covCS, visible, grown]) cs.delete();
+        // Whole components, not per-chart pieces: a region split across a printed seam is still one
+        // patch to whoever reads the template, and dropping half of it would be the visible defect.
+        // A component under the bleed's own footprint (a disc of bleedMm) is smaller than the margin
+        // the bleed already reserves, so hatching it tells nobody anything; at DEAD_SMOOTH_MM every
+        // chair zone has exactly one such straggler and nothing between it and the real patch.
+        const dropped = dropSmallRegions(deadCS, Math.PI * config.covers.bleedMm ** 2, opts.wasm);
+        if (dropped !== deadCS) {
+          deadCS.delete();
+          deadCS = dropped;
+        }
       }
     }
 
