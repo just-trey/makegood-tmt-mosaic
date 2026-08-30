@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   MIN_CUT_DEPTH_MM,
+  addZeroDepthRaise,
   depthDiffers,
   regionLabel,
   requestedDepth,
@@ -8,6 +9,7 @@ import {
   thinDepthNotice,
   zeroDepthWarning,
   CUT_FLOOR_MM,
+  type ZeroDepthRaise,
 } from './depth';
 import type {
   BaseParams,
@@ -283,6 +285,10 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
 
   const maxDepth = thickness - CUT_FLOOR_MM;
 
+  // Staged at each resolveDepth call, warned about once at the end of the build: a global Depth of
+  // 0 raises every row at once.
+  const zeroDepthRaises = new Map<string, ZeroDepthRaise>();
+
   /**
    * A recess reaching the back of the plate would cut through it, and one at or below zero cuts
    * nothing — but both used to be fixed silently, so a depth of 100 on a 4 mm disc exported a
@@ -294,7 +300,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   const resolveDepth = (key: string, label: string): number => {
     const requested = requestedDepth(colorSettings, globalDepth, key);
     const depth = Math.min(requested <= 0 ? MIN_CUT_DEPTH_MM : requested, maxDepth);
-    if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depth));
+    if (requested <= 0) addZeroDepthRaise(zeroDepthRaises, label, requested, depth);
     else if (depthDiffers(depth, requested))
       warnBuild(
         `Depth for "${label}" was set to ${requested.toFixed(2)} mm, but a ${thickness.toFixed(2)} mm ` +
@@ -451,6 +457,11 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
           areaPct: (100 * baseAreaMm) / grandTotal,
         }
       : null;
+
+  // Last, past every resolveDepth call there is or could be: staging a raise below this point
+  // would collect it into a map nothing reads, and drop the pill silently.
+  for (const r of zeroDepthRaises.values())
+    warnBuild(zeroDepthWarning(r.labels, r.requested, r.raisedTo));
 
   return { baseGroup, colorMeshes, thickness, footW, footH, detectedColors, baseAssigned };
 }

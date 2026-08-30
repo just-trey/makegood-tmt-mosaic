@@ -426,10 +426,83 @@ Closing it means carrying the applied depth out of the build on
 `ColorListEntry`, which today holds only what the palette knows. It has to stay
 display-only when it gets there, or it re-creates the pinning bug above.
 
-**Also open, from the same finding:** one depth edit raises one warning per
-colour. Typing `0` with four colours loaded stacks four identical pills, and on a
-photograph it would stack ten. They are per-colour because the build warns as it
-cuts each one; saying it once needs the loop to collect rather than announce.
+## troubleshooting.md does not say when a too-deep assembly depth goes unnamed
+
+The zero-depth section of [troubleshooting.md](troubleshooting.md) used to
+assert assembly mode had "no upper limit". False: `depthSetting =
+Math.min(raised, mapper.maxCutDepth())` bounds it and `tooDeepWarning` names it.
+The sentence was cut rather than replaced, and this is what it owes.
+
+**Three replacements were drafted and each named a different, incomplete set of
+the cases where nothing is said.** A fourth attempt inside this very section
+missed one more. So the cases are deliberately not listed here: an enumeration
+written from outside the code has been wrong every time it was tried.
+
+Two mechanisms produce the silence, and both must be read from source:
+
+- `maxCutDepth()` declines by returning `Infinity`
+  ([zones.ts](../src/geometry/zones.ts), plus
+  [conformal.ts](../src/geometry/conformal.ts), which always declines). Its
+  guard clauses are the list.
+- The bound applies but `tooDeepWarning`'s `regions.some(...)` gate does not
+  match, because `resolveCutRegions` returned a different depth
+  ([assembly.ts](../src/geometry/assembly.ts)).
+
+Silence is correct in all of them: a clamp that changes nothing should not be
+announced. Closing this means reading both sites, writing the outcomes down
+once, and pinning them with a test per case so the list cannot rot again.
+
+## The too-deep clamp still raises one warning pill per colour
+
+The other half of "one depth edit raises one warning per colour". The zero-depth
+branch now collects across the build and says it once; the clamp branch does
+not, and still announces inside the per-colour loop.
+
+Measured 2026-08-29:
+
+| `recessBg`       | pills |
+| ---------------- | ----- |
+| `true` (shipped) | 4     |
+| `false`          | 3     |
+
+**To re-derive both numbers**, write a temporary test file at the repo root and
+run `npx vitest run <file>`:
+
+```ts
+import { buildGeometry } from './src/geometry/flat';
+import { WARNINGS, clearWarnings } from './src/warnings';
+// threeColorParsed() and the baseParams block: copy from tests/flat.test.ts.
+for (const recessBg of [true, false]) {
+  clearWarnings();
+  await buildGeometry({ ...baseInput(), parsed: threeColorParsed(), globalDepth: 100, recessBg });
+  console.log(recessBg, WARNINGS.filter((w) => w.message.includes('can only cut')).length);
+}
+```
+
+`baseInput()` there is a 4 mm-thick disc, which is what makes the clamp
+`3.95 mm`. Delete the file afterwards; it is a probe, not a gate.
+
+All identical but for the row name — `Depth for "#0000ff" was set to 100.00 mm,
+but a 4.00 mm plate can only cut 3.95 mm deep. It was cut at 3.95 mm instead.`
+The fourth is the `Background` row, a third caller of the same branch.
+
+Three callers, two mechanics, and they are not symmetric:
+
+- **Flat mode** ([flat.ts](../src/geometry/flat.ts), the
+  `depthDiffers(depth, requested)` branch) groups on `(requested, cutAt)`, the
+  two numbers the message prints, exactly as `addZeroDepthRaise` does. Not on
+  the plate: `requested` is per row, since any row — the background included —
+  can carry its own `colorSettings` override, so two rows clamped to the same
+  depth can have asked for different ones.
+- **Assembly mode** (`tooDeepWarning`, [assembly.ts](../src/geometry/assembly.ts))
+  needs a third component. It names the part on purpose, because
+  `maxCutDepth()` is a per-part bound, so two parts genuinely clamp the same
+  colour to two depths. The key is `(requested, cutAt, partName)`, and the
+  message has to keep naming the part.
+
+Closing it means the `addZeroDepthRaise` treatment applied to both, with the
+assembly grouping carrying the part name. Deferred as a second collection
+mechanic rather than bolted onto the PR that landed the first.
 
 ## Auto-merge is a similarity control; the user's actual constraint is a slot count
 
@@ -1649,13 +1722,13 @@ parsing one means locating and extracting the markup fragment first.
 **Known gaps**, all measured 2026-08-26 against the 220 prose strings `src/`
 admits.
 
-| Gap                                                   | Size                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Markup element text is unchecked (`src/**/*.ts` only) | 78 of the 220 are markup. Only their attributes are read, giving 23 units, and **62 yield nothing at all**. The case that matters is [svg/parse.ts](../src/svg/parse.ts), a plain warning that counts as markup only because it names an SVG element. Reopening this means locating and parsing the markup fragment inside each template literal |
-| Prose filter is a heuristic                           | A whole string of 25 characters or fewer is unchecked. Admitting 21 to 25 takes the gate from 220 strings to 239, so 19 more, none of them defects. Measure on flattened strings: counting raw literals gives 14, a different universe                                                                                                           |
-| Imperative list is closed                             | An instruction using a verb outside it reads as clean                                                                                                                                                                                                                                                                                            |
-| An interpolation counts as one word                   | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts                                                                                                                                                                                                      |
-| Constants resolve within one file only                | A suffix imported from another module is still one token. A name bound twice, or bound with `let`, is skipped rather than guessed: a wrong substitution invents defects that are not there                                                                                                                                                       |
+| Gap                                                   | Size                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Markup element text is unchecked (`src/**/*.ts` only) | 78 of the 220 are markup. Only their attributes are read, giving 23 units, and **62 yield nothing at all**. The case that matters is [svg/parse.ts](../src/svg/parse.ts), a plain warning that counts as markup only because it names an SVG element. Reopening this means locating and parsing the markup fragment inside each template literal                                                                                                                                                    |
+| Prose filter is a heuristic                           | A whole string of 25 characters or fewer is unchecked. Admitting 21 to 25 takes the gate from 220 strings to 239, so 19 more, none of them defects. Measure on flattened strings: counting raw literals gives 14, a different universe                                                                                                                                                                                                                                                              |
+| Imperative list is closed                             | An instruction using a verb outside it reads as clean                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| An interpolation counts as one word                   | The 20-word limit undercounts a message built from a joined list. The stacked-parts warning measures 11 and runs 15 or more with four parts. `grep -rn "join(', ')" src/` finds 9 sites, 5 of them unbounded (2026-08-29). Replicating the gate's own `sentences()`/`words()` on `n` hex labels: `zeroDepthWarning` and `edgeCutThroughNotice` both run 16/20/21/25 words at n=1/5/6/10, and 21 at three `Merged (N)` rows. Six colours is `DEFAULT_RASTER_COLORS`, so an imported photo reaches it |
+| Constants resolve within one file only                | A suffix imported from another module is still one token. A name bound twice, or bound with `let`, is skipped rather than guessed: a wrong substitution invents defects that are not there                                                                                                                                                                                                                                                                                                          |
 
 The last one is the shape of a gap that already cost something. `flatten()` used
 to collapse **every** non-literal operand, so a message finished by a shared

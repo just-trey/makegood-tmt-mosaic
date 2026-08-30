@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Position } from 'geojson';
 import {
   MIN_CUT_DEPTH_MM,
+  addZeroDepthRaise,
   depthDiffers,
   edgeCutThroughNotice,
   regionLabel,
@@ -10,6 +11,7 @@ import {
   thinDepthNotice,
   tooDeepWarning,
   zeroDepthWarning,
+  type ZeroDepthRaise,
 } from './depth';
 import type {
   AssemblyBuild,
@@ -773,6 +775,9 @@ export async function buildAssemblyGeometry(
   // per part: it is one fact about the design, and a color can sit on several parts. Map, not Set,
   // so the notice can state the actual depth.
   const edgeCutColors = new Map<string, number>();
+  // Zero-depth raises, collected across every part for the same reason: build-wide, because the
+  // message carries no part name, and said once however many colors were raised.
+  const zeroDepthRaises = new Map<string, ZeroDepthRaise>();
   // Palette indices known to have reached some design surface: a survived boundary clip, a
   // produced inlay (a cut-through zone has no clip boundary, its boolean bounds the cut), or any
   // CSG failure involving the color, so a color lost to a broken boolean is never also told to
@@ -866,7 +871,7 @@ export async function buildAssemblyGeometry(
         //
         // The message reports the *setting* it raised, not the cut produced: what a part does with a
         // depth is the mapper's business. Naming a cut depth here claimed 0.02 mm on a 3 mm
-        // through-cut. No part name either, so it dedupes to one warning per color.
+        // through-cut. No part name either, so a color on both halves of a wheel is named once.
         const raised = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
         // And bounded above by how far this part actually extends behind its design face. Without
         // this, assembly mode had no upper bound at all: 20 mm and 9999 mm on the wheel both built
@@ -886,7 +891,7 @@ export async function buildAssemblyGeometry(
           label: `color ${label}`,
           clipped,
         });
-        if (requested <= 0) warnBuild(zeroDepthWarning(label, requested, depthSetting));
+        if (requested <= 0) addZeroDepthRaise(zeroDepthRaises, label, requested, depthSetting);
         // Gated on what the mapper did with the number, exactly like the sub-layer note below, and
         // for the same reason: a cutThrough part discards the setting and holes the whole way
         // through, so "it was cut at 24.25 mm instead" would be false there. Never test
@@ -1233,6 +1238,11 @@ export async function buildAssemblyGeometry(
       held.forEach(manifoldDelete);
     }
   }
+  // Collected build-wide rather than staged per part like the edge notice below: that one promises
+  // something about the exported geometry, this one only describes the setting the user typed, so a
+  // part that fails its booleans does not make it untrue.
+  for (const r of zeroDepthRaises.values())
+    warnBuild(zeroDepthWarning(r.labels, r.requested, r.raisedTo));
   // Once, after every part: one notice naming every color the edge rule took the full way through.
   // Grouped by cut depth, a single value in practice (one part has the rule) but per-part in the
   // model, so grouping keeps the message honest if a second such part lands.

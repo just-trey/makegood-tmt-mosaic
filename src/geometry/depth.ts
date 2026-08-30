@@ -52,12 +52,47 @@ export function regionLabel(color: string, isMerge: boolean, memberCount: number
  * raised value to a mapper that may discard it (a cutThrough part holes any depth the whole way
  * through), so "would cut nothing" would be false there and true in flat mode. Everything this
  * says is true wherever the color lands.
+ *
+ * Takes every color at once, like edgeCutThroughNotice: a global Depth of 0 raises every row, so a
+ * message per row stacked one identical-looking pill per color, and an imported photo starts at
+ * DEFAULT_RASTER_COLORS of them.
  */
-export function zeroDepthWarning(label: string, requested: number, raisedTo: number): string {
+export function zeroDepthWarning(labels: string[], requested: number, raisedTo: number): string {
+  const one = labels.length === 1;
+  const which = labels.map((l) => `"${l}"`).join(', ');
   return (
-    `Depth for "${label}" was set to ${requested.toFixed(2)} mm, which is not a depth that can ` +
-    `cut. It was raised to ${raisedTo.toFixed(2)} mm.`
+    `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ` +
+    `${requested.toFixed(2)} mm, which is not a depth that can cut. ` +
+    `${one ? 'It was' : 'They were'} raised to ${raisedTo.toFixed(2)} mm.`
   );
+}
+
+export interface ZeroDepthRaise {
+  requested: number;
+  raisedTo: number;
+  labels: string[];
+}
+
+/**
+ * Stage one color's raise for a single message at the end of the build.
+ *
+ * Keyed by both numbers as the message prints them, never by "was raised at all": `requested` is
+ * per color, so merging two pairs would quote some of the colors named the other pair's number.
+ * `raisedTo` is in the key for the same reason, though nothing reachable today varies it within one
+ * build (flat mode's bound is the one plate; assembly's maxCutDepth() declines rather than
+ * returning below MIN_CUT_DEPTH_MM). A label already staged for a pair is not repeated, which is
+ * what keeps a color sitting on several parts to one mention.
+ */
+export function addZeroDepthRaise(
+  into: Map<string, ZeroDepthRaise>,
+  label: string,
+  requested: number,
+  raisedTo: number,
+): void {
+  const key = `${requested.toFixed(2)}|${raisedTo.toFixed(2)}`;
+  const at = into.get(key);
+  if (!at) into.set(key, { requested, raisedTo, labels: [label] });
+  else if (!at.labels.includes(label)) at.labels.push(label);
 }
 
 /**

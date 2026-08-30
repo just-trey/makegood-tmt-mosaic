@@ -19,6 +19,26 @@ function squareParsed(): ParsedSVG {
   };
 }
 
+function threeColorParsed(): ParsedSVG {
+  const bar = (x0: number, x1: number) => [
+    [
+      { x: x0, y: 0 },
+      { x: x1, y: 0 },
+      { x: x1, y: 10 },
+      { x: x0, y: 10 },
+    ],
+  ];
+  return {
+    shapes: [
+      { fill: '#ff0000', loops: bar(0, 12), order: 0 },
+      { fill: '#00ff00', loops: bar(12, 21), order: 1 },
+      { fill: '#0000ff', loops: bar(21, 27), order: 2 },
+    ],
+    bbox: { minX: 0, minY: 0, maxX: 27, maxY: 10 },
+    rawSVGCircle: null,
+  };
+}
+
 function baseInput(overrides: Partial<FlatBuildInput> = {}): FlatBuildInput {
   return {
     parsed: squareParsed(),
@@ -100,6 +120,51 @@ describe('buildGeometry depth clamp warning', () => {
       expect(built.colorMeshes.find((c) => c.key === '#ff0000')!.depth).toBeCloseTo(0.2);
       expect(WARNINGS.some((w) => w.message.includes('It was raised to 0.20 mm.'))).toBe(true);
     }
+  });
+
+  it('says it once for every color at that depth, not once per color', async () => {
+    await buildGeometry(baseInput({ parsed: threeColorParsed(), globalDepth: 0, recessBg: false }));
+
+    const zero = WARNINGS.filter((w) => w.message.includes('is not a depth that can cut'));
+    expect(zero.map((w) => w.message)).toEqual([
+      'Depths for "#0000ff", "#00ff00", "#ff0000" were set to 0.00 mm, which is not a depth ' +
+        'that can cut. They were raised to 0.20 mm.',
+    ]);
+  });
+
+  it('keeps two different requested depths in two messages', async () => {
+    // Grouping on "was raised at all" would put both in one message and quote one of them the
+    // other's number.
+    await buildGeometry(
+      baseInput({
+        parsed: threeColorParsed(),
+        recessBg: false,
+        colorSettings: {
+          '#ff0000': { depth: 0 },
+          '#00ff00': { depth: -1 },
+          '#0000ff': { depth: 0 },
+        },
+      }),
+    );
+
+    expect(
+      WARNINGS.filter((w) => w.message.includes('is not a depth that can cut')).map(
+        (w) => w.message,
+      ),
+    ).toEqual([
+      'Depths for "#0000ff", "#ff0000" were set to 0.00 mm, which is not a depth that can cut. ' +
+        'They were raised to 0.20 mm.',
+      'Depth for "#00ff00" was set to -1.00 mm, which is not a depth that can cut. It was ' +
+        'raised to 0.20 mm.',
+    ]);
+  });
+
+  it('names the background alongside the colors it shares a depth with', async () => {
+    await buildGeometry(baseInput({ parsed: threeColorParsed(), globalDepth: 0 }));
+
+    const zero = WARNINGS.filter((w) => w.message.includes('is not a depth that can cut'));
+    expect(zero).toHaveLength(1);
+    expect(zero[0].message).toContain('"#ff0000", "Background"');
   });
 
   it('names the background region rather than a hex', async () => {

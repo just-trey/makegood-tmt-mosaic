@@ -39,6 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `docs/tech-debt.md` carries both
   (`npx vitest run tests/raster-parse.test.ts tests/artworkListPanel.test.ts`,
   38 tests).
+- **One depth edit no longer stacks one warning pill per colour.** Setting
+  **Depth** to 0 raised every colour and announced each one separately, because
+  both build modes warned inside their per-colour loop and the pill list
+  deduplicates on exact message text, which the colour name made unique. Three
+  colours produced three pills, and an imported photo starts at six
+  (`DEFAULT_RASTER_COLORS`, up to a `MAX_COLORS` of 16).
+  Both modes now collect the raises and say it once: `Depths for "#0000ff",
+"#00ff00", "#ff0000" were set to 0.00 mm …`, singular wording unchanged for a
+  single colour. Colours are grouped by the pair of numbers the message prints,
+  so 0 on one row and -1 on another stay two warnings rather than one quoting
+  the wrong figure, and a colour cut on several parts is still named once
+  (`npx vitest run tests/flat.test.ts tests/assembly.test.ts -t 'once for every
+color'`).
 - **The prime tower now gets a suggested corner on a round part.** The corner
   search scored each part by its bounding box, which reports a disc as filling
   corners a circle never reaches. A 220mm hubcap on the 350×320 H2D bed read as
