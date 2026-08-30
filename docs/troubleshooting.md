@@ -1087,17 +1087,44 @@ recovery.
 
 **What it means.** The depth you asked for is more than that part has material
 for, measured from its design face straight back. It was cut at the deepest the
-part can take, a fraction of a millimetre short of breaking out the back.
+part can take, a fraction of a millimetre short of breaking out the back. The
+colour's row in the colour list shows the same number beside its Depth field
+("cut at … "), so you don't have to hold the warning open to see it.
 
 **What to do.** Nothing, if the number was a slip. If you meant a deep pocket,
 the part is the limit, so there is nothing to raise it to.
 
-**This is not a wall check, and not every part has one.** A part's wall varies
-across it, and a recess well under this limit can still break through a thin spot
-without any warning. Some parts raise no limit at all: a design face the app
-cannot measure a depth against, or a part too thin to hold the minimum. Look at
-the cut in the 3D view, and in your slicer's preview, before printing. See
-[tech-debt.md](tech-debt.md).
+**This is not a wall check.** A part's wall varies across it, and a recess well
+under this limit can still break through a thin spot without any warning. Look
+at the cut in the 3D view, and in your slicer's preview, before printing.
+
+**Some parts raise no limit at all, and cut silently to whatever you asked —
+this is not a bug, and both cases below are read straight from the code, not
+guessed at from outside it:**
+
+- **The part declines to measure a limit.** `maxCutDepth()` returns `Infinity`
+  when it has nothing to measure against:
+  - A face the cut axis can't read: not near-vertical (its normal's Y
+    component is at most 0.1), or the projected face plane lands outside the
+    part's own vertical extent (a tilted or sideways patch).
+  - A part too thin to hold even the smallest printable recess (0.20 mm) once
+    the through-safety floor is subtracted.
+  - No mesh loaded yet.
+  - **Every part on a baked design surface** (the chair body is the only
+    shipped example) declines unconditionally: a curved chart has no single
+    axis to measure a depth against, unlike a flat patch.
+- **A limit applies, but nothing was actually cut at it.** The clamped number
+  gets computed, but the part discards it rather than cutting to it, so
+  nothing in the message would be true:
+  - **A cut-through part** (the wheel's cap) ignores the setting entirely and
+    holes a fixed or measured depth of its own.
+  - **A colour that lands entirely on the part's outer wall.** The edge rule
+    (see "reaches the part's outer edge" above) cuts it full thickness
+    instead of to the setting; the warning only fires for the part of a
+    colour actually cut at the clamped number, so an all-edge colour raises
+    nothing.
+  - A rotated copy of a part that already reported this: it shares its
+    source's bound exactly, so a second identical pill would add nothing.
 
 ## Troubleshooting: "… zones still blank" notices (assembly mode)
 

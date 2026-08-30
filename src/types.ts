@@ -487,6 +487,13 @@ export interface AssemblyPaletteEntry {
   key: string;
   members: string[];
   isMerge: boolean;
+  /**
+   * The depth actually cut for this colour, display-only (docs/tech-debt.md). Undefined where no
+   * part ever cut a normal recess for it (every landing was a cutThrough hole or an edge-rule
+   * full-thickness cut, or the colour reached no part at all). The minimum across parts when they
+   * clamp it to different depths, so the field shows the more-restrictive fact.
+   */
+  appliedDepth?: number;
 }
 
 /** Indexed mesh: unique vertices (xyz interleaved) + 3 indices per triangle. */

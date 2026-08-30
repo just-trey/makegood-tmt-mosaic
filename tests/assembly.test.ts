@@ -1372,6 +1372,150 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
   );
 });
 
+describe('buildAssemblyGeometry palette appliedDepth', () => {
+  beforeEach(() => clearWarnings());
+
+  it('carries the depth actually cut, for the colour list field (docs/tech-debt.md)', async () => {
+    const built = (await buildAssemblyGeometry(
+      baseInput({ colorSettings: { 'asm:#ff0000': { depth: 9999 } } }),
+    ))!;
+    expect(built.palette.find((p) => p.hex === '#ff0000')?.appliedDepth).toBeCloseTo(9.95, 4);
+  });
+
+  it(
+    'is unset for a colour a cutThrough part discards the setting for',
+    { timeout: 30000 },
+    async () => {
+      const built = (await buildAssemblyGeometry(
+        baseInput({ parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })] }),
+      ))!;
+      expect(built.palette.find((p) => p.hex === '#ff0000')?.appliedDepth).toBeUndefined();
+    },
+  );
+
+  it('takes the more-clamped of two parts', { timeout: 30000 }, async () => {
+    const built = (await buildAssemblyGeometry(
+      baseInput({
+        colorSettings: { 'asm:#ff0000': { depth: 9999 } },
+        parts: [
+          boxPart(),
+          boxPart({
+            id: 2,
+            name: 'thinner box',
+            positions: Float32Array.from(
+              new THREE.BoxGeometry(40, 5, 40).toNonIndexed().translate(0, 2.5, 0).attributes
+                .position.array as Float32Array,
+            ),
+            boundaryLoops: [
+              [
+                [-20, 5, -20],
+                [20, 5, -20],
+                [20, 5, 20],
+                [-20, 5, 20],
+              ],
+            ],
+            topZ: 5,
+          }),
+        ],
+      }),
+    ))!;
+    // 10mm box clamps to 9.95, 5mm box clamps to 4.95 — the field shows the more-restrictive fact
+    expect(built.palette.find((p) => p.hex === '#ff0000')?.appliedDepth).toBeCloseTo(4.95, 4);
+  });
+});
+
+describe('buildAssemblyGeometry too-deep clamp handling', () => {
+  beforeEach(() => clearWarnings());
+
+  it('says so when a depth deeper than the part is clamped', { timeout: 30000 }, async () => {
+    const built = (await buildAssemblyGeometry(
+      baseInput({ colorSettings: { 'asm:#ff0000': { depth: 9999 } } }),
+    ))!;
+    const r = yRange(built.partOutputs[0].inlaySoups[0]);
+    expect(r.max - r.min).toBeCloseTo(10 - 0.05, 4);
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      'Depth for "#ff0000" was set to 9999.00 mm, deeper than "test box" goes. It was cut at ' +
+        '9.95 mm instead.',
+    );
+  });
+
+  it(
+    'says it once for every color clamped the same way on the same part',
+    { timeout: 30000 },
+    async () => {
+      // Same shape as the zero-depth grouping test above: without collecting build-wide this
+      // stacked one identical-looking pill per color.
+      await buildAssemblyGeometry(
+        baseInput({ parsed: threeColorSquaresParsed(), globalDepth: 9999 }),
+      );
+
+      const tooDeep = WARNINGS.filter((w) => w.message.includes('goes.'));
+      expect(tooDeep.map((w) => w.message)).toEqual([
+        'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 9999.00 mm, deeper than ' +
+          '"test box" goes. They were cut at 9.95 mm instead.',
+      ]);
+    },
+  );
+
+  it(
+    'keeps two parts clamping the same color separate, each naming its own part',
+    { timeout: 30000 },
+    async () => {
+      // Unlike the zero-depth message, this one names the part on purpose: maxCutDepth() is a
+      // per-part bound, so two parts stay two facts even when they clamp to the same number.
+      await buildAssemblyGeometry(
+        baseInput({
+          colorSettings: { 'asm:#ff0000': { depth: 9999 } },
+          parts: [boxPart(), boxPart({ id: 2, name: 'second box' })],
+        }),
+      );
+
+      const tooDeep = WARNINGS.filter((w) => w.message.includes('goes.'));
+      expect(tooDeep.map((w) => w.message)).toEqual([
+        'Depth for "#ff0000" was set to 9999.00 mm, deeper than "test box" goes. It was cut at ' +
+          '9.95 mm instead.',
+        'Depth for "#ff0000" was set to 9999.00 mm, deeper than "second box" goes. It was cut ' +
+          'at 9.95 mm instead.',
+      ]);
+    },
+  );
+
+  it(
+    'stays quiet on a cutThrough part, which discards the setting rather than clamping it',
+    { timeout: 30000 },
+    async () => {
+      // resolveCutRegions returns the fixed throughDepth() here, never depthSetting, so the gate
+      // that asks "did any region actually land at the clamped depth" must find none.
+      await buildAssemblyGeometry(
+        baseInput({
+          parts: [boxPart({ cutThrough: true, cutThroughDepth: 3 })],
+          colorSettings: { 'asm:#ff0000': { depth: 9999 } },
+        }),
+      );
+      expect(WARNINGS.filter((w) => w.message.includes('goes.'))).toEqual([]);
+    },
+  );
+
+  it(
+    'stays quiet when the whole color is cut at the edge depth instead of the clamp',
+    { timeout: 30000 },
+    async () => {
+      // Red is entirely at the edge in this fixture (see the edge-cut-through describe below), so
+      // every region resolveCutRegions returns for it is the edge slice, never depthSetting.
+      await buildAssemblyGeometry(
+        baseInput({
+          parsed: edgeAndInteriorParsed(),
+          radius: 20,
+          parts: [boxPart({ edgeCutThroughDepth: 3 })],
+          colorSettings: { 'asm:#ff0000': { depth: 9999 } },
+        }),
+      );
+      expect(WARNINGS.filter((w) => w.message.includes('goes.'))).toEqual([]);
+      expect(WARNINGS.some((w) => w.message.includes("the part's outer edge"))).toBe(true);
+    },
+  );
+});
+
 describe('buildAssemblyGeometry depth labels and thin cuts', () => {
   beforeEach(() => clearWarnings());
 

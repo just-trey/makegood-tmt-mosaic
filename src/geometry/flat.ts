@@ -1,14 +1,17 @@
 import * as THREE from 'three';
 import {
   MIN_CUT_DEPTH_MM,
+  addTooDeepClamp,
   addZeroDepthRaise,
   depthDiffers,
   regionLabel,
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
+  tooDeepPlateWarning,
   zeroDepthWarning,
   CUT_FLOOR_MM,
+  type DepthClamp,
   type ZeroDepthRaise,
 } from './depth';
 import type {
@@ -288,6 +291,9 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   // Staged at each resolveDepth call, warned about once at the end of the build: a global Depth of
   // 0 raises every row at once.
   const zeroDepthRaises = new Map<string, ZeroDepthRaise>();
+  // Same staging, for a depth clamped to the plate thickness instead of raised from zero — see
+  // addTooDeepClamp.
+  const tooDeepClamps = new Map<string, DepthClamp>();
 
   /**
    * A recess reaching the back of the plate would cut through it, and one at or below zero cuts
@@ -302,11 +308,7 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
     const depth = Math.min(requested <= 0 ? MIN_CUT_DEPTH_MM : requested, maxDepth);
     if (requested <= 0) addZeroDepthRaise(zeroDepthRaises, label, requested, depth);
     else if (depthDiffers(depth, requested))
-      warnBuild(
-        `Depth for "${label}" was set to ${requested.toFixed(2)} mm, but a ${thickness.toFixed(2)} mm ` +
-          `plate can only cut ${maxDepth.toFixed(2)} mm deep. It was cut at ${depth.toFixed(2)} mm ` +
-          `instead.`,
-      );
+      addTooDeepClamp(tooDeepClamps, label, requested, depth);
     // noticeBuild, not warnBuild: the two branches above overrode the user's number, this one
     // honors it. Promoting it was proposed and rejected — see thinDepthNotice in depth.ts.
     else if (subLayerDepth(depth)) noticeBuild(thinDepthNotice(label, depth));
@@ -462,6 +464,8 @@ export async function buildGeometry(input: FlatBuildInput): Promise<FlatBuild | 
   // would collect it into a map nothing reads, and drop the pill silently.
   for (const r of zeroDepthRaises.values())
     warnBuild(zeroDepthWarning(r.labels, r.requested, r.raisedTo));
+  for (const c of tooDeepClamps.values())
+    warnBuild(tooDeepPlateWarning(c.labels, c.requested, c.cutAt, thickness));
 
   return { baseGroup, colorMeshes, thickness, footW, footH, detectedColors, baseAssigned };
 }

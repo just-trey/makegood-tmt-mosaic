@@ -250,6 +250,7 @@ async function rebuildScene(): Promise<void> {
     isMergeGroup: c.isMergeGroup,
     areaPct: c.areaPct,
     isBackground: c.isBackground,
+    appliedDepth: c.depth,
   }));
   if (built.baseAssigned) {
     listEntries.push({
@@ -528,6 +529,7 @@ async function rebuildAssemblyScene(): Promise<void> {
       isMergeGroup: c.isMerge,
       areaPct: area,
       isBackground: false,
+      appliedDepth: c.appliedDepth,
     });
   });
   const totalArea = colorListEntries.reduce((s, c) => s + c.areaPct, 0) || 1;

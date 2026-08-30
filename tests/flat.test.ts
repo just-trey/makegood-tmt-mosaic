@@ -229,6 +229,52 @@ describe('buildGeometry depth clamp warning', () => {
     expect(WARNINGS.every((w) => !w.message.includes('(merged)'))).toBe(true);
   });
 
+  it('says it once for every color clamped to the same depth, not once per color', async () => {
+    // Same shape as the zero-depth grouping test above, for the too-deep clamp branch: a global
+    // Depth of 100 on a 4 mm disc (recessBg: true) clamps every color, including Background, to
+    // 3.95 mm, and used to raise one identical-looking pill per color instead of one.
+    await buildGeometry(
+      baseInput({ parsed: threeColorParsed(), globalDepth: 100, recessBg: true }),
+    );
+    const tooDeep = WARNINGS.filter((w) => w.message.includes('can only cut'));
+    expect(tooDeep).toHaveLength(1);
+    expect(tooDeep[0].message).toBe(
+      'Depths for "#0000ff", "#00ff00", "#ff0000", "Background" were set to 100.00 mm, but a ' +
+        '4.00 mm plate can only cut 3.95 mm deep. They were cut at 3.95 mm instead.',
+    );
+  });
+
+  it('says it once for every color clamped, without Background when recessBg is off', async () => {
+    await buildGeometry(
+      baseInput({ parsed: threeColorParsed(), globalDepth: 100, recessBg: false }),
+    );
+    const tooDeep = WARNINGS.filter((w) => w.message.includes('can only cut'));
+    expect(tooDeep).toHaveLength(1);
+    expect(tooDeep[0].message).toContain('"#0000ff", "#00ff00", "#ff0000"');
+    expect(tooDeep[0].message).not.toContain('Background');
+  });
+
+  it('keeps two different requested depths in two too-deep messages', async () => {
+    await buildGeometry(
+      baseInput({
+        parsed: threeColorParsed(),
+        recessBg: false,
+        colorSettings: {
+          '#ff0000': { depth: 100 },
+          '#00ff00': { depth: 50 },
+          '#0000ff': { depth: 100 },
+        },
+      }),
+    );
+    const tooDeep = WARNINGS.filter((w) => w.message.includes('can only cut'));
+    expect(tooDeep.map((w) => w.message)).toEqual([
+      'Depths for "#0000ff", "#ff0000" were set to 100.00 mm, but a 4.00 mm plate can only cut ' +
+        '3.95 mm deep. They were cut at 3.95 mm instead.',
+      'Depth for "#00ff00" was set to 50.00 mm, but a 4.00 mm plate can only cut 3.95 mm deep. ' +
+        'It was cut at 3.95 mm instead.',
+    ]);
+  });
+
   it('warns on every rebuild, not only the first', async () => {
     // The clamped depth must never get written back into colorSettings as if the user had asked
     // for it — that silenced this warning from the second build onward while the depth stayed

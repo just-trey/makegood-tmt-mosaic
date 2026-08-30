@@ -623,3 +623,96 @@ describe('a depth the build will raise', () => {
     expect(hints).toEqual(['mm']);
   });
 });
+
+/**
+ * The other clamp docs/tech-debt.md's "depth field cannot show a clamp that depends on the part"
+ * closed: a depth deeper than the part goes is clamped too, and (until now) the field said
+ * nothing — `appliedDepth` is how the build reports what it actually cut.
+ */
+describe('a depth the build clamped to the part', () => {
+  it('says what was actually cut, without changing the field', () => {
+    state.colorSettings = {};
+    state.globalDepth = 9999;
+
+    renderColorList([
+      {
+        color: '#ff0000',
+        key: '#ff0000',
+        members: ['#ff0000'],
+        isMergeGroup: false,
+        areaPct: 50,
+        isBackground: false,
+        appliedDepth: 9.95,
+      },
+    ]);
+
+    const input = document.querySelector<HTMLInputElement>('.depth-input')!;
+    expect(input.value, 'the field still shows what was typed').toBe('9999.00');
+    // "cut at", not "raised to": this clamp really did land on a printed depth.
+    const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
+    expect(hints.join(' ')).toContain('cut at 9.95');
+    expect(hints.join(' ')).not.toContain('raised to');
+  });
+
+  it('says nothing extra when appliedDepth matches what was asked for', () => {
+    state.colorSettings = {};
+    state.globalDepth = 2;
+
+    renderColorList([
+      {
+        color: '#ff0000',
+        key: '#ff0000',
+        members: ['#ff0000'],
+        isMergeGroup: false,
+        areaPct: 50,
+        isBackground: false,
+        appliedDepth: 2,
+      },
+    ]);
+
+    const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
+    expect(hints).toEqual(['mm']);
+  });
+
+  it('says nothing extra when appliedDepth is unknown', () => {
+    state.colorSettings = {};
+    state.globalDepth = 9999;
+
+    renderColorList([
+      {
+        color: '#ff0000',
+        key: '#ff0000',
+        members: ['#ff0000'],
+        isMergeGroup: false,
+        areaPct: 50,
+        isBackground: false,
+      },
+    ]);
+
+    const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
+    expect(hints).toEqual(['mm']);
+  });
+
+  it('defers to the zero-depth hint rather than stacking both', () => {
+    // A depth of zero raised to 0.20mm can never simultaneously be a too-deep clamp — the field
+    // must pick one story, not two contradictory ones.
+    state.colorSettings = {};
+    state.globalDepth = 0;
+
+    renderColorList([
+      {
+        color: '#ff0000',
+        key: '#ff0000',
+        members: ['#ff0000'],
+        isMergeGroup: false,
+        areaPct: 50,
+        isBackground: false,
+        appliedDepth: 0.2,
+      },
+    ]);
+
+    const hints = [...document.querySelectorAll('.depth-row .hint')].map((n) => n.textContent);
+    expect(hints.join(' ')).toContain('raised to 0.20');
+    expect(hints.join(' ')).not.toContain('cut at');
+  });
+});

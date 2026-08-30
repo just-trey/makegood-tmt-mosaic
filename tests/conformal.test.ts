@@ -291,6 +291,15 @@ describe('boundary', () => {
   });
 });
 
+describe('maxCutDepth', () => {
+  // A conformal zone cuts along a whole normal field, not one axis, so unlike FlatZoneMapper it has
+  // no measurement to offer at all and always declines. Pinned so the too-deep clamp warning's
+  // silence on a conformal part (docs/troubleshooting.md) can't regress into a false positive.
+  it('always declines, regardless of chart shape', () => {
+    expect(mapper.maxCutDepth()).toBe(Infinity);
+  });
+});
+
 describe('buildCutter', () => {
   const DEPTH = 1.5;
   const OVER = 0.5;

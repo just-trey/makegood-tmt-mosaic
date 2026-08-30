@@ -38,6 +38,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   what holds it up there. Where Detail still moves the floor at all, or where
   there is no placement to blame, the noise wording stands
   (`npx vitest run tests/raster-parse.test.ts -t "empty trace"`).
+- **The colour list's Depth field now shows a clamp deeper than the part, not
+  just one raised from zero.** The build carries the depth it actually cut
+  onto `ColorListEntry.appliedDepth`, display-only, and the field says
+  "cut at … " beside a clamped row the same way it already says "raised to
+  0.20" for a zero one. Assembly mode computes "did a region actually land at
+  the clamped depth" once per colour and shares it between the field, the
+  too-deep pill, and the thin-depth note, so the three can't silently
+  disagree about what a cut-through or all-edge part actually cut. Fixes half
+  of `docs/tech-debt.md`'s "The depth field cannot show a clamp that depends
+  on the part" (`npx vitest run tests/colorList.test.ts tests/assembly.test.ts`).
+- **A too-deep assembly depth clamp now raises one warning pill per colour,
+  not one per colour per part.** The zero-depth clamp already collected
+  across the build; the too-deep clamp now does too, grouped by
+  `(requested, cutAt)` in flat mode and `(requested, cutAt, partName)` in
+  assembly mode, since `maxCutDepth()` is a per-part bound and two parts can
+  genuinely clamp the same colour to two different depths. Was 4 pills for a
+  3-colour design with `recessBg: true` clamped past its plate, now 1
+  (`npx vitest run tests/depth.test.ts tests/flat.test.ts tests/assembly.test.ts`).
+- **`docs/troubleshooting.md` now says when a too-deep assembly depth clamp
+  goes unnamed**, reading the two mechanisms from source instead of guessing:
+  `maxCutDepth()` declining (a non-vertical or tilted face, a part too thin
+  to hold the minimum recess, no mesh yet, or any baked-zone part) and the
+  bound applying but nothing actually landing at it (a cut-through part, or a
+  colour cut entirely by the edge rule). Each case is pinned with a test
+  (`npx vitest run tests/zones.test.ts tests/conformal.test.ts tests/assembly.test.ts`).
 - **Switching parts no longer asks you to confirm.** The dialog said
   switching would "clear the currently loaded" parts, naming the one thing
   that survives — your artwork stays right where you left it, and the part

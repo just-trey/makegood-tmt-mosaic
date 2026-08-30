@@ -1,5 +1,5 @@
 import { addToBase, baseColorHex, removeFromBase, state } from '../state/store';
-import { MIN_CUT_DEPTH_MM, requestedDepth } from '../geometry/depth';
+import { MIN_CUT_DEPTH_MM, depthDiffers, requestedDepth } from '../geometry/depth';
 import { scheduleRebuild } from '../app/scheduler';
 import { nearestFilamentName } from '../state/filaments';
 import { getPrinter } from '../export/printers';
@@ -16,6 +16,13 @@ export interface ColorListEntry {
   isBackground: boolean;
   /** printed in the body instead of cut — a distinct status row, no depth/merge controls */
   isBase?: boolean;
+  /**
+   * The depth the build actually cut this row at, display-only (docs/tech-debt.md). Never fed
+   * back into colorSettings or compared against the requested depth to decide anything: doing
+   * that is what pinned every row to its clamped depth and silenced the global Depth field (see
+   * `shownDepth` below). Absent on the Base row, which isn't cut at all.
+   */
+  appliedDepth?: number;
 }
 
 export function groupContaining(hex: string): string[] | null {
@@ -320,10 +327,17 @@ export function renderColorList(
     // Said beside the field instead of written into it: writing it back is what the comment above
     // records as pinning every row to the clamped value and silencing the warning.
     //
-    // Only the zero case, which the panel can work out on its own. The other override, a depth
-    // deeper than the part, depends on that part's geometry and is not knowable here
-    // (docs/tech-debt.md).
     const raisedFromZero = shownDepth <= 0;
+    // The other clamp: a depth deeper than the part goes is cut short, and the build now reports
+    // what it actually cut on `appliedDepth`. Compared at the printed precision, like the
+    // warning's own depthDiffers, so a clamp that only moves the number below 2dp (3.951 -> 3.95)
+    // stays quiet instead of reading as a bug in this field. Says "cut at", not "raised to": this
+    // one really did land on a printed depth, unlike the zero case which discusses the setting.
+    const tooDeepClamped =
+      !raisedFromZero &&
+      c.appliedDepth != null &&
+      c.appliedDepth < shownDepth &&
+      depthDiffers(c.appliedDepth, shownDepth);
     // A row carrying its own depth looked identical to one following the global, so the global
     // Depth field appearing not to work had no visible cause and no visible undo — clearing the
     // field was the only way back, and it was documented only in the help panel.
@@ -391,6 +405,7 @@ export function renderColorList(
             : ''
         }
         ${raisedFromZero ? `<span class="hint">raised to ${MIN_CUT_DEPTH_MM.toFixed(2)}</span>` : ''}
+        ${tooDeepClamped ? `<span class="hint">cut at ${c.appliedDepth!.toFixed(2)}</span>` : ''}
         <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
       </div>
       ${mergeSelectHtml ? `<div class="merge-row">${mergeSelectHtml}</div>` : ''}`;
