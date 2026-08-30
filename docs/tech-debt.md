@@ -1088,28 +1088,35 @@ placement given the two designs' actual placed footprints, rather than stepping
 a fixed distance and testing for an exact-spot collision. That is a real
 placement search and wants its own change, not a wider constant.
 
-## A capped trace that also drops a color says nothing about the color
+## Two traces still drop a color and say nothing about it
 
-`rasterLostColors` ([src/raster/parse.ts](../src/raster/parse.ts)) suppresses the dropped-color
-notice whenever `capped` is set. A trace that both raised its floor and lost a whole color shows
-only `rasterCappedMessage`, which says detail "was merged into its surroundings" and never that a
-color left the palette. This is the half of "a traced image can lose a color with nothing said" that
-the notice did not close.
+`rasterLostColors` ([src/raster/parse.ts](../src/raster/parse.ts)) raises the dropped-color notice
+only where its one sentence is true, which is under the fractional floor on an uncapped trace. Two
+cases are left silent, both `droppedColors > 0`. They are the half of "a traced image can lose a
+color with nothing said" that the notice did not close.
 
-- **Reproduced synthetically, not on the corpus.** 1024 six-pixel blocks over two flat bands plus
-  one-pixel specks, 320x320 at Colors 5 and Detail 100, gives `capped: true` with
-  `droppedColors: 1` (`npx vitest run tests/raster-parse.test.ts -t "leaves a capped trace"`). No
-  corpus source has been measured doing it. The section below is why it is not ruled out: the cap
-  is a target, not a bound, and the raise can still swallow a color.
-- **Why it is suppressed.** The two notices give opposite remedies. Capped says lower Colors or
-  lower Detail; dropped-color says raise Detail. Both on one image contradict each other.
-- **The same split gives a round trip.** Raising Detail on a dropped-color notice lowers the floor,
-  which raises the component count, which can trip the cap. The next trace is capped, the
-  dropped-color notice is retracted, and the user is told to lower the Detail they just raised —
-  with the color still gone and now unmentioned.
-- Closing it takes one message carrying both facts, or a measured rule for which remedy wins when a
-  trace is capped and short of colors at once. Not a wording change: it needs an answer to whether
-  raising Detail can recover a color on a capped trace at all.
+| Case                       | Suppressed by                 | Reproduced by                                                    |
+| -------------------------- | ----------------------------- | ---------------------------------------------------------------- |
+| Capped, and short a color  | `capped`                      | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"` |
+| A placement's nozzle floor | `floorReason === 'printable'` | `npx vitest run tests/raster-parse.test.ts -t "stays silent"`    |
+
+- **Capped**: the trace shows `rasterCappedMessage` only, which says detail "was merged into its
+  surroundings" and never that a color left the palette. The two remedies are opposites — capped
+  says lower Colors or Detail, dropped-color says raise Detail — so both on one image contradict
+  each other. Reproduced synthetically (1024 six-pixel blocks over two flat bands plus one-pixel
+  specks, 320x320 at Colors 5 and Detail 100: `capped: true`, `droppedColors: 1`), never on the
+  corpus. The section below is why it is not ruled out: the cap is a target, not a bound.
+- **Printable floor**: a small placement puts the nozzle-width floor above the fractional one, and
+  Detail does not scale that half, so the notice's only sentence would be false. 128px across
+  12.8mm drops a color at Detail 0, 50 and 100 alike. Saying it needs a second message, and that
+  message's remedy is a resize, which does not re-trace — see "The printable despeckle floor is
+  fixed at the moment of the trace" for why the notice would then stand stale.
+- **The capped split also gives a round trip.** Raising Detail on a dropped-color notice lowers the
+  floor, raises the component count, and can trip the cap. The next trace is capped, the notice is
+  retracted, and the user is told to lower the Detail they just raised, with the color still gone.
+- Closing either takes a message carrying both facts, or a measured rule for which remedy wins.
+  Neither is a wording change: the capped one needs an answer to whether raising Detail can recover
+  a color on a capped trace at all, and the printable one needs the re-trace-on-resize item first.
 
 ## `MAX_COMPONENTS` is a target, not the bound its name implies
 

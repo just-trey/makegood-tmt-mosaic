@@ -28,14 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   actually paint, and a color whose every piece fell under the despeckle floor
   simply vanished from the readout: `painted` drops on five of nineteen corpus
   sources (`docs/findings/2026-08-20-despeckle-floor.md`). The trace now reports
-  how many colors it dropped, and the notice names the image and the way back —
-  raising Detail under the fractional floor, or a bigger design or part under a
-  placement's printable floor, which Detail never scales. It counts only colors
-  that labelled pixels and then painted none of them, so an image with fewer
-  colors than Colors asks for stays quiet, and so does a color that won a
-  cluster and labelled nothing. A capped trace keeps its own notice rather than
-  getting a second one with the opposite remedy, so that one case still says
-  nothing about the color it dropped; `docs/tech-debt.md` carries it
+  how many colors it dropped, and a notice names the image and says to raise
+  Detail. It counts only colors that labelled pixels and then painted none of
+  them, so an image with fewer colors than Colors asks for stays quiet, and so
+  does a color that won a cluster and labelled nothing. It is raised only where
+  raising Detail is the true answer: a capped trace keeps its own notice, whose
+  remedy is the opposite one, and a placement small enough that the nozzle-width
+  floor binds is left alone, since Detail does not scale that floor. Those two
+  still say nothing about the color they dropped, and `docs/tech-debt.md`
+  carries both
   (`npx vitest run tests/raster-parse.test.ts tests/artworkListPanel.test.ts`,
   37 tests).
 - **The prime tower now gets a suggested corner on a round part.** The corner

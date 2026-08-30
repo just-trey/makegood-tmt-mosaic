@@ -204,16 +204,17 @@ export function rasterTracedMessage(name: string): string {
  * Shown when tracing painted nothing with colors the quantizer had found, so the readout comes back
  * under the Colors slider with nothing saying why.
  *
- * The remedy is the floor's, not the notice's: under the fractional floor, raising Detail quarters
- * it (autoParams scales it by 4^((50-detail)/50)) and is the opposite of what rasterCappedMessage
- * asks for. Under a placement's printable floor Detail moves nothing, so the size is the only way
- * back, exactly as in rasterEmptyTraceMessage.
+ * Raising Detail is the whole message, and rasterLostColors only raises it where that is the true
+ * answer: the fractional floor is the one autoParams scales, by 4^((50-detail)/50). It is also the
+ * opposite of what rasterCappedMessage asks for, which is why the two are mutually exclusive.
+ *
+ * It makes no claim about the pieces being unprintable. Under that floor they usually are printable
+ * — NOZZLE_MM is the only floor that claims otherwise, and the one Detail deliberately never scales.
  */
-export function rasterColorLossMessage(name: string, dropped: number, reason: FloorReason): string {
+export function rasterColorLossMessage(name: string, dropped: number): string {
   return (
     `${dropped === 1 ? '1 color' : `${dropped} colors`} in "${name}" ` +
-    `${dropped === 1 ? 'was' : 'were'} dropped. Every piece was too small to print. ` +
-    (reason === 'printable' ? 'Make the design or the part bigger.' : 'Raise Detail to keep more.')
+    `${dropped === 1 ? 'was' : 'were'} dropped. Raise Detail to keep more.`
   );
 }
 
@@ -227,14 +228,17 @@ export function rasterColorLossKey(sourceId: string): string {
 }
 
 /**
- * Whether a finished trace should raise rasterColorLossMessage. Not simply `droppedColors > 0`: a
- * capped trace already carries rasterCappedMessage, and showing both would tell one image to lower
- * Detail and raise it at the same time.
+ * Whether a finished trace should raise rasterColorLossMessage. Not simply `droppedColors > 0`: it
+ * only fires where raising Detail is the true answer.
+ *
+ * A capped trace already carries rasterCappedMessage, whose remedy is the opposite one, and under a
+ * placement's printable floor Detail moves nothing at all. Both of those stay silent about the color
+ * they dropped, which docs/tech-debt.md carries.
  */
 export function rasterLostColors(
-  result: Pick<RasterParseResult, 'capped' | 'droppedColors'>,
+  result: Pick<RasterParseResult, 'capped' | 'droppedColors' | 'floorReason'>,
 ): boolean {
-  return !result.capped && result.droppedColors > 0;
+  return !result.capped && result.floorReason === 'noise' && result.droppedColors > 0;
 }
 
 /**

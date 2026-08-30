@@ -249,7 +249,7 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
     dismissColorLoss(source.id);
     if (rasterLostColors(result))
       notice(
-        rasterColorLossMessage(source.name, result.droppedColors, result.floorReason),
+        rasterColorLossMessage(source.name, result.droppedColors),
         rasterColorLossKey(source.id),
       );
     renderWarnings();

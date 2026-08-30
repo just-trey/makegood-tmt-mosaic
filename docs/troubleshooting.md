@@ -506,8 +506,8 @@ To get a result you are happier with:
 
 ## Troubleshooting: "… colors in … were dropped…"
 
-Full text: _"3 colors in "yourfile.png" were dropped. Every piece was too small
-to print. Raise Detail to keep more."_
+Full text: _"3 colors in "yourfile.png" were dropped. Raise Detail to keep
+more."_
 
 One color reads in the singular: **"1 color in "yourfile.png" was dropped."**
 
@@ -519,31 +519,28 @@ only the ones that still paint something once the despeckle floor has run
 that floor leaves the palette. The readout used to show the smaller number with
 nothing saying it differed from what was asked for.
 
-The last sentence is the one that changes, because the two floors have
-different ways back.
-
 - **Raise Detail.** It sets how small a speck survives, so raising it quarters
   the floor and lets the smaller pieces back through. That is the opposite of
   what "Some detail … was too fine to print…" above asks for, and the two never
   show on the same image: a capped trace keeps that notice and never raises
   this one.
-- **Placed small, it ends differently.** The last sentence reads
-  **"Make the design or the part bigger."** whenever the placement's
-  nozzle-width floor is the binding one. Detail does not scale that half, so the
-  color is gone at Detail 0, 50 and 100 alike. Same split as "Nothing in … is
-  big enough to print at this size" below.
-- **Not "on a part": part scale runs the other way.** 128px across 12.8mm has a
-  printable floor of 16px² against a fractional 2, and asks for the size. The
-  same image at 512px across 185mm has a sub-pixel printable floor against a
-  fractional 39, and still asks for Detail. Both measured by
-  `npx vitest run tests/raster-parse.test.ts -t "printable floor"` and
-  `-t "part scale"`.
+- **It does not say the pieces were unprintable, because usually they were
+  not.** The floor it fires under is a fraction of the image, not a nozzle
+  width. At part scale that fraction is millimetres across.
 - **The count is against the colors that labelled pixels, not the slider.** An
   image that simply has fewer colors than Colors asks for (a three-color logo at
   Colors 8) has lost nothing, and never raises this. Neither does a color that
   won a cluster and then labelled no pixel at all, which the blur before
   clustering can produce: nothing of it was ever traced, so there is nothing to
   bring back.
+- **Placed small, nothing is said at all.** Below roughly a nozzle width per
+  working pixel the placement floor binds instead, Detail moves nothing, and the
+  notice would be false, so it is withheld: 128px across 12.8mm has a printable
+  floor of 16px² against a fractional 2, and drops a color silently at every
+  Detail. The same image at 512px across 185mm has a printable floor of 1px²,
+  the no-op, against a fractional 39, and does raise the notice. Both measured
+  by `npx vitest run tests/raster-parse.test.ts -t "stays silent"` and
+  `-t "part scale"`. `docs/tech-debt.md` carries it, with the capped case.
 
 ## Troubleshooting: "No opaque pixels were found in this image…"
 

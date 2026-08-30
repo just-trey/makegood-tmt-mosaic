@@ -283,53 +283,53 @@ describe('parseRasterImage', () => {
     });
 
     // Placed small, the nozzle-width floor sits above the fractional one, and Detail never scales
-    // that half: the color is gone at Detail 0, 50 and 100 alike, so the notice must not offer it.
-    // 128px across 12.8mm gives a printable floor of 16px² against a fractional 2 at Detail 50.
-    it('sends the user to the size, not to Detail, under a printable floor', () => {
+    // that half: the color is gone at Detail 0, 50 and 100 alike. The notice says "raise Detail"
+    // and nothing else, so it must not fire here at all. 128px across 12.8mm gives a printable
+    // floor of 16px² against a fractional 2 at Detail 50.
+    it('stays silent under a printable floor, which Detail cannot move', () => {
       for (const detail of [0, 50, 100]) {
-        const img = sprinkled(128);
-        const result = parseRasterImage(img, { colors: 4, detail, mmPerPixel: 0.1 });
+        const result = parseRasterImage(sprinkled(128), { colors: 4, detail, mmPerPixel: 0.1 });
 
         expect(result.droppedColors).toBe(1);
         expect(result.floorReason).toBe('printable');
-        expect(rasterLostColors(result)).toBe(true);
-        const text = rasterColorLossMessage('a.png', result.droppedColors, result.floorReason);
-        expect(text).toContain('Make the design or the part bigger.');
-        expect(text).not.toContain('Detail');
+        expect(rasterLostColors(result)).toBe(false);
       }
     });
 
-    // Not "on a part": a part-scale placement runs the other way. 512px across 185mm (0.361mm per
-    // pixel) has a sub-pixel printable floor against a fractional 39, so Detail is still the answer.
-    it('still asks for Detail at part scale, where the fractional floor binds', () => {
-      const result = parseRasterImage(sprinkled(512), {
+    // A placement is not itself the printable case: at part scale it runs the other way. 512px
+    // across 185mm (0.361mm per pixel) has a printable floor of 1px², the no-op, against a
+    // fractional 39, so Detail is the answer and the notice does fire.
+    it('fires at part scale, where the fractional floor binds', () => {
+      const img = sprinkled(512);
+      const result = parseRasterImage(img, {
         colors: 4,
         detail: DETAIL_DEFAULT,
         mmPerPixel: 0.361,
       });
 
-      expect(printableFloorPx(0.361)).toBeLessThan(
-        fracFloorPx(autoParams(measureImage(sprinkled(512)), DETAIL_DEFAULT, true), 512, 512),
-      );
+      expect(printableFloorPx(0.361)).toBe(1);
+      expect(fracFloorPx(autoParams(measureImage(img), DETAIL_DEFAULT, true), 512, 512)).toBe(39);
       expect(result.droppedColors).toBe(1);
       expect(result.floorReason).toBe('noise');
-      expect(rasterColorLossMessage('a.png', 1, result.floorReason)).toContain('Raise Detail');
+      expect(rasterLostColors(result)).toBe(true);
     });
 
     it('names one dropped color in the singular and more in the plural', () => {
-      expect(rasterColorLossMessage('a.png', 1, 'noise')).toContain(
-        '1 color in "a.png" was dropped.',
+      expect(rasterColorLossMessage('a.png', 1)).toBe(
+        '1 color in "a.png" was dropped. Raise Detail to keep more.',
       );
-      expect(rasterColorLossMessage('a.png', 3, 'noise')).toContain(
-        '3 colors in "a.png" were dropped.',
+      expect(rasterColorLossMessage('a.png', 3)).toBe(
+        '3 colors in "a.png" were dropped. Raise Detail to keep more.',
       );
     });
 
-    it('tells the user to raise Detail under the floor Detail scales', () => {
-      expect(parseRasterImage(sprinkled(), { colors: 4, detail: 0 }).floorReason).toBe('noise');
-      expect(rasterColorLossMessage('a.png', 1, 'noise')).toContain('Raise Detail');
-      // …which is the opposite of what the capped notice, its mutually exclusive sibling, asks for.
+    // It claims nothing about printability: the floor it fires under removes pieces that print
+    // perfectly well, and NOZZLE_MM — the floor that does make that claim — is the one Detail
+    // never scales.
+    it('asks for the opposite of what the capped notice asks for, and claims nothing else', () => {
+      expect(rasterColorLossMessage('a.png', 1)).toContain('Raise Detail');
       expect(rasterCappedMessage('a.png')).toContain('lower Detail');
+      expect(rasterColorLossMessage('a.png', 1)).not.toContain('print');
     });
   });
 
