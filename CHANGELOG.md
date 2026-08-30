@@ -71,16 +71,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   have been, against 2 points and 0 for the same path with an `L` instead of the
   arc. `S` and `T` also read each other's control points across curve types,
   which the spec does not allow: an `S` after a `Q`, or a `T` after a `C`, now
-  starts at the current point (`npx vitest run tests/path.test.ts`).
+  starts at the current point (`npx vitest run tests/path.test.ts`; the two
+  before figures come from that same test run against `src/svg/path.ts` checked
+  out from the previous commit).
 - **A path coordinate written with an uppercase `E` exponent now imports.**
   `1E2` is a legal SVG number, but the tokenizer matched a lowercase `e` only,
   so `M0 0 L1E2 0` was read as a command letter, reported as "Path 1 has broken
   data", and dropped, while `M0 0 L1e2 0` imported fine. Both now give the same
   one loop and no warning (`npx vitest run tests/path.test.ts`).
-- **"Path 3 has broken data" now counts the paths you can count.** The number
-  in that warning skipped every `<path>` that had been left out of the import,
-  so a file whose first four paths are hidden or unfilled named its fifth one
-  "Path 1" (`npx vitest run tests/parse.test.ts`).
+- **The number in a "Path 3 has broken data" warning now counts what you can
+  count.** Both that warning and "Shape 3 has a gradient/pattern fill" numbered
+  their element among the ones the import kept, not among the ones in the file,
+  so anything hidden, unfilled, or sitting in a clip mask shifted the count. A
+  file whose first five paths are hidden or clip-mask paths named its sixth one
+  "Path 1". Both messages now count every element of that kind from the top of
+  the file, which is what someone reading the file in their editor can do
+  (`npx vitest run tests/parse.test.ts`).
 - **Switching parts no longer asks you to confirm.** The dialog said
   switching would "clear the currently loaded" parts, naming the one thing
   that survives — your artwork stays right where you left it, and the part

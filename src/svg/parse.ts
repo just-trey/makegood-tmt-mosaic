@@ -4,6 +4,11 @@ import { ellipsePoints, parsePathD } from './path';
 import { warn } from '../warnings';
 import { rethrowStackOverflowAs } from '../errors';
 
+// The tags that can carry a flat fill. One list, so the walk's test and the selector that counts
+// past it for the warning numbers cannot drift apart.
+const SHAPE_TAGS = ['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline'];
+const SHAPE_SELECTOR = SHAPE_TAGS.join(',');
+
 // Normalize any CSS color string to "#rrggbb" using a canvas as an oracle.
 let colorCanvas: CanvasRenderingContext2D | null = null;
 export function normalizeColor(str: string | null): string | null {
@@ -209,13 +214,12 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
   const shapes: SVGShape[] = [];
   let order = 0;
-  // Counts every <path> the walk reaches, including the hidden and unfilled ones a user counting
-  // <path> elements in their editor cannot skip, so a warning can name which one broke by
-  // position. warn() dedupes by exact message, so an unnumbered "Path has broken data" would
-  // collapse a second offender into the first one's pill and under-report how much was dropped.
+  // Both numbers are positions in the file as an editor shows it, not positions among the
+  // elements that survived import: someone counting elements to find the one a warning named
+  // cannot skip the hidden, unfilled or <defs>-bound ones. warn() dedupes by exact message, so an
+  // unnumbered "Path has broken data" would collapse a second offender into the first one's pill
+  // and under-report how much was dropped, which is why they are numbered at all.
   let pathCount = 0;
-  // Same reason, for every visible candidate shape of any of the 6 tags below: two
-  // gradient/pattern-filled elements would otherwise collapse into one warning too.
   let shapeCount = 0;
 
   // Largest <circle> found by the same visible-subtree walk as shapes below (assembly mode's
@@ -267,8 +271,14 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         'style',
         'metadata',
       ].includes(tag)
-    )
+    ) {
+      // Nothing in here is imported, but the warning numbers still have to count it: a clip mask
+      // puts real <path> elements in <defs>, and someone opening the file to find the element we
+      // named counts those too.
+      shapeCount += el.querySelectorAll(SHAPE_SELECTOR).length;
+      pathCount += el.getElementsByTagName('path').length;
       return;
+    }
 
     const localM = parseTransformAttr(el.getAttribute('transform'));
     const M = Mat.multiply(parentM, localM);
@@ -297,17 +307,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     const opacity = parseFillOpacity(resolveProp(el, 'fill-opacity'));
     const displayNone = resolveProp(el, 'display') === 'none';
 
-    if (
-      tag === 'path' ||
-      tag === 'rect' ||
-      tag === 'circle' ||
-      tag === 'ellipse' ||
-      tag === 'polygon' ||
-      tag === 'polyline'
-    ) {
+    if (SHAPE_TAGS.includes(tag)) {
+      shapeCount++;
       if (tag === 'path') pathCount++;
       if (!displayNone) {
-        shapeCount++;
         if (fillUrl) {
           warn(
             `Shape ${shapeCount} (a <${tag}>) has a gradient/pattern fill (not a flat color), so it was skipped.`,

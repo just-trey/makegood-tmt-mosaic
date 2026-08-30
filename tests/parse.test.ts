@@ -134,14 +134,15 @@ describe('parseSVGDocument', () => {
     expect(WARNINGS.map((w) => w.message)).toContainEqual(expect.stringContaining('Path 2'));
   });
 
-  it('counts a hidden <path>, so a later broken one is named by its position in the file', () => {
+  it('counts a <path> it can never import, so a later broken one is named by its position in the file', () => {
     clearWarnings();
-    // Hidden four ways, then the broken one. A user counting <path> elements in their editor
-    // has no way to skip the invisible ones, so Path N has to agree with that count.
+    // A clip-mask path, then hidden four ways, then the broken one. Someone counting <path>
+    // elements in their editor cannot skip any of those, so Path N has to agree with that count.
     expect(() =>
       parseSVGDocument(
         svg(
-          '<path d="M0 0 L1 1" fill="#ff0000" fill-opacity="0"/>' +
+          '<defs><clipPath id="c"><path d="M0 0 L1 1"/></clipPath></defs>' +
+            '<path d="M0 0 L1 1" fill="#ff0000" fill-opacity="0"/>' +
             '<path d="M0 0 L1 1" fill="none"/>' +
             '<path d="M0 0 L1 1" fill="url(#a)"/>' +
             '<path d="M0 0 L1 1" fill="#ff0000" display="none"/>' +
@@ -149,7 +150,20 @@ describe('parseSVGDocument', () => {
         ),
       ),
     ).toThrow();
-    expect(WARNINGS.map((w) => w.message)).toContainEqual(expect.stringContaining('Path 5'));
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(expect.stringContaining('Path 6'));
+  });
+
+  it('numbers a gradient-filled shape on the same basis, counting the ones it never imported', () => {
+    clearWarnings();
+    parseSVGDocument(
+      svg(
+        '<defs><rect width="9" height="9" fill="#111111"/></defs>' +
+          '<rect width="4" height="4" fill="#ff0000" display="none"/>' +
+          '<rect width="4" height="4" fill="url(#a)"/>' +
+          '<rect width="4" height="4" fill="#00ff00"/>',
+      ),
+    );
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(expect.stringContaining('Shape 3'));
   });
 
   it('resolves fills through <style> class rules, with inline style winning', () => {

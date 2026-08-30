@@ -1120,3 +1120,30 @@ introduced by round 3's fix to round 1's fix. The function shipped unchanged.
 the same trailing-text problem and `fill-opacity` is only where it was noticed.
 Strip it once at the resolver, then this function is a two-line clamp with no
 string parsing in it.
+
+## `display="none"` on a group does not hide the shapes inside it
+
+`parseSVGDocument` (`svg/parse.ts`) resolves `display` per element, and `walk`
+recurses into children regardless, so the flag is never inherited. CSS removes
+the whole subtree. This removes only the element carrying the attribute.
+
+Measured 2026-08-30 with a throwaway jsdom vitest file that called
+`parseSVGDocument` on a hidden group plus one visible `<rect>`, and printed
+`out.shapes.length`:
+
+| Document                                                     | Shapes imported | Should be |
+| ------------------------------------------------------------ | --------------- | --------- |
+| `<g display="none"><rect …/></g>` + a visible `<rect>`       | 2               | 1         |
+| `<g style="display:none"><rect …/></g>` + a visible `<rect>` | 2               | 1         |
+
+A hidden Inkscape or Illustrator layer is exactly this markup. The artwork the
+user hid is inlaid into the print and costs an AMS slot.
+
+Found by `/code-review` on the branch that fixed the warning numbers next to
+it, and not fixed there because the fix needs a decision first.
+
+**Closing it** is two lines in `walk`: pass the resolved flag down and or it
+with the element's own. The open question is whether a hidden layer vanishing
+is silent. `fill-opacity="0"` on one shape is silent on purpose, for the reason
+in the comment on that branch. A whole hidden layer is a lot more artwork to
+drop with nothing said, and CLAUDE.md code rule 1 wants a named warning for it.
