@@ -1083,37 +1083,6 @@ too, or rebuilding a source's copies when it re-adopts. It stays open because
 the first role to pair `buildMesh` with `allowRotatedCopies` makes it real, and
 nothing today can produce a case to test against.
 
-## An `S`/`T` after an arc reflects the control point of the curve before the arc
-
-`parsePathD` (`svg/path.ts`) keeps `prevCtrl` alive across an `A` command: `A`
-is in the exclusion list on the `prevCtrl = null` line at the bottom of the
-loop. The spec says an `S` whose previous command was not `C`/`c`/`S`/`s` takes
-its first control point coincident with the current point, and the same for `T`
-after anything but `Q`/`q`/`T`/`t`. An arc between them is exactly that case.
-
-Measured 2026-08-28 on this branch, with a throwaway
-`tests/zz-probe.test.ts` that called `parsePathD` on two paths differing only
-in the command before the `S`, then took the flattened tail from `(20,20)` and
-its distance off the chord `y = x`:
-
-| Path                                                  | Tail points | Max distance off the chord |
-| ----------------------------------------------------- | ----------- | -------------------------- |
-| `M0 0 C0 50 0 50 10 10 A5 5 0 0 1 20 20 S30 30 40 40` | 16          | 15.67 user units           |
-| `M0 0 C0 50 0 50 10 10 L20 20 S30 30 40 40`           | 2           | 0                          |
-
-The `L` row is the spec-correct shape for both: with no `C`/`S` immediately
-before, the `S` should leave the current point straight at the chord. The `A`
-row bows 15.67 units the wrong way.
-
-Found by `/code-review` while the arc-flag tokenizer was being fixed; not
-fixed there to keep that PR to one finding. Nothing shipped is wrong today: of
-the 13 `.svg` files under `public/`, 0 have a `d` attribute containing an arc
-at all, so 0 have an arc followed by `S`/`T` (counted by walking `public/`,
-matching every `d="…"`, and scanning its command letters for `A`/`a`).
-
-**Closing it** is one edit: drop `A` from the `C !== 'C' && ...` list so an arc
-clears `prevCtrl`, plus a test comparing the two paths above.
-
 ## `parseFillOpacity` reads a percentage and an out-of-range value wrong, and three attempts to fix it each broke something else
 
 `parseFillOpacity` (`svg/parse.ts`) is `parseFloat` plus a finite check. Two
@@ -1151,48 +1120,3 @@ introduced by round 3's fix to round 1's fix. The function shipped unchanged.
 the same trailing-text problem and `fill-opacity` is only where it was noticed.
 Strip it once at the resolver, then this function is a two-line clamp with no
 string parsing in it.
-
-## `fill-opacity="0"` drops a shape with nothing said
-
-`parseSVGDocument` (`svg/parse.ts`) skips a shape whose resolved `fill-opacity`
-is 0 through a bare `else if (opacity === 0)` branch with no `warn()`, while
-the gradient/pattern branch three lines above it names the element it skipped.
-CLAUDE.md code rule 1 says an excluded shape gets a named warning.
-
-The silence is deliberate for a shape the artist hid on purpose: a warning per
-hidden shape would nag on a file that is behaving. It is written down because
-the clamp above would route authoring defects (`-1`, `-50%`) into the same
-branch, and nothing there distinguishes the two.
-
-Second-order: `pathCount` only increments inside the visible branch, so the
-`Path N` in a later broken-data warning counts visible paths, not paths in the
-file. A user counting `<path>` elements in their editor lands on the wrong one.
-
-**Closing it** means deciding whether a deliberately hidden shape is worth a
-notice at all. If it is, the branch needs a named warning and its own
-`docs/troubleshooting.md` section; if it is not, `pathCount` should still move
-out of the visible branch so `Path N` counts what the user can count.
-
-## The path `d` tokenizer rejects an uppercase `E` exponent
-
-`parsePathD`'s regex (`svg/path.ts`) is
-`/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g`. The exponent branch matches lowercase
-`e` only, so an uppercase `E` falls through to the `[a-zA-Z]` branch and is
-consumed as a command letter. `1E2` is a legal SVG number, so a legal path is
-reported as "Path N has broken data" and its subpath is dropped.
-
-Measured 2026-08-28 on this branch with a throwaway vitest file calling
-`parsePathD` with a spy for `onMalformed`:
-
-| `d`           | Loops                | Warned |
-| ------------- | -------------------- | ------ |
-| `M0 0 L1e2 0` | 1, ending at (100,0) | no     |
-| `M0 0 L1E2 0` | 0                    | yes    |
-
-Found by `/code-review` while the glued-arc-flag fix was in review, and it is
-the same failure mode: a valid path told it is broken. Not fixed there to keep
-that PR to one finding.
-
-**Closing it** is one character class: `(?:[eE][-+]?\d+)?`, plus the two-row
-test above. Worth checking the same regex's other assumptions in the same pass,
-since this is the second gap found in it.

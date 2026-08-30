@@ -63,6 +63,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   bound applying but nothing actually landing at it (a cut-through part, or a
   colour cut entirely by the edge rule). Each case is pinned with a test
   (`npx vitest run tests/zones.test.ts tests/conformal.test.ts tests/assembly.test.ts`).
+- **A smooth curve after an arc no longer bows the wrong way.** In a path `d`
+  string, `S` and `T` mirror the control point of the curve before them, and an
+  arc in between was not clearing it. On
+  `M0 0 C0 50 0 50 10 10 A5 5 0 0 1 20 20 S30 30 40 40` the tail after (20,20)
+  came out as 16 points bowing 15.67 user units off the straight line it should
+  have been, against 2 points and 0 for the same path with an `L` instead of the
+  arc. `S` and `T` also read each other's control points across curve types,
+  which the spec does not allow: an `S` after a `Q`, or a `T` after a `C`, now
+  starts at the current point (`npx vitest run tests/path.test.ts`).
+- **A path coordinate written with an uppercase `E` exponent now imports.**
+  `1E2` is a legal SVG number, but the tokenizer matched a lowercase `e` only,
+  so `M0 0 L1E2 0` was read as a command letter, reported as "Path 1 has broken
+  data", and dropped, while `M0 0 L1e2 0` imported fine. Both now give the same
+  one loop and no warning (`npx vitest run tests/path.test.ts`).
+- **"Path 3 has broken data" now counts the paths you can count.** The number
+  in that warning skipped every `<path>` that had been left out of the import,
+  so a file whose first four paths are hidden or unfilled named its fifth one
+  "Path 1" (`npx vitest run tests/parse.test.ts`).
 - **Switching parts no longer asks you to confirm.** The dialog said
   switching would "clear the currently loaded" parts, naming the one thing
   that survives — your artwork stays right where you left it, and the part

@@ -209,7 +209,8 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
   const shapes: SVGShape[] = [];
   let order = 0;
-  // Counts every <path> reached here (valid or not), so a warning can name which one broke by
+  // Counts every <path> the walk reaches, including the hidden and unfilled ones a user counting
+  // <path> elements in their editor cannot skip, so a warning can name which one broke by
   // position. warn() dedupes by exact message, so an unnumbered "Path has broken data" would
   // collapse a second offender into the first one's pill and under-report how much was dropped.
   let pathCount = 0;
@@ -304,6 +305,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       tag === 'polygon' ||
       tag === 'polyline'
     ) {
+      if (tag === 'path') pathCount++;
       if (!displayNone) {
         shapeCount++;
         if (fillUrl) {
@@ -313,12 +315,14 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         } else if (fillRaw === 'none') {
           // no fill, e.g. stroke-only outline — ignored for inlay purposes
         } else if (opacity === 0) {
-          // invisible, ignore
+          // Deliberately silent, unlike the gradient branch above: fill-opacity="0" is how an
+          // artist hides a shape, and a pill per hidden shape would nag on a file behaving as
+          // drawn. A clamp in parseFillOpacity would land -1 and -50% here too, and nothing in
+          // this branch tells those apart from a deliberate hide.
         } else {
           const hex = normalizeColor(fillRaw || getAncestorFill(el) || '#000000');
           let loops: Loop[] = [];
           if (tag === 'path') {
-            pathCount++;
             const n = pathCount;
             const d = el.getAttribute('d');
             if (d) {

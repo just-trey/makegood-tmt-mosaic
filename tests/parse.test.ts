@@ -134,6 +134,24 @@ describe('parseSVGDocument', () => {
     expect(WARNINGS.map((w) => w.message)).toContainEqual(expect.stringContaining('Path 2'));
   });
 
+  it('counts a hidden <path>, so a later broken one is named by its position in the file', () => {
+    clearWarnings();
+    // Hidden four ways, then the broken one. A user counting <path> elements in their editor
+    // has no way to skip the invisible ones, so Path N has to agree with that count.
+    expect(() =>
+      parseSVGDocument(
+        svg(
+          '<path d="M0 0 L1 1" fill="#ff0000" fill-opacity="0"/>' +
+            '<path d="M0 0 L1 1" fill="none"/>' +
+            '<path d="M0 0 L1 1" fill="url(#a)"/>' +
+            '<path d="M0 0 L1 1" fill="#ff0000" display="none"/>' +
+            '<path d="M0 0 L10" fill="#00ff00"/>',
+        ),
+      ),
+    ).toThrow();
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(expect.stringContaining('Path 5'));
+  });
+
   it('resolves fills through <style> class rules, with inline style winning', () => {
     const out = parseSVGDocument(
       svg(
