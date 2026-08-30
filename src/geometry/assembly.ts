@@ -983,12 +983,15 @@ export async function buildAssemblyGeometry(
         // for the same reason: a cutThrough part discards the setting and holes the whole way
         // through, so "it was cut at 24.25 mm instead" would be false there. Never test
         // `part.cutThrough` here.
-        // Not on a rotated copy: it shares its source's mesh, face and topZ by construction
-        // (asmAddDuplicate), so its bound is the same number and the pill would differ only by
-        // "(rotated copy)". A two-half wheel with eight colours raised sixteen, half of them saying
-        // nothing new. zeroDepthWarning drops the part name outright for the same reason; this one
-        // keeps it, because the bound really is per-part wherever the parts differ.
-        else if (!part.isDuplicateOf && depthDiffers(depthSetting, raised) && landedAtSetting)
+        // A rotated copy reports like any other part. It shares its source's bound by construction
+        // (asmAddDuplicate hands it the same mesh, face and topZ), but its placer maps a different
+        // slice of the artwork onto that face, so *which* colors reach the bound differs — and
+        // skipping copies left a color landing only on the copy with a "cut at" depth in its
+        // color-list row that no warning named. Copies were skipped to stop one pill per color per
+        // half; addPartTooDeepClamp's grouping is what holds that down now, though only per
+        // requested depth — colors sharing a depth setting collapse to one pill per half, and
+        // per-color overrides in the color list still split.
+        else if (depthDiffers(depthSetting, raised) && landedAtSetting)
           addPartTooDeepClamp(tooDeepClamps, label, part.name, raised, depthSetting);
         // The warning above describes the setting and holds wherever the color lands. This one
         // predicts the printed recess, so it must not be said about a part that discards the setting

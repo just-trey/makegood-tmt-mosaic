@@ -1150,8 +1150,12 @@ guessed at from outside it:**
     instead of to the setting; the warning only fires for the part of a
     colour actually cut at the clamped number, so an all-edge colour raises
     nothing.
-  - A rotated copy of a part that already reported this: it shares its
-    source's bound exactly, so a second identical pill would add nothing.
+
+**A rotated copy is a part in its own right here.** The wheel's two halves are
+"Top" and "Bottom", so a colour clamped on only one of them names that half,
+and a colour on both is named in a pill for each. Colours clamped from the same
+depth setting share one pill per half; a colour given its own depth in the
+colour list gets its own.
 
 ## Troubleshooting: "… zones still blank" notices (assembly mode)
 

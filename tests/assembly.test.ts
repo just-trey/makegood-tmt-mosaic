@@ -53,6 +53,33 @@ function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   };
 }
 
+/**
+ * A part whose design face covers only the -X side of its mesh, plus the 180° rotated copy the
+ * wheel roles make (which get their own name: "Bottom" to the source's "Top"). The copy shares the
+ * source's mesh, face and bound, but its placer maps a different slice of the artwork onto that
+ * same face, so a color can land on one and not the other.
+ */
+function halfFaceWithCopy(): AssemblyPart[] {
+  const loops = [
+    [
+      [-20, 10, -20],
+      [-2, 10, -20],
+      [-2, 10, 20],
+      [-20, 10, 20],
+    ],
+  ];
+  return [
+    boxPart({ boundaryLoops: loops }),
+    boxPart({
+      id: 2,
+      name: 'test box (rotated copy)',
+      isDuplicateOf: 1,
+      boundaryLoops: loops,
+      angleDeg: 180,
+    }),
+  ];
+}
+
 function redSquareParsed(): ParsedSVG {
   const loops = [
     [
@@ -127,6 +154,29 @@ function threeColorSquaresParsed(): ParsedSVG {
     ],
     bbox: { minX: 0, minY: 0, maxX: 27, maxY: 10 },
     rawSVGCircle: { cx: 13.5, cy: 5, r: 13.5 },
+  };
+}
+
+/** Three horizontal bands, each spanning the design's full width, so every color reaches both
+ * halves of halfFaceWithCopy(). */
+function threeBandsParsed(): ParsedSVG {
+  const band = (y0: number, y1: number) => [
+    [
+      { x: 0, y: y0 },
+      { x: 30, y: y0 },
+      { x: 30, y: y1 },
+      { x: 0, y: y1 },
+      { x: 0, y: y0 },
+    ],
+  ];
+  return {
+    shapes: [
+      { fill: '#ff0000', loops: band(0, 10), order: 0 },
+      { fill: '#0000ff', loops: band(10, 20), order: 1 },
+      { fill: '#00ff00', loops: band(20, 30), order: 2 },
+    ],
+    bbox: { minX: 0, minY: 0, maxX: 30, maxY: 30 },
+    rawSVGCircle: { cx: 15, cy: 15, r: 15 },
   };
 }
 
@@ -1624,6 +1674,58 @@ describe('buildAssemblyGeometry too-deep clamp handling', () => {
       );
       expect(WARNINGS.filter((w) => w.message.includes('goes.'))).toEqual([]);
       expect(WARNINGS.some((w) => w.message.includes("the part's outer edge"))).toBe(true);
+    },
+  );
+
+  it(
+    'names a color that lands only on a rotated copy, under the copy',
+    { timeout: 30000 },
+    async () => {
+      // Blue lands on the source's face and red only on the copy's, because the copy's placer
+      // rotates the artwork 180° onto that same boundary. Skipping duplicates left red clamped,
+      // shown "cut at 9.95" in its Depth field, and named by no warning at all.
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parsed: twoColorSquaresParsed(),
+          parts: halfFaceWithCopy(),
+          globalDepth: 9999,
+        }),
+      ))!;
+
+      // The display half of the same fact, unguarded and therefore always right: it is what the
+      // warning has to agree with.
+      expect(built.palette.find((p) => p.hex === '#ff0000')?.appliedDepth).toBeCloseTo(9.95, 4);
+      const tooDeep = WARNINGS.filter((w) => w.message.includes('goes.'));
+      // Under the copy's own name, not the source's: the two are separate parts to the user (the
+      // wheel calls them "Top" and "Bottom" and exports them onto separate plates), so naming the
+      // source would send someone to inspect a half the color never reaches.
+      expect(tooDeep.map((w) => w.message)).toEqual([
+        'Depth for "#0000ff" was set to 9999.00 mm, deeper than "test box" goes. It was cut at ' +
+          '9.95 mm instead.',
+        'Depth for "#ff0000" was set to 9999.00 mm, deeper than "test box (rotated copy)" goes. ' +
+          'It was cut at 9.95 mm instead.',
+      ]);
+    },
+  );
+
+  it(
+    'caps a source and its rotated copy at one pill each, however many colors clamp',
+    { timeout: 30000 },
+    async () => {
+      // Why copies used to be skipped: before the clamps were grouped, a two-half wheel raised one
+      // pill per color per half. Grouping is what bounds that now — three colors on both halves
+      // stay at two pills, not six.
+      await buildAssemblyGeometry(
+        baseInput({ parsed: threeBandsParsed(), parts: halfFaceWithCopy(), globalDepth: 9999 }),
+      );
+
+      const tooDeep = WARNINGS.filter((w) => w.message.includes('goes.'));
+      expect(tooDeep.map((w) => w.message)).toEqual([
+        'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 9999.00 mm, deeper than ' +
+          '"test box" goes. They were cut at 9.95 mm instead.',
+        'Depths for "#00ff00", "#0000ff", "#ff0000" were set to 9999.00 mm, deeper than ' +
+          '"test box (rotated copy)" goes. They were cut at 9.95 mm instead.',
+      ]);
     },
   );
 });

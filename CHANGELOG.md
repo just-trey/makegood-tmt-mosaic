@@ -56,6 +56,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   genuinely clamp the same colour to two different depths. Was 4 pills for a
   3-colour design with `recessBg: true` clamped past its plate, now 1
   (`npx vitest run tests/depth.test.ts tests/flat.test.ts tests/assembly.test.ts`).
+- **A colour clamped on only one half of a wheel is now named in the warning,
+  not just in its Depth field.** The too-deep pill skipped rotated copies, on
+  the grounds that a copy shares its source's mesh, face and topZ and so
+  clamps to the same number. That holds for the bound and not for which
+  colours reach it: the copy's placer maps a rotated slice of the artwork onto
+  that same face, so a colour landing only on the copy showed a "cut at" depth
+  in the colour list with no pill naming it. Copies now report like any other
+  part, under their own name — the wheel's halves are "Top" and "Bottom", and
+  naming the source would send someone to inspect a half the colour never
+  reaches. The pill count is held down by the grouping this shipped alongside
+  rather than by skipping the copy: three colours clamped from one depth
+  setting on both halves give 2 pills, one per half naming all three, rather
+  than one pill per colour per half. Only colours carrying their own depth in
+  the colour list still split
+  (`npx vitest run tests/assembly.test.ts -t "rotated copy"`).
 - **`docs/troubleshooting.md` now says when a too-deep assembly depth clamp
   goes unnamed**, reading the two mechanisms from source instead of guessing:
   `maxCutDepth()` declining (a non-vertical or tilted face, a part too thin
