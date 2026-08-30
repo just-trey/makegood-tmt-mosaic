@@ -533,6 +533,8 @@ nothing saying it differed from what was asked for.
   won a cluster and then labelled no pixel at all, which the blur before
   clustering can produce: nothing of it was ever traced, so there is nothing to
   bring back.
+- **At Detail 100 it is not shown either**, since there is no raising left to
+  do. The color is still dropped, so the readout is still short of the slider.
 - **Placed small, nothing is said at all.** Below roughly a nozzle width per
   working pixel the placement floor binds instead, Detail moves nothing, and the
   notice would be false, so it is withheld: 128px across 12.8mm has a printable

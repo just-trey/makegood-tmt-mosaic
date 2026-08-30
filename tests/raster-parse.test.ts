@@ -14,6 +14,7 @@ import {
   fracFloorPx,
   printableFloorPx,
   DETAIL_DEFAULT,
+  DETAIL_MAX,
 } from '../src/raster/stats';
 import { quantize } from '../src/raster/quantize';
 import type { RasterImage } from '../src/raster/types';
@@ -187,7 +188,7 @@ describe('parseRasterImage', () => {
       expect(quantized.palette.length).toBe(3);
       expect(result.palette.length).toBe(2);
       expect(result.droppedColors).toBe(1);
-      expect(rasterLostColors(result)).toBe(true);
+      expect(rasterLostColors(result, detail)).toBe(true);
     });
 
     it('counts nothing when every color the quantizer found survives', () => {
@@ -195,7 +196,7 @@ describe('parseRasterImage', () => {
       const result = parseRasterImage(sprinkled(), opts);
       expect(result.palette.length).toBe(3);
       expect(result.droppedColors).toBe(0);
-      expect(rasterLostColors(result)).toBe(false);
+      expect(rasterLostColors(result, DETAIL_DEFAULT)).toBe(false);
     });
 
     it('counts nothing when the image just has fewer colors than Colors asked for', () => {
@@ -207,7 +208,7 @@ describe('parseRasterImage', () => {
       });
       expect(result.palette.length).toBe(2);
       expect(result.droppedColors).toBe(0);
-      expect(rasterLostColors(result)).toBe(false);
+      expect(rasterLostColors(result, 0)).toBe(false);
     });
 
     it('leaves a capped trace to its own notice', () => {
@@ -237,7 +238,7 @@ describe('parseRasterImage', () => {
 
       expect(result.capped).toBe(true);
       expect(result.droppedColors).toBe(1);
-      expect(rasterLostColors(result)).toBe(false);
+      expect(rasterLostColors(result, 100)).toBe(false);
       // The cap raise puts `floorPx` (33) above the fractional floor (24) on its own. Reading the
       // reason off it would call a placement in force on an image that has none.
       expect(result.floorPx).toBeGreaterThan(
@@ -278,7 +279,7 @@ describe('parseRasterImage', () => {
         expect(map.palette.filter((_, i) => !labelled.has(i))).toHaveLength(1);
         expect(result.palette.length).toBe(2);
         expect(result.droppedColors).toBe(0);
-        expect(rasterLostColors(result)).toBe(false);
+        expect(rasterLostColors(result, detail)).toBe(false);
       }
     });
 
@@ -292,7 +293,7 @@ describe('parseRasterImage', () => {
 
         expect(result.droppedColors).toBe(1);
         expect(result.floorReason).toBe('printable');
-        expect(rasterLostColors(result)).toBe(false);
+        expect(rasterLostColors(result, detail)).toBe(false);
       }
     });
 
@@ -311,7 +312,21 @@ describe('parseRasterImage', () => {
       expect(fracFloorPx(autoParams(measureImage(img), DETAIL_DEFAULT, true), 512, 512)).toBe(39);
       expect(result.droppedColors).toBe(1);
       expect(result.floorReason).toBe('noise');
-      expect(rasterLostColors(result)).toBe(true);
+      expect(rasterLostColors(result, DETAIL_DEFAULT)).toBe(true);
+    });
+
+    // At the slider's own maximum the message asks for something the panel cannot do. 256px and
+    // 384px both still drop a color there, so it is not a hypothetical.
+    it('stays silent at DETAIL_MAX, where there is no raising left', () => {
+      for (const size of [256, 384]) {
+        const result = parseRasterImage(sprinkled(size), { colors: 4, detail: DETAIL_MAX });
+
+        expect(result.droppedColors).toBe(1);
+        expect(result.capped).toBe(false);
+        expect(result.floorReason).toBe('noise');
+        expect(rasterLostColors(result, DETAIL_MAX)).toBe(false);
+        expect(rasterLostColors(result, DETAIL_MAX - 5)).toBe(true);
+      }
     });
 
     it('names one dropped color in the singular and more in the plural', () => {

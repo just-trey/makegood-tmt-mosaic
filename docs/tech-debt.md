@@ -1088,17 +1088,18 @@ placement given the two designs' actual placed footprints, rather than stepping
 a fixed distance and testing for an exact-spot collision. That is a real
 placement search and wants its own change, not a wider constant.
 
-## Two traces still drop a color and say nothing about it
+## Three traces still drop a color and say nothing about it
 
 `rasterLostColors` ([src/raster/parse.ts](../src/raster/parse.ts)) raises the dropped-color notice
-only where its one sentence is true, which is under the fractional floor on an uncapped trace. Two
-cases are left silent, both `droppedColors > 0`. They are the half of "a traced image can lose a
-color with nothing said" that the notice did not close.
+only where its one sentence — raise Detail — is both true and available. Three cases are left
+silent, all `droppedColors > 0`. They are the half of "a traced image can lose a color with nothing
+said" that the notice did not close.
 
-| Case                       | Suppressed by                 | Reproduced by                                                    |
-| -------------------------- | ----------------------------- | ---------------------------------------------------------------- |
-| Capped, and short a color  | `capped`                      | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"` |
-| A placement's nozzle floor | `floorReason === 'printable'` | `npx vitest run tests/raster-parse.test.ts -t "stays silent"`    |
+| Case                       | Suppressed by                 | Reproduced by                                                       |
+| -------------------------- | ----------------------------- | ------------------------------------------------------------------- |
+| Capped, and short a color  | `capped`                      | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"`    |
+| A placement's nozzle floor | `floorReason === 'printable'` | `npx vitest run tests/raster-parse.test.ts -t "stays silent under"` |
+| Detail already at the top  | `detail >= DETAIL_MAX`        | `npx vitest run tests/raster-parse.test.ts -t "stays silent at"`    |
 
 - **Capped**: the trace shows `rasterCappedMessage` only, which says detail "was merged into its
   surroundings" and never that a color left the palette. The two remedies are opposites — capped
@@ -1111,12 +1112,18 @@ color with nothing said" that the notice did not close.
   12.8mm drops a color at Detail 0, 50 and 100 alike. Saying it needs a second message, and that
   message's remedy is a resize, which does not re-trace — see "The printable despeckle floor is
   fixed at the moment of the trace" for why the notice would then stand stale.
+- **Detail at its maximum**: the slider is `DETAIL_MIN`-`DETAIL_MAX`, so at the top the remedy is
+  not available and the notice would name an action the panel cannot take. Both 256px and 384px of
+  the sprinkle fixture still drop a color there, so it is not hypothetical. Saying it needs a
+  different sentence — lower Colors, or use a cleaner image — which is `rasterCappedMessage`'s
+  advice arriving by another route, and nothing has measured whether it helps here.
 - **The capped split also gives a round trip.** Raising Detail on a dropped-color notice lowers the
   floor, raises the component count, and can trip the cap. The next trace is capped, the notice is
   retracted, and the user is told to lower the Detail they just raised, with the color still gone.
 - Closing either takes a message carrying both facts, or a measured rule for which remedy wins.
-  Neither is a wording change: the capped one needs an answer to whether raising Detail can recover
-  a color on a capped trace at all, and the printable one needs the re-trace-on-resize item first.
+  None is a wording change: the capped one needs an answer to whether raising Detail can recover a
+  color on a capped trace at all, the printable one needs the re-trace-on-resize item first, and the
+  Detail-at-maximum one needs a measured second remedy.
 
 ## `MAX_COMPONENTS` is a target, not the bound its name implies
 

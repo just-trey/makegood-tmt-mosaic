@@ -12,6 +12,7 @@ import {
 } from '../state/artwork';
 import { fillModeOffered } from '../assembly/kinds';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
+import { DETAIL_MAX, DETAIL_MIN } from '../raster/stats';
 import {
   rasterCappedMessage,
   rasterColorLossKey,
@@ -194,7 +195,7 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
     <div class="row">
       <label for="raster-detail-${source.id}">Detail</label>
       <input type="range" id="raster-detail-${source.id}" class="raster-detail"
-             min="0" max="100" step="5" />
+             min="${DETAIL_MIN}" max="${DETAIL_MAX}" step="5" />
     </div>
     <div class="raster-readout"></div>
   `;
@@ -247,7 +248,7 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
     // Its own key, so it stands beside whichever of those two this source holds — and so the same
     // dismiss-then-notice order applies to it separately.
     dismissColorLoss(source.id);
-    if (rasterLostColors(result))
+    if (rasterLostColors(result, source.raster.detail))
       notice(
         rasterColorLossMessage(source.name, result.droppedColors),
         rasterColorLossKey(source.id),

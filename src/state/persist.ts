@@ -711,7 +711,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       // like the app quietly changed it.
       if (result.capped) notice(rasterCappedMessage(s.name), s.id);
       else notice(rasterTracedMessage(s.name), s.id);
-      if (rasterLostColors(result))
+      if (rasterLostColors(result, opts.detail))
         notice(rasterColorLossMessage(s.name, result.droppedColors), rasterColorLossKey(s.id));
       sources.push({
         id: s.id,

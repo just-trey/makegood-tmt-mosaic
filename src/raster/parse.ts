@@ -1,5 +1,5 @@
 import type { Loop, ParsedSVG, SVGShape } from '../types';
-import { autoParams, despeckleFloorPx, fracFloorPx, measureImage } from './stats';
+import { autoParams, despeckleFloorPx, DETAIL_MAX, fracFloorPx, measureImage } from './stats';
 import { MEASURE_EDGE } from './decode';
 import { quantize } from './quantize';
 import { traceLabelMap } from './trace';
@@ -229,16 +229,19 @@ export function rasterColorLossKey(sourceId: string): string {
 
 /**
  * Whether a finished trace should raise rasterColorLossMessage. Not simply `droppedColors > 0`: it
- * only fires where raising Detail is the true answer.
+ * only fires where raising Detail is an answer the user can actually give.
  *
- * A capped trace already carries rasterCappedMessage, whose remedy is the opposite one, and under a
- * placement's printable floor Detail moves nothing at all. Both of those stay silent about the color
- * they dropped, which docs/tech-debt.md carries.
+ * Three cases where it is not: a capped trace already carries rasterCappedMessage, whose remedy is
+ * the opposite one; under a placement's printable floor Detail moves nothing at all; and at
+ * DETAIL_MAX there is no raising left to do. All three stay silent about the color they dropped,
+ * which docs/tech-debt.md carries.
  */
 export function rasterLostColors(
   result: Pick<RasterParseResult, 'capped' | 'droppedColors' | 'floorReason'>,
+  detail: number,
 ): boolean {
-  return !result.capped && result.floorReason === 'noise' && result.droppedColors > 0;
+  if (result.capped || result.floorReason !== 'noise' || detail >= DETAIL_MAX) return false;
+  return result.droppedColors > 0;
 }
 
 /**
