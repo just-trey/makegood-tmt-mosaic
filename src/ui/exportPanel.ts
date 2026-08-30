@@ -233,6 +233,9 @@ function warnIfIncompleteZoneCoverage(): void {
 export async function exportPrintReady3MF(): Promise<void> {
   let materials: ExportMaterial[], parts: ExportPart[], fname: string;
   const bodyColor = baseColorHex().toUpperCase();
+  // captured now, not read at track() time below: the export button disables itself during the
+  // awaits ahead, but #shape-kind doesn't, so state.assembly.kindId can move under us mid-export
+  const exportedKindId = state.shapeKind === 'assembly' ? state.assembly.kindId : null;
 
   if (state.shapeKind === 'assembly') {
     const built = getLastAssemblyBuild();
@@ -325,6 +328,8 @@ export async function exportPrintReady3MF(): Promise<void> {
       printer: state.printerId,
       colors: materials.length - 1,
       warnings: placementWarnings.length,
+      // flat mode has no assembly kind to name
+      ...(exportedKindId ? { kind: exportedKindId } : {}),
     });
     download(blob, fname);
   } catch (e) {
