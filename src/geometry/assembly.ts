@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Position } from 'geojson';
 import {
   MIN_CUT_DEPTH_MM,
+  addPartTooDeepClamp,
   addZeroDepthRaise,
   depthDiffers,
   edgeCutThroughNotice,
@@ -11,6 +12,7 @@ import {
   thinDepthNotice,
   tooDeepWarning,
   zeroDepthWarning,
+  type PartDepthClamp,
   type ZeroDepthRaise,
 } from './depth';
 import type {
@@ -785,6 +787,13 @@ export async function buildAssemblyGeometry(
   // Zero-depth raises, collected across every part for the same reason: build-wide, because the
   // message carries no part name, and said once however many colors were raised.
   const zeroDepthRaises = new Map<string, ZeroDepthRaise>();
+  // Same staging, for a depth clamped by a part's maxCutDepth() instead of raised from zero — see
+  // addPartTooDeepClamp. Keyed with the part name, unlike zeroDepthRaises: the bound is per-part.
+  const tooDeepClamps = new Map<string, PartDepthClamp>();
+  // The depth actually cut per palette index, for the colour list's Depth field (display-only,
+  // docs/tech-debt.md). Keyed by palette index rather than key/label, matching every other
+  // build-wide colour map here.
+  const colorAppliedDepth = new Map<number, number>();
   // Palette indices known to have reached some design surface: a survived boundary clip, a
   // produced inlay (a cut-through zone has no clip boundary, its boolean bounds the cut), or any
   // CSG failure involving the color, so a color lost to a broken boolean is never also told to
@@ -898,6 +907,22 @@ export async function buildAssemblyGeometry(
           label: `color ${label}`,
           clipped,
         });
+        // Whether any region actually landed at depthSetting, rather than at a depth the mapper
+        // substituted for it (a cut-through part's fixed hole, an edge-rule full-thickness slice).
+        // Computed once and shared by the three readers below — the colour-list depth, the
+        // too-deep pill, and the thin-depth note — so they cannot silently disagree about what was
+        // cut, the failure CLAUDE.md's shared-value rule exists to catch (`some`, not `every`,
+        // because a split color is cut at two depths at once and only the matching slice counts).
+        const landedAtSetting = regions.some((r) => !depthDiffers(r.depth, depthSetting));
+        // The depth the colour list's Depth field shows, display-only (docs/tech-debt.md): gated
+        // the same way, so a cutThrough or all-edge part (which discards depthSetting entirely)
+        // never reports a recess it did not cut. The minimum across parts/zones, so a colour
+        // landing on two parts at two depths shows the more-clamped one rather than whichever ran
+        // last.
+        if (landedAtSetting) {
+          const prev = colorAppliedDepth.get(ci);
+          colorAppliedDepth.set(ci, prev == null ? depthSetting : Math.min(prev, depthSetting));
+        }
         if (requested <= 0) addZeroDepthRaise(zeroDepthRaises, label, requested, depthSetting);
         // Gated on what the mapper did with the number, exactly like the sub-layer note below, and
         // for the same reason: a cutThrough part discards the setting and holes the whole way
@@ -908,12 +933,8 @@ export async function buildAssemblyGeometry(
         // "(rotated copy)". A two-half wheel with eight colours raised sixteen, half of them saying
         // nothing new. zeroDepthWarning drops the part name outright for the same reason; this one
         // keeps it, because the bound really is per-part wherever the parts differ.
-        else if (
-          !part.isDuplicateOf &&
-          depthDiffers(depthSetting, raised) &&
-          regions.some((r) => !depthDiffers(r.depth, depthSetting))
-        )
-          warnBuild(tooDeepWarning(label, part.name, raised, depthSetting));
+        else if (!part.isDuplicateOf && depthDiffers(depthSetting, raised) && landedAtSetting)
+          addPartTooDeepClamp(tooDeepClamps, label, part.name, raised, depthSetting);
         // The warning above describes the setting and holds wherever the color lands. This one
         // predicts the printed recess, so it must not be said about a part that discards the setting
         // and cuts the whole way through: "too thin to show up" is wrong about a 3 mm hole. Ask the
@@ -922,15 +943,9 @@ export async function buildAssemblyGeometry(
         // Warnings dedupe by message, so gating per-part is right when a color sits on several: the
         // note appears if any part cuts at the setting, and stays silent if none do.
         //
-        // `some`, because a split color is cut at two depths at once: the interior slice deserves
-        // the note, the edge slice does not.
-        //
         // noticeBuild, not warnBuild: the depth is honored, not overridden. Promoting it was
         // proposed and rejected, see thinDepthNotice in depth.ts.
-        else if (
-          subLayerDepth(depthSetting) &&
-          regions.some((r) => !depthDiffers(r.depth, depthSetting))
-        )
+        else if (subLayerDepth(depthSetting) && landedAtSetting)
           noticeBuild(thinDepthNotice(label, depthSetting));
         // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
         // step); the snap tolerance is a property of the bake, so both modes take the same one.
@@ -1250,6 +1265,8 @@ export async function buildAssemblyGeometry(
   // part that fails its booleans does not make it untrue.
   for (const r of zeroDepthRaises.values())
     warnBuild(zeroDepthWarning(r.labels, r.requested, r.raisedTo));
+  for (const c of tooDeepClamps.values())
+    warnBuild(tooDeepWarning(c.labels, c.partName, c.requested, c.cutAt));
   // Once, after every part: one notice naming every color the edge rule took the full way through.
   // Grouped by cut depth, a single value in practice (one part has the rule) but per-part in the
   // model, so grouping keeps the message honest if a second such part lands.
@@ -1279,6 +1296,10 @@ export async function buildAssemblyGeometry(
           `${missed.map((l) => `"${l}"`).join(', ')}. Lower Scale or move the design to bring them back.`,
       );
   }
+  palette.forEach((c, ci) => {
+    const d = colorAppliedDepth.get(ci);
+    if (d != null) c.appliedDepth = d;
+  });
   return { partOutputs, palette, viewSign, detectedColors, baseAssigned };
 }
 

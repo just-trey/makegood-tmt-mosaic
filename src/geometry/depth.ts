@@ -106,19 +106,91 @@ export function addZeroDepthRaise(
  * the recess by how far the part extends behind its design face, which is the deepest any cut
  * could go before leaving the part entirely. A recess shallower than that can still break through
  * a thin wall, and nothing here measures that (docs/tech-debt.md).
+ *
+ * Takes every color clamped to the same depth on the same part at once, like zeroDepthWarning:
+ * without grouping, a merged-color palette on one part stacked one identical-looking pill per
+ * color (see addTooDeepClamp).
  */
 export function tooDeepWarning(
-  label: string,
+  labels: string[],
   partName: string,
   requested: number,
   cutAt: number,
 ): string {
+  const one = labels.length === 1;
+  const which = labels.map((l) => `"${l}"`).join(', ');
   // Says what it cut, and does not claim that number is the part's face-to-back distance: the cut
   // stops a floor short of it, so quoting one figure as both was wrong by CUT_FLOOR_MM.
   return (
-    `Depth for "${label}" was set to ${requested.toFixed(2)} mm, deeper than "${partName}" goes. ` +
-    `It was cut at ${cutAt.toFixed(2)} mm instead.`
+    `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ${requested.toFixed(2)} mm, ` +
+    `deeper than "${partName}" goes. ${one ? 'It was' : 'They were'} cut at ${cutAt.toFixed(2)} mm instead.`
   );
+}
+
+/**
+ * The warning for a depth deeper than the flat-mode plate can hold. Same shape as tooDeepWarning,
+ * but a plate has no part to name — the bound is the one thickness the whole build shares.
+ */
+export function tooDeepPlateWarning(
+  labels: string[],
+  requested: number,
+  cutAt: number,
+  thickness: number,
+): string {
+  const one = labels.length === 1;
+  const which = labels.map((l) => `"${l}"`).join(', ');
+  return (
+    `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ${requested.toFixed(2)} mm, ` +
+    `but a ${thickness.toFixed(2)} mm plate can only cut ${cutAt.toFixed(2)} mm deep. ` +
+    `${one ? 'It was' : 'They were'} cut at ${cutAt.toFixed(2)} mm instead.`
+  );
+}
+
+export interface DepthClamp {
+  requested: number;
+  cutAt: number;
+  labels: string[];
+}
+
+/**
+ * Stage one color's too-deep clamp for a single flat-mode message at the end of the build. Keyed
+ * like addZeroDepthRaise, by both numbers the message prints: `requested` is per row (any row can
+ * carry its own colorSettings override), and `cutAt` for the same reason, though within one flat
+ * build it never varies — there is only the one plate.
+ */
+export function addTooDeepClamp(
+  into: Map<string, DepthClamp>,
+  label: string,
+  requested: number,
+  cutAt: number,
+): void {
+  const key = `${requested.toFixed(2)}|${cutAt.toFixed(2)}`;
+  const at = into.get(key);
+  if (!at) into.set(key, { requested, cutAt, labels: [label] });
+  else if (!at.labels.includes(label)) at.labels.push(label);
+}
+
+export interface PartDepthClamp extends DepthClamp {
+  partName: string;
+}
+
+/**
+ * Stage one color's too-deep clamp for a single assembly-mode message at the end of the build.
+ * Keyed by a third component addTooDeepClamp doesn't need: `maxCutDepth()` is a per-part bound, so
+ * two parts can genuinely clamp the same color to two different depths, and the message has to
+ * keep naming the part.
+ */
+export function addPartTooDeepClamp(
+  into: Map<string, PartDepthClamp>,
+  label: string,
+  partName: string,
+  requested: number,
+  cutAt: number,
+): void {
+  const key = `${requested.toFixed(2)}|${cutAt.toFixed(2)}|${partName}`;
+  const at = into.get(key);
+  if (!at) into.set(key, { requested, cutAt, partName, labels: [label] });
+  else if (!at.labels.includes(label)) at.labels.push(label);
 }
 
 /**

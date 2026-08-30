@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   MIN_CUT_DEPTH_MM,
+  addPartTooDeepClamp,
+  addTooDeepClamp,
   depthDiffers,
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
+  tooDeepPlateWarning,
   tooDeepWarning,
+  type DepthClamp,
+  type PartDepthClamp,
 } from '../src/geometry/depth';
 
 describe('subLayerDepth', () => {
@@ -79,7 +84,7 @@ describe('depthDiffers', () => {
 });
 
 describe('tooDeepWarning', () => {
-  const msg = tooDeepWarning('#ff0000', 'Wheel top', 9999, 48.45);
+  const msg = tooDeepWarning(['#ff0000'], 'Wheel top', 9999, 48.45);
 
   it('names the color, the part, and both numbers', () => {
     expect(msg).toContain('"#ff0000"');
@@ -98,5 +103,63 @@ describe('tooDeepWarning', () => {
   // CLAUDE.md bars em dashes in user-facing copy.
   it('uses no em dash', () => {
     expect(msg).not.toContain('\u2014');
+  });
+
+  it('names every color clamped to the same depth on the same part at once', () => {
+    const grouped = tooDeepWarning(['#ff0000', '#00ff00'], 'Wheel top', 9999, 48.45);
+    expect(grouped).toBe(
+      'Depths for "#ff0000", "#00ff00" were set to 9999.00 mm, deeper than "Wheel top" goes. ' +
+        'They were cut at 48.45 mm instead.',
+    );
+  });
+});
+
+describe('tooDeepPlateWarning', () => {
+  it('names the color and both numbers, with the plate thickness instead of a part', () => {
+    const msg = tooDeepPlateWarning(['#ff0000'], 100, 3.95, 4);
+    expect(msg).toBe(
+      'Depth for "#ff0000" was set to 100.00 mm, but a 4.00 mm plate can only cut 3.95 mm deep. ' +
+        'It was cut at 3.95 mm instead.',
+    );
+  });
+
+  it('groups every color clamped to the same depth into one message', () => {
+    const msg = tooDeepPlateWarning(['#ff0000', '#0000ff'], 100, 3.95, 4);
+    expect(msg).toBe(
+      'Depths for "#ff0000", "#0000ff" were set to 100.00 mm, but a 4.00 mm plate can only cut ' +
+        '3.95 mm deep. They were cut at 3.95 mm instead.',
+    );
+  });
+});
+
+describe('addTooDeepClamp / addPartTooDeepClamp', () => {
+  it('groups by (requested, cutAt), keeping two different requested depths separate', () => {
+    const into = new Map<string, DepthClamp>();
+    addTooDeepClamp(into, '#ff0000', 100, 3.95);
+    addTooDeepClamp(into, '#0000ff', 100, 3.95);
+    addTooDeepClamp(into, '#00ff00', 50, 3.95);
+    expect(Array.from(into.values())).toEqual([
+      { requested: 100, cutAt: 3.95, labels: ['#ff0000', '#0000ff'] },
+      { requested: 50, cutAt: 3.95, labels: ['#00ff00'] },
+    ]);
+  });
+
+  it('does not repeat a label already staged for the same pair', () => {
+    const into = new Map<string, DepthClamp>();
+    addTooDeepClamp(into, '#ff0000', 100, 3.95);
+    addTooDeepClamp(into, '#ff0000', 100, 3.95);
+    expect(Array.from(into.values())).toEqual([
+      { requested: 100, cutAt: 3.95, labels: ['#ff0000'] },
+    ]);
+  });
+
+  it('keeps two parts clamping the same color to the same numbers separate', () => {
+    const into = new Map<string, PartDepthClamp>();
+    addPartTooDeepClamp(into, '#ff0000', 'Wheel top', 9999, 24.25);
+    addPartTooDeepClamp(into, '#ff0000', 'Wheel bottom', 9999, 24.25);
+    expect(Array.from(into.values())).toEqual([
+      { requested: 9999, cutAt: 24.25, partName: 'Wheel top', labels: ['#ff0000'] },
+      { requested: 9999, cutAt: 24.25, partName: 'Wheel bottom', labels: ['#ff0000'] },
+    ]);
   });
 });
