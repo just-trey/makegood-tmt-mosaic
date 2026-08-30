@@ -14,7 +14,14 @@ import { getPrinter } from '../export/printers';
 import { asmLoadFullAssembly } from '../assembly/parts';
 import { parseSVGDocument } from '../svg/parse';
 import { decodeWorkingImage, encodeWorkingImage } from '../raster/store';
-import { parseRasterImage, rasterCappedMessage, rasterTracedMessage } from '../raster/parse';
+import {
+  parseRasterImage,
+  rasterCappedMessage,
+  rasterColorLossKey,
+  rasterColorLossMessage,
+  rasterLostColors,
+  rasterTracedMessage,
+} from '../raster/parse';
 import { clearWarnings, notice, warn } from '../warnings';
 import type { RasterImage } from '../raster/types';
 
@@ -704,6 +711,8 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       // like the app quietly changed it.
       if (result.capped) notice(rasterCappedMessage(s.name), s.id);
       else notice(rasterTracedMessage(s.name), s.id);
+      if (rasterLostColors(result))
+        notice(rasterColorLossMessage(s.name, result.droppedColors), rasterColorLossKey(s.id));
       sources.push({
         id: s.id,
         kind: s.kind,

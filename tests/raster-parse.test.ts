@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { parseRasterImage, EmptyTraceError, rasterEmptyTraceMessage } from '../src/raster/parse';
+import {
+  parseRasterImage,
+  EmptyTraceError,
+  rasterCappedMessage,
+  rasterColorLossMessage,
+  rasterEmptyTraceMessage,
+  rasterLostColors,
+} from '../src/raster/parse';
 import {
   measureImage,
   autoParams,
   despeckleFloorPx,
+  fracFloorPx,
   printableFloorPx,
   DETAIL_DEFAULT,
+  DETAIL_MAX,
 } from '../src/raster/stats';
 import { quantize } from '../src/raster/quantize';
 import type { RasterImage } from '../src/raster/types';
@@ -24,6 +33,24 @@ function bands(w: number, h: number, colors: string[], alpha = 255): RasterImage
       data[i + 3] = alpha;
     }
   return { data, w, h };
+}
+
+/**
+ * Blue and green bands under a red sprinkle: enough red pixels to win a palette entry, every one
+ * of them a lone speck. Deterministic placement — the assertions on it must not flake.
+ */
+function sprinkled(w = 64, h = w): RasterImage {
+  const img = bands(w, h, ['#0000ff', '#00c000']);
+  for (let p = 0; p < w * h; p++) {
+    const x = p % w,
+      y = (p / w) | 0;
+    if ((x * 5 + y * 3) % 17 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
+    const i = p * 4;
+    img.data[i] = 255;
+    img.data[i + 1] = 0;
+    img.data[i + 2] = 0;
+  }
+  return img;
 }
 
 const opts = { colors: 4, detail: DETAIL_DEFAULT };
@@ -135,20 +162,7 @@ describe('parseRasterImage', () => {
   // "3 colors · 2 regions", the smoke's `shown === traced` check compared a 3 against a color list
   // holding 2, and remapSettingsToPalette could carry a depth onto a hex nothing paints.
   it('reports only the colors the traced shapes actually paint', () => {
-    // A red sprinkle: enough pixels to win a palette entry, every one of them a lone speck the
-    // despeckle floor absorbs. Deterministic placement — this assertion must not flake.
-    const w = 64,
-      h = 64;
-    const img = bands(w, h, ['#0000ff', '#00c000']);
-    for (let p = 0; p < w * h; p++) {
-      const x = p % w,
-        y = (p / w) | 0;
-      if ((x * 5 + y * 3) % 17 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
-      const i = p * 4;
-      img.data[i] = 255;
-      img.data[i + 1] = 0;
-      img.data[i + 2] = 0;
-    }
+    const img = sprinkled();
     // Detail full-left quadruples the despeckle floor, so a one-pixel speck cannot survive it.
     const detail = 0;
     const { parsed, palette } = parseRasterImage(img, { colors: 4, detail });
@@ -159,6 +173,191 @@ describe('parseRasterImage', () => {
     // …and the fixture really does exercise it: the quantizer found a color the trace then lost.
     const quantized = quantize(img, 4, autoParams(measureImage(img), detail).blurRadius);
     expect(quantized.palette.length).toBeGreaterThan(palette.length);
+  });
+
+  // `painted` drops on five of nineteen corpus sources and nothing said so
+  // (docs/findings/2026-08-20-despeckle-floor.md). The trigger is measured against the colors the
+  // quantizer actually labelled pixels with, never against the slider.
+  describe('dropped colors', () => {
+    it('counts a color the quantizer found and the trace painted nothing with', () => {
+      const img = sprinkled();
+      const detail = 0;
+      const result = parseRasterImage(img, { colors: 4, detail });
+      const quantized = quantize(img, 4, autoParams(measureImage(img), detail).blurRadius);
+
+      expect(quantized.palette.length).toBe(3);
+      expect(result.palette.length).toBe(2);
+      expect(result.droppedColors).toBe(1);
+      expect(rasterLostColors(result)).toBe(true);
+    });
+
+    it('counts nothing when every color the quantizer found survives', () => {
+      // The same sprinkle at the default Detail, where the floor leaves the specks alone.
+      const result = parseRasterImage(sprinkled(), opts);
+      expect(result.palette.length).toBe(3);
+      expect(result.droppedColors).toBe(0);
+      expect(rasterLostColors(result)).toBe(false);
+    });
+
+    it('counts nothing when the image just has fewer colors than Colors asked for', () => {
+      // Two bands at Colors 4. The palette is short of the slider and nothing was lost: no Detail
+      // setting invents a third color, so the notice must not offer one.
+      const result = parseRasterImage(bands(64, 64, ['#0000ff', '#00c000']), {
+        colors: 4,
+        detail: 0,
+      });
+      expect(result.palette.length).toBe(2);
+      expect(result.droppedColors).toBe(0);
+      expect(rasterLostColors(result)).toBe(false);
+    });
+
+    it('leaves a capped trace to its own notice', () => {
+      // 1024 six-pixel blocks over two bands, plus one-pixel yellow specks: past MAX_COMPONENTS,
+      // so the floor is raised, and the raise takes the yellow with it. Both notices at once would
+      // tell one image to lower Detail and raise it in the same breath.
+      const img = bands(320, 320, ['#0000ff', '#00c000']);
+      for (let y = 1; y + 6 < 320; y += 10)
+        for (let x = 1; x + 6 < 320; x += 10)
+          for (let dy = 0; dy < 6; dy++)
+            for (let dx = 0; dx < 6; dx++) {
+              const i = ((y + dy) * 320 + (x + dx)) * 4;
+              img.data[i] = 255;
+              img.data[i + 1] = 0;
+              img.data[i + 2] = 0;
+            }
+      for (let p = 0; p < 320 * 320; p++) {
+        const x = p % 320,
+          y = (p / 320) | 0;
+        if ((x * 5 + y * 3) % 53 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
+        const i = p * 4;
+        img.data[i] = 255;
+        img.data[i + 1] = 255;
+        img.data[i + 2] = 0;
+      }
+      const result = parseRasterImage(img, { colors: 5, detail: 100 });
+
+      expect(result.capped).toBe(true);
+      expect(result.droppedColors).toBe(1);
+      expect(rasterLostColors(result)).toBe(false);
+      // The cap raise puts `floorPx` (33) above the floor that was asked for (24) on its own, so
+      // reading the empty-trace reason off it would call a placement in force on an image that has
+      // none.
+      expect(result.floorPx).toBeGreaterThan(
+        despeckleFloorPx(
+          autoParams(measureImage(img), 100, false),
+          320,
+          320,
+          measureImage(img),
+          100,
+          0,
+        ),
+      );
+      // `capped` carries the suppression on its own, not by borrowing another rule's answer.
+      expect(rasterLostColors({ capped: true, droppedColors: 1, detailLowersFloor: true })).toBe(
+        false,
+      );
+    });
+
+    // A centroid can win a cluster from the source histogram and label no pixel at all, because
+    // assignment resolves against the blurred copy. Nothing of it was ever traced, so there were no
+    // pieces to lose and no floor to raise: counting it would offer a remedy that does nothing.
+    it('counts nothing for a color that never labelled a pixel', () => {
+      const img = bands(768, 768, ['#0000ff', '#00c000']);
+      for (let p = 0; p < 768 * 768; p++) {
+        const x = p % 768,
+          y = (p / 768) | 0;
+        if ((x * 5 + y * 3) % 101 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
+        const i = p * 4;
+        img.data[i] = 255;
+        img.data[i + 1] = 0;
+        img.data[i + 2] = 0;
+      }
+      for (const detail of [0, 50, 100]) {
+        const params = autoParams(measureImage(img), detail, true);
+        const map = quantize(img, 4, params.blurRadius);
+        const labelled = new Set(map.labels);
+        const result = parseRasterImage(img, { colors: 4, detail });
+
+        // The fixture really does exercise it: one centroid carries no pixel in the label map.
+        expect(map.palette.length).toBe(3);
+        expect(map.palette.filter((_, i) => !labelled.has(i))).toHaveLength(1);
+        expect(result.palette.length).toBe(2);
+        expect(result.droppedColors).toBe(0);
+        expect(rasterLostColors(result)).toBe(false);
+      }
+    });
+
+    // Placed small, the nozzle-width floor sits above the fractional one, and Detail never scales
+    // that half: the color is gone at Detail 0, 50 and 100 alike. The notice says "raise Detail"
+    // and nothing else, so it must not fire here at all. 128px across 12.8mm gives a printable
+    // floor of 16px² against a fractional 2 at Detail 50.
+    it('stays silent under a printable floor, which Detail cannot move', () => {
+      for (const detail of [0, 50, 100]) {
+        const result = parseRasterImage(sprinkled(128), { colors: 4, detail, mmPerPixel: 0.1 });
+
+        expect(result.droppedColors).toBe(1);
+        expect(result.detailLowersFloor).toBe(false);
+        expect(rasterLostColors(result)).toBe(false);
+      }
+    });
+
+    // A placement is not itself the printable case: at part scale it runs the other way. 512px
+    // across 185mm (0.361mm per pixel) has a printable floor of 1px², the no-op, against a
+    // fractional 39, so Detail is the answer and the notice does fire.
+    it('fires at part scale, where the fractional floor binds', () => {
+      const img = sprinkled(512);
+      const result = parseRasterImage(img, {
+        colors: 4,
+        detail: DETAIL_DEFAULT,
+        mmPerPixel: 0.361,
+      });
+
+      expect(printableFloorPx(0.361)).toBe(1);
+      expect(fracFloorPx(autoParams(measureImage(img), DETAIL_DEFAULT, true), 512, 512)).toBe(39);
+      expect(result.droppedColors).toBe(1);
+      expect(result.detailLowersFloor).toBe(true);
+      expect(rasterLostColors(result)).toBe(true);
+    });
+
+    // At the slider's own maximum the message asks for something the panel cannot do, and the same
+    // comparison answers it: the floor at DETAIL_MAX is the floor already in force. 256px and 384px
+    // both still drop a color there, so it is not a hypothetical.
+    it('stays silent at DETAIL_MAX, where there is no raising left', () => {
+      for (const size of [256, 384]) {
+        const atTop = parseRasterImage(sprinkled(size), { colors: 4, detail: DETAIL_MAX });
+        // Two steps down, not one: at 384px the floor rounds to 6 at both 95 and 100, so 95 is
+        // already a no-op and the notice is withheld there too — the predicate measures the floor
+        // rather than assuming the slider's last step moves it.
+        const below = parseRasterImage(sprinkled(size), { colors: 4, detail: DETAIL_MAX - 10 });
+
+        expect(atTop.droppedColors).toBe(1);
+        expect(atTop.capped).toBe(false);
+        expect(atTop.detailLowersFloor).toBe(false);
+        expect(rasterLostColors(atTop)).toBe(false);
+
+        expect(below.droppedColors).toBe(1);
+        expect(below.detailLowersFloor).toBe(true);
+        expect(rasterLostColors(below)).toBe(true);
+      }
+    });
+
+    it('names one dropped color in the singular and more in the plural', () => {
+      expect(rasterColorLossMessage('a.png', 1)).toBe(
+        '1 color in "a.png" was dropped. Raise Detail to keep more.',
+      );
+      expect(rasterColorLossMessage('a.png', 3)).toBe(
+        '3 colors in "a.png" were dropped. Raise Detail to keep more.',
+      );
+    });
+
+    // It claims nothing about printability: the floor it fires under removes pieces that print
+    // perfectly well, and NOZZLE_MM — the floor that does make that claim — is the one Detail
+    // never scales.
+    it('asks for the opposite of what the capped notice asks for, and claims nothing else', () => {
+      expect(rasterColorLossMessage('a.png', 1)).toContain('Raise Detail');
+      expect(rasterCappedMessage('a.png')).toContain('lower Detail');
+      expect(rasterColorLossMessage('a.png', 1)).not.toContain('print');
+    });
   });
 
   it('keeps the palette in the quantizer order it narrows', () => {

@@ -3,7 +3,7 @@ import { ALPHA_THRESHOLD } from './types';
 
 /** The Detail slider's multiplier on despeckle/simplify strength: 4x at full left, 1/4 at full right. */
 export function detailStrength(detail: number): number {
-  const clamped = Math.max(0, Math.min(100, detail));
+  const clamped = Math.max(DETAIL_MIN, Math.min(DETAIL_MAX, detail));
   return Math.pow(DETAIL_RANGE, (DETAIL_DEFAULT - clamped) / DETAIL_DEFAULT);
 }
 
@@ -160,6 +160,14 @@ const FLATNESS_MAX = 2;
 
 /** Detail slider midpoint — the value at which the auto-derived parameters are used unchanged. */
 export const DETAIL_DEFAULT = 50;
+
+/**
+ * The slider's own ends, shared so the panel's markup and the code reading it cannot drift. Derived
+ * rather than written as 100: detailStrength's exponent is symmetric about the midpoint, so only
+ * twice it lands on the 1/4 that DETAIL_RANGE promises at full right.
+ */
+export const DETAIL_MIN = 0;
+export const DETAIL_MAX = 2 * DETAIL_DEFAULT;
 
 /**
  * How far the Detail slider can pull the auto-derived strength in each direction. 4 means full-left

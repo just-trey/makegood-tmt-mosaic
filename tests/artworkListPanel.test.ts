@@ -13,7 +13,14 @@ vi.mock('../src/assembly/kinds', () => ({ fillModeOffered: () => false }));
 import { renderArtworkList } from '../src/ui/artworkListPanel';
 import { loadArtworkSource } from '../src/state/artwork';
 import { state } from '../src/state/store';
-import { parseRasterImage, rasterCappedMessage, rasterTracedMessage } from '../src/raster/parse';
+import {
+  parseRasterImage,
+  rasterCappedMessage,
+  rasterColorLossKey,
+  rasterColorLossMessage,
+  rasterLostColors,
+  rasterTracedMessage,
+} from '../src/raster/parse';
 import { WARNINGS, clearWarnings, notice } from '../src/warnings';
 import type { RasterImage } from '../src/raster/types';
 
@@ -32,14 +39,55 @@ function dot(w: number, h: number, size = 2): RasterImage {
 }
 
 /**
- * Load a 90x90 dot as a raster source, the way applyRasterFile does. No placement (mmPerPixel
- * unset), so the fractional floor is the only one that can empty it: Detail 100 keeps the dot
- * (floor 1, despeckle skipped), Detail 0 quadruples the floor past the dot's own area and empties
- * the trace.
+ * A 90x90 dot. No placement (mmPerPixel unset), so the fractional floor is the only one that can
+ * empty it: Detail 100 keeps the dot (floor 1, despeckle skipped), Detail 0 quadruples the floor
+ * past the dot's own area and empties the trace.
  */
 function loadDotSource(name: string) {
-  const image = dot(90, 90, 2);
-  const opts = { colors: 4, detail: 100, name };
+  return loadRasterSource(dot(90, 90, 2), { colors: 4, detail: 100, name });
+}
+
+/**
+ * Blue and green bands under a red sprinkle of lone specks — see raster-parse.test.ts. Detail 50
+ * keeps all three colors; Detail 0 quadruples the floor and the red paints nothing.
+ */
+function loadSprinkleSource(name: string) {
+  const w = 64,
+    h = 64;
+  const image = bands(w, h, ['#0000ff', '#00c000']);
+  for (let p = 0; p < w * h; p++) {
+    const x = p % w,
+      y = (p / w) | 0;
+    if ((x * 5 + y * 3) % 17 !== 0 || x % 2 === 0 || y % 2 === 0) continue;
+    const i = p * 4;
+    image.data[i] = 255;
+    image.data[i + 1] = 0;
+    image.data[i + 2] = 0;
+  }
+  return loadRasterSource(image, { colors: 4, detail: 50, name });
+}
+
+/** Solid vertical bands of flat color — see raster-parse.test.ts. */
+function bands(w: number, h: number, colors: string[]): RasterImage {
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const n = parseInt(colors[Math.floor((x / w) * colors.length)].slice(1), 16);
+      data[i] = (n >> 16) & 255;
+      data[i + 1] = (n >> 8) & 255;
+      data[i + 2] = n & 255;
+      data[i + 3] = 255;
+    }
+  return { data, w, h };
+}
+
+/** Load an image as a raster source, and raise the notices, the way applyRasterFile does. */
+function loadRasterSource(
+  image: RasterImage,
+  opts: { colors: number; detail: number; name: string },
+) {
+  const name = opts.name;
   const result = parseRasterImage(image, opts);
   const instance = loadArtworkSource(result.parsed, name, 'raster', 'sticker', '', {
     image,
@@ -47,9 +95,14 @@ function loadDotSource(name: string) {
     palette: result.palette,
     regions: result.componentCount,
   });
-  // The notice a real load raises (see applyRasterFile) — loadArtworkSource itself is pure state.
+  // The notices a real load raises (see applyRasterFile) — loadArtworkSource itself is pure state.
   if (result.capped) notice(rasterCappedMessage(name), instance.sourceId);
   else notice(rasterTracedMessage(name), instance.sourceId);
+  if (rasterLostColors(result))
+    notice(
+      rasterColorLossMessage(name, result.droppedColors),
+      rasterColorLossKey(instance.sourceId),
+    );
   return state.sources.find((s) => s.id === instance.sourceId)!;
 }
 
@@ -132,5 +185,69 @@ describe('rasterControls Detail slider — empty trace', () => {
 
     expect(state.sources).toHaveLength(0);
     expect(WARNINGS.some((w) => w.key === source.id)).toBe(false);
+  });
+});
+
+describe('rasterControls Detail slider — dropped colors', () => {
+  it('raises the notice beside the traced one, under its own key', () => {
+    const source = loadSprinkleSource('sprinkle.png');
+    expect(WARNINGS).toHaveLength(1);
+    render();
+
+    detailInput(source.id).value = '0';
+    detailInput(source.id).dispatchEvent(new Event('change'));
+
+    expect(WARNINGS).toEqual([
+      { message: rasterTracedMessage('sprinkle.png'), level: 'info', key: source.id },
+      {
+        message: rasterColorLossMessage('sprinkle.png', 1),
+        level: 'info',
+        key: rasterColorLossKey(source.id),
+      },
+    ]);
+  });
+
+  it('retracts it once a re-trace keeps every color', () => {
+    const source = loadSprinkleSource('sprinkle.png');
+    render();
+    detailInput(source.id).value = '0';
+    detailInput(source.id).dispatchEvent(new Event('change'));
+    expect(WARNINGS).toHaveLength(2);
+
+    detailInput(source.id).value = '50';
+    detailInput(source.id).dispatchEvent(new Event('change'));
+
+    expect(WARNINGS).toEqual([
+      { message: rasterTracedMessage('sprinkle.png'), level: 'info', key: source.id },
+    ]);
+  });
+
+  it('retracts it when the source is removed', () => {
+    const source = loadSprinkleSource('sprinkle.png');
+    render();
+    detailInput(source.id).value = '0';
+    detailInput(source.id).dispatchEvent(new Event('change'));
+    expect(WARNINGS).toHaveLength(2);
+
+    document
+      .querySelector<HTMLButtonElement>('.artwork-remove')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(state.sources).toHaveLength(0);
+    expect(WARNINGS).toHaveLength(0);
+  });
+
+  it('retracts it when the next trace comes back empty', () => {
+    // The dropped-color notice names colors the image no longer has any trace of, so it cannot be
+    // left standing next to the empty-trace warning that replaced its row's status line.
+    const source = loadDotSource('speck.png');
+    notice(rasterColorLossMessage('speck.png', 1), rasterColorLossKey(source.id));
+    render();
+
+    detailInput(source.id).value = '0';
+    detailInput(source.id).dispatchEvent(new Event('change'));
+
+    expect(WARNINGS).toHaveLength(1);
+    expect(WARNINGS[0]).toMatchObject({ level: 'warn', key: source.id });
   });
 });

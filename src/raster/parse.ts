@@ -1,9 +1,10 @@
 import type { Loop, ParsedSVG, SVGShape } from '../types';
-import { autoParams, despeckleFloorPx, fracFloorPx, measureImage } from './stats';
+import { autoParams, despeckleFloorPx, DETAIL_MAX, fracFloorPx, measureImage } from './stats';
 import { MEASURE_EDGE } from './decode';
 import { quantize } from './quantize';
 import { traceLabelMap } from './trace';
 import type { TracedComponent } from './trace';
+import { BACKGROUND } from './types';
 import type { RasterImage, RasterOptions } from './types';
 
 export interface RasterParseResult {
@@ -11,6 +12,19 @@ export interface RasterParseResult {
   /** The colors the traced shapes actually paint with — can be shorter than the requested count,
    * and shorter than the quantizer's own palette. */
   palette: string[];
+  /**
+   * How many colors labelled pixels and then painted nothing. Counted against the quantizer's
+   * palette, never against `opts.colors`: an image with fewer colors than the slider asks for lost
+   * nothing, and no Detail setting invents a color it never had.
+   */
+  droppedColors: number;
+  /**
+   * Whether raising Detail lowers the floor this trace ran under at all, measured rather than
+   * inferred: the floor the same image would get at DETAIL_MAX, against the one it got. False when
+   * a placement's nozzle-width floor pins it (Detail never scales that half) and false at
+   * DETAIL_MAX itself, which is every case where "raise Detail" is not an instruction.
+   */
+  detailLowersFloor: boolean;
   /** Traced components, for the panel's live readout and the bench. */
   componentCount: number;
   /** True when the despeckle floor was raised to stay under MAX_COMPONENTS. */
@@ -98,14 +112,29 @@ export function parseRasterImage(
 
   const floor = despeckleFloorPx(params, img.w, img.h, stats, opts.detail, opts.mmPerPixel ?? 0);
   const { components, capped, floorPx } = traceLabelMap(map, params, floor);
-  if (!components.length) {
-    // What the floor would have been with no placement, i.e. the fractional floor alone (see
-    // despeckleFloorPx's mmPerPixel<=0 branch). If the real floor is above that, the placement —
-    // not Detail, which never scales the printable half — is what emptied the trace.
-    const unplacedFloor = fracFloorPx(params, img.w, img.h);
-    const reason: EmptyTraceReason = floorPx > unplacedFloor ? 'printable' : 'noise';
-    throw new EmptyTraceError(opts.name ?? 'this image', reason);
-  }
+  // Which floor is in force, against what it would have been with no placement — the fractional
+  // floor alone (see despeckleFloorPx's mmPerPixel<=0 branch). Above that, the placement is what
+  // removed the pixels, and Detail — which never scales the printable half — cannot undo it.
+  //
+  // Read off `floor`, the floor asked for, never the `floorPx` the trace came back with: a cap
+  // raise puts that one above the fraction on its own, so a capped trace with no placement at all
+  // would read as 'printable' and send the user off to resize a design that is not the problem.
+  const floorReason: FloorReason =
+    floor > fracFloorPx(params, img.w, img.h) ? 'printable' : 'noise';
+  if (!components.length) throw new EmptyTraceError(opts.name ?? 'this image', floorReason);
+
+  // What the dropped-color notice's remedy is worth here, asked directly rather than inferred from
+  // which floor binds: the floor this image would get at DETAIL_MAX, against the one it got. A
+  // placement's nozzle floor pinning it and the slider already being at its end are the same answer.
+  const detailLowersFloor =
+    despeckleFloorPx(
+      autoParams(stats, DETAIL_MAX, ranDetailPass),
+      img.w,
+      img.h,
+      stats,
+      DETAIL_MAX,
+      opts.mmPerPixel ?? 0,
+    ) < floor;
 
   const shapes =
     granularity === 'component'
@@ -122,6 +151,15 @@ export function parseRasterImage(
   const painted = new Set(shapes.map((s) => s.fill));
   const palette = map.palette.filter((hex) => painted.has(hex));
 
+  // Only the colors that labelled pixels and then painted none of them. A centroid can win a
+  // cluster from the source histogram and label nothing at all, because assignment is resolved
+  // against the *blurred* copy (see quantize): that color never had pieces to lose, so counting it
+  // would put a "raise Detail" notice on a loss no Detail setting can undo.
+  const labelled = new Set<number>();
+  for (const label of map.labels) if (label !== BACKGROUND) labelled.add(label);
+  let droppedColors = 0;
+  for (const label of labelled) if (!painted.has(map.palette[label])) droppedColors++;
+
   return {
     parsed: {
       shapes,
@@ -137,6 +175,8 @@ export function parseRasterImage(
       origin: 'raster',
     },
     palette,
+    droppedColors,
+    detailLowersFloor,
     componentCount: components.length,
     capped,
     floorPx,
@@ -178,15 +218,61 @@ export function rasterTracedMessage(name: string): string {
   return `"${name}" was traced from a photo. An SVG would come out cleaner.`;
 }
 
-/** Why a trace came back with nothing — see rasterEmptyTraceMessage and EmptyTraceError. */
-export type EmptyTraceReason = 'printable' | 'noise';
+/**
+ * Shown when tracing painted nothing with colors the quantizer had found, so the readout comes back
+ * under the Colors slider with nothing saying why.
+ *
+ * Raising Detail is the whole message, and rasterLostColors only raises it where that is the true
+ * answer: the fractional floor is the one autoParams scales, by 4^((50-detail)/50). It is also the
+ * opposite of what rasterCappedMessage asks for, which is why the two are mutually exclusive.
+ *
+ * It makes no claim about the pieces being unprintable. Under that floor they usually are printable
+ * — NOZZLE_MM is the only floor that claims otherwise, and the one Detail deliberately never scales.
+ */
+export function rasterColorLossMessage(name: string, dropped: number): string {
+  return (
+    `${dropped === 1 ? '1 color' : `${dropped} colors`} in "${name}" ` +
+    `${dropped === 1 ? 'was' : 'were'} dropped. Raise Detail to keep more.`
+  );
+}
+
+/**
+ * The notice key for rasterColorLossMessage, deliberately not the bare source id the capped/traced
+ * pair uses: this one stands *beside* the traced notice, and sharing their key would make push()
+ * skip whichever arrived second and dismissNotice() retract the wrong one.
+ */
+export function rasterColorLossKey(sourceId: string): string {
+  return `${sourceId}:colors`;
+}
+
+/**
+ * Whether a finished trace should raise rasterColorLossMessage. Not simply `droppedColors > 0`: it
+ * only fires where raising Detail is an answer the user can actually give.
+ *
+ * Two cases where it is not: a capped trace already carries rasterCappedMessage, whose remedy is
+ * the opposite one, and a trace whose floor Detail cannot lower — a placement's nozzle-width floor
+ * pinning it, or the slider already at DETAIL_MAX. Both stay silent about the color they dropped,
+ * which docs/tech-debt.md carries.
+ */
+export function rasterLostColors(
+  result: Pick<RasterParseResult, 'capped' | 'droppedColors' | 'detailLowersFloor'>,
+): boolean {
+  return !result.capped && result.detailLowersFloor && result.droppedColors > 0;
+}
+
+/**
+ * Which despeckle floor a trace ran under. 'printable' is the placement's nozzle-width floor, which
+ * Detail never scales; 'noise' is the fractional floor, which it does. It decides what a lost color
+ * or an emptied trace can be recovered by — see rasterColorLossMessage and rasterEmptyTraceMessage.
+ */
+export type FloorReason = 'printable' | 'noise';
 
 /**
  * The empty-trace message for either cause: 'printable' means the placement's nozzle-width floor
  * emptied it and Detail can't help (that floor is never scaled by Detail); 'noise' means the
  * fractional floor did, which Detail does scale.
  */
-export function rasterEmptyTraceMessage(name: string, reason: EmptyTraceReason): string {
+export function rasterEmptyTraceMessage(name: string, reason: FloorReason): string {
   return reason === 'printable'
     ? `Nothing in "${name}" is big enough to print at this size. Make the design or the part bigger.`
     : `No color regions survived tracing "${name}". Try raising Detail, or use a less noisy image.`;
@@ -194,8 +280,8 @@ export function rasterEmptyTraceMessage(name: string, reason: EmptyTraceReason):
 
 /** Thrown by parseRasterImage when the despeckle floor removes every component. */
 export class EmptyTraceError extends Error {
-  readonly reason: EmptyTraceReason;
-  constructor(name: string, reason: EmptyTraceReason) {
+  readonly reason: FloorReason;
+  constructor(name: string, reason: FloorReason) {
     super(rasterEmptyTraceMessage(name, reason));
     this.name = 'EmptyTraceError';
     this.reason = reason;

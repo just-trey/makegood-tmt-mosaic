@@ -1088,22 +1088,72 @@ placement given the two designs' actual placed footprints, rather than stepping
 a fixed distance and testing for an exact-spot collision. That is a real
 placement search and wants its own change, not a wider constant.
 
-## A traced image can lose a color with nothing said
+## Two traces still drop a color and say nothing about it
 
-`parseRasterImage` narrows the palette to the colors that actually paint something, and since
-2026-08-20 the despeckle floor removes far more than it used to
-([2026-08-20 despeckle floor](findings/2026-08-20-despeckle-floor.md)). Five of nineteen corpus
-sources come back with fewer colors than the Colors slider asked for: gravel 8 to 5, foliage 8 to
-7, dalmatian and zebra 4 to 2 and 3, the cartoon 6 to 5.
+`rasterLostColors` ([src/raster/parse.ts](../src/raster/parse.ts)) raises the dropped-color notice
+only where its one sentence — raise Detail — is both true and available. Two cases are left silent,
+both `droppedColors > 0`. They are the half of "a traced image can lose a color with nothing said"
+that the notice did not close.
 
-- **Correct, and silent.** Those colors were only ever painted in pieces under the printable floor,
-  so the narrower list is the honest one. Nothing says so: the readout shows the number it found,
-  and the user has to notice it differs from the number they asked for.
-- The `capped` notice ("Some detail was too fine to print and was merged") covers the
-  `MAX_COMPONENTS` case only, which now fires much less often, and its remedy (lower Colors, lower
-  Detail) is backwards for this one.
-- Closing it means deciding whether a dropped color is worth a notice at all, and if it is, saying
-  it in a way that does not fire on every photograph. Raising Detail is the remedy that fits.
+| Case                        | Suppressed by        | Reproduced by                                                    |
+| --------------------------- | -------------------- | ---------------------------------------------------------------- |
+| Capped, and short a color   | `capped`             | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"` |
+| A floor Detail cannot lower | `!detailLowersFloor` | `npx vitest run tests/raster-parse.test.ts -t "stays silent"`    |
+
+- **Capped**: the trace shows `rasterCappedMessage` only, which says detail "was merged into its
+  surroundings" and never that a color left the palette. The two remedies are opposites — capped
+  says lower Colors or Detail, dropped-color says raise Detail — so both on one image contradict
+  each other. Reproduced synthetically (1024 six-pixel blocks over two flat bands plus one-pixel
+  specks, 320x320 at Colors 5 and Detail 100: `capped: true`, `droppedColors: 1`), never on the
+  corpus. The section below is why it is not ruled out: the cap is a target, not a bound.
+- **A floor Detail cannot lower** covers two shapes of the same thing, and `detailLowersFloor`
+  measures both rather than inferring either: a placement's nozzle-width floor pinning the floor
+  (128px across 12.8mm drops a color at Detail 0, 50 and 100 alike), and the slider already at
+  `DETAIL_MAX`. Saying either needs a second message, and the placement one's remedy is a resize,
+  which does not re-trace — see "The printable despeckle floor is fixed at the moment of the trace".
+- **A partly-pinned floor still fires, with a weak remedy.** Where the nozzle floor sits just under
+  the fractional one, raising Detail lowers the floor by a little and may not bring the color back.
+  The notice is still true — it says what Detail does, never that the color returns — and no notice
+  can promise recovery, since a quartered floor can still be above a color's pieces. Drawing a "how
+  much movement is enough" line would be an invented constant, so it is left as is. **Unmeasured**:
+  how often that band is where real artwork lands.
+- **The claim also goes stale on a resize**, since nothing re-traces on a placement change: a notice
+  raised at part scale keeps standing after the design is scaled down onto a face where the nozzle
+  floor pins the floor, which is the case `detailLowersFloor` exists to suppress. Same root as "The
+  printable despeckle floor is fixed at the moment of the trace", and closed by the same fix.
+- **The notice can also vanish mid-remedy, which reads as fixed.** Its presence tracks "Detail can
+  still move this floor", not "a color is missing". On `sprinkled(384)` with no placement, Detail 90
+  gives floor 7 and the notice; Detail 95 gives floor 6, `detailLowersFloor` false, and the notice is
+  retracted — with `droppedColors` still 1 and the readout still one color short.
+- **The capped split also gives a round trip.** Raising Detail on a dropped-color notice lowers the
+  floor, raises the component count, and can trip the cap. The next trace is capped, the notice is
+  retracted, and the user is told to lower the Detail they just raised, with the color still gone.
+- **The trigger has never been run against the corpus.** Every test uses a synthetic fixture, and
+  the five sources the notice exists for (dalmatian, zebra, cartoon, gravel, foliage) sit in the
+  gitignored `stubs/`. `scripts/bench-raster.ts` already reports `painted` per source and is where a
+  `droppedColors`/`detailLowersFloor` column would go, which would answer whether the two
+  suppressions above silence any of those five at their own placements. **Unmeasured.**
+- Closing either takes a message carrying both facts, or a measured rule for which remedy wins.
+  Neither is a wording change: the capped one needs an answer to whether raising Detail can recover
+  a color on a capped trace at all, and the pinned-floor one needs the re-trace-on-resize item
+  first.
+
+## The empty-trace message infers whether Detail can help, where the dropped-color notice measures it
+
+`rasterEmptyTraceMessage` ([src/raster/parse.ts](../src/raster/parse.ts)) picks its arm from
+`FloorReason`, which asks _which_ floor binds (`floor > fracFloorPx`). `rasterLostColors` asks the
+question directly instead, via `detailLowersFloor`: the floor the same image would get at
+`DETAIL_MAX`, against the floor in force. The two disagree where the nozzle floor ties the fractional
+one rather than exceeding it.
+
+- **Measured on a 128px image at `mmPerPixel` 0.28 to 0.30**: `printableFloorPx` and `fracFloorPx`
+  are both 2, so `floor > frac` is false and the reason reads `'noise'`. An emptied trace there says
+  "Try raising Detail, or use a less noisy image", while the floor at `DETAIL_MAX` is still pinned at
+  2 by the nozzle half and Detail moves nothing.
+- Pre-existing: the inference is what shipped, and the dropped-color work only put a measurement next
+  to it. Left alone deliberately, since changing it changes an unrelated shipped message.
+- Closing it: hand the same `detailLowersFloor` comparison to the empty-trace message, and re-check
+  the two tests that pin its arms (`-t "printable-floor"`, `-t "the noise message"`).
 
 ## `MAX_COMPONENTS` is a target, not the bound its name implies
 

@@ -504,6 +504,49 @@ To get a result you are happier with:
 - **Crop or simplify the source.** A busy background the design doesn't need is
   what usually blows the budget.
 
+## Troubleshooting: "… colors in … were dropped…"
+
+Full text: _"3 colors in "yourfile.png" were dropped. Raise Detail to keep
+more."_
+
+One color reads in the singular: **"1 color in "yourfile.png" was dropped."**
+
+**An informational notice, not a failure.** The image loaded and cut normally.
+
+The Colors slider asks the quantizer for a number of colors. Tracing then keeps
+only the ones that still paint something once the despeckle floor has run
+([parse.ts](../src/raster/parse.ts)), and a color whose every piece sits under
+that floor leaves the palette. The readout used to show the smaller number with
+nothing saying it differed from what was asked for.
+
+- **Raise Detail.** It sets how small a speck survives, so raising it lowers
+  the floor and lets the smaller pieces back through. The floor scales 4x at
+  Detail 0 down to 1/4 at Detail 100, so 16x across the slider's full travel,
+  and less than that wherever a placement's own floor is already close. That is
+  the opposite of what "Some detail … was too fine to print…" above asks for,
+  and the two never show on the same image: a capped trace keeps that notice and
+  never raises this one.
+- **It does not say the pieces were unprintable, because usually they were
+  not.** With a placement, the floor that normally binds is the smallest feature
+  flat art keeps: a 1.6mm square, four nozzle widths (`DESPECKLE_FEATURE_MM`).
+  At 512px across 185mm that is 20px², under the fractional floor's 39. With no
+  placement it is that fraction instead. Neither is a nozzle width, and where
+  the nozzle floor does bind this notice is withheld.
+- **The count is against the colors that labelled pixels, not the slider.** An
+  image that simply has fewer colors than Colors asks for (a three-color logo at
+  Colors 8) has lost nothing, and never raises this. Neither does a color that
+  won a cluster and then labelled no pixel at all, which the blur before
+  clustering can produce: nothing of it was ever traced, so there is nothing to
+  bring back.
+- **Where Detail cannot lower the floor, nothing is said at all.** Two cases:
+  the design is placed small enough that the nozzle-width floor pins the floor
+  (128px across 12.8mm has a printable floor of 16px² against a fractional 2,
+  and drops a color silently at every Detail), or Detail is already at 100. The
+  same image at 512px across 185mm has a printable floor of 1px², the no-op,
+  against a fractional 39, and does raise the notice. Measured by
+  `npx vitest run tests/raster-parse.test.ts -t "stays silent"` and
+  `-t "part scale"`. `docs/tech-debt.md` carries it, with the capped case.
+
 ## Troubleshooting: "No opaque pixels were found in this image…"
 
 Full text: _"No opaque pixels were found in this image. There is nothing to
