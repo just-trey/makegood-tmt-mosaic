@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Hovering the artwork dropzone no longer looks the same as dragging a file
+  over it.** `#dropzone:hover` and its drag-over state rendered identically —
+  border, text color and the blue background wash all lit up on plain hover,
+  so arriving over the dropzone while dragging a file changed nothing on
+  screen. Hover now brightens only the border, matching
+  `design-system/README.md`'s States rule; the text color and background wash
+  are back to drag-over only (checked with a headless drag-over dispatch
+  against `#dropzone`'s computed styles — hover and drag-over now differ on
+  `color` and `backgroundColor`, matching before the fix only on
+  `borderColor`).
 - **Switching parts no longer asks you to confirm.** The dialog said
   switching would "clear the currently loaded" parts, naming the one thing
   that survives — your artwork stays right where you left it, and the part

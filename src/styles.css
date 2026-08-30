@@ -616,7 +616,9 @@ input[type='checkbox'] {
   cursor: pointer;
   transition: var(--transition-fast);
 }
-#dropzone:hover,
+#dropzone:hover {
+  border-color: var(--accent);
+}
 #dropzone.drag {
   border-color: var(--accent);
   color: var(--accent);
