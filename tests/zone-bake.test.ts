@@ -5,6 +5,7 @@ import {
   weldParts,
   simplifyLoop,
   meshFingerprint as bakeFingerprint,
+  symmetrizeCovers,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
@@ -732,8 +733,12 @@ describe('hidden surface classification', () => {
   };
   const finePlate = platePart('fine', 20, () => false);
 
-  const bake = (part: Part, covers: Cover[]): ReturnType<typeof bakeZones> =>
-    bakeZones(config([part], [ZONE], { covers: COVER_CFG }), [part], () => {}, { covers, wasm });
+  const bake = (
+    part: Part,
+    covers: Cover[],
+    coverCfg: object = COVER_CFG,
+  ): ReturnType<typeof bakeZones> =>
+    bakeZones(config([part], [ZONE], { covers: coverCfg }), [part], () => {}, { covers, wasm });
   const deadOf = (
     baked: ReturnType<typeof bakeZones>,
   ): { outer: number[][]; holes: number[][][] }[] =>
@@ -791,6 +796,29 @@ describe('hidden surface classification', () => {
     // two is how far under the rim you can still see, which is the thing being measured.
     expect(deadArea(baked)).toBeGreaterThan(Math.PI * 30 * 30);
     expect(deadArea(baked)).toBeLessThan(Math.PI * 50 * 50);
+  });
+
+  it('snaps an off-mirror cover pair onto the mirror plane, meshes and all', () => {
+    // Two boxes that should be each other's mirror image and are not: one sits 20..80 from the
+    // plane, the other 21..81, and the second is 1mm along y as well. The chair's casters are out
+    // by the same order (1.187mm).
+    const a = boxCover([-80, 70, 1], [-20, 130, 31]);
+    const b = boxCover([21, 71, 1], [81, 131, 31]);
+    const span = (c: Cover, k: number): number[] => [
+      Math.min(...c.verts.map((v) => v[k])),
+      Math.max(...c.verts.map((v) => v[k])),
+    ];
+    symmetrizeCovers([a, b], 0);
+    // both now stand the averaged distance from the plane, 20.5..80.5
+    expect(span(a, 0)).toEqual([-80.5, -20.5]);
+    expect(span(b, 0)).toEqual([20.5, 80.5]);
+    // and along the axes it does not mirror, both land on the average
+    expect(span(a, 1)).toEqual(span(b, 1));
+    expect(span(a, 1)).toEqual([70.5, 130.5]);
+    // exactly mirrored, not merely aligned: every vertex of one is the other's reflection
+    const key = (v: number[]): string => v.map((x) => x.toFixed(6)).join();
+    const mirrored = new Set(a.verts.map((v) => key([-v[0], v[1], v[2]])));
+    expect(b.verts.every((v) => mirrored.has(key(v)))).toBe(true);
   });
 
   it('a cover beside the plate hides nothing', () => {

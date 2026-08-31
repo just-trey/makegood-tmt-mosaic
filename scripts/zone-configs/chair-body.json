@@ -23,7 +23,8 @@
   "covers": {
     "file": "stubs/dead-zones.3mf",
     "referenceColor": "#F768E6FF",
-    "bleedMm": 20
+    "bleedMm": 20,
+    "mirrorAxis": "x"
   },
   "parts": [
     { "libraryPartId": "chair-storage-left", "file": "public/stl/chair-storage-left.3mf" },

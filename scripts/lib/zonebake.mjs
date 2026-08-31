@@ -252,12 +252,81 @@ export function registerCovers(config, parts, objects) {
         `${best.residual.toFixed(3)}mm (limit ${REGISTER_RESIDUAL_MM}mm)`,
     );
   const xform = (v) => apply(best.R, v).map((x, k) => x + best.T[k]);
-  return {
-    covers: coverObjs.map((c) => ({ verts: c.verts.map(xform), tris: c.tris })),
-    matched: best.matched,
-    residual: best.residual,
-  };
+  const covers = coverObjs.map((c) => ({ verts: c.verts.map(xform), tris: c.tris }));
+  const mirror = config.covers.mirrorAxis
+    ? symmetrizeCovers(covers, 'xyz'.indexOf(config.covers.mirrorAxis))
+    : null;
+  return { covers, matched: best.matched, residual: best.residual, mirror };
 }
+
+/** Axis-aligned bounds and their midpoint. Midpoint, not centroid: these meshes are unevenly */
+/** tessellated, so a centroid drifts with triangle density (the seat cushion's is 1.1mm off a */
+/** bbox that is centred to 0.000mm). */
+function boundsMid(verts) {
+  const mn = [Infinity, Infinity, Infinity];
+  const mx = [-Infinity, -Infinity, -Infinity];
+  for (const v of verts)
+    for (let k = 0; k < 3; k++) {
+      if (v[k] < mn[k]) mn[k] = v[k];
+      if (v[k] > mx[k]) mx[k] = v[k];
+    }
+  return { mn, mx, mid: [0, 1, 2].map((k) => (mn[k] + mx[k]) / 2) };
+}
+
+/**
+ * Makes mirror-paired cover bodies exactly mirror-symmetric about `axis` = 0, IN PLACE.
+ *
+ * A CAD export lands its instances where the assembly put them, not where symmetry would: the
+ * chair's four casters pair up 1.187mm off their own mirror image and 0.315 degrees rotated. That
+ * is far under any tolerance the bake cares about on its own, and it still decides a knife-edge —
+ * the flanks classify within 3.8% of each other and the surviving dead region did not, because a
+ * sample sitting at 27 or 28 blocked directions of 32 goes whichever way the sub-millimetre pose
+ * pushes it. Snapping the poses removes the tie-breaker instead of tuning the threshold that
+ * exposes it.
+ *
+ * Each pair is rebuilt from ONE of its two meshes, mirrored for the other side, so the result is
+ * symmetric exactly rather than to some residual. The source is the body on the negative side of
+ * the axis: a geometric rule, so it does not depend on the order objects happen to appear in the
+ * file. Both sides move to the averaged offset, so neither side's pose is adopted wholesale.
+ * Unpaired bodies (the chair's two cushions, which straddle the plane themselves) are left alone.
+ */
+export function symmetrizeCovers(covers, axis) {
+  if (axis < 0) throw new Error('covers.mirrorAxis must be "x", "y" or "z"');
+  const flip = (v) => v.map((x, k) => (k === axis ? -x : x));
+  const info = covers.map((c, i) => ({ i, c, b: boundsMid(c.verts) }));
+  const used = new Set();
+  const moved = [];
+  for (const a of info) {
+    if (used.has(a.i)) continue;
+    const partner = info
+      .filter((o) => o.i !== a.i && !used.has(o.i) && o.c.tris.length === a.c.tris.length)
+      .map((o) => ({ o, d: dist3(a.b.mid, flip(o.b.mid)) }))
+      .sort((x, y) => x.d - y.d)[0];
+    // A pair has to be nearer its own mirror image than the sampling resolution, or it is two
+    // different bodies that merely happen to share a triangle count.
+    if (!partner || partner.d > MIRROR_PAIR_TOL_MM) continue;
+    used.add(a.i);
+    used.add(partner.o.i);
+    const src = a.b.mid[axis] < 0 ? a : partner.o;
+    const dst = src === a ? partner.o : a;
+    // averaged pose: same distance from the plane on both sides, averaged along the others
+    const target = [0, 1, 2].map((k) =>
+      k === axis
+        ? -(Math.abs(a.b.mid[k]) + Math.abs(partner.o.b.mid[k])) / 2
+        : (a.b.mid[k] + partner.o.b.mid[k]) / 2,
+    );
+    const shift = [0, 1, 2].map((k) => target[k] - src.b.mid[k]);
+    const srcVerts = src.c.verts.map((v) => v.map((x, k) => x + shift[k]));
+    src.c.verts = srcVerts;
+    dst.c.verts = srcVerts.map(flip);
+    dst.c.tris = src.c.tris.map((t) => [t[0], t[2], t[1]]);
+    moved.push(dist3(src.b.mid, target), dist3(dst.b.mid, flip(target)));
+  }
+  return { pairs: moved.length / 2, maxShiftMm: moved.length ? Math.max(...moved) : 0 };
+}
+
+const MIRROR_PAIR_TOL_MM = 5;
+const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 /**
  * How far one visibility ray looks (mm) before it counts as escaping. Not a proximity limit: a
@@ -297,6 +366,29 @@ const COVER_HIDDEN_FRACTION = 0.85;
  * 25mm² is a ~5mm boundary resolution against the 20mm bleed, at 67k samples for the whole chair.
  */
 const COVER_SAMPLE_MM2 = 25;
+/**
+ * A sample with a cover this close (mm) straight out along its normal is hidden, whatever the
+ * hemisphere test makes of it. Touching plastic is touching plastic; the hemisphere test is for
+ * everything that is not in contact.
+ *
+ * It exists because a chamfer defeats the hemisphere test. The seat's clip recesses have ~45
+ * degree walls, so a sample there tilts its whole hemisphere with the wall and 4 or 5 of its 32
+ * directions escape sideways — 27 or 28 blocked against the 28 needed — while the cushion sits
+ * 0.7 to 1.9mm above it and the cushion is solid over the whole bay (150 of 150 and 149 of 149
+ * cells, measured 2026-08-30; the cushion projects 54,647mm² solid of a 59,813mm² bbox with no
+ * cutout there).
+ *
+ * 2.5mm is chosen against the closest thing that is genuinely visible. On the chair the nearest a
+ * visible sample gets to any cover is 3.26mm on the left flank and 3.97mm on the right — the wheel
+ * standing off its mount, the 3-10mm band the ray-length note above describes. So the rule adds
+ * exactly 0mm² on both flanks at every threshold up to 3mm, and 2.5 keeps 0.76mm of margin under
+ * the measured floor rather than crowding it. Above it, the flanks start losing rim: 4mm would
+ * take 2,164 and 2,127mm² of surface measured as visible.
+ *
+ * What it buys, in area the hemisphere test alone leaves printable: seat +1,026mm² (of 1,028 at
+ * saturation, so the bays are essentially all of it) and front +1,583mm².
+ */
+const COVER_CONTACT_MM = 2.5;
 /**
  * Dead islands under this (mm²) are dropped. Deliberately looser than MIN_ISLAND_AREA_MM2:
  * dropping a dead sliver only means a speck of hidden surface still takes artwork, the safe
@@ -402,11 +494,11 @@ function rayTriDist(xyz, t, px, py, pz, dx, dy, dz) {
 }
 
 /**
- * Whether any cover blocks the ray from `p` along `dir` within COVER_RAY_MM, by walking the grid
- * cell by cell (3D DDA). Each cell is entered once, so no de-duplication beyond the per-ray
- * triangle stamp is needed.
+ * Whether any cover blocks the ray from `p` along `dir` within `maxMm`, by walking the grid cell
+ * by cell (3D DDA). Each cell is entered once, so no de-duplication beyond the per-ray triangle
+ * stamp is needed.
  */
-function coverOccludes(index, p, dir) {
+function coverOccludes(index, p, dir, maxMm = COVER_RAY_MM) {
   index.ray++;
   const { xyz, cells, seen } = index;
   let ix = Math.floor(p[0] / CELL_MM),
@@ -422,15 +514,14 @@ function coverOccludes(index, p, dir) {
   const dx = dir[0] !== 0 ? Math.abs(CELL_MM / dir[0]) : Infinity;
   const dy = dir[1] !== 0 ? Math.abs(CELL_MM / dir[1]) : Infinity;
   const dz = dir[2] !== 0 ? Math.abs(CELL_MM / dir[2]) : Infinity;
-  for (let entry = 0; entry <= COVER_RAY_MM;) {
+  for (let entry = 0; entry <= maxMm;) {
     const cell = cells.get(cellKey(ix, iy, iz));
     if (cell)
       for (let a = 0; a < cell.length; a++) {
         const t = cell[a];
         if (seen[t] === index.ray) continue;
         seen[t] = index.ray;
-        if (rayTriDist(xyz, t, p[0], p[1], p[2], dir[0], dir[1], dir[2]) <= COVER_RAY_MM)
-          return true;
+        if (rayTriDist(xyz, t, p[0], p[1], p[2], dir[0], dir[1], dir[2]) <= maxMm) return true;
       }
     if (tx < ty && tx < tz) {
       entry = tx;
@@ -1344,14 +1435,24 @@ function classifyRegions(loops) {
 }
 
 /**
- * Morphological open-then-close at DEAD_SMOOTH_MM. Both halves shrink before they grow, so the
- * result is contained in the input dilated by the radius and can never reach further onto surface
- * the classifier called visible than the radius itself.
+ * Morphological close-then-open at DEAD_SMOOTH_MM: fill the notches, then take the spikes off.
+ * `close(X)` is contained in `X` dilated by the radius and `open` only ever shrinks, so the result
+ * still cannot reach further onto surface the classifier called visible than the radius itself.
+ *
+ * Closing FIRST, which is the order that matters. The bleed erodes 20mm in from every visible
+ * sample, which pinches a shadow that is physically one piece into lobes joined by necks a few
+ * millimetres wide. Opening first severs those necks, and whether a given neck survives is a
+ * coin-flip on where the sample cells happened to land: with the covers snapped to the mirror
+ * plane the two flanks classify within 0.4% of each other (7,450 against 7,477mm² of covered wing
+ * surface) and open-then-close still split them 12,814 against 14,007mm², because the left flank's
+ * neck onto its fender was severed and the right flank's was not. Closing first restores the necks
+ * the bleed pinched before anything can cut them, and the same two zones come out 15,032 against
+ * 15,291mm², 1.7% apart.
  */
 function smoothDead(cs) {
   if (DEAD_SMOOTH_MM <= 0) return cs;
   let cur = cs;
-  for (const d of [-DEAD_SMOOTH_MM, DEAD_SMOOTH_MM, DEAD_SMOOTH_MM, -DEAD_SMOOTH_MM]) {
+  for (const d of [DEAD_SMOOTH_MM, -DEAD_SMOOTH_MM, -DEAD_SMOOTH_MM, DEAD_SMOOTH_MM]) {
     const next = cur.offset(d, 'Round', 2, 32);
     if (cur !== cs) cur.delete();
     cur = next;
@@ -1622,6 +1723,8 @@ function validateConfig(config) {
       throw new Error(
         'covers.referenceColor must be a hex color (the color of the parts themselves)',
       );
+    if (c.mirrorAxis !== undefined && !['x', 'y', 'z'].includes(c.mirrorAxis))
+      throw new Error('covers.mirrorAxis must be "x", "y" or "z" when present');
   }
   const ids = new Set();
   for (const z of config.zones) {
@@ -1771,7 +1874,11 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
           const a = (cell[0][0] + cell[1][0] + cell[2][0]) / 3;
           const b = (cell[0][1] + cell[1][1] + cell[2][1]) / 3;
           const at = (v0, v1, v2, s, t) => v0.map((x, i) => x + (v1[i] - x) * s + (v2[i] - x) * t);
-          const hidden = hemisphereBlocked(coverIdx, at(p3[0], p3[1], p3[2], a, b), n);
+          const s3 = at(p3[0], p3[1], p3[2], a, b);
+          // Contact first: it is one ray against the hemisphere's 32, and it is the cheap answer
+          // for everything the cushions actually touch.
+          const hidden =
+            coverOccludes(coverIdx, s3, n, COVER_CONTACT_MM) || hemisphereBlocked(coverIdx, s3, n);
           (hidden ? coveredRings : visibleRings).push(
             cell.map(([s, t]) => at(q[0], q[1], q[2], s, t)),
           );

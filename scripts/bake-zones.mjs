@@ -77,7 +77,11 @@ if (config.covers) {
     opts.covers = reg.covers;
     console.log(
       `  covers      ${config.covers.file}: ${reg.covers.length} cover bodies, ` +
-        `registered against ${reg.matched} parts (residual ${reg.residual.toFixed(3)}mm)`,
+        `registered against ${reg.matched} parts (residual ${reg.residual.toFixed(3)}mm)` +
+        (reg.mirror
+          ? `, ${reg.mirror.pairs} pair(s) snapped to the ${config.covers.mirrorAxis} mirror ` +
+            `plane (max ${reg.mirror.maxShiftMm.toFixed(3)}mm)`
+          : ''),
     );
   } catch (e) {
     die(e.message);
