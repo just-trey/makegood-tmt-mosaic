@@ -469,12 +469,35 @@ export function safeIntersectChecked(
   a = cleanFeature(a);
   b = cleanFeature(b);
   if (!a || !b) return { feat: null, clipped: false };
-  const r = boolOpWithRetry((x, y) => turf.intersect(x, y) as PolyFeature | null, a, b);
+  const r = boolOpWithRetry(INTERSECT, a, b);
   if (r.ok) return { feat: r.val ?? null, clipped: true };
   warnBool(
     `Clipping color region to the design face failed${label ? ` for ${label}` : ''}. Region left unclipped, may extend past the face edge.`,
   );
   return { feat: a, clipped: false };
+}
+
+const INTERSECT = (x: PolyFeature, y: PolyFeature): PolyFeature | null =>
+  turf.intersect(x, y) as PolyFeature | null;
+
+/**
+ * The overlap of two features, or null for "they don't overlap" AND for "the boolean flaked".
+ *
+ * For a DIAGNOSTIC intersect, whose answer only picks which message a build already owes. Neither
+ * of the other two helpers fits one: `safeIntersect` hands the subject back UNCLIPPED on failure,
+ * which a probe reads as "they overlap" for every input, and `safeIntersectChecked` says
+ * "Region left unclipped, may extend past the face edge" — a promise about exported geometry, and
+ * a lie when the intersect it failed shaped none.
+ *
+ * So a flake is silent and indistinguishable from no overlap here. That is the safe direction:
+ * the caller falls back to the message it would have given before it could tell them apart.
+ */
+export function intersectQuiet(a: PolyFeature | null, b: PolyFeature | null): PolyFeature | null {
+  a = cleanFeature(a);
+  b = cleanFeature(b);
+  if (!a || !b) return null;
+  const r = boolOpWithRetry(INTERSECT, a, b);
+  return r.ok ? (r.val ?? null) : null;
 }
 
 /** How long a boolean pass runs before yielding a frame to the browser. */

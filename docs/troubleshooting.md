@@ -966,27 +966,33 @@ design is anchored. An SVG with no `<circle>` boundary marker is auto-centered
 on its bounding box, which a stray decorative element can move.
 
 **Its sibling below is a different cause with a different fix.** A color that
-reached the part but landed only on covered surface gets "… lands only where
-the part is hidden once assembled" instead. Lowering Scale will not help there.
+reached the part but only on covered surface gets "… only reaches surface
+that's hidden once assembled" instead. Lowering Scale will not help there.
 
-## Troubleshooting: "… lands only where the part is hidden once assembled"
+## Troubleshooting: "… only reaches surface that's hidden once assembled"
 
-Full text, one color: _"\"#ff0000\" lands only where the part is hidden once
-assembled and won't print. Move the design off the hatching to bring it
-back."_ Several colors: _"3 colors land only where the part is hidden once
-assembled and won't print: "#101010", "#e07020", "#f5d020". Move the design off
-the hatching to bring them back."_ A merged group is named the way its row is:
-_"Merged (3)"_.
+Full text, one color: _"\"#ff0000\" only reaches surface that's hidden once
+assembled and won't print. Move it off the hatching to bring it back."_
+Several colors: _"3 colors only reach surface that's hidden once assembled and
+won't print: "#101010", "#e07020", "#f5d020". Move them off the hatching to
+bring them back."_ A merged group is named the way its row is: _"Merged (3)"_.
 
 Assembly mode, chair only today. The chair's design zones run under the wheels
 and the cushions, and the app does not cut artwork into surface that is covered
-once the chair is put together. This says a color's shapes all sit there, so
-nothing of it prints.
+once the chair is put together. This says the only surface the color reached is
+that covered surface, so nothing of it prints.
 
-**It is not the same as landing off the part.** The design is on the part. Only
-the covered strip of it is out of bounds, so Scale is the wrong control: a
-smaller design centred on the same spot is still on covered surface. Move it
-instead.
+**It says nothing about the rest of the design.** The wording is deliberate: a
+color can be mostly off the part while the one piece of it that does reach the
+part sits on a covered strip. That reaches this warning too, and "it all landed
+on covered surface" would be false of it. What the app knows is that no visible
+surface anywhere took the color, and some covered surface did.
+
+**It is not the same as landing off the part.** Part of the design is on the
+part, on the covered strip, so Scale is the wrong control: a smaller design
+centred on the same spot is still on covered surface. Move it instead. If
+moving it off the hatching does not bring it back, it was the straddling case
+above, and it needs a bigger move than the hatching's own width.
 
 **Where to move it to.** The covered surface is crosshatched in the 3D view and
 hatched on the printable template, both before any artwork is placed. The Seat

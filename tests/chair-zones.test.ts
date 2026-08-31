@@ -308,6 +308,20 @@ describe('hidden surface (deadRegions)', () => {
     expect(Math.abs(planarArea(mapper.boundary()!) - (claim - deadArea(c)))).toBeLessThan(5);
   });
 
+  it('no shipped chart is hidden outright', () => {
+    // buildAssemblyGeometry used to branch before tiling on a chart whose claim is entirely dead,
+    // where boundary() is the empty MultiPolygon. It attributed a fill off the untiled source and
+    // saved nothing, because no chart of this bake reaches it. This is the pin behind that
+    // deletion: a bake that hides a whole chart fails here, naming it, and the branch is worth
+    // having back at that point.
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        const m = partMesh.get(c.libraryPartId)!;
+        const mapper = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices));
+        expect(planarArea(mapper.boundary()!), `${z.id}/${c.libraryPartId}`).toBeGreaterThan(0);
+      }
+  });
+
   it('a chart without the field means nothing is hidden, not an error', () => {
     const z = sidecar.zones.find((zz) => zz.id === 'seat')!;
     const c = z.charts.find((ch) => ch.libraryPartId === 'chair-seat-center')!;

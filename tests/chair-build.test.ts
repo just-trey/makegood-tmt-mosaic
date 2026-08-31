@@ -556,7 +556,7 @@ describe('a design that lands only on hidden surface', () => {
     const messages = WARNINGS.map((w) => w.message);
     expect(messages).toContainEqual(
       expect.stringContaining(
-        `"#ff0000" lands only where the part is hidden once assembled and won't print`,
+        `"#ff0000" only reaches surface that's hidden once assembled and won't print`,
       ),
     );
     // The remedy in the other message is Scale, which cannot help here: a smaller design on the
@@ -573,7 +573,7 @@ describe('a design that lands only on hidden surface', () => {
     const messages = WARNINGS.map((w) => w.message);
     expect(messages).toContainEqual(expect.stringContaining('lands entirely off the part'));
     expect(messages).not.toContainEqual(
-      expect.stringContaining('lands only where the part is hidden once assembled'),
+      expect.stringContaining("only reaches surface that's hidden once assembled"),
     );
   }, 180000);
 });
