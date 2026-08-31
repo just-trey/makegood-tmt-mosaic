@@ -688,7 +688,7 @@ export class ConformalZoneMapper implements ZoneMapper {
       const contour = outer.map(([u, v]) => new THREE.Vector2(u, v));
       const holePts = holes.map((h) => h.map(([u, v]) => new THREE.Vector2(u, v)));
       const all = [...outer, ...holes.flat()];
-      let tris: number[][] = [];
+      let tris: number[][];
       try {
         tris = THREE.ShapeUtils.triangulateShape(contour, holePts);
       } catch {
