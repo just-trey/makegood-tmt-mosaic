@@ -9,7 +9,7 @@ import {
   zoneCoverage,
 } from '../state/artwork';
 import { creasedNormalsFromIndex, indexMatchesSoup } from '../geometry/creasedNormals';
-import { clearBuildWarnings, noticeBuild } from '../warnings';
+import { clearBuildWarnings, noticeBuild, warn } from '../warnings';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
   asmPartFaceNormal,
@@ -356,11 +356,26 @@ function addHiddenSurfaceOverlays(
     if (!z.chart?.deadRegions?.length) continue;
     let overlay = overlayCache.get(z.chart);
     if (overlay === undefined) {
-      // z.id, or deadOverlayMesh's failure warning says "this zone" and every zone shares its
-      // dedupe key, so the second one to fail is swallowed by the first.
-      const built = new ConformalZoneMapper(null, z.chart, z.id).deadOverlayMesh();
-      // stripes every 8mm of surface
-      overlay = built && { positions: built.positions, uv: built.uv.map((x) => x / 8) };
+      // Caught per zone, because this decoration must never cost the model. renderRawAssemblyParts
+      // is the fallback that keeps the bare parts on screen when a build fails, and it calls here
+      // too — so a throw out of this loop empties the very viewport that path exists to keep
+      // filled, and reads as a crash. The mapper's constructor validates the chart for the first
+      // time here (reconstructChart only range-checks vertex indices) and deadOverlayMesh reads
+      // ring[0] straight out, so a malformed sidecar reaches it as a TypeError, not a null.
+      try {
+        // z.id, or deadOverlayMesh's failure warning says "this zone" and every zone shares its
+        // dedupe key, so the second one to fail is swallowed by the first.
+        const built = new ConformalZoneMapper(null, z.chart, z.id).deadOverlayMesh();
+        // stripes every 8mm of surface
+        overlay = built && { positions: built.positions, uv: built.uv.map((x) => x / 8) };
+      } catch {
+        overlay = null;
+        warn(
+          `Couldn't shade the hidden surface on "${z.id}". Artwork still won't cut there. ` +
+            `Only the hatching is missing. Please report this.`,
+          `dead-overlay-${z.id}`,
+        );
+      }
       overlayCache.set(z.chart, overlay);
     }
     if (!overlay) continue;

@@ -718,20 +718,27 @@ const MIN_DEAD_AREA_MM2 = 15;
  * Radius (mm) of the morphological smoothing applied to the dead region in UV (see smoothDead for
  * the order, which is load-bearing).
  *
- * The classifier is piecewise-constant on COVER_SAMPLE_MM2 patches, so its boundary is a staircase
- * about one patch tall (a 25mm² triangle is 6.6mm on the long side), and the bleed's miter joins
- * turn every step of it into a spike. The closing fills the notches, the opening takes the spikes
- * and slivers off; both are Round, so the structuring element is a real disc.
+ * The classifier is piecewise-constant on COVER_SAMPLE_MM2 patches, so a lone cell whose hemisphere
+ * escaped where every neighbour's did not leaves a one-cell hole, and a lone cell that was blocked
+ * leaves a one-cell spike. The closing fills the holes, the opening takes the spikes off; both are
+ * Round, so the structuring element is a real disc.
  *
- * 5mm is where the zone-level component histogram separates (2026-08-30 sweep). Raw, each zone is a
- * continuum — the left flank runs 12,348 / 708 / 668 / 666 / 277 / 256 / 142 / … mm². At 5mm every
- * zone is one large patch and exactly one straggler, with nothing between: left 12,620 + 316, right
- * 13,886 + 460, front 13,489 + 334, seat 20,792 + 313. Smaller does not separate them; larger only
- * costs area, and does not buy symmetry — at 7 and 9mm the left flank still ends with nothing on
- * its fender chart while the right keeps ~600mm².
+ * **5mm is the sampling cell, not a swept knee.** COVER_SAMPLE_MM2 is 25mm², so a cell is about
+ * 5mm on a side (a 25mm² triangle is 6.6mm on its long side), and that is the scale of every
+ * artifact this exists to remove. Tying it there rather than tuning it is deliberate: swept
+ * 2026-08-31 at 3 / 5 / 7mm, the shipped zones come out
  *
- * It is also what clears the slivers the owner marked on the Front sheet: 138 / 154 / 912 /
- * 1,068mm² in the four marked boxes before any of this work, and 0 / 0 / 1 / 9 after.
+ *   zone         3mm              5mm              7mm
+ *   left         19,478 + 3,865   19,473 + 4,013   19,409 + 3,998
+ *   right        19,654 + 3,868   19,760 + 4,017   19,630 + 3,998
+ *   seat-left    13,457 +   803   13,094 +   798   14,724 +   790
+ *   seat-right   13,463 +   804   13,113 +   801   14,730 +   790
+ *
+ * — the same component count everywhere and totals within a few percent, so there IS no knee in
+ * this band and a number picked from one would be picked from noise. An earlier version of this
+ * comment claimed 5mm was where a component histogram separated, on figures taken when the
+ * smoothing ran AFTER the bleed and had the bleed's own pinched necks to repair; smoothDead
+ * describes what changed.
  */
 const DEAD_SMOOTH_MM = 5;
 

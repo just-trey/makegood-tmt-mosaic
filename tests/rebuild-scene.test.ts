@@ -515,6 +515,26 @@ describe('hidden-surface overlay (deadRegions)', () => {
     expect(msgs.some((m) => m.includes('this zone'))).toBe(false);
   });
 
+  // renderRawAssemblyParts is the path that keeps the bare parts on screen when a build fails, and
+  // it builds these overlays too. A throw escaping the loop empties the viewport that path exists
+  // to keep filled, which reads as a crash. The mapper validates the chart for the first time here,
+  // and deadOverlayMesh reads ring[0] with no guard, so a malformed sidecar arrives as a TypeError.
+  it('keeps the parts on screen when a zone’s overlay throws, and names the zone', async () => {
+    // A uv array one pair short of the vertex count. reconstructChart only range-checks triangle
+    // indices, so the mapper's own validation is the first thing to see this, and it throws.
+    const chart = flatChart(true);
+    chart.uv = chart.uv.slice(0, -2);
+    state.assembly.parts = [asmPart({ zones: [{ id: 'left', name: 'left', chart }] } as never)];
+    clearWarnings();
+
+    await rebuildCurrent();
+
+    expect(sceneMeshes().length).toBeGreaterThan(0);
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(
+      expect.stringContaining('hidden surface on "left"'),
+    );
+  });
+
   it('shares one hatch material across parts, and lets go of it when the scene disposes it', async () => {
     state.assembly.parts = [zonedPart(true), zonedPart(true)];
 
