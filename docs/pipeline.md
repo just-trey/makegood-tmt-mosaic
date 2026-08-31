@@ -166,11 +166,18 @@ rounded edge the way real vinyl would
   never reaches a seam.)
 - Surface hidden by another part once assembled (wheels, cushions) is baked
   as per-chart `deadRegions`: the config's `covers` file marks the covering
-  bodies, a bake pass tests each zone triangle for a cover along its normal,
-  and the visible region grown by `bleedMm` (20) is subtracted back so artwork
-  still runs past the visible edge. The runtime subtracts dead regions from
-  the artwork clip; the viewport and templates draw them hatched. Constants
-  and their measurements: `COVER_RAY_MM` in
+  bodies, and a bake pass samples each zone (~25mm² per sub-cell) and calls a
+  sample hidden when a cover touches it (within `COVER_CONTACT_MM`) or blocks
+  most of its outward hemisphere (`COVER_HEMI_DIRS` rays,
+  `COVER_HIDDEN_FRACTION` blocked) — the contact test catches a flush cushion
+  the hemisphere test misses on an angled wall, the hemisphere test catches a
+  curved wheel shadow a single along-normal ray missed. Mirror-paired covers
+  are snapped exactly symmetric first (`covers.mirrorAxis`), and a cover hides
+  surface only on the part it is actually carried by. The visible region grown
+  by `bleedMm` (20) is subtracted back, then smoothed to clear the sampling
+  grid's own staircase edge, so artwork still runs past the visible edge. The
+  runtime subtracts dead regions from the artwork clip; the viewport and
+  templates draw them hatched. Constants and their measurements:
   [zonebake.mjs](../scripts/lib/zonebake.mjs).
 - Artwork laid across a seam is split, cut into each part separately, and
   exported under that part's object.

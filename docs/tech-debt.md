@@ -34,22 +34,29 @@ Dead zones add a third state that classifier has no name for: the zone is
 present and correctly pickable, but the surface is hidden once assembled, so it
 takes no artwork and shows no ink.
 
-Measured 2026-08-16, chair, `MOSAIC_GPU=1`, before and after the dead-zone bake:
+Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair:
 
-| Run                   | Failures | New ones                                                          |
-| --------------------- | -------- | ----------------------------------------------------------------- |
-| `main` (fenders only) | 3        | a0-front "too few bare-body samples", wing-left/right no ink      |
-| dead zones            | 7        | 4 x "picked a zone on bare body" (38/21/1/8 samples), seat no ink |
+| Run                                      | Failures | What they are                                                               |
+| ---------------------------------------- | -------- | --------------------------------------------------------------------------- |
+| `main` (fenders only, 2026-08-16)        | 3        | a0-front "too few bare-body samples", wing-left/right no ink                |
+| dead zones, hemisphere bake (2026-08-30) | 5        | 4 x "picked a zone on bare body" (36/31/1/25 samples) + an orbit-drag throw |
 
 - The pick itself is right: the zone is there, and the hatch overlay says why
   artwork will not appear. Only the check's model is stale.
 - The numbers corroborate the mechanism: `main` had just 96 bare-body samples
   at a0-front ("too few for the assertion to mean anything"); with hidden
   surface unlinked there are enough that the complaint becomes through-picks.
-- `seat` produces no interior ink sample from any angle because 43,539mm² of
-  its ~56,600mm² is hidden, leaving only the front lip inked.
+- The throw ends the run inside the per-zone identity sweep, after its first
+  angle (`v0`), so this run never reaches the later angles or the named
+  cases. Reproduced twice with identical sample counts, so it's a real stop,
+  not sampling noise — a second, separate defect in the script from the
+  classifier gap this section is about. `seat`'s `v0` pass alone already
+  shows 0 interior ink samples, consistent with 41,710mm² of its
+  ~56,600mm² being hidden (see the section below), but the later angles that
+  would confirm "no ink from any angle" go unchecked this run.
 - Closing it: teach the sweep to read each chart's `deadRegions`, and expect
   "zone pickable, no ink" over them rather than counting it a through-pick.
+  The orbit-drag throw needs its own fix first to reach the later stages.
 - Not in CI (nothing runs this script), so it blocks nothing today. It is the
   only automated guard on convention 12, which is why it is worth repairing
   rather than deleting.
@@ -59,10 +66,12 @@ Measured 2026-08-16, chair, `MOSAIC_GPU=1`, before and after the dead-zone bake:
 
 ## The chair's Seat zone is mostly hidden surface, so an auto-fit design lands on the cushion
 
-Measured 2026-08-16: 43,539mm² of the Seat zone's ~56,600mm² is covered by the
-seat cushion, leaving the front lip. Auto-fit centers on the zone's UV bbox,
-which is under the cushion, so a design dropped on Seat with no adjustment cuts
-almost nothing and prints as a sliver on the lip.
+Measured 2026-08-30 (bake log's `zone "seat" ... dead 41710mm²`, total zone
+area summed from `seat`'s `subRegions` in `public/stl/chair-body-zones.json`,
+unchanged at ~56,600mm²): 41,710mm² of the Seat zone's ~56,600mm² is covered by
+the seat cushion, leaving the front lip. Auto-fit centers on the zone's UV
+bbox, which is under the cushion, so a design dropped on Seat with no
+adjustment cuts almost nothing and prints as a sliver on the lip.
 
 - Working as designed: the pan really is under the cushion, and not spending
   filament changes there is the point of the feature.
@@ -80,12 +89,16 @@ almost nothing and prints as a sliver on the lip.
 The assembled chair runs a tire ring outside that, and the bake has never seen
 it, so the flanks treat the band under the tire as printable.
 
-Measured on the stub (2026-08-30), against the photo-scaled tire:
+Measured on the stub (2026-08-30), against the photo-scaled tire. The "baked
+dead" row is the flank's whole dead area (`public/stl/chair-body-zones.json`,
+summed over `left`/`right`'s `deadRegions`) — only that row moved since the
+hemisphere classifier, contact test and carry rule landed; the shadow and
+tire-ring rows are geometry projections independent of the bake algorithm:
 
 |                                               | `left`    | `right`   |
 | --------------------------------------------- | --------- | --------- |
 | straight-on wheel shadow on the zone          | 36,619mm² | 36,730mm² |
-| baked dead there (the rest is the 20mm bleed) | 12,891mm² | 14,489mm² |
+| baked dead there (the rest is the 20mm bleed) | 15,039mm² | 15,727mm² |
 | what a 30mm tire ring would add               | 22,447mm² | 23,215mm² |
 
 - **The tire figures are unmeasured.** 30mm is scaled off a photo — the hub

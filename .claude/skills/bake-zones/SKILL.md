@@ -126,7 +126,8 @@ the kind is assembled, so it takes no artwork and no filament changes:
 "covers": {
   "file": "stubs/dead-zones.3mf",
   "referenceColor": "#F768E6FF",
-  "bleedMm": 20
+  "bleedMm": 20,
+  "mirrorAxis": "x"
 }
 ```
 
@@ -138,14 +139,44 @@ the kind is assembled, so it takes no artwork and no filament changes:
 - The export's frame need not match the bake frame: the reference bodies are
   matched to the config parts by bounding box and the transform is solved from
   their consensus, refused above 1mm residual.
-- A zone triangle is hidden when a cover sits within `COVER_RAY_MM` straight
-  out along its normal (measured constant, see zonebake.mjs).
+- `mirrorAxis` (optional, `x`/`y`/`z`) snaps mirror-paired cover bodies (the
+  chair's four casters) exactly symmetric about that axis before
+  classification runs. A CAD export lands each instance a fraction of a
+  millimetre off its own mirror image, which is enough to flip a knife-edge
+  sample from hidden to visible; snapping removes that tie-breaker instead of
+  tuning around it. A cover with no mirror partner (a cushion straddling the
+  plane) is left alone.
+- Each zone is sampled at ~`COVER_SAMPLE_MM2` (25mm²) per sub-cell, not per
+  triangle — the CAD faces arrive as coarse fans, and a per-triangle verdict
+  can't draw a shadow edge inside one. A sample is hidden when either:
+  - a cover sits within `COVER_CONTACT_MM` (2.5mm) straight out along the
+    sample's normal — touching plastic, checked first because it's the cheap
+    answer for what a cushion actually rests on; or
+  - its outward hemisphere is mostly blocked: `COVER_HEMI_DIRS` (32)
+    cosine-weighted rays are cast, out to `COVER_RAY_MM` (120mm), and the
+    sample counts as hidden once `COVER_HIDDEN_FRACTION` (0.85) of them hit a
+    cover. This is what a single along-normal ray can't do: it only caught
+    triangles whose own normal happened to aim at the cover, leaving a curved
+    surface (a wheel's fender arch) speckled instead of one clean shadow.
+- A cover hides surface only on the part it's actually carried by: a cover
+  resting on a part (contact within `COVER_CONTACT_MM`) hides there; a cover
+  resting on nothing (the chair's casters, which stand off every nearby part
+  by the same clearance) is attributed to whichever part holds the larger
+  share of its own surface. Surface a cover hides on a part it isn't carried
+  by stays printable — it only costs an unclaimed filament change, never
+  deletes visible artwork.
 - `bleedMm` keeps artwork running that far past the visible edge into the
-  hidden area, so a slightly shifted cover never reveals blank plastic.
+  hidden area, so a slightly shifted cover never reveals blank plastic. The
+  dead region is then closed-then-opened at a `DEAD_SMOOTH_MM` (5mm) radius to
+  clear the sampling grid's own staircase edge, and a dead island under
+  `MIN_DEAD_AREA_MM2` (15mm²) is dropped.
 - Output: per-chart `deadRegions` in the sidecar (schema 3), subtracted from
   the artwork clip at runtime, drawn hatched on templates and in the viewport.
 - The bake log prints `dead <area>mm²` per zone. A zone whose surface faces
   away from every cover correctly reports 0.
+- All the constants above, and the measurements that chose them, live in
+  [zonebake.mjs](../../../scripts/lib/zonebake.mjs). Re-read them before
+  retuning anything.
 
 ## 2. Run it
 
