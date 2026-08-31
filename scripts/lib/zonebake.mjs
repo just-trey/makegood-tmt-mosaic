@@ -1837,12 +1837,12 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
     .filter(Boolean)
     .join('\n');
   const legend = [
-    zone.seams?.length ? 'dashed = printed-part seam' : '',
-    partLabels ? 'labels name the printed part' : '',
-    deadD ? 'hatched = hidden once assembled' : '',
+    zone.seams?.length ? 'Dashed = printed-part seam' : '',
+    partLabels ? 'Labels name the printed part' : '',
+    deadD ? 'Hatched = hidden once assembled' : '',
   ]
     .filter(Boolean)
-    .join('; ');
+    .join('. ');
   // Shrunk to fit the sheet rather than wrapped: a second line would drop out of the header band
   // the part labels dodge, and land on top of one. Three clauses at full size run 320mm, which is
   // wider than every chair template.

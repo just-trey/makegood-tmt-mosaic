@@ -45,5 +45,5 @@
   <text x="109.91" y="88.41" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#1a4f8f" opacity="0.75">seat back top</text>
   <text x="109.85" y="12" text-anchor="middle" font-family="sans-serif"
         font-size="8" fill="#1a4f8f">Front</text>
-  <text x="109.85" y="24" text-anchor="middle" font-family="sans-serif" font-size="5.27" fill="#1a4f8f">dashed = printed-part seam; labels name the printed part; hatched = hidden once assembled</text>
+  <text x="109.85" y="24" text-anchor="middle" font-family="sans-serif" font-size="5.27" fill="#1a4f8f">Dashed = printed-part seam. Labels name the printed part. Hatched = hidden once assembled</text>
 </svg>

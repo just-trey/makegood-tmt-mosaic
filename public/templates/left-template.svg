@@ -39,5 +39,5 @@
   <text x="333.91" y="300.69" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#1a4f8f" opacity="0.75">wheel mount left</text>
   <text x="321.05" y="12" text-anchor="middle" font-family="sans-serif"
         font-size="8" fill="#1a4f8f">Left side</text>
-  <text x="321.05" y="24" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#1a4f8f">dashed = printed-part seam; labels name the printed part; hatched = hidden once assembled</text>
+  <text x="321.05" y="24" text-anchor="middle" font-family="sans-serif" font-size="8" fill="#1a4f8f">Dashed = printed-part seam. Labels name the printed part. Hatched = hidden once assembled</text>
 </svg>

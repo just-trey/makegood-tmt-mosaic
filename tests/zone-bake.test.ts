@@ -369,7 +369,7 @@ describe('cross-part welding and seams', () => {
     const svg = baked.templates[0].svg;
     expect(svg).toContain('>part a<');
     expect(svg).toContain('>part b<');
-    expect(svg).toContain('labels name the printed part');
+    expect(svg).toContain('Labels name the printed part');
   });
 });
 
