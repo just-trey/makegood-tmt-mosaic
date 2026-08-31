@@ -29,7 +29,7 @@
  *                runtime clips its cutter to), cross-part seam polylines, the sidecar object, and
  *                template SVGs.
  */
-import JSZip from 'jszip';
+import { eachElement, meshTris, meshVerts, modelXML } from './mesh.mjs';
 import { detectFlatPatches } from '../../src/geometry/meshparts.ts';
 import { ACCENT, GRAY, LABEL_SIZE } from './svgstyle.mjs';
 
@@ -80,26 +80,19 @@ const round = (v, dp) => Number(v.toFixed(dp));
 /**
  * Reads a packed single-object 3MF (the pack-part.mjs output format) keeping its index
  * structure: chart `verts` entries are indices into this exact file order, which is also the
- * order the runtime loader will see. Attribute-wise regexes, same reason as scripts/lib/mesh.mjs:
- * 3MF does not mandate an attribute order.
+ * order the runtime loader will see. Element walk and attribute-wise reads shared with
+ * scripts/lib/mesh.mjs: 3MF does not mandate an attribute order, and a self-closing `<object/>`
+ * must not merge two bodies.
  */
 export async function read3MFIndexed(buf) {
-  const zip = await JSZip.loadAsync(buf);
-  const model = zip.file('3D/3dmodel.model');
-  if (!model) throw new Error('not a valid 3MF: missing 3D/3dmodel.model');
-  const xml = await model.async('string');
-  const XA = [/\bx="([^"]*)"/, /\by="([^"]*)"/, /\bz="([^"]*)"/];
-  const TA = [/\bv1="([^"]*)"/, /\bv2="([^"]*)"/, /\bv3="([^"]*)"/];
-  const attrs = (tag, res) => res.map((r) => +(tag.match(r)?.[1] ?? NaN));
+  const xml = await modelXML(buf);
   const verts = [];
   const tris = [];
-  for (const om of xml.matchAll(/<object\b[^>]*(?:\/>|>([\s\S]*?)<\/object>)/g)) {
-    const body = om[1];
+  for (const { body } of eachElement(xml, 'object')) {
     if (!body) continue;
     const base = verts.length;
-    for (const v of body.matchAll(/<vertex\b[^>]*>/g)) verts.push(attrs(v[0], XA));
-    for (const t of body.matchAll(/<triangle\b[^>]*>/g))
-      tris.push(attrs(t[0], TA).map((i) => base + i));
+    for (const v of meshVerts(body)) verts.push(v);
+    for (const t of meshTris(body)) tris.push(t.map((i) => base + i));
   }
   for (const t of tris)
     for (const vi of t)
@@ -109,21 +102,42 @@ export async function read3MFIndexed(buf) {
 }
 
 /**
- * Reads every mesh object out of a multi-body 3MF along with its material color, resolved
- * through pid -> m:colorgroup -> m:color. The covers file (a whole-assembly CAD export) tells
- * its bodies apart only by color: every body is named the same and carries no part id.
+ * `pid` -> that m:colorgroup's colours in document order, so an object's `pindex` selects one.
+ *
+ * Read as attributes and children rather than as one fixed-shape match. `<m:colorgroup id="(\d+)">`
+ * required `id` to be the LAST attribute of the tag, so a writer emitting
+ * `<m:colorgroup displaypropertiesid="7" id="2">` produced zero groups and left every body with no
+ * colour at all; and it took only the first `<m:color>`, so a group holding several resolved every
+ * body in it to colour 0 whatever its `pindex` said.
  */
-export async function read3MFObjectsByColor(buf) {
-  const zip = await JSZip.loadAsync(buf);
-  const model = zip.file('3D/3dmodel.model');
-  if (!model) throw new Error('not a valid 3MF: missing 3D/3dmodel.model');
-  const xml = await model.async('string');
-  const XA = [/\bx="([^"]*)"/, /\by="([^"]*)"/, /\bz="([^"]*)"/];
-  const TA = [/\bv1="([^"]*)"/, /\bv2="([^"]*)"/, /\bv3="([^"]*)"/];
-  const attrs = (tag, res) => res.map((r) => +(tag.match(r)?.[1] ?? NaN));
-  const colorOf = new Map();
-  for (const m of xml.matchAll(/<m:colorgroup id="(\d+)">\s*<m:color color="(#[0-9A-Fa-f]+)"/g))
-    colorOf.set(m[1], m[2].toUpperCase());
+function colorGroups(xml) {
+  const groups = new Map();
+  for (const { attrs: a, body } of eachElement(xml, 'm:colorgroup')) {
+    const id = a.match(/\bid="(\d+)"/)?.[1];
+    if (!id || !body) continue;
+    groups.set(
+      id,
+      [...body.matchAll(/<m:color\b[^>]*\bcolor="(#[0-9A-Fa-f]+)"/g)].map((c) =>
+        c[1].toUpperCase(),
+      ),
+    );
+  }
+  return groups;
+}
+
+/**
+ * Reads every mesh object out of a multi-body 3MF along with its material color, resolved
+ * through pid + pindex -> m:colorgroup -> m:color. The covers file (a whole-assembly CAD export)
+ * tells its bodies apart only by color: every body is named the same and carries no part id.
+ *
+ * **An unresolvable colour is fatal, never null.** Colour is the whole classification here:
+ * registerCovers sorts reference bodies from cover bodies on it, and a body with no colour used to
+ * fall through as a COVER, which is the one guess that silently starts hiding surface. `file` only
+ * names the file in those messages.
+ */
+export async function read3MFObjectsByColor(buf, file = 'covers file') {
+  const xml = await modelXML(buf);
+  const groups = colorGroups(xml);
   // Vertices are read in each object's local frame. A file whose build items or components carry
   // their own transforms would collapse every body toward its origin, and a coincidental bbox
   // match could then register the covers somewhere wrong without tripping the residual check, so
@@ -134,13 +148,33 @@ export async function read3MFObjectsByColor(buf) {
         're-export it with all transforms applied to the mesh coordinates',
     );
   const objects = [];
-  for (const om of xml.matchAll(/<object\b([^>]*)>([\s\S]*?)<\/object>/g)) {
-    const pid = om[1].match(/\bpid="(\d+)"/)?.[1];
-    const verts = [];
-    const tris = [];
-    for (const v of om[2].matchAll(/<vertex\b[^>]*>/g)) verts.push(attrs(v[0], XA));
-    for (const t of om[2].matchAll(/<triangle\b[^>]*>/g)) tris.push(attrs(t[0], TA));
-    if (tris.length) objects.push({ color: colorOf.get(pid ?? '') ?? null, verts, tris });
+  for (const { attrs: a, body } of eachElement(xml, 'object')) {
+    if (!body) continue;
+    const tris = meshTris(body);
+    if (!tris.length) continue;
+    const id = a.match(/\bid="([^"]*)"/)?.[1] ?? '?';
+    // A per-triangle property overrides the object's, so one body would carry several colours and
+    // this reader has nowhere to put them. Refused rather than reported as the object's colour.
+    if (/<triangle\b[^>]*\bp1="/.test(body))
+      throw new Error(
+        `${file}: object id=${id} sets colours per triangle (p1=), which this reader cannot split`,
+      );
+    const pid = a.match(/\bpid="([^"]*)"/)?.[1];
+    const colors = pid == null ? undefined : groups.get(pid);
+    if (!colors?.length)
+      throw new Error(
+        `${file}: object id=${id} ` +
+          (pid == null
+            ? 'has no pid, so its colour cannot be resolved'
+            : `points at pid="${pid}", which is not an m:colorgroup holding colours`),
+      );
+    const pindex = +(a.match(/\bpindex="(\d+)"/)?.[1] ?? 0);
+    if (!(pindex < colors.length))
+      throw new Error(
+        `${file}: object id=${id} asks m:colorgroup ${pid} for colour ${pindex}, ` +
+          `but that group holds ${colors.length}`,
+      );
+    objects.push({ color: colors[pindex], verts: meshVerts(body), tris });
   }
   return objects;
 }
@@ -171,17 +205,7 @@ export function registerCovers(config, parts, objects) {
       `covers file has ${refs.length} reference bodies and ${coverObjs.length} covers: ` +
         `check covers.referenceColor (${config.covers.referenceColor})`,
     );
-  const bboxOf = (verts) => {
-    const mn = [Infinity, Infinity, Infinity];
-    const mx = [-Infinity, -Infinity, -Infinity];
-    for (const v of verts)
-      for (let k = 0; k < 3; k++) {
-        if (v[k] < mn[k]) mn[k] = v[k];
-        if (v[k] > mx[k]) mx[k] = v[k];
-      }
-    return { mn, mx, dims: [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]] };
-  };
-  const partBB = parts.map((p) => bboxOf(p.verts));
+  const partBB = parts.map((p) => bounds(p.verts));
   const rotations = [];
   for (const p of [
     [0, 1, 2],
@@ -215,7 +239,7 @@ export function registerCovers(config, parts, objects) {
   ];
   let best = null;
   for (const R of rotations) {
-    const refBB = refs.map((r) => bboxOf(r.verts.map((v) => apply(R, v))));
+    const refBB = refs.map((r) => bounds(r.verts.map((v) => apply(R, v))));
     // Candidate translations clustered by distance to a running mean, not a fixed mm grid: a
     // consensus straddling a grid boundary would split into two half-sized votes and fail a
     // registration whose true residual is far under the limit.
@@ -259,10 +283,14 @@ export function registerCovers(config, parts, objects) {
   return { covers, matched: best.matched, residual: best.residual, mirror };
 }
 
-/** Axis-aligned bounds and their midpoint. Midpoint, not centroid: these meshes are unevenly */
-/** tessellated, so a centroid drifts with triangle density (the seat cushion's is 1.1mm off a */
-/** bbox that is centred to 0.000mm). */
-function boundsMid(verts) {
+/**
+ * Axis-aligned bounds of a vertex list, with both derived forms the bake reads off them: per-axis
+ * dimensions (registerCovers matches parts to reference bodies on these) and the midpoint.
+ *
+ * Midpoint, not centroid: these meshes are unevenly tessellated, so a centroid drifts with triangle
+ * density (the seat cushion's is 1.1mm off a bbox that is centred to 0.000mm).
+ */
+function bounds(verts) {
   const mn = [Infinity, Infinity, Infinity];
   const mx = [-Infinity, -Infinity, -Infinity];
   for (const v of verts)
@@ -270,7 +298,12 @@ function boundsMid(verts) {
       if (v[k] < mn[k]) mn[k] = v[k];
       if (v[k] > mx[k]) mx[k] = v[k];
     }
-  return { mn, mx, mid: [0, 1, 2].map((k) => (mn[k] + mx[k]) / 2) };
+  return {
+    mn,
+    mx,
+    dims: [0, 1, 2].map((k) => mx[k] - mn[k]),
+    mid: [0, 1, 2].map((k) => (mn[k] + mx[k]) / 2),
+  };
 }
 
 /**
@@ -289,13 +322,21 @@ function boundsMid(verts) {
  * the axis: a geometric rule, so it does not depend on the order objects happen to appear in the
  * file. Both sides move to the averaged offset, so neither side's pose is adopted wholesale.
  * Unpaired bodies (the chair's two cushions, which straddle the plane themselves) are left alone.
+ *
+ * **Overwriting one body with another's mirror is checked before it happens.** Pairing is by
+ * triangle count and mirror-midpoint distance, and two unrelated bodies can share both, at which
+ * point this would silently replace one shape with the other. Vertex count and bbox extent are
+ * checked first and refuse loudly, and how far the replacement actually moves geometry comes back
+ * as `maxResidualMm` for the bake log. That residual is 21.976mm on the chair, which is a real
+ * defect in the covers file rather than in this function: see docs/tech-debt.md.
  */
 export function symmetrizeCovers(covers, axis) {
   if (axis < 0) throw new Error('covers.mirrorAxis must be "x", "y" or "z"');
   const flip = (v) => v.map((x, k) => (k === axis ? -x : x));
-  const info = covers.map((c, i) => ({ i, c, b: boundsMid(c.verts) }));
+  const info = covers.map((c, i) => ({ i, c, b: bounds(c.verts) }));
   const used = new Set();
   const moved = [];
+  let maxResidual = 0;
   for (const a of info) {
     if (used.has(a.i)) continue;
     const partner = info
@@ -305,8 +346,6 @@ export function symmetrizeCovers(covers, axis) {
     // A pair has to be nearer its own mirror image than the sampling resolution, or it is two
     // different bodies that merely happen to share a triangle count.
     if (!partner || partner.d > MIRROR_PAIR_TOL_MM) continue;
-    used.add(a.i);
-    used.add(partner.o.i);
     const src = a.b.mid[axis] < 0 ? a : partner.o;
     const dst = src === a ? partner.o : a;
     // averaged pose: same distance from the plane on both sides, averaged along the others
@@ -317,15 +356,96 @@ export function symmetrizeCovers(covers, axis) {
     );
     const shift = [0, 1, 2].map((k) => target[k] - src.b.mid[k]);
     const srcVerts = src.c.verts.map((v) => v.map((x, k) => x + shift[k]));
+    // Same body, or two different ones that happen to share a triangle count? Vertex count and
+    // per-axis extent, the same test registerCovers already matches parts to reference bodies on,
+    // at the same measured tolerance. Two unrelated bodies agree on neither; the chair's four
+    // casters agree on both exactly (8,953 vertices, 48.500 x 154.059 x 279.997mm, all four).
+    if (
+      src.c.verts.length !== dst.c.verts.length ||
+      src.b.dims.some((d, k) => Math.abs(d - dst.b.dims[k]) >= REGISTER_DIM_TOL_MM)
+    )
+      throw new Error(
+        `covers file: two bodies pair as mirrors (${a.c.tris.length} triangles, midpoints ` +
+          `${partner.d.toFixed(3)}mm apart) but are not the same body — ` +
+          `${src.c.verts.length} vs ${dst.c.verts.length} vertices, ` +
+          `${src.b.dims.map((d) => d.toFixed(3)).join(' x ')} against ` +
+          `${dst.b.dims.map((d) => d.toFixed(3)).join(' x ')}mm. Check covers.mirrorAxis.`,
+      );
+    // How far the replacement below actually moves geometry: each vertex of the destination against
+    // the nearest of the mirrored source, both ways, as point SETS. Not index for index (two bodies
+    // that ARE each other's mirror need not list vertices in the same order) and not sorted either
+    // (a caster's disc puts thousands of vertices at nearly equal x, so sorting reorders whole runs
+    // of them and reads 279.997mm on a pair that is 0.000mm apart as sets).
+    //
+    // Reported, not enforced, and the chair is why: see docs/tech-debt.md, "The covers file's
+    // casters are 180-degree rotations of each other, not mirrors". Every value it could be
+    // enforced at today is a number picked to admit or reject that one file.
+    const mirrorTarget = flip(target);
+    const have = dst.c.verts.map((v) =>
+      [0, 1, 2].map((k) => v[k] + mirrorTarget[k] - dst.b.mid[k]),
+    );
+    const want = srcVerts.map(flip);
+    maxResidual = Math.max(
+      maxResidual,
+      Math.max(
+        nearestPointResidual(want, have, MIRROR_REPORT_MM),
+        nearestPointResidual(have, want, MIRROR_REPORT_MM),
+      ),
+    );
+    used.add(a.i);
+    used.add(partner.o.i);
     src.c.verts = srcVerts;
     dst.c.verts = srcVerts.map(flip);
     dst.c.tris = src.c.tris.map((t) => [t[0], t[2], t[1]]);
     moved.push(dist3(src.b.mid, target), dist3(dst.b.mid, flip(target)));
   }
-  return { pairs: moved.length / 2, maxShiftMm: moved.length ? Math.max(...moved) : 0 };
+  return {
+    pairs: moved.length / 2,
+    maxShiftMm: moved.length ? Math.max(...moved) : 0,
+    maxResidualMm: maxResidual,
+  };
 }
 
 const MIRROR_PAIR_TOL_MM = 5;
+
+/**
+ * Worst distance from a point of `a` to the nearest point of `b`, or Infinity as soon as one of
+ * them has nothing within `cap`. Cells are `cap` wide, so the 27-neighbour search cannot miss a
+ * counterpart that is inside it, and anything outside it has already failed.
+ */
+function nearestPointResidual(a, b, cap) {
+  const cell = (p) =>
+    `${Math.floor(p[0] / cap)},${Math.floor(p[1] / cap)},${Math.floor(p[2] / cap)}`;
+  const cells = new Map();
+  for (const p of b) {
+    const k = cell(p);
+    let l = cells.get(k);
+    if (!l) cells.set(k, (l = []));
+    l.push(p);
+  }
+  let worst = 0;
+  for (const p of a) {
+    const [ci, cj, ck] = [0, 1, 2].map((k) => Math.floor(p[k] / cap));
+    let best = Infinity;
+    for (let i = -1; i <= 1; i++)
+      for (let j = -1; j <= 1; j++)
+        for (let k = -1; k <= 1; k++)
+          for (const q of cells.get(`${ci + i},${cj + j},${ck + k}`) ?? [])
+            best = Math.min(best, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
+    if (!(best <= worst)) {
+      if (best === Infinity) return Infinity;
+      worst = best;
+    }
+  }
+  return worst;
+}
+/**
+ * Search cap (mm) for the reported mirror-shape residual. Not a limit on anything: it only bounds
+ * the point-set search, and a pair further apart than this reports Infinity rather than a figure.
+ * 50 is above the chair's 21.976mm and below the 280mm body it sits on, so the number stays
+ * meaningful without the search widening over the whole assembly.
+ */
+const MIRROR_REPORT_MM = 50;
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 /**
@@ -739,6 +859,9 @@ function nearestBody(index, p, cap) {
   return { d: Math.sqrt(best), body };
 }
 
+/** Barycentric point (s, t) of the triangle v0/v1/v2, in whatever dimension they carry. */
+const at = (v0, v1, v2, s, t) => v0.map((x, i) => x + (v1[i] - x) * s + (v2[i] - x) * t);
+
 const triArea3 = (a, b, c) => {
   const n = cross3(sub3(b, a), sub3(c, a));
   return Math.hypot(n[0], n[1], n[2]) / 2;
@@ -793,8 +916,21 @@ function coverHomeParts(coverIdx, partIdx, covers, parts) {
         d = c.verts[t[2]];
       const cen = [(a[0] + b[0] + d[0]) / 3, (a[1] + b[1] + d[1]) / 3, (a[2] + b[2] + d[2]) / 3];
       // The last answer bounds this one by the triangle inequality, which keeps the shell search
-      // local over a mesh listed in any spatially coherent order.
-      const hit = nearestBody(partIdx, cen, prevP ? prevD + dist3(prevP, cen) : Infinity);
+      // local over a mesh listed in any spatially coherent order. Every triangle wants its nearest
+      // part whatever the distance, so the bound is only ever an optimisation.
+      //
+      // A miss therefore means the bound was too tight, not that there is nothing to find, and the
+      // answer is to drop it rather than record it. `hit.d` on a miss is the CAP, which is not an
+      // upper bound on the true nearest — carrying it forward as prevD tightens the next cap below
+      // a valid bound, and the misses chain. It is also this triangle's whole area going missing
+      // from the vote that picks the cover's home part.
+      //
+      // Reachable, not theoretical: a centroid exactly as far from the nearest part as the bound
+      // allows misses on the strict `<`, which happens whenever the previous centroid sits on the
+      // segment between this one and the surface. tests/zone-bake.test.ts hit it with a box over a
+      // two-plate seam and lost 7,200mm² of one plate's share to it.
+      let hit = nearestBody(partIdx, cen, prevP ? prevD + dist3(prevP, cen) : Infinity);
+      if (hit.body < 0) hit = nearestBody(partIdx, cen, Infinity);
       prevD = hit.d;
       prevP = cen;
       if (hit.body >= 0) share[hit.body] += triArea3(a, b, d);
@@ -1542,6 +1678,16 @@ const loopArea = (pts) => {
 };
 
 /**
+ * Area (mm²) of one `{ outer, holes }` region: the outer loop less its holes, unsigned.
+ *
+ * Exported because the same sum is what the bake log reports, what dropSmallRegions filters on, and
+ * what the tests assert against — and a region measured by its outer loop alone reads a ring as
+ * solid, which is the difference between "this chart is mostly hidden" and "this chart is a frame".
+ */
+export const regionNetArea = (r) =>
+  Math.abs(loopArea(r.outer)) - r.holes.reduce((s, h) => s + Math.abs(loopArea(h)), 0);
+
+/**
  * Area centroid of a polygon, falling back to the bbox centre when the loop is too thin for the
  * signed-area formula to be stable. Only used to park a text label, so "somewhere sensible inside
  * the bbox" is the whole requirement — a concave region can push the true centroid outside itself.
@@ -1674,11 +1820,7 @@ function smoothDead(cs) {
 function dropSmallRegions(cs, minAreaMm2, wasm) {
   const rings = cs.toPolygons().map((r) => r.map(([x, y]) => [x, y]));
   const regions = classifyRegions(rings);
-  const keep = regions.filter(
-    (r) =>
-      Math.abs(loopArea(r.outer)) - r.holes.reduce((s, h) => s + Math.abs(loopArea(h)), 0) >=
-      minAreaMm2,
-  );
+  const keep = regions.filter((r) => regionNetArea(r) >= minAreaMm2);
   if (keep.length === regions.length) return cs;
   return new wasm.CrossSection(
     keep.flatMap((r) => [r.outer, ...r.holes]),
@@ -2103,7 +2245,6 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         )) {
           const a = (cell[0][0] + cell[1][0] + cell[2][0]) / 3;
           const b = (cell[0][1] + cell[1][1] + cell[2][1]) / 3;
-          const at = (v0, v1, v2, s, t) => v0.map((x, i) => x + (v1[i] - x) * s + (v2[i] - x) * t);
           const s3 = at(p3[0], p3[1], p3[2], a, b);
           // Contact first: it is one ray against the hemisphere's 32, and it is the cheap answer
           // for everything the cushions actually touch. A cover this close is resting on this
@@ -2334,15 +2475,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     });
     const deadArea = coverIdx
       ? charts.reduce(
-          (s, c) =>
-            s +
-            (c.deadRegions ?? []).reduce(
-              (t, r) =>
-                t +
-                Math.abs(loopArea(r.outer)) -
-                r.holes.reduce((h, l) => h + Math.abs(loopArea(l)), 0),
-              0,
-            ),
+          (s, c) => s + (c.deadRegions ?? []).reduce((t, r) => t + regionNetArea(r), 0),
           0,
         )
       : 0;

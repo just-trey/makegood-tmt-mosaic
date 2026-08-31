@@ -6,6 +6,7 @@ import {
   simplifyLoop,
   meshFingerprint as bakeFingerprint,
   symmetrizeCovers,
+  regionNetArea,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
@@ -744,11 +745,7 @@ describe('hidden surface classification', () => {
   ): { outer: number[][]; holes: number[][][] }[] =>
     baked.sidecar.zones[0].charts[0].deadRegions ?? [];
   const deadArea = (baked: ReturnType<typeof bakeZones>): number =>
-    deadOf(baked).reduce(
-      (s, r) =>
-        s + Math.abs(loopArea(r.outer)) - r.holes.reduce((h, l) => h + Math.abs(loopArea(l)), 0),
-      0,
-    );
+    deadOf(baked).reduce((s, r) => s + regionNetArea(r), 0);
 
   it('a flush box on a finely meshed plate leaves one clean patch, inset by the bleed', () => {
     const baked = bake(finePlate, [boxCover([50, 50, 1], [150, 150, 31])]);
@@ -864,13 +861,7 @@ describe('hidden surface classification', () => {
         deadRegions?: { outer: number[][]; holes: number[][][] }[];
       }[]) {
         const dead = c.deadRegions ?? [];
-        out[c.libraryPartId] = dead.reduce(
-          (s, r) =>
-            s +
-            Math.abs(loopArea(r.outer)) -
-            r.holes.reduce((h, l) => h + Math.abs(loopArea(l)), 0),
-          0,
-        );
+        out[c.libraryPartId] = dead.reduce((s, r) => s + regionNetArea(r), 0);
         const pts = dead.flatMap((r) => r.outer);
         if (pts.length)
           out.box[c.libraryPartId] = [
@@ -888,9 +879,14 @@ describe('hidden surface classification', () => {
       [20, 40, 0.5],
       [140, 160, 30],
     ];
+    // 134, not 140, and the 6mm buys nothing on the left plate: it moves the box's far x-spanning
+    // triangle centroid off x=100. A centroid exactly on the seam is equidistant from BOTH plates,
+    // so its whole triangle's area goes to whichever the argmax happens to reach first, and the
+    // mirrored case below then answers the un-mirrored one's part. Nothing about the left plate's
+    // shadow moves: the box still starts at x=20 and still crosses the seam.
     const MOUNTED: [number[], number[]] = [
       [20, 40, 4],
-      [140, 160, 34],
+      [134, 160, 34],
     ];
 
     it('a cover resting on both parts hides surface on both', () => {
@@ -914,6 +910,27 @@ describe('hidden surface classification', () => {
       // patch starts at x=35 and the seam is at 100, so reaching it is 65mm wide against 55.
       expect(box.left[0]).toBeGreaterThan(60);
       expect(box.left[1]).toBeGreaterThan(85);
+    });
+
+    it('a capped nearest-part miss does not decide which part carries a cover', () => {
+      // Two blocks in ONE cover body, the bigger over the left plate, ordered so the walking bound
+      // that speeds the nearest-part search up meets its own worst case: the big block's underside
+      // triangle centroid sits directly below its topside one, so the bound (last distance plus the
+      // step) is EXACTLY the true distance and the search's strict `<` rejects it. That block's
+      // whole top-half area used to drop out of the vote with it, handing the cover to the smaller
+      // block's plate — the left plate then kept no dead region at all.
+      const merge = (a: Cover, b: Cover): Cover => ({
+        verts: [...a.verts, ...b.verts],
+        tris: [...a.tris, ...b.tris.map((t) => t.map((i) => i + a.verts.length))],
+      });
+      // z given reversed in the first block on purpose: that is what puts its underside face first.
+      const cover = merge(
+        boxCover([20, 160, 34], [80, 40, 4]),
+        boxCover([120, 40, 4], [174, 160, 34]),
+      );
+      const { left: l, right: r } = bake2([cover]);
+      expect(l).toBeGreaterThan(0);
+      expect(r).toBe(0);
     });
 
     it('the same cover mirrored keeps the other part instead', () => {

@@ -68,7 +68,7 @@ if (config.covers) {
     );
   let objects;
   try {
-    objects = await read3MFObjectsByColor(fs.readFileSync(file));
+    objects = await read3MFObjectsByColor(fs.readFileSync(file), config.covers.file);
   } catch (e) {
     die(`could not read covers file ${config.covers.file}: ${e.message}`);
   }
@@ -80,7 +80,8 @@ if (config.covers) {
         `registered against ${reg.matched} parts (residual ${reg.residual.toFixed(3)}mm)` +
         (reg.mirror
           ? `, ${reg.mirror.pairs} pair(s) snapped to the ${config.covers.mirrorAxis} mirror ` +
-            `plane (max ${reg.mirror.maxShiftMm.toFixed(3)}mm)`
+            `plane (max shift ${reg.mirror.maxShiftMm.toFixed(3)}mm, ` +
+            `worst shape residual ${reg.mirror.maxResidualMm.toFixed(3)}mm)`
           : ''),
     );
   } catch (e) {

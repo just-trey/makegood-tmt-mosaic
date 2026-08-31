@@ -115,6 +115,34 @@ tire-ring rows are geometry projections independent of the bake algorithm:
   of the bake.
 - The owner has seen the trade and chose to leave tires out for now.
 
+## The covers file's casters are 180-degree rotations of each other, not mirrors
+
+`symmetrizeCovers` ([scripts/lib/zonebake.mjs](../scripts/lib/zonebake.mjs)) snaps a mirror-paired
+cover body by replacing one with `mirror_x` of the other. On the chair that moves real geometry.
+
+Measured 2026-08-30, `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`
+(the "worst shape residual" figure it now prints), plus a signed-axis-map search over the two
+bodies:
+
+| Question                                           | Answer                                                     |
+| -------------------------------------------------- | ---------------------------------------------------------- |
+| Are the two paired caster bodies the same body?    | Yes: 8,953 vertices and 48.500 x 154.059 x 279.997mm, both |
+| Are they related by the x mirror the snap assumes? | No: 21.976mm apart, 3,958 of 8,953 vertices over 1mm       |
+| What relates them exactly?                         | `(x, y, z) -> (-x, y, -z)`, residual 0.000mm               |
+
+- `(-x, y, -z)` has determinant +1, so it is a 180-degree rotation about the vertical axis. The
+  snap is off by a further `mirror_z`.
+- **The shipped sidecar was baked with the snap**, so the dead regions on the flanks already
+  reflect the mirrored caster rather than the one in the file.
+- The bake refuses a pair that is not the same body at all (vertex count, per-axis extent, at
+  `REGISTER_DIM_TOL_MM`). It only reports the mirror residual, because every value it could be
+  enforced at today is a number picked to admit or reject this one file.
+- **Closing it needs a decision, not code**: whether the chair's assembly is meant to be
+  mirror-symmetric there. `DECISIONS-NEEDED.md` carries the question and both branches of it. If
+  the file is wrong, a re-export closes this and lets the residual become an enforced bound; if the
+  chair really fits its casters rotated, `covers.mirrorAxis` comes off and the knife-edge
+  asymmetry the snap settles has to be settled another way.
+
 ## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
 
 ## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted
