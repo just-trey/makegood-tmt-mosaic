@@ -636,10 +636,11 @@ export class ConformalZoneMapper implements ZoneMapper {
         // The nearest triangle whatever its distance, with no CHART_SNAP_MM bound. That bound
         // refuses MISPLACED ARTWORK, and there is none here: a dead region is cut against this
         // chart's own triangle union at bake time, so its corners sit on the triangulation rather
-        // than in the gap the snap covers. Measured over all 11 charts of
-        // public/stl/chair-body-zones.json that carry one: worst corner 0.001mm off, none past the
-        // snap tolerance, no lookup answering null (tests/chair-zones.test.ts pins it). Bounding it
-        // would put pinholes in the hatch over surface the cut really does clip.
+        // than in the gap the snap covers. Measured over all 12 charts of
+        // public/stl/chair-body-zones.json that carry one: worst corner 0.0006mm off, none past the
+        // snap tolerance, no lookup answering null (tests/chair-zones.test.ts pins it over every
+        // one of them). Bounding it would put pinholes in the hatch over surface the cut really
+        // does clip.
         const hit = this.lookup(u, v);
         // Unreachable given the guard above, and narrowing rather than a `!` so it stays that way.
         if (!hit) return;

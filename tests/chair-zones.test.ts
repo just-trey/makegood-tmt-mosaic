@@ -397,26 +397,38 @@ describe('hidden surface (deadRegions)', () => {
     expect(planarArea(mapper.boundary()!)).toBeCloseTo(claim, 0);
   });
 
+  // Every chart that carries dead regions, not a representative one: this is what conformal.ts's
+  // deadOverlayMesh cites for dropping the CHART_SNAP_MM bound on its lookup. A corner landing off
+  // the triangulation would answer null there, drop its triangle, and leave a pinhole in the hatch
+  // over surface the cut really does clip — so "no chart does" has to be checked on all of them.
   it('the viewport overlay mesh sits on the part, a hair above the surface', () => {
-    const z = sidecar.zones.find((zz) => zz.id === 'seat-left')!;
-    const c = z.charts.find((ch) => ch.libraryPartId === 'chair-wheel-mount-left')!;
-    const m = partMesh.get(c.libraryPartId)!;
-    const mapper = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices));
-    const overlay = mapper.deadOverlayMesh()!;
-    expect(overlay.positions.length).toBeGreaterThan(0);
-    expect(overlay.positions.length / 3).toBe(overlay.uv.length / 2);
-    const mn = [Infinity, Infinity, Infinity];
-    const mx = [-Infinity, -Infinity, -Infinity];
-    for (let i = 0; i < m.vertices.length; i += 3)
-      for (let k = 0; k < 3; k++) {
-        mn[k] = Math.min(mn[k], m.vertices[i + k]);
-        mx[k] = Math.max(mx[k], m.vertices[i + k]);
+    let checked = 0;
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        if (!c.deadRegions?.length) continue;
+        checked++;
+        const m = partMesh.get(c.libraryPartId)!;
+        const mapper = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices), z.id);
+        const overlay = mapper.deadOverlayMesh();
+        const where = `${z.id}/${c.libraryPartId}`;
+        expect(overlay, where).not.toBeNull();
+        expect(overlay!.positions.length, where).toBeGreaterThan(0);
+        expect(overlay!.positions.length / 3, where).toBe(overlay!.uv.length / 2);
+        const mn = [Infinity, Infinity, Infinity];
+        const mx = [-Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < m.vertices.length; i += 3)
+          for (let k = 0; k < 3; k++) {
+            mn[k] = Math.min(mn[k], m.vertices[i + k]);
+            mx[k] = Math.max(mx[k], m.vertices[i + k]);
+          }
+        for (let i = 0; i < overlay!.positions.length; i += 3)
+          for (let k = 0; k < 3; k++) {
+            expect(overlay!.positions[i + k], where).toBeGreaterThanOrEqual(mn[k] - 1);
+            expect(overlay!.positions[i + k], where).toBeLessThanOrEqual(mx[k] + 1);
+          }
       }
-    for (let i = 0; i < overlay.positions.length; i += 3)
-      for (let k = 0; k < 3; k++) {
-        expect(overlay.positions[i + k]).toBeGreaterThanOrEqual(mn[k] - 1);
-        expect(overlay.positions[i + k]).toBeLessThanOrEqual(mx[k] + 1);
-      }
+    // The count conformal.ts's comment quotes. A rebake that changes it dates that comment too.
+    expect(checked).toBe(12);
   });
 });
 

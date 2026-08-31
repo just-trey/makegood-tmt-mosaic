@@ -8,8 +8,9 @@ model: opus
 
 [add-part](../add-part/SKILL.md) covers a part with **one** design face: the app
 detects the largest flat patch and the SVG maps onto it. A body like the chair
-has eight design surfaces across ten printed pieces, and no flat patch is any
-of them. Those come from a **zone bake**, an offline unwrap whose committed
+has eight design surfaces welded across ten of its eleven printed body pieces,
+and no flat patch is any of them. (The eleventh, the seat pan, is in no zone at
+all: the cushion covers it.) Those come from a **zone bake**, an offline unwrap whose committed
 outputs (a sidecar plus per-zone templates) are the real artifacts.
 [bake-zones.mjs](../../../scripts/bake-zones.mjs) is the reproducible recipe.
 

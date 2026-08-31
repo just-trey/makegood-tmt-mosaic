@@ -2598,7 +2598,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
             // outer loop alone a ring of hidden surface reads as solid, so a region hiding almost
             // nothing survives a threshold meant to drop it. Holes are filtered first, because a
             // hole under minHoleArea is not subtracted from what ships either. Nothing in the
-            // current sidecar moves: all 27 of its dead regions have no holes at all.
+            // current sidecar moves: all 12 of its dead regions have no holes at all.
             .filter((r) => regionNetArea(r) >= MIN_DEAD_AREA_MM2)
             .map((r) => ({
               outer: roundLoop(simplifyLoop(r.outer, simplifyTol)),

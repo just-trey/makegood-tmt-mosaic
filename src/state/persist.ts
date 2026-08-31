@@ -786,6 +786,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   // re-pointed below for the same reason: left on a dead id, setActiveArtwork returns early and
   // the app comes back with no parsed design and Export off, while the artwork that DID restore
   // sits in state unselected.
+  const zoneOf = new Map(session.artworks.map((a) => [a.id, a.zoneId]));
   const artworks: ArtworkInstance[] = session.artworks
     .filter((a) => !lostSources.has(a.sourceId))
     .map((a) => ({
@@ -810,12 +811,25 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   // silent loss the kind-mismatch branch above avoids, reached from a different direction, and the
   // dropdown does not show it either: it renders the saved id as no selection at all. Sent to All
   // zones instead, which cuts something and reads correctly in the badge, and said out loud.
+  //
+  // **An empty zone list is not evidence of anything**, which is why the whole check is gated on
+  // one being offered at all. asmLoadFullAssembly returns quietly while the parts manifest is still
+  // in flight (its own comment calls that path supported, and loadPartsLibrary calls back through
+  // maybeAutoLoadAssembly when the fetch lands), so "no zones" is far more often "not yet" than
+  // "retired" — and discarding every binding on that reading loses them before the deferred load
+  // can arrive. A part that fails its own fetch mid-load already raises an alert naming the file,
+  // so a partial load is told about; only the false total wipe is worth guarding.
   const offered = new Set(availableZones().map((z) => z.zoneId));
+  const judgeable = keepSavedZones && offered.size > 0;
   const resolves = (zoneId: string | null): boolean => zoneId === null || offered.has(zoneId);
-  const orphaned = keepSavedZones ? session.artworks.filter((a) => !resolves(a.zoneId)) : [];
-  session.artworks.forEach((a) =>
-    setArtworkZone(a.id, keepSavedZones && resolves(a.zoneId) ? a.zoneId : null),
-  );
+  // Over the RESTORED instances, not the saved ones: a design whose source could not be rebuilt was
+  // filtered out above and is not in state to be moved, so counting it would name designs the user
+  // cannot see. It also has its own warning already.
+  const orphaned = judgeable ? artworks.filter((a) => !resolves(zoneOf.get(a.id) ?? null)) : [];
+  artworks.forEach((a) => {
+    const zoneId = zoneOf.get(a.id) ?? null;
+    setArtworkZone(a.id, keepSavedZones && (!judgeable || resolves(zoneId)) ? zoneId : null);
+  });
   if (orphaned.length)
     warn(
       orphaned.length === 1
