@@ -46,7 +46,12 @@ Open questions with no obvious answer, where the measurement behind the question
   chair's hidden surface now clipped, an auto-fit design on Seat lands mostly
   on covered surface and prints as a sliver on the front lip. The overlay
   explains it, but placing straight onto the visible region would be the
-  better default.
+  better default. The anchor becomes the chart's claim minus its `deadRegions`
+  rather than the whole zone bbox. Deferred out of the dead-zones change
+  because it moves placement for every zone on every kind, a far wider blast
+  radius than the clip itself. Measurement:
+  [tech-debt.md](tech-debt.md), "The chair's Seat zone is mostly hidden
+  surface".
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind.
 - A full parent-handle assembly kind.

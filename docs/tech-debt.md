@@ -77,11 +77,8 @@ adjustment cuts almost nothing and prints as a sliver on the lip.
   filament changes there is the point of the feature.
 - The hatch overlay and the hatched template explain it, so it is legible
   rather than silent, and the design can be moved by hand onto the lip.
-- Closing it: anchor auto-fit placement on the visible region (the chart's
-  claim minus its `deadRegions`) rather than the whole zone bbox. Listed in
-  [roadmap.md](roadmap.md).
-- Deferred out of this change because it moves placement for every zone on
-  every kind, which is a bigger blast radius than the clip itself.
+- Closing it: [roadmap.md](roadmap.md), "Center auto-fit on the visible part of
+  a zone". That is where the fix and why it was deferred are written up.
 
 ## The covers reference has no tires, so each flank keeps artwork the tire hides — unmeasured
 
@@ -89,22 +86,28 @@ adjustment cuts almost nothing and prints as a sliver on the lip.
 The assembled chair runs a tire ring outside that, and the bake has never seen
 it, so the flanks treat the band under the tire as printable.
 
-Measured on the stub (2026-08-30), against the photo-scaled tire. The "baked
-dead" row is the flank's whole dead area (`public/stl/chair-body-zones.json`,
-summed over `left`/`right`'s `deadRegions`) — only that row moved since the
-hemisphere classifier, contact test and carry rule landed; the shadow and
-tire-ring rows are geometry projections independent of the bake algorithm:
+All three rows come from
+`npx vite-node scripts/measure-wheel-shadow.mjs --tire-mm 30`, re-taken
+2026-08-30. That script's header defines each projection; the shadow and
+tire-ring rows are geometry, independent of the bake algorithm, and the baked
+row is the flank's whole dead area summed out of
+`public/stl/chair-body-zones.json`.
 
 |                                               | `left`    | `right`   |
 | --------------------------------------------- | --------- | --------- |
-| straight-on wheel shadow on the zone          | 36,619mm² | 36,730mm² |
+| straight-on wheel shadow on the zone          | 36,654mm² | 36,806mm² |
 | baked dead there (the rest is the 20mm bleed) | 15,039mm² | 15,727mm² |
-| what a 30mm tire ring would add               | 22,447mm² | 23,215mm² |
+| what a 30mm tire ring would add               | 17,867mm² | 17,668mm² |
 
-- **The tire figures are unmeasured.** 30mm is scaled off a photo — the hub
-  reads ~340px for a stub-measured 280mm, the band ~37px. Read the last row as
-  "about as much again as the stub covers", never as a number to build on. The
-  stub rows above it are measured.
+- **The tire row is unmeasured, and only its arithmetic is reproducible.** 30mm
+  is scaled off a photo — the hub reads ~340px for a stub-measured 280mm, the
+  band ~37px — and the ring is grown radially about each cover's own axle in
+  the script, not modelled. Read it as "about as much again as the stub
+  covers", never as a number to build on. The two rows above it are measured.
+- The earlier figures in this section (36,619 / 36,730 for the shadow, 22,447 /
+  23,215 for the ring) named no command and could not be re-derived. The shadow
+  reproduces to 0.2%; the ring does not, because whatever built that annulus is
+  not what the script does.
 - The direction is safe: surface under the tire is treated as printable, so it
   costs a filament change on plastic nobody sees. It never leaves blank plastic
   where artwork was expected, which is the failure that would matter.
@@ -142,8 +145,6 @@ bodies:
   the file is wrong, a re-export closes this and lets the residual become an enforced bound; if the
   chair really fits its casters rotated, `covers.mirrorAxis` comes off and the knife-edge
   asymmetry the snap settles has to be settled another way.
-
-## Selection in the panels is still an accent tint, and two of convention 19's neighbours are open
 
 ## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted
 
@@ -364,7 +365,7 @@ result has not been re-measured.
 on it and no user can reach the numbers above. This is a gate, not a fix: the
 path is unchanged and every measurement here still stands. Clearing the flag
 needs the accumulator-or-worker fix and the "Handle (left)" color loss (defect
-3 of "Two open defects in the chair / pattern-library workflow", below).
+2 of "One open defect in the chair / pattern-library workflow", below).
 Sticker on the chair is unaffected and was measured at 19.5s for a full
 five-zone rebuild on the same box, which is why only Fill was withheld.
 
@@ -421,9 +422,11 @@ behind them.
   rects and takes only a region count and a repeat count, so a chair run means
   teaching it a kind and a Fill mode.
 
-## Two open defects in the chair / pattern-library workflow, and what's blocked on them
+## One open defect in the chair / pattern-library workflow, and what's blocked on it
 
-Two of four defects the maintainer named on 2026-08-05; the other two are fixed.
+One of four defects the maintainer named on 2026-08-05; the other three are
+fixed, dead zones with this change. Defects 2-4 below are longer-standing ones
+against the same two features, folded in here by #275.
 Both features are withheld from the UI for the beta: `chair-body` carries
 `hidden: true` and `PATTERN_LIBRARY_ENABLED` is `false`. The report is the
 maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
@@ -456,7 +459,7 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
    invalid prism and returns `null`, so the escalating erode ladder that
    fixed a lost color on the wheel (a `FlatZoneMapper`) buys the chair body
    nothing: a conformal zone gets no repair attempt and goes straight to the
-   warning in defect 3. Whether the chair body actually hits self-touching
+   warning in defect 2. Whether the chair body actually hits self-touching
    regions is unmeasured — nobody has driven dense artwork through a
    conformal zone to find out. Closing it means either giving the conformal
    mapper the same retry, or establishing that its null return means
@@ -475,8 +478,8 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
 `debug-csg-failure` skills and every chair drive script depend on. Nothing
 public names that parameter: it is out of the README's `?kind=` example list.
 
-Neither flag is the fix. Restoring the chair needs defects 1-2 closed;
-restoring the pattern library needs defect 3 closed.
+Neither flag is the fix. Restoring the chair needs defect 1 closed; restoring
+the pattern library needs defect 2 closed.
 
 ## The raster edge-density reading depends on how big the file is
 

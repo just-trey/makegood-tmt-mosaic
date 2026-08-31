@@ -485,7 +485,7 @@ const COVER_HIDDEN_FRACTION = 0.85;
  * zone under 1.5%, while a per-triangle verdict is 7% high on the flanks and 7% high on `front`.
  * 25mm² is a ~5mm boundary resolution against the 20mm bleed, at 67k samples for the whole chair.
  */
-const COVER_SAMPLE_MM2 = 25;
+export const COVER_SAMPLE_MM2 = 25;
 /**
  * A sample with a cover this close (mm) straight out along its normal is hidden, whatever the
  * hemisphere test makes of it. Touching plastic is touching plastic; the hemisphere test is for
@@ -550,7 +550,10 @@ const cellKey = (i, j, k) => (i * 73856093) ^ (j * 19349663) ^ (k * 83492791);
  * triangles, with zero verdicts changed. `owner` keeps which body each triangle came from, which
  * is what lets a hit name the cover that scored it.
  */
-function bodyIndex(bodies) {
+// Exported for scripts/measure-wheel-shadow.mjs, which has to cast against the covers the way the
+// bake does rather than re-implement the intersection: a re-implemented hot loop IS the
+// measurement, and a published figure taken with a lookalike is a figure nobody can check.
+export function bodyIndex(bodies) {
   const pts = [];
   const owner = [];
   bodies.forEach((b, bi) => {
@@ -644,7 +647,7 @@ function rayTriDist(xyz, t, px, py, pz, dx, dy, dz) {
  * stamp is needed. The first hit found wins, which is not always the nearest one: what the caller
  * needs is a cover that blocks this direction, not the front-most of several that do.
  */
-function coverOccludes(index, p, dir, maxMm = COVER_RAY_MM) {
+export function coverOccludes(index, p, dir, maxMm = COVER_RAY_MM) {
   index.ray++;
   const { xyz, cells, seen } = index;
   let ix = Math.floor(p[0] / CELL_MM),
@@ -860,7 +863,7 @@ function nearestBody(index, p, cap) {
 }
 
 /** Barycentric point (s, t) of the triangle v0/v1/v2, in whatever dimension they carry. */
-const at = (v0, v1, v2, s, t) => v0.map((x, i) => x + (v1[i] - x) * s + (v2[i] - x) * t);
+export const at = (v0, v1, v2, s, t) => v0.map((x, i) => x + (v1[i] - x) * s + (v2[i] - x) * t);
 
 const triArea3 = (a, b, c) => {
   const n = cross3(sub3(b, a), sub3(c, a));
@@ -948,8 +951,8 @@ function coverHomeParts(coverIdx, partIdx, covers, parts) {
  */
 const SUB_CELLS = new Map();
 /** 24 to a side is 576 samples, which the chair's largest triangle (8,430mm²) already sits under. */
-const SUB_CELLS_MAX = 24;
-function subCells(k) {
+export const SUB_CELLS_MAX = 24;
+export function subCells(k) {
   let cached = SUB_CELLS.get(k);
   if (cached) return cached;
   const out = [];
