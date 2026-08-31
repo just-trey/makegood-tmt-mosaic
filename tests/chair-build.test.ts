@@ -310,6 +310,34 @@ describe('conformal build on the real chair', () => {
   });
 });
 
+const inRing = (p: number[], ring: number[][]): boolean => {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i],
+      b = ring[j];
+    if (
+      a[1] > p[1] !== b[1] > p[1] &&
+      p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]
+    )
+      inside = !inside;
+  }
+  return inside;
+};
+
+const edgeDist = (p: number[], ring: number[][]): number => {
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i],
+      b = ring[(i + 1) % ring.length];
+    const dx = b[0] - a[0],
+      dy = b[1] - a[1];
+    const l2 = dx * dx + dy * dy;
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+    best = Math.min(best, Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)));
+  }
+  return best;
+};
+
 /**
  * A spot in the zone guaranteed to be on real, VISIBLE design surface: the most interior point of
  * the largest sub-region after the hidden surface (deadRegions) is honoured, with the placement
@@ -320,33 +348,6 @@ describe('conformal build on the real chair', () => {
  */
 function zoneTarget(zoneId: string): { partId: string; offX: number; offZ: number } {
   const zone = sidecar.zones.find((z) => z.id === zoneId)!;
-  const inRing = (p: number[], ring: number[][]): boolean => {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const a = ring[i],
-        b = ring[j];
-      if (
-        a[1] > p[1] !== b[1] > p[1] &&
-        p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]
-      )
-        inside = !inside;
-    }
-    return inside;
-  };
-  const edgeDist = (p: number[], ring: number[][]): number => {
-    let best = Infinity;
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i],
-        b = ring[(i + 1) % ring.length];
-      const dx = b[0] - a[0],
-        dy = b[1] - a[1];
-      const l2 = dx * dx + dy * dy;
-      const t =
-        l2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
-      best = Math.min(best, Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)));
-    }
-    return best;
-  };
   let best: { partId: string; p: number[]; score: number } | null = null;
   for (const ch of zone.charts)
     for (const r of ch.subRegions) {
@@ -371,11 +372,58 @@ function zoneTarget(zoneId: string): { partId: string; offX: number; offZ: numbe
           if (!best || score > best.score) best = { partId: ch.libraryPartId, p, score };
         }
     }
+  // A 24x24 scan of every sub-region bbox finding nothing means the zone has no visible interior
+  // the scan can see, which is a fact about the bake, not a null to dereference. Say which zone
+  // and how much of it is hidden, so a re-bake that swallows a zone reads as that rather than as
+  // "Cannot read properties of null".
+  if (!best) {
+    const dead = zone.charts.reduce((s, c) => s + (c.deadRegions?.length ?? 0), 0);
+    throw new Error(
+      `zone "${zoneId}": no grid point landed on visible surface across ` +
+        `${zone.charts.length} chart(s) with ${dead} dead region(s)`,
+    );
+  }
   // placer(): uv = designCentred + (offX, offZ) + zone bbox centre
   return {
-    partId: best!.partId,
-    offX: best!.p[0] - zone.uvBounds.maxU / 2,
-    offZ: best!.p[1] - zone.uvBounds.maxV / 2,
+    partId: best.partId,
+    offX: best.p[0] - zone.uvBounds.maxU / 2,
+    offZ: best.p[1] - zone.uvBounds.maxV / 2,
+  };
+}
+
+/**
+ * The mirror of `zoneTarget`: the most interior point of the zone's largest HIDDEN region, with
+ * the offsets that put a design's centre there. What a design placed on surface the assembly
+ * covers looks like, which is the only way to reach the hidden-surface warning.
+ */
+function deadTarget(zoneId: string): { chartPartId: string; offX: number; offZ: number } {
+  const zone = sidecar.zones.find((z) => z.id === zoneId)!;
+  let best: { chartPartId: string; p: number[]; score: number } | null = null;
+  for (const ch of zone.charts)
+    for (const d of ch.deadRegions ?? []) {
+      const xs = d.outer.map((p) => p[0]);
+      const ys = d.outer.map((p) => p[1]);
+      const [minX, maxX, minY, maxY] = [
+        Math.min(...xs),
+        Math.max(...xs),
+        Math.min(...ys),
+        Math.max(...ys),
+      ];
+      for (let gi = 1; gi < 24; gi++)
+        for (let gj = 1; gj < 24; gj++) {
+          const p = [minX + ((maxX - minX) * gi) / 24, minY + ((maxY - minY) * gj) / 24];
+          if (!inRing(p, d.outer)) continue;
+          if (d.holes.some((h) => inRing(p, h))) continue;
+          let score = edgeDist(p, d.outer);
+          for (const h of d.holes) score = Math.min(score, edgeDist(p, h));
+          if (!best || score > best.score) best = { chartPartId: ch.libraryPartId, p, score };
+        }
+    }
+  if (!best) throw new Error(`zone "${zoneId}": no dead region to place a design inside`);
+  return {
+    chartPartId: best.chartPartId,
+    offX: best.p[0] - zone.uvBounds.maxU / 2,
+    offZ: best.p[1] - zone.uvBounds.maxV / 2,
   };
 }
 
@@ -474,5 +522,58 @@ describe('per-zone artwork binding', () => {
     );
     expect(a).toBeGreaterThan(0);
     expect(b).toBeCloseTo(a, 6);
+  }, 180000);
+});
+
+describe('a design that lands only on hidden surface', () => {
+  // The seat is the zone where this is reachable by accident: most of it is under the cushion.
+  const ZONE = 'seat';
+
+  /** The whole zone in the scene, so "landed nowhere" means nowhere on the chair. */
+  async function seatParts(): Promise<AssemblyPart[]> {
+    const zone = sidecar.zones.find((z) => z.id === ZONE)!;
+    const out: AssemblyPart[] = [];
+    for (const c of zone.charts) {
+      const mesh = await loadPacked(c.libraryPartId);
+      out.push(
+        chairPart(
+          c.libraryPartId,
+          mesh,
+          zonesFor(c.libraryPartId, mesh).filter((z) => z.id === ZONE),
+        ),
+      );
+    }
+    return out;
+  }
+
+  it('names the hidden surface as the cause, not Scale', async () => {
+    clearWarnings();
+    const { offX, offZ } = deadTarget(ZONE);
+    const parts = await seatParts();
+    // 12mm, well inside the cushion block, so every bit of it is clipped away and none of it
+    // reaches a neighbouring chart.
+    await buildAssemblyGeometry(chairInput(parts, 12, [{ zoneId: ZONE, sizeMM: 12, offX, offZ }]));
+    const messages = WARNINGS.map((w) => w.message);
+    expect(messages).toContainEqual(
+      expect.stringContaining(
+        `"#ff0000" lands only where the part is hidden once assembled and won't print`,
+      ),
+    );
+    // The remedy in the other message is Scale, which cannot help here: a smaller design on the
+    // same spot is still under the cushion.
+    expect(messages).not.toContainEqual(expect.stringContaining('lands entirely off the part'));
+  }, 180000);
+
+  it('still blames the placement when the design never reaches the chair at all', async () => {
+    clearWarnings();
+    const parts = await seatParts();
+    await buildAssemblyGeometry(
+      chairInput(parts, 12, [{ zoneId: ZONE, sizeMM: 12, offX: 100000, offZ: 100000 }]),
+    );
+    const messages = WARNINGS.map((w) => w.message);
+    expect(messages).toContainEqual(expect.stringContaining('lands entirely off the part'));
+    expect(messages).not.toContainEqual(
+      expect.stringContaining('lands only where the part is hidden once assembled'),
+    );
   }, 180000);
 });

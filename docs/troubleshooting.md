@@ -38,6 +38,15 @@ carries visibly _less_ geometry than it should, so parts of the design come out
 blank. Fix by simplifying the design (fewer, larger shapes). Numbers in
 [tech-debt.md](tech-debt.md), "Turf's tile union has a vertex ceiling".
 
+**One "Couldn't trim the overlap" is not about a colour at all.** It names `the
+hidden surface on "<zone id>"` (`left`, `seat`, …). That is the chair's artwork
+clip failing to have the assembled-over surface subtracted from it, in
+`ConformalZoneMapper.boundary()`. Nothing is lost: the clip is kept
+unsubtracted, so artwork cuts where it would otherwise have been trimmed, and
+the cost is filament changes on surface nobody sees once the chair is together.
+The hatch in the 3D view and on the template still show what should have been
+trimmed.
+
 ## Troubleshooting: "Could not load the Manifold boolean engine, so assembly cutting is unavailable"
 
 Full text: _"Could not load the Manifold boolean engine, so assembly cutting is
@@ -955,6 +964,43 @@ them, and their rows and slots come back with them.
 If a color should be partly on the face but this fires anyway, check where the
 design is anchored. An SVG with no `<circle>` boundary marker is auto-centered
 on its bounding box, which a stray decorative element can move.
+
+**Its sibling below is a different cause with a different fix.** A color that
+reached the part but landed only on covered surface gets "… lands only where
+the part is hidden once assembled" instead. Lowering Scale will not help there.
+
+## Troubleshooting: "… lands only where the part is hidden once assembled"
+
+Full text, one color: _"\"#ff0000\" lands only where the part is hidden once
+assembled and won't print. Move the design off the hatching to bring it
+back."_ Several colors: _"3 colors land only where the part is hidden once
+assembled and won't print: "#101010", "#e07020", "#f5d020". Move the design off
+the hatching to bring them back."_ A merged group is named the way its row is:
+_"Merged (3)"_.
+
+Assembly mode, chair only today. The chair's design zones run under the wheels
+and the cushions, and the app does not cut artwork into surface that is covered
+once the chair is put together. This says a color's shapes all sit there, so
+nothing of it prints.
+
+**It is not the same as landing off the part.** The design is on the part. Only
+the covered strip of it is out of bounds, so Scale is the wrong control: a
+smaller design centred on the same spot is still on covered surface. Move it
+instead.
+
+**Where to move it to.** The covered surface is crosshatched in the 3D view and
+hatched on the printable template, both before any artwork is placed. The Seat
+zone is the one that catches people out: most of it is under the cushion, so a
+design dropped there with no adjustment lands almost entirely covered. The
+front lip is the visible part.
+
+The named colors are dropped from the color list, the filament slot count, and
+the exported 3MF's filament list, and come back with the design when it moves.
+
+If a color should be on visible surface but this fires anyway, check the
+placement offsets and the zone the design is bound to. Every zone has its own
+template, and the design is centred on the whole zone rather than on the part
+of it you can see.
 
 ## Troubleshooting: "This SVG has a circle around most of the artwork, but some of it falls outside"
 

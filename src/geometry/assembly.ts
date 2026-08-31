@@ -854,6 +854,33 @@ export async function buildAssemblyGeometry(
   // CSG failure involving the color, so a color lost to a broken boolean is never also told to
   // move. Only colors that provably reached nothing get the off-part warning at the end.
   const landedColors = new Set<number>();
+  // Of those, the ones that reached a design surface and were kept out only by hidden surface. Why
+  // a color cut nothing decides which warning it gets at the end, and the two causes have opposite
+  // remedies: bring the design back onto the part, or move it off surface the assembly covers.
+  const hiddenColors = new Set<number>();
+  /**
+   * Record a color whose placed region reached this zone's hidden surface, and nothing else.
+   *
+   * Dead surface is baked inside the chart's own claim, so an overlap proves the region landed on
+   * surface this part really carries and only the dead subtraction kept it out — which is exactly
+   * "the pre-clip boundary would have admitted it", without asking the mapper for a second
+   * boundary. A design thrown off the part overlaps nothing and never reaches here.
+   *
+   * safeIntersectChecked, not safeIntersect: the fallback hands the region back UNCLIPPED, which
+   * would read as an overlap for every color. A clipper failure falls through to the
+   * off-the-part message instead, which is the one that shipped before either existed.
+   */
+  const noteHiddenSurface = (
+    mapper: ZoneMapper,
+    placed: PolyFeature | null,
+    ci: number,
+    label: string,
+  ): void => {
+    const dead = mapper.deadArea();
+    if (!placed || !dead) return;
+    const r = safeIntersectChecked(placed, dead, label);
+    if (r.clipped && r.feat) hiddenColors.add(ci);
+  };
   let anyPlacements = false;
   let viewSign = 1,
     viewSignSet = false; // Y direction of the first real part's design face
@@ -914,12 +941,21 @@ export async function buildAssemblyGeometry(
         if (!source) return;
         // An empty MultiPolygon is a real clip that admits nothing: every bit of surface this chart
         // owns is hidden once assembled. Checked before tiling, which would otherwise pay a full
-        // fill's cost per color to produce regions that are all discarded.
+        // fill's cost per color to produce regions that are all discarded. Placement still runs, on
+        // the untiled source, only to attribute the loss: a fill whose tiles would have reached this
+        // chart when the source does not stays unattributed and takes the off-the-part message.
         if (
           boundaryPoly?.geometry.type === 'MultiPolygon' &&
           !boundaryPoly.geometry.coordinates.length
-        )
+        ) {
+          noteHiddenSurface(
+            mapper,
+            mapFeatureCoords(source, place),
+            ci,
+            `color ${c.hex} on ${part.name}`,
+          );
           return;
+        }
         // Fill: repeat the regions across the grid *in SVG space*, before placement, so tiles
         // inherit the placement's rotation/scale/offset and seam-straddling copies overlap where the
         // union can weld them.
@@ -934,10 +970,14 @@ export async function buildAssemblyGeometry(
         // clean through instead of recessed. Tracked rather than assumed; see the mapper.
         let clipped = true;
         if (boundaryPoly) {
+          const placed = feat;
           const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
           feat = r.feat;
           clipped = r.clipped;
-          if (!feat) return;
+          if (!feat) {
+            noteHiddenSurface(mapper, placed, ci, `color ${c.hex} on ${part.name}`);
+            return;
+          }
           // Only a real clip proves the color reached this face. A cut-through zone has no clip
           // boundary (its boolean against the mesh is what bounds the cut), so there a color counts
           // as landed only when that boolean yields an inlay, in the intersection loop below.
@@ -1361,20 +1401,37 @@ export async function buildAssemblyGeometry(
   // Gated on anyPlacements so a build with no design surfaces at all doesn't call every color
   // missing. See landedColors above for what counts as landed.
   if (anyPlacements) {
-    const missed = palette
-      .map((c, ci) =>
-        landedColors.has(ci) ? null : regionLabel(c.hex, c.isMerge, c.members.length),
-      )
-      .filter((l): l is string => l !== null);
-    if (missed.length === 1)
+    const labelsOf = (want: (ci: number) => boolean): string[] =>
+      palette
+        .map((c, ci) =>
+          landedColors.has(ci) || !want(ci)
+            ? null
+            : regionLabel(c.hex, c.isMerge, c.members.length),
+        )
+        .filter((l): l is string => l !== null);
+    // Two causes, two remedies, so they are never merged into one count. A color the design put
+    // only on surface the assembly covers is not off the part and Scale will not bring it back.
+    const hidden = labelsOf((ci) => hiddenColors.has(ci));
+    const off = labelsOf((ci) => !hiddenColors.has(ci));
+    if (off.length === 1)
       warnBuild(
-        `"${missed[0]}" lands entirely off the part and won't print. ` +
+        `"${off[0]}" lands entirely off the part and won't print. ` +
           `Lower Scale or move the design to bring it back.`,
       );
-    else if (missed.length)
+    else if (off.length)
       warnBuild(
-        `${missed.length} colors land entirely off the part and won't print: ` +
-          `${missed.map((l) => `"${l}"`).join(', ')}. Lower Scale or move the design to bring them back.`,
+        `${off.length} colors land entirely off the part and won't print: ` +
+          `${off.map((l) => `"${l}"`).join(', ')}. Lower Scale or move the design to bring them back.`,
+      );
+    if (hidden.length === 1)
+      warnBuild(
+        `"${hidden[0]}" lands only where the part is hidden once assembled and won't print. ` +
+          `Move the design off the hatching to bring it back.`,
+      );
+    else if (hidden.length)
+      warnBuild(
+        `${hidden.length} colors land only where the part is hidden once assembled and won't print: ` +
+          `${hidden.map((l) => `"${l}"`).join(', ')}. Move the design off the hatching to bring them back.`,
       );
   }
   palette.forEach((c, ci) => {

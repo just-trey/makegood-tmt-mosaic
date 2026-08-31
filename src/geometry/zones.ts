@@ -164,8 +164,19 @@ export interface ZoneMapper {
   readonly nsign: number;
   /** SVG-space → zone 2D design space (mm), folding in the shared placement */
   placer(placement: DesignPlacement): (pt: number[]) => number[];
-  /** clip target polygon in the zone's 2D design space, or null to skip clipping */
+  /**
+   * Clip target polygon in the zone's 2D design space. Three states, not two: a polygon clips,
+   * `null` means "no clip at all" and cuts everywhere, and an **empty MultiPolygon admits
+   * nothing** — every bit of surface this mapper owns is hidden once assembled. The two null-ish
+   * answers are opposites, so a caller that folds them together cuts a whole hidden zone.
+   */
   boundary(): PolyFeature | null;
+  /**
+   * Surface this mapper owns that another part hides once assembled, in the same 2D design space,
+   * or null where nothing is. Already subtracted out of `boundary()`; exposed on its own so a
+   * caller can tell "the design never reached the part" from "it reached only hidden surface".
+   */
+  deadArea(): PolyFeature | null;
   /** area a fill-mode artwork tiles across, in the zone's 2D design space; null when unknown */
   fillExtent(): FillExtent | null;
   /**
@@ -291,6 +302,11 @@ export class FlatZoneMapper implements ZoneMapper {
       }
     }
     return this.boundaryPoly;
+  }
+
+  /** A flat patch is the whole design face; nothing is hidden behind another part. */
+  deadArea(): PolyFeature | null {
+    return null;
   }
 
   /**

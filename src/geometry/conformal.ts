@@ -10,6 +10,7 @@ import {
   type ManifoldAPI,
   type ManifoldSolid,
 } from './manifold';
+import { safeDiff } from './regions';
 import {
   rotatePointY,
   type CutRegion,
@@ -457,23 +458,33 @@ export class ConformalZoneMapper implements ZoneMapper {
       this.boundaryPoly = null;
     }
     // Hidden surface takes no artwork: anything outside the clip just stays base color, so
-    // subtracting here is the whole mechanism. Its own try: a null boundary upstream means "no
-    // clip at all" and cuts everywhere, so a failed difference must keep the unsubtracted clip
-    // (wasteful, never wrong-looking), not null the boundary out.
+    // subtracting here is the whole mechanism.
+    //
+    // safeDiff rather than turf.difference direct, for the retry ladder and the warning: turf 6.5
+    // throws on inputs a truncate-to-precision pass rescues, and the silent catch this replaced
+    // reported that flake as "nothing is hidden on this chart".
+    //
+    // Its two empty-looking outcomes are opposite answers and both are wanted. A FAILURE hands the
+    // subject back, so the clip stays unsubtracted: wasteful (a filament change on surface nobody
+    // sees), never wrong-looking, and the direction that matters, because a null boundary upstream
+    // means "no clip at all" and cuts everywhere. An EMPTY RESULT is null, and here that is real:
+    // everything this chart owns is hidden (the shipped seat/storage charts), so the clip must
+    // admit nothing rather than fall back to admitting all of it.
+    //
+    // **Partial clipping stays silent, deliberately.** A design straddling a cushion edge prints as
+    // whatever survives this subtraction, with no warning, exactly as one straddling a zone
+    // boundary already does. Nothing is dropped without being shown: the viewport hatches the dead
+    // area and the template prints it hatched, both before any artwork is placed. Any "most of it
+    // was trimmed" trigger needs a fraction, and no measurement chooses one. A color trimmed to
+    // NOTHING is a different case and does get named, in buildAssemblyGeometry.
     const dead = this.deadArea();
-    if (this.boundaryPoly && dead) {
-      try {
-        const clipped = turf.difference(this.boundaryPoly, dead);
-        // difference() returns null for an empty result. Here that is a real answer, not a
-        // failure: everything this chart owns is hidden (the shipped seat/storage charts), and
-        // the clip must admit nothing rather than fall back to admitting all of it.
-        this.boundaryPoly = clipped
-          ? (clipped as PolyFeature)
-          : (turf.multiPolygon([]) as PolyFeature);
-      } catch {
-        // keep the unsubtracted clip
-      }
-    }
+    if (this.boundaryPoly && dead)
+      this.boundaryPoly =
+        safeDiff(
+          this.boundaryPoly,
+          dead,
+          `the hidden surface on "${this.zoneId ?? 'this zone'}"`,
+        ) ?? (turf.multiPolygon([]) as PolyFeature);
     return this.boundaryPoly;
   }
 
