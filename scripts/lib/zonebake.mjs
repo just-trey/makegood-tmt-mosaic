@@ -396,21 +396,23 @@ const COVER_CONTACT_MM = 2.5;
  */
 const MIN_DEAD_AREA_MM2 = 15;
 /**
- * Radius (mm) of the morphological open-then-close that smooths the dead region in UV.
+ * Radius (mm) of the morphological smoothing applied to the dead region in UV (see smoothDead for
+ * the order, which is load-bearing).
  *
  * The classifier is piecewise-constant on COVER_SAMPLE_MM2 patches, so its boundary is a staircase
  * about one patch tall (a 25mm² triangle is 6.6mm on the long side), and the bleed's miter joins
- * turn every step of it into a spike. Opening first removes the spikes and slivers, closing then
- * fills the notches; both are Round, so the structuring element is a real disc.
+ * turn every step of it into a spike. The closing fills the notches, the opening takes the spikes
+ * and slivers off; both are Round, so the structuring element is a real disc.
  *
  * 5mm is where the zone-level component histogram separates (2026-08-30 sweep). Raw, each zone is a
  * continuum — the left flank runs 12,348 / 708 / 668 / 666 / 277 / 256 / 142 / … mm². At 5mm every
  * zone is one large patch and exactly one straggler, with nothing between: left 12,620 + 316, right
  * 13,886 + 460, front 13,489 + 334, seat 20,792 + 313. Smaller does not separate them; larger only
- * costs area (8mm gives up another 8% and splits the seat in two).
+ * costs area, and does not buy symmetry — at 7 and 9mm the left flank still ends with nothing on
+ * its fender chart while the right keeps ~600mm².
  *
- * It is also what finally clears the slivers the owner marked on the Front sheet: 138 / 154 / 912 /
- * 1,068mm² in the four marked boxes before any of this work, and 0 / 0 / 0 / 0 after.
+ * It is also what clears the slivers the owner marked on the Front sheet: 138 / 154 / 912 /
+ * 1,068mm² in the four marked boxes before any of this work, and 0 / 0 / 1 / 9 after.
  */
 const DEAD_SMOOTH_MM = 5;
 
