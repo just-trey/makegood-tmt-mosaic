@@ -123,8 +123,13 @@ const HAIRLINE_WALK_PX = 16;
 
 /**
  * Views the per-zone identity pass sweeps through, as cumulative orbit drags from the framed
- * default. Chosen so each zone is face-on enough in at least one of them to leave an interior ink
- * sample; the two flanks are edge-on from front and back alike and need the sweep.
+ * default. Chosen so the flanks, which are edge-on from front and back alike, come face-on
+ * somewhere in the sweep.
+ *
+ * It does NOT reach every zone: docs/tech-debt.md records wing-left and wing-right never producing
+ * an ink sample from any of these five, which predates the fender zones' own arrival, and line 751
+ * hard-errors on exactly that. Widening the sweep is part of repairing this script, not something
+ * these drags already do.
  */
 const IDENTITY_SWEEP = [
   { id: 'v0', drag: null },

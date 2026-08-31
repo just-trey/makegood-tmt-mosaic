@@ -6,6 +6,7 @@ import {
   simplifyLoop,
   meshFingerprint as bakeFingerprint,
   symmetrizeCovers,
+  asymmetricPart,
   regionNetArea,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
@@ -816,6 +817,43 @@ describe('hidden surface classification', () => {
     expect(span(a, 1)).toEqual([70.5, 130.5]);
   });
 
+  // `twin` maps a body with no partner to ITSELF, and the mirrored classify pass reads it to decide
+  // whether a blocker is a cover this part carries. That holds only for a body that really is its
+  // own mirror. An off-centre lone cover mapped to itself would stamp the far flank's samples
+  // hidden AND claimed against a cover nowhere near them, deleting artwork a user can see.
+  it('refuses a lone cover that is neither half of a pair nor its own mirror', () => {
+    expect(() => symmetrizeCovers([boxCover([20, 20, 1], [80, 80, 31])], 0)).toThrow(
+      /pairs with nothing and does not cross/,
+    );
+  });
+
+  it('lets a cover that crosses the plane be its own mirror', () => {
+    const out = symmetrizeCovers([boxCover([-40, 20, 1], [40, 80, 31])], 0);
+    expect(out.pairs).toBe(0);
+    expect([...out.twin]).toEqual([0]);
+  });
+
+  // covers.mirrorAxis describes the COVERS file. The classifier reflects SAMPLE POINTS through the
+  // same plane, which is only a point on this kind if the kind shares that symmetry — and OR-ing
+  // the two answers can only add hidden surface, so being wrong here deletes artwork.
+  it('refuses a part set that does not share the covers file’s mirror', () => {
+    const at = (x0: number): Part => ({
+      libraryPartId: `p${x0}`,
+      verts: [
+        [x0, 0, 0],
+        [x0 + 40, 0, 0],
+        [x0 + 40, 40, 0],
+      ],
+      tris: [[0, 1, 2]],
+    });
+    // -90..-50 against 50..90: each other's reflection, so the set passes.
+    expect(asymmetricPart([at(-90), at(50)], 0)).toBeNull();
+    // 60..100 is not the reflection of -90..-50, and neither crosses the plane.
+    expect(asymmetricPart([at(-90), at(60)], 0)).toBe('p-90');
+    // A part straddling the plane is its own mirror and needs no partner.
+    expect(asymmetricPart([at(-20)], 0)).toBeNull();
+  });
+
   it('poses a rotated pair without replacing either mesh with the other’s mirror', () => {
     // The chair's casters: the same body, mounted rotated 180 degrees about the vertical, so its
     // two instances are NOT mirror images (owner, 2026-08-31). A box could not tell the two
@@ -950,6 +988,21 @@ describe('hidden surface classification', () => {
       // patch starts at x=35 and the seam is at 100, so reaching it is 65mm wide against 55.
       expect(box.left[0]).toBeGreaterThan(60);
       expect(box.left[1]).toBeGreaterThan(85);
+    });
+
+    // The unit test above is on asymmetricPart; this is the wiring. These two plates sit at
+    // 0..100 and 100..200, so neither crosses x=0 nor mirrors the other, and a bake that asked its
+    // mirrored question anyway would reflect every sample off the kind entirely.
+    it('refuses to bake a mirrored classification on an asymmetric part set', () => {
+      const cover = boxCover(...RESTING);
+      expect(() =>
+        bakeZones(
+          config([left, right], [ZONE], { covers: { ...COVER_CFG, mirrorAxis: 'x' } }),
+          [left, right],
+          () => {},
+          { covers: [cover], wasm, coverTwin: [0] },
+        ),
+      ).toThrow(/neither crosses that plane nor has a part mirroring it/);
     });
 
     it('mirroring a standing cover mirrors its shadow', () => {

@@ -235,8 +235,11 @@ function cylinderMesh(axis, lo, hi, centre, radius, segments = SOLID_SEGMENTS) {
     const j = (i + 1) % segments;
     tris.push([i, j, segments + j], [i, segments + j, segments + i]);
   }
+  // Both caps wound outward like the wall. Nothing here reads an orientation today (a cover is only
+  // ray-cast, double-sided, and point-queried), but a mesh whose signed volume is 52.3 where its
+  // real one is 157.1 is a trap for the first consumer that does.
   for (let i = 1; i + 1 < segments; i++) {
-    tris.push([0, i, i + 1], [segments, segments + i + 1, segments + i]);
+    tris.push([0, i + 1, i], [segments, segments + i, segments + i + 1]);
   }
   return { verts, tris };
 }
@@ -575,6 +578,22 @@ export function symmetrizeCovers(covers, axis) {
     dst.c.verts = have;
     moved.push(dist3(src.b.mid, target), dist3(dst.b.mid, mirrorTarget));
   }
+  // A body nothing paired with is left alone AND mapped to itself, which only holds if it really is
+  // its own mirror image — the chair's two cushions, which cross the plane. An off-centre lone
+  // cover would be mapped to itself too, and the mirrored classify pass reads `twin` to decide
+  // whether a blocker is one THIS part carries: it would stamp the far flank's samples hidden and
+  // claimed against a cover sitting nowhere near them, deleting artwork a user can see with nothing
+  // said. Refused rather than approximated, since there is no right answer to approximate.
+  for (const e of info) {
+    if (used.has(e.i)) continue;
+    if (e.b.mn[axis] <= 0 && 0 <= e.b.mx[axis]) continue;
+    throw new Error(
+      `covers file: a cover body (${e.c.tris.length} triangles, ${'xyz'[axis]} ` +
+        `${e.b.mn[axis].toFixed(1)}..${e.b.mx[axis].toFixed(1)}mm) pairs with nothing and does not ` +
+        `cross the ${'xyz'[axis]} mirror plane, so it is neither half of a pair nor its own ` +
+        `mirror. Give it its partner in the export, or drop covers.mirrorAxis.`,
+    );
+  }
   return {
     pairs: moved.length / 2,
     maxShiftMm: moved.length ? Math.max(...moved) : 0,
@@ -733,6 +752,33 @@ const cellKey = (i, j, k) => (i * 73856093) ^ (j * 19349663) ^ (k * 83492791);
 // Exported for scripts/measure-wheel-shadow.mjs, which has to cast against the covers the way the
 // bake does rather than re-implement the intersection: a re-implemented hot loop IS the
 // measurement, and a published figure taken with a lookalike is a figure nobody can check.
+/**
+ * The first part that breaks mirror symmetry about coordinate 0 of `axis`, or null. A part passes
+ * by crossing the plane itself, or by having another part whose bbox is its reflection, at
+ * REGISTER_DIM_TOL_MM — the tolerance every other body-matching test here already uses.
+ *
+ * `covers.mirrorAxis` describes the COVERS file. The mirrored classify pass reflects sample points
+ * about the same plane and asks the question again there, which is only a point on this kind at all
+ * if the kind shares that symmetry — and OR-ing the two answers can only ADD hidden surface, so
+ * getting it wrong deletes artwork rather than leaving some. Nothing else states the parts are
+ * symmetric, so this is checked rather than assumed.
+ */
+export function asymmetricPart(parts, axis) {
+  const bb = parts.map((p) => bounds(p.verts));
+  const near = (a, b) => Math.abs(a - b) < REGISTER_DIM_TOL_MM;
+  for (let i = 0; i < parts.length; i++) {
+    const b = bb[i];
+    if (b.mn[axis] <= 0 && 0 <= b.mx[axis]) continue;
+    const mn = [...b.mn];
+    const mx = [...b.mx];
+    mn[axis] = -b.mx[axis];
+    mx[axis] = -b.mn[axis];
+    if (!bb.some((o, j) => j !== i && mn.every((x, k) => near(x, o.mn[k]) && near(mx[k], o.mx[k]))))
+      return parts[i].libraryPartId;
+  }
+  return null;
+}
+
 export function bodyIndex(bodies) {
   const pts = [];
   const owner = [];
@@ -1965,15 +2011,24 @@ function classifyRegions(loops) {
  * `close(X)` is contained in `X` dilated by the radius and `open` only ever shrinks, so the result
  * still cannot reach further onto surface the classifier called visible than the radius itself.
  *
- * Closing FIRST, which is the order that matters. The bleed erodes 20mm in from every visible
- * sample, which pinches a shadow that is physically one piece into lobes joined by necks a few
- * millimetres wide. Opening first severs those necks, and whether a given neck survives is a
- * coin-flip on where the sample cells happened to land: with the covers snapped to the mirror
- * plane the two flanks classify within 0.4% of each other (7,450 against 7,477mm² of covered wing
- * surface) and open-then-close still split them 12,814 against 14,007mm², because the left flank's
- * neck onto its fender was severed and the right flank's was not. Closing first restores the necks
- * the bleed pinched before anything can cut them, and the same two zones come out 15,032 against
- * 15,291mm², 1.7% apart.
+ * Closing FIRST, which is the order that matters. This runs on the RAW sample union now, before
+ * the bleed rather than after it, so what the closing repairs is the classifier's own speckle: a
+ * cell whose hemisphere escaped where every neighbour's did not leaves a one-cell hole, and a
+ * shadow crossing a curved seam arrives as lobes joined by a cell or two. Opening first erodes
+ * those joins away before anything can bridge them, and the surface goes back to taking artwork
+ * nobody will see. Re-derived 2026-08-31 by swapping the offset list and rebaking:
+ *
+ *   zone        open-then-close   close-then-open
+ *   left               20,596mm²         23,486mm²
+ *   right              20,611mm²         23,777mm²
+ *   seat-left          13,276mm²         13,893mm²
+ *   seat-right         13,361mm²         13,914mm²
+ *   front              31,191mm²         31,014mm²
+ *
+ * The direction is safe despite claiming more: closing is bounded by the paragraph above, so it
+ * reaches at most DEAD_SMOOTH_MM past what the classifier called hidden, and the visible region is
+ * then grown by four times that (bleedMm 20) and subtracted. The bleed decides the edge; this only
+ * decides whether the shape arriving at it is in one piece.
  */
 function smoothDead(cs) {
   if (DEAD_SMOOTH_MM <= 0) return cs;
@@ -2301,6 +2356,15 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       'covers.mirrorAxis needs opts.coverTwin, the cover pairing symmetrizeCovers returns: ' +
         'without it the classifier cannot ask the mirrored question and the bake is asymmetric',
     );
+  if (config.covers?.mirrorAxis) {
+    const bad = asymmetricPart(parts, 'xyz'.indexOf(config.covers.mirrorAxis));
+    if (bad)
+      throw new Error(
+        `covers.mirrorAxis is "${config.covers.mirrorAxis}", but part "${bad}" neither crosses ` +
+          `that plane nor has a part mirroring it, so the classifier's mirrored sample would not ` +
+          `land on this kind at all. Drop covers.mirrorAxis for an asymmetric kind.`,
+      );
+  }
   const coverIdx = config.covers ? bodyIndex(opts.covers) : null;
   const coverHome = coverIdx
     ? coverHomeParts(coverIdx, bodyIndex(parts), opts.covers, parts)
