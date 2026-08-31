@@ -39,7 +39,7 @@ blank. Fix by simplifying the design (fewer, larger shapes). Numbers in
 [tech-debt.md](tech-debt.md), "Turf's tile union has a vertex ceiling".
 
 **One "Couldn't trim the overlap" is not about a colour at all.** It names `the
-hidden surface on "<zone id>"` (`left`, `seat`, …). That is the chair's artwork
+hidden surface on "<zone id>"` (`left`, `seat-left`, …). That is the chair's artwork
 clip failing to have the assembled-over surface subtracted from it, in
 `ConformalZoneMapper.boundary()`. Nothing is lost: the clip is kept
 unsubtracted, so artwork cuts where it would otherwise have been trimmed, and
@@ -995,10 +995,10 @@ moving it off the hatching does not bring it back, it was the straddling case
 above, and it needs a bigger move than the hatching's own width.
 
 **Where to move it to.** The covered surface is crosshatched in the 3D view and
-hatched on the printable template, both before any artwork is placed. The Seat
-zone is the one that catches people out: most of it is under the cushion, so a
-design dropped there with no adjustment lands almost entirely covered. The
-front lip is the visible part.
+hatched on the printable template, both before any artwork is placed. `Left seat
+side` and `Right seat side` are the ones that catch people out: 81% of each is
+under the cushion, so a design dropped there with no adjustment lands almost
+entirely covered. The seat pan itself is in no zone at all.
 
 The named colors are dropped from the color list, the filament slot count, and
 the exported 3MF's filament list, and come back with the design when it moves.
@@ -1010,7 +1010,7 @@ of it you can see.
 
 ## Troubleshooting: "Couldn't shade the hidden surface on …"
 
-Full text: _"Couldn't shade the hidden surface on "seat". Artwork still won't cut
+Full text: _"Couldn't shade the hidden surface on "seat-left". Artwork still won't cut
 there. Only the hatching is missing. Please report this."_
 
 Assembly mode, chair only today. The app failed to build the crosshatch for one

@@ -453,8 +453,23 @@ describe('hidden-surface overlay (deadRegions)', () => {
       zoneBounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
     };
   }
-  const zonedPart = (withDead: boolean): AssemblyPart =>
-    asmPart({ zones: [{ id: 'z', name: 'Zone', chart: flatChart(withDead) }] } as never);
+  const zonedPart = (withDead: boolean, id = 'z'): AssemblyPart =>
+    asmPart({ zones: [{ id, name: 'Zone', chart: flatChart(withDead) }] } as never);
+  /** Three collinear points enclose no area, so the triangulator returns nothing for this. */
+  const brokenPart = (id: string): AssemblyPart => {
+    const chart = flatChart(true);
+    chart.deadRegions = [
+      {
+        outer: [
+          [4, 4],
+          [10, 4],
+          [16, 4],
+        ],
+        holes: [],
+      },
+    ];
+    return asmPart({ zones: [{ id, name: id, chart }] } as never);
+  };
   const sceneMeshes = (): THREE.Mesh[] => {
     const meshes: THREE.Mesh[] = [];
     modelGroup.traverse((o) => {
@@ -482,6 +497,22 @@ describe('hidden-surface overlay (deadRegions)', () => {
     expect(overlay.geometry.getAttribute('uv').count).toBe(
       overlay.geometry.getAttribute('position').count,
     );
+  });
+
+  // deadOverlayMesh names the zone in its failure warning and keys the dedupe on it, and both are
+  // dead letters unless the caller hands it one. Without the id every zone says "this zone" and
+  // shares the key `dead-overlay-`, so the second zone to fail is swallowed by the first — the one
+  // case where the user has two things to report and hears about one.
+  it('names each zone whose hatch fails, rather than swallowing the second', async () => {
+    state.assembly.parts = [brokenPart('left'), brokenPart('front')];
+    clearWarnings();
+
+    await rebuildCurrent();
+
+    const msgs = WARNINGS.map((w) => w.message);
+    expect(msgs.some((m) => m.includes(`hidden surface on "left"`))).toBe(true);
+    expect(msgs.some((m) => m.includes(`hidden surface on "front"`))).toBe(true);
+    expect(msgs.some((m) => m.includes('this zone'))).toBe(false);
   });
 
   it('shares one hatch material across parts, and lets go of it when the scene disposes it', async () => {

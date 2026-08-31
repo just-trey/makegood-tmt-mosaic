@@ -44,8 +44,9 @@ Open questions with no obvious answer, where the measurement behind the question
   has and the AMS slot count is settled before export rather than after.
 - Center auto-fit on the visible part of a zone, not its whole bbox. With the
   chair's hidden surface now clipped, an auto-fit design on `seat-left` or
-  `seat-right` lands mostly on covered surface: 13,893 of 17,150mm² there is
-  under the cushion, so 81% of the bbox the anchor uses is hatched. The overlay
+  `seat-right` lands mostly on covered surface: 13,893mm² of the zone's
+  17,150mm² claim is under the cushion, and 69% of the 20,070mm² `uvBounds` bbox
+  the anchor actually centres on. The overlay
   explains it, but placing straight onto the visible region would be the better
   default. The anchor becomes the chart's claim minus its `deadRegions` rather
   than the whole zone bbox. Deferred out of the dead-zones change because it

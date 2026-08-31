@@ -469,8 +469,10 @@ export class ConformalZoneMapper implements ZoneMapper {
     // subject back, so the clip stays unsubtracted: wasteful (a filament change on surface nobody
     // sees), never wrong-looking, and the direction that matters, because a null boundary upstream
     // means "no clip at all" and cuts everywhere. An EMPTY RESULT is null, and here that is real:
-    // everything this chart owns is hidden (the shipped seat/storage charts), so the clip must
-    // admit nothing rather than fall back to admitting all of it.
+    // everything this chart owns is hidden, so the clip must admit nothing rather than fall back to
+    // admitting all of it. No shipped chart reaches it — the most-covered is `seat-right`'s storage
+    // sliver at 99.4%, and tests/chair-zones.test.ts pins that none is hidden outright — so this
+    // arm is for the bake that first does.
     //
     // **Partial clipping stays silent, deliberately.** A design straddling a cushion edge prints as
     // whatever survives this subtraction, with no warning, exactly as one straddling a zone

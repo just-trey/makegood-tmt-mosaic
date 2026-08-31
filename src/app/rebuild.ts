@@ -356,7 +356,9 @@ function addHiddenSurfaceOverlays(
     if (!z.chart?.deadRegions?.length) continue;
     let overlay = overlayCache.get(z.chart);
     if (overlay === undefined) {
-      const built = new ConformalZoneMapper(null, z.chart).deadOverlayMesh();
+      // z.id, or deadOverlayMesh's failure warning says "this zone" and every zone shares its
+      // dedupe key, so the second one to fail is swallowed by the first.
+      const built = new ConformalZoneMapper(null, z.chart, z.id).deadOverlayMesh();
       // stripes every 8mm of surface
       overlay = built && { positions: built.positions, uv: built.uv.map((x) => x / 8) };
       overlayCache.set(z.chart, overlay);

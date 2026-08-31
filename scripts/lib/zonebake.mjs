@@ -487,6 +487,12 @@ function bounds(verts) {
  * `(x, y, z) -> (-x, y, -z)` — a rotation, determinant +1, off by a further mirror in z. Re-derive
  * with `npx vite-node scripts/measure-caster-axis-map.mjs`.
  *
+ * Those numbers are the covers FILE's own bodies. The chair's config no longer hands them here:
+ * `covers.solids` stands one disc in each pair's place first (buildCoverSolids), and a disc pair is
+ * an exact mirror, so this run reports 0.000mm on the chair today. The rule is not about the chair —
+ * it is what any covers file gets, and the next one may well pair by rotation with no disc to hide
+ * it. That is why the script takes `solids` off to answer the question.
+ *
  * The pair is still checked for being the same body at all: two unrelated bodies can share a
  * triangle count and a mirror midpoint, and posing those as a pair moves one of them somewhere it
  * does not belong. Vertex count and bbox extent decide, the same test registerCovers matches parts
@@ -526,7 +532,8 @@ export function symmetrizeCovers(covers, axis) {
     // Same body, or two different ones that happen to share a triangle count? Vertex count and
     // per-axis extent, the same test registerCovers already matches parts to reference bodies on,
     // at the same measured tolerance. Two unrelated bodies agree on neither; the chair's four
-    // casters agree on both exactly (8,953 vertices, 48.500 x 154.059 x 279.997mm, all four).
+    // caster bodies agree on both exactly (8,953 vertices, 48.500 x 154.059 x 279.997mm, all four),
+    // measured on the covers file before covers.solids replaces them.
     if (
       src.c.verts.length !== dst.c.verts.length ||
       src.b.dims.some((d, k) => Math.abs(d - dst.b.dims[k]) >= REGISTER_DIM_TOL_MM)

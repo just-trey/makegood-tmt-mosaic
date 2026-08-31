@@ -158,9 +158,10 @@ the kind is assembled, so it takes no artwork and no filament changes:
   the other's mirror is exact symmetry rather than symmetry to a residual, and
   it is wrong for a pair mounted by rotation: the chair's casters are the same
   part turned 180 degrees, so mirroring one onto the other moved geometry
-  21.976mm (`npx vite-node scripts/measure-caster-axis-map.mjs`). How far a
-  pair is from being mirror images is reported in the bake log as the worst
-  shape residual, never enforced.
+  21.976mm (`npx vite-node scripts/measure-caster-axis-map.mjs`, which takes
+  `solids` off first — the chair's discs replace those bodies before this runs,
+  and a disc pair mirrors exactly). How far a pair is from being mirror images
+  is reported in the bake log as the worst shape residual, never enforced.
 - Each zone is sampled at ~`COVER_SAMPLE_MM2` (25mm²) per sub-cell, not per
   triangle — the CAD faces arrive as coarse fans, and a per-triangle verdict
   can't draw a shadow edge inside one. A sample is hidden when either:
@@ -173,18 +174,23 @@ the kind is assembled, so it takes no artwork and no filament changes:
     cover. This is what a single along-normal ray can't do: it only caught
     triangles whose own normal happened to aim at the cover, leaving a curved
     surface (a wheel's fender arch) speckled instead of one clean shadow.
-- A cover hides surface only on the part it's actually carried by: a cover
-  resting on a part (contact within `COVER_CONTACT_MM`) hides there; a cover
-  resting on nothing (the chair's casters, which stand off every nearby part
-  by the same clearance) is attributed to whichever part holds the larger
-  share of its own surface. Surface a cover hides on a part it isn't carried
-  by stays printable — it only costs an unclaimed filament change, never
-  deletes visible artwork.
-- `bleedMm` keeps artwork running that far past the visible edge into the
-  hidden area, so a slightly shifted cover never reveals blank plastic. The
-  dead region is then closed-then-opened at a `DEAD_SMOOTH_MM` (5mm) radius to
-  clear the sampling grid's own staircase edge, and a dead island under
-  `MIN_DEAD_AREA_MM2` (15mm²) is dropped.
+- A cover that RESTS on parts (contact within `COVER_CONTACT_MM`) hides only on
+  the parts it rests on. One resting on nothing is unconstrained and hides
+  wherever it occludes. It used to be handed to the single part holding the
+  largest share of its nearest surface, which on the chair gave each wheel its
+  mount and nothing else — and that cut the wheel's shadow off along a straight
+  line down the mount/fender seam, when a mounted wheel plainly hides across it.
+  The hemisphere test already answers whether a cover hides a given sample, so a
+  second, weaker guess on top of it only subtracted right answers.
+- Both the covered and the visible set are closed-then-opened at a
+  `DEAD_SMOOTH_MM` (5mm) radius FIRST, to clear the sampling grid's own
+  staircase, and only then is the visible set grown by `bleedMm` and subtracted.
+  That order is load-bearing: bleeding first dilates the staircase and takes
+  2 x `bleedMm` out of the dead region, enough to lose a whole narrow strip of
+  it — on the chair it took one fender's entire wheel shadow while leaving the
+  other's. `bleedMm` keeps artwork running that far past the visible edge into
+  the hidden area, so a slightly shifted cover never reveals blank plastic. A
+  dead island under `MIN_DEAD_AREA_MM2` (15mm²) is then dropped.
 - Output: per-chart `deadRegions` in the sidecar (schema 3), subtracted from
   the artwork clip at runtime, drawn hatched on templates and in the viewport.
 - The bake log prints `dead <area>mm²` per zone. A zone whose surface faces

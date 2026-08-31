@@ -55,8 +55,15 @@ const objects = await read3MFObjectsByColor(
   fs.readFileSync(path.join(REPO, config.covers.file)),
   config.covers.file,
 );
-// mirrorAxis off, so registerCovers returns the covers unposed and unsymmetrized.
-const raw = { ...config, covers: { ...config.covers, mirrorAxis: undefined } };
+// mirrorAxis AND solids off, so registerCovers returns the covers file's own bodies, unposed and
+// unsymmetrized. Dropping solids is what keeps this script answering the question it asks: the
+// shipping config replaces the four caster bodies with two declared discs inside registerCovers,
+// and a disc pair IS an exact mirror, so leaving it on prints 0.000mm and reads as a flat
+// contradiction of the claim below.
+const raw = {
+  ...config,
+  covers: { ...config.covers, mirrorAxis: undefined, solids: undefined },
+};
 const { covers } = registerCovers(raw, parts, objects);
 
 const bounds = (verts) => {
