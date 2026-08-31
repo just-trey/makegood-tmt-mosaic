@@ -423,22 +423,36 @@ const CELL_MM = 8;
 const cellKey = (i, j, k) => (i * 73856093) ^ (j * 19349663) ^ (k * 83492791);
 
 /**
- * Every cover body's triangles in ONE 8mm cell grid, flattened to a Float64Array. One grid rather
- * than one per body because the question is only ever "does any cover block this ray", so a single
+ * Every body's triangles in ONE 8mm cell grid, flattened to a Float64Array. One grid rather than
+ * one per body because the question is only ever "does any of them block this ray", so a single
  * walk answers it; `seen` stamps a triangle per ray, since a triangle sits in every cell its bbox
  * spans. Measured 67x faster than the per-body sampled march it replaces, over 16,031 chair zone
- * triangles, with zero verdicts changed.
+ * triangles, with zero verdicts changed. `owner` keeps which body each triangle came from, which
+ * is what lets a hit name the cover that scored it.
  */
-function coverIndex(covers) {
+function bodyIndex(bodies) {
   const pts = [];
-  for (const c of covers)
-    for (const t of c.tris) pts.push(c.verts[t[0]], c.verts[t[1]], c.verts[t[2]]);
+  const owner = [];
+  bodies.forEach((b, bi) => {
+    for (const t of b.tris) {
+      pts.push(b.verts[t[0]], b.verts[t[1]], b.verts[t[2]]);
+      owner.push(bi);
+    }
+  });
   const count = pts.length / 3;
   const xyz = new Float64Array(pts.length * 3);
   pts.forEach((v, i) => xyz.set(v, i * 3));
   const cells = new Map();
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
   for (let t = 0; t < count; t++) {
     const o = t * 9;
+    for (let k = 0; k < 3; k++) {
+      const mn = Math.floor(Math.min(xyz[o + k], xyz[o + 3 + k], xyz[o + 6 + k]) / CELL_MM);
+      const mx = Math.floor(Math.max(xyz[o + k], xyz[o + 3 + k], xyz[o + 6 + k]) / CELL_MM);
+      if (mn < lo[k]) lo[k] = mn;
+      if (mx > hi[k]) hi[k] = mx;
+    }
     for (
       let i = Math.floor(Math.min(xyz[o], xyz[o + 3], xyz[o + 6]) / CELL_MM);
       i <= Math.floor(Math.max(xyz[o], xyz[o + 3], xyz[o + 6]) / CELL_MM);
@@ -460,7 +474,16 @@ function coverIndex(covers) {
           cell.push(t);
         }
   }
-  return { xyz, cells, seen: new Int32Array(count).fill(-1), ray: 0 };
+  return {
+    xyz,
+    cells,
+    seen: new Int32Array(count).fill(-1),
+    ray: 0,
+    owner: Int32Array.from(owner),
+    bodyCount: bodies.length,
+    lo,
+    hi,
+  };
 }
 
 /** Möller-Trumbore against cover triangle `t`; distance along dir, or Infinity. */
@@ -496,9 +519,10 @@ function rayTriDist(xyz, t, px, py, pz, dx, dy, dz) {
 }
 
 /**
- * Whether any cover blocks the ray from `p` along `dir` within `maxMm`, by walking the grid cell
+ * Which cover blocks the ray from `p` along `dir` within `maxMm`, or -1, by walking the grid cell
  * by cell (3D DDA). Each cell is entered once, so no de-duplication beyond the per-ray triangle
- * stamp is needed.
+ * stamp is needed. The first hit found wins, which is not always the nearest one: what the caller
+ * needs is a cover that blocks this direction, not the front-most of several that do.
  */
 function coverOccludes(index, p, dir, maxMm = COVER_RAY_MM) {
   index.ray++;
@@ -523,7 +547,8 @@ function coverOccludes(index, p, dir, maxMm = COVER_RAY_MM) {
         const t = cell[a];
         if (seen[t] === index.ray) continue;
         seen[t] = index.ray;
-        if (rayTriDist(xyz, t, p[0], p[1], p[2], dir[0], dir[1], dir[2]) <= maxMm) return true;
+        if (rayTriDist(xyz, t, p[0], p[1], p[2], dir[0], dir[1], dir[2]) <= maxMm)
+          return index.owner[t];
       }
     if (tx < ty && tx < tz) {
       entry = tx;
@@ -539,7 +564,7 @@ function coverOccludes(index, p, dir, maxMm = COVER_RAY_MM) {
       tz += dz;
     }
   }
-  return false;
+  return -1;
 }
 
 /**
@@ -566,8 +591,10 @@ const HEMI_ESCAPE_BUDGET = COVER_HEMI_DIRS - Math.ceil(COVER_HIDDEN_FRACTION * C
  * HEMI_ESCAPE_BUDGET of its outward hemisphere runs into a cover. The part's own surface is
  * ignored — assembling the covers is what changes visibility, and a zone that is already
  * self-occluded was never printable artwork in the first place.
+ *
+ * `blockers`, zeroed by the caller, comes back stamped with every cover that took a direction.
  */
-function hemisphereBlocked(index, p, n) {
+function hemisphereBlocked(index, p, n, blockers) {
   // any vector not parallel to n; the pair only has to be orthonormal, not aligned to anything
   let ux, uy, uz;
   if (Math.abs(n[2]) < 0.9) {
@@ -593,9 +620,190 @@ function hemisphereBlocked(index, p, n) {
     w[0] = ux * d[0] + vx * d[1] + n[0] * d[2];
     w[1] = uy * d[0] + vy * d[1] + n[1] * d[2];
     w[2] = uz * d[0] + vz * d[1] + n[2] * d[2];
-    if (!coverOccludes(index, p, w) && ++escaped > HEMI_ESCAPE_BUDGET) return false;
+    const hit = coverOccludes(index, p, w);
+    if (hit < 0) {
+      if (++escaped > HEMI_ESCAPE_BUDGET) return false;
+    } else blockers[hit] = 1;
   }
   return true;
+}
+
+/** Squared distance from `p` to triangle `t` of a body index (Ericson's Voronoi-region test). */
+function ptTriDist2(xyz, t, px, py, pz) {
+  const o = t * 9;
+  const ax = xyz[o],
+    ay = xyz[o + 1],
+    az = xyz[o + 2];
+  const abx = xyz[o + 3] - ax,
+    aby = xyz[o + 4] - ay,
+    abz = xyz[o + 5] - az;
+  const acx = xyz[o + 6] - ax,
+    acy = xyz[o + 7] - ay,
+    acz = xyz[o + 8] - az;
+  const apx = px - ax,
+    apy = py - ay,
+    apz = pz - az;
+  const d1 = abx * apx + aby * apy + abz * apz;
+  const d2 = acx * apx + acy * apy + acz * apz;
+  if (d1 <= 0 && d2 <= 0) return apx * apx + apy * apy + apz * apz;
+  const bpx = apx - abx,
+    bpy = apy - aby,
+    bpz = apz - abz;
+  const d3 = abx * bpx + aby * bpy + abz * bpz;
+  const d4 = acx * bpx + acy * bpy + acz * bpz;
+  if (d3 >= 0 && d4 <= d3) return bpx * bpx + bpy * bpy + bpz * bpz;
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+    const v = d1 / (d1 - d3);
+    const qx = apx - abx * v,
+      qy = apy - aby * v,
+      qz = apz - abz * v;
+    return qx * qx + qy * qy + qz * qz;
+  }
+  const cpx = apx - acx,
+    cpy = apy - acy,
+    cpz = apz - acz;
+  const d5 = abx * cpx + aby * cpy + abz * cpz;
+  const d6 = acx * cpx + acy * cpy + acz * cpz;
+  if (d6 >= 0 && d5 <= d6) return cpx * cpx + cpy * cpy + cpz * cpz;
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+    const w = d2 / (d2 - d6);
+    const qx = apx - acx * w,
+      qy = apy - acy * w,
+      qz = apz - acz * w;
+    return qx * qx + qy * qy + qz * qz;
+  }
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+    const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
+    const qx = bpx + (cpx - bpx) * w,
+      qy = bpy + (cpy - bpy) * w,
+      qz = bpz + (cpz - bpz) * w;
+    return qx * qx + qy * qy + qz * qz;
+  }
+  const den = 1 / (va + vb + vc);
+  const v = vb * den,
+    w = vc * den;
+  const qx = apx - abx * v - acx * w,
+    qy = apy - aby * v - acy * w,
+    qz = apz - abz * v - acz * w;
+  return qx * qx + qy * qy + qz * qz;
+}
+
+/**
+ * The body of `index` nearest to `p`, and its distance, by widening shells of cells around p's own
+ * cell. `cap` bounds the search: nothing within it comes back as body -1. Pass a real upper bound
+ * where one is known — an unbounded search on a point far from every body walks the whole grid.
+ */
+function nearestBody(index, p, cap) {
+  const { xyz, cells, owner, lo, hi } = index;
+  let best = cap * cap;
+  let body = -1;
+  const c0 = Math.floor(p[0] / CELL_MM),
+    c1 = Math.floor(p[1] / CELL_MM),
+    c2 = Math.floor(p[2] / CELL_MM);
+  for (let r = 0; ; r++) {
+    // A cell in shell r cannot come nearer than (r-1) cells, p sitting anywhere inside its own.
+    const reach = (r - 1) * CELL_MM;
+    if (r > 1 && reach * reach > best) break;
+    for (let i = c0 - r; i <= c0 + r; i++)
+      for (let j = c1 - r; j <= c1 + r; j++)
+        for (let k = c2 - r; k <= c2 + r; k++) {
+          if (r > 0 && Math.abs(i - c0) !== r && Math.abs(j - c1) !== r && Math.abs(k - c2) !== r)
+            continue;
+          const cell = cells.get(cellKey(i, j, k));
+          if (!cell) continue;
+          const bx = Math.max(i * CELL_MM - p[0], 0, p[0] - (i + 1) * CELL_MM);
+          const by = Math.max(j * CELL_MM - p[1], 0, p[1] - (j + 1) * CELL_MM);
+          const bz = Math.max(k * CELL_MM - p[2], 0, p[2] - (k + 1) * CELL_MM);
+          if (bx * bx + by * by + bz * bz > best) continue;
+          for (let a = 0; a < cell.length; a++) {
+            const d = ptTriDist2(xyz, cell[a], p[0], p[1], p[2]);
+            if (d < best) {
+              best = d;
+              body = owner[cell[a]];
+            }
+          }
+        }
+    if (
+      c0 - r <= lo[0] &&
+      c0 + r >= hi[0] &&
+      c1 - r <= lo[1] &&
+      c1 + r >= hi[1] &&
+      c2 - r <= lo[2] &&
+      c2 + r >= hi[2]
+    )
+      break;
+  }
+  return { d: Math.sqrt(best), body };
+}
+
+const triArea3 = (a, b, c) => {
+  const n = cross3(sub3(b, a), sub3(c, a));
+  return Math.hypot(n[0], n[1], n[2]) / 2;
+};
+
+/**
+ * Which printed parts each cover is allowed to hide surface on. Surface a cover hides on any other
+ * part stays printable: giving up hidden surface only wastes a filament change, while claiming
+ * surface the assembly does not actually hide deletes artwork someone can see.
+ *
+ * A cover that RESTS on parts hides on the parts it rests on, contact being the same
+ * COVER_CONTACT_MM the classifier calls touching. A cover that rests on nothing is carried by one
+ * part, and hides only there: the part nearest to the largest share of the cover's own surface.
+ *
+ * Measured on the chair (2026-08-30, scratch mount.mjs / mount3.mjs): the two cushions rest at
+ * 0.42-0.62mm on every part they hide, while all four casters stand at a uniform 3.615mm from
+ * their mount, their fender AND their storage side — the stub models the caster as a clearance
+ * pocket, so no contact distinguishes what carries it. Their own surface does: nearest-part share
+ * splits 103,234mm² mount to 26,305mm² fender on one caster of each side and 58,608 to 40,207 on
+ * the other, the SAME numbers left and right, so both flanks are trimmed the same way.
+ *
+ * What this gives up is the fender arm. Both wings classify as hidden nearly identically (7,450
+ * against 7,477mm² raw, 0.4% apart), and only the right one kept 639mm² of it through the 20mm
+ * bleed, because the two fender meshes are tessellated differently (2,517 against 4,922 chart
+ * triangles, landing at different zone-u positions) and the bleed is what decides which survives.
+ * Nothing about the chair is asymmetric there; the UV seam layout is.
+ */
+function coverHomeParts(coverIdx, partIdx, covers, parts) {
+  const home = covers.map(() => new Set());
+  covers.forEach((c, ci) => {
+    for (const v of c.verts) {
+      const { body } = nearestBody(partIdx, v, COVER_CONTACT_MM);
+      if (body >= 0) home[ci].add(body);
+    }
+  });
+  // Both directions: a vertex of either mesh can be the only witness of a flush contact whose
+  // other side is one big triangle with its vertices far away.
+  parts.forEach((p, pi) => {
+    for (const v of p.verts) {
+      const { body } = nearestBody(coverIdx, v, COVER_CONTACT_MM);
+      if (body >= 0) home[body].add(pi);
+    }
+  });
+  covers.forEach((c, ci) => {
+    if (home[ci].size) return;
+    const share = new Float64Array(parts.length);
+    let prevD = Infinity;
+    let prevP = null;
+    for (const t of c.tris) {
+      const a = c.verts[t[0]],
+        b = c.verts[t[1]],
+        d = c.verts[t[2]];
+      const cen = [(a[0] + b[0] + d[0]) / 3, (a[1] + b[1] + d[1]) / 3, (a[2] + b[2] + d[2]) / 3];
+      // The last answer bounds this one by the triangle inequality, which keeps the shell search
+      // local over a mesh listed in any spatially coherent order.
+      const hit = nearestBody(partIdx, cen, prevP ? prevD + dist3(prevP, cen) : Infinity);
+      prevD = hit.d;
+      prevP = cen;
+      if (hit.body >= 0) share[hit.body] += triArea3(a, b, d);
+    }
+    let best = 0;
+    for (let pi = 1; pi < share.length; pi++) if (share[pi] > share[best]) best = pi;
+    if (share[best] > 0) home[ci].add(best);
+  });
+  return home;
 }
 
 /**
@@ -1758,7 +1966,21 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     throw new Error('parts array does not match config.parts (same ids, same order, required)');
   if (config.covers && !(opts.covers && opts.wasm))
     throw new Error('config declares covers but the bake was given no cover meshes / Manifold');
-  const coverIdx = config.covers ? coverIndex(opts.covers) : null;
+  const coverIdx = config.covers ? bodyIndex(opts.covers) : null;
+  const coverHome = coverIdx
+    ? coverHomeParts(coverIdx, bodyIndex(parts), opts.covers, parts)
+    : null;
+  const partCovers = parts.map((_, pi) =>
+    coverHome ? coverHome.flatMap((h, ci) => (h.has(pi) ? [ci] : [])) : [],
+  );
+  if (coverHome)
+    coverHome.forEach((h, ci) =>
+      log(
+        `  cover ${ci} hides on: ${
+          [...h].map((pi) => parts[pi].libraryPartId).join(', ') || '(nothing)'
+        }`,
+      ),
+    );
   const warnings = [];
   const weld = weldParts(parts, config.weldTolMm ?? WELD_TOL_MM, config.seamWeldTolMm ?? 0);
   const triGeom = weld.tris.map((t) => triNormalArea(weld.verts, t));
@@ -1857,13 +2079,19 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     // keeps hairline slivers of no area but full length, and dilating one by 20mm sweeps away the
     // dead region around it. Measured on the seat: identical areas either way (5,780 against
     // 5,786mm² visible), 5,999mm² of dead surface by subtraction against 22,354mm² by union.
+    //
+    // The two sets do not cover every patch, and must not: a patch hidden only by a cover this
+    // part does not carry (see coverHomeParts) is neither visible nor claimed, so it stays
+    // printable without eating the dead region on the part next to it through the bleed.
     const triRing = (zt) => zt.map((z) => uvOf(z));
     let deadCS = null;
     if (coverIdx) {
       const coveredRings = [];
       const visibleRings = [];
+      const blockers = new Uint8Array(coverIdx.bodyCount);
       zoneTris.forEach((ti, k) => {
         const p3 = weld.tris[ti].v.map((g) => weld.verts[g]);
+        const mine = partCovers[weld.tris[ti].part];
         const q = triRing(zTris[k]);
         const uvArea =
           Math.abs(
@@ -1878,12 +2106,20 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
           const at = (v0, v1, v2, s, t) => v0.map((x, i) => x + (v1[i] - x) * s + (v2[i] - x) * t);
           const s3 = at(p3[0], p3[1], p3[2], a, b);
           // Contact first: it is one ray against the hemisphere's 32, and it is the cheap answer
-          // for everything the cushions actually touch.
-          const hidden =
-            coverOccludes(coverIdx, s3, n, COVER_CONTACT_MM) || hemisphereBlocked(coverIdx, s3, n);
-          (hidden ? coveredRings : visibleRings).push(
-            cell.map(([s, t]) => at(q[0], q[1], q[2], s, t)),
-          );
+          // for everything the cushions actually touch. A cover this close is resting on this
+          // part by definition, so a contact hit needs no further attribution.
+          let hidden = coverOccludes(coverIdx, s3, n, COVER_CONTACT_MM) >= 0;
+          let claimed = hidden;
+          if (!hidden) {
+            blockers.fill(0);
+            hidden = hemisphereBlocked(coverIdx, s3, n, blockers);
+            // Hidden by a cover this part does not carry: hidden all the same, so it must not
+            // dilate into the dead region around it, and not ours to hatch either.
+            claimed = hidden && mine.some((ci) => blockers[ci]);
+          }
+          const ring = cell.map(([s, t]) => at(q[0], q[1], q[2], s, t));
+          if (!hidden) visibleRings.push(ring);
+          else if (claimed) coveredRings.push(ring);
         }
       });
       if (coveredRings.length) {

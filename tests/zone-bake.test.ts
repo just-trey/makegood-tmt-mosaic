@@ -825,4 +825,102 @@ describe('hidden surface classification', () => {
     const baked = bake(finePlate, [boxCover([260, 50, 1], [360, 150, 31])]);
     expect(deadOf(baked)).toHaveLength(0);
   });
+
+  describe('a cover hides only on the parts that carry it', () => {
+    /** 100x200 plate on 10mm cells, its left edge at `x0`; two of them meet along x=100. */
+    const plateAt = (libraryPartId: string, x0: number): Part => {
+      const verts: number[][] = [];
+      for (let i = 0; i <= 10; i++)
+        for (let j = 0; j <= 20; j++) verts.push([x0 + i * 10, j * 10, 0]);
+      const idx = (i: number, j: number): number => i * 21 + j;
+      const tris: number[][] = [];
+      for (let i = 0; i < 10; i++)
+        for (let j = 0; j < 20; j++)
+          tris.push(
+            [idx(i, j), idx(i + 1, j), idx(i + 1, j + 1)],
+            [idx(i, j), idx(i + 1, j + 1), idx(i, j + 1)],
+          );
+      return { libraryPartId, verts, tris };
+    };
+    const left = plateAt('left', 0);
+    const right = plateAt('right', 100);
+
+    const bake2 = (
+      covers: Cover[],
+    ): { left: number; right: number; box: Record<string, number[]> } => {
+      const baked = bakeZones(
+        config([left, right], [ZONE], { covers: COVER_CFG }),
+        [left, right],
+        () => {},
+        { covers, wasm },
+      );
+      const out: { left: number; right: number; box: Record<string, number[]> } = {
+        left: 0,
+        right: 0,
+        box: {},
+      };
+      for (const c of baked.sidecar.zones[0].charts as {
+        libraryPartId: 'left' | 'right';
+        deadRegions?: { outer: number[][]; holes: number[][][] }[];
+      }[]) {
+        const dead = c.deadRegions ?? [];
+        out[c.libraryPartId] = dead.reduce(
+          (s, r) =>
+            s +
+            Math.abs(loopArea(r.outer)) -
+            r.holes.reduce((h, l) => h + Math.abs(loopArea(l)), 0),
+          0,
+        );
+        const pts = dead.flatMap((r) => r.outer);
+        if (pts.length)
+          out.box[c.libraryPartId] = [
+            Math.max(...pts.map((p) => p[0])) - Math.min(...pts.map((p) => p[0])),
+            Math.max(...pts.map((p) => p[1])) - Math.min(...pts.map((p) => p[1])),
+          ];
+      }
+      return out;
+    };
+
+    // 120x120, three quarters of it over the left plate. Flush against both (0.5mm, inside
+    // COVER_CONTACT_MM) in one case and standing 4mm clear of both in the other; nothing else
+    // about the two differs.
+    const RESTING: [number[], number[]] = [
+      [20, 40, 0.5],
+      [140, 160, 30],
+    ];
+    const MOUNTED: [number[], number[]] = [
+      [20, 40, 4],
+      [140, 160, 34],
+    ];
+
+    it('a cover resting on both parts hides surface on both', () => {
+      const { left: l, right: r } = bake2([boxCover(...RESTING)]);
+      // 120x120 hidden, inset by the 10mm bleed, split 70/30 by the seam at x=100
+      expect(l).toBeGreaterThan(6800);
+      expect(l).toBeLessThan(7100);
+      expect(r).toBeGreaterThan(2800);
+      expect(r).toBeLessThan(3100);
+    });
+
+    it('a cover standing clear of both hides only on the part carrying most of it', () => {
+      const { left: l, right: r, box } = bake2([boxCover(...MOUNTED)]);
+      expect(r).toBe(0);
+      // 4mm of standoff lets the edges of the shadow see out sideways, so the patch comes in
+      // under the flush cover's 7,000mm² above; what matters is that all of it is on this part
+      expect(l).toBeGreaterThan(5500);
+      expect(l).toBeLessThan(7000);
+      // and it runs to the seam, not 10mm short of it: the surface it hides on the right plate is
+      // hidden, so it must not dilate back across the seam the way visible surface would. The
+      // patch starts at x=35 and the seam is at 100, so reaching it is 65mm wide against 55.
+      expect(box.left[0]).toBeGreaterThan(60);
+      expect(box.left[1]).toBeGreaterThan(85);
+    });
+
+    it('the same cover mirrored keeps the other part instead', () => {
+      const mirror = (v: number[]): number[] => [200 - v[0], v[1], v[2]];
+      const { left: l, right: r } = bake2([boxCover(mirror(MOUNTED[1]), mirror(MOUNTED[0]))]);
+      expect(l).toBe(0);
+      expect(r).toBeGreaterThan(5500);
+    });
+  });
 });
