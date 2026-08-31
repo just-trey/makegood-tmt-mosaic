@@ -73,8 +73,13 @@ PR #147 is the worked example of stopping:
   when unsure. The numbers that decide whether a print succeeds (the verified
   plate constants) had been stable and live-verified since they landed.
 
-Four guards that matter more than the count:
+Six guards that matter more than the count:
 
+- **Findings anchor in the diff.** A finding lands on the changed lines or
+  their direct blast radius. A pre-existing issue becomes a
+  `docs/tech-debt.md` item, never review commentary.
+- **A settled finding stays settled.** One judged fixed or no-change-needed
+  in an earlier round is never re-raised in a later one.
 - **Never invent a constant to satisfy a reviewer.** A number that closes a
   finding without a measurement behind it is worse than the finding.
 - **If rounds keep finding real defects, suspect the diff.** A change that
@@ -355,6 +360,11 @@ planning time instead of re-litigated every session.
 | **Sonnet** | `src/ui/`, state plumbing, docs, config, test scaffolding                                                 |
 
 Split a PR across both when it has a geometry half and a UI half.
+
+The plan also names the `/code-review` level per work item, chosen once the
+same way. Calibration for this repo: round 1 at `high`, later code rounds at
+`medium`, the single prose pass at `low`. After a taste-only round, offer to
+skip further rounds.
 
 Verify by running the app, not only by running the tests.
 
