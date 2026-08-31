@@ -16,6 +16,9 @@ vi.mock('../src/scene/viewport', () => ({
 vi.mock('../src/scene/designGizmo', () => ({
   refreshGizmo: vi.fn(),
   isGizmoDragging: () => false,
+  // rebuild.ts reads the accent token through this for the hidden-surface hatch. Absent from the
+  // mock it is undefined, and any path here that reaches the overlay dies on a call to it.
+  tokenColor: (_name: string, fallback: number) => fallback,
 }));
 vi.mock('../src/scene/zonePick', () => ({ refreshZonePickMeshes: vi.fn() }));
 vi.mock('../src/ui/colorList', () => ({ renderColorList: vi.fn() }));

@@ -282,7 +282,17 @@ async function rebuildScene(): Promise<void> {
 
 /** Diagonal stripes in the app accent, one stripe per tile: the tile maps to 8mm of surface. */
 let hatchTexture: THREE.CanvasTexture | null = null;
+/**
+ * One material for every hatched zone on every part, not one apiece.
+ *
+ * Dropped on its own dispose event rather than held forever, because `newModelGroup` disposes the
+ * materials of everything it clears: keeping the handle would hand the next rebuild a material
+ * whose GPU program has been released. The listener makes the cache last exactly as long as the
+ * scene does, which also means the accent is re-read once per rebuild and a theme change lands.
+ */
+let hatchMaterial: THREE.MeshBasicMaterial | null = null;
 function hiddenSurfaceMaterial(): THREE.MeshBasicMaterial {
+  if (hatchMaterial) return hatchMaterial;
   const accent = new THREE.Color(tokenColor('--accent', 0x6d93ff));
   if (!hatchTexture) {
     const c = document.createElement('canvas');
@@ -303,19 +313,28 @@ function hiddenSurfaceMaterial(): THREE.MeshBasicMaterial {
       hatchTexture.wrapS = hatchTexture.wrapT = THREE.RepeatWrapping;
     }
   }
-  return new THREE.MeshBasicMaterial({
+  const mat = new THREE.MeshBasicMaterial({
     ...(hatchTexture ? { map: hatchTexture } : { color: accent }),
     transparent: true,
     opacity: 0.7,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
+  mat.addEventListener('dispose', () => {
+    if (hatchMaterial === mat) hatchMaterial = null;
+  });
+  hatchMaterial = mat;
+  return mat;
 }
 
 // The warp (triangulate, subdivide, per-vertex surface lookup) is static per chart, but every
 // rebuild disposes scene geometry (newModelGroup), so what is cached is the computed arrays and
 // a fresh BufferGeometry is built from them each time. Keyed by the chart object: charts live as
 // long as the loaded part they came from.
+//
+// `uv` is already divided by the stripe pitch. A BufferAttribute never writes to the array it
+// wraps and geometry disposal frees the GPU buffer rather than the array, so both are handed
+// straight to each rebuild's fresh attributes instead of being copied and rescaled per rebuild.
 const overlayCache = new WeakMap<object, { positions: Float32Array; uv: Float32Array } | null>();
 
 /**
@@ -332,15 +351,15 @@ function addHiddenSurfaceOverlays(
     if (!z.chart?.deadRegions?.length) continue;
     let overlay = overlayCache.get(z.chart);
     if (overlay === undefined) {
-      overlay = new ConformalZoneMapper(null, z.chart).deadOverlayMesh();
+      const built = new ConformalZoneMapper(null, z.chart).deadOverlayMesh();
+      // stripes every 8mm of surface
+      overlay = built && { positions: built.positions, uv: built.uv.map((x) => x / 8) };
       overlayCache.set(z.chart, overlay);
     }
     if (!overlay) continue;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(overlay.positions.slice(), 3));
-    // stripes every 8mm of surface
-    const uv = overlay.uv.map((x) => x / 8);
-    geo.setAttribute('uv', new THREE.BufferAttribute(Float32Array.from(uv), 2));
+    geo.setAttribute('position', new THREE.BufferAttribute(overlay.positions, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(overlay.uv, 2));
     const mesh = new THREE.Mesh(geo, hiddenSurfaceMaterial());
     // Invisible to every raycast. It floats 0.4mm proud of the surface, which zone picking's
     // occlusion test (OCCLUSION_TOL_MM = 0.05) reads as a solid part covering the chart. Measured

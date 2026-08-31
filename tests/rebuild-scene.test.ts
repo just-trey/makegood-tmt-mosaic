@@ -484,6 +484,30 @@ describe('hidden-surface overlay (deadRegions)', () => {
     );
   });
 
+  it('shares one hatch material across parts, and lets go of it when the scene disposes it', async () => {
+    state.assembly.parts = [zonedPart(true), zonedPart(true)];
+
+    await rebuildCurrent();
+
+    const mats = sceneMeshes()
+      .map((m) => m.material as THREE.Material)
+      .filter((m) => m.transparent);
+    expect(mats).toHaveLength(2);
+    expect(new Set(mats).size).toBe(1);
+
+    // The real newModelGroup disposes the materials of everything it clears, which releases the
+    // GPU program behind this one. Holding the handle past that would hand the next rebuild a
+    // disposed material; the cache has to drop it and build a fresh one.
+    const first = mats[0];
+    first.dispose();
+    await rebuildCurrent();
+    const after = sceneMeshes()
+      .map((m) => m.material as THREE.Material)
+      .find((m) => m.transparent);
+    expect(after).toBeTruthy();
+    expect(after).not.toBe(first);
+  });
+
   it('draws it again on the cut result, and adds nothing when nothing is hidden', async () => {
     const part = zonedPart(true);
     state.assembly.parts = [part];
