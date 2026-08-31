@@ -280,50 +280,55 @@ async function rebuildScene(): Promise<void> {
   frameModelIfPending();
 }
 
-/** Diagonal stripes in the app accent, one stripe per tile: the tile maps to 8mm of surface. */
-let hatchTexture: THREE.CanvasTexture | null = null;
 /**
- * One material for every hatched zone on every part, not one apiece.
+ * One material and its stripe texture for every hatched zone on every part, cached as ONE pair.
  *
- * Dropped on its own dispose event rather than held forever, because `newModelGroup` disposes the
- * materials of everything it clears: keeping the handle would hand the next rebuild a material
- * whose GPU program has been released. The listener makes the cache last exactly as long as the
- * scene does, which also means the accent is re-read once per rebuild and a theme change lands.
+ * Dropped on the material's own dispose event rather than held forever, because `newModelGroup`
+ * disposes the materials of everything it clears: keeping the handle would hand the next rebuild a
+ * material whose GPU program has been released. The listener makes the cache last exactly as long
+ * as the scene does, so the accent is re-read once per rebuild and a theme change lands.
+ *
+ * **The texture goes with it, which is the part that makes that true.** The stripes are DRAWN in
+ * the accent, so the colour lives in the texture, not in the material. Cached separately, the
+ * texture outlived every dispose and the rebuilt material kept mapping the old accent's stripes —
+ * a theme change re-read a colour it then did not use. Dropped together, and disposed rather than
+ * abandoned: `newModelGroup` frees the material, never the texture hanging off it.
  */
-let hatchMaterial: THREE.MeshBasicMaterial | null = null;
+let hatch: { material: THREE.MeshBasicMaterial; texture: THREE.CanvasTexture | null } | null = null;
 function hiddenSurfaceMaterial(): THREE.MeshBasicMaterial {
-  if (hatchMaterial) return hatchMaterial;
+  if (hatch) return hatch.material;
   const accent = new THREE.Color(tokenColor('--accent', 0x6d93ff));
-  if (!hatchTexture) {
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    // jsdom has no 2D canvas; a plain translucent tint is the same signal minus the stripes
-    const ctx = c.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, 64, 64);
-      ctx.strokeStyle = `#${accent.getHexString()}`;
-      ctx.lineWidth = 12;
-      for (const x of [-64, 0, 64]) {
-        ctx.beginPath();
-        ctx.moveTo(x, 64);
-        ctx.lineTo(x + 64, 0);
-        ctx.stroke();
-      }
-      hatchTexture = new THREE.CanvasTexture(c);
-      hatchTexture.wrapS = hatchTexture.wrapT = THREE.RepeatWrapping;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  // jsdom has no 2D canvas; a plain translucent tint is the same signal minus the stripes
+  const ctx = c.getContext('2d');
+  let texture: THREE.CanvasTexture | null = null;
+  if (ctx) {
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.strokeStyle = `#${accent.getHexString()}`;
+    ctx.lineWidth = 12;
+    for (const x of [-64, 0, 64]) {
+      ctx.beginPath();
+      ctx.moveTo(x, 64);
+      ctx.lineTo(x + 64, 0);
+      ctx.stroke();
     }
+    texture = new THREE.CanvasTexture(c);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   }
   const mat = new THREE.MeshBasicMaterial({
-    ...(hatchTexture ? { map: hatchTexture } : { color: accent }),
+    ...(texture ? { map: texture } : { color: accent }),
     transparent: true,
     opacity: 0.7,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
   mat.addEventListener('dispose', () => {
-    if (hatchMaterial === mat) hatchMaterial = null;
+    if (hatch?.material !== mat) return;
+    hatch.texture?.dispose();
+    hatch = null;
   });
-  hatchMaterial = mat;
+  hatch = { material: mat, texture };
   return mat;
 }
 

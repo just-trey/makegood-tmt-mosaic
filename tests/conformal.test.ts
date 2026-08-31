@@ -15,6 +15,7 @@ import {
 import { canvasAnchor } from '../src/geometry/assembly';
 import type { DesignPlacement } from '../src/geometry/zones';
 import type { ParsedSVG, PolyFeature } from '../src/types';
+import { WARNINGS, clearWarnings } from '../src/warnings';
 
 // Quarter-cylinder shell, the one curved surface that unwraps exactly: radius R about the Y axis,
 // θ ∈ [0, 90°], height H. UV is the analytic unwrap (u = R·θ arc length, v = y), so every chart
@@ -111,6 +112,66 @@ describe('chart validation', () => {
     const triangles = Uint32Array.from(chart.triangles);
     triangles[0] = chart.positions3.length / 3;
     expect(() => new ConformalZoneMapper(wasm, { ...chart, triangles })).toThrow();
+  });
+});
+
+describe('the hidden-surface overlay never thins out silently', () => {
+  /** A dead region the triangulator cannot use: three collinear points enclose no area. */
+  const degenerate = { outer: [[5, 5] as number[], [15, 5], [25, 5]], holes: [] };
+
+  it('names the zone when a dead region produces no hatch at all', () => {
+    clearWarnings();
+    const chart = makeCylinderChart();
+    const m = new ConformalZoneMapper(wasm, { ...chart, deadRegions: [degenerate] }, 'seat');
+    expect(m.deadOverlayMesh()).toBeNull();
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(
+      expect.stringContaining(`Couldn't shade the hidden surface on "seat"`),
+    );
+  });
+
+  it('still shades every patch it can when only one of them fails', () => {
+    clearWarnings();
+    const chart = makeCylinderChart();
+    const good = {
+      outer: [
+        [5, 5],
+        [20, 5],
+        [20, 20],
+        [5, 20],
+      ] as number[][],
+      holes: [] as number[][][],
+    };
+    const m = new ConformalZoneMapper(wasm, { ...chart, deadRegions: [degenerate, good] }, 'seat');
+    const mesh = m.deadOverlayMesh()!;
+    expect(mesh.positions.length).toBeGreaterThan(0);
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(
+      expect.stringContaining(`Couldn't shade the hidden surface on "seat"`),
+    );
+  });
+
+  it('says nothing when every patch shades', () => {
+    clearWarnings();
+    const chart = makeCylinderChart();
+    const m = new ConformalZoneMapper(
+      wasm,
+      {
+        ...chart,
+        deadRegions: [
+          {
+            outer: [
+              [5, 5],
+              [20, 5],
+              [20, 20],
+              [5, 20],
+            ],
+            holes: [],
+          },
+        ],
+      },
+      'seat',
+    );
+    expect(m.deadOverlayMesh()!.positions.length).toBeGreaterThan(0);
+    expect(WARNINGS).toHaveLength(0);
   });
 });
 

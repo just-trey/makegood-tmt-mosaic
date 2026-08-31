@@ -33,4 +33,9 @@ declare module '@turf/turf' {
     properties?: object,
     options?: object,
   ): Feature<MultiPolygon>;
+  // Tests only: the chair suites pick an interior point of a baked region to place a design on,
+  // and turf already owns the holes-aware containment rule that a hand-rolled ray cast keeps
+  // getting subtly wrong. Nothing in src/ calls it, so the "surface we call" note above still
+  // reads true of the app.
+  export function booleanPointInPolygon(point: number[] | Feature, polygon: Poly): boolean;
 }

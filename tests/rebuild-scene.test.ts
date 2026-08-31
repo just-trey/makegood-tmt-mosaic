@@ -508,6 +508,49 @@ describe('hidden-surface overlay (deadRegions)', () => {
     expect(after).not.toBe(first);
   });
 
+  it('rebuilds the stripe texture with the material, so a theme change reaches the stripes', async () => {
+    // jsdom has no 2D canvas, so the shipped path here falls back to a flat tint and never builds
+    // a texture at all — the case this pins cannot happen without one. A stub context is enough:
+    // nothing is read back off it, the point is only that a CanvasTexture gets made.
+    const proto = HTMLCanvasElement.prototype as unknown as {
+      getContext: (id: string) => unknown;
+    };
+    const real = proto.getContext;
+    proto.getContext = () => ({
+      clearRect() {},
+      beginPath() {},
+      moveTo() {},
+      lineTo() {},
+      stroke() {},
+      strokeStyle: '',
+      lineWidth: 0,
+    });
+    try {
+      state.assembly.parts = [zonedPart(true)];
+      const hatchMat = async (): Promise<THREE.MeshBasicMaterial> => {
+        await rebuildCurrent();
+        return sceneMeshes()
+          .map((m) => m.material as THREE.MeshBasicMaterial)
+          .find((m) => m.transparent)!;
+      };
+      // The cache is module-level and an earlier test in this file already filled it, from the
+      // textureless jsdom path. Dispose that one so this test builds its own with the stub up.
+      (await hatchMat()).dispose();
+      const first = await hatchMat();
+      expect(first.map).toBeTruthy();
+      // The accent is drawn INTO the stripes, so a texture that outlives the material keeps the
+      // old accent's colour however many times the material is rebuilt.
+      const texture = first.map!;
+      first.dispose();
+      const after = await hatchMat();
+      expect(after).not.toBe(first);
+      expect(after.map).toBeTruthy();
+      expect(after.map).not.toBe(texture);
+    } finally {
+      proto.getContext = real;
+    }
+  });
+
   it('draws it again on the cut result, and adds nothing when nothing is hidden', async () => {
     const part = zonedPart(true);
     state.assembly.parts = [part];

@@ -11,6 +11,7 @@ import {
   type ManifoldSolid,
 } from './manifold';
 import { safeDiff } from './regions';
+import { warn } from '../warnings';
 import {
   rotatePointY,
   type CutRegion,
@@ -621,12 +622,26 @@ export class ConformalZoneMapper implements ZoneMapper {
   ): { positions: Float32Array; uv: Float32Array } | null {
     const dead = this.chart.deadRegions;
     if (!dead?.length) return null;
+    // A chart with no triangles has no surface to shade, and it is also the only input that makes
+    // `lookup` answer null: cellIdxU/V clamp a query into the grid and the ring search spans all of
+    // it, so any populated chart returns its nearest triangle however far the query lands. Taken
+    // here so the emit loop below has nothing left to drop.
+    if (!this.chart.triangles.length) return null;
     const positions: number[] = [];
     const uvOut: number[] = [];
+    let failed = 0;
     const emit = (tri: number[][]): void => {
       const pts: number[][] = [];
       for (const [u, v] of tri) {
+        // The nearest triangle whatever its distance, with no CHART_SNAP_MM bound. That bound
+        // refuses MISPLACED ARTWORK, and there is none here: a dead region is cut against this
+        // chart's own triangle union at bake time, so its corners sit on the triangulation rather
+        // than in the gap the snap covers. Measured over all 11 charts of
+        // public/stl/chair-body-zones.json that carry one: worst corner 0.001mm off, none past the
+        // snap tolerance, no lookup answering null (tests/chair-zones.test.ts pins it). Bounding it
+        // would put pinholes in the hatch over surface the cut really does clip.
         const hit = this.lookup(u, v);
+        // Unreachable given the guard above, and narrowing rather than a `!` so it stays that way.
         if (!hit) return;
         const { p, n } = this.surfacePoint(hit);
         pts.push([p[0] + liftMm * n[0], p[1] + liftMm * n[1], p[2] + liftMm * n[2]]);
@@ -673,14 +688,36 @@ export class ConformalZoneMapper implements ZoneMapper {
       const contour = outer.map(([u, v]) => new THREE.Vector2(u, v));
       const holePts = holes.map((h) => h.map(([u, v]) => new THREE.Vector2(u, v)));
       const all = [...outer, ...holes.flat()];
-      let tris: number[][];
+      let tris: number[][] = [];
       try {
         tris = THREE.ShapeUtils.triangulateShape(contour, holePts);
       } catch {
+        tris = [];
+      }
+      // The one drop left in here, and it takes a whole patch of hatching with it. Said out loud
+      // rather than skipped: the hatch is how a user is told where artwork will not print, and the
+      // hidden-surface warning's own remedy sends them to it. Missing hatch over surface the cut
+      // still clips reads as a place artwork is welcome.
+      //
+      // Both outcomes counted, not just the throw: this triangulator answers a ring it cannot use
+      // with an empty list about as often as it raises, and an empty list drops the patch just as
+      // silently.
+      //
+      // warn(), not warnBuild(): rebuild.ts caches this mesh per chart, so a build-scoped pill
+      // would show on the rebuild that computed it and vanish on every cache hit after. The key
+      // dedupes it instead.
+      if (!tris.length) {
+        failed++;
         continue;
       }
       for (const [i, j, k] of tris) subdivide([all[i], all[j], all[k]], 0);
     }
+    if (failed)
+      warn(
+        `Couldn't shade the hidden surface on "${this.zoneId ?? 'this zone'}". ` +
+          `Artwork still won't cut there. Only the hatching is missing. Please report this.`,
+        `dead-overlay-${this.zoneId ?? ''}`,
+      );
     if (!positions.length) return null;
     return { positions: Float32Array.from(positions), uv: Float32Array.from(uvOut) };
   }

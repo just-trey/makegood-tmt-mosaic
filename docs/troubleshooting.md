@@ -1008,6 +1008,26 @@ placement offsets and the zone the design is bound to. Every zone has its own
 template, and the design is centred on the whole zone rather than on the part
 of it you can see.
 
+## Troubleshooting: "Couldn't shade the hidden surface on …"
+
+Full text: _"Couldn't shade the hidden surface on "seat". Artwork still won't cut
+there. Only the hatching is missing. Please report this."_
+
+Assembly mode, chair only today. The app failed to build the crosshatch for one
+patch of covered surface on that zone. Nothing about the print changed: the
+same surface is still covered, and artwork placed on it is still clipped away.
+What is missing is the picture of where that is.
+
+**It matters because the hatching is the instruction.** The sibling warning
+above tells you to move a design off the hatching. If a patch of hatching is
+missing, that spot looks like somewhere artwork is welcome and it is not.
+
+**What to do.** Download the zone's template from the Templates panel: the
+template is drawn from the same baked regions and generally still shows the
+patch, so it is the second opinion. Then report it, with the zone name from the
+message — it is a bug in the app, not in your file, and nothing you change in
+the design will clear it.
+
 ## Troubleshooting: "This SVG has a circle around most of the artwork, but some of it falls outside"
 
 A design template marks its boundary with a circle drawn around everything, and on a

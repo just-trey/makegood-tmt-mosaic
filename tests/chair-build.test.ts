@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import * as turf from '@turf/turf';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -12,7 +13,7 @@ import { FlatZoneMapper } from '../src/geometry/zones';
 import { ConformalZoneMapper } from '../src/geometry/conformal';
 import { reconstructChart, type ZoneSidecar } from '../src/geometry/zoneCharts';
 import { getManifold, manifoldIsValid, soupToManifold } from '../src/geometry/manifold';
-import type { AssemblyPart, DesignZone, ParsedSVG } from '../src/types';
+import type { AssemblyPart, DesignZone, ParsedSVG, PolyFeature } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 import {
   read3MFIndexed,
@@ -310,18 +311,13 @@ describe('conformal build on the real chair', () => {
   });
 });
 
-const inRing = (p: number[], ring: number[][]): boolean => {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[i],
-      b = ring[j];
-    if (
-      a[1] > p[1] !== b[1] > p[1] &&
-      p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]
-    )
-      inside = !inside;
-  }
-  return inside;
+/** A baked `{ outer, holes }` region as a turf polygon; rings there don't repeat their first point. */
+const regionPoly = (r: Region): PolyFeature => {
+  const close = (ring: number[][]): number[][] =>
+    ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
+      ? ring
+      : [...ring, ring[0]];
+  return turf.polygon([close(r.outer), ...r.holes.map(close)]) as PolyFeature;
 };
 
 const edgeDist = (p: number[], ring: number[][]): number => {
@@ -339,38 +335,64 @@ const edgeDist = (p: number[], ring: number[][]): number => {
 };
 
 /**
+ * The most interior point of one region of one chart, in the zone's UV mm — the deepest a design's
+ * centre can sit inside it. Coarse 24x24 scan of the region's bbox, scored by distance to the
+ * nearest edge it must stay clear of.
+ *
+ * `avoid` is the regions the point must ALSO stay out of, and it is scored as well as tested: a
+ * point one grid step inside a dead region's edge passes the test and still puts half a design over
+ * it. Its holes count on both counts — a hole in a dead region is visible surface, so its rim is a
+ * boundary of the dead region exactly as the outer ring is.
+ *
+ * Containment is turf's, not a hand-rolled ray cast. It has to be right about a point in a hole and
+ * about a point on an edge, and both suites already depend on turf 6.5 for exactly this geometry.
+ */
+type Region = { outer: number[][]; holes: number[][][] };
+function interiorPoint(
+  region: Region,
+  avoid: Region[] = [],
+): { p: number[]; score: number } | null {
+  const xs = region.outer.map((q) => q[0]);
+  const ys = region.outer.map((q) => q[1]);
+  const [minX, maxX, minY, maxY] = [
+    Math.min(...xs),
+    Math.max(...xs),
+    Math.min(...ys),
+    Math.max(...ys),
+  ];
+  const poly = regionPoly(region);
+  const avoidPolys = avoid.map(regionPoly);
+  let best: { p: number[]; score: number } | null = null;
+  for (let gi = 1; gi < 24; gi++)
+    for (let gj = 1; gj < 24; gj++) {
+      const p = [minX + ((maxX - minX) * gi) / 24, minY + ((maxY - minY) * gj) / 24];
+      if (!turf.booleanPointInPolygon(p, poly)) continue;
+      if (avoidPolys.some((a) => turf.booleanPointInPolygon(p, a))) continue;
+      let score = edgeDist(p, region.outer);
+      for (const h of region.holes) score = Math.min(score, edgeDist(p, h));
+      for (const a of avoid) {
+        score = Math.min(score, edgeDist(p, a.outer));
+        for (const h of a.holes) score = Math.min(score, edgeDist(p, h));
+      }
+      if (!best || score > best.score) best = { p, score };
+    }
+  return best;
+}
+
+/**
  * A spot in the zone guaranteed to be on real, VISIBLE design surface: the most interior point of
- * the largest sub-region after the hidden surface (deadRegions) is honoured, with the placement
- * offsets that put a design's centre there. Offset 0/0 puts the design at the zone's UV centre,
- * which on a zone with holes and several lobes is not necessarily over any surface at all (and on
- * the seat it is under the cushion, where artwork is deliberately clipped away). Found by a coarse
- * grid scan scored by distance to the nearest boundary (region edge, hole, or dead region).
+ * any sub-region once the hidden surface (deadRegions) is honoured, with the placement offsets that
+ * put a design's centre there. Offset 0/0 puts the design at the zone's UV centre, which on a zone
+ * with holes and several lobes is not necessarily over any surface at all (and on the seat it is
+ * under the cushion, where artwork is deliberately clipped away).
  */
 function zoneTarget(zoneId: string): { partId: string; offX: number; offZ: number } {
   const zone = sidecar.zones.find((z) => z.id === zoneId)!;
   let best: { partId: string; p: number[]; score: number } | null = null;
   for (const ch of zone.charts)
     for (const r of ch.subRegions) {
-      const xs = r.outer.map((p) => p[0]);
-      const ys = r.outer.map((p) => p[1]);
-      const [minX, maxX, minY, maxY] = [
-        Math.min(...xs),
-        Math.max(...xs),
-        Math.min(...ys),
-        Math.max(...ys),
-      ];
-      const dead = ch.deadRegions ?? [];
-      for (let gi = 1; gi < 24; gi++)
-        for (let gj = 1; gj < 24; gj++) {
-          const p = [minX + ((maxX - minX) * gi) / 24, minY + ((maxY - minY) * gj) / 24];
-          if (!inRing(p, r.outer)) continue;
-          if (r.holes.some((h) => inRing(p, h))) continue;
-          if (dead.some((d) => inRing(p, d.outer) && !d.holes.some((h) => inRing(p, h)))) continue;
-          let score = edgeDist(p, r.outer);
-          for (const h of r.holes) score = Math.min(score, edgeDist(p, h));
-          for (const d of dead) score = Math.min(score, edgeDist(p, d.outer));
-          if (!best || score > best.score) best = { partId: ch.libraryPartId, p, score };
-        }
+      const hit = interiorPoint(r, ch.deadRegions ?? []);
+      if (hit && (!best || hit.score > best.score)) best = { partId: ch.libraryPartId, ...hit };
     }
   // A 24x24 scan of every sub-region bbox finding nothing means the zone has no visible interior
   // the scan can see, which is a fact about the bake, not a null to dereference. Say which zone
@@ -392,32 +414,18 @@ function zoneTarget(zoneId: string): { partId: string; offX: number; offZ: numbe
 }
 
 /**
- * The mirror of `zoneTarget`: the most interior point of the zone's largest HIDDEN region, with
- * the offsets that put a design's centre there. What a design placed on surface the assembly
- * covers looks like, which is the only way to reach the hidden-surface warning.
+ * The mirror of `zoneTarget`: the most interior point of the zone's HIDDEN regions, with the
+ * offsets that put a design's centre there. What a design placed on surface the assembly covers
+ * looks like, which is the only way to reach the hidden-surface warning.
  */
 function deadTarget(zoneId: string): { chartPartId: string; offX: number; offZ: number } {
   const zone = sidecar.zones.find((z) => z.id === zoneId)!;
   let best: { chartPartId: string; p: number[]; score: number } | null = null;
   for (const ch of zone.charts)
     for (const d of ch.deadRegions ?? []) {
-      const xs = d.outer.map((p) => p[0]);
-      const ys = d.outer.map((p) => p[1]);
-      const [minX, maxX, minY, maxY] = [
-        Math.min(...xs),
-        Math.max(...xs),
-        Math.min(...ys),
-        Math.max(...ys),
-      ];
-      for (let gi = 1; gi < 24; gi++)
-        for (let gj = 1; gj < 24; gj++) {
-          const p = [minX + ((maxX - minX) * gi) / 24, minY + ((maxY - minY) * gj) / 24];
-          if (!inRing(p, d.outer)) continue;
-          if (d.holes.some((h) => inRing(p, h))) continue;
-          let score = edgeDist(p, d.outer);
-          for (const h of d.holes) score = Math.min(score, edgeDist(p, h));
-          if (!best || score > best.score) best = { chartPartId: ch.libraryPartId, p, score };
-        }
+      const hit = interiorPoint(d);
+      if (hit && (!best || hit.score > best.score))
+        best = { chartPartId: ch.libraryPartId, ...hit };
     }
   if (!best) throw new Error(`zone "${zoneId}": no dead region to place a design inside`);
   return {
