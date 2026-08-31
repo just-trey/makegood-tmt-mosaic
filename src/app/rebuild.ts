@@ -345,8 +345,8 @@ function addHiddenSurfaceOverlays(
     // Invisible to every raycast. It floats 0.4mm proud of the surface, which zone picking's
     // occlusion test (OCCLUSION_TOL_MM = 0.05) reads as a solid part covering the chart. Measured
     // on the chair over a 61x61 grid of NDC points at a 1440x900 viewport, default framed view:
-    // without this the seat drops from 50 pickable points to 36, the front zone from 111 to 79 and
-    // the left fender from 63 to 55, so a click on hatched surface selects nothing, not its zone.
+    // without this the seat drops from 50 pickable points to 18, the front zone from 111 to 76 and
+    // the left fender from 63 to 52, so a click on hatched surface selects nothing, not its zone.
     mesh.raycast = () => {};
     xf.add(mesh);
   }
