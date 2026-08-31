@@ -172,8 +172,9 @@ rounded edge the way real vinyl would
   `COVER_HIDDEN_FRACTION` blocked) — the contact test catches a flush cushion
   the hemisphere test misses on an angled wall, the hemisphere test catches a
   curved wheel shadow a single along-normal ray missed. Mirror-paired covers
-  are snapped exactly symmetric first (`covers.mirrorAxis`), and a cover hides
-  surface only on the part it is actually carried by. The visible region grown
+  are first snapped onto exactly mirrored poses (`covers.mirrorAxis`), keeping
+  each body's own mesh — the chair's casters are rotated, not mirrored. A cover
+  hides surface only on the part it is actually carried by. The visible region grown
   by `bleedMm` (20) is subtracted back, then smoothed to clear the sampling
   grid's own staircase edge, so artwork still runs past the visible edge. The
   runtime subtracts dead regions from the artwork clip; the viewport and

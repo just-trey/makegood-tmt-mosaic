@@ -86,13 +86,23 @@ export function* eachElement(xml, name) {
   }
 }
 
-/** The `<vertex>` positions of one object body, in file order. */
-export const meshVerts = (body) =>
-  [...body.matchAll(/<vertex\b[^>]*>/g)].map((v) => attrs(v[0], XA));
+/**
+ * The `<vertex>` positions of one object body, in file order.
+ *
+ * A generator, like `eachElement` above and for the same reason: these files reach hundreds of MB
+ * of vertex tags. Spreading `matchAll` into an array and mapping that holds every match object and
+ * every parsed point at once, on top of whatever the caller is building. Every caller streams it
+ * into its own list, so none of them wants that middle copy; one that needs random access spreads
+ * it itself and holds one list rather than three.
+ */
+export function* meshVerts(body) {
+  for (const m of body.matchAll(/<vertex\b[^>]*>/g)) yield attrs(m[0], XA);
+}
 
 /** The `<triangle>` index triples of one object body, LOCAL to that object's own vertex list. */
-export const meshTris = (body) =>
-  [...body.matchAll(/<triangle\b[^>]*>/g)].map((t) => attrs(t[0], TA));
+export function* meshTris(body) {
+  for (const m of body.matchAll(/<triangle\b[^>]*>/g)) yield attrs(m[0], TA);
+}
 
 /**
  * Reads only meshes inlined in 3D/3dmodel.model, exactly like load3MF. A Bambu multi-part file

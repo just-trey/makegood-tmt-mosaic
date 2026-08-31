@@ -136,6 +136,35 @@ describe('read3MFObjectsByColor', () => {
     );
   });
 
+  it('refuses a triangle pointing outside its own body’s vertex list', async () => {
+    // Indices are LOCAL to each object, so an out-of-range one is not caught by the file having
+    // enough vertices overall. Silent before this: the vertex reads as undefined and the body's
+    // bounds come back from a shorter list than the mesh really has.
+    const buf = await make3MF(
+      group(2, '#111111FF') +
+        `<object id="9" pid="2"><mesh><vertices>` +
+        `<vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/>` +
+        `</vertices><triangles><triangle v1="0" v2="1" v3="7"/></triangles></mesh></object>`,
+    );
+    await expect(read3MFObjectsByColor(buf, 'covers.3mf')).rejects.toThrow(
+      /covers\.3mf.*id=9.*vertex 7.*mesh has 3/s,
+    );
+  });
+
+  it('refuses a vertex missing a coordinate rather than reading it as NaN', async () => {
+    // A NaN coordinate loses every comparison, so the body's bounds go NaN and registerCovers
+    // matches it against nothing — a failure that surfaces nowhere near the file that caused it.
+    const buf = await make3MF(
+      group(2, '#111111FF') +
+        `<object id="9" pid="2"><mesh><vertices>` +
+        `<vertex x="0" y="0" z="0"/><vertex x="1" y="0"/><vertex x="0" y="1" z="0"/>` +
+        `</vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>`,
+    );
+    await expect(read3MFObjectsByColor(buf, 'covers.3mf')).rejects.toThrow(
+      /covers\.3mf.*id=9.*vertex 1 did not parse/s,
+    );
+  });
+
   it('still refuses a file whose bodies are placed by transform', async () => {
     const buf = await make3MF(
       group(2, '#111111FF') + `<object id="1" pid="2">${mesh(0)}</object>`,

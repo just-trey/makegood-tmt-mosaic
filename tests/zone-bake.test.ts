@@ -795,16 +795,17 @@ describe('hidden surface classification', () => {
     expect(deadArea(baked)).toBeLessThan(Math.PI * 50 * 50);
   });
 
-  it('snaps an off-mirror cover pair onto the mirror plane, meshes and all', () => {
+  const span = (c: Cover, k: number): number[] => [
+    Math.min(...c.verts.map((v) => v[k])),
+    Math.max(...c.verts.map((v) => v[k])),
+  ];
+
+  it('snaps an off-mirror cover pair onto mirrored poses', () => {
     // Two boxes that should be each other's mirror image and are not: one sits 20..80 from the
     // plane, the other 21..81, and the second is 1mm along y as well. The chair's casters are out
     // by the same order (1.187mm).
     const a = boxCover([-80, 70, 1], [-20, 130, 31]);
     const b = boxCover([21, 71, 1], [81, 131, 31]);
-    const span = (c: Cover, k: number): number[] => [
-      Math.min(...c.verts.map((v) => v[k])),
-      Math.max(...c.verts.map((v) => v[k])),
-    ];
     symmetrizeCovers([a, b], 0);
     // both now stand the averaged distance from the plane, 20.5..80.5
     expect(span(a, 0)).toEqual([-80.5, -20.5]);
@@ -812,10 +813,48 @@ describe('hidden surface classification', () => {
     // and along the axes it does not mirror, both land on the average
     expect(span(a, 1)).toEqual(span(b, 1));
     expect(span(a, 1)).toEqual([70.5, 130.5]);
-    // exactly mirrored, not merely aligned: every vertex of one is the other's reflection
-    const key = (v: number[]): string => v.map((x) => x.toFixed(6)).join();
-    const mirrored = new Set(a.verts.map((v) => key([-v[0], v[1], v[2]])));
-    expect(b.verts.every((v) => mirrored.has(key(v)))).toBe(true);
+  });
+
+  it('poses a rotated pair without replacing either mesh with the other’s mirror', () => {
+    // The chair's casters: the same body, mounted rotated 180 degrees about the vertical, so its
+    // two instances are NOT mirror images (owner, 2026-08-31). A box could not tell the two
+    // behaviours apart, being its own mirror, so two corners are chamfered 10mm along x — inward
+    // on a diagonal pair, which leaves the bounding box (and so the pairing test) untouched.
+    const chamfered = (): Cover => {
+      const c = boxCover([-30, -30, 0], [30, 30, 20]);
+      c.verts = c.verts.map((v) =>
+        (v[0] === 30 && v[1] === 30 && v[2] === 20) || (v[0] === -30 && v[1] === -30 && v[2] === 0)
+          ? [v[0] - Math.sign(v[0]) * 10, v[1], v[2]]
+          : v,
+      );
+      return c;
+    };
+    const a = chamfered();
+    const b = chamfered();
+    // b is a turned 180 degrees about the vertical: a rotation, so its winding still reads out.
+    b.verts = b.verts.map((v) => [-v[0], -v[1], v[2]]);
+    // Placed as a pair straddling the plane, each 100mm out.
+    a.verts = a.verts.map((v) => [v[0] - 100, v[1], v[2]]);
+    b.verts = b.verts.map((v) => [v[0] + 100, v[1], v[2]]);
+    const shapeOf = (c: Cover): string[] => {
+      const mid = [0, 1, 2].map((k) => (span(c, k)[0] + span(c, k)[1]) / 2);
+      return c.verts.map((v) => v.map((x, k) => (x - mid[k]).toFixed(6)).join()).sort();
+    };
+    const beforeA = shapeOf(a);
+    const beforeB = shapeOf(b);
+    const out = symmetrizeCovers([a, b], 0);
+    expect(out.pairs).toBe(1);
+    // Posed: mirrored midpoints along the axis, equal on the others.
+    expect(span(a, 0)).toEqual([-130, -70]);
+    expect(span(b, 0)).toEqual([70, 130]);
+    // Each mesh is still its own shape, and the two are not each other's reflection. Before this,
+    // b came back rebuilt from a and its chamfers swapped corners — the same replacement that
+    // moved the chair's casters by 21.976mm.
+    expect(shapeOf(a)).toEqual(beforeA);
+    expect(shapeOf(b)).toEqual(beforeB);
+    expect(shapeOf(a)).not.toEqual(shapeOf(b));
+    // Reported rather than hidden: 10mm, one chamfer's full travel.
+    expect(out.maxResidualMm).toBeCloseTo(10, 6);
   });
 
   it('a cover beside the plate hides nothing', () => {
@@ -912,13 +951,13 @@ describe('hidden surface classification', () => {
       expect(box.left[1]).toBeGreaterThan(85);
     });
 
-    it('a capped nearest-part miss does not decide which part carries a cover', () => {
-      // Two blocks in ONE cover body, the bigger over the left plate, ordered so the walking bound
-      // that speeds the nearest-part search up meets its own worst case: the big block's underside
-      // triangle centroid sits directly below its topside one, so the bound (last distance plus the
-      // step) is EXACTLY the true distance and the search's strict `<` rejects it. That block's
-      // whole top-half area used to drop out of the vote with it, handing the cover to the smaller
-      // block's plate — the left plate then kept no dead region at all.
+    it('a two-block cover goes to the plate carrying most of its area', () => {
+      // The vote that picks a standing cover's home part must see every triangle's area. This
+      // fixture is the shape that caught it not doing so: two blocks in ONE cover body, the bigger
+      // over the left plate, with the big block's underside centroid directly below its topside
+      // one. A search bound that has since been deleted rejected exactly that arrangement, dropped
+      // the big block's whole top half out of the vote, and handed the cover to the smaller block's
+      // plate — the left plate then kept no dead region at all.
       const merge = (a: Cover, b: Cover): Cover => ({
         verts: [...a.verts, ...b.verts],
         tris: [...a.tris, ...b.tris.map((t) => t.map((i) => i + a.verts.length))],

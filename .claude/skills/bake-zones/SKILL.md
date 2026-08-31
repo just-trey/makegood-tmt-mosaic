@@ -140,12 +140,19 @@ the kind is assembled, so it takes no artwork and no filament changes:
   matched to the config parts by bounding box and the transform is solved from
   their consensus, refused above 1mm residual.
 - `mirrorAxis` (optional, `x`/`y`/`z`) snaps mirror-paired cover bodies (the
-  chair's four casters) exactly symmetric about that axis before
+  chair's four casters) onto exactly mirrored POSES about that axis before
   classification runs. A CAD export lands each instance a fraction of a
   millimetre off its own mirror image, which is enough to flip a knife-edge
   sample from hidden to visible; snapping removes that tie-breaker instead of
   tuning around it. A cover with no mirror partner (a cushion straddling the
   plane) is left alone.
+- **The pose only.** Each body keeps its own mesh. Rebuilding one side from
+  the other's mirror is exact symmetry rather than symmetry to a residual, and
+  it is wrong for a pair mounted by rotation: the chair's casters are the same
+  part turned 180 degrees, so mirroring one onto the other moved geometry
+  21.976mm (`npx vite-node scripts/measure-caster-axis-map.mjs`). How far a
+  pair is from being mirror images is reported in the bake log as the worst
+  shape residual, never enforced.
 - Each zone is sampled at ~`COVER_SAMPLE_MM2` (25mm²) per sub-cell, not per
   triangle — the CAD faces arrive as coarse fans, and a per-triangle verdict
   can't draw a shadow edge inside one. A sample is hidden when either:

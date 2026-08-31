@@ -17,8 +17,8 @@
  *     never so it can be built on.
  *
  * Area is measured in the chart's UV, which is true millimetres of surface, and only over the
- * charts each zone actually carries. Sampling matches the bake: COVER_SAMPLE_MM2 patches per
- * triangle, capped at SUB_CELLS_MAX to a side, one sample at each patch centroid.
+ * charts each zone actually carries. Sampling is the bake's own `sampleCells` and `cellCentroid`,
+ * so the density and the sample points are the same ones it classifies with.
  *
  * Usage (needs stubs/dead-zones.3mf, which lives outside the repo):
  *   npx vite-node scripts/measure-wheel-shadow.mjs
@@ -30,6 +30,7 @@ import { fileURLToPath } from 'url';
 import {
   at,
   bodyIndex,
+  cellCentroid,
   coverOccludes,
   COVER_RAY_MM,
   COVER_SAMPLE_MM2,
@@ -37,8 +38,7 @@ import {
   read3MFObjectsByColor,
   regionNetArea,
   registerCovers,
-  subCells,
-  SUB_CELLS_MAX,
+  sampleCells,
 } from './lib/zonebake.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -112,11 +112,9 @@ function shadowArea(chart, dir, index) {
       c2 = p2(triangles[t + 2]);
     const triUV =
       Math.abs((b2[0] - a2[0]) * (c2[1] - a2[1]) - (c2[0] - a2[0]) * (b2[1] - a2[1])) / 2;
-    const k = Math.max(1, Math.min(SUB_CELLS_MAX, Math.ceil(Math.sqrt(triUV / COVER_SAMPLE_MM2))));
-    const cells = subCells(k);
+    const cells = sampleCells(triUV);
     for (const cell of cells) {
-      const s = (cell[0][0] + cell[1][0] + cell[2][0]) / 3;
-      const u = (cell[0][1] + cell[1][1] + cell[2][1]) / 3;
+      const [s, u] = cellCentroid(cell);
       if (coverOccludes(index, at(a3, b3, c3, s, u), dir, COVER_RAY_MM) >= 0)
         area += triUV / cells.length;
     }

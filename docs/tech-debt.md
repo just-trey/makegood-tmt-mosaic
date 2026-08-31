@@ -88,16 +88,16 @@ it, so the flanks treat the band under the tire as printable.
 
 All three rows come from
 `npx vite-node scripts/measure-wheel-shadow.mjs --tire-mm 30`, re-taken
-2026-08-30. That script's header defines each projection; the shadow and
+2026-08-31 against the rebaked sidecar. That script's header defines each projection; the shadow and
 tire-ring rows are geometry, independent of the bake algorithm, and the baked
 row is the flank's whole dead area summed out of
 `public/stl/chair-body-zones.json`.
 
 |                                               | `left`    | `right`   |
 | --------------------------------------------- | --------- | --------- |
-| straight-on wheel shadow on the zone          | 36,654mm² | 36,806mm² |
-| baked dead there (the rest is the 20mm bleed) | 15,039mm² | 15,727mm² |
-| what a 30mm tire ring would add               | 17,867mm² | 17,668mm² |
+| straight-on wheel shadow on the zone          | 36,668mm² | 36,806mm² |
+| baked dead there (the rest is the 20mm bleed) | 14,935mm² | 15,727mm² |
+| what a 30mm tire ring would add               | 17,836mm² | 17,668mm² |
 
 - **The tire row is unmeasured, and only its arithmetic is reproducible.** 30mm
   is scaled off a photo — the hub reads ~340px for a stub-measured 280mm, the
@@ -108,6 +108,10 @@ row is the flank's whole dead area summed out of
   23,215 for the ring) named no command and could not be re-derived. The shadow
   reproduces to 0.2%; the ring does not, because whatever built that annulus is
   not what the script does.
+- `left` moved (36,654 to 36,668 shadow, 15,039 to 14,935 baked) when
+  `symmetrizeCovers` stopped replacing one caster with the other's mirror. That
+  flank now sees the caster the covers file really carries. `right` is
+  unchanged, since it was the mirror's source.
 - The direction is safe: surface under the tire is treated as printable, so it
   costs a filament change on plastic nobody sees. It never leaves blank plastic
   where artwork was expected, which is the failure that would matter.
@@ -117,34 +121,6 @@ row is the flank's whole dead area summed out of
   from a photo is the sort of unmeasured constant this file exists to keep out
   of the bake.
 - The owner has seen the trade and chose to leave tires out for now.
-
-## The covers file's casters are 180-degree rotations of each other, not mirrors
-
-`symmetrizeCovers` ([scripts/lib/zonebake.mjs](../scripts/lib/zonebake.mjs)) snaps a mirror-paired
-cover body by replacing one with `mirror_x` of the other. On the chair that moves real geometry.
-
-Measured 2026-08-30, `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`
-(the "worst shape residual" figure it now prints), plus a signed-axis-map search over the two
-bodies:
-
-| Question                                           | Answer                                                     |
-| -------------------------------------------------- | ---------------------------------------------------------- |
-| Are the two paired caster bodies the same body?    | Yes: 8,953 vertices and 48.500 x 154.059 x 279.997mm, both |
-| Are they related by the x mirror the snap assumes? | No: 21.976mm apart, 3,958 of 8,953 vertices over 1mm       |
-| What relates them exactly?                         | `(x, y, z) -> (-x, y, -z)`, residual 0.000mm               |
-
-- `(-x, y, -z)` has determinant +1, so it is a 180-degree rotation about the vertical axis. The
-  snap is off by a further `mirror_z`.
-- **The shipped sidecar was baked with the snap**, so the dead regions on the flanks already
-  reflect the mirrored caster rather than the one in the file.
-- The bake refuses a pair that is not the same body at all (vertex count, per-axis extent, at
-  `REGISTER_DIM_TOL_MM`). It only reports the mirror residual, because every value it could be
-  enforced at today is a number picked to admit or reject this one file.
-- **Closing it needs a decision, not code**: whether the chair's assembly is meant to be
-  mirror-symmetric there. `DECISIONS-NEEDED.md` carries the question and both branches of it. If
-  the file is wrong, a re-export closes this and lets the residual become an enforced bound; if the
-  chair really fits its casters rotated, `covers.mirrorAxis` comes off and the knife-edge
-  asymmetry the snap settles has to be settled another way.
 
 ## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted
 
