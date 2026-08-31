@@ -24,7 +24,16 @@
     "file": "stubs/dead-zones.3mf",
     "referenceColor": "#F768E6FF",
     "bleedMm": 20,
-    "mirrorAxis": "x"
+    "mirrorAxis": "x",
+    "solids": [
+      {
+        "id": "wheel",
+        "type": "cylinder",
+        "axis": "x",
+        "radiusMm": 140,
+        "replacesDims": [48.5, 154.06, 280.0]
+      }
+    ]
   },
   "parts": [
     { "libraryPartId": "chair-storage-left", "file": "public/stl/chair-storage-left.3mf" },
@@ -38,7 +47,6 @@
       "libraryPartId": "chair-wheel-mount-right",
       "file": "public/stl/chair-wheel-mount-right.3mf"
     },
-    { "libraryPartId": "chair-seat-center", "file": "public/stl/chair-seat-center.3mf" },
     { "libraryPartId": "chair-seat-back-bottom", "file": "public/stl/chair-seat-back-bottom.3mf" },
     { "libraryPartId": "chair-seat-back-top", "file": "public/stl/chair-seat-back-top.3mf" }
   ],
@@ -72,10 +80,17 @@
       "up": [0, 1, 0]
     },
     {
-      "id": "seat",
-      "name": "Seat",
-      "seedPoint": [0, 230, -361],
-      "maxAngleDeg": 50,
+      "id": "seat-left",
+      "name": "Left seat side",
+      "seedPoint": [93.2, 234.4, -319.3],
+      "maxAngleDeg": 35,
+      "up": [0, 0, -1]
+    },
+    {
+      "id": "seat-right",
+      "name": "Right seat side",
+      "seedPoint": [-93.2, 234.4, -319.3],
+      "maxAngleDeg": 35,
       "up": [0, 0, -1]
     },
     {

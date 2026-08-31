@@ -123,8 +123,8 @@ const HAIRLINE_WALK_PX = 16;
 
 /**
  * Views the per-zone identity pass sweeps through, as cumulative orbit drags from the framed
- * default. Chosen so each of the five zones is face-on enough in at least one of them to leave an
- * interior ink sample; the two flanks are edge-on from front and back alike and need the sweep.
+ * default. Chosen so each zone is face-on enough in at least one of them to leave an interior ink
+ * sample; the two flanks are edge-on from front and back alike and need the sweep.
  */
 const IDENTITY_SWEEP = [
   { id: 'v0', drag: null },
@@ -161,6 +161,7 @@ const NAMED_CASES = [
     fy: 516 / 920,
     cls: 'body',
     expect: null,
+    // 'seat' was retired when the seat pan left every zone; the pick it names is still the bug.
     wasPick: 'seat',
   },
 ];

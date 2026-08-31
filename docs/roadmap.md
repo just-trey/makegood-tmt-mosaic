@@ -43,19 +43,27 @@ Open questions with no obvious answer, where the measurement behind the question
   derived from the image, so an image's regions are filaments the user actually
   has and the AMS slot count is settled before export rather than after.
 - Center auto-fit on the visible part of a zone, not its whole bbox. With the
-  chair's hidden surface now clipped, an auto-fit design on Seat lands mostly
-  on covered surface and prints as a sliver on the front lip. The overlay
-  explains it, but placing straight onto the visible region would be the
-  better default. The anchor becomes the chart's claim minus its `deadRegions`
-  rather than the whole zone bbox. Deferred out of the dead-zones change
-  because it moves placement for every zone on every kind, a far wider blast
-  radius than the clip itself. Measurement:
-  [tech-debt.md](tech-debt.md), "The chair's Seat zone is mostly hidden
-  surface".
+  chair's hidden surface now clipped, an auto-fit design on `seat-left` or
+  `seat-right` lands mostly on covered surface: 13,893 of 17,150mm² there is
+  under the cushion, so 81% of the bbox the anchor uses is hatched. The overlay
+  explains it, but placing straight onto the visible region would be the better
+  default. The anchor becomes the chart's claim minus its `deadRegions` rather
+  than the whole zone bbox. Deferred out of the dead-zones change because it
+  moves placement for every zone on every kind, a far wider blast radius than
+  the clip itself.
+- Wrap one design across the whole chair, rather than one zone at a time. The
+  owner's stated end goal, and the thing the per-zone sheets are a stand-in for.
+  Two things are in the way. Each zone is its own LSCM unwrap with no shared
+  parameterisation, so a design crossing from `left` to `back` has no continuous
+  coordinate to follow; and an `ArtworkInstance` binds to one `zoneId`
+  ([src/state/artwork.ts](../src/state/artwork.ts)), which
+  [src/geometry/assembly.ts](../src/geometry/assembly.ts) matches one mapper at
+  a time. "All zones" today means the same design placed on each zone
+  independently, not one design spanning them. No approach chosen yet.
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind.
 - A full parent-handle assembly kind.
-- Surface-first zone picking: show the chair's seven design zones as
+- Surface-first zone picking: show the chair's eight design zones as
   selectable surfaces on the model from the moment it loads, so "put this on
   the back" is one click before any file is chosen, instead of today's
   load-a-design-then-rebind-it-to-a-zone order (`vision`-lens review,

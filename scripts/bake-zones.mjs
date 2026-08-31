@@ -75,6 +75,7 @@ if (config.covers) {
   try {
     const reg = registerCovers(config, parts, objects);
     opts.covers = reg.covers;
+    opts.coverTwin = reg.mirror?.twin;
     console.log(
       `  covers      ${config.covers.file}: ${reg.covers.length} cover bodies, ` +
         `registered against ${reg.matched} parts (residual ${reg.residual.toFixed(3)}mm)` +
@@ -84,6 +85,12 @@ if (config.covers) {
             `worst shape residual ${reg.mirror.maxResidualMm.toFixed(3)}mm)`
           : ''),
     );
+    for (const s of reg.solids ?? [])
+      console.log(
+        `  solid       "${s.id}" replaced ${s.replaced} cover bod${s.replaced === 1 ? 'y' : 'ies'}` +
+          ` spanning ${s.dims.map((d) => d.toFixed(2)).join(' x ')}mm ` +
+          `at (${s.mid.map((x) => x.toFixed(2)).join(', ')})`,
+      );
   } catch (e) {
     die(e.message);
   }

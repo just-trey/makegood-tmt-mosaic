@@ -752,11 +752,12 @@ describe('hidden surface classification', () => {
     const dead = deadOf(baked);
     expect(dead).toHaveLength(1);
     expect(dead[0].holes).toHaveLength(0);
-    // 100x100 hidden, minus the 10mm bleed dilated in from every side, minus the four corners the
-    // DEAD_SMOOTH_MM open-close rounds off (r² - πr²/4 apiece at r = 5)
-    const rounded = 80 * 80 - 4 * (25 - Math.PI * 6.25);
-    expect(deadArea(baked)).toBeGreaterThan(rounded - 15);
-    expect(deadArea(baked)).toBeLessThan(rounded + 15);
+    // Exactly 80x80, with square corners. Smoothing runs before the bleed, so the covered 100x100
+    // comes out of the close-then-open with DEAD_SMOOTH_MM fillets at its corners and the visible
+    // set comes out with the matching fillets inside its hole — and dilating that by a bleed wider
+    // than the fillet radius (10 against 5) erodes them away again. Under the old bleed-then-smooth
+    // order the fillets survived onto the result and cost 4 * (r² - πr²/4) of it.
+    expect(deadArea(baked)).toBeCloseTo(80 * 80, 2);
   });
 
   it('drops a dead island the bleed margin would swallow, and keeps the real patch', () => {
@@ -862,7 +863,7 @@ describe('hidden surface classification', () => {
     expect(deadOf(baked)).toHaveLength(0);
   });
 
-  describe('a cover hides only on the parts that carry it', () => {
+  describe('which parts a cover hides on', () => {
     /** 100x200 plate on 10mm cells, its left edge at `x0`; two of them meet along x=100. */
     const plateAt = (libraryPartId: string, x0: number): Part => {
       const verts: number[][] = [];
@@ -918,11 +919,6 @@ describe('hidden surface classification', () => {
       [20, 40, 0.5],
       [140, 160, 30],
     ];
-    // 134, not 140, and the 6mm buys nothing on the left plate: it moves the box's far x-spanning
-    // triangle centroid off x=100. A centroid exactly on the seam is equidistant from BOTH plates,
-    // so its whole triangle's area goes to whichever the argmax happens to reach first, and the
-    // mirrored case below then answers the un-mirrored one's part. Nothing about the left plate's
-    // shadow moves: the box still starts at x=20 and still crosses the seam.
     const MOUNTED: [number[], number[]] = [
       [20, 40, 4],
       [134, 160, 34],
@@ -937,11 +933,16 @@ describe('hidden surface classification', () => {
       expect(r).toBeLessThan(3100);
     });
 
-    it('a cover standing clear of both hides only on the part carrying most of it', () => {
+    it('a cover resting on nothing hides on every part it occludes', () => {
       const { left: l, right: r, box } = bake2([boxCover(...MOUNTED)]);
-      expect(r).toBe(0);
+      // Nothing carries it, so nothing narrows it: the shadow falls where the hemisphere test puts
+      // it, and it crosses the seam. The rule this replaces handed a standing cover to the ONE part
+      // holding the larger share of its nearest surface, and `r` came back exactly 0 — which is how
+      // the chair's wheel shadow came to stop dead along a straight line down the mount/fender seam
+      // while the wheel plainly hides across it.
+      expect(r).toBeGreaterThan(1500);
       // 4mm of standoff lets the edges of the shadow see out sideways, so the patch comes in
-      // under the flush cover's 7,000mm² above; what matters is that all of it is on this part
+      // under the flush cover's 7,000mm² above
       expect(l).toBeGreaterThan(5500);
       expect(l).toBeLessThan(7000);
       // and it runs to the seam, not 10mm short of it: the surface it hides on the right plate is
@@ -951,32 +952,15 @@ describe('hidden surface classification', () => {
       expect(box.left[1]).toBeGreaterThan(85);
     });
 
-    it('a two-block cover goes to the plate carrying most of its area', () => {
-      // The vote that picks a standing cover's home part must see every triangle's area. This
-      // fixture is the shape that caught it not doing so: two blocks in ONE cover body, the bigger
-      // over the left plate, with the big block's underside centroid directly below its topside
-      // one. A search bound that has since been deleted rejected exactly that arrangement, dropped
-      // the big block's whole top half out of the vote, and handed the cover to the smaller block's
-      // plate — the left plate then kept no dead region at all.
-      const merge = (a: Cover, b: Cover): Cover => ({
-        verts: [...a.verts, ...b.verts],
-        tris: [...a.tris, ...b.tris.map((t) => t.map((i) => i + a.verts.length))],
-      });
-      // z given reversed in the first block on purpose: that is what puts its underside face first.
-      const cover = merge(
-        boxCover([20, 160, 34], [80, 40, 4]),
-        boxCover([120, 40, 4], [174, 160, 34]),
-      );
-      const { left: l, right: r } = bake2([cover]);
-      expect(l).toBeGreaterThan(0);
-      expect(r).toBe(0);
-    });
-
-    it('the same cover mirrored keeps the other part instead', () => {
+    it('mirroring a standing cover mirrors its shadow', () => {
+      // The two plates are one mesh translated, so the mirrored cover has to give the un-mirrored
+      // answer with the parts swapped. Under the argmax rule this pair read (l > 0, r = 0) and then
+      // (l = 0, r > 0): each side of one fixture losing a whole plate to a tie-break.
       const mirror = (v: number[]): number[] => [200 - v[0], v[1], v[2]];
-      const { left: l, right: r } = bake2([boxCover(mirror(MOUNTED[1]), mirror(MOUNTED[0]))]);
-      expect(l).toBe(0);
-      expect(r).toBeGreaterThan(5500);
+      const a = bake2([boxCover(...MOUNTED)]);
+      const b = bake2([boxCover(mirror(MOUNTED[1]), mirror(MOUNTED[0]))]);
+      expect(b.right).toBeCloseTo(a.left, 0);
+      expect(b.left).toBeCloseTo(a.right, 0);
     });
   });
 });

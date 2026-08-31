@@ -4,6 +4,7 @@ import type { ArtworkInstance, DesignSource } from '../types';
 import {
   allowedArtworkMode,
   pruneSettingsToPalette,
+  availableZones,
   restoreArtworkPool,
   setActiveArtwork,
   setArtworkZone,
@@ -804,7 +805,23 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       mode: allowedArtworkMode(a.mode),
     }));
   restoreArtworkPool(sources, artworks);
-  session.artworks.forEach((a) => setArtworkZone(a.id, keepSavedZones ? a.zoneId : null));
+  // A saved zoneId the loaded parts no longer offer — a zone a re-bake renamed or dropped — matches
+  // no mapper, so geometry/assembly.ts cuts that design nowhere and says nothing about it. Same
+  // silent loss the kind-mismatch branch above avoids, reached from a different direction, and the
+  // dropdown does not show it either: it renders the saved id as no selection at all. Sent to All
+  // zones instead, which cuts something and reads correctly in the badge, and said out loud.
+  const offered = new Set(availableZones().map((z) => z.zoneId));
+  const resolves = (zoneId: string | null): boolean => zoneId === null || offered.has(zoneId);
+  const orphaned = keepSavedZones ? session.artworks.filter((a) => !resolves(a.zoneId)) : [];
+  session.artworks.forEach((a) =>
+    setArtworkZone(a.id, keepSavedZones && resolves(a.zoneId) ? a.zoneId : null),
+  );
+  if (orphaned.length)
+    warn(
+      orphaned.length === 1
+        ? `1 design was on a zone this part no longer has. It's on All zones now.`
+        : `${orphaned.length} designs were on zones this part no longer has. They're on All zones now.`,
+    );
   setActiveArtwork(
     artworks.some((a) => a.id === session.activeArtworkId)
       ? session.activeArtworkId

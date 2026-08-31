@@ -50,10 +50,10 @@ Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair:
   angle (`v0`), so this run never reaches the later angles or the named
   cases. Reproduced twice with identical sample counts, so it's a real stop,
   not sampling noise — a second, separate defect in the script from the
-  classifier gap this section is about. `seat`'s `v0` pass alone already
-  shows 0 interior ink samples, consistent with 41,710mm² of its
-  ~56,600mm² being hidden (see the section below), but the later angles that
-  would confirm "no ink from any angle" go unchecked this run.
+  classifier gap this section is about. The zone whose `v0` pass showed 0
+  interior ink samples was `seat`, which no longer exists: the seat pan left
+  every zone and the two mount tops became `seat-left`/`seat-right`. Re-run
+  before trusting the failure count above.
 - Closing it: teach the sweep to read each chart's `deadRegions`, and expect
   "zone pickable, no ink" over them rather than counting it a through-pick.
   The orbit-drag throw needs its own fix first to reach the later stages.
@@ -64,27 +64,12 @@ Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair:
   came in with the fender zones: the sweep's angles never see enough of a
   fender to sample one.
 
-## The chair's Seat zone is mostly hidden surface, so an auto-fit design lands on the cushion
-
-Measured 2026-08-30 (bake log's `zone "seat" ... dead 41710mm²`, total zone
-area summed from `seat`'s `subRegions` in `public/stl/chair-body-zones.json`,
-unchanged at ~56,600mm²): 41,710mm² of the Seat zone's ~56,600mm² is covered by
-the seat cushion, leaving the front lip. Auto-fit centers on the zone's UV
-bbox, which is under the cushion, so a design dropped on Seat with no
-adjustment cuts almost nothing and prints as a sliver on the lip.
-
-- Working as designed: the pan really is under the cushion, and not spending
-  filament changes there is the point of the feature.
-- The hatch overlay and the hatched template explain it, so it is legible
-  rather than silent, and the design can be moved by hand onto the lip.
-- Closing it: [roadmap.md](roadmap.md), "Center auto-fit on the visible part of
-  a zone". That is where the fix and why it was deferred are written up.
-
 ## The covers reference has no tires, so each flank keeps artwork the tire hides — unmeasured
 
-`stubs/dead-zones.3mf` carries the printed wheel only: two halves plus the cap.
-The assembled chair runs a tire ring outside that, and the bake has never seen
-it, so the flanks treat the band under the tire as printable.
+`stubs/dead-zones.3mf` carries the printed wheel only: two halves plus the cap,
+and the bake now replaces those halves with a solid 280mm disc of the same
+diameter. The assembled chair runs a tire ring outside that, which the bake has
+never seen, so the flanks treat the band under the tire as printable.
 
 All three rows come from
 `npx vite-node scripts/measure-wheel-shadow.mjs --tire-mm 30`, re-taken
@@ -95,9 +80,9 @@ row is the flank's whole dead area summed out of
 
 |                                               | `left`    | `right`   |
 | --------------------------------------------- | --------- | --------- |
-| straight-on wheel shadow on the zone          | 36,668mm² | 36,806mm² |
-| baked dead there (the rest is the 20mm bleed) | 14,935mm² | 15,727mm² |
-| what a 30mm tire ring would add               | 17,836mm² | 17,668mm² |
+| straight-on wheel shadow on the zone          | 36,737mm² | 36,894mm² |
+| baked dead there (the rest is the 20mm bleed) | 23,486mm² | 23,777mm² |
+| what a 30mm tire ring would add               | 18,619mm² | 18,441mm² |
 
 - **The tire row is unmeasured, and only its arithmetic is reproducible.** 30mm
   is scaled off a photo — the hub reads ~340px for a stub-measured 280mm, the
@@ -108,18 +93,19 @@ row is the flank's whole dead area summed out of
   23,215 for the ring) named no command and could not be re-derived. The shadow
   reproduces to 0.2%; the ring does not, because whatever built that annulus is
   not what the script does.
-- `left` moved (36,654 to 36,668 shadow, 15,039 to 14,935 baked) when
-  `symmetrizeCovers` stopped replacing one caster with the other's mirror. That
-  flank now sees the caster the covers file really carries. `right` is
-  unchanged, since it was the mirror's source.
 - The direction is safe: surface under the tire is treated as printable, so it
   costs a filament change on plastic nobody sees. It never leaves blank plastic
   where artwork was expected, which is the failure that would matter.
-- Closing it: re-export `stubs/dead-zones.3mf` with tire bodies on the four
-  casters, rebake, and the shadow falls out of the existing classifier with no
-  code change. Deliberately not approximated in code — inventing an annulus
-  from a photo is the sort of unmeasured constant this file exists to keep out
-  of the bake.
+- Closing it is now one number. The wheel reaches the bake as a declared solid
+  (`covers.solids` in `scripts/zone-configs/chair-body.json`), so raising
+  `radiusMm` from 140 to the tire's real outer radius and rebaking is the whole
+  change. It still needs a measured radius: the disc is posed from the file and
+  its diameter checked against the bodies it replaces, so a guessed number
+  fails the bake rather than quietly hiding the wrong ring.
+- The rows above moved when the four hollow half-dishes became two solid discs
+  and the bleed moved after the smoothing. The shadow row is geometry and barely
+  moved; the baked row rose because the wheel now hides across the mount/fender
+  seam instead of stopping dead at it.
 - The owner has seen the trade and chose to leave tires out for now.
 
 ## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted

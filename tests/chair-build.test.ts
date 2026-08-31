@@ -534,8 +534,8 @@ describe('per-zone artwork binding', () => {
 });
 
 describe('a design that lands only on hidden surface', () => {
-  // The seat is the zone where this is reachable by accident: most of it is under the cushion.
-  const ZONE = 'seat';
+  // A seat side is the zone where this is reachable by accident: 80% of it is under the cushion.
+  const ZONE = 'seat-left';
 
   /** The whole zone in the scene, so "landed nowhere" means nowhere on the chair. */
   async function seatParts(): Promise<AssemblyPart[]> {

@@ -209,6 +209,113 @@ const REGISTER_DIM_TOL_MM = 1.5;
 const REGISTER_RESIDUAL_MM = 1;
 
 /**
+ * Circle segments per declared cylinder. The polygon sits `r * (1 - cos(pi/n))` inside the true
+ * circle: at the chair's r = 140 that is 0.042mm, two orders under the ~5mm boundary resolution
+ * COVER_SAMPLE_MM2 buys the classifier, so the shadow edge is limited by the sampling and not by
+ * this. It costs 508 triangles against the 17,902 of one dished CAD half-wheel.
+ */
+const SOLID_SEGMENTS = 128;
+
+/** A closed cylinder about `axis`, spanning lo..hi, centred on `centre` in the other two axes. */
+function cylinderMesh(axis, lo, hi, centre, radius, segments = SOLID_SEGMENTS) {
+  const u = (axis + 1) % 3;
+  const w = (axis + 2) % 3;
+  const verts = [];
+  for (const s of [lo, hi])
+    for (let i = 0; i < segments; i++) {
+      const a = (2 * Math.PI * i) / segments;
+      const v = [0, 0, 0];
+      v[axis] = s;
+      v[u] = centre[u] + radius * Math.cos(a);
+      v[w] = centre[w] + radius * Math.sin(a);
+      verts.push(v);
+    }
+  const tris = [];
+  for (let i = 0; i < segments; i++) {
+    const j = (i + 1) % segments;
+    tris.push([i, j, segments + j], [i, segments + j, segments + i]);
+  }
+  for (let i = 1; i + 1 < segments; i++) {
+    tris.push([0, i, i + 1], [segments, segments + i + 1, segments + i]);
+  }
+  return { verts, tris };
+}
+
+/**
+ * Replaces cover bodies with a declared solid of revolution, and returns the new cover list.
+ *
+ * A CAD export models a cover as the printed part. The chair's wheel arrives as its two hollow
+ * printed halves, spoke openings and all, so rays reach the far wall through the body's own holes:
+ * the shadow came out a ragged patch instead of a circle, and COVER_RAY_MM had to be stretched to
+ * 120mm to catch that wall at all. What hides the fender is the mounted wheel's silhouette, and
+ * that is a known number — the same 280mm `public/templates/wheel-cover-circle.svg` draws — not
+ * something to recover by sampling a mesh full of holes.
+ *
+ * **The solid is posed from the file, never from the config.** `replacesDims` matches bodies by
+ * bbox dimensions (REGISTER_DIM_TOL_MM, the test registerCovers already matches parts to reference
+ * bodies on); matched bodies whose boxes overlap become ONE solid, which is what turns the wheel's
+ * two printed halves into a single disc; and the axis extent and centre are read off that cluster.
+ * Only `radiusMm` is declared, and it is checked against the cluster's own diameter. So a
+ * re-exported covers file carries the solid with it, and a radius disagreeing with the mesh fails
+ * loudly rather than quietly hiding the wrong disc somewhere.
+ */
+export function buildCoverSolids(covers, specs) {
+  const info = covers.map((c, i) => ({ i, b: bounds(c.verts) }));
+  const taken = new Set();
+  const built = [];
+  const report = [];
+  const overlaps = (a, b) => a.b.mn.every((x, k) => x <= b.b.mx[k] && b.b.mn[k] <= a.b.mx[k]);
+  for (const spec of specs) {
+    const axis = 'xyz'.indexOf(spec.axis);
+    const pool = info.filter(
+      (e) =>
+        !taken.has(e.i) &&
+        e.b.dims.every((d, k) => Math.abs(d - spec.replacesDims[k]) < REGISTER_DIM_TOL_MM),
+    );
+    if (!pool.length)
+      throw new Error(
+        `covers.solids "${spec.id}": no cover body measures ` +
+          `${spec.replacesDims.join(' x ')}mm (within ${REGISTER_DIM_TOL_MM}mm). The file holds ` +
+          info.map((e) => e.b.dims.map((d) => d.toFixed(2)).join(' x ')).join(', '),
+      );
+    const group = new Array(pool.length).fill(-1);
+    let groups = 0;
+    for (let i = 0; i < pool.length; i++) {
+      if (group[i] >= 0) continue;
+      const g = groups++;
+      group[i] = g;
+      const stack = [i];
+      while (stack.length) {
+        const a = stack.pop();
+        for (let j = 0; j < pool.length; j++)
+          if (group[j] < 0 && overlaps(pool[a], pool[j])) {
+            group[j] = g;
+            stack.push(j);
+          }
+      }
+    }
+    for (let g = 0; g < groups; g++) {
+      const members = pool.filter((_, k) => group[k] === g);
+      const cb = bounds(members.flatMap((e) => covers[e.i].verts));
+      for (let k = 0; k < 3; k++) {
+        if (k === axis) continue;
+        if (Math.abs(cb.dims[k] - 2 * spec.radiusMm) >= REGISTER_DIM_TOL_MM)
+          throw new Error(
+            `covers.solids "${spec.id}": a ${spec.radiusMm}mm radius wants a ` +
+              `${2 * spec.radiusMm}mm span on ${'xyz'[k]}, but the ${members.length} ` +
+              `bod${members.length === 1 ? 'y' : 'ies'} it replaces span ` +
+              `${cb.dims[k].toFixed(2)}mm there`,
+          );
+      }
+      built.push(cylinderMesh(axis, cb.mn[axis], cb.mx[axis], cb.mid, spec.radiusMm));
+      for (const e of members) taken.add(e.i);
+      report.push({ id: spec.id, replaced: members.length, mid: cb.mid, dims: cb.dims });
+    }
+  }
+  return { covers: [...covers.filter((_, i) => !taken.has(i)), ...built], report };
+}
+
+/**
  * Registers the covers file's frame against the bake frame and returns the cover meshes
  * transformed into it. A CAD export lands in its own axes (the chair's covers file is y-up where
  * the bake frame is z-forward), so the reference bodies (the kind's own parts, re-exported in the
@@ -317,11 +424,19 @@ export function registerCovers(config, parts, objects) {
         `${best.residual.toFixed(3)}mm (limit ${REGISTER_RESIDUAL_MM}mm)`,
     );
   const xform = (v) => apply(best.R, v).map((x, k) => x + best.T[k]);
-  const covers = coverObjs.map((c) => ({ verts: c.verts.map(xform), tris: c.tris }));
+  let covers = coverObjs.map((c) => ({ verts: c.verts.map(xform), tris: c.tris }));
+  // Before the mirror snap, not after: a declared solid is posed from the bodies it replaces, so
+  // it inherits their sub-millimetre asymmetry, and symmetrizeCovers is what takes that back out.
+  let solids = null;
+  if (config.covers.solids?.length) {
+    const s = buildCoverSolids(covers, config.covers.solids);
+    covers = s.covers;
+    solids = s.report;
+  }
   const mirror = config.covers.mirrorAxis
     ? symmetrizeCovers(covers, 'xyz'.indexOf(config.covers.mirrorAxis))
     : null;
-  return { covers, matched: best.matched, residual: best.residual, mirror };
+  return { covers, matched: best.matched, residual: best.residual, mirror, solids };
 }
 
 /**
@@ -382,6 +497,9 @@ function bounds(verts) {
 export function symmetrizeCovers(covers, axis) {
   if (axis < 0) throw new Error('covers.mirrorAxis must be "x", "y" or "z"');
   const flip = (v) => v.map((x, k) => (k === axis ? -x : x));
+  // Which cover is each cover's mirror image. A body with no partner straddles the plane and is
+  // its own, so the map is total and the classifier can reflect any blocker without a branch.
+  const twin = covers.map((_, i) => i);
   const info = covers.map((c, i) => ({ i, c, b: bounds(c.verts) }));
   const used = new Set();
   const moved = [];
@@ -442,6 +560,8 @@ export function symmetrizeCovers(covers, axis) {
     );
     used.add(a.i);
     used.add(partner.o.i);
+    twin[a.i] = partner.o.i;
+    twin[partner.o.i] = a.i;
     // Each side keeps its own mesh, translated onto its half of the mirrored pose. `have` is
     // already the destination's own vertices at that pose, computed for the residual above.
     src.c.verts = srcVerts;
@@ -452,6 +572,7 @@ export function symmetrizeCovers(covers, axis) {
     pairs: moved.length / 2,
     maxShiftMm: moved.length ? Math.max(...moved) : 0,
     maxResidualMm: maxResidual,
+    twin,
   };
 }
 
@@ -929,32 +1050,23 @@ function nearestBody(index, p, cap) {
 /** Barycentric point (s, t) of the triangle v0/v1/v2, in whatever dimension they carry. */
 export const at = (v0, v1, v2, s, t) => v0.map((x, i) => x + (v1[i] - x) * s + (v2[i] - x) * t);
 
-const triArea3 = (a, b, c) => {
-  const n = cross3(sub3(b, a), sub3(c, a));
-  return Math.hypot(n[0], n[1], n[2]) / 2;
-};
-
 /**
- * Which printed parts each cover is allowed to hide surface on. Surface a cover hides on any other
- * part stays printable: giving up hidden surface only wastes a filament change, while claiming
- * surface the assembly does not actually hide deletes artwork someone can see.
+ * Which printed parts each cover may hide surface on, or `null` for "wherever it occludes".
  *
  * A cover that RESTS on parts hides on the parts it rests on, contact being the same
- * COVER_CONTACT_MM the classifier calls touching. A cover that rests on nothing is carried by one
- * part, and hides only there: the part nearest to the largest share of the cover's own surface.
+ * COVER_CONTACT_MM the classifier calls touching. The chair's two cushions rest at 0.42-0.62mm on
+ * everything they hide (measured 2026-08-30), so contact names their parts exactly.
  *
- * Measured on the chair (2026-08-30, scratch mount.mjs / mount3.mjs): the two cushions rest at
- * 0.42-0.62mm on every part they hide, while all four casters stand at a uniform 3.615mm from
- * their mount, their fender AND their storage side — the stub models the caster as a clearance
- * pocket, so no contact distinguishes what carries it. Their own surface does: nearest-part share
- * splits 103,234mm² mount to 26,305mm² fender on one caster of each side and 58,608 to 40,207 on
- * the other, the SAME numbers left and right, so both flanks are trimmed the same way.
+ * A cover that rests on nothing is unconstrained. It used to be attributed to the ONE part holding
+ * the largest share of its own nearest surface, which on the chair gave each wheel its mount and
+ * nothing else — and that is what cut the wheel's shadow off along a straight line down the
+ * mount/fender seam on both side sheets, when a mounted wheel plainly hides across it. Each fender
+ * carries ~7,450mm² of surface the wheel hides and the rule handed all of it back.
  *
- * What this gives up is the fender arm. Both wings classify as hidden nearly identically (7,450
- * against 7,477mm² raw, 0.4% apart), and only the right one kept 639mm² of it through the 20mm
- * bleed, because the two fender meshes are tessellated differently (2,517 against 4,922 chart
- * triangles, landing at different zone-u positions) and the bleed is what decides which survives.
- * Nothing about the chair is asymmetric there; the UV seam layout is.
+ * The rule was guarding against a cover claiming surface the assembly does not actually hide. But
+ * the hemisphere test already answers that, and now answers it against exact geometry: the wheel is
+ * a declared solid disc (see buildCoverSolids) rather than a hollow CAD half-dish whose own spoke
+ * openings let rays through. A second, weaker guess layered on top only subtracted right answers.
  */
 function coverHomeParts(coverIdx, partIdx, covers, parts) {
   const home = covers.map(() => new Set());
@@ -972,28 +1084,7 @@ function coverHomeParts(coverIdx, partIdx, covers, parts) {
       if (body >= 0) home[body].add(pi);
     }
   });
-  covers.forEach((c, ci) => {
-    if (home[ci].size) return;
-    const share = new Float64Array(parts.length);
-    for (const t of c.tris) {
-      const a = c.verts[t[0]],
-        b = c.verts[t[1]],
-        d = c.verts[t[2]];
-      const cen = [(a[0] + b[0] + d[0]) / 3, (a[1] + b[1] + d[1]) / 3, (a[2] + b[2] + d[2]) / 3];
-      // Uncapped. This carried a triangle-inequality bound off the previous centroid's answer, on
-      // the theory that it kept the shell search local, plus the retry a too-tight bound needs and
-      // a regression test for the one time it lost a whole block's area out of the vote. Measured
-      // on the chair (4 covers, 71,608 triangles reaching this loop): 10.61s with the bound
-      // (10,603 / 10,614 / 10,600ms) against 10.74s without (10,713 / 10,761ms). It cost more than
-      // it saved, because each of its 244 misses paid a full uncapped search on top.
-      const hit = nearestBody(partIdx, cen, Infinity);
-      if (hit.body >= 0) share[hit.body] += triArea3(a, b, d);
-    }
-    let best = 0;
-    for (let pi = 1; pi < share.length; pi++) if (share[pi] > share[best]) best = pi;
-    if (share[best] > 0) home[ci].add(best);
-  });
-  return home;
+  return home.map((h) => (h.size ? h : null));
 }
 
 /**
@@ -2149,6 +2240,24 @@ function validateConfig(config) {
       );
     if (c.mirrorAxis !== undefined && !['x', 'y', 'z'].includes(c.mirrorAxis))
       throw new Error('covers.mirrorAxis must be "x", "y" or "z" when present');
+    if (c.solids !== undefined) {
+      if (!Array.isArray(c.solids) || !c.solids.length)
+        throw new Error('covers.solids must be a non-empty array when present');
+      for (const s of c.solids) {
+        if (!s.id) throw new Error('every covers.solids entry needs an id');
+        if (s.type !== 'cylinder')
+          throw new Error(`covers.solids "${s.id}": the only type is "cylinder"`);
+        if (!['x', 'y', 'z'].includes(s.axis))
+          throw new Error(`covers.solids "${s.id}": axis must be "x", "y" or "z"`);
+        if (!(s.radiusMm > 0))
+          throw new Error(`covers.solids "${s.id}": radiusMm must be positive`);
+        if (!Array.isArray(s.replacesDims) || s.replacesDims.length !== 3)
+          throw new Error(
+            `covers.solids "${s.id}": replacesDims must be the 3 bbox dimensions of the bodies ` +
+              `it replaces, which is what poses the solid from the file`,
+          );
+      }
+    }
   }
   const ids = new Set();
   for (const z of config.zones) {
@@ -2180,18 +2289,25 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     throw new Error('parts array does not match config.parts (same ids, same order, required)');
   if (config.covers && !(opts.covers && opts.wasm))
     throw new Error('config declares covers but the bake was given no cover meshes / Manifold');
+  if (config.covers?.mirrorAxis && opts.coverTwin?.length !== opts.covers.length)
+    throw new Error(
+      'covers.mirrorAxis needs opts.coverTwin, the cover pairing symmetrizeCovers returns: ' +
+        'without it the classifier cannot ask the mirrored question and the bake is asymmetric',
+    );
   const coverIdx = config.covers ? bodyIndex(opts.covers) : null;
   const coverHome = coverIdx
     ? coverHomeParts(coverIdx, bodyIndex(parts), opts.covers, parts)
     : null;
   const partCovers = parts.map((_, pi) =>
-    coverHome ? coverHome.flatMap((h, ci) => (h.has(pi) ? [ci] : [])) : [],
+    coverHome ? coverHome.flatMap((h, ci) => (h === null || h.has(pi) ? [ci] : [])) : [],
   );
   if (coverHome)
     coverHome.forEach((h, ci) =>
       log(
         `  cover ${ci} hides on: ${
-          [...h].map((pi) => parts[pi].libraryPartId).join(', ') || '(nothing)'
+          h === null
+            ? 'any part it occludes (rests on nothing)'
+            : [...h].map((pi) => parts[pi].libraryPartId).join(', ')
         }`,
       ),
     );
@@ -2303,6 +2419,24 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       const coveredRings = [];
       const visibleRings = [];
       const blockers = new Uint8Array(coverIdx.bodyCount);
+      const mirrorAxis = config.covers?.mirrorAxis ? 'xyz'.indexOf(config.covers.mirrorAxis) : -1;
+      const twin = opts.coverTwin;
+      /**
+       * One sample's verdict as bit 1 = hidden, bit 2 = hidden by a cover this part carries.
+       * `mirrored` says the point has been reflected across the mirror plane, so a blocker is
+       * stamped against the twin cover and has to be read back through `twin`.
+       */
+      const classify = (p, nrm, mine, mirrored) => {
+        // Contact first: it is one ray against the hemisphere's 32, and it is the cheap answer
+        // for everything the cushions actually touch. A cover this close is resting on this
+        // part by definition, so a contact hit needs no further attribution.
+        if (coverOccludes(coverIdx, p, nrm, COVER_CONTACT_MM) >= 0) return 3;
+        blockers.fill(0);
+        if (!hemisphereBlocked(coverIdx, p, nrm, blockers)) return 0;
+        // Hidden by a cover this part does not carry: hidden all the same, so it must not
+        // dilate into the dead region around it, and not ours to hatch either.
+        return mine.some((ci) => blockers[mirrored ? twin[ci] : ci]) ? 3 : 1;
+      };
       zoneTris.forEach((ti, k) => {
         const p3 = weld.tris[ti].v.map((g) => weld.verts[g]);
         const mine = partCovers[weld.tris[ti].part];
@@ -2315,18 +2449,23 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         for (const cell of sampleCells(uvArea)) {
           const [a, b] = cellCentroid(cell);
           const s3 = at(p3[0], p3[1], p3[2], a, b);
-          // Contact first: it is one ray against the hemisphere's 32, and it is the cheap answer
-          // for everything the cushions actually touch. A cover this close is resting on this
-          // part by definition, so a contact hit needs no further attribution.
-          let hidden = coverOccludes(coverIdx, s3, n, COVER_CONTACT_MM) >= 0;
-          let claimed = hidden;
-          if (!hidden) {
-            blockers.fill(0);
-            hidden = hemisphereBlocked(coverIdx, s3, n, blockers);
-            // Hidden by a cover this part does not carry: hidden all the same, so it must not
-            // dilate into the dead region around it, and not ours to hatch either.
-            claimed = hidden && mine.some((ci) => blockers[ci]);
+          // Asked at the sample AND at its mirror image, hidden if either says so. Mirrored parts
+          // and mirrored covers are exact (bbox delta 0.000mm on all four twin pairs; the snapped
+          // wheel discs agree to 1e-13mm), so both points sit on real, identical surface — but the
+          // question asked at them is not mirror-equivariant. Two things break it: the twins are
+          // tessellated differently (37,820 against 29,822 triangles on the fenders), so the
+          // sample grids land in different places; and hemisphereBlocked builds its ray frame from
+          // `n` by a rule whose output is not the reflection of the reflected input. Either alone
+          // flips a knife-edge sample, which is what left the flanks 5.3% apart with nothing
+          // asymmetric in the geometry. `h(p) OR h(-p)` is symmetric by construction, so it is a
+          // guarantee rather than a threshold tuned until the two sides happened to agree.
+          let v = classify(s3, n, mine, false);
+          if (mirrorAxis >= 0 && v !== 3) {
+            const flip = (u) => u.map((x, ax) => (ax === mirrorAxis ? -x : x));
+            v |= classify(flip(s3), flip(n), mine, true);
           }
+          const hidden = (v & 1) !== 0;
+          const claimed = (v & 2) !== 0;
           const ring = cell.map(([s, t]) => at(q[0], q[1], q[2], s, t));
           if (!hidden) visibleRings.push(ring);
           else if (claimed) coveredRings.push(ring);
@@ -2334,18 +2473,24 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       });
       if (coveredRings.length) {
         const wasm = opts.wasm;
-        const covCS = new wasm.CrossSection(coveredRings, 'NonZero');
-        const visible = new wasm.CrossSection(visibleRings, 'NonZero');
-        // Miter, though Round is the truer dilation-by-a-disc: a miter join over-reaches past a
-        // convex corner, and on the staircase boundary the samples leave that is every corner.
-        // Tried Round and measured it worse where it counts — the marked slivers in the front
-        // sheet's top corners went from 27mm² back to 146mm², past even the 138mm² they had
-        // before this change, in exchange for tidier spikes around the seat's two through-holes.
-        const grown = visible.offset(config.covers.bleedMm, 'Miter', 2, 16);
-        const rough = covCS.subtract(grown);
-        deadCS = smoothDead(rough);
-        rough.delete();
-        for (const cs of [covCS, visible, grown]) cs.delete();
+        // Smooth the classification, THEN bleed — not the other way round. Both sets are unions of
+        // COVER_SAMPLE_MM2 cells, so both arrive with a staircase edge and a scatter of lone cells
+        // that escaped their neighbours' verdict. Those are artifacts of how the surface was asked,
+        // not shape, and dilating one by bleedMm turns it into a 2*bleedMm bite out of the dead
+        // region: a hidden strip narrower than that disappears outright. Measured on the fenders,
+        // which classify 0.4% apart on the two flanks (7,450 against 7,477mm²): bleeding first took
+        // the whole of the left one's wheel shadow and left the right one's, and the difference in
+        // the OUTPUT was 100%. Smoothing first is also what lets the offset be Round — the true
+        // dilation by a disc — since Miter was only ever there to fight the staircase's corners.
+        const covRaw = new wasm.CrossSection(coveredRings, 'NonZero');
+        const visRaw = new wasm.CrossSection(visibleRings, 'NonZero');
+        const covCS = smoothDead(covRaw);
+        const visible = smoothDead(visRaw);
+        const grown = visible.offset(config.covers.bleedMm, 'Round', 2, 16);
+        deadCS = covCS.subtract(grown);
+        // A Set: smoothDead hands back its own argument when DEAD_SMOOTH_MM is off, and Manifold's
+        // wasm handles do not survive being deleted twice.
+        for (const cs of new Set([covRaw, visRaw, covCS, visible, grown])) cs.delete();
         // Whole components, not per-chart pieces: a region split across a printed seam is still one
         // patch to whoever reads the template, and dropping half of it would be the visible defect.
         // A component under the bleed's own footprint (a disc of bleedMm) is smaller than the margin

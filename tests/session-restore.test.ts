@@ -389,6 +389,40 @@ describe('applyRestoredSession: assembly mode', () => {
     expect(state.artworks.map((a) => a.zone)).toEqual([null]);
   });
 
+  // The same silent loss as the test above, reached from the other direction: the right kind loads,
+  // but a re-bake has since renamed or dropped one of its zones. geometry/assembly.ts matches
+  // instances to mappers by zoneId, so a binding naming a zone nobody offers is cut nowhere and
+  // says nothing — and the dropdown shows no selection rather than a wrong one, so there is not
+  // even a visible symptom to chase. Sending it to All zones cuts something the user can see.
+  it('re-points a design off a zone the loaded parts no longer offer, and says so', async () => {
+    vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {
+      state.assembly.parts = [
+        {
+          id: 7,
+          name: 'Chair wheel mount (left)',
+          zones: [{ id: 'left', name: 'Left side' }],
+        },
+      ] as unknown as typeof state.assembly.parts;
+    });
+    const [art] = session().artworks;
+
+    await applyRestoredSession(
+      session({
+        shapeKind: 'assembly',
+        assembly: { kindId: 'chair-body', variantId: null },
+        artworks: [
+          { ...art, id: 'a-live', zoneId: 'left' },
+          { ...art, id: 'a-retired', zoneId: 'seat' },
+        ],
+      }),
+    );
+
+    expect(state.artworks.find((a) => a.zone?.zoneId === 'left')).toBeDefined();
+    expect(state.artworks.filter((a) => a.zone === null)).toHaveLength(1);
+    expect(state.artworks.some((a) => a.zone?.zoneId === 'seat')).toBe(false);
+    expect(WARNINGS.some((w) => /no longer has/.test(w.message))).toBe(true);
+  });
+
   it('drops the parts already loaded, so the fallback kind can auto-load its own', async () => {
     state.assembly.parts = [{ id: 1, name: 'Footrest' }] as unknown as typeof state.assembly.parts;
 

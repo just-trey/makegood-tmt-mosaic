@@ -8,7 +8,7 @@ model: opus
 
 [add-part](../add-part/SKILL.md) covers a part with **one** design face: the app
 detects the largest flat patch and the SVG maps onto it. A body like the chair
-has five design surfaces across eleven printed pieces, and no flat patch is any
+has eight design surfaces across ten printed pieces, and no flat patch is any
 of them. Those come from a **zone bake**, an offline unwrap whose committed
 outputs (a sidecar plus per-zone templates) are the real artifacts.
 [bake-zones.mjs](../../../scripts/bake-zones.mjs) is the reproducible recipe.
@@ -139,9 +139,16 @@ the kind is assembled, so it takes no artwork and no filament changes:
 - The export's frame need not match the bake frame: the reference bodies are
   matched to the config parts by bounding box and the transform is solved from
   their consensus, refused above 1mm residual.
-- `mirrorAxis` (optional, `x`/`y`/`z`) snaps mirror-paired cover bodies (the
-  chair's four casters) onto exactly mirrored POSES about that axis before
-  classification runs. A CAD export lands each instance a fraction of a
+- `solids` (optional) replaces cover bodies with a declared primitive, posed
+  from the file. One entry names an `axis`, a `radiusMm`, and the
+  `replacesDims` bbox of the bodies it stands in for; matched bodies whose
+  boxes overlap become one solid, and the radius is checked against their own
+  diameter so a wrong number fails the bake. Reach for it when the CAD body is
+  the printed part rather than the thing that blocks the view — the chair's
+  wheel arrives as two hollow halves with spoke openings, and rays reached its
+  far wall through its own holes until one solid 280mm disc replaced them.
+- `mirrorAxis` (optional, `x`/`y`/`z`) snaps mirror-paired cover bodies onto
+  exactly mirrored POSES about that axis before classification runs. A CAD export lands each instance a fraction of a
   millimetre off its own mirror image, which is enough to flip a knife-edge
   sample from hidden to visible; snapping removes that tie-breaker instead of
   tuning around it. A cover with no mirror partner (a cushion straddling the

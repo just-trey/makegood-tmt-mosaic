@@ -16,6 +16,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   shifted wheel or cushion never reveals blank plastic. The hidden areas show
   crosshatched in the 3D view before any artwork is placed, and hatched on the
   printable templates, so the cut is never a surprise.
+- **The wheel's blocked-out area is the shape of the wheel.** It reads as an
+  arc across the side sheet and carries on over the mount-to-fender join,
+  instead of stopping in a straight line at the join. The covers file models the
+  wheel as its two printed halves, which are hollow, so the old shadow was
+  drawn partly through the wheel's own spoke openings; the bake now stands a
+  solid 280mm disc in their place.
+- **Left and right block out the same areas.** The chair is symmetric and its
+  answer now is too: the two sides differ by 1.2% where they differed by 5.3%,
+  and each fender used to keep the wheel's whole shadow or none of it depending
+  on which side it was.
+
+### Changed
+
+- **The seat pan takes no design.** The cushion covers all of it, so no zone
+  reaches it any more and it prints in one colour. The `Seat` zone became `Left
+seat side` and `Right seat side` on the two shelves either side of the pan,
+  which the cushion covers 81% of and which stay selectable for the rest. A
+  saved session naming the old zone says so on restore and moves that design to
+  All zones.
 
 ### Fixed
 

@@ -1251,6 +1251,28 @@ prints in the base color.
   notice just makes the coverage visible; it doesn't ask you to change
   anything.
 
+## Troubleshooting: "… designs were on zones this part no longer has"
+
+Full text: _"1 design was on a zone this part no longer has. It's on All zones
+now."_ ("2 designs were on zones this part no longer has. They're on All zones
+now." for more than one.)
+
+**Only on restoring a saved session**, and only when the part still loads. The
+saved session stores which zone each design was on by name. A release that
+re-bakes a part's zones can rename or retire one, and the saved name then
+matches nothing on the part that just loaded.
+
+The design is not lost. It is moved to All zones, which is the binding that
+always cuts something, and the zone badge on its row says so.
+
+**What happened to the chair.** The seat pan came out of every zone, because the
+cushion covers all of it, and the `Seat` zone became `Left seat side` and `Right
+seat side` on the two shelves either side. A session saved before that names a
+zone the chair no longer has.
+
+**What to do.** Pick the zone you want from the design's dropdown, or leave it
+on All zones. Saving again writes the new name, so the notice does not come back.
+
 ## Troubleshooting: "Exporting with artwork on … of … zones…" warnings
 
 Full text: _"Exporting with artwork on … of … zones. The other … zones will
