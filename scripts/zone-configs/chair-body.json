@@ -66,13 +66,6 @@
       "up": [0, 1, 0]
     },
     {
-      "id": "back",
-      "name": "Back",
-      "seedPoint": [0, 280, -497],
-      "maxAngleDeg": 35,
-      "up": [0, 1, 0]
-    },
-    {
       "id": "front",
       "name": "Front",
       "seedPoint": [0, 281, -477],
