@@ -675,6 +675,15 @@ const COVER_HEMI_DIRS = 32;
  * leaves artwork somewhere nobody looks. It lands at 90% of the wheels' straight-on projected
  * shadow (33,746 against 37,456mm² on `left`), the missing tenth being the rim you can see into at
  * a grazing angle.
+ *
+ * **Settled by the owner, 2026-09-01: surface the cushion covers takes no image or pattern.** An
+ * earlier run had them marking four regions on the Front sheet as hatched wrongly, and the bake
+ * then read 0 / 0 / 1 / 9mm² in them. This threshold, the contact test and the smoothing order
+ * together now read 297 / 390 / 1,402 / 1,465mm² there. The cushion sits 0.5 to 18.4mm off the
+ * surface in those four (median 4.4mm on the two by the shoulder, 12-13mm on the two lower down),
+ * which is the band where "can you see it once assembled" is a judgement and not a measurement.
+ * The ruling above is that judgement, and it replaces the four marks. Do not tune this constant to
+ * bring those numbers back down.
  */
 const COVER_HIDDEN_FRACTION = 0.85;
 /**
