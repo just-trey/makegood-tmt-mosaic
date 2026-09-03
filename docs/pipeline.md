@@ -173,7 +173,7 @@ rounded edge the way real vinyl would
   most of its outward hemisphere (`COVER_HEMI_DIRS` rays,
   `COVER_HIDDEN_FRACTION` blocked) — the contact test catches a flush cushion
   the hemisphere test misses on an angled wall, the hemisphere test catches a
-  curved wheel shadow a single along-normal ray missed. Four things then keep
+  curved wheel shadow a single along-normal ray missed. Five things then keep
   that verdict honest, and each fixes a shape the sheets came out wrong:
   - **Declared solids** (`covers.solids`) replace cover bodies with an exact
     primitive. The wheel arrives as its two hollow printed halves, and rays
