@@ -12,13 +12,15 @@ import {
   pruneSettingsToPalette,
   removeArtworkInstance,
   setActiveArtwork,
+  setArtworkMirror,
   setArtworkMode,
   setArtworkZone,
   syncActiveArtworkPlacement,
+  zoneCoverage,
 } from '../src/state/artwork';
 import { state } from '../src/state/store';
 import { OVERLAP_WARN_FRACTION } from '../src/geometry/designOverlap';
-import type { AssemblyPart, ParsedSVG } from '../src/types';
+import type { AssemblyPart, ParsedSVG, ZoneMirror } from '../src/types';
 
 function fakeParsed(): ParsedSVG {
   return {
@@ -105,6 +107,7 @@ function zonedPart(
   zoneId: string,
   zoneName: string,
   templateFile?: string,
+  mirror?: ZoneMirror,
 ): AssemblyPart {
   return {
     id,
@@ -114,7 +117,7 @@ function zonedPart(
     patches: null,
     patchIdx: 0,
     boundaryLoops: null,
-    zones: [{ id: zoneId, name: zoneName, templateFile }],
+    zones: [{ id: zoneId, name: zoneName, templateFile, mirror }],
     topZ: 0,
     baseDepth: 1,
     isDuplicateOf: null,
@@ -528,6 +531,112 @@ describe('availableZones / setArtworkZone', () => {
     setArtworkZone(a.id, null);
     expect(a.zone).toBeNull();
   });
+
+  it('reports each zone’s baked mirror relation', () => {
+    state.assembly.parts = [
+      zonedPart(1, 'right', 'Right side', undefined, { twin: 'left' }),
+      zonedPart(2, 'front', 'Front', undefined, { self: true }),
+    ];
+    expect(availableZones()).toEqual([
+      { zoneId: 'right', name: 'Right side', mirror: { twin: 'left' } },
+      { zoneId: 'front', name: 'Front', mirror: { self: true } },
+    ]);
+  });
+
+  it('drops mirror when the instance is rebound to a zone with none', () => {
+    state.assembly.parts = [
+      zonedPart(1, 'right', 'Right side', undefined, { twin: 'left' }),
+      zonedPart(2, 'seat', 'Seat'),
+    ];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'right');
+    setArtworkMirror(a.id, true);
+    expect(a.mirror).toBe(true);
+
+    setArtworkZone(a.id, 'seat');
+    expect(a.mirror).toBe(false);
+  });
+
+  it('drops mirror when the instance is unbound to "All zones"', () => {
+    state.assembly.parts = [zonedPart(1, 'right', 'Right side', undefined, { twin: 'left' })];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'right');
+    setArtworkMirror(a.id, true);
+
+    setArtworkZone(a.id, null);
+    expect(a.mirror).toBe(false);
+  });
+
+  it('keeps mirror when rebound to a different zone that also offers one', () => {
+    // The order restoreSession runs in: the pool restores with mirror already set, then every
+    // instance's zone is rebound via setArtworkZone as if the user had just picked it.
+    state.assembly.parts = [
+      zonedPart(1, 'right', 'Right side', undefined, { twin: 'left' }),
+      zonedPart(2, 'front', 'Front', undefined, { self: true }),
+    ];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'right');
+    setArtworkMirror(a.id, true);
+
+    setArtworkZone(a.id, 'front');
+    expect(a.mirror).toBe(true);
+  });
+});
+
+describe('setArtworkMirror', () => {
+  it('turns mirror on only when the bound zone offers one', () => {
+    state.assembly.parts = [zonedPart(1, 'right', 'Right side', undefined, { twin: 'left' })];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'right');
+
+    setArtworkMirror(a.id, true);
+    expect(a.mirror).toBe(true);
+
+    setArtworkMirror(a.id, false);
+    expect(a.mirror).toBe(false);
+  });
+
+  it('leaves mirror off when the bound zone offers none', () => {
+    state.assembly.parts = [zonedPart(1, 'seat', 'Seat')];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'seat');
+
+    setArtworkMirror(a.id, true);
+    expect(a.mirror).toBe(false);
+  });
+
+  it('leaves mirror off on an unbound ("All zones") instance', () => {
+    state.assembly.parts = [zonedPart(1, 'right', 'Right side', undefined, { twin: 'left' })];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+
+    setArtworkMirror(a.id, true);
+    expect(a.mirror).toBe(false);
+  });
+});
+
+describe('zoneCoverage', () => {
+  it('counts a mirrored instance’s twin zone as covered', () => {
+    state.assembly.parts = [
+      zonedPart(1, 'right', 'Right side', undefined, { twin: 'left' }),
+      zonedPart(2, 'left', 'Left side', undefined, { twin: 'right' }),
+    ];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'right');
+
+    expect(zoneCoverage()).toEqual({ total: 2, covered: 1 });
+
+    setArtworkMirror(a.id, true);
+    expect(zoneCoverage()).toEqual({ total: 2, covered: 2 });
+  });
+
+  it('does not double-count a self-mirrored zone', () => {
+    state.assembly.parts = [zonedPart(1, 'front', 'Front', undefined, { self: true })];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'front');
+    setArtworkMirror(a.id, true);
+
+    expect(zoneCoverage()).toEqual({ total: 1, covered: 1 });
+  });
 });
 
 describe('addInstanceForSource', () => {
@@ -697,5 +806,16 @@ describe('clearArtworkZoneBindings', () => {
 
     expect(a.zone).toBeNull();
     expect(state.artworks).toHaveLength(1);
+  });
+
+  it('clears mirror along with the zone binding', () => {
+    state.assembly.parts = [zonedPart(1, 'right', 'Right side', undefined, { twin: 'left' })];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'right');
+    setArtworkMirror(a.id, true);
+
+    clearArtworkZoneBindings();
+
+    expect(a.mirror).toBe(false);
   });
 });

@@ -344,6 +344,23 @@ design on top is a real workflow. It has the same overlapping-inlay problem
 where the sticker's colours differ from the pattern's. Known gap, also in
 [tech-debt.md](tech-debt.md).
 
+## Troubleshooting: "… crosses the middle of …" notice (assembly mode)
+
+Full text: _""…" crosses the middle of "…". Its … half is kept and mirrored
+onto the …."_
+
+A design bound to a zone with no twin (the chair's front and back panels)
+mirrors across its own centre line instead of onto a paired zone. Ticking
+Mirror on a row bound to one of those keeps whichever half your design's
+placed centre lands on and reflects it onto the other half. If your design
+crosses that centre line, the crossing part is cropped off before it's
+mirrored — this notice says which half survived.
+
+**This is not a warning.** Both halves still print; the design is just
+cropped to one half before it repeats. Move the design so it sits entirely on
+one side of the centre line (drawn dashed on the zone's template) if you want
+the whole thing to survive uncropped.
+
 ## Troubleshooting: Fill warnings, "You have one tile instead"
 
 Fill repeats one design across a whole part. When it can't work out how, it

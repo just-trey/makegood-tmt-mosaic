@@ -207,6 +207,14 @@ rounded edge the way real vinyl would
   exported under that part's object.
 - Target a zone from the Artwork list's per-row dropdown, or by clicking the
   surface in the 3D view.
+- A zone pair mirrored across the config's `mirrorAxis` (or a zone seeded on
+  that plane, mirrored across its own centre) bakes a `mirror` relation and a
+  measured residual into the sidecar. Ticking Mirror on a bound artwork row
+  cuts the same design on the twin zone, reflected about its `uvBounds`
+  centre; a self-mirrored zone instead keeps whichever half the design's
+  placed centre lands on and reflects it onto the other, with a notice when
+  that crops content. The residual re-derives from
+  [scripts/measure-zone-mirror.mjs](../scripts/measure-zone-mirror.mjs).
 
 **Artwork can't cross between zones, and the split is load-bearing.**
 A zone's spread of surface directions must stay tight enough that flattening

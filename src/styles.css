@@ -677,6 +677,14 @@ input[type='checkbox'] {
   color: var(--accent);
   white-space: nowrap;
 }
+.artwork-row .artwork-mirror-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-hair);
+  font-size: var(--text-meta);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
 
 /* Colors/Detail for a loaded image. Sits under its row and is indented into it, because these
    belong to the image itself — every placement of it shares them — not to the placement. */

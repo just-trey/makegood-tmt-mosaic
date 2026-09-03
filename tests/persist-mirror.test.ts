@@ -17,8 +17,9 @@ import {
   saveSession,
   type PersistedSession,
 } from '../src/state/persist';
+import { asmLoadFullAssembly } from '../src/assembly/parts';
 import { state } from '../src/state/store';
-import type { ArtworkInstance } from '../src/types';
+import type { ArtworkInstance, AssemblyPart, ZoneMirror } from '../src/types';
 
 /**
  * An instance's Mirror flag has to survive a reload like its other placement fields, and a
@@ -58,6 +59,28 @@ const instance = (over: Partial<ArtworkInstance> = {}): ArtworkInstance => ({
   mode: 'sticker',
   ...over,
 });
+
+/** A minimal zoned part carrying one named DesignZone, for the mirror-survives-restore test. */
+function zonedPart(id: number, zoneId: string, mirror?: ZoneMirror): AssemblyPart {
+  return {
+    id,
+    name: `part-${id}`,
+    roleId: 'r',
+    positions: null,
+    patches: null,
+    patchIdx: 0,
+    boundaryLoops: null,
+    zones: [{ id: zoneId, name: zoneId, mirror }],
+    topZ: 0,
+    baseDepth: 1,
+    isDuplicateOf: null,
+    pivotX: 0,
+    pivotZ: 0,
+    angleDeg: 0,
+    loaded: true,
+    cutThrough: false,
+  };
+}
 
 function session(artworks: PersistedSession['artworks']): PersistedSession {
   return {
@@ -105,7 +128,7 @@ beforeEach(() => {
 });
 
 describe('the Mirror flag across a reload', () => {
-  it('round-trips through save and restore', async () => {
+  it('the field itself round-trips through save and restore', async () => {
     state.sources = [
       { id: 's1', kind: 'upload', name: 'a.svg', svgText: SVG, parsed: null },
     ] as unknown as typeof state.sources;
@@ -114,9 +137,6 @@ describe('the Mirror flag across a reload', () => {
     saveSession();
     const saved = loadSavedSession()!;
     expect(saved.artworks[0].mirror).toBe(true);
-
-    await applyRestoredSession(saved);
-    expect(state.artworks[0].mirror).toBe(true);
   });
 
   it('a session saved before the flag existed restores with it off', async () => {
@@ -124,5 +144,29 @@ describe('the Mirror flag across a reload', () => {
     await applyRestoredSession(session([{ ...instance(), zoneId: null }]));
     expect(state.artworks).toHaveLength(1);
     expect(state.artworks[0].mirror).toBeFalsy();
+  });
+
+  it('drops on restore once the rebound target is no zone at all', async () => {
+    // shapeKind 'disc' in session() takes the non-assembly restore branch, which unbinds every
+    // zone (see applyRestoredSession's `keepSavedZones = false`) — so even a saved mirror:true
+    // has nothing left to mirror onto and setArtworkZone's own clearing rule drops it.
+    await applyRestoredSession(session([{ ...instance({ mirror: true }), zoneId: 'right' }]));
+    expect(state.artworks[0].mirror).toBe(false);
+  });
+
+  it('survives restore when rebound to a zone that still offers a mirror', async () => {
+    // restoreArtworkPool lands mirror:true on the instance before setArtworkZone ever runs; this
+    // is the case that flag has to survive — the saved zone is still offered and still mirrors.
+    vi.mocked(asmLoadFullAssembly).mockImplementationOnce(async () => {
+      state.assembly.parts = [zonedPart(1, 'right', { twin: 'left' })];
+    });
+    const saved = session([{ ...instance({ mirror: true }), zoneId: 'right' }]);
+    saved.shapeKind = 'assembly';
+    saved.assembly = { kindId: 'wheel', variantId: null };
+
+    await applyRestoredSession(saved);
+
+    expect(state.artworks[0].zone).toEqual({ partId: 1, zoneId: 'right' });
+    expect(state.artworks[0].mirror).toBe(true);
   });
 });

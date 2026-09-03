@@ -1,4 +1,4 @@
-import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState } from '../types';
+import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState, ZoneMirror } from '../types';
 import { clearBaseColor, state } from './store';
 import { deltaE, hexToLab } from '../color';
 import { parseRasterImage } from '../raster/parse';
@@ -554,11 +554,34 @@ export function setActiveArtwork(id: string | null): void {
   if (src) state.parsed = src.parsed;
 }
 
+/** Baked mirror relation of a zone, looked up off the loaded parts. Undefined off assembly mode too. */
+function zoneMirrorOf(zoneId: string): ZoneMirror | undefined {
+  for (const part of state.assembly.parts)
+    for (const z of part.zones ?? []) if (z.id === zoneId) return z.mirror;
+  return undefined;
+}
+
 /** Bind (or unbind, with `zoneId: null`) which zone an instance's artwork lands on. */
 export function setArtworkZone(instanceId: string, zoneId: string | null): void {
   const a = state.artworks.find((x) => x.id === instanceId);
   if (!a) return;
   a.zone = zoneId ? { partId: partIdForZone(zoneId), zoneId } : null;
+  // A saved (or already-ticked) Mirror survives rebinding to another zone that also offers it —
+  // restoreSession rebinds every instance's zone here after the pool restores mirror:true — and
+  // drops the moment the new zone (or "All zones") offers none, so a stale flag never reaches a
+  // mapper with no mirror to apply it against.
+  if (a.mirror && !(zoneId && zoneMirrorOf(zoneId))) a.mirror = false;
+}
+
+/**
+ * Toggle whether an instance also cuts on its bound zone's mirror. Only takes effect on a zone
+ * that actually offers one (`ZoneMirror`, baked per zone); asking for it on any other zone leaves
+ * it off, same as a session restored before Mirror existed.
+ */
+export function setArtworkMirror(instanceId: string, on: boolean): void {
+  const a = state.artworks.find((x) => x.id === instanceId);
+  if (!a) return;
+  a.mirror = on && !!(a.zone && zoneMirrorOf(a.zone.zoneId));
 }
 
 /**
@@ -611,11 +634,17 @@ function partIdForZone(zoneId: string): number {
  * assembly mode, or for a kind with no zone sidecar (a part with `zones: undefined` has one
  * implicit flat zone, not a pickable one).
  */
-export function availableZones(): { zoneId: string; name: string; templateFile?: string }[] {
-  const seen = new Map<string, { name: string; templateFile?: string }>();
+export function availableZones(): {
+  zoneId: string;
+  name: string;
+  templateFile?: string;
+  mirror?: ZoneMirror;
+}[] {
+  const seen = new Map<string, { name: string; templateFile?: string; mirror?: ZoneMirror }>();
   for (const part of state.assembly.parts)
     for (const z of part.zones ?? [])
-      if (!seen.has(z.id)) seen.set(z.id, { name: z.name, templateFile: z.templateFile });
+      if (!seen.has(z.id))
+        seen.set(z.id, { name: z.name, templateFile: z.templateFile, mirror: z.mirror });
   return Array.from(seen, ([zoneId, v]) => ({ zoneId, ...v }));
 }
 
@@ -631,9 +660,17 @@ export function zoneCoverage(): { total: number; covered: number } {
   if (!zones.length) return { total: 0, covered: 0 };
   if (state.artworks.some((a) => a.zone === null))
     return { total: zones.length, covered: zones.length };
-  const bound = new Set(
-    state.artworks.map((a) => a.zone?.zoneId).filter((id): id is string => !!id),
-  );
+  const bound = new Set<string>();
+  for (const a of state.artworks) {
+    const zoneId = a.zone?.zoneId;
+    if (!zoneId) continue;
+    bound.add(zoneId);
+    // A mirrored instance cuts on its twin too (or the same zone's other half, already counted).
+    if (a.mirror) {
+      const mirror = zoneMirrorOf(zoneId);
+      if (mirror && 'twin' in mirror) bound.add(mirror.twin);
+    }
+  }
   return { total: zones.length, covered: bound.size };
 }
 
@@ -686,6 +723,7 @@ export function clearArtwork(): void {
 export function clearArtworkZoneBindings(): void {
   state.artworks.forEach((a) => {
     a.zone = null;
+    a.mirror = false;
   });
 }
 

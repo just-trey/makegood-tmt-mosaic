@@ -61,6 +61,16 @@ dropdown.
 - **Props:** `{ zone: string }` (the zone id, or `'all'` for the unbound/"every zone" option)
 - **Dormant:** no offered kind ships design zones, so the dropdown never renders.
 
+### `artwork_mirror_toggled`
+
+Fired when the user ticks or unticks an artwork row's Mirror checkbox.
+
+- **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-mirror-check` change handler in `renderArtworkList`.
+- **Props:** `{ on: boolean, kind: 'twin' | 'centre' }` (`kind` is `'twin'` for a zone mirrored
+  onto a paired zone, `'centre'` for a zone mirrored across its own middle)
+- **Dormant:** no offered kind ships design zones, so the checkbox never renders — `chair-body`
+  is the only kind with mirrored zones and it stays hidden (see `docs/tech-debt.md`).
+
 ### `artwork_mode_changed`
 
 Fired when the user switches an artwork row between placing one copy and
