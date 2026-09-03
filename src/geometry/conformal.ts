@@ -10,6 +10,8 @@ import {
   type ManifoldAPI,
   type ManifoldSolid,
 } from './manifold';
+import { safeDiff } from './regions';
+import { warn } from '../warnings';
 import {
   rotatePointY,
   type CutRegion,
@@ -95,6 +97,12 @@ export interface ConformalChart {
    */
   subRegions?: { outer: number[][]; holes: number[][][] }[];
   /**
+   * Surface of this chart another part hides once assembled, already shrunk by the bake's bleed.
+   * Subtracted from `boundary()` so hidden surface spends no filament changes, and exposed via
+   * `deadArea()` for the viewport shading. Absent and empty both mean "nothing is hidden".
+   */
+  deadRegions?: { outer: number[][]; holes: number[][][] }[];
+  /**
    * The whole zone's UV bbox, measured across every part's chart at bake time — the template's
    * coordinate space. Placement and fill tiling anchor here rather than on this chart's own
    * vertices, so a zone spanning a seam places one design across the parts (each part cutting its
@@ -103,6 +111,15 @@ export interface ConformalChart {
    */
   zoneBounds?: { minU: number; minV: number; maxU: number; maxV: number };
 }
+
+/** GeoJSON rings repeat their first point; baked loops don't, so close before handing to turf. */
+const closeRing = (ring: number[][]): number[][] => {
+  const r = ring.map((p) => [p[0], p[1]]);
+  const a = r[0],
+    b = r[r.length - 1];
+  if (a[0] !== b[0] || a[1] !== b[1]) r.push([a[0], a[1]]);
+  return r;
+};
 
 interface ChartHit {
   tri: number;
@@ -143,6 +160,8 @@ export class ConformalZoneMapper implements ZoneMapper {
   private readonly cells: number[][];
   private boundaryComputed = false;
   private boundaryPoly: PolyFeature | null = null;
+  private deadComputed = false;
+  private deadPoly: PolyFeature | null = null;
 
   /**
    * `wasm` may be null for a read-only mapper (the gizmo builds one synchronously just to read
@@ -426,27 +445,70 @@ export class ConformalZoneMapper implements ZoneMapper {
   boundary(): PolyFeature | null {
     if (this.boundaryComputed) return this.boundaryPoly;
     this.boundaryComputed = true;
-    const close = (ring: number[][]): number[][] => {
-      const r = ring.map((p) => [p[0], p[1]]);
-      const a = r[0],
-        b = r[r.length - 1];
-      if (a[0] !== b[0] || a[1] !== b[1]) r.push([a[0], a[1]]);
-      return r;
-    };
     const sub = this.chart.subRegions;
     try {
       this.boundaryPoly = sub?.length
         ? (turf.multiPolygon(
-            sub.map((r) => [close(r.outer), ...r.holes.map(close)]),
+            sub.map((r) => [closeRing(r.outer), ...r.holes.map(closeRing)]),
           ) as PolyFeature)
         : (turf.polygon([
-            close(this.chart.boundary),
-            ...(this.chart.holes ?? []).map(close),
+            closeRing(this.chart.boundary),
+            ...(this.chart.holes ?? []).map(closeRing),
           ]) as PolyFeature);
     } catch {
       this.boundaryPoly = null;
     }
+    // Hidden surface takes no artwork: anything outside the clip just stays base color, so
+    // subtracting here is the whole mechanism.
+    //
+    // safeDiff rather than turf.difference direct, for the retry ladder and the warning: turf 6.5
+    // throws on inputs a truncate-to-precision pass rescues, and the silent catch this replaced
+    // reported that flake as "nothing is hidden on this chart".
+    //
+    // Its two empty-looking outcomes are opposite answers and both are wanted. A FAILURE hands the
+    // subject back, so the clip stays unsubtracted: wasteful (a filament change on surface nobody
+    // sees), never wrong-looking, and the direction that matters, because a null boundary upstream
+    // means "no clip at all" and cuts everywhere. An EMPTY RESULT is null, and here that is real:
+    // everything this chart owns is hidden, so the clip must admit nothing rather than fall back to
+    // admitting all of it. No shipped chart reaches it — the most-covered is `seat-right`'s storage
+    // sliver at 99.4%, and tests/chair-zones.test.ts pins that none is hidden outright — so this
+    // arm is for the bake that first does.
+    //
+    // **Partial clipping stays silent, deliberately.** A design straddling a cushion edge prints as
+    // whatever survives this subtraction, with no warning, exactly as one straddling a zone
+    // boundary already does. Nothing is dropped without being shown: the viewport hatches the dead
+    // area and the template prints it hatched, both before any artwork is placed. Any "most of it
+    // was trimmed" trigger needs a fraction, and no measurement chooses one. A color trimmed to
+    // NOTHING is a different case and does get named, in buildAssemblyGeometry.
+    const dead = this.deadArea();
+    if (this.boundaryPoly && dead)
+      this.boundaryPoly =
+        safeDiff(
+          this.boundaryPoly,
+          dead,
+          `the hidden surface on "${this.zoneId ?? 'this zone'}"`,
+        ) ?? (turf.multiPolygon([]) as PolyFeature);
     return this.boundaryPoly;
+  }
+
+  /**
+   * Surface another part hides once assembled (already bleed-shrunk at bake time), as one
+   * MultiPolygon in chart UV, or null when nothing is hidden. `boundary()` subtracts it from the
+   * artwork clip; the viewport shades it so the clip is visible before any artwork is placed.
+   */
+  deadArea(): PolyFeature | null {
+    if (this.deadComputed) return this.deadPoly;
+    this.deadComputed = true;
+    const dead = this.chart.deadRegions;
+    if (!dead?.length) return null;
+    try {
+      this.deadPoly = turf.multiPolygon(
+        dead.map((r) => [closeRing(r.outer), ...r.holes.map(closeRing)]),
+      ) as PolyFeature;
+    } catch {
+      this.deadPoly = null;
+    }
+    return this.deadPoly;
   }
 
   /**
@@ -546,6 +608,121 @@ export class ConformalZoneMapper implements ZoneMapper {
       manifoldDelete(fine);
       manifoldDelete(prism);
     }
+  }
+
+  /**
+   * Display mesh of the chart's hidden surface, for the viewport shading: `deadRegions`
+   * triangulated in UV, subdivided so it follows the curvature, each vertex lifted `liftMm` off
+   * the surface along its smooth normal. Returns interleaved 3D positions plus the UV each vertex
+   * came from (true mm, for a striped texture), or null when nothing is hidden. Pure display: no
+   * boolean engine, not watertight, and T-junctions from the per-triangle subdivision are fine at
+   * this lift.
+   */
+  deadOverlayMesh(
+    liftMm = 0.4,
+    refineMm = 4,
+  ): { positions: Float32Array; uv: Float32Array } | null {
+    const dead = this.chart.deadRegions;
+    if (!dead?.length) return null;
+    // A chart with no triangles has no surface to shade, and it is also the only input that makes
+    // `lookup` answer null: cellIdxU/V clamp a query into the grid and the ring search spans all of
+    // it, so any populated chart returns its nearest triangle however far the query lands. Taken
+    // here so the emit loop below has nothing left to drop.
+    if (!this.chart.triangles.length) return null;
+    const positions: number[] = [];
+    const uvOut: number[] = [];
+    let failed = 0;
+    const emit = (tri: number[][]): void => {
+      const pts: number[][] = [];
+      for (const [u, v] of tri) {
+        // The nearest triangle whatever its distance, with no CHART_SNAP_MM bound. That bound
+        // refuses MISPLACED ARTWORK, and there is none here: a dead region is cut against this
+        // chart's own triangle union at bake time, so its corners sit on the triangulation rather
+        // than in the gap the snap covers. Measured over all 12 charts of
+        // public/stl/chair-body-zones.json that carry one: worst corner 0.0006mm off, none past the
+        // snap tolerance, no lookup answering null (tests/chair-zones.test.ts pins it over every
+        // one of them). Bounding it would put pinholes in the hatch over surface the cut really
+        // does clip.
+        const hit = this.lookup(u, v);
+        // Unreachable given the guard above, and narrowing rather than a `!` so it stays that way.
+        if (!hit) return;
+        const { p, n } = this.surfacePoint(hit);
+        pts.push([p[0] + liftMm * n[0], p[1] + liftMm * n[1], p[2] + liftMm * n[2]]);
+      }
+      for (let k = 0; k < 3; k++) {
+        positions.push(pts[k][0], pts[k][1], pts[k][2]);
+        uvOut.push(tri[k][0], tri[k][1]);
+      }
+    };
+    const subdivide = (tri: number[][], depth: number): void => {
+      let longest = 0;
+      let li = 0;
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k],
+          b = tri[(k + 1) % 3];
+        const d = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
+        if (d > longest) {
+          longest = d;
+          li = k;
+        }
+      }
+      if (depth >= 10 || longest <= refineMm * refineMm) {
+        emit(tri);
+        return;
+      }
+      const a = tri[li],
+        b = tri[(li + 1) % 3],
+        c = tri[(li + 2) % 3];
+      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      subdivide([a, m, c], depth + 1);
+      subdivide([m, b, c], depth + 1);
+    };
+    // triangulateShape indexes into contour-then-holes concatenated, but drops a ring's last point
+    // when it repeats the first. Strip those here so the index it returns and `all` stay the same
+    // list; letting it strip them shifts every index after the first closed ring.
+    const open = (ring: number[][]): number[][] => {
+      const a = ring[0],
+        b = ring[ring.length - 1];
+      return ring.length > 1 && a[0] === b[0] && a[1] === b[1] ? ring.slice(0, -1) : ring;
+    };
+    for (const region of dead) {
+      const outer = open(region.outer);
+      const holes = region.holes.map(open);
+      const contour = outer.map(([u, v]) => new THREE.Vector2(u, v));
+      const holePts = holes.map((h) => h.map(([u, v]) => new THREE.Vector2(u, v)));
+      const all = [...outer, ...holes.flat()];
+      let tris: number[][];
+      try {
+        tris = THREE.ShapeUtils.triangulateShape(contour, holePts);
+      } catch {
+        tris = [];
+      }
+      // The one drop left in here, and it takes a whole patch of hatching with it. Said out loud
+      // rather than skipped: the hatch is how a user is told where artwork will not print, and the
+      // hidden-surface warning's own remedy sends them to it. Missing hatch over surface the cut
+      // still clips reads as a place artwork is welcome.
+      //
+      // Both outcomes counted, not just the throw: this triangulator answers a ring it cannot use
+      // with an empty list about as often as it raises, and an empty list drops the patch just as
+      // silently.
+      //
+      // warn(), not warnBuild(): rebuild.ts caches this mesh per chart, so a build-scoped pill
+      // would show on the rebuild that computed it and vanish on every cache hit after. The key
+      // dedupes it instead.
+      if (!tris.length) {
+        failed++;
+        continue;
+      }
+      for (const [i, j, k] of tris) subdivide([all[i], all[j], all[k]], 0);
+    }
+    if (failed)
+      warn(
+        `Couldn't shade the hidden surface on "${this.zoneId ?? 'this zone'}". ` +
+          `Artwork still won't cut there. Only the hatching is missing. Please report this.`,
+        `dead-overlay-${this.zoneId ?? ''}`,
+      );
+    if (!positions.length) return null;
+    return { positions: Float32Array.from(positions), uv: Float32Array.from(uvOut) };
   }
 
   frameAt(u: number, v: number, giveUpMM?: number): ZoneFrame {

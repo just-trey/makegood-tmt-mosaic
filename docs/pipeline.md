@@ -154,8 +154,10 @@ overlap from above, which clears a design nested in another's hollow without
 putting a boolean on the rebuild.
 
 **Design zones: a part can carry more than one design surface.** Baked ahead of
-time by `scripts/bake-zones.mjs`. The chair body has seven (left, right, front,
-back, seat, wing-left, wing-right). Each is a true-scale flat map of its
+time by `scripts/bake-zones.mjs`. The chair body has eight (left, right, front,
+back, seat-left, seat-right, wing-left, wing-right). The seat pan is in none of
+them: the cushion covers it whole, so it prints in one colour and takes no
+artwork at all. Each zone is a true-scale flat map of its
 surface (a UV chart) that
 artwork wraps onto **conformally**: a sticker follows the surface around a
 rounded edge the way real vinyl would
@@ -164,12 +166,49 @@ rounded edge the way real vinyl would
 - A zone spans the printed parts under it rather than stopping at a part edge.
   (The fender zones happen to live on one part each: the wing's forward face
   never reaches a seam.)
+- Surface hidden by another part once assembled (wheels, cushions) is baked
+  as per-chart `deadRegions`: the config's `covers` file marks the covering
+  bodies, and a bake pass samples each zone (~25mm² per sub-cell) and calls a
+  sample hidden when a cover touches it (within `COVER_CONTACT_MM`) or blocks
+  most of its outward hemisphere (`COVER_HEMI_DIRS` rays,
+  `COVER_HIDDEN_FRACTION` blocked) — the contact test catches a flush cushion
+  the hemisphere test misses on an angled wall, the hemisphere test catches a
+  curved wheel shadow a single along-normal ray missed. Five things then keep
+  that verdict honest, and each fixes a shape the sheets came out wrong:
+  - **Declared solids** (`covers.solids`) replace cover bodies with an exact
+    primitive. The wheel arrives as its two hollow printed halves, and rays
+    reach the far wall through its own spoke openings, so its shadow baked as a
+    ragged patch. It is now one solid 280mm disc, posed from the bodies it
+    replaces and checked against their diameter.
+  - **A declared solid's own shadow is drawn, not derived**
+    (`declaredShadow: true`): the dead area is the disc of radius
+    `radiusMm − bleedMm` about the solid's snapped axis, gated the way the
+    classifier gates (within ray reach, facing the solid, on a part carrying
+    it). Classify-and-bleed could never return a clean arc there — the bleed
+    also erodes 20mm out from every through-hole inside the shadow. Derived
+    regions that would add nothing beyond the disc but post-bleed rags (under
+    π·bleedMm²) are absorbed into it; anything larger — another cover's real
+    shadow — is kept whole and unioned.
+  - **Mirror-paired covers** are snapped onto exactly mirrored poses
+    (`covers.mirrorAxis`), keeping each body's own mesh.
+  - **The question is asked twice**, at each sample and at its mirror image,
+    hidden if either says so. The parts and covers are exact mirrors but the
+    twins are tessellated differently and the hemisphere's ray frame is not
+    mirror-equivariant, so without this the two flanks disagree by 5%.
+  - **Smoothing runs before the bleed**, not after. Both the covered and the
+    visible set arrive as a staircase of sample cells, and dilating one of those
+    by `bleedMm` (20) bites twice that out of the dead region — enough to take a
+    whole fender's wheel shadow on one flank and leave it on the other.
+    A cover resting on parts hides on the parts it rests on; one resting on
+    nothing hides wherever it occludes. The runtime subtracts dead regions from the
+    artwork clip; the viewport and templates draw them hatched. Constants and
+    their measurements: [zonebake.mjs](../scripts/lib/zonebake.mjs).
 - Artwork laid across a seam is split, cut into each part separately, and
   exported under that part's object.
 - Target a zone from the Artwork list's per-row dropdown, or by clicking the
   surface in the 3D view.
 
-**Artwork can't cross between zones, and the split into seven is load-bearing.**
+**Artwork can't cross between zones, and the split is load-bearing.**
 A zone's spread of surface directions must stay tight enough that flattening
 doesn't fold the surface onto itself, which `flipped == 0` does not check:
 merging left/back/right into one chart makes it fold onto itself over 4.85% of

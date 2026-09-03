@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **The chair no longer spends filament changes on surface the wheels and
+  cushions hide.** The parts of a design surface that another part covers once
+  the chair is assembled are now marked at bake time and cut out of the
+  artwork. Artwork still runs 20mm past the visible edge (`covers.bleedMm` in
+  `scripts/zone-configs/chair-body.json`), so a slightly shifted wheel or
+  cushion never reveals blank plastic. The hidden areas show crosshatched in
+  the 3D view before any artwork is placed, and hatched on the printable
+  templates, so the cut is never a surprise.
+- **The wheel's blocked-out area is a real circle.** It reads as an arc across
+  the side sheet, runs right up to the axle opening, and carries on over the
+  mount-to-fender join instead of stopping in a straight line at the join. The
+  bake used to reconstruct the shadow by sampling rays against the wheel and
+  its edge wandered; the wheel's config entry now declares
+  `declaredShadow: true` and the dead area is drawn directly as the declared
+  140mm tire radius minus the 20mm edge margin, around the wheel's own mounted
+  position. What another cover hides (the cushions, the casters) is still
+  derived the old way.
+- **Left and right block out the same areas.** The chair is symmetric and its
+  answer now is too: the two sides differ by 0.6% where they differed by 5.3%
+  when this work started (27,174 vs 27,009mm² in the per-zone `dead` lines of
+  `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`),
+  and each fender used to keep the wheel's whole shadow or none of it
+  depending on which side it was.
+
+### Changed
+
+- **The seat pan takes no design.** The cushion covers all of it, so no zone
+  reaches it any more and it prints in one colour. The `Seat` zone became `Left
+seat side` and `Right seat side` on the two shelves either side of the pan,
+  which the covers block 81% of (13,971 of 17,166mm², the same bake log's
+  `dead` figure over the zone's claim) and which stay selectable for the rest. A
+  saved session naming the old zone says so on restore and moves that design to
+  All zones.
+
 ### Fixed
 
 - **Hovering the artwork dropzone no longer looks the same as dragging a file

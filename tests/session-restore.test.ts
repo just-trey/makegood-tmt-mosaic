@@ -389,6 +389,106 @@ describe('applyRestoredSession: assembly mode', () => {
     expect(state.artworks.map((a) => a.zone)).toEqual([null]);
   });
 
+  // The same silent loss as the test above, reached from the other direction: the right kind loads,
+  // but a re-bake has since renamed or dropped one of its zones. geometry/assembly.ts matches
+  // instances to mappers by zoneId, so a binding naming a zone nobody offers is cut nowhere and
+  // says nothing — and the dropdown shows no selection rather than a wrong one, so there is not
+  // even a visible symptom to chase. Sending it to All zones cuts something the user can see.
+  it('re-points a design off a zone the loaded parts no longer offer, and says so', async () => {
+    vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {
+      state.assembly.parts = [
+        {
+          id: 7,
+          name: 'Chair wheel mount (left)',
+          zones: [{ id: 'left', name: 'Left side' }],
+        },
+      ] as unknown as typeof state.assembly.parts;
+    });
+    const [art] = session().artworks;
+
+    await applyRestoredSession(
+      session({
+        shapeKind: 'assembly',
+        assembly: { kindId: 'chair-body', variantId: null },
+        artworks: [
+          { ...art, id: 'a-live', zoneId: 'left' },
+          { ...art, id: 'a-retired', zoneId: 'seat' },
+        ],
+      }),
+    );
+
+    expect(state.artworks.find((a) => a.zone?.zoneId === 'left')).toBeDefined();
+    expect(state.artworks.filter((a) => a.zone === null)).toHaveLength(1);
+    expect(state.artworks.some((a) => a.zone?.zoneId === 'seat')).toBe(false);
+    expect(WARNINGS.some((w) => /^1 design was on a zone/.test(w.message))).toBe(true);
+  });
+
+  // Counted over what actually restored. An instance whose source could not be rebuilt is filtered
+  // out before this runs and has its own warning, so counting it would name designs that are not in
+  // state for the user to go and look at.
+  it('does not count a design whose source failed to restore', async () => {
+    class FailingImage {
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      set src(_v: string) {
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    vi.stubGlobal('Image', FailingImage);
+    vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {
+      state.assembly.parts = [
+        { id: 7, name: 'Mount', zones: [{ id: 'left', name: 'Left side' }] },
+      ] as unknown as typeof state.assembly.parts;
+    });
+    const base = session();
+    const [art] = base.artworks;
+
+    await applyRestoredSession(
+      session({
+        shapeKind: 'assembly',
+        assembly: { kindId: 'chair-body', variantId: null },
+        sources: [
+          ...base.sources,
+          {
+            id: 'r1',
+            kind: 'raster',
+            name: 'photo.png',
+            svgText: '',
+            raster: { png: 'data:image/png;base64,NOTVALID', colors: 4, detail: 50 },
+          },
+        ],
+        artworks: [
+          { ...art, id: 'a-kept', zoneId: 'seat' },
+          { ...art, id: 'a-lost', sourceId: 'r1', zoneId: 'seat' },
+        ],
+      }),
+    );
+
+    expect(state.artworks.map((a) => a.id)).toEqual(['a-kept']);
+    expect(WARNINGS.some((w) => /^1 design was on a zone/.test(w.message))).toBe(true);
+    expect(WARNINGS.some((w) => /^2 designs were on zones/.test(w.message))).toBe(false);
+  });
+
+  // asmLoadFullAssembly returns without loading while the parts manifest is in flight, and
+  // loadPartsLibrary calls back through maybeAutoLoadAssembly when it lands. Reading the empty zone
+  // list that leaves as "every zone was retired" would discard every binding before the deferred
+  // load could arrive — a total wipe, on a supported path, from a check meant to prevent a loss.
+  it('keeps zone bindings when no zones are offered yet, and says nothing', async () => {
+    vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {});
+    const [art] = session().artworks;
+
+    await applyRestoredSession(
+      session({
+        shapeKind: 'assembly',
+        assembly: { kindId: 'chair-body', variantId: null },
+        artworks: [{ ...art, id: 'a-live', zoneId: 'left' }],
+      }),
+    );
+
+    expect(state.artworks[0].zone?.zoneId).toBe('left');
+    expect(WARNINGS.some((w) => /no longer has/.test(w.message))).toBe(false);
+  });
+
   it('drops the parts already loaded, so the fallback kind can auto-load its own', async () => {
     state.assembly.parts = [{ id: 1, name: 'Footrest' }] as unknown as typeof state.assembly.parts;
 

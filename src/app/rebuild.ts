@@ -9,7 +9,7 @@ import {
   zoneCoverage,
 } from '../state/artwork';
 import { creasedNormalsFromIndex, indexMatchesSoup } from '../geometry/creasedNormals';
-import { clearBuildWarnings, noticeBuild } from '../warnings';
+import { clearBuildWarnings, noticeBuild, warn } from '../warnings';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
   asmPartFaceNormal,
@@ -18,6 +18,7 @@ import {
   shippedColorIndices,
   type ArtworkBuildInput,
 } from '../geometry/assembly';
+import { ConformalZoneMapper } from '../geometry/conformal';
 import { currentAssemblyKind, hubcapSilhouetteOffset } from '../assembly/kinds';
 import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
 import {
@@ -28,7 +29,7 @@ import {
   setPreferredViewDir,
 } from '../scene/viewport';
 import { assemblyViewDir, displayQuaternionFor } from '../scene/displayFrame';
-import { refreshGizmo } from '../scene/designGizmo';
+import { refreshGizmo, tokenColor } from '../scene/designGizmo';
 import { refreshZonePickMeshes } from '../scene/zonePick';
 import { renderColorList, type ColorListEntry } from '../ui/colorList';
 import { renderBaseColorSwatches } from '../ui/partPanel';
@@ -280,6 +281,119 @@ async function rebuildScene(): Promise<void> {
 }
 
 /**
+ * One material and its stripe texture for every hatched zone on every part, cached as ONE pair.
+ *
+ * Dropped on the material's own dispose event rather than held forever, because `newModelGroup`
+ * disposes the materials of everything it clears: keeping the handle would hand the next rebuild a
+ * material whose GPU program has been released. The listener makes the cache last exactly as long
+ * as the scene does, so the accent is re-read once per rebuild and a theme change lands.
+ *
+ * **The texture goes with it, which is the part that makes that true.** The stripes are DRAWN in
+ * the accent, so the colour lives in the texture, not in the material. Cached separately, the
+ * texture outlived every dispose and the rebuilt material kept mapping the old accent's stripes —
+ * a theme change re-read a colour it then did not use. Dropped together, and disposed rather than
+ * abandoned: `newModelGroup` frees the material, never the texture hanging off it.
+ */
+let hatch: { material: THREE.MeshBasicMaterial; texture: THREE.CanvasTexture | null } | null = null;
+function hiddenSurfaceMaterial(): THREE.MeshBasicMaterial {
+  if (hatch) return hatch.material;
+  const accent = new THREE.Color(tokenColor('--accent', 0x6d93ff));
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  // jsdom has no 2D canvas; a plain translucent tint is the same signal minus the stripes
+  const ctx = c.getContext('2d');
+  let texture: THREE.CanvasTexture | null = null;
+  if (ctx) {
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.strokeStyle = `#${accent.getHexString()}`;
+    ctx.lineWidth = 12;
+    for (const x of [-64, 0, 64]) {
+      ctx.beginPath();
+      ctx.moveTo(x, 64);
+      ctx.lineTo(x + 64, 0);
+      ctx.stroke();
+    }
+    texture = new THREE.CanvasTexture(c);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  }
+  const mat = new THREE.MeshBasicMaterial({
+    ...(texture ? { map: texture } : { color: accent }),
+    transparent: true,
+    opacity: 0.7,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  mat.addEventListener('dispose', () => {
+    if (hatch?.material !== mat) return;
+    hatch.texture?.dispose();
+    hatch = null;
+  });
+  hatch = { material: mat, texture };
+  return mat;
+}
+
+// The warp (triangulate, subdivide, per-vertex surface lookup) is static per chart, but every
+// rebuild disposes scene geometry (newModelGroup), so what is cached is the computed arrays and
+// a fresh BufferGeometry is built from them each time. Keyed by the chart object: charts live as
+// long as the loaded part they came from.
+//
+// `uv` is already divided by the stripe pitch. A BufferAttribute never writes to the array it
+// wraps and geometry disposal frees the GPU buffer rather than the array, so both are handed
+// straight to each rebuild's fresh attributes instead of being copied and rescaled per rebuild.
+const overlayCache = new WeakMap<object, { positions: Float32Array; uv: Float32Array } | null>();
+
+/**
+ * Hatch each zone's hidden surface (chart deadRegions) onto the part, floating just off the
+ * mesh. Drawn in both render paths so the "artwork stops here" line is visible before anything
+ * is placed, not discovered after a cut comes out trimmed.
+ */
+function addHiddenSurfaceOverlays(
+  xf: ReturnType<typeof asmPartTransformGroup>,
+  part: (typeof state.assembly.parts)[number],
+): void {
+  if (!part.zones?.length) return;
+  for (const z of part.zones) {
+    if (!z.chart?.deadRegions?.length) continue;
+    let overlay = overlayCache.get(z.chart);
+    if (overlay === undefined) {
+      // Caught per zone, because this decoration must never cost the model. renderRawAssemblyParts
+      // is the fallback that keeps the bare parts on screen when a build fails, and it calls here
+      // too — so a throw out of this loop empties the very viewport that path exists to keep
+      // filled, and reads as a crash. The mapper's constructor validates the chart for the first
+      // time here (reconstructChart only range-checks vertex indices) and deadOverlayMesh reads
+      // ring[0] straight out, so a malformed sidecar reaches it as a TypeError, not a null.
+      try {
+        // z.id, or deadOverlayMesh's failure warning says "this zone" and every zone shares its
+        // dedupe key, so the second one to fail is swallowed by the first.
+        const built = new ConformalZoneMapper(null, z.chart, z.id).deadOverlayMesh();
+        // stripes every 8mm of surface
+        overlay = built && { positions: built.positions, uv: built.uv.map((x) => x / 8) };
+      } catch {
+        overlay = null;
+        warn(
+          `Couldn't shade the hidden surface on "${z.id}". Artwork still won't cut there. ` +
+            `Only the hatching is missing. Please report this.`,
+          `dead-overlay-${z.id}`,
+        );
+      }
+      overlayCache.set(z.chart, overlay);
+    }
+    if (!overlay) continue;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(overlay.positions, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(overlay.uv, 2));
+    const mesh = new THREE.Mesh(geo, hiddenSurfaceMaterial());
+    // Invisible to every raycast. It floats 0.4mm proud of the surface, which zone picking's
+    // occlusion test (OCCLUSION_TOL_MM = 0.05) reads as a solid part covering the chart. Measured
+    // on the chair over a 61x61 grid of NDC points at a 1440x900 viewport, default framed view:
+    // without this the seat drops from 50 pickable points to 18, the front zone from 111 to 76 and
+    // the left fender from 63 to 52, so a click on hatched surface selects nothing, not its zone.
+    mesh.raycast = () => {};
+    xf.add(mesh);
+  }
+}
+
+/**
  * Show the bare loaded parts (no cuts) so the wheel is visible as soon as it loads, before any
  * artwork is applied — otherwise selecting the assembly leaves the viewport empty until an SVG
  * is dropped in.
@@ -299,6 +413,7 @@ function renderRawAssemblyParts(): void {
     modelGroup.add(xf.outer);
     const soup = Float32Array.from(part.positions);
     xf.add(new THREE.Mesh(bufferGeometryFromTris(soup, part.indexed), rawMat));
+    addHiddenSurfaceOverlays(xf, part);
     tris += part.positions.length / 9;
   });
   $('#stat-tris').textContent = Math.round(tris) + ' tris';
@@ -500,6 +615,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     // output because `bodyIndexed` is also what 3MF export writes, and this must not change what
     // an uncut part exports.
     xf.add(new THREE.Mesh(bufferGeometryFromTris(bodySoup, bodyIndexed ?? part.indexed), baseMat));
+    addHiddenSurfaceOverlays(xf, part);
     tris += bodySoup.length / 9;
     Object.entries(inlaySoups).forEach(([ci, soup]) => {
       const hex = built.palette[+ci].hex;

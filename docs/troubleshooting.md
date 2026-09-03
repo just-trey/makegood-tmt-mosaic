@@ -38,6 +38,15 @@ carries visibly _less_ geometry than it should, so parts of the design come out
 blank. Fix by simplifying the design (fewer, larger shapes). Numbers in
 [tech-debt.md](tech-debt.md), "Turf's tile union has a vertex ceiling".
 
+**One "Couldn't trim the overlap" is not about a colour at all.** It names `the
+hidden surface on "<zone id>"` (`left`, `seat-left`, …). That is the chair's artwork
+clip failing to have the assembled-over surface subtracted from it, in
+`ConformalZoneMapper.boundary()`. Nothing is lost: the clip is kept
+unsubtracted, so artwork cuts where it would otherwise have been trimmed, and
+the cost is filament changes on surface nobody sees once the chair is together.
+The hatch in the 3D view and on the template still show what should have been
+trimmed.
+
 ## Troubleshooting: "Could not load the Manifold boolean engine, so assembly cutting is unavailable"
 
 Full text: _"Could not load the Manifold boolean engine, so assembly cutting is
@@ -956,6 +965,70 @@ If a color should be partly on the face but this fires anyway, check where the
 design is anchored. An SVG with no `<circle>` boundary marker is auto-centered
 on its bounding box, which a stray decorative element can move.
 
+**Its sibling below is a different cause with a different fix.** A color that
+reached the part but only on covered surface gets "… only reaches surface
+that's hidden once assembled" instead. Lowering Scale will not help there.
+
+## Troubleshooting: "… only reaches surface that's hidden once assembled"
+
+Full text, one color: _"\"#ff0000\" only reaches surface that's hidden once
+assembled and won't print. Move it off the hatching to bring it back."_
+Several colors: _"3 colors only reach surface that's hidden once assembled and
+won't print: "#101010", "#e07020", "#f5d020". Move them off the hatching to
+bring them back."_ A merged group is named the way its row is: _"Merged (3)"_.
+
+Assembly mode, chair only today. The chair's design zones run under the wheels
+and the cushions, and the app does not cut artwork into surface that is covered
+once the chair is put together. This says the only surface the color reached is
+that covered surface, so nothing of it prints.
+
+**It says nothing about the rest of the design.** The wording is deliberate: a
+color can be mostly off the part while the one piece of it that does reach the
+part sits on a covered strip. That reaches this warning too, and "it all landed
+on covered surface" would be false of it. What the app knows is that no visible
+surface anywhere took the color, and some covered surface did.
+
+**It is not the same as landing off the part.** Part of the design is on the
+part, on the covered strip, so Scale is the wrong control: a smaller design
+centred on the same spot is still on covered surface. Move it instead. If
+moving it off the hatching does not bring it back, it was the straddling case
+above, and it needs a bigger move than the hatching's own width.
+
+**Where to move it to.** The covered surface is crosshatched in the 3D view and
+hatched on the printable template, both before any artwork is placed. `Left seat
+side` and `Right seat side` are the ones that catch people out: 81% of each is
+covered once the chair is assembled (the bake log's per-zone `dead` figure over
+the zone's claim), so a design dropped there with no adjustment lands almost
+entirely covered. The seat pan itself is in no zone at all.
+
+The named colors are dropped from the color list, the filament slot count, and
+the exported 3MF's filament list, and come back with the design when it moves.
+
+If a color should be on visible surface but this fires anyway, check the
+placement offsets and the zone the design is bound to. Every zone has its own
+template, and the design is centred on the whole zone rather than on the part
+of it you can see.
+
+## Troubleshooting: "Couldn't shade the hidden surface on …"
+
+Full text: _"Couldn't shade the hidden surface on "seat-left". Artwork still won't cut
+there. Only the hatching is missing. Please report this."_
+
+Assembly mode, chair only today. The app failed to build the crosshatch for one
+patch of covered surface on that zone. Nothing about the print changed: the
+same surface is still covered, and artwork placed on it is still clipped away.
+What is missing is the picture of where that is.
+
+**It matters because the hatching is the instruction.** The sibling warning
+above tells you to move a design off the hatching. If a patch of hatching is
+missing, that spot looks like somewhere artwork is welcome and it is not.
+
+**What to do.** Download the zone's template from the Templates panel: the
+template is drawn from the same baked regions and generally still shows the
+patch, so it is the second opinion. Then report it, with the zone name from the
+message — it is a bug in the app, not in your file, and nothing you change in
+the design will clear it.
+
 ## Troubleshooting: "This SVG has a circle around most of the artwork, but some of it falls outside"
 
 A design template marks its boundary with a circle drawn around everything, and on a
@@ -1178,6 +1251,28 @@ prints in the base color.
 - **Leave it as is**, if you only meant to decorate part of the piece. The
   notice just makes the coverage visible; it doesn't ask you to change
   anything.
+
+## Troubleshooting: "… designs were on zones this part no longer has"
+
+Full text: _"1 design was on a zone this part no longer has. It's on All zones
+now."_ ("2 designs were on zones this part no longer has. They're on All zones
+now." for more than one.)
+
+**Only on restoring a saved session**, and only when the part still loads. The
+saved session stores which zone each design was on by name. A release that
+re-bakes a part's zones can rename or retire one, and the saved name then
+matches nothing on the part that just loaded.
+
+The design is not lost. It is moved to All zones, which is the binding that
+always cuts something, and the zone badge on its row says so.
+
+**What happened to the chair.** The seat pan came out of every zone, because the
+cushion covers all of it, and the `Seat` zone became `Left seat side` and `Right
+seat side` on the two shelves either side. A session saved before that names a
+zone the chair no longer has.
+
+**What to do.** Pick the zone you want from the design's dropdown, or leave it
+on All zones. Saving again writes the new name, so the notice does not come back.
 
 ## Troubleshooting: "Exporting with artwork on … of … zones…" warnings
 

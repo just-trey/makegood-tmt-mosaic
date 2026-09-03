@@ -8,8 +8,9 @@ model: opus
 
 [add-part](../add-part/SKILL.md) covers a part with **one** design face: the app
 detects the largest flat patch and the SVG maps onto it. A body like the chair
-has five design surfaces across eleven printed pieces, and no flat patch is any
-of them. Those come from a **zone bake**, an offline unwrap whose committed
+has eight design surfaces welded across ten of its eleven printed body pieces,
+and no flat patch is any of them. (The eleventh, the seat pan, is in no zone at
+all: the cushion covers it.) Those come from a **zone bake**, an offline unwrap whose committed
 outputs (a sidecar plus per-zone templates) are the real artifacts.
 [bake-zones.mjs](../../../scripts/bake-zones.mjs) is the reproducible recipe.
 
@@ -116,6 +117,87 @@ they do _not_ cover:
 **Turning `seamWeldTolMm` on re-tunes every zone**, since each now grows until
 `maxAngleDeg` stops it rather than until the part runs out. Retune the angles in
 the same change.
+
+### covers: what other parts hide
+
+Optional. Marks the surface that covering parts (wheels, cushions) hide once
+the kind is assembled, so it takes no artwork and no filament changes:
+
+```json
+"covers": {
+  "file": "stubs/dead-zones.3mf",
+  "referenceColor": "#F768E6FF",
+  "bleedMm": 20,
+  "mirrorAxis": "x"
+}
+```
+
+- `file` is a whole-assembly CAD export holding the kind's own parts in one
+  color (`referenceColor`) and every covering body in any other. Bodies carry
+  no usable names, so color is the only distinction. The file may sit in
+  `stubs/` (untracked); the bake **hard-fails without it** rather than
+  silently baking a sidecar with nothing hidden.
+- The export's frame need not match the bake frame: the reference bodies are
+  matched to the config parts by bounding box and the transform is solved from
+  their consensus, refused above 1mm residual.
+- `solids` (optional) replaces cover bodies with a declared primitive, posed
+  from the file. One entry names an `axis`, a `radiusMm`, and the
+  `replacesDims` bbox of the bodies it stands in for; matched bodies whose
+  boxes overlap become one solid, and the radius is checked against their own
+  diameter so a wrong number fails the bake. Reach for it when the CAD body is
+  the printed part rather than the thing that blocks the view — the chair's
+  wheel arrives as two hollow halves with spoke openings, and rays reached its
+  far wall through its own holes until one solid 280mm disc replaced them.
+- `mirrorAxis` (optional, `x`/`y`/`z`) snaps mirror-paired cover bodies onto
+  exactly mirrored POSES about that axis before classification runs. A CAD export lands each instance a fraction of a
+  millimetre off its own mirror image, which is enough to flip a knife-edge
+  sample from hidden to visible; snapping removes that tie-breaker instead of
+  tuning around it. A cover with no mirror partner (a cushion straddling the
+  plane) is left alone.
+- **The pose only.** Each body keeps its own mesh. Rebuilding one side from
+  the other's mirror is exact symmetry rather than symmetry to a residual, and
+  it is wrong for a pair mounted by rotation: the chair's casters are the same
+  part turned 180 degrees, so mirroring one onto the other moved geometry
+  21.976mm (`npx vite-node scripts/measure-caster-axis-map.mjs`, which takes
+  `solids` off first — the chair's discs replace those bodies before this runs,
+  and a disc pair mirrors exactly). How far a pair is from being mirror images
+  is reported in the bake log as the worst shape residual, never enforced.
+- Each zone is sampled at ~`COVER_SAMPLE_MM2` (25mm²) per sub-cell, not per
+  triangle — the CAD faces arrive as coarse fans, and a per-triangle verdict
+  can't draw a shadow edge inside one. A sample is hidden when either:
+  - a cover sits within `COVER_CONTACT_MM` (2.5mm) straight out along the
+    sample's normal — touching plastic, checked first because it's the cheap
+    answer for what a cushion actually rests on; or
+  - its outward hemisphere is mostly blocked: `COVER_HEMI_DIRS` (32)
+    cosine-weighted rays are cast, out to `COVER_RAY_MM` (120mm), and the
+    sample counts as hidden once `COVER_HIDDEN_FRACTION` (0.85) of them hit a
+    cover. This is what a single along-normal ray can't do: it only caught
+    triangles whose own normal happened to aim at the cover, leaving a curved
+    surface (a wheel's fender arch) speckled instead of one clean shadow.
+- A cover that RESTS on parts (contact within `COVER_CONTACT_MM`) hides only on
+  the parts it rests on. One resting on nothing is unconstrained and hides
+  wherever it occludes. It used to be handed to the single part holding the
+  largest share of its nearest surface, which on the chair gave each wheel its
+  mount and nothing else — and that cut the wheel's shadow off along a straight
+  line down the mount/fender seam, when a mounted wheel plainly hides across it.
+  The hemisphere test already answers whether a cover hides a given sample, so a
+  second, weaker guess on top of it only subtracted right answers.
+- Both the covered and the visible set are closed-then-opened at a
+  `DEAD_SMOOTH_MM` (5mm) radius FIRST, to clear the sampling grid's own
+  staircase, and only then is the visible set grown by `bleedMm` and subtracted.
+  That order is load-bearing: bleeding first dilates the staircase and takes
+  2 x `bleedMm` out of the dead region, enough to lose a whole narrow strip of
+  it — on the chair it took one fender's entire wheel shadow while leaving the
+  other's. `bleedMm` keeps artwork running that far past the visible edge into
+  the hidden area, so a slightly shifted cover never reveals blank plastic. A
+  dead island under `MIN_DEAD_AREA_MM2` (15mm²) is then dropped.
+- Output: per-chart `deadRegions` in the sidecar (schema 3), subtracted from
+  the artwork clip at runtime, drawn hatched on templates and in the viewport.
+- The bake log prints `dead <area>mm²` per zone. A zone whose surface faces
+  away from every cover correctly reports 0.
+- All the constants above, and the measurements that chose them, live in
+  [zonebake.mjs](../../../scripts/lib/zonebake.mjs). Re-read them before
+  retuning anything.
 
 ## 2. Run it
 

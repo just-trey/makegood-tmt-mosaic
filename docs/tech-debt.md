@@ -24,6 +24,90 @@ approach that lost belongs in a comment next to the code it constrains, or in
 [docs/pipeline.md](pipeline.md) for the geometry pipeline — not here. What stays
 here is closeable: it names code work under a “Closing it” line.
 
+## check:zone-occlusion reads hidden surface as "no zone here" and reports four false failures
+
+`scripts/check-zone-occlusion.mjs` classifies a pixel by whether the inked zone
+color shows there: ink means the zone is visible, no ink means bare body. A
+click landing on a zone where no ink shows is reported as a through-pick.
+
+Dead zones add a third state that classifier has no name for: the zone is
+present and correctly pickable, but the surface is hidden once assembled, so it
+takes no artwork and shows no ink.
+
+Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair:
+
+| Run                                      | Failures | What they are                                                               |
+| ---------------------------------------- | -------- | --------------------------------------------------------------------------- |
+| `main` (fenders only, 2026-08-16)        | 3        | a0-front "too few bare-body samples", wing-left/right no ink                |
+| dead zones, hemisphere bake (2026-08-30) | 5        | 4 x "picked a zone on bare body" (36/31/1/25 samples) + an orbit-drag throw |
+
+- The pick itself is right: the zone is there, and the hatch overlay says why
+  artwork will not appear. Only the check's model is stale.
+- The numbers corroborate the mechanism: `main` had just 96 bare-body samples
+  at a0-front ("too few for the assertion to mean anything"); with hidden
+  surface unlinked there are enough that the complaint becomes through-picks.
+- The throw ends the run inside the per-zone identity sweep, after its first
+  angle (`v0`), so this run never reaches the later angles or the named
+  cases. Reproduced twice with identical sample counts, so it's a real stop,
+  not sampling noise — a second, separate defect in the script from the
+  classifier gap this section is about. The zone whose `v0` pass showed 0
+  interior ink samples was `seat`, which no longer exists: the seat pan left
+  every zone and the two mount tops became `seat-left`/`seat-right`. Re-run
+  before trusting the failure count above.
+- Closing it: teach the sweep to read each chart's `deadRegions`, and expect
+  "zone pickable, no ink" over them rather than counting it a through-pick.
+  The orbit-drag throw needs its own fix first to reach the later stages.
+- Not in CI (nothing runs this script), so it blocks nothing today. It is the
+  only automated guard on convention 12, which is why it is worth repairing
+  rather than deleting.
+- `wing-left`/`wing-right` never producing an ink sample predates this and
+  came in with the fender zones: the sweep's angles never see enough of a
+  fender to sample one.
+
+## The covers reference has no tires, so each flank keeps artwork the tire hides — unmeasured
+
+`stubs/dead-zones.3mf` carries the printed wheel only: two halves plus the cap,
+and the bake now replaces those halves with a solid 280mm disc of the same
+diameter. The assembled chair runs a tire ring outside that, which the bake has
+never seen, so the flanks treat the band under the tire as printable.
+
+All three rows come from
+`npx vite-node scripts/measure-wheel-shadow.mjs --tire-mm 30`, re-taken
+2026-08-31 against the rebaked sidecar. That script's header defines each projection; the shadow and
+tire-ring rows are geometry, independent of the bake algorithm, and the baked
+row is the flank's whole dead area summed out of
+`public/stl/chair-body-zones.json`.
+
+|                                               | `left`    | `right`   |
+| --------------------------------------------- | --------- | --------- |
+| straight-on wheel shadow on the zone          | 36,737mm² | 36,894mm² |
+| baked dead there (the rest is the 20mm bleed) | 23,486mm² | 23,777mm² |
+| what a 30mm tire ring would add               | 18,619mm² | 18,441mm² |
+
+- **The tire row is unmeasured, and only its arithmetic is reproducible.** 30mm
+  is scaled off a photo — the hub reads ~340px for a stub-measured 280mm, the
+  band ~37px — and the ring is grown radially about each cover's own axle in
+  the script, not modelled. Read it as "about as much again as the stub
+  covers", never as a number to build on. The two rows above it are measured.
+- The earlier figures in this section (36,619 / 36,730 for the shadow, 22,447 /
+  23,215 for the ring) named no command and could not be re-derived. The shadow
+  reproduces to 0.2%; the ring does not, because whatever built that annulus is
+  not what the script does.
+- The direction is safe: surface under the tire is treated as printable, so it
+  costs a filament change on plastic nobody sees. It never leaves blank plastic
+  where artwork was expected, which is the failure that would matter.
+- Closing it is now one number. The wheel reaches the bake as a declared solid
+  (`covers.solids` in `scripts/zone-configs/chair-body.json`), so raising
+  `radiusMm` from 140 to the tire's real outer radius and rebaking is the whole
+  change. It still needs a measured radius: the disc is posed from the file and
+  its diameter checked against the bodies it replaces, so a guessed number
+  fails the bake rather than quietly hiding the wrong ring.
+- The rows above moved when the four hollow half-dishes became two solid discs
+  and the bleed moved after the smoothing. The shadow row is geometry and barely
+  moved; the baked row rose because the wheel now hides across the mount/fender
+  seam instead of stopping dead at it.
+- The owner has seen the trade and chose to leave tires out for now.
+
 ## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted
 
 `rasterControls().apply()` ([src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts)) must call
@@ -243,7 +327,7 @@ result has not been re-measured.
 on it and no user can reach the numbers above. This is a gate, not a fix: the
 path is unchanged and every measurement here still stands. Clearing the flag
 needs the accumulator-or-worker fix and the "Handle (left)" color loss (defect
-3 of "Two open defects in the chair / pattern-library workflow", below).
+2 of "One open defect in the chair / pattern-library workflow", below).
 Sticker on the chair is unaffected and was measured at 19.5s for a full
 five-zone rebuild on the same box, which is why only Fill was withheld.
 
@@ -300,19 +384,16 @@ behind them.
   rects and takes only a region count and a repeat count, so a chair run means
   teaching it a kind and a Fill mode.
 
-## Two open defects in the chair / pattern-library workflow, and what's blocked on them
+## One open defect in the chair / pattern-library workflow, and what's blocked on it
 
-Two of four defects the maintainer named on 2026-08-05; the other two are fixed.
+One of four defects the maintainer named on 2026-08-05; the other three are
+fixed, dead zones with this change. Defects 2-4 below are longer-standing ones
+against the same two features, folded in here by #275.
 Both features are withheld from the UI for the beta: `chair-body` carries
 `hidden: true` and `PATTERN_LIBRARY_ENABLED` is `false`. The report is the
 maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
 
-1. **Dead zones still need defining — open.** It is written up in
-   [roadmap.md](roadmap.md) ("Dead zones: mark the parts of a design zone that
-   are hidden by an adjacent part"). Without it a design placed across a joint
-   spends filament changes on surface nobody sees.
-
-2. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
+1. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
    outline.** Every shipped template in `public/templates/` is a pure `L`
    polyline with no curve commands: the zone boundary is traced along mesh
    triangle edges and emitted vertex-for-vertex. So a template's outline is as
@@ -323,7 +404,7 @@ maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
    clips to. Note the repo already has curve fitting for the raster tracer
    (`src/raster/curve.ts`); nothing equivalent runs on a zone boundary.
 
-3. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
+2. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
    Measured on `MOSAIC_GPU=1` production build, 2026-08-03: zebra in Fill mode
    on the chair's Left side settles clean apart from a single `Couldn't cut
 color #0a0a0a into "Handle (left)"`, so that part prints without the black.
@@ -335,18 +416,18 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
    specific solid Manifold rejects; worth trying first whether the handle's
    own mesh density or a near-tangent cut at its curvature is what trips it.
 
-4. **The extrude repair never runs on a conformal zone — related,
+3. **The extrude repair never runs on a conformal zone — related,
    unmeasured on the chair.** `ConformalZoneMapper.buildCutter` absorbs an
    invalid prism and returns `null`, so the escalating erode ladder that
    fixed a lost color on the wheel (a `FlatZoneMapper`) buys the chair body
    nothing: a conformal zone gets no repair attempt and goes straight to the
-   warning in defect 3. Whether the chair body actually hits self-touching
+   warning in defect 2. Whether the chair body actually hits self-touching
    regions is unmeasured — nobody has driven dense artwork through a
    conformal zone to find out. Closing it means either giving the conformal
    mapper the same retry, or establishing that its null return means
    something different enough that a retry would be wrong.
 
-5. **`export-chair-examples.mjs` cannot reach Fill — tooling, broken since
+4. **`export-chair-examples.mjs` cannot reach Fill — tooling, broken since
    #137.** The script sets `.artwork-mode` to `fill` and asserts it took, but
    `chair-body` carries `withholdFill: true` so `artworkListPanel` never
    renders that select: the step times out. Not a selector to update — the
@@ -359,8 +440,8 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
 `debug-csg-failure` skills and every chair drive script depend on. Nothing
 public names that parameter: it is out of the README's `?kind=` example list.
 
-Neither flag is the fix. Restoring the chair needs defects 1-2 closed;
-restoring the pattern library needs defect 3 closed.
+Neither flag is the fix. Restoring the chair needs defect 1 closed; restoring
+the pattern library needs defect 2 closed.
 
 ## The raster edge-density reading depends on how big the file is
 

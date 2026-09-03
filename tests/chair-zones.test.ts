@@ -20,7 +20,9 @@ import {
 } from '../src/geometry/manifold';
 import type { PolyFeature } from '../src/types';
 import {
+  MIN_ISLAND_AREA_MM2,
   read3MFIndexed,
+  SIMPLIFY_TOL_MM,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 
@@ -55,17 +57,23 @@ const regionPolygon = (r: { outer: number[][]; holes: number[][][] }): PolyFeatu
   turf.polygon([closed(r.outer), ...r.holes.map(closed)]) as PolyFeature;
 
 describe('chair zone sidecar', () => {
-  it('is the chair-body sidecar with the seven shipped zones', () => {
+  it('is the chair-body sidecar with the eight shipped zones', () => {
     expect(sidecar.kindId).toBe('chair-body');
     expect(sidecar.zones.map((z) => z.id).sort()).toEqual([
       'back',
       'front',
       'left',
       'right',
-      'seat',
+      'seat-left',
+      'seat-right',
       'wing-left',
       'wing-right',
     ]);
+  });
+
+  it('no zone reaches the seat pan, which the cushion covers whole', () => {
+    const parts = sidecar.zones.flatMap((z) => z.charts.map((c) => c.libraryPartId));
+    expect(parts).not.toContain('chair-seat-center');
   });
 
   it('fingerprints match the packed meshes the charts index into', () => {
@@ -261,17 +269,203 @@ describe('chart reconstruction', () => {
   });
 });
 
+// The covers file marks the wheels and cushions; the bake turns what they hide into per-chart
+// deadRegions. These pin the shipped shape of that data and the runtime clip subtraction.
+describe('hidden surface (deadRegions)', () => {
+  const deadArea = (c: (typeof sidecar.zones)[number]['charts'][number]): number =>
+    (c.deadRegions ?? []).reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+
+  it('lands where the covers sit: wheels and cushions, not the back or the fenders', () => {
+    const zoneDead = new Map(
+      sidecar.zones.map((z) => [z.id, z.charts.reduce((s, c) => s + deadArea(c), 0)]),
+    );
+    // wheel over each flank's mount, cushion over the seat, backrest cushion over `front`
+    expect(zoneDead.get('left')!).toBeGreaterThan(500);
+    expect(zoneDead.get('right')!).toBeGreaterThan(500);
+    expect(zoneDead.get('seat-left')!).toBeGreaterThan(10000);
+    expect(zoneDead.get('seat-right')!).toBeGreaterThan(10000);
+    expect(zoneDead.get('front')!).toBeGreaterThan(5000);
+    // the back faces away from every cover, and nothing sits in front of a fender
+    expect(zoneDead.get('back')).toBe(0);
+    expect(zoneDead.get('wing-left')).toBe(0);
+    expect(zoneDead.get('wing-right')).toBe(0);
+  });
+
+  // The regression guard for the whole point of this bake. The chair is mirror-symmetric and so are
+  // its covers, so a mirrored pair that disagrees means the ANSWER is asymmetric, not the chair.
+  //
+  // 5% is the measured headroom, not a target: this bake lands at 1.23% (left/right), 0.15%
+  // (seat-left/right) and 3.80% (the front zone's two handles). What is left is the two flanks
+  // being tessellated differently (37,820 against 29,822 triangles on the fenders) and therefore
+  // unwrapping differently, which no amount of classifying can remove. Before the classifier asked
+  // its question at each sample AND its mirror, and before the bleed was moved after the smoothing,
+  // the same pairs read 5.3% and 100% — one flank kept the whole wheel shadow on its fender and the
+  // other kept none of it.
+  it('mirrored pairs hide the same area on both sides', () => {
+    const zoneDead = new Map(
+      sidecar.zones.map((z) => [z.id, z.charts.reduce((s, c) => s + deadArea(c), 0)]),
+    );
+    const apart = (a: number, b: number): number =>
+      a + b === 0 ? 0 : (200 * Math.abs(a - b)) / (a + b);
+    for (const [a, b] of [
+      ['left', 'right'],
+      ['seat-left', 'seat-right'],
+      ['wing-left', 'wing-right'],
+    ])
+      expect(apart(zoneDead.get(a)!, zoneDead.get(b)!), `${a} vs ${b}`).toBeLessThan(5);
+
+    // Same check one level down, where a single zone spans a mirrored pair of parts.
+    for (const z of sidecar.zones) {
+      const byPart = new Map(z.charts.map((c) => [c.libraryPartId, deadArea(c)]));
+      for (const [id, area] of byPart) {
+        if (!id.endsWith('-left')) continue;
+        const twin = byPart.get(`${id.slice(0, -'-left'.length)}-right`);
+        if (twin === undefined) continue;
+        expect(apart(area, twin), `${z.id}: ${id} vs its twin`).toBeLessThan(5);
+      }
+    }
+  });
+
+  it('every dead region stays inside its own chart’s claim', () => {
+    // Dead regions are cut against the chart's exact triangle union; the claim is the same
+    // surface after 0.2mm loop simplification, so their edges disagree by thin ribbons. 25mm²
+    // covers a 0.2mm ribbon along a 100mm+ boundary; a dead region genuinely reaching past its
+    // chart would exceed this by the area of whatever it grabbed.
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        if (!c.deadRegions?.length) continue;
+        const claim = c.subRegions.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+        expect(deadArea(c), `${z.id}/${c.libraryPartId}`).toBeLessThan(claim + 25);
+      }
+  });
+
+  it('boundary() hands the cutter the claim minus the hidden surface', () => {
+    const z = sidecar.zones.find((zz) => zz.id === 'seat-left')!;
+    const c = z.charts.find((ch) => ch.libraryPartId === 'chair-wheel-mount-left')!;
+    expect(deadArea(c)).toBeGreaterThan(0);
+    const m = partMesh.get(c.libraryPartId)!;
+    const mapper = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices));
+    const claim = c.subRegions.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+    expect(Math.abs(planarArea(mapper.deadArea()!))).toBeCloseTo(deadArea(c), 1);
+    // Subtraction shrinks the clip by about the dead area. What is left over is the same
+    // simplified-vs-exact edge disagreement as above, so the budget is that mechanism rather than a
+    // round number: a SIMPLIFY_TOL_MM-wide ribbon along the dead region's own perimeter. On this
+    // chart that is 574mm of perimeter, so 115mm², and the bake lands at 6.8mm² — a bare number
+    // tight enough to catch anything would only be pinning which chart this test happens to read.
+    const perimeter = (c.deadRegions ?? []).reduce(
+      (s, r) =>
+        s +
+        [r.outer, ...r.holes].reduce(
+          (t, loop) =>
+            t +
+            loop.reduce((u, pt, i) => {
+              const q = loop[(i + 1) % loop.length];
+              return u + Math.hypot(q[0] - pt[0], q[1] - pt[1]);
+            }, 0),
+          0,
+        ),
+      0,
+    );
+    expect(Math.abs(planarArea(mapper.boundary()!) - (claim - deadArea(c)))).toBeLessThan(
+      SIMPLIFY_TOL_MM * perimeter,
+    );
+  });
+
+  it('no shipped chart is hidden outright', () => {
+    // buildAssemblyGeometry used to branch before tiling on a chart whose claim is entirely dead,
+    // where boundary() is the empty MultiPolygon. It attributed a fill off the untiled source and
+    // saved nothing, because no chart of this bake reaches it. This is the pin behind that
+    // deletion: a bake that hides a whole chart fails here, naming it, and the branch is worth
+    // having back at that point.
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        const m = partMesh.get(c.libraryPartId)!;
+        const mapper = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices));
+        expect(planarArea(mapper.boundary()!), `${z.id}/${c.libraryPartId}`).toBeGreaterThan(0);
+      }
+  });
+
+  it('a chart without the field means nothing is hidden, not an error', () => {
+    const z = sidecar.zones.find((zz) => zz.id === 'seat-left')!;
+    const c = z.charts.find((ch) => ch.libraryPartId === 'chair-wheel-mount-left')!;
+    const m = partMesh.get(c.libraryPartId)!;
+    const stripped = { ...c };
+    delete stripped.deadRegions;
+    const mapper = new ConformalZoneMapper(null, reconstructChart(z, stripped, m.vertices));
+    expect(mapper.deadArea()).toBeNull();
+    const claim = c.subRegions.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+    expect(planarArea(mapper.boundary()!)).toBeCloseTo(claim, 0);
+  });
+
+  // Every chart that carries dead regions, not a representative one: this is what conformal.ts's
+  // deadOverlayMesh cites for dropping the CHART_SNAP_MM bound on its lookup. A corner landing off
+  // the triangulation would answer null there, drop its triangle, and leave a pinhole in the hatch
+  // over surface the cut really does clip — so "no chart does" has to be checked on all of them.
+  it('the viewport overlay mesh sits on the part, a hair above the surface', () => {
+    let checked = 0;
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        if (!c.deadRegions?.length) continue;
+        checked++;
+        const m = partMesh.get(c.libraryPartId)!;
+        const mapper = new ConformalZoneMapper(null, reconstructChart(z, c, m.vertices), z.id);
+        const overlay = mapper.deadOverlayMesh();
+        const where = `${z.id}/${c.libraryPartId}`;
+        expect(overlay, where).not.toBeNull();
+        expect(overlay!.positions.length, where).toBeGreaterThan(0);
+        expect(overlay!.positions.length / 3, where).toBe(overlay!.uv.length / 2);
+        const mn = [Infinity, Infinity, Infinity];
+        const mx = [-Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < m.vertices.length; i += 3)
+          for (let k = 0; k < 3; k++) {
+            mn[k] = Math.min(mn[k], m.vertices[i + k]);
+            mx[k] = Math.max(mx[k], m.vertices[i + k]);
+          }
+        for (let i = 0; i < overlay!.positions.length; i += 3)
+          for (let k = 0; k < 3; k++) {
+            expect(overlay!.positions[i + k], where).toBeGreaterThanOrEqual(mn[k] - 1);
+            expect(overlay!.positions[i + k], where).toBeLessThanOrEqual(mx[k] + 1);
+          }
+      }
+    // The count conformal.ts's comment quotes. A rebake that changes it dates that comment too.
+    expect(checked).toBe(12);
+  });
+});
+
 describe('reconstructed charts drive the conformal mapper on real geometry', () => {
   let wasm: ManifoldAPI;
   beforeAll(async () => {
     wasm = await getManifold();
   }, 30000);
 
-  // A feature provably inside the chart: the first chart triangle in UV, shrunk 15% toward its
-  // centroid so it clears the chart edge. (The zone boundary centroid can fall in a hole for the
-  // irregular side charts, which is a placement question for the build, not a warp-engine test.)
+  // A feature provably inside the chart: the first chart triangle in UV that the pipeline would
+  // still be cutting at all, shrunk 15% toward its centroid so it clears the chart edge. (The zone
+  // boundary centroid can fall in a hole for the irregular side charts, which is a placement
+  // question for the build, not a warp-engine test.)
+  //
+  // MIN_ISLAND_AREA_MM2 is the floor because below it there is nothing to be watertight about: an
+  // island that small is dropped from the clip region before any cutter is built. Triangle 0 of
+  // `seat-right`'s storage crumb is 0.130mm², a prism about 0.45mm on a side, and warping one that
+  // small onto curved surface inverts its winding — a scale limit of the warp that no shipped
+  // feature reaches, and reading it as a failure only hides the zones this is meant to cover.
   const firstTriFeature = (uv: number[], triangles: Uint32Array): PolyFeature => {
-    const p = [0, 1, 2].map((k) => [uv[triangles[k] * 2], uv[triangles[k] * 2 + 1]]);
+    const triArea = (t: number): number => {
+      const q = [0, 1, 2].map((k) => [
+        uv[triangles[3 * t + k] * 2],
+        uv[triangles[3 * t + k] * 2 + 1],
+      ]);
+      return (
+        Math.abs(
+          (q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[2][0] - q[0][0]) * (q[1][1] - q[0][1]),
+        ) / 2
+      );
+    };
+    let t = 0;
+    while (t + 1 < triangles.length / 3 && triArea(t) < MIN_ISLAND_AREA_MM2) t++;
+    const p = [0, 1, 2].map((k) => [
+      uv[triangles[3 * t + k] * 2],
+      uv[triangles[3 * t + k] * 2 + 1],
+    ]);
     const cu = (p[0][0] + p[1][0] + p[2][0]) / 3;
     const cv = (p[0][1] + p[1][1] + p[2][1]) / 3;
     const shr = ([u, v]: number[]): number[] => [cu + (u - cu) * 0.85, cv + (v - cv) * 0.85];
@@ -279,7 +473,7 @@ describe('reconstructed charts drive the conformal mapper on real geometry', () 
     return turf.polygon([ring]) as PolyFeature;
   };
 
-  it.each(['left', 'right', 'back', 'seat', 'wing-left', 'wing-right'])(
+  it.each(['left', 'right', 'back', 'seat-left', 'seat-right', 'wing-left', 'wing-right'])(
     'zone %s: frameAt lands on the part and a warped cutter is watertight',
     (zoneId) => {
       const z = sidecar.zones.find((zz) => zz.id === zoneId)!;

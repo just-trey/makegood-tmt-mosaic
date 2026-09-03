@@ -42,19 +42,40 @@ Open questions with no obvious answer, where the measurement behind the question
   ([public/filaments.json](../public/filaments.json)) instead of to colors
   derived from the image, so an image's regions are filaments the user actually
   has and the AMS slot count is settled before export rather than after.
-- Dead zones **(named 2026-08-05 as one of four open defects in the chair
-  workflow — see [tech-debt.md](tech-debt.md))**: mark the parts of a
-  design zone that are hidden by an adjacent
-  part — joints, overlaps, undersides — where a filament change buys nothing.
-  A design placed across one wastes color changes on surface nobody sees.
-  Shape: a bake step that casts each zone triangle outward, tests occlusion
-  against every other part, and emits a `deadRegions` UV polygon set that the
-  runtime subtracts from the clip region and the template draws hatched, so
-  the artist can see where not to put detail.
+- Center auto-fit on the visible part of a zone, not its whole bbox. With the
+  chair's hidden surface now clipped, an auto-fit design on `seat-left` or
+  `seat-right` lands mostly on covered surface: 13,971mm² of `seat-left`'s
+  17,166mm² claim is covered (the bake log's per-zone `dead` figure over the
+  zone's claim; `seat-right` is 13,983), and 70% of the 20,070mm² `uvBounds` bbox
+  the anchor actually centres on. The overlay
+  explains it, but placing straight onto the visible region would be the better
+  default. The anchor becomes the chart's claim minus its `deadRegions` rather
+  than the whole zone bbox. Deferred out of the dead-zones change because it
+  moves placement for every zone on every kind, a far wider blast radius than
+  the clip itself.
+- Wrap one design across the whole chair, rather than one zone at a time. The
+  owner's stated end goal, and the thing the per-zone sheets are a stand-in for.
+  Two things are in the way. Each zone is its own LSCM unwrap with no shared
+  parameterisation, so a design crossing from `left` to `back` has no continuous
+  coordinate to follow; and an `ArtworkInstance` binds to one `zoneId`
+  ([src/state/artwork.ts](../src/state/artwork.ts)), which
+  [src/geometry/assembly.ts](../src/geometry/assembly.ts) matches one mapper at
+  a time. "All zones" today means the same design placed on each zone
+  independently, not one design spanning them. No approach chosen yet.
+  - Stepping stone (owner, 2026-09-01): mirror-design — place artwork on one
+    of a mirrored zone pair (`right`), auto-mirror it onto the twin (`left`).
+    Data-model work only: bind one `ArtworkInstance` to a zone pair and flip
+    placement, no shared parameterisation needed. The bake already snaps the
+    pairs symmetric, so the twin templates match. For `front`, the same idea
+    is design-half-reflect-across-the-centerline at placement level.
+  - Rejected (owner, 2026-09-01): per-part design canvases instead of the
+    whole-chair zones. Zones spanning printed seams are the point — per-part
+    canvases would make volunteers hand-align a design across four oddly
+    shaped parts, the CAD-literacy work `docs/audience.md` rules out.
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind.
 - A full parent-handle assembly kind.
-- Surface-first zone picking: show the chair's seven design zones as
+- Surface-first zone picking: show the chair's eight design zones as
   selectable surfaces on the model from the moment it loads, so "put this on
   the back" is one click before any file is chosen, instead of today's
   load-a-design-then-rebind-it-to-a-zone order (`vision`-lens review,

@@ -49,16 +49,68 @@ const XA = [/\bx="([^"]*)"/, /\by="([^"]*)"/, /\bz="([^"]*)"/];
 const TA = [/\bv1="([^"]*)"/, /\bv2="([^"]*)"/, /\bv3="([^"]*)"/];
 const attrs = (tag, res) => res.map((r) => +(tag.match(r)?.[1] ?? NaN));
 
+/** Open 3D/3dmodel.model out of a 3MF and hand back its XML. */
+export async function modelXML(buf) {
+  const zip = await JSZip.loadAsync(buf);
+  const model = zip.file('3D/3dmodel.model');
+  if (!model) throw new Error('not a valid 3MF: missing 3D/3dmodel.model');
+  return model.async('string');
+}
+
+/**
+ * Every `<name>` element in a 3MF model, as `{ attrs, body }` — `body` null for a self-closing one.
+ *
+ * Regex rather than a DOM parse because these files reach hundreds of MB of vertex tags, and the
+ * readers below only ever want two flat element lists out of them.
+ *
+ * The self-closing arm is the whole reason this is shared. `<x …>([\s\S]*?)</x>` skips a
+ * self-closing `<x …/>` and then runs the NEXT element's body from the file position after it, so
+ * one element silently swallows its neighbour's contents. That is invisible in output: the reader
+ * just returns a merged body. Three readers walk this file shape (read3MF here, read3MFIndexed and
+ * read3MFObjectsByColor in zonebake.mjs) and a fourth walks colour groups, so they get one scanner
+ * rather than four regexes to keep in step.
+ */
+export function* eachElement(xml, name) {
+  const open = new RegExp(`<${name}\\b([^>]*?)(/?)>`, 'g');
+  const close = `</${name}>`;
+  let m;
+  while ((m = open.exec(xml))) {
+    if (m[2] === '/') {
+      yield { attrs: m[1], body: null };
+      continue;
+    }
+    const end = xml.indexOf(close, open.lastIndex);
+    if (end < 0) throw new Error(`3MF has a <${name}> with no ${close}`);
+    yield { attrs: m[1], body: xml.slice(open.lastIndex, end) };
+    open.lastIndex = end + close.length;
+  }
+}
+
+/**
+ * The `<vertex>` positions of one object body, in file order.
+ *
+ * A generator, like `eachElement` above and for the same reason: these files reach hundreds of MB
+ * of vertex tags. Spreading `matchAll` into an array and mapping that holds every match object and
+ * every parsed point at once, on top of whatever the caller is building. Every caller streams it
+ * into its own list, so none of them wants that middle copy; one that needs random access spreads
+ * it itself and holds one list rather than three.
+ */
+export function* meshVerts(body) {
+  for (const m of body.matchAll(/<vertex\b[^>]*>/g)) yield attrs(m[0], XA);
+}
+
+/** The `<triangle>` index triples of one object body, LOCAL to that object's own vertex list. */
+export function* meshTris(body) {
+  for (const m of body.matchAll(/<triangle\b[^>]*>/g)) yield attrs(m[0], TA);
+}
+
 /**
  * Reads only meshes inlined in 3D/3dmodel.model, exactly like load3MF. A Bambu multi-part file
  * that references its mesh via <component p:path> therefore reports zero triangles here too —
  * same failure as the app's, caught before it ships.
  */
 export async function read3MF(buf) {
-  const zip = await JSZip.loadAsync(buf);
-  const model = zip.file('3D/3dmodel.model');
-  if (!model) throw new Error('not a valid 3MF: missing 3D/3dmodel.model');
-  const xml = await model.async('string');
+  const xml = await modelXML(buf);
   if (/p:path=/.test(xml))
     console.warn(
       '  ! uses <component p:path> — load3MF cannot resolve this; not usable as geometry',
@@ -68,13 +120,11 @@ export async function read3MF(buf) {
   // Walk one <object> at a time and offset by a per-object base, exactly as load3MF does. Triangle
   // indices are local to their own <mesh>, so reading every <vertex> in the file into one flat
   // list and trusting the raw indices silently returns the first object's geometry N times.
-  for (const om of xml.matchAll(/<object\b[^>]*(?:\/>|>([\s\S]*?)<\/object>)/g)) {
-    const body = om[1];
+  for (const { body } of eachElement(xml, 'object')) {
     if (!body) continue;
     const base = verts.length;
-    for (const v of body.matchAll(/<vertex\b[^>]*>/g)) verts.push(attrs(v[0], XA));
-    for (const t of body.matchAll(/<triangle\b[^>]*>/g))
-      tris.push(attrs(t[0], TA).map((i) => base + i));
+    for (const v of meshVerts(body)) verts.push(v);
+    for (const t of meshTris(body)) tris.push(t.map((i) => base + i));
   }
   const positions = new Float32Array(tris.length * 9);
   tris.forEach((t, i) =>

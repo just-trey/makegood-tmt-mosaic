@@ -48,9 +48,9 @@ const PLACEHOLDER = new RegExp(
 );
 
 // Below this a fragment is a phrase like "It was put at", which appears in half the file and
-// would pass whatever the app says. Re-measured 2026-08-30 (`npm run check:troubleshooting`, whose
-// own summary line prints these): of the 108 quotes the three forms find, 87 are checked and 21 are
-// skipped, clustering in 9 of 59 sections that end up with no checked quote
+// would pass whatever the app says. Re-measured 2026-08-31 (`npm run check:troubleshooting`, whose
+// own summary line prints these): of the 116 quotes the three forms find, 94 are checked and 22 are
+// skipped, clustering in 9 of 62 sections that end up with no checked quote
 // at all -- including the assembly CSG one, where `"Designs … overlap"` is mostly placeholder.
 // Two are a different cause: a heading with a nested quote (`"… deeper than "Wheel top" goes"`)
 // pairs left-to-right into two fragments too short to pin, and the digit-run rule above applied to

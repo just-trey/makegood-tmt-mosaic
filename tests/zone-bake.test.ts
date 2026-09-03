@@ -5,6 +5,10 @@ import {
   weldParts,
   simplifyLoop,
   meshFingerprint as bakeFingerprint,
+  symmetrizeCovers,
+  asymmetricPart,
+  regionNetArea,
+  buildCoverSolids,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
@@ -368,7 +372,7 @@ describe('cross-part welding and seams', () => {
     const svg = baked.templates[0].svg;
     expect(svg).toContain('>part a<');
     expect(svg).toContain('>part b<');
-    expect(svg).toContain('labels name the printed part');
+    expect(svg).toContain('Labels name the printed part');
   });
 });
 
@@ -633,5 +637,465 @@ describe('the mesh fingerprint survives the double-to-float32 narrowing', () => 
     const f32 = new Float32Array(part.verts.length * 3);
     part.verts.forEach((v, i) => f32.set(v, i * 3));
     expect(bakeFingerprint(part)).toEqual(runtimeFingerprint(f32, part.tris.length));
+  });
+});
+
+// Dead-surface classification, on shapes whose hidden area is known in closed form. Every case is
+// the same 200x200 plate; what changes is the cover and the plate's tessellation.
+describe('hidden surface classification', () => {
+  let wasm: ManifoldAPI;
+  beforeAll(async () => {
+    wasm = await getManifold();
+  }, 30000);
+
+  type Cover = { verts: number[][]; tris: number[][] };
+
+  /** Axis-aligned box, outward-wound. */
+  function boxCover(lo: number[], hi: number[]): Cover {
+    const verts: number[][] = [];
+    for (let i = 0; i < 8; i++)
+      verts.push([i & 1 ? hi[0] : lo[0], i & 2 ? hi[1] : lo[1], i & 4 ? hi[2] : lo[2]]);
+    const v = (x: number, y: number, z: number): number => x + y * 2 + z * 4;
+    const quads = [
+      [v(1, 0, 0), v(1, 1, 0), v(1, 1, 1), v(1, 0, 1)],
+      [v(0, 0, 0), v(0, 0, 1), v(0, 1, 1), v(0, 1, 0)],
+      [v(0, 1, 0), v(0, 1, 1), v(1, 1, 1), v(1, 1, 0)],
+      [v(0, 0, 0), v(1, 0, 0), v(1, 0, 1), v(0, 0, 1)],
+      [v(0, 0, 1), v(1, 0, 1), v(1, 1, 1), v(0, 1, 1)],
+      [v(0, 0, 0), v(0, 1, 0), v(1, 1, 0), v(1, 0, 0)],
+    ];
+    return {
+      verts,
+      tris: quads.flatMap((q) => [
+        [q[0], q[1], q[2]],
+        [q[0], q[2], q[3]],
+      ]),
+    };
+  }
+
+  /**
+   * A dish: annular front face at `zFront` with a bore of radius `ri`, a solid back wall at
+   * `zBack`, and the rim between them. This is the chair wheel in miniature — the surface under
+   * the bore has nothing within 25mm of it along its own normal, and is still hidden.
+   */
+  function dishCover(
+    cx: number,
+    cy: number,
+    ri: number,
+    ro: number,
+    zFront: number,
+    zBack: number,
+  ): Cover {
+    const N = 64;
+    const verts: number[][] = [];
+    const ring = (r: number, z: number): number => {
+      const base = verts.length;
+      for (let i = 0; i < N; i++)
+        verts.push([
+          cx + r * Math.cos((2 * Math.PI * i) / N),
+          cy + r * Math.sin((2 * Math.PI * i) / N),
+          z,
+        ]);
+      return base;
+    };
+    const inF = ring(ri, zFront);
+    const outF = ring(ro, zFront);
+    const outB = ring(ro, zBack);
+    const inB = ring(ri, zBack);
+    const hub = verts.length;
+    verts.push([cx, cy, zBack]);
+    const tris: number[][] = [];
+    const band = (a: number, b: number): void => {
+      for (let i = 0; i < N; i++) {
+        const j = (i + 1) % N;
+        tris.push([a + i, b + i, b + j], [a + i, b + j, a + j]);
+      }
+    };
+    band(inF, outF); // front annulus
+    band(outF, outB); // rim
+    band(outB, inB); // back wall, outer part
+    for (let i = 0; i < N; i++) tris.push([inB + i, hub, inB + ((i + 1) % N)]);
+    return { verts, tris };
+  }
+
+  const COVER_CFG = { file: '-', referenceColor: '#FFFFFF', bleedMm: 10 };
+  const ZONE = { id: 'face', name: 'Face', seedNormal: [0, 0, 1], maxAngleDeg: 20, up: [0, 1, 0] };
+  /** 200x200 plate as two triangles: the chair's CAD faces arrive this coarse. */
+  const coarsePlate: Part = {
+    libraryPartId: 'coarse',
+    verts: [
+      [0, 0, 0],
+      [200, 0, 0],
+      [200, 200, 0],
+      [0, 200, 0],
+    ],
+    tris: [
+      [0, 1, 2],
+      [0, 2, 3],
+    ],
+  };
+  const finePlate = platePart('fine', 20, () => false);
+
+  const bake = (
+    part: Part,
+    covers: Cover[],
+    coverCfg: object = COVER_CFG,
+  ): ReturnType<typeof bakeZones> =>
+    bakeZones(config([part], [ZONE], { covers: coverCfg }), [part], () => {}, { covers, wasm });
+  const deadOf = (
+    baked: ReturnType<typeof bakeZones>,
+  ): { outer: number[][]; holes: number[][][] }[] =>
+    baked.sidecar.zones[0].charts[0].deadRegions ?? [];
+  const deadArea = (baked: ReturnType<typeof bakeZones>): number =>
+    deadOf(baked).reduce((s, r) => s + regionNetArea(r), 0);
+
+  it('a flush box on a finely meshed plate leaves one clean patch, inset by the bleed', () => {
+    const baked = bake(finePlate, [boxCover([50, 50, 1], [150, 150, 31])]);
+    const dead = deadOf(baked);
+    expect(dead).toHaveLength(1);
+    expect(dead[0].holes).toHaveLength(0);
+    // Exactly 80x80, with square corners. Smoothing runs before the bleed, so the covered 100x100
+    // comes out of the close-then-open with DEAD_SMOOTH_MM fillets at its corners and the visible
+    // set comes out with the matching fillets inside its hole — and dilating that by a bleed wider
+    // than the fillet radius (10 against 5) erodes them away again. Under the old bleed-then-smooth
+    // order the fillets survived onto the result and cost 4 * (r² - πr²/4) of it.
+    expect(deadArea(baked)).toBeCloseTo(80 * 80, 2);
+  });
+
+  it('drops a dead island the bleed margin would swallow, and keeps the real patch', () => {
+    // Two covers: a 100x100 that survives the bleed with 80x80 to spare, and a 37x37 whose 17x17
+    // remnant is wide enough to survive the open but under the bleed's own footprint (a disc of
+    // bleedMm, 314mm²), so it carries no signal worth hatching.
+    const baked = bake(finePlate, [
+      boxCover([10, 10, 1], [110, 110, 31]),
+      boxCover([150, 150, 1], [187, 187, 31]),
+    ]);
+    const dead = deadOf(baked);
+    expect(dead).toHaveLength(1);
+    expect(deadArea(baked)).toBeGreaterThan(6000);
+  });
+
+  it('the same box on a two-triangle plate hides the same 80x80, not the whole plate', () => {
+    // Classifying whole triangles cannot answer this: both triangle centroids are under the box,
+    // so a per-triangle verdict has only "all 40,000mm²" and "nothing" to choose between.
+    const baked = bake(coarsePlate, [boxCover([50, 50, 1], [150, 150, 31])]);
+    const dead = deadOf(baked);
+    expect(dead).toHaveLength(1);
+    expect(deadArea(baked)).toBeCloseTo(80 * 80, -2);
+  });
+
+  it('a dished cover hides the surface under its bore, which no ray along the normal reaches', () => {
+    // Bore radius 30 at 5mm, back wall at 45mm: straight out, the plate centre sees nothing until
+    // 45mm. It is still hidden — the rim and back wall close off every other direction.
+    const baked = bake(finePlate, [dishCover(100, 100, 30, 60, 5, 45)]);
+    const dead = deadOf(baked);
+    expect(dead).toHaveLength(1);
+    expect(dead[0].holes).toHaveLength(0);
+    // Bounded, not pinned: the bore's own 30mm radius has to be inside the patch, and the rim's
+    // 60mm shadow inset by the 10mm bleed bounds it from above. Where the edge falls between the
+    // two is how far under the rim you can still see, which is the thing being measured.
+    expect(deadArea(baked)).toBeGreaterThan(Math.PI * 30 * 30);
+    expect(deadArea(baked)).toBeLessThan(Math.PI * 50 * 50);
+  });
+
+  const span = (c: Cover, k: number): number[] => [
+    Math.min(...c.verts.map((v) => v[k])),
+    Math.max(...c.verts.map((v) => v[k])),
+  ];
+
+  it('snaps an off-mirror cover pair onto mirrored poses', () => {
+    // Two boxes that should be each other's mirror image and are not: one sits 20..80 from the
+    // plane, the other 21..81, and the second is 1mm along y as well. The chair's casters are out
+    // by the same order (1.187mm).
+    const a = boxCover([-80, 70, 1], [-20, 130, 31]);
+    const b = boxCover([21, 71, 1], [81, 131, 31]);
+    symmetrizeCovers([a, b], 0);
+    // both now stand the averaged distance from the plane, 20.5..80.5
+    expect(span(a, 0)).toEqual([-80.5, -20.5]);
+    expect(span(b, 0)).toEqual([20.5, 80.5]);
+    // and along the axes it does not mirror, both land on the average
+    expect(span(a, 1)).toEqual(span(b, 1));
+    expect(span(a, 1)).toEqual([70.5, 130.5]);
+  });
+
+  // `twin` maps a body with no partner to ITSELF, and the mirrored classify pass reads it to decide
+  // whether a blocker is a cover this part carries. That holds only for a body that really is its
+  // own mirror. An off-centre lone cover mapped to itself would stamp the far flank's samples
+  // hidden AND claimed against a cover nowhere near them, deleting artwork a user can see.
+  it('refuses a lone cover that is neither half of a pair nor its own mirror', () => {
+    expect(() => symmetrizeCovers([boxCover([20, 20, 1], [80, 80, 31])], 0)).toThrow(
+      /pairs with nothing and does not cross/,
+    );
+  });
+
+  it('lets a cover that crosses the plane be its own mirror', () => {
+    const out = symmetrizeCovers([boxCover([-40, 20, 1], [40, 80, 31])], 0);
+    expect(out.pairs).toBe(0);
+    expect([...out.twin]).toEqual([0]);
+  });
+
+  // covers.mirrorAxis describes the COVERS file. The classifier reflects SAMPLE POINTS through the
+  // same plane, which is only a point on this kind if the kind shares that symmetry — and OR-ing
+  // the two answers can only add hidden surface, so being wrong here deletes artwork.
+  it('refuses a part set that does not share the covers file’s mirror', () => {
+    const at = (x0: number): Part => ({
+      libraryPartId: `p${x0}`,
+      verts: [
+        [x0, 0, 0],
+        [x0 + 40, 0, 0],
+        [x0 + 40, 40, 0],
+      ],
+      tris: [[0, 1, 2]],
+    });
+    // -90..-50 against 50..90: each other's reflection, so the set passes.
+    expect(asymmetricPart([at(-90), at(50)], 0)).toBeNull();
+    // 60..100 is not the reflection of -90..-50, and neither crosses the plane.
+    expect(asymmetricPart([at(-90), at(60)], 0)).toBe('p-90');
+    // A part straddling the plane is its own mirror and needs no partner.
+    expect(asymmetricPart([at(-20)], 0)).toBeNull();
+  });
+
+  it('poses a rotated pair without replacing either mesh with the other’s mirror', () => {
+    // The chair's casters: the same body, mounted rotated 180 degrees about the vertical, so its
+    // two instances are NOT mirror images (owner, 2026-08-31). A box could not tell the two
+    // behaviours apart, being its own mirror, so two corners are chamfered 10mm along x — inward
+    // on a diagonal pair, which leaves the bounding box (and so the pairing test) untouched.
+    const chamfered = (): Cover => {
+      const c = boxCover([-30, -30, 0], [30, 30, 20]);
+      c.verts = c.verts.map((v) =>
+        (v[0] === 30 && v[1] === 30 && v[2] === 20) || (v[0] === -30 && v[1] === -30 && v[2] === 0)
+          ? [v[0] - Math.sign(v[0]) * 10, v[1], v[2]]
+          : v,
+      );
+      return c;
+    };
+    const a = chamfered();
+    const b = chamfered();
+    // b is a turned 180 degrees about the vertical: a rotation, so its winding still reads out.
+    b.verts = b.verts.map((v) => [-v[0], -v[1], v[2]]);
+    // Placed as a pair straddling the plane, each 100mm out.
+    a.verts = a.verts.map((v) => [v[0] - 100, v[1], v[2]]);
+    b.verts = b.verts.map((v) => [v[0] + 100, v[1], v[2]]);
+    const shapeOf = (c: Cover): string[] => {
+      const mid = [0, 1, 2].map((k) => (span(c, k)[0] + span(c, k)[1]) / 2);
+      return c.verts.map((v) => v.map((x, k) => (x - mid[k]).toFixed(6)).join()).sort();
+    };
+    const beforeA = shapeOf(a);
+    const beforeB = shapeOf(b);
+    const out = symmetrizeCovers([a, b], 0);
+    expect(out.pairs).toBe(1);
+    // Posed: mirrored midpoints along the axis, equal on the others.
+    expect(span(a, 0)).toEqual([-130, -70]);
+    expect(span(b, 0)).toEqual([70, 130]);
+    // Each mesh is still its own shape, and the two are not each other's reflection. Before this,
+    // b came back rebuilt from a and its chamfers swapped corners — the same replacement that
+    // moved the chair's casters by 21.976mm.
+    expect(shapeOf(a)).toEqual(beforeA);
+    expect(shapeOf(b)).toEqual(beforeB);
+    expect(shapeOf(a)).not.toEqual(shapeOf(b));
+    // Reported rather than hidden: 10mm, one chamfer's full travel.
+    expect(out.maxResidualMm).toBeCloseTo(10, 6);
+  });
+
+  it('a cover beside the plate hides nothing', () => {
+    const baked = bake(finePlate, [boxCover([260, 50, 1], [360, 150, 31])]);
+    expect(deadOf(baked)).toHaveLength(0);
+  });
+
+  // A declaredShadow solid's dead region is drawn from its silhouette (radiusMm − bleedMm about
+  // its axis), replacing whatever classify-and-bleed derived under it. The chair's wheel is the
+  // motivating case: the derived arc sat at 112.5mm ± 11.4 against a 140mm rim.
+  describe('declared shadows', () => {
+    // A 60x60x30 box hovering 1mm over the plate, replaced by a declared r=30 cylinder at
+    // (100, 100). With bleedMm 10 the declared dead disc is r=20.
+    const SOLID = {
+      id: 'disc',
+      type: 'cylinder',
+      axis: 'z',
+      radiusMm: 30,
+      replacesDims: [60, 60, 30],
+      declaredShadow: true,
+    };
+    const discBox = (): Cover => boxCover([70, 70, 1], [130, 130, 31]);
+    const bakeDeclared = (extraCovers: Cover[] = []): ReturnType<typeof bakeZones> => {
+      const built = buildCoverSolids([discBox(), ...extraCovers], [SOLID]);
+      return bakeZones(
+        config([finePlate], [ZONE], { covers: { ...COVER_CFG, solids: [SOLID] } }),
+        [finePlate],
+        () => {},
+        { covers: built.covers, solids: built.report, wasm },
+      );
+    };
+
+    it('draws the dead disc at radiusMm − bleedMm, round to the smoothing, not the classifier', () => {
+      const baked = bakeDeclared();
+      const dead = deadOf(baked);
+      expect(dead).toHaveLength(1);
+      expect(dead[0].holes).toHaveLength(0);
+      // The plate unwraps to itself, so UV mm are world mm: every boundary vertex of the declared
+      // region sits on the r=20 circle about (100, 100), give or take the sampling cell the edge
+      // was rasterised at. The derived pipeline cannot pass this: its edge wanders by the
+      // hemisphere's escapes, which is the chair's ±11.4mm arc.
+      const radii = dead[0].outer.map((p) => Math.hypot(p[0] - 100, p[1] - 100));
+      expect(Math.max(...radii)).toBeLessThan(23);
+      expect(Math.min(...radii)).toBeGreaterThan(17);
+      expect(deadArea(baked)).toBeGreaterThan(Math.PI * 18 * 18);
+      expect(deadArea(baked)).toBeLessThan(Math.PI * 22 * 22);
+    });
+
+    it('replaces only the solid’s own derived component; a separate cover’s patch survives', () => {
+      // The box cover's 50x50 footprint erodes to a 30x30 patch at [145..175]x[25..55] — outside
+      // the disc's 30mm silhouette, so attribution must leave it exactly as the derived pipeline
+      // made it. Kept a full bleed inside the plate edge: a covered strip reaching the boundary
+      // has no visible surface beyond it to erode from, and the patch comes out oversized.
+      const baked = bakeDeclared([boxCover([135, 15, 1], [185, 65, 31])]);
+      const dead = deadOf(baked);
+      expect(dead).toHaveLength(2);
+      const areas = dead.map((r) => regionNetArea(r)).sort((a, b) => a - b);
+      expect(areas[0]).toBeCloseTo(30 * 30, -2);
+      expect(areas[1]).toBeGreaterThan(Math.PI * 18 * 18);
+      expect(areas[1]).toBeLessThan(Math.PI * 22 * 22);
+    });
+
+    it('refuses to bake a declaredShadow config without the posed solids', () => {
+      const built = buildCoverSolids([discBox()], [SOLID]);
+      expect(() =>
+        bakeZones(
+          config([finePlate], [ZONE], { covers: { ...COVER_CFG, solids: [SOLID] } }),
+          [finePlate],
+          () => {},
+          { covers: built.covers, wasm },
+        ),
+      ).toThrow(/opts\.solids/);
+    });
+
+    it('refuses a declared disc the bleed would swallow', () => {
+      expect(() =>
+        bakeZones(
+          config([finePlate], [ZONE], {
+            covers: { ...COVER_CFG, solids: [{ ...SOLID, radiusMm: 8 }] },
+          }),
+          [finePlate],
+          () => {},
+          { covers: [], solids: [], wasm },
+        ),
+      ).toThrow(/larger than/);
+    });
+  });
+
+  describe('which parts a cover hides on', () => {
+    /** 100x200 plate on 10mm cells, its left edge at `x0`; two of them meet along x=100. */
+    const plateAt = (libraryPartId: string, x0: number): Part => {
+      const verts: number[][] = [];
+      for (let i = 0; i <= 10; i++)
+        for (let j = 0; j <= 20; j++) verts.push([x0 + i * 10, j * 10, 0]);
+      const idx = (i: number, j: number): number => i * 21 + j;
+      const tris: number[][] = [];
+      for (let i = 0; i < 10; i++)
+        for (let j = 0; j < 20; j++)
+          tris.push(
+            [idx(i, j), idx(i + 1, j), idx(i + 1, j + 1)],
+            [idx(i, j), idx(i + 1, j + 1), idx(i, j + 1)],
+          );
+      return { libraryPartId, verts, tris };
+    };
+    const left = plateAt('left', 0);
+    const right = plateAt('right', 100);
+
+    const bake2 = (
+      covers: Cover[],
+    ): { left: number; right: number; box: Record<string, number[]> } => {
+      const baked = bakeZones(
+        config([left, right], [ZONE], { covers: COVER_CFG }),
+        [left, right],
+        () => {},
+        { covers, wasm },
+      );
+      const out: { left: number; right: number; box: Record<string, number[]> } = {
+        left: 0,
+        right: 0,
+        box: {},
+      };
+      for (const c of baked.sidecar.zones[0].charts as {
+        libraryPartId: 'left' | 'right';
+        deadRegions?: { outer: number[][]; holes: number[][][] }[];
+      }[]) {
+        const dead = c.deadRegions ?? [];
+        out[c.libraryPartId] = dead.reduce((s, r) => s + regionNetArea(r), 0);
+        const pts = dead.flatMap((r) => r.outer);
+        if (pts.length)
+          out.box[c.libraryPartId] = [
+            Math.max(...pts.map((p) => p[0])) - Math.min(...pts.map((p) => p[0])),
+            Math.max(...pts.map((p) => p[1])) - Math.min(...pts.map((p) => p[1])),
+          ];
+      }
+      return out;
+    };
+
+    // 120x120, three quarters of it over the left plate. Flush against both (0.5mm, inside
+    // COVER_CONTACT_MM) in one case and standing 4mm clear of both in the other; nothing else
+    // about the two differs.
+    const RESTING: [number[], number[]] = [
+      [20, 40, 0.5],
+      [140, 160, 30],
+    ];
+    const MOUNTED: [number[], number[]] = [
+      [20, 40, 4],
+      [134, 160, 34],
+    ];
+
+    it('a cover resting on both parts hides surface on both', () => {
+      const { left: l, right: r } = bake2([boxCover(...RESTING)]);
+      // 120x120 hidden, inset by the 10mm bleed, split 70/30 by the seam at x=100
+      expect(l).toBeGreaterThan(6800);
+      expect(l).toBeLessThan(7100);
+      expect(r).toBeGreaterThan(2800);
+      expect(r).toBeLessThan(3100);
+    });
+
+    it('a cover resting on nothing hides on every part it occludes', () => {
+      const { left: l, right: r, box } = bake2([boxCover(...MOUNTED)]);
+      // Nothing carries it, so nothing narrows it: the shadow falls where the hemisphere test puts
+      // it, and it crosses the seam. The rule this replaces handed a standing cover to the ONE part
+      // holding the larger share of its nearest surface, and `r` came back exactly 0 — which is how
+      // the chair's wheel shadow came to stop dead along a straight line down the mount/fender seam
+      // while the wheel plainly hides across it.
+      expect(r).toBeGreaterThan(1500);
+      // 4mm of standoff lets the edges of the shadow see out sideways, so the patch comes in
+      // under the flush cover's 7,000mm² above
+      expect(l).toBeGreaterThan(5500);
+      expect(l).toBeLessThan(7000);
+      // and it runs to the seam, not 10mm short of it: the surface it hides on the right plate is
+      // hidden, so it must not dilate back across the seam the way visible surface would. The
+      // patch starts at x=35 and the seam is at 100, so reaching it is 65mm wide against 55.
+      expect(box.left[0]).toBeGreaterThan(60);
+      expect(box.left[1]).toBeGreaterThan(85);
+    });
+
+    // The unit test above is on asymmetricPart; this is the wiring. These two plates sit at
+    // 0..100 and 100..200, so neither crosses x=0 nor mirrors the other, and a bake that asked its
+    // mirrored question anyway would reflect every sample off the kind entirely.
+    it('refuses to bake a mirrored classification on an asymmetric part set', () => {
+      const cover = boxCover(...RESTING);
+      expect(() =>
+        bakeZones(
+          config([left, right], [ZONE], { covers: { ...COVER_CFG, mirrorAxis: 'x' } }),
+          [left, right],
+          () => {},
+          { covers: [cover], wasm, coverTwin: [0] },
+        ),
+      ).toThrow(/neither crosses that plane nor has a part mirroring it/);
+    });
+
+    it('mirroring a standing cover mirrors its shadow', () => {
+      // The two plates are one mesh translated, so the mirrored cover has to give the un-mirrored
+      // answer with the parts swapped. Under the argmax rule this pair read (l > 0, r = 0) and then
+      // (l = 0, r > 0): each side of one fixture losing a whole plate to a tie-break.
+      const mirror = (v: number[]): number[] => [200 - v[0], v[1], v[2]];
+      const a = bake2([boxCover(...MOUNTED)]);
+      const b = bake2([boxCover(mirror(MOUNTED[1]), mirror(MOUNTED[0]))]);
+      expect(b.right).toBeCloseTo(a.left, 0);
+      expect(b.left).toBeCloseTo(a.right, 0);
+    });
   });
 });

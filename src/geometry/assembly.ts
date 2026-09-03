@@ -29,6 +29,7 @@ import type {
 import {
   applyColorMerges,
   computeNetRegionsByColor,
+  intersectQuiet,
   planarArea,
   safeIntersectChecked,
   safeUnion,
@@ -854,6 +855,33 @@ export async function buildAssemblyGeometry(
   // CSG failure involving the color, so a color lost to a broken boolean is never also told to
   // move. Only colors that provably reached nothing get the off-part warning at the end.
   const landedColors = new Set<number>();
+  // Of those, the ones that reached a design surface and were kept out only by hidden surface. Why
+  // a color cut nothing decides which warning it gets at the end, and the two causes have opposite
+  // remedies: bring the design back onto the part, or move it off surface the assembly covers.
+  const hiddenColors = new Set<number>();
+  /**
+   * Record a color whose placed region reached this zone's hidden surface, and nothing else.
+   *
+   * Dead surface is baked inside the chart's own claim, so an overlap proves the region landed on
+   * surface this part really carries and only the dead subtraction kept it out — which is exactly
+   * "the pre-clip boundary would have admitted it", without asking the mapper for a second
+   * boundary. A design thrown off the part overlaps nothing and never reaches here.
+   *
+   * The one place a color is attributed to hidden surface. Reached from the single exit below
+   * where the clip leaves nothing, so what it probes is always the region the build really placed,
+   * tiles and all.
+   *
+   * intersectQuiet, not either safeIntersect: this is a probe, and both of those are wrong for one
+   * in opposite ways — the fallback hands the region back UNCLIPPED, which reads as an overlap for
+   * every color, and the checked variant warns the user that a region was left unclipped, about an
+   * intersect that shaped no geometry. A flaked boolean therefore leaves the color unattributed
+   * and it takes the off-the-part message, which is the one that shipped before either existed.
+   */
+  const noteHiddenSurface = (mapper: ZoneMapper, placed: PolyFeature | null, ci: number): void => {
+    const dead = mapper.deadArea();
+    if (!placed || !dead) return;
+    if (intersectQuiet(placed, dead)) hiddenColors.add(ci);
+  };
   let anyPlacements = false;
   let viewSign = 1,
     viewSignSet = false; // Y direction of the first real part's design face
@@ -926,10 +954,21 @@ export async function buildAssemblyGeometry(
         // clean through instead of recessed. Tracked rather than assumed; see the mapper.
         let clipped = true;
         if (boundaryPoly) {
+          const placed = feat;
+          // A boundary that admits nothing (the empty MultiPolygon: every bit of surface this
+          // chart owns is hidden once assembled) takes this same clip and comes back empty, so it
+          // needs no branch of its own. It had one, taken before tiling to save a fill's union pass
+          // over a chart that would discard every tile. That branch attributed off the UNTILED
+          // source, which is not the region the build places, and no bake reaches it: tests/
+          // chair-zones.test.ts ("no shipped chart is hidden outright") pins that every chart's
+          // boundary still admits area. Worth restoring against a bake that fails it, not before.
           const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
           feat = r.feat;
           clipped = r.clipped;
-          if (!feat) return;
+          if (!feat) {
+            noteHiddenSurface(mapper, placed, ci);
+            return;
+          }
           // Only a real clip proves the color reached this face. A cut-through zone has no clip
           // boundary (its boolean against the mesh is what bounds the cut), so there a color counts
           // as landed only when that boolean yields an inlay, in the intersection loop below.
@@ -1353,20 +1392,64 @@ export async function buildAssemblyGeometry(
   // Gated on anyPlacements so a build with no design surfaces at all doesn't call every color
   // missing. See landedColors above for what counts as landed.
   if (anyPlacements) {
-    const missed = palette
-      .map((c, ci) =>
-        landedColors.has(ci) ? null : regionLabel(c.hex, c.isMerge, c.members.length),
-      )
-      .filter((l): l is string => l !== null);
-    if (missed.length === 1)
+    const labelsOf = (want: (ci: number) => boolean): string[] =>
+      palette
+        .map((c, ci) =>
+          landedColors.has(ci) || !want(ci)
+            ? null
+            : regionLabel(c.hex, c.isMerge, c.members.length),
+        )
+        .filter((l): l is string => l !== null);
+    // Two causes, two remedies, so they are never merged into one count. A color the design put
+    // only on surface the assembly covers is not off the part and Scale will not bring it back.
+    const hidden = labelsOf((ci) => hiddenColors.has(ci));
+    const off = labelsOf((ci) => !hiddenColors.has(ci));
+    /**
+     * Picks the singular or plural form of a dropped-colors message, and owns every quote in it:
+     * the name in the singular and each name in the plural's list. Both causes had that written out
+     * twice apiece, and the four copies are how one of them came to put its full stop somewhere the
+     * other did not.
+     *
+     * The two sentences themselves stay whole inside their callers rather than being assembled from
+     * a shared clause and pronoun. scripts/check-troubleshooting.mjs pins a doc section by finding
+     * its quote inside a string src/ ships, and a message stitched together across arrow functions
+     * is no such string: deduplicating the wording leaves both sections unsearchable.
+     */
+    const missedWarning = (
+      labels: string[],
+      one: (label: string) => string,
+      many: (count: number, list: string) => string,
+    ): string =>
+      labels.length === 1
+        ? one(`"${labels[0]}"`)
+        : many(labels.length, labels.map((l) => `"${l}"`).join(', '));
+    if (off.length)
       warnBuild(
-        `"${missed[0]}" lands entirely off the part and won't print. ` +
-          `Lower Scale or move the design to bring it back.`,
+        missedWarning(
+          off,
+          (l) =>
+            `${l} lands entirely off the part and won't print. ` +
+            `Lower Scale or move the design to bring it back.`,
+          (n, list) =>
+            `${n} colors land entirely off the part and won't print: ` +
+            `${list}. Lower Scale or move the design to bring them back.`,
+        ),
       );
-    else if (missed.length)
+    // "only reaches surface that is hidden", not "lands only where the part is hidden": a design
+    // mostly thrown off the part while grazing one dead patch reaches this too, and of that one the
+    // second reading is false. What the build really knows is that no visible surface anywhere took
+    // the color and some hidden surface did, which is what the first reading says.
+    if (hidden.length)
       warnBuild(
-        `${missed.length} colors land entirely off the part and won't print: ` +
-          `${missed.map((l) => `"${l}"`).join(', ')}. Lower Scale or move the design to bring them back.`,
+        missedWarning(
+          hidden,
+          (l) =>
+            `${l} only reaches surface that's hidden once assembled and won't print. ` +
+            `Move it off the hatching to bring it back.`,
+          (n, list) =>
+            `${n} colors only reach surface that's hidden once assembled and won't print: ` +
+            `${list}. Move them off the hatching to bring them back.`,
+        ),
       );
   }
   palette.forEach((c, ci) => {

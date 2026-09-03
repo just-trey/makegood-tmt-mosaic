@@ -49,7 +49,7 @@ let currentFrame: FaceFrame | null = null;
  * copied into TypeScript that drifts when the palette moves. Falls back when there is no
  * stylesheet (jsdom), where nothing is rendered anyway.
  */
-function tokenColor(name: string, fallback: number): number {
+export function tokenColor(name: string, fallback: number): number {
   const raw =
     typeof getComputedStyle === 'function'
       ? getComputedStyle(document.documentElement).getPropertyValue(name).trim()

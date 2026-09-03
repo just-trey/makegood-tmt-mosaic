@@ -40,6 +40,7 @@ vi.mock('../src/state/persist', () => ({ schedulePersist: vi.fn() }));
 vi.mock('../src/scene/designGizmo', () => ({
   refreshGizmo: vi.fn(),
   isGizmoDragging: () => false,
+  tokenColor: (_name: string, fallback: number) => fallback,
 }));
 vi.mock('../src/scene/zonePick', () => ({ refreshZonePickMeshes: vi.fn() }));
 vi.mock('../src/assembly/parts', async (importOriginal) => ({
@@ -405,6 +406,221 @@ describe('assembly mode with no artwork yet', () => {
     await rebuildCurrent();
 
     expect(setPreferredViewDir).toHaveBeenCalledWith(expect.anything());
+  });
+});
+
+describe('hidden-surface overlay (deadRegions)', () => {
+  // A hand-built flat chart: a 20x20mm square whose UV equals its xz footprint, with a 12x12mm
+  // dead patch in the middle, enough for the overlay warp to have real surface to land on.
+  function flatChart(withDead: boolean) {
+    return {
+      positions3: new Float32Array([0, 0, 0, 20, 0, 0, 20, 0, 20, 0, 0, 20]),
+      uv: new Float32Array([0, 0, 20, 0, 20, 20, 0, 20]),
+      triangles: new Uint32Array([0, 1, 2, 0, 2, 3]),
+      normalSign: 1 as const,
+      boundary: [
+        [0, 0],
+        [20, 0],
+        [20, 20],
+        [0, 20],
+      ],
+      subRegions: [
+        {
+          outer: [
+            [0, 0],
+            [20, 0],
+            [20, 20],
+            [0, 20],
+          ],
+          holes: [],
+        },
+      ],
+      ...(withDead
+        ? {
+            deadRegions: [
+              {
+                outer: [
+                  [4, 4],
+                  [16, 4],
+                  [16, 16],
+                  [4, 16],
+                ],
+                holes: [],
+              },
+            ],
+          }
+        : {}),
+      zoneBounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
+    };
+  }
+  const zonedPart = (withDead: boolean, id = 'z'): AssemblyPart =>
+    asmPart({ zones: [{ id, name: 'Zone', chart: flatChart(withDead) }] } as never);
+  /** Three collinear points enclose no area, so the triangulator returns nothing for this. */
+  const brokenPart = (id: string): AssemblyPart => {
+    const chart = flatChart(true);
+    chart.deadRegions = [
+      {
+        outer: [
+          [4, 4],
+          [10, 4],
+          [16, 4],
+        ],
+        holes: [],
+      },
+    ];
+    return asmPart({ zones: [{ id, name: id, chart }] } as never);
+  };
+  const sceneMeshes = (): THREE.Mesh[] => {
+    const meshes: THREE.Mesh[] = [];
+    modelGroup.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+    });
+    return meshes;
+  };
+
+  beforeEach(() => {
+    state.shapeKind = 'assembly';
+    state.assembly.kindId = 'wheel';
+  });
+
+  it('hatches the hidden surface on the bare parts, before any artwork exists', async () => {
+    state.assembly.parts = [zonedPart(true)];
+
+    await rebuildCurrent();
+
+    const meshes = sceneMeshes();
+    expect(meshes).toHaveLength(2);
+    const overlay = meshes.find((m) => (m.material as THREE.Material).transparent)!;
+    expect(overlay).toBeTruthy();
+    expect(overlay.geometry.getAttribute('position').count).toBeGreaterThan(0);
+    // per-vertex UV drives the stripe texture
+    expect(overlay.geometry.getAttribute('uv').count).toBe(
+      overlay.geometry.getAttribute('position').count,
+    );
+  });
+
+  // deadOverlayMesh names the zone in its failure warning and keys the dedupe on it, and both are
+  // dead letters unless the caller hands it one. Without the id every zone says "this zone" and
+  // shares the key `dead-overlay-`, so the second zone to fail is swallowed by the first — the one
+  // case where the user has two things to report and hears about one.
+  it('names each zone whose hatch fails, rather than swallowing the second', async () => {
+    state.assembly.parts = [brokenPart('left'), brokenPart('front')];
+    clearWarnings();
+
+    await rebuildCurrent();
+
+    const msgs = WARNINGS.map((w) => w.message);
+    expect(msgs.some((m) => m.includes(`hidden surface on "left"`))).toBe(true);
+    expect(msgs.some((m) => m.includes(`hidden surface on "front"`))).toBe(true);
+    expect(msgs.some((m) => m.includes('this zone'))).toBe(false);
+  });
+
+  // renderRawAssemblyParts is the path that keeps the bare parts on screen when a build fails, and
+  // it builds these overlays too. A throw escaping the loop empties the viewport that path exists
+  // to keep filled, which reads as a crash. The mapper validates the chart for the first time here,
+  // and deadOverlayMesh reads ring[0] with no guard, so a malformed sidecar arrives as a TypeError.
+  it('keeps the parts on screen when a zone’s overlay throws, and names the zone', async () => {
+    // A uv array one pair short of the vertex count. reconstructChart only range-checks triangle
+    // indices, so the mapper's own validation is the first thing to see this, and it throws.
+    const chart = flatChart(true);
+    chart.uv = chart.uv.slice(0, -2);
+    state.assembly.parts = [asmPart({ zones: [{ id: 'left', name: 'left', chart }] } as never)];
+    clearWarnings();
+
+    await rebuildCurrent();
+
+    expect(sceneMeshes().length).toBeGreaterThan(0);
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(
+      expect.stringContaining('hidden surface on "left"'),
+    );
+  });
+
+  it('shares one hatch material across parts, and lets go of it when the scene disposes it', async () => {
+    state.assembly.parts = [zonedPart(true), zonedPart(true)];
+
+    await rebuildCurrent();
+
+    const mats = sceneMeshes()
+      .map((m) => m.material as THREE.Material)
+      .filter((m) => m.transparent);
+    expect(mats).toHaveLength(2);
+    expect(new Set(mats).size).toBe(1);
+
+    // The real newModelGroup disposes the materials of everything it clears, which releases the
+    // GPU program behind this one. Holding the handle past that would hand the next rebuild a
+    // disposed material; the cache has to drop it and build a fresh one.
+    const first = mats[0];
+    first.dispose();
+    await rebuildCurrent();
+    const after = sceneMeshes()
+      .map((m) => m.material as THREE.Material)
+      .find((m) => m.transparent);
+    expect(after).toBeTruthy();
+    expect(after).not.toBe(first);
+  });
+
+  it('rebuilds the stripe texture with the material, so a theme change reaches the stripes', async () => {
+    // jsdom has no 2D canvas, so the shipped path here falls back to a flat tint and never builds
+    // a texture at all — the case this pins cannot happen without one. A stub context is enough:
+    // nothing is read back off it, the point is only that a CanvasTexture gets made.
+    const proto = HTMLCanvasElement.prototype as unknown as {
+      getContext: (id: string) => unknown;
+    };
+    const real = proto.getContext;
+    proto.getContext = () => ({
+      clearRect() {},
+      beginPath() {},
+      moveTo() {},
+      lineTo() {},
+      stroke() {},
+      strokeStyle: '',
+      lineWidth: 0,
+    });
+    try {
+      state.assembly.parts = [zonedPart(true)];
+      const hatchMat = async (): Promise<THREE.MeshBasicMaterial> => {
+        await rebuildCurrent();
+        return sceneMeshes()
+          .map((m) => m.material as THREE.MeshBasicMaterial)
+          .find((m) => m.transparent)!;
+      };
+      // The cache is module-level and an earlier test in this file already filled it, from the
+      // textureless jsdom path. Dispose that one so this test builds its own with the stub up.
+      (await hatchMat()).dispose();
+      const first = await hatchMat();
+      expect(first.map).toBeTruthy();
+      // The accent is drawn INTO the stripes, so a texture that outlives the material keeps the
+      // old accent's colour however many times the material is rebuilt.
+      const texture = first.map!;
+      first.dispose();
+      const after = await hatchMat();
+      expect(after).not.toBe(first);
+      expect(after.map).toBeTruthy();
+      expect(after.map).not.toBe(texture);
+    } finally {
+      proto.getContext = real;
+    }
+  });
+
+  it('draws it again on the cut result, and adds nothing when nothing is hidden', async () => {
+    const part = zonedPart(true);
+    state.assembly.parts = [part];
+    state.parsed = parsedSquare();
+    vi.mocked(buildAssemblyGeometry).mockResolvedValue(
+      assemblyBuild({ partOutputs: [{ part, bodySoup: tri(), inlaySoups: { 0: tri(1) } }] }),
+    );
+
+    await rebuildCurrent();
+
+    const withOverlay = sceneMeshes().filter(
+      (m) => (m.material as THREE.Material).transparent,
+    ).length;
+    expect(withOverlay).toBeGreaterThan(0);
+
+    state.assembly.parts = [zonedPart(false)];
+    state.parsed = null;
+    await rebuildCurrent();
+    expect(sceneMeshes()).toHaveLength(1);
   });
 });
 
