@@ -1,5 +1,5 @@
 {
-  "schema": 3,
+  "schema": 4,
   "kindId": "chair-body",
   "meshes": {
     "chair-storage-left": { "triangleCount": 46494, "bboxHash": "be4a9352" },
@@ -13876,7 +13876,11 @@
       "uvBounds": { "minU": 0, "minV": 0, "maxU": 642.0334, "maxV": 509.2176 },
       "up": [0, 1],
       "normalSign": 1,
-      "distortion": { "max": 1.2242, "mean": 1.0142 }
+      "distortion": { "max": 1.2242, "mean": 1.0142 },
+      "mirror": {
+        "twin": "right",
+        "residualMm": { "pairs": 5146, "rms": 0.178, "p95": 0.268, "max": 0.632 }
+      }
     },
     {
       "id": "right",
@@ -30490,7 +30494,11 @@
       "uvBounds": { "minU": 0, "minV": 0, "maxU": 641.5152, "maxV": 509.3575 },
       "up": [0, 1],
       "normalSign": 1,
-      "distortion": { "max": 1.2259, "mean": 1.0159 }
+      "distortion": { "max": 1.2259, "mean": 1.0159 },
+      "mirror": {
+        "twin": "left",
+        "residualMm": { "pairs": 5521, "rms": 0.19, "p95": 0.292, "max": 0.728 }
+      }
     },
     {
       "id": "back",
@@ -48803,7 +48811,11 @@
       "uvBounds": { "minU": 0, "minV": 0, "maxU": 315.3992, "maxV": 437.0657 },
       "up": [0, 1],
       "normalSign": 1,
-      "distortion": { "max": 1.1341, "mean": 1.0057 }
+      "distortion": { "max": 1.1341, "mean": 1.0057 },
+      "mirror": {
+        "self": true,
+        "residualMm": { "pairs": 7248, "rms": 0.15, "p95": 0.353, "max": 1.162 }
+      }
     },
     {
       "id": "front",
@@ -57225,7 +57237,11 @@
       "uvBounds": { "minU": 0, "minV": 0, "maxU": 219.6439, "maxV": 326.8609 },
       "up": [0, 1],
       "normalSign": 1,
-      "distortion": { "max": 1.1088, "mean": 1.0037 }
+      "distortion": { "max": 1.1088, "mean": 1.0037 },
+      "mirror": {
+        "self": true,
+        "residualMm": { "pairs": 3708, "rms": 0.815, "p95": 0.647, "max": 7.51 }
+      }
     },
     {
       "id": "seat-left",
@@ -59324,7 +59340,11 @@
       "uvBounds": { "minU": 0, "minV": 0, "maxU": 91.355, "maxV": 219.6902 },
       "up": [0, 1],
       "normalSign": 1,
-      "distortion": { "max": 1.0833, "mean": 1.0029 }
+      "distortion": { "max": 1.0833, "mean": 1.0029 },
+      "mirror": {
+        "twin": "seat-right",
+        "residualMm": { "pairs": 868, "rms": 0.033, "p95": 0.03, "max": 0.278 }
+      }
     },
     {
       "id": "seat-right",
@@ -61430,7 +61450,11 @@
       "uvBounds": { "minU": 0, "minV": 0, "maxU": 91.3907, "maxV": 219.6882 },
       "up": [0, 1],
       "normalSign": 1,
-      "distortion": { "max": 1.0833, "mean": 1.003 }
+      "distortion": { "max": 1.0833, "mean": 1.003 },
+      "mirror": {
+        "twin": "seat-left",
+        "residualMm": { "pairs": 867, "rms": 0.038, "p95": 0.03, "max": 0.297 }
+      }
     },
     {
       "id": "wing-left",
@@ -61915,7 +61939,11 @@
       "uvBounds": { "minU": 0, "minV": 0, "maxU": 44.545, "maxV": 242.3996 },
       "up": [0, 1],
       "normalSign": 1,
-      "distortion": { "max": 1.016, "mean": 1.002 }
+      "distortion": { "max": 1.016, "mean": 1.002 },
+      "mirror": {
+        "twin": "wing-right",
+        "residualMm": { "pairs": 195, "rms": 0.024, "p95": 0.011, "max": 0.312 }
+      }
     },
     {
       "id": "wing-right",
@@ -62402,7 +62430,11 @@
       "uvBounds": { "minU": 0, "minV": 0, "maxU": 44.5403, "maxV": 242.3972 },
       "up": [0, 1],
       "normalSign": 1,
-      "distortion": { "max": 1.016, "mean": 1.002 }
+      "distortion": { "max": 1.016, "mean": 1.002 },
+      "mirror": {
+        "twin": "wing-left",
+        "residualMm": { "pairs": 195, "rms": 0.024, "p95": 0.011, "max": 0.312 }
+      }
     }
   ]
 }

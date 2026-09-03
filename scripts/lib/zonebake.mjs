@@ -31,6 +31,7 @@
  */
 import { eachElement, meshTris, meshVerts, modelXML } from './mesh.mjs';
 import { detectFlatPatches } from '../../src/geometry/meshparts.ts';
+import { CHART_SNAP_MM } from '../../src/geometry/conformal.ts';
 import { ACCENT, GRAY, LABEL_SIZE } from './svgstyle.mjs';
 
 /** Boundary/hole/seam polyline simplification tolerance (mm) — CHART_SNAP_MM covers the slack. */
@@ -620,23 +621,32 @@ const MIRROR_PAIR_TOL_MM = 5;
 // many vertices exceed a threshold, off one pass of the same search the bake reports its residual
 // with — see bodyIndex above for why a measurement script must not re-implement one.
 export function nearestPointDistances(a, b, cap) {
+  return nearestPoints(a, b, cap).map((n) => n.d);
+}
+
+/** The search behind nearestPointDistances, keeping WHICH point of `b` won (`j`, -1 for none). */
+export function nearestPoints(a, b, cap) {
   const cell = (p) =>
     `${Math.floor(p[0] / cap)},${Math.floor(p[1] / cap)},${Math.floor(p[2] / cap)}`;
   const cells = new Map();
-  for (const p of b) {
+  b.forEach((p, j) => {
     const k = cell(p);
     let l = cells.get(k);
     if (!l) cells.set(k, (l = []));
-    l.push(p);
-  }
+    l.push(j);
+  });
   return a.map((p) => {
     const [ci, cj, ck] = [0, 1, 2].map((k) => Math.floor(p[k] / cap));
-    let best = Infinity;
+    let best = { d: Infinity, j: -1 };
     for (let i = -1; i <= 1; i++)
       for (let j = -1; j <= 1; j++)
         for (let k = -1; k <= 1; k++)
-          for (const q of cells.get(`${ci + i},${cj + j},${ck + k}`) ?? [])
-            best = Math.min(best, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
+          for (const qj of cells.get(`${ci + i},${cj + j},${ck + k}`) ?? []) {
+            const q = b[qj];
+            const d = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+            // A neighbouring cell reaches past `cap`; the promise is "within cap or nothing".
+            if (d <= cap && d < best.d) best = { d, j: qj };
+          }
     return best;
   });
 }
@@ -653,6 +663,117 @@ function nearestPointResidual(a, b, cap) {
  */
 const MIRROR_REPORT_MM = 50;
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+/**
+ * Which zone mirrors which, read off the config's seed points alone: two zones are twins when
+ * their seeds are each other's reflection across the `mirrorAxis` plane, and a zone whose seed
+ * sits on the plane is its own mirror. The same MIRROR_PAIR_TOL_MM symmetrizeCovers pairs cover
+ * bodies with, so "on the plane" and "each other's image" mean one thing across the bake.
+ *
+ * Seeds, not charts: pairing has to be settled before anything is unwrapped, and a seed is the one
+ * point the config states about where a zone is. A zone grown from a `seedNormal` states none, so
+ * it is left unpaired with a warning rather than guessed at from its patch.
+ */
+export function pairMirrorZones(zones, axis) {
+  const mirror = new Map();
+  const warnings = [];
+  const flip = (v) => v.map((x, k) => (k === axis ? -x : x));
+  const seeded = zones.filter((z) => Array.isArray(z.seedPoint));
+  for (const z of zones)
+    if (!Array.isArray(z.seedPoint))
+      warnings.push(
+        `zone "${z.id}" grows from a seedNormal, so mirrorAxis cannot pair it: it offers no mirror`,
+      );
+  for (const z of seeded) {
+    if (mirror.has(z.id)) continue;
+    if (Math.abs(z.seedPoint[axis]) <= MIRROR_PAIR_TOL_MM) {
+      mirror.set(z.id, { self: true });
+      continue;
+    }
+    const want = flip(z.seedPoint);
+    const partner = seeded
+      .filter((o) => o !== z && !mirror.has(o.id))
+      .map((o) => ({ o, d: dist3(o.seedPoint, want) }))
+      .sort((x, y) => x.d - y.d)[0];
+    if (!partner || partner.d > MIRROR_PAIR_TOL_MM) {
+      warnings.push(
+        `zone "${z.id}" has no mirror: its seed ${z.seedPoint.join(', ')} is ` +
+          `${Math.abs(z.seedPoint[axis]).toFixed(1)}mm off the ${'xyz'[axis]} plane and no other ` +
+          `zone seeds within ${MIRROR_PAIR_TOL_MM}mm of its reflection. It offers no mirror`,
+      );
+      continue;
+    }
+    mirror.set(z.id, { twin: partner.o.id });
+    mirror.set(partner.o.id, { twin: z.id });
+  }
+  return { mirror, warnings };
+}
+
+/**
+ * How far (mm) a chart vertex may sit from the reflection of its counterpart on the twin to count
+ * as the same point of the surface. The twins are exact mirrors but tessellated differently, so
+ * a vertex either has a counterpart almost exactly under its reflection or none at all, and the
+ * width only has to sit between those. Swept on the shipped chair bake (measureZoneMirror at
+ * 0.25 / 0.5 / 1.0mm, 2026-09-03): right->left pairs 5,285 / 5,521 / 6,017 of 7,551 at rms
+ * 0.177 / 0.190 / 0.281; back (self) 7,084 / 7,248 / 7,543 at 0.140 / 0.150 / 0.212. Widening
+ * past 0.5 starts pairing vertices the twin does not have (the rms climbs with the count);
+ * narrowing loses real pairs without moving it. 0.5 is the plan's measurement width, and the
+ * pair counts tests/chair-zones.test.ts pins are counts at this width.
+ */
+export const MIRROR_VERT_PAIR_MM = 0.5;
+
+/** Every chart vertex of a zone with its 3D position and UV, for measureZoneMirror. */
+function zoneMirrorPoints(zone, vertsOf) {
+  const pos = [];
+  const uv = [];
+  for (const c of zone.charts) {
+    const verts = vertsOf(c.libraryPartId);
+    for (let i = 0; i < c.verts.length; i++) {
+      pos.push(verts[c.verts[i]]);
+      uv.push([c.uv[2 * i], c.uv[2 * i + 1]]);
+    }
+  }
+  return { pos, uv };
+}
+
+/**
+ * How well zone B's chart is the reflection of zone A's, in the exact terms a mirrored placement
+ * uses: reflect each vertex of A across the axis plane, take B's nearest vertex within
+ * MIRROR_VERT_PAIR_MM, and compare B's UV with A's UV reflected about A's uvBounds centre onto
+ * B's. The residual is that UV distance in mm; a self-mirrored zone measures against itself.
+ *
+ * `vertsOf(libraryPartId)` hands back that part's packed vertex list, the same list the chart's
+ * `verts` index — the bake's own parts, or the 3MFs re-read by scripts/measure-zone-mirror.mjs.
+ *
+ * The reflection is the whole transform. A best-fit rotation and scale on top of it moved the
+ * chair's right->left pair by -0.005 degrees and x1.00022 (plan measurement, 2026-09-03), so
+ * there is no constant here to tune, only a number to report.
+ */
+export function measureZoneMirror(zoneA, zoneB, axis, vertsOf, cap = MIRROR_VERT_PAIR_MM) {
+  const a = zoneMirrorPoints(zoneA, vertsOf);
+  const b = zoneA === zoneB ? a : zoneMirrorPoints(zoneB, vertsOf);
+  const flip = (v) => v.map((x, k) => (k === axis ? -x : x));
+  const cA = [zoneA.uvBounds.maxU / 2, zoneA.uvBounds.maxV / 2];
+  const cB = [zoneB.uvBounds.maxU / 2, zoneB.uvBounds.maxV / 2];
+  const near = nearestPoints(a.pos.map(flip), b.pos, cap);
+  const residuals = [];
+  near.forEach((n, i) => {
+    if (n.j < 0) return;
+    const [u, v] = a.uv[i];
+    const want = [cB[0] - (u - cA[0]), cB[1] + (v - cA[1])];
+    const got = b.uv[n.j];
+    residuals.push(Math.hypot(got[0] - want[0], got[1] - want[1]));
+  });
+  residuals.sort((x, y) => x - y);
+  const n = residuals.length;
+  return {
+    of: a.pos.length,
+    pairs: n,
+    rms: n ? Math.sqrt(residuals.reduce((s, r) => s + r * r, 0) / n) : 0,
+    p95: n ? residuals[Math.max(0, Math.ceil(0.95 * n) - 1)] : 0,
+    max: n ? residuals[n - 1] : 0,
+  };
+}
 
 /**
  * How far one visibility ray looks (mm) before it counts as escaping. Not a proximity limit: a
@@ -2183,13 +2304,24 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
     ? `\n  <path d="${deadD}" fill="url(#hidden)" fill-rule="evenodd" stroke="${ACCENT}" ` +
       `stroke-width="0.3" stroke-opacity="0.5"/>`
     : '';
-  const seams = (zone.seams || [])
-    .map(
-      (line) =>
-        `  <polyline points="${line.map((p) => pt(p).join(',')).join(' ')}" fill="none" ` +
-        `stroke="${ACCENT}" stroke-width="0.6" stroke-dasharray="2 3"/>`,
-    )
-    .join('\n');
+  const dashed = (pts) =>
+    `  <polyline points="${pts.map((p) => pt(p).join(',')).join(' ')}" fill="none" ` +
+    `stroke="${ACCENT}" stroke-width="0.6" stroke-dasharray="2 3"/>`;
+  // A self-mirrored zone's centre line: the runtime reflects a mirrored design about the uvBounds
+  // centre, and this is the one mark on the sheet that says where "the right half" starts.
+  const selfMirror = !!zone.mirror?.self;
+  const centreU = zone.uvBounds ? zone.uvBounds.maxU / 2 : chartBBox.maxU / 2;
+  const seams = [
+    ...(zone.seams || []).map(dashed),
+    ...(selfMirror
+      ? [
+          dashed([
+            [centreU, chartBBox.maxV],
+            [centreU, 0],
+          ]),
+        ]
+      : []),
+  ].join('\n');
   // Placed labels, so a later one can be dropped rather than land on top of an earlier one.
   const placed = [];
   const partLabels = (zone.charts.length > 1 ? zone.charts : [])
@@ -2228,6 +2360,7 @@ export function zoneTemplateSVG(zone, kindId, chartBBox) {
     .join('\n');
   const legend = [
     zone.seams?.length ? 'Dashed = printed-part seam' : '',
+    selfMirror ? 'Dashed centre line = mirror' : '',
     partLabels ? 'Labels name the printed part' : '',
     deadD ? 'Hatched = hidden once assembled' : '',
   ]
@@ -2313,6 +2446,8 @@ function validateConfig(config) {
     !(config.seamWeldTolMm > (config.weldTolMm ?? WELD_TOL_MM))
   )
     throw new Error('seamWeldTolMm must be larger than weldTolMm to stitch anything');
+  if (config.mirrorAxis !== undefined && !['x', 'y', 'z'].includes(config.mirrorAxis))
+    throw new Error('mirrorAxis must be "x", "y" or "z" when present');
   if (config.covers !== undefined) {
     const c = config.covers;
     if (typeof c.file !== 'string' || !c.file)
@@ -2445,6 +2580,9 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       });
   });
   const warnings = [];
+  const mirrorAxis = config.mirrorAxis ? 'xyz'.indexOf(config.mirrorAxis) : -1;
+  const zoneMirror = mirrorAxis >= 0 ? pairMirrorZones(config.zones, mirrorAxis) : null;
+  if (zoneMirror) warnings.push(...zoneMirror.warnings);
   const weld = weldParts(parts, config.weldTolMm ?? WELD_TOL_MM, config.seamWeldTolMm ?? 0);
   const triGeom = weld.tris.map((t) => triNormalArea(weld.verts, t));
   const soup = new Float32Array(weld.tris.length * 9);
@@ -2468,6 +2606,9 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
   const minIslandArea = config.minIslandAreaMm2 ?? MIN_ISLAND_AREA_MM2;
   const zones = [];
   const templates = [];
+  // Templates are drawn after every zone is baked: a self-mirrored zone's sheet needs its mirror
+  // relation, which is measured across the finished charts below.
+  const chartBBoxes = [];
   for (const zoneCfg of config.zones) {
     const zoneTris = segmentZone(weld, zoneCfg, patches, edgeTris, triGeom);
     assertSingleIsland(zoneCfg.id, zoneTris, weld, edgeTris);
@@ -2888,10 +3029,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       },
     };
     zones.push(zone);
-    templates.push({
-      file: zone.templateFile,
-      svg: zoneTemplateSVG(zone, config.kindId, { maxU, maxV }),
-    });
+    chartBBoxes.push({ maxU, maxV });
     const deadArea = coverIdx
       ? charts.reduce(
           (s, c) => s + (c.deadRegions ?? []).reduce((t, r) => t + regionNetArea(r), 0),
@@ -2907,12 +3045,53 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     );
   }
 
+  if (zoneMirror) {
+    const vertsOf = (id) => parts.find((p) => p.libraryPartId === id).verts;
+    for (const zone of zones) {
+      const rel = zoneMirror.mirror.get(zone.id);
+      if (!rel) continue;
+      const other = rel.self ? zone : zones.find((z) => z.id === rel.twin);
+      const m = measureZoneMirror(zone, other, mirrorAxis, vertsOf);
+      zone.mirror = {
+        ...rel,
+        residualMm: {
+          pairs: m.pairs,
+          rms: round(m.rms, 3),
+          p95: round(m.p95, 3),
+          max: round(m.max, 3),
+        },
+      };
+      log(
+        `zone "${zone.id}" mirrors ${rel.self ? 'itself' : `"${rel.twin}"`}: ${m.pairs} of ` +
+          `${m.of} vertices paired, residual rms ${m.rms.toFixed(3)} p95 ${m.p95.toFixed(3)} ` +
+          `max ${m.max.toFixed(3)}mm` +
+          (rel.self
+            ? ''
+            : `, bbox gap ${Math.abs(zone.uvBounds.maxU - other.uvBounds.maxU).toFixed(3)} x ` +
+              `${Math.abs(zone.uvBounds.maxV - other.uvBounds.maxV).toFixed(3)}mm`),
+      );
+      // The same slack the runtime already grants a chart against its own triangulation: a
+      // reflection landing further off than that would put mirrored artwork visibly off its twin.
+      if (m.p95 > CHART_SNAP_MM)
+        warnings.push(
+          `zone "${zone.id}": mirror residual p95 ${m.p95.toFixed(3)}mm exceeds ` +
+            `${CHART_SNAP_MM}mm — a mirrored design will not land where its twin's reflection is`,
+        );
+    }
+  }
+  zones.forEach((zone, i) =>
+    templates.push({
+      file: zone.templateFile,
+      svg: zoneTemplateSVG(zone, config.kindId, chartBBoxes[i]),
+    }),
+  );
+
   const meshes = {};
   config.parts.forEach((p, pi) => {
     meshes[p.libraryPartId] = meshFingerprint(parts[pi]);
   });
-  // Sidecar schema 3 (charts may carry `deadRegions` beside `subRegions`); independent of the
-  // zone *config* schema checked in validateConfig, which is still 1. Must match SIDECAR_SCHEMA
-  // in src/geometry/zoneCharts.ts.
-  return { sidecar: { schema: 3, kindId: config.kindId, meshes, zones }, templates, warnings };
+  // Sidecar schema 4 (zones may carry `mirror`, charts `deadRegions`); independent of the zone
+  // *config* schema checked in validateConfig, which is still 1. Must match SIDECAR_SCHEMA in
+  // src/geometry/zoneCharts.ts.
+  return { sidecar: { schema: 4, kindId: config.kindId, meshes, zones }, templates, warnings };
 }
