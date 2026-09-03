@@ -49,9 +49,11 @@ import {
 } from './manifold';
 import {
   faceXZBBox,
+  oppositeSide,
   OVERSHOOT_MM,
   type CutRegion,
   type DesignPlacement,
+  type KeepSide,
   type ZoneMapper,
 } from './zones';
 import { zoneMappersFor } from './zoneMappers';
@@ -66,7 +68,12 @@ import {
   type TileRefusal,
   type TileRefusalReport,
 } from './patterns';
-import { overlappingDesignPairs, type InkPolygon, type PlacedDesign } from './designOverlap';
+import {
+  clipToConvex,
+  overlappingDesignPairs,
+  type InkPolygon,
+  type PlacedDesign,
+} from './designOverlap';
 import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
 import { noticeBuild, warnBuild } from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
@@ -156,6 +163,14 @@ export interface ArtworkBuildInput {
    * SVG viewBox, clipped to the zone boundary.
    */
   mode?: 'sticker' | 'fill';
+  /**
+   * Set when this design keeps one half of a self-mirrored zone, its reflection keeping the
+   * other. The half kept is the one the design's placed centre lies on, so a design drawn on
+   * either side of the template's centre line prints there and mirrors across; this value settles
+   * only a design centred exactly on the line, which is where a mirrored pair (whose centres
+   * reflect onto each other, and onto the line together) would otherwise both keep the same half.
+   */
+  keepSide?: KeepSide;
 }
 
 export interface AssemblyBuildInput {
@@ -466,6 +481,77 @@ export function placedFootprintMM(
   return { w: c * w + sn * h, h: sn * w + c * h };
 }
 
+/** One design's kept half of a self-mirrored zone, resolved to a side and the clip for it. */
+interface KeptHalf {
+  side: KeepSide;
+  /** the line the half is cut at, in the zone's 2D design space */
+  centreU: number;
+  clip: PolyFeature;
+  /** what to call the zone in the notice */
+  zoneName: string;
+}
+
+/**
+ * Which half a design keeps on this zone, or null when it keeps all of it. The side is the one
+ * the design's placed centre lies on; `keepSide` itself only breaks the exact tie (see the field).
+ *
+ * The centre is taken from `fillExtent()`, the same zone bbox the placer anchors on, so the line
+ * here is the line mirroredBuildInput reflects about. A mirrored pair lands on opposite sides by
+ * construction: the reflection's offset from the centre is the exact negation of the original's,
+ * so only a centre landing ON the line reaches the tie, and there the two carry opposite values.
+ */
+function keptHalfFor(
+  mapper: ZoneMapper,
+  a: ArtworkBuildInput,
+  place: (pt: number[]) => number[],
+  zoneName: string,
+): KeptHalf | null {
+  if (!a.keepSide) return null;
+  const extent = mapper.fillExtent();
+  if (!extent) return null;
+  const centreU = (extent.minX + extent.maxX) / 2;
+  const b = a.parsed.bbox;
+  const du = place([(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2])[0] - centreU;
+  const side: KeepSide = du > 0 ? 'right' : du < 0 ? 'left' : a.keepSide;
+  const clip = mapper.sideClip(side);
+  return clip ? { side, centreU, clip, zoneName } : null;
+}
+
+/**
+ * `feat` cut down to the half a design keeps, and whether anything was cut away. Both readers of
+ * a placed region go through here, the cutter and the overlap check's ink, so the two halves of
+ * one mirrored design never warn against each other over ink neither of them cuts.
+ *
+ * Whether the region crosses the line is read off its vertices, not off an area before and after:
+ * a boolean that changes nothing still moves the area in its last bits, and a tolerance on that
+ * would be a number nobody measured. A region with no vertex past the line loses nothing and is
+ * handed back untouched, without paying for the boolean.
+ */
+function clipToKeptSide(
+  feat: PolyFeature,
+  half: KeptHalf,
+  label: string,
+): { feat: PolyFeature | null; removed: boolean } {
+  const beyond =
+    half.side === 'right'
+      ? (u: number): boolean => u < half.centreU
+      : (u: number): boolean => u > half.centreU;
+  const crosses = polysOf(feat).some((rings) =>
+    rings.some((ring) => ring.some((pt) => beyond(pt[0]))),
+  );
+  if (!crosses) return { feat, removed: false };
+  const r = safeIntersectChecked(feat, half.clip, label);
+  return { feat: r.feat, removed: r.clipped };
+}
+
+/** Rule 1 for the half clip: what a mirrored design lost to the centre line, and where it went. */
+export function mirrorHalfNotice(design: string, zone: string, side: KeepSide): string {
+  return (
+    `"${design}" crosses the middle of "${zone}". ` +
+    `Its ${side} half is kept and mirrored onto the ${oppositeSide(side)}.`
+  );
+}
+
 /**
  * The regions one design actually cuts, pushed through the zone's placer: what the overlap check
  * consults when two placed bounding boxes alone would warn about artwork that never touches.
@@ -473,39 +559,60 @@ export function placedFootprintMM(
  * Post-merge, post-base: these are the palette slots' features, so a color sent to the body is
  * correctly not ink. Slots never overlap each other within one design (net regions are cut apart
  * before they are pooled), so their areas add without double counting.
+ *
+ * Clipped to the design's kept half exactly as the cutter is, so a mirrored design's two halves
+ * are compared on the ink that actually cuts.
  */
 function placedInk(
   featuresByColor: (PolyFeature | null)[][],
   ai: number,
   place: (pt: number[]) => number[],
+  half: KeptHalf | null,
 ): InkPolygon[] {
   const out: InkPolygon[] = [];
   for (const perArtwork of featuresByColor) {
     const f = perArtwork[ai];
     if (!f) continue;
-    for (const rings of polysOf(f))
+    const placed = mapFeatureCoords(f, place);
+    const kept = half ? clipToKeptSide(placed, half, 'the overlap check').feat : placed;
+    if (!kept) continue;
+    for (const rings of polysOf(kept))
       out.push(
         rings.map((r) => {
           // GeoJSON rings repeat their first point; drop it so the clipper's wrap-around edge
           // isn't a zero-length one.
           const closed =
             r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1];
-          return (closed ? r.slice(0, -1) : r).map((pt) => place(pt as number[]));
+          return (closed ? r.slice(0, -1) : r) as number[][];
         }),
       );
   }
   return out;
 }
 
-/** The design's content bounding box, placed: a convex quad in the zone's own 2D design space. */
-function placedBBoxQuad(parsed: ParsedSVG, place: (pt: number[]) => number[]): number[][] {
+/**
+ * The design's content bounding box, placed: a convex quad in the zone's own 2D design space,
+ * cut down to the kept half where the design keeps one. The overlap check's ink gate bounds how
+ * much ink reaches the box two footprints share rather than intersecting ink with ink, so two
+ * halves of one mirrored design, disjoint but each filling its side of the shared box, would still
+ * trip it on their unclipped footprints. Clipped, the two footprints meet at the line and share
+ * no area at all. Still convex: a convex quad against a half-plane.
+ */
+function placedBBoxQuad(
+  parsed: ParsedSVG,
+  place: (pt: number[]) => number[],
+  half: KeptHalf | null,
+): number[][] {
   const b = parsed.bbox;
-  return [
+  const quad = [
     [b.minX, b.minY],
     [b.maxX, b.minY],
     [b.maxX, b.maxY],
     [b.minX, b.maxY],
   ].map(place);
+  if (!half) return quad;
+  const ring = (half.clip.geometry.coordinates as number[][][])[0];
+  return clipToConvex(quad, ring.slice(0, -1));
 }
 
 /**
@@ -932,6 +1039,7 @@ export async function buildAssemblyGeometry(
         mapper: ZoneMapper,
         boundaryPoly: PolyFeature | null,
         place: (pt: number[]) => number[],
+        half: KeptHalf | null,
         grid: TileGrid | null,
         c: AssemblyPaletteEntry,
         ci: number,
@@ -973,6 +1081,15 @@ export async function buildAssemblyGeometry(
           // boundary (its boolean against the mesh is what bounds the cut), so there a color counts
           // as landed only when that boolean yields an inlay, in the intersection loop below.
           landedColors.add(ci);
+        }
+        // After the boundary clip, so what the notice reports lost is surface this part cuts.
+        // The color counts as landed either way: what this takes off is cut by the reflection.
+        if (half) {
+          const r = clipToKeptSide(feat, half, `color ${c.hex} on ${part.name}`);
+          if (r.removed)
+            noticeBuild(mirrorHalfNotice(artworks[ai].name || 'design', half.zoneName, half.side));
+          feat = r.feat;
+          if (!feat) return;
         }
         const requested = requestedDepth(colorSettings, globalDepth, c.key);
         // A depth at or below zero cuts nothing and used to drop the color silently, deleting its
@@ -1142,15 +1259,18 @@ export async function buildAssemblyGeometry(
       for (let zi = 0; zi < mappers.length; zi++) {
         const mapper = mappers[zi];
         if (!zoneWork[zi].length) continue;
+        const zoneName =
+          part.zones?.find((z) => z.id === mapper.zoneId)?.name ?? mapper.zoneId ?? part.name;
         if (zoneWork[zi].length > 1 && !overlapCheckedZones.has(mapper.zoneId ?? '')) {
           warnOverlappingDesigns(
             zoneWork[zi].map((ai) => {
               const place = mapper.placer(placements[ai]);
+              const half = keptHalfFor(mapper, artworks[ai], place, zoneName);
               return {
                 name: artworks[ai].name || 'design',
-                quad: placedBBoxQuad(artworks[ai].parsed, place),
+                quad: placedBBoxQuad(artworks[ai].parsed, place, half),
                 fill: artworks[ai].mode === 'fill',
-                ink: () => placedInk(featuresByColor, ai, place),
+                ink: () => placedInk(featuresByColor, ai, place, half),
               };
             }),
           );
@@ -1162,6 +1282,7 @@ export async function buildAssemblyGeometry(
         for (const ai of zoneWork[zi]) {
           anyPlacements = true;
           const place = mapper.placer(placements[ai]);
+          const half = keptHalfFor(mapper, artworks[ai], place, zoneName);
           // One grid per (zone, artwork): every color of a fill repeats identically, so the
           // inverted-placement coverage math runs once, not per palette slot. A fill that can't be
           // tiled degrades to a single copy plus a warning rather than an empty part.
@@ -1210,8 +1331,16 @@ export async function buildAssemblyGeometry(
             // into colorPrisms or it did not.
             throwIfCancelled();
             const base = unitsDone;
-            await buildColorPrism(mapper, boundaryPoly, place, grid, palette[ci], ci, ai, (f) =>
-              reportPartProgress((base + f) / partUnits),
+            await buildColorPrism(
+              mapper,
+              boundaryPoly,
+              place,
+              half,
+              grid,
+              palette[ci],
+              ci,
+              ai,
+              (f) => reportPartProgress((base + f) / partUnits),
             );
             reportPartProgress(++unitsDone / partUnits);
             await maybeYield();

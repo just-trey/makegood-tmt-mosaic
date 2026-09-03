@@ -18,6 +18,7 @@ import {
   type CutterOptions,
   type DesignPlacement,
   type FillExtent,
+  type KeepSide,
   type ZoneFrame,
   type ZoneMapper,
 } from './zones';
@@ -509,6 +510,32 @@ export class ConformalZoneMapper implements ZoneMapper {
       this.deadPoly = null;
     }
     return this.deadPoly;
+  }
+
+  /**
+   * One half of the zone's UV bbox, split at the centre the placer anchors on (`uvCu`), so "right
+   * of centre" here and "reflected about centre" in mirroredBuildInput are the same line. Padded
+   * outward by the zone's own extent: the clip answers only which side of the line ink sits on,
+   * and ink placed past the bounds is still on one side of it.
+   */
+  sideClip(side: KeepSide): PolyFeature | null {
+    const bb = this.uvBBox;
+    const w = bb.maxX - bb.minX,
+      h = bb.maxY - bb.minY;
+    if (!(w > 0) || !(h > 0)) return null;
+    const u0 = side === 'right' ? this.uvCu : bb.minX - w;
+    const u1 = side === 'right' ? bb.maxX + w : this.uvCu;
+    const v0 = bb.minY - h,
+      v1 = bb.maxY + h;
+    return turf.polygon([
+      [
+        [u0, v0],
+        [u1, v0],
+        [u1, v1],
+        [u0, v1],
+        [u0, v0],
+      ],
+    ]) as PolyFeature;
   }
 
   /**

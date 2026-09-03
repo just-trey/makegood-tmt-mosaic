@@ -1,11 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as turf from '@turf/turf';
-import {
-  CHART_SNAP_MM,
-  ConformalZoneMapper,
-  FILL_REFINE_MM,
-  type ConformalChart,
-} from '../src/geometry/conformal';
+import { CHART_SNAP_MM, ConformalZoneMapper, FILL_REFINE_MM } from '../src/geometry/conformal';
 import {
   getManifold,
   manifoldIsValid,
@@ -17,56 +12,7 @@ import type { DesignPlacement } from '../src/geometry/zones';
 import type { ParsedSVG, PolyFeature } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 
-// Quarter-cylinder shell, the one curved surface that unwraps exactly: radius R about the Y axis,
-// θ ∈ [0, 90°], height H. UV is the analytic unwrap (u = R·θ arc length, v = y), so every chart
-// quantity has a closed form to test against. Grid spacing ~2mm keeps chord sag (R·dθ²/8) well
-// under the 0.05mm accuracy budget.
-const R = 30;
-const H = 60;
-const ARC_U = (R * Math.PI) / 2;
-
-function cylinderPoint(u: number, v: number): [number, number, number] {
-  const th = u / R;
-  return [R * Math.sin(th), v, R * Math.cos(th)];
-}
-
-function makeCylinderChart(): ConformalChart {
-  const nu = 24; // θ segments → du ≈ 1.96mm
-  const nv = 15; // height segments → dv = 4mm
-  const positions3: number[] = [];
-  const uv: number[] = [];
-  for (let i = 0; i <= nu; i++) {
-    const u = (i / nu) * ARC_U;
-    for (let j = 0; j <= nv; j++) {
-      const v = (j / nv) * H;
-      positions3.push(...cylinderPoint(u, v));
-      uv.push(u, v);
-    }
-  }
-  const triangles: number[] = [];
-  const idx = (i: number, j: number): number => i * (nv + 1) + j;
-  for (let i = 0; i < nu; i++) {
-    for (let j = 0; j < nv; j++) {
-      const a = idx(i, j),
-        b = idx(i + 1, j),
-        c = idx(i + 1, j + 1),
-        d = idx(i, j + 1);
-      triangles.push(a, b, c, a, c, d); // CCW in UV → outward (radial) normals
-    }
-  }
-  return {
-    positions3: Float32Array.from(positions3),
-    uv: Float32Array.from(uv),
-    triangles: Uint32Array.from(triangles),
-    normalSign: 1,
-    boundary: [
-      [0, 0],
-      [ARC_U, 0],
-      [ARC_U, H],
-      [0, H],
-    ],
-  };
-}
+import { ARC_U, cylinderPoint, H, makeCylinderChart, R } from './lib/cylinderChart';
 
 function squareAt(cu: number, cv: number, half: number): PolyFeature {
   return turf.polygon([

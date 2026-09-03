@@ -79,7 +79,7 @@ function counterClockwise(poly: number[][]): number[][] {
  * boundary that join otherwise disjoint pieces. Those cost nothing here because every caller
  * wants the area, which they leave unchanged.
  */
-function clipToConvex(subject: number[][], window: number[][]): number[][] {
+export function clipToConvex(subject: number[][], window: number[][]): number[][] {
   let out = counterClockwise(subject);
   const clip = counterClockwise(window);
   for (let i = 0; i < clip.length && out.length; i++) {

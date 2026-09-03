@@ -1,0 +1,128 @@
+// @vitest-environment jsdom
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../src/app/scheduler', () => ({ scheduleRebuild: vi.fn() }));
+vi.mock('../src/scene/viewport', () => ({ requestFrame: vi.fn() }));
+vi.mock('../src/ui/overlay', () => ({ showOverlay: vi.fn(), hideOverlay: vi.fn() }));
+vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
+vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
+vi.mock('../src/assembly/parts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/assembly/parts')>();
+  return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
+});
+
+import {
+  applyRestoredSession,
+  loadSavedSession,
+  saveSession,
+  type PersistedSession,
+} from '../src/state/persist';
+import { state } from '../src/state/store';
+import type { ArtworkInstance } from '../src/types';
+
+/**
+ * An instance's Mirror flag has to survive a reload like its other placement fields, and a
+ * session saved before the flag existed has to come back with it off. The save path spreads the
+ * instance; the restore path lists fields one by one, which is where a new one goes missing.
+ */
+
+/** svg/parse.ts normalizes colors through a canvas 2D context, which jsdom has none of. */
+beforeAll(() => {
+  HTMLCanvasElement.prototype.getContext = (() => {
+    let fillStyle = '#000000';
+    return {
+      get fillStyle() {
+        return fillStyle;
+      },
+      set fillStyle(v: string) {
+        fillStyle = v;
+      },
+    };
+  }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+});
+
+const SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">' +
+  '<rect x="0" y="0" width="10" height="10" fill="#ff0000"/></svg>';
+
+const instance = (over: Partial<ArtworkInstance> = {}): ArtworkInstance => ({
+  id: 'a1',
+  sourceId: 's1',
+  zone: null,
+  offsetU: 0,
+  offsetV: 0,
+  scalePct: 100,
+  rotationDeg: 0,
+  flipX: false,
+  flipY: false,
+  mode: 'sticker',
+  ...over,
+});
+
+function session(artworks: PersistedSession['artworks']): PersistedSession {
+  return {
+    version: 1,
+    savedAt: Date.now(),
+    shapeKind: 'disc',
+    disc: { diameter: 90, thickness: 5 },
+    rect: { width: 100, height: 70, thickness: 3 },
+    round: { width: 100, height: 70, corner: 12, thickness: 3 },
+    stlPlate: { width: 120, height: 80, thickness: 6, faceZ: 2 },
+    marginPct: 7,
+    scalePct: 100,
+    offsetX: 0,
+    offsetY: 0,
+    flipX: false,
+    flipY: false,
+    rotationDeg: 0,
+    globalDepth: 1.5,
+    recessBg: true,
+    printerId: 'snapmaker-u1',
+    asmRadius: 140,
+    assembly: { kindId: null, variantId: null },
+    baseFilamentId: 'blue',
+    autoMergeLevel: 2,
+    baseColorKey: null,
+    baseColorMembers: [],
+    mergeGroups: [],
+    colorSettings: {},
+    explicitDepths: true,
+    keptApart: [],
+    sources: [{ id: 's1', kind: 'upload', name: 'a.svg', svgText: SVG }],
+    artworks,
+    activeArtworkId: 'a1',
+  } as PersistedSession;
+}
+
+beforeEach(() => {
+  localStorage.clear();
+  state.shapeKind = 'disc';
+  state.assembly.kindId = null;
+  state.assembly.parts = [];
+  state.sources = [];
+  state.artworks = [];
+  state.activeArtworkId = null;
+});
+
+describe('the Mirror flag across a reload', () => {
+  it('round-trips through save and restore', async () => {
+    state.sources = [
+      { id: 's1', kind: 'upload', name: 'a.svg', svgText: SVG, parsed: null },
+    ] as unknown as typeof state.sources;
+    state.artworks = [instance({ mirror: true })];
+
+    saveSession();
+    const saved = loadSavedSession()!;
+    expect(saved.artworks[0].mirror).toBe(true);
+
+    await applyRestoredSession(saved);
+    expect(state.artworks[0].mirror).toBe(true);
+  });
+
+  it('a session saved before the flag existed restores with it off', async () => {
+    // instance() carries no `mirror` key at all, which is what an older session looks like
+    await applyRestoredSession(session([{ ...instance(), zoneId: null }]));
+    expect(state.artworks).toHaveLength(1);
+    expect(state.artworks[0].mirror).toBeFalsy();
+  });
+});

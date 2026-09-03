@@ -492,6 +492,11 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
         id: zone.id,
         name: zone.name,
         templateFile: zone.templateFile,
+        // The relation only; the bake's residual is a figure for its log and tests, not a runtime
+        // input, and carrying it here would invite something to read it as a tolerance.
+        ...(zone.mirror
+          ? { mirror: 'twin' in zone.mirror ? { twin: zone.mirror.twin } : { self: true } }
+          : {}),
         chart: reconstructChart(zone, chart, vertices),
       });
     } catch (e) {

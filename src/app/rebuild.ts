@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { AssemblyBuild, IndexedMesh } from '../types';
+import type { AssemblyBuild, IndexedMesh, ZoneMirror, ZoneRef } from '../types';
 import { baseColorHex, currentBaseParams, SCALE_MAX_PCT, state } from '../state/store';
 import {
   activeArtworkInstance,
@@ -18,6 +18,7 @@ import {
   shippedColorIndices,
   type ArtworkBuildInput,
 } from '../geometry/assembly';
+import { mirroredBuildInput, type KeepSide } from '../geometry/zones';
 import { ConformalZoneMapper } from '../geometry/conformal';
 import { currentAssemblyKind, hubcapSilhouetteOffset } from '../assembly/kinds';
 import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
@@ -61,6 +62,13 @@ export function getLastAssemblyBuild(): AssemblyBuild | null {
  * (3.8-5.2s against a steady 4.1s for the chair's 13 parts).
  */
 const CREASE_ANGLE_RAD = (30 * Math.PI) / 180;
+
+/** The baked mirror relation of a bound zone, read off the part it is bound to. */
+function zoneMirrorOf(ref: ZoneRef | null): ZoneMirror | undefined {
+  if (!ref) return undefined;
+  const part = state.assembly.parts.find((p) => p.id === ref.partId);
+  return part?.zones?.find((z) => z.id === ref.zoneId)?.mirror;
+}
 
 /**
  * Display geometry for one triangle soup.
@@ -506,21 +514,31 @@ async function rebuildAssemblyScene(): Promise<void> {
     const source = state.sources.find((s) => s.id === a.sourceId);
     const parsed = source?.parsed ?? state.parsed;
     if (!parsed) return [];
-    return [
-      {
-        parsed,
-        name: source?.name,
-        zoneId: a.zone?.zoneId ?? null,
-        scaleMult: a.scalePct / 100,
-        maxScaleMult: SCALE_MAX_PCT / 100,
-        offX: a.offsetU,
-        offZ: a.offsetV,
-        flipX: a.flipX,
-        flipY: a.flipY,
-        rotationDeg: a.rotationDeg,
-        mode: a.mode,
-      },
-    ];
+    const primary: ArtworkBuildInput = {
+      parsed,
+      name: source?.name,
+      zoneId: a.zone?.zoneId ?? null,
+      scaleMult: a.scalePct / 100,
+      maxScaleMult: SCALE_MAX_PCT / 100,
+      offX: a.offsetU,
+      offZ: a.offsetV,
+      flipX: a.flipX,
+      flipY: a.flipY,
+      rotationDeg: a.rotationDeg,
+      mode: a.mode,
+    };
+    // A mirrored instance is two placements: its own, and its reflection bound to the twin zone,
+    // or to the other half of a self-mirrored one. The build sees two ordinary artworks and nothing
+    // in the geometry knows they are related. A flag on a zone that offers no mirror is ignored
+    // rather than guessed at; state clears it when the binding changes.
+    const mirror = a.mirror ? zoneMirrorOf(a.zone) : undefined;
+    if (!mirror) return [primary];
+    if ('twin' in mirror) return [primary, mirroredBuildInput(primary, mirror.twin)];
+    // Tie rule only (see ArtworkBuildInput.keepSide): at Offset 0 the right half is the one kept,
+    // which is what "design the right half" on the template promises.
+    const keepSide: KeepSide = primary.offX >= 0 ? 'right' : 'left';
+    const own = { ...primary, keepSide };
+    return [own, mirroredBuildInput(own, own.zoneId ?? null)];
   });
   // state.parsed without an instance shouldn't happen (loadArtworkSource creates one), but the
   // globals remain the source of truth for flat mode, so fall back to them rather than silently
