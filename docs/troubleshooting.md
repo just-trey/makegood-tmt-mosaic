@@ -997,7 +997,8 @@ above, and it needs a bigger move than the hatching's own width.
 **Where to move it to.** The covered surface is crosshatched in the 3D view and
 hatched on the printable template, both before any artwork is placed. `Left seat
 side` and `Right seat side` are the ones that catch people out: 81% of each is
-under the cushion, so a design dropped there with no adjustment lands almost
+covered once the chair is assembled (the bake log's per-zone `dead` figure over
+the zone's claim), so a design dropped there with no adjustment lands almost
 entirely covered. The seat pan itself is in no zone at all.
 
 The named colors are dropped from the color list, the filament slot count, and

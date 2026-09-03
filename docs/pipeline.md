@@ -180,6 +180,15 @@ rounded edge the way real vinyl would
     reach the far wall through its own spoke openings, so its shadow baked as a
     ragged patch. It is now one solid 280mm disc, posed from the bodies it
     replaces and checked against their diameter.
+  - **A declared solid's own shadow is drawn, not derived**
+    (`declaredShadow: true`): the dead area is the disc of radius
+    `radiusMm − bleedMm` about the solid's snapped axis, gated the way the
+    classifier gates (within ray reach, facing the solid, on a part carrying
+    it). Classify-and-bleed could never return a clean arc there — the bleed
+    also erodes 20mm out from every through-hole inside the shadow. Derived
+    regions that would add nothing beyond the disc but post-bleed rags (under
+    π·bleedMm²) are absorbed into it; anything larger — another cover's real
+    shadow — is kept whole and unioned.
   - **Mirror-paired covers** are snapped onto exactly mirrored poses
     (`covers.mirrorAxis`), keeping each body's own mesh.
   - **The question is asked twice**, at each sample and at its mirror image,

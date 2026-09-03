@@ -31,7 +31,8 @@
         "type": "cylinder",
         "axis": "x",
         "radiusMm": 140,
-        "replacesDims": [48.5, 154.06, 280.0]
+        "replacesDims": [48.5, 154.06, 280.0],
+        "declaredShadow": true
       }
     ]
   },
@@ -63,6 +64,13 @@
       "name": "Right side",
       "seedPoint": [-168, 199, -491],
       "maxAngleDeg": 45,
+      "up": [0, 1, 0]
+    },
+    {
+      "id": "back",
+      "name": "Back",
+      "seedPoint": [0, 280, -497],
+      "maxAngleDeg": 35,
       "up": [0, 1, 0]
     },
     {

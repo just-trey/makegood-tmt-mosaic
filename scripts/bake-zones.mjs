@@ -76,6 +76,7 @@ if (config.covers) {
     const reg = registerCovers(config, parts, objects);
     opts.covers = reg.covers;
     opts.coverTwin = reg.mirror?.twin;
+    opts.solids = reg.solids ?? undefined;
     console.log(
       `  covers      ${config.covers.file}: ${reg.covers.length} cover bodies, ` +
         `registered against ${reg.matched} parts (residual ${reg.residual.toFixed(3)}mm)` +

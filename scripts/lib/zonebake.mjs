@@ -315,6 +315,13 @@ export function buildCoverSolids(covers, specs) {
       report.push({ id: spec.id, replaced: members.length, mid: cb.mid, dims: cb.dims });
     }
   }
+  // Where each built solid landed in the returned cover list, so a declaredShadow reader can find
+  // the solid's FINAL pose (symmetrizeCovers moves cover vertices after this returns; `mid` above
+  // is the pre-snap cluster and reusing it would hand the two flanks discs a sub-mm apart).
+  const kept = covers.length - taken.size;
+  report.forEach((r, k) => {
+    r.coverIndex = kept + k;
+  });
   return { covers: [...covers.filter((_, i) => !taken.has(i)), ...built], report };
 }
 
@@ -2334,6 +2341,13 @@ function validateConfig(config) {
             `covers.solids "${s.id}": replacesDims must be the 3 bbox dimensions of the bodies ` +
               `it replaces, which is what poses the solid from the file`,
           );
+        if (s.declaredShadow !== undefined && s.declaredShadow !== true)
+          throw new Error(`covers.solids "${s.id}": declaredShadow must be true when present`);
+        if (s.declaredShadow && !(s.radiusMm - c.bleedMm > 0))
+          throw new Error(
+            `covers.solids "${s.id}": declaredShadow needs radiusMm (${s.radiusMm}) larger than ` +
+              `covers.bleedMm (${c.bleedMm}) — the declared dead disc is their difference`,
+          );
       }
     }
   }
@@ -2398,6 +2412,38 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         }`,
       ),
     );
+  // Declared shadows: a solid whose silhouette is a known number gets its dead region DRAWN from
+  // that number, not recovered by classify-and-bleed. The derived pipeline can never hand back a
+  // clean disc under the chair's wheel: the bleed erodes 20mm in from the rim AND 20mm out from
+  // every through-hole inside the shadow, so the arc came out at 112.5mm ± 11.4 against a rim at
+  // 140. The dead radius is radiusMm − bleedMm — the same shifted-cover margin the bleed reserves
+  // everywhere else, kept by construction instead of by dilation.
+  const declaredSpecs = (config.covers?.solids ?? []).filter((s) => s.declaredShadow);
+  if (declaredSpecs.length && !opts.solids)
+    throw new Error(
+      'config declares covers.solids with declaredShadow but the bake was given no opts.solids ' +
+        '(the buildCoverSolids report): without the posed solids the shadow would silently fall ' +
+        'back to the derived shape',
+    );
+  const declared = declaredSpecs.flatMap((spec) => {
+    const axis = 'xyz'.indexOf(spec.axis);
+    return opts.solids
+      .filter((rep) => rep.id === spec.id)
+      .map((rep) => {
+        const b = bounds(opts.covers[rep.coverIndex].verts);
+        return {
+          id: spec.id,
+          axis,
+          u: (axis + 1) % 3,
+          w: (axis + 2) % 3,
+          mid: b.mid,
+          lo: b.mn[axis],
+          hi: b.mx[axis],
+          deadR: spec.radiusMm - config.covers.bleedMm,
+          cover: rep.coverIndex,
+        };
+      });
+  });
   const warnings = [];
   const weld = weldParts(parts, config.weldTolMm ?? WELD_TOL_MM, config.seamWeldTolMm ?? 0);
   const triGeom = weld.tris.map((t) => triNormalArea(weld.verts, t));
@@ -2505,7 +2551,25 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     if (coverIdx) {
       const coveredRings = [];
       const visibleRings = [];
+      const declaredRings = [];
       const blockers = new Uint8Array(coverIdx.bodyCount);
+      /**
+       * Is this sample inside a declared dead disc? The gates mirror the classifier's own limits:
+       * within COVER_RAY_MM of the solid's axial slab (the classifier's reach), facing it along
+       * the axis, hidden only on parts that carry the cover (partCovers, same as claimed) — then
+       * within deadR of the axis. Analytic on the snapped poses, so the flanks agree by
+       * construction; samples in the bleed annulus (deadR..radiusMm) fall through to classify.
+       */
+      const declaredDead = (p, n, mine) => {
+        for (const d of declared) {
+          const ax = Math.max(d.lo - p[d.axis], p[d.axis] - d.hi, 0);
+          if (ax > COVER_RAY_MM) continue;
+          if (!mine.includes(d.cover)) continue;
+          if (ax > 0 && n[d.axis] * (d.mid[d.axis] - p[d.axis]) <= 0) continue;
+          if (Math.hypot(p[d.u] - d.mid[d.u], p[d.w] - d.mid[d.w]) <= d.deadR) return true;
+        }
+        return false;
+      };
       const mirrorAxis = config.covers?.mirrorAxis ? 'xyz'.indexOf(config.covers.mirrorAxis) : -1;
       const twin = opts.coverTwin;
       /**
@@ -2546,6 +2610,13 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
           // flips a knife-edge sample, which is what left the flanks 5.3% apart with nothing
           // asymmetric in the geometry. `h(p) OR h(-p)` is symmetric by construction, so it is a
           // guarantee rather than a threshold tuned until the two sides happened to agree.
+          const ring = cell.map(([s, t]) => at(q[0], q[1], q[2], s, t));
+          // Declared dead beats the classifier either way: as covered it would be bled in from
+          // the rim, as visible (a through-hole ray escaping) it would erode the disc.
+          if (declared.length && declaredDead(s3, n, mine)) {
+            declaredRings.push(ring);
+            continue;
+          }
           let v = classify(s3, n, mine, false);
           if (mirrorAxis >= 0 && v !== 3) {
             const flip = (u) => u.map((x, ax) => (ax === mirrorAxis ? -x : x));
@@ -2553,7 +2624,6 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
           }
           const hidden = (v & 1) !== 0;
           const claimed = (v & 2) !== 0;
-          const ring = cell.map(([s, t]) => at(q[0], q[1], q[2], s, t));
           if (!hidden) visibleRings.push(ring);
           else if (claimed) coveredRings.push(ring);
         }
@@ -2578,6 +2648,47 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         // A Set: smoothDead hands back its own argument when DEAD_SMOOTH_MM is off, and Manifold's
         // wasm handles do not survive being deleted twice.
         for (const cs of new Set([covRaw, visRaw, covCS, visible, grown])) cs.delete();
+      }
+      if (declaredRings.length) {
+        const wasm = opts.wasm;
+        const decRaw = new wasm.CrossSection(declaredRings, 'NonZero');
+        const decCS = smoothDead(decRaw);
+        // A derived component is replaced by the declared disc exactly when everything it would
+        // add BEYOND the disc is under the bleed-footprint threshold dropSmallRegions already
+        // treats as signal-free — those are the post-bleed rags of the solid's own shadow, and
+        // unioning them onto the disc would put the raggedness back on its edge. Any component
+        // adding more than that carries another cover's real shadow (the caster channel, the
+        // cushion on the seat sides) and is kept whole; the union dedups where it laps the disc.
+        // No overlap-share vote: a straddling region near a 50% line would flip whole regions of
+        // hatch on a re-tessellation.
+        const kept = [];
+        let replacedN = 0;
+        let replacedArea = 0;
+        if (deadCS) {
+          for (const comp of deadCS.decompose()) {
+            const rem = comp.subtract(decCS);
+            const beyond = rem.area();
+            rem.delete();
+            if (beyond <= Math.PI * config.covers.bleedMm ** 2) {
+              replacedN++;
+              replacedArea += comp.area();
+              comp.delete();
+            } else {
+              kept.push(comp);
+            }
+          }
+          deadCS.delete();
+        }
+        log(
+          `  zone "${zoneCfg.id}": declared shadow ${decCS.area().toFixed(0)}mm² absorbs ` +
+            `${replacedN} derived fragment(s) (${replacedArea.toFixed(0)}mm²), ` +
+            `${kept.length} region(s) kept`,
+        );
+        deadCS = wasm.CrossSection.union([decCS, ...kept]);
+        for (const cs of [decCS, ...kept]) cs.delete();
+        if (decRaw !== decCS) decRaw.delete();
+      }
+      if (deadCS) {
         // Whole components, not per-chart pieces: a region split across a printed seam is still one
         // patch to whoever reads the template, and dropping half of it would be the visible defect.
         // A component under the bleed's own footprint (a disc of bleedMm) is smaller than the margin

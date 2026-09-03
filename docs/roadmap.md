@@ -61,6 +61,16 @@ Open questions with no obvious answer, where the measurement behind the question
   [src/geometry/assembly.ts](../src/geometry/assembly.ts) matches one mapper at
   a time. "All zones" today means the same design placed on each zone
   independently, not one design spanning them. No approach chosen yet.
+  - Stepping stone (owner, 2026-09-01): mirror-design — place artwork on one
+    of a mirrored zone pair (`right`), auto-mirror it onto the twin (`left`).
+    Data-model work only: bind one `ArtworkInstance` to a zone pair and flip
+    placement, no shared parameterisation needed. The bake already snaps the
+    pairs symmetric, so the twin templates match. For `front`, the same idea
+    is design-half-reflect-across-the-centerline at placement level.
+  - Rejected (owner, 2026-09-01): per-part design canvases instead of the
+    whole-chair zones. Zones spanning printed seams are the point — per-part
+    canvases would make volunteers hand-align a design across four oddly
+    shaped parts, the CAD-literacy work `docs/audience.md` rules out.
 - Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
   existing half-wheel (Top ×2 + Cap) kind.
 - A full parent-handle assembly kind.

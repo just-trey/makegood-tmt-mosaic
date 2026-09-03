@@ -8,6 +8,7 @@ import {
   symmetrizeCovers,
   asymmetricPart,
   regionNetArea,
+  buildCoverSolids,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
@@ -899,6 +900,87 @@ describe('hidden surface classification', () => {
   it('a cover beside the plate hides nothing', () => {
     const baked = bake(finePlate, [boxCover([260, 50, 1], [360, 150, 31])]);
     expect(deadOf(baked)).toHaveLength(0);
+  });
+
+  // A declaredShadow solid's dead region is drawn from its silhouette (radiusMm − bleedMm about
+  // its axis), replacing whatever classify-and-bleed derived under it. The chair's wheel is the
+  // motivating case: the derived arc sat at 112.5mm ± 11.4 against a 140mm rim.
+  describe('declared shadows', () => {
+    // A 60x60x30 box hovering 1mm over the plate, replaced by a declared r=30 cylinder at
+    // (100, 100). With bleedMm 10 the declared dead disc is r=20.
+    const SOLID = {
+      id: 'disc',
+      type: 'cylinder',
+      axis: 'z',
+      radiusMm: 30,
+      replacesDims: [60, 60, 30],
+      declaredShadow: true,
+    };
+    const discBox = (): Cover => boxCover([70, 70, 1], [130, 130, 31]);
+    const bakeDeclared = (extraCovers: Cover[] = []): ReturnType<typeof bakeZones> => {
+      const built = buildCoverSolids([discBox(), ...extraCovers], [SOLID]);
+      return bakeZones(
+        config([finePlate], [ZONE], { covers: { ...COVER_CFG, solids: [SOLID] } }),
+        [finePlate],
+        () => {},
+        { covers: built.covers, solids: built.report, wasm },
+      );
+    };
+
+    it('draws the dead disc at radiusMm − bleedMm, round to the smoothing, not the classifier', () => {
+      const baked = bakeDeclared();
+      const dead = deadOf(baked);
+      expect(dead).toHaveLength(1);
+      expect(dead[0].holes).toHaveLength(0);
+      // The plate unwraps to itself, so UV mm are world mm: every boundary vertex of the declared
+      // region sits on the r=20 circle about (100, 100), give or take the sampling cell the edge
+      // was rasterised at. The derived pipeline cannot pass this: its edge wanders by the
+      // hemisphere's escapes, which is the chair's ±11.4mm arc.
+      const radii = dead[0].outer.map((p) => Math.hypot(p[0] - 100, p[1] - 100));
+      expect(Math.max(...radii)).toBeLessThan(23);
+      expect(Math.min(...radii)).toBeGreaterThan(17);
+      expect(deadArea(baked)).toBeGreaterThan(Math.PI * 18 * 18);
+      expect(deadArea(baked)).toBeLessThan(Math.PI * 22 * 22);
+    });
+
+    it('replaces only the solid’s own derived component; a separate cover’s patch survives', () => {
+      // The box cover's 50x50 footprint erodes to a 30x30 patch at [145..175]x[25..55] — outside
+      // the disc's 30mm silhouette, so attribution must leave it exactly as the derived pipeline
+      // made it. Kept a full bleed inside the plate edge: a covered strip reaching the boundary
+      // has no visible surface beyond it to erode from, and the patch comes out oversized.
+      const baked = bakeDeclared([boxCover([135, 15, 1], [185, 65, 31])]);
+      const dead = deadOf(baked);
+      expect(dead).toHaveLength(2);
+      const areas = dead.map((r) => regionNetArea(r)).sort((a, b) => a - b);
+      expect(areas[0]).toBeCloseTo(30 * 30, -2);
+      expect(areas[1]).toBeGreaterThan(Math.PI * 18 * 18);
+      expect(areas[1]).toBeLessThan(Math.PI * 22 * 22);
+    });
+
+    it('refuses to bake a declaredShadow config without the posed solids', () => {
+      const built = buildCoverSolids([discBox()], [SOLID]);
+      expect(() =>
+        bakeZones(
+          config([finePlate], [ZONE], { covers: { ...COVER_CFG, solids: [SOLID] } }),
+          [finePlate],
+          () => {},
+          { covers: built.covers, wasm },
+        ),
+      ).toThrow(/opts\.solids/);
+    });
+
+    it('refuses a declared disc the bleed would swallow', () => {
+      expect(() =>
+        bakeZones(
+          config([finePlate], [ZONE], {
+            covers: { ...COVER_CFG, solids: [{ ...SOLID, radiusMm: 8 }] },
+          }),
+          [finePlate],
+          () => {},
+          { covers: [], solids: [], wasm },
+        ),
+      ).toThrow(/larger than/);
+    });
   });
 
   describe('which parts a cover hides on', () => {
