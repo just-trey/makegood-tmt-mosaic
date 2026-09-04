@@ -72,7 +72,8 @@ for (const zone of sidecar.zones) {
         `${Math.abs(zone.uvBounds.maxV - other.uvBounds.maxV).toFixed(3)}`,
     'best fit (deg, scale, rms)': fit
       ? `${fit.thetaDeg.toFixed(3)}, x${fit.scale.toFixed(5)}, ${fit.rms.toFixed(3)}`
-      : 'no pairs',
+      : // under 3 pairs a similarity passes through them all and scores a fake 0
+        `n < 3 (${m.pairs})`,
     sidecar: baked
       ? `${baked.pairs}/${baked.rms}/${baked.p95}/${baked.max}` +
         (baked.pairs === m.pairs && Math.abs(baked.rms - m.rms) < 0.0006 ? '' : ' MISMATCH')

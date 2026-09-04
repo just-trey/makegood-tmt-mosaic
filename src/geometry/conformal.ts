@@ -48,9 +48,9 @@ export const FILL_REFINE_MM = 3;
  * little off every real triangle. Measured across all 26 shipped chair charts (2026-09-04) by the
  * `claims no patch further off its triangles than the snap tolerance` cases in
  * tests/chair-zones.test.ts, one per chart: worst **2.150mm** (`right/chair-wing-right`), then
- * 2.104 (`back/chair-seat-back-top`) and 2.101 (`left/chair-storage-left`); the rest under 1mm. So 3 bounds a real bake artifact
- * with ~28% headroom, and `tests/chair-zones.test.ts` pins it — a re-bake that widens the gap fails
- * CI instead of silently dropping cuts.
+ * 2.104 (`back/chair-seat-back-top`) and 2.101 (`left/chair-storage-left`); the rest under 1mm.
+ * So 3 bounds a real bake artifact with ~28% headroom, and a re-bake that widens the gap fails CI
+ * instead of silently dropping cuts.
  *
  * **Measure this by refinement, never by rastering.** The depth is a distance function, so it is
  * 1-Lipschitz: sampling it on a grid of step h under-reports by up to h/√2, and the peaks here are

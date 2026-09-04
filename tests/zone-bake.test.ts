@@ -9,6 +9,9 @@ import {
   asymmetricPart,
   regionNetArea,
   buildCoverSolids,
+  measureZoneSeam,
+  zoneSeamPoints,
+  WELD_TOL_MM,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
@@ -560,6 +563,87 @@ describe('bad inputs fail loudly', () => {
       /key\(s\) nothing reads: claimWedges/,
     );
     expect(() => bakeZones(config([part], [WRAP_ZONE], { _note: ['why'] }), [part])).not.toThrow();
+  });
+
+  it('refuses a zone key nothing reads', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    const zone = { ...WRAP_ZONE, maxAngleDegrees: 50 };
+    expect(() => bakeZones(config([part], [zone]), [part])).toThrow(
+      /zone "wrap" has key\(s\) nothing reads: maxAngleDegrees/,
+    );
+  });
+});
+
+// The rule itself, not its guards. The quarter cylinder's normal sweeps 0..90 degrees in 24
+// facets of 3.75, so two zones seeded at its ends at 40 leave facets 11 (43.125 degrees) and 12
+// (46.875) in neither: a two-facet strip with a zone on each side, which is the chair's storage-box
+// corner in miniature. The split is by normal, so 11 goes to `near` and 12 to `far`.
+describe('claimWedge', () => {
+  const endZones = (deg: number): object[] => [
+    { id: 'near', name: 'Near', seedNormal: [0, 0, 1], maxAngleDeg: deg, up: [0, 1, 0] },
+    { id: 'far', name: 'Far', seedNormal: [1, 0, 0], maxAngleDeg: deg, up: [0, 1, 0] },
+  ];
+  const part = cylinderPart('cyl', 0, NU);
+  const vertsOf = (): number[][] => part.verts;
+  const bake = (on: boolean): ZoneSidecar =>
+    bakeZones(config([part], endZones(40), on ? { claimWedge: true } : {}), [part])
+      .sidecar as ZoneSidecar;
+  const seam = (
+    sidecar: ZoneSidecar,
+  ): { medianMm: number | null; shared: number; counts: number[] } => {
+    const [a, b] = sidecar.zones.map((z) => zoneSeamPoints(z, vertsOf));
+    return measureZoneSeam(a, b, WELD_TOL_MM);
+  };
+
+  it('leaves the strip in no zone when the flag is off', () => {
+    const off = seam(bake(false));
+    // The charts stop two facets apart, so they hold no vertex in common and none of `near`'s
+    // boundary is within 2mm of `far`. Both are 0 only while the rule is off: this is the control
+    // that says the assertions below are the rule's doing.
+    expect(off.shared).toBe(0);
+    expect(off.counts[0]).toBe(0);
+  });
+
+  it('hands the strip out so the two zones abut', () => {
+    const on = seam(bake(true));
+    // The split runs down one column of the mesh, so the zones share exactly its NV + 1 vertices,
+    // and the median gap over everything within 20mm halves (4.90 -> 2.94mm) — the rest of that
+    // window is each chart's top and bottom rim, which the two zones do not share and never did.
+    expect(on.shared).toBe(NV + 1);
+    expect(on.counts[0]).toBeGreaterThan(0);
+    expect(on.medianMm!).toBeLessThan(seam(bake(false)).medianMm!);
+  });
+
+  it('splits the strip on the normal and claims every triangle once', () => {
+    const before = bake(false);
+    const after = bake(true);
+    const tris = (s: ZoneSidecar, id: string): number[] =>
+      s.zones.find((z) => z.id === id)!.charts.flatMap((c) => c.tris);
+    // one facet each: 15 quads of 2 triangles
+    expect(tris(after, 'near').length - tris(before, 'near').length).toBe(30);
+    expect(tris(after, 'far').length - tris(before, 'far').length).toBe(30);
+    const all = after.zones.flatMap((z) => z.charts.flatMap((c) => c.tris));
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('reports the strip and the census it was chosen from', () => {
+    const lines: string[] = [];
+    bakeZones(config([part], endZones(40), { claimWedge: true }), [part], (m: string) =>
+      lines.push(m),
+    );
+    const said = lines.filter((l) => l.startsWith('claimWedge:'));
+    expect(said[0]).toMatch(
+      new RegExp(`of ${part.tris.length} welded triangles \\d+ are in a zone`),
+    );
+    // the strip is the only unclaimed component, and it touches exactly the two zones
+    expect(said[1]).toMatch(/0: 0 comp \/ 0 tris, 1: 0 comp \/ 0 tris, 2: 1 comp \/ 60 tris/);
+    expect(said[2]).toBe(
+      'claimWedge: the strip between "near" and "far" went 30 tris (118mm²) to the first, ' +
+        '30 (118mm²) to the second, 0 (0mm²) reached by neither',
+    );
+    expect(said[3]).toBe(
+      'claimWedge: after the rule, 60 triangle(s) went to a zone and 0 are ' + 'still in none',
+    );
   });
 });
 

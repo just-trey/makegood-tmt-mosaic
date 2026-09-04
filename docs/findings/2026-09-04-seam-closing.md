@@ -120,14 +120,22 @@ mirror residual below.
   these figures come from, so they re-derive with the rebake command above:
 
   ```
-  claimWedge: 288037 of 332784 welded triangles in no zone (945572mm² across 383 component(s))
+  claimWedge: before the rule, of 332784 welded triangles 44613 are in a zone, 134 are degenerate,
+    288037 are in none
+  claimWedge: those 288037 form 383 component(s), by zones touched — 0: 0 comp / 0 tris,
+    1: 380 comp / 74034 tris, 2: 2 comp / 315 tris, 3+: 1 comp / 213688 tris
   claimWedge: left a 213688-triangle component (927946mm²) alone — it touches 8 zones
     (left, right, back, front, seat-left, seat-right, wing-left, wing-right), not two
+  claimWedge: after the rule, 313 triangle(s) went to a zone and 287724 are still in none
   ```
 
-  Nearly all the surface no zone wants is that one component, with every zone around it. A rule
-  keyed on "touches a zone" would have put artwork over the lot. A component touching three or
-  more zones is reported every time, since which zone should own it is the config's question.
+  The three classes account for every welded triangle (44,613 + 134 + 288,037 = 332,784, and
+  74,034 + 315 + 213,688 = 288,037), which is the point of printing the degenerate count. The
+  two strips are the whole of the two-zone class. A rule keyed on "touches a zone" would have taken
+  the 3+ component — the hidden interior — and the 380 one-zone pockets besides. Every component
+  touching three or more zones is reported, since which zone should own it is the config's
+  question, and both it and any triangle a strip's fronts could not reach reach the caller as a
+  `warnings` entry rather than only the log.
 
 - **Assigning the strip by normal alone breaks the bake.** The first version marooned one triangle
   in `back`'s half whose normal preferred `left`, and `assertSingleIsland` refused the bake: zone
@@ -149,7 +157,14 @@ byte-identical, because its strip went entirely to `back`.
 | `left` | 10,093 → **10,095** | 1.2242 / 1.0142 → **1.2244** / 1.0142 | 642.033 × 509.218 → **642.035** × 509.217 | 124,730 → **124,728**mm² |
 
 `back` gains 1,063mm² of clip region against the 1,092mm² of strip it was handed, the difference
-being 0.2mm of loop simplification along the new edge. Everything else is unchanged: `right`,
+being 0.2mm of loop simplification along the new edge.
+
+**A saved design on `back` barely moves, despite the sheet being 34.5mm wider.** Placement anchors
+on the zone's UV bbox centre, which went 157.70 → 174.95mm; but the strip was added at BOTH
+corners, so the chair's own x = 0 centre line went 157.65 → 175.11 in the same chart (mean u over
+the 59 chart vertices within 0.5mm of x = 0). The anchor was 0.05mm off that line and is now
+0.16mm off it the other way, so it moved 0.21mm across the chair. `maxV` moved 0.0003mm, so
+nothing moves vertically at all. Everything else is unchanged: `right`,
 `front`, both seat sides and both fenders keep their triangle counts, stretch, bounds and dead
 regions to the digit, all 12 charts still carry dead regions, and the dead areas are the same
 (`left` 27,174mm², `right` 27,009mm², 0.61% apart).

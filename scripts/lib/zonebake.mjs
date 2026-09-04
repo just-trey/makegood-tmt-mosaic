@@ -789,7 +789,10 @@ export function measureZoneMirror(zoneA, zoneB, axis, vertsOf, cap = MIRROR_VERT
  */
 export function procrustesFit(pairs, allowScale = true) {
   const n = pairs.length;
-  if (n < 2) return null;
+  // Two pairs are 4 equations against a similarity's 4 degrees of freedom (3 rigid, plus scale), so
+  // the fit passes through both and every residual is 0. A perfect score meaning "too little data"
+  // is the one answer worth refusing outright, so the caller says "n < 3" instead of printing it.
+  if (n < 3) return null;
   const pc = [0, 0];
   const qc = [0, 0];
   for (const { want, got } of pairs) {
@@ -853,12 +856,22 @@ export const SEAM_FIT_MM = SEAM_GAP_BUCKETS_MM[2];
 export const zoneSeamPoints = (zone, vertsOf) => zoneChartPoints(zone, vertsOf, true);
 
 /**
+ * How close (mm) two zones' vertices must sit to count as the SAME vertex. The weld tolerance, from
+ * the config where it sets one: two zones meeting across a printed seam hold different parts'
+ * vertices, welded at bake time but never equal, so an identity test on `part:index` reads 0 shared
+ * on exactly the seams a whole-chair design most needs to cross.
+ */
+export const sharedVertTolMm = (config) =>
+  config?.seamWeldTolMm ?? config?.weldTolMm ?? WELD_TOL_MM;
+
+/**
  * The seam relation from zone A to zone B, both as zoneSeamPoints: gap counts by
  * SEAM_GAP_BUCKETS_MM and their median, then the rigid and similarity fits taking A's UV onto B's —
- * over the pairs within SEAM_FIT_MM, and over the vertices the two SHARE outright. Read the shared
- * ones: a nearest-point pair is often not the same place (5.61 against 1.81mm p95 on the chair).
+ * over the pairs within SEAM_FIT_MM, and over the vertices the two SHARE (coincident within
+ * `sharedTolMm`). Read the shared ones: a nearest-point pair within SEAM_FIT_MM is often not the
+ * same place at all (5.61 against 1.81mm p95 on the chair's flank/back corner).
  */
-export function measureZoneSeam(a, b) {
+export function measureZoneSeam(a, b, sharedTolMm = WELD_TOL_MM) {
   const cap = SEAM_GAP_BUCKETS_MM[SEAM_GAP_BUCKETS_MM.length - 1];
   const near = nearestPoints(
     a.boundary.map((i) => a.pos[i]),
@@ -879,11 +892,10 @@ export function measureZoneSeam(a, b) {
   });
   gaps.sort((x, y) => x - y);
   const m = gaps.length;
-  const bAt = new Map(b.keys.map((k, i) => [k, i]));
   const sharedPairs = [];
-  a.keys.forEach((k, i) => {
-    const j = bAt.get(k);
-    if (j !== undefined) sharedPairs.push({ want: a.uv[i], got: b.uv[j] });
+  nearestPoints(a.pos, b.pos, sharedTolMm).forEach((nb, i) => {
+    // The search reaches into neighbouring cells, so it answers past its cap; this does not.
+    if (nb.j >= 0 && nb.d <= sharedTolMm) sharedPairs.push({ want: a.uv[i], got: b.uv[nb.j] });
   });
   return {
     of: a.boundary.length,
@@ -1746,7 +1758,25 @@ export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNor
   const seen = new Uint8Array(weld.tris.length);
   const strips = [];
   const skipped = [];
-  const census = { components: 0, tris: 0, areaMm2: 0, ofTris: weld.tris.length };
+  // Every welded triangle lands in exactly one of these, so the log's numbers add up to `ofTris`
+  // and a reader can see there is nothing unaccounted for. `degenerate` is the zero-area triangles
+  // no zone can hold: they are skipped by the walk, and without a line of their own they would
+  // simply be missing from the total.
+  const census = {
+    ofTris: weld.tris.length,
+    degenerate: triGeom.reduce((n, g) => n + (g ? 0 : 1), 0),
+    inZone: 0,
+    unclaimed: 0,
+    components: 0,
+    byTouch: {
+      0: { components: 0, tris: 0 },
+      1: { components: 0, tris: 0 },
+      2: { components: 0, tris: 0 },
+      '3+': { components: 0, tris: 0 },
+    },
+    handed: 0,
+  };
+  for (let i = 0; i < owner.length; i++) if (owner[i] >= 0) census.inZone++;
   for (let start = 0; start < owner.length; start++) {
     if (owner[start] >= 0 || seen[start] || !triGeom[start]) continue;
     seen[start] = 1;
@@ -1766,9 +1796,11 @@ export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNor
       }
     }
     census.components++;
-    census.tris += comp.length;
+    census.unclaimed += comp.length;
+    const bucket = census.byTouch[touches.size >= 3 ? '3+' : touches.size];
+    bucket.components++;
+    bucket.tris += comp.length;
     const compArea = comp.reduce((t, ti) => t + triGeom[ti].area, 0);
-    census.areaMm2 += compArea;
     if (touches.size !== 2) {
       // Not a strip between two zones. Reported from three zones up: that is surface several zones
       // stop against, and which of them should own it is a question the config has to answer.
@@ -1824,6 +1856,7 @@ export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNor
     });
   }
   for (const tris of zoneTris) tris.sort((x, y) => x - y);
+  census.handed = strips.reduce((n, w) => n + w.tris[0] + w.tris[1], 0);
   return { strips, skipped, census };
 }
 
@@ -2693,6 +2726,9 @@ export function meshFingerprint(part) {
   return { triangleCount: part.tris.length, bboxHash: fnv1a(sig) };
 }
 
+/** Every per-zone key the bake reads. A zone has no `_note`: the config's own covers it. */
+const ZONE_KEYS = new Set(['id', 'maxAngleDeg', 'name', 'seedNormal', 'seedPoint', 'up']);
+
 /** Every top-level key the bake reads, plus `_note`, which is where a config explains itself. */
 const CONFIG_KEYS = new Set([
   '_note',
@@ -2775,6 +2811,12 @@ function validateConfig(config) {
   const ids = new Set();
   for (const z of config.zones) {
     if (!z.id || !z.name) throw new Error('every zone needs an id and a name');
+    const strayZoneKeys = Object.keys(z).filter((k) => !ZONE_KEYS.has(k));
+    if (strayZoneKeys.length)
+      throw new Error(
+        `zone "${z.id}" has key(s) nothing reads: ${strayZoneKeys.join(', ')}. Known keys are ` +
+          `${[...ZONE_KEYS].join(', ')}`,
+      );
     if (ids.has(z.id)) throw new Error(`duplicate zone id "${z.id}"`);
     ids.add(z.id);
     if (!(z.maxAngleDeg > 0 && z.maxAngleDeg <= 180))
@@ -2907,9 +2949,19 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       triGeom,
       grow,
     );
+    // Two lines, both BEFORE the rule ran, and they reconcile: inZone + degenerate + unclaimed is
+    // ofTris. The touch classes are what the two-zone gate is choosing between, so a one-zone
+    // pocket the rule will never reach is visible rather than buried in the total.
     log(
-      `claimWedge: ${census.tris} of ${census.ofTris} welded triangles in no zone ` +
-        `(${census.areaMm2.toFixed(0)}mm² across ${census.components} component(s))`,
+      `claimWedge: before the rule, of ${census.ofTris} welded triangles ${census.inZone} are in ` +
+        `a zone, ${census.degenerate} are degenerate, ${census.unclaimed} are in none`,
+    );
+    log(
+      `claimWedge: those ${census.unclaimed} form ${census.components} component(s), by zones ` +
+        `touched — ` +
+        ['0', '1', '2', '3+']
+          .map((k) => `${k}: ${census.byTouch[k].components} comp / ${census.byTouch[k].tris} tris`)
+          .join(', '),
     );
     for (const w of strips)
       log(
@@ -2923,6 +2975,28 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         `claimWedge: left a ${k.tris}-triangle component (${k.areaMm2.toFixed(0)}mm²) alone — ` +
           `it touches ${k.zones.length} zones (${k.zones.join(', ')}), not two`,
       );
+    log(
+      `claimWedge: after the rule, ${census.handed} triangle(s) went to a zone and ` +
+        `${census.unclaimed - census.handed} are still in none`,
+    );
+    // Surface the rule could have taken and did not is surface no design can be placed on, and a
+    // caller reading only the return value would never learn of it.
+    for (const w of strips)
+      if (w.unreached)
+        warnings.push(
+          `claimWedge left ${w.unreached} triangle(s) (${w.unreachedMm2.toFixed(0)}mm²) of the ` +
+            `strip between "${w.zones[0]}" and "${w.zones[1]}" in no zone — neither zone's growth ` +
+            `reached them across the split, so no artwork can be cut there`,
+        );
+    for (const k of skipped)
+      warnings.push(
+        `claimWedge left ${k.tris} triangle(s) (${k.areaMm2.toFixed(0)}mm²) in no zone — that ` +
+          `patch touches ${k.zones.length} zones (${k.zones.join(', ')}) and a strip must lie ` +
+          `between exactly two, so no artwork can be cut there`,
+      );
+    // Again, on the arrays the unwrap will read: the rule appends to them, and a bug that handed
+    // one triangle to two zones would otherwise reach the charts unchallenged.
+    assertNoDoubleClaim(config.zones, zoneTriSets, weld.tris.length);
   }
   for (const [zi, zoneCfg] of config.zones.entries()) {
     const zoneTris = zoneTriSets[zi];

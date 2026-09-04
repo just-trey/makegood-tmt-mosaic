@@ -15,9 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `scripts/measure-zone-seams.mjs` read that 8mm gap on the previous sidecar
   (69afabf) and reads 0 on this one. The Back is 34.5mm wider for it, and over
   the 122mm the corner runs a mark drawn to the edge of one sheet continues on
-  the other within 1.8mm, 95th percentile. Open any saved design on the Back
-  sheet and check it. The sheet is a different size now, so artwork on it
-  moves.
+  the other within 1.8mm, 95th percentile. A saved design on the Back barely
+  moves: the sheet grew by the same amount on both corners, so its centre
+  stayed within a quarter of a millimetre of the chair's centre line, and did
+  not move up or down at all.
 
 ### Added
 
