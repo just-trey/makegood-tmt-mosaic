@@ -1,15 +1,8 @@
 /**
- * Whether two zones' charts meet, and how well one registers onto the other across the join, off
- * the SHIPPED sidecar and part files. Answers the question a whole-chair sheet turns on: a design
- * can only be cut across a seam where the two zones abut AND a rigid move takes one chart's UV onto
- * the other's within the slack a chart already tolerates. Read the SHARED-vertex fit for that
- * verdict: the nearest-point one pairs A's boundary with whatever B has within SEAM_FIT_MM, which
- * off the seam is not the same place at all. Shared means coincident within the config's weld
- * tolerance, so two zones meeting across a printed seam count as meeting.
- *
- * Reading, the nearest-point search and the Procrustes fit are the bake's own (`read3MFIndexed`,
- * `nearestPoints`, `procrustesFit`, `measureZoneSeam` in lib/zonebake.mjs), not re-implemented: a
- * measurement script that computes its figure a second way IS a second figure.
+ * Whether two zones' charts meet, and how well one registers onto the other, off the SHIPPED
+ * sidecar and part files. Read the SHARED-vertex fit for the whole-chair verdict: a design can
+ * cross a seam only where the zones abut AND a rigid move takes one chart's UV onto the other's;
+ * the nearest-point fit pairs with whatever sits nearby, which off the seam is not the same place.
  *
  * Usage:
  *   npx vite-node scripts/measure-zone-seams.mjs [public/stl/chair-body-zones.json] \

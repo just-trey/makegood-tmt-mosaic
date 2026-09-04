@@ -714,15 +714,13 @@ export function pairMirrorZones(zones, axis) {
 export const MIRROR_VERT_PAIR_MM = 0.5;
 
 /**
- * Every chart vertex of a zone with its 3D position, its UV, and the packed vertex it indexes —
- * `part:index`, which is what makes two zones' claims on the SAME vertex recognisable. With
- * `withBoundary` it also returns which of them lie on a chart edge carried by one triangle: the
- * zone's outer rim, its holes, and the printed seams where the next part's chart takes over.
+ * Every chart vertex of a zone with its 3D position and its UV. With `withBoundary` it also
+ * returns which of them lie on a chart edge carried by one triangle: the zone's outer rim, its
+ * holes, and the printed seams where the next part's chart takes over.
  */
 function zoneChartPoints(zone, vertsOf, withBoundary = false, tolMm = WELD_TOL_MM) {
   const pos = [];
   const uv = [];
-  const keys = [];
   const boundary = [];
   for (const c of zone.charts) {
     const verts = vertsOf(c.libraryPartId);
@@ -730,7 +728,6 @@ function zoneChartPoints(zone, vertsOf, withBoundary = false, tolMm = WELD_TOL_M
     for (let i = 0; i < c.verts.length; i++) {
       pos.push(verts[c.verts[i]]);
       uv.push([c.uv[2 * i], c.uv[2 * i + 1]]);
-      keys.push(`${c.libraryPartId}:${c.verts[i]}`);
     }
     if (!withBoundary) continue;
     // Edge use is counted on position-welded ids, not chart-local ones: a part file can ship
@@ -752,7 +749,7 @@ function zoneChartPoints(zone, vertsOf, withBoundary = false, tolMm = WELD_TOL_M
       for (let k = 0; k < 3; k++) if (onEdge.has(t.v[k])) onLocal.add(t.lv[k]);
     for (const v of onLocal) boundary.push(base + v);
   }
-  return { pos, uv, keys, boundary };
+  return { pos, uv, boundary };
 }
 
 /**
@@ -2776,7 +2773,9 @@ function validateConfig(config) {
   if (config.claimWedge !== undefined && config.claimWedge !== true)
     throw new Error('claimWedge is opt-in: set it to true or leave it out');
   // A key nobody reads is a setting the author believes is on. `claimWedges` for `claimWedge` cost
-  // nothing to type and would have baked the shipped chair with the strip still in no zone.
+  // nothing to type and would have baked the shipped chair with the strip still in no zone. Only
+  // the top level and each zone are checked; keys inside `covers`, its solids, and `parts` entries
+  // (e.g. `declaredShadows` for `declaredShadow`) still pass silently.
   const unknown = Object.keys(config).filter((k) => !CONFIG_KEYS.has(k));
   if (unknown.length)
     throw new Error(
