@@ -24,8 +24,8 @@ import {
   MIN_ISLAND_AREA_MM2,
   nearestPoints,
   read3MFIndexed,
-  SEAM_WELD_TOL_MM,
   SIMPLIFY_TOL_MM,
+  WELD_TOL_MM,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 
@@ -39,6 +39,12 @@ const stlPath = (id: string): string => resolve(REPO, 'public/stl', `${id}.3mf`)
 
 const sidecar: ZoneSidecar = JSON.parse(
   readFileSync(resolve(REPO, 'public/stl/chair-body-zones.json'), 'utf8'),
+);
+
+// The config the sidecar was baked with: seam checks judge welds at ITS tolerances, so retuning
+// the config and rebaking cannot leave this file silently judging at a stale constant.
+const zoneConfig: { seamWeldTolMm?: number; weldTolMm?: number } = JSON.parse(
+  readFileSync(resolve(REPO, 'scripts/zone-configs/chair-body.json'), 'utf8'),
 );
 
 // packed vertices (file order) + triangle count per charted part, straight from the packed 3MF;
@@ -179,7 +185,21 @@ describe('chart reconstruction', () => {
   // is the half that actually corrupts output — where two parts both claim a patch of UV, the same
   // artwork is cut into both, so the design appears twice at the seam on the printed chair.
   it('gives no two parts of a zone an overlapping claim on the same UV', () => {
-    const overlaps: { where: string; overlap: number; zone: string; a: string; b: string }[] = [];
+    const overlaps: {
+      where: string;
+      overlap: number;
+      zone: string;
+      a: string;
+      b: string;
+      box: number[];
+    }[] = [];
+    const growBox = (box: number[], coords: unknown): number[] => {
+      if (Array.isArray(coords) && typeof coords[0] === 'number') {
+        const [x, y] = coords as number[];
+        return [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)];
+      }
+      return Array.isArray(coords) ? coords.reduce((b, c) => growBox(b, c), box) : box;
+    };
     for (const z of sidecar.zones) {
       // bbox computed off the outer ring rather than turf.bbox — src/turf.d.ts declares only the
       // handful of turf entry points the app actually uses, and bbox isn't one of them.
@@ -205,12 +225,16 @@ describe('chart reconstruction', () => {
       for (let i = 0; i < claims.length; i++)
         for (let j = i + 1; j < claims.length; j++) {
           let overlap = 0;
+          let box = [Infinity, Infinity, -Infinity, -Infinity];
           for (const a of claims[i].regions)
             for (const b of claims[j].regions) {
               if (a.box[0] > b.box[2] || b.box[0] > a.box[2]) continue;
               if (a.box[1] > b.box[3] || b.box[1] > a.box[3]) continue;
               const hit = turf.intersect(a.poly, b.poly);
-              if (hit) overlap += Math.abs(planarArea(hit as PolyFeature));
+              if (hit) {
+                overlap += Math.abs(planarArea(hit as PolyFeature));
+                box = growBox(box, hit.geometry.coordinates);
+              }
             }
           // Not zero: two parts that share a seam have their common boundary traced separately from
           // each side, and 0.2mm of loop simplification lets the two traces cross. A part whose
@@ -226,6 +250,7 @@ describe('chart reconstruction', () => {
               zone: z.id,
               a: claims[i].id,
               b: claims[j].id,
+              box,
             });
         }
     }
@@ -241,13 +266,32 @@ describe('chart reconstruction', () => {
 
     // "all seam-sharing" is the load-bearing half of the claim: an overlap between two parts that
     // do NOT meet on the printed chair is a claim that crept, not a traced boundary. Two parts
-    // share a seam when the bake welded them, so a vertex of one sits within seamWeldTolMm of a
-    // vertex of the other.
+    // share a seam when the bake welded them — a vertex of one within the config's seamWeldTolMm
+    // of a vertex of the other — and only chart vertices AT the overlap (within CHART_SNAP_MM of
+    // its UV box) may vouch: almost every adjacent part pair touches somewhere, so a whole-part
+    // search would bless a patch that crept far from any seam.
+    const seamTol = zoneConfig.seamWeldTolMm ?? zoneConfig.weldTolMm ?? WELD_TOL_MM;
     for (const o of overlaps) {
-      const A = partMesh.get(o.a)!.verts;
-      const B = partMesh.get(o.b)!.verts;
-      const touching = nearestPoints(A, B, SEAM_WELD_TOL_MM).filter(
-        (n: { d: number }) => n.d <= SEAM_WELD_TOL_MM,
+      const z = sidecar.zones.find((zz) => zz.id === o.zone)!;
+      const atOverlap = (partId: string): number[][] => {
+        const c = z.charts.find((cc) => cc.libraryPartId === partId)!;
+        const verts = partMesh.get(partId)!.verts;
+        const out: number[][] = [];
+        for (let i = 0; i < c.verts.length; i++) {
+          const u = c.uv[2 * i];
+          const v = c.uv[2 * i + 1];
+          if (
+            u >= o.box[0] - CHART_SNAP_MM &&
+            u <= o.box[2] + CHART_SNAP_MM &&
+            v >= o.box[1] - CHART_SNAP_MM &&
+            v <= o.box[3] + CHART_SNAP_MM
+          )
+            out.push(verts[c.verts[i]]);
+        }
+        return out;
+      };
+      const touching = nearestPoints(atOverlap(o.a), atOverlap(o.b), seamTol).filter(
+        (n: { d: number }) => n.d <= seamTol,
       ).length;
       expect(touching, `${o.where} overlap without a shared seam`).toBeGreaterThan(0);
     }
@@ -642,8 +686,9 @@ describe('baked claims stay inside the snap tolerance', () => {
   };
 
   /**
-   * The three charts whose claim reaches furthest off their own triangulation, with the same 5%
-   * headroom the mirror bounds above use. Everything else is held to 1mm, which is what
+   * The three charts whose claim reaches furthest off their own triangulation, pinned ~5% above
+   * their measured depths (the mirror bounds above carry their own looser headroom, 23-40%).
+   * Everything else is held to 1mm, which is what
    * src/geometry/conformal.ts means by "the rest under 1mm" — and these 26 cases are the
    * measurement it cites, one per shipped chart.
    */

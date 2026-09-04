@@ -60,8 +60,8 @@ covers on, took 72.6s.
 
 The two seed normals are **exactly perpendicular** — `left` grows against `[1,0,0]` and `back`
 against `[0,0,-1]`, both read off the seed triangle. So the fillet between them spans 90° of
-normal, and 45 + 35 leaves a 9.6° band of it in no zone. Covering that band needs the two limits
-to sum past 90, and every way of getting there costs more than the band is worth:
+normal, and 45 + 35 leaves a 90 − 45 − 35 = 10° band of it in no zone. Covering that band needs
+the two limits to sum past 90, and every way of getting there costs more than the band is worth:
 
 - **`back` past 35°** is the config note's own measurement, confirmed: 1.1341 at 35, 1.2261 at 40,
   1.5810 at 45. The bar is 1.2259, so even 40 misses by 0.0002.
@@ -106,8 +106,13 @@ mirror residual below.
   neighbours within 10mm are not on the seam at all. `measureZoneSeam` now reports both, and the
   script's `shared rigid` column is the one the bar is about.
 - **The plan's `front → back` row conflated the two directions.** `front → back` is 0/0/0/**191**
-  of 1,677 at a 19.5mm median; the 231 and the 19.6mm belong to `back → front`, which is of 3,610.
-  The other pinned rows reproduce exactly, so the boundary-vertex definition is right.
+  of 1,677 at a 19.5mm median; the 231 and the 19.6mm it listed belong to `back → front`. The
+  other pinned rows reproduce exactly, so the boundary-vertex definition is right.
+- **Chart-local boundary edges overcount on a part that ships coincident duplicate vertices**
+  (review round 4). An interior edge split across such a pair reads as two once-used edges, so a
+  few interior vertices were marked boundary. Counting edge use on position-welded ids moves the
+  boundary totals — `left` 2,323 → 2,322, `right` 3,098 → 3,096, `back` 3,683 → 3,674 — and
+  `back → front` within 20mm from 231 to 223. No gap median, fit, or shared figure moved.
 - **`back → left`'s median reads 8.2mm here against the plan's 8.3.** 58 gaps is an even count and
   `measureZoneSeam` averages the two middle values where the earlier run took the upper one. Every
   odd-count row (69, 73, 43 pairs) agrees to the digit.

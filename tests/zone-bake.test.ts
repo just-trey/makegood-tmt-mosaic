@@ -641,6 +641,110 @@ describe('claimWedge', () => {
       'claimWedge: after the rule, 60 triangle(s) went to a zone and 0 are ' + 'still in none',
     );
   });
+
+  // The growth half of the rule, on a fixture that DISAGREES with outright assignment (the
+  // cylinder above cannot: its normals are monotonic, so growth and assignment always agree).
+  // Five wall segments whose normals zigzag 0/35/25/40/60 degrees: the strip's wants come out
+  // [b, a, b], zone a's front starts empty (its side of the strip wants b), and b can only reach
+  // the segment its own edge touches — the far b-want segment hides behind the a-want one.
+  it('claims only what a zone front can reach, and warns about the rest', () => {
+    const thetas = [0, 35, 25, 40, 60].map((d) => (d * Math.PI) / 180);
+    const verts: number[][] = [
+      [0, 0, 0],
+      [0, 8, 0],
+    ];
+    let x = 0;
+    let z = 0;
+    for (const t of thetas) {
+      x += 10 * Math.cos(t);
+      z -= 10 * Math.sin(t);
+      verts.push([x, 0, z], [x, 8, z]);
+    }
+    const tris: number[][] = [];
+    for (let i = 0; i < 5; i++)
+      tris.push([2 * i, 2 * (i + 1), 2 * (i + 1) + 1], [2 * i, 2 * (i + 1) + 1, 2 * i + 1]);
+    const zig: Part = { libraryPartId: 'zig', verts, tris };
+    const mid = (i: number): number[] => [
+      (verts[2 * i][0] + verts[2 * (i + 1)][0]) / 2,
+      4,
+      (verts[2 * i][2] + verts[2 * (i + 1)][2]) / 2,
+    ];
+    const zones = [
+      { id: 'a', name: 'A', seedPoint: mid(0), maxAngleDeg: 15, up: [0, 1, 0] },
+      { id: 'b', name: 'B', seedPoint: mid(4), maxAngleDeg: 15, up: [0, 1, 0] },
+    ];
+    const baked = bakeZones(config([zig], zones, { claimWedge: true }), [zig]);
+    const s = baked.sidecar as ZoneSidecar;
+    const claimed = new Map(
+      s.zones.map((zn) => [zn.id, zn.charts[0].tris.slice().sort((p, q) => p - q)]),
+    );
+    expect(claimed.get('a')).toEqual([0, 1]);
+    expect(claimed.get('b')).toEqual([6, 7, 8, 9]);
+    expect(
+      baked.warnings.some((w: string) =>
+        /claimWedge left 4 triangle\(s\).*"a" and "b".*neither zone's growth/.test(w),
+      ),
+    ).toBe(true);
+  });
+
+  // The other refusal: a patch bordered by three zones is left alone and surfaced. Three arms
+  // folded 40 degrees off one flat square; each zone claims its arm, the square is within no
+  // zone's limit and touches all three.
+  it('leaves a patch touching three zones alone, and says so', () => {
+    const w = 10 * Math.cos((40 * Math.PI) / 180);
+    const h = 10 * Math.sin((40 * Math.PI) / 180);
+    const verts = [
+      [0, 0, 0],
+      [10, 0, 0],
+      [10, 10, 0],
+      [0, 10, 0],
+      [10 + w, 0, -h],
+      [10 + w, 10, -h],
+      [-w, 10, -h],
+      [-w, 0, -h],
+      [10, 10 + w, -h],
+      [0, 10 + w, -h],
+    ];
+    const tris = [
+      [0, 1, 2],
+      [0, 2, 3],
+      [1, 4, 5],
+      [1, 5, 2],
+      [0, 3, 6],
+      [0, 6, 7],
+      [3, 2, 8],
+      [3, 8, 9],
+    ];
+    const arms: Part = { libraryPartId: 'arms', verts, tris };
+    const zones = [
+      {
+        id: 'east',
+        name: 'East',
+        seedPoint: [10 + w / 2, 5, -h / 2],
+        maxAngleDeg: 15,
+        up: [0, 1, 0],
+      },
+      { id: 'west', name: 'West', seedPoint: [-w / 2, 5, -h / 2], maxAngleDeg: 15, up: [0, 1, 0] },
+      {
+        id: 'north',
+        name: 'North',
+        seedPoint: [5, 10 + w / 2, -h / 2],
+        maxAngleDeg: 15,
+        up: [0, 1, 0],
+      },
+    ];
+    const baked = bakeZones(config([arms], zones, { claimWedge: true }), [arms]);
+    const s = baked.sidecar as ZoneSidecar;
+    for (const zn of s.zones) expect(zn.charts[0].tris.length, zn.id).toBe(2);
+    const all = s.zones.flatMap((zn) => zn.charts[0].tris);
+    expect(all).not.toContain(0);
+    expect(all).not.toContain(1);
+    expect(
+      baked.warnings.some((wng: string) =>
+        /touches 3 zones \(east, west, north\).*no artwork can be cut there/.test(wng),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('pinch vertices', () => {

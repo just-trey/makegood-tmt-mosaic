@@ -69,7 +69,7 @@ const sidecar = insist(readJSON(sidecarPath), 'sidecar');
 const vertsOf = await configPartVerts(config, REPO);
 
 const sharedTol = sharedVertTolMm(config);
-const pts = new Map(sidecar.zones.map((z) => [z.id, zoneSeamPoints(z, vertsOf)]));
+const pts = new Map(sidecar.zones.map((z) => [z.id, zoneSeamPoints(z, vertsOf, config.weldTolMm)]));
 const fmt = (x, dp) => (x === null || x === undefined ? '-' : x.toFixed(dp));
 /** Why there is no fit: under 3 pairs a similarity passes through them all and scores a fake 0. */
 const noFit = (pairs) => (pairs < 3 ? `n < 3 (${pairs})` : '-');
@@ -105,8 +105,7 @@ for (const a of sidecar.zones)
   }
 console.log(
   `\n  ${sidecarPath}: A's chart-boundary vertices against B's surface, fits on the pairs ` +
-    `within ${SEAM_FIT_MM}mm, shared = coincident within ${sharedTol.samePartMm}mm on one part ` +
-    `/ ${sharedTol.crossPartMm}mm across parts\n  (a design crosses a seam only where the SHARED ` +
-    `rigid p95 is under CHART_SNAP_MM = ${CHART_SNAP_MM})\n`,
+    `within ${SEAM_FIT_MM}mm, shared = coincident within ${sharedTol}mm\n  (a design crosses a ` +
+    `seam only where the SHARED rigid p95 is under CHART_SNAP_MM = ${CHART_SNAP_MM})\n`,
 );
 console.table(rows);

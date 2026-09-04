@@ -719,7 +719,7 @@ export const MIRROR_VERT_PAIR_MM = 0.5;
  * `withBoundary` it also returns which of them lie on a chart edge carried by one triangle: the
  * zone's outer rim, its holes, and the printed seams where the next part's chart takes over.
  */
-function zoneChartPoints(zone, vertsOf, withBoundary = false) {
+function zoneChartPoints(zone, vertsOf, withBoundary = false, tolMm = WELD_TOL_MM) {
   const pos = [];
   const uv = [];
   const keys = [];
@@ -733,15 +733,24 @@ function zoneChartPoints(zone, vertsOf, withBoundary = false) {
       keys.push(`${c.libraryPartId}:${c.verts[i]}`);
     }
     if (!withBoundary) continue;
+    // Edge use is counted on position-welded ids, not chart-local ones: a part file can ship
+    // coincident duplicate vertices, and in local ids an interior edge split across such a pair
+    // reads as two once-used edges, marking interior vertices as boundary (4 shipped chair charts
+    // do this). weldParts is the same joining rule the bake itself used.
+    const w = weldParts([{ verts: c.verts.map((i) => verts[i]), tris: c.chartTris }], tolMm);
     const use = new Map();
-    for (const t of c.chartTris)
+    for (const t of w.tris)
       for (let k = 0; k < 3; k++) {
-        const e = edgeKey(t[k], t[(k + 1) % 3]);
+        if (t.v[k] === t.v[(k + 1) % 3]) continue;
+        const e = edgeKey(t.v[k], t.v[(k + 1) % 3]);
         use.set(e, (use.get(e) ?? 0) + 1);
       }
     const onEdge = new Set();
     for (const [e, n] of use) if (n === 1) for (const v of e.split(',')) onEdge.add(+v);
-    for (const v of onEdge) boundary.push(base + v);
+    const onLocal = new Set();
+    for (const t of w.tris)
+      for (let k = 0; k < 3; k++) if (onEdge.has(t.v[k])) onLocal.add(t.lv[k]);
+    for (const v of onLocal) boundary.push(base + v);
   }
   return { pos, uv, keys, boundary };
 }
@@ -853,18 +862,17 @@ export const SEAM_GAP_BUCKETS_MM = [2, 5, 10, 20];
 export const SEAM_FIT_MM = SEAM_GAP_BUCKETS_MM[2];
 
 /** A zone's chart vertices with the boundary flags measureZoneSeam needs. Compute once per zone. */
-export const zoneSeamPoints = (zone, vertsOf) => zoneChartPoints(zone, vertsOf, true);
+export const zoneSeamPoints = (zone, vertsOf, tolMm = WELD_TOL_MM) =>
+  zoneChartPoints(zone, vertsOf, true, tolMm);
 
 /**
- * How close (mm) two zones' vertices must sit to count as the SAME vertex, per pair kind: the bake
- * welds within a part at `weldTolMm` but stitches across parts only at `seamWeldTolMm`, which
- * defaults to 0 (weldParts). A cross-part pair inside `weldTolMm` was never joined, so one scalar
- * would call vertices shared on exactly the seams the runtime never stitched.
+ * How close (mm) two zones' vertices must sit to count as the SAME vertex: the loosest distance
+ * the bake joins at (weldParts merges within `weldTolMm` regardless of part; stitchSeams adds
+ * cross-part pairs up to `seamWeldTolMm`). One scalar can overcount a same-part pair in
+ * (weldTolMm, seamWeldTolMm] — the bake leaves those split — and the chair's seams have none.
  */
-export const sharedVertTolMm = (config) => ({
-  samePartMm: config?.weldTolMm ?? WELD_TOL_MM,
-  crossPartMm: config?.seamWeldTolMm ?? 0,
-});
+export const sharedVertTolMm = (config) =>
+  config?.seamWeldTolMm ?? config?.weldTolMm ?? WELD_TOL_MM;
 
 /**
  * The seam relation from zone A to zone B, both as zoneSeamPoints: gap counts by
@@ -872,7 +880,7 @@ export const sharedVertTolMm = (config) => ({
  * over the pairs within SEAM_FIT_MM, and over the vertices the two SHARE (sharedVertTolMm). Read
  * the shared ones: a nearest-point pair within SEAM_FIT_MM is often not the same place at all.
  */
-export function measureZoneSeam(a, b, sharedTol = sharedVertTolMm(undefined)) {
+export function measureZoneSeam(a, b, sharedTolMm = WELD_TOL_MM) {
   const cap = SEAM_GAP_BUCKETS_MM[SEAM_GAP_BUCKETS_MM.length - 1];
   const near = nearestPoints(
     a.boundary.map((i) => a.pos[i]),
@@ -894,16 +902,10 @@ export function measureZoneSeam(a, b, sharedTol = sharedVertTolMm(undefined)) {
   gaps.sort((x, y) => x - y);
   const m = gaps.length;
   const sharedPairs = [];
-  const partOf = (keys, i) => keys[i].slice(0, keys[i].lastIndexOf(':'));
-  nearestPoints(a.pos, b.pos, Math.max(sharedTol.samePartMm, sharedTol.crossPartMm)).forEach(
-    (nb, i) => {
-      if (nb.j < 0) return;
-      const lim =
-        partOf(a.keys, i) === partOf(b.keys, nb.j) ? sharedTol.samePartMm : sharedTol.crossPartMm;
-      // The search reaches into neighbouring cells, so it answers past its cap; this does not.
-      if (nb.d <= lim) sharedPairs.push({ want: a.uv[i], got: b.uv[nb.j] });
-    },
-  );
+  nearestPoints(a.pos, b.pos, sharedTolMm).forEach((nb, i) => {
+    // The search reaches into neighbouring cells, so it answers past its cap; this does not.
+    if (nb.j >= 0 && nb.d <= sharedTolMm) sharedPairs.push({ want: a.uv[i], got: b.uv[nb.j] });
+  });
   return {
     of: a.boundary.length,
     counts,

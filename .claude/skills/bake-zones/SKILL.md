@@ -104,6 +104,8 @@ claimWedge: those 288037 form 383 component(s), by zones touched — 0: 0 comp /
   1: 380 comp / 74034 tris, 2: 2 comp / 315 tris, 3+: 1 comp / 213688 tris
 claimWedge: the strip between "left" and "back" went 2 tris (2mm²) to the first,
   155 (551mm²) to the second, 2 (5mm²) reached by neither
+claimWedge: the strip between "right" and "back" went 0 tris (0mm²) to the first,
+  156 (541mm²) to the second, 0 (0mm²) reached by neither
 claimWedge: left a 213688-triangle component (927946mm²) alone — it touches 8 zones
   (left, right, back, front, seat-left, seat-right, wing-left, wing-right), not two
 claimWedge: after the rule, 313 triangle(s) went to a zone and 287724 are still in none
