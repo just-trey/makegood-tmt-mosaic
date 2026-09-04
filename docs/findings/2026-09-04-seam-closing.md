@@ -5,12 +5,12 @@ raising an angle limit.** All nine `maxAngleDeg` pairs failed a bar. A new segme
 `claimWedge`, closes the gap at the shipped angles and registers across it at **1.81mm / 1.58mm
 rigid p95**, inside `CHART_SNAP_MM` (3). It is applied; the sidecar and templates are rebaked.
 
-- Commit `69afabf` (branch `seam-closing`), WSL2, node via `npx vite-node`.
+- Branch `seam-closing` off `69afabf`, WSL2, node via `npx vite-node`.
 - Phase B gets a real seam on `left ↔ back` and `right ↔ back`, and only there. Every other zone
   pair is unchanged: fenders are still 26° out, `front` still meets nothing within 10mm.
-- The seam is **122mm long**, not the whole flank/back edge: y 337..459, x ±158..170,
-  z −505..−488, which is 20 × 122mm of `left`'s 642 × 509mm sheet. Phase B must not draw the rest
-  of that edge as continuous.
+- The seam is **122mm long**, not the whole flank/back edge: on the shipped bake the 54 (left) and
+  62 (right) shared vertices span y 337..459 at x ±158..170, z −505..−488 — 20 × 122mm of `left`'s
+  642 × 509mm sheet. Phase B must not draw the rest of that edge as continuous.
 
 ## What was measured
 
@@ -120,10 +120,11 @@ mirror residual below.
   zones around it — the hidden interior. A rule keyed on "touches a zone" would have put artwork
   over the lot.
 - **Assigning the strip by normal alone breaks the bake.** The first version marooned one triangle
-  in `back`'s half whose normal preferred `left`, and `assertSingleIsland` refused: `zone "left" is
-not a single connected island (10095 of 10096 triangles reachable from the seed)`. Growing from
-  each zone's own front instead makes connectivity structural. It costs 2 triangles (5mm²) on the
-  left strip that neither front reaches; they stay unclaimed and the bake says so.
+  in `back`'s half whose normal preferred `left`, and `assertSingleIsland` refused it with
+  `zone "left" is not a single connected island (10095 of 10096 triangles reachable from the
+seed)`. Growing from each zone's own front instead makes connectivity structural. It costs 2
+  triangles (5mm²) on the left strip that neither front reaches; they stay unclaimed and the bake
+  says so.
 
 ## What the rebake moved
 
