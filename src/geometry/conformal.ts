@@ -45,8 +45,8 @@ export const FILL_REFINE_MM = 3;
  *
  * The number is set by the bake, not by taste: a part's baked claim on a zone (`subRegions`) is
  * slightly more generous than the triangulation inside it, so points within the claim can sit a
- * little off every real triangle. Measured across all 25 shipped chair charts (2026-07-31): worst
- * **2.150mm** (`right/chair-wing-right`), then 2.104 (`back/chair-seat-back-top`) and 2.102
+ * little off every real triangle. Measured across all 26 shipped chair charts (2026-09-04): worst
+ * **2.150mm** (`right/chair-wing-right`), then 2.104 (`back/chair-seat-back-top`) and 2.101
  * (`left/chair-storage-left`); every other chart stays under 1mm. So 3 bounds a real bake artifact
  * with ~28% headroom, and `tests/chair-zones.test.ts` pins it — a re-bake that widens the gap fails
  * CI instead of silently dropping cuts.

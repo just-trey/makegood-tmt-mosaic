@@ -211,8 +211,8 @@ describe('chart reconstruction', () => {
             }
           // Not zero: two parts that share a seam have their common boundary traced separately from
           // each side, and 0.2mm of loop simplification lets the two traces cross. Measured on the
-          // shipped bake, every one of the 23 overlapping pairs shares a seam and the worst is
-          // 29.85mm² (wing-right/wheel-mount-right) on a 124,500mm² zone — 0.024%, a 0.15mm ribbon.
+          // shipped bake, every one of the 20 overlapping pairs shares a seam and the worst is
+          // 29.85mm² (wing-right/wheel-mount-right) on a 124,728mm² zone — 0.024%, a 0.15mm ribbon.
           // A part whose region genuinely crept across a seam onto its neighbour's patch would
           // scale as creep × seam length: even 1mm over a 200mm seam is 0.16%, caught here.
           expect(overlap / zoneArea, `${z.id}: ${claims[i].id} vs ${claims[j].id}`).toBeLessThan(
@@ -459,11 +459,16 @@ describe('mirror relations', () => {
       expect(z.mirror!.residualMm.p95, z.id).toBeLessThan(CHART_SNAP_MM);
   });
 
-  // Headroom over the measured bake, not targets. Measured (bake log, 2026-09-03): left 0.178 /
-  // right 0.190 rms over 5,146 / 5,521 pairs; seat-left 0.033 / seat-right 0.038; both fenders
-  // 0.024; back 0.150 over 7,248; front 0.815 over 3,708, where 63 vertices on the storage-box
+  // Headroom over the measured bake, not targets. Measured (bake log, 2026-09-04): left 0.178 /
+  // right 0.189 rms over 5,146 / 5,521 pairs; seat-left 0.033 / seat-right 0.038; both fenders
+  // 0.024; back 0.504 over 7,428; front 0.815 over 3,708, where 63 vertices on the storage-box
   // corner at the zone's bottom edge sit up to 7.51mm off and carry the rms (p95 is 0.647). A rise
   // past these means the twins' charts unwrapped differently, not that a mirrored design moved.
+  //
+  // `back` was 0.150 over 7,248 before claimWedge handed it the two storage-box corner strips, and
+  // those are not each other's mirror: 155 triangles on the left against 156 on the right, since
+  // the two boxes are tessellated differently. So the chart it unwraps is slightly asymmetric and
+  // its self-reflection is 0.504 rms / 0.761 p95 / 1.349 max — still a quarter of CHART_SNAP_MM.
   it.each([
     ['left', 0.25],
     ['right', 0.25],
@@ -471,7 +476,7 @@ describe('mirror relations', () => {
     ['seat-right', 0.05],
     ['wing-left', 0.05],
     ['wing-right', 0.05],
-    ['back', 0.2],
+    ['back', 0.7],
     ['front', 1.0],
   ])('%s reflects onto its mirror within %s mm rms', (id, bound) => {
     expect(zone(id).mirror!.residualMm.rms).toBeLessThan(bound);
@@ -721,7 +726,7 @@ describe('baked claims stay inside the snap tolerance', () => {
           if (bd > worst) worst = bd;
         }
       }
-      // Worst on the shipped bake is 2.150mm (right/chair-wing-right), then 2.104 and 2.102; every
+      // Worst on the shipped bake is 2.150mm (right/chair-wing-right), then 2.104 and 2.101; every
       // other chart is under 1mm. A failure here means the bake changed, not that the scan got
       // unlucky — the hill-climb above is what makes that distinction trustworthy.
       expect(worst, `${who} worst uncovered depth`).toBeLessThan(CHART_SNAP_MM);

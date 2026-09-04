@@ -2896,7 +2896,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     // two lobes meet at a pinch vertex, splitAtRepeats hands back a separate simple loop for each.
     // Classify by containment rather than assuming "largest loop is the outline, rest are holes" —
     // on the chair's left flank that assumption made the second-largest LOBE a hole of the first,
-    // leaving `boundary` enclosing 22,944mm² of a 124,500mm² zone with 17 of its 18 "holes" lying
+    // leaving `boundary` enclosing 22,941mm² of a 124,728mm² zone with 17 of its 18 "holes" lying
     // outside it entirely.
     const zoneRegions = classifyRegions(loops)
       .map((r) => ({
@@ -2908,7 +2908,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     // `boundary`/`holes` are singular in the sidecar and so can only carry the LARGEST lobe. That is
     // fine because nothing cuts against them: every chart carries `subRegions`, the bake refuses to
     // emit a chart without them, and ConformalZoneMapper.boundary() prefers them — the per-part
-    // regions do sum to the whole zone (left: 124,797mm² across its 4 parts, against a 22,944mm²
+    // regions do sum to the whole zone (left: 124,728mm² across its 4 parts, against a 22,941mm²
     // largest lobe). Treat these two as the display outline, not the clip region.
     const outer = { pts: zoneRegions[0].outer };
     const holes = zoneRegions[0].holes.map((pts) => ({ pts }));

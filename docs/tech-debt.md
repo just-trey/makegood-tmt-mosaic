@@ -708,8 +708,8 @@ yields no cutter, and
 [src/geometry/assembly.ts](../src/geometry/assembly.ts) reports "Couldn't cut
 color … into …. It won't print there." — alarming, and indistinguishable from
 the real failure it shares a message with. The overlaps are inherent to per-part
-clipping and small — measured across the shipped bake, 23 overlapping part
-pairs, all seam-sharing, worst 29.85 mm² on a 124,500 mm² zone (a ~0.15 mm
+clipping and small — measured across the shipped bake, 20 overlapping part
+pairs, all seam-sharing, worst 29.85 mm² on a 124,728 mm² zone (a ~0.15 mm
 ribbon), and `tests/chair-zones.test.ts` holds them under 0.05% of zone area.
 Fix: drop a clip remnant under an area floor _before_ `buildCutter` rather
 than attempting it and warning. Pick the floor above the measured ribbon and

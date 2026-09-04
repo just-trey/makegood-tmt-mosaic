@@ -301,8 +301,8 @@ Errors that stop the bake:
 
 **Two sidecar fields are display-only and will mislead you if read as the clip
 region.** `boundary` and `holes` are singular, so they carry only the zone's
-**largest lobe**: the chair's `left` lobe is 22,944mm² of a zone whose per-part
-regions sum to 124,797mm². Every chart's `subRegions` is what actually clips a
+**largest lobe**: the chair's `left` lobe is 22,941mm² of a zone whose per-part
+regions sum to 124,728mm². Every chart's `subRegions` is what actually clips a
 cutter.
 
 ## 4. Wire it into the kind
