@@ -11,12 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **The Back sheet now reaches around the storage-box corners, and meets the
   side sheets there.** A strip of each corner belonged to no sheet at all, so
-  the Back and the side stopped 8mm short of each other. The Back is 34.5mm
-  wider for it. The two sheets now line up over the 122mm the corner runs: a
-  mark drawn to the edge of one continues on the other within 1.8mm, 95th
-  percentile, measured by `scripts/measure-zone-seams.mjs`. Open any saved
-  design on the Back sheet and check it. The sheet is a different size now, so
-  artwork on it moves.
+  the Back and the side stopped 8mm short of each other.
+  `scripts/measure-zone-seams.mjs` read that 8mm gap on the previous sidecar
+  (69afabf) and reads 0 on this one. The Back is 34.5mm wider for it, and over
+  the 122mm the corner runs a mark drawn to the edge of one sheet continues on
+  the other within 1.8mm, 95th percentile. Open any saved design on the Back
+  sheet and check it. The sheet is a different size now, so artwork on it
+  moves.
 
 ### Added
 

@@ -853,15 +853,10 @@ export const SEAM_FIT_MM = SEAM_GAP_BUCKETS_MM[2];
 export const zoneSeamPoints = (zone, vertsOf) => zoneChartPoints(zone, vertsOf, true);
 
 /**
- * The seam relation from zone A to zone B, both as zoneSeamPoints: how many of A's chart-boundary
- * vertices have any B vertex within each SEAM_GAP_BUCKETS_MM and the median of those gaps, and the
- * rigid and similarity fits from A's UV onto B's over the pairs within SEAM_FIT_MM.
- *
- * Then the same two fits over the vertices the two zones SHARE outright — same part, same packed
- * index, so the pairs are the same point rather than merely a near one. That is the registration a
- * design crossing the seam actually rides on, and the two answers are far apart: on the chair's
- * flank/back corner the nearest-point fit reads 5.61mm p95 where the shared one reads 1.81, because
- * a boundary vertex within 10mm of the next zone is often not on the seam at all.
+ * The seam relation from zone A to zone B, both as zoneSeamPoints: gap counts by
+ * SEAM_GAP_BUCKETS_MM and their median, then the rigid and similarity fits taking A's UV onto B's —
+ * over the pairs within SEAM_FIT_MM, and over the vertices the two SHARE outright. Read the shared
+ * ones: a nearest-point pair is often not the same place (5.61 against 1.81mm p95 on the chair).
  */
 export function measureZoneSeam(a, b) {
   const cap = SEAM_GAP_BUCKETS_MM[SEAM_GAP_BUCKETS_MM.length - 1];
@@ -1659,11 +1654,8 @@ function buildEdgeTris(tris) {
   return edgeTris;
 }
 
-/**
- * The seed triangles a zone grows from and the direction it grows against, which claimWedge needs
- * too — a second derivation of "which way does this zone face" would be a second answer.
- */
-export function zoneSeed(weld, zoneCfg, patches, triGeom) {
+/** The seed triangles a zone grows from and the direction it grows against. */
+function zoneSeed(weld, zoneCfg, patches, triGeom) {
   let seedTris;
   let growNormal;
   if (zoneCfg.seedNormal) {
@@ -1701,8 +1693,10 @@ export function zoneSeed(weld, zoneCfg, patches, triGeom) {
 }
 
 /**
- * BFS from the seeded patch across shared edges, accepting triangles whose face normal stays
- * within maxAngleDeg of the config's seed direction. Returns global triangle indices, sorted.
+ * BFS from the seeded patch across shared edges, accepting triangles whose face normal stays within
+ * maxAngleDeg of the config's seed direction. Returns `{ tris, growNormal }` — sorted global
+ * triangle indices, and the direction they were grown against, which claimWedges splits a strip on:
+ * deriving "which way does this zone face" a second time there would be a second answer.
  */
 export function segmentZone(weld, zoneCfg, patches, edgeTris, triGeom) {
   const { seedTris, growNormal } = zoneSeed(weld, zoneCfg, patches, triGeom);
@@ -1728,29 +1722,14 @@ export function segmentZone(weld, zoneCfg, patches, edgeTris, triGeom) {
       }
     }
   }
-  return [...inZone].sort((a, b) => a - b);
+  return { tris: [...inZone].sort((a, b) => a - b), growNormal };
 }
 
 /**
- * Hands the strip of surface left BETWEEN two zones to them, so their charts abut along it instead
- * of stopping either side of a fillet. Mutates `zoneTris` in place and returns one report row per
- * strip claimed.
- *
- * The strip is an unclaimed connected component with exactly two zones on its boundary, and every
- * triangle in it goes to whichever of those two grow normals its own is nearer: a Voronoi split in
- * normal space, which is the same measure the angle limits cut it out with in the first place.
- *
- * **The two-zone gate is the only thing bounding this, and it is not conservatism.** Most of a
- * printed assembly is surface no zone wants — the chair leaves 288,037 of its 332,784 welded
- * triangles unclaimed — and nearly all of it is ONE component with 8 zones around it (213,688
- * triangles, 927,946mm², against 159 and 156 for the two corner strips). A rule that took every
- * component touching a zone would put artwork over the whole hidden interior.
- *
- * Per-triangle adjacency does not work here and was measured before this: only 5 of the chair's
- * unclaimed triangles touch two zones directly, and iterating that rule to fixpoint claims 8 in
- * three passes and stops, because the strip is two triangles wide almost everywhere. Whole
- * components need no iteration either — claiming one cannot change another's boundary, since two
- * unclaimed components adjacent to each other would be one component.
+ * Hands the strip BETWEEN two zones to them so their charts abut: an unclaimed component with
+ * exactly two zones on its boundary, each triangle to the nearer grow normal, grown from each
+ * zone's own edge so none joins a zone it is unconnected to. Mutates `zoneTris`. The two-zone gate
+ * stops it eating the surface no zone wants, which is what `census` counts and the bake logs.
  */
 export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNormals) {
   const owner = new Int32Array(weld.tris.length).fill(-1);
@@ -1765,7 +1744,9 @@ export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNor
     return out;
   };
   const seen = new Uint8Array(weld.tris.length);
-  const report = [];
+  const strips = [];
+  const skipped = [];
+  const census = { components: 0, tris: 0, areaMm2: 0, ofTris: weld.tris.length };
   for (let start = 0; start < owner.length; start++) {
     if (owner[start] >= 0 || seen[start] || !triGeom[start]) continue;
     seen[start] = 1;
@@ -1784,8 +1765,24 @@ export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNor
         }
       }
     }
-    if (touches.size !== 2) continue;
-    const [a, b] = [...touches];
+    census.components++;
+    census.tris += comp.length;
+    const compArea = comp.reduce((t, ti) => t + triGeom[ti].area, 0);
+    census.areaMm2 += compArea;
+    if (touches.size !== 2) {
+      // Not a strip between two zones. Reported from three zones up: that is surface several zones
+      // stop against, and which of them should own it is a question the config has to answer.
+      if (touches.size >= 3)
+        skipped.push({
+          zones: [...touches].sort((x, y) => x - y).map((zi) => zoneCfgs[zi].id),
+          tris: comp.length,
+          areaMm2: compArea,
+        });
+      continue;
+    }
+    // Sorted, so which zone is "first" in the report follows the config rather than the order a
+    // breadth-first walk happened to meet the two.
+    const [a, b] = [...touches].sort((x, y) => x - y);
     const inComp = new Set(comp);
     const want = new Map(
       comp.map((ti) => [
@@ -1818,7 +1815,7 @@ export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNor
       front = next;
     }
     const left = comp.filter((ti) => owner[ti] < 0);
-    report.push({
+    strips.push({
       zones: [zoneCfgs[a].id, zoneCfgs[b].id],
       tris: counts,
       areaMm2: areas,
@@ -1827,7 +1824,34 @@ export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNor
     });
   }
   for (const tris of zoneTris) tris.sort((x, y) => x - y);
-  return report;
+  return { strips, skipped, census };
+}
+
+/**
+ * Refuses a segmentation where two zones grew onto the same triangle: the runtime would cut the
+ * same artwork into both charts, and the join would carry it twice. Checked before claimWedges,
+ * whose first-wins `owner` would otherwise hide it.
+ */
+function assertNoDoubleClaim(zoneCfgs, zoneTriSets, triCount) {
+  const owner = new Int32Array(triCount).fill(-1);
+  const clashes = new Map();
+  zoneTriSets.forEach((tris, zi) => {
+    for (const ti of tris) {
+      if (owner[ti] < 0) {
+        owner[ti] = zi;
+        continue;
+      }
+      const key = `"${zoneCfgs[owner[ti]].id}" and "${zoneCfgs[zi].id}"`;
+      clashes.set(key, (clashes.get(key) ?? 0) + 1);
+    }
+  });
+  if (clashes.size)
+    throw new Error(
+      'two zones grew onto the same triangles, so the same artwork would be cut into both ' +
+        `charts and the join would carry it twice: ${[...clashes]
+          .map(([k, n]) => `${k} share ${n}`)
+          .join(', ')}. Lower one of their maxAngleDeg, or move a seed.`,
+    );
 }
 
 function assertSingleIsland(zoneId, zoneTris, weld, edgeTris) {
@@ -2669,6 +2693,23 @@ export function meshFingerprint(part) {
   return { triangleCount: part.tris.length, bboxHash: fnv1a(sig) };
 }
 
+/** Every top-level key the bake reads, plus `_note`, which is where a config explains itself. */
+const CONFIG_KEYS = new Set([
+  '_note',
+  'claimWedge',
+  'covers',
+  'kindId',
+  'minHoleAreaMm2',
+  'minIslandAreaMm2',
+  'mirrorAxis',
+  'parts',
+  'schema',
+  'seamWeldTolMm',
+  'simplifyTolMm',
+  'weldTolMm',
+  'zones',
+]);
+
 function validateConfig(config) {
   if (config.schema !== 1) throw new Error(`unsupported zone config schema ${config.schema}`);
   if (!config.kindId) throw new Error('zone config needs a kindId');
@@ -2685,6 +2726,14 @@ function validateConfig(config) {
     throw new Error('mirrorAxis must be "x", "y" or "z" when present');
   if (config.claimWedge !== undefined && config.claimWedge !== true)
     throw new Error('claimWedge is opt-in: set it to true or leave it out');
+  // A key nobody reads is a setting the author believes is on. `claimWedges` for `claimWedge` cost
+  // nothing to type and would have baked the shipped chair with the strip still in no zone.
+  const unknown = Object.keys(config).filter((k) => !CONFIG_KEYS.has(k));
+  if (unknown.length)
+    throw new Error(
+      `zone config has key(s) nothing reads: ${unknown.join(', ')}. Known keys are ` +
+        `${[...CONFIG_KEYS].join(', ')}`,
+    );
   if (config.covers !== undefined) {
     const c = config.covers;
     if (typeof c.file !== 'string' || !c.file)
@@ -2845,15 +2894,34 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
   const templates = [];
   // Every zone is segmented before any is unwrapped, so claimWedge can see what the angle limits
   // left between them.
-  const zoneTriSets = config.zones.map((z) => segmentZone(weld, z, patches, edgeTris, triGeom));
+  const segments = config.zones.map((z) => segmentZone(weld, z, patches, edgeTris, triGeom));
+  const zoneTriSets = segments.map((s) => s.tris);
+  assertNoDoubleClaim(config.zones, zoneTriSets, weld.tris.length);
   if (config.claimWedge) {
-    const grow = config.zones.map((z) => zoneSeed(weld, z, patches, triGeom).growNormal);
-    for (const w of claimWedges(weld, config.zones, zoneTriSets, edgeTris, triGeom, grow))
+    const grow = segments.map((s) => s.growNormal);
+    const { strips, skipped, census } = claimWedges(
+      weld,
+      config.zones,
+      zoneTriSets,
+      edgeTris,
+      triGeom,
+      grow,
+    );
+    log(
+      `claimWedge: ${census.tris} of ${census.ofTris} welded triangles in no zone ` +
+        `(${census.areaMm2.toFixed(0)}mm² across ${census.components} component(s))`,
+    );
+    for (const w of strips)
       log(
         `claimWedge: the strip between "${w.zones[0]}" and "${w.zones[1]}" went ` +
           `${w.tris[0]} tris (${w.areaMm2[0].toFixed(0)}mm²) to the first, ` +
           `${w.tris[1]} (${w.areaMm2[1].toFixed(0)}mm²) to the second, ` +
           `${w.unreached} (${w.unreachedMm2.toFixed(0)}mm²) reached by neither`,
+      );
+    for (const k of skipped)
+      log(
+        `claimWedge: left a ${k.tris}-triangle component (${k.areaMm2.toFixed(0)}mm²) alone — ` +
+          `it touches ${k.zones.length} zones (${k.zones.join(', ')}), not two`,
       );
   }
   for (const [zi, zoneCfg] of config.zones.entries()) {
@@ -2909,7 +2977,9 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     // fine because nothing cuts against them: every chart carries `subRegions`, the bake refuses to
     // emit a chart without them, and ConformalZoneMapper.boundary() prefers them — the per-part
     // regions do sum to the whole zone (left: 124,728mm² across its 4 parts, against a 22,941mm²
-    // largest lobe). Treat these two as the display outline, not the clip region.
+    // largest lobe — the sum tests/chair-zones.test.ts computes in "splits each zone into per-part
+    // clip regions that together cover it"). Treat these two as the display outline, not the clip
+    // region.
     const outer = { pts: zoneRegions[0].outer };
     const holes = zoneRegions[0].holes.map((pts) => ({ pts }));
     const roundLoop = (pts) => pts.map((p) => [round(p[0], 3), round(p[1], 3)]);

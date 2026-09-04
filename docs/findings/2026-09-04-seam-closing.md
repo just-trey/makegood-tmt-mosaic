@@ -14,11 +14,11 @@ rigid p95**, inside `CHART_SNAP_MM` (3). It is applied; the sidecar and template
 
 ## What was measured
 
-| Command                                                                     | Produces                                    |
-| --------------------------------------------------------------------------- | ------------------------------------------- |
-| `npx vite-node scripts/measure-zone-seams.mjs`                              | the seam table for a sidecar (all 56 pairs) |
-| `npx vite-node scripts/measure-zone-mirror.mjs`                             | the mirror residuals the sidecar records    |
-| `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json` | the shipped rebake                          |
+| Command                                                                     | Produces                                                     |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `npx vite-node scripts/measure-zone-seams.mjs`                              | the seam table for a sidecar (all 56 pairs)                  |
+| `npx vite-node scripts/measure-zone-mirror.mjs`                             | the mirror residuals the sidecar records                     |
+| `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json` | the shipped rebake, and the `claimWedge:` census lines below |
 
 The sweep itself ran from an uncommitted scratch script, and is 15 lines of committed library:
 read each `config.parts` file with `read3MFIndexed`, `delete config.covers`, set the three
@@ -95,10 +95,11 @@ mirror residual below.
 
 ## Null results and wrong turns
 
-- **The bake does not refuse a double claim.** The plan's bar said it did; nothing in `bakeZones`
-  checks it. Three of the nine candidates claim triangles twice and would have baked a sidecar that
-  cuts the same artwork onto both zones with no warning. The sweep computes it from the emitted
-  charts (same `libraryPartId`, same entry in `chart.tris`); the shipped bake has none.
+- **The bake did not refuse a double claim.** The plan's bar said it did; nothing in `bakeZones`
+  checked it. Three of the nine candidates claim triangles twice and would have baked a sidecar
+  that cuts the same artwork onto both zones with no warning, and `claimWedges`' first-wins
+  ownership would then have hidden it. `assertNoDoubleClaim` now refuses one before the wedge rule
+  runs, naming the two zones and the count. The shipped bake has none.
 - **The nearest-point fit is the wrong measure for this bar, by a factor of 3.** Pairing A's
   boundary vertices with whatever B has within 10mm reads 8.81mm p95 on the shipped `left → back`,
   where the 10 vertices the two zones genuinely SHARE read 2.48. Most of a boundary vertex's
@@ -115,10 +116,19 @@ mirror residual below.
   in three passes and stops — the strip is two triangles wide almost everywhere, so its middle row
   never sees a second zone. Whole components need no iteration either: two unclaimed components
   adjacent to each other would be one component.
-- **The two-zone gate is the whole safety of the rule, not caution.** 288,037 of the chair's
-  332,784 welded triangles are in no zone, and 213,688 of them are ONE component with all eight
-  zones around it — the hidden interior. A rule keyed on "touches a zone" would have put artwork
-  over the lot.
+- **The two-zone gate is the whole safety of the rule, not caution.** The bake logs the census
+  these figures come from, so they re-derive with the rebake command above:
+
+  ```
+  claimWedge: 288037 of 332784 welded triangles in no zone (945572mm² across 383 component(s))
+  claimWedge: left a 213688-triangle component (927946mm²) alone — it touches 8 zones
+    (left, right, back, front, seat-left, seat-right, wing-left, wing-right), not two
+  ```
+
+  Nearly all the surface no zone wants is that one component, with every zone around it. A rule
+  keyed on "touches a zone" would have put artwork over the lot. A component touching three or
+  more zones is reported every time, since which zone should own it is the config's question.
+
 - **Assigning the strip by normal alone breaks the bake.** The first version marooned one triangle
   in `back`'s half whose normal preferred `left`, and `assertSingleIsland` refused the bake: zone
   "left" is not a single connected island, 10,095 of 10,096 triangles reachable from the seed.
@@ -160,6 +170,16 @@ regions to the digit, all 12 charts still carry dead regions, and the dead areas
 other's mirror: 155 triangles on the left against 156 on the right, since the two storage boxes are
 tessellated differently. 0.761mm p95 is a quarter of `CHART_SNAP_MM`, so the bake raises no mirror
 warning, but the pin in `tests/chair-zones.test.ts` went from 0.2 to 0.7.
+
+### Guards added with it
+
+Both were found by this sweep rather than by the shipped bake, and both fail without their fix
+(`tests/zone-bake.test.ts`, on the analytic quarter cylinder):
+
+- `assertNoDoubleClaim`, above. Two zones seeded at the cylinder's two ends at 60° overlap over 30°
+  of arc and are now refused; at 40° they bake and no triangle is claimed twice.
+- `validateConfig` refuses a top-level key nothing reads. `claimWedges` for `claimWedge` costs
+  nothing to type and would have baked the chair with the strip still in no zone, silently.
 
 ### Other pins moved
 

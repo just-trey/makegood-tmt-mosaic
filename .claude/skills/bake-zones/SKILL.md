@@ -93,18 +93,26 @@ grown from each zone's own edge of the strip, so nothing joins a zone it is not
 connected to. Reach for it when two zones have to **abut** rather than merely
 face each other, which is what lets one design be cut across the join.
 
-Read the log line it prints per strip. On the chair:
+**Read the census it logs first, then one line per strip, then one per
+component it left alone.** The census is the surface the gate is protecting, so
+a wedge rule that has started eating it shows up there. On the chair:
 
 ```
+claimWedge: 288037 of 332784 welded triangles in no zone (945572mm² across 383 component(s))
 claimWedge: the strip between "left" and "back" went 2 tris (2mm²) to the first,
   155 (551mm²) to the second, 2 (5mm²) reached by neither
+claimWedge: left a 213688-triangle component (927946mm²) alone — it touches 8 zones
+  (left, right, back, front, seat-left, seat-right, wing-left, wing-right), not two
 ```
 
-The two-zone gate is what bounds it, and it is not caution: 288,037 of the
-chair's 332,784 welded triangles are in no zone, and 213,688 of those are one
-component with all eight zones around it. Raising `maxAngleDeg` instead does
-not work on the chair — every pair in {45,50,55} x {35,40,45} breaks a stretch
-bar, claims a triangle twice, or both
+That last line is the gate doing its job: nearly all the unclaimed surface is
+one component with every zone around it, and a rule keyed on "touches a zone"
+would have put artwork over the whole hidden interior. A component touching
+three or more zones is always reported, since which zone should own it is a
+question the config has to answer.
+
+Raising `maxAngleDeg` instead does not work on the chair — every pair in
+{45,50,55} x {35,40,45} breaks a stretch bar, claims a triangle twice, or both
 ([2026-09-04-seam-closing.md](../../../docs/findings/2026-09-04-seam-closing.md)).
 
 ### seamWeldTolMm is the one that changes everything
@@ -295,6 +303,8 @@ Errors that stop the bake:
 | `no flat patch points along seedNormal [...]`                                                                  | Nothing passes the 0.9 dot. Use a `seedPoint`.                                                                                                                   |
 | `seed patch has no triangles within maxAngleDeg`                                                               | The angle is too tight for the seed itself.                                                                                                                      |
 | `is not a single connected island (N of M triangles reachable from the seed)`                                  | The zone leaked to a disconnected patch. Tighten `maxAngleDeg` or move the seed.                                                                                 |
+| `two zones grew onto the same triangles ... share N`                                                           | Two zones’ limits overlap, so the same artwork would be cut into both charts. Lower one, or move a seed.                                                         |
+| `zone config has key(s) nothing reads: ...`                                                                    | A typo in a top-level key. The message lists every key the bake reads; `_note` is the only free-form one.                                                        |
 | `N triangle(s) fold over in UV — the zone is too curved to unwrap as one chart; lower maxAngleDeg or split it` | A fold makes the chart unusable, so this is a hard stop rather than a stretch warning.                                                                           |
 | `part "<id>" contributes triangles but no usable boundary loop`                                                | An empty `subRegions` would read at runtime as "no per-part clipping" and fall back to the whole zone outline: the exact failure `subRegions` exists to prevent. |
 | `LSCM solve did not converge` / `LSCM solution collapsed to a point`                                           | A degenerate zone mesh, not a tuning problem.                                                                                                                    |
@@ -302,7 +312,8 @@ Errors that stop the bake:
 **Two sidecar fields are display-only and will mislead you if read as the clip
 region.** `boundary` and `holes` are singular, so they carry only the zone's
 **largest lobe**: the chair's `left` lobe is 22,941mm² of a zone whose per-part
-regions sum to 124,728mm². Every chart's `subRegions` is what actually clips a
+regions sum to 124,728mm² (the sum the `splits each zone into per-part clip
+regions that together cover it` test in `tests/chair-zones.test.ts` computes). Every chart's `subRegions` is what actually clips a
 cutter.
 
 ## 4. Wire it into the kind

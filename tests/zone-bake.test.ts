@@ -15,6 +15,7 @@ import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneChart
 import { ConformalZoneMapper, type ConformalChart } from '../src/geometry/conformal';
 import { getManifold, type ManifoldAPI } from '../src/geometry/manifold';
 import type { DesignPlacement } from '../src/geometry/zones';
+import type { ZoneSidecar } from '../src/geometry/zoneCharts';
 
 // Same analytic quarter-cylinder the conformal mapper tests use (radius R about the Y axis,
 // θ ∈ [0, 90°], height H), but as an indexed mesh the bake has to unwrap itself. A polyhedral
@@ -525,6 +526,40 @@ describe('bad inputs fail loudly', () => {
     const part = platePart('plate', 4, () => false);
     const zone = { id: 'z', name: 'Z', seedNormal: [0, 0, 1], maxAngleDeg: 30, up: [0, 1, 0] };
     expect(() => bakeZones(config([part], [zone, { ...zone }]), [part])).toThrow(/duplicate/);
+  });
+
+  // The quarter cylinder's normal sweeps 0..90 degrees, so two zones seeded at its ends claim
+  // everything within maxAngleDeg of each end. At 40 they meet nowhere; at 60 they overlap over
+  // 30 degrees of arc, and the same artwork would be cut into both charts at the join. Nothing
+  // used to notice, and claimWedges' first-wins ownership would go on to hide it.
+  const endZones = (deg: number): object[] => [
+    { id: 'near', name: 'Near', seedNormal: [0, 0, 1], maxAngleDeg: deg, up: [0, 1, 0] },
+    { id: 'far', name: 'Far', seedNormal: [1, 0, 0], maxAngleDeg: deg, up: [0, 1, 0] },
+  ];
+
+  it('refuses two zones that grew onto the same triangles', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    expect(() => bakeZones(config([part], endZones(60)), [part])).toThrow(
+      /"near" and "far" share \d+\. Lower one of their maxAngleDeg/,
+    );
+  });
+
+  it('bakes the same two zones once their limits no longer overlap', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    const sidecar = bakeZones(config([part], endZones(40)), [part]).sidecar as ZoneSidecar;
+    expect(sidecar.zones.map((z) => z.id)).toEqual(['near', 'far']);
+    const claimed = sidecar.zones.flatMap((z) =>
+      z.charts.flatMap((c) => c.tris.map((t) => `${c.libraryPartId}:${t}`)),
+    );
+    expect(new Set(claimed).size).toBe(claimed.length);
+  });
+
+  it('refuses a top-level config key nothing reads, so a typo is not a silent no-op', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    expect(() => bakeZones(config([part], [WRAP_ZONE], { claimWedges: true }), [part])).toThrow(
+      /key\(s\) nothing reads: claimWedges/,
+    );
+    expect(() => bakeZones(config([part], [WRAP_ZONE], { _note: ['why'] }), [part])).not.toThrow();
   });
 });
 

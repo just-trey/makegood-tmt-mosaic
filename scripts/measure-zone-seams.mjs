@@ -19,11 +19,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   measureZoneSeam,
-  read3MFIndexed,
   SEAM_FIT_MM,
   SEAM_GAP_BUCKETS_MM,
   zoneSeamPoints,
 } from './lib/zonebake.mjs';
+import { configPartVerts } from './lib/zoneparts.mjs';
 import { CHART_SNAP_MM } from '../src/geometry/conformal.ts';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,16 +40,7 @@ const sidecarPath =
   `public/stl/${config.kindId}-zones.json`;
 const sidecar = JSON.parse(fs.readFileSync(path.resolve(REPO, sidecarPath), 'utf8'));
 
-const partVerts = new Map();
-for (const p of config.parts) {
-  const mesh = await read3MFIndexed(fs.readFileSync(path.resolve(REPO, p.file)));
-  partVerts.set(p.libraryPartId, mesh.verts);
-}
-const vertsOf = (id) => {
-  const v = partVerts.get(id);
-  if (!v) throw new Error(`sidecar chart names part "${id}", which the config does not list`);
-  return v;
-};
+const vertsOf = await configPartVerts(config, REPO);
 
 const pts = new Map(sidecar.zones.map((z) => [z.id, zoneSeamPoints(z, vertsOf)]));
 const fmt = (x, dp) => (x === null || x === undefined ? '-' : x.toFixed(dp));
@@ -74,6 +65,12 @@ for (const a of sidecar.zones)
       'shared rigid (deg, rms, p95, max)': m.sharedRigid
         ? `${fmt(m.sharedRigid.thetaDeg, 2)}, ${fmt(m.sharedRigid.rms, 2)}, ` +
           `${fmt(m.sharedRigid.p95, 2)}, ${fmt(m.sharedRigid.max, 2)}`
+        : '-',
+      // The scale is the point of this one: a net attaches sheets by rotation and translation
+      // only, so a shared seam whose best fit wants to resize is not one a design can cross.
+      'shared similarity (deg, scale, rms)': m.sharedSimilarity
+        ? `${fmt(m.sharedSimilarity.thetaDeg, 2)}, x${fmt(m.sharedSimilarity.scale, 4)}, ` +
+          `${fmt(m.sharedSimilarity.rms, 2)}`
         : '-',
     });
   }

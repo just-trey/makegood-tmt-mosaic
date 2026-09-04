@@ -23,8 +23,8 @@ import {
   measureZoneMirror,
   pairMirrorZones,
   procrustesFit,
-  read3MFIndexed,
 } from './lib/zonebake.mjs';
+import { configPartVerts } from './lib/zoneparts.mjs';
 import { CHART_SNAP_MM } from '../src/geometry/conformal.ts';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -48,16 +48,7 @@ const sidecar = JSON.parse(
   fs.readFileSync(path.resolve(REPO, 'public/stl', `${config.kindId}-zones.json`), 'utf8'),
 );
 
-const partVerts = new Map();
-for (const p of config.parts) {
-  const mesh = await read3MFIndexed(fs.readFileSync(path.resolve(REPO, p.file)));
-  partVerts.set(p.libraryPartId, mesh.verts);
-}
-const vertsOf = (id) => {
-  const v = partVerts.get(id);
-  if (!v) throw new Error(`sidecar chart names part "${id}", which the config does not list`);
-  return v;
-};
+const vertsOf = await configPartVerts(config, REPO);
 
 const { mirror, warnings } = pairMirrorZones(config.zones, axis);
 for (const w of warnings) console.warn(`  ! ${w}`);
