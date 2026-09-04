@@ -120,9 +120,9 @@ mirror residual below.
   zones around it — the hidden interior. A rule keyed on "touches a zone" would have put artwork
   over the lot.
 - **Assigning the strip by normal alone breaks the bake.** The first version marooned one triangle
-  in `back`'s half whose normal preferred `left`, and `assertSingleIsland` refused it with
-  `zone "left" is not a single connected island (10095 of 10096 triangles reachable from the
-seed)`. Growing from each zone's own front instead makes connectivity structural. It costs 2
+  in `back`'s half whose normal preferred `left`, and `assertSingleIsland` refused the bake: zone
+  "left" is not a single connected island, 10,095 of 10,096 triangles reachable from the seed.
+  Growing from each zone's own front instead makes connectivity structural. It costs 2
   triangles (5mm²) on the left strip that neither front reaches; they stay unclaimed and the bake
   says so.
 
