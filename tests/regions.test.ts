@@ -4,6 +4,7 @@ import {
   cleanFeature,
   computeNetRegionsByColor,
   dedupeRing,
+  intersectChecked,
   safeIntersect,
   shapeToFeature,
 } from '../src/geometry/regions';
@@ -210,6 +211,45 @@ describe('cleanFeature', () => {
       },
     };
     expect(cleanFeature(f)).toBeNull();
+  });
+});
+
+describe('intersectChecked', () => {
+  it('reads an input emptied by cleanup as a clean empty clip, not a failure', () => {
+    const sliver: PolyFeature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [5, 0],
+            [10, 0],
+            [0, 0],
+          ],
+        ],
+      },
+    };
+    const box: PolyFeature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, -1],
+            [10, -1],
+            [10, 1],
+            [0, 1],
+            [0, -1],
+          ],
+        ],
+      },
+    };
+    expect(intersectChecked(sliver, box)).toEqual({ feat: null, clipped: true });
+    expect(intersectChecked(box, null)).toEqual({ feat: null, clipped: true });
+    expect(intersectChecked(box, box).clipped).toBe(true);
   });
 });
 

@@ -208,11 +208,18 @@ npx vite-node scripts/bake-zones.mjs scripts/zone-configs/<kind>.json
 Exactly one argument; the script dies on zero or two. Paths inside the config
 resolve from the repo root. Both outputs are committed:
 
-- **`public/stl/<kindId>-zones.json`**, the sidecar. `schema: 2` (the _sidecar_
+- **`public/stl/<kindId>-zones.json`**, the sidecar. `schema: 4` (the _sidecar_
   schema, independent of the config's `schema: 1`) and it must match
   `SIDECAR_SCHEMA` in
   [zoneCharts.ts](../../../src/geometry/zoneCharts.ts).
 - **`public/templates/<zoneId>-template.svg`**, one per zone, true-size at 1:1 mm.
+  A self-mirrored zone's template also gets a dashed centre line.
+
+A config's top-level `mirrorAxis` (distinct from `covers.mirrorAxis` above,
+which only snaps cover bodies) pairs zones whose `seedPoint`s reflect across
+that axis as mirror twins, or marks a zone seeded on the plane as
+self-mirrored; the bake writes the relation and a measured registration
+residual into each zone's `mirror` field.
 
 The sidecar is written minified, but `public/` isn't in `.prettierignore`, so
 the committed copy is prettier's: ~65k lines against the one line the script

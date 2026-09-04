@@ -116,6 +116,12 @@ export interface FlatPatch {
 }
 
 /**
+ * How a zone reflects across its kind's mirror plane: `twin` names the zone on the other side,
+ * `self` says the plane runs through this zone, so its own centre line is the mirror.
+ */
+export type ZoneMirror = { twin: string } | { self: true };
+
+/**
  * A design zone on a part: one baked UV chart the artwork maps into, letting a part carry several
  * design surfaces (and eventually wrap artwork around edges). Populated by the zone bake pipeline.
  * A part with no zones uses an implicit flat zone from its chosen patch (`implicitZoneFor` in
@@ -124,6 +130,8 @@ export interface FlatPatch {
 export interface DesignZone {
   id: string;
   name: string;
+  /** Baked mirror relation (see ZoneMirror); absent on a zone the kind offers no mirror for. */
+  mirror?: ZoneMirror;
   /**
    * The baked UV chart this zone's artwork wraps onto, reconstructed against the part's loaded
    * mesh (see geometry/zoneCharts.ts). Present on a conformal zone; absent means flat projection.
@@ -209,6 +217,8 @@ export interface ArtworkInstance {
   flipX: boolean;
   flipY: boolean;
   mode: 'sticker' | 'fill';
+  /** Also cut this design reflected onto the zone's mirror; absent (a session saved before it existed) means off. */
+  mirror?: boolean;
 }
 
 export interface AssemblyPart {

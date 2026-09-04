@@ -1272,3 +1272,20 @@ warning for it.
 **Decided 2026-08-30**: warn, named, per CLAUDE.md code rule 1 — a hidden layer is enough content
 to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
 scheduled.
+
+## `Seat back (top)` takes ink on one side of the centre line only, Mirror on or off
+
+Measured 2026-09-04 on `f97035a` by `npm run build && MOSAIC_GPU=1 npm run check:mirror-design`
+(the `front-mirror-off-control.3mf` export it keeps): with the sample badge on the Front at
+offset 0 and Mirror off, `Seat back (top)` carries one inlay at x −39.6..−39.2, y 381.4..387.9,
+z −471.3..−470.0 and nothing at +x, while `Seat back (bottom)` cuts both halves. Mirror on gives
+the same one-sided result, so this is the Front zone's coverage of that part, not the mirror.
+
+- No warning names the missing +x side. The "only reaches surface that's hidden" warning fires
+  for a colour, not for a half of one part.
+- Not diagnosed: whether the +x half is inside the cushion's dead region (then correct and only
+  the silence is wrong), or the chart's `subRegions` for that part stop short of it.
+- Closing it: dump the Front zone's `subRegions` and `deadRegions` for `chair-seat-back-top`
+  (`public/stl/chair-body-zones.json`), compare the +x and −x claims, then either fix the bake
+  or add a per-part notice. The live check keeps that export as the control for which sides can
+  take ink, so it stays green either way.

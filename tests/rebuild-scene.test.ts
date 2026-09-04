@@ -60,7 +60,13 @@ import { setPreferredViewDir } from '../src/scene/viewport';
 import { asmRebuildGeneratedParts } from '../src/assembly/parts';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 import { state } from '../src/state/store';
-import type { AssemblyBuild, AssemblyPart, ParsedSVG, SVGShape } from '../src/types';
+import type {
+  ArtworkInstance,
+  AssemblyBuild,
+  AssemblyPart,
+  ParsedSVG,
+  SVGShape,
+} from '../src/types';
 import type { FlatBuild } from '../src/geometry/flat';
 
 const triStat = () => document.querySelector('#stat-tris')!.textContent;
@@ -891,5 +897,104 @@ describe('a part whose shape follows the artwork sees the current placement', ()
     expect(scaleAtRegen).toBe(250);
 
     state.hubcapSilhouette = false;
+  });
+});
+
+describe('a mirrored instance reaches the build as two placements', () => {
+  const instance = (over: Partial<ArtworkInstance>): ArtworkInstance => ({
+    id: 'a1',
+    sourceId: 's1',
+    zone: { partId: 1, zoneId: 'right' },
+    offsetU: 7.5,
+    offsetV: -3,
+    scalePct: 100,
+    rotationDeg: 37,
+    flipX: false,
+    flipY: true,
+    mode: 'sticker',
+    ...over,
+  });
+  const built = (): Parameters<typeof buildAssemblyGeometry>[0]['artworks'] =>
+    vi.mocked(buildAssemblyGeometry).mock.calls.at(-1)![0].artworks;
+
+  beforeEach(() => {
+    state.shapeKind = 'assembly';
+    state.assembly.kindId = 'chair-body';
+    state.parsed = parsedSquare();
+  });
+
+  it('adds the reflection on the twin zone: offset and rotation negated, flip toggled', async () => {
+    state.assembly.parts = [
+      asmPart({ zones: [{ id: 'right', name: 'Right side', mirror: { twin: 'left' } }] }),
+    ];
+    state.artworks = [instance({ mirror: true })];
+
+    await rebuildCurrent();
+
+    const [own, twin] = built();
+    expect(built()).toHaveLength(2);
+    expect(own).toMatchObject({ zoneId: 'right', offX: 7.5, rotationDeg: 37, flipX: false });
+    expect(own.keepSide).toBeUndefined();
+    expect(twin).toMatchObject({
+      zoneId: 'left',
+      offX: -7.5,
+      offZ: -3,
+      rotationDeg: -37,
+      flipX: true,
+      flipY: true,
+      reflected: true,
+    });
+    // one group for the pair, so the overlap check never compares the two
+    expect(own.mirrorPair).toBe('a1');
+    expect(twin.mirrorPair).toBe('a1');
+    expect(own.reflected).toBeUndefined();
+  });
+
+  it('on a self-mirrored zone, both placements stay on it and keep opposite halves', async () => {
+    state.assembly.parts = [
+      asmPart({ zones: [{ id: 'front', name: 'Front', mirror: { self: true } }] }),
+    ];
+    state.artworks = [instance({ zone: { partId: 1, zoneId: 'front' }, mirror: true })];
+
+    await rebuildCurrent();
+
+    const [own, twin] = built();
+    expect(own).toMatchObject({ zoneId: 'front', keepSide: 'right', mirrorPair: 'a1' });
+    expect(twin).toMatchObject({ zoneId: 'front', keepSide: 'left', offX: -7.5, mirrorPair: 'a1' });
+  });
+
+  it('a negative offset names the left half as the tie rule', async () => {
+    state.assembly.parts = [
+      asmPart({ zones: [{ id: 'front', name: 'Front', mirror: { self: true } }] }),
+    ];
+    state.artworks = [
+      instance({ zone: { partId: 1, zoneId: 'front' }, mirror: true, offsetU: -2 }),
+    ];
+
+    await rebuildCurrent();
+
+    expect(built().map((a) => a.keepSide)).toEqual(['left', 'right']);
+  });
+
+  it('ignores the flag on a zone that offers no mirror', async () => {
+    state.assembly.parts = [asmPart({ zones: [{ id: 'right', name: 'Right side' }] })];
+    state.artworks = [instance({ mirror: true })];
+
+    await rebuildCurrent();
+
+    expect(built()).toHaveLength(1);
+    expect(built()[0].keepSide).toBeUndefined();
+    expect(built()[0].mirrorPair).toBeUndefined();
+  });
+
+  it('builds one placement when the flag is off', async () => {
+    state.assembly.parts = [
+      asmPart({ zones: [{ id: 'right', name: 'Right side', mirror: { twin: 'left' } }] }),
+    ];
+    state.artworks = [instance({})];
+
+    await rebuildCurrent();
+
+    expect(built()).toHaveLength(1);
   });
 });

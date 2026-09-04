@@ -20,6 +20,7 @@ import {
 } from '../src/geometry/manifold';
 import type { PolyFeature } from '../src/types';
 import {
+  measureZoneMirror,
   MIN_ISLAND_AREA_MM2,
   read3MFIndexed,
   SIMPLIFY_TOL_MM,
@@ -38,8 +39,9 @@ const sidecar: ZoneSidecar = JSON.parse(
   readFileSync(resolve(REPO, 'public/stl/chair-body-zones.json'), 'utf8'),
 );
 
-// packed vertices (file order) + triangle count per charted part, straight from the packed 3MF
-const partMesh = new Map<string, { vertices: Float32Array; triCount: number }>();
+// packed vertices (file order) + triangle count per charted part, straight from the packed 3MF;
+// `verts` is the same list unnarrowed, as the bake's own measurements read it
+const partMesh = new Map<string, { vertices: Float32Array; verts: number[][]; triCount: number }>();
 
 beforeAll(async () => {
   const ids = new Set<string>();
@@ -48,7 +50,7 @@ beforeAll(async () => {
     const mesh = await read3MFIndexed(readFileSync(stlPath(id)));
     const vertices = new Float32Array(mesh.verts.length * 3);
     mesh.verts.forEach((v: number[], i: number) => vertices.set(v, i * 3));
-    partMesh.set(id, { vertices, triCount: mesh.tris.length });
+    partMesh.set(id, { vertices, verts: mesh.verts, triCount: mesh.tris.length });
   }
 }, 60000);
 
@@ -430,6 +432,63 @@ describe('hidden surface (deadRegions)', () => {
     // The count conformal.ts's comment quotes. A rebake that changes it dates that comment too.
     expect(checked).toBe(12);
   });
+});
+
+describe('mirror relations', () => {
+  const zone = (id: string): (typeof sidecar.zones)[number] =>
+    sidecar.zones.find((z) => z.id === id)!;
+
+  it('pairs the flanks, seat sides and fenders, and mirrors the front and back on themselves', () => {
+    for (const [a, b] of [
+      ['left', 'right'],
+      ['seat-left', 'seat-right'],
+      ['wing-left', 'wing-right'],
+    ]) {
+      expect(zone(a).mirror, a).toMatchObject({ twin: b });
+      expect(zone(b).mirror, b).toMatchObject({ twin: a });
+    }
+    expect(zone('front').mirror).toMatchObject({ self: true });
+    expect(zone('back').mirror).toMatchObject({ self: true });
+    expect(sidecar.zones.every((z) => z.mirror)).toBe(true);
+  });
+
+  // The same slack the runtime grants a chart against its own triangulation. A reflection landing
+  // further off would put a mirrored design visibly off its twin.
+  it('every reflection lands inside the snap tolerance at the 95th percentile', () => {
+    for (const z of sidecar.zones)
+      expect(z.mirror!.residualMm.p95, z.id).toBeLessThan(CHART_SNAP_MM);
+  });
+
+  // Headroom over the measured bake, not targets. Measured (bake log, 2026-09-03): left 0.178 /
+  // right 0.190 rms over 5,146 / 5,521 pairs; seat-left 0.033 / seat-right 0.038; both fenders
+  // 0.024; back 0.150 over 7,248; front 0.815 over 3,708, where 63 vertices on the storage-box
+  // corner at the zone's bottom edge sit up to 7.51mm off and carry the rms (p95 is 0.647). A rise
+  // past these means the twins' charts unwrapped differently, not that a mirrored design moved.
+  it.each([
+    ['left', 0.25],
+    ['right', 0.25],
+    ['seat-left', 0.05],
+    ['seat-right', 0.05],
+    ['wing-left', 0.05],
+    ['wing-right', 0.05],
+    ['back', 0.2],
+    ['front', 1.0],
+  ])('%s reflects onto its mirror within %s mm rms', (id, bound) => {
+    expect(zone(id).mirror!.residualMm.rms).toBeLessThan(bound);
+  });
+
+  it('the baked residuals are what the shipped meshes give', () => {
+    const vertsOf = (id: string): number[][] => partMesh.get(id)!.verts;
+    for (const z of sidecar.zones) {
+      const rel = z.mirror!;
+      const other = 'self' in rel ? z : zone(rel.twin);
+      const m = measureZoneMirror(z, other, 0, vertsOf);
+      expect(m.pairs, z.id).toBe(rel.residualMm.pairs);
+      expect(m.rms, z.id).toBeCloseTo(rel.residualMm.rms, 3);
+      expect(m.p95, z.id).toBeCloseTo(rel.residualMm.p95, 3);
+      expect(m.max, z.id).toBeCloseTo(rel.residualMm.max, 3);
+    }
+  }, 60000);
 });
 
 describe('reconstructed charts drive the conformal mapper on real geometry', () => {

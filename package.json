@@ -15,6 +15,7 @@
     "check:troubleshooting": "node scripts/check-troubleshooting.mjs",
     "check:type-scale": "node scripts/check-type-scale.mjs",
     "check:zone-occlusion": "node scripts/check-zone-occlusion.mjs",
+    "check:mirror-design": "node scripts/check-mirror-design.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",

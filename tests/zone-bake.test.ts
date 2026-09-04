@@ -241,6 +241,91 @@ describe('baked sidecar drives the conformal mapper', () => {
   });
 });
 
+describe('mirror pairing', () => {
+  /** The part reflected across x = 0, re-wound so it still faces outward. */
+  const mirrorX = (p: Part, id: string): Part => ({
+    libraryPartId: id,
+    verts: p.verts.map(([x, y, z]) => [-x, y, z]),
+    tris: p.tris.map(([a, b, c]) => [a, c, b]),
+  });
+  // Both start at θ = 3.75° so the two shells stand 3.9mm apart across the plane and nothing welds
+  // them into one island; the seeds sit at the middle of each arc, each other's reflection.
+  const seedA = [R * Math.SQRT1_2, H / 2, R * Math.SQRT1_2];
+  const seedB = [-R * Math.SQRT1_2, H / 2, R * Math.SQRT1_2];
+  const zoneAt = (id: string, seedPoint: number[]): object => ({
+    id,
+    name: id,
+    seedPoint,
+    maxAngleDeg: 50,
+    up: [0, 1, 0],
+  });
+
+  it('bakes two mirrored shells as a twin pair whose charts reflect onto each other', () => {
+    const a = cylinderPart('cyl-a', 1, NU);
+    const b = mirrorX(a, 'cyl-b');
+    const baked = bakeZones(
+      config([a, b], [zoneAt('a', seedA), zoneAt('b', seedB)], { mirrorAxis: 'x' }),
+      [a, b],
+    );
+    expect(baked.warnings).toHaveLength(0);
+    const [za, zb] = baked.sidecar.zones;
+    expect(za.mirror).toMatchObject({ twin: 'b' });
+    expect(zb.mirror).toMatchObject({ twin: 'a' });
+    // every vertex has its counterpart, and the same mesh unwrapped either way round differs by
+    // the sidecar's 4-decimal rounding only
+    expect(za.mirror.residualMm.pairs).toBe(a.verts.length);
+    expect(za.mirror.residualMm.max).toBeLessThan(0.01);
+    expect(zb.mirror.residualMm.rms).toBeLessThan(0.01);
+    expect(baked.sidecar.schema).toBe(4);
+  });
+
+  it('mirrors a zone straddling the plane on itself, and draws the centre line on its sheet', () => {
+    const plate = platePart('plate', 10, () => false);
+    plate.verts = plate.verts.map(([x, y, z]) => [x - 50, y, z]);
+    const baked = bakeZones(config([plate], [zoneAt('top', [0, 50, 0])], { mirrorAxis: 'x' }), [
+      plate,
+    ]);
+    const zone = baked.sidecar.zones[0];
+    expect(zone.mirror).toMatchObject({ self: true });
+    expect(zone.mirror.residualMm.pairs).toBe(plate.verts.length);
+    expect(zone.mirror.residualMm.max).toBeLessThan(0.01);
+    const svg = baked.templates[0].svg;
+    expect(svg).toContain('Dashed centre line = mirror');
+    const centre = zone.uvBounds.maxU / 2;
+    const vertical = /<polyline points="([\d.]+),[\d.]+ ([\d.]+),[\d.]+"/.exec(svg)!;
+    expect(+vertical[1]).toBeCloseTo(centre, 1);
+    expect(+vertical[2]).toBeCloseTo(centre, 1);
+  });
+
+  it('a zone with nothing across the plane is warned about and offers no mirror', () => {
+    const a = cylinderPart('cyl-a', 1, NU);
+    const baked = bakeZones(config([a], [zoneAt('a', seedA)], { mirrorAxis: 'x' }), [a]);
+    expect(baked.sidecar.zones[0].mirror).toBeUndefined();
+    expect(baked.warnings.some((w: string) => /zone "a" has no mirror/.test(w))).toBe(true);
+    expect(baked.templates[0].svg).not.toContain('centre line');
+  });
+
+  it('a seedNormal zone cannot be paired, and says so', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    const baked = bakeZones(config([part], [WRAP_ZONE], { mirrorAxis: 'x' }), [part]);
+    expect(baked.sidecar.zones[0].mirror).toBeUndefined();
+    expect(baked.warnings.some((w: string) => /seedNormal/.test(w))).toBe(true);
+  });
+
+  it('refuses a mirrorAxis that is not an axis', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    expect(() => bakeZones(config([part], [WRAP_ZONE], { mirrorAxis: 'w' }), [part])).toThrow(
+      /mirrorAxis/,
+    );
+  });
+
+  it('bakes no mirror at all when the config declares no axis', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    const baked = bakeZones(config([part], [WRAP_ZONE]), [part]);
+    expect(baked.sidecar.zones[0].mirror).toBeUndefined();
+  });
+});
+
 describe('cross-part welding and seams', () => {
   // the shared θ=45° vertex column is duplicated in both parts, and part B is nudged 0.2µm so
   // the weld tolerance (not exact equality) is what joins them

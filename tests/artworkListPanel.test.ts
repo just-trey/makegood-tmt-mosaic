@@ -11,7 +11,7 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/assembly/kinds', () => ({ fillModeOffered: () => false }));
 
 import { renderArtworkList } from '../src/ui/artworkListPanel';
-import { loadArtworkSource } from '../src/state/artwork';
+import { loadArtworkSource, setArtworkMirror, setArtworkZone } from '../src/state/artwork';
 import { state } from '../src/state/store';
 import {
   parseRasterImage,
@@ -22,7 +22,10 @@ import {
   rasterTracedMessage,
 } from '../src/raster/parse';
 import { WARNINGS, clearWarnings, notice } from '../src/warnings';
+import { track } from '../src/analytics/track';
+import { scheduleRebuild } from '../src/app/scheduler';
 import type { RasterImage } from '../src/raster/types';
+import type { AssemblyPart, ParsedSVG, ZoneMirror } from '../src/types';
 
 /** A single small opaque square on an otherwise transparent canvas — see raster-parse.test.ts. */
 function dot(w: number, h: number, size = 2): RasterImage {
@@ -114,6 +117,37 @@ function render() {
 
 function detailInput(sourceId: string) {
   return document.getElementById(`raster-detail-${sourceId}`) as HTMLInputElement;
+}
+
+function fakeParsed(): ParsedSVG {
+  return { shapes: [], bbox: { minX: 0, minY: 0, maxX: 10, maxY: 10 }, rawSVGCircle: null };
+}
+
+/** A minimal zoned part carrying one named DesignZone, for the Mirror-control tests below. */
+function zonedPart(
+  id: number,
+  zoneId: string,
+  zoneName: string,
+  mirror?: ZoneMirror,
+): AssemblyPart {
+  return {
+    id,
+    name: `part-${id}`,
+    roleId: 'r',
+    positions: null,
+    patches: null,
+    patchIdx: 0,
+    boundaryLoops: null,
+    zones: [{ id: zoneId, name: zoneName, mirror }],
+    topZ: 0,
+    baseDepth: 1,
+    isDuplicateOf: null,
+    pivotX: 0,
+    pivotZ: 0,
+    angleDeg: 0,
+    loaded: true,
+    cutThrough: false,
+  };
 }
 
 beforeEach(() => {
@@ -249,5 +283,90 @@ describe('rasterControls Detail slider — dropped colors', () => {
 
     expect(WARNINGS).toHaveLength(1);
     expect(WARNINGS[0]).toMatchObject({ level: 'warn', key: source.id });
+  });
+});
+
+describe('Mirror control', () => {
+  it('renders only on a zone that offers a mirror', () => {
+    state.assembly.parts = [
+      zonedPart(1, 'right', 'Right side', { twin: 'left' }),
+      zonedPart(2, 'seat', 'Seat'),
+    ];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'right');
+    render();
+    expect(document.querySelector('.artwork-mirror-check')).not.toBeNull();
+
+    setArtworkZone(a.id, 'seat');
+    render();
+    expect(document.querySelector('.artwork-mirror-check')).toBeNull();
+  });
+
+  it('shows the twin badge and fires the toggle analytics event and a rebuild', () => {
+    state.assembly.parts = [
+      zonedPart(1, 'right', 'Right side', { twin: 'left' }),
+      zonedPart(2, 'left', 'Left side', { twin: 'right' }),
+    ];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'right');
+    render();
+
+    const check = document.querySelector<HTMLInputElement>('.artwork-mirror-check')!;
+    check.checked = true;
+    check.dispatchEvent(new Event('change'));
+
+    expect(document.querySelector('.artwork-zone-badge')!.textContent).toBe(
+      '→ Right side + Left side (mirrored)',
+    );
+    expect(track).toHaveBeenCalledWith('artwork_mirror_toggled', { on: true, kind: 'twin' });
+    expect(scheduleRebuild).toHaveBeenCalled();
+  });
+
+  it('shows the self-mirror badge', () => {
+    state.assembly.parts = [zonedPart(1, 'front', 'Front', { self: true })];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'front');
+    render();
+
+    const check = document.querySelector<HTMLInputElement>('.artwork-mirror-check')!;
+    check.checked = true;
+    check.dispatchEvent(new Event('change'));
+
+    expect(document.querySelector('.artwork-zone-badge')!.textContent).toBe('→ Front (mirrored)');
+    expect(track).toHaveBeenCalledWith('artwork_mirror_toggled', { on: true, kind: 'centre' });
+  });
+
+  it('un-ticking drops the mirror badge back to the plain zone name', () => {
+    state.assembly.parts = [zonedPart(1, 'front', 'Front', { self: true })];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'front');
+    setArtworkMirror(a.id, true);
+    render();
+
+    const check = document.querySelector<HTMLInputElement>('.artwork-mirror-check')!;
+    expect(check.checked).toBe(true);
+    check.checked = false;
+    check.dispatchEvent(new Event('change'));
+
+    expect(document.querySelector('.artwork-zone-badge')!.textContent).toBe('→ Front');
+    expect(track).toHaveBeenCalledWith('artwork_mirror_toggled', { on: false, kind: 'centre' });
+  });
+
+  it('+zone skips a zone already covered by a mirrored instance’s twin', () => {
+    state.assembly.parts = [
+      zonedPart(1, 'right', 'Right side', { twin: 'left' }),
+      zonedPart(2, 'left', 'Left side', { twin: 'right' }),
+      zonedPart(3, 'seat', 'Seat'),
+    ];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg'); // binds to the first zone, 'right'
+    setArtworkMirror(a.id, true);
+    render();
+
+    document
+      .querySelector<HTMLButtonElement>('.artwork-add-zone')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(state.artworks).toHaveLength(2);
+    expect(state.artworks[1].zone?.zoneId).toBe('seat');
   });
 });

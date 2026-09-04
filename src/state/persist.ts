@@ -799,6 +799,9 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       rotationDeg: a.rotationDeg,
       flipX: a.flipX,
       flipY: a.flipY,
+      // Absent stays absent: a session saved before Mirror existed reads as off, the same way it
+      // would if the user had never ticked it.
+      ...(a.mirror === true ? { mirror: true } : {}),
       // Clamped, not trusted: a session saved before its kind withheld Fill (or before the flag
       // existed) still carries 'fill', and restoring it verbatim would walk straight into the path
       // the flag keeps users out of. Runs after the kind is set above, so it clamps against the

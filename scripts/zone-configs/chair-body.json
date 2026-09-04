@@ -20,6 +20,7 @@
     "claims 2 triangles 'left'/'right' already own, cutting the same artwork twice at the join."
   ],
   "seamWeldTolMm": 0.6,
+  "mirrorAxis": "x",
   "covers": {
     "file": "stubs/dead-zones.3mf",
     "referenceColor": "#F768E6FF",

@@ -10,6 +10,7 @@
 //   {
 //     "schema": 1,
 //     "kindId": "chair-body",
+//     "mirrorAxis": "x",                 // optional: pair zones whose seedPoints reflect across it
 //     "parts": [{ "libraryPartId": "chair-side-left", "file": "public/stl/chair-side-left.3mf" }],
 //     "zones": [{ "id": "chair-left", "name": "Left side",
 //                 "seedNormal": [-1, 0, 0],      // or "seedPoint": [x, y, z]

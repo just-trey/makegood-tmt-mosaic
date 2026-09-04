@@ -2,6 +2,7 @@ import { CUT_FLOOR_MM, MIN_CUT_DEPTH_MM } from './depth';
 import * as THREE from 'three';
 import * as turf from '@turf/turf';
 import type { AssemblyPart, PolyFeature } from '../types';
+import type { ArtworkBuildInput } from './assembly';
 import { extrudeRegionToSoup, type ManifoldAPI } from './manifold';
 import { EDGE_TOUCH_TOL_MM, erodeBoundary, splitAtBoundary } from './edgeRegions';
 import { shapeToFeature } from './regions';
@@ -55,6 +56,36 @@ export function faceXZBBox(
     if (p[2] > maxZ) maxZ = p[2];
   }
   return { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, w: maxX - minX, h: maxZ - minZ };
+}
+
+/** Which half of a self-mirrored zone a design keeps: 'right' is u at or past the zone's bbox centre. */
+export type KeepSide = 'right' | 'left';
+
+export const oppositeSide = (side: KeepSide): KeepSide => (side === 'right' ? 'left' : 'right');
+
+/**
+ * The placement that cuts `a` reflected across a zone's mirror: the same design bound to `zoneId`,
+ * with the offset, rotation and flip that put every point at the reflection of where `a` puts it.
+ *
+ * From ConformalZoneMapper.placer, u = R(θ)·diag(f,1)·(p − c)·mm + off + centre. Reflecting u
+ * about the zone's bbox centre is M = diag(−1, 1) on (u − centre), and
+ * M·R(θ)·diag(f,1) = R(−θ)·diag(−f,1) with M·off = (−offX, offZ): the reflection is the same
+ * placer with the rotation negated, the horizontal flip toggled and offX negated. It holds across
+ * a twin pair because each twin anchors on its own bbox centre and the bake orients both as seen
+ * from outside (tests/mirror-design.test.ts checks it against a mirrored chart pair).
+ *
+ * A design keeping one half of a self-mirrored zone hands the other half to its reflection.
+ */
+export function mirroredBuildInput(a: ArtworkBuildInput, zoneId: string | null): ArtworkBuildInput {
+  return {
+    ...a,
+    zoneId,
+    offX: -a.offX,
+    rotationDeg: -a.rotationDeg,
+    flipX: !a.flipX,
+    keepSide: a.keepSide && oppositeSide(a.keepSide),
+    reflected: true,
+  };
 }
 
 /**
@@ -177,6 +208,12 @@ export interface ZoneMapper {
    * caller can tell "the design never reached the part" from "it reached only hidden surface".
    */
   deadArea(): PolyFeature | null;
+  /**
+   * The half of the zone a design keeps when it is mirrored across the zone's own centre line, in
+   * the same 2D design space as `boundary()`. Null where the zone offers no such mirror: a flat
+   * face has no baked centre, so nothing there is ever asked to keep a half.
+   */
+  sideClip(side: KeepSide): PolyFeature | null;
   /** area a fill-mode artwork tiles across, in the zone's 2D design space; null when unknown */
   fillExtent(): FillExtent | null;
   /**
@@ -306,6 +343,10 @@ export class FlatZoneMapper implements ZoneMapper {
 
   /** A flat patch is the whole design face; nothing is hidden behind another part. */
   deadArea(): PolyFeature | null {
+    return null;
+  }
+
+  sideClip(): PolyFeature | null {
     return null;
   }
 

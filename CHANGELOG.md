@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A design can mirror onto its zone's twin, or across its own centre.** A
+  Mirror checkbox on an artwork row bound to a zone that offers one cuts the
+  same design on the twin zone, reflected — the two sides line up within
+  0.3mm on the flanks, 95th percentile, measured by
+  `scripts/measure-zone-mirror.mjs`. A zone with no twin, like the chair's
+  front and back panels, mirrors across its own centre line instead: the
+  design's near half is kept and reflected onto the far half, with a notice
+  when the crop crosses it.
 - **The chair no longer spends filament changes on surface the wheels and
   cushions hide.** The parts of a design surface that another part covers once
   the chair is assembled are now marked at bake time and cut out of the

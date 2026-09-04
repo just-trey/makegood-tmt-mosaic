@@ -466,15 +466,28 @@ export function safeIntersectChecked(
   b: PolyFeature | null,
   label?: string,
 ): { feat: PolyFeature | null; clipped: boolean } {
+  const r = intersectChecked(a, b);
+  if (!r.clipped && r.feat)
+    warnBool(
+      `Clipping color region to the design face failed${label ? ` for ${label}` : ''}. Region left unclipped, may extend past the face edge.`,
+    );
+  return r;
+}
+
+/**
+ * `safeIntersectChecked` without its warning, for a caller whose clip is not to the design face
+ * and whose failure it names itself. The fallback is the same: the subject back, unclipped. An
+ * input with nothing in it is a clean empty result, not a failure: there was nothing to clip.
+ */
+export function intersectChecked(
+  a: PolyFeature | null,
+  b: PolyFeature | null,
+): { feat: PolyFeature | null; clipped: boolean } {
   a = cleanFeature(a);
   b = cleanFeature(b);
-  if (!a || !b) return { feat: null, clipped: false };
+  if (!a || !b) return { feat: null, clipped: true };
   const r = boolOpWithRetry(INTERSECT, a, b);
-  if (r.ok) return { feat: r.val ?? null, clipped: true };
-  warnBool(
-    `Clipping color region to the design face failed${label ? ` for ${label}` : ''}. Region left unclipped, may extend past the face edge.`,
-  );
-  return { feat: a, clipped: false };
+  return r.ok ? { feat: r.val ?? null, clipped: true } : { feat: a, clipped: false };
 }
 
 const INTERSECT = (x: PolyFeature, y: PolyFeature): PolyFeature | null =>

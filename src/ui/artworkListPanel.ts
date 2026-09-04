@@ -7,6 +7,7 @@ import {
   removeArtworkInstance,
   requantizeSource,
   setActiveArtwork,
+  setArtworkMirror,
   setArtworkMode,
   setArtworkZone,
 } from '../state/artwork';
@@ -76,6 +77,7 @@ export function renderArtworkList(): void {
           ? '<button type="button" class="btn small artwork-add-zone" title="Place this design on another zone" aria-label="Place this design on another zone">+zone</button>'
           : ''
       }
+      ${zones.length ? '<span class="artwork-mirror"></span>' : ''}
       <button type="button" class="btn small artwork-remove" title="Remove this artwork" aria-label="Remove this artwork">×</button>
     `;
     // set via textContent, not innerHTML — the source name is a user-supplied filename
@@ -107,10 +109,53 @@ export function renderArtworkList(): void {
     const zoneBadge = row.querySelector<HTMLElement>('.artwork-zone-badge');
     const updateZoneBadge = (): void => {
       if (!zoneBadge) return;
-      const zoneName = zones.find((z) => z.zoneId === a.zone?.zoneId)?.name;
-      zoneBadge.textContent = '→ ' + (zoneName ?? 'All zones');
+      const zoneInfo = zones.find((z) => z.zoneId === a.zone?.zoneId);
+      const zoneName = zoneInfo?.name ?? 'All zones';
+      if (a.mirror && zoneInfo?.mirror) {
+        const mirror = zoneInfo.mirror;
+        const twinName =
+          'twin' in mirror ? zones.find((z) => z.zoneId === mirror.twin)?.name : undefined;
+        zoneBadge.textContent =
+          twinName !== undefined
+            ? `→ ${zoneName} + ${twinName} (mirrored)`
+            : `→ ${zoneName} (mirrored)`;
+      } else {
+        zoneBadge.textContent = '→ ' + zoneName;
+      }
     };
     updateZoneBadge();
+
+    const mirrorWrap = row.querySelector<HTMLElement>('.artwork-mirror');
+    const updateMirrorControl = (): void => {
+      if (!mirrorWrap) return;
+      const zoneInfo = zones.find((z) => z.zoneId === a.zone?.zoneId);
+      const mirror = zoneInfo?.mirror;
+      if (!mirror) {
+        mirrorWrap.innerHTML = '';
+        return;
+      }
+      const kind: 'twin' | 'centre' = 'twin' in mirror ? 'twin' : 'centre';
+      const title =
+        'twin' in mirror
+          ? `Also cut this design on the ${zones.find((z) => z.zoneId === mirror.twin)?.name ?? 'twin zone'}, mirrored`
+          : `Mirror this design across the centre line of the ${zoneInfo!.name}`;
+      mirrorWrap.innerHTML =
+        '<label class="artwork-mirror-label"><input type="checkbox" class="artwork-mirror-check" /> Mirror</label>';
+      const check = mirrorWrap.querySelector<HTMLInputElement>('.artwork-mirror-check')!;
+      // Properties, not interpolation: the title carries a zone name, the same reason
+      // `.artwork-name` is set through textContent above.
+      check.title = title;
+      check.setAttribute('aria-label', title);
+      check.checked = !!a.mirror;
+      check.addEventListener('click', (e) => e.stopPropagation());
+      check.addEventListener('change', () => {
+        setArtworkMirror(a.id, check.checked);
+        updateZoneBadge();
+        scheduleRebuild();
+        track('artwork_mirror_toggled', { on: check.checked, kind });
+      });
+    };
+    updateMirrorControl();
 
     const zoneSel = row.querySelector<HTMLSelectElement>('.artwork-zone');
     if (zoneSel) {
@@ -122,6 +167,7 @@ export function renderArtworkList(): void {
       zoneSel.addEventListener('change', () => {
         setArtworkZone(a.id, zoneSel.value || null);
         updateZoneBadge();
+        updateMirrorControl();
         scheduleRebuild();
         track('artwork_instance_zone_changed', { zone: zoneSel.value || 'all' });
       });
@@ -133,10 +179,19 @@ export function renderArtworkList(): void {
         e.stopPropagation();
         // Land the new placement on the first zone nothing from this source is already bound to,
         // falling back to "all zones" if every zone already has one — a reasonable starting guess
-        // the user can immediately retarget from the new row's own dropdown.
-        const used = new Set(
-          state.artworks.filter((x) => x.sourceId === a.sourceId).map((x) => x.zone?.zoneId),
-        );
+        // the user can immediately retarget from the new row's own dropdown. A mirrored instance
+        // already cuts on its twin, so that counts as used too, or +zone would offer a zone the
+        // source is already on.
+        const used = new Set<string | undefined>();
+        state.artworks
+          .filter((x) => x.sourceId === a.sourceId)
+          .forEach((x) => {
+            used.add(x.zone?.zoneId);
+            if (x.mirror && x.zone) {
+              const mirror = zones.find((z) => z.zoneId === x.zone!.zoneId)?.mirror;
+              if (mirror && 'twin' in mirror) used.add(mirror.twin);
+            }
+          });
         const next = zones.find((z) => !used.has(z.zoneId));
         addInstanceForSource(a.sourceId, next?.zoneId ?? null);
         renderArtworkList();

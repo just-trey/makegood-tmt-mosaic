@@ -1,4 +1,5 @@
 import type { ConformalChart } from './conformal';
+import type { ZoneMirror } from '../types';
 
 /**
  * Runtime side of the design-zone sidecar (`public/stl/<kind>-zones.json`, baked by
@@ -55,6 +56,13 @@ export interface SidecarZone {
   up: number[];
   normalSign: 1 | -1;
   distortion: { max: number; mean: number };
+  /**
+   * The zone's mirror relation plus how well the twin's chart (or this zone's other half) really
+   * is the reflection of this one: per paired vertex, the twin's UV against this zone's UV
+   * reflected about its `uvBounds` centre, in mm. Baked by scripts/lib/zonebake.mjs, never typed
+   * by hand; absent when the config declares no `mirrorAxis` or the zone pairs with nothing.
+   */
+  mirror?: ZoneMirror & { residualMm: { pairs: number; rms: number; p95: number; max: number } };
 }
 
 /**
@@ -64,9 +72,10 @@ export interface SidecarZone {
  * can't be paired with newer code that would read its per-part clip region as absent and clip every
  * part to the whole zone. Schema 3 adds `deadRegions`: a cached schema-2 sidecar read by this code
  * would silently report "nothing is hidden" on a kind whose bake says otherwise, the same class of
- * failure, so it takes the same hard refusal.
+ * failure, so it takes the same hard refusal. Schema 4 adds `mirror`: a cached schema-3 sidecar
+ * would silently offer no Mirror on a kind whose bake says otherwise, so same again.
  */
-export const SIDECAR_SCHEMA = 3;
+export const SIDECAR_SCHEMA = 4;
 
 export interface ZoneSidecar {
   schema: number;
