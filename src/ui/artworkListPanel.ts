@@ -138,9 +138,14 @@ export function renderArtworkList(): void {
       const title =
         'twin' in mirror
           ? `Also cut this design on the ${zones.find((z) => z.zoneId === mirror.twin)?.name ?? 'twin zone'}, mirrored`
-          : `Mirror this design across the middle of the ${zoneInfo!.name}`;
-      mirrorWrap.innerHTML = `<label class="artwork-mirror-label"><input type="checkbox" class="artwork-mirror-check" title="${title}" aria-label="${title}" /> Mirror</label>`;
+          : `Mirror this design across the centre line of the ${zoneInfo!.name}`;
+      mirrorWrap.innerHTML =
+        '<label class="artwork-mirror-label"><input type="checkbox" class="artwork-mirror-check" /> Mirror</label>';
       const check = mirrorWrap.querySelector<HTMLInputElement>('.artwork-mirror-check')!;
+      // Properties, not interpolation: the title carries a zone name, the same reason
+      // `.artwork-name` is set through textContent above.
+      check.title = title;
+      check.setAttribute('aria-label', title);
       check.checked = !!a.mirror;
       check.addEventListener('click', (e) => e.stopPropagation());
       check.addEventListener('change', () => {

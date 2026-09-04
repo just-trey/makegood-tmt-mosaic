@@ -476,7 +476,8 @@ export function safeIntersectChecked(
 
 /**
  * `safeIntersectChecked` without its warning, for a caller whose clip is not to the design face
- * and whose failure it names itself. The fallback is the same: the subject back, unclipped.
+ * and whose failure it names itself. The fallback is the same: the subject back, unclipped. An
+ * input with nothing in it is a clean empty result, not a failure: there was nothing to clip.
  */
 export function intersectChecked(
   a: PolyFeature | null,
@@ -484,7 +485,7 @@ export function intersectChecked(
 ): { feat: PolyFeature | null; clipped: boolean } {
   a = cleanFeature(a);
   b = cleanFeature(b);
-  if (!a || !b) return { feat: null, clipped: false };
+  if (!a || !b) return { feat: null, clipped: true };
   const r = boolOpWithRetry(INTERSECT, a, b);
   return r.ok ? { feat: r.val ?? null, clipped: true } : { feat: a, clipped: false };
 }

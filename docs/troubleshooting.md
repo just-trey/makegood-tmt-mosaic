@@ -344,9 +344,9 @@ design on top is a real workflow. It has the same overlapping-inlay problem
 where the sticker's colours differ from the pattern's. Known gap, also in
 [tech-debt.md](tech-debt.md).
 
-## Troubleshooting: "… crosses the middle of …" notice (assembly mode)
+## Troubleshooting: "… crosses the centre line of …" notice (assembly mode)
 
-Full text: _""…" crosses the middle of "…". Its … half is kept and mirrored
+Full text: _""…" crosses the centre line of "…". Its … half is kept and mirrored
 onto the …."_
 
 A design bound to a zone with no twin (the chair's front and back panels)
@@ -376,7 +376,7 @@ causes, both rare:
   shipped bake produces.
 
 Either way the design and its reflection are both cut whole, so where they
-cross the middle the export carries two inlays claiming the same space, the
+cross the centre line the export carries two inlays claiming the same space, the
 same problem the ["Designs … overlap"](#troubleshooting-designs--overlap-warnings)
 warning describes. Untick Mirror on that row and the design cuts once, as
 placed. Simplifying the design in Illustrator or Inkscape can clear the

@@ -107,7 +107,7 @@ for (const zone of sidecar.zones) {
   if (!rel) continue;
   const other = rel.self ? zone : sidecar.zones.find((z) => z.id === rel.twin);
   const m = measureZoneMirror(zone, other, axis, vertsOf, cap);
-  const fit = similarityFit(m.pairList);
+  const fit = m.pairs ? similarityFit(m.pairList) : null;
   const baked = zone.mirror?.residualMm;
   rows.push({
     pair: `${zone.id} -> ${rel.self ? zone.id + ' (self)' : rel.twin}`,
@@ -119,7 +119,9 @@ for (const zone of sidecar.zones) {
       ? '-'
       : `${Math.abs(zone.uvBounds.maxU - other.uvBounds.maxU).toFixed(3)} x ` +
         `${Math.abs(zone.uvBounds.maxV - other.uvBounds.maxV).toFixed(3)}`,
-    'best fit (deg, scale, rms)': `${fit.thetaDeg.toFixed(3)}, x${fit.scale.toFixed(5)}, ${fit.rms.toFixed(3)}`,
+    'best fit (deg, scale, rms)': fit
+      ? `${fit.thetaDeg.toFixed(3)}, x${fit.scale.toFixed(5)}, ${fit.rms.toFixed(3)}`
+      : 'no pairs',
     sidecar: baked
       ? `${baked.pairs}/${baked.rms}/${baked.p95}/${baked.max}` +
         (baked.pairs === m.pairs && Math.abs(baked.rms - m.rms) < 0.0006 ? '' : ' MISMATCH')

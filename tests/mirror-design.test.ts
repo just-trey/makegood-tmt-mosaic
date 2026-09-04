@@ -8,11 +8,13 @@ import {
 } from '../src/geometry/zones';
 import {
   buildAssemblyGeometry,
+  clipToKeptSide,
   mirrorClipFailedWarning,
   mirrorHalfNotice,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
+import * as turf from '@turf/turf';
 import { getManifold, manifoldToMeshes, type ManifoldAPI } from '../src/geometry/manifold';
 import type { AssemblyPart, ParsedSVG, PolyFeature } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
@@ -123,6 +125,27 @@ describe('sideClip', () => {
     expect(Math.max(...xs(right))).toBeGreaterThanOrEqual(ARC_U);
     expect(Math.max(...xs(left))).toBeCloseTo(centre, 9);
     expect(Math.min(...xs(left))).toBeLessThanOrEqual(0);
+  });
+
+  it('a region with nothing in it once cleaned is empty, not removed and not a failure', () => {
+    // Three collinear points crossing the line enclose no area: the clipper is never asked, so
+    // the cutter neither warns of a failed crop nor says a half was kept.
+    const mapper = new ConformalZoneMapper(null, makeCylinderChart(), 'front');
+    const half = {
+      side: 'right' as const,
+      centreU: ARC_U / 2,
+      clip: mapper.sideClip('right')!,
+      zoneName: 'Front',
+    };
+    const sliver = turf.polygon([
+      [
+        [ARC_U / 2 - 5, 10],
+        [ARC_U / 2, 10],
+        [ARC_U / 2 + 5, 10],
+        [ARC_U / 2 - 5, 10],
+      ],
+    ]) as PolyFeature;
+    expect(clipToKeptSide(sliver, half)).toEqual({ feat: null, removed: false, failed: false });
   });
 
   it('is null on a flat face, which has no baked centre to mirror about', () => {
@@ -248,7 +271,7 @@ describe('the half clip on a self-mirrored zone', () => {
     // once, and about the primary's side: the reflection also loses its crossing part, and a
     // second notice reading "its left half is kept" would contradict the first
     expect(WARNINGS.filter((w) => w.message === NOTICE)).toHaveLength(1);
-    expect(WARNINGS.filter((w) => /crosses the middle/.test(w.message))).toHaveLength(1);
+    expect(WARNINGS.filter((w) => /crosses the centre line/.test(w.message))).toHaveLength(1);
     expect(WARNINGS.some((w) => /overlap|Two placements/.test(w.message))).toBe(false);
   }, 60000);
 
@@ -278,7 +301,7 @@ describe('the half clip on a self-mirrored zone', () => {
     expect(
       WARNINGS.filter((w) => w.message === mirrorClipFailedWarning(NAME, 'plate')),
     ).toHaveLength(1);
-    expect(WARNINGS.some((w) => /crosses the middle/.test(w.message))).toBe(false);
+    expect(WARNINGS.some((w) => /crosses the centre line/.test(w.message))).toBe(false);
   }, 60000);
 
   it('the half kept is the one the design sits on, whichever the tie rule names', async () => {
@@ -305,7 +328,7 @@ describe('the half clip on a self-mirrored zone', () => {
     const c = ARC_U / 2;
     expect(max - c).toBeCloseTo(22, 0);
     expect(c - min).toBeCloseTo(22, 0);
-    expect(WARNINGS.some((w) => /crosses the middle/.test(w.message))).toBe(false);
+    expect(WARNINGS.some((w) => /crosses the centre line/.test(w.message))).toBe(false);
     expect(WARNINGS.some((w) => /overlap|Two placements/.test(w.message))).toBe(false);
   }, 60000);
 
@@ -314,7 +337,7 @@ describe('the half clip on a self-mirrored zone', () => {
     both.artworks = both.artworks.map((a) => ({ ...a, keepSide: undefined }));
     await buildAssemblyGeometry(both);
     expect(WARNINGS.some((w) => /^Two placements of "logo" overlap/.test(w.message))).toBe(true);
-    expect(WARNINGS.some((w) => /crosses the middle/.test(w.message))).toBe(false);
+    expect(WARNINGS.some((w) => /crosses the centre line/.test(w.message))).toBe(false);
   }, 60000);
 
   it('a pair sharing mirrorPair is never compared, so a mirrored Fill is not told to switch', async () => {

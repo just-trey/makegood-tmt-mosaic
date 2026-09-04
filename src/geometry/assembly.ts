@@ -31,6 +31,7 @@ import {
   computeNetRegionsByColor,
   intersectQuiet,
   planarArea,
+  cleanFeature,
   intersectChecked,
   safeIntersectChecked,
   safeUnion,
@@ -487,7 +488,7 @@ export function placedFootprintMM(
 }
 
 /** One design's kept half of a self-mirrored zone, resolved to a side and the clip for it. */
-interface KeptHalf {
+export interface KeptHalf {
   side: KeepSide;
   /** the line the half is cut at, in the zone's 2D design space */
   centreU: number;
@@ -522,12 +523,14 @@ function keptHalfFor(
  * `feat` cut to the half a design keeps; the cutter and the overlap check's ink both take it.
  * Crossing is read off the vertices rather than an area before and after, which a no-op boolean
  * still moves in its last bits; nothing past the line means no boolean. `failed` hands the
- * region back unclipped and says nothing: the cutter names that, the ink reader ignores it.
+ * region back unclipped and says nothing: the cutter names that, the ink reader ignores it. A
+ * region with nothing in it once cleaned is empty, not removed and not failed.
  */
-function clipToKeptSide(
+export function clipToKeptSide(
   feat: PolyFeature,
   half: KeptHalf,
 ): { feat: PolyFeature | null; removed: boolean; failed: boolean } {
+  if (!cleanFeature(feat)) return { feat: null, removed: false, failed: false };
   const beyond =
     half.side === 'right'
       ? (u: number): boolean => u < half.centreU
@@ -543,14 +546,14 @@ function clipToKeptSide(
 /** Rule 1 for the half clip: what a mirrored design lost to the centre line, and where it went. */
 export function mirrorHalfNotice(design: string, zone: string, side: KeepSide): string {
   return (
-    `"${design}" crosses the middle of "${zone}". ` +
+    `"${design}" crosses the centre line of "${zone}". ` +
     `Its ${side} half is kept and mirrored onto the ${oppositeSide(side)}.`
   );
 }
 
 /**
  * The half clip could not be applied (the clipper flaked, or the zone has no centre to clip at),
- * so the design and its reflection both cut whole and their inlays double up along the middle.
+ * so the design and its reflection both cut whole and their inlays double up along the centre line.
  * One remedy, the one that always works.
  */
 export function mirrorClipFailedWarning(design: string, zone: string): string {
