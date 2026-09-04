@@ -154,6 +154,22 @@ describe('the Mirror flag across a reload', () => {
     expect(state.artworks[0].mirror).toBe(false);
   });
 
+  it('survives restore while no zones are offered yet (parts manifest still in flight)', async () => {
+    // asmLoadFullAssembly returns quietly while the parts manifest is still loading, so the restore
+    // sees no zones at all. It keeps the saved zone binding on that reading (an empty zone list is
+    // not evidence of anything); the flag has to be kept on the same reading, or a saved mirrored
+    // design comes back cutting one side with nothing said.
+    const saved = session([{ ...instance({ mirror: true }), zoneId: 'right' }]);
+    saved.shapeKind = 'assembly';
+    saved.assembly = { kindId: 'chair-body', variantId: null };
+
+    await applyRestoredSession(saved);
+
+    expect(state.assembly.parts).toEqual([]);
+    expect(state.artworks[0].zone?.zoneId).toBe('right');
+    expect(state.artworks[0].mirror).toBe(true);
+  });
+
   it('survives restore when rebound to a zone that still offers a mirror', async () => {
     // restoreArtworkPool lands mirror:true on the instance before setArtworkZone ever runs; this
     // is the case that flag has to survive — the saved zone is still offered and still mirrors.

@@ -184,6 +184,33 @@ describe('overlappingDesignPairs', () => {
 
 // The quads alone answer "could these cut into each other". Ink answers it for the one shape that
 // makes the quad wrong in the user's favour: a design sitting in another's hollow.
+describe('overlappingDesignPairs, mirrored pairs', () => {
+  it('never compares a design with its own reflection, even as two fills', () => {
+    const a = { ...design(rect(0, 0, 10, 10), 'a.svg', true), group: 'a1' };
+    const b = { ...design(rect(0, 0, 10, 10), 'a.svg', true), group: 'a1' };
+    expect(overlappingDesignPairs([a, b])).toEqual([]);
+    expect(
+      overlappingDesignPairs([
+        { ...a, fill: false },
+        { ...b, fill: false },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('still compares a mirrored design against another design', () => {
+    const a = { ...design(rect(0, 0, 10, 10), 'a.svg'), group: 'a1' };
+    const other = { ...design(rect(0, 0, 10, 10), 'b.svg'), group: 'b1' };
+    const ungrouped = design(rect(0, 0, 10, 10), 'c.svg');
+    expect(overlappingDesignPairs([a, other])).toHaveLength(1);
+    expect(overlappingDesignPairs([a, ungrouped])).toHaveLength(1);
+  });
+
+  it('two ungrouped placements are not one group', () => {
+    const a = design(rect(0, 0, 10, 10));
+    expect(overlappingDesignPairs([a, design(rect(0, 0, 10, 10))])).toHaveLength(1);
+  });
+});
+
 describe('overlappingDesignPairs, ink gate', () => {
   it('leaves a logo centered in a frame alone', () => {
     expect(

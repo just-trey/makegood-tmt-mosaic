@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { AssemblyBuild, IndexedMesh, ZoneMirror, ZoneRef } from '../types';
+import type { AssemblyBuild, IndexedMesh } from '../types';
 import { baseColorHex, currentBaseParams, SCALE_MAX_PCT, state } from '../state/store';
 import {
   activeArtworkInstance,
   availableZones,
   syncActiveArtworkPlacement,
   zoneCoverage,
+  zoneMirrorOf,
 } from '../state/artwork';
 import { creasedNormalsFromIndex, indexMatchesSoup } from '../geometry/creasedNormals';
 import { clearBuildWarnings, noticeBuild, warn } from '../warnings';
@@ -62,13 +63,6 @@ export function getLastAssemblyBuild(): AssemblyBuild | null {
  * (3.8-5.2s against a steady 4.1s for the chair's 13 parts).
  */
 const CREASE_ANGLE_RAD = (30 * Math.PI) / 180;
-
-/** The baked mirror relation of a bound zone, read off the part it is bound to. */
-function zoneMirrorOf(ref: ZoneRef | null): ZoneMirror | undefined {
-  if (!ref) return undefined;
-  const part = state.assembly.parts.find((p) => p.id === ref.partId);
-  return part?.zones?.find((z) => z.id === ref.zoneId)?.mirror;
-}
 
 /**
  * Display geometry for one triangle soup.
@@ -531,13 +525,14 @@ async function rebuildAssemblyScene(): Promise<void> {
     // or to the other half of a self-mirrored one. The build sees two ordinary artworks and nothing
     // in the geometry knows they are related. A flag on a zone that offers no mirror is ignored
     // rather than guessed at; state clears it when the binding changes.
-    const mirror = a.mirror ? zoneMirrorOf(a.zone) : undefined;
+    const mirror = a.mirror && a.zone ? zoneMirrorOf(a.zone.zoneId) : undefined;
     if (!mirror) return [primary];
-    if ('twin' in mirror) return [primary, mirroredBuildInput(primary, mirror.twin)];
+    const paired = { ...primary, mirrorPair: a.id };
+    if ('twin' in mirror) return [paired, mirroredBuildInput(paired, mirror.twin)];
     // Tie rule only (see ArtworkBuildInput.keepSide): at Offset 0 the right half is the one kept,
     // which is what "design the right half" on the template promises.
     const keepSide: KeepSide = primary.offX >= 0 ? 'right' : 'left';
-    const own = { ...primary, keepSide };
+    const own = { ...paired, keepSide };
     return [own, mirroredBuildInput(own, own.zoneId ?? null)];
   });
   // state.parsed without an instance shouldn't happen (loadArtworkSource creates one), but the

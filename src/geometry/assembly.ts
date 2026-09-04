@@ -31,6 +31,7 @@ import {
   computeNetRegionsByColor,
   intersectQuiet,
   planarArea,
+  intersectChecked,
   safeIntersectChecked,
   safeUnion,
   YIELD_BUDGET_MS,
@@ -171,6 +172,10 @@ export interface ArtworkBuildInput {
    * reflect onto each other, and onto the line together) would otherwise both keep the same half.
    */
   keepSide?: KeepSide;
+  /** Set on the reflection mirroredBuildInput makes, so a notice about the pair is said once. */
+  reflected?: boolean;
+  /** Shared by a mirrored design and its reflection; the overlap check never compares the two. */
+  mirrorPair?: string;
 }
 
 export interface AssemblyBuildInput {
@@ -492,13 +497,9 @@ interface KeptHalf {
 }
 
 /**
- * Which half a design keeps on this zone, or null when it keeps all of it. The side is the one
- * the design's placed centre lies on; `keepSide` itself only breaks the exact tie (see the field).
- *
- * The centre is taken from `fillExtent()`, the same zone bbox the placer anchors on, so the line
- * here is the line mirroredBuildInput reflects about. A mirrored pair lands on opposite sides by
- * construction: the reflection's offset from the centre is the exact negation of the original's,
- * so only a centre landing ON the line reaches the tie, and there the two carry opposite values.
+ * Which half a design keeps on this zone, or null when it keeps all of it: the half its placed
+ * centre lies on, `keepSide` breaking only the exact tie. The centre is `fillExtent()`'s, the same
+ * bbox the placer anchors on, so this is the line mirroredBuildInput reflects about.
  */
 function keptHalfFor(
   mapper: ZoneMapper,
@@ -518,20 +519,15 @@ function keptHalfFor(
 }
 
 /**
- * `feat` cut down to the half a design keeps, and whether anything was cut away. Both readers of
- * a placed region go through here, the cutter and the overlap check's ink, so the two halves of
- * one mirrored design never warn against each other over ink neither of them cuts.
- *
- * Whether the region crosses the line is read off its vertices, not off an area before and after:
- * a boolean that changes nothing still moves the area in its last bits, and a tolerance on that
- * would be a number nobody measured. A region with no vertex past the line loses nothing and is
- * handed back untouched, without paying for the boolean.
+ * `feat` cut to the half a design keeps; the cutter and the overlap check's ink both take it.
+ * Crossing is read off the vertices rather than an area before and after, which a no-op boolean
+ * still moves in its last bits; nothing past the line means no boolean. `failed` hands the
+ * region back unclipped and says nothing: the cutter names that, the ink reader ignores it.
  */
 function clipToKeptSide(
   feat: PolyFeature,
   half: KeptHalf,
-  label: string,
-): { feat: PolyFeature | null; removed: boolean } {
+): { feat: PolyFeature | null; removed: boolean; failed: boolean } {
   const beyond =
     half.side === 'right'
       ? (u: number): boolean => u < half.centreU
@@ -539,9 +535,9 @@ function clipToKeptSide(
   const crosses = polysOf(feat).some((rings) =>
     rings.some((ring) => ring.some((pt) => beyond(pt[0]))),
   );
-  if (!crosses) return { feat, removed: false };
-  const r = safeIntersectChecked(feat, half.clip, label);
-  return { feat: r.feat, removed: r.clipped };
+  if (!crosses) return { feat, removed: false, failed: false };
+  const r = intersectChecked(feat, half.clip);
+  return { feat: r.feat, removed: r.clipped, failed: !r.clipped };
 }
 
 /** Rule 1 for the half clip: what a mirrored design lost to the centre line, and where it went. */
@@ -549,6 +545,18 @@ export function mirrorHalfNotice(design: string, zone: string, side: KeepSide): 
   return (
     `"${design}" crosses the middle of "${zone}". ` +
     `Its ${side} half is kept and mirrored onto the ${oppositeSide(side)}.`
+  );
+}
+
+/**
+ * The half clip could not be applied (the clipper flaked, or the zone has no centre to clip at),
+ * so the design and its reflection both cut whole and their inlays double up along the middle.
+ * One remedy, the one that always works.
+ */
+export function mirrorClipFailedWarning(design: string, zone: string): string {
+  return (
+    `Couldn't crop "${design}" to its half of "${zone}". ` +
+    `It and its mirror image both print in full. Untick Mirror on that design.`
   );
 }
 
@@ -574,7 +582,7 @@ function placedInk(
     const f = perArtwork[ai];
     if (!f) continue;
     const placed = mapFeatureCoords(f, place);
-    const kept = half ? clipToKeptSide(placed, half, 'the overlap check').feat : placed;
+    const kept = half ? clipToKeptSide(placed, half).feat : placed;
     if (!kept) continue;
     for (const rings of polysOf(kept))
       out.push(
@@ -591,12 +599,9 @@ function placedInk(
 }
 
 /**
- * The design's content bounding box, placed: a convex quad in the zone's own 2D design space,
- * cut down to the kept half where the design keeps one. The overlap check's ink gate bounds how
- * much ink reaches the box two footprints share rather than intersecting ink with ink, so two
- * halves of one mirrored design, disjoint but each filling its side of the shared box, would still
- * trip it on their unclipped footprints. Clipped, the two footprints meet at the line and share
- * no area at all. Still convex: a convex quad against a half-plane.
+ * The design's content bbox placed, cut to the kept half where it keeps one: the ink gate bounds
+ * reach into the shared box rather than intersecting ink, so two disjoint halves of one design
+ * would still trip it on whole footprints. Still convex, a quad against a half-plane.
  */
 function placedBBoxQuad(
   parsed: ParsedSVG,
@@ -1084,10 +1089,13 @@ export async function buildAssemblyGeometry(
         }
         // After the boundary clip, so what the notice reports lost is surface this part cuts.
         // The color counts as landed either way: what this takes off is cut by the reflection.
+        // Said from the un-reflected input only, or the pair reports both halves as the one kept.
         if (half) {
-          const r = clipToKeptSide(feat, half, `color ${c.hex} on ${part.name}`);
-          if (r.removed)
-            noticeBuild(mirrorHalfNotice(artworks[ai].name || 'design', half.zoneName, half.side));
+          const r = clipToKeptSide(feat, half);
+          const design = artworks[ai].name || 'design';
+          if (r.failed) warnBuild(mirrorClipFailedWarning(design, half.zoneName));
+          else if (r.removed && !artworks[ai].reflected)
+            noticeBuild(mirrorHalfNotice(design, half.zoneName, half.side));
           feat = r.feat;
           if (!feat) return;
         }
@@ -1271,6 +1279,7 @@ export async function buildAssemblyGeometry(
                 quad: placedBBoxQuad(artworks[ai].parsed, place, half),
                 fill: artworks[ai].mode === 'fill',
                 ink: () => placedInk(featuresByColor, ai, place, half),
+                group: artworks[ai].mirrorPair,
               };
             }),
           );
@@ -1283,6 +1292,10 @@ export async function buildAssemblyGeometry(
           anyPlacements = true;
           const place = mapper.placer(placements[ai]);
           const half = keptHalfFor(mapper, artworks[ai], place, zoneName);
+          // A zone with no centre to clip at cuts the design and its reflection whole. Degenerate
+          // (a chart with no extent), and still a doubled cut nobody asked for, so it is named.
+          if (artworks[ai].keepSide && !half)
+            warnBuild(mirrorClipFailedWarning(artworks[ai].name || 'design', zoneName));
           // One grid per (zone, artwork): every color of a fill repeats identically, so the
           // inverted-placement coverage math runs once, not per palette slot. A fill that can't be
           // tiled degrades to a single copy plus a warning rather than an empty part.

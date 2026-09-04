@@ -555,7 +555,7 @@ export function setActiveArtwork(id: string | null): void {
 }
 
 /** Baked mirror relation of a zone, looked up off the loaded parts. Undefined off assembly mode too. */
-function zoneMirrorOf(zoneId: string): ZoneMirror | undefined {
+export function zoneMirrorOf(zoneId: string): ZoneMirror | undefined {
   for (const part of state.assembly.parts)
     for (const z of part.zones ?? []) if (z.id === zoneId) return z.mirror;
   return undefined;
@@ -569,8 +569,11 @@ export function setArtworkZone(instanceId: string, zoneId: string | null): void 
   // A saved (or already-ticked) Mirror survives rebinding to another zone that also offers it —
   // restoreSession rebinds every instance's zone here after the pool restores mirror:true — and
   // drops the moment the new zone (or "All zones") offers none, so a stale flag never reaches a
-  // mapper with no mirror to apply it against.
-  if (a.mirror && !(zoneId && zoneMirrorOf(zoneId))) a.mirror = false;
+  // mapper with no mirror to apply it against. Judged only while some zone is offered at all: the
+  // restore runs while the parts manifest may still be in flight, and restoreSession keeps the
+  // saved binding on that reading for the same reason (an empty zone list is not evidence).
+  if (a.mirror && (!zoneId || (availableZones().length > 0 && !zoneMirrorOf(zoneId))))
+    a.mirror = false;
 }
 
 /**

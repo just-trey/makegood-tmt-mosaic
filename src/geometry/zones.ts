@@ -84,6 +84,7 @@ export function mirroredBuildInput(a: ArtworkBuildInput, zoneId: string | null):
     rotationDeg: -a.rotationDeg,
     flipX: !a.flipX,
     keepSide: a.keepSide && oppositeSide(a.keepSide),
+    reflected: true,
   };
 }
 

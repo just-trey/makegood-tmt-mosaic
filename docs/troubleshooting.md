@@ -361,6 +361,27 @@ cropped to one half before it repeats. Move the design so it sits entirely on
 one side of the centre line (drawn dashed on the zone's template) if you want
 the whole thing to survive uncropped.
 
+## Troubleshooting: "Couldn't crop … to its half of …" warnings (assembly mode)
+
+Full text: _"Couldn't crop "…" to its half of "…". It and its mirror image
+both print in full. Untick Mirror on that design."_
+
+The same half clip as the notice above, except it could not be applied. Two
+causes, both rare:
+
+- The polygon clipper failed on this design's regions, the same way the
+  ["Clipping color region to the design face failed…"](#troubleshooting-clipping-color-region-to-the-design-face-failed-assembly-mode)
+  warning can.
+- The zone has no centre line to clip at (a chart with no extent), which no
+  shipped bake produces.
+
+Either way the design and its reflection are both cut whole, so where they
+cross the middle the export carries two inlays claiming the same space, the
+same problem the ["Designs … overlap"](#troubleshooting-designs--overlap-warnings)
+warning describes. Untick Mirror on that row and the design cuts once, as
+placed. Simplifying the design in Illustrator or Inkscape can clear the
+clipper failure, after which Mirror can go back on.
+
 ## Troubleshooting: Fill warnings, "You have one tile instead"
 
 Fill repeats one design across a whole part. When it can't work out how, it

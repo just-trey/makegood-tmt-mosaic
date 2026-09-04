@@ -942,7 +942,12 @@ describe('a mirrored instance reaches the build as two placements', () => {
       rotationDeg: -37,
       flipX: true,
       flipY: true,
+      reflected: true,
     });
+    // one group for the pair, so the overlap check never compares the two
+    expect(own.mirrorPair).toBe('a1');
+    expect(twin.mirrorPair).toBe('a1');
+    expect(own.reflected).toBeUndefined();
   });
 
   it('on a self-mirrored zone, both placements stay on it and keep opposite halves', async () => {
@@ -954,8 +959,8 @@ describe('a mirrored instance reaches the build as two placements', () => {
     await rebuildCurrent();
 
     const [own, twin] = built();
-    expect(own).toMatchObject({ zoneId: 'front', keepSide: 'right' });
-    expect(twin).toMatchObject({ zoneId: 'front', keepSide: 'left', offX: -7.5 });
+    expect(own).toMatchObject({ zoneId: 'front', keepSide: 'right', mirrorPair: 'a1' });
+    expect(twin).toMatchObject({ zoneId: 'front', keepSide: 'left', offX: -7.5, mirrorPair: 'a1' });
   });
 
   it('a negative offset names the left half as the tie rule', async () => {
@@ -979,6 +984,7 @@ describe('a mirrored instance reaches the build as two placements', () => {
 
     expect(built()).toHaveLength(1);
     expect(built()[0].keepSide).toBeUndefined();
+    expect(built()[0].mirrorPair).toBeUndefined();
   });
 
   it('builds one placement when the flag is off', async () => {

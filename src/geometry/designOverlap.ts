@@ -53,6 +53,12 @@ export interface PlacedDesign {
    * Omit it and the quads decide alone, which is what every caller did before the ink gate landed.
    */
   ink?: () => InkPolygon[];
+  /**
+   * Placements that are one design by construction (a mirrored design and its reflection) share
+   * a group and are never compared: the fill/fill arm warns before any quad or ink is read, and
+   * "switch one to Sticker" is advice about a placement the user never made.
+   */
+  group?: string;
 }
 
 function signedArea(poly: number[][]): number {
@@ -182,6 +188,7 @@ export function overlappingDesignPairs(placed: PlacedDesign[]): [PlacedDesign, P
     for (let j = i + 1; j < placed.length; j++) {
       const a = placed[i],
         b = placed[j];
+      if (a.group !== undefined && a.group === b.group) continue;
       if (a.fill !== b.fill) continue;
       if (a.fill && b.fill) {
         pairs.push([a, b]);

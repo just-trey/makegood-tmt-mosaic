@@ -567,6 +567,24 @@ describe('availableZones / setArtworkZone', () => {
     expect(a.mirror).toBe(false);
   });
 
+  it('keeps mirror on a rebind made while no zones are offered at all', () => {
+    // The restore window: setArtworkZone runs before the parts have landed. With nothing offered
+    // there is no zone to judge the flag against, so it stays, exactly as the binding itself does.
+    state.assembly.parts = [zonedPart(1, 'right', 'Right side', undefined, { twin: 'left' })];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, 'right');
+    setArtworkMirror(a.id, true);
+
+    state.assembly.parts = [];
+    setArtworkZone(a.id, 'right');
+    expect(a.mirror).toBe(true);
+
+    // and still drops once zones are offered and the bound one has no mirror
+    state.assembly.parts = [zonedPart(2, 'right', 'Right side')];
+    setArtworkZone(a.id, 'right');
+    expect(a.mirror).toBe(false);
+  });
+
   it('keeps mirror when rebound to a different zone that also offers one', () => {
     // The order restoreSession runs in: the pool restores with mirror already set, then every
     // instance's zone is rebound via setArtworkZone as if the user had just picked it.

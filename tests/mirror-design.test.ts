@@ -8,6 +8,7 @@ import {
 } from '../src/geometry/zones';
 import {
   buildAssemblyGeometry,
+  mirrorClipFailedWarning,
   mirrorHalfNotice,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
@@ -91,6 +92,7 @@ describe('mirroredBuildInput reflects a placement across a twin pair', () => {
     const b = mirroredBuildInput(a, 'front');
     expect(b.zoneId).toBe('front');
     expect(b.keepSide).toBe('left');
+    expect(b.reflected).toBe(true);
     const placeA = twinA.placer(toPlacement(a));
     const placeB = twinA.placer(toPlacement(b));
     for (const pt of SVG_POINTS) {
@@ -101,10 +103,10 @@ describe('mirroredBuildInput reflects a placement across a twin pair', () => {
     }
   });
 
-  it('is an involution: reflecting twice is the original placement', () => {
+  it('is an involution on the placement fields', () => {
     const a = input();
     const back = mirroredBuildInput(mirroredBuildInput(a, 'left'), 'right');
-    expect(back).toEqual(a);
+    expect(back).toEqual({ ...a, reflected: true });
   });
 });
 
@@ -243,8 +245,40 @@ describe('the half clip on a self-mirrored zone', () => {
     const c = ARC_U / 2;
     expect(max - c).toBeCloseTo(13, 0);
     expect(c - min).toBeCloseTo(13, 0);
+    // once, and about the primary's side: the reflection also loses its crossing part, and a
+    // second notice reading "its left half is kept" would contradict the first
     expect(WARNINGS.filter((w) => w.message === NOTICE)).toHaveLength(1);
+    expect(WARNINGS.filter((w) => /crosses the middle/.test(w.message))).toHaveLength(1);
     expect(WARNINGS.some((w) => /overlap|Two placements/.test(w.message))).toBe(false);
+  }, 60000);
+
+  it('says the failure out loud when the zone has no centre line to clip at', async () => {
+    // A flat face offers no sideClip. keepSide reaching one is a degenerate input, but the outcome
+    // is a doubled cut, so it is named rather than left to the overlap warning.
+    const flat: AssemblyPart = {
+      ...part,
+      id: 2,
+      name: 'plate',
+      zones: undefined,
+      boundaryLoops: [
+        [
+          [-40, 60, -40],
+          [40, 60, -40],
+          [40, 60, 40],
+          [-40, 60, 40],
+        ],
+      ],
+      patchNormal: [0, 1, 0],
+      topZ: 60,
+    };
+    const both = mirrored(3);
+    both.parts = [flat];
+    both.artworks = both.artworks.map((a) => ({ ...a, zoneId: null }));
+    await buildAssemblyGeometry(both);
+    expect(
+      WARNINGS.filter((w) => w.message === mirrorClipFailedWarning(NAME, 'plate')),
+    ).toHaveLength(1);
+    expect(WARNINGS.some((w) => /crosses the middle/.test(w.message))).toBe(false);
   }, 60000);
 
   it('the half kept is the one the design sits on, whichever the tie rule names', async () => {
@@ -281,5 +315,17 @@ describe('the half clip on a self-mirrored zone', () => {
     await buildAssemblyGeometry(both);
     expect(WARNINGS.some((w) => /^Two placements of "logo" overlap/.test(w.message))).toBe(true);
     expect(WARNINGS.some((w) => /crosses the middle/.test(w.message))).toBe(false);
+  }, 60000);
+
+  it('a pair sharing mirrorPair is never compared, so a mirrored Fill is not told to switch', async () => {
+    const both = mirrored(3);
+    both.artworks = both.artworks.map((a) => ({
+      ...a,
+      keepSide: undefined,
+      mode: 'fill' as const,
+      mirrorPair: 'a1',
+    }));
+    await buildAssemblyGeometry(both);
+    expect(WARNINGS.some((w) => /both set to Fill|overlap/.test(w.message))).toBe(false);
   }, 60000);
 });
