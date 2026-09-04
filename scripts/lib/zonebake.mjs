@@ -713,18 +713,37 @@ export function pairMirrorZones(zones, axis) {
  */
 export const MIRROR_VERT_PAIR_MM = 0.5;
 
-/** Every chart vertex of a zone with its 3D position and UV, for measureZoneMirror. */
-function zoneMirrorPoints(zone, vertsOf) {
+/**
+ * Every chart vertex of a zone with its 3D position, its UV, and the packed vertex it indexes —
+ * `part:index`, which is what makes two zones' claims on the SAME vertex recognisable. With
+ * `withBoundary` it also returns which of them lie on a chart edge carried by one triangle: the
+ * zone's outer rim, its holes, and the printed seams where the next part's chart takes over.
+ */
+function zoneChartPoints(zone, vertsOf, withBoundary = false) {
   const pos = [];
   const uv = [];
+  const keys = [];
+  const boundary = [];
   for (const c of zone.charts) {
     const verts = vertsOf(c.libraryPartId);
+    const base = pos.length;
     for (let i = 0; i < c.verts.length; i++) {
       pos.push(verts[c.verts[i]]);
       uv.push([c.uv[2 * i], c.uv[2 * i + 1]]);
+      keys.push(`${c.libraryPartId}:${c.verts[i]}`);
     }
+    if (!withBoundary) continue;
+    const use = new Map();
+    for (const t of c.chartTris)
+      for (let k = 0; k < 3; k++) {
+        const e = edgeKey(t[k], t[(k + 1) % 3]);
+        use.set(e, (use.get(e) ?? 0) + 1);
+      }
+    const onEdge = new Set();
+    for (const [e, n] of use) if (n === 1) for (const v of e.split(',')) onEdge.add(+v);
+    for (const v of onEdge) boundary.push(base + v);
   }
-  return { pos, uv };
+  return { pos, uv, keys, boundary };
 }
 
 /**
@@ -734,8 +753,8 @@ function zoneMirrorPoints(zone, vertsOf) {
  * the whole transform: a best-fit rotation and scale add nothing (scripts/measure-zone-mirror.mjs).
  */
 export function measureZoneMirror(zoneA, zoneB, axis, vertsOf, cap = MIRROR_VERT_PAIR_MM) {
-  const a = zoneMirrorPoints(zoneA, vertsOf);
-  const b = zoneA === zoneB ? a : zoneMirrorPoints(zoneB, vertsOf);
+  const a = zoneChartPoints(zoneA, vertsOf);
+  const b = zoneA === zoneB ? a : zoneChartPoints(zoneB, vertsOf);
   const cA = [zoneA.uvBounds.maxU / 2, zoneA.uvBounds.maxV / 2];
   const cB = [zoneB.uvBounds.maxU / 2, zoneB.uvBounds.maxV / 2];
   const near = nearestPoints(a.pos.map(reflectAcross(axis)), b.pos, cap);
@@ -759,6 +778,127 @@ export function measureZoneMirror(zoneA, zoneB, axis, vertsOf, cap = MIRROR_VERT
     rms: n ? Math.sqrt(residuals.reduce((s, r) => s + r * r, 0) / n) : 0,
     p95: n ? residuals[Math.max(0, Math.ceil(0.95 * n) - 1)] : 0,
     max: n ? residuals[n - 1] : 0,
+  };
+}
+
+/**
+ * Best q ~= s*R(theta)*(p - p_bar) + q_bar over the pairs, and what is left of them after it. Closed
+ * form: theta from the cross/dot sums of the centred pairs, s from their ratio of norms — or s = 1
+ * when `allowScale` is false, which is what a registration between two true-mm charts has to be: a
+ * fit allowed to resize would land the design at the wrong size on the far side of the seam.
+ */
+export function procrustesFit(pairs, allowScale = true) {
+  const n = pairs.length;
+  if (n < 2) return null;
+  const pc = [0, 0];
+  const qc = [0, 0];
+  for (const { want, got } of pairs) {
+    pc[0] += want[0] / n;
+    pc[1] += want[1] / n;
+    qc[0] += got[0] / n;
+    qc[1] += got[1] / n;
+  }
+  let dot = 0;
+  let cross = 0;
+  let pp = 0;
+  for (const { want, got } of pairs) {
+    const px = want[0] - pc[0];
+    const py = want[1] - pc[1];
+    const qx = got[0] - qc[0];
+    const qy = got[1] - qc[1];
+    dot += px * qx + py * qy;
+    cross += px * qy - py * qx;
+    pp += px * px + py * py;
+  }
+  // Every source point at one place: nothing to recover but a translation, and s would divide by 0.
+  if (!(pp > 0)) return null;
+  const theta = Math.atan2(cross, dot);
+  const s = allowScale ? Math.hypot(dot, cross) / pp : 1;
+  const c = Math.cos(theta);
+  const sn = Math.sin(theta);
+  const res = pairs
+    .map(({ want, got }) => {
+      const px = want[0] - pc[0];
+      const py = want[1] - pc[1];
+      return Math.hypot(
+        got[0] - (s * (c * px - sn * py) + qc[0]),
+        got[1] - (s * (sn * px + c * py) + qc[1]),
+      );
+    })
+    .sort((x, y) => x - y);
+  return {
+    n,
+    thetaDeg: (theta * 180) / Math.PI,
+    scale: s,
+    rms: Math.sqrt(res.reduce((a, r) => a + r * r, 0) / n),
+    p95: res[Math.max(0, Math.ceil(0.95 * n) - 1)],
+    max: res[n - 1],
+  };
+}
+
+/**
+ * Report buckets (mm) for how far one zone's chart boundary sits from the next zone's surface.
+ * Nothing acts on them: they bracket CHART_SNAP_MM (3), the slack a chart already tolerates, so a
+ * reader can tell at a glance whether two zones abut, nearly abut, or merely face each other.
+ */
+export const SEAM_GAP_BUCKETS_MM = [2, 5, 10, 20];
+/**
+ * Widest gap (mm) a vertex pair may span and still register the two charts. Wider than this the two
+ * points are not the same place on the chair, so the fit would be measuring the gap rather than the
+ * registration. It is the third bucket above, kept in step with it deliberately.
+ */
+export const SEAM_FIT_MM = SEAM_GAP_BUCKETS_MM[2];
+
+/** A zone's chart vertices with the boundary flags measureZoneSeam needs. Compute once per zone. */
+export const zoneSeamPoints = (zone, vertsOf) => zoneChartPoints(zone, vertsOf, true);
+
+/**
+ * The seam relation from zone A to zone B, both as zoneSeamPoints: how many of A's chart-boundary
+ * vertices have any B vertex within each SEAM_GAP_BUCKETS_MM and the median of those gaps, and the
+ * rigid and similarity fits from A's UV onto B's over the pairs within SEAM_FIT_MM.
+ *
+ * Then the same two fits over the vertices the two zones SHARE outright — same part, same packed
+ * index, so the pairs are the same point rather than merely a near one. That is the registration a
+ * design crossing the seam actually rides on, and the two answers are far apart: on the chair's
+ * flank/back corner the nearest-point fit reads 5.61mm p95 where the shared one reads 1.81, because
+ * a boundary vertex within 10mm of the next zone is often not on the seam at all.
+ */
+export function measureZoneSeam(a, b) {
+  const cap = SEAM_GAP_BUCKETS_MM[SEAM_GAP_BUCKETS_MM.length - 1];
+  const near = nearestPoints(
+    a.boundary.map((i) => a.pos[i]),
+    b.pos,
+    cap,
+  );
+  const counts = SEAM_GAP_BUCKETS_MM.map(() => 0);
+  const gaps = [];
+  const pairs = [];
+  near.forEach((nb, k) => {
+    // The search reaches into neighbouring cells, so it answers past `cap`; this does not.
+    if (nb.j < 0 || nb.d > cap) return;
+    SEAM_GAP_BUCKETS_MM.forEach((t, i) => {
+      if (nb.d <= t) counts[i]++;
+    });
+    gaps.push(nb.d);
+    if (nb.d <= SEAM_FIT_MM) pairs.push({ want: a.uv[a.boundary[k]], got: b.uv[nb.j] });
+  });
+  gaps.sort((x, y) => x - y);
+  const m = gaps.length;
+  const bAt = new Map(b.keys.map((k, i) => [k, i]));
+  const sharedPairs = [];
+  a.keys.forEach((k, i) => {
+    const j = bAt.get(k);
+    if (j !== undefined) sharedPairs.push({ want: a.uv[i], got: b.uv[j] });
+  });
+  return {
+    of: a.boundary.length,
+    counts,
+    medianMm: m ? (m % 2 ? gaps[(m - 1) / 2] : (gaps[m / 2 - 1] + gaps[m / 2]) / 2) : null,
+    shared: sharedPairs.length,
+    rigid: procrustesFit(pairs, false),
+    similarity: procrustesFit(pairs, true),
+    sharedRigid: procrustesFit(sharedPairs, false),
+    sharedSimilarity: procrustesFit(sharedPairs, true),
   };
 }
 
