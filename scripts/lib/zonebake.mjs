@@ -856,22 +856,23 @@ export const SEAM_FIT_MM = SEAM_GAP_BUCKETS_MM[2];
 export const zoneSeamPoints = (zone, vertsOf) => zoneChartPoints(zone, vertsOf, true);
 
 /**
- * How close (mm) two zones' vertices must sit to count as the SAME vertex. The weld tolerance, from
- * the config where it sets one: two zones meeting across a printed seam hold different parts'
- * vertices, welded at bake time but never equal, so an identity test on `part:index` reads 0 shared
- * on exactly the seams a whole-chair design most needs to cross.
+ * How close (mm) two zones' vertices must sit to count as the SAME vertex, per pair kind: the bake
+ * welds within a part at `weldTolMm` but stitches across parts only at `seamWeldTolMm`, which
+ * defaults to 0 (weldParts). A cross-part pair inside `weldTolMm` was never joined, so one scalar
+ * would call vertices shared on exactly the seams the runtime never stitched.
  */
-export const sharedVertTolMm = (config) =>
-  config?.seamWeldTolMm ?? config?.weldTolMm ?? WELD_TOL_MM;
+export const sharedVertTolMm = (config) => ({
+  samePartMm: config?.weldTolMm ?? WELD_TOL_MM,
+  crossPartMm: config?.seamWeldTolMm ?? 0,
+});
 
 /**
  * The seam relation from zone A to zone B, both as zoneSeamPoints: gap counts by
  * SEAM_GAP_BUCKETS_MM and their median, then the rigid and similarity fits taking A's UV onto B's —
- * over the pairs within SEAM_FIT_MM, and over the vertices the two SHARE (coincident within
- * `sharedTolMm`). Read the shared ones: a nearest-point pair within SEAM_FIT_MM is often not the
- * same place at all (5.61 against 1.81mm p95 on the chair's flank/back corner).
+ * over the pairs within SEAM_FIT_MM, and over the vertices the two SHARE (sharedVertTolMm). Read
+ * the shared ones: a nearest-point pair within SEAM_FIT_MM is often not the same place at all.
  */
-export function measureZoneSeam(a, b, sharedTolMm = WELD_TOL_MM) {
+export function measureZoneSeam(a, b, sharedTol = sharedVertTolMm(undefined)) {
   const cap = SEAM_GAP_BUCKETS_MM[SEAM_GAP_BUCKETS_MM.length - 1];
   const near = nearestPoints(
     a.boundary.map((i) => a.pos[i]),
@@ -893,10 +894,16 @@ export function measureZoneSeam(a, b, sharedTolMm = WELD_TOL_MM) {
   gaps.sort((x, y) => x - y);
   const m = gaps.length;
   const sharedPairs = [];
-  nearestPoints(a.pos, b.pos, sharedTolMm).forEach((nb, i) => {
-    // The search reaches into neighbouring cells, so it answers past its cap; this does not.
-    if (nb.j >= 0 && nb.d <= sharedTolMm) sharedPairs.push({ want: a.uv[i], got: b.uv[nb.j] });
-  });
+  const partOf = (keys, i) => keys[i].slice(0, keys[i].lastIndexOf(':'));
+  nearestPoints(a.pos, b.pos, Math.max(sharedTol.samePartMm, sharedTol.crossPartMm)).forEach(
+    (nb, i) => {
+      if (nb.j < 0) return;
+      const lim =
+        partOf(a.keys, i) === partOf(b.keys, nb.j) ? sharedTol.samePartMm : sharedTol.crossPartMm;
+      // The search reaches into neighbouring cells, so it answers past its cap; this does not.
+      if (nb.d <= lim) sharedPairs.push({ want: a.uv[i], got: b.uv[nb.j] });
+    },
+  );
   return {
     of: a.boundary.length,
     counts,
@@ -1803,7 +1810,11 @@ export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNor
     const compArea = comp.reduce((t, ti) => t + triGeom[ti].area, 0);
     if (touches.size !== 2) {
       // Not a strip between two zones. Reported from three zones up: that is surface several zones
-      // stop against, and which of them should own it is a question the config has to answer.
+      // stop against, and which of them should own it is a question the config has to answer. A
+      // component touching one zone stays out of `warnings` deliberately: it is the angle limit's
+      // own remainder, by design on every zone's far edge (380 components on the chair), and the
+      // census itemises it by count and triangles where a per-component warning would drown the two
+      // real signals above.
       if (touches.size >= 3)
         skipped.push({
           zones: [...touches].sort((x, y) => x - y).map((zi) => zoneCfgs[zi].id),

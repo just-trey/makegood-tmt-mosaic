@@ -105,7 +105,8 @@ for (const a of sidecar.zones)
   }
 console.log(
   `\n  ${sidecarPath}: A's chart-boundary vertices against B's surface, fits on the pairs ` +
-    `within ${SEAM_FIT_MM}mm, shared = coincident within ${sharedTol}mm\n  (a design crosses a ` +
-    `seam only where the SHARED rigid p95 is under CHART_SNAP_MM = ${CHART_SNAP_MM})\n`,
+    `within ${SEAM_FIT_MM}mm, shared = coincident within ${sharedTol.samePartMm}mm on one part ` +
+    `/ ${sharedTol.crossPartMm}mm across parts\n  (a design crosses a seam only where the SHARED ` +
+    `rigid p95 is under CHART_SNAP_MM = ${CHART_SNAP_MM})\n`,
 );
 console.table(rows);

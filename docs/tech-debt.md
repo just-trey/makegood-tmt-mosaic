@@ -711,8 +711,8 @@ the real failure it shares a message with. The overlaps are inherent to per-part
 clipping and small — the `gives no two parts of a zone an overlapping claim on
 the same UV` test in `tests/chair-zones.test.ts` walks all of them and holds
 them under 0.05% of zone area; on the shipped bake it finds 20 overlapping part
-pairs, all seam-sharing, worst 29.85 mm² on a 124,728 mm² zone (a ~0.15 mm
-ribbon).
+pairs, all seam-sharing, worst 29.85 mm² on `right`, a 124,747 mm² zone (a
+~0.15 mm ribbon).
 Fix: drop a clip remnant under an area floor _before_ `buildCutter` rather
 than attempting it and warning. Pick the floor above the measured ribbon and
 well under anything printable.

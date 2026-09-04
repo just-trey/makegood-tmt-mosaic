@@ -10,8 +10,8 @@ import {
   regionNetArea,
   buildCoverSolids,
   measureZoneSeam,
+  sharedVertTolMm,
   zoneSeamPoints,
-  WELD_TOL_MM,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
@@ -505,6 +505,15 @@ describe('cube face zone', () => {
   });
 });
 
+// The quarter cylinder's normal sweeps 0..90 degrees, so two zones seeded at its ends claim
+// everything within maxAngleDeg of each end. At 40 they meet nowhere; at 60 they overlap over
+// 30 degrees of arc, and the same artwork would be cut into both charts at the join. Nothing
+// used to notice, and claimWedges' first-wins ownership would go on to hide it.
+const endZones = (deg: number): object[] => [
+  { id: 'near', name: 'Near', seedNormal: [0, 0, 1], maxAngleDeg: deg, up: [0, 1, 0] },
+  { id: 'far', name: 'Far', seedNormal: [1, 0, 0], maxAngleDeg: deg, up: [0, 1, 0] },
+];
+
 describe('bad inputs fail loudly', () => {
   it('refuses a closed surface (nothing to pin, no boundary)', () => {
     const part = cubePart('cube');
@@ -530,15 +539,6 @@ describe('bad inputs fail loudly', () => {
     const zone = { id: 'z', name: 'Z', seedNormal: [0, 0, 1], maxAngleDeg: 30, up: [0, 1, 0] };
     expect(() => bakeZones(config([part], [zone, { ...zone }]), [part])).toThrow(/duplicate/);
   });
-
-  // The quarter cylinder's normal sweeps 0..90 degrees, so two zones seeded at its ends claim
-  // everything within maxAngleDeg of each end. At 40 they meet nowhere; at 60 they overlap over
-  // 30 degrees of arc, and the same artwork would be cut into both charts at the join. Nothing
-  // used to notice, and claimWedges' first-wins ownership would go on to hide it.
-  const endZones = (deg: number): object[] => [
-    { id: 'near', name: 'Near', seedNormal: [0, 0, 1], maxAngleDeg: deg, up: [0, 1, 0] },
-    { id: 'far', name: 'Far', seedNormal: [1, 0, 0], maxAngleDeg: deg, up: [0, 1, 0] },
-  ];
 
   it('refuses two zones that grew onto the same triangles', () => {
     const part = cylinderPart('cyl', 0, NU);
@@ -579,10 +579,6 @@ describe('bad inputs fail loudly', () => {
 // (46.875) in neither: a two-facet strip with a zone on each side, which is the chair's storage-box
 // corner in miniature. The split is by normal, so 11 goes to `near` and 12 to `far`.
 describe('claimWedge', () => {
-  const endZones = (deg: number): object[] => [
-    { id: 'near', name: 'Near', seedNormal: [0, 0, 1], maxAngleDeg: deg, up: [0, 1, 0] },
-    { id: 'far', name: 'Far', seedNormal: [1, 0, 0], maxAngleDeg: deg, up: [0, 1, 0] },
-  ];
   const part = cylinderPart('cyl', 0, NU);
   const vertsOf = (): number[][] => part.verts;
   const bake = (on: boolean): ZoneSidecar =>
@@ -592,7 +588,7 @@ describe('claimWedge', () => {
     sidecar: ZoneSidecar,
   ): { medianMm: number | null; shared: number; counts: number[] } => {
     const [a, b] = sidecar.zones.map((z) => zoneSeamPoints(z, vertsOf));
-    return measureZoneSeam(a, b, WELD_TOL_MM);
+    return measureZoneSeam(a, b, sharedVertTolMm({}));
   };
 
   it('leaves the strip in no zone when the flag is off', () => {
