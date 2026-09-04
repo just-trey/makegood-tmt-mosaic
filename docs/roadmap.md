@@ -55,13 +55,26 @@ Open questions with no obvious answer, where the measurement behind the question
   the clip itself.
 - Wrap one design across the whole chair, rather than one zone at a time. The
   owner's stated end goal, and the thing the per-zone sheets are a stand-in for.
-  Two things are in the way. Each zone is its own LSCM unwrap with no shared
-  parameterisation, so a design crossing from `left` to `back` has no continuous
-  coordinate to follow; and an `ArtworkInstance` binds to one `zoneId`
-  ([src/state/artwork.ts](../src/state/artwork.ts)), which
-  [src/geometry/assembly.ts](../src/geometry/assembly.ts) matches one mapper at
-  a time. "All zones" today means the same design placed on each zone
-  independently, not one design spanning them. No approach chosen yet.
+  Mirror plus per-zone is the measured ceiling
+  ([spike, 2026-09-04](spikes/2026-09-04-cone-wrap.md)): a cone-singularity
+  unwrap (BFF v1.6) of the left+back+right band cleared no bar at any cone
+  count (0–16 cones: 2.4–44% of the chart covered twice, 5,000–31,000 folded
+  triangles), and the merged-LSCM fold it was meant to remove is in the
+  surface, not the seams (4.84% on the vertex-glued band, 3.58% once the seams
+  are sewn). "All zones" today means the same design placed on each zone
+  independently, not one design spanning them.
+  - The data-model blocker is not the blocker. A zone already spans six
+    printed parts, so a merged unwrap would be one bigger zone and
+    `ArtworkInstance` would not change. What stands in the way is that the bake
+    never builds a surface: the band it welds is held together at vertices
+    (2,075 four-way edges, 792 boundary loops), sewn edge-to-edge it has genus
+    6 (both flanks' skins overlap their neighbours' and close tubes), and a
+    Manifold union of the fattened parts is genus 0 but its triangulation
+    defeats BFF and the bake's LSCM alike. Any further attempt starts with a
+    remesh of the band, not a bake config.
+  - The prebuilt BFF is not a drop-in for the bake's LSCM either: on a single
+    storage flank it leaves 92 folded triangles and max stretch 106 where the
+    bake gives 1.11 and none.
   - Rejected (owner, 2026-09-01): per-part design canvases instead of the
     whole-chair zones. Zones spanning printed seams are the point — per-part
     canvases would make volunteers hand-align a design across four oddly
