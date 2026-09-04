@@ -83,6 +83,30 @@ Optional overrides default to the constants in `zonebake.mjs`: `weldTolMm`
 (`MIN_ISLAND_AREA_MM2`, `0.4`). **Leave them alone unless you have a
 measurement.**
 
+### claimWedge: the strip between two zones
+
+Optional, `"claimWedge": true`, off unless a config asks for it. After every
+zone has grown to its `maxAngleDeg`, an unclaimed connected component with
+**exactly two zones** on its boundary is the strip left between them, and each
+of its triangles goes to whichever of the two grow normals its own is nearer —
+grown from each zone's own edge of the strip, so nothing joins a zone it is not
+connected to. Reach for it when two zones have to **abut** rather than merely
+face each other, which is what lets one design be cut across the join.
+
+Read the log line it prints per strip. On the chair:
+
+```
+claimWedge: the strip between "left" and "back" went 2 tris (2mm²) to the first,
+  155 (551mm²) to the second, 2 (5mm²) reached by neither
+```
+
+The two-zone gate is what bounds it, and it is not caution: 288,037 of the
+chair's 332,784 welded triangles are in no zone, and 213,688 of those are one
+component with all eight zones around it. Raising `maxAngleDeg` instead does
+not work on the chair — every pair in {45,50,55} x {35,40,45} breaks a stretch
+bar, claims a triangle twice, or both
+([2026-09-04-seam-closing.md](../../../docs/findings/2026-09-04-seam-closing.md)).
+
 ### seamWeldTolMm is the one that changes everything
 
 Separately-printed parts are never coincident; they meet with real clearance. At

@@ -1660,10 +1660,10 @@ function buildEdgeTris(tris) {
 }
 
 /**
- * BFS from the seeded patch across shared edges, accepting triangles whose face normal stays
- * within maxAngleDeg of the config's seed direction. Returns global triangle indices, sorted.
+ * The seed triangles a zone grows from and the direction it grows against, which claimWedge needs
+ * too — a second derivation of "which way does this zone face" would be a second answer.
  */
-export function segmentZone(weld, zoneCfg, patches, edgeTris, triGeom) {
+export function zoneSeed(weld, zoneCfg, patches, triGeom) {
   let seedTris;
   let growNormal;
   if (zoneCfg.seedNormal) {
@@ -1697,6 +1697,15 @@ export function segmentZone(weld, zoneCfg, patches, edgeTris, triGeom) {
   } else {
     throw new Error(`zone "${zoneCfg.id}" needs a seedNormal or seedPoint`);
   }
+  return { seedTris, growNormal };
+}
+
+/**
+ * BFS from the seeded patch across shared edges, accepting triangles whose face normal stays
+ * within maxAngleDeg of the config's seed direction. Returns global triangle indices, sorted.
+ */
+export function segmentZone(weld, zoneCfg, patches, edgeTris, triGeom) {
+  const { seedTris, growNormal } = zoneSeed(weld, zoneCfg, patches, triGeom);
   const cosMax = Math.cos((zoneCfg.maxAngleDeg * Math.PI) / 180);
   const inZone = new Set();
   const queue = [];
@@ -1720,6 +1729,105 @@ export function segmentZone(weld, zoneCfg, patches, edgeTris, triGeom) {
     }
   }
   return [...inZone].sort((a, b) => a - b);
+}
+
+/**
+ * Hands the strip of surface left BETWEEN two zones to them, so their charts abut along it instead
+ * of stopping either side of a fillet. Mutates `zoneTris` in place and returns one report row per
+ * strip claimed.
+ *
+ * The strip is an unclaimed connected component with exactly two zones on its boundary, and every
+ * triangle in it goes to whichever of those two grow normals its own is nearer: a Voronoi split in
+ * normal space, which is the same measure the angle limits cut it out with in the first place.
+ *
+ * **The two-zone gate is the only thing bounding this, and it is not conservatism.** Most of a
+ * printed assembly is surface no zone wants — the chair leaves 288,037 of its 332,784 welded
+ * triangles unclaimed — and nearly all of it is ONE component with 8 zones around it (213,688
+ * triangles, 927,946mm², against 159 and 156 for the two corner strips). A rule that took every
+ * component touching a zone would put artwork over the whole hidden interior.
+ *
+ * Per-triangle adjacency does not work here and was measured before this: only 5 of the chair's
+ * unclaimed triangles touch two zones directly, and iterating that rule to fixpoint claims 8 in
+ * three passes and stops, because the strip is two triangles wide almost everywhere. Whole
+ * components need no iteration either — claiming one cannot change another's boundary, since two
+ * unclaimed components adjacent to each other would be one component.
+ */
+export function claimWedges(weld, zoneCfgs, zoneTris, edgeTris, triGeom, growNormals) {
+  const owner = new Int32Array(weld.tris.length).fill(-1);
+  zoneTris.forEach((tris, zi) => {
+    for (const ti of tris) if (owner[ti] < 0) owner[ti] = zi;
+  });
+  const nbrsOf = (ti) => {
+    const t = weld.tris[ti];
+    const out = [];
+    for (let k = 0; k < 3; k++)
+      for (const o of edgeTris.get(edgeKey(t.v[k], t.v[(k + 1) % 3]))) if (o !== ti) out.push(o);
+    return out;
+  };
+  const seen = new Uint8Array(weld.tris.length);
+  const report = [];
+  for (let start = 0; start < owner.length; start++) {
+    if (owner[start] >= 0 || seen[start] || !triGeom[start]) continue;
+    seen[start] = 1;
+    const comp = [];
+    const touches = new Set();
+    const queue = [start];
+    while (queue.length) {
+      const ti = queue.pop();
+      comp.push(ti);
+      for (const o of nbrsOf(ti)) {
+        if (!triGeom[o]) continue;
+        if (owner[o] >= 0) touches.add(owner[o]);
+        else if (!seen[o]) {
+          seen[o] = 1;
+          queue.push(o);
+        }
+      }
+    }
+    if (touches.size !== 2) continue;
+    const [a, b] = [...touches];
+    const inComp = new Set(comp);
+    const want = new Map(
+      comp.map((ti) => [
+        ti,
+        dot3(triGeom[ti].normal, growNormals[a]) >= dot3(triGeom[ti].normal, growNormals[b])
+          ? a
+          : b,
+      ]),
+    );
+    // Grown from each zone's own edge of the strip rather than assigned outright, so a triangle
+    // only joins a zone it is connected to. Assigning by normal alone left `left` a stray triangle
+    // marooned in the far half of the corner strip, and assertSingleIsland refused the bake
+    // (10,095 of 10,096 reachable). Whatever a front cannot reach stays unclaimed and is reported.
+    const counts = [0, 0];
+    const areas = [0, 0];
+    let front = comp.filter((ti) => nbrsOf(ti).some((o) => owner[o] === want.get(ti)));
+    while (front.length) {
+      const next = [];
+      for (const ti of front) {
+        if (owner[ti] >= 0) continue;
+        const zi = want.get(ti);
+        owner[ti] = zi;
+        zoneTris[zi].push(ti);
+        const k = zi === a ? 0 : 1;
+        counts[k]++;
+        areas[k] += triGeom[ti].area;
+        for (const o of nbrsOf(ti))
+          if (owner[o] < 0 && inComp.has(o) && want.get(o) === zi) next.push(o);
+      }
+      front = next;
+    }
+    const left = comp.filter((ti) => owner[ti] < 0);
+    report.push({
+      zones: [zoneCfgs[a].id, zoneCfgs[b].id],
+      tris: counts,
+      areaMm2: areas,
+      unreached: left.length,
+      unreachedMm2: left.reduce((t, ti) => t + triGeom[ti].area, 0),
+    });
+  }
+  for (const tris of zoneTris) tris.sort((x, y) => x - y);
+  return report;
 }
 
 function assertSingleIsland(zoneId, zoneTris, weld, edgeTris) {
@@ -2575,6 +2683,8 @@ function validateConfig(config) {
     throw new Error('seamWeldTolMm must be larger than weldTolMm to stitch anything');
   if (config.mirrorAxis !== undefined && !['x', 'y', 'z'].includes(config.mirrorAxis))
     throw new Error('mirrorAxis must be "x", "y" or "z" when present');
+  if (config.claimWedge !== undefined && config.claimWedge !== true)
+    throw new Error('claimWedge is opt-in: set it to true or leave it out');
   if (config.covers !== undefined) {
     const c = config.covers;
     if (typeof c.file !== 'string' || !c.file)
@@ -2733,8 +2843,21 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
   const minIslandArea = config.minIslandAreaMm2 ?? MIN_ISLAND_AREA_MM2;
   const zones = [];
   const templates = [];
-  for (const zoneCfg of config.zones) {
-    const zoneTris = segmentZone(weld, zoneCfg, patches, edgeTris, triGeom);
+  // Every zone is segmented before any is unwrapped, so claimWedge can see what the angle limits
+  // left between them.
+  const zoneTriSets = config.zones.map((z) => segmentZone(weld, z, patches, edgeTris, triGeom));
+  if (config.claimWedge) {
+    const grow = config.zones.map((z) => zoneSeed(weld, z, patches, triGeom).growNormal);
+    for (const w of claimWedges(weld, config.zones, zoneTriSets, edgeTris, triGeom, grow))
+      log(
+        `claimWedge: the strip between "${w.zones[0]}" and "${w.zones[1]}" went ` +
+          `${w.tris[0]} tris (${w.areaMm2[0].toFixed(0)}mm²) to the first, ` +
+          `${w.tris[1]} (${w.areaMm2[1].toFixed(0)}mm²) to the second, ` +
+          `${w.unreached} (${w.unreachedMm2.toFixed(0)}mm²) reached by neither`,
+      );
+  }
+  for (const [zi, zoneCfg] of config.zones.entries()) {
+    const zoneTris = zoneTriSets[zi];
     assertSingleIsland(zoneCfg.id, zoneTris, weld, edgeTris);
 
     const globalToZone = new Map();
