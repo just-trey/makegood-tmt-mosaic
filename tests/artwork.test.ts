@@ -20,6 +20,9 @@ import {
 } from '../src/state/artwork';
 import { state } from '../src/state/store';
 import { OVERLAP_WARN_FRACTION } from '../src/geometry/designOverlap';
+import { WHOLE_CHAIR_ZONE } from '../src/geometry/zones';
+import type { ConformalChart } from '../src/geometry/conformal';
+import type { ZoneNet } from '../src/geometry/zoneCharts';
 import type { AssemblyPart, ParsedSVG, ZoneMirror } from '../src/types';
 
 function fakeParsed(): ParsedSVG {
@@ -47,6 +50,7 @@ beforeEach(() => {
   state.baseColorMembers = [];
   state.keptApart = [];
   state.assembly.parts = [];
+  state.assembly.net = null;
   state.shapeKind = 'disc';
   state.assembly.kindId = null;
 });
@@ -654,6 +658,114 @@ describe('zoneCoverage', () => {
     setArtworkMirror(a.id, true);
 
     expect(zoneCoverage()).toEqual({ total: 1, covered: 1 });
+  });
+});
+
+/** A chart carrying only what `netZones()` reads off it: its zone-space UV bounds. */
+function chartWithBounds(b: {
+  minU: number;
+  minV: number;
+  maxU: number;
+  maxV: number;
+}): ConformalChart {
+  return {
+    positions3: new Float32Array(),
+    uv: new Float32Array(),
+    triangles: new Uint32Array(),
+    normalSign: 1,
+    boundary: [],
+    zoneBounds: b,
+  };
+}
+
+/** A zoned part whose zone carries a chart, so `netZones()` can resolve its UV bounds. */
+function netZonedPart(id: number, zoneId: string): AssemblyPart {
+  return {
+    ...zonedPart(id, zoneId, zoneId),
+    zones: [
+      {
+        id: zoneId,
+        name: zoneId,
+        chart: chartWithBounds({ minU: 0, minV: 0, maxU: 10, maxV: 10 }),
+      },
+    ],
+  };
+}
+
+/** A net placing exactly the given zones, at a neutral (unmoved) transform. */
+function netOf(zoneIds: string[]): ZoneNet {
+  return {
+    templateFile: 'net-template.svg',
+    bounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
+    zones: Object.fromEntries(
+      zoneIds.map((id) => [id, { rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true }]),
+    ),
+  };
+}
+
+describe('availableZones / zoneCoverage — Whole chair', () => {
+  it('is not offered with no net loaded', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left side')];
+    expect(availableZones().some((z) => z.zoneId === WHOLE_CHAIR_ZONE)).toBe(false);
+  });
+
+  it('lists Whole chair first, with the net’s template file, once its zones are loaded', () => {
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+    state.assembly.net = netOf(['left', 'back']);
+
+    const zones = availableZones();
+    expect(zones[0]).toEqual({
+      zoneId: WHOLE_CHAIR_ZONE,
+      name: 'Whole chair',
+      templateFile: 'net-template.svg',
+    });
+    expect(zones.map((z) => z.zoneId)).toEqual([WHOLE_CHAIR_ZONE, 'left', 'back']);
+  });
+
+  it('is not offered when the loaded parts carry none of the net’s zones', () => {
+    // A net can outlive the part it was baked for (a stale sidecar, or a part switch mid-load) —
+    // netZones() reads null rather than offer a binding that would cut nothing.
+    state.assembly.parts = [zonedPart(1, 'seat', 'Seat')];
+    state.assembly.net = netOf(['left', 'back']);
+    expect(availableZones().some((z) => z.zoneId === WHOLE_CHAIR_ZONE)).toBe(false);
+  });
+
+  it('binds an instance to the reserved id like any other zone', () => {
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+    state.assembly.net = netOf(['left', 'back']);
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+    expect(a.zone?.zoneId).toBe(WHOLE_CHAIR_ZONE);
+  });
+
+  it('counts every zone the net places as covered, not the reserved id itself', () => {
+    state.assembly.parts = [
+      netZonedPart(1, 'left'),
+      netZonedPart(2, 'back'),
+      netZonedPart(3, 'right'),
+    ];
+    state.assembly.net = netOf(['left', 'back', 'right']);
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+
+    expect(zoneCoverage()).toEqual({ total: 3, covered: 3 });
+  });
+
+  it('counts a detached net zone as covered too — the expansion cuts it either way', () => {
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'fender-left')];
+    state.assembly.net = {
+      templateFile: 'net-template.svg',
+      bounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
+      zones: {
+        left: { rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true },
+        'fender-left': { rotationDeg: 0, offsetU: 100, offsetV: 0, attached: false },
+      },
+    };
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+
+    expect(zoneCoverage()).toEqual({ total: 2, covered: 2 });
   });
 });
 

@@ -271,7 +271,10 @@ export function loadArtworkSource(
   };
   state.sources.push(source);
 
-  const zones = availableZones();
+  // Whole chair is excluded from the default pick for the same reason `zone: null` is called out
+  // above: it stamps the design onto every net zone at once, which is the "result nobody asked
+  // for" this default exists to avoid, not a fresh alternative to it.
+  const zones = availableZones().filter((z) => z.zoneId !== WHOLE_CHAIR_ZONE);
   const zoneId = zones.length > 1 ? zones[0].zoneId : null;
   const instance: ArtworkInstance = {
     id: `artwork-${nextArtworkId++}`,

@@ -24,6 +24,9 @@ import {
 import { WARNINGS, clearWarnings, notice } from '../src/warnings';
 import { track } from '../src/analytics/track';
 import { scheduleRebuild } from '../src/app/scheduler';
+import { WHOLE_CHAIR_ZONE } from '../src/geometry/zones';
+import type { ConformalChart } from '../src/geometry/conformal';
+import type { ZoneNet } from '../src/geometry/zoneCharts';
 import type { RasterImage } from '../src/raster/types';
 import type { AssemblyPart, ParsedSVG, ZoneMirror } from '../src/types';
 
@@ -156,6 +159,7 @@ beforeEach(() => {
   state.artworks = [];
   state.activeArtworkId = null;
   state.assembly.parts = [];
+  state.assembly.net = null;
   state.shapeKind = 'disc';
   clearWarnings();
 });
@@ -368,5 +372,122 @@ describe('Mirror control', () => {
 
     expect(state.artworks).toHaveLength(2);
     expect(state.artworks[1].zone?.zoneId).toBe('seat');
+  });
+});
+
+/** A chart carrying only what `netZones()` reads off it: its zone-space UV bounds. */
+function chartWithBounds(): ConformalChart {
+  return {
+    positions3: new Float32Array(),
+    uv: new Float32Array(),
+    triangles: new Uint32Array(),
+    normalSign: 1,
+    boundary: [],
+    zoneBounds: { minU: 0, minV: 0, maxU: 10, maxV: 10 },
+  };
+}
+
+/** A net-carrying zoned part, and the net that places its zone alongside one other. */
+function netFixture(): { parts: AssemblyPart[]; net: ZoneNet } {
+  const part = (id: number, zoneId: string): AssemblyPart => ({
+    ...zonedPart(id, zoneId, zoneId),
+    zones: [{ id: zoneId, name: zoneId, chart: chartWithBounds() }],
+  });
+  return {
+    parts: [part(1, 'left'), part(2, 'back')],
+    net: {
+      templateFile: 'net-template.svg',
+      bounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
+      zones: {
+        left: { rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true },
+        back: { rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true },
+      },
+    },
+  };
+}
+
+describe('Whole chair (net binding)', () => {
+  it('offers Whole chair in the dropdown only once a net is loaded', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left side')];
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    render();
+    expect(
+      Array.from(document.querySelectorAll<HTMLOptionElement>('.artwork-zone option')).map(
+        (o) => o.value,
+      ),
+    ).not.toContain(WHOLE_CHAIR_ZONE);
+
+    const { parts, net } = netFixture();
+    state.assembly.parts = parts;
+    state.assembly.net = net;
+    render();
+    const options = Array.from(
+      document.querySelectorAll<HTMLOptionElement>('.artwork-zone option'),
+    );
+    expect(options[1]).toMatchObject({ value: WHOLE_CHAIR_ZONE, textContent: 'Whole chair' });
+
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+    render();
+    expect(document.querySelector<HTMLSelectElement>('.artwork-zone')!.value).toBe(
+      WHOLE_CHAIR_ZONE,
+    );
+  });
+
+  it('badges a whole-chair binding, with no Mirror checkbox offered', () => {
+    const { parts, net } = netFixture();
+    state.assembly.parts = parts;
+    state.assembly.net = net;
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+    render();
+
+    expect(document.querySelector('.artwork-zone-badge')!.textContent).toBe('→ Whole chair');
+    expect(document.querySelector('.artwork-mirror-check')).toBeNull();
+  });
+
+  it('sends "whole", never the reserved id, to analytics on rebind', () => {
+    const { parts, net } = netFixture();
+    state.assembly.parts = parts;
+    state.assembly.net = net;
+    loadArtworkSource(fakeParsed(), 'a.svg');
+    render();
+
+    const zoneSel = document.querySelector<HTMLSelectElement>('.artwork-zone')!;
+    zoneSel.value = WHOLE_CHAIR_ZONE;
+    zoneSel.dispatchEvent(new Event('change'));
+
+    expect(track).toHaveBeenCalledWith('artwork_instance_zone_changed', { zone: 'whole' });
+  });
+
+  it('+zone treats a whole-chair source as covering every zone the net places', () => {
+    const { parts, net } = netFixture();
+    state.assembly.parts = parts;
+    state.assembly.net = net;
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+    render();
+
+    document
+      .querySelector<HTMLButtonElement>('.artwork-add-zone')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    // Both net zones ('left', 'back') are already covered by the whole-chair instance, so the
+    // new placement falls back to "all zones" rather than landing on one of them a second time.
+    expect(state.artworks).toHaveLength(2);
+    expect(state.artworks[1].zone).toBeNull();
+  });
+
+  it('+zone still skips the reserved id itself when adding directly from a zone-bound instance', () => {
+    const { parts, net } = netFixture();
+    state.assembly.parts = [...parts, zonedPart(3, 'seat', 'Seat')];
+    state.assembly.net = net;
+    loadArtworkSource(fakeParsed(), 'a.svg'); // binds to 'left' (first real zone)
+    render();
+
+    document
+      .querySelector<HTMLButtonElement>('.artwork-add-zone')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(state.artworks[1].zone?.zoneId).toBe('back');
   });
 });

@@ -1312,6 +1312,44 @@ zone the chair no longer has.
 **What to do.** Pick the zone you want from the design's dropdown, or leave it
 on All zones. Saving again writes the new name, so the notice does not come back.
 
+## Troubleshooting: "…" is set to cover the whole part, but this part has no whole-part layout"
+
+Full text: _""…" is set to cover the whole part, but this part has no
+whole-part layout. Pick a single zone for it from the list."_
+
+**What it means.** This design's row is bound to **Whole chair**, but the
+loaded part has no whole-chair sheet — either it isn't the chair, or its zone
+data predates that option. The binding survives switching parts and reloading
+the page, so it's easy to carry over from a session where it did apply.
+
+**What to do.** Pick a single zone from the row's dropdown. Switching back to
+the chair restores **Whole chair** as an option.
+
+## Troubleshooting: "The "…" zone isn't loaded, so "…" won't be cut there"
+
+Full text: _"The "…" zone isn't loaded, so "…" won't be cut there. Reload the
+page to try again."_
+
+**What it means.** A design bound to **Whole chair** cuts onto every sheet of
+the chair's whole-part layout. One of those sheets didn't load, so this
+design gets nothing there. Every sheet that did load still gets its cut.
+
+**What to do.** Reload the page. If it keeps happening, report it via
+**Feedback** or **Report a bug on GitHub**, naming the part.
+
+## Troubleshooting: "The "…" zone isn't on the whole-part sheet, so "…" won't reach it"
+
+Full text: _"The "…" zone isn't on the whole-part sheet, so "…" won't reach
+it. Add another design and target that zone."_
+
+**An informational notice, not a warning.** The loaded part carries a design
+zone that its whole-chair sheet doesn't place — a zone a future re-bake added
+without giving it a spot on the sheet. A design bound to **Whole chair**
+never reaches that zone.
+
+**What to do.** Add a separate design and target that zone directly from its
+own row's dropdown.
+
 ## Troubleshooting: "Exporting with artwork on … of … zones…" warnings
 
 Full text: _"Exporting with artwork on … of … zones. The other … zones will

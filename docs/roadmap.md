@@ -53,16 +53,32 @@ Open questions with no obvious answer, where the measurement behind the question
   than the whole zone bbox. Deferred out of the dead-zones change because it
   moves placement for every zone on every kind, a far wider blast radius than
   the clip itself.
-- Wrap one design across the whole chair, rather than one zone at a time. The
-  owner's stated end goal, and the thing the per-zone sheets are a stand-in for.
-  Mirror plus per-zone is the measured ceiling
-  ([spike, 2026-09-04](spikes/2026-09-04-cone-wrap.md)): a cone-singularity
-  unwrap (BFF v1.6) of the left+back+right band cleared no bar at any cone
-  count (0–16 cones: 2.4–44% of the chart covered twice, 5,000–31,000 folded
-  triangles), and the merged-LSCM fold it was meant to remove is in the
-  surface, not the seams (4.84% on the vertex-glued band, 3.58% once the seams
-  are sewn). "All zones" today means the same design placed on each zone
-  independently, not one design spanning them.
+- ~~Wrap one design across the whole chair, rather than one zone at a time.~~
+  **Shipped as the whole-chair net (CHANGELOG, "Whole chair").** The seamless
+  wrap itself is still closed no-go — the geometry below hasn't changed — but
+  the net is its practical ceiling: the chair's eight design zones laid out
+  on one unfolded sheet, each at the transform its bake measured. Two of
+  those seams (left/back, back/right) register within 2mm at the 95th
+  percentile (1.81mm / 1.58mm, `npx vite-node
+scripts/measure-zone-seams.mjs`), so a design bound to **Whole chair**
+  continues across them; every other pair of sheets (front, seat sides, wing
+  panels) sits beside its neighbour with a visible gap and doesn't connect.
+  Two attached sheets also overlap at their registered transform, so a mark
+  drawn there is cut in both places — open as a decision at ship time, see
+  `DECISIONS-NEEDED.md` (or its resolution, once settled).
+  - **Follow-up: Mirror on a net binding.** Not offered in the shipping PR —
+    the checkbox hides on a row bound to Whole chair. The net is symmetric
+    about the back's own centre line, so a mirror there would reflect the
+    whole sheet about that line rather than one zone about its own; nobody
+    has built or measured that transform yet.
+  - The seamless wrap (a single unwrapped surface, no seams at all) is the
+    owner's stated end goal, and the measured ceiling on it hasn't moved:
+    a cone-singularity unwrap (BFF v1.6) of the left+back+right band cleared
+    no bar at any cone count
+    ([spike, 2026-09-04](spikes/2026-09-04-cone-wrap.md); 0–16 cones:
+    2.4–44% of the chart covered twice, 5,000–31,000 folded triangles), and
+    the merged-LSCM fold it was meant to remove is in the surface, not the
+    seams (4.84% on the vertex-glued band, 3.58% once the seams are sewn).
   - The data-model blocker is not the blocker. A zone already spans six
     printed parts, so a merged unwrap would be one bigger zone and
     `ArtworkInstance` would not change. What stands in the way is that the bake

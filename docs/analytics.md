@@ -58,7 +58,9 @@ Fired when the user retargets an artwork instance's zone binding from its row
 dropdown.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-zone` change handler in `renderArtworkList`.
-- **Props:** `{ zone: string }` (the zone id, or `'all'` for the unbound/"every zone" option)
+- **Props:** `{ zone: string }` (the zone id, `'all'` for the unbound/"every
+  zone" option, or `'whole'` for "Whole chair" — the reserved zone id itself
+  is never sent)
 - **Dormant:** no offered kind ships design zones, so the dropdown never renders.
 
 ### `artwork_mirror_toggled`

@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A design can now cover the whole chair at once, instead of one zone at a
+  time.** "Whole chair" in an artwork row's zone dropdown places that design
+  across every sheet of the chair's unfolded layout in one go, cut from a
+  single new design template (Part panel, next to the per-zone ones). Where
+  two sheets meet at a registered seam — left/back and back/right, each
+  within 2mm at the 95th percentile (`npx vite-node
+scripts/measure-zone-seams.mjs`) — a mark drawn across the join continues on
+  the far side. The other sheets sit beside their neighbour with a visible
+  gap and don't connect. Two of the sheets overlap by design; a mark drawn
+  there is cut in both places, warned about at bake time and hatched on the
+  template. Mirror isn't offered on a whole-chair-bound design yet.
 - **A design can mirror onto its zone's twin, or across its own centre.** A
   Mirror checkbox on an artwork row bound to a zone that offers one cuts the
   same design on the twin zone, reflected — the two sides line up within

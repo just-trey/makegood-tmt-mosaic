@@ -207,6 +207,14 @@ rounded edge the way real vinyl would
   exported under that part's object.
 - Target a zone from the Artwork list's per-row dropdown, or by clicking the
   surface in the 3D view.
+- **Whole chair** (a reserved zone id, `WHOLE_CHAIR_ZONE` in
+  [zones.ts](../src/geometry/zones.ts)) binds one design to the kind's whole
+  unfolded layout instead of one zone. `rebuild.ts` expands it into one
+  ordinary build input per zone the layout places
+  (`netToZoneBuildInput`), each moved by that zone's baked net transform —
+  geometry never sees a whole-part binding, only the same per-zone artworks
+  it already handles. Clicking a zone directly in the 3D view rebinds away
+  from Whole chair to that one zone (`zonePick.ts`).
 - A zone pair mirrored across the config's `mirrorAxis` (or a zone seeded on
   that plane, mirrored across its own centre) bakes a `mirror` relation and a
   measured residual into the sidecar. Ticking Mirror on a bound artwork row
@@ -216,19 +224,15 @@ rounded edge the way real vinyl would
   that crops content. The residual re-derives from
   [scripts/measure-zone-mirror.mjs](../scripts/measure-zone-mirror.mjs).
 
-**Artwork can't cross between zones, and the split is load-bearing.**
+**A single zone is a chart, not a surface that flows into its neighbours.**
 A zone's spread of surface directions must stay tight enough that flattening
 doesn't fold the surface onto itself, which `flipped == 0` does not check:
 merging left/back/right into one chart makes it fold onto itself over 4.85% of
 its area. Widening one zone is capped by stretch first, which doubles for 5°
-more on the chair's flanks. Don't assume the boundary between two zones is a
-curve you could register across: on the chair, `left` and `back` share only
-22mm of it in a shared-vertex sense, and zero on the storage boxes, where an
-89.6° corner opens a wedge of surface orientation neither zone's angle limit
-accepts.
+more on the chair's flanks. A design bound to one zone stops at its boundary.
 
-Three ways to remove the split were prototyped against the shipped bake and
-measured dead ends, so nobody re-derives them:
+Three ways to merge the charts into one continuous surface were prototyped
+against the shipped bake and measured dead ends, so nobody re-derives them:
 
 - **A cylindrical band** (unwrap left→back→right around the chair like a
   bottle label) loses too much: only 69.6% of today's surface fits inside
@@ -238,15 +242,30 @@ measured dead ends, so nobody re-derives them:
   triangles, max stretch 1.54) but fails on UV injectivity instead: 4.85% of
   the chart area is covered by more than one triangle, so a cutter can land on
   the wrong sheet of surface — worse than the seam it removes.
-- **Cross-chart registration** (keep three charts, give each a rigid offset
+- **Cross-chart registration** (keep separate charts, give each a rigid offset
   into a shared UV coordinate) has a real transform (−0.1° rotation, scale
-  1.0074, 1.26mm rms from `left` to `back`) but fails on geometry, not maths:
-  `left`/`back` share only 10 vertices, on a ~22mm stretch of one handle
-  fillet, and zero on the storage boxes.
+  1.0074, 1.26mm rms from `left` to `back`) but failed on geometry, not maths,
+  at the time: `left`/`back` shared only 10 vertices, on a ~22mm stretch of
+  one handle fillet, and zero on the storage boxes, where an 89.6° corner
+  opened a wedge of surface orientation neither zone's angle limit claimed.
 
-What's left is a different parameterization family (cone-singularity methods
-like BFF/OptCuts, rather than plain LSCM) — a substantially bigger change than
-any of the three above, and nothing today needs it.
+What's left of the surface-merging goal is a different parameterization
+family (cone-singularity methods like BFF/OptCuts, rather than plain LSCM) —
+a substantially bigger change than any of the three above. A prebuilt BFF
+was spiked against it and closed no-go
+([docs/spikes/2026-09-04-cone-wrap.md](spikes/2026-09-04-cone-wrap.md)); the
+whole-chair net (**Whole chair**, above) is the shipped stand-in.
+
+**Cross-chart registration was later closed for two of those boundaries.**
+`claimWedge` (a zone-config option) hands an unclaimed wedge of surface to
+whichever neighbouring zone's seed normal is nearer, so `left`/`back` and
+`back`/`right` abut with 0mm gap instead of the ~8mm strip claimWedge's
+predecessor left in no zone at all
+([docs/findings/2026-09-04-seam-closing.md](findings/2026-09-04-seam-closing.md)).
+The whole-chair net (above, "Whole chair") uses exactly the registration this
+unlocked: a design bound to it continues across those two boundaries, within
+2mm at the 95th percentile, and sits with a visible gap at every boundary the
+wedge didn't close.
 
 **Hardware variants** (the chair's Standard/Kit caster mounts) show a version
 picker above the part list. Switching reloads only the parts that differ.
