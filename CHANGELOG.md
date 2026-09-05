@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The Back sheet now reaches around the storage-box corners, and meets the
+  side sheets there.** A strip of each corner belonged to no sheet at all, so
+  the Back and the side stopped 8mm short of each other.
+  `scripts/measure-zone-seams.mjs` read that 8mm gap on the previous sidecar
+  (69afabf) and reads 0 on this one. The Back is 34.5mm wider for it, and over
+  the 122mm the corner runs a mark drawn to the edge of one sheet continues on
+  the other within 1.8mm, 95th percentile. A saved design on the Back barely
+  moves: the sheet grew by the same amount on both corners, so its centre
+  stayed within a quarter of a millimetre of the chair's centre line, and did
+  not move up or down at all.
+
 ### Added
 
 - **A design can mirror onto its zone's twin, or across its own centre.** A

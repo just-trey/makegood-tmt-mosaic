@@ -22,8 +22,10 @@ import type { PolyFeature } from '../src/types';
 import {
   measureZoneMirror,
   MIN_ISLAND_AREA_MM2,
+  nearestPoints,
   read3MFIndexed,
   SIMPLIFY_TOL_MM,
+  WELD_TOL_MM,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 
@@ -37,6 +39,12 @@ const stlPath = (id: string): string => resolve(REPO, 'public/stl', `${id}.3mf`)
 
 const sidecar: ZoneSidecar = JSON.parse(
   readFileSync(resolve(REPO, 'public/stl/chair-body-zones.json'), 'utf8'),
+);
+
+// The config the sidecar was baked with: seam checks judge welds at ITS tolerances, so retuning
+// the config and rebaking cannot leave this file silently judging at a stale constant.
+const zoneConfig: { seamWeldTolMm?: number; weldTolMm?: number } = JSON.parse(
+  readFileSync(resolve(REPO, 'scripts/zone-configs/chair-body.json'), 'utf8'),
 );
 
 // packed vertices (file order) + triangle count per charted part, straight from the packed 3MF;
@@ -177,6 +185,21 @@ describe('chart reconstruction', () => {
   // is the half that actually corrupts output — where two parts both claim a patch of UV, the same
   // artwork is cut into both, so the design appears twice at the seam on the printed chair.
   it('gives no two parts of a zone an overlapping claim on the same UV', () => {
+    const overlaps: {
+      where: string;
+      overlap: number;
+      zone: string;
+      a: string;
+      b: string;
+      box: number[];
+    }[] = [];
+    const growBox = (box: number[], coords: unknown): number[] => {
+      if (Array.isArray(coords) && typeof coords[0] === 'number') {
+        const [x, y] = coords as number[];
+        return [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)];
+      }
+      return Array.isArray(coords) ? coords.reduce((b, c) => growBox(b, c), box) : box;
+    };
     for (const z of sidecar.zones) {
       // bbox computed off the outer ring rather than turf.bbox — src/turf.d.ts declares only the
       // handful of turf entry points the app actually uses, and bbox isn't one of them.
@@ -202,23 +225,75 @@ describe('chart reconstruction', () => {
       for (let i = 0; i < claims.length; i++)
         for (let j = i + 1; j < claims.length; j++) {
           let overlap = 0;
+          let box = [Infinity, Infinity, -Infinity, -Infinity];
           for (const a of claims[i].regions)
             for (const b of claims[j].regions) {
               if (a.box[0] > b.box[2] || b.box[0] > a.box[2]) continue;
               if (a.box[1] > b.box[3] || b.box[1] > a.box[3]) continue;
               const hit = turf.intersect(a.poly, b.poly);
-              if (hit) overlap += Math.abs(planarArea(hit as PolyFeature));
+              if (hit) {
+                overlap += Math.abs(planarArea(hit as PolyFeature));
+                box = growBox(box, hit.geometry.coordinates);
+              }
             }
           // Not zero: two parts that share a seam have their common boundary traced separately from
-          // each side, and 0.2mm of loop simplification lets the two traces cross. Measured on the
-          // shipped bake, every one of the 23 overlapping pairs shares a seam and the worst is
-          // 29.85mm² (wing-right/wheel-mount-right) on a 124,500mm² zone — 0.024%, a 0.15mm ribbon.
-          // A part whose region genuinely crept across a seam onto its neighbour's patch would
-          // scale as creep × seam length: even 1mm over a 200mm seam is 0.16%, caught here.
+          // each side, and 0.2mm of loop simplification lets the two traces cross. A part whose
+          // region genuinely crept across a seam onto its neighbour's patch would scale as
+          // creep × seam length: even 1mm over a 200mm seam is 0.16%, caught here.
           expect(overlap / zoneArea, `${z.id}: ${claims[i].id} vs ${claims[j].id}`).toBeLessThan(
             0.0005,
           );
+          if (overlap > 0)
+            overlaps.push({
+              where: `${z.id}: ${claims[i].id}/${claims[j].id}`,
+              overlap,
+              zone: z.id,
+              a: claims[i].id,
+              b: claims[j].id,
+              box,
+            });
         }
+    }
+
+    // The figures docs/tech-debt.md and this file's own comments cite, computed rather than
+    // remembered. 20 pairs, and the worst is 29.85mm² on `right`, whose per-part regions sum to
+    // 124,747mm² — 0.024%, a 0.15mm ribbon along a shared seam.
+    expect(overlaps.length).toBe(20);
+    const worst = overlaps.reduce((w, o) => (o.overlap > w.overlap ? o : w));
+    expect(worst.where).toBe('right: chair-wing-right/chair-wheel-mount-right');
+    expect(worst.overlap).toBeGreaterThan(29.8);
+    expect(worst.overlap).toBeLessThan(29.9);
+
+    // "all seam-sharing" is the load-bearing half of the claim: an overlap between two parts that
+    // do NOT meet on the printed chair is a claim that crept, not a traced boundary. Two parts
+    // share a seam when the bake welded them — a vertex of one within the config's seamWeldTolMm
+    // of a vertex of the other — and only chart vertices AT the overlap (within CHART_SNAP_MM of
+    // its UV box) may vouch: almost every adjacent part pair touches somewhere, so a whole-part
+    // search would bless a patch that crept far from any seam.
+    const seamTol = zoneConfig.seamWeldTolMm ?? zoneConfig.weldTolMm ?? WELD_TOL_MM;
+    for (const o of overlaps) {
+      const z = sidecar.zones.find((zz) => zz.id === o.zone)!;
+      const atOverlap = (partId: string): number[][] => {
+        const c = z.charts.find((cc) => cc.libraryPartId === partId)!;
+        const verts = partMesh.get(partId)!.verts;
+        const out: number[][] = [];
+        for (let i = 0; i < c.verts.length; i++) {
+          const u = c.uv[2 * i];
+          const v = c.uv[2 * i + 1];
+          if (
+            u >= o.box[0] - CHART_SNAP_MM &&
+            u <= o.box[2] + CHART_SNAP_MM &&
+            v >= o.box[1] - CHART_SNAP_MM &&
+            v <= o.box[3] + CHART_SNAP_MM
+          )
+            out.push(verts[c.verts[i]]);
+        }
+        return out;
+      };
+      const touching = nearestPoints(atOverlap(o.a), atOverlap(o.b), seamTol).filter(
+        (n: { d: number }) => n.d <= seamTol,
+      ).length;
+      expect(touching, `${o.where} overlap without a shared seam`).toBeGreaterThan(0);
     }
   });
 
@@ -459,11 +534,18 @@ describe('mirror relations', () => {
       expect(z.mirror!.residualMm.p95, z.id).toBeLessThan(CHART_SNAP_MM);
   });
 
-  // Headroom over the measured bake, not targets. Measured (bake log, 2026-09-03): left 0.178 /
-  // right 0.190 rms over 5,146 / 5,521 pairs; seat-left 0.033 / seat-right 0.038; both fenders
-  // 0.024; back 0.150 over 7,248; front 0.815 over 3,708, where 63 vertices on the storage-box
-  // corner at the zone's bottom edge sit up to 7.51mm off and carry the rms (p95 is 0.647). A rise
-  // past these means the twins' charts unwrapped differently, not that a mirrored design moved.
+  // Headroom over the measured bake, not targets. Re-derive with
+  // `npx vite-node scripts/measure-zone-mirror.mjs`, which prints the same figures the sidecar
+  // holds: left 0.178 / right 0.189 rms over 5,146 / 5,521 pairs; seat-left 0.033 / seat-right
+  // 0.038; both fenders 0.024; back 0.504 over 7,428; front 0.815 over 3,708. A rise past these
+  // means the twins' charts unwrapped differently, not that a mirrored design moved.
+  //
+  // Two bounds are loose because a zone's own geometry is not symmetric, not because the mirror is
+  // weak. `back` absorbs the two storage-box corner strips claimWedge hands it, and they are 155
+  // triangles on the left against 156 on the right — the boxes are tessellated differently — so
+  // 0.7 covers a measured 0.504 whose p95 (0.761) is a quarter of CHART_SNAP_MM. `front` absorbs
+  // 63 vertices on the same corner sitting up to 7.51mm off, which carry an rms of 0.815 over a
+  // p95 of 0.647.
   it.each([
     ['left', 0.25],
     ['right', 0.25],
@@ -471,7 +553,7 @@ describe('mirror relations', () => {
     ['seat-right', 0.05],
     ['wing-left', 0.05],
     ['wing-right', 0.05],
-    ['back', 0.2],
+    ['back', 0.7],
     ['front', 1.0],
   ])('%s reflects onto its mirror within %s mm rms', (id, bound) => {
     expect(zone(id).mirror!.residualMm.rms).toBeLessThan(bound);
@@ -603,6 +685,23 @@ describe('baked claims stay inside the snap tolerance', () => {
     return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
   };
 
+  /**
+   * The three charts whose claim reaches furthest off their own triangulation, pinned ~5% above
+   * their measured depths (the mirror bounds above carry their own looser headroom, 23-40%).
+   * Everything else is held to 1mm, which is what
+   * src/geometry/conformal.ts means by "the rest under 1mm" — and these 26 cases are the
+   * measurement it cites, one per shipped chart.
+   */
+  const DEEPEST = new Map([
+    ['right/chair-wing-right', 2.26],
+    ['back/chair-seat-back-top', 2.21],
+    ['left/chair-storage-left', 2.21],
+  ]);
+
+  it('runs one case per shipped chart, which is the count conformal.ts names', () => {
+    expect(sidecar.zones.reduce((n, z) => n + z.charts.length, 0)).toBe(26);
+  });
+
   /** Spatial index cell, and the radius past which a gap is too big to be a bake artifact anyway. */
   const BUCKET_MM = 6;
   /** Coarse scan step; anything above it becomes a hill-climb seed. */
@@ -721,10 +820,13 @@ describe('baked claims stay inside the snap tolerance', () => {
           if (bd > worst) worst = bd;
         }
       }
-      // Worst on the shipped bake is 2.150mm (right/chair-wing-right), then 2.104 and 2.102; every
-      // other chart is under 1mm. A failure here means the bake changed, not that the scan got
-      // unlucky — the hill-climb above is what makes that distinction trustworthy.
+      // The invariant, then the headroom over the measured bake that conformal.ts cites: three
+      // charts sit above 2mm (2.150 right/chair-wing-right, 2.104 back/chair-seat-back-top, 2.101
+      // left/chair-storage-left) and every other one is under 1mm, the next being 0.991. A failure
+      // means the bake changed, not that the scan got unlucky — the hill-climb above is what makes
+      // that distinction trustworthy.
       expect(worst, `${who} worst uncovered depth`).toBeLessThan(CHART_SNAP_MM);
+      expect(worst, `${who} against its measured depth`).toBeLessThan(DEEPEST.get(who) ?? 1.0);
     },
     60000,
   );

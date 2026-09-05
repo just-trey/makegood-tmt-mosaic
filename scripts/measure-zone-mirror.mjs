@@ -22,8 +22,9 @@ import {
   MIRROR_VERT_PAIR_MM,
   measureZoneMirror,
   pairMirrorZones,
-  read3MFIndexed,
+  procrustesFit,
 } from './lib/zonebake.mjs';
+import { configPartVerts } from './lib/zoneparts.mjs';
 import { CHART_SNAP_MM } from '../src/geometry/conformal.ts';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,57 +48,7 @@ const sidecar = JSON.parse(
   fs.readFileSync(path.resolve(REPO, 'public/stl', `${config.kindId}-zones.json`), 'utf8'),
 );
 
-const partVerts = new Map();
-for (const p of config.parts) {
-  const mesh = await read3MFIndexed(fs.readFileSync(path.resolve(REPO, p.file)));
-  partVerts.set(p.libraryPartId, mesh.verts);
-}
-const vertsOf = (id) => {
-  const v = partVerts.get(id);
-  if (!v) throw new Error(`sidecar chart names part "${id}", which the config does not list`);
-  return v;
-};
-
-/**
- * Best similarity q ≈ s·R(θ)·(p − p̄) + q̄ over the pairs, and the rms left after it. Closed
- * form: θ from the cross/dot sums of the centred pairs, s from their ratio of norms.
- */
-function similarityFit(pairs) {
-  const n = pairs.length;
-  const pc = [0, 0];
-  const qc = [0, 0];
-  for (const { want, got } of pairs) {
-    pc[0] += want[0] / n;
-    pc[1] += want[1] / n;
-    qc[0] += got[0] / n;
-    qc[1] += got[1] / n;
-  }
-  let dot = 0;
-  let cross = 0;
-  let pp = 0;
-  for (const { want, got } of pairs) {
-    const px = want[0] - pc[0];
-    const py = want[1] - pc[1];
-    const qx = got[0] - qc[0];
-    const qy = got[1] - qc[1];
-    dot += px * qx + py * qy;
-    cross += px * qy - py * qx;
-    pp += px * px + py * py;
-  }
-  const theta = Math.atan2(cross, dot);
-  const s = Math.hypot(dot, cross) / pp;
-  const c = Math.cos(theta);
-  const sn = Math.sin(theta);
-  let sq = 0;
-  for (const { want, got } of pairs) {
-    const px = want[0] - pc[0];
-    const py = want[1] - pc[1];
-    const fx = s * (c * px - sn * py) + qc[0];
-    const fy = s * (sn * px + c * py) + qc[1];
-    sq += (got[0] - fx) ** 2 + (got[1] - fy) ** 2;
-  }
-  return { thetaDeg: (theta * 180) / Math.PI, scale: s, rms: Math.sqrt(sq / n) };
-}
+const vertsOf = await configPartVerts(config, REPO);
 
 const { mirror, warnings } = pairMirrorZones(config.zones, axis);
 for (const w of warnings) console.warn(`  ! ${w}`);
@@ -107,7 +58,7 @@ for (const zone of sidecar.zones) {
   if (!rel) continue;
   const other = rel.self ? zone : sidecar.zones.find((z) => z.id === rel.twin);
   const m = measureZoneMirror(zone, other, axis, vertsOf, cap);
-  const fit = m.pairs ? similarityFit(m.pairList) : null;
+  const fit = procrustesFit(m.pairList);
   const baked = zone.mirror?.residualMm;
   rows.push({
     pair: `${zone.id} -> ${rel.self ? zone.id + ' (self)' : rel.twin}`,
@@ -121,7 +72,8 @@ for (const zone of sidecar.zones) {
         `${Math.abs(zone.uvBounds.maxV - other.uvBounds.maxV).toFixed(3)}`,
     'best fit (deg, scale, rms)': fit
       ? `${fit.thetaDeg.toFixed(3)}, x${fit.scale.toFixed(5)}, ${fit.rms.toFixed(3)}`
-      : 'no pairs',
+      : // under 3 pairs a similarity passes through them all and scores a fake 0
+        `n < 3 (${m.pairs})`,
     sidecar: baked
       ? `${baked.pairs}/${baked.rms}/${baked.p95}/${baked.max}` +
         (baked.pairs === m.pairs && Math.abs(baked.rms - m.rms) < 0.0006 ? '' : ' MISMATCH')

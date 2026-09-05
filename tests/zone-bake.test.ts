@@ -9,12 +9,16 @@ import {
   asymmetricPart,
   regionNetArea,
   buildCoverSolids,
+  measureZoneSeam,
+  sharedVertTolMm,
+  zoneSeamPoints,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
 import { ConformalZoneMapper, type ConformalChart } from '../src/geometry/conformal';
 import { getManifold, type ManifoldAPI } from '../src/geometry/manifold';
 import type { DesignPlacement } from '../src/geometry/zones';
+import type { ZoneSidecar } from '../src/geometry/zoneCharts';
 
 // Same analytic quarter-cylinder the conformal mapper tests use (radius R about the Y axis,
 // θ ∈ [0, 90°], height H), but as an indexed mesh the bake has to unwrap itself. A polyhedral
@@ -501,6 +505,15 @@ describe('cube face zone', () => {
   });
 });
 
+// The quarter cylinder's normal sweeps 0..90 degrees, so two zones seeded at its ends claim
+// everything within maxAngleDeg of each end. At 40 they meet nowhere; at 60 they overlap over
+// 30 degrees of arc, and the same artwork would be cut into both charts at the join. Nothing
+// used to notice, and claimWedges' first-wins ownership would go on to hide it.
+const endZones = (deg: number): object[] => [
+  { id: 'near', name: 'Near', seedNormal: [0, 0, 1], maxAngleDeg: deg, up: [0, 1, 0] },
+  { id: 'far', name: 'Far', seedNormal: [1, 0, 0], maxAngleDeg: deg, up: [0, 1, 0] },
+];
+
 describe('bad inputs fail loudly', () => {
   it('refuses a closed surface (nothing to pin, no boundary)', () => {
     const part = cubePart('cube');
@@ -525,6 +538,212 @@ describe('bad inputs fail loudly', () => {
     const part = platePart('plate', 4, () => false);
     const zone = { id: 'z', name: 'Z', seedNormal: [0, 0, 1], maxAngleDeg: 30, up: [0, 1, 0] };
     expect(() => bakeZones(config([part], [zone, { ...zone }]), [part])).toThrow(/duplicate/);
+  });
+
+  it('refuses two zones that grew onto the same triangles', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    expect(() => bakeZones(config([part], endZones(60)), [part])).toThrow(
+      /"near" and "far" share \d+\. Lower one of their maxAngleDeg/,
+    );
+  });
+
+  it('bakes the same two zones once their limits no longer overlap', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    const sidecar = bakeZones(config([part], endZones(40)), [part]).sidecar as ZoneSidecar;
+    expect(sidecar.zones.map((z) => z.id)).toEqual(['near', 'far']);
+    const claimed = sidecar.zones.flatMap((z) =>
+      z.charts.flatMap((c) => c.tris.map((t) => `${c.libraryPartId}:${t}`)),
+    );
+    expect(new Set(claimed).size).toBe(claimed.length);
+  });
+
+  it('refuses a top-level config key nothing reads, so a typo is not a silent no-op', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    expect(() => bakeZones(config([part], [WRAP_ZONE], { claimWedges: true }), [part])).toThrow(
+      /key\(s\) nothing reads: claimWedges/,
+    );
+    expect(() => bakeZones(config([part], [WRAP_ZONE], { _note: ['why'] }), [part])).not.toThrow();
+  });
+
+  it('refuses a zone key nothing reads', () => {
+    const part = cylinderPart('cyl', 0, NU);
+    const zone = { ...WRAP_ZONE, maxAngleDegrees: 50 };
+    expect(() => bakeZones(config([part], [zone]), [part])).toThrow(
+      /zone "wrap" has key\(s\) nothing reads: maxAngleDegrees/,
+    );
+  });
+});
+
+// The rule itself, not its guards. The quarter cylinder's normal sweeps 0..90 degrees in 24
+// facets of 3.75, so two zones seeded at its ends at 40 leave facets 11 (43.125 degrees) and 12
+// (46.875) in neither: a two-facet strip with a zone on each side, which is the chair's storage-box
+// corner in miniature. The split is by normal, so 11 goes to `near` and 12 to `far`.
+describe('claimWedge', () => {
+  const part = cylinderPart('cyl', 0, NU);
+  const vertsOf = (): number[][] => part.verts;
+  const bake = (on: boolean): ZoneSidecar =>
+    bakeZones(config([part], endZones(40), on ? { claimWedge: true } : {}), [part])
+      .sidecar as ZoneSidecar;
+  const seam = (
+    sidecar: ZoneSidecar,
+  ): { medianMm: number | null; shared: number; counts: number[] } => {
+    const [a, b] = sidecar.zones.map((z) => zoneSeamPoints(z, vertsOf));
+    return measureZoneSeam(a, b, sharedVertTolMm({}));
+  };
+
+  it('leaves the strip in no zone when the flag is off', () => {
+    const off = seam(bake(false));
+    // The charts stop two facets apart, so they hold no vertex in common and none of `near`'s
+    // boundary is within 2mm of `far`. Both are 0 only while the rule is off: this is the control
+    // that says the assertions below are the rule's doing.
+    expect(off.shared).toBe(0);
+    expect(off.counts[0]).toBe(0);
+  });
+
+  it('hands the strip out so the two zones abut', () => {
+    const on = seam(bake(true));
+    // The split runs down one column of the mesh, so the zones share exactly its NV + 1 vertices,
+    // and the median gap over everything within 20mm halves (4.90 -> 2.94mm) — the rest of that
+    // window is each chart's top and bottom rim, which the two zones do not share and never did.
+    expect(on.shared).toBe(NV + 1);
+    expect(on.counts[0]).toBeGreaterThan(0);
+    expect(on.medianMm!).toBeLessThan(seam(bake(false)).medianMm!);
+  });
+
+  it('splits the strip on the normal and claims every triangle once', () => {
+    const before = bake(false);
+    const after = bake(true);
+    const tris = (s: ZoneSidecar, id: string): number[] =>
+      s.zones.find((z) => z.id === id)!.charts.flatMap((c) => c.tris);
+    // one facet each: 15 quads of 2 triangles
+    expect(tris(after, 'near').length - tris(before, 'near').length).toBe(30);
+    expect(tris(after, 'far').length - tris(before, 'far').length).toBe(30);
+    const all = after.zones.flatMap((z) => z.charts.flatMap((c) => c.tris));
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('reports the strip and the census it was chosen from', () => {
+    const lines: string[] = [];
+    bakeZones(config([part], endZones(40), { claimWedge: true }), [part], (m: string) =>
+      lines.push(m),
+    );
+    const said = lines.filter((l) => l.startsWith('claimWedge:'));
+    expect(said[0]).toMatch(
+      new RegExp(`of ${part.tris.length} welded triangles \\d+ are in a zone`),
+    );
+    // the strip is the only unclaimed component, and it touches exactly the two zones
+    expect(said[1]).toMatch(/0: 0 comp \/ 0 tris, 1: 0 comp \/ 0 tris, 2: 1 comp \/ 60 tris/);
+    expect(said[2]).toBe(
+      'claimWedge: the strip between "near" and "far" went 30 tris (118mm²) to the first, ' +
+        '30 (118mm²) to the second, 0 (0mm²) reached by neither',
+    );
+    expect(said[3]).toBe(
+      'claimWedge: after the rule, 60 triangle(s) went to a zone and 0 are ' + 'still in none',
+    );
+  });
+
+  // The growth half of the rule, on a fixture that DISAGREES with outright assignment (the
+  // cylinder above cannot: its normals are monotonic, so growth and assignment always agree).
+  // Five wall segments whose normals zigzag 0/35/25/40/60 degrees: the strip's wants come out
+  // [b, a, b], zone a's front starts empty (its side of the strip wants b), and b can only reach
+  // the segment its own edge touches — the far b-want segment hides behind the a-want one.
+  it('claims only what a zone front can reach, and warns about the rest', () => {
+    const thetas = [0, 35, 25, 40, 60].map((d) => (d * Math.PI) / 180);
+    const verts: number[][] = [
+      [0, 0, 0],
+      [0, 8, 0],
+    ];
+    let x = 0;
+    let z = 0;
+    for (const t of thetas) {
+      x += 10 * Math.cos(t);
+      z -= 10 * Math.sin(t);
+      verts.push([x, 0, z], [x, 8, z]);
+    }
+    const tris: number[][] = [];
+    for (let i = 0; i < 5; i++)
+      tris.push([2 * i, 2 * (i + 1), 2 * (i + 1) + 1], [2 * i, 2 * (i + 1) + 1, 2 * i + 1]);
+    const zig: Part = { libraryPartId: 'zig', verts, tris };
+    const mid = (i: number): number[] => [
+      (verts[2 * i][0] + verts[2 * (i + 1)][0]) / 2,
+      4,
+      (verts[2 * i][2] + verts[2 * (i + 1)][2]) / 2,
+    ];
+    const zones = [
+      { id: 'a', name: 'A', seedPoint: mid(0), maxAngleDeg: 15, up: [0, 1, 0] },
+      { id: 'b', name: 'B', seedPoint: mid(4), maxAngleDeg: 15, up: [0, 1, 0] },
+    ];
+    const baked = bakeZones(config([zig], zones, { claimWedge: true }), [zig]);
+    const s = baked.sidecar as ZoneSidecar;
+    const claimed = new Map(
+      s.zones.map((zn) => [zn.id, zn.charts[0].tris.slice().sort((p, q) => p - q)]),
+    );
+    expect(claimed.get('a')).toEqual([0, 1]);
+    expect(claimed.get('b')).toEqual([6, 7, 8, 9]);
+    expect(
+      baked.warnings.some((w: string) =>
+        /claimWedge left 4 triangle\(s\).*"a" and "b".*neither zone's growth/.test(w),
+      ),
+    ).toBe(true);
+  });
+
+  // The other refusal: a patch bordered by three zones is left alone and surfaced. Three arms
+  // folded 40 degrees off one flat square; each zone claims its arm, the square is within no
+  // zone's limit and touches all three.
+  it('leaves a patch touching three zones alone, and says so', () => {
+    const w = 10 * Math.cos((40 * Math.PI) / 180);
+    const h = 10 * Math.sin((40 * Math.PI) / 180);
+    const verts = [
+      [0, 0, 0],
+      [10, 0, 0],
+      [10, 10, 0],
+      [0, 10, 0],
+      [10 + w, 0, -h],
+      [10 + w, 10, -h],
+      [-w, 10, -h],
+      [-w, 0, -h],
+      [10, 10 + w, -h],
+      [0, 10 + w, -h],
+    ];
+    const tris = [
+      [0, 1, 2],
+      [0, 2, 3],
+      [1, 4, 5],
+      [1, 5, 2],
+      [0, 3, 6],
+      [0, 6, 7],
+      [3, 2, 8],
+      [3, 8, 9],
+    ];
+    const arms: Part = { libraryPartId: 'arms', verts, tris };
+    const zones = [
+      {
+        id: 'east',
+        name: 'East',
+        seedPoint: [10 + w / 2, 5, -h / 2],
+        maxAngleDeg: 15,
+        up: [0, 1, 0],
+      },
+      { id: 'west', name: 'West', seedPoint: [-w / 2, 5, -h / 2], maxAngleDeg: 15, up: [0, 1, 0] },
+      {
+        id: 'north',
+        name: 'North',
+        seedPoint: [5, 10 + w / 2, -h / 2],
+        maxAngleDeg: 15,
+        up: [0, 1, 0],
+      },
+    ];
+    const baked = bakeZones(config([arms], zones, { claimWedge: true }), [arms]);
+    const s = baked.sidecar as ZoneSidecar;
+    for (const zn of s.zones) expect(zn.charts[0].tris.length, zn.id).toBe(2);
+    const all = s.zones.flatMap((zn) => zn.charts[0].tris);
+    expect(all).not.toContain(0);
+    expect(all).not.toContain(1);
+    expect(
+      baked.warnings.some((wng: string) =>
+        /touches 3 zones \(east, west, north\).*no artwork can be cut there/.test(wng),
+      ),
+    ).toBe(true);
   });
 });
 

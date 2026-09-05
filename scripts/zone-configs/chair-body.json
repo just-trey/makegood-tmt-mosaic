@@ -17,9 +17,15 @@
     "The wing seeds must sit ON the fender's forward face: the face's area centroid hangs in air",
     "inside the arch and seeds a 14-triangle sheet hidden in it. At 40deg each wing zone is",
     "100cm2 at 1.016x and shares no triangle with 'left'/'right'; at 50deg it reaches 128cm2 but",
-    "claims 2 triangles 'left'/'right' already own, cutting the same artwork twice at the join."
+    "claims 2 triangles 'left'/'right' already own, cutting the same artwork twice at the join.",
+    "claimWedge is what makes the flanks and 'back' meet, and the angles above are why it has to:",
+    "the storage-box corner is a fillet between two exactly perpendicular seed normals, so 45+35",
+    "leaves a 90-45-35 = 10deg band of it in no zone. Raising the angles to cover it never worked --",
+    "pair in {45,50,55}x{35,40,45} broke a stretch bar, a double claim, or both (see",
+    "docs/findings/2026-09-04-seam-closing.md). The wedge rule closes it at the shipped angles."
   ],
   "seamWeldTolMm": 0.6,
+  "claimWedge": true,
   "mirrorAxis": "x",
   "covers": {
     "file": "stubs/dead-zones.3mf",
