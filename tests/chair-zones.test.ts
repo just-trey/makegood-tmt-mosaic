@@ -12,6 +12,7 @@ import {
 } from '../src/geometry/zoneCharts';
 import { planarArea } from '../src/geometry/regions';
 import { CHART_SNAP_MM, ConformalZoneMapper } from '../src/geometry/conformal';
+import { boundsCentre, netOffsetToZone } from '../src/geometry/zones';
 import {
   getManifold,
   manifoldIsValid,
@@ -21,11 +22,14 @@ import {
 import type { PolyFeature } from '../src/types';
 import {
   measureZoneMirror,
+  measureZoneSeam,
   MIN_ISLAND_AREA_MM2,
   nearestPoints,
+  NET_SHEET_GAP_MM,
   read3MFIndexed,
   SIMPLIFY_TOL_MM,
   WELD_TOL_MM,
+  zoneSeamPoints,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
 
@@ -110,6 +114,215 @@ describe('chair zone sidecar', () => {
       false,
     );
     expect(meshFingerprint(m.vertices, m.triCount).bboxHash).toMatch(/^[0-9a-f]{8}$/);
+  });
+});
+
+describe('the whole-chair net', () => {
+  const net = sidecar.net!;
+  const zone = (id: string): (typeof sidecar.zones)[number] =>
+    sidecar.zones.find((z) => z.id === id)!;
+
+  it('places every zone exactly once, and nothing that is not a zone', () => {
+    expect(Object.keys(net.zones).sort()).toEqual(sidecar.zones.map((z) => z.id).sort());
+  });
+
+  it('ships the whole-chair sheet it names', () => {
+    expect(net.templateFile).toBe('net-template.svg');
+    const svg = readFileSync(resolve(REPO, 'public/templates', net.templateFile), 'utf8');
+    // true size, and every sheet drawn on it
+    expect(svg).toMatch(/<svg width="\d+(\.\d+)?mm" height="\d+(\.\d+)?mm"/);
+    for (const z of sidecar.zones) expect(svg, z.id).toContain(`>${z.name}</text>`);
+  });
+
+  // `left` and `right` share vertices with `back` that register under CHART_SNAP_MM, so a design
+  // carries across those two joins and no others. Every remaining pair shares no vertex at all —
+  // `npx vite-node scripts/measure-zone-seams.mjs` prints "n < 3 (0)" in its shared-rigid column
+  // for all of them — so their sheets are laid beside a neighbour and claim no continuity.
+  it.each([
+    ['back', true],
+    ['left', true],
+    ['right', true],
+    ['front', false],
+    ['seat-left', false],
+    ['seat-right', false],
+    ['wing-left', false],
+    ['wing-right', false],
+  ])('%s is attached: %s', (id, attached) => {
+    expect(net.zones[id].attached).toBe(attached);
+  });
+
+  it('roots the tree on the back, which is the only sheet two others attach to', () => {
+    expect(net.zones.back).toMatchObject({ rotationDeg: 0, offsetU: 0, offsetV: 0 });
+    expect(net.zones.back.seamResidualMm).toBeUndefined();
+    for (const id of ['left', 'right']) expect(net.zones[id].seamResidualMm!.to).toBe('back');
+    // a detached sheet claims no registration, so it carries no residual either
+    for (const id of ['front', 'seat-left', 'seat-right', 'wing-left', 'wing-right'])
+      expect(net.zones[id].seamResidualMm, id).toBeUndefined();
+  });
+
+  it('every attached sheet registers inside the snap tolerance', () => {
+    for (const [id, p] of Object.entries(net.zones))
+      if (p.seamResidualMm) expect(p.seamResidualMm.p95, id).toBeLessThan(CHART_SNAP_MM);
+  });
+
+  // The baked transform IS the shared-vertex rigid fit `scripts/measure-zone-seams.mjs` reports,
+  // re-derived here off the shipped meshes: left -> back 54 pairs at -0.34 deg, p95 1.812mm;
+  // right -> back 62 pairs at 0.32 deg, p95 1.583mm. A rebake that moved a sheet without a
+  // measurement behind it fails here.
+  it('the attached transforms are the fit the seam script measures', () => {
+    const vertsOf = (id: string): number[][] => partMesh.get(id)!.verts;
+    const sharedTol = zoneConfig.seamWeldTolMm ?? zoneConfig.weldTolMm ?? WELD_TOL_MM;
+    const pts = new Map(
+      sidecar.zones.map((z) => [z.id, zoneSeamPoints(z, vertsOf, zoneConfig.weldTolMm)]),
+    );
+    for (const id of ['left', 'right']) {
+      const p = net.zones[id];
+      const m = measureZoneSeam(pts.get(id), pts.get(p.seamResidualMm!.to), sharedTol);
+      expect(m.sharedRigid.n, id).toBe(p.seamResidualMm!.pairs);
+      expect(m.sharedRigid.p95, id).toBeCloseTo(p.seamResidualMm!.p95, 3);
+      expect(m.sharedRigid.rms, id).toBeCloseTo(p.seamResidualMm!.rms, 3);
+      expect(m.sharedRigid.max, id).toBeCloseTo(p.seamResidualMm!.max, 3);
+      // the parent is the net's root, so its own transform is the identity and the fit is the
+      // whole of this sheet's placement
+      expect(m.sharedRigid.thetaDeg, id).toBeCloseTo(p.rotationDeg, 3);
+      expect(m.sharedRigid.t[0], id).toBeCloseTo(p.offsetU, 3);
+      expect(m.sharedRigid.t[1], id).toBeCloseTo(p.offsetV, 3);
+    }
+  }, 120000);
+
+  /**
+   * The whole point of an attached seam, on the real chair: a design drawn on the net at a point of
+   * the flank/back join must reach the same place on the chair through either sheet. Each zone is
+   * asked through the mappers the app builds, taking the chart that really holds the query, so this
+   * exercises the reconstructed charts and the net transform together.
+   */
+  it('a point of the attached seam is the same place on the chair through either sheet', () => {
+    const netCentre = boundsCentre(net.bounds);
+    const mappersFor = (id: string): ConformalZoneMapper[] =>
+      zone(id).charts.map(
+        (c) =>
+          new ConformalZoneMapper(
+            null,
+            reconstructChart(zone(id), c, partMesh.get(c.libraryPartId)!.vertices),
+            id,
+          ),
+      );
+    const at = (id: string, u: number, v: number): { p: number[]; off: number } => {
+      const [zu, zv] = netOffsetToZone(
+        [u - netCentre[0], v - netCentre[1]],
+        net.zones[id],
+        netCentre,
+        boundsCentre(zone(id).uvBounds),
+      );
+      let best: { p: number[]; off: number } | null = null;
+      for (const m of mappersFor(id)) {
+        const f = m.frameAt(zu, zv);
+        if (!best || f.offChartMM < best.off)
+          best = { p: [f.origin.x, f.origin.y, f.origin.z], off: f.offChartMM };
+      }
+      return best!;
+    };
+    // the join itself: `left`'s shared vertices sit around u 500, v 363 of its own sheet, which the
+    // sidecar's transform puts near the net's origin corner
+    const vertsOf = (id: string): number[][] => partMesh.get(id)!.verts;
+    const pts = new Map(
+      sidecar.zones.map((z) => [z.id, zoneSeamPoints(z, vertsOf, zoneConfig.weldTolMm)]),
+    );
+    const sharedTol = zoneConfig.seamWeldTolMm ?? zoneConfig.weldTolMm ?? WELD_TOL_MM;
+    let worst = 0;
+    let checked = 0;
+    for (const flank of ['left', 'right']) {
+      const A = pts.get(flank) as { pos: number[][]; uv: number[][] };
+      const B = pts.get('back') as { pos: number[][]; uv: number[][] };
+      const near = nearestPoints(A.pos, B.pos, sharedTol);
+      near.forEach((n: { j: number; d: number }, i: number) => {
+        if (n.j < 0 || n.d > sharedTol) return;
+        const p = net.zones[flank];
+        const r = (p.rotationDeg * Math.PI) / 180;
+        const [u, v] = A.uv[i];
+        const nu = Math.cos(r) * u - Math.sin(r) * v + p.offsetU;
+        const nv = Math.sin(r) * u + Math.cos(r) * v + p.offsetV;
+        const a = at(flank, nu, nv);
+        const b = at('back', nu, nv);
+        if (a.off > CHART_SNAP_MM || b.off > CHART_SNAP_MM) return;
+        checked++;
+        worst = Math.max(worst, Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1], a.p[2] - b.p[2]));
+      });
+    }
+    // Every shared vertex of both joins (116 of them), and the two sheets put each within the same
+    // slack the runtime already grants a chart against its own triangulation. Worst on this bake is
+    // 2.280mm, against a seam registration whose p95 is 1.812mm.
+    expect(checked).toBe(116);
+    expect(worst).toBeLessThan(CHART_SNAP_MM);
+  }, 120000);
+
+  it('bounds the canvas to the placed sheets, and no further', () => {
+    let minU = Infinity,
+      minV = Infinity,
+      maxU = -Infinity,
+      maxV = -Infinity;
+    for (const z of sidecar.zones) {
+      const p = net.zones[z.id];
+      const r = (p.rotationDeg * Math.PI) / 180;
+      const c = Math.cos(r),
+        s = Math.sin(r);
+      for (const [u, v] of [
+        [z.uvBounds.minU, z.uvBounds.minV],
+        [z.uvBounds.maxU, z.uvBounds.minV],
+        [z.uvBounds.maxU, z.uvBounds.maxV],
+        [z.uvBounds.minU, z.uvBounds.maxV],
+      ]) {
+        const x = c * u - s * v + p.offsetU;
+        const y = s * u + c * v + p.offsetV;
+        minU = Math.min(minU, x);
+        maxU = Math.max(maxU, x);
+        minV = Math.min(minV, y);
+        maxV = Math.max(maxV, y);
+      }
+    }
+    expect(net.bounds.minU).toBeCloseTo(minU, 3);
+    expect(net.bounds.minV).toBeCloseTo(minV, 3);
+    expect(net.bounds.maxU).toBeCloseTo(maxU, 3);
+    expect(net.bounds.maxV).toBeCloseTo(maxV, 3);
+  });
+
+  // Detached sheets are laid where the bake chose, so this is the bake keeping its own promise:
+  // their boxes clear everything already down by NET_SHEET_GAP_MM. The attached pair is exempt —
+  // their placement is measured, not chosen, and the flanks' boxes really do reach over the back's
+  // (which is why the bake also warns about the 8,730 / 8,226mm2 the sheets share).
+  it('every detached sheet clears the sheets it was laid beside', () => {
+    const box = (id: string): { minU: number; maxU: number; minV: number; maxV: number } => {
+      const z = zone(id);
+      const p = net.zones[id];
+      const r = (p.rotationDeg * Math.PI) / 180;
+      const c = Math.cos(r),
+        s = Math.sin(r);
+      const cs = [
+        [z.uvBounds.minU, z.uvBounds.minV],
+        [z.uvBounds.maxU, z.uvBounds.minV],
+        [z.uvBounds.maxU, z.uvBounds.maxV],
+        [z.uvBounds.minU, z.uvBounds.maxV],
+      ].map(([u, v]) => [c * u - s * v + p.offsetU, s * u + c * v + p.offsetV]);
+      return {
+        minU: Math.min(...cs.map((q) => q[0])),
+        maxU: Math.max(...cs.map((q) => q[0])),
+        minV: Math.min(...cs.map((q) => q[1])),
+        maxV: Math.max(...cs.map((q) => q[1])),
+      };
+    };
+    for (const z of sidecar.zones) {
+      if (net.zones[z.id].attached) continue;
+      const a = box(z.id);
+      for (const o of sidecar.zones) {
+        if (o.id === z.id) continue;
+        const b = box(o.id);
+        const gapU = Math.max(a.minU - b.maxU, b.minU - a.maxU);
+        const gapV = Math.max(a.minV - b.maxV, b.minV - a.maxV);
+        // 1e-3 of slack for the sidecar's own 4-decimal rounding of two offsets, nothing more:
+        // seat-right against left is the tightest at 5.99998mm.
+        expect(Math.max(gapU, gapV), `${z.id} vs ${o.id}`).toBeGreaterThan(NET_SHEET_GAP_MM - 1e-3);
+      }
+    }
   });
 });
 

@@ -1,5 +1,5 @@
 {
-  "schema": 4,
+  "schema": 5,
   "kindId": "chair-body",
   "meshes": {
     "chair-storage-left": { "triangleCount": 46494, "bboxHash": "be4a9352" },
@@ -62974,5 +62974,51 @@
         "residualMm": { "pairs": 195, "rms": 0.024, "p95": 0.011, "max": 0.312 }
       }
     }
-  ]
+  ],
+  "net": {
+    "templateFile": "net-template.svg",
+    "bounds": { "minU": -542.2602, "minV": -340.4825, "maxU": 892.2348, "maxV": 769.9269 },
+    "zones": {
+      "left": {
+        "rotationDeg": -0.3377,
+        "offsetU": -491.7152,
+        "offsetV": -111.0102,
+        "attached": true,
+        "seamResidualMm": { "to": "back", "pairs": 54, "rms": 0.716, "p95": 1.812, "max": 2.182 }
+      },
+      "right": {
+        "rotationDeg": 0.3162,
+        "offsetU": 200.1891,
+        "offsetV": -114.6112,
+        "attached": true,
+        "seamResidualMm": { "to": "back", "pairs": 62, "rms": 0.686, "p95": 1.583, "max": 2.26 }
+      },
+      "back": { "rotationDeg": 0, "offsetU": 0, "offsetV": 0, "attached": true },
+      "front": { "rotationDeg": 0, "offsetU": 62.7193, "offsetV": 443.066, "attached": false },
+      "seat-left": {
+        "rotationDeg": 0,
+        "offsetU": 395.3325,
+        "offsetV": -340.3014,
+        "attached": false
+      },
+      "seat-right": {
+        "rotationDeg": 0,
+        "offsetU": -144.3954,
+        "offsetV": -340.4825,
+        "attached": false
+      },
+      "wing-left": {
+        "rotationDeg": 0,
+        "offsetU": -542.2602,
+        "offsetV": -134.8797,
+        "attached": false
+      },
+      "wing-right": {
+        "rotationDeg": 0,
+        "offsetU": 847.6945,
+        "offsetV": -131.9914,
+        "attached": false
+      }
+    }
+  }
 }

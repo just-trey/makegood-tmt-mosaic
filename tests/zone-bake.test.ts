@@ -10,14 +10,16 @@ import {
   regionNetArea,
   buildCoverSolids,
   measureZoneSeam,
+  NET_SHEET_GAP_MM,
+  netSheetOverlaps,
   sharedVertTolMm,
   zoneSeamPoints,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
-import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
+import { meshFingerprint as runtimeFingerprint, SIDECAR_SCHEMA } from '../src/geometry/zoneCharts';
 import { ConformalZoneMapper, type ConformalChart } from '../src/geometry/conformal';
 import { getManifold, type ManifoldAPI } from '../src/geometry/manifold';
-import type { DesignPlacement } from '../src/geometry/zones';
+import { WHOLE_CHAIR_ZONE, type DesignPlacement } from '../src/geometry/zones';
 import type { ZoneSidecar } from '../src/geometry/zoneCharts';
 
 // Same analytic quarter-cylinder the conformal mapper tests use (radius R about the Y axis,
@@ -280,7 +282,7 @@ describe('mirror pairing', () => {
     expect(za.mirror.residualMm.pairs).toBe(a.verts.length);
     expect(za.mirror.residualMm.max).toBeLessThan(0.01);
     expect(zb.mirror.residualMm.rms).toBeLessThan(0.01);
-    expect(baked.sidecar.schema).toBe(4);
+    expect(baked.sidecar.schema).toBe(SIDECAR_SCHEMA);
   });
 
   it('mirrors a zone straddling the plane on itself, and draws the centre line on its sheet', () => {
@@ -1401,5 +1403,165 @@ describe('hidden surface classification', () => {
       expect(b.right).toBeCloseTo(a.left, 0);
       expect(b.left).toBeCloseTo(a.right, 0);
     });
+  });
+});
+
+/**
+ * The net: every zone's sheet laid out on one canvas so a design can be drawn across the whole
+ * part. Two shells that share nothing are detached and must not be laid over each other; one that
+ * shares its boundary with the next attaches at the measured fit.
+ */
+describe('the net', () => {
+  const zoneAt = (id: string, seedPoint: number[]): object => ({
+    id,
+    name: id,
+    seedPoint,
+    maxAngleDeg: 20,
+    up: [0, 1, 0],
+  });
+
+  /**
+   * Two flat plates hinged along a shared edge at 30 degrees — the whole feature in miniature. Both
+   * are developable and their edge vertices are coincident, so the net has to unfold them into one
+   * 60 x 120mm sheet with nothing between and nothing over.
+   */
+  const DIHEDRAL = (30 * Math.PI) / 180;
+  const CELLS = 6;
+  const SIDE = CELLS * 10;
+  const gridPart = (id: string, at: (x: number, y: number) => number[]): Part => {
+    const verts: number[][] = [];
+    for (let i = 0; i <= CELLS; i++)
+      for (let j = 0; j <= CELLS; j++) verts.push(at(i * 10, j * 10));
+    const tris: number[][] = [];
+    const idx = (i: number, j: number): number => i * (CELLS + 1) + j;
+    for (let i = 0; i < CELLS; i++)
+      for (let j = 0; j < CELLS; j++) {
+        const a = idx(i, j),
+          b = idx(i + 1, j),
+          c = idx(i + 1, j + 1),
+          d = idx(i, j + 1);
+        tris.push([a, b, c], [a, c, d]);
+      }
+    return { libraryPartId: id, verts, tris };
+  };
+  const hinged = (): { parts: Part[]; zones: object[] } => ({
+    parts: [
+      gridPart('flat', (x, y) => [x, y, 0]),
+      gridPart('tilt', (x, t) => [x, SIDE + t * Math.cos(DIHEDRAL), t * Math.sin(DIHEDRAL)]),
+    ],
+    zones: [
+      zoneAt('a', [SIDE / 2, SIDE / 2, 0]),
+      zoneAt('b', [
+        SIDE / 2,
+        SIDE + (SIDE / 2) * Math.cos(DIHEDRAL),
+        (SIDE / 2) * Math.sin(DIHEDRAL),
+      ]),
+    ],
+  });
+
+  it('is absent on a kind with one zone, which has nothing to lay out', () => {
+    const p = platePart('plate', 6, () => false);
+    const baked = bakeZones(config([p], [zoneAt('top', [30, 30, 0])]), [p]);
+    expect(baked.sidecar.net).toBeUndefined();
+    expect(baked.templates.map((t: { file: string }) => t.file)).toEqual(['top-template.svg']);
+  });
+
+  it('unfolds two hinged plates into one sheet, at the fit the seam measurement reports', () => {
+    const { parts, zones } = hinged();
+    const cfg = config(parts, zones);
+    const baked = bakeZones(cfg, parts);
+    expect(baked.warnings).toHaveLength(0);
+    const net = baked.sidecar.net!;
+    expect(Object.keys(net.zones).sort()).toEqual(['a', 'b']);
+    // both sheets are in the attached component, and only the child records a residual
+    expect(net.zones.a).toMatchObject({ attached: true, rotationDeg: 0, offsetU: 0, offsetV: 0 });
+    expect(net.zones.a.seamResidualMm).toBeUndefined();
+    expect(net.zones.b.attached).toBe(true);
+    expect(net.zones.b.seamResidualMm!.to).toBe('a');
+    // the hinge is a straight edge, so b unfolds straight up from a with no gap and no overlap
+    expect(net.zones.b).toMatchObject({ rotationDeg: 0, offsetU: 0 });
+    expect(net.zones.b.offsetV).toBeCloseTo(SIDE, 6);
+    expect(net.bounds).toMatchObject({ minU: 0, minV: 0, maxU: SIDE, maxV: 2 * SIDE });
+
+    const vertsOf = (pid: string): number[][] => parts.find((p) => p.libraryPartId === pid)!.verts;
+    const pts = (zid: string): object =>
+      zoneSeamPoints(
+        baked.sidecar.zones.find((z: { id: string }) => z.id === zid),
+        vertsOf,
+      );
+    const m = measureZoneSeam(pts('b'), pts('a'), sharedVertTolMm(cfg));
+    expect(m.sharedRigid.n).toBe(net.zones.b.seamResidualMm!.pairs);
+    expect(m.sharedRigid.thetaDeg).toBeCloseTo(net.zones.b.rotationDeg, 6);
+    expect(m.sharedRigid.t[0]).toBeCloseTo(net.zones.b.offsetU, 6);
+    expect(m.sharedRigid.t[1]).toBeCloseTo(net.zones.b.offsetV, 6);
+    // two developable plates, so the join is exact rather than merely inside the snap tolerance
+    expect(net.zones.b.seamResidualMm!.p95).toBeLessThan(1e-6);
+    expect(baked.templates.map((t: { file: string }) => t.file)).toContain('net-template.svg');
+  });
+
+  it('slides a detached sheet clear instead of laying it over its neighbour', () => {
+    // Two coplanar plates 6mm apart, so they know they are neighbours but share no vertex. `b`'s
+    // own "up" points back at `a`, which puts its seam at the TOP of its own sheet — exactly the
+    // chair's front-against-back case. Laying its seam 6mm past `a`'s would bury the sheet in `a`,
+    // so the layout has to slide it out until the two boxes clear.
+    const parts = [
+      gridPart('near', (x, y) => [x, y, 0]),
+      gridPart('far', (x, y) => [x, y + SIDE + NET_SHEET_GAP_MM, 0]),
+    ];
+    const baked = bakeZones(
+      config(parts, [
+        zoneAt('a', [SIDE / 2, SIDE / 2, 0]),
+        { ...zoneAt('b', [SIDE / 2, SIDE * 1.5 + NET_SHEET_GAP_MM, 0]), up: [0, -1, 0] },
+      ]),
+      parts,
+    );
+    const net = baked.sidecar.net!;
+    expect(net.zones.a).toMatchObject({ attached: true, offsetU: 0, offsetV: 0 });
+    expect(net.zones.b.attached).toBe(false);
+    expect(net.zones.b.seamResidualMm).toBeUndefined();
+    // no rotation: a detached sheet keeps its own "up" vertical rather than being turned to face
+    // its neighbour
+    expect(net.zones.b.rotationDeg).toBe(0);
+    // seam-to-seam alone would have put it at 6; clear of `a`'s 60mm sheet it lands at 66
+    expect(net.zones.b.offsetV).toBeCloseTo(SIDE + NET_SHEET_GAP_MM, 6);
+    expect(net.bounds).toMatchObject({ minV: 0, maxV: 2 * SIDE + NET_SHEET_GAP_MM });
+  });
+
+  it('measures where two sheets claim the same canvas, ignoring what covers hide', async () => {
+    const wasm = await getManifold();
+    type Region = { outer: number[][]; holes: number[][][] };
+    const box = (u0: number, u1: number, h: number): Region => ({
+      outer: [
+        [u0, 0],
+        [u1, 0],
+        [u1, h],
+        [u0, h],
+      ],
+      holes: [],
+    });
+    // two 40mm sheets, the second laid 30mm along: 10 x 40 of shared canvas, of which the first
+    // sheet hides a 4 x 40 strip, so 6 x 40 = 240mm2 is what a design could really be cut on twice
+    const zones: { id: string; charts: { subRegions: Region[]; deadRegions?: Region[] }[] }[] = [
+      { id: 'a', charts: [{ subRegions: [box(0, 40, 40)], deadRegions: [box(30, 34, 40)] }] },
+      { id: 'b', charts: [{ subRegions: [box(0, 40, 40)] }] },
+    ];
+    const layout = {
+      placed: new Map([
+        ['a', { theta: 0, t: [0, 0] }],
+        ['b', { theta: 0, t: [30, 0] }],
+      ]),
+    };
+    const warnings: string[] = [];
+    const rings = netSheetOverlaps(zones, layout, wasm, () => {}, warnings);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/"a" and "b" overlap over 240mm/);
+    expect(rings.length).toBeGreaterThan(0);
+  });
+
+  it('refuses a zone using the id a whole-part design binds to', () => {
+    const p = platePart('plate', 6, () => false);
+    expect(() => bakeZones(config([p], [zoneAt(WHOLE_CHAIR_ZONE, [30, 30, 0])]), [p])).toThrow(
+      /reserved for a design placed on the whole part/,
+    );
   });
 });

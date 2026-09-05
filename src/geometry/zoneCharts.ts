@@ -66,6 +66,31 @@ export interface SidecarZone {
 }
 
 /**
+ * Where one zone's sheet sits on the kind's net, as a rotation and translation taking that zone's
+ * own UV mm to net mm (never a scale: a resized sheet would print the design at the wrong size).
+ * `attached` says the placement is the measured registration across a shared seam, so a design
+ * carries across the join; false says the sheet was merely laid beside its neighbour.
+ */
+export interface NetZonePlacement {
+  rotationDeg: number;
+  offsetU: number;
+  offsetV: number;
+  attached: boolean;
+  /** How well the shared seam really registers, in mm; absent on the root and on detached sheets. */
+  seamResidualMm?: { to: string; pairs: number; rms: number; p95: number; max: number };
+}
+
+/**
+ * The whole kind unfolded onto one canvas: every zone at its net transform, plus the canvas extent
+ * a design bound to the whole part is placed against. Absent on a kind with fewer than two zones.
+ */
+export interface ZoneNet {
+  templateFile: string;
+  bounds: { minU: number; minV: number; maxU: number; maxV: number };
+  zones: Record<string, NetZonePlacement>;
+}
+
+/**
  * The only sidecar format this build understands. The per-part mesh fingerprints guard the
  * *geometry* pairing; this guards the *format*, so a visitor holding a cached schema-1 sidecar
  * (whose charts carry `subBoundary` rather than `subRegions`, and whose zones have no `uvBounds`)
@@ -73,9 +98,10 @@ export interface SidecarZone {
  * part to the whole zone. Schema 3 adds `deadRegions`: a cached schema-2 sidecar read by this code
  * would silently report "nothing is hidden" on a kind whose bake says otherwise, the same class of
  * failure, so it takes the same hard refusal. Schema 4 adds `mirror`: a cached schema-3 sidecar
- * would silently offer no Mirror on a kind whose bake says otherwise, so same again.
+ * would silently offer no Mirror on a kind whose bake says otherwise, so same again. Schema 5 adds
+ * `net`, and repeats it once more: a cached schema-4 sidecar would offer no whole-part zone at all.
  */
-export const SIDECAR_SCHEMA = 4;
+export const SIDECAR_SCHEMA = 5;
 
 export interface ZoneSidecar {
   schema: number;
@@ -83,6 +109,7 @@ export interface ZoneSidecar {
   /** per referenced part: the mesh it was baked against, to refuse a mismatched re-pack */
   meshes: Record<string, { triangleCount: number; bboxHash: string }>;
   zones: SidecarZone[];
+  net?: ZoneNet;
 }
 
 /**
