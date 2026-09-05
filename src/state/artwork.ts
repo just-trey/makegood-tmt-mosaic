@@ -3,6 +3,8 @@ import { clearBaseColor, state } from './store';
 import { deltaE, hexToLab } from '../color';
 import { parseRasterImage } from '../raster/parse';
 import type { RasterImage } from '../raster/types';
+import type { NetZonePlacement } from '../geometry/zoneCharts';
+import { boundsCentre, WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
@@ -648,7 +650,60 @@ export function availableZones(): {
     for (const z of part.zones ?? [])
       if (!seen.has(z.id))
         seen.set(z.id, { name: z.name, templateFile: z.templateFile, mirror: z.mirror });
-  return Array.from(seen, ([zoneId, v]) => ({ zoneId, ...v }));
+  const out = Array.from(seen, ([zoneId, v]) => ({ zoneId, ...v }));
+  const net = netZones();
+  // First, because it is the whole part and every other entry is one piece of it. Named for the
+  // thing rather than for the layout: "net" is our word, not the user's.
+  if (net)
+    out.unshift({
+      zoneId: WHOLE_CHAIR_ZONE,
+      name: 'Whole chair',
+      templateFile: state.assembly.net!.templateFile,
+    });
+  return out;
+}
+
+/** One zone of the net, with everything needed to move a whole-part placement onto it. */
+export interface NetZoneBinding {
+  zoneId: string;
+  place: NetZonePlacement;
+  /** the zone's own UV bbox centre, which is what its placer anchors on */
+  zoneCentre: [number, number];
+}
+
+/**
+ * The loaded kind's net, resolved against the parts actually in the scene: the canvas anchor, one
+ * entry per net zone a loaded part carries, and the zones on either side that did not pair up.
+ *
+ * Null where a whole-part binding cannot mean anything — no net baked, or none of its zones
+ * loaded. The two mismatch lists are not filtered away: a zone the net names but nothing carries
+ * takes no artwork, and a loaded zone the net never placed takes none either, and both are things
+ * the build has to say out loud rather than quietly cut around.
+ */
+export function netZones(): {
+  netCentre: [number, number];
+  zones: NetZoneBinding[];
+  /** zones the net places that no loaded part carries */
+  missing: string[];
+  /** zones a loaded part offers that the net does not place */
+  unplaced: string[];
+} | null {
+  const net = state.assembly.net;
+  if (!net) return null;
+  const bounds = new Map<string, { minU: number; minV: number; maxU: number; maxV: number }>();
+  for (const part of state.assembly.parts)
+    for (const z of part.zones ?? [])
+      if (z.chart?.zoneBounds && !bounds.has(z.id)) bounds.set(z.id, z.chart.zoneBounds);
+  const zones: NetZoneBinding[] = [];
+  const missing: string[] = [];
+  for (const [zoneId, place] of Object.entries(net.zones)) {
+    const b = bounds.get(zoneId);
+    if (b) zones.push({ zoneId, place, zoneCentre: boundsCentre(b) });
+    else missing.push(zoneId);
+  }
+  if (!zones.length) return null;
+  const unplaced = Array.from(bounds.keys()).filter((id) => !net.zones[id]);
+  return { netCentre: boundsCentre(net.bounds), zones, missing, unplaced };
 }
 
 /**
@@ -659,14 +714,23 @@ export function availableZones(): {
  * a single/no-zone kind, where there's nothing to reconcile.
  */
 export function zoneCoverage(): { total: number; covered: number } {
-  const zones = availableZones();
+  // The whole-part entry is every other entry at once, not a surface of its own, so it is not a
+  // zone this counts towards — only one it can fill.
+  const zones = availableZones().filter((z) => z.zoneId !== WHOLE_CHAIR_ZONE);
   if (!zones.length) return { total: 0, covered: 0 };
   if (state.artworks.some((a) => a.zone === null))
     return { total: zones.length, covered: zones.length };
+  const net = netZones();
   const bound = new Set<string>();
   for (const a of state.artworks) {
     const zoneId = a.zone?.zoneId;
     if (!zoneId) continue;
+    // A whole-part design is cut onto every zone the net places, detached sheets included: the
+    // build expands it into one ordinary placement per zone, and each of those really does cut.
+    if (zoneId === WHOLE_CHAIR_ZONE) {
+      for (const z of net?.zones ?? []) bound.add(z.zoneId);
+      continue;
+    }
     bound.add(zoneId);
     // A mirrored instance cuts on its twin too (or the same zone's other half, already counted).
     if (a.mirror) {

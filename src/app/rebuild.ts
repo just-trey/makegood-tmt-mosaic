@@ -5,12 +5,13 @@ import { baseColorHex, currentBaseParams, SCALE_MAX_PCT, state } from '../state/
 import {
   activeArtworkInstance,
   availableZones,
+  netZones,
   syncActiveArtworkPlacement,
   zoneCoverage,
   zoneMirrorOf,
 } from '../state/artwork';
 import { creasedNormalsFromIndex, indexMatchesSoup } from '../geometry/creasedNormals';
-import { clearBuildWarnings, noticeBuild, warn } from '../warnings';
+import { clearBuildWarnings, noticeBuild, warn, warnBuild } from '../warnings';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
   asmPartFaceNormal,
@@ -19,7 +20,12 @@ import {
   shippedColorIndices,
   type ArtworkBuildInput,
 } from '../geometry/assembly';
-import { mirroredBuildInput, type KeepSide } from '../geometry/zones';
+import {
+  mirroredBuildInput,
+  netToZoneBuildInput,
+  WHOLE_CHAIR_ZONE,
+  type KeepSide,
+} from '../geometry/zones';
 import { ConformalZoneMapper } from '../geometry/conformal';
 import { currentAssemblyKind, hubcapSilhouetteOffset } from '../assembly/kinds';
 import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
@@ -521,6 +527,34 @@ async function rebuildAssemblyScene(): Promise<void> {
       rotationDeg: a.rotationDeg,
       mode: a.mode,
     };
+    // A whole-part instance is one placement per zone of the net, each moved onto that zone's own
+    // sheet. Same shape as the mirror expansion below: the build sees ordinary artworks and nothing
+    // in the geometry knows the net exists.
+    if (a.zone?.zoneId === WHOLE_CHAIR_ZONE) {
+      const net = netZones();
+      // The binding survives a part switch and a session restore, so it can outlive the net it
+      // named. Cutting nothing without saying so is the failure rule 1 is about.
+      if (!net) {
+        warnBuild(
+          `"${source?.name ?? 'This design'}" is set to cover the whole part, but this part has no ` +
+            `whole-part layout. Pick a single zone for it from the list.`,
+        );
+        return [];
+      }
+      for (const id of net.missing)
+        warnBuild(
+          `The "${id}" zone isn't loaded, so "${source?.name ?? 'this design'}" won't be cut there. ` +
+            `Reload the page to try again.`,
+        );
+      for (const id of net.unplaced)
+        noticeBuild(
+          `The "${id}" zone isn't on the whole-part sheet, so "${source?.name ?? 'this design'}" ` +
+            `won't reach it. Add another design and target that zone.`,
+        );
+      return net.zones.map((z) =>
+        netToZoneBuildInput(primary, z.zoneId, z.place, net.netCentre, z.zoneCentre),
+      );
+    }
     // A mirrored instance is two placements: its own, and its reflection bound to the twin zone,
     // or to the other half of a self-mirrored one. The build sees two ordinary artworks and nothing
     // in the geometry knows they are related. A flag on a zone that offers no mirror is ignored

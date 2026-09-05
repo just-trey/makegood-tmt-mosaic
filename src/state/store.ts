@@ -9,6 +9,7 @@ import type {
   ParsedSVG,
   ShapeKind,
 } from '../types';
+import type { ZoneNet } from '../geometry/zoneCharts';
 import { getFilament } from './filaments';
 import { DEFAULT_PRINTER_ID } from '../export/printers';
 import { HUBCAP_DEFAULT_DIAMETER_MM } from '../geometry/hubcap';
@@ -84,6 +85,13 @@ export interface AppState {
     parts: AssemblyPart[];
     nextPartId: number;
     library: LibraryEntry[];
+    /**
+     * The loaded kind's baked net: where each zone's sheet sits when the whole part is unfolded,
+     * for a design bound to the whole part rather than one zone. Null on a kind whose bake baked
+     * none. Read only through `netZones()` (state/artwork.ts), which also checks the zones it
+     * names are actually loaded.
+     */
+    net: ZoneNet | null;
   };
 
   /** body/base color, chosen from the owned-filament palette (null = neutral default) */
@@ -133,7 +141,7 @@ export const state: AppState = {
   asmRadius: 138,
   hubcapDiameterMm: HUBCAP_DEFAULT_DIAMETER_MM,
   hubcapSilhouette: false,
-  assembly: { kindId: null, variantId: null, parts: [], nextPartId: 1, library: [] },
+  assembly: { kindId: null, variantId: null, parts: [], nextPartId: 1, library: [], net: null },
 
   baseFilamentId: null,
 
