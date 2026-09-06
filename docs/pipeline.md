@@ -297,10 +297,20 @@ by `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`):
 
 So a design carries across the ~120mm of the flank/back join around the storage
 box corner, and is torn everywhere else on that boundary — the two halves cut
-on surfaces tens of mm apart, with nothing at runtime saying so
-([docs/tech-debt.md](tech-debt.md)). The net template draws the joining stretch
+on surfaces tens of mm apart. The net template draws the joining stretch
 dashed and the rest on a solid line saying the sheets do not join there. Every
 boundary the wedge didn't close still sits with a visible gap.
+
+**The runtime says the same thing, at the point a design does it.** Each patch
+one sheet yields to another is baked cut at the limits of that boundary's
+joining stretch (`markNetExclusionContinuity`, zonebake.mjs), so every piece
+carries `joins` and, where it does not, the `tearMm` measured along it. When
+`clipToNetShare` finds a whole-part design's ink really reached a non-joining
+piece **and** left ink behind on this zone, the build warns naming both zones
+and that distance. Both conditions matter: a design wholly inside what one
+sheet yields is cut once on the neighbour, in one piece, and is not torn. A
+placed-bbox test over the whole boundary was rejected instead — 31% and 8% of
+these two boundaries join, so it would fire for nearly every design drawn.
 
 **Hardware variants** (the chair's Standard/Kit caster mounts) show a version
 picker above the part list. Switching reloads only the parts that differ.

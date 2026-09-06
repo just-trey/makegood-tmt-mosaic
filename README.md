@@ -125,7 +125,8 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   (`net:` lines): left/back joins over 61 of 197 rows of its boundary,
   right/back over 8 of 99. Elsewhere the two sheets only sit side by side, and
   a design drawn across there prints in two pieces 33.6mm apart at the median
-  (164.4mm on right/back). The whole-part sheet draws a real join dashed and
+  (164.4mm on right/back), which the build warns about naming both zones and
+  the distance. The whole-part sheet draws a real join dashed and
   everything else on a solid line. Its other sheets sit apart with a visible
   gap, same as before. A point on that sheet still cuts in exactly one place:
   where two sheets lie over each other, the seam between them decides which,

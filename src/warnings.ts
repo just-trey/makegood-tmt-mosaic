@@ -17,8 +17,13 @@ export interface Notice {
    * templated from user data (a filename) that two different sources can share — two raster
    * sources named the same can otherwise collide on message-equality and drop or cross-retract
    * each other's notice. Unset for every caller but the raster capped/traced pair, the empty-trace
-   * warning the sliders raise, and the matching restore-failure warning — the only places two live
-   * entries can otherwise render identical text. Defaults to `message` when omitted.
+   * warning the sliders raise, and the matching restore-failure warning — the places two live
+   * entries can otherwise render identical text.
+   *
+   * It also runs the other way, for one fact that can be reached with two different numbers:
+   * `netTornWarning` is raised per color, and two colors of one design can measure different tears
+   * across the same pair of sheets. Keyed on the pair, that is one pill instead of two saying the
+   * same thing at different sizes. Defaults to `message` when omitted.
    */
   key?: string;
 }
@@ -42,9 +47,13 @@ export function notice(message: string, key?: string): void {
   push({ message, level: 'info', key });
 }
 
-/** Build-scoped counterpart to warn() — use inside code that runs fresh every rebuild. */
-export function warnBuild(message: string): void {
-  push({ message, level: 'warn', build: true });
+/**
+ * Build-scoped counterpart to warn() — use inside code that runs fresh every rebuild. Pass `key`
+ * where one fact is reached once per color and the message carries a per-color measurement, so the
+ * build states it once rather than once per number (see Notice.key).
+ */
+export function warnBuild(message: string, key?: string): void {
+  push({ message, level: 'warn', build: true, key });
 }
 
 /** Build-scoped counterpart to notice() — use inside code that runs fresh every rebuild. */

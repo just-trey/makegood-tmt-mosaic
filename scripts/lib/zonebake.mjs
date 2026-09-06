@@ -34,7 +34,13 @@ import { detectFlatPatches } from '../../src/geometry/meshparts.ts';
 import { CHART_SNAP_MM } from '../../src/geometry/conformal.ts';
 import { WHOLE_CHAIR_ZONE } from '../../src/geometry/zones.ts';
 import { ACCENT, GRAY, LABEL_SIZE } from './svgstyle.mjs';
-import { chartTriangles, seamContinuity, SURVEY_U_STEP_MM, surveyBoundary } from './netseam.mjs';
+import {
+  chartTriangles,
+  netToZoneUV,
+  seamContinuity,
+  SURVEY_U_STEP_MM,
+  surveyBoundary,
+} from './netseam.mjs';
 
 /** Boundary/hole/seam polyline simplification tolerance (mm) — CHART_SNAP_MM covers the slack. */
 export const SIMPLIFY_TOL_MM = 0.2;
@@ -3264,6 +3270,129 @@ function seamContinuityFor(zones, net, parts, childId, parentId, log) {
   return { summary: out, rows: rows.map((r) => ({ ...r, continuous: r.jump <= tolMm })) };
 }
 
+/** A zone's own UV point taken to net mm under its PUBLISHED placement, the one the runtime reads. */
+function publishedToNet(place) {
+  const r = (place.rotationDeg * Math.PI) / 180;
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  return ([u, v]) => [c * u - s * v + place.offsetU, s * u + c * v + place.offsetV];
+}
+
+/**
+ * Cut every yielded patch at the limits of its boundary's joining stretch, so each piece lies along
+ * one kind of boundary and can say which.
+ *
+ * Two registered sheets abut along their whole boundary on the canvas, and the surfaces under them
+ * only meet over the stretch the shared vertices span (`seamContinuity`). A whole-part design
+ * reaching a patch outside that stretch is cut in two halves tens of millimetres apart, and until
+ * this the runtime had no way to tell the two cases apart: the patch was one entry covering both.
+ *
+ * The survey walks one row per net v, so its runs of joining and torn rows ARE intervals of net v,
+ * and cutting a patch at `vFrom`/`vTo` is cutting it at the polyline's own limits. The band is
+ * built in net mm and mapped into the zone's UV, since that is the space the patches are baked in.
+ *
+ * `tearMm` is the median 3D jump of the torn rows the entry spans, which for a patch reaching both
+ * ends of a boundary is that boundary's own torn median (the figure docs/pipeline.md quotes) and
+ * for a small one is local to it. An entry spanning no surveyed row falls back to the boundary's
+ * torn rows as a whole, still measured and only less local.
+ *
+ * The torn side comes back as ONE entry holding both the piece below the joining stretch and the
+ * piece above it. They are disconnected, so each region is wholly on one side; splitting them into
+ * an entry each would only multiply what the runtime pools straight back together.
+ *
+ * Rounding is the same 3 decimals partitionNet applies, so the cut between a piece and its
+ * neighbour moves by at most 0.001mm. Unlike the partition's own seam that is not load-bearing:
+ * both pieces are yielded to the SAME zone, so a sliver between them is 0.001mm of canvas this zone
+ * still cuts, not a strip that changes hands.
+ */
+function markNetExclusionContinuity(net, boundaries, wasm, log) {
+  const byPair = new Map();
+  for (const b of boundaries) {
+    const info = { rows: b.rows, cont: net.zones[b.a].seamContinuity };
+    byPair.set(`${b.a}>${b.b}`, info);
+    byPair.set(`${b.b}>${b.a}`, info);
+  }
+  const reach = Math.hypot(net.bounds.maxU - net.bounds.minU, net.bounds.maxV - net.bounds.minV);
+  const finish = (loop) => loop.map((p) => [round(p[0], 3), round(p[1], 3)]);
+  const tearOf = (rows, vMin, vMax) => {
+    const torn = rows.filter((r) => !r.continuous);
+    const local = torn.filter((r) => r.v >= vMin && r.v <= vMax);
+    const use = (local.length ? local : torn).map((r) => r.jump).sort((x, y) => x - y);
+    return use.length ? round(use[use.length >> 1], 1) : undefined;
+  };
+  for (const [zoneId, place] of Object.entries(net.zones)) {
+    if (!place.excluded) continue;
+    const toNet = publishedToNet(place);
+    const out = [];
+    for (const e of place.excluded) {
+      const info = byPair.get(`${zoneId}>${e.to}`);
+      // Nothing surveyed this boundary, so `joins` stays absent and the runtime says nothing about
+      // it. Silence is what shipped before; a guess here would be a claim about surface nobody
+      // measured.
+      if (!info) {
+        out.push(e);
+        continue;
+      }
+      const { rows, cont } = info;
+      // Whole boundary joins, or none of it does: no cut to make, one flag for the whole patch.
+      if (cont.met === cont.rows || !cont.met) {
+        const vs = e.regions.flatMap((r) => r.outer.map((p) => toNet(p)[1]));
+        out.push(
+          cont.met
+            ? { ...e, joins: true }
+            : { ...e, joins: false, tearMm: tearOf(rows, Math.min(...vs), Math.max(...vs)) },
+        );
+        continue;
+      }
+      const rect = [
+        [net.bounds.minU - reach, cont.vFrom],
+        [net.bounds.maxU + reach, cont.vFrom],
+        [net.bounds.maxU + reach, cont.vTo],
+        [net.bounds.minU - reach, cont.vTo],
+      ].map((p) => netToZoneUV(place, p));
+      const patch = new wasm.CrossSection(
+        e.regions.flatMap((r) => [r.outer, ...r.holes]),
+        'EvenOdd',
+      );
+      const band = new wasm.CrossSection([rect], 'EvenOdd');
+      for (const [cs, joins] of [
+        [patch.intersect(band), true],
+        [patch.subtract(band), false],
+      ]) {
+        const area = cs.area();
+        const regions =
+          area >= MIN_ISLAND_AREA_MM2
+            ? classifyRegions(cs.toPolygons().map((r) => r.map(([x, y]) => [x, y])))
+            : [];
+        cs.delete();
+        if (!regions.length) continue;
+        const pieceVs = regions.flatMap((r) => r.outer.map((p) => toNet(p)[1]));
+        out.push({
+          to: e.to,
+          toName: e.toName,
+          areaMm2: round(area, 1),
+          joins,
+          ...(joins ? {} : { tearMm: tearOf(rows, Math.min(...pieceVs), Math.max(...pieceVs)) }),
+          regions: regions.map((r) => ({
+            outer: finish(r.outer),
+            holes: r.holes.map(finish),
+          })),
+        });
+      }
+      patch.delete();
+      band.delete();
+    }
+    place.excluded = out;
+    for (const e of out)
+      if (e.joins === false)
+        log(
+          `net: ${e.areaMm2}mm² of the canvas "${zoneId}" yields to "${e.to}" lies along a ` +
+            `stretch where the two sheets do not join — a whole-part design across it is cut in ` +
+            `two pieces ${e.tearMm}mm apart`,
+        );
+  }
+}
+
 /** The rotated UV bbox of a zone placed at (theta, t). */
 function netSheetBBox(zone, theta, t) {
   const c = Math.cos(theta);
@@ -4361,6 +4490,10 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       file: net.templateFile,
       svg: netTemplateSVG(zones, net, sheetOf, boundaries),
     });
+    // After the template, deliberately: it draws one cross-hatched patch and one "X cuts this"
+    // label per yielded entry, and a patch cut in two would double both. The runtime is the only
+    // consumer of the pieces.
+    if (opts.wasm) markNetExclusionContinuity(net, boundaries, opts.wasm, log);
     log(
       `net: ${Object.values(net.zones).filter((z) => z.attached).length} of ${zones.length} ` +
         `sheet(s) attached, canvas ${(net.bounds.maxU - net.bounds.minU).toFixed(1)} x ` +

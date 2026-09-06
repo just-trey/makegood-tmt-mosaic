@@ -204,15 +204,23 @@ describe('the whole-chair net', () => {
   // print the same areas: left yields 8668mm2 to back, right 8158mm2, and back yields 29mm2 back
   // to left and 27mm2 to right — the slivers of each patch that fall on the flank's side of the
   // seam. 16,882mm2 reassigned in total, and 0 pairs still overlapping.
+  //
+  // Each of those four patches ships cut at the limits of its boundary's joining stretch, so the
+  // eight rows below are the same four patches: 2201.7 + 6465.9 = 8667.6mm2 of the flank's, and so
+  // on, a tenth off the undivided figure because each piece rounds its own area.
   it('divides every patch two sheets both claim, and records what each yields', () => {
     const yields = Object.entries(net.zones).flatMap(([id, p]) =>
-      (p.excluded ?? []).map((e) => [id, e.to, e.areaMm2]),
+      (p.excluded ?? []).map((e) => [id, e.to, e.areaMm2, e.joins]),
     );
     expect(yields).toEqual([
-      ['left', 'back', 8667.5],
-      ['right', 'back', 8158.2],
-      ['back', 'left', 28.9],
-      ['back', 'right', 26.9],
+      ['left', 'back', 2201.7, true],
+      ['left', 'back', 6465.9, false],
+      ['right', 'back', 559.6, true],
+      ['right', 'back', 7598.7, false],
+      ['back', 'left', 27.5, true],
+      ['back', 'left', 1.4, false],
+      ['back', 'right', 9.4, true],
+      ['back', 'right', 17.4, false],
     ]);
     for (const [id, p] of Object.entries(net.zones))
       for (const e of p.excluded ?? []) {
@@ -444,6 +452,87 @@ describe('the whole-chair net', () => {
       expect(baked.jumpMm.median, id).toBeGreaterThan(CHART_SNAP_MM);
     }
   });
+
+  /**
+   * The rule the runtime warning rests on: a yielded patch says whether the stretch of boundary it
+   * lies along is a real join, and it can only say that because the bake cut it at that stretch's
+   * limits. Checked against the joining span the survey re-derives above, not against the flag
+   * itself, so a patch marked joining while lying out in the torn part fails here.
+   */
+  it('cuts each yielded patch at the limits of its boundary’s joining stretch', () => {
+    const sheets = buildSheets();
+    // one survey per attached sheet; the back's own patches lie on the same two boundaries
+    const rowsFor = new Map<string, { v: number; jump: number }[]>();
+    const spanFor = new Map<string, { vFrom: number; vTo: number; tol: number }>();
+    for (const [id, place] of Object.entries(net.zones)) {
+      if (!place.seamResidualMm) continue;
+      const rows = surveyBoundary(sheets, id, place.seamResidualMm.to, {
+        uFrom: net.bounds.minU,
+        uTo: net.bounds.maxU,
+        vFrom: net.bounds.minV,
+        vTo: net.bounds.maxV,
+      });
+      const c = place.seamContinuity!;
+      for (const key of [`${id}>${place.seamResidualMm.to}`, `${place.seamResidualMm.to}>${id}`]) {
+        rowsFor.set(key, rows);
+        spanFor.set(key, {
+          vFrom: c.vFrom!,
+          vTo: c.vTo!,
+          tol: place.seamResidualMm.p95 + SURVEY_U_STEP_MM,
+        });
+      }
+    }
+    let checked = 0;
+    for (const [id, place] of Object.entries(net.zones)) {
+      const p = net.zones[id];
+      const th = (p.rotationDeg * Math.PI) / 180;
+      const netV = ([u, v]: number[]): number => Math.sin(th) * u + Math.cos(th) * v + p.offsetV;
+      for (const e of place.excluded ?? []) {
+        const key = `${id}>${e.to}`;
+        const span = spanFor.get(key)!;
+        expect(span, key).toBeDefined();
+        const vs = e.regions.flatMap((r) => r.outer.map(netV));
+        // The cut is exact up to the sidecar's own 3-decimal rounding of the loops.
+        const SLACK = 1e-3;
+        if (e.joins) {
+          expect(Math.min(...vs), `${key} joining piece`).toBeGreaterThanOrEqual(
+            span.vFrom - SLACK,
+          );
+          expect(Math.max(...vs), `${key} joining piece`).toBeLessThanOrEqual(span.vTo + SLACK);
+          expect(e.tearMm, `${key} joining piece`).toBeUndefined();
+        } else {
+          expect(e.joins, key).toBe(false);
+          // Per region, not per entry: the cut leaves the canvas below the joining stretch and the
+          // canvas above it in one entry, as separate connected pieces. Each piece must sit wholly
+          // on one side, which is what a cut at the limits means and what a cut anywhere else
+          // (or in the wrong space) breaks.
+          for (const r of e.regions) {
+            const rv = r.outer.map(netV);
+            expect(
+              Math.max(...rv) <= span.vFrom + SLACK || Math.min(...rv) >= span.vTo - SLACK,
+              `${key} torn piece spans net v ${Math.min(...rv)}..${Math.max(...rv)}, across the ` +
+                `join at ${span.vFrom}..${span.vTo}`,
+            ).toBe(true);
+          }
+          // and the tear it quotes is the median jump of the torn rows it actually spans
+          const torn = rowsFor
+            .get(key)!
+            .filter(
+              (r) =>
+                r.jump > span.tol &&
+                r.v >= Math.min(...vs) - SLACK &&
+                r.v <= Math.max(...vs) + SLACK,
+            )
+            .map((r) => r.jump)
+            .sort((a, b) => a - b);
+          expect(torn.length, `${key} torn rows`).toBeGreaterThan(0);
+          expect(e.tearMm, key).toBeCloseTo(torn[torn.length >> 1], 1);
+        }
+        checked++;
+      }
+    }
+    expect(checked).toBe(8);
+  }, 120000);
 
   // Detached sheets are laid where the bake chose, so this is the bake keeping its own promise:
   // their boxes clear everything already down by NET_SHEET_GAP_MM. The attached pair is exempt —

@@ -1292,38 +1292,6 @@ the same one-sided result, so this is the Front zone's coverage of that part, no
   or add a per-part notice. The live check keeps that export as the control for which sides can
   take ink, so it stays green either way.
 
-## Nothing warns when a whole-part design straddles a boundary that only abuts
-
-Measured 2026-09-06 on the shipped sidecar by `npx vite-node scripts/bake-zones.mjs
-scripts/zone-configs/chair-body.json` (its `net: "<a>"/"<b>" is continuous over …` lines), and
-re-derived by `npm run build && MOSAIC_GPU=1 node scripts/check-net-design.mjs stubs/net-check`.
-
-Two registered sheets abut along their whole boundary on the canvas — the partition gives every
-point to exactly one of them — but the registration is one rigid fit through the vertices the two
-zones share, so the surfaces only meet over the stretch those vertices span.
-
-| Boundary   | Rows joining | Median tear elsewhere | p95     | Worst   |
-| ---------- | ------------ | --------------------- | ------- | ------- |
-| left/back  | 61 of 197    | 33.6mm                | 43.3mm  | 135.1mm |
-| right/back | 8 of 99      | 164.4mm               | 179.0mm | 179.1mm |
-
-- A whole-part design drawn across the other 136 (and 91) rows is cut in two halves that print
-  tens of mm apart on different faces, and **nothing says so**. Geometry sees two ordinary
-  in-bounds placements; both cut cleanly.
-- The template and the docs now scope the claim (`seamContinuity` in the sidecar, a solid line
-  and a legend line on `public/templates/net-template.svg`), so the sheet no longer presents the
-  whole boundary as a join. That is the drawing, not a runtime check.
-- Not done here because it needs machinery this branch should not carry: the sidecar records the
-  joining stretch as a net-v span only, not where the boundary runs in net u, so nothing at
-  runtime can ask "does this design's ink cross the boundary, and where". A bbox test in
-  `rebuild.ts` was considered and rejected — with 31% and 8% of these boundaries joining it would
-  fire for nearly every whole-part design on the chair, which is a banner, not a warning.
-- Closing it: bake the boundary polyline (the survey already computes it, `rows[].u`/`.v` in
-  `scripts/lib/netseam.mjs`) split at the continuity limits, and mark each yielded exclusion
-  region with whether the stretch it lies along joins. `clipToNetShare` already knows when ink
-  really reached a yielded patch — that is the hook — so the warning becomes one more arm of the
-  notice it already raises, plus its `docs/troubleshooting.md` section.
-
 ## The viewport does not hatch the canvas a whole-part design gives up
 
 Seen 2026-09-06 in `stubs/net-check/share-dot-corner.png` (from `npm run build && MOSAIC_GPU=1

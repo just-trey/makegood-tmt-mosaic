@@ -125,6 +125,45 @@ describe('an exclusion whose baked loops build no polygon', () => {
   });
 });
 
+describe('the mapper carries the bake’s continuity verdict through to the clip', () => {
+  it('hands over `joins` and the tear beside the patch it belongs to', () => {
+    const chart: ConformalChart = {
+      ...makeCylinderChart(),
+      netExcluded: [
+        {
+          to: 'b',
+          toName: 'Sheet B',
+          areaMm2: 12,
+          joins: false,
+          tearMm: 44.2,
+          regions: [
+            {
+              outer: [
+                [0, 0],
+                [4, 4],
+                [8, 0],
+              ],
+              holes: [],
+            },
+          ],
+        },
+      ],
+    };
+    const excl = new ConformalZoneMapper(null, chart, 'a').netExcluded();
+    expect(excl[0]).toMatchObject({ joins: false, tearMm: 44.2 });
+  });
+
+  it('leaves both undefined on a patch baked before either was measured', () => {
+    const chart: ConformalChart = {
+      ...makeCylinderChart(),
+      netExcluded: [{ to: 'b', toName: 'Sheet B', areaMm2: 12, regions: [] }],
+    };
+    const excl = new ConformalZoneMapper(null, chart, 'a').netExcluded();
+    expect(excl[0].joins).toBeUndefined();
+    expect(excl[0].tearMm).toBeUndefined();
+  });
+});
+
 describe('differenceChecked', () => {
   it('flags the failure and hands the subject back whole', () => {
     const r = differenceChecked(box(0, 0, 10, 10), box(5, -1, 15, 11));
