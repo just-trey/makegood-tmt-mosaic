@@ -108,6 +108,21 @@ describe('an exclusion whose baked loops build no polygon', () => {
     expect(excl[0]).toMatchObject({ toName: 'Sheet B', region: null });
     expect(excl[0].bbox).toEqual([0, 0, 8, 4]);
   });
+
+  it('keeps an entry with no loops at all, with a gate nothing slips past', () => {
+    // An entry with an empty `regions` array has no loops to read a bbox from. Left inverted
+    // ([Inf, Inf, -Inf, -Inf]), the overlap gate skips the entry for every real design and the
+    // clip neither trims nor fails — the silent doubled cut again, one shape further gone.
+    const chart: ConformalChart = {
+      ...makeCylinderChart(),
+      netExcluded: [{ to: 'b', toName: 'Sheet B', areaMm2: 12, regions: [] }],
+    };
+    const excl = new ConformalZoneMapper(null, chart, 'a').netExcluded();
+    expect(excl).toHaveLength(1);
+    expect(excl[0]).toMatchObject({ toName: 'Sheet B', region: null });
+    // Unbounded, so the bbox gate consults it for every design and the null region fails the clip.
+    expect(excl[0].bbox).toEqual([-Infinity, -Infinity, Infinity, Infinity]);
+  });
 });
 
 describe('differenceChecked', () => {

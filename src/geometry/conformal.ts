@@ -517,9 +517,13 @@ export class ConformalZoneMapper implements ZoneMapper {
     for (const e of this.chart.netExcluded ?? []) {
       let poly: PolyFeature | null;
       try {
-        poly = turf.multiPolygon(
-          e.regions.map((r) => [closeRing(r.outer), ...r.holes.map(closeRing)]),
-        ) as PolyFeature;
+        // turf builds a hollow feature from zero loops without complaint; null it so the entry
+        // takes the untrimmable path instead of intersecting nothing and saying nothing.
+        poly = e.regions.length
+          ? (turf.multiPolygon(
+              e.regions.map((r) => [closeRing(r.outer), ...r.holes.map(closeRing)]),
+            ) as PolyFeature)
+          : null;
       } catch {
         poly = null;
       }
@@ -529,7 +533,12 @@ export class ConformalZoneMapper implements ZoneMapper {
       //
       // Straight off the baked loops rather than through turf: the shim in src/turf.d.ts declares
       // only the surface this app calls, and a min/max over the same arrays is the whole of it.
-      const bbox = [Infinity, Infinity, -Infinity, -Infinity];
+      // No loops at all leaves that min/max inverted, and an inverted bbox never overlaps
+      // anything, so the gate would skip the entry silently — unbounded instead, so every design
+      // consults it and the null region fails the clip out loud.
+      const bbox = e.regions.length
+        ? [Infinity, Infinity, -Infinity, -Infinity]
+        : [-Infinity, -Infinity, Infinity, Infinity];
       for (const r of e.regions)
         for (const [u, v] of r.outer) {
           if (u < bbox[0]) bbox[0] = u;

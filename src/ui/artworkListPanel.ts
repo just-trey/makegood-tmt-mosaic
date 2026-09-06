@@ -190,12 +190,13 @@ export function renderArtworkList(): void {
         // source is already on. A whole-part instance cuts on every zone the net places (see
         // zoneCoverage), so it uses up all of those, not just the reserved id itself.
         const used = new Set<string | undefined>();
+        const netZoneList = netZones()?.zones ?? [];
         state.artworks
           .filter((x) => x.sourceId === a.sourceId)
           .forEach((x) => {
             used.add(x.zone?.zoneId);
             if (x.zone?.zoneId === WHOLE_CHAIR_ZONE)
-              for (const z of netZones()?.zones ?? []) used.add(z.zoneId);
+              for (const z of netZoneList) used.add(z.zoneId);
             if (x.mirror && x.zone) {
               const mirror = zones.find((z) => z.zoneId === x.zone!.zoneId)?.mirror;
               if (mirror && 'twin' in mirror) used.add(mirror.twin);
