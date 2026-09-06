@@ -478,7 +478,66 @@ const offsetFor = (spot) => ({
   offY: spot[1] - NET_CENTRE[1],
 });
 
+/**
+ * Walk the whole boundary between two sheets and report how far the mark jumps in 3D at each
+ * crossing — the context every number in check 1 needs.
+ *
+ * Check 1 places one bar at one spot, and a spot chosen off a passing measurement proves only that
+ * the spot passes. This says how much of the boundary would have passed, so a report can say
+ * "where the sheets meet" instead of implying they meet everywhere. Rows are scanned in net v, and
+ * per row the last canvas the first sheet owns and the first the second owns are compared: the two
+ * are adjacent on the sheet by construction, so the distance between them is the tear a design
+ * crossing there would take.
+ */
+function surveyBoundary(a, b, { vStep = 2, uStep = 0.5, uFrom = -20, uTo = 180 } = {}) {
+  const rows = [];
+  for (let v = NET.bounds.minV; v <= NET.bounds.maxV; v += vStep) {
+    let lastA = null,
+      firstB = null;
+    for (let u = uFrom; u <= uTo; u += uStep) {
+      const owners = netPoint(zoneTris, u, v).owners.map((o) => [o.zoneId, o.P]);
+      const inA = owners.find(([z]) => z === a);
+      const inB = owners.find(([z]) => z === b);
+      if (inA && !firstB) lastA = { u, P: inA[1] };
+      if (inB && !firstB && lastA) firstB = { u, P: inB[1] };
+    }
+    if (lastA && firstB)
+      rows.push({
+        v,
+        canvasGap: firstB.u - lastA.u,
+        jump: Math.hypot(...[0, 1, 2].map((k) => lastA.P[k] - firstB.P[k])),
+      });
+  }
+  return rows;
+}
+
 console.log(`net centre ${NET_CENTRE.map((n) => n.toFixed(2)).join(', ')}`);
+
+console.log('\n--- survey: the whole "Left side"/"Back" boundary, row by row');
+{
+  const seamP95 = NET.zones.left.seamResidualMm.p95;
+  const rows = surveyBoundary('left', 'back');
+  const met = rows.filter((r) => r.jump <= seamP95 + WALK_MM);
+  const sorted = rows.map((r) => r.jump).sort((x, y) => x - y);
+  const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+  console.log(
+    `   ${rows.length} rows 2mm apart; canvas gap median ` +
+      `${rows
+        .map((r) => r.canvasGap)
+        .sort((x, y) => x - y)
+        [rows.length >> 1].toFixed(2)}mm; ` +
+      `3D jump median ${q(0.5).toFixed(2)}mm p95 ${q(0.95).toFixed(2)}mm max ` +
+      `${sorted[sorted.length - 1].toFixed(2)}mm`,
+  );
+  if (!met.length)
+    fail('the two sheets do not meet in 3D anywhere along their boundary — check 1 has no seam');
+  else
+    console.log(
+      `   ${met.length}/${rows.length} rows cross within ${(seamP95 + WALK_MM).toFixed(3)}mm, ` +
+        `over net v ${Math.min(...met.map((r) => r.v)).toFixed(1)}..` +
+        `${Math.max(...met.map((r) => r.v)).toFixed(1)}`,
+    );
+}
 
 let browser;
 const preview = await startPreview({ port: PORT });
