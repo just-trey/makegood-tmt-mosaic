@@ -32,6 +32,7 @@ import {
   intersectQuiet,
   planarArea,
   cleanFeature,
+  differenceChecked,
   intersectChecked,
   safeIntersectChecked,
   safeUnion,
@@ -56,6 +57,7 @@ import {
   type CutRegion,
   type DesignPlacement,
   type KeepSide,
+  type NetExclusion,
   type ZoneMapper,
 } from './zones';
 import { zoneMappersFor } from './zoneMappers';
@@ -177,6 +179,12 @@ export interface ArtworkBuildInput {
   reflected?: boolean;
   /** Shared by a mirrored design and its reflection; the overlap check never compares the two. */
   mirrorPair?: string;
+  /**
+   * Set on every placement `netToZoneBuildInput` makes, so the cut is clipped to the canvas this
+   * zone owns on the whole-part sheet rather than to everything its own chart reaches. Off for a
+   * design bound to this zone by name, which is the whole reason the partition costs no surface.
+   */
+  netBound?: boolean;
 }
 
 export interface AssemblyBuildInput {
@@ -543,6 +551,88 @@ export function clipToKeptSide(
   return { feat: r.feat, removed: r.clipped, failed: !r.clipped };
 }
 
+/**
+ * `feat` cut to the canvas this zone owns on the whole-part sheet: the patches another sheet took
+ * are removed, one entry at a time so the notice can name where each went.
+ *
+ * The bbox gate is what keeps this free in the common case — most zones yield nothing, and a design
+ * nowhere near what one did yields costs no boolean. Past it, the intersect probe separates "this
+ * design never reaches the patch" (no clip, nothing to say) from "it does" (clip, and say so), so a
+ * notice is only raised when the cut really moved.
+ *
+ * On a failed boolean the region is handed back whole, exactly as the boundary clip does: that is
+ * the pre-partition behaviour, a doubled cut rather than a missing one, and it is named.
+ */
+export function clipToNetShare(
+  feat: PolyFeature,
+  exclusions: NetExclusion[],
+): { feat: PolyFeature | null; movedTo: string[]; failed: boolean } {
+  const movedTo: string[] = [];
+  let failed = false;
+  let cur: PolyFeature | null = cleanFeature(feat);
+  if (!cur || !exclusions.length) return { feat: cur, movedTo, failed };
+  for (const e of exclusions) {
+    if (!cur) break;
+    const b = featureBBox(cur);
+    if (b[0] > e.bbox[2] || b[2] < e.bbox[0] || b[1] > e.bbox[3] || b[3] < e.bbox[1]) continue;
+    if (!e.region) {
+      failed = true;
+      continue;
+    }
+    const hit = intersectChecked(cur, e.region);
+    if (!hit.clipped) {
+      failed = true;
+      continue;
+    }
+    if (!hit.feat) continue;
+    const cut = differenceChecked(cur, e.region);
+    // The difference hands the subject back whole on a failure, so a move reported off `cut.feat`
+    // alone would name a zone the ink never went to while it is still cut here as well.
+    if (!cut.trimmed) {
+      failed = true;
+      continue;
+    }
+    cur = cut.feat;
+    movedTo.push(e.toName);
+  }
+  return { feat: cur, movedTo, failed };
+}
+
+/** [minX, minY, maxX, maxY] of a placed feature, for the cheap gate above. */
+function featureBBox(f: PolyFeature): number[] {
+  const b = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const rings of polysOf(f))
+    for (const ring of rings)
+      for (const p of ring) {
+        if (p[0] < b[0]) b[0] = p[0];
+        if (p[1] < b[1]) b[1] = p[1];
+        if (p[0] > b[2]) b[2] = p[0];
+        if (p[1] > b[3]) b[3] = p[1];
+      }
+  return b;
+}
+
+/** Rule 1 for the net clip: where the part of a whole-part design this zone gave up is cut. */
+export function netShareNotice(design: string, zone: string, toNames: string[]): string {
+  const where =
+    toNames.length === 1 ? `"${toNames[0]}"` : toNames.map((n) => `"${n}"`).join(' and ');
+  return (
+    `"${design}" reaches part of the whole-part sheet that ${where} owns. ` +
+    `It is cut there, not on "${zone}".`
+  );
+}
+
+/**
+ * The net clip could not be applied, so this zone cuts the part another sheet also cuts and the
+ * design lands twice. One remedy, the one that always works.
+ */
+export function netShareFailedWarning(design: string, zone: string): string {
+  return (
+    `Couldn't trim "${design}" to the part of the whole-part sheet "${zone}" owns. ` +
+    `Some of it prints twice. Bind that design to one zone instead.`
+  );
+}
+
 /** Rule 1 for the half clip: what a mirrored design lost to the centre line, and where it went. */
 export function mirrorHalfNotice(design: string, zone: string, side: KeepSide): string {
   return (
@@ -579,13 +669,15 @@ function placedInk(
   ai: number,
   place: (pt: number[]) => number[],
   half: KeptHalf | null,
+  netExcl: NetExclusion[] = [],
 ): InkPolygon[] {
   const out: InkPolygon[] = [];
   for (const perArtwork of featuresByColor) {
     const f = perArtwork[ai];
     if (!f) continue;
     const placed = mapFeatureCoords(f, place);
-    const kept = half ? clipToKeptSide(placed, half).feat : placed;
+    const half0 = half ? clipToKeptSide(placed, half).feat : placed;
+    const kept = half0 && netExcl.length ? clipToNetShare(half0, netExcl).feat : half0;
     if (!kept) continue;
     for (const rings of polysOf(kept))
       out.push(
@@ -1048,6 +1140,8 @@ export async function buildAssemblyGeometry(
         boundaryPoly: PolyFeature | null,
         place: (pt: number[]) => number[],
         half: KeptHalf | null,
+        netExcl: NetExclusion[],
+        zoneName: string,
         grid: TileGrid | null,
         c: AssemblyPaletteEntry,
         ci: number,
@@ -1099,6 +1193,27 @@ export async function buildAssemblyGeometry(
           if (r.failed) warnBuild(mirrorClipFailedWarning(design, half.zoneName));
           else if (r.removed && !artworks[ai].reflected)
             noticeBuild(mirrorHalfNotice(design, half.zoneName, half.side));
+          feat = r.feat;
+          if (!feat) return;
+        }
+        // A whole-part design is cut where the net says this zone owns the canvas, and nowhere
+        // else: two sheets can lie over each other, and without this the same mark would be cut on
+        // both. Nothing is lost — the zone that owns the patch cuts it, and this zone's own
+        // per-zone binding still reaches it — so this says where the ink went rather than warning.
+        //
+        // The decision behind it (2026-09-05): the alternative was to leave the sheets overlapping,
+        // measured and hatched, and let a mark near the flank/back join print in two places. It
+        // measured 8,730 and 8,226mm² of doubled canvas on the chair, right where a design's centre
+        // lands, so the canvas is partitioned instead. (What the flanks end up yielding is smaller,
+        // 8,668 and 8,158mm²: a sheet only yields canvas the sheet taking it can actually chart.)
+        if (netExcl.length) {
+          const r = clipToNetShare(feat, netExcl);
+          const design = artworks[ai].name || 'design';
+          // Both, not one or the other: a zone can yield canvas to two neighbours (the chair's back
+          // yields to each flank), so one call can fail on one patch and move ink on another, and
+          // each half of that is a thing the user has to be told on its own.
+          if (r.failed) warnBuild(netShareFailedWarning(design, zoneName));
+          if (r.movedTo.length) noticeBuild(netShareNotice(design, zoneName, r.movedTo));
           feat = r.feat;
           if (!feat) return;
         }
@@ -1277,11 +1392,12 @@ export async function buildAssemblyGeometry(
             zoneWork[zi].map((ai) => {
               const place = mapper.placer(placements[ai]);
               const half = keptHalfFor(mapper, artworks[ai], place, zoneName);
+              const excl = artworks[ai].netBound ? mapper.netExcluded() : [];
               return {
                 name: artworks[ai].name || 'design',
                 quad: placedBBoxQuad(artworks[ai].parsed, place, half),
                 fill: artworks[ai].mode === 'fill',
-                ink: () => placedInk(featuresByColor, ai, place, half),
+                ink: () => placedInk(featuresByColor, ai, place, half, excl),
                 group: artworks[ai].mirrorPair,
               };
             }),
@@ -1295,6 +1411,7 @@ export async function buildAssemblyGeometry(
           anyPlacements = true;
           const place = mapper.placer(placements[ai]);
           const half = keptHalfFor(mapper, artworks[ai], place, zoneName);
+          const netExcl = artworks[ai].netBound ? mapper.netExcluded() : [];
           // A zone with no centre to clip at cuts the design and its reflection whole. Degenerate
           // (a chart with no extent), and still a doubled cut nobody asked for, so it is named.
           if (artworks[ai].keepSide && !half)
@@ -1352,6 +1469,8 @@ export async function buildAssemblyGeometry(
               boundaryPoly,
               place,
               half,
+              netExcl,
+              zoneName,
               grid,
               palette[ci],
               ci,

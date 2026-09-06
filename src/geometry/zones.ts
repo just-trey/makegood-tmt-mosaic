@@ -58,6 +58,25 @@ export function faceXZBBox(
   return { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, w: maxX - minX, h: maxZ - minZ };
 }
 
+/**
+ * A patch of one zone's 2D design space that another sheet of the net owns, ready to clip against.
+ * `bbox` is turf's [minX, minY, maxX, maxY], so a placed region that comes nowhere near it costs
+ * no boolean at all — the common case, since most zones yield nothing.
+ */
+export interface NetExclusion {
+  /** the owning zone's display name, for the notice that says where the ink went instead */
+  toName: string;
+  /**
+   * Null when the baked loops would not build a polygon. The patch is then unclippable rather than
+   * absent: a design reaching it is cut here as well as on `toName`, which is the doubled cut the
+   * partition exists to remove, so it has to be reported instead of dropped. `bbox` is read off the
+   * same loops and stays usable, so a design nowhere near the patch still costs nothing and says
+   * nothing.
+   */
+  region: PolyFeature | null;
+  bbox: number[];
+}
+
 /** Which half of a self-mirrored zone a design keeps: 'right' is u at or past the zone's bbox centre. */
 export type KeepSide = 'right' | 'left';
 
@@ -85,6 +104,128 @@ export function mirroredBuildInput(a: ArtworkBuildInput, zoneId: string | null):
     flipX: !a.flipX,
     keepSide: a.keepSide && oppositeSide(a.keepSide),
     reflected: true,
+  };
+}
+
+/**
+ * The zone id an artwork binds to when it is placed on the whole part at once, across every sheet
+ * of the baked net rather than one zone. Reserved: no bake may emit a zone with this id, so it
+ * travels through `ZoneRef`, persistence and the dropdown as an ordinary id, and is expanded into
+ * one ordinary per-zone placement before any geometry sees it.
+ */
+export const WHOLE_CHAIR_ZONE = '*whole';
+
+/** A rectangle's centre, which is what both a zone chart and the net anchor placement on. */
+export function boundsCentre(b: {
+  minU: number;
+  minV: number;
+  maxU: number;
+  maxV: number;
+}): [number, number] {
+  return [(b.minU + b.maxU) / 2, (b.minV + b.maxV) / 2];
+}
+
+/**
+ * A net-space offset (mm from the net's anchor centre) read in one zone's own offset space.
+ *
+ * The net places that zone at `p_net = R(θ)·p_zone + t`, and both spaces anchor placement on their
+ * own bbox centre, so an offset `o` from the net centre is `R(−θ)·(o + netC − t) − zoneC` from the
+ * zone's. Everything that has to agree about where a whole-part design lands — the build inputs,
+ * the gizmo frame — goes through this one function.
+ */
+export function netOffsetToZone(
+  off: readonly [number, number],
+  place: { rotationDeg: number; offsetU: number; offsetV: number },
+  netCentre: readonly [number, number],
+  zoneCentre: readonly [number, number],
+): [number, number] {
+  const r = (-place.rotationDeg * Math.PI) / 180;
+  const c = Math.cos(r),
+    s = Math.sin(r);
+  const dx = off[0] + netCentre[0] - place.offsetU;
+  const dy = off[1] + netCentre[1] - place.offsetV;
+  return [c * dx - s * dy - zoneCentre[0], s * dx + c * dy - zoneCentre[1]];
+}
+
+/**
+ * The placement that cuts `a` onto one zone of the net: the same design bound to `zoneId`, moved
+ * and turned so every point lands where the net puts it.
+ *
+ * From ConformalZoneMapper.placer, a zone reads `p = R(rot)·D·s + off + centre`. Composing that
+ * with the net's own `R(θ)·p + t` and matching it to the net-space placement gives
+ * `rot − θ` and `netOffsetToZone`. Flips are untouched: `D` sits inside the rotation in both, and
+ * the net transform carries no reflection, so nothing swaps handedness across it.
+ */
+export function netToZoneBuildInput(
+  a: ArtworkBuildInput,
+  zoneId: string,
+  place: { rotationDeg: number; offsetU: number; offsetV: number },
+  netCentre: readonly [number, number],
+  zoneCentre: readonly [number, number],
+): ArtworkBuildInput {
+  const [offX, offZ] = netOffsetToZone([a.offX, a.offZ], place, netCentre, zoneCentre);
+  return {
+    ...a,
+    zoneId,
+    offX,
+    offZ,
+    rotationDeg: a.rotationDeg - place.rotationDeg,
+    netBound: true,
+  };
+}
+
+/**
+ * What the on-face gizmo asks of a surface: which way it faces, where a placed SVG point lands in
+ * its 2D design space, and the world frame at an in-plane offset. Every ZoneMapper is one; a
+ * whole-part binding is served by `netGizmoMapper`, which is only these four things and could not
+ * honestly answer the rest (its clip regions are one zone's, its placement space the net's).
+ */
+export type GizmoMapper = Pick<ZoneMapper, 'zoneId' | 'faceNormal' | 'placer' | 'frameAt'>;
+
+/**
+ * One zone's surface queried in NET coordinates, for a design placed on the whole part.
+ *
+ * Both directions go through `netOffsetToZone` rather than restating the placer against the net's
+ * centre, so the frame the gizmo draws and the cut `netToZoneBuildInput` makes are one piece of
+ * algebra. The placer's answer is pushed back out to net mm, so this mapper's 2D design space is
+ * the net's throughout.
+ */
+export function netGizmoMapper(
+  inner: ZoneMapper,
+  place: { rotationDeg: number; offsetU: number; offsetV: number },
+  netCentre: readonly [number, number],
+  zoneCentre: readonly [number, number],
+): GizmoMapper {
+  const r = (place.rotationDeg * Math.PI) / 180;
+  const c = Math.cos(r),
+    s = Math.sin(r);
+  const toNet = (p: number[]): number[] => [
+    c * p[0] - s * p[1] + place.offsetU,
+    s * p[0] + c * p[1] + place.offsetV,
+  ];
+  return {
+    zoneId: inner.zoneId,
+    faceNormal: inner.faceNormal,
+    placer: (p: DesignPlacement) => {
+      const [offX, offZ] = netOffsetToZone([p.offX, p.offZ], place, netCentre, zoneCentre);
+      const zone = inner.placer({
+        ...p,
+        offX,
+        offZ,
+        rotationDeg: p.rotationDeg - place.rotationDeg,
+      });
+      return (pt: number[]) => toNet(zone(pt));
+    },
+    frameAt: (u, v, giveUpMM) => {
+      const [zu, zv] = netOffsetToZone([u, v], place, netCentre, zoneCentre);
+      const f = inner.frameAt(zu, zv, giveUpMM);
+      // The net's +u is the zone's +u turned by θ, so the axes a drag runs along turn with it.
+      return {
+        ...f,
+        uAxis: f.uAxis.clone().multiplyScalar(c).addScaledVector(f.vAxis, -s),
+        vAxis: f.uAxis.clone().multiplyScalar(s).addScaledVector(f.vAxis, c),
+      };
+    },
   };
 }
 
@@ -214,6 +355,12 @@ export interface ZoneMapper {
    * face has no baked centre, so nothing there is ever asked to keep a half.
    */
   sideClip(side: KeepSide): PolyFeature | null;
+  /**
+   * Where a WHOLE-PART design must not cut on this zone, because another sheet of the net owns
+   * that canvas and cuts it there instead. Empty for every other binding and every kind with no
+   * net. Kept out of `boundary()` on purpose: that clip is per zone, this one is per binding.
+   */
+  netExcluded(): NetExclusion[];
   /** area a fill-mode artwork tiles across, in the zone's 2D design space; null when unknown */
   fillExtent(): FillExtent | null;
   /**
@@ -348,6 +495,11 @@ export class FlatZoneMapper implements ZoneMapper {
 
   sideClip(): PolyFeature | null {
     return null;
+  }
+
+  /** A flat face is the only sheet a kind with no net has; it yields nothing to anything. */
+  netExcluded(): NetExclusion[] {
+    return [];
   }
 
   /**

@@ -5,12 +5,13 @@ import { baseColorHex, currentBaseParams, SCALE_MAX_PCT, state } from '../state/
 import {
   activeArtworkInstance,
   availableZones,
+  netZones,
   syncActiveArtworkPlacement,
   zoneCoverage,
   zoneMirrorOf,
 } from '../state/artwork';
 import { creasedNormalsFromIndex, indexMatchesSoup } from '../geometry/creasedNormals';
-import { clearBuildWarnings, noticeBuild, warn } from '../warnings';
+import { clearBuildWarnings, noticeBuild, warn, warnBuild } from '../warnings';
 import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
   asmPartFaceNormal,
@@ -19,7 +20,12 @@ import {
   shippedColorIndices,
   type ArtworkBuildInput,
 } from '../geometry/assembly';
-import { mirroredBuildInput, type KeepSide } from '../geometry/zones';
+import {
+  mirroredBuildInput,
+  netToZoneBuildInput,
+  WHOLE_CHAIR_ZONE,
+  type KeepSide,
+} from '../geometry/zones';
 import { ConformalZoneMapper } from '../geometry/conformal';
 import { currentAssemblyKind, hubcapSilhouetteOffset } from '../assembly/kinds';
 import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
@@ -446,6 +452,99 @@ function poseAssemblyForDisplay(): void {
   modelGroup.position.set(-center.x, -center.y, -box.min.z);
 }
 
+/**
+ * Every instance whose source still resolves, each carrying its own placement and zone binding.
+ * With one unbound instance — every flow that exists until the panel can add a second — this is
+ * exactly the single global placement the build used to take.
+ *
+ * Exported for the tests: it is the whole of the whole-part and mirror expansion, and every branch
+ * of it either produces a placement or says why it produced none.
+ */
+export function artworkBuildInputs(): ArtworkBuildInput[] {
+  const artworks: ArtworkBuildInput[] = state.artworks.flatMap((a) => {
+    const source = state.sources.find((s) => s.id === a.sourceId);
+    const parsed = source?.parsed ?? state.parsed;
+    if (!parsed) return [];
+    const primary: ArtworkBuildInput = {
+      parsed,
+      name: source?.name,
+      zoneId: a.zone?.zoneId ?? null,
+      scaleMult: a.scalePct / 100,
+      maxScaleMult: SCALE_MAX_PCT / 100,
+      offX: a.offsetU,
+      offZ: a.offsetV,
+      flipX: a.flipX,
+      flipY: a.flipY,
+      rotationDeg: a.rotationDeg,
+      mode: a.mode,
+    };
+    // A whole-part instance is one placement per zone of the net, each moved onto that zone's own
+    // sheet. Same shape as the mirror expansion below: the build sees ordinary artworks and nothing
+    // in the geometry knows the net exists.
+    if (a.zone?.zoneId === WHOLE_CHAIR_ZONE) {
+      const net = netZones();
+      // The binding survives a part switch and a session restore, so it can outlive the net it
+      // named. Cutting nothing without saying so is the failure rule 1 is about.
+      if (!net) {
+        warnBuild(
+          `"${source?.name ?? 'This design'}" is set to cover the whole part, but this part has no ` +
+            `whole-part sheet. Pick a single zone for it from the list.`,
+        );
+        return [];
+      }
+      // Named, not id'd: every string beside these reads a zone by the name the dropdown shows, and
+      // "wing-left" is the bake's word for it.
+      for (const z of net.missing)
+        warnBuild(
+          `The "${z.name}" zone isn't loaded, so "${source?.name ?? 'this design'}" won't be cut ` +
+            `there. Reload the page to try again.`,
+        );
+      for (const z of net.unplaced)
+        noticeBuild(
+          `The "${z.name}" zone isn't on the whole-part sheet, so "${source?.name ?? 'this design'}" ` +
+            `won't reach it. Add another design and target that zone.`,
+        );
+      return net.zones.map((z) =>
+        netToZoneBuildInput(primary, z.zoneId, z.place, net.netCentre, z.zoneCentre),
+      );
+    }
+    // A mirrored instance is two placements: its own, and its reflection bound to the twin zone,
+    // or to the other half of a self-mirrored one. The build sees two ordinary artworks and nothing
+    // in the geometry knows they are related. A flag on a zone that offers no mirror is ignored
+    // rather than guessed at; state clears it when the binding changes.
+    const mirror = a.mirror && a.zone ? zoneMirrorOf(a.zone.zoneId) : undefined;
+    if (!mirror) return [primary];
+    const paired = { ...primary, mirrorPair: a.id };
+    if ('twin' in mirror) return [paired, mirroredBuildInput(paired, mirror.twin)];
+    // Tie rule only (see ArtworkBuildInput.keepSide): at Offset 0 the right half is the one kept,
+    // which is what "design the right half" on the template promises.
+    const keepSide: KeepSide = primary.offX >= 0 ? 'right' : 'left';
+    const own = { ...paired, keepSide };
+    return [own, mirroredBuildInput(own, own.zoneId ?? null)];
+  });
+  // state.parsed without an instance shouldn't happen (loadArtworkSource creates one), but the
+  // globals remain the source of truth for flat mode, so fall back to them rather than silently
+  // building nothing.
+  //
+  // Gated on there being no instance at all, not on the expansion coming back empty. An instance
+  // that expanded to nothing has already said why in a warning, and this would then cut it across
+  // every zone at the global placement — the exact opposite of what the app just said it would do.
+  if (!state.artworks.length && state.parsed)
+    artworks.push({
+      parsed: state.parsed,
+      zoneId: null,
+      scaleMult: state.scalePct / 100,
+      maxScaleMult: SCALE_MAX_PCT / 100,
+      offX: state.offsetX,
+      offZ: state.offsetY,
+      flipX: state.flipX,
+      flipY: state.flipY,
+      rotationDeg: state.rotationDeg,
+      mode: 'sticker',
+    });
+  return artworks;
+}
+
 async function rebuildAssemblyScene(): Promise<void> {
   newModelGroup(state.stlRefMesh);
 
@@ -501,56 +600,7 @@ async function rebuildAssemblyScene(): Promise<void> {
   // build.
   syncActiveArtworkPlacement();
 
-  // Every instance whose source still resolves, each carrying its own placement and zone binding.
-  // With one unbound instance — every flow that exists until the panel can add a second — this is
-  // exactly the single global placement the build used to take.
-  const artworks: ArtworkBuildInput[] = state.artworks.flatMap((a) => {
-    const source = state.sources.find((s) => s.id === a.sourceId);
-    const parsed = source?.parsed ?? state.parsed;
-    if (!parsed) return [];
-    const primary: ArtworkBuildInput = {
-      parsed,
-      name: source?.name,
-      zoneId: a.zone?.zoneId ?? null,
-      scaleMult: a.scalePct / 100,
-      maxScaleMult: SCALE_MAX_PCT / 100,
-      offX: a.offsetU,
-      offZ: a.offsetV,
-      flipX: a.flipX,
-      flipY: a.flipY,
-      rotationDeg: a.rotationDeg,
-      mode: a.mode,
-    };
-    // A mirrored instance is two placements: its own, and its reflection bound to the twin zone,
-    // or to the other half of a self-mirrored one. The build sees two ordinary artworks and nothing
-    // in the geometry knows they are related. A flag on a zone that offers no mirror is ignored
-    // rather than guessed at; state clears it when the binding changes.
-    const mirror = a.mirror && a.zone ? zoneMirrorOf(a.zone.zoneId) : undefined;
-    if (!mirror) return [primary];
-    const paired = { ...primary, mirrorPair: a.id };
-    if ('twin' in mirror) return [paired, mirroredBuildInput(paired, mirror.twin)];
-    // Tie rule only (see ArtworkBuildInput.keepSide): at Offset 0 the right half is the one kept,
-    // which is what "design the right half" on the template promises.
-    const keepSide: KeepSide = primary.offX >= 0 ? 'right' : 'left';
-    const own = { ...paired, keepSide };
-    return [own, mirroredBuildInput(own, own.zoneId ?? null)];
-  });
-  // state.parsed without an instance shouldn't happen (loadArtworkSource creates one), but the
-  // globals remain the source of truth for flat mode, so fall back to them rather than silently
-  // building nothing.
-  if (!artworks.length && state.parsed)
-    artworks.push({
-      parsed: state.parsed,
-      zoneId: null,
-      scaleMult: state.scalePct / 100,
-      maxScaleMult: SCALE_MAX_PCT / 100,
-      offX: state.offsetX,
-      offZ: state.offsetY,
-      flipX: state.flipX,
-      flipY: state.flipY,
-      rotationDeg: state.rotationDeg,
-      mode: 'sticker',
-    });
+  const artworks = artworkBuildInputs();
   // The default zone binding (loadArtworkSource) picks the first zone silently, since binding
   // every zone recuts the whole assembly on every nudge — see that function's comment. Surface the
   // decision here instead of leaving it discoverable only via the per-row dropdown: this is what

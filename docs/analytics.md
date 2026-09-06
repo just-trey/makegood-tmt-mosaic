@@ -58,7 +58,9 @@ Fired when the user retargets an artwork instance's zone binding from its row
 dropdown.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-zone` change handler in `renderArtworkList`.
-- **Props:** `{ zone: string }` (the zone id, or `'all'` for the unbound/"every zone" option)
+- **Props:** `{ zone: string }` (the zone id, `'all'` for the unbound/"every
+  zone" option, or `'whole'` for "Whole chair" — the reserved zone id itself
+  is never sent)
 - **Dormant:** no offered kind ships design zones, so the dropdown never renders.
 
 ### `artwork_mirror_toggled`
@@ -108,11 +110,10 @@ Fired when the user changes the part-shape mode.
 
 Fired when the user downloads an assembly kind's design template from the Part
 panel — either the single per-kind template, or (for a part with more than
-one design zone) one of the per-zone templates. No offered kind has more than
-one, so only the single-template path fires.
+one design zone, like the chair) one of the per-zone templates.
 
 - **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `#asm-template-link` click handler in `initAssemblyPanel`, and the per-zone link handlers in `renderZoneTemplateLinks`.
-- **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`), plus `zone: string` (the zone id) on a per-zone download
+- **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`), plus `zone: string` (the zone id, or `'whole'` for the whole-part sheet — the reserved id itself is never sent) on a per-zone download
 
 ### `build_param_changed`
 

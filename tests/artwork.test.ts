@@ -20,6 +20,9 @@ import {
 } from '../src/state/artwork';
 import { state } from '../src/state/store';
 import { OVERLAP_WARN_FRACTION } from '../src/geometry/designOverlap';
+import { WHOLE_CHAIR_ZONE } from '../src/geometry/zones';
+import type { ConformalChart } from '../src/geometry/conformal';
+import type { ZoneNet } from '../src/geometry/zoneCharts';
 import type { AssemblyPart, ParsedSVG, ZoneMirror } from '../src/types';
 
 function fakeParsed(): ParsedSVG {
@@ -47,6 +50,7 @@ beforeEach(() => {
   state.baseColorMembers = [];
   state.keptApart = [];
   state.assembly.parts = [];
+  state.assembly.net = null;
   state.shapeKind = 'disc';
   state.assembly.kindId = null;
 });
@@ -299,6 +303,54 @@ describe('stacked-instance cascade', () => {
 
     expect(second.zone?.zoneId).toBe('left');
     expect(second.offsetU).toBe(INSTANCE_CASCADE_MM);
+  });
+
+  // A whole-part binding is placed in NET mm and cut once per sheet, so what it covers on any one
+  // zone is its net offset moved onto that sheet. netOf places each 0..10 zone on a 0..20 canvas,
+  // so the net's own centre reads (5, 5) in every zone's space.
+  describe('against a design bound to the whole part', () => {
+    beforeEach(() => {
+      state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+      state.assembly.net = netOf(['left', 'back']);
+    });
+
+    it('steps off the spot a whole-part design really covers on that zone', () => {
+      const first = loadArtworkSource(fakeParsed(), 'a.svg');
+      setArtworkZone(first.id, WHOLE_CHAIR_ZONE);
+      state.offsetX = 5;
+      state.offsetY = 5;
+
+      const second = loadArtworkSource(fakeParsed(), 'b.svg'); // binds to 'left'
+
+      expect(second.zone?.zoneId).toBe('left');
+      expect(second.offsetU).toBe(5 + INSTANCE_CASCADE_MM);
+      expect(second.offsetV).toBe(5 + INSTANCE_CASCADE_MM);
+    });
+
+    it('does not step off a net offset that reads the same number in another space', () => {
+      // Both sit at 0/0, but the whole-part design's 0/0 is the net's anchor and lands at (5, 5) on
+      // each sheet. Matching the raw numbers would move a design off a spot nothing is on.
+      const first = loadArtworkSource(fakeParsed(), 'a.svg');
+      setArtworkZone(first.id, WHOLE_CHAIR_ZONE);
+      first.offsetU = 0;
+      first.offsetV = 0;
+      state.offsetX = 0;
+      state.offsetY = 0;
+
+      const second = loadArtworkSource(fakeParsed(), 'b.svg');
+
+      expect(second.offsetU).toBe(0);
+      expect(second.offsetV).toBe(0);
+    });
+
+    it('leaves a whole-part binding on a kind with no net where it was put', () => {
+      // Nothing is cut at all, and the build warns about that; there is no spot to step off.
+      const first = loadArtworkSource(fakeParsed(), 'a.svg');
+      setArtworkZone(first.id, WHOLE_CHAIR_ZONE);
+      state.assembly.net = null;
+
+      expect(addInstanceForSource(first.sourceId, 'left').offsetU).toBe(0);
+    });
   });
 
   it('steps an "All zones" design off a zone-bound one it would cover', () => {
@@ -654,6 +706,142 @@ describe('zoneCoverage', () => {
     setArtworkMirror(a.id, true);
 
     expect(zoneCoverage()).toEqual({ total: 1, covered: 1 });
+  });
+});
+
+/** A chart carrying only what `netZones()` reads off it: its zone-space UV bounds. */
+function chartWithBounds(b: {
+  minU: number;
+  minV: number;
+  maxU: number;
+  maxV: number;
+}): ConformalChart {
+  return {
+    positions3: new Float32Array(),
+    uv: new Float32Array(),
+    triangles: new Uint32Array(),
+    normalSign: 1,
+    boundary: [],
+    zoneBounds: b,
+  };
+}
+
+/** A zoned part whose zone carries a chart, so `netZones()` can resolve its UV bounds. */
+function netZonedPart(id: number, zoneId: string): AssemblyPart {
+  return {
+    ...zonedPart(id, zoneId, zoneId),
+    zones: [
+      {
+        id: zoneId,
+        name: zoneId,
+        chart: chartWithBounds({ minU: 0, minV: 0, maxU: 10, maxV: 10 }),
+      },
+    ],
+  };
+}
+
+/** A net placing exactly the given zones, at a neutral (unmoved) transform. */
+function netOf(zoneIds: string[]): ZoneNet {
+  return {
+    templateFile: 'net-template.svg',
+    bounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
+    zones: Object.fromEntries(
+      zoneIds.map((id) => [
+        id,
+        { name: id, rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true },
+      ]),
+    ),
+  };
+}
+
+describe('availableZones / zoneCoverage — Whole chair', () => {
+  it('is not offered with no net loaded', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left side')];
+    expect(availableZones().some((z) => z.zoneId === WHOLE_CHAIR_ZONE)).toBe(false);
+  });
+
+  it('lists Whole chair first, with the net’s template file, once its zones are loaded', () => {
+    state.assembly.kindId = 'chair-body'; // kind.name is "Chair body" — see the label test below
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+    state.assembly.net = netOf(['left', 'back']);
+
+    const zones = availableZones();
+    expect(zones[0]).toEqual({
+      zoneId: WHOLE_CHAIR_ZONE,
+      name: 'Whole chair',
+      templateFile: 'net-template.svg',
+    });
+    expect(zones.map((z) => z.zoneId)).toEqual([WHOLE_CHAIR_ZONE, 'left', 'back']);
+  });
+
+  it('reads the label off the loaded kind’s own name, not a hardcoded "chair"', () => {
+    // A stand-in for a future multi-zone kind: real kind id, unrelated to the chair, whose own
+    // display name ("Wheel (Top ×2 + Cap)") should get its own first word, not "Whole chair".
+    state.assembly.kindId = 'wheel';
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+    state.assembly.net = netOf(['left', 'back']);
+
+    expect(availableZones()[0].name).toBe('Whole wheel');
+  });
+
+  it('falls back to a generic label outside assembly mode, where nothing can render it anyway', () => {
+    state.assembly.kindId = null;
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+    state.assembly.net = netOf(['left', 'back']);
+
+    expect(availableZones()[0].name).toBe('Whole part');
+  });
+
+  it('is not offered when the loaded parts carry none of the net’s zones', () => {
+    // A net can outlive the part it was baked for (a stale sidecar, or a part switch mid-load) —
+    // netZones() reads null rather than offer a binding that would cut nothing.
+    state.assembly.parts = [zonedPart(1, 'seat', 'Seat')];
+    state.assembly.net = netOf(['left', 'back']);
+    expect(availableZones().some((z) => z.zoneId === WHOLE_CHAIR_ZONE)).toBe(false);
+  });
+
+  it('binds an instance to the reserved id like any other zone', () => {
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+    state.assembly.net = netOf(['left', 'back']);
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+    expect(a.zone?.zoneId).toBe(WHOLE_CHAIR_ZONE);
+  });
+
+  it('counts every zone the net places as covered, not the reserved id itself', () => {
+    state.assembly.parts = [
+      netZonedPart(1, 'left'),
+      netZonedPart(2, 'back'),
+      netZonedPart(3, 'right'),
+    ];
+    state.assembly.net = netOf(['left', 'back', 'right']);
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+
+    expect(zoneCoverage()).toEqual({ total: 3, covered: 3 });
+  });
+
+  it('counts a detached net zone as covered too — the expansion cuts it either way', () => {
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'fender-left')];
+    state.assembly.net = {
+      templateFile: 'net-template.svg',
+      bounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
+      zones: {
+        left: { name: 'left', rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true },
+        'fender-left': {
+          name: 'fender-left',
+          rotationDeg: 0,
+          offsetU: 100,
+          offsetV: 0,
+          attached: false,
+        },
+      },
+    };
+    const a = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+
+    expect(zoneCoverage()).toEqual({ total: 2, covered: 2 });
   });
 });
 

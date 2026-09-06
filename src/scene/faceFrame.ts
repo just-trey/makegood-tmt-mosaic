@@ -4,8 +4,9 @@ import { currentBaseParams } from '../state/store';
 import { currentAssemblyKind, currentDesignScaleContext } from '../assembly/kinds';
 import { primaryZoneMapper, zoneMappersFor } from '../geometry/zoneMappers';
 import { designAnchor, designMmPerUnit } from '../geometry/assembly';
-import type { ZoneFrame, ZoneMapper } from '../geometry/zones';
-import { activeArtworkInstance } from '../state/artwork';
+import { netGizmoMapper, WHOLE_CHAIR_ZONE } from '../geometry/zones';
+import type { GizmoMapper, ZoneFrame, ZoneMapper } from '../geometry/zones';
+import { activeArtworkInstance, netZones } from '../state/artwork';
 import type { AssemblyPart } from '../types';
 import { modelToWorldDir, modelToWorldPoint, modelWorldMatrix } from './viewport';
 
@@ -125,12 +126,23 @@ function flatFrame(): FaceFrame | null {
  *
  * Unbound artwork, and any kind with no zone sidecar, still resolve to the single primary mapper.
  */
-function gizmoMappers(parts: AssemblyPart[], isRect: boolean): ZoneMapper[] {
+function gizmoMappers(parts: AssemblyPart[], isRect: boolean): GizmoMapper[] {
   const zoneId = activeArtworkInstance()?.zone?.zoneId;
-  if (zoneId) {
-    const bound = parts
-      .filter((p) => p.loaded && !p.isDuplicateOf && p.zones?.some((z) => z.id === zoneId))
-      .flatMap((p) => zoneMappersFor(p, parts, isRect, null).filter((m) => m.zoneId === zoneId));
+  const zoneMappers = (id: string): ZoneMapper[] =>
+    parts
+      .filter((p) => p.loaded && !p.isDuplicateOf && p.zones?.some((z) => z.id === id))
+      .flatMap((p) => zoneMappersFor(p, parts, isRect, null).filter((m) => m.zoneId === id));
+  // A whole-part binding is placed in net mm, so every zone's mappers come back wrapped in the
+  // transform that puts that zone's sheet where the net has it — the same resolve-across-mappers
+  // the seam case below relies on, over every sheet rather than one zone's parts.
+  if (zoneId === WHOLE_CHAIR_ZONE) {
+    const net = netZones();
+    const bound = (net?.zones ?? []).flatMap((z) =>
+      zoneMappers(z.zoneId).map((m) => netGizmoMapper(m, z.place, net!.netCentre, z.zoneCentre)),
+    );
+    if (bound.length) return bound;
+  } else if (zoneId) {
+    const bound = zoneMappers(zoneId);
     if (bound.length) return bound;
   }
   // A part of a zoned kind only counts once its zones have resolved and at least one takes
@@ -164,7 +176,7 @@ const SAMPLE_GIVE_UP_MM = 3;
  * hit on the chart resolves in the first grid ring.
  */
 function bestFrameAt(
-  mappers: ZoneMapper[],
+  mappers: GizmoMapper[],
   u: number,
   v: number,
   from: { i: number },

@@ -66,6 +66,82 @@ export interface SidecarZone {
 }
 
 /**
+ * Where one zone's sheet sits on the kind's net, as a rotation and translation taking that zone's
+ * own UV mm to net mm (never a scale: a resized sheet would print the design at the wrong size).
+ * `attached` says the placement is the measured registration across a shared seam, so a design
+ * carries across the join; false says the sheet was merely laid beside its neighbour.
+ */
+export interface NetZonePlacement {
+  /**
+   * The zone's display name, carried here for the same reason `NetZoneExclusion.toName` is: the
+   * build names a zone the net places but nothing loaded, and with no loaded part there is no zone
+   * list to resolve the id against.
+   *
+   * Optional because it arrived inside schema 5 rather than with it, so a cached sidecar can be
+   * this schema and still lack it. Its one reader falls back to the id, which is what shipped
+   * before — not worth a schema bump, which would refuse every cached sidecar to fix a name in a
+   * warning that only fires when a part failed to load.
+   */
+  name?: string;
+  rotationDeg: number;
+  offsetU: number;
+  offsetV: number;
+  attached: boolean;
+  /** How well the shared seam really registers, in mm; absent on the root and on detached sheets. */
+  seamResidualMm?: { to: string; pairs: number; rms: number; p95: number; max: number };
+  /**
+   * How much of that seam is a join rather than an abutment, surveyed row by row along the
+   * boundary the two sheets share.
+   *
+   * `seamResidualMm` says how well the fit landed on the vertices the two zones SHARE. It says
+   * nothing about the rest of the boundary, where the sheets still sit flush on the canvas and the
+   * surfaces under them are far apart: on the chair's flank/back boundary 61 of 197 rows join, and
+   * a design crossing one of the other 136 is torn by 33.5mm at the median. `vFrom`/`vTo` bound
+   * the joining stretch in net mm, and are absent when no row joins at all.
+   *
+   * Measured by scripts/lib/netseam.mjs, which scripts/check-net-design.mjs re-runs against the
+   * shipped file.
+   */
+  seamContinuity?: {
+    rows: number;
+    met: number;
+    vFrom?: number;
+    vTo?: number;
+    jumpMm: { median: number; p95: number; max: number };
+  };
+  /**
+   * Canvas this zone yields, so a point of the net belongs to exactly one zone. Absent where it
+   * yields none, which is every zone whose sheet lies over no other.
+   */
+  excluded?: NetZoneExclusion[];
+}
+
+/**
+ * A patch of this zone's own UV that another sheet of the net owns: a whole-part design is cut
+ * there on `to` alone, and never here. The zone stays reachable through its own per-zone binding,
+ * which does not consult this at all.
+ *
+ * `toName` is the owning zone's display name, carried rather than looked up because the notice
+ * this feeds is user-facing and the geometry layer has no zone list to resolve an id against.
+ */
+export interface NetZoneExclusion {
+  to: string;
+  toName: string;
+  areaMm2: number;
+  regions: { outer: number[][]; holes: number[][][] }[];
+}
+
+/**
+ * The whole kind unfolded onto one canvas: every zone at its net transform, plus the canvas extent
+ * a design bound to the whole part is placed against. Absent on a kind with fewer than two zones.
+ */
+export interface ZoneNet {
+  templateFile: string;
+  bounds: { minU: number; minV: number; maxU: number; maxV: number };
+  zones: Record<string, NetZonePlacement>;
+}
+
+/**
  * The only sidecar format this build understands. The per-part mesh fingerprints guard the
  * *geometry* pairing; this guards the *format*, so a visitor holding a cached schema-1 sidecar
  * (whose charts carry `subBoundary` rather than `subRegions`, and whose zones have no `uvBounds`)
@@ -73,9 +149,10 @@ export interface SidecarZone {
  * part to the whole zone. Schema 3 adds `deadRegions`: a cached schema-2 sidecar read by this code
  * would silently report "nothing is hidden" on a kind whose bake says otherwise, the same class of
  * failure, so it takes the same hard refusal. Schema 4 adds `mirror`: a cached schema-3 sidecar
- * would silently offer no Mirror on a kind whose bake says otherwise, so same again.
+ * would silently offer no Mirror on a kind whose bake says otherwise, so same again. Schema 5 adds
+ * `net`, and repeats it once more: a cached schema-4 sidecar would offer no whole-part zone at all.
  */
-export const SIDECAR_SCHEMA = 4;
+export const SIDECAR_SCHEMA = 5;
 
 export interface ZoneSidecar {
   schema: number;
@@ -83,6 +160,7 @@ export interface ZoneSidecar {
   /** per referenced part: the mesh it was baked against, to refuse a mismatched re-pack */
   meshes: Record<string, { triangleCount: number; bboxHash: string }>;
   zones: SidecarZone[];
+  net?: ZoneNet;
 }
 
 /**
@@ -137,6 +215,7 @@ export function reconstructChart(
   zone: SidecarZone,
   chart: SidecarChart,
   partVertices: Float32Array,
+  netExcluded?: NetZoneExclusion[],
 ): ConformalChart {
   const positions3 = new Float32Array(chart.verts.length * 3);
   for (let i = 0; i < chart.verts.length; i++) {
@@ -160,6 +239,7 @@ export function reconstructChart(
     subRegions: chart.subRegions,
     deadRegions: chart.deadRegions,
     zoneBounds: zone.uvBounds,
+    netExcluded,
   };
 }
 

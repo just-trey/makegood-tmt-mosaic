@@ -432,17 +432,37 @@ export function safeDiff(
   b: PolyFeature | null,
   label?: string,
 ): PolyFeature | null {
+  const r = differenceChecked(a, b);
+  if (!r.trimmed)
+    warnBool(
+      `Couldn't trim the overlap${label ? ` for ${label}` : ''}. That region may overlap its neighbor instead of being trimmed back.`,
+    );
+  return r.feat;
+}
+
+/**
+ * `safeDiff` without its warning, saying whether the subtraction actually happened.
+ *
+ * The fallback hands the subject back WHOLE, which a caller reading only the feature cannot tell
+ * from "the clipping took nothing off it". That matters wherever the caller then reports where the
+ * removed area went: `clipToNetShare` names the zone a whole-part mark moved to, and on a failed
+ * difference the mark has not moved at all — it is still cut here, and cut again there.
+ * Nothing to subtract is a clean success, not a failure.
+ */
+export function differenceChecked(
+  a: PolyFeature | null,
+  b: PolyFeature | null,
+): { feat: PolyFeature | null; trimmed: boolean } {
   a = cleanFeature(a);
   b = cleanFeature(b);
-  if (!a) return null;
-  if (!b) return a;
-  const r = boolOpWithRetry((x, y) => turf.difference(x, y) as PolyFeature | null, a, b);
-  if (r.ok) return r.val ?? null;
-  warnBool(
-    `Couldn't trim the overlap${label ? ` for ${label}` : ''}. That region may overlap its neighbor instead of being trimmed back.`,
-  );
-  return a;
+  if (!a) return { feat: null, trimmed: true };
+  if (!b) return { feat: a, trimmed: true };
+  const r = boolOpWithRetry(DIFFERENCE, a, b);
+  return r.ok ? { feat: r.val ?? null, trimmed: true } : { feat: a, trimmed: false };
 }
+
+const DIFFERENCE = (x: PolyFeature, y: PolyFeature): PolyFeature | null =>
+  turf.difference(x, y) as PolyFeature | null;
 
 export function safeIntersect(
   a: PolyFeature | null,

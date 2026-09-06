@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import * as turf from '@turf/turf';
 import type { PolyFeature } from '../types';
+import type { NetZoneExclusion } from './zoneCharts';
 import {
   extrudeRegionToSoup,
   manifoldDelete,
@@ -15,6 +16,7 @@ import { warn } from '../warnings';
 import {
   rotatePointY,
   type CutRegion,
+  type NetExclusion,
   type CutterOptions,
   type DesignPlacement,
   type FillExtent,
@@ -112,6 +114,13 @@ export interface ConformalChart {
    * falls back to this chart's UV bbox — identical for a single-part zone.
    */
   zoneBounds?: { minU: number; minV: number; maxU: number; maxV: number };
+  /**
+   * Patches of this zone's UV that another sheet of the whole-part net owns. Only a design bound
+   * to the whole part consults them: on that binding this zone must not cut there, because the
+   * zone named in each entry does. Absent on a kind with no net, and on every zone whose sheet
+   * lies over no other.
+   */
+  netExcluded?: NetZoneExclusion[];
 }
 
 /** GeoJSON rings repeat their first point; baked loops don't, so close before handing to turf. */
@@ -164,6 +173,7 @@ export class ConformalZoneMapper implements ZoneMapper {
   private boundaryPoly: PolyFeature | null = null;
   private deadComputed = false;
   private deadPoly: PolyFeature | null = null;
+  private netExclCache: NetExclusion[] | null = null;
 
   /**
    * `wasm` may be null for a read-only mapper (the gizmo builds one synchronously just to read
@@ -491,6 +501,54 @@ export class ConformalZoneMapper implements ZoneMapper {
           `the hidden surface on "${this.zoneId ?? 'this zone'}"`,
         ) ?? (turf.multiPolygon([]) as PolyFeature);
     return this.boundaryPoly;
+  }
+
+  /**
+   * The canvas this zone yields to other sheets of the net, one entry per owning zone, in chart UV.
+   *
+   * Deliberately NOT folded into `boundary()`: that clip is the same for every binding, and this
+   * one applies to a whole-part design only. A design bound to this zone by name still cuts here,
+   * which is what keeps the partition from losing surface — it only decides which of two zones a
+   * whole-part design lands on.
+   */
+  netExcluded(): NetExclusion[] {
+    if (this.netExclCache) return this.netExclCache;
+    const out: NetExclusion[] = [];
+    for (const e of this.chart.netExcluded ?? []) {
+      let poly: PolyFeature | null;
+      try {
+        // turf builds a hollow feature from zero loops without complaint; null it so the entry
+        // takes the untrimmable path instead of intersecting nothing and saying nothing.
+        poly = e.regions.length
+          ? (turf.multiPolygon(
+              e.regions.map((r) => [closeRing(r.outer), ...r.holes.map(closeRing)]),
+            ) as PolyFeature)
+          : null;
+      } catch {
+        poly = null;
+      }
+      // Kept with a null region rather than dropped: dropping it puts the patch back on both
+      // sheets with nothing said, which is the one doubled cut the partition exists to remove.
+      // clipToNetShare reads the null as "cannot trim this" and the build names it.
+      //
+      // Straight off the baked loops rather than through turf: the shim in src/turf.d.ts declares
+      // only the surface this app calls, and a min/max over the same arrays is the whole of it.
+      // No loops at all leaves that min/max inverted, and an inverted bbox never overlaps
+      // anything, so the gate would skip the entry silently — unbounded instead, so every design
+      // consults it and the null region fails the clip out loud.
+      const bbox = e.regions.length
+        ? [Infinity, Infinity, -Infinity, -Infinity]
+        : [-Infinity, -Infinity, Infinity, Infinity];
+      for (const r of e.regions)
+        for (const [u, v] of r.outer) {
+          if (u < bbox[0]) bbox[0] = u;
+          if (v < bbox[1]) bbox[1] = v;
+          if (u > bbox[2]) bbox[2] = u;
+          if (v > bbox[3]) bbox[3] = v;
+        }
+      out.push({ toName: e.toName, region: poly, bbox });
+    }
+    return (this.netExclCache = out);
   }
 
   /**

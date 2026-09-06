@@ -455,6 +455,9 @@ export async function asmRebuildGeneratedParts(
  */
 async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<void> {
   const zonesFile = currentAssemblyKind()?.zonesFile;
+  // A kind with no sidecar has no net either, and this is the one place that runs on every part of
+  // every kind — leaving the previous kind's net standing would offer its whole-part zone here.
+  if (!zonesFile) state.assembly.net = null;
   if (!zonesFile || !part.libraryPartId || !part.vertices) return;
   const partId = part.libraryPartId;
   const vertices = part.vertices;
@@ -470,6 +473,7 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
     part.zones = [];
     return;
   }
+  state.assembly.net = sidecar.net ?? null;
   // Every zone/chart pair baked onto this part. Set even when empty: a piece the bake gave no zone
   // takes no artwork at all, which is not the same as having no sidecar (see AssemblyPart.zones).
   const baked = sidecar.zones.flatMap((zone) =>
@@ -497,7 +501,7 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
         ...(zone.mirror
           ? { mirror: 'twin' in zone.mirror ? { twin: zone.mirror.twin } : { self: true } }
           : {}),
-        chart: reconstructChart(zone, chart, vertices),
+        chart: reconstructChart(zone, chart, vertices, sidecar.net?.zones[zone.id]?.excluded),
       });
     } catch (e) {
       warn(

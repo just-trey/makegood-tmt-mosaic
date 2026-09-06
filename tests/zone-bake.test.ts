@@ -10,14 +10,17 @@ import {
   regionNetArea,
   buildCoverSolids,
   measureZoneSeam,
+  NET_SHEET_GAP_MM,
+  netSheetOverlaps,
+  partitionNet,
   sharedVertTolMm,
   zoneSeamPoints,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
-import { meshFingerprint as runtimeFingerprint } from '../src/geometry/zoneCharts';
+import { meshFingerprint as runtimeFingerprint, SIDECAR_SCHEMA } from '../src/geometry/zoneCharts';
 import { ConformalZoneMapper, type ConformalChart } from '../src/geometry/conformal';
 import { getManifold, type ManifoldAPI } from '../src/geometry/manifold';
-import type { DesignPlacement } from '../src/geometry/zones';
+import { WHOLE_CHAIR_ZONE, type DesignPlacement } from '../src/geometry/zones';
 import type { ZoneSidecar } from '../src/geometry/zoneCharts';
 
 // Same analytic quarter-cylinder the conformal mapper tests use (radius R about the Y axis,
@@ -264,12 +267,15 @@ describe('mirror pairing', () => {
     up: [0, 1, 0],
   });
 
-  it('bakes two mirrored shells as a twin pair whose charts reflect onto each other', () => {
+  it('bakes two mirrored shells as a twin pair whose charts reflect onto each other', async () => {
     const a = cylinderPart('cyl-a', 1, NU);
     const b = mirrorX(a, 'cyl-b');
+    // Two zones means a net, and a net without the boolean engine ships undivided and says so.
     const baked = bakeZones(
       config([a, b], [zoneAt('a', seedA), zoneAt('b', seedB)], { mirrorAxis: 'x' }),
       [a, b],
+      () => {},
+      { wasm: await getManifold() },
     );
     expect(baked.warnings).toHaveLength(0);
     const [za, zb] = baked.sidecar.zones;
@@ -280,7 +286,7 @@ describe('mirror pairing', () => {
     expect(za.mirror.residualMm.pairs).toBe(a.verts.length);
     expect(za.mirror.residualMm.max).toBeLessThan(0.01);
     expect(zb.mirror.residualMm.rms).toBeLessThan(0.01);
-    expect(baked.sidecar.schema).toBe(4);
+    expect(baked.sidecar.schema).toBe(SIDECAR_SCHEMA);
   });
 
   it('mirrors a zone straddling the plane on itself, and draws the centre line on its sheet', () => {
@@ -1401,5 +1407,311 @@ describe('hidden surface classification', () => {
       expect(b.right).toBeCloseTo(a.left, 0);
       expect(b.left).toBeCloseTo(a.right, 0);
     });
+  });
+});
+
+/**
+ * The net: every zone's sheet laid out on one canvas so a design can be drawn across the whole
+ * part. Two shells that share nothing are detached and must not be laid over each other; one that
+ * shares its boundary with the next attaches at the measured fit.
+ */
+describe('the net', () => {
+  const zoneAt = (id: string, seedPoint: number[]): object => ({
+    id,
+    name: id,
+    seedPoint,
+    maxAngleDeg: 20,
+    up: [0, 1, 0],
+  });
+
+  /**
+   * A rectangle as the two chart triangles that cover it, in the form a chart carries them. The
+   * partition asks what a sheet can really warp onto, not just what its clip region admits, so a
+   * hand-built sheet has to say both.
+   */
+  const boxChart = (u0: number, u1: number, h: number, v0 = 0): object => ({
+    uv: [u0, v0, u1, v0, u1, v0 + h, u0, v0 + h],
+    chartTris: [
+      [0, 1, 2],
+      [0, 2, 3],
+    ],
+  });
+
+  /**
+   * Two flat plates hinged along a shared edge at 30 degrees — the whole feature in miniature. Both
+   * are developable and their edge vertices are coincident, so the net has to unfold them into one
+   * 60 x 120mm sheet with nothing between and nothing over.
+   */
+  const DIHEDRAL = (30 * Math.PI) / 180;
+  const CELLS = 6;
+  const SIDE = CELLS * 10;
+  const gridPart = (id: string, at: (x: number, y: number) => number[]): Part => {
+    const verts: number[][] = [];
+    for (let i = 0; i <= CELLS; i++)
+      for (let j = 0; j <= CELLS; j++) verts.push(at(i * 10, j * 10));
+    const tris: number[][] = [];
+    const idx = (i: number, j: number): number => i * (CELLS + 1) + j;
+    for (let i = 0; i < CELLS; i++)
+      for (let j = 0; j < CELLS; j++) {
+        const a = idx(i, j),
+          b = idx(i + 1, j),
+          c = idx(i + 1, j + 1),
+          d = idx(i, j + 1);
+        tris.push([a, b, c], [a, c, d]);
+      }
+    return { libraryPartId: id, verts, tris };
+  };
+  const hinged = (): { parts: Part[]; zones: object[] } => ({
+    parts: [
+      gridPart('flat', (x, y) => [x, y, 0]),
+      gridPart('tilt', (x, t) => [x, SIDE + t * Math.cos(DIHEDRAL), t * Math.sin(DIHEDRAL)]),
+    ],
+    zones: [
+      zoneAt('a', [SIDE / 2, SIDE / 2, 0]),
+      zoneAt('b', [
+        SIDE / 2,
+        SIDE + (SIDE / 2) * Math.cos(DIHEDRAL),
+        (SIDE / 2) * Math.sin(DIHEDRAL),
+      ]),
+    ],
+  });
+
+  it('is absent on a kind with one zone, which has nothing to lay out', () => {
+    const p = platePart('plate', 6, () => false);
+    const baked = bakeZones(config([p], [zoneAt('top', [30, 30, 0])]), [p]);
+    expect(baked.sidecar.net).toBeUndefined();
+    expect(baked.templates.map((t: { file: string }) => t.file)).toEqual(['top-template.svg']);
+  });
+
+  it('warns rather than shipping a net nothing divided', () => {
+    // The engine used to ride on the covers file, so a coverless multi-zone config skipped the
+    // partition AND its overlap proof, and said so only in the log. What ships then is a net whose
+    // sheets were never divided, which is a whole-part design cut twice wherever two of them meet.
+    const { parts, zones } = hinged();
+    const baked = bakeZones(config(parts, zones), parts);
+    expect(baked.warnings).toEqual([expect.stringContaining('no boolean engine')]);
+    const placements = Object.values(baked.sidecar.net!.zones) as { excluded?: unknown }[];
+    expect(placements.every((z) => z.excluded === undefined)).toBe(true);
+  });
+
+  it('unfolds two hinged plates into one sheet, at the fit the seam measurement reports', async () => {
+    const { parts, zones } = hinged();
+    const cfg = config(parts, zones);
+    const baked = bakeZones(cfg, parts, () => {}, { wasm: await getManifold() });
+    expect(baked.warnings).toHaveLength(0);
+    const net = baked.sidecar.net!;
+    expect(Object.keys(net.zones).sort()).toEqual(['a', 'b']);
+    // both sheets are in the attached component, and only the child records a residual
+    expect(net.zones.a).toMatchObject({ attached: true, rotationDeg: 0, offsetU: 0, offsetV: 0 });
+    expect(net.zones.a.seamResidualMm).toBeUndefined();
+    expect(net.zones.b.attached).toBe(true);
+    expect(net.zones.b.seamResidualMm!.to).toBe('a');
+    // the hinge is a straight edge, so b unfolds straight up from a with no gap and no overlap
+    expect(net.zones.b).toMatchObject({ rotationDeg: 0, offsetU: 0 });
+    expect(net.zones.b.offsetV).toBeCloseTo(SIDE, 6);
+    expect(net.bounds).toMatchObject({ minU: 0, minV: 0, maxU: SIDE, maxV: 2 * SIDE });
+
+    const vertsOf = (pid: string): number[][] => parts.find((p) => p.libraryPartId === pid)!.verts;
+    const pts = (zid: string): object =>
+      zoneSeamPoints(
+        baked.sidecar.zones.find((z: { id: string }) => z.id === zid),
+        vertsOf,
+      );
+    const m = measureZoneSeam(pts('b'), pts('a'), sharedVertTolMm(cfg));
+    expect(m.sharedRigid.n).toBe(net.zones.b.seamResidualMm!.pairs);
+    expect(m.sharedRigid.thetaDeg).toBeCloseTo(net.zones.b.rotationDeg, 6);
+    expect(m.sharedRigid.t[0]).toBeCloseTo(net.zones.b.offsetU, 6);
+    expect(m.sharedRigid.t[1]).toBeCloseTo(net.zones.b.offsetV, 6);
+    // two developable plates, so the join is exact rather than merely inside the snap tolerance
+    expect(net.zones.b.seamResidualMm!.p95).toBeLessThan(1e-6);
+    expect(baked.templates.map((t: { file: string }) => t.file)).toContain('net-template.svg');
+  });
+
+  it('slides a detached sheet clear instead of laying it over its neighbour', () => {
+    // Two coplanar plates 6mm apart, so they know they are neighbours but share no vertex. `b`'s
+    // own "up" points back at `a`, which puts its seam at the TOP of its own sheet — exactly the
+    // chair's front-against-back case. Laying its seam 6mm past `a`'s would bury the sheet in `a`,
+    // so the layout has to slide it out until the two boxes clear.
+    const parts = [
+      gridPart('near', (x, y) => [x, y, 0]),
+      gridPart('far', (x, y) => [x, y + SIDE + NET_SHEET_GAP_MM, 0]),
+    ];
+    const baked = bakeZones(
+      config(parts, [
+        zoneAt('a', [SIDE / 2, SIDE / 2, 0]),
+        { ...zoneAt('b', [SIDE / 2, SIDE * 1.5 + NET_SHEET_GAP_MM, 0]), up: [0, -1, 0] },
+      ]),
+      parts,
+    );
+    const net = baked.sidecar.net!;
+    expect(net.zones.a).toMatchObject({ attached: true, offsetU: 0, offsetV: 0 });
+    expect(net.zones.b.attached).toBe(false);
+    expect(net.zones.b.seamResidualMm).toBeUndefined();
+    // no rotation: a detached sheet keeps its own "up" vertical rather than being turned to face
+    // its neighbour
+    expect(net.zones.b.rotationDeg).toBe(0);
+    // seam-to-seam alone would have put it at 6; clear of `a`'s 60mm sheet it lands at 66
+    expect(net.zones.b.offsetV).toBeCloseTo(SIDE + NET_SHEET_GAP_MM, 6);
+    expect(net.bounds).toMatchObject({ minV: 0, maxV: 2 * SIDE + NET_SHEET_GAP_MM });
+  });
+
+  it('divides a patch two sheets both claim at the seam between them, leaving none', async () => {
+    const wasm = await getManifold();
+    type Region = { outer: number[][]; holes: number[][][] };
+    const box = (u0: number, u1: number, h: number): Region => ({
+      outer: [
+        [u0, 0],
+        [u1, 0],
+        [u1, h],
+        [u0, h],
+      ],
+      holes: [],
+    });
+    // Two 40mm sheets, the second laid 30mm along: 10 x 40 of shared canvas, of which the first
+    // sheet hides a 4 x 40 strip, so 34..40 x 0..40 = 240mm2 is what a design could really be cut
+    // on twice. They register across a seam at u = 35, which divides that patch 40 / 200.
+    // Chart triangles as well as clip regions: a sheet can only yield canvas it charts, so a
+    // fixture that says nothing about its triangles is a sheet that charts nothing.
+    const zones = [
+      {
+        id: 'a',
+        charts: [
+          { subRegions: [box(0, 40, 40)], deadRegions: [box(30, 34, 40)], ...boxChart(0, 40, 40) },
+        ],
+      },
+      { id: 'b', charts: [{ subRegions: [box(0, 40, 40)], ...boxChart(0, 40, 40) }] },
+    ];
+    const layout = {
+      placed: new Map([
+        ['a', { theta: 0, t: [0, 0] }],
+        ['b', { theta: 0, t: [30, 0] }],
+      ]),
+      bounds: { minU: 0, minV: 0, maxU: 70, maxV: 40 },
+    };
+    const before = netSheetOverlaps(zones, layout, wasm);
+    expect(before).toHaveLength(1);
+    expect(before[0].areaMm2).toBeCloseTo(240, 3);
+
+    // the seam, as A's own UV: the shared vertices whose fit registered the two sheets
+    const seamOf = (x: string, y: string): object | undefined =>
+      (x === 'a' && y === 'b') || (x === 'b' && y === 'a')
+        ? {
+            m: {
+              sharedPairs: [{ want: [35, 0] }, { want: [35, 20] }, { want: [35, 40] }],
+            },
+          }
+        : undefined;
+    const warnings: string[] = [];
+    const { excluded } = partitionNet(zones, layout, seamOf, wasm, () => {}, warnings);
+    expect(warnings).toHaveLength(0);
+    // each keeps its own side of u = 35: `a` is the sheet to the left of it, `b` the one to the
+    // right, so `a` yields the 5 x 40 beyond the seam and `b` yields the 1 x 40 short of it
+    expect(excluded.get('a')).toHaveLength(1);
+    expect(excluded.get('a')[0].to).toBe('b');
+    expect(excluded.get('a')[0].areaMm2).toBeCloseTo(200, 1);
+    expect(excluded.get('b')).toHaveLength(1);
+    expect(excluded.get('b')[0].to).toBe('a');
+    expect(excluded.get('b')[0].areaMm2).toBeCloseTo(40, 1);
+    // the halves tile the patch: nothing cut twice, and nothing cut nowhere
+    expect(excluded.get('a')[0].areaMm2 + excluded.get('b')[0].areaMm2).toBeCloseTo(240, 1);
+
+    // and the proof: over the partitioned sheets, no two of them claim the same canvas
+    const flat = new Map(
+      [...excluded].map(([id, list]: [string, { regions: Region[] }[]]) => [
+        id,
+        list.flatMap((e) => e.regions),
+      ]),
+    );
+    expect(netSheetOverlaps(zones, layout, wasm, flat)).toEqual([]);
+  });
+
+  it('never yields canvas the sheet taking it cannot chart', async () => {
+    const wasm = await getManifold();
+    type Region = { outer: number[][]; holes: number[][][] };
+    const box = (u0: number, u1: number, v0: number, v1: number): Region => ({
+      outer: [
+        [u0, v0],
+        [u1, v0],
+        [u1, v1],
+        [u0, v1],
+      ],
+      holes: [],
+    });
+    // `b`'s clip region is the full 40mm square, but its triangles stop at v = 30: the last 10mm is
+    // the bulge a simplified boundary loop leaves over a notch the triangles do not fill. Ink there
+    // is admitted by b's clip and then dropped by its warp, so a partition that hands it over on
+    // the strength of the clip alone loses the mark AND tells the user it moved.
+    const zones = [
+      { id: 'a', charts: [{ subRegions: [box(0, 40, 0, 40)], ...boxChart(0, 40, 40) }] },
+      { id: 'b', charts: [{ subRegions: [box(0, 40, 0, 40)], ...boxChart(0, 40, 30) }] },
+    ];
+    const layout = {
+      placed: new Map([
+        ['a', { theta: 0, t: [0, 0] }],
+        ['b', { theta: 0, t: [30, 0] }],
+      ]),
+      bounds: { minU: 0, minV: 0, maxU: 70, maxV: 40 },
+    };
+    const seamOf = (x: string, y: string): object | undefined =>
+      (x === 'a' && y === 'b') || (x === 'b' && y === 'a')
+        ? { m: { sharedPairs: [{ want: [35, 0] }, { want: [35, 15] }, { want: [35, 30] }] } }
+        : undefined;
+    const warnings: string[] = [];
+    const { excluded } = partitionNet(zones, layout, seamOf, wasm, () => {}, warnings);
+    expect(warnings).toHaveLength(0);
+
+    // The shared canvas is 30..40 x 0..40 = 400mm2 by the clip regions, but only 30..40 x 0..30 =
+    // 300mm2 of it is charted by both. `a` keeps u < 35 and yields 35..40 x 0..30 = 150mm2.
+    expect(excluded.get('a')).toHaveLength(1);
+    expect(excluded.get('a')[0].areaMm2).toBeCloseTo(150, 1);
+    // and nothing of the 35..40 x 30..40 strip `b` cannot reach goes with it
+    const yielded: Region[] = excluded.get('a')[0].regions;
+    const highest = Math.max(...yielded.flatMap((r) => r.outer.map((p) => p[1])));
+    expect(highest).toBeCloseTo(30, 1);
+  });
+
+  it('refuses to guess when two sheets overlap with no seam to divide them at', async () => {
+    const wasm = await getManifold();
+    type Region = { outer: number[][]; holes: number[][][] };
+    const box = (u0: number, u1: number): Region => ({
+      outer: [
+        [u0, 0],
+        [u1, 0],
+        [u1, 40],
+        [u0, 40],
+      ],
+      holes: [],
+    });
+    const zones = [
+      { id: 'a', charts: [{ subRegions: [box(0, 40)], ...boxChart(0, 40, 40) }] },
+      { id: 'b', charts: [{ subRegions: [box(0, 40)], ...boxChart(0, 40, 40) }] },
+    ];
+    const layout = {
+      placed: new Map([
+        ['a', { theta: 0, t: [0, 0] }],
+        ['b', { theta: 0, t: [30, 0] }],
+      ]),
+      bounds: { minU: 0, minV: 0, maxU: 70, maxV: 40 },
+    };
+    const warnings: string[] = [];
+    const { excluded } = partitionNet(
+      zones,
+      layout,
+      () => undefined,
+      wasm,
+      () => {},
+      warnings,
+    );
+    expect(warnings[0]).toMatch(/no seam to divide them at, so all of it stays with "a"/);
+    // all of it to the sheet already on the canvas, and it is still a partition
+    expect(excluded.get('a')).toHaveLength(0);
+    expect(excluded.get('b')[0].areaMm2).toBeCloseTo(400, 1);
+  });
+
+  it('refuses a zone using the id a whole-part design binds to', () => {
+    const p = platePart('plate', 6, () => false);
+    expect(() => bakeZones(config([p], [zoneAt(WHOLE_CHAIR_ZONE, [30, 30, 0])]), [p])).toThrow(
+      /reserved for a design placed on the whole part/,
+    );
   });
 });

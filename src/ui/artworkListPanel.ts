@@ -4,6 +4,7 @@ import {
   addInstanceForSource,
   availableZones,
   isRasterSource,
+  netZones,
   removeArtworkInstance,
   requantizeSource,
   setActiveArtwork,
@@ -11,6 +12,7 @@ import {
   setArtworkMode,
   setArtworkZone,
 } from '../state/artwork';
+import { WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { fillModeOffered } from '../assembly/kinds';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
 import { DETAIL_MAX, DETAIL_MIN } from '../raster/stats';
@@ -169,7 +171,11 @@ export function renderArtworkList(): void {
         updateZoneBadge();
         updateMirrorControl();
         scheduleRebuild();
-        track('artwork_instance_zone_changed', { zone: zoneSel.value || 'all' });
+        // The reserved id is a plumbing detail, not something to leak into analytics —
+        // it's the same reason it's named "Whole chair" everywhere a user reads it.
+        track('artwork_instance_zone_changed', {
+          zone: zoneSel.value === WHOLE_CHAIR_ZONE ? 'whole' : zoneSel.value || 'all',
+        });
       });
     }
 
@@ -181,18 +187,25 @@ export function renderArtworkList(): void {
         // falling back to "all zones" if every zone already has one — a reasonable starting guess
         // the user can immediately retarget from the new row's own dropdown. A mirrored instance
         // already cuts on its twin, so that counts as used too, or +zone would offer a zone the
-        // source is already on.
+        // source is already on. A whole-part instance cuts on every zone the net places (see
+        // zoneCoverage), so it uses up all of those, not just the reserved id itself.
         const used = new Set<string | undefined>();
+        const netZoneList = netZones()?.zones ?? [];
         state.artworks
           .filter((x) => x.sourceId === a.sourceId)
           .forEach((x) => {
             used.add(x.zone?.zoneId);
+            if (x.zone?.zoneId === WHOLE_CHAIR_ZONE)
+              for (const z of netZoneList) used.add(z.zoneId);
             if (x.mirror && x.zone) {
               const mirror = zones.find((z) => z.zoneId === x.zone!.zoneId)?.mirror;
               if (mirror && 'twin' in mirror) used.add(mirror.twin);
             }
           });
-        const next = zones.find((z) => !used.has(z.zoneId));
+        // Never auto-picked: like the initial load (setArtworkZone's own default), landing a new
+        // placement on Whole chair by default would stamp it across every net zone at once, the
+        // opposite of "another zone". It stays reachable — just from the new row's own dropdown.
+        const next = zones.find((z) => z.zoneId !== WHOLE_CHAIR_ZONE && !used.has(z.zoneId));
         addInstanceForSource(a.sourceId, next?.zoneId ?? null);
         renderArtworkList();
         refreshFitInputsFromState();
