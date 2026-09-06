@@ -79,7 +79,7 @@ import {
   type PlacedDesign,
 } from './designOverlap';
 import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
-import { noticeBuild, warnBuild } from '../warnings';
+import { dismissNotice, noticeBuild, warnBuild } from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
 import { throwIfCancelled } from '../cancel';
@@ -663,17 +663,47 @@ export function netShareNotice(design: string, zone: string, toNames: string[]):
  * obvious place and is wrong: 31% and 8% of the chair's two boundaries join, so a placed-bbox test
  * over either would fire for nearly every whole-part design ever drawn. The clip already knows the
  * one thing that matters, which is whether ink really reached the patch.
+ *
+ * **The two zones are named in a fixed order, not in the order the build reached them.** One
+ * crossing raises this from both sides: the divider between two sheets is ragged, so each zone
+ * yields slivers to the other and a design over the join reaches a torn patch on each. Naming them
+ * "from" and "to" made the text depend on which zone's build ran first, which is two pills for one
+ * boundary. Sorted, the pair reads the same either way, and `raiseTornWarning` keeps one pill
+ * quoting the worse of the two tears.
  */
-export function netTornWarning(
-  design: string,
-  zone: string,
-  toName: string,
-  tearMm: number,
-): string {
+export function netTornWarning(design: string, zones: string[], tearMm: number): string {
+  const [a, b] = [...zones].sort();
   return (
-    `"${design}" crosses from "${zone}" to "${toName}", where the two sheets do not join. ` +
+    `"${design}" crosses between "${a}" and "${b}", where the two sheets do not join. ` +
     `It prints in two pieces, about ${Math.round(tearMm)}mm apart. Bind it to one zone instead.`
   );
+}
+
+/**
+ * One pill per design and boundary, quoting the worst tear measured for it.
+ *
+ * Worst rather than first, and this is why it cannot just ride on the notice list's own dedupe:
+ * `tearMm` is measured over the rows each yielded piece spans, so the two sides of one boundary
+ * report different numbers (33.8mm and 2.6mm across the chair's flank/back join). First-wins would
+ * quote whichever zone the build reached first, and on the chair that can be the 2.6mm sliver for
+ * a design that is really torn by 34mm. The standing pill is retracted and re-raised instead.
+ *
+ * `seen` is per build. Colours share it too, which is the other way one fact arrives twice: the
+ * clip runs per colour and two colours can cross different torn stretches of the same boundary.
+ */
+function raiseTornWarning(
+  seen: Map<string, { message: string; tearMm: number }>,
+  design: string,
+  zones: string[],
+  tearMm: number,
+): void {
+  const key = `net-torn:${design}:${[...zones].sort().join(':')}`;
+  const had = seen.get(key);
+  if (had && had.tearMm >= tearMm) return;
+  if (had) dismissNotice(had.message, key);
+  const message = netTornWarning(design, zones, tearMm);
+  seen.set(key, { message, tearMm });
+  warnBuild(message, key);
 }
 
 /**
@@ -903,6 +933,8 @@ export async function buildAssemblyGeometry(
     keptApart,
   } = input;
   if (!artworks.length || artworks.some((a) => !a.parsed)) return null;
+  /** Standing straddle pills for this build, keyed by design and boundary — raiseTornWarning. */
+  const tornPills = new Map<string, { message: string; tearMm: number }>();
 
   const isRect = designFit === 'rect';
 
@@ -1270,15 +1302,9 @@ export async function buildAssemblyGeometry(
           if (r.movedTo.length) noticeBuild(netShareNotice(design, zoneName, r.movedTo));
           // The notice above says where the ink went; this says the two halves will not line up.
           // Both, because they are different facts: the move is right and the result still isn't.
-          //
-          // Keyed on the pair rather than the text: this runs per color, and two colors of one
-          // design can cross different torn stretches of the same boundary and measure different
-          // tears. That is one broken design, so it is one pill, quoting a tear it really crosses.
+          // One pill per boundary however many zones, colors and directions reach it.
           for (const t of r.torn)
-            warnBuild(
-              netTornWarning(design, zoneName, t.toName, t.tearMm),
-              `net-torn:${design}:${zoneName}:${t.toName}`,
-            );
+            raiseTornWarning(tornPills, design, [zoneName, t.toName], t.tearMm);
           feat = r.feat;
           if (!feat) return;
         }

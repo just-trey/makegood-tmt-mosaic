@@ -438,8 +438,16 @@ describe('a whole-part design is cut on exactly one sheet', () => {
    *
    * Both cases run the identical geometry and differ by that flag alone, which is what makes the
    * fire a fire and the silence a silence.
+   *
+   * The zones are renamed to "Sheet A"/"Sheet B" here, matching what each one's `toName` calls the
+   * other. That is what a real sidecar has (`toName` is the neighbour zone's own display name), and
+   * it matters: the pill is keyed on the pair of display names, so two zones that disagree about
+   * each other's name are two boundaries as far as this can tell.
    */
-  const flagged = (flags: { joins: boolean; tearMm?: number }): AssemblyPart[] =>
+  const NET_NAME: Record<string, string> = { a: 'Sheet A', b: 'Sheet B' };
+  const flagged = (
+    flagsFor: (zoneId: string) => { joins: boolean; tearMm?: number },
+  ): AssemblyPart[] =>
     parts.map((p) => {
       const z = p.zones![0];
       const chart = z.chart as ConformalChart;
@@ -448,9 +456,10 @@ describe('a whole-part design is cut on exactly one sheet', () => {
         zones: [
           {
             ...z,
+            name: NET_NAME[z.id],
             chart: {
               ...chart,
-              netExcluded: chart.netExcluded!.map((e) => ({ ...e, ...flags })),
+              netExcluded: chart.netExcluded!.map((e) => ({ ...e, ...flagsFor(z.id) })),
             },
           },
         ],
@@ -464,24 +473,38 @@ describe('a whole-part design is cut on exactly one sheet', () => {
   it('says nothing extra when the ink crosses a stretch the two sheets really join', async () => {
     const out = await buildAssemblyGeometry({
       ...build(true),
-      parts: flagged({ joins: true, tearMm: 44.2 }),
+      parts: flagged(() => ({ joins: true, tearMm: 44.2 })),
     });
     expect(out).not.toBeNull();
     // the move still happens and is still reported; only the tear is not, because there is none
-    expect(WARNINGS.map((w) => w.message)).toContain(netShareNotice('logo', 'a', ['Sheet B']));
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      netShareNotice('logo', 'Sheet A', ['Sheet B']),
+    );
     expect(tornSaid()).toEqual([]);
   }, 60000);
 
-  it('warns, naming both sheets and the tear, when it crosses a stretch that only abuts', async () => {
+  it('warns once for the boundary, naming both sheets and the worse of the two tears', async () => {
+    // Both sheets yield to the other and the mark crosses both, so this raises the fact from both
+    // sides — one crossing, one pill. The two sides carry different tears, as the chair's do
+    // (33.8mm one way, 2.6mm the other), and the pill has to quote the worse.
     const out = await buildAssemblyGeometry({
       ...build(true),
-      parts: flagged({ joins: false, tearMm: 44.2 }),
+      parts: flagged((id) => ({ joins: false, tearMm: id === 'a' ? 3.1 : 44.2 })),
     });
     expect(out).not.toBeNull();
-    const said = WARNINGS.map((w) => w.message);
-    expect(said).toContain(netTornWarning('logo', 'a', 'Sheet B', 44.2));
-    expect(said).toContain(netTornWarning('logo', 'b', 'Sheet A', 44.2));
+    expect(tornSaid()).toEqual([netTornWarning('logo', ['Sheet A', 'Sheet B'], 44.2)]);
     expect(WARNINGS.find((w) => /do not join/.test(w.message))!.level).toBe('warn');
+  }, 60000);
+
+  it('keeps the worse tear whichever sheet the build reached first', async () => {
+    // The same boundary with the numbers swapped. First-wins would pass the test above and quote
+    // 3mm here, on a design really torn by 44.
+    const out = await buildAssemblyGeometry({
+      ...build(true),
+      parts: flagged((id) => ({ joins: false, tearMm: id === 'a' ? 44.2 : 3.1 })),
+    });
+    expect(out).not.toBeNull();
+    expect(tornSaid()).toEqual([netTornWarning('logo', ['Sheet A', 'Sheet B'], 44.2)]);
   }, 60000);
 
   it('says nothing when the whole design landed on the other sheet, torn or not', async () => {
@@ -490,11 +513,13 @@ describe('a whole-part design is cut on exactly one sheet', () => {
     // right. 12mm puts the 20mm square clear of the u = HALF divider.
     const out = await buildAssemblyGeometry({
       ...build(true, 12),
-      parts: flagged({ joins: false, tearMm: 44.2 }),
+      parts: flagged(() => ({ joins: false, tearMm: 44.2 })),
     });
     expect(out).not.toBeNull();
     // proof it really did reach the yielded patch, rather than missing every exclusion
-    expect(WARNINGS.map((w) => w.message)).toContain(netShareNotice('logo', 'a', ['Sheet B']));
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      netShareNotice('logo', 'Sheet A', ['Sheet B']),
+    );
     expect(tornSaid()).toEqual([]);
   }, 60000);
 

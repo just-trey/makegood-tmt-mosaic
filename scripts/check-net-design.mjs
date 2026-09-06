@@ -641,7 +641,18 @@ try {
   console.log('\n=== 6. Whole chair, a bar across a stretch of that boundary that only abuts ===');
   if (tornRow) {
     const torn = [tornRow.u, tornRow.v];
-    const tearMm = (NET.zones.left.excluded ?? []).find((e) => e.joins === false)?.tearMm;
+    // Read the way the runtime reads it, not off the first torn entry that turns up: `tearMm` is
+    // per yielded patch, one boundary can ship several to one neighbour, and both zones yield to
+    // each other across the ragged divider. clipToNetShare pools per neighbour and
+    // raiseTornWarning pools across directions, both at the worst tear, so this pools the same way.
+    // Off `find()` alone, a rebake that split one patch in two, or that gave the back a worse
+    // sliver, would fail here for the wrong reason or check the wrong boundary's number.
+    const tornTears = (from, to) =>
+      (NET.zones[from].excluded ?? [])
+        .filter((e) => e.to === to && e.joins === false)
+        .map((e) => e.tearMm);
+    const candidates = [...tornTears('left', 'back'), ...tornTears('back', 'left')];
+    const tearMm = candidates.length ? Math.max(...candidates) : undefined;
     // The two samples the survey itself compared: the last canvas the flank owns and the first the
     // back does, half a canvas gap either side of the row's midpoint. Their 3D answers are what
     // `tornRow.jump` measures, so this is the same crossing the sidecar calls torn.
@@ -660,16 +671,20 @@ try {
     const got = await tornWarnings(page);
     console.log(`   straddle warnings: ${JSON.stringify(got, null, 1)}`);
     if (tearMm === undefined)
-      fail('the sidecar records no tearMm for what "left" yields to "back"');
+      fail('the sidecar records no torn patch on the "left"/"back" boundary');
+    const [n1, n2] = [zoneName('left'), zoneName('back')].sort();
     const want =
-      `"${path.basename(tornSvg)}" crosses from "${zoneName('left')}" to "${zoneName('back')}", ` +
-      `where the two sheets do not join. It prints in two pieces, about ${Math.round(tearMm)}mm ` +
-      `apart. Bind it to one zone instead.`;
-    if (got.includes(want)) pass(`the straddle warning fired: ${want}`);
+      `"${path.basename(tornSvg)}" crosses between "${n1}" and "${n2}", where the two sheets do ` +
+      `not join. It prints in two pieces, about ${Math.round(tearMm)}mm apart. Bind it to one ` +
+      `zone instead.`;
+    if (got.length !== 1)
+      fail(`one crossing of one boundary raised ${got.length} pill(s): ${JSON.stringify(got)}`);
+    else if (got[0] === want) pass(`the straddle warning fired: ${want}`);
     else
       fail(
         `no warning said the mark crosses where the sheets do not join. Wanted:\n         ` +
-          `${want}\n         got: ${JSON.stringify(got)}`,
+          `${want}\n         got: ${JSON.stringify(got)}\n         ` +
+          `(the boundary's torn patches measure ${JSON.stringify(candidates)}mm)`,
       );
     // And the export really does come out in two pieces, which is the thing the warning claims.
     const tornExport = await exportTo(page, path.join(OUT, '6-torn-whole.3mf'));

@@ -1379,10 +1379,10 @@ this zone gives up would not load.
 skips the trim entirely. Please also report it via **Feedback** or **Report a
 bug on GitHub** — this failing is a bug, not a placement you can draw around.
 
-## Troubleshooting: "…" crosses from "…" to "…", where the two sheets do not join"
+## Troubleshooting: "…" crosses between "…" and "…", where the two sheets do not join"
 
-Full text: _""…" crosses from "…" to "…", where the two sheets do not join. It
-prints in two pieces, about …mm apart. Bind it to one zone instead."_
+Full text: _""…" crosses between "…" and "…", where the two sheets do not join.
+It prints in two pieces, about …mm apart. Bind it to one zone instead."_
 
 **What it means.** Two sheets sit side by side on the whole-part template all
 along their shared edge, but the surfaces under them only meet over part of it.

@@ -39,6 +39,7 @@ import {
   seamContinuity,
   SURVEY_U_STEP_MM,
   surveyBoundary,
+  zoneUVToNet,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
 } from '../scripts/lib/netseam.mjs';
 
@@ -484,9 +485,9 @@ describe('the whole-chair net', () => {
     }
     let checked = 0;
     for (const [id, place] of Object.entries(net.zones)) {
-      const p = net.zones[id];
-      const th = (p.rotationDeg * Math.PI) / 180;
-      const netV = ([u, v]: number[]): number => Math.sin(th) * u + Math.cos(th) * v + p.offsetV;
+      // The bake's own transform, not a copy of it: a sign slip here would agree with a sign slip
+      // in the split and pass.
+      const netV = (uv: number[]): number => zoneUVToNet(place, uv)[1];
       for (const e of place.excluded ?? []) {
         const key = `${id}>${e.to}`;
         const span = spanFor.get(key)!;

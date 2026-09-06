@@ -40,6 +40,7 @@ import {
   seamContinuity,
   SURVEY_U_STEP_MM,
   surveyBoundary,
+  zoneUVToNet,
 } from './netseam.mjs';
 
 /** Boundary/hole/seam polyline simplification tolerance (mm) — CHART_SNAP_MM covers the slack. */
@@ -2776,10 +2777,7 @@ export function netTemplateSVG(zones, net, sheetOf, boundaries = []) {
   const yieldLabels = [];
   for (const zone of zones) {
     const nz = net.zones[zone.id];
-    const th = (nz.rotationDeg * Math.PI) / 180;
-    const c = Math.cos(th);
-    const s = Math.sin(th);
-    const toNet = ([u, v]) => [c * u - s * v + nz.offsetU, s * u + c * v + nz.offsetV];
+    const toNet = (p) => zoneUVToNet(nz, p);
     for (const e of nz.excluded ?? []) {
       for (const r of e.regions)
         for (const loop of [r.outer, ...r.holes])
@@ -3270,14 +3268,6 @@ function seamContinuityFor(zones, net, parts, childId, parentId, log) {
   return { summary: out, rows: rows.map((r) => ({ ...r, continuous: r.jump <= tolMm })) };
 }
 
-/** A zone's own UV point taken to net mm under its PUBLISHED placement, the one the runtime reads. */
-function publishedToNet(place) {
-  const r = (place.rotationDeg * Math.PI) / 180;
-  const c = Math.cos(r);
-  const s = Math.sin(r);
-  return ([u, v]) => [c * u - s * v + place.offsetU, s * u + c * v + place.offsetV];
-}
-
 /**
  * Cut every yielded patch at the limits of its boundary's joining stretch, so each piece lies along
  * one kind of boundary and can say which.
@@ -3322,7 +3312,9 @@ function markNetExclusionContinuity(net, boundaries, wasm, log) {
   };
   for (const [zoneId, place] of Object.entries(net.zones)) {
     if (!place.excluded) continue;
-    const toNet = publishedToNet(place);
+    // The published placement, not the layout's: the runtime reads these rounded numbers, so the
+    // split has to be cut where they put the loops.
+    const toNet = (p) => zoneUVToNet(place, p);
     const out = [];
     for (const e of place.excluded) {
       const info = byPair.get(`${zoneId}>${e.to}`);
