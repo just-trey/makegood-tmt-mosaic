@@ -30,6 +30,7 @@ import {
   chartTriangles,
   netPoint,
   netToZoneUV,
+  zoneUVToNet,
   seamContinuity,
   SURVEY_U_STEP_MM,
   surveyBoundary,
@@ -902,16 +903,7 @@ async function gizmoLatency(page) {
 
 /** Smallest net-mm distance from one sheet's charted surface to any other sheet's. */
 function gapToOtherSheets(zoneId) {
-  const netUV = (id, tris) =>
-    tris.flatMap((t) =>
-      t.uv.map((p) => {
-        const pl = NET.zones[id];
-        const r = (pl.rotationDeg * Math.PI) / 180,
-          c = Math.cos(r),
-          s = Math.sin(r);
-        return [c * p[0] - s * p[1] + pl.offsetU, s * p[0] + c * p[1] + pl.offsetV];
-      }),
-    );
+  const netUV = (id, tris) => tris.flatMap((t) => t.uv.map((p) => zoneUVToNet(NET.zones[id], p)));
   // Deduped to 0.1mm: a chart's triangles share almost every corner, and the pairwise walk below
   // is the one place in this script where that multiplies out.
   const thin = (pts) => [
