@@ -372,6 +372,26 @@ describe('the whole-chair net', () => {
       ]),
     );
 
+  // Built once and shared: the two boundary surveys are this file's heaviest work, and running
+  // them per test starved the vitest worker's RPC heartbeat on CI ("Timeout calling
+  // onTaskUpdate", every test green) — the cost is the sync stretch, not the assertions.
+  let sheetsOnce: Map<string, object> | undefined;
+  const theSheets = (): Map<string, object> => (sheetsOnce ??= buildSheets());
+  const surveys = new Map<string, { v: number; jump: number }[]>();
+  const surveyFor = (id: string, to: string): { v: number; jump: number }[] => {
+    let rows = surveys.get(id);
+    if (!rows) {
+      rows = surveyBoundary(theSheets(), id, to, {
+        uFrom: net.bounds.minU,
+        uTo: net.bounds.maxU,
+        vFrom: net.bounds.minV,
+        vTo: net.bounds.maxV,
+      }) as { v: number; jump: number }[];
+      surveys.set(id, rows);
+    }
+    return rows;
+  };
+
   // The whole point of the partition is that a whole-part mark is cut once, so every bit of canvas
   // one sheet gives up has to be canvas the sheet taking it can really warp onto. It is not enough
   // for the receiver's CLIP region to admit it: that region is a simplified outline of its chart
@@ -381,7 +401,7 @@ describe('the whole-chair net', () => {
   // the fix: drop the `chartedSheet` intersection from `netLiveSheets` in scripts/lib/zonebake.mjs
   // and rebake; that bake also reports 1.5 and 0.8mm² the back handed back to each flank.
   it('yields no canvas the sheet taking it cannot chart', () => {
-    const sheets = buildSheets();
+    const sheets = theSheets();
     const STEP = 0.5;
     for (const [id, place] of Object.entries(net.zones))
       for (const e of place.excluded ?? []) {
@@ -428,18 +448,12 @@ describe('the whole-chair net', () => {
   // The rest abuts and tears, and the sidecar has to say so or the template draws a join that is
   // not there.
   it('records how much of each attached seam is a join rather than an abutment', () => {
-    const sheets = buildSheets();
     for (const [id, place] of Object.entries(net.zones)) {
       if (!place.seamResidualMm) {
         expect(place.seamContinuity, id).toBeUndefined();
         continue;
       }
-      const rows = surveyBoundary(sheets, id, place.seamResidualMm.to, {
-        uFrom: net.bounds.minU,
-        uTo: net.bounds.maxU,
-        vFrom: net.bounds.minV,
-        vTo: net.bounds.maxV,
-      });
+      const rows = surveyFor(id, place.seamResidualMm.to);
       const got = seamContinuity(rows, place.seamResidualMm.p95 + SURVEY_U_STEP_MM);
       const baked = place.seamContinuity!;
       expect(baked.rows, id).toBe(got.rows);
@@ -461,18 +475,12 @@ describe('the whole-chair net', () => {
    * itself, so a patch marked joining while lying out in the torn part fails here.
    */
   it('cuts each yielded patch at the limits of its boundary’s joining stretch', () => {
-    const sheets = buildSheets();
     // one survey per attached sheet; the back's own patches lie on the same two boundaries
     const rowsFor = new Map<string, { v: number; jump: number }[]>();
     const spanFor = new Map<string, { vFrom: number; vTo: number; tol: number }>();
     for (const [id, place] of Object.entries(net.zones)) {
       if (!place.seamResidualMm) continue;
-      const rows = surveyBoundary(sheets, id, place.seamResidualMm.to, {
-        uFrom: net.bounds.minU,
-        uTo: net.bounds.maxU,
-        vFrom: net.bounds.minV,
-        vTo: net.bounds.maxV,
-      });
+      const rows = surveyFor(id, place.seamResidualMm.to);
       const c = place.seamContinuity!;
       for (const key of [`${id}>${place.seamResidualMm.to}`, `${place.seamResidualMm.to}>${id}`]) {
         rowsFor.set(key, rows);
