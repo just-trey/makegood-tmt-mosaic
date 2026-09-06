@@ -368,7 +368,9 @@ describe('the whole-chair net', () => {
   // for the receiver's CLIP region to admit it: that region is a simplified outline of its chart
   // and bulges over notches the triangles leave open. While the partition ran on the clip alone the
   // flanks handed the back 24.0 and 21.8mm² it could not reach — ink dropped, with a notice saying
-  // it had moved there.
+  // it had moved there. Those two figures are this same measurement run against the sidecar as it
+  // was: `git show bc6f775~1:public/stl/chair-body-zones.json` in place of the shipped one, which
+  // also reports 1.5 and 0.8mm² the back handed back to each flank.
   it('yields no canvas the sheet taking it cannot chart', () => {
     const sheets = buildSheets();
     const STEP = 0.5;

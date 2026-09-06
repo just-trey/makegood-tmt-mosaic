@@ -2962,9 +2962,10 @@ function netFrame(layout, zoneId) {
  *
  * NOT the same thing as its `subRegions`, which are those triangles' boundary loops SIMPLIFIED, and
  * so bulge over notches and sub-threshold holes the triangles leave open. On the chair that gap is
- * 24mm² along the back's rim, and while the partition ran on subRegions alone it handed exactly
- * that sliver from each flank to the back, which then could not cut it: ink dropped, and a notice
- * saying it had moved. Cached per layout because the partition asks three times and a chair zone
+ * 24.0 and 21.8mm² along the back's rim, and while the partition ran on subRegions alone it handed
+ * exactly that sliver from each flank to the back, which then could not cut it: ink dropped, and a
+ * notice saying it had moved (tests/chair-zones.test.ts measures it; docs/pipeline.md names how to
+ * re-derive the before). Cached per layout because the partition asks three times and a chair zone
  * carries up to 13k triangles.
  */
 const chartedCache = new WeakMap();
