@@ -21,7 +21,6 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 import { renderZoneTemplateLinks } from '../src/ui/assemblyPanel';
 import { track } from '../src/analytics/track';
 import { state } from '../src/state/store';
-import { WHOLE_CHAIR_ZONE } from '../src/geometry/zones';
 import type { ConformalChart } from '../src/geometry/conformal';
 import type { ZoneNet } from '../src/geometry/zoneCharts';
 import type { AssemblyPart } from '../src/types';
@@ -108,7 +107,7 @@ describe('renderZoneTemplateLinks — Whole chair', () => {
     expect(links.map((a) => a.textContent)).toEqual(['left']);
   });
 
-  it('tracks a Whole chair download under its own zone id, like any other zone link', () => {
+  it('tracks a Whole chair download as "whole", never the reserved id', () => {
     state.assembly.parts = [
       netPart(1, 'left', 'left-template.svg'),
       netPart(2, 'back', 'back-template.svg'),
@@ -120,7 +119,7 @@ describe('renderZoneTemplateLinks — Whole chair', () => {
 
     expect(track).toHaveBeenCalledWith('template_download', {
       kind: 'chair-body',
-      zone: WHOLE_CHAIR_ZONE,
+      zone: 'whole',
     });
   });
 });

@@ -8,7 +8,14 @@ vi.mock('../src/app/scheduler', () => ({ scheduleRebuild: vi.fn() }));
 vi.mock('../src/ui/fitPanel', () => ({ refreshFitInputsFromState: vi.fn() }));
 vi.mock('../src/scene/designGizmo', () => ({ refreshGizmo: vi.fn() }));
 vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
-vi.mock('../src/assembly/kinds', () => ({ fillModeOffered: () => false }));
+vi.mock('../src/assembly/kinds', () => ({
+  fillModeOffered: () => false,
+  // availableZones() reads the kind's display name for the "Whole <kind>" label; the real module
+  // pulls in Manifold and the export/printers chain this file exists to avoid, so this stands in
+  // with just what that lookup needs.
+  currentAssemblyKind: () =>
+    state.assembly.kindId === 'chair-body' ? { name: 'Chair body' } : null,
+}));
 
 import { renderArtworkList } from '../src/ui/artworkListPanel';
 import { loadArtworkSource, setArtworkMirror, setArtworkZone } from '../src/state/artwork';
@@ -160,6 +167,7 @@ beforeEach(() => {
   state.activeArtworkId = null;
   state.assembly.parts = [];
   state.assembly.net = null;
+  state.assembly.kindId = null;
   state.shapeKind = 'disc';
   clearWarnings();
 });
@@ -407,6 +415,12 @@ function netFixture(): { parts: AssemblyPart[]; net: ZoneNet } {
 }
 
 describe('Whole chair (net binding)', () => {
+  // The label reads "Whole <kind>" off the loaded kind's own name (see availableZones()); the
+  // chair's is "Chair body", so the dropdown/badge text below pins the derivation, not a literal.
+  beforeEach(() => {
+    state.assembly.kindId = 'chair-body';
+  });
+
   it('offers Whole chair in the dropdown only once a net is loaded', () => {
     state.assembly.parts = [zonedPart(1, 'left', 'Left side')];
     const a = loadArtworkSource(fakeParsed(), 'a.svg');

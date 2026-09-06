@@ -17,6 +17,7 @@ import {
   switchChairVariant,
 } from '../assembly/parts';
 import { HUBCAP_WHEEL_DIAMETER_MM } from '../geometry/hubcap';
+import { WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { availableZones, clampArtworkModes } from '../state/artwork';
 import { track } from '../analytics/track';
 import { renderArtworkList } from './artworkListPanel';
@@ -288,7 +289,10 @@ export function renderZoneTemplateLinks(): void {
   box.querySelectorAll<HTMLAnchorElement>('a').forEach((a, i) =>
     a.addEventListener('click', () => {
       const kind = currentAssemblyKind();
-      if (kind) track('template_download', { kind: kind.id, zone: zones[i].zoneId });
+      // The reserved id is plumbing, not something to leak into analytics — same reason
+      // artwork_instance_zone_changed maps it, in src/ui/artworkListPanel.ts.
+      const zone = zones[i].zoneId === WHOLE_CHAIR_ZONE ? 'whole' : zones[i].zoneId;
+      if (kind) track('template_download', { kind: kind.id, zone });
     }),
   );
 }

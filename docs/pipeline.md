@@ -264,7 +264,7 @@ family (cone-singularity methods like BFF/OptCuts, rather than plain LSCM) —
 a substantially bigger change than any of the three above. A prebuilt BFF
 was spiked against it and closed no-go
 ([docs/spikes/2026-09-04-cone-wrap.md](spikes/2026-09-04-cone-wrap.md)); the
-whole-chair net (**Whole chair**, above) is the shipped stand-in.
+whole-part sheet (**Whole chair**, above) is the shipped stand-in.
 
 **Cross-chart registration was later closed for two of those boundaries.**
 `claimWedge` (a zone-config option) hands an unclaimed wedge of surface to
@@ -272,7 +272,7 @@ whichever neighbouring zone's seed normal is nearer, so `left`/`back` and
 `back`/`right` abut with 0mm gap instead of the ~8mm strip claimWedge's
 predecessor left in no zone at all
 ([docs/findings/2026-09-04-seam-closing.md](findings/2026-09-04-seam-closing.md)).
-The whole-chair net (above, "Whole chair") uses exactly the registration this
+The whole-part sheet (above, "Whole chair") uses exactly the registration this
 unlocked: a design bound to it continues across those two boundaries, within
 2mm at the 95th percentile, and sits with a visible gap at every boundary the
 wedge didn't close.

@@ -54,7 +54,7 @@ Open questions with no obvious answer, where the measurement behind the question
   moves placement for every zone on every kind, a far wider blast radius than
   the clip itself.
 - ~~Wrap one design across the whole chair, rather than one zone at a time.~~
-  **Shipped as the whole-chair net (CHANGELOG, "Whole chair").** The seamless
+  **Shipped as the whole-part sheet (CHANGELOG, "Whole chair").** The seamless
   wrap itself is still closed no-go — the geometry below hasn't changed — but
   the net is its practical ceiling: the chair's eight design zones laid out
   on one unfolded sheet, each at the transform its bake measured. Two of
@@ -63,9 +63,14 @@ Open questions with no obvious answer, where the measurement behind the question
 scripts/measure-zone-seams.mjs`), so a design bound to **Whole chair**
   continues across them; every other pair of sheets (front, seat sides, wing
   panels) sits beside its neighbour with a visible gap and doesn't connect.
-  Two attached sheets also overlap at their registered transform, so a mark
-  drawn there is cut in both places — open as a decision at ship time, see
-  `DECISIONS-NEEDED.md` (or its resolution, once settled).
+  Two attached sheets also overlap at their registered transform — 8,700mm²
+  and 8,199mm² of it on the chair, where the flanks reach across the back's
+  ([docs/pipeline.md](pipeline.md)). Rather than let a mark there cut twice,
+  the canvas is partitioned at the seam: each point cuts on whichever
+  sheet's own body it's on, so it lands in exactly one place
+  (`clipToNetShare`, [src/geometry/assembly.ts](../src/geometry/assembly.ts)).
+  Binding a zone by name instead of Whole chair still reaches all of its
+  surface — only the whole-part binding gives any of it up.
   - **Follow-up: Mirror on a net binding.** Not offered in the shipping PR —
     the checkbox hides on a row bound to Whole chair. The net is symmetric
     about the back's own centre line, so a mirror there would reflect the

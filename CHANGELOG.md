@@ -34,7 +34,7 @@ scripts/measure-zone-seams.mjs`) — a mark drawn across the join continues on
   between them decides which one cuts, so a mark on the sheet lands in exactly
   one place; the template hatches those areas and names the sheet that gets
   them. Binding a design to that zone by name still reaches all of its
-  surface. Mirror isn't offered on a whole-chair-bound design yet.
+  surface. Mirror isn't offered yet on a design set to cover the whole part.
 - **A design can mirror onto its zone's twin, or across its own centre.** A
   Mirror checkbox on an artwork row bound to a zone that offers one cuts the
   same design on the twin zone, reflected — the two sides line up within

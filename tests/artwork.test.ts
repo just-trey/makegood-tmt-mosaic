@@ -761,6 +761,7 @@ describe('availableZones / zoneCoverage — Whole chair', () => {
   });
 
   it('lists Whole chair first, with the net’s template file, once its zones are loaded', () => {
+    state.assembly.kindId = 'chair-body'; // kind.name is "Chair body" — see the label test below
     state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
     state.assembly.net = netOf(['left', 'back']);
 
@@ -771,6 +772,24 @@ describe('availableZones / zoneCoverage — Whole chair', () => {
       templateFile: 'net-template.svg',
     });
     expect(zones.map((z) => z.zoneId)).toEqual([WHOLE_CHAIR_ZONE, 'left', 'back']);
+  });
+
+  it('reads the label off the loaded kind’s own name, not a hardcoded "chair"', () => {
+    // A stand-in for a future multi-zone kind: real kind id, unrelated to the chair, whose own
+    // display name ("Wheel (Top ×2 + Cap)") should get its own first word, not "Whole chair".
+    state.assembly.kindId = 'wheel';
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+    state.assembly.net = netOf(['left', 'back']);
+
+    expect(availableZones()[0].name).toBe('Whole wheel');
+  });
+
+  it('falls back to a generic label outside assembly mode, where nothing can render it anyway', () => {
+    state.assembly.kindId = null;
+    state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+    state.assembly.net = netOf(['left', 'back']);
+
+    expect(availableZones()[0].name).toBe('Whole part');
   });
 
   it('is not offered when the loaded parts carry none of the net’s zones', () => {

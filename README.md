@@ -123,7 +123,7 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   (`npx vite-node scripts/measure-zone-seams.mjs`). Its other sheets sit apart
   with a visible gap, same as before. A point on that sheet still cuts in
   exactly one place. Where two sheets lie over each other, the seam between
-  them decides which, and the whole-chair template hatches the part each one
+  them decides which, and the whole-part sheet hatches the part each one
   gives up.
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.

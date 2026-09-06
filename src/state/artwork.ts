@@ -5,7 +5,7 @@ import { parseRasterImage } from '../raster/parse';
 import type { RasterImage } from '../raster/types';
 import type { NetZonePlacement } from '../geometry/zoneCharts';
 import { boundsCentre, netOffsetToZone, WHOLE_CHAIR_ZONE } from '../geometry/zones';
-import { currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
+import { currentAssemblyKind, currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
 
@@ -691,11 +691,14 @@ export function availableZones(): {
   const out = Array.from(seen, ([zoneId, v]) => ({ zoneId, ...v }));
   const net = netZones();
   // First, because it is the whole part and every other entry is one piece of it. Named for the
-  // thing rather than for the layout: "net" is our word, not the user's.
+  // thing rather than for the layout: "net" is our word, not the user's. The label reads "Whole
+  // <kind>" off the kind's own display name rather than a hardcoded "chair" — the chair's is
+  // "Chair body", and only its first word belongs in a sentence a volunteer reads ("Whole chair
+  // body" names a part twice), so a future multi-zone kind gets its own word the same way.
   if (net)
     out.unshift({
       zoneId: WHOLE_CHAIR_ZONE,
-      name: 'Whole chair',
+      name: `Whole ${(currentAssemblyKind()?.name ?? 'part').split(' ')[0].toLowerCase()}`,
       templateFile: state.assembly.net!.templateFile,
     });
   return out;
