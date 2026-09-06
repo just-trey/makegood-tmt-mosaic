@@ -227,8 +227,9 @@ rounded edge the way real vinyl would
   triangles leave open, so a partition run on them alone handed the back 24.0
   and 21.8mm² it could not warp onto — ink dropped, with a notice saying it had
   moved. Both figures come from the "yields no canvas the sheet taking it
-  cannot chart" test in `tests/chair-zones.test.ts`, pointed at the sidecar as
-  it was (`git show bc6f775~1:public/stl/chair-body-zones.json`). What it gives
+  cannot chart" test in `tests/chair-zones.test.ts`; re-derive them by
+  dropping the `chartedSheet` intersection from `netLiveSheets` in
+  `scripts/lib/zonebake.mjs`, rebaking, and re-running that test. What it gives
   up is baked as `net.zones[<id>].excluded`, and
   `clipToNetShare` takes that off a whole-part cut with a notice naming the
   zone the ink went to. Binding a zone by name ignores it entirely and still
