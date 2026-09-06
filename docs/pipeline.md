@@ -217,7 +217,9 @@ rounded edge the way real vinyl would
   from Whole chair to that one zone (`zonePick.ts`).
 - **The layout is partitioned, so a point on it cuts exactly once.** Two
   sheets can lie over each other: on the chair the flanks reach 8,700 and
-  8,199mm² across the back's. The divider is the registered seam itself —
+  8,199mm² across the back's (the bake prints all four yielded areas:
+  `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`,
+  pinned in `tests/chair-zones.test.ts`). The divider is the registered seam itself —
   the total-least-squares line through the vertices the two zones share, the
   same ones whose fit placed the sheet — and each keeps the side its own body
   is on. What it gives up is baked as `net.zones[<id>].excluded`, and
