@@ -305,6 +305,54 @@ describe('stacked-instance cascade', () => {
     expect(second.offsetU).toBe(INSTANCE_CASCADE_MM);
   });
 
+  // A whole-part binding is placed in NET mm and cut once per sheet, so what it covers on any one
+  // zone is its net offset moved onto that sheet. netOf places each 0..10 zone on a 0..20 canvas,
+  // so the net's own centre reads (5, 5) in every zone's space.
+  describe('against a design bound to the whole part', () => {
+    beforeEach(() => {
+      state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
+      state.assembly.net = netOf(['left', 'back']);
+    });
+
+    it('steps off the spot a whole-part design really covers on that zone', () => {
+      const first = loadArtworkSource(fakeParsed(), 'a.svg');
+      setArtworkZone(first.id, WHOLE_CHAIR_ZONE);
+      state.offsetX = 5;
+      state.offsetY = 5;
+
+      const second = loadArtworkSource(fakeParsed(), 'b.svg'); // binds to 'left'
+
+      expect(second.zone?.zoneId).toBe('left');
+      expect(second.offsetU).toBe(5 + INSTANCE_CASCADE_MM);
+      expect(second.offsetV).toBe(5 + INSTANCE_CASCADE_MM);
+    });
+
+    it('does not step off a net offset that reads the same number in another space', () => {
+      // Both sit at 0/0, but the whole-part design's 0/0 is the net's anchor and lands at (5, 5) on
+      // each sheet. Matching the raw numbers would move a design off a spot nothing is on.
+      const first = loadArtworkSource(fakeParsed(), 'a.svg');
+      setArtworkZone(first.id, WHOLE_CHAIR_ZONE);
+      first.offsetU = 0;
+      first.offsetV = 0;
+      state.offsetX = 0;
+      state.offsetY = 0;
+
+      const second = loadArtworkSource(fakeParsed(), 'b.svg');
+
+      expect(second.offsetU).toBe(0);
+      expect(second.offsetV).toBe(0);
+    });
+
+    it('leaves a whole-part binding on a kind with no net where it was put', () => {
+      // Nothing is cut at all, and the build warns about that; there is no spot to step off.
+      const first = loadArtworkSource(fakeParsed(), 'a.svg');
+      setArtworkZone(first.id, WHOLE_CHAIR_ZONE);
+      state.assembly.net = null;
+
+      expect(addInstanceForSource(first.sourceId, 'left').offsetU).toBe(0);
+    });
+  });
+
   it('steps an "All zones" design off a zone-bound one it would cover', () => {
     state.assembly.parts = [zonedPart(1, 'left', 'Left'), zonedPart(2, 'seat', 'Seat')];
     const first = loadArtworkSource(fakeParsed(), 'a.svg'); // binds to 'left'

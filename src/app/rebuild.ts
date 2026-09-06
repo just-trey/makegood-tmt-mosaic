@@ -452,64 +452,15 @@ function poseAssemblyForDisplay(): void {
   modelGroup.position.set(-center.x, -center.y, -box.min.z);
 }
 
-async function rebuildAssemblyScene(): Promise<void> {
-  newModelGroup(state.stlRefMesh);
-
-  // The fit sliders and the gizmo write the legacy globals; the instance is where the rest of
-  // assembly mode reads placement from. Sync FIRST, because a part whose shape follows the artwork
-  // is regenerated below and reads that instance — left until its usual spot further down, the
-  // outline was built from the previous scale/rotation/offset and the picture from the new one,
-  // which is the drift the whole placement seam exists to prevent. Idempotent, and the call below
-  // stays where it is so the non-generated path is unchanged.
-  syncActiveArtworkPlacement();
-
-  // BEFORE the no-artwork branch below, not after it. A part whose shape follows the artwork has
-  // to be rebuilt when the artwork goes away, and that is exactly the case that branch returns
-  // early for — so removing the last image left the hubcap still cut to its silhouette, with
-  // nothing on screen to explain why.
-  if (generatedPartsNeedRebuild()) await asmRebuildGeneratedParts({ schedule: false });
-
-  // A part cut to its own artwork centres itself on its mounting axis, and the artwork's offset is
-  // then solved for rather than chosen — moving the picture relative to a part that IS the picture
-  // isn't a meaningful request, and honouring one can't be made consistent anyway (the cut adds the
-  // design face's own centre, which for a silhouette is the thing being offset). Written back to
-  // both the instance and the legacy globals so the Fit sliders show what is actually in force.
-  const silOff = hubcapSilhouetteOffset();
-  if (silOff) {
-    state.offsetX = silOff.x;
-    state.offsetY = silOff.z;
-    const active = activeArtworkInstance();
-    if (active) {
-      active.offsetU = silOff.x;
-      active.offsetV = silOff.z;
-    }
-  }
-
-  // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
-  if (!state.parsed) {
-    renderRawAssemblyParts();
-    poseAssemblyForDisplay();
-    renderColorList(null);
-    renderWarnings();
-    $<HTMLButtonElement>('#btn-export').disabled = true;
-    if (!state.assembly.parts.some((p) => p.loaded)) $('#stat-tris').textContent = '0 tris';
-    const primary = state.assembly.parts.find((p) => p.loaded && !p.isDuplicateOf);
-    const nrm = primary ? asmPartFaceNormal(primary, state.assembly.parts) : null;
-    setPreferredViewDir(assemblyViewDir(currentAssemblyKind(), nrm && nrm[1] < 0 ? -1 : 1));
-    refreshModelShadows();
-    frameModelIfPending();
-    return;
-  }
-
-  // Placement still comes from the global fit sliders (the instance-aware panel wires them to the
-  // active instance directly); sync the instance here so assembly-mode code reads placement
-  // through it rather than the legacy fields, without changing what value actually reaches the
-  // build.
-  syncActiveArtworkPlacement();
-
-  // Every instance whose source still resolves, each carrying its own placement and zone binding.
-  // With one unbound instance — every flow that exists until the panel can add a second — this is
-  // exactly the single global placement the build used to take.
+/**
+ * Every instance whose source still resolves, each carrying its own placement and zone binding.
+ * With one unbound instance — every flow that exists until the panel can add a second — this is
+ * exactly the single global placement the build used to take.
+ *
+ * Exported for the tests: it is the whole of the whole-part and mirror expansion, and every branch
+ * of it either produces a placement or says why it produced none.
+ */
+export function artworkBuildInputs(): ArtworkBuildInput[] {
   const artworks: ArtworkBuildInput[] = state.artworks.flatMap((a) => {
     const source = state.sources.find((s) => s.id === a.sourceId);
     const parsed = source?.parsed ?? state.parsed;
@@ -572,7 +523,11 @@ async function rebuildAssemblyScene(): Promise<void> {
   // state.parsed without an instance shouldn't happen (loadArtworkSource creates one), but the
   // globals remain the source of truth for flat mode, so fall back to them rather than silently
   // building nothing.
-  if (!artworks.length && state.parsed)
+  //
+  // Gated on there being no instance at all, not on the expansion coming back empty. An instance
+  // that expanded to nothing has already said why in a warning, and this would then cut it across
+  // every zone at the global placement — the exact opposite of what the app just said it would do.
+  if (!state.artworks.length && state.parsed)
     artworks.push({
       parsed: state.parsed,
       zoneId: null,
@@ -585,6 +540,65 @@ async function rebuildAssemblyScene(): Promise<void> {
       rotationDeg: state.rotationDeg,
       mode: 'sticker',
     });
+  return artworks;
+}
+
+async function rebuildAssemblyScene(): Promise<void> {
+  newModelGroup(state.stlRefMesh);
+
+  // The fit sliders and the gizmo write the legacy globals; the instance is where the rest of
+  // assembly mode reads placement from. Sync FIRST, because a part whose shape follows the artwork
+  // is regenerated below and reads that instance — left until its usual spot further down, the
+  // outline was built from the previous scale/rotation/offset and the picture from the new one,
+  // which is the drift the whole placement seam exists to prevent. Idempotent, and the call below
+  // stays where it is so the non-generated path is unchanged.
+  syncActiveArtworkPlacement();
+
+  // BEFORE the no-artwork branch below, not after it. A part whose shape follows the artwork has
+  // to be rebuilt when the artwork goes away, and that is exactly the case that branch returns
+  // early for — so removing the last image left the hubcap still cut to its silhouette, with
+  // nothing on screen to explain why.
+  if (generatedPartsNeedRebuild()) await asmRebuildGeneratedParts({ schedule: false });
+
+  // A part cut to its own artwork centres itself on its mounting axis, and the artwork's offset is
+  // then solved for rather than chosen — moving the picture relative to a part that IS the picture
+  // isn't a meaningful request, and honouring one can't be made consistent anyway (the cut adds the
+  // design face's own centre, which for a silhouette is the thing being offset). Written back to
+  // both the instance and the legacy globals so the Fit sliders show what is actually in force.
+  const silOff = hubcapSilhouetteOffset();
+  if (silOff) {
+    state.offsetX = silOff.x;
+    state.offsetY = silOff.z;
+    const active = activeArtworkInstance();
+    if (active) {
+      active.offsetU = silOff.x;
+      active.offsetV = silOff.z;
+    }
+  }
+
+  // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
+  if (!state.parsed) {
+    renderRawAssemblyParts();
+    poseAssemblyForDisplay();
+    renderColorList(null);
+    renderWarnings();
+    $<HTMLButtonElement>('#btn-export').disabled = true;
+    if (!state.assembly.parts.some((p) => p.loaded)) $('#stat-tris').textContent = '0 tris';
+    const primary = state.assembly.parts.find((p) => p.loaded && !p.isDuplicateOf);
+    const nrm = primary ? asmPartFaceNormal(primary, state.assembly.parts) : null;
+    setPreferredViewDir(assemblyViewDir(currentAssemblyKind(), nrm && nrm[1] < 0 ? -1 : 1));
+    refreshModelShadows();
+    frameModelIfPending();
+    return;
+  }
+
+  // Placement still comes from the global fit sliders (the instance-aware panel wires them to the
+  // active instance directly); sync the instance here so assembly-mode code reads placement
+  // through it rather than the legacy fields, without changing what value actually reaches the
+  // build.
+  syncActiveArtworkPlacement();
+
+  const artworks = artworkBuildInputs();
   // The default zone binding (loadArtworkSource) picks the first zone silently, since binding
   // every zone recuts the whole assembly on every nudge — see that function's comment. Surface the
   // decision here instead of leaving it discoverable only via the per-row dropdown: this is what

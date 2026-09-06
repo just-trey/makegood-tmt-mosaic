@@ -4,7 +4,7 @@ import { deltaE, hexToLab } from '../color';
 import { parseRasterImage } from '../raster/parse';
 import type { RasterImage } from '../raster/types';
 import type { NetZonePlacement } from '../geometry/zoneCharts';
-import { boundsCentre, WHOLE_CHAIR_ZONE } from '../geometry/zones';
+import { boundsCentre, netOffsetToZone, WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
@@ -34,14 +34,51 @@ export const INSTANCE_CASCADE_MM = 8;
 const SAME_SPOT_MM = 1e-6;
 
 /**
- * Do two zone bindings put their designs on the same surface? `null` is "All zones", which covers
- * every one of them — so it shares a surface with any binding, including another `null`. Comparing
- * the ids directly would treat "All zones" as a zone of its own and let a bound design seed on top
- * of one that is already stamped everywhere.
+ * Do two zone bindings put their designs on the same surface? Two of them cover every zone at once
+ * rather than naming one: `null` is "All zones", and the whole-part id is every sheet of the net.
+ * Either shares a surface with any binding, including another of itself. Comparing the ids directly
+ * treats them as zones of their own and lets a bound design seed on top of one already stamped
+ * everywhere.
  */
 function sharesSurface(a: string | null, b: string | null): boolean {
-  return a === null || b === null || a === b;
+  const everywhere = (z: string | null): boolean => z === null || z === WHOLE_CHAIR_ZONE;
+  return everywhere(a) || everywhere(b) || a === b;
 }
+
+/** One design's placement on one surface, in that surface's own offset space. */
+interface PlacedMark {
+  /** a real zone id, or null for a binding that lands on every zone at once */
+  zoneId: string | null;
+  offsetU: number;
+  offsetV: number;
+}
+
+/**
+ * Where a placement actually lands, one entry per surface it cuts on.
+ *
+ * A whole-part binding is the one case that is not itself a surface: it is placed in **net** mm and
+ * cut as one ordinary placement per sheet, so its offsets are moved onto each zone before they mean
+ * anything beside a placement bound to that zone by name. `netOffsetToZone` is the same algebra the
+ * build's own expansion uses (see rebuild.ts), so the spot compared here is the spot that gets cut.
+ * Comparing the two raw compares net mm against zone mm, which is neither the same spot nor a
+ * different one.
+ *
+ * Empty for a whole-part binding on a kind with no net — nothing is cut, and the build says so.
+ */
+function placedMarks(zoneId: string | null, offsetU: number, offsetV: number): PlacedMark[] {
+  if (zoneId !== WHOLE_CHAIR_ZONE) return [{ zoneId, offsetU, offsetV }];
+  const net = netZones();
+  if (!net) return [];
+  return net.zones.map((z) => {
+    const [u, v] = netOffsetToZone([offsetU, offsetV], z.place, net.netCentre, z.zoneCentre);
+    return { zoneId: z.zoneId, offsetU: u, offsetV: v };
+  });
+}
+
+const sameSpot = (x: PlacedMark, y: PlacedMark): boolean =>
+  sharesSurface(x.zoneId, y.zoneId) &&
+  Math.abs(x.offsetU - y.offsetU) < SAME_SPOT_MM &&
+  Math.abs(x.offsetV - y.offsetV) < SAME_SPOT_MM;
 
 /**
  * The largest placed design the cascade will step the full width of.
@@ -146,13 +183,11 @@ function cascadedOffset(
   incoming: CascadeSubject,
 ): { offsetU: number; offsetV: number } {
   if (state.shapeKind !== 'assembly') return { offsetU, offsetV };
-  const at = (u: number, v: number): ArtworkInstance | undefined =>
-    state.artworks.find(
-      (a) =>
-        sharesSurface(a.zone?.zoneId ?? null, zoneId) &&
-        Math.abs(a.offsetU - u) < SAME_SPOT_MM &&
-        Math.abs(a.offsetV - v) < SAME_SPOT_MM,
-    );
+  const taken = state.artworks.flatMap((a) =>
+    placedMarks(a.zone?.zoneId ?? null, a.offsetU, a.offsetV),
+  );
+  const at = (u: number, v: number): boolean =>
+    placedMarks(zoneId, u, v).some((m) => taken.some((t) => sameSpot(m, t)));
   if (!at(offsetU, offsetV)) return { offsetU, offsetV };
   const step = cascadeStepMM(surfaceClearanceMM(zoneId, incoming));
   for (let i = 1; i <= state.artworks.length; i++) {
