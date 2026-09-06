@@ -24,6 +24,7 @@ import {
   measureZoneMirror,
   measureZoneSeam,
   MIN_ISLAND_AREA_MM2,
+  netSheetOverlaps,
   nearestPoints,
   NET_SHEET_GAP_MM,
   read3MFIndexed,
@@ -188,6 +189,58 @@ describe('the whole-chair net', () => {
       expect(m.sharedRigid.t[0], id).toBeCloseTo(p.offsetU, 3);
       expect(m.sharedRigid.t[1], id).toBeCloseTo(p.offsetV, 3);
     }
+  }, 120000);
+
+  // Every figure here re-derives from
+  // `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`, whose net lines
+  // print the same areas: left yields 8700mm2 to back, right 8199mm2, and back yields 30mm2 back
+  // to left and 27mm2 to right — the slivers of each patch that fall on the flank's side of the
+  // seam. 16,956mm2 reassigned in total, and 0 pairs still overlapping.
+  it('divides every patch two sheets both claim, and records what each yields', () => {
+    const yields = Object.entries(net.zones).flatMap(([id, p]) =>
+      (p.excluded ?? []).map((e) => [id, e.to, e.areaMm2]),
+    );
+    expect(yields).toEqual([
+      ['left', 'back', 8699.6],
+      ['right', 'back', 8198.5],
+      ['back', 'left', 30.4],
+      ['back', 'right', 27.5],
+    ]);
+    for (const [id, p] of Object.entries(net.zones))
+      for (const e of p.excluded ?? []) {
+        // names a zone that exists, and its display name, since that is what the notice says
+        expect(zone(e.to), `${id} -> ${e.to}`).toBeDefined();
+        expect(e.toName).toBe(zone(e.to).name);
+        // and the recorded area is the area of the loops shipped beside it, not a separate number
+        const area = e.regions.reduce(
+          (s, r) => s + Math.abs(planarArea(regionPolygon(r))) - 0 * r.holes.length,
+          0,
+        );
+        expect(area, `${id} -> ${e.to}`).toBeCloseTo(e.areaMm2, 0);
+      }
+  });
+
+  // The bake's own guard, re-run here against the shipped sidecar: with each zone's yielded canvas
+  // taken off, no two sheets claim the same place on the net, so a whole-part design is cut in
+  // exactly one place. Before the partition this reported 8,730 and 8,226mm2.
+  it('leaves no canvas two sheets both claim', async () => {
+    const wasm = await getManifold();
+    const layout = {
+      placed: new Map(
+        sidecar.zones.map((z) => [
+          z.id,
+          {
+            theta: (net.zones[z.id].rotationDeg * Math.PI) / 180,
+            t: [net.zones[z.id].offsetU, net.zones[z.id].offsetV],
+          },
+        ]),
+      ),
+    };
+    const excluded = new Map(
+      sidecar.zones.map((z) => [z.id, (net.zones[z.id].excluded ?? []).flatMap((e) => e.regions)]),
+    );
+    expect(netSheetOverlaps(sidecar.zones, layout, wasm)).toHaveLength(2); // the two the bake divided
+    expect(netSheetOverlaps(sidecar.zones, layout, wasm, excluded)).toEqual([]);
   }, 120000);
 
   /**

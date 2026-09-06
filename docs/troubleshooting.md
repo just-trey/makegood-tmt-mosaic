@@ -1350,6 +1350,35 @@ never reaches that zone.
 **What to do.** Add a separate design and target that zone directly from its
 own row's dropdown.
 
+## Troubleshooting: "…" reaches part of the whole-chair sheet that "…" owns"
+
+Full text: _""…" reaches part of the whole-chair sheet that "…" owns. It is cut
+there, not on "…"."_
+
+**An informational notice, not a warning.** Two sheets of the whole-chair
+layout can lie over each other, and the seam between them decides which one
+owns the shared area. A design bound to **Whole chair** that reaches into it is
+cut on the sheet that owns it, once — not on both, and not nowhere. The
+whole-chair template hatches those areas and names the sheet that cuts them.
+
+**What to do.** Nothing, unless you wanted that mark on the other zone. For
+that, bind a separate design to that zone from its own row's dropdown: a
+per-zone binding reaches all of its zone's surface, hatched areas included.
+
+## Troubleshooting: "Couldn't trim "…" to the part of the whole-chair sheet "…" owns"
+
+Full text: _"Couldn't trim "…" to the part of the whole-chair sheet "…" owns.
+Some of it prints twice. Bind that design to one zone instead."_
+
+**What it means.** The polygon clipper failed on the trim above, so this zone
+cut the area another sheet also cuts. That part of the design prints in two
+places on the chair.
+
+**What to do.** Bind the design to a single zone from its row's dropdown, which
+skips the trim entirely. Please also report it via **Feedback** or **Report a
+bug on GitHub** — the clipper failing here is a bug, not a placement you can
+draw around.
+
 ## Troubleshooting: "Exporting with artwork on … of … zones…" warnings
 
 Full text: _"Exporting with artwork on … of … zones. The other … zones will

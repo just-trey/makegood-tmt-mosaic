@@ -30,9 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   within 2mm at the 95th percentile (`npx vite-node
 scripts/measure-zone-seams.mjs`) — a mark drawn across the join continues on
   the far side. The other sheets sit beside their neighbour with a visible
-  gap and don't connect. Two of the sheets overlap by design; a mark drawn
-  there is cut in both places, warned about at bake time and hatched on the
-  template. Mirror isn't offered on a whole-chair-bound design yet.
+  gap and don't connect. Where two sheets lie over each other, the seam
+  between them decides which one cuts, so a mark on the sheet lands in exactly
+  one place; the template hatches those areas and names the sheet that gets
+  them. Binding a design to that zone by name still reaches all of its
+  surface. Mirror isn't offered on a whole-chair-bound design yet.
 - **A design can mirror onto its zone's twin, or across its own centre.** A
   Mirror checkbox on an artwork row bound to a zone that offers one cuts the
   same design on the twin zone, reflected — the two sides line up within

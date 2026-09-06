@@ -78,6 +78,26 @@ export interface NetZonePlacement {
   attached: boolean;
   /** How well the shared seam really registers, in mm; absent on the root and on detached sheets. */
   seamResidualMm?: { to: string; pairs: number; rms: number; p95: number; max: number };
+  /**
+   * Canvas this zone yields, so a point of the net belongs to exactly one zone. Absent where it
+   * yields none, which is every zone whose sheet lies over no other.
+   */
+  excluded?: NetZoneExclusion[];
+}
+
+/**
+ * A patch of this zone's own UV that another sheet of the net owns: a whole-part design is cut
+ * there on `to` alone, and never here. The zone stays reachable through its own per-zone binding,
+ * which does not consult this at all.
+ *
+ * `toName` is the owning zone's display name, carried rather than looked up because the notice
+ * this feeds is user-facing and the geometry layer has no zone list to resolve an id against.
+ */
+export interface NetZoneExclusion {
+  to: string;
+  toName: string;
+  areaMm2: number;
+  regions: { outer: number[][]; holes: number[][][] }[];
 }
 
 /**
@@ -164,6 +184,7 @@ export function reconstructChart(
   zone: SidecarZone,
   chart: SidecarChart,
   partVertices: Float32Array,
+  netExcluded?: NetZoneExclusion[],
 ): ConformalChart {
   const positions3 = new Float32Array(chart.verts.length * 3);
   for (let i = 0; i < chart.verts.length; i++) {
@@ -187,6 +208,7 @@ export function reconstructChart(
     subRegions: chart.subRegions,
     deadRegions: chart.deadRegions,
     zoneBounds: zone.uvBounds,
+    netExcluded,
   };
 }
 

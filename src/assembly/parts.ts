@@ -501,7 +501,7 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
         ...(zone.mirror
           ? { mirror: 'twin' in zone.mirror ? { twin: zone.mirror.twin } : { self: true } }
           : {}),
-        chart: reconstructChart(zone, chart, vertices),
+        chart: reconstructChart(zone, chart, vertices, sidecar.net?.zones[zone.id]?.excluded),
       });
     } catch (e) {
       warn(

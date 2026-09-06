@@ -121,7 +121,10 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   does cross two of those boundaries — left/back and back/right — registered
   within 2mm at the 95th percentile
   (`npx vite-node scripts/measure-zone-seams.mjs`). Its other sheets sit apart
-  with a visible gap, same as before.
+  with a visible gap, same as before. A point on that sheet still cuts in
+  exactly one place. Where two sheets lie over each other, the seam between
+  them decides which, and the whole-chair template hatches the part each one
+  gives up.
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.
 - Input parts must be watertight/manifold for assembly cutting.

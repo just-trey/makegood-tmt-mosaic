@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ConformalZoneMapper, type ConformalChart } from '../src/geometry/conformal';
 import {
   netGizmoMapper,
@@ -6,9 +6,16 @@ import {
   netToZoneBuildInput,
   type DesignPlacement,
 } from '../src/geometry/zones';
-import type { ArtworkBuildInput } from '../src/geometry/assembly';
-import type { ParsedSVG } from '../src/types';
-import { ARC_U, H, makeCylinderChart } from './lib/cylinderChart';
+import {
+  buildAssemblyGeometry,
+  netShareNotice,
+  type ArtworkBuildInput,
+  type AssemblyBuildInput,
+} from '../src/geometry/assembly';
+import { getManifold, manifoldToMeshes, type ManifoldAPI } from '../src/geometry/manifold';
+import { clearWarnings, WARNINGS } from '../src/warnings';
+import type { AssemblyPart, ParsedSVG } from '../src/types';
+import { ARC_U, H, R, makeCylinderChart } from './lib/cylinderChart';
 
 /**
  * A design bound to the whole part is one placement per zone, each moved onto that zone's sheet.
@@ -170,6 +177,9 @@ describe('netToZoneBuildInput places one design across the sheets of a net', () 
     expect(netToZoneBuildInput(a, 'sheet-a', placeA, netCentre, netCentre)).toEqual({
       ...a,
       zoneId: 'sheet-a',
+      // still flagged: the placement did not move, but the cut is still the whole part's and must
+      // be clipped to the canvas this sheet owns
+      netBound: true,
     });
   });
 
@@ -229,4 +239,175 @@ describe('netGizmoMapper reads a sheet in net coordinates', () => {
     // sheet B is laid at -PHI on the net, so its own +u is PHI off the net's +u
     expect(net.uAxis.angleTo(raw.uAxis)).toBeCloseTo((Math.abs(PHI) * Math.PI) / 180, 3);
   });
+});
+
+/**
+ * The partition, cut for real: two sheets laid on the same canvas, each owning one half of it, and
+ * one whole-part design across the join. Without the clip both sheets cut the whole design and the
+ * mark prints twice; with it each cuts its own half and every point of the canvas is cut once.
+ */
+describe('a whole-part design is cut on exactly one sheet', () => {
+  const HALF = ARC_U / 2;
+  const SHIFT = 200;
+  /** The chart, moved SHIFT along z so the second shell is a separate solid on the same canvas. */
+  const shifted = (c: ConformalChart): ConformalChart => {
+    const positions3 = Float32Array.from(c.positions3);
+    for (let i = 2; i < positions3.length; i += 3) positions3[i] += SHIFT;
+    return { ...c, positions3 };
+  };
+  const strip = (u0: number, u1: number): { outer: number[][]; holes: number[][][] } => ({
+    outer: [
+      [u0, -1],
+      [u1, -1],
+      [u1, H + 1],
+      [u0, H + 1],
+    ],
+    holes: [],
+  });
+  const square = (s: number): ParsedSVG => ({
+    shapes: [
+      {
+        fill: '#ff0000',
+        loops: [
+          [
+            { x: 0, y: 0 },
+            { x: s, y: 0 },
+            { x: s, y: s },
+            { x: 0, y: s },
+            { x: 0, y: 0 },
+          ],
+        ],
+        order: 0,
+      },
+    ],
+    bbox: { minX: 0, minY: 0, maxX: s, maxY: s },
+    rawSVGCircle: null,
+    userUnitMM: 1,
+  });
+
+  let wasm: ManifoldAPI;
+  let parts: AssemblyPart[];
+  const partAt = (id: number, name: string, chart: ConformalChart, z: number): AssemblyPart => ({
+    id,
+    name,
+    roleId: name,
+    positions: null,
+    zones: [{ id: name, name, chart }],
+    patches: null,
+    patchIdx: 0,
+    boundaryLoops: [
+      [
+        [-1, 0, -1],
+        [1, 0, -1],
+        [1, 0, 1],
+      ],
+    ],
+    patchNormal: [0, 1, 0],
+    topZ: 0,
+    baseDepth: 0,
+    isDuplicateOf: null,
+    pivotX: 0,
+    pivotZ: 0,
+    angleDeg: z,
+    loaded: true,
+    cutThrough: false,
+  });
+
+  beforeAll(async () => {
+    wasm = await getManifold();
+    const solid = wasm.Manifold.cylinder(H, R, R, 128).rotate([-90, 0, 0]);
+    const soup = manifoldToMeshes(solid).soup;
+    solid.delete();
+    const moved = Float32Array.from(soup);
+    for (let i = 2; i < moved.length; i += 3) moved[i] += SHIFT;
+    // sheet A owns u < HALF and yields the rest; sheet B owns u >= HALF and yields the rest
+    const chartA: ConformalChart = {
+      ...makeCylinderChart(),
+      zoneBounds: NET_BOUNDS,
+      netExcluded: [
+        { to: 'b', toName: 'Sheet B', areaMm2: HALF * H, regions: [strip(HALF, ARC_U + 1)] },
+      ],
+    };
+    const chartB: ConformalChart = {
+      ...shifted(makeCylinderChart()),
+      zoneBounds: NET_BOUNDS,
+      netExcluded: [{ to: 'a', toName: 'Sheet A', areaMm2: HALF * H, regions: [strip(-1, HALF)] }],
+    };
+    parts = [partAt(1, 'a', chartA, 0), partAt(2, 'b', chartB, 0)];
+    parts[0].positions = soup;
+    parts[1].positions = moved;
+  }, 30000);
+
+  beforeEach(() => clearWarnings());
+
+  /** Both sheets sit at the identity on the net, so a net offset is a chart offset. */
+  const identity = { rotationDeg: 0, offsetU: 0, offsetV: 0 };
+  const build = (netBound: boolean): AssemblyBuildInput => {
+    const own: ArtworkBuildInput = {
+      parsed: square(20),
+      name: 'logo',
+      zoneId: null,
+      scaleMult: 1,
+      offX: 0,
+      offZ: 0,
+      flipX: false,
+      flipY: false,
+      rotationDeg: 0,
+    };
+    const on = (id: string): ArtworkBuildInput =>
+      netBound
+        ? netToZoneBuildInput(own, id, identity, netCentre, netCentre)
+        : { ...own, zoneId: id };
+    return {
+      artworks: [on('a'), on('b')],
+      parts,
+      mergeGroups: [],
+      colorSettings: {},
+      globalDepth: 1,
+      radius: 0,
+      designFit: 'rect',
+    };
+  };
+
+  /** Arc-length range of an inlay around its shell's axis: which part of the canvas it cut. */
+  const uRange = (soup: Float32Array, z0: number): { min: number; max: number } => {
+    let min = Infinity,
+      max = -Infinity;
+    for (let i = 0; i < soup.length; i += 3) {
+      const u = R * Math.atan2(soup[i], soup[i + 2] - z0);
+      if (u < min) min = u;
+      if (u > max) max = u;
+    }
+    return { min, max };
+  };
+
+  it('cuts each half on the sheet the net gives it, and says where the other half went', async () => {
+    const out = await buildAssemblyGeometry(build(true));
+    expect(out).not.toBeNull();
+    const [a, b] = out!.partOutputs;
+    const ia = Object.values(a.inlaySoups)[0];
+    const ib = Object.values(b.inlaySoups)[0];
+    // the design spans u ∈ [HALF−10, HALF+10]; each sheet keeps only its own side of HALF
+    const ra = uRange(ia, 0);
+    const rb = uRange(ib, SHIFT);
+    expect(ra.min).toBeCloseTo(HALF - 10, 0);
+    expect(ra.max).toBeCloseTo(HALF, 0);
+    expect(rb.min).toBeCloseTo(HALF, 0);
+    expect(rb.max).toBeCloseTo(HALF + 10, 0);
+    // and the two halves are the whole design, cut once: they meet at HALF and cross nowhere
+    expect(rb.min).toBeGreaterThanOrEqual(ra.max - 0.5);
+    const said = WARNINGS.map((w) => w.message);
+    expect(said).toContain(netShareNotice('logo', 'a', ['Sheet B']));
+    expect(said).toContain(netShareNotice('logo', 'b', ['Sheet A']));
+  }, 60000);
+
+  it('cuts the whole design on both sheets when it is bound to them by name', async () => {
+    // The same two placements without the whole-part flag: the partition is about one binding, so
+    // a design bound to a zone by name still reaches every bit of surface that zone owns.
+    const out = await buildAssemblyGeometry(build(false));
+    const [a, b] = out!.partOutputs;
+    expect(uRange(Object.values(a.inlaySoups)[0], 0).max).toBeCloseTo(HALF + 10, 0);
+    expect(uRange(Object.values(b.inlaySoups)[0], SHIFT).min).toBeCloseTo(HALF - 10, 0);
+    expect(WARNINGS.map((w) => w.message).some((m) => m.includes('whole-chair sheet'))).toBe(false);
+  }, 60000);
 });

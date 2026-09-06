@@ -58,6 +58,18 @@ export function faceXZBBox(
   return { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, w: maxX - minX, h: maxZ - minZ };
 }
 
+/**
+ * A patch of one zone's 2D design space that another sheet of the net owns, ready to clip against.
+ * `bbox` is turf's [minX, minY, maxX, maxY], so a placed region that comes nowhere near it costs
+ * no boolean at all — the common case, since most zones yield nothing.
+ */
+export interface NetExclusion {
+  /** the owning zone's display name, for the notice that says where the ink went instead */
+  toName: string;
+  region: PolyFeature;
+  bbox: number[];
+}
+
 /** Which half of a self-mirrored zone a design keeps: 'right' is u at or past the zone's bbox centre. */
 export type KeepSide = 'right' | 'left';
 
@@ -145,7 +157,14 @@ export function netToZoneBuildInput(
   zoneCentre: readonly [number, number],
 ): ArtworkBuildInput {
   const [offX, offZ] = netOffsetToZone([a.offX, a.offZ], place, netCentre, zoneCentre);
-  return { ...a, zoneId, offX, offZ, rotationDeg: a.rotationDeg - place.rotationDeg };
+  return {
+    ...a,
+    zoneId,
+    offX,
+    offZ,
+    rotationDeg: a.rotationDeg - place.rotationDeg,
+    netBound: true,
+  };
 }
 
 /**
@@ -329,6 +348,12 @@ export interface ZoneMapper {
    * face has no baked centre, so nothing there is ever asked to keep a half.
    */
   sideClip(side: KeepSide): PolyFeature | null;
+  /**
+   * Where a WHOLE-PART design must not cut on this zone, because another sheet of the net owns
+   * that canvas and cuts it there instead. Empty for every other binding and every kind with no
+   * net. Kept out of `boundary()` on purpose: that clip is per zone, this one is per binding.
+   */
+  netExcluded(): NetExclusion[];
   /** area a fill-mode artwork tiles across, in the zone's 2D design space; null when unknown */
   fillExtent(): FillExtent | null;
   /**
@@ -463,6 +488,11 @@ export class FlatZoneMapper implements ZoneMapper {
 
   sideClip(): PolyFeature | null {
     return null;
+  }
+
+  /** A flat face is the only sheet a kind with no net has; it yields nothing to anything. */
+  netExcluded(): NetExclusion[] {
+    return [];
   }
 
   /**

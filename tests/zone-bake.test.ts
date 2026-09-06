@@ -12,6 +12,7 @@ import {
   measureZoneSeam,
   NET_SHEET_GAP_MM,
   netSheetOverlaps,
+  partitionNet,
   sharedVertTolMm,
   zoneSeamPoints,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by vite-node, not bundled)
@@ -1527,7 +1528,7 @@ describe('the net', () => {
     expect(net.bounds).toMatchObject({ minV: 0, maxV: 2 * SIDE + NET_SHEET_GAP_MM });
   });
 
-  it('measures where two sheets claim the same canvas, ignoring what covers hide', async () => {
+  it('divides a patch two sheets both claim at the seam between them, leaving none', async () => {
     const wasm = await getManifold();
     type Region = { outer: number[][]; holes: number[][][] };
     const box = (u0: number, u1: number, h: number): Region => ({
@@ -1539,8 +1540,9 @@ describe('the net', () => {
       ],
       holes: [],
     });
-    // two 40mm sheets, the second laid 30mm along: 10 x 40 of shared canvas, of which the first
-    // sheet hides a 4 x 40 strip, so 6 x 40 = 240mm2 is what a design could really be cut on twice
+    // Two 40mm sheets, the second laid 30mm along: 10 x 40 of shared canvas, of which the first
+    // sheet hides a 4 x 40 strip, so 34..40 x 0..40 = 240mm2 is what a design could really be cut
+    // on twice. They register across a seam at u = 35, which divides that patch 40 / 200.
     const zones: { id: string; charts: { subRegions: Region[]; deadRegions?: Region[] }[] }[] = [
       { id: 'a', charts: [{ subRegions: [box(0, 40, 40)], deadRegions: [box(30, 34, 40)] }] },
       { id: 'b', charts: [{ subRegions: [box(0, 40, 40)] }] },
@@ -1550,12 +1552,81 @@ describe('the net', () => {
         ['a', { theta: 0, t: [0, 0] }],
         ['b', { theta: 0, t: [30, 0] }],
       ]),
+      bounds: { minU: 0, minV: 0, maxU: 70, maxV: 40 },
+    };
+    const before = netSheetOverlaps(zones, layout, wasm);
+    expect(before).toHaveLength(1);
+    expect(before[0].areaMm2).toBeCloseTo(240, 3);
+
+    // the seam, as A's own UV: the shared vertices whose fit registered the two sheets
+    const seamOf = (x: string, y: string): object | undefined =>
+      (x === 'a' && y === 'b') || (x === 'b' && y === 'a')
+        ? {
+            m: {
+              sharedPairs: [{ want: [35, 0] }, { want: [35, 20] }, { want: [35, 40] }],
+            },
+          }
+        : undefined;
+    const warnings: string[] = [];
+    const { excluded } = partitionNet(zones, layout, seamOf, wasm, () => {}, warnings);
+    expect(warnings).toHaveLength(0);
+    // each keeps its own side of u = 35: `a` is the sheet to the left of it, `b` the one to the
+    // right, so `a` yields the 5 x 40 beyond the seam and `b` yields the 1 x 40 short of it
+    expect(excluded.get('a')).toHaveLength(1);
+    expect(excluded.get('a')[0].to).toBe('b');
+    expect(excluded.get('a')[0].areaMm2).toBeCloseTo(200, 1);
+    expect(excluded.get('b')).toHaveLength(1);
+    expect(excluded.get('b')[0].to).toBe('a');
+    expect(excluded.get('b')[0].areaMm2).toBeCloseTo(40, 1);
+    // the halves tile the patch: nothing cut twice, and nothing cut nowhere
+    expect(excluded.get('a')[0].areaMm2 + excluded.get('b')[0].areaMm2).toBeCloseTo(240, 1);
+
+    // and the proof: over the partitioned sheets, no two of them claim the same canvas
+    const flat = new Map(
+      [...excluded].map(([id, list]: [string, { regions: Region[] }[]]) => [
+        id,
+        list.flatMap((e) => e.regions),
+      ]),
+    );
+    expect(netSheetOverlaps(zones, layout, wasm, flat)).toEqual([]);
+  });
+
+  it('refuses to guess when two sheets overlap with no seam to divide them at', async () => {
+    const wasm = await getManifold();
+    type Region = { outer: number[][]; holes: number[][][] };
+    const box = (u0: number, u1: number): Region => ({
+      outer: [
+        [u0, 0],
+        [u1, 0],
+        [u1, 40],
+        [u0, 40],
+      ],
+      holes: [],
+    });
+    const zones = [
+      { id: 'a', charts: [{ subRegions: [box(0, 40)] }] },
+      { id: 'b', charts: [{ subRegions: [box(0, 40)] }] },
+    ];
+    const layout = {
+      placed: new Map([
+        ['a', { theta: 0, t: [0, 0] }],
+        ['b', { theta: 0, t: [30, 0] }],
+      ]),
+      bounds: { minU: 0, minV: 0, maxU: 70, maxV: 40 },
     };
     const warnings: string[] = [];
-    const rings = netSheetOverlaps(zones, layout, wasm, () => {}, warnings);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/"a" and "b" overlap over 240mm/);
-    expect(rings.length).toBeGreaterThan(0);
+    const { excluded } = partitionNet(
+      zones,
+      layout,
+      () => undefined,
+      wasm,
+      () => {},
+      warnings,
+    );
+    expect(warnings[0]).toMatch(/no seam to divide them at, so all of it stays with "a"/);
+    // all of it to the sheet already on the canvas, and it is still a partition
+    expect(excluded.get('a')).toHaveLength(0);
+    expect(excluded.get('b')[0].areaMm2).toBeCloseTo(400, 1);
   });
 
   it('refuses a zone using the id a whole-part design binds to', () => {

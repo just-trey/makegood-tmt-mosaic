@@ -912,6 +912,8 @@ export function measureZoneSeam(a, b, sharedTolMm = WELD_TOL_MM) {
     counts,
     medianMm: m ? (m % 2 ? gaps[(m - 1) / 2] : (gaps[m / 2 - 1] + gaps[m / 2]) / 2) : null,
     shared: sharedPairs.length,
+    /** the shared vertices themselves, `{ want: A's UV, got: B's UV }` — the seam, as two charts see it */
+    sharedPairs,
     rigid: procrustesFit(pairs, false),
     similarity: procrustesFit(pairs, true),
     sharedRigid: procrustesFit(sharedPairs, false),
@@ -2723,7 +2725,7 @@ ${body}
  * `sheetOf(zoneId)` gives that zone's `zoneSheetSVG` result, so the sheets here and the per-zone
  * templates are the same drawing rather than two that have to be kept in step.
  */
-export function netTemplateSVG(zones, net, kindId, sheetOf, overlapRings = []) {
+export function netTemplateSVG(zones, net, kindId, sheetOf) {
   const b = net.bounds;
   // Symmetric margin, so the canvas centre stays the net's own centre and a design traced on this
   // sheet still lands where `bounds` anchors it. Without it a sheet flush with an edge has its
@@ -2754,17 +2756,48 @@ export function netTemplateSVG(zones, net, kindId, sheetOf, overlapRings = []) {
       `  <g transform="matrix(${m.map((x) => round(x, 4)).join(' ')})">\n${sheet.body}${label}\n  </g>`,
     );
   }
-  const overlapD = overlapRings
-    .map(
-      (ring) =>
-        ring.map(([u, v], i) => `${i ? 'L' : 'M'}${round(u, 2)} ${round(-v, 2)}`).join(' ') + ' Z',
-    )
-    .join(' ');
+  // Where one sheet lies over another, the canvas belongs to whichever of the two the seam between
+  // them puts it on, and the other sheet does not cut there. Drawn on the sheet that yielded it,
+  // named for the sheet that took it, so an artist can see both which mark goes where and that its
+  // own per-zone template still reaches that surface.
+  const yielded = [];
+  const yieldLabels = [];
+  for (const zone of zones) {
+    const nz = net.zones[zone.id];
+    const th = (nz.rotationDeg * Math.PI) / 180;
+    const c = Math.cos(th);
+    const s = Math.sin(th);
+    const toNet = ([u, v]) => [c * u - s * v + nz.offsetU, s * u + c * v + nz.offsetV];
+    for (const e of nz.excluded ?? []) {
+      for (const r of e.regions)
+        for (const loop of [r.outer, ...r.holes])
+          yielded.push(
+            loop
+              .map(toNet)
+              .map(([u, v], i) => `${i ? 'L' : 'M'}${round(u, 2)} ${round(-v, 2)}`)
+              .join(' ') + ' Z',
+          );
+      const biggest = e.regions
+        .map((r) => ({ outer: r.outer, area: Math.abs(loopArea(r.outer)) }))
+        .sort((x, y) => y.area - x.area)[0];
+      if (!biggest || biggest.area < LABEL_MIN_AREA_MM2) continue;
+      const [lu, lv] = toNet(loopCentroid(biggest.outer));
+      yieldLabels.push(
+        `  <text x="${round(lu, 2)}" y="${round(-lv, 2)}" text-anchor="middle" ` +
+          `font-family="sans-serif" font-size="${LABEL_SIZE}" fill="${ACCENT}">` +
+          `${xmlEscape(e.toName)} cuts this</text>`,
+      );
+    }
+  }
+  const overlapD = yielded.join(' ');
   const legend = [
     'Sheets that touch are joined: a design carries across them',
     'A sheet marked "separate sheet" does not join its neighbour',
     'Hatched ground = no surface here',
-    overlapD ? 'Cross-hatched = two sheets share this space, and ink there cuts on both' : '',
+    overlapD
+      ? 'Cross-hatched belongs to the sheet named on it, and only that sheet cuts a whole-part ' +
+        'design there. Its own per-zone sheet still reaches that surface'
+      : '',
   ]
     .filter(Boolean)
     .join('. ');
@@ -2790,7 +2823,7 @@ ${anyDead ? HIDDEN_PATTERN_DEF + '\n' : ''}    <pattern id="ground" width="8" he
 ${groups.join('\n')}${
     overlapD
       ? `\n  <path d="${overlapD}" fill="url(#shared)" fill-rule="evenodd" stroke="${ACCENT}" ` +
-        `stroke-width="0.3" stroke-opacity="0.6"/>`
+        `stroke-width="0.3" stroke-opacity="0.6"/>\n${yieldLabels.join('\n')}`
       : ''
   }
   <text x="${round((b.minU + b.maxU) / 2, 2)}" y="${round(y0 + LABEL_SIZE, 2)}" text-anchor="middle"
@@ -2853,53 +2886,232 @@ export function netSeamRelations(zones, vertsOf, sharedTolMm, weldTolMm) {
   return (aId, bId) => rel.get(`${aId}>${bId}`);
 }
 
+/** A zone's UV point taken to net mm, and back again, under its net placement. */
+function netFrame(layout, zoneId) {
+  const p = layout.placed.get(zoneId);
+  const c = Math.cos(p.theta);
+  const s = Math.sin(p.theta);
+  return {
+    toNet: ([u, v]) => [c * u - s * v + p.t[0], s * u + c * v + p.t[1]],
+    toZone: ([u, v]) => {
+      const du = u - p.t[0];
+      const dv = v - p.t[1];
+      return [c * du + s * dv, -s * du + c * dv];
+    },
+  };
+}
+
 /**
- * Where two sheets claim the same place on the net, as rings in net mm.
- *
- * Two zones are different surface — the bake refuses a triangle claimed twice — so an overlap here
- * is two unrelated pieces of the part landing on one patch of canvas, and ink drawn there is cut on
- * both of them. That cannot be designed around unseen, so it is measured, warned about, and drawn
- * on the net template. Against each zone's LIVE area (its per-part clip regions less the surface
- * covers hide), since that is what a cutter can actually reach.
+ * Each zone's LIVE canvas as a CrossSection in net mm: its per-part clip regions less the surface
+ * covers hide, which is what a cutter can actually reach. `excluded` (zone UV, per zone) is taken
+ * off as well, so the same function measures a net before and after it has been partitioned.
  */
-export function netSheetOverlaps(zones, layout, wasm, log = () => {}, warnings = []) {
+function netLiveSheets(zones, layout, wasm, excluded = new Map()) {
   const live = new Map();
   for (const zone of zones) {
-    const p = layout.placed.get(zone.id);
-    const c = Math.cos(p.theta);
-    const s = Math.sin(p.theta);
-    const xf = ([u, v]) => [c * u - s * v + p.t[0], s * u + c * v + p.t[1]];
+    const { toNet } = netFrame(layout, zone.id);
     const ringsOf = (regions) =>
-      regions.flatMap((r) => [r.outer.map(xf), ...r.holes.map((h) => h.map(xf))]);
+      regions.flatMap((r) => [r.outer.map(toNet), ...r.holes.map((h) => h.map(toNet))]);
     let cs = new wasm.CrossSection(ringsOf(zone.charts.flatMap((ch) => ch.subRegions)), 'EvenOdd');
-    const deadRings = ringsOf(zone.charts.flatMap((ch) => ch.deadRegions ?? []));
-    if (deadRings.length) {
-      const dead = new wasm.CrossSection(deadRings, 'EvenOdd');
-      const cut = cs.subtract(dead);
+    const off = ringsOf([
+      ...zone.charts.flatMap((ch) => ch.deadRegions ?? []),
+      ...(excluded.get(zone.id) ?? []),
+    ]);
+    if (off.length) {
+      const gone = new wasm.CrossSection(off, 'EvenOdd');
+      const cut = cs.subtract(gone);
       cs.delete();
-      dead.delete();
+      gone.delete();
       cs = cut;
     }
     live.set(zone.id, cs);
   }
-  const rings = [];
+  return live;
+}
+
+/**
+ * Where two sheets claim the same place on the net, as rings in net mm, one entry per pair.
+ *
+ * Two zones are different surface — the bake refuses a triangle claimed twice — so an overlap here
+ * is two unrelated pieces of the part landing on one patch of canvas, and ink drawn there would be
+ * cut on both. `partitionNet` divides every such patch between the two, and this then runs again
+ * over the partitioned sheets as the proof that it did: any overlap left is a real defect, so it
+ * warns.
+ */
+export function netSheetOverlaps(zones, layout, wasm, excluded = new Map()) {
+  const live = netLiveSheets(zones, layout, wasm, excluded);
+  const out = [];
   for (let i = 0; i < zones.length; i++)
     for (let j = i + 1; j < zones.length; j++) {
       const both = live.get(zones[i].id).intersect(live.get(zones[j].id));
       const area = both.area();
       // Below the bake's own tessellation-dust floor two outlines are touching, not overlapping.
-      if (area >= MIN_ISLAND_AREA_MM2) {
-        rings.push(...both.toPolygons().map((r) => r.map(([x, y]) => [x, y])));
-        const msg =
-          `net: sheets "${zones[i].id}" and "${zones[j].id}" overlap over ${area.toFixed(0)}mm² ` +
-          `of canvas — a design drawn there is cut on both zones`;
-        log(msg);
-        warnings.push(msg);
-      }
+      if (area >= MIN_ISLAND_AREA_MM2)
+        out.push({
+          a: zones[i].id,
+          b: zones[j].id,
+          areaMm2: area,
+          rings: both.toPolygons().map((r) => r.map(([x, y]) => [x, y])),
+        });
       both.delete();
     }
   for (const cs of live.values()) cs.delete();
-  return rings;
+  return out;
+}
+
+/**
+ * The line through a set of net-mm points, as a centre and a unit normal: the total-least-squares
+ * fit, so a seam running any direction is fitted the same way. Null when the points have no
+ * direction (all at one place), which is not a seam.
+ */
+function fitLine(pts) {
+  const n = pts.length;
+  if (n < 2) return null;
+  const c = [0, 0];
+  for (const p of pts) {
+    c[0] += p[0] / n;
+    c[1] += p[1] / n;
+  }
+  let sxx = 0,
+    sxy = 0,
+    syy = 0;
+  for (const p of pts) {
+    const dx = p[0] - c[0];
+    const dy = p[1] - c[1];
+    sxx += dx * dx;
+    sxy += dx * dy;
+    syy += dy * dy;
+  }
+  if (!(sxx + syy > 0)) return null;
+  // principal direction of the covariance; its perpendicular is the normal
+  const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  return { centre: c, normal: [-Math.sin(theta), Math.cos(theta)] };
+}
+
+/** A half-plane as a CrossSection: everything on the `sign` side of `line`, across the whole net. */
+function halfPlane(wasm, line, sign, bounds) {
+  const reach = Math.hypot(bounds.maxU - bounds.minU, bounds.maxV - bounds.minV) + NET_SHEET_GAP_MM;
+  const [nx, ny] = [sign * line.normal[0], sign * line.normal[1]];
+  const [tx, ty] = [-ny, nx];
+  const at = (along, out) => [
+    line.centre[0] + along * tx + out * nx,
+    line.centre[1] + along * ty + out * ny,
+  ];
+  return new wasm.CrossSection(
+    [[at(-reach, 0), at(reach, 0), at(reach, reach), at(-reach, reach)]],
+    'EvenOdd',
+  );
+}
+
+/**
+ * Divide every patch of canvas two sheets both claim, so a point of the net belongs to exactly one
+ * zone and a whole-part design is cut in exactly one place.
+ *
+ * **The divider is the seam the two zones are registered across**, not a choice: the net is the
+ * part unfolded about that seam, so each sheet's own surface lies on its own side of it and
+ * anything it has on the far side has folded over its neighbour. The line is the total-least-squares
+ * fit through the vertices the two zones SHARE — the same vertices whose rigid fit placed the sheet
+ * in the first place — and each zone keeps the side its own body is on.
+ *
+ * Two sheets with no registered seam between them cannot be divided that way. They also cannot
+ * overlap: `layoutNet` slides every detached sheet clear. So that case is a defect in the layout
+ * rather than a case to rule on, and the whole patch goes to the sheet already on the canvas, said
+ * out loud.
+ *
+ * Returns the canvas each zone yields, in that zone's OWN UV, with the zone that took it.
+ */
+export function partitionNet(zones, layout, seamOf, wasm, log = () => {}, warnings = []) {
+  const before = netSheetOverlaps(zones, layout, wasm);
+  const yielded = new Map(zones.map((z) => [z.id, []]));
+  if (!before.length) return { excluded: yielded, before };
+  const live = netLiveSheets(zones, layout, wasm);
+  const centroidOf = (id) => {
+    // area centroid of the sheet, to say which side of the seam its body is on
+    const rings = live.get(id).toPolygons();
+    let a2 = 0;
+    const c = [0, 0];
+    for (const ring of rings)
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const cr = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+        a2 += cr;
+        c[0] += (ring[j][0] + ring[i][0]) * cr;
+        c[1] += (ring[j][1] + ring[i][1]) * cr;
+      }
+    return a2 ? [c[0] / (3 * a2), c[1] / (3 * a2)] : null;
+  };
+  for (const pair of before) {
+    const patch = new wasm.CrossSection(pair.rings, 'EvenOdd');
+    const rel = seamOf(pair.a, pair.b);
+    const shared = rel?.m?.sharedPairs ?? [];
+    const { toNet } = netFrame(layout, pair.a);
+    const line = shared.length >= 3 ? fitLine(shared.map((s) => toNet(s.want))) : null;
+    const ca = line && centroidOf(pair.a);
+    const cb = line && centroidOf(pair.b);
+    const side = (c) =>
+      Math.sign(
+        line.normal[0] * (c[0] - line.centre[0]) + line.normal[1] * (c[1] - line.centre[1]),
+      );
+    // The fit has to actually separate the two bodies, or "its own side" names nothing.
+    const usable = line && ca && cb && side(ca) !== 0 && side(ca) === -side(cb);
+    if (!usable) {
+      const msg =
+        `net: sheets "${pair.a}" and "${pair.b}" overlap over ${pair.areaMm2.toFixed(0)}mm² with ` +
+        `no seam to divide them at, so all of it stays with "${pair.a}"`;
+      log(msg);
+      warnings.push(msg);
+      yielded.get(pair.b).push({ to: pair.a, cs: patch });
+      continue;
+    }
+    // Each zone keeps the half of the patch on its own side of the seam; the other half it yields.
+    for (const [keeper, loser, sign] of [
+      [pair.a, pair.b, side(ca)],
+      [pair.b, pair.a, side(cb)],
+    ]) {
+      const half = halfPlane(wasm, line, sign, layout.bounds);
+      const mine = patch.intersect(half);
+      half.delete();
+      if (mine.area() >= MIN_ISLAND_AREA_MM2) yielded.get(loser).push({ to: keeper, cs: mine });
+      else mine.delete();
+    }
+    patch.delete();
+  }
+  for (const cs of live.values()) cs.delete();
+
+  // Back into each zone's own UV, which is the space its charts and its cutter work in. Rounded
+  // HERE rather than by the caller, so the overlap re-measurement that proves the partition runs on
+  // the loops that actually ship.
+  //
+  // **Not simplified, unlike every other loop the bake emits.** The two halves of a divided patch
+  // tile it exactly; moving either boundary by `simplifyTol` breaks that in one of two ways, and
+  // both are real. Pulled in, a strip of canvas goes back to being cut twice (0.2mm of tolerance
+  // over these ragged outlines measured 16mm² and 26mm² of surviving overlap on the chair). Pushed
+  // out, the two halves both give up a strip along the seam and a whole-part design cuts there on
+  // neither, which is exactly the silent drop the partition exists to avoid. Rounding to the same
+  // 3 decimals the rest of the sidecar uses moves a boundary by 0.001mm at most, symmetrically.
+  const excluded = new Map(zones.map((z) => [z.id, []]));
+  const finish = (loop) => loop.map((p) => [round(p[0], 3), round(p[1], 3)]);
+  for (const [zoneId, parts] of yielded) {
+    const { toZone } = netFrame(layout, zoneId);
+    for (const { to, cs } of parts) {
+      const regions = classifyRegions(cs.toPolygons().map((r) => r.map(([x, y]) => [x, y])));
+      const area = cs.area();
+      cs.delete();
+      if (!regions.length) continue;
+      excluded.get(zoneId).push({
+        to,
+        areaMm2: round(area, 1),
+        regions: regions.map((r) => ({
+          outer: finish(r.outer.map(toZone)),
+          holes: r.holes.map((h) => finish(h.map(toZone))),
+        })),
+      });
+      log(
+        `net: "${zoneId}" yields ${area.toFixed(0)}mm² of canvas to "${to}" — a whole-part design ` +
+          `is cut there on "${to}" alone, and "${zoneId}"'s own sheet still reaches it`,
+      );
+    }
+  }
+  return { excluded, before };
 }
 
 /** The rotated UV bbox of a zone placed at (theta, t). */
@@ -3914,10 +4126,29 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       config.weldTolMm ?? WELD_TOL_MM,
     );
     const layout = layoutNet(zones, seamOf, log, warnings);
-    const overlaps = opts.wasm
-      ? netSheetOverlaps(zones, layout, opts.wasm, log, warnings)
-      : (log('net: sheet overlaps not measured — no boolean engine (the covers file loads it)'),
-        []);
+    // Divide every patch two sheets both claim, then measure again: after the partition the sheets
+    // must not overlap at all, and anything left is a defect rather than a thing to design around.
+    let excluded = new Map();
+    if (opts.wasm) {
+      const part = partitionNet(zones, layout, seamOf, opts.wasm, log, warnings);
+      excluded = part.excluded;
+      const flat = new Map([...excluded].map(([id, list]) => [id, list.flatMap((e) => e.regions)]));
+      const left = netSheetOverlaps(zones, layout, opts.wasm, flat);
+      for (const o of left) {
+        const msg =
+          `net: sheets "${o.a}" and "${o.b}" still overlap over ${o.areaMm2.toFixed(0)}mm² after ` +
+          `the partition — a design drawn there is cut on both zones`;
+        log(msg);
+        warnings.push(msg);
+      }
+      const moved = [...excluded.values()].flat().reduce((s, e) => s + e.areaMm2, 0);
+      log(
+        `net: ${part.before.length} overlapping pair(s) divided, ${moved.toFixed(0)}mm² ` +
+          `reassigned, ${left.length} pair(s) still overlapping`,
+      );
+    } else {
+      log('net: sheet overlaps not measured — no boolean engine (the covers file loads it)');
+    }
     net = {
       templateFile: 'net-template.svg',
       bounds: {
@@ -3928,6 +4159,14 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       },
       zones: layout.zones,
     };
+    for (const [id, list] of excluded)
+      if (list.length)
+        net.zones[id].excluded = list.map((e) => ({
+          to: e.to,
+          toName: zones.find((z) => z.id === e.to).name,
+          areaMm2: e.areaMm2,
+          regions: e.regions,
+        }));
     const sheetCache = new Map();
     const sheetOf = (id) => {
       if (!sheetCache.has(id))
@@ -3943,7 +4182,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     };
     templates.push({
       file: net.templateFile,
-      svg: netTemplateSVG(zones, net, config.kindId, sheetOf, overlaps),
+      svg: netTemplateSVG(zones, net, config.kindId, sheetOf),
     });
     log(
       `net: ${Object.values(net.zones).filter((z) => z.attached).length} of ${zones.length} ` +
