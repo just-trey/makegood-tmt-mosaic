@@ -26,6 +26,14 @@ import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import { startPreview, launchBrowser, newPage, afterRebuild, shot } from './lib/harness.mjs';
 import { eachElement, meshVerts, modelXML } from './lib/mesh.mjs';
+import {
+  chartTriangles,
+  netPoint,
+  netToZoneUV,
+  seamContinuity,
+  SURVEY_U_STEP_MM,
+  surveyBoundary,
+} from './lib/netseam.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = process.argv[2] || 'stubs/net-check';
@@ -84,126 +92,26 @@ async function partVertices(libraryPartId) {
   return out;
 }
 
-/** One zone's chart triangles, each carrying its UV corners, its 3D corners and its part. */
-async function buildZone(zoneId) {
-  const zone = sidecar.zones.find((z) => z.id === zoneId);
-  if (!zone) throw new Error(`the sidecar has no zone "${zoneId}"`);
-  const tris = [];
-  for (const chart of zone.charts) {
-    const packed = await partVertices(chart.libraryPartId);
-    const p3 = chart.verts.map((vi) => {
-      const v = packed[vi];
-      if (!v)
-        throw new Error(
-          `zone "${zoneId}" references vertex ${vi} of ${chart.libraryPartId}, which has ` +
-            `${packed.length} — the sidecar is stale for that mesh`,
-        );
-      return v;
-    });
-    for (const [a, b, c] of chart.chartTris) {
-      const uv = [
-        [chart.uv[2 * a], chart.uv[2 * a + 1]],
-        [chart.uv[2 * b], chart.uv[2 * b + 1]],
-        [chart.uv[2 * c], chart.uv[2 * c + 1]],
-      ];
-      tris.push({
-        part: chart.libraryPartId,
-        uv,
-        p: [p3[a], p3[b], p3[c]],
-        mn: [Math.min(uv[0][0], uv[1][0], uv[2][0]), Math.min(uv[0][1], uv[1][1], uv[2][1])],
-        mx: [Math.max(uv[0][0], uv[1][0], uv[2][0]), Math.max(uv[0][1], uv[1][1], uv[2][1])],
-      });
-    }
-  }
-  return tris;
-}
-
-/** Net mm -> that zone's own UV mm, and back. The net places a sheet at R(θ)·p_zone + t. */
-function netToZoneUV(zoneId, p) {
-  const pl = NET.zones[zoneId];
-  const r = (-pl.rotationDeg * Math.PI) / 180;
-  const c = Math.cos(r),
-    s = Math.sin(r);
-  const dx = p[0] - pl.offsetU,
-    dy = p[1] - pl.offsetV;
-  return [c * dx - s * dy, s * dx + c * dy];
-}
-
-/** The 3D point one zone's charts put at a UV, by barycentric interpolation, or null off-chart. */
-function surfaceAt(tris, uv) {
-  for (const t of tris) {
-    if (uv[0] < t.mn[0] || uv[0] > t.mx[0] || uv[1] < t.mn[1] || uv[1] > t.mx[1]) continue;
-    const [A, B, C] = t.uv;
-    const v0 = [C[0] - A[0], C[1] - A[1]],
-      v1 = [B[0] - A[0], B[1] - A[1]],
-      v2 = [uv[0] - A[0], uv[1] - A[1]];
-    const d00 = v0[0] * v0[0] + v0[1] * v0[1],
-      d01 = v0[0] * v1[0] + v0[1] * v1[1],
-      d11 = v1[0] * v1[0] + v1[1] * v1[1],
-      d20 = v2[0] * v0[0] + v2[1] * v0[1],
-      d21 = v2[0] * v1[0] + v2[1] * v1[1];
-    const den = d00 * d11 - d01 * d01;
-    if (Math.abs(den) < 1e-12) continue;
-    const u = (d11 * d20 - d01 * d21) / den,
-      v = (d00 * d21 - d01 * d20) / den;
-    if (u < -1e-9 || v < -1e-9 || u + v > 1 + 1e-9) continue;
-    const w = 1 - u - v;
-    return {
-      P: [0, 1, 2].map((k) => w * t.p[0][k] + v * t.p[1][k] + u * t.p[2][k]),
-      part: t.part,
-    };
-  }
-  return null;
-}
-
-const inRing = (pt, ring) => {
-  let inside = false;
-  for (let i = 0, k = ring.length - 1; i < ring.length; k = i++) {
-    const a = ring[i],
-      b = ring[k];
-    if (
-      a[1] > pt[1] !== b[1] > pt[1] &&
-      pt[0] < ((b[0] - a[0]) * (pt[1] - a[1])) / (b[1] - a[1]) + a[0]
-    )
-      inside = !inside;
-  }
-  return inside;
-};
-
-/** The exclusion covering this zone-UV point, i.e. the neighbour that owns that patch of canvas. */
-function exclusionAt(zoneId, uv) {
-  for (const e of NET.zones[zoneId].excluded ?? [])
-    for (const region of e.regions) {
-      if (!inRing(uv, region.outer)) continue;
-      if ((region.holes ?? []).some((h) => inRing(uv, h))) continue;
-      return e;
-    }
-  return null;
-}
-
 /**
- * Who cuts a point of the whole-part canvas, and where that lands in 3D — the whole prediction
- * this check rests on. `others` carries what the zones that did NOT win put at the same net point,
- * which is what "cut exactly once" is asserted against: on this chair those alternatives are tens
- * of mm away, so ink at one of them is ink the partition failed to stop.
+ * The net's sheets, in the form scripts/lib/netseam.mjs measures: chart triangles carrying both
+ * spaces, the sheet's place on the canvas, and the canvas it yields to its neighbours.
  */
-function netPoint(zoneTris, u, v) {
-  const covering = [];
+async function buildSheets() {
+  const sheets = new Map();
   for (const zoneId of Object.keys(NET.zones)) {
-    const tris = zoneTris.get(zoneId);
-    if (!tris) continue;
-    const uv = netToZoneUV(zoneId, [u, v]);
-    const hit = surfaceAt(tris, uv);
-    if (!hit) continue;
-    covering.push({ zoneId, uv, ...hit, excluded: exclusionAt(zoneId, uv) });
+    const zone = sidecar.zones.find((z) => z.id === zoneId);
+    if (!zone) throw new Error(`the sidecar has no zone "${zoneId}"`);
+    const verts = new Map();
+    for (const c of zone.charts)
+      if (!verts.has(c.libraryPartId))
+        verts.set(c.libraryPartId, await partVertices(c.libraryPartId));
+    sheets.set(zoneId, {
+      tris: chartTriangles(zone.charts, (c) => verts.get(c.libraryPartId)),
+      place: NET.zones[zoneId],
+      excluded: NET.zones[zoneId].excluded,
+    });
   }
-  const owners = covering.filter((c) => !c.excluded);
-  return {
-    owner: owners.length === 1 ? owners[0] : null,
-    owners,
-    others: covering.filter((c) => !owners.includes(c)),
-    covering,
-  };
+  return sheets;
 }
 
 /* ------------------------------------------------------------------- 3MF reading */
@@ -457,8 +365,7 @@ async function cornerShot(page, box, tag, wanted, steps = 14) {
 
 /* ------------------------------------------------------------------- run */
 
-const zoneTris = new Map();
-for (const zoneId of Object.keys(NET.zones)) zoneTris.set(zoneId, await buildZone(zoneId));
+const sheets = await buildSheets();
 const zoneName = (id) => sidecar.zones.find((z) => z.id === id)?.name ?? id;
 
 /**
@@ -478,64 +385,65 @@ const offsetFor = (spot) => ({
   offY: spot[1] - NET_CENTRE[1],
 });
 
-/**
- * Walk the whole boundary between two sheets and report how far the mark jumps in 3D at each
- * crossing — the context every number in check 1 needs.
- *
- * Check 1 places one bar at one spot, and a spot chosen off a passing measurement proves only that
- * the spot passes. This says how much of the boundary would have passed, so a report can say
- * "where the sheets meet" instead of implying they meet everywhere. Rows are scanned in net v, and
- * per row the last canvas the first sheet owns and the first the second owns are compared: the two
- * are adjacent on the sheet by construction, so the distance between them is the tear a design
- * crossing there would take.
- */
-function surveyBoundary(a, b, { vStep = 2, uStep = 0.5, uFrom = -20, uTo = 180 } = {}) {
-  const rows = [];
-  for (let v = NET.bounds.minV; v <= NET.bounds.maxV; v += vStep) {
-    let lastA = null,
-      firstB = null;
-    for (let u = uFrom; u <= uTo; u += uStep) {
-      const owners = netPoint(zoneTris, u, v).owners.map((o) => [o.zoneId, o.P]);
-      const inA = owners.find(([z]) => z === a);
-      const inB = owners.find(([z]) => z === b);
-      if (inA && !firstB) lastA = { u, P: inA[1] };
-      if (inB && !firstB && lastA) firstB = { u, P: inB[1] };
-    }
-    if (lastA && firstB)
-      rows.push({
-        v,
-        canvasGap: firstB.u - lastA.u,
-        jump: Math.hypot(...[0, 1, 2].map((k) => lastA.P[k] - firstB.P[k])),
-      });
-  }
-  return rows;
-}
-
 console.log(`net centre ${NET_CENTRE.map((n) => n.toFixed(2)).join(', ')}`);
 
 console.log('\n--- survey: the whole "Left side"/"Back" boundary, row by row');
 {
-  const seamP95 = NET.zones.left.seamResidualMm.p95;
-  const rows = surveyBoundary('left', 'back');
-  const met = rows.filter((r) => r.jump <= seamP95 + WALK_MM);
-  const sorted = rows.map((r) => r.jump).sort((x, y) => x - y);
-  const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+  // The same measurement the bake writes into the sidecar, re-derived here against the shipped
+  // file: check 1 places one bar at one spot, and a spot chosen off a passing measurement proves
+  // only that the spot passes. This says how much of the boundary would have passed.
+  // The same window the bake surveys — the whole canvas — or the two would be measuring different
+  // boundaries and the comparison below would mean nothing.
+  const rows = surveyBoundary(sheets, 'left', 'back', {
+    uFrom: NET.bounds.minU,
+    uTo: NET.bounds.maxU,
+    vFrom: NET.bounds.minV,
+    vTo: NET.bounds.maxV,
+  });
+  const got = seamContinuity(rows, NET.zones.left.seamResidualMm.p95 + SURVEY_U_STEP_MM);
+  const gaps = rows.map((r) => r.canvasGap).sort((x, y) => x - y);
   console.log(
-    `   ${rows.length} rows 2mm apart; canvas gap median ` +
-      `${rows
-        .map((r) => r.canvasGap)
-        .sort((x, y) => x - y)
-        [rows.length >> 1].toFixed(2)}mm; ` +
-      `3D jump median ${q(0.5).toFixed(2)}mm p95 ${q(0.95).toFixed(2)}mm max ` +
-      `${sorted[sorted.length - 1].toFixed(2)}mm`,
+    `   ${rows.length} rows 2mm apart; canvas gap median ${gaps[rows.length >> 1].toFixed(2)}mm; ` +
+      `3D jump median ${got.jumpMm.median.toFixed(2)}mm p95 ${got.jumpMm.p95.toFixed(2)}mm ` +
+      `max ${got.jumpMm.max.toFixed(2)}mm`,
   );
-  if (!met.length)
+  if (!got.met)
     fail('the two sheets do not meet in 3D anywhere along their boundary — check 1 has no seam');
   else
     console.log(
-      `   ${met.length}/${rows.length} rows cross within ${(seamP95 + WALK_MM).toFixed(3)}mm, ` +
-        `over net v ${Math.min(...met.map((r) => r.v)).toFixed(1)}..` +
-        `${Math.max(...met.map((r) => r.v)).toFixed(1)}`,
+      `   ${got.met}/${got.rows} rows cross within the registration bar, over net v ` +
+        `${got.vFrom.toFixed(1)}..${got.vTo.toFixed(1)}`,
+    );
+
+  // And the same numbers as the sidecar's own record of them, so a rebake that moves the seam
+  // fails here rather than leaving the template drawing a stretch that is no longer continuous.
+  const baked = NET.zones.left.seamContinuity;
+  // The sidecar rounds to 3 decimals, so that is the bar: anything looser would let a real drift
+  // through, and anything tighter fails on the rounding itself.
+  const SIDECAR_ROUNDING_MM = 5e-4;
+  const off = (a, b) => Math.abs(a - b) > SIDECAR_ROUNDING_MM;
+  if (!baked) fail('the sidecar records no seamContinuity for the "left" sheet');
+  else if (
+    baked.met !== got.met ||
+    baked.rows !== got.rows ||
+    off(baked.vFrom, got.vFrom) ||
+    off(baked.vTo, got.vTo) ||
+    off(baked.jumpMm.median, got.jumpMm.median) ||
+    off(baked.jumpMm.p95, got.jumpMm.p95) ||
+    off(baked.jumpMm.max, got.jumpMm.max)
+  )
+    fail(
+      `the sidecar's seamContinuity (${baked.met}/${baked.rows} rows, v ` +
+        `${baked.vFrom}..${baked.vTo}, tear ${baked.jumpMm.median}/${baked.jumpMm.max}mm) is not ` +
+        `what this survey measures (${got.met}/${got.rows} rows, v ` +
+        `${got.vFrom.toFixed(3)}..${got.vTo.toFixed(3)}, tear ` +
+        `${got.jumpMm.median.toFixed(3)}/${got.jumpMm.max.toFixed(3)}mm)`,
+    );
+  else
+    pass(
+      `the sidecar's continuous span matches this survey: ${baked.met}/${baked.rows} rows, ` +
+        `net v ${baked.vFrom}..${baked.vTo}, torn by ${baked.jumpMm.median}mm at the median ` +
+        `elsewhere`,
     );
 }
 
@@ -570,7 +478,7 @@ try {
   // The bar's centreline, walked in net mm, with the sheet that owns each step resolved.
   const walk = [];
   for (let t = -BAR_W / 2; t <= BAR_W / 2 + 1e-9; t += WALK_MM)
-    walk.push({ t, ...netPoint(zoneTris, bar[0] + t, bar[1]) });
+    walk.push({ t, ...netPoint(sheets, bar[0] + t, bar[1]) });
   const unowned = walk.filter((w) => !w.owner);
   if (unowned.length)
     fail(
@@ -695,7 +603,7 @@ try {
   /* ------------------------------------------------------ 2: inside the shared canvas */
   console.log('\n=== 2. Whole chair, a mark inside canvas the flank yields to the back ===');
   const share = SPOT.share;
-  const sharePoint = netPoint(zoneTris, share[0], share[1]);
+  const sharePoint = netPoint(sheets, share[0], share[1]);
   console.log(
     `   net (${share.join(', ')}): owned by ` +
       `${sharePoint.owner ? `"${sharePoint.owner.zoneId}" ${fmtP(sharePoint.owner.P)} on ${sharePoint.owner.part}` : 'nobody'}` +
@@ -757,7 +665,7 @@ try {
   /* ------------------------------------------------------ 3: a detached sheet */
   console.log('\n=== 3. Whole chair, a mark centred on the detached fender sheet ===');
   const fender = SPOT.fender;
-  const fenderPoint = netPoint(zoneTris, fender[0], fender[1]);
+  const fenderPoint = netPoint(sheets, fender[0], fender[1]);
   console.log(
     `   net (${fender.join(', ')}): covered by ` +
       `${fenderPoint.covering.map((c) => `"${c.zoneId}" ${fmtP(c.P)} on ${c.part}`).join(', ') || 'nobody'}`,
@@ -803,7 +711,7 @@ try {
     (leftZone.uvBounds.minU + leftZone.uvBounds.maxU) / 2,
     (leftZone.uvBounds.minV + leftZone.uvBounds.maxV) / 2,
   ];
-  const shareLeftUV = netToZoneUV('left', share);
+  const shareLeftUV = netToZoneUV(NET.zones.left, share);
   await setZone(page, 'left');
   await afterRebuild(page, () =>
     page.fill('#p-offset-x', (shareLeftUV[0] - leftCentre[0]).toFixed(3)),
@@ -903,11 +811,11 @@ function gapToOtherSheets(zoneId) {
   const thin = (pts) => [
     ...new Map(pts.map((p) => [`${p[0].toFixed(1)},${p[1].toFixed(1)}`, p])).values(),
   ];
-  const mine = thin(netUV(zoneId, zoneTris.get(zoneId)));
+  const mine = thin(netUV(zoneId, sheets.get(zoneId).tris));
   let best = Infinity;
   for (const otherId of Object.keys(NET.zones)) {
     if (otherId === zoneId) continue;
-    for (const q of thin(netUV(otherId, zoneTris.get(otherId))))
+    for (const q of thin(netUV(otherId, sheets.get(otherId).tris)))
       for (const p of mine) {
         const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
         if (d < best) best = d;

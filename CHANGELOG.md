@@ -26,11 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   time.** "Whole chair" in an artwork row's zone dropdown places that design
   across every sheet of the chair's unfolded layout in one go, cut from a
   single new design template (Part panel, next to the per-zone ones). Where
-  two sheets meet at a registered seam — left/back and back/right, each
-  within 2mm at the 95th percentile (`npx vite-node
-scripts/measure-zone-seams.mjs`) — a mark drawn across the join continues on
-  the far side. The other sheets sit beside their neighbour with a visible
-  gap and don't connect. Where two sheets lie over each other, the seam
+  two sheets really join — part of left/back and part of back/right — a mark
+  drawn across the join continues on the far side. That is only part of each
+  boundary: elsewhere the two sheets sit side by side without joining, and the
+  template draws a real join on a solid line and the rest on a dotted one.
+  The other sheets sit beside their neighbour with a visible gap and don't
+  connect. Where two sheets lie over each other, the seam
   between them decides which one cuts, so a mark on the sheet lands in exactly
   one place; the template hatches those areas and names the sheet that gets
   them. Binding a design to that zone by name still reaches all of its

@@ -90,6 +90,26 @@ export interface NetZonePlacement {
   /** How well the shared seam really registers, in mm; absent on the root and on detached sheets. */
   seamResidualMm?: { to: string; pairs: number; rms: number; p95: number; max: number };
   /**
+   * How much of that seam is a join rather than an abutment, surveyed row by row along the
+   * boundary the two sheets share.
+   *
+   * `seamResidualMm` says how well the fit landed on the vertices the two zones SHARE. It says
+   * nothing about the rest of the boundary, where the sheets still sit flush on the canvas and the
+   * surfaces under them are far apart: on the chair's flank/back boundary 61 of 197 rows join, and
+   * a design crossing one of the other 136 is torn by 33.5mm at the median. `vFrom`/`vTo` bound
+   * the joining stretch in net mm, and are absent when no row joins at all.
+   *
+   * Measured by scripts/lib/netseam.mjs, which scripts/check-net-design.mjs re-runs against the
+   * shipped file.
+   */
+  seamContinuity?: {
+    rows: number;
+    met: number;
+    vFrom?: number;
+    vTo?: number;
+    jumpMm: { median: number; p95: number; max: number };
+  };
+  /**
    * Canvas this zone yields, so a point of the net belongs to exactly one zone. Absent where it
    * yields none, which is every zone whose sheet lies over no other.
    */

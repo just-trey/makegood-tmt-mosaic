@@ -33,6 +33,14 @@ import {
   zoneSeamPoints,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
 } from '../scripts/lib/zonebake.mjs';
+import {
+  chartTriangles,
+  netPoint,
+  seamContinuity,
+  SURVEY_U_STEP_MM,
+  surveyBoundary,
+  // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
+} from '../scripts/lib/netseam.mjs';
 
 // End-to-end check of the baked chair sidecar on the REAL chair meshes (the real-geometry analog of
 // the synthetic-cylinder conformal test): every charted part's fingerprint matches, each chart
@@ -193,18 +201,18 @@ describe('the whole-chair net', () => {
 
   // Every figure here re-derives from
   // `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`, whose net lines
-  // print the same areas: left yields 8700mm2 to back, right 8199mm2, and back yields 30mm2 back
+  // print the same areas: left yields 8668mm2 to back, right 8158mm2, and back yields 29mm2 back
   // to left and 27mm2 to right — the slivers of each patch that fall on the flank's side of the
-  // seam. 16,956mm2 reassigned in total, and 0 pairs still overlapping.
+  // seam. 16,882mm2 reassigned in total, and 0 pairs still overlapping.
   it('divides every patch two sheets both claim, and records what each yields', () => {
     const yields = Object.entries(net.zones).flatMap(([id, p]) =>
       (p.excluded ?? []).map((e) => [id, e.to, e.areaMm2]),
     );
     expect(yields).toEqual([
-      ['left', 'back', 8699.6],
-      ['right', 'back', 8198.5],
-      ['back', 'left', 30.4],
-      ['back', 'right', 27.5],
+      ['left', 'back', 8667.5],
+      ['right', 'back', 8158.2],
+      ['back', 'left', 28.9],
+      ['back', 'right', 26.9],
     ]);
     for (const [id, p] of Object.entries(net.zones))
       for (const e of p.excluded ?? []) {
@@ -337,6 +345,102 @@ describe('the whole-chair net', () => {
     expect(net.bounds.minV).toBeCloseTo(minV, 3);
     expect(net.bounds.maxU).toBeCloseTo(maxU, 3);
     expect(net.bounds.maxV).toBeCloseTo(maxV, 3);
+  });
+
+  /** The net's sheets in the form scripts/lib/netseam.mjs measures, off the shipped sidecar. */
+  const buildSheets = (): Map<string, object> =>
+    new Map(
+      Object.keys(net.zones).map((id) => [
+        id,
+        {
+          place: net.zones[id],
+          excluded: net.zones[id].excluded,
+          tris: chartTriangles(
+            zone(id).charts,
+            (ch: { libraryPartId: string }) => partMesh.get(ch.libraryPartId)!.verts,
+          ),
+        },
+      ]),
+    );
+
+  // The whole point of the partition is that a whole-part mark is cut once, so every bit of canvas
+  // one sheet gives up has to be canvas the sheet taking it can really warp onto. It is not enough
+  // for the receiver's CLIP region to admit it: that region is a simplified outline of its chart
+  // and bulges over notches the triangles leave open. While the partition ran on the clip alone the
+  // flanks handed the back 24.0 and 21.8mm² it could not reach — ink dropped, with a notice saying
+  // it had moved there.
+  it('yields no canvas the sheet taking it cannot chart', () => {
+    const sheets = buildSheets();
+    const STEP = 0.5;
+    for (const [id, place] of Object.entries(net.zones))
+      for (const e of place.excluded ?? []) {
+        const r = (place.rotationDeg * Math.PI) / 180;
+        const c = Math.cos(r),
+          s = Math.sin(r);
+        let minU = Infinity,
+          minV = Infinity,
+          maxU = -Infinity,
+          maxV = -Infinity;
+        for (const reg of e.regions)
+          for (const [u, v] of reg.outer) {
+            minU = Math.min(minU, u);
+            minV = Math.min(minV, v);
+            maxU = Math.max(maxU, u);
+            maxV = Math.max(maxV, v);
+          }
+        let yielded = 0,
+          orphan = 0;
+        for (let u = minU; u <= maxU; u += STEP)
+          for (let v = minV; v <= maxV; v += STEP) {
+            const at = netPoint(
+              sheets,
+              c * u - s * v + place.offsetU,
+              s * u + c * v + place.offsetV,
+            );
+            const mine = at.covering.find((x: { zoneId: string }) => x.zoneId === id);
+            if (!mine || mine.excluded !== e) continue;
+            yielded++;
+            if (!at.owners.length) orphan++;
+          }
+        // At most one sample of the lattice may straddle the boundary itself. Anything more is
+        // canvas the partition took off one sheet and gave to a sheet that cannot cut it.
+        expect(orphan * STEP ** 2, `${id} -> ${e.to} (${yielded} samples)`).toBeLessThanOrEqual(
+          STEP ** 2,
+        );
+      }
+  });
+
+  // Two registered sheets abut along their WHOLE boundary on the canvas whatever the part does
+  // underneath, because the partition gives every point to exactly one of them. The registration is
+  // one rigid fit through the vertices the two zones share, so it lands them on each other only
+  // over the stretch those vertices span: on this chair, 61 of the flank/back boundary's 197 rows.
+  // The rest abuts and tears, and the sidecar has to say so or the template draws a join that is
+  // not there.
+  it('records how much of each attached seam is a join rather than an abutment', () => {
+    const sheets = buildSheets();
+    for (const [id, place] of Object.entries(net.zones)) {
+      if (!place.seamResidualMm) {
+        expect(place.seamContinuity, id).toBeUndefined();
+        continue;
+      }
+      const rows = surveyBoundary(sheets, id, place.seamResidualMm.to, {
+        uFrom: net.bounds.minU,
+        uTo: net.bounds.maxU,
+        vFrom: net.bounds.minV,
+        vTo: net.bounds.maxV,
+      });
+      const got = seamContinuity(rows, place.seamResidualMm.p95 + SURVEY_U_STEP_MM);
+      const baked = place.seamContinuity!;
+      expect(baked.rows, id).toBe(got.rows);
+      expect(baked.met, id).toBe(got.met);
+      expect(baked.vFrom, id).toBeCloseTo(got.vFrom, 3);
+      expect(baked.vTo, id).toBeCloseTo(got.vTo, 3);
+      expect(baked.jumpMm.median, id).toBeCloseTo(got.jumpMm.median, 3);
+      expect(baked.jumpMm.max, id).toBeCloseTo(got.jumpMm.max, 3);
+      // and it is a real limit, not a formality: most of this boundary is not a join
+      expect(baked.met, id).toBeLessThan(baked.rows);
+      expect(baked.jumpMm.median, id).toBeGreaterThan(CHART_SNAP_MM);
+    }
   });
 
   // Detached sheets are laid where the bake chose, so this is the bake keeping its own promise:

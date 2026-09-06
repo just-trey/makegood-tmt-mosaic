@@ -34,6 +34,7 @@ import { detectFlatPatches } from '../../src/geometry/meshparts.ts';
 import { CHART_SNAP_MM } from '../../src/geometry/conformal.ts';
 import { WHOLE_CHAIR_ZONE } from '../../src/geometry/zones.ts';
 import { ACCENT, GRAY, LABEL_SIZE } from './svgstyle.mjs';
+import { chartTriangles, seamContinuity, SURVEY_U_STEP_MM, surveyBoundary } from './netseam.mjs';
 
 /** Boundary/hole/seam polyline simplification tolerance (mm) — CHART_SNAP_MM covers the slack. */
 export const SIMPLIFY_TOL_MM = 0.2;
@@ -2718,14 +2719,19 @@ ${body}
 
 /**
  * The whole kind unfolded: every zone's sheet drawn at its net transform on one true-size canvas,
- * so a design can be drawn across the sheets that really join. Attached sheets meet at their
- * measured registration; a detached one says so on its face and carries no continuity to its
- * neighbour. The canvas ground is hatched, so anything drawn off a sheet is visibly on nothing.
+ * so a design can be drawn across the sheets that really join. The canvas ground is hatched, so
+ * anything drawn off a sheet is visibly on nothing.
+ *
+ * **Two sheets abutting is not two sheets joining.** A registered pair meets along its whole
+ * boundary on the canvas whatever the part does underneath, and the registration is one rigid fit
+ * through the vertices the two zones share, so it only lands them on each other over the stretch
+ * those vertices span. `boundaries` carries the surveyed rows, and the two stretches are drawn
+ * differently: a design across the torn one prints in halves tens of mm apart.
  *
  * `sheetOf(zoneId)` gives that zone's `zoneSheetSVG` result, so the sheets here and the per-zone
  * templates are the same drawing rather than two that have to be kept in step.
  */
-export function netTemplateSVG(zones, net, sheetOf) {
+export function netTemplateSVG(zones, net, sheetOf, boundaries = []) {
   const b = net.bounds;
   // Symmetric margin, so the canvas centre stays the net's own centre and a design traced on this
   // sheet still lands where `bounds` anchors it. Without it a sheet flush with an edge has its
@@ -2790,8 +2796,50 @@ export function netTemplateSVG(zones, net, sheetOf) {
     }
   }
   const overlapD = yielded.join(' ');
+
+  // The boundary between two registered sheets, drawn as what it really is row by row: solid where
+  // the surface carries across, dotted where the two sheets merely sit next to each other. Not
+  // dashed, either of them — a sheet already draws its printed-part seams that way.
+  const runs = [];
+  const joinLabels = [];
+  for (const bnd of boundaries) {
+    let run = null;
+    const flush = () => {
+      if (run && run.pts.length > 1) runs.push(run);
+      run = null;
+    };
+    for (const r of bnd.rows) {
+      if (!run || run.continuous !== r.continuous) {
+        flush();
+        run = { continuous: r.continuous, pts: [] };
+      }
+      run.pts.push([r.u, r.v]);
+    }
+    flush();
+    const torn = bnd.rows.filter((r) => !r.continuous);
+    if (torn.length) {
+      const mid = torn[torn.length >> 1];
+      joinLabels.push(
+        `  <text x="${round(mid.u, 2)}" y="${round(-mid.v - 2, 2)}" text-anchor="middle" ` +
+          `font-family="sans-serif" font-size="${LABEL_SIZE}" fill="${GRAY}">` +
+          `these sheets do not join here</text>`,
+      );
+    }
+  }
+  const runPath = (want) =>
+    runs
+      .filter((r) => r.continuous === want)
+      .map((r) =>
+        r.pts.map(([u, v], i) => `${i ? 'L' : 'M'}${round(u, 2)} ${round(-v, 2)}`).join(' '),
+      )
+      .join(' ');
+  const joinedD = runPath(true);
+  const tornD = runPath(false);
+
   const legend = [
-    'Sheets that touch are joined: a design carries across them',
+    'A solid line where two sheets meet is a real join: a design carries across it',
+    'A dotted line is not a join: the two sheets only sit side by side there',
+    'A design across a dotted line prints in two pieces, far apart on the part',
     'A sheet marked "separate sheet" does not join its neighbour',
     'Hatched ground = no surface here',
     overlapD
@@ -2824,6 +2872,14 @@ ${groups.join('\n')}${
     overlapD
       ? `\n  <path d="${overlapD}" fill="url(#shared)" fill-rule="evenodd" stroke="${ACCENT}" ` +
         `stroke-width="0.3" stroke-opacity="0.6"/>\n${yieldLabels.join('\n')}`
+      : ''
+  }${
+    joinedD ? `\n  <path d="${joinedD}" fill="none" stroke="${ACCENT}" stroke-width="1.2"/>` : ''
+  }${
+    tornD
+      ? `\n  <path d="${tornD}" fill="none" stroke="${GRAY}" stroke-width="1.2" ` +
+        `stroke-dasharray="1 3"/>\n` +
+        joinLabels.join('\n')
       : ''
   }
   <text x="${round((b.minU + b.maxU) / 2, 2)}" y="${round(y0 + LABEL_SIZE, 2)}" text-anchor="middle"
@@ -2902,9 +2958,42 @@ function netFrame(layout, zoneId) {
 }
 
 /**
- * Each zone's LIVE canvas as a CrossSection in net mm: its per-part clip regions less the surface
- * covers hide, which is what a cutter can actually reach. `excluded` (zone UV, per zone) is taken
- * off as well, so the same function measures a net before and after it has been partitioned.
+ * A zone's chart triangles as one region in net mm — the canvas its cutter can really warp onto.
+ *
+ * NOT the same thing as its `subRegions`, which are those triangles' boundary loops SIMPLIFIED, and
+ * so bulge over notches and sub-threshold holes the triangles leave open. On the chair that gap is
+ * 24mm² along the back's rim, and while the partition ran on subRegions alone it handed exactly
+ * that sliver from each flank to the back, which then could not cut it: ink dropped, and a notice
+ * saying it had moved. Cached per layout because the partition asks three times and a chair zone
+ * carries up to 13k triangles.
+ */
+const chartedCache = new WeakMap();
+function chartedSheet(zone, layout, wasm) {
+  let byZone = chartedCache.get(layout);
+  if (!byZone) chartedCache.set(layout, (byZone = new Map()));
+  let cs = byZone.get(zone.id);
+  if (cs) return cs;
+  const { toNet } = netFrame(layout, zone.id);
+  // NonZero, not EvenOdd: a chart's triangles tile their patch without overlapping, so every point
+  // is wound exactly once and the fill rule only has to ignore which way round each one is.
+  const rings = zone.charts.flatMap((ch) =>
+    ch.chartTris.map((t) => t.map((i) => toNet([ch.uv[2 * i], ch.uv[2 * i + 1]]))),
+  );
+  cs = new wasm.CrossSection(rings, 'NonZero');
+  byZone.set(zone.id, cs);
+  return cs;
+}
+
+/** Release the cached charted sheets — wasm handles, so they do not go with the garbage collector. */
+function disposeChartedSheets(layout) {
+  for (const cs of chartedCache.get(layout)?.values() ?? []) cs.delete();
+  chartedCache.delete(layout);
+}
+
+/**
+ * Each zone's LIVE canvas as a CrossSection in net mm: the surface it can actually cut, less what
+ * covers hide. `excluded` (zone UV, per zone) is taken off as well, so the same function measures a
+ * net before and after it has been partitioned.
  */
 function netLiveSheets(zones, layout, wasm, excluded = new Map()) {
   const live = new Map();
@@ -2912,7 +3001,14 @@ function netLiveSheets(zones, layout, wasm, excluded = new Map()) {
     const { toNet } = netFrame(layout, zone.id);
     const ringsOf = (regions) =>
       regions.flatMap((r) => [r.outer.map(toNet), ...r.holes.map((h) => h.map(toNet))]);
-    let cs = new wasm.CrossSection(ringsOf(zone.charts.flatMap((ch) => ch.subRegions)), 'EvenOdd');
+    const clip = new wasm.CrossSection(
+      ringsOf(zone.charts.flatMap((ch) => ch.subRegions)),
+      'EvenOdd',
+    );
+    // Both, not either: the clip region is what the runtime admits, the triangles are what it can
+    // warp onto, and canvas outside either is canvas nothing cuts.
+    let cs = clip.intersect(chartedSheet(zone, layout, wasm));
+    clip.delete();
     const off = ringsOf([
       ...zone.charts.flatMap((ch) => ch.deadRegions ?? []),
       ...(excluded.get(zone.id) ?? []),
@@ -3112,6 +3208,59 @@ export function partitionNet(zones, layout, seamOf, wasm, log = () => {}, warnin
     }
   }
   return { excluded, before };
+}
+
+/**
+ * How much of one attached seam is continuous surface, measured the way check-net-design.mjs
+ * measures it against the shipped file — the same code, from lib/netseam.mjs, so the bake's claim
+ * and the live check's verdict cannot drift.
+ *
+ * The bar is the seam's OWN registration residual plus the survey's canvas step: a crossing counts
+ * as continuous when the two sheets land on each other as well as the fit that placed them did, and
+ * the samples straddling the boundary are a step apart, so that much real surface travel is
+ * expected. Neither number is chosen here.
+ */
+function seamContinuityFor(zones, net, parts, childId, parentId, log) {
+  const sheets = new Map();
+  for (const zone of zones) {
+    const place = net.zones[zone.id];
+    if (!place) continue;
+    sheets.set(zone.id, {
+      place,
+      excluded: place.excluded,
+      tris: chartTriangles(
+        zone.charts,
+        (ch) => parts.find((p) => p.libraryPartId === ch.libraryPartId).verts,
+      ),
+    });
+  }
+  if (!sheets.has(childId) || !sheets.has(parentId)) return null;
+  const rows = surveyBoundary(sheets, childId, parentId, {
+    uFrom: net.bounds.minU,
+    uTo: net.bounds.maxU,
+    vFrom: net.bounds.minV,
+    vTo: net.bounds.maxV,
+  });
+  const tolMm = net.zones[childId].seamResidualMm.p95 + SURVEY_U_STEP_MM;
+  const c = seamContinuity(rows, tolMm);
+  if (!c) return null;
+  const r3 = (n) => round(n, 3);
+  const out = {
+    rows: c.rows,
+    met: c.met,
+    ...(c.met ? { vFrom: r3(c.vFrom), vTo: r3(c.vTo) } : {}),
+    jumpMm: { median: r3(c.jumpMm.median), p95: r3(c.jumpMm.p95), max: r3(c.jumpMm.max) },
+  };
+  log(
+    `net: "${childId}"/"${parentId}" is continuous over ${c.met} of ${c.rows} rows of their ` +
+      `boundary` +
+      (c.met ? ` (net v ${out.vFrom}..${out.vTo})` : '') +
+      `; elsewhere a design crossing it is torn by ${out.jumpMm.median}mm at the median, ` +
+      `${out.jumpMm.max}mm at worst`,
+  );
+  // The summary is what the sidecar carries; the rows are for the template, which draws the
+  // boundary in this same bake and so never needs them written down.
+  return { summary: out, rows: rows.map((r) => ({ ...r, continuous: r.jump <= tolMm })) };
 }
 
 /** The rotated UV bbox of a zone placed at (theta, t). */
@@ -4181,6 +4330,19 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
           areaMm2: e.areaMm2,
           regions: e.regions,
         }));
+    // How much of each attached seam really is continuous surface. Two registered sheets abut all
+    // along their boundary whatever the part does under it, so without this the template would draw
+    // the whole join as a seam a design carries across, and on the chair only a third of one is.
+    const boundaries = [];
+    // Gated on the engine for the same reason the partition is: without one nothing was divided,
+    // so both sheets still own the whole overlap and "where does the boundary run" has no answer.
+    for (const [id, place] of Object.entries(opts.wasm ? net.zones : {})) {
+      if (!place.seamResidualMm) continue;
+      const c = seamContinuityFor(zones, net, parts, id, place.seamResidualMm.to, log);
+      if (!c) continue;
+      place.seamContinuity = c.summary;
+      boundaries.push({ a: id, b: place.seamResidualMm.to, rows: c.rows });
+    }
     const sheetCache = new Map();
     const sheetOf = (id) => {
       if (!sheetCache.has(id))
@@ -4196,13 +4358,14 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     };
     templates.push({
       file: net.templateFile,
-      svg: netTemplateSVG(zones, net, sheetOf),
+      svg: netTemplateSVG(zones, net, sheetOf, boundaries),
     });
     log(
       `net: ${Object.values(net.zones).filter((z) => z.attached).length} of ${zones.length} ` +
         `sheet(s) attached, canvas ${(net.bounds.maxU - net.bounds.minU).toFixed(1)} x ` +
         `${(net.bounds.maxV - net.bounds.minV).toFixed(1)}mm`,
     );
+    if (opts.wasm) disposeChartedSheets(layout);
   }
 
   const meshes = {};

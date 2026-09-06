@@ -61,16 +61,24 @@ Open questions with no obvious answer, where the measurement behind the question
   those seams (left/back, back/right) register within 2mm at the 95th
   percentile (1.81mm / 1.58mm, `npx vite-node
 scripts/measure-zone-seams.mjs`), so a design bound to **Whole chair**
-  continues across them; every other pair of sheets (front, seat sides, wing
-  panels) sits beside its neighbour with a visible gap and doesn't connect.
-  Two attached sheets also overlap at their registered transform — 8,700mm²
-  and 8,199mm² of it on the chair, where the flanks reach across the back's
+  continues across the stretch that fit covers — 61 of the left/back
+  boundary's 197 rows, 8 of right/back's 99 — and is torn everywhere else
+  along them ([docs/pipeline.md](pipeline.md)); every other pair of sheets
+  (front, seat sides, wing panels) sits beside its neighbour with a visible
+  gap and doesn't connect.
+  Two attached sheets also overlap at their registered transform — 8,668mm²
+  and 8,158mm² of it on the chair, where the flanks reach across the back's
   ([docs/pipeline.md](pipeline.md)). Rather than let a mark there cut twice,
   the canvas is partitioned at the seam: each point cuts on whichever
   sheet's own body it's on, so it lands in exactly one place
   (`clipToNetShare`, [src/geometry/assembly.ts](../src/geometry/assembly.ts)).
   Binding a zone by name instead of Whole chair still reaches all of its
   surface — only the whole-part binding gives any of it up.
+  - **Follow-up: hatch the yielded canvas in the 3D view.** Surface a sheet
+    gives up looks live and silently refuses a whole-part mark, which reads
+    as the design vanishing and reappearing 44mm away
+    ([docs/tech-debt.md](tech-debt.md)). Only correct while a whole-part
+    binding is active, which is what makes it its own piece of work.
   - **Follow-up: Mirror on a net binding.** Not offered in the shipping PR —
     the checkbox hides on a row bound to Whole chair. The net is symmetric
     about the back's own centre line, so a mirror there would reflect the

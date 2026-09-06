@@ -1425,6 +1425,19 @@ describe('the net', () => {
   });
 
   /**
+   * A rectangle as the two chart triangles that cover it, in the form a chart carries them. The
+   * partition asks what a sheet can really warp onto, not just what its clip region admits, so a
+   * hand-built sheet has to say both.
+   */
+  const boxChart = (u0: number, u1: number, h: number, v0 = 0): object => ({
+    uv: [u0, v0, u1, v0, u1, v0 + h, u0, v0 + h],
+    chartTris: [
+      [0, 1, 2],
+      [0, 2, 3],
+    ],
+  });
+
+  /**
    * Two flat plates hinged along a shared edge at 30 degrees — the whole feature in miniature. Both
    * are developable and their edge vertices are coincident, so the net has to unfold them into one
    * 60 x 120mm sheet with nothing between and nothing over.
@@ -1557,9 +1570,16 @@ describe('the net', () => {
     // Two 40mm sheets, the second laid 30mm along: 10 x 40 of shared canvas, of which the first
     // sheet hides a 4 x 40 strip, so 34..40 x 0..40 = 240mm2 is what a design could really be cut
     // on twice. They register across a seam at u = 35, which divides that patch 40 / 200.
-    const zones: { id: string; charts: { subRegions: Region[]; deadRegions?: Region[] }[] }[] = [
-      { id: 'a', charts: [{ subRegions: [box(0, 40, 40)], deadRegions: [box(30, 34, 40)] }] },
-      { id: 'b', charts: [{ subRegions: [box(0, 40, 40)] }] },
+    // Chart triangles as well as clip regions: a sheet can only yield canvas it charts, so a
+    // fixture that says nothing about its triangles is a sheet that charts nothing.
+    const zones = [
+      {
+        id: 'a',
+        charts: [
+          { subRegions: [box(0, 40, 40)], deadRegions: [box(30, 34, 40)], ...boxChart(0, 40, 40) },
+        ],
+      },
+      { id: 'b', charts: [{ subRegions: [box(0, 40, 40)], ...boxChart(0, 40, 40) }] },
     ];
     const layout = {
       placed: new Map([
@@ -1605,6 +1625,51 @@ describe('the net', () => {
     expect(netSheetOverlaps(zones, layout, wasm, flat)).toEqual([]);
   });
 
+  it('never yields canvas the sheet taking it cannot chart', async () => {
+    const wasm = await getManifold();
+    type Region = { outer: number[][]; holes: number[][][] };
+    const box = (u0: number, u1: number, v0: number, v1: number): Region => ({
+      outer: [
+        [u0, v0],
+        [u1, v0],
+        [u1, v1],
+        [u0, v1],
+      ],
+      holes: [],
+    });
+    // `b`'s clip region is the full 40mm square, but its triangles stop at v = 30: the last 10mm is
+    // the bulge a simplified boundary loop leaves over a notch the triangles do not fill. Ink there
+    // is admitted by b's clip and then dropped by its warp, so a partition that hands it over on
+    // the strength of the clip alone loses the mark AND tells the user it moved.
+    const zones = [
+      { id: 'a', charts: [{ subRegions: [box(0, 40, 0, 40)], ...boxChart(0, 40, 40) }] },
+      { id: 'b', charts: [{ subRegions: [box(0, 40, 0, 40)], ...boxChart(0, 40, 30) }] },
+    ];
+    const layout = {
+      placed: new Map([
+        ['a', { theta: 0, t: [0, 0] }],
+        ['b', { theta: 0, t: [30, 0] }],
+      ]),
+      bounds: { minU: 0, minV: 0, maxU: 70, maxV: 40 },
+    };
+    const seamOf = (x: string, y: string): object | undefined =>
+      (x === 'a' && y === 'b') || (x === 'b' && y === 'a')
+        ? { m: { sharedPairs: [{ want: [35, 0] }, { want: [35, 15] }, { want: [35, 30] }] } }
+        : undefined;
+    const warnings: string[] = [];
+    const { excluded } = partitionNet(zones, layout, seamOf, wasm, () => {}, warnings);
+    expect(warnings).toHaveLength(0);
+
+    // The shared canvas is 30..40 x 0..40 = 400mm2 by the clip regions, but only 30..40 x 0..30 =
+    // 300mm2 of it is charted by both. `a` keeps u < 35 and yields 35..40 x 0..30 = 150mm2.
+    expect(excluded.get('a')).toHaveLength(1);
+    expect(excluded.get('a')[0].areaMm2).toBeCloseTo(150, 1);
+    // and nothing of the 35..40 x 30..40 strip `b` cannot reach goes with it
+    const yielded: Region[] = excluded.get('a')[0].regions;
+    const highest = Math.max(...yielded.flatMap((r) => r.outer.map((p) => p[1])));
+    expect(highest).toBeCloseTo(30, 1);
+  });
+
   it('refuses to guess when two sheets overlap with no seam to divide them at', async () => {
     const wasm = await getManifold();
     type Region = { outer: number[][]; holes: number[][][] };
@@ -1618,8 +1683,8 @@ describe('the net', () => {
       holes: [],
     });
     const zones = [
-      { id: 'a', charts: [{ subRegions: [box(0, 40)] }] },
-      { id: 'b', charts: [{ subRegions: [box(0, 40)] }] },
+      { id: 'a', charts: [{ subRegions: [box(0, 40)], ...boxChart(0, 40, 40) }] },
+      { id: 'b', charts: [{ subRegions: [box(0, 40)], ...boxChart(0, 40, 40) }] },
     ];
     const layout = {
       placed: new Map([

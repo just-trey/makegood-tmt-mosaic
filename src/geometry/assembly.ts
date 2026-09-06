@@ -1204,7 +1204,8 @@ export async function buildAssemblyGeometry(
         // The decision behind it (2026-09-05): the alternative was to leave the sheets overlapping,
         // measured and hatched, and let a mark near the flank/back join print in two places. It
         // measured 8,730 and 8,226mm² of doubled canvas on the chair, right where a design's centre
-        // lands, so the canvas is partitioned instead.
+        // lands, so the canvas is partitioned instead. (What the flanks end up yielding is smaller,
+        // 8,668 and 8,158mm²: a sheet only yields canvas the sheet taking it can actually chart.)
         if (netExcl.length) {
           const r = clipToNetShare(feat, netExcl);
           const design = artworks[ai].name || 'design';

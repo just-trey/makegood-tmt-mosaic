@@ -216,13 +216,17 @@ rounded edge the way real vinyl would
   it already handles. Clicking a zone directly in the 3D view rebinds away
   from Whole chair to that one zone (`zonePick.ts`).
 - **The layout is partitioned, so a point on it cuts exactly once.** Two
-  sheets can lie over each other: on the chair the flanks reach 8,700 and
-  8,199mm² across the back's (the bake prints all four yielded areas:
+  sheets can lie over each other: on the chair the flanks reach 8,668 and
+  8,158mm² across the back's (the bake prints all four yielded areas:
   `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`,
   pinned in `tests/chair-zones.test.ts`). The divider is the registered seam itself —
   the total-least-squares line through the vertices the two zones share, the
   same ones whose fit placed the sheet — and each keeps the side its own body
-  is on. What it gives up is baked as `net.zones[<id>].excluded`, and
+  is on. **A sheet only ever yields canvas the sheet taking it can chart**:
+  the per-part clip regions are simplified outlines and bulge over notches the
+  triangles leave open, so a partition run on them alone handed the back 24.0
+  and 21.8mm² it could not warp onto — ink dropped, with a notice saying it had
+  moved. What it gives up is baked as `net.zones[<id>].excluded`, and
   `clipToNetShare` takes that off a whole-part cut with a notice naming the
   zone the ink went to. Binding a zone by name ignores it entirely and still
   reaches every bit of surface that zone owns. `netSheetOverlaps` re-run over
@@ -275,9 +279,24 @@ whichever neighbouring zone's seed normal is nearer, so `left`/`back` and
 predecessor left in no zone at all
 ([docs/findings/2026-09-04-seam-closing.md](findings/2026-09-04-seam-closing.md)).
 The whole-part sheet (above, "Whole chair") uses exactly the registration this
-unlocked: a design bound to it continues across those two boundaries, within
-2mm at the 95th percentile, and sits with a visible gap at every boundary the
-wedge didn't close.
+unlocked, and it reaches only as far as the vertices that registration was fit
+through. The fit is one rigid transform over the vertices two zones SHARE, so
+it lands the sheets on each other over that stretch and nowhere else, while the
+partition makes them abut along the whole boundary regardless. Surveyed row by
+row (`scripts/lib/netseam.mjs`, baked as `net.zones[<id>].seamContinuity`, run
+by `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`):
+
+| Boundary   | Rows joining | Median tear elsewhere | Worst   |
+| ---------- | ------------ | --------------------- | ------- |
+| left/back  | 61 of 197    | 33.6mm                | 135.1mm |
+| right/back | 8 of 99      | 164.4mm               | 179.1mm |
+
+So a design carries across the ~120mm of the flank/back join around the storage
+box corner, and is torn everywhere else on that boundary — the two halves cut
+on surfaces tens of mm apart, with nothing at runtime saying so
+([docs/tech-debt.md](tech-debt.md)). The net template draws the joining stretch
+dashed and the rest on a solid line saying the sheets do not join there. Every
+boundary the wedge didn't close still sits with a visible gap.
 
 **Hardware variants** (the chair's Standard/Kit caster mounts) show a version
 picker above the part list. Switching reloads only the parts that differ.
