@@ -113,7 +113,7 @@ function gridFor(tris) {
 }
 
 /** The 3D point one zone's charts put at a UV, by barycentric interpolation, or null off-chart. */
-export function surfaceAt(tris, uv) {
+function surfaceAt(tris, uv) {
   if (!tris.length) return null;
   const g = gridFor(tris);
   const i = g.clamp(Math.floor((uv[0] - g.minU) / g.su));
@@ -143,7 +143,7 @@ export function surfaceAt(tris, uv) {
   return null;
 }
 
-export function inRing(pt, ring) {
+function inRing(pt, ring) {
   let inside = false;
   for (let i = 0, k = ring.length - 1; i < ring.length; k = i++) {
     const a = ring[i],
@@ -158,7 +158,7 @@ export function inRing(pt, ring) {
 }
 
 /** The exclusion covering this zone-UV point, i.e. the neighbour that owns that patch of canvas. */
-export function exclusionAt(excluded, uv) {
+function exclusionAt(excluded, uv) {
   for (const e of excluded ?? [])
     for (const region of e.regions) {
       if (!inRing(uv, region.outer)) continue;
