@@ -76,8 +76,13 @@ export interface NetZonePlacement {
    * The zone's display name, carried here for the same reason `NetZoneExclusion.toName` is: the
    * build names a zone the net places but nothing loaded, and with no loaded part there is no zone
    * list to resolve the id against.
+   *
+   * Optional because it arrived inside schema 5 rather than with it, so a cached sidecar can be
+   * this schema and still lack it. Its one reader falls back to the id, which is what shipped
+   * before — not worth a schema bump, which would refuse every cached sidecar to fix a name in a
+   * warning that only fires when a part failed to load.
    */
-  name: string;
+  name?: string;
   rotationDeg: number;
   offsetU: number;
   offsetV: number;

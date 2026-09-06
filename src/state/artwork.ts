@@ -740,7 +740,7 @@ export function netZones(): {
   for (const [zoneId, place] of Object.entries(net.zones)) {
     const b = bounds.get(zoneId);
     if (b) zones.push({ zoneId, place, zoneCentre: boundsCentre(b) });
-    else missing.push({ zoneId, name: place.name });
+    else missing.push({ zoneId, name: place.name ?? zoneId });
   }
   if (!zones.length) return null;
   const unplaced = Array.from(bounds.keys())
