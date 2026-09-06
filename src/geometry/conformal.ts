@@ -523,7 +523,10 @@ export class ConformalZoneMapper implements ZoneMapper {
       } catch {
         poly = null;
       }
-      if (!poly) continue;
+      // Kept with a null region rather than dropped: dropping it puts the patch back on both
+      // sheets with nothing said, which is the one doubled cut the partition exists to remove.
+      // clipToNetShare reads the null as "cannot trim this" and the build names it.
+      //
       // Straight off the baked loops rather than through turf: the shim in src/turf.d.ts declares
       // only the surface this app calls, and a min/max over the same arrays is the whole of it.
       const bbox = [Infinity, Infinity, -Infinity, -Infinity];

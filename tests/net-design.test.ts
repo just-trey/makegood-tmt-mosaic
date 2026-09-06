@@ -8,6 +8,7 @@ import {
 } from '../src/geometry/zones';
 import {
   buildAssemblyGeometry,
+  netShareFailedWarning,
   netShareNotice,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
@@ -399,6 +400,34 @@ describe('a whole-part design is cut on exactly one sheet', () => {
     const said = WARNINGS.map((w) => w.message);
     expect(said).toContain(netShareNotice('logo', 'a', ['Sheet B']));
     expect(said).toContain(netShareNotice('logo', 'b', ['Sheet A']));
+  }, 60000);
+
+  it('says both what it could not trim and where the rest of the ink went', async () => {
+    // One zone can yield canvas to two neighbours, so one clip can fail on one patch and move ink
+    // on another. Sheet A here yields its far half to B as before, and carries a second entry the
+    // mapper cannot build a polygon from — reporting either fact alone loses the other.
+    const chart = parts[0].zones![0].chart as ConformalChart;
+    const broken = {
+      ...chart,
+      netExcluded: [
+        {
+          to: 'b',
+          toName: 'Sheet B',
+          areaMm2: 1,
+          regions: [{ outer: strip(HALF - 5, HALF + 5).outer }],
+        } as unknown as NonNullable<ConformalChart['netExcluded']>[number],
+        ...chart.netExcluded!,
+      ],
+    };
+    const withBroken = {
+      ...build(true),
+      parts: [{ ...parts[0], zones: [{ ...parts[0].zones![0], chart: broken }] }, parts[1]],
+    };
+    const out = await buildAssemblyGeometry(withBroken);
+    expect(out).not.toBeNull();
+    const said = WARNINGS.map((w) => w.message);
+    expect(said).toContain(netShareFailedWarning('logo', 'a'));
+    expect(said).toContain(netShareNotice('logo', 'a', ['Sheet B']));
   }, 60000);
 
   it('cuts the whole design on both sheets when it is bound to them by name', async () => {

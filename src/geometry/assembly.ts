@@ -32,8 +32,8 @@ import {
   intersectQuiet,
   planarArea,
   cleanFeature,
+  differenceChecked,
   intersectChecked,
-  safeDiff,
   safeIntersectChecked,
   safeUnion,
   YIELD_BUDGET_MS,
@@ -575,13 +575,24 @@ export function clipToNetShare(
     if (!cur) break;
     const b = featureBBox(cur);
     if (b[0] > e.bbox[2] || b[2] < e.bbox[0] || b[1] > e.bbox[3] || b[3] < e.bbox[1]) continue;
+    if (!e.region) {
+      failed = true;
+      continue;
+    }
     const hit = intersectChecked(cur, e.region);
     if (!hit.clipped) {
       failed = true;
       continue;
     }
     if (!hit.feat) continue;
-    cur = safeDiff(cur, e.region);
+    const cut = differenceChecked(cur, e.region);
+    // The difference hands the subject back whole on a failure, so a move reported off `cut.feat`
+    // alone would name a zone the ink never went to while it is still cut here as well.
+    if (!cut.trimmed) {
+      failed = true;
+      continue;
+    }
+    cur = cut.feat;
     movedTo.push(e.toName);
   }
   return { feat: cur, movedTo, failed };
@@ -1197,8 +1208,11 @@ export async function buildAssemblyGeometry(
         if (netExcl.length) {
           const r = clipToNetShare(feat, netExcl);
           const design = artworks[ai].name || 'design';
+          // Both, not one or the other: a zone can yield canvas to two neighbours (the chair's back
+          // yields to each flank), so one call can fail on one patch and move ink on another, and
+          // each half of that is a thing the user has to be told on its own.
           if (r.failed) warnBuild(netShareFailedWarning(design, zoneName));
-          else if (r.movedTo.length) noticeBuild(netShareNotice(design, zoneName, r.movedTo));
+          if (r.movedTo.length) noticeBuild(netShareNotice(design, zoneName, r.movedTo));
           feat = r.feat;
           if (!feat) return;
         }

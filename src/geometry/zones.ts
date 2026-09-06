@@ -66,7 +66,14 @@ export function faceXZBBox(
 export interface NetExclusion {
   /** the owning zone's display name, for the notice that says where the ink went instead */
   toName: string;
-  region: PolyFeature;
+  /**
+   * Null when the baked loops would not build a polygon. The patch is then unclippable rather than
+   * absent: a design reaching it is cut here as well as on `toName`, which is the doubled cut the
+   * partition exists to remove, so it has to be reported instead of dropped. `bbox` is read off the
+   * same loops and stays usable, so a design nowhere near the patch still costs nothing and says
+   * nothing.
+   */
+  region: PolyFeature | null;
   bbox: number[];
 }
 
