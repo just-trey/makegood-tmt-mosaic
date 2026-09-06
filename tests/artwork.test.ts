@@ -746,7 +746,10 @@ function netOf(zoneIds: string[]): ZoneNet {
     templateFile: 'net-template.svg',
     bounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
     zones: Object.fromEntries(
-      zoneIds.map((id) => [id, { rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true }]),
+      zoneIds.map((id) => [
+        id,
+        { name: id, rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true },
+      ]),
     ),
   };
 }
@@ -806,8 +809,14 @@ describe('availableZones / zoneCoverage — Whole chair', () => {
       templateFile: 'net-template.svg',
       bounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
       zones: {
-        left: { rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true },
-        'fender-left': { rotationDeg: 0, offsetU: 100, offsetV: 0, attached: false },
+        left: { name: 'left', rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true },
+        'fender-left': {
+          name: 'fender-left',
+          rotationDeg: 0,
+          offsetU: 100,
+          offsetV: 0,
+          attached: false,
+        },
       },
     };
     const a = loadArtworkSource(fakeParsed(), 'a.svg');

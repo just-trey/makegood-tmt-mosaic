@@ -617,7 +617,7 @@ export function netShareNotice(design: string, zone: string, toNames: string[]):
   const where =
     toNames.length === 1 ? `"${toNames[0]}"` : toNames.map((n) => `"${n}"`).join(' and ');
   return (
-    `"${design}" reaches part of the whole-chair sheet that ${where} owns. ` +
+    `"${design}" reaches part of the whole-part sheet that ${where} owns. ` +
     `It is cut there, not on "${zone}".`
   );
 }
@@ -628,7 +628,7 @@ export function netShareNotice(design: string, zone: string, toNames: string[]):
  */
 export function netShareFailedWarning(design: string, zone: string): string {
   return (
-    `Couldn't trim "${design}" to the part of the whole-chair sheet "${zone}" owns. ` +
+    `Couldn't trim "${design}" to the part of the whole-part sheet "${zone}" owns. ` +
     `Some of it prints twice. Bind that design to one zone instead.`
   );
 }

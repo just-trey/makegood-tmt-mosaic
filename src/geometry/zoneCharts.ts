@@ -72,6 +72,12 @@ export interface SidecarZone {
  * carries across the join; false says the sheet was merely laid beside its neighbour.
  */
 export interface NetZonePlacement {
+  /**
+   * The zone's display name, carried here for the same reason `NetZoneExclusion.toName` is: the
+   * build names a zone the net places but nothing loaded, and with no loaded part there is no zone
+   * list to resolve the id against.
+   */
+  name: string;
   rotationDeg: number;
   offsetU: number;
   offsetV: number;

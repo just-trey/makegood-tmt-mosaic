@@ -37,7 +37,16 @@ const parsed = (): ParsedSVG => ({
   rawSVGCircle: null,
 });
 
-const zonedPart = (id: number, zoneId: string, name: string): AssemblyPart =>
+const chart = {
+  positions3: new Float32Array(),
+  uv: new Float32Array(),
+  triangles: new Uint32Array(),
+  normalSign: 1,
+  boundary: [],
+  zoneBounds: { minU: 0, minV: 0, maxU: 10, maxV: 10 },
+};
+
+const zonedPart = (id: number, zoneId: string, name: string, charted = false): AssemblyPart =>
   ({
     id,
     name: `part-${id}`,
@@ -46,7 +55,7 @@ const zonedPart = (id: number, zoneId: string, name: string): AssemblyPart =>
     patches: null,
     patchIdx: 0,
     boundaryLoops: null,
-    zones: [{ id: zoneId, name }],
+    zones: [{ id: zoneId, name, ...(charted ? { chart } : {}) }],
     topZ: 0,
     baseDepth: 1,
     isDuplicateOf: null,
@@ -56,6 +65,18 @@ const zonedPart = (id: number, zoneId: string, name: string): AssemblyPart =>
     loaded: true,
     cutThrough: false,
   }) as unknown as AssemblyPart;
+
+/** A net placing exactly these zones, each at a neutral transform, under the names given. */
+const netOf = (named: Record<string, string>): NonNullable<typeof state.assembly.net> => ({
+  templateFile: 'net-template.svg',
+  bounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
+  zones: Object.fromEntries(
+    Object.entries(named).map(([id, name]) => [
+      id,
+      { name, rotationDeg: 0, offsetU: 0, offsetV: 0, attached: true },
+    ]),
+  ),
+});
 
 beforeEach(() => {
   clearWarnings();
@@ -100,5 +121,41 @@ describe('artworkBuildInputs — a whole-part binding with no net', () => {
 
     expect(inputs).toHaveLength(1);
     expect(inputs[0]).toMatchObject({ zoneId: null, offX: 12, mode: 'sticker' });
+  });
+});
+
+// Every other string on screen reads a zone by the name the dropdown shows it under, so these two
+// did not get to spell it "wing-left".
+describe('artworkBuildInputs — zones the net and the parts disagree about', () => {
+  const bind = (): void => {
+    const a = loadArtworkSource(parsed(), 'a.svg');
+    setArtworkZone(a.id, WHOLE_CHAIR_ZONE);
+  };
+
+  it('names a zone the net places that nothing loaded by its display name', () => {
+    state.assembly.parts = [zonedPart(1, 'left', 'Left side', true)];
+    state.assembly.net = netOf({ left: 'Left side', 'wing-left': 'Left wing' });
+    bind();
+
+    artworkBuildInputs();
+
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      `The "Left wing" zone isn't loaded, so "a.svg" won't be cut there. Reload the page to try again.`,
+    );
+  });
+
+  it('names a loaded zone the net does not place by its display name', () => {
+    state.assembly.parts = [
+      zonedPart(1, 'left', 'Left side', true),
+      zonedPart(2, 'seat-left', 'Left seat', true),
+    ];
+    state.assembly.net = netOf({ left: 'Left side' });
+    bind();
+
+    artworkBuildInputs();
+
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      `The "Left seat" zone isn't on the whole-part sheet, so "a.svg" won't reach it. Add another design and target that zone.`,
+    );
   });
 });

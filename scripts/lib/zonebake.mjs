@@ -4147,7 +4147,14 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
           `reassigned, ${left.length} pair(s) still overlapping`,
       );
     } else {
-      log('net: sheet overlaps not measured — no boolean engine (the covers file loads it)');
+      // A warning, not a log line: what ships is a net whose sheets were never divided and whose
+      // `excluded` lists are empty, so a whole-part design over a shared patch cuts on both zones.
+      // Silence here would be indistinguishable from a bake that measured and found nothing.
+      const msg =
+        `net: no boolean engine, so the ${zones.length} sheets ship undivided and unmeasured — ` +
+        `a whole-part design over two of them is cut twice`;
+      log(msg);
+      warnings.push(msg);
     }
     net = {
       templateFile: 'net-template.svg',
@@ -4157,7 +4164,14 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         maxU: round(layout.bounds.maxU, 4),
         maxV: round(layout.bounds.maxV, 4),
       },
-      zones: layout.zones,
+      // Each sheet carries its zone's display name, so the runtime can name a zone the net places
+      // that no loaded part carries — the one case where there is nothing else to read it off.
+      zones: Object.fromEntries(
+        Object.entries(layout.zones).map(([id, p]) => [
+          id,
+          { name: zones.find((z) => z.id === id).name, ...p },
+        ]),
+      ),
     };
     for (const [id, list] of excluded)
       if (list.length)

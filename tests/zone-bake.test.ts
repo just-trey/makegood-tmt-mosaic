@@ -267,12 +267,15 @@ describe('mirror pairing', () => {
     up: [0, 1, 0],
   });
 
-  it('bakes two mirrored shells as a twin pair whose charts reflect onto each other', () => {
+  it('bakes two mirrored shells as a twin pair whose charts reflect onto each other', async () => {
     const a = cylinderPart('cyl-a', 1, NU);
     const b = mirrorX(a, 'cyl-b');
+    // Two zones means a net, and a net without the boolean engine ships undivided and says so.
     const baked = bakeZones(
       config([a, b], [zoneAt('a', seedA), zoneAt('b', seedB)], { mirrorAxis: 'x' }),
       [a, b],
+      () => {},
+      { wasm: await getManifold() },
     );
     expect(baked.warnings).toHaveLength(0);
     const [za, zb] = baked.sidecar.zones;
@@ -1467,10 +1470,21 @@ describe('the net', () => {
     expect(baked.templates.map((t: { file: string }) => t.file)).toEqual(['top-template.svg']);
   });
 
-  it('unfolds two hinged plates into one sheet, at the fit the seam measurement reports', () => {
+  it('warns rather than shipping a net nothing divided', () => {
+    // The engine used to ride on the covers file, so a coverless multi-zone config skipped the
+    // partition AND its overlap proof, and said so only in the log. What ships then is a net whose
+    // sheets were never divided, which is a whole-part design cut twice wherever two of them meet.
+    const { parts, zones } = hinged();
+    const baked = bakeZones(config(parts, zones), parts);
+    expect(baked.warnings).toEqual([expect.stringContaining('no boolean engine')]);
+    const placements = Object.values(baked.sidecar.net!.zones) as { excluded?: unknown }[];
+    expect(placements.every((z) => z.excluded === undefined)).toBe(true);
+  });
+
+  it('unfolds two hinged plates into one sheet, at the fit the seam measurement reports', async () => {
     const { parts, zones } = hinged();
     const cfg = config(parts, zones);
-    const baked = bakeZones(cfg, parts);
+    const baked = bakeZones(cfg, parts, () => {}, { wasm: await getManifold() });
     expect(baked.warnings).toHaveLength(0);
     const net = baked.sidecar.net!;
     expect(Object.keys(net.zones).sort()).toEqual(['a', 'b']);

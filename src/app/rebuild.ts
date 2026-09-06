@@ -488,18 +488,20 @@ export function artworkBuildInputs(): ArtworkBuildInput[] {
       if (!net) {
         warnBuild(
           `"${source?.name ?? 'This design'}" is set to cover the whole part, but this part has no ` +
-            `whole-part layout. Pick a single zone for it from the list.`,
+            `whole-part sheet. Pick a single zone for it from the list.`,
         );
         return [];
       }
-      for (const id of net.missing)
+      // Named, not id'd: every string beside these reads a zone by the name the dropdown shows, and
+      // "wing-left" is the bake's word for it.
+      for (const z of net.missing)
         warnBuild(
-          `The "${id}" zone isn't loaded, so "${source?.name ?? 'this design'}" won't be cut there. ` +
-            `Reload the page to try again.`,
+          `The "${z.name}" zone isn't loaded, so "${source?.name ?? 'this design'}" won't be cut ` +
+            `there. Reload the page to try again.`,
         );
-      for (const id of net.unplaced)
+      for (const z of net.unplaced)
         noticeBuild(
-          `The "${id}" zone isn't on the whole-part sheet, so "${source?.name ?? 'this design'}" ` +
+          `The "${z.name}" zone isn't on the whole-part sheet, so "${source?.name ?? 'this design'}" ` +
             `won't reach it. Add another design and target that zone.`,
         );
       return net.zones.map((z) =>

@@ -62980,6 +62980,7 @@
     "bounds": { "minU": -542.2602, "minV": -340.4825, "maxU": 892.2348, "maxV": 769.9269 },
     "zones": {
       "left": {
+        "name": "Left side",
         "rotationDeg": -0.3377,
         "offsetU": -491.7152,
         "offsetV": -111.0102,
@@ -63449,6 +63450,7 @@
         ]
       },
       "right": {
+        "name": "Right side",
         "rotationDeg": 0.3162,
         "offsetU": 200.1891,
         "offsetV": -114.6112,
@@ -63940,6 +63942,7 @@
         ]
       },
       "back": {
+        "name": "Back",
         "rotationDeg": 0,
         "offsetU": 0,
         "offsetV": 0,
@@ -64146,26 +64149,36 @@
           }
         ]
       },
-      "front": { "rotationDeg": 0, "offsetU": 62.7193, "offsetV": 443.066, "attached": false },
+      "front": {
+        "name": "Front",
+        "rotationDeg": 0,
+        "offsetU": 62.7193,
+        "offsetV": 443.066,
+        "attached": false
+      },
       "seat-left": {
+        "name": "Left seat side",
         "rotationDeg": 0,
         "offsetU": 395.3325,
         "offsetV": -340.3014,
         "attached": false
       },
       "seat-right": {
+        "name": "Right seat side",
         "rotationDeg": 0,
         "offsetU": -144.3954,
         "offsetV": -340.4825,
         "attached": false
       },
       "wing-left": {
+        "name": "Left fender",
         "rotationDeg": 0,
         "offsetU": -542.2602,
         "offsetV": -134.8797,
         "attached": false
       },
       "wing-right": {
+        "name": "Right fender",
         "rotationDeg": 0,
         "offsetU": 847.6945,
         "offsetV": -131.9914,

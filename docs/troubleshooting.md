@@ -1312,13 +1312,13 @@ zone the chair no longer has.
 **What to do.** Pick the zone you want from the design's dropdown, or leave it
 on All zones. Saving again writes the new name, so the notice does not come back.
 
-## Troubleshooting: "…" is set to cover the whole part, but this part has no whole-part layout"
+## Troubleshooting: "…" is set to cover the whole part, but this part has no whole-part sheet"
 
 Full text: _""…" is set to cover the whole part, but this part has no
-whole-part layout. Pick a single zone for it from the list."_
+whole-part sheet. Pick a single zone for it from the list."_
 
 **What it means.** This design's row is bound to **Whole chair**, but the
-loaded part has no whole-chair sheet — either it isn't the chair, or its zone
+loaded part has no whole-part sheet — either it isn't the chair, or its zone
 data predates that option. The binding survives switching parts and reloading
 the page, so it's easy to carry over from a session where it did apply.
 
@@ -1330,9 +1330,9 @@ the chair restores **Whole chair** as an option.
 Full text: _"The "…" zone isn't loaded, so "…" won't be cut there. Reload the
 page to try again."_
 
-**What it means.** A design bound to **Whole chair** cuts onto every sheet of
-the chair's whole-part layout. One of those sheets didn't load, so this
-design gets nothing there. Every sheet that did load still gets its cut.
+**What it means.** A design bound to **Whole chair** cuts onto every zone the
+whole-part sheet places. One of those zones didn't load, so this design gets
+nothing there. Every zone that did load still gets its cut.
 
 **What to do.** Reload the page. If it keeps happening, report it via
 **Feedback** or **Report a bug on GitHub**, naming the part.
@@ -1343,41 +1343,41 @@ Full text: _"The "…" zone isn't on the whole-part sheet, so "…" won't reach
 it. Add another design and target that zone."_
 
 **An informational notice, not a warning.** The loaded part carries a design
-zone that its whole-chair sheet doesn't place — a zone a future re-bake added
+zone that the whole-part sheet doesn't place — a zone a future re-bake added
 without giving it a spot on the sheet. A design bound to **Whole chair**
 never reaches that zone.
 
 **What to do.** Add a separate design and target that zone directly from its
 own row's dropdown.
 
-## Troubleshooting: "…" reaches part of the whole-chair sheet that "…" owns"
+## Troubleshooting: "…" reaches part of the whole-part sheet that "…" owns"
 
-Full text: _""…" reaches part of the whole-chair sheet that "…" owns. It is cut
+Full text: _""…" reaches part of the whole-part sheet that "…" owns. It is cut
 there, not on "…"."_
 
-**An informational notice, not a warning.** Two sheets of the whole-chair
-layout can lie over each other, and the seam between them decides which one
-owns the shared area. A design bound to **Whole chair** that reaches into it is
-cut on the sheet that owns it, once — not on both, and not nowhere. The
-whole-chair template hatches those areas and names the sheet that cuts them.
+**An informational notice, not a warning.** Two zones can lie over each other
+on the whole-part sheet, and the seam between them decides which one owns the
+shared area. A design bound to **Whole chair** that reaches into it is cut on
+the zone that owns it, once — not on both, and not nowhere. The whole-part
+template hatches those areas and names the zone that cuts them.
 
 **What to do.** Nothing, unless you wanted that mark on the other zone. For
 that, bind a separate design to that zone from its own row's dropdown: a
 per-zone binding reaches all of its zone's surface, hatched areas included.
 
-## Troubleshooting: "Couldn't trim "…" to the part of the whole-chair sheet "…" owns"
+## Troubleshooting: "Couldn't trim "…" to the part of the whole-part sheet "…" owns"
 
-Full text: _"Couldn't trim "…" to the part of the whole-chair sheet "…" owns.
+Full text: _"Couldn't trim "…" to the part of the whole-part sheet "…" owns.
 Some of it prints twice. Bind that design to one zone instead."_
 
-**What it means.** The polygon clipper failed on the trim above, so this zone
-cut the area another sheet also cuts. That part of the design prints in two
-places on the chair.
+**What it means.** The trim above could not be applied, so this zone cut the
+area another sheet also cuts. That part of the design prints in two places on
+the chair. Either the polygon clipper failed on it, or the baked record of what
+this zone gives up would not load.
 
 **What to do.** Bind the design to a single zone from its row's dropdown, which
 skips the trim entirely. Please also report it via **Feedback** or **Report a
-bug on GitHub** — the clipper failing here is a bug, not a placement you can
-draw around.
+bug on GitHub** — this failing is a bug, not a placement you can draw around.
 
 ## Troubleshooting: "Exporting with artwork on … of … zones…" warnings
 

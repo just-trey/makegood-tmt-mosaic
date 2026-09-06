@@ -721,26 +721,31 @@ export interface NetZoneBinding {
 export function netZones(): {
   netCentre: [number, number];
   zones: NetZoneBinding[];
-  /** zones the net places that no loaded part carries */
-  missing: string[];
+  /** zones the net places that no loaded part carries, named off the net's own record of them */
+  missing: { zoneId: string; name: string }[];
   /** zones a loaded part offers that the net does not place */
-  unplaced: string[];
+  unplaced: { zoneId: string; name: string }[];
 } | null {
   const net = state.assembly.net;
   if (!net) return null;
   const bounds = new Map<string, { minU: number; minV: number; maxU: number; maxV: number }>();
+  const names = new Map<string, string>();
   for (const part of state.assembly.parts)
-    for (const z of part.zones ?? [])
+    for (const z of part.zones ?? []) {
       if (z.chart?.zoneBounds && !bounds.has(z.id)) bounds.set(z.id, z.chart.zoneBounds);
+      if (!names.has(z.id)) names.set(z.id, z.name);
+    }
   const zones: NetZoneBinding[] = [];
-  const missing: string[] = [];
+  const missing: { zoneId: string; name: string }[] = [];
   for (const [zoneId, place] of Object.entries(net.zones)) {
     const b = bounds.get(zoneId);
     if (b) zones.push({ zoneId, place, zoneCentre: boundsCentre(b) });
-    else missing.push(zoneId);
+    else missing.push({ zoneId, name: place.name });
   }
   if (!zones.length) return null;
-  const unplaced = Array.from(bounds.keys()).filter((id) => !net.zones[id]);
+  const unplaced = Array.from(bounds.keys())
+    .filter((id) => !net.zones[id])
+    .map((zoneId) => ({ zoneId, name: names.get(zoneId) ?? zoneId }));
   return { netCentre: boundsCentre(net.bounds), zones, missing, unplaced };
 }
 

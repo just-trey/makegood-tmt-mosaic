@@ -58,7 +58,9 @@ for (const p of config.parts ?? []) {
   console.log(`  loaded      ${p.file}: ${mesh.verts.length} vertices, ${mesh.tris.length} tris`);
 }
 
-const opts = {};
+// Loaded for every bake, not only one that declares covers. The net partition needs it too, and
+// while it rode on `covers` a coverless multi-zone config shipped its sheets undivided.
+const opts = { wasm: await getManifold() };
 if (config.covers) {
   const file = path.resolve(REPO, config.covers.file);
   if (!fs.existsSync(file))
@@ -96,7 +98,6 @@ if (config.covers) {
   } catch (e) {
     die(e.message);
   }
-  opts.wasm = await getManifold();
 }
 
 let result;
