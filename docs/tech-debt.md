@@ -1331,10 +1331,12 @@ from `public/stl/chair-body-zones.json`.
   took them from.
 - **The guard deliberately does not ask whether the clip is what made a piece
   small.** Two review rounds tried and it is not answerable from a boolean's
-  output: `boolOpWithRetry` truncates to 1e-6 absolute, which moves a sub-floor
-  piece's area by about 1e-5 relative, and the clipper fuses touching input
-  polygons, so an output piece has no reliable source to be compared against. A
-  flat floor plus a notice was the maintainer's call over reverting the guard.
+  output: the clipper fuses touching input polygons, so a fused output piece
+  matches no single source and reads as shrunk — two abutting 0.3 x 0.2mm dots
+  wholly inside the boundary came back as nothing. Coordinates also move
+  whenever `boolOpWithRetry` takes its catch, which truncates at 1e-10, 1e-8
+  and 1e-6. A flat floor plus a notice was the maintainer's call over reverting
+  the guard.
 - **The data is still wrong**, and a wider hairline would clear the floor. This
   is the same class as "A seam sliver warns as if artwork were lost" above,
   seen from the bake rather than the cut.

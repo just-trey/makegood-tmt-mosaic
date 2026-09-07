@@ -572,6 +572,13 @@ describe('a clip remnant too small to print', () => {
     // The no-cutter path copies part.positions verbatim, so an identical soup is the whole claim
     // and needs no Manifold solids to say it.
     expect(out.bodySoup.length).toBe(part.positions!.length);
+    // And it must be the guard that dropped it, not the hairline having gone. Re-baking that away
+    // is still owed (docs/tech-debt.md), and without this the test would pass with the guard
+    // deleted the day it lands.
+    expect(
+      WARNINGS.map((w) => w.message),
+      'nothing said the speck was dropped',
+    ).toContainEqual(expect.stringContaining("is too small to print, so it wasn't cut"));
   }, 180000);
 
   // The case a floor on the feature's TOTAL area misses, and the first version of this fix did:

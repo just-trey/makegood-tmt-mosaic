@@ -1151,9 +1151,16 @@ describe('fill mode', () => {
       expect(WARNINGS.some((w) => /more than \d+ tiles/.test(w.message))).toBe(true);
       expect(built.partOutputs[0].inlaySoups[0]).toBeUndefined();
       expect(
-        WARNINGS.some((w) => /left a speck too small to print/.test(w.message)),
+        WARNINGS.some((w) => /is too small to print, so it wasn't cut/.test(w.message)),
         `no speck notice; warnings were ${JSON.stringify(WARNINGS.map((w) => w.message))}`,
       ).toBe(true);
+      // And NOT the off-the-part message, whose remedy is to lower Scale. The colour reached the
+      // face perfectly well; what it left there could not print, and telling someone to shrink a
+      // design that is already too small sends them the wrong way.
+      expect(
+        WARNINGS.map((w) => w.message),
+        'a too-small design was reported as landing off the part',
+      ).not.toContainEqual(expect.stringContaining('lands entirely off the part'));
     },
   );
 

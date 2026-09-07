@@ -644,19 +644,28 @@ function featureBBox(f: PolyFeature): number[] {
 }
 
 /**
- * Names specks a clip left behind that are too small to print, so they are never dropped in
- * silence. Reported per colour and part, since that is the pair the user can act on.
+ * Names specks too small to print, so they are never dropped in silence. Per colour and part,
+ * which is the pair the user can act on.
+ *
+ * **Says nothing about what made them small.** Three clips can each leave one and a design can
+ * arrive that size already; the message would be wrong about the cause for at least one of those
+ * however it is worded, and the remedy is the same in every case.
+ *
+ * No count either, because the key below dedupes across all three clips and a count would be one
+ * clip's rather than the total.
  *
  * A notice rather than a warning: nothing printable went. One nozzle square is the floor, and a
  * region under it cannot hold a single bead of any shape.
  */
-export function unprintableSpeckNotice(hex: string, partName: string, count: number): string {
+export function unprintableSpeckNotice(label: string, partName: string): string {
   return (
-    `Trimming "${hex}" to "${partName}" left ${count === 1 ? 'a speck' : `${count} specks`} too ` +
-    `small to print, so ${count === 1 ? 'it was' : 'they were'} not cut. A recess needs to be ` +
-    `about 0.4 mm across to hold a bead.`
+    `Part of "${label}" on "${partName}" is too small to print, so it wasn't cut. A recess needs ` +
+    `to be about 0.4 mm across to hold a bead.`
   );
 }
+
+/** One pill per colour and part, however many of the three clips leave a speck. See Notice.key. */
+const speckKey = (ci: number, partId: number): string => `speck:${ci}:${partId}`;
 
 /** Rule 1 for the net clip: where the part of a whole-part design this zone gave up is cut. */
 export function netShareNotice(design: string, zone: string, toNames: string[]): string {
@@ -1187,6 +1196,20 @@ export async function buildAssemblyGeometry(
    * intersect that shaped no geometry. A flaked boolean therefore leaves the color unattributed
    * and it takes the off-the-part message, which is the one that shipped before either existed.
    */
+  /**
+   * Say that a clip left a speck of this colour on this part too small to print, once per pair
+   * however many of the three clips leave one.
+   */
+  const noteSpeck = (
+    ci: number,
+    part: AssemblyPart,
+    c: { hex: string; isMerge: boolean; members: unknown[] },
+  ): void =>
+    noticeBuild(
+      unprintableSpeckNotice(regionLabel(c.hex, c.isMerge, c.members.length), part.name),
+      speckKey(ci, part.id),
+    );
+
   const noteHiddenSurface = (mapper: ZoneMapper, placed: PolyFeature | null, ci: number): void => {
     const dead = mapper.deadArea();
     if (!placed || !dead) return;
@@ -1281,9 +1304,15 @@ export async function buildAssemblyGeometry(
           // The dead region on a chart is baked to share that chart's own outline, which is where
           // this clip leaves a hairline rather than nothing. See dropUnprintableRemnants.
           const trimmed = dropUnprintableRemnants(feat, CLIP_REMNANT_FLOOR_MM2);
-          if (trimmed.dropped)
-            noticeBuild(unprintableSpeckNotice(c.hex, part.name, trimmed.dropped));
+          if (trimmed.dropped) noteSpeck(ci, part, c);
           feat = trimmed.feat;
+          // The colour DID reach this face; what it left there could not print. Marking it landed
+          // keeps it out of the "lands entirely off the part" bucket, whose remedy is to lower
+          // Scale — backwards for a design that is already too small.
+          if (!feat && trimmed.dropped) {
+            landedColors.add(ci);
+            return;
+          }
           if (!feat) {
             noteHiddenSurface(mapper, placed, ci);
             return;
@@ -1304,7 +1333,7 @@ export async function buildAssemblyGeometry(
             noticeBuild(mirrorHalfNotice(design, half.zoneName, half.side));
           // Same boundaries, same failure: the kept-side clip runs along the zone's own centre line.
           const half2 = dropUnprintableRemnants(r.feat, CLIP_REMNANT_FLOOR_MM2);
-          if (half2.dropped) noticeBuild(unprintableSpeckNotice(c.hex, part.name, half2.dropped));
+          if (half2.dropped) noteSpeck(ci, part, c);
           feat = half2.feat;
           if (!feat) return;
         }
@@ -1334,7 +1363,7 @@ export async function buildAssemblyGeometry(
           // The net partition is cut from the same charts, so its patch boundaries coincide with
           // this zone's claim in exactly the way that leaves a hairline.
           const share = dropUnprintableRemnants(r.feat, CLIP_REMNANT_FLOOR_MM2);
-          if (share.dropped) noticeBuild(unprintableSpeckNotice(c.hex, part.name, share.dropped));
+          if (share.dropped) noteSpeck(ci, part, c);
           feat = share.feat;
           if (!feat) return;
         }

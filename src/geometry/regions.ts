@@ -311,12 +311,13 @@ function fromGeom(polys: Geom): PolyFeature | null {
  * both.
  *
  * **Nothing here asks whether the clip is what made a piece small**, and two rounds of trying said
- * that is not answerable from a boolean's output: it renormalises coordinates (`boolOpWithRetry`
- * truncates to 1e-6 absolute, which moves a sub-floor piece's area by ~1e-5 relative) and it fuses
- * touching input polygons, so an output piece has no reliable source polygon to be compared
- * against. The floor is applied flat instead, and the caller reports what went — which is the
- * honest trade: a piece this size was never going to print, whoever made it small, and the user is
- * told rather than left to find out.
+ * that is not answerable from a boolean's output. The clipper fuses touching input polygons, so a
+ * fused output piece matches no single source and reads as shrunk: verified end to end, two
+ * abutting 0.3 x 0.2mm dots wholly inside the boundary came back as nothing. Coordinates move too
+ * whenever `boolOpWithRetry` takes its catch, which truncates at 1e-10 and then 1e-8 and 1e-6.
+ * The floor is applied flat instead, and the caller reports what went — the honest trade, since a
+ * piece this size was never going to print whoever made it small, and the user is told rather than
+ * left to find out.
  *
  * The floor is an area, so it admits a long enough hairline and refuses a round dot one nozzle
  * across. The seam ribbon in docs/tech-debt.md is the case that needs the other measure: closing

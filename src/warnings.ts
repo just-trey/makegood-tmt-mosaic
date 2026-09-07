@@ -56,9 +56,15 @@ export function warnBuild(message: string, key?: string): void {
   push({ message, level: 'warn', build: true, key });
 }
 
-/** Build-scoped counterpart to notice() — use inside code that runs fresh every rebuild. */
-export function noticeBuild(message: string): void {
-  push({ message, level: 'info', build: true });
+/**
+ * Build-scoped counterpart to notice() — use inside code that runs fresh every rebuild.
+ *
+ * Takes a `key` for the same reason warnBuild does: one fact reached from several places in a
+ * build states itself once. The clip-remnant notice is raised at three different clips and is one
+ * thing to the user.
+ */
+export function noticeBuild(message: string, key?: string): void {
+  push({ message, level: 'info', build: true, key });
 }
 
 export function clearWarnings(): void {

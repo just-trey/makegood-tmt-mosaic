@@ -15,12 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   trimmed to runs along an edge of the design itself, the trim can hand back a
   hairline instead of nothing, and a hairline still cuts. This one was 0.02mm
   wide and 8mm long, 0.025mm² against 1,258mm² and up for every other piece the
-  same design reached. The build now discards any piece of a trimmed design under
-  one nozzle square, and **says which color and which part it took them from** —
-  a piece that small cannot hold a single bead, and nothing goes unnamed. It
-  checks each piece rather than the design as a whole, because the sliver
-  usually arrives beside a real region and adding the two together hides it. The
-  same check runs where a mark is split at a seam and where it is split down the
+  same design reached. The build now discards any piece of a design under one
+  nozzle square, and **says which color and which part it took them from** — a
+  piece that small cannot hold a single bead, and nothing goes unnamed. It checks
+  each piece rather than the design as a whole, because the sliver usually
+  arrives beside a real region and adding the two together hides it. The same
+  check runs where a mark is split at a seam and where it is split down the
   middle for mirroring, which leave the same kind of sliver for the same reason.
 
   One thing changes for designs that were always tiny: a recess under about

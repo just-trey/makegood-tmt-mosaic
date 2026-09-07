@@ -243,17 +243,20 @@ piece. See [tech-debt.md](tech-debt.md).
 The message clears itself when you're back somewhere Fill works, but the mode
 does not come back with it. Set it again from the row's Sticker/Fill control.
 
-## Troubleshooting: "Trimming "…" to "…" left a speck too small to print"
+## Troubleshooting: "Part of "…" on "…" is too small to print"
 
-Full text: _Trimming "…" to "…" left a speck too small to print, so it was not
-cut. A recess needs to be about 0.4 mm across to hold a bead._ Plural:
-_left N specks too small to print, so they were not cut._
+Full text: _Part of "…" on "…" is too small to print, so it wasn't cut. A recess
+needs to be about 0.4 mm across to hold a bead._
 
-**What it means.** Your design is trimmed to the part it sits on, to the piece
-of it a seam gives that part, and to one half when Mirror is on. A trim can
-leave a scrap smaller than the printer's nozzle: nothing that small can hold a
-single bead, so it is dropped instead of cut. This says which color and which
-piece, so nothing goes without being named.
+**What it means.** Something in that color on that part is smaller than the
+printer's nozzle. Nothing that small can hold a single bead, so it is dropped
+instead of cut, and this names the color and the part so nothing goes in
+silence. One pill per color and part, however many scraps went.
+
+Two things make them. Your design can simply be that small. Or trimming can
+leave a scrap: a design is trimmed to the part it sits on, to the piece of it a
+seam gives that part, and to one half when Mirror is on. The message doesn't
+guess which, because the fix is the same either way.
 
 **What you get.** Everything else in that color is cut normally. Only the
 scraps go.
