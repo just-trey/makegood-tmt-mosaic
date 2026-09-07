@@ -219,7 +219,9 @@ something your artwork or settings caused.
 ## Troubleshooting: "… is a sticker now. The … can't repeat a design across it yet."
 
 Full text: _"…" is a sticker now. The … can't repeat a design across it yet._
-Plural: _"…", "…" are stickers now._
+Or: _"…" is a sticker now. Cut to artwork shape can't repeat a design across the
+shape it cut._ Two designs rewritten at once give you one of these each, not a
+combined line.
 
 **What it means.** You had a design set to **Fill** and then moved it somewhere
 Fill isn't offered. Two things do that: picking the chair body, which doesn't

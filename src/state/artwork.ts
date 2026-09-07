@@ -663,8 +663,15 @@ export function fillClampedNotice(name: string, partName: string, bySetting: boo
     : `"${name}" is a sticker now. The ${partName} can't repeat a design across it yet.`;
 }
 
-/** One key per design, so a second clamped design is reported instead of colliding with the first. */
-const fillClampKey = (sourceId: string): string => `fill-clamped:${sourceId}`;
+/**
+ * One key per design, so a second clamped design is reported instead of colliding with the first.
+ *
+ * Exported because the notice outlives the design otherwise: the retraction in clampArtworkModes
+ * walks the live sources, so once a removed design's source is gone there is nothing left to match
+ * and the pill stands for the session naming a file that is not loaded. artworkListPanel's remove
+ * handler retracts it there, beside the two other per-source notices that already need it.
+ */
+export const fillClampKey = (sourceId: string): string => `fill-clamped:${sourceId}`;
 
 /**
  * Re-clamp every loaded design's mode against the current part. Artwork outlives a part switch

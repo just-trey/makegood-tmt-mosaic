@@ -298,7 +298,9 @@ triangle count, part count, lobe count, holes, seams, `stretch max`/`mean`, and
 the fitted mm `scale`.
 
 Four kinds of warning print last with a `!` prefix. None stops the bake. The
-chair emits six lines across the last two.
+chair emits four lines across the last two, reporting six dropped folds: five on
+`back`'s display outline and one on `front`'s, plus two per handle chart in
+`back`'s clip regions.
 
 - **`max stretch <x> exceeds 1.1`** fires when max per-edge stretch (the larger
   of the length ratio and its inverse) passes `DISTORTION_WARN = 1.1`. Fix by
