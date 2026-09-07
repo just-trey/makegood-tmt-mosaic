@@ -1043,6 +1043,20 @@ describe('hidden surface (deadRegions)', () => {
       }
   });
 
+  // A baked EMPTY list is a real answer — the bake found nothing cuttable on that chart — and
+  // must not read as "no field, derive it yourself". Deriving it back would reinstate the dust
+  // the bake exists to drop, on the one chart most likely to be all dust.
+  it('reads an empty baked cut region as admitting nothing, not as absent', () => {
+    const z = sidecar.zones.find((zz) => zz.id === 'seat-left')!;
+    const c = z.charts.find((ch) => ch.libraryPartId === 'chair-wheel-mount-left')!;
+    const m = partMesh.get(c.libraryPartId)!;
+    const mapper = new ConformalZoneMapper(
+      null,
+      reconstructChart(z, { ...c, cutRegions: [] }, m.vertices),
+    );
+    expect(planarArea(mapper.boundary())).toBe(0);
+  });
+
   // Both fields, because the bake now carries the subtraction in `cutRegions` and `boundary()`
   // prefers it. Stripping only `deadRegions` leaves the cut region standing and tests nothing; the
   // fallback this pins is for a hand-built chart that has neither.

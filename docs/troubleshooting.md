@@ -243,23 +243,21 @@ piece. See [tech-debt.md](tech-debt.md).
 The message clears itself when you're back somewhere Fill works, but the mode
 does not come back with it. Set it again from the row's Sticker/Fill control.
 
-## Troubleshooting: "Part of "…" on "…" is too small to print"
+## Troubleshooting: "… has detail on "…" too fine to print"
 
-Full text, when some of that color still cuts on the part:
-_"Part of \"…\" on \"…\" is too small to print, so it wasn't cut. A recess needs
-to be about 0.4 mm across to hold a bead."_ And when none of it does:
-_"\"…\" is too small to print on \"…\", so nothing was cut there. A recess needs
-to be about 0.4 mm across to hold a bead."_
+Full text: _"\"…\" has detail on \"…\" too fine to print, so it wasn't cut. A
+recess needs to be about 0.4 mm across to hold a bead."_
 
 **What it means.** Something in that color on that part is smaller than the
 printer's nozzle. Nothing that small can hold a single bead, so it is dropped
 instead of cut, and this names the color and the part so nothing goes in
 silence. One pill per color and part, however many scraps went.
 
-Two things make them. Your design can simply be that small. Or trimming can
-leave a scrap: a design is trimmed to the part it sits on, to the piece of it a
-seam gives that part, and to one half when Mirror is on. The message doesn't
-guess which, because the fix is the same either way.
+Two things make them. Your design can simply be that fine. Or trimming can leave
+a scrap: a design is trimmed to the part it sits on, to the piece of it a seam
+gives that part, and to one half when Mirror is on. The message doesn't guess
+which, and doesn't say how much went or what survived, because the fix is the
+same either way and because several trims can each drop something.
 
 **What you get.** Everything else in that color is cut normally. Only the
 scraps go.

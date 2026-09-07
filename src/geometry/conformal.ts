@@ -482,8 +482,15 @@ export class ConformalZoneMapper implements ZoneMapper {
     // too small to print. Preferred over doing that subtraction here because the two sets are
     // traced from the same triangles and share long stretches of boundary, so the difference
     // leaves dust along them — 55 of the chair's 142 pieces, before the bake started cleaning it.
+    // Presence, not length. A baked EMPTY list is a chart the bake found nothing cuttable on, and
+    // falling back to deriving it here would reinstate exactly the dust the bake exists to drop.
+    // Absent means a hand-built chart, which is the only case the derivation is still for.
     const cut = this.chart.cutRegions;
-    if (cut?.length) {
+    if (cut) {
+      if (!cut.length) {
+        this.boundaryPoly = turf.multiPolygon([]) as PolyFeature;
+        return this.boundaryPoly;
+      }
       try {
         this.boundaryPoly = turf.multiPolygon(
           cut.map((r) => [closeRing(r.outer), ...r.holes.map(closeRing)]),

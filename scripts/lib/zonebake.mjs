@@ -4391,8 +4391,9 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       }));
       if (!chart.cutRegions.length)
         warnings.push(
-          `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": every bit of its claim is ` +
-            `hidden once assembled, so it can take no artwork at all`,
+          `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": nothing of its claim survives ` +
+            `as cuttable surface — either the covers hide all of it, or every piece left came out ` +
+            `under ${minCutPieceArea}mm² — so it can take no artwork at all`,
         );
       charts.push(chart);
     }

@@ -644,24 +644,23 @@ function featureBBox(f: PolyFeature): number[] {
 }
 
 /**
- * Names specks too small to print, so they are never dropped in silence. Per colour and part,
- * which is the pair the user can act on.
+ * Names detail too fine to print, so it is never dropped in silence. Per colour and part, which is
+ * the pair the user can act on.
  *
- * **Says nothing about what made them small.** Three clips can each leave one and a design can
- * arrive that size already; the message would be wrong about the cause for at least one of those
- * however it is worded, and the remedy is the same in every case.
- *
- * No count either, because the key below dedupes across all three clips and a count would be one
- * clip's rather than the total.
+ * **Says nothing about what made it small, how much went, or what survived.** Three clips can each
+ * drop something and a design can arrive that size already, so a message about the cause would be
+ * wrong for at least one of them. And the key below dedupes across all three, first push winning,
+ * so any claim about the remainder could be left standing by a later clip that removes the rest —
+ * which is what an earlier two-form version of this did.
  *
  * A notice rather than a warning: nothing printable went. One nozzle square is the floor, and a
  * region under it cannot hold a single bead of any shape.
  */
-export function unprintableSpeckNotice(label: string, partName: string, anyLeft: boolean): string {
-  const what = anyLeft
-    ? `Part of "${label}" on "${partName}" is too small to print, so it wasn't cut.`
-    : `"${label}" is too small to print on "${partName}", so nothing was cut there.`;
-  return `${what} A recess needs to be about 0.4 mm across to hold a bead.`;
+export function unprintableSpeckNotice(label: string, partName: string): string {
+  return (
+    `"${label}" has detail on "${partName}" too fine to print, so it wasn't cut. A recess needs ` +
+    `to be about 0.4 mm across to hold a bead.`
+  );
 }
 
 /** One pill per colour and part, however many of the three clips leave a speck. See Notice.key. */
@@ -1205,6 +1204,13 @@ export async function buildAssemblyGeometry(
    * Say that a clip left a speck of this colour on this part too small to print, once per pair
    * however many of the three clips leave one.
    */
+
+  const noteHiddenSurface = (mapper: ZoneMapper, placed: PolyFeature | null, ci: number): void => {
+    const dead = mapper.deadArea();
+    if (!placed || !dead) return;
+    if (intersectQuiet(placed, dead)) hiddenColors.add(ci);
+  };
+
   const dropSpecks = (
     feat: PolyFeature | null,
     ci: number,
@@ -1214,11 +1220,7 @@ export async function buildAssemblyGeometry(
     const r = dropUnprintableRemnants(feat, CLIP_REMNANT_FLOOR_MM2);
     if (!r.dropped) return r.feat;
     noticeBuild(
-      unprintableSpeckNotice(
-        regionLabel(c.hex, c.isMerge, c.members.length),
-        part.name,
-        r.feat !== null,
-      ),
+      unprintableSpeckNotice(regionLabel(c.hex, c.isMerge, c.members.length), part.name),
       speckKey(ci, part.id),
     );
     // The color DID reach this face; what it left could not print. Recording that here, in the one
@@ -1227,12 +1229,6 @@ export async function buildAssemblyGeometry(
     // design already too small. An earlier version set it at one of the three sites.
     landedColors.add(ci);
     return r.feat;
-  };
-
-  const noteHiddenSurface = (mapper: ZoneMapper, placed: PolyFeature | null, ci: number): void => {
-    const dead = mapper.deadArea();
-    if (!placed || !dead) return;
-    if (intersectQuiet(placed, dead)) hiddenColors.add(ci);
   };
   let anyPlacements = false;
   let viewSign = 1,

@@ -26,10 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Your designs are unaffected: the surface they can cut is the same, minus
   slivers nothing could have printed.
 
-  Two things you may notice. Clicking a zone in the 3D view is more accurate,
-  since some of those slivers were pickable. And a design with a piece genuinely
-  too small to print now says so, naming the color and the part, instead of
-  going quiet — a recess needs to be about 0.4 mm across to hold a bead.
+  One thing you may notice: a design with detail genuinely too fine to print now
+  says so, naming the color and the part, instead of going quiet. A recess needs
+  to be about 0.4 mm across to hold a bead.
 
 ### Added
 

@@ -1151,7 +1151,7 @@ describe('fill mode', () => {
       expect(WARNINGS.some((w) => /more than \d+ tiles/.test(w.message))).toBe(true);
       expect(built.partOutputs[0].inlaySoups[0]).toBeUndefined();
       expect(
-        WARNINGS.some((w) => /is too small to print/.test(w.message)),
+        WARNINGS.some((w) => /too fine to print/.test(w.message)),
         `no speck notice; warnings were ${JSON.stringify(WARNINGS.map((w) => w.message))}`,
       ).toBe(true);
       // And NOT the off-the-part message, whose remedy is to lower Scale. The colour reached the
