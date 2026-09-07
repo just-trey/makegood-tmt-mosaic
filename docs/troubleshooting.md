@@ -245,8 +245,11 @@ does not come back with it. Set it again from the row's Sticker/Fill control.
 
 ## Troubleshooting: "Part of "…" on "…" is too small to print"
 
-Full text: _Part of "…" on "…" is too small to print, so it wasn't cut. A recess
-needs to be about 0.4 mm across to hold a bead._
+Full text, when some of that color still cuts on the part:
+_"Part of \"…\" on \"…\" is too small to print, so it wasn't cut. A recess needs
+to be about 0.4 mm across to hold a bead."_ And when none of it does:
+_"\"…\" is too small to print on \"…\", so nothing was cut there. A recess needs
+to be about 0.4 mm across to hold a bead."_
 
 **What it means.** Something in that color on that part is smaller than the
 printer's nozzle. Nothing that small can hold a single bead, so it is dropped

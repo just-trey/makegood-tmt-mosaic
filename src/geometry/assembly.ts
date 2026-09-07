@@ -657,11 +657,11 @@ function featureBBox(f: PolyFeature): number[] {
  * A notice rather than a warning: nothing printable went. One nozzle square is the floor, and a
  * region under it cannot hold a single bead of any shape.
  */
-export function unprintableSpeckNotice(label: string, partName: string): string {
-  return (
-    `Part of "${label}" on "${partName}" is too small to print, so it wasn't cut. A recess needs ` +
-    `to be about 0.4 mm across to hold a bead.`
-  );
+export function unprintableSpeckNotice(label: string, partName: string, anyLeft: boolean): string {
+  const what = anyLeft
+    ? `Part of "${label}" on "${partName}" is too small to print, so it wasn't cut.`
+    : `"${label}" is too small to print on "${partName}", so nothing was cut there.`;
+  return `${what} A recess needs to be about 0.4 mm across to hold a bead.`;
 }
 
 /** One pill per colour and part, however many of the three clips leave a speck. See Notice.key. */
@@ -771,8 +771,12 @@ export function mirrorClipFailedWarning(design: string, zone: string): string {
  * correctly not ink. Slots never overlap each other within one design (net regions are cut apart
  * before they are pooled), so their areas add without double counting.
  *
- * Clipped to the design's kept half exactly as the cutter is, so a mirrored design's two halves
- * are compared on the ink that actually cuts.
+ * Clipped to the design's kept half and its net share exactly as the cutter is, and put through
+ * the same speck floor, so two designs are compared on the ink that actually cuts. Without the
+ * floor the check could name an overlap on a sliver the build then drops.
+ *
+ * Not the per-part boundary clip, which is the one difference: this runs once per design rather
+ * than once per part, and there is no part here to take a boundary from.
  */
 function placedInk(
   featuresByColor: (PolyFeature | null)[][],
@@ -787,7 +791,8 @@ function placedInk(
     if (!f) continue;
     const placed = mapFeatureCoords(f, place);
     const half0 = half ? clipToKeptSide(placed, half).feat : placed;
-    const kept = half0 && netExcl.length ? clipToNetShare(half0, netExcl).feat : half0;
+    const share = half0 && netExcl.length ? clipToNetShare(half0, netExcl).feat : half0;
+    const kept = dropUnprintableRemnants(share, CLIP_REMNANT_FLOOR_MM2).feat;
     if (!kept) continue;
     for (const rings of polysOf(kept))
       out.push(
@@ -1200,15 +1205,29 @@ export async function buildAssemblyGeometry(
    * Say that a clip left a speck of this colour on this part too small to print, once per pair
    * however many of the three clips leave one.
    */
-  const noteSpeck = (
+  const dropSpecks = (
+    feat: PolyFeature | null,
     ci: number,
     part: AssemblyPart,
     c: { hex: string; isMerge: boolean; members: unknown[] },
-  ): void =>
+  ): PolyFeature | null => {
+    const r = dropUnprintableRemnants(feat, CLIP_REMNANT_FLOOR_MM2);
+    if (!r.dropped) return r.feat;
     noticeBuild(
-      unprintableSpeckNotice(regionLabel(c.hex, c.isMerge, c.members.length), part.name),
+      unprintableSpeckNotice(
+        regionLabel(c.hex, c.isMerge, c.members.length),
+        part.name,
+        r.feat !== null,
+      ),
       speckKey(ci, part.id),
     );
+    // The color DID reach this face; what it left could not print. Recording that here, in the one
+    // place the drop happens, is what keeps it out of the "lands entirely off the part" bucket at
+    // every clip rather than only the first — whose remedy is to lower Scale, backwards for a
+    // design already too small. An earlier version set it at one of the three sites.
+    landedColors.add(ci);
+    return r.feat;
+  };
 
   const noteHiddenSurface = (mapper: ZoneMapper, placed: PolyFeature | null, ci: number): void => {
     const dead = mapper.deadArea();
@@ -1301,22 +1320,17 @@ export async function buildAssemblyGeometry(
           const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
           feat = r.feat;
           clipped = r.clipped;
-          // The dead region on a chart is baked to share that chart's own outline, which is where
-          // this clip leaves a hairline rather than nothing. See dropUnprintableRemnants.
-          const trimmed = dropUnprintableRemnants(feat, CLIP_REMNANT_FLOOR_MM2);
-          if (trimmed.dropped) noteSpeck(ci, part, c);
-          feat = trimmed.feat;
-          // The colour DID reach this face; what it left there could not print. Marking it landed
-          // keeps it out of the "lands entirely off the part" bucket, whose remedy is to lower
-          // Scale — backwards for a design that is already too small.
-          if (!feat && trimmed.dropped) {
-            landedColors.add(ci);
-            return;
-          }
+          // Before the speck floor, not after: a clip that returns nothing at all is the colour
+          // landing on hidden surface, and that has its own message with its own remedy. Dropping
+          // specks first would report it as ink too small to print, which is a different thing.
           if (!feat) {
             noteHiddenSurface(mapper, placed, ci);
             return;
           }
+          // The dead region on a chart is baked to share that chart's own outline, which is where
+          // this clip leaves a hairline rather than nothing. See dropUnprintableRemnants.
+          feat = dropSpecks(feat, ci, part, c);
+          if (!feat) return;
           // Only a real clip proves the color reached this face. A cut-through zone has no clip
           // boundary (its boolean against the mesh is what bounds the cut), so there a color counts
           // as landed only when that boolean yields an inlay, in the intersection loop below.
@@ -1332,9 +1346,7 @@ export async function buildAssemblyGeometry(
           else if (r.removed && !artworks[ai].reflected)
             noticeBuild(mirrorHalfNotice(design, half.zoneName, half.side));
           // Same boundaries, same failure: the kept-side clip runs along the zone's own centre line.
-          const half2 = dropUnprintableRemnants(r.feat, CLIP_REMNANT_FLOOR_MM2);
-          if (half2.dropped) noteSpeck(ci, part, c);
-          feat = half2.feat;
+          feat = dropSpecks(r.feat, ci, part, c);
           if (!feat) return;
         }
         // A whole-part design is cut where the net says this zone owns the canvas, and nowhere
@@ -1362,9 +1374,7 @@ export async function buildAssemblyGeometry(
             raiseTornWarning(tornPills, design, [zoneName, t.toName], t.tearMm);
           // The net partition is cut from the same charts, so its patch boundaries coincide with
           // this zone's claim in exactly the way that leaves a hairline.
-          const share = dropUnprintableRemnants(r.feat, CLIP_REMNANT_FLOOR_MM2);
-          if (share.dropped) noteSpeck(ci, part, c);
-          feat = share.feat;
+          feat = dropSpecks(r.feat, ci, part, c);
           if (!feat) return;
         }
         const requested = requestedDepth(colorSettings, globalDepth, c.key);

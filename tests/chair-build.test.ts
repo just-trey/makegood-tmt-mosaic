@@ -578,7 +578,9 @@ describe('a clip remnant too small to print', () => {
     expect(
       WARNINGS.map((w) => w.message),
       'nothing said the speck was dropped',
-    ).toContainEqual(expect.stringContaining("is too small to print, so it wasn't cut"));
+    ).toContainEqual(
+      expect.stringContaining('is too small to print on "chair-seat-back-top", so nothing was cut'),
+    );
   }, 180000);
 
   // The case a floor on the feature's TOTAL area misses, and the first version of this fix did:
