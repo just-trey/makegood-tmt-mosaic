@@ -1200,17 +1200,20 @@ export async function buildAssemblyGeometry(
    * intersect that shaped no geometry. A flaked boolean therefore leaves the color unattributed
    * and it takes the off-the-part message, which is the one that shipped before either existed.
    */
-  /**
-   * Say that a clip left a speck of this colour on this part too small to print, once per pair
-   * however many of the three clips leave one.
-   */
-
   const noteHiddenSurface = (mapper: ZoneMapper, placed: PolyFeature | null, ci: number): void => {
     const dead = mapper.deadArea();
     if (!placed || !dead) return;
     if (intersectQuiet(placed, dead)) hiddenColors.add(ci);
   };
 
+  /**
+   * Drop the pieces of a clipped region too small to print, say so once per colour and part
+   * however many of the three clips leave one, and record that the colour did reach this face.
+   *
+   * All three together on purpose: an earlier version did the drop at three sites and the landed
+   * mark at one, which left a colour collecting both the speck notice and "lands entirely off the
+   * part" — whose remedy is to lower Scale, backwards for a design already too small.
+   */
   const dropSpecks = (
     feat: PolyFeature | null,
     ci: number,

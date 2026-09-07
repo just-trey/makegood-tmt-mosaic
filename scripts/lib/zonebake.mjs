@@ -33,6 +33,7 @@ import { eachElement, meshTris, meshVerts, modelXML } from './mesh.mjs';
 import { detectFlatPatches } from '../../src/geometry/meshparts.ts';
 import { CHART_SNAP_MM } from '../../src/geometry/conformal.ts';
 import { WHOLE_CHAIR_ZONE } from '../../src/geometry/zones.ts';
+import { CLIP_REMNANT_FLOOR_MM2 } from '../../src/geometry/depth.ts';
 import { ACCENT, GRAY, LABEL_SIZE } from './svgstyle.mjs';
 import {
   chartTriangles,
@@ -68,8 +69,10 @@ export const MIN_HOLE_WIDTH_MM = 2;
 /**
  * Smallest piece of a part's cut region the bake keeps, in mm².
  *
- * One 0.4mm nozzle square — the same floor `CLIP_REMNANT_FLOOR_MM2` applies at cut time, and the
- * same reason: a piece under it cannot hold a single extrusion of any shape.
+ * `CLIP_REMNANT_FLOOR_MM2` itself, not a copy of its value: the bake cleans to exactly the floor
+ * the cut then applies, and a hardcoded 0.16 here would let a change to NOZZLE_MM split the two
+ * apart — the bake still cleaning at the old figure while the cut drops at the new one, so
+ * ordinary designs quietly start raising the speck notice again with every gate green.
  *
  * It matters here because `cutRegions` is a difference between two loops traced from the SAME
  * triangles, so they share long stretches of boundary and the subtraction leaves dust along them.
@@ -78,7 +81,7 @@ export const MIN_HOLE_WIDTH_MM = 2;
  * into the seat back. Cleaning it here rather than at cut time is what keeps the runtime from
  * having to tell the user about the bake's own dust.
  */
-export const MIN_CUT_PIECE_MM2 = 0.16;
+export const MIN_CUT_PIECE_MM2 = CLIP_REMNANT_FLOOR_MM2;
 /**
  * Islands smaller than this (mm²) are dropped from a part's clip region. Far below MIN_HOLE_AREA_MM2
  * on purpose: a hole that small is a fillet artifact worth closing up, but an *island* that small is
