@@ -1291,24 +1291,3 @@ the same one-sided result, so this is the Front zone's coverage of that part, no
   (`public/stl/chair-body-zones.json`), compare the +x and −x claims, then either fix the bake
   or add a per-part notice. The live check keeps that export as the control for which sides can
   take ink, so it stays green either way.
-
-## The viewport does not hatch the canvas a whole-part design gives up
-
-Seen 2026-09-06 in `stubs/net-check/share-dot-corner.png` (from `npm run build && MOSAIC_GPU=1
-node scripts/check-net-design.mjs stubs/net-check`), the run that verified the partition.
-
-- Surface a flank yields to the back looks live in the 3D view — lit, un-hatched, indistinguishable
-  from surface that takes ink — and silently refuses a whole-part mark. Dead surface a few
-  millimetres away _is_ hatched, so the viewport actively suggests the yielded patch is fine.
-- What the user sees: they drag a design onto the flank near the back, the mark disappears from
-  under the cursor and reappears 44mm away on the back. The build says where it went
-  (`netShareNotice`), but only after the fact and only in the warnings list.
-- 8,668mm² and 8,158mm² of the chair's flanks are in this state — the whole shared patch, not an
-  edge case.
-- It must only show while a **whole-part** binding is active. A design bound to that zone by name
-  reaches every bit of it, so hatching it always would be a lie in the other direction — this is
-  the one overlay whose correctness depends on which row is selected.
-- Closing it: `ConformalZoneMapper.netExcluded()` already returns the regions in chart UV, which is
-  what the dead-surface overlay is built from (`rebuild.ts`, `CREASE_ANGLE_RAD` neighbourhood).
-  Reuse that mesh path with a second pattern, gated on the active instance's binding, and refresh
-  it when the row's zone changes.

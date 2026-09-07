@@ -764,10 +764,12 @@ try {
         `from ${fmtP(yielder.P)}) — the mark cut once`,
     );
 
-  // The mark itself, on the sheet that won it. The flank it was placed over is 44mm away and out
-  // of this view by construction; the viewport draws no hatching over a yielded patch, so this
-  // picture and the notice pill in it are all a volunteer gets about where the ink went.
-  await cornerShot(page, box, 'share-dot', ['back']);
+  // The mark itself, on the sheet that won it, with the flank it was placed over cross-hatched
+  // beside it — the storage-box corner, so both sheets are in frame. The flank's own answer is
+  // 44mm away, so the hatch, the notice pill and this picture are what a volunteer has to go on.
+  // Section 4 shoots the same corner with the same mark bound to the flank by name, where the
+  // hatch must be gone.
+  await cornerShot(page, box, 'share-dot', ['left', 'back']);
 
   /* ------------------------------------------------------ 3: a detached sheet */
   console.log('\n=== 3. Whole chair, a mark centred on the detached fender sheet ===');
@@ -862,6 +864,11 @@ try {
       `nothing left on "${zoneName(owner.zoneId)}" (nearest ink ` +
         `${backAtRebind.d.toFixed(1)}mm from ${fmtP(owner.P)})`,
     );
+  // The pair to `share-dot-corner.png`: same corner, same mark, bound to the flank by name. That
+  // binding cuts every bit of the flank, yielded canvas included, so the cross-hatch has to be
+  // gone here — a hatch that stayed would be the same lie in the other direction.
+  await cornerShot(page, box, 'share-dot-perzone', ['left', 'back']);
+
   const gizmoZone = await gizmoLatency(page);
   console.log(
     `\n--- observation: gizmo with a single-zone binding\n   ${JSON.stringify(gizmoZone)}`,

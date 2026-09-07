@@ -235,6 +235,22 @@ rounded edge the way real vinyl would
   zone the ink went to. Binding a zone by name ignores it entirely and still
   reaches every bit of surface that zone owns. `netSheetOverlaps` re-run over
   the partitioned sheets is the proof, and reports none.
+- **The viewport cross-hatches what a sheet gives up**, so the refusal is
+  visible before a mark is dragged there rather than only in the notice after.
+  `ConformalZoneMapper.netExcludedOverlayMesh` is the dead-surface overlay's
+  own warp (`regionOverlayMesh`) over the yielded regions, clipped to
+  `boundary()` first: the bake's exclusions are zone-wide, so unclipped they
+  smear onto every chart of a seam-spanning zone. Two hatches in one viewport,
+  and they mean opposite things, so they are drawn as the printed net template
+  draws them: hidden surface is one set of diagonals in `--accent`, yielded
+  canvas crosses them in `--accent-2`.
+- **It is shown only while the active artwork row binds to the whole part.**
+  A row bound to a zone by name cuts every bit of that zone, so hatching a
+  yielded patch on that binding is the same lie in the other direction. No row
+  selected shows nothing, the same as a per-zone row. `rebuild.ts` builds the
+  mesh whatever the binding and flips `visible`, so clicking another row costs
+  a `refreshNetYieldOverlays()` rather than a rebuild. Every path that changes
+  a binding already schedules one.
 - A zone pair mirrored across the config's `mirrorAxis` (or a zone seeded on
   that plane, mirrored across its own centre) bakes a `mirror` relation and a
   measured residual into the sidecar. Ticking Mirror on a bound artwork row

@@ -73,12 +73,10 @@ scripts/measure-zone-seams.mjs`), so a design bound to **Whole chair**
   sheet's own body it's on, so it lands in exactly one place
   (`clipToNetShare`, [src/geometry/assembly.ts](../src/geometry/assembly.ts)).
   Binding a zone by name instead of Whole chair still reaches all of its
-  surface — only the whole-part binding gives any of it up.
-  - **Follow-up: hatch the yielded canvas in the 3D view.** Surface a sheet
-    gives up looks live and silently refuses a whole-part mark, which reads
-    as the design vanishing and reappearing 44mm away
-    ([docs/tech-debt.md](tech-debt.md)). Only correct while a whole-part
-    binding is active, which is what makes it its own piece of work.
+  surface — only the whole-part binding gives any of it up. The 3D view
+  cross-hatches that surface while a whole-part row is the active one, so the
+  refusal is visible before a mark is dragged there
+  ([docs/pipeline.md](pipeline.md)).
   - **Follow-up: Mirror on a net binding.** Not offered in the shipping PR —
     the checkbox hides on a row bound to Whole chair. The net is symmetric
     about the back's own centre line, so a mirror there would reflect the

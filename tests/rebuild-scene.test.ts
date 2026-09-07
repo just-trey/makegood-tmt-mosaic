@@ -18,6 +18,7 @@ vi.mock('../src/scene/viewport', () => ({
     return modelGroup;
   }),
   getModelGroup: vi.fn(() => modelGroup),
+  invalidate: vi.fn(),
   setPreferredViewDir: vi.fn(),
   refreshModelShadows: vi.fn(),
   frameModelIfPending: vi.fn(),
@@ -49,14 +50,20 @@ vi.mock('../src/assembly/parts', async (importOriginal) => ({
 }));
 vi.mock('../src/ui/dom', () => ({ $: (sel: string) => document.querySelector(sel) }));
 
-import { getLastAssemblyBuild, getLastBuild, rebuildCurrent } from '../src/app/rebuild';
+import {
+  getLastAssemblyBuild,
+  getLastBuild,
+  rebuildCurrent,
+  refreshNetYieldOverlays,
+} from '../src/app/rebuild';
+import { WHOLE_CHAIR_ZONE } from '../src/geometry/zones';
 import { buildGeometry } from '../src/geometry/flat';
 import { buildAssemblyGeometry } from '../src/geometry/assembly';
 import { renderColorList } from '../src/ui/colorList';
 import { refreshGizmo } from '../src/scene/designGizmo';
 import { refreshZonePickMeshes } from '../src/scene/zonePick';
 import { schedulePersist } from '../src/state/persist';
-import { setPreferredViewDir } from '../src/scene/viewport';
+import { invalidate, setPreferredViewDir } from '../src/scene/viewport';
 import { asmRebuildGeneratedParts } from '../src/assembly/parts';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 import { state } from '../src/state/store';
@@ -95,6 +102,30 @@ function parsedSquare(): ParsedSVG {
 
 /** One triangle, as a soup — 9 floats = 1 triangle. */
 const tri = (z = 0): Float32Array => new Float32Array([0, 0, z, 10, 0, z, 10, 10, z]);
+
+/** An axis-aligned baked region, the outer/holes form the charts carry. */
+const rect = (
+  u0: number,
+  v0: number,
+  u1: number,
+  v1: number,
+): { outer: number[][]; holes: number[][][] } => ({
+  outer: [
+    [u0, v0],
+    [u1, v0],
+    [u1, v1],
+    [u0, v1],
+  ],
+  holes: [],
+});
+
+const sceneMeshes = (): THREE.Mesh[] => {
+  const meshes: THREE.Mesh[] = [];
+  modelGroup.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+  });
+  return meshes;
+};
 
 function colorMesh(color: string, areaPct: number) {
   return {
@@ -476,14 +507,6 @@ describe('hidden-surface overlay (deadRegions)', () => {
     ];
     return asmPart({ zones: [{ id, name: id, chart }] } as never);
   };
-  const sceneMeshes = (): THREE.Mesh[] => {
-    const meshes: THREE.Mesh[] = [];
-    modelGroup.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
-    });
-    return meshes;
-  };
-
   beforeEach(() => {
     state.shapeKind = 'assembly';
     state.assembly.kindId = 'wheel';
@@ -627,6 +650,159 @@ describe('hidden-surface overlay (deadRegions)', () => {
     state.parsed = null;
     await rebuildCurrent();
     expect(sceneMeshes()).toHaveLength(1);
+  });
+});
+
+describe('yielded-canvas overlay (netExcluded)', () => {
+  // The same 20x20mm flat chart, with a 12x12mm patch this zone gives up to another sheet of the
+  // net. subRegions cover the whole square and nothing is dead, so `boundary()` clips the patch to
+  // itself and the overlay is exactly what the bake yielded.
+  function yieldChart(regions = [rect(4, 4, 16, 16)]) {
+    return {
+      positions3: new Float32Array([0, 0, 0, 20, 0, 0, 20, 0, 20, 0, 0, 20]),
+      uv: new Float32Array([0, 0, 20, 0, 20, 20, 0, 20]),
+      triangles: new Uint32Array([0, 1, 2, 0, 2, 3]),
+      normalSign: 1 as const,
+      boundary: rect(0, 0, 20, 20).outer,
+      subRegions: [rect(0, 0, 20, 20)],
+      netExcluded: [{ toName: 'Back', regions, joins: true }],
+      zoneBounds: { minU: 0, minV: 0, maxU: 20, maxV: 20 },
+    };
+  }
+  const yieldPart = (chart = yieldChart()): AssemblyPart =>
+    asmPart({ zones: [{ id: 'left', name: 'Left side', chart }] } as never);
+  const overlays = (): THREE.Mesh[] => {
+    const found: THREE.Mesh[] = [];
+    modelGroup.traverse((o) => {
+      if (o.userData.netYieldOverlay) found.push(o as THREE.Mesh);
+    });
+    return found;
+  };
+  const visibleOverlays = (): THREE.Mesh[] => overlays().filter((m) => m.visible);
+  const bind = (zoneId: string | null): void => {
+    state.artworks = [
+      {
+        id: 'a1',
+        sourceId: 's1',
+        zone: zoneId ? { partId: 0, zoneId } : null,
+        offsetU: 0,
+        offsetV: 0,
+        scalePct: 100,
+        rotationDeg: 0,
+        flipX: false,
+        flipY: false,
+        mode: 'sticker',
+      } as unknown as (typeof state.artworks)[number],
+    ];
+    state.activeArtworkId = 'a1';
+  };
+
+  beforeEach(() => {
+    state.shapeKind = 'assembly';
+    state.assembly.kindId = 'chair-body';
+    state.assembly.parts = [yieldPart()];
+  });
+
+  it('hatches the yielded canvas while the row being edited covers the whole part', async () => {
+    bind(WHOLE_CHAIR_ZONE);
+
+    await rebuildCurrent();
+
+    expect(visibleOverlays()).toHaveLength(1);
+  });
+
+  // A row bound to this zone by name cuts every bit of it, yielded patches included, so hatching
+  // them on that binding is the same lie in the other direction.
+  it('draws nothing for a row bound to a zone by name', async () => {
+    bind('left');
+
+    await rebuildCurrent();
+
+    expect(visibleOverlays()).toHaveLength(0);
+  });
+
+  it('draws nothing with no row selected', async () => {
+    bind(WHOLE_CHAIR_ZONE);
+    state.activeArtworkId = null;
+
+    await rebuildCurrent();
+
+    expect(visibleOverlays()).toHaveLength(0);
+  });
+
+  // The one path that changes which binding is active without scheduling a rebuild: clicking
+  // another artwork row. Without this the hatch keeps answering for the row that was selected when
+  // the last CSG build ran.
+  it('follows the active row without a rebuild', async () => {
+    bind('left');
+    await rebuildCurrent();
+    expect(visibleOverlays()).toHaveLength(0);
+    const calls = vi.mocked(buildAssemblyGeometry).mock.calls.length;
+
+    state.artworks[0].zone = { partId: 0, zoneId: WHOLE_CHAIR_ZONE };
+    vi.mocked(invalidate).mockClear();
+    refreshNetYieldOverlays();
+
+    expect(visibleOverlays()).toHaveLength(1);
+    expect(vi.mocked(buildAssemblyGeometry).mock.calls.length).toBe(calls);
+    // Nothing else redraws on a row click, so the flip has to ask for the frame itself.
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it('takes its geometry from the yielded regions, not from the whole chart', async () => {
+    bind(WHOLE_CHAIR_ZONE);
+
+    await rebuildCurrent();
+
+    const uv = visibleOverlays()[0].geometry.getAttribute('uv');
+    // UV is divided by the 8mm stripe pitch on the way in, so 4..16mm of surface is 0.5..2.0 here.
+    let mn = Infinity,
+      mx = -Infinity;
+    for (let i = 0; i < uv.count * 2; i++) {
+      mn = Math.min(mn, uv.array[i]);
+      mx = Math.max(mx, uv.array[i]);
+    }
+    expect(mn).toBeCloseTo(4 / 8, 6);
+    expect(mx).toBeCloseTo(16 / 8, 6);
+
+    // Move the yielded patch and the mesh moves with it — the overlay reads netExcluded, not the
+    // chart outline that stayed put.
+    state.assembly.parts = [yieldPart(yieldChart([rect(2, 2, 8, 8)]))];
+    await rebuildCurrent();
+    const moved = visibleOverlays()[0].geometry.getAttribute('uv');
+    let movedMax = -Infinity;
+    for (let i = 0; i < moved.count * 2; i++) movedMax = Math.max(movedMax, moved.array[i]);
+    expect(movedMax).toBeCloseTo(8 / 8, 6);
+  });
+
+  it('adds nothing at all to a zone that yields nothing', async () => {
+    bind(WHOLE_CHAIR_ZONE);
+    const chart = yieldChart();
+    chart.netExcluded = [];
+    state.assembly.parts = [yieldPart(chart)];
+
+    await rebuildCurrent();
+
+    expect(overlays()).toHaveLength(0);
+    expect(sceneMeshes()).toHaveLength(1);
+  });
+
+  // Two hatches that read the same say nothing. The dead one is one set of diagonals in --accent;
+  // this one crosses them and is drawn in --accent-2, the same pair of marks the printed net
+  // template uses for the same two meanings.
+  it('is a different material from the hidden-surface hatch', async () => {
+    bind(WHOLE_CHAIR_ZONE);
+    const chart = { ...yieldChart(), deadRegions: [rect(17, 17, 19, 19)] };
+    state.assembly.parts = [yieldPart(chart as never)];
+
+    await rebuildCurrent();
+
+    const overlay = visibleOverlays()[0];
+    const dead = sceneMeshes().find(
+      (m) => (m.material as THREE.Material).transparent && m !== overlay,
+    )!;
+    expect(dead).toBeTruthy();
+    expect(overlay.material).not.toBe(dead.material);
   });
 });
 
