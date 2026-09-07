@@ -320,8 +320,14 @@ function fromGeom(polys: Geom): PolyFeature | null {
  * left to find out.
  *
  * The floor is an area, so it admits a long enough hairline and refuses a round dot one nozzle
- * across. The seam ribbon in docs/tech-debt.md is the case that needs the other measure: closing
- * those means a real min-width test, and there is no measurement here to choose the width from.
+ * across. A min-width test would settle both, and it has not been written because no case has
+ * needed it yet rather than because none could: the hairline above was one, and this floor caught
+ * it on area by a factor of six. That thread is open in docs/tech-debt.md, "Nothing measures
+ * whether a cut region is too NARROW to print". What measurement HAS retired is the seam overlap —
+ * every one of the chair's 41 overlap pieces builds a cutter on both its parts, and `buildCutter`
+ * extrudes a ribbon one micron wide and 120mm long without complaint. Re-derive with
+ * `npx vite-node scripts/measure-seam-overlap.mjs`; the run is in
+ * docs/findings/2026-09-07-seam-ribbon-closed.md.
  */
 export function dropUnprintableRemnants(
   feat: PolyFeature | null,

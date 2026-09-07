@@ -719,53 +719,6 @@ scale before the one just typed.
   debounce and the cancel path the Colors and Detail sliders already have, or a notice that says
   the design was traced for a different size.
 
-## A seam sliver warns as if artwork were lost
-
-Where two parts' claims on
-a zone overlap, clipping a color to one part's `subRegions` can leave a
-remnant a fraction of a millimetre wide. It survives the turf clip, then
-yields no cutter, and
-[src/geometry/assembly.ts](../src/geometry/assembly.ts) reports "Couldn't cut
-color … into …. It won't print there." — alarming, and indistinguishable from
-the real failure it shares a message with. The overlaps are inherent to per-part
-clipping and small — the `gives no two parts of a zone an overlapping claim on
-the same UV` test in `tests/chair-zones.test.ts` walks all of them and holds
-them under 0.05% of zone area; on the shipped bake it finds 20 overlapping part
-pairs, all seam-sharing, worst 29.85 mm² on `right`, a 124,747 mm² zone (a
-~0.15 mm ribbon).
-Fix: drop a clip remnant _before_ `buildCutter` rather than attempting it and
-warning.
-
-**Half of that landed and does not reach this.** `dropUnprintableRemnants`
-(`src/geometry/regions.ts`) now runs after the per-part clip, the seam clip and
-the mirror clip, and drops a piece under `CLIP_REMNANT_FLOOR_MM2`, one nozzle
-square, naming what it took. That is 0.16 mm², chosen for a 0.025 mm² hairline.
-**This ribbon is 29.85 mm²**, two orders of magnitude above it, so it still
-reaches `buildCutter`.
-
-Raising the floor to clear the ribbon is not the answer: 29.85 mm² is a
-printable _area_, and what makes the ribbon unprintable is its 0.15 mm _width_.
-Closing this needs a min-width test — a morphological opening at one nozzle,
-the shape `narrowFeatureArea` in `src/geometry/hubcapOutline.ts` already uses —
-applied per piece. What has been missing is a reason to spend it, which is the
-next paragraph.
-
-This bullet used to cite the 2026-07-28 "Seat back (bottom)" warnings as a
-confirmed sighting. Instrumenting the running app on 2026-07-31 showed that
-those had a different cause — cutter vertices landing outside the snap
-tolerance, since fixed — and that they looked permanent only because warnings
-were never cleared per rebuild, also since fixed. So the seam remnant is still
-real geometry and still reaches `buildCutter`, but **no warning has actually
-been traced to it**. Confirm one before spending the fix on it.
-
-A deliberate hunt on 2026-08-08 failed to produce a sighting —
-[docs/findings/seam-sliver-sighting.md](findings/seam-sliver-sighting.md), 18
-checkerboard configurations across three cell densities, two scales and
-sub-millimetre offsets, then a finer rotated pass recording triangle and color
-counts so "no warnings" is a statement about a build that demonstrably ran. Zero
-cut-solid warnings throughout. That is not proof the remnant can't warn, but it
-is the cheap attempts already spent — read it before repeating them.
-
 ## A Fill under a sticker overlaps just like two stickers do, and isn't checked
 
 The overlap check in
@@ -1308,37 +1261,27 @@ warning for it.
 to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
 scheduled.
 
-## The bake's cut regions are clean; the seam ribbon still is not
+## Nothing measures whether a cut region is too NARROW to print, only how small
 
-Closing the "`Seat back (top)` takes ink on one side" report found the cause one
-layer up from where that report looked, and it turned out not to be one hairline
-but dust everywhere.
+`CLIP_REMNANT_FLOOR_MM2` drops a clipped piece under one nozzle square. That is
+an area, and a long enough hairline clears it: the one #296 removed from
+`chair-seat-back-top` was 0.020 x 8.08mm, extruded perfectly well, and cut a
+visible 0.4mm mark into surface the cushion covers. The area floor caught it by
+a factor of six, which is luck rather than design.
 
-The runtime used to derive a part's clip region on every load, subtracting
-`deadRegions` from `subRegions`. Those two are traced from the SAME triangles,
-so they share long stretches of boundary and the difference leaves slivers along
-them. **55 of the chair's 142 live pieces came back under one nozzle square**,
-worst on `seat-right`/`chair-wheel-mount-right` at 11 of 23, and one of them —
-0.0253mm², 0.020mm wide, 8.08mm long on `chair-seat-back-top`'s Front chart —
-cut a visible 0.4mm mark into surface the cushion covers.
-
-The subtraction is baked now, as `cutRegions`, done once and cleaned once at
-`MIN_CUT_PIECE_MM2`. The chair ships **0 sub-floor pieces of 87**, and the
-baked result agrees with an independent turf difference to within 0.68mm² on
-the worst of its 26 charts.
-
-- Sidecar schema 6. A stale sidecar is refused rather than silently read.
-- `CLIP_REMNANT_FLOOR_MM2` still runs at each of the three clips as a backstop,
-  naming what it drops. With the bake clean it fires on a genuinely too-small
-  design and not on ordinary ones.
-- **A side effect worth knowing**: `npm run check:zone-occlusion` went from 6
-  failures to 2. Most of its "picked a zone on bare body" samples were landing
-  on the dust.
-
-**What is still open is the seam ribbon**, in "A seam sliver warns as if artwork
-were lost" above. That one is 29.85mm², two orders of magnitude over both
-floors, and unprintable by its 0.15mm WIDTH rather than its area. Neither the
-bake filter nor the cut floor reaches it, and raising either would start eating
-printable regions. It needs a min-width test — a morphological opening at one
-nozzle, the shape `narrowFeatureArea` in
+The measure that would catch it directly is a morphological opening at one
+nozzle — the shape `narrowFeatureArea` in
 [src/geometry/hubcapOutline.ts](../src/geometry/hubcapOutline.ts) already uses.
+
+**What retired the case that used to motivate it**: the seam overlaps, which
+"A seam sliver warns as if artwork were lost" said would yield no cutter and
+warn. They do not.
+[docs/findings/2026-09-07-seam-ribbon-closed.md](findings/2026-09-07-seam-ribbon-closed.md)
+measures all 41 of them building on both parts, and `buildCutter` extruding a
+ribbon one micron wide and 120mm long. Re-derive with
+`npx vite-node scripts/measure-seam-overlap.mjs`.
+
+So this is open on the #296 hairline alone, and closing it needs a width chosen
+against real features rather than against that one. The chair has genuine
+overlap pieces at 0.15mm and a real radiused slot at 1.43mm, so an opening at
+0.4mm is not obviously safe and wants measuring across every kind first.

@@ -617,8 +617,8 @@ describe('buildAssemblyGeometry', () => {
           expect(part.bodySoup).not.toEqual(Float32Array.from(part.part.positions!));
           expect(part.inlaySoups).toEqual({});
 
-          // the warning has to name the color and say the recess ships empty, or it's
-          // indistinguishable from the alarming-but-harmless seam-sliver case
+          // the warning has to name the color and say the recess ships empty, or it reads like any
+          // other cut failure — and a real one is what this is
           const w = WARNINGS.find((x) => /couldn't fit the inlay/i.test(x.message));
           expect(w).toBeDefined();
           expect(w!.message).toMatch(/#ff0000/);
