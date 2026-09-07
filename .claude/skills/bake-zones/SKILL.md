@@ -80,8 +80,15 @@ direction ... is nearly perpendicular to the surface everywhere`.
 Optional overrides default to the constants in `zonebake.mjs`: `weldTolMm`
 (`WELD_TOL_MM`, `1e-3`), `simplifyTolMm` (`SIMPLIFY_TOL_MM`, `0.2`),
 `minHoleAreaMm2` (`MIN_HOLE_AREA_MM2`, `15`), `minIslandAreaMm2`
-(`MIN_ISLAND_AREA_MM2`, `0.4`). **Leave them alone unless you have a
-measurement.**
+(`MIN_ISLAND_AREA_MM2`, `0.4`), `minHoleWidthMm` (`MIN_HOLE_WIDTH_MM`, `2`).
+**Leave them alone unless you have a measurement.**
+
+`minHoleWidthMm` is the one most likely to need lowering on a new part. It
+throws out an interior loop whose `4 x area / perimeter` is under it, which is
+how a fold in the unwrap is told from a hole in the part. The default has only
+1.31x of margin over the chair's narrowest real hole, so a part with a genuinely
+narrower slot needs it lowered — and needs the separation re-measured first, or
+the bake will report a real slot as enclosing no width.
 
 ### claimWedge: the strip between two zones
 
@@ -290,7 +297,8 @@ unwrap pivots around it and any zone crossing there distorts. Then per zone:
 triangle count, part count, lobe count, holes, seams, `stretch max`/`mean`, and
 the fitted mm `scale`.
 
-Two warnings print last with a `!` prefix. Neither stops the bake:
+Four kinds of warning print last with a `!` prefix. None stops the bake. The
+chair emits six lines across the last two.
 
 - **`max stretch <x> exceeds 1.1`** fires when max per-edge stretch (the larger
   of the length ratio and its inverse) passes `DISTORTION_WARN = 1.1`. Fix by
@@ -306,6 +314,17 @@ Two warnings print last with a `!` prefix. Neither stops the bake:
   island is the one failure with no runtime signal**, since artwork over it is
   silently intersected away, which is why it warns at all. A drop much larger
   than dust, or several, means the zone is fraying at its angle limit.
+- **`dropped N fold(s) under 2mm mean width ... from the clip region's holes`**:
+  an interior loop that doubles back on itself, enclosing perimeter but no width,
+  which the area test alone passes. The chair's two handle charts on `back`
+  carried two each. This one runs **opposite** to the island warning above: a
+  hole that stops being punched _adds_ clip region rather than removing it. That
+  is the intent, and it is still the clip region moving, which is why it says so.
+- **`dropped N fold(s) ... from the display outline's holes`**: the same test on
+  the zone-level `boundary`/`holes`, which are the display outline and which
+  nothing cuts against. Counts differ from the line above on purpose — the
+  outline chains across stitched seams and fans into folds the per-part regions
+  never see, six against four on the chair. Safe to read as cosmetic.
 
 Errors that stop the bake:
 
