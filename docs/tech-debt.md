@@ -1260,3 +1260,28 @@ warning for it.
 **Decided 2026-08-30**: warn, named, per CLAUDE.md code rule 1 — a hidden layer is enough content
 to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
 scheduled.
+
+## Nothing measures whether a cut region is too NARROW to print, only how small
+
+`CLIP_REMNANT_FLOOR_MM2` drops a clipped piece under one nozzle square. That is
+an area, and a long enough hairline clears it: the one #296 removed from
+`chair-seat-back-top` was 0.020 x 8.08mm, extruded perfectly well, and cut a
+visible 0.4mm mark into surface the cushion covers. The area floor caught it by
+a factor of six, which is luck rather than design.
+
+The measure that would catch it directly is a morphological opening at one
+nozzle — the shape `narrowFeatureArea` in
+[src/geometry/hubcapOutline.ts](../src/geometry/hubcapOutline.ts) already uses.
+
+**What retired the case that used to motivate it**: the seam overlaps, which
+"A seam sliver warns as if artwork were lost" said would yield no cutter and
+warn. They do not.
+[docs/findings/2026-09-07-seam-ribbon-closed.md](findings/2026-09-07-seam-ribbon-closed.md)
+measures all 41 of them building on both parts, and `buildCutter` extruding a
+ribbon one micron wide and 120mm long. Re-derive with
+`npx vite-node scripts/measure-seam-overlap.mjs`.
+
+So this is open on the #296 hairline alone, and closing it needs a width chosen
+against real features rather than against that one. The chair has genuine
+overlap pieces at 0.15mm and a real radiused slot at 1.43mm, so an opening at
+0.4mm is not obviously safe and wants measuring across every kind first.

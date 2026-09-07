@@ -807,8 +807,9 @@ describe('chart reconstruction', () => {
       const cs = z.charts.filter((c) => (c.cutRegions ?? []).length);
       for (let i = 0; i < cs.length; i++)
         for (let j = i + 1; j < cs.length; j++) {
-          // No try/catch: a throw here is `boolOpWithRetry`'s own failure and must fail the test,
-          // not be swallowed into a pass.
+          // No try/catch. This is turf direct, not the app's `boolOpWithRetry`, so it has none of
+          // that wrapper's truncation retries — which makes a throw here a stronger signal, not a
+          // weaker one, and it must fail the test rather than be swallowed into a pass.
           const hit = turf.intersect(
             regionsPolygon(cs[i].cutRegions!),
             regionsPolygon(cs[j].cutRegions!),

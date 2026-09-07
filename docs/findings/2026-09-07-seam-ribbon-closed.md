@@ -94,7 +94,9 @@ A ribbon one micron wide and 120mm long extrudes without complaint.
   catch on area by a factor of six. Nothing here says that case cannot recur
   wider. What is settled is that the seam overlaps are not it, and that a width
   guard would have to be sized against real features: the chair has genuine
-  overlap pieces at 0.15mm.
+  overlap pieces at 0.15mm. That thread has its own tech-debt section, "Nothing
+  measures whether a cut region is too NARROW to print", so it does not live
+  only here.
 - The overlap test in `tests/chair-zones.test.ts` stays. What it really guards is
   a claim creeping far from a seam, which is a different thing and still worth
   catching. Its comment said the overlap corrupts output; it now says what was
@@ -113,9 +115,11 @@ said what to do instead: "Confirm one before spending the fix on it."
 
 **Measuring at the wrong granularity, then quoting a margin from it.** The
 "55x" in the first draft of this report came from per-pair widths and was wrong
-twice over — the per-piece thinnest is 50x smaller than the per-pair figure, and
-the failure it was a margin against turned out not to be a width failure at all.
-A safety margin is a claim like any other, and it needs the same measurement.
+twice over — per piece the thinnest is 0.0055mm against 0.0830mm per pair, a
+factor of 15, and the failure it was a margin against turned out not to be a
+width failure at all. A safety margin is a claim like any other and needs the
+same measurement, which is why the two figures are printed by the script rather
+than the ratio being asserted.
 
 **Sampling a shape by its centroid.** The vertex mean of a curved sliver is
 outside it. Four of the 41 separations were measured on surface neither part
