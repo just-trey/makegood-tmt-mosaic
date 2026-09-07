@@ -569,11 +569,43 @@ describe('a clip remnant too small to print', () => {
     expect(build, 'build returned null').not.toBeNull();
     const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
     expect(Object.keys(out.inlaySoups), 'an inlay was built from a 0.025mm² remnant').toEqual([]);
+    // The no-cutter path copies part.positions verbatim, so an identical soup is the whole claim
+    // and needs no Manifold solids to say it.
+    expect(out.bodySoup.length).toBe(part.positions!.length);
+  }, 180000);
 
-    const wasm = await getManifold();
-    const cut = soupToManifold(wasm, out.bodySoup);
-    const orig = soupToManifold(wasm, part.positions!);
-    expect(orig.volume() - cut.volume()).toBeCloseTo(0, 6);
+  // The case a floor on the feature's TOTAL area misses, and the first version of this fix did:
+  // the hairline usually arrives beside the real band rather than alone, and 2,634.33 + 0.025 is
+  // comfortably over any floor. Only a per-polygon test drops the one and keeps the other.
+  it('drops the hairline while keeping the real band it arrives with', async () => {
+    clearWarnings();
+    const mesh = await loadPacked(PART);
+    const part = chairPart(
+      PART,
+      mesh,
+      zonesFor(PART, mesh).filter((z) => z.id === ZONE),
+    );
+    const zone = sidecar.zones.find((z) => z.id === ZONE)!;
+    // Covers the whole chart: the band at v 270..327 and the hairline at v 149.8..157.8 together.
+    const build = await buildAssemblyGeometry(
+      chairInput([part], 200, [
+        {
+          zoneId: ZONE,
+          sizeMM: 200,
+          offX: 109.8 - zone.uvBounds.maxU / 2,
+          offZ: 238 - zone.uvBounds.maxV / 2,
+        },
+      ]),
+    );
+    const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
+    expect(Object.keys(out.inlaySoups).length, 'the band cut nothing').toBeGreaterThan(0);
+
+    // The band is at y 525.3..556.3 on the chair; the hairline sat at y 380.0..387.9. Nothing the
+    // build cuts may reach down there.
+    const soup = out.inlaySoups[Number(Object.keys(out.inlaySoups)[0])];
+    let minY = Infinity;
+    for (let i = 1; i < soup.length; i += 3) minY = Math.min(minY, soup[i]);
+    expect(minY, 'an inlay reached the hairline at the bottom of the chart').toBeGreaterThan(400);
   }, 180000);
 
   // The floor must not be reachable by anything a user meant. On the same zone and the same

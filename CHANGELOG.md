@@ -15,11 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   trimmed to runs along an edge of the design itself, the trim can hand back a
   hairline instead of nothing, and a hairline still cuts. This one was 0.02mm
   wide and 8mm long, 0.025mm² against 1,258mm² and up for every other piece the
-  same design reached. The build now discards a region the trim itself made too
-  small to print, one nozzle square being the line. A design that was already
-  that small before trimming is untouched: that is your drawing, not an artifact.
-  The same guard covers the seam between two pieces, where the trim can leave the
-  same kind of sliver.
+  same design reached. The build now discards a piece the trim itself made too
+  small to print, one nozzle square being the line, and it checks each piece
+  rather than the design as a whole: the sliver usually arrives beside a real
+  region, and adding the two together hides it. A design that was already that
+  small before trimming is untouched: that is your drawing, not an artifact. The
+  same check runs where a mark is split at a seam and where it is split down the
+  middle for mirroring, which leave the same kind of sliver for the same reason.
+  It catches a sliver by how much of it there is, so a long thin one can still
+  get past; that one is written up rather than fixed.
 
 ### Added
 

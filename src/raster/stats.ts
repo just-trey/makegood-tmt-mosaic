@@ -81,6 +81,12 @@ const PHOTO_PARAMS: TraceParams = {
  * and to the smallest hubcap's 30mm face gets floors over six times apart in printed size. This is
  * the half that does not move with the picture.
  */
+/**
+ * **Deliberately not scaled by the Detail slider**, unlike the feature floor beside it in
+ * `despeckleFloorPx`. Coarseness is a taste control and one nozzle square is not one: below it a
+ * component cannot hold a single extrusion of any shape, whatever the user asked for. Everything
+ * between one nozzle and comfortably printable is the fractional floor's business.
+ */
 export function printableFloorPx(mmPerPixel: number): number {
   if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0) return 0;
   return Math.round((NOZZLE_MM / mmPerPixel) ** 2);

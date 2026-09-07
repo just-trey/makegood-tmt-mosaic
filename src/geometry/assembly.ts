@@ -31,6 +31,7 @@ import {
   applyColorMerges,
   computeNetRegionsByColor,
   intersectQuiet,
+  dropUnprintableRemnants,
   planarArea,
   cleanFeature,
   differenceChecked,
@@ -1262,27 +1263,9 @@ export async function buildAssemblyGeometry(
           const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
           feat = r.feat;
           clipped = r.clipped;
-          // The clip cutting a printable region down to an unprintable hairline is the clip failing
-          // to return nothing, not a region. Where its boundary runs ALONG an edge of what it is
-          // clipping — a dead region baked to share its chart's own outline, a part's claim meeting
-          // its neighbour's at a seam — the intersect hands back a sliver instead of null, and a
-          // sliver still extrudes into a real inlay. Measured on the chair's Front zone with the
-          // mirror check's asymmetric design: `chair-seat-back-top` came back with 0.025mm²,
-          // 0.020mm wide and 8.08mm long, against 1,258 to 3,029mm² for every other chart that
-          // design reaches. It cut a 0.4mm inlay into surface the cushion covers.
-          //
-          // BOTH sides of the comparison, and the same floor for each. A region already under one
-          // nozzle square before the clip is the user's own design being small — the 0.2mm square a
-          // refused fill falls back to, say — and dropping that would be discarding their content
-          // over a boundary that took nothing off it. What is dropped here is only a region the
-          // boundary itself made unprintable.
-          const kept = feat ? Math.abs(planarArea(feat)) : 0;
-          if (
-            feat &&
-            kept < CLIP_REMNANT_FLOOR_MM2 &&
-            Math.abs(planarArea(placed)) >= CLIP_REMNANT_FLOOR_MM2
-          )
-            feat = null;
+          // The dead region on a chart is baked to share that chart's own outline, which is where
+          // this clip leaves a hairline rather than nothing. See dropUnprintableRemnants.
+          feat = dropUnprintableRemnants(feat, placed, CLIP_REMNANT_FLOOR_MM2);
           if (!feat) {
             noteHiddenSurface(mapper, placed, ci);
             return;
@@ -1301,7 +1284,8 @@ export async function buildAssemblyGeometry(
           if (r.failed) warnBuild(mirrorClipFailedWarning(design, half.zoneName));
           else if (r.removed && !artworks[ai].reflected)
             noticeBuild(mirrorHalfNotice(design, half.zoneName, half.side));
-          feat = r.feat;
+          // Same boundaries, same failure: the kept-side clip runs along the zone's own centre line.
+          feat = dropUnprintableRemnants(r.feat, feat, CLIP_REMNANT_FLOOR_MM2);
           if (!feat) return;
         }
         // A whole-part design is cut where the net says this zone owns the canvas, and nowhere
@@ -1327,7 +1311,9 @@ export async function buildAssemblyGeometry(
           // One pill per boundary however many zones, colors and directions reach it.
           for (const t of r.torn)
             raiseTornWarning(tornPills, design, [zoneName, t.toName], t.tearMm);
-          feat = r.feat;
+          // The net partition is cut from the same charts, so its patch boundaries coincide with
+          // this zone's claim in exactly the way that leaves a hairline.
+          feat = dropUnprintableRemnants(r.feat, feat, CLIP_REMNANT_FLOOR_MM2);
           if (!feat) return;
         }
         const requested = requestedDepth(colorSettings, globalDepth, c.key);

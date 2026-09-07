@@ -731,9 +731,22 @@ the same UV` test in `tests/chair-zones.test.ts` walks all of them and holds
 them under 0.05% of zone area; on the shipped bake it finds 20 overlapping part
 pairs, all seam-sharing, worst 29.85 mm² on `right`, a 124,747 mm² zone (a
 ~0.15 mm ribbon).
-Fix: drop a clip remnant under an area floor _before_ `buildCutter` rather
-than attempting it and warning. Pick the floor above the measured ribbon and
-well under anything printable.
+Fix: drop a clip remnant _before_ `buildCutter` rather than attempting it and
+warning.
+
+**Half of that landed and does not reach this.** `dropUnprintableRemnants`
+(`src/geometry/regions.ts`) now runs after the per-part clip, the seam clip and
+the mirror clip, and drops a piece under `CLIP_REMNANT_FLOOR_MM2`, one nozzle
+square. That is 0.16 mm², chosen for a 0.025 mm² hairline. **This ribbon is
+29.85 mm²**, two orders of magnitude above it, so it still reaches
+`buildCutter`.
+
+Raising the floor to clear the ribbon is not the answer: 29.85 mm² is a
+printable _area_, and what makes the ribbon unprintable is its 0.15 mm _width_.
+Closing this needs a min-width test — a morphological opening at one nozzle,
+the shape `narrowFeatureArea` in `src/geometry/hubcapOutline.ts` already uses —
+applied per piece. What has been missing is a reason to spend it, which is the
+next paragraph.
 
 This bullet used to cite the 2026-07-28 "Seat back (bottom)" warnings as a
 confirmed sighting. Instrumenting the running app on 2026-07-31 showed that

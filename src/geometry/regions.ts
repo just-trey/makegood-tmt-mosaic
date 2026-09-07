@@ -297,6 +297,39 @@ function fromGeom(polys: Geom): PolyFeature | null {
   return { type: 'Feature', properties: {}, geometry: geom } as PolyFeature;
 }
 
+/**
+ * Drop the pieces a clip left too small to print, and only those.
+ *
+ * Where a clip boundary runs ALONG an edge of what it is clipping — a baked dead region sharing
+ * its chart's own outline, a part's claim meeting its neighbour's at a seam — the intersect hands
+ * back a hairline instead of dropping it, and a hairline still extrudes into a real inlay. The
+ * chair shipped one: 0.025mm², 0.020mm wide and 8.08mm long on `chair-seat-back-top`'s Front
+ * chart, which cut a 0.4mm mark into surface the cushion covers.
+ *
+ * **Per polygon, because a hairline usually arrives beside a real region rather than alone.** On
+ * that same chart the clip returns the 2,634mm² band AND the hairline; a floor on the feature's
+ * total keeps both, which is what a first version of this did.
+ *
+ * **Only when `before` was printable.** A feature already under the floor going in is the user's
+ * own design being small — the 0.2mm square a refused fill falls back to — and the clip took
+ * nothing off it. Discarding that would be dropping their content over a boundary that did not
+ * touch it.
+ *
+ * The floor is an area, so it admits a long enough hairline and refuses a round dot one nozzle
+ * across. Both are edges of what a single number on an area can say: closing them means a real
+ * min-width test, and there is no measurement here to choose the width from yet.
+ */
+export function dropUnprintableRemnants(
+  after: PolyFeature | null,
+  before: PolyFeature | null,
+  floorMM2: number,
+): PolyFeature | null {
+  if (!after || planarArea(before) < floorMM2) return after;
+  const polys = toGeom(after);
+  const kept = polys.filter((rings) => planarArea(fromGeom([rings])) >= floorMM2);
+  return kept.length === polys.length ? after : fromGeom(kept);
+}
+
 function truncGeom(polys: Geom, precision: number): Geom {
   const f = Math.pow(10, precision);
   return polys.map((p) =>
