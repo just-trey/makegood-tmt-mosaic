@@ -11,6 +11,7 @@ import {
   setArtworkMirror,
   setArtworkMode,
   setArtworkZone,
+  fillClampKey,
 } from '../state/artwork';
 import { WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { fillModeOffered } from '../assembly/kinds';
@@ -228,6 +229,7 @@ export function renderArtworkList(): void {
       if (source && !state.sources.some((s) => s.id === source.id)) {
         dismissNotice(rasterCappedMessage(source.name), source.id);
         dismissColorLoss(source.id);
+        dismissNotice('', fillClampKey(source.id));
       }
       renderWarnings();
       $('#svg-fname').textContent = '';

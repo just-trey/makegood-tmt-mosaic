@@ -322,10 +322,11 @@ fix above — 93.6s is not interactive — but re-measure before quoting the
 405.6s figure as the cost of the pipeline itself. The "All zones" >900s
 result has not been re-measured.
 
-**Withheld from users, 2026-08-05.** The chair-body kind now carries
+**Withheld from users, 2026-08-05.** The chair-body kind carries
 `withholdFill` (`src/types.ts`), so Fill and the pattern strip are not offered
-on it and no user can reach the numbers above. This is a gate, not a fix: the
-path is unchanged and every measurement here still stands. Clearing the flag
+on it and no user can reach the numbers above. The kind itself is offered in the
+Part dropdown; only Fill on it is not. This is a gate, not a fix: the path is
+unchanged and every measurement here still stands. Clearing the flag
 needs the accumulator-or-worker fix and the "Handle (left)" color loss (defect
 1 of "Three open defects in the chair / pattern-library Fill path", below).
 Sticker on the chair is unaffected and was measured at 19.5s for a full
@@ -391,10 +392,10 @@ more: dead zones took three, and the clip-region folds took the part of the
 fourth that excluded real surface. What is left of that fourth one is cosmetic
 and has its own section below, "A zone template's outline is faceted". What is
 left HERE are longer-standing defects against the same two features, folded in
-by #275, and all three are about Fill. Both features are still withheld from the UI for the
-beta: `chair-body` carries `hidden: true` and `PATTERN_LIBRARY_ENABLED` is
-`false`. The report is the maintainer's, the diagnosis is not, and where the
-cause is confirmed it says so.
+by #275, and all three are about Fill. The chair itself is offered now, with
+Sticker: what is still withheld is Fill on it (`withholdFill`) and the pattern
+library everywhere (`PATTERN_LIBRARY_ENABLED` is `false`). The report is the
+maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
 
 1. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
    Measured on `MOSAIC_GPU=1` production build, 2026-08-03: zebra in Fill mode
@@ -428,15 +429,15 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
    defects above close and `withholdFill` comes off, or the script needs a
    different way to put several colours on every part.
 
-`?kind=chair-body` still reaches the chair, which the `bake-zones` and
-`debug-csg-failure` skills and every chair drive script depend on. Nothing
-public names that parameter: it is out of the README's `?kind=` example list.
+`?kind=chair-body` reaches the chair without going through the dropdown, which
+the `bake-zones` and `debug-csg-failure` skills and every chair drive script
+depend on. It is a documented parameter now that the chair is offered, and the
+README lists it beside the other three.
 
-Neither flag is the fix. Nothing above blocks offering the chair with Sticker
-any more, so `hidden: true` now survives only because no change has taken it
-off — not because this section still holds it. Restoring the pattern library
-needs defect 1 closed, and clearing `withholdFill` needs that plus the
-accumulator-or-worker fix in "Rebuild performance needs ongoing work" above.
+Neither remaining flag is a fix. Restoring the pattern library needs defect 1
+closed. Clearing `withholdFill` needs that plus the accumulator-or-worker fix
+in "Rebuild performance needs ongoing work" above, and closing defect 3 is what
+gives the chair drive script several colours on every part again.
 
 ## A zone template's outline is faceted, because nothing curve-fits a zone boundary
 

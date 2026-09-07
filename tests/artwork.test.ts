@@ -19,6 +19,7 @@ import {
   zoneCoverage,
 } from '../src/state/artwork';
 import { state } from '../src/state/store';
+import { WARNINGS } from '../src/warnings';
 import { OVERLAP_WARN_FRACTION } from '../src/geometry/designOverlap';
 import { WHOLE_CHAIR_ZONE } from '../src/geometry/zones';
 import type { ConformalChart } from '../src/geometry/conformal';
@@ -84,6 +85,65 @@ describe('Fill withheld on a kind that opts out', () => {
     onKind('chair-body');
     expect(clampArtworkModes()).toBe(true);
     expect(activeArtworkInstance()!.mode).toBe('sticker');
+  });
+
+  // The switch is now reachable from the Part dropdown, not just from a URL that starts with no
+  // artwork, so this rewrite takes a mode the user picked — and the control it was picked with is
+  // not on screen on the chair to show that it went.
+  it('names the design it took out of Fill, rather than rewriting it silently', () => {
+    onKind('wheel');
+    loadArtworkSource(fakeParsed(), 'zebra.svg');
+    setArtworkMode(activeArtworkInstance()!.id, 'fill');
+    onKind('chair-body');
+    WARNINGS.length = 0;
+    clampArtworkModes();
+    const said = WARNINGS.map((w) => w.message);
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('"zebra.svg"');
+    expect(said[0]).toContain('Chair body');
+  });
+
+  // Keyed per design. A single constant key made push() drop the second one, so a user who loaded
+  // two Fill designs was told about one and silently lost the other — the exact failure the notice
+  // exists to prevent.
+  it('names a second clamped design too, rather than colliding with the first', () => {
+    onKind('wheel');
+    loadArtworkSource(fakeParsed(), 'zebra.svg');
+    setArtworkMode(activeArtworkInstance()!.id, 'fill');
+    onKind('chair-body');
+    WARNINGS.length = 0;
+    clampArtworkModes();
+    onKind('wheel');
+    loadArtworkSource(fakeParsed(), 'tiger.svg');
+    setArtworkMode(activeArtworkInstance()!.id, 'fill');
+    onKind('chair-body');
+    clampArtworkModes();
+    const said = WARNINGS.map((w) => w.message).join(' | ');
+    expect(said).toContain('"zebra.svg"');
+    expect(said).toContain('"tiger.svg"');
+  });
+
+  // Session-scoped, so nothing else retracts it: left standing it would name a part the user has
+  // already left, on one that offers Fill perfectly well.
+  it('retracts the notice once the design is back on a part that offers Fill', () => {
+    onKind('wheel');
+    loadArtworkSource(fakeParsed(), 'zebra.svg');
+    setArtworkMode(activeArtworkInstance()!.id, 'fill');
+    onKind('chair-body');
+    WARNINGS.length = 0;
+    clampArtworkModes();
+    expect(WARNINGS).toHaveLength(1);
+    onKind('wheel');
+    clampArtworkModes();
+    expect(WARNINGS).toEqual([]);
+  });
+
+  it('says nothing when nothing was rewritten', () => {
+    onKind('chair-body');
+    loadArtworkSource(fakeParsed(), 'zebra.svg');
+    WARNINGS.length = 0;
+    expect(clampArtworkModes()).toBe(false);
+    expect(WARNINGS).toEqual([]);
   });
 
   it('keeps Fill through a detour into a flat mode, which only ignores it', () => {

@@ -216,6 +216,33 @@ something your artwork or settings caused.
 **What to do.** Reload the page. If it recurs on the same part, report it via
 **Feedback** or **Report a bug on GitHub**, naming the part.
 
+## Troubleshooting: "… is a sticker now. The … can't repeat a design across it yet."
+
+Full text: _"…" is a sticker now. The … can't repeat a design across it yet._
+Or: _"…" is a sticker now. Cut to artwork shape can't repeat a design across the
+shape it cut._ Two designs rewritten at once give you one of these each, not a
+combined line.
+
+**What it means.** You had a design set to **Fill** and then moved it somewhere
+Fill isn't offered. Two things do that: picking the chair body, which doesn't
+offer Fill at all, and ticking **Cut to artwork shape** on the hubcap, which
+would otherwise tile a shape with copies of itself. The message names whichever
+one it was. The mode is rewritten to **Sticker** rather than carried across, and
+this says so, because the Sticker/Fill control isn't on screen to show you it
+changed.
+
+**What you get.** Each named design is placed once instead of repeated. Nothing
+else about it moves: its zone, scale, offset, rotation and colors are untouched.
+
+**What to do.** Nothing, if one copy is what you wanted. If you need the design
+repeated across the surface, either scale it up and place copies by hand with
+"+zone", or use a part that offers Fill. Fill on the chair is withheld on
+purpose — it took 93.6s to settle on a single zone and dropped a color on one
+piece. See [tech-debt.md](tech-debt.md).
+
+The message clears itself when you're back somewhere Fill works, but the mode
+does not come back with it. Set it again from the row's Sticker/Fill control.
+
 ## Troubleshooting: "Couldn't load the design zones for "…"…"
 
 Full text: _"Couldn't load the design zones for "…" (…: …). It will load

@@ -8,6 +8,7 @@ import { boundsCentre, netOffsetToZone, WHOLE_CHAIR_ZONE } from '../geometry/zon
 import { currentAssemblyKind, currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
+import { dismissNotice, notice } from '../warnings';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
@@ -650,20 +651,75 @@ export function allowedArtworkMode(mode: ArtworkInstance['mode']): ArtworkInstan
 }
 
 /**
+ * Names one design a switch took out of Fill, so the rewrite is never silent.
+ *
+ * Two reasons reach here and they are not interchangeable: a kind carrying `withholdFill`, where
+ * the part is what can't do it, and Cut to artwork shape on the hubcap, where the setting is. The
+ * message has to name whichever is actually true, or it tells the user to blame the wrong thing.
+ */
+export function fillClampedNotice(name: string, partName: string, bySetting: boolean): string {
+  return bySetting
+    ? `"${name}" is a sticker now. Cut to artwork shape can't repeat a design across the shape it cut.`
+    : `"${name}" is a sticker now. The ${partName} can't repeat a design across it yet.`;
+}
+
+/**
+ * One key per design, so a second clamped design is reported instead of colliding with the first.
+ *
+ * Exported because the notice outlives the design otherwise: the retraction in clampArtworkModes
+ * walks the live sources, so once a removed design's source is gone there is nothing left to match
+ * and the pill stands for the session naming a file that is not loaded. artworkListPanel's remove
+ * handler retracts it there, beside the two other per-source notices that already need it.
+ */
+export const fillClampKey = (sourceId: string): string => `fill-clamped:${sourceId}`;
+
+/**
  * Re-clamp every loaded design's mode against the current part. Artwork outlives a part switch
  * (only its zone bindings are cleared), so a design set to Fill on the wheel would otherwise arrive
  * on the chair still set to Fill and rebuild through the path the flag exists to keep it out of.
  * Returns whether anything changed, so callers can skip a needless rebuild.
+ *
+ * Says so when it does. Before the chair was offered in the Part dropdown this could only be
+ * reached by loading a URL, which starts with no artwork, so the rewrite had nothing to take. Now
+ * a design carried over from the wheel loses a mode the user chose, and the control it was chosen
+ * with is not on screen to show it.
  */
 export function clampArtworkModes(): boolean {
   let changed = false;
+  const clamped = new Map<string, string>();
   state.artworks.forEach((a) => {
     const next = allowedArtworkMode(a.mode);
-    if (next !== a.mode) {
-      a.mode = next;
-      changed = true;
-    }
+    if (next === a.mode) return;
+    a.mode = next;
+    changed = true;
+    // Two placements of one design clamp together and are one row on screen, so it is named once.
+    // An artwork whose source has gone still gets an entry, under its own id: not being nameable
+    // is not a reason to say nothing.
+    const src = state.sources.find((s) => s.id === a.sourceId);
+    clamped.set(src?.id ?? a.id, src?.name ?? 'A design');
   });
+  // These are session-scoped rather than build-scoped, so nothing else takes them down, and they
+  // state a standing fact rather than an event: this design is a sticker here. Once clamped, a
+  // design's mode is plain `sticker` and indistinguishable from one the user chose, so the fact
+  // cannot be re-derived on a later call — which is why a still-true notice is left alone instead
+  // of being retracted and re-raised. What ends it is Fill working again, and that is the one
+  // condition checked here.
+  //
+  // Leaves one narrow staleness, in both directions: moving between the chair and a hubcap that
+  // already has Cut to artwork shape on keeps Fill withheld throughout, so nothing is dismissed and
+  // the mode is already `sticker` so nothing re-raises, and the pill keeps the wording it was
+  // raised with. Going that way it names a toggle the chair does not render. Closing it means
+  // keying the notice on the part as well as the design; it needs the toggle set before the switch
+  // to reach, and the pill is dismissable, so it is written down rather than patched.
+  if (!fillWithheld()) {
+    for (const id of [...state.sources.map((s) => s.id), ...state.artworks.map((a) => a.id)])
+      dismissNotice('', fillClampKey(id));
+    return changed;
+  }
+  const bySetting = !currentAssemblyKind()?.withholdFill;
+  const partName = currentAssemblyKind()?.name ?? 'part';
+  for (const [id, name] of clamped)
+    notice(fillClampedNotice(name, partName, bySetting), fillClampKey(id));
   return changed;
 }
 

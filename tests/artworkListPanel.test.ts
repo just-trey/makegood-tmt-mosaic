@@ -19,7 +19,12 @@ vi.mock('../src/assembly/kinds', () => ({
 }));
 
 import { renderArtworkList } from '../src/ui/artworkListPanel';
-import { loadArtworkSource, setArtworkMirror, setArtworkZone } from '../src/state/artwork';
+import {
+  fillClampKey,
+  loadArtworkSource,
+  setArtworkMirror,
+  setArtworkZone,
+} from '../src/state/artwork';
 import { state } from '../src/state/store';
 import {
   parseRasterImage,
@@ -218,6 +223,24 @@ describe('rasterControls Detail slider — empty trace', () => {
     expect(messages).toContainEqual({ key: a.id, level: 'warn' });
     expect(messages).toContainEqual({ key: b.id, level: 'info' });
     expect(WARNINGS).toHaveLength(2);
+  });
+
+  // The clamp notice is keyed on the source, and clampArtworkModes retracts it by walking the LIVE
+  // sources — so once the design is removed there is nothing left to match and the pill would stand
+  // for the session naming a file that is not loaded. It joins the two notices already retracted
+  // here rather than getting a retraction path of its own.
+  it('removing a clamped design retracts its fill-clamped notice', () => {
+    const source = loadDotSource('zebra.png');
+    notice('"zebra.png" is a sticker now.', fillClampKey(source.id));
+    render();
+    expect(WARNINGS.some((w) => w.key === fillClampKey(source.id))).toBe(true);
+
+    document
+      .querySelector<HTMLButtonElement>('.artwork-remove')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(state.sources).toHaveLength(0);
+    expect(WARNINGS.some((w) => w.key === fillClampKey(source.id))).toBe(false);
   });
 
   it('removing the empty-traced source retracts its warn', () => {

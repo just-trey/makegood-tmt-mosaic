@@ -35,9 +35,9 @@ try {
       const { page, errors } = await newPage(browser, {
         viewport: { width: vp.width, height: vp.height },
       });
-      // ?kind= rather than selectOption: a kind withheld from the Part dropdown has no option to
-      // select, and main.ts honours the parameter for those too. It also skips building the
-      // default part first, which is the whole reason the parameter exists.
+      // ?kind= rather than selectOption: it skips building the default part first, which is the
+      // whole reason the parameter exists. Every kind measured here is offered in the dropdown too,
+      // so this is about not paying for the wheel, not about reaching something withheld.
       await page.goto(`http://localhost:${PORT}/?kind=${kind.id}`);
       await page.waitForFunction(
         () => {

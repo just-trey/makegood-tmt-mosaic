@@ -9,8 +9,8 @@ placed on build plates, every recess pre-named and pre-assigned to its own
 Generic PETG filament slot with the detected colors, 15% gyroid infill and
 tree (auto) support pre-set, so it opens ready to slice in **Bambu Studio,
 OrcaSlicer, or Snapmaker Orca** (pick your printer from the export panel —
-Bambu X1C/P1S/A1/H2D or Snapmaker U1). It covers three TMT parts: the wheel,
-the hubcap, and the footrest.
+Bambu X1C/P1S/A1/H2D or Snapmaker U1). It covers four TMT parts: the wheel,
+the hubcap, the footrest, and the chair body.
 
 Built for [MakeGood](https://makegood.design)'s Toddler Mobility Trainer
 (TMT) — a free, open-source 3D-printable mobility device for children ages
@@ -55,8 +55,8 @@ build time, so the deployed app has no runtime CDN dependencies. The Google
 Fonts stylesheet is the only external request.
 
 The app opens on the wheel. `?kind=` opens it on a given assembly kind instead
-(`?kind=footrest`, `?kind=hubcap`), so a link can point at the part being
-discussed, and a script driving the app can skip building a part it doesn't
+(`?kind=footrest`, `?kind=hubcap`, `?kind=chair-body`), so a link can point at
+the part being discussed, and a script driving the app can skip building a part it doesn't
 want. An unknown or absent value opens the wheel, as before.
 
 ## Deployment
@@ -132,6 +132,25 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   where two sheets lie over each other, the seam between them decides which,
   and the sheet hatches the part each one gives up. So does the 3D view, while
   a **Whole chair** row is the active one.
+- Large wrapped surfaces stretch the artwork. On the chair, Right side is the
+  worst at 1.23x and Left side 1.22x, then Back 1.13x, Front 1.11x, the seat
+  sides 1.08x, and the fenders barely at all (1.02x). The bake prints these, and
+  they are in `public/stl/chair-body-zones.json`.
+- **Fill isn't offered on the chair body.** It was measured at 93.6s to settle
+  on one zone, "All zones" didn't finish inside 900s, and it dropped a color on
+  one part. Sticker works normally there. See
+  [docs/tech-debt.md](docs/tech-debt.md).
+- Three of the chair's thirteen pieces can't carry artwork, because no design
+  zone reaches them: the two caster mounts, and Seat center, which the cushion
+  covers whole.
+- On the chair, "Seat back (top)" takes artwork on one side of the centre line
+  only, whether Mirror is on or off. Nothing warns about the bare half. It's the
+  Front zone's coverage of that piece, not the mirror, and it's the one place a
+  design lands on less of a part than it looks like it should. See
+  [docs/tech-debt.md](docs/tech-debt.md).
+- The chair's prime-tower positions are verified on 270mm and 256mm beds only
+  (Snapmaker and Bambu A1). Any other bed inherits the 270mm positions untested
+  — check the tower in your slicer. See [docs/tech-debt.md](docs/tech-debt.md).
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.
 - Input parts must be watertight/manifold for assembly cutting.

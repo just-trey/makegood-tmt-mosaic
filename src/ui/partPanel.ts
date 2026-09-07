@@ -296,16 +296,17 @@ export function initPartPanel(): void {
     // used to be cleared only by the next export, which left pills naming the previous part
     // standing over the new one.
     clearStalePlacementNotices();
-    // Rendered here, not left to the rebuild this schedules: a cancel honoured inside the
-    // debounce window clears both the dirty flag and the armed timer (app/scheduler.ts), which
-    // would leave pills on screen that WARNINGS no longer holds.
-    renderWarnings();
     setShapeKind('assembly');
     track('mode_switch', { kind: 'assembly' });
     // Artwork outlives a part switch, so a design left in Fill by the previous kind has to be
     // re-clamped against the new one before it reaches a rebuild — hiding the control alone would
     // leave the old mode live and still cut through the withheld path.
     clampArtworkModes();
+    // Rendered here, not left to the rebuild this schedules: a cancel honoured inside the
+    // debounce window clears both the dirty flag and the armed timer (app/scheduler.ts), which
+    // would leave pills on screen that WARNINGS no longer holds. After the clamp, not before it —
+    // the clamp raises a notice naming what it rewrote, and a render ahead of it paints nothing.
+    renderWarnings();
     // Zone bindings above, and the assembly-only Sticker/Fill control, both change with the
     // part — so the rows re-render on every switch, not just when the assembly kind changed.
     renderArtworkList();
