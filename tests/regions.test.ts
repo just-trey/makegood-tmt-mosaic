@@ -4,6 +4,7 @@ import {
   cleanFeature,
   computeNetRegionsByColor,
   dedupeRing,
+  dropUnprintableRemnants,
   intersectChecked,
   safeIntersect,
   shapeToFeature,
@@ -413,5 +414,79 @@ describe('applyColorMerges', () => {
     const merged = out.find((r) => r.members.includes('#0000ff'))!;
     expect(merged.isMerge).toBe(true);
     expect(merged.members.sort()).toEqual(['#0000ff', '#00ff00']);
+  });
+});
+
+describe('dropUnprintableRemnants', () => {
+  const FLOOR = 0.16; // one 0.4mm nozzle square, as CLIP_REMNANT_FLOOR_MM2
+
+  /** An axis-aligned rectangle as its own polygon, in mm. */
+  const rect = (x0: number, y0: number, w: number, h: number): number[][] => [
+    [x0, y0],
+    [x0 + w, y0],
+    [x0 + w, y0 + h],
+    [x0, y0 + h],
+    [x0, y0],
+  ];
+  const feat = (...polys: number[][][]): PolyFeature =>
+    ({
+      type: 'Feature',
+      properties: {},
+      geometry:
+        polys.length === 1
+          ? { type: 'Polygon', coordinates: [polys[0]] }
+          : { type: 'MultiPolygon', coordinates: polys.map((p) => [p]) },
+    }) as PolyFeature;
+  const areas = (f: PolyFeature | null): number[] => {
+    if (!f) return [];
+    const g = f.geometry as { type: string; coordinates: number[][][] | number[][][][] };
+    const polys =
+      g.type === 'Polygon' ? [g.coordinates as number[][][]] : (g.coordinates as number[][][][]);
+    return polys.map((rings) => {
+      const r = rings[0];
+      let a = 0;
+      for (let i = 0; i < r.length - 1; i++) a += r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1];
+      return Math.abs(a / 2);
+    });
+  };
+
+  // The chair's own numbers: a 2,634mm² live band and a 0.0253mm² hairline, which is what the
+  // Front clip on `chair-seat-back-top` returns. The hairline's bbox is 0.020 x 8.08mm and would
+  // be 0.1616mm² if it were a filled rectangle — over this floor. It is 0.0253 because it tapers,
+  // which is the docstring's "admits a long enough hairline" in numbers.
+  it('drops a hairline and keeps the real region it arrives beside', () => {
+    const r = dropUnprintableRemnants(
+      feat(rect(0, 0, 80, 32.93), rect(70, 150, 0.02, 1.265)),
+      FLOOR,
+    );
+    expect(r.dropped).toBe(1);
+    expect(areas(r.feat)).toHaveLength(1);
+    expect(areas(r.feat)[0]).toBeCloseTo(2634.4, 1);
+  });
+
+  it('counts every piece it drops, so the caller can name them', () => {
+    const dots = Array.from({ length: 5 }, (_, i) => rect(i * 2, 0, 0.3, 0.3)); // 0.09mm² each
+    const r = dropUnprintableRemnants(feat(rect(0, 0, 10, 10), ...dots), FLOOR);
+    expect(r.dropped).toBe(5);
+    expect(areas(r.feat)).toEqual([100]);
+  });
+
+  it('returns everything, and no drop, when every piece can print', () => {
+    const f = feat(rect(0, 0, 10, 10), rect(50, 0, 1, 1));
+    const r = dropUnprintableRemnants(f, FLOOR);
+    expect(r.dropped).toBe(0);
+    expect(r.feat).toBe(f);
+  });
+
+  // Every piece under the floor: the result is null, and `dropped` is what tells the caller to say
+  // so rather than let the colour vanish.
+  it('reports the count even when nothing survives', () => {
+    const r = dropUnprintableRemnants(feat(rect(0, 0, 0.3, 0.3), rect(5, 0, 0.3, 0.3)), FLOOR);
+    expect(r.feat).toBeNull();
+    expect(r.dropped).toBe(2);
+  });
+
+  it('passes a null result straight through', () => {
+    expect(dropUnprintableRemnants(null, FLOOR)).toEqual({ feat: null, dropped: 0 });
   });
 });

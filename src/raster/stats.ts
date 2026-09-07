@@ -1,5 +1,6 @@
 import type { ImageStats, RasterImage, TraceParams } from './types';
 import { ALPHA_THRESHOLD } from './types';
+import { NOZZLE_MM } from '../geometry/depth';
 
 /** The Detail slider's multiplier on despeckle/simplify strength: 4x at full left, 1/4 at full right. */
 export function detailStrength(detail: number): number {
@@ -72,17 +73,6 @@ const PHOTO_PARAMS: TraceParams = {
 };
 
 /**
- * Nozzle width in mm: the reference for what a printer can lay down at all.
- *
- * A component with less area than one nozzle square cannot hold a single extrusion of any shape,
- * so nothing this floor removes was going to print. That is deliberately the weakest claim
- * available about a feature size, and it is why the Detail slider does not scale it: coarseness is
- * a taste control and this is not one. Everything between one nozzle and comfortably printable
- * stays the fractional floor's business.
- */
-const NOZZLE_MM = 0.4;
-
-/**
  * Despeckle floor in working pixels for a design placed at `mmPerPixel`, or 0 where the placement
  * is unknown and the fractional floor is the only one there is.
  *
@@ -90,6 +80,11 @@ const NOZZLE_MM = 0.4;
  * for, but it cannot mean anything in millimetres: the same image auto-fit to the 185mm footrest
  * and to the smallest hubcap's 30mm face gets floors over six times apart in printed size. This is
  * the half that does not move with the picture.
+ *
+ * **Deliberately not scaled by the Detail slider**, unlike the feature floor beside it in
+ * `despeckleFloorPx`. Coarseness is a taste control and one nozzle square is not one: below it a
+ * component cannot hold a single extrusion of any shape, whatever the user asked for. Everything
+ * between one nozzle and comfortably printable is the fractional floor's business.
  */
 export function printableFloorPx(mmPerPixel: number): number {
   if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0) return 0;

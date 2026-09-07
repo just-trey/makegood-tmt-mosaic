@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A design on the chair's Front no longer cuts a phantom mark into the top of
+  the seat back.** A 0.4mm inlay, in surface the cushion covers, on one side of
+  the centre line only.
+
+  The chair's design surfaces are worked out by taking each piece's share of a
+  zone and subtracting what the wheels and cushions hide once it's assembled.
+  That was done fresh every time the app loaded, and the two shapes are traced
+  from the same triangles, so they run along each other for long stretches and
+  the subtraction left slivers all down them. 55 of the chair's 142 pieces of
+  design surface were smaller than the printer's nozzle. One of them is the mark
+  on the seat back.
+
+  The subtraction happens once now, when the part's zones are baked, and
+  anything left under one nozzle across is dropped there. The chair ships none.
+  Your designs are unaffected: the surface they can cut is the same, minus
+  slivers nothing could have printed.
+
+  One thing you may notice: a design with detail genuinely too fine to print now
+  says so, naming the color and the part, instead of going quiet. A recess needs
+  to be about 0.4 mm across to hold a bead.
+
 ### Added
 
 - **The chair body is back in the Part dropdown.** It has been reachable only by
@@ -23,9 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   stays hidden everywhere, which is unchanged.
 
   Read the limitations in the README before printing one. The prime-tower
-  positions are checked on 270mm and 256mm beds only, the caster mounts take no
-  artwork, and "Seat back (top)" takes it on one side of the centre line only
-  with nothing warning about the bare half.
+  positions are checked on 270mm and 256mm beds only, and the caster mounts and
+  Seat center take no artwork.
 
 ### Fixed
 

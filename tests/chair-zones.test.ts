@@ -701,6 +701,81 @@ describe('chart reconstruction', () => {
     expect(folds).toEqual([]);
   });
 
+  // What the cut actually clips to, and the reason it is baked rather than derived on load. The
+  // runtime used to subtract `deadRegions` from `subRegions` itself, and those two are traced from
+  // the SAME triangles: they share long stretches of boundary, and the difference leaves dust
+  // along them. Measured before the bake took the subtraction over: 55 of the chair's 142 live
+  // pieces came back under one nozzle square, worst on `seat-right`/`chair-wheel-mount-right` at
+  // 11 of 23, and one of them cut a visible 0.4mm mark into the seat back.
+  it('bakes a cut region with no piece too small to print', () => {
+    const FLOOR = 0.16; // one 0.4mm nozzle square, as MIN_CUT_PIECE_MM2
+    const dust: string[] = [];
+    let pieces = 0;
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        expect(c.cutRegions, `${z.id}/${c.libraryPartId} has no cutRegions`).toBeDefined();
+        for (const r of c.cutRegions!) {
+          pieces++;
+          const a = Math.abs(planarArea(regionPolygon(r)));
+          if (a < FLOOR) dust.push(`${z.id}/${c.libraryPartId}: ${a.toFixed(4)}mm²`);
+        }
+      }
+    expect(pieces, 'no cut pieces at all').toBeGreaterThan(50);
+    expect(dust).toEqual([]);
+  });
+
+  // The guard that would have caught a stale bake. With nothing to subtract there is nothing to
+  // do, so `subtractRegions` hands the claim straight back and these two must be identical — not
+  // close, identical. 14 of the chair's 26 charts have no dead region, and all 14 differed in a
+  // sidecar baked before that no-covers path existed.
+  it('leaves a chart with nothing hidden byte-identical to its claim', () => {
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        if (c.deadRegions?.length) continue;
+        expect(c.cutRegions, `${z.id}/${c.libraryPartId}`).toEqual(c.subRegions);
+      }
+  });
+
+  // It must also still BE the claim less the hidden surface. A filter that ate real surface would
+  // pass the test above by emptying everything.
+  //
+  // Checked against turf's own difference rather than against `claim − dead` summed, which is a
+  // bad reference: two dead regions overlapping, or one reaching past the claim, make that
+  // arithmetic subtract the same surface twice — 24.7% out on `seat-left`/`chair-storage-left`.
+  // turf is also a different engine from the Manifold CrossSection the bake subtracts with, so
+  // agreement between them is a real cross-check rather than the bake grading itself.
+  it("bakes the cut region as the claim less what's hidden", () => {
+    const area = (rs: { outer: number[][]; holes: number[][][] }[]): number =>
+      rs.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
+    const close = (r: number[][]): number[][] =>
+      r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r : [...r, r[0]];
+    const multi = (rs: { outer: number[][]; holes: number[][][] }[]): PolyFeature =>
+      turf.multiPolygon(rs.map((r) => [close(r.outer), ...r.holes.map(close)])) as PolyFeature;
+
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        const where = `${z.id}/${c.libraryPartId}`;
+        const dead = c.deadRegions ?? [];
+        const ref = dead.length
+          ? (turf.difference(multi(c.subRegions), multi(dead)) as PolyFeature | null)
+          : multi(c.subRegions);
+        const want = ref ? Math.abs(planarArea(ref)) : 0;
+        const got = area(c.cutRegions!);
+        // An ABSOLUTE bound, deliberately. What separates the two engines is the handful of
+        // sub-nozzle pieces the bake drops, and that is an absolute quantity: it does not grow
+        // with the region. Measured across all 26 charts of the shipped bake, the worst gap is
+        // 0.68mm² on `seat-right`/`chair-wheel-mount-right`, and the worst in relative terms is
+        // 2.2% only because that region is 6.5mm² and the gap 0.14mm², under one nozzle square.
+        //
+        // 2mm² is three times the worst and still catches a real island going: an earlier version
+        // allowed 0.1% of the region, which on the 35,313mm² left fender would have hidden a 35mm²
+        // loss. It was also calibrated against a stale bake — the sidecar had not been re-baked
+        // since `subtractRegions` gained its no-covers path, and the 3.8mm² it was sized for was
+        // that drift, not the filter.
+        expect(Math.abs(got - want), `${where}: cut region disagrees with turf`).toBeLessThan(2);
+      }
+  });
+
   // The area check above is necessary but NOT sufficient for a partition: two parts overlapping by
   // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total. Overlap
   // is the half that actually corrupts output — where two parts both claim a patch of UV, the same
@@ -983,12 +1058,30 @@ describe('hidden surface (deadRegions)', () => {
       }
   });
 
-  it('a chart without the field means nothing is hidden, not an error', () => {
+  // A baked EMPTY list is a real answer — the bake found nothing cuttable on that chart — and
+  // must not read as "no field, derive it yourself". Deriving it back would reinstate the dust
+  // the bake exists to drop, on the one chart most likely to be all dust.
+  it('reads an empty baked cut region as admitting nothing, not as absent', () => {
+    const z = sidecar.zones.find((zz) => zz.id === 'seat-left')!;
+    const c = z.charts.find((ch) => ch.libraryPartId === 'chair-wheel-mount-left')!;
+    const m = partMesh.get(c.libraryPartId)!;
+    const mapper = new ConformalZoneMapper(
+      null,
+      reconstructChart(z, { ...c, cutRegions: [] }, m.vertices),
+    );
+    expect(planarArea(mapper.boundary())).toBe(0);
+  });
+
+  // Both fields, because the bake now carries the subtraction in `cutRegions` and `boundary()`
+  // prefers it. Stripping only `deadRegions` leaves the cut region standing and tests nothing; the
+  // fallback this pins is for a hand-built chart that has neither.
+  it('a chart with neither field means nothing is hidden, not an error', () => {
     const z = sidecar.zones.find((zz) => zz.id === 'seat-left')!;
     const c = z.charts.find((ch) => ch.libraryPartId === 'chair-wheel-mount-left')!;
     const m = partMesh.get(c.libraryPartId)!;
     const stripped = { ...c };
     delete stripped.deadRegions;
+    delete stripped.cutRegions;
     const mapper = new ConformalZoneMapper(null, reconstructChart(z, stripped, m.vertices));
     expect(mapper.deadArea()).toBeNull();
     const claim = c.subRegions.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);

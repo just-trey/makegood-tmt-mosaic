@@ -69,8 +69,14 @@ const pass = (msg) => console.log(`  ok   ${msg}`);
 const sidecar = JSON.parse(
   readFileSync(path.join(REPO, 'public/stl/chair-body-zones.json'), 'utf8'),
 );
-if (sidecar.schema !== 5)
-  throw new Error(`this check reads schema 5; the shipped sidecar is schema ${sidecar.schema}`);
+// A literal rather than importing SIDECAR_SCHEMA, so this script keeps running under plain `node`
+// — importing the TS module forces `npx vite-node` on it. Bump it with the constant in
+// src/geometry/zoneCharts.ts; it went 5 to 6 when `cutRegions` landed.
+const READS_SCHEMA = 6;
+if (sidecar.schema !== READS_SCHEMA)
+  throw new Error(
+    `this check reads schema ${READS_SCHEMA}; the shipped sidecar is schema ${sidecar.schema}`,
+  );
 const NET = sidecar.net;
 if (!NET) throw new Error('the shipped chair sidecar has no net — nothing to check');
 const NET_CENTRE = [

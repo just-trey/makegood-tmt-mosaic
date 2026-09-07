@@ -40,6 +40,8 @@ Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair:
 | ---------------------------------------- | -------- | --------------------------------------------------------------------------- |
 | `main` (fenders only, 2026-08-16)        | 3        | a0-front "too few bare-body samples", wing-left/right no ink                |
 | dead zones, hemisphere bake (2026-08-30) | 5        | 4 x "picked a zone on bare body" (36/31/1/25 samples) + an orbit-drag throw |
+| whole-chair zones (2026-09-07)           | 6        | the four above, plus one on the `*whole` zone, plus the throw               |
+| baked `cutRegions` (2026-09-07)          | 2        | a0-front (48 samples) + the throw — the rest were landing on bake dust      |
 
 - The pick itself is right: the zone is there, and the hatch overlay says why
   artwork will not appear. Only the check's model is stale.
@@ -731,9 +733,22 @@ the same UV` test in `tests/chair-zones.test.ts` walks all of them and holds
 them under 0.05% of zone area; on the shipped bake it finds 20 overlapping part
 pairs, all seam-sharing, worst 29.85 mm² on `right`, a 124,747 mm² zone (a
 ~0.15 mm ribbon).
-Fix: drop a clip remnant under an area floor _before_ `buildCutter` rather
-than attempting it and warning. Pick the floor above the measured ribbon and
-well under anything printable.
+Fix: drop a clip remnant _before_ `buildCutter` rather than attempting it and
+warning.
+
+**Half of that landed and does not reach this.** `dropUnprintableRemnants`
+(`src/geometry/regions.ts`) now runs after the per-part clip, the seam clip and
+the mirror clip, and drops a piece under `CLIP_REMNANT_FLOOR_MM2`, one nozzle
+square, naming what it took. That is 0.16 mm², chosen for a 0.025 mm² hairline.
+**This ribbon is 29.85 mm²**, two orders of magnitude above it, so it still
+reaches `buildCutter`.
+
+Raising the floor to clear the ribbon is not the answer: 29.85 mm² is a
+printable _area_, and what makes the ribbon unprintable is its 0.15 mm _width_.
+Closing this needs a min-width test — a morphological opening at one nozzle,
+the shape `narrowFeatureArea` in `src/geometry/hubcapOutline.ts` already uses —
+applied per piece. What has been missing is a reason to spend it, which is the
+next paragraph.
 
 This bullet used to cite the 2026-07-28 "Seat back (bottom)" warnings as a
 confirmed sighting. Instrumenting the running app on 2026-07-31 showed that
@@ -1293,19 +1308,37 @@ warning for it.
 to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
 scheduled.
 
-## `Seat back (top)` takes ink on one side of the centre line only, Mirror on or off
+## The bake's cut regions are clean; the seam ribbon still is not
 
-Measured 2026-09-04 on `f97035a` by `npm run build && MOSAIC_GPU=1 npm run check:mirror-design`
-(the `front-mirror-off-control.3mf` export it keeps): with the sample badge on the Front at
-offset 0 and Mirror off, `Seat back (top)` carries one inlay at x −39.6..−39.2, y 381.4..387.9,
-z −471.3..−470.0 and nothing at +x, while `Seat back (bottom)` cuts both halves. Mirror on gives
-the same one-sided result, so this is the Front zone's coverage of that part, not the mirror.
+Closing the "`Seat back (top)` takes ink on one side" report found the cause one
+layer up from where that report looked, and it turned out not to be one hairline
+but dust everywhere.
 
-- No warning names the missing +x side. The "only reaches surface that's hidden" warning fires
-  for a colour, not for a half of one part.
-- Not diagnosed: whether the +x half is inside the cushion's dead region (then correct and only
-  the silence is wrong), or the chart's `subRegions` for that part stop short of it.
-- Closing it: dump the Front zone's `subRegions` and `deadRegions` for `chair-seat-back-top`
-  (`public/stl/chair-body-zones.json`), compare the +x and −x claims, then either fix the bake
-  or add a per-part notice. The live check keeps that export as the control for which sides can
-  take ink, so it stays green either way.
+The runtime used to derive a part's clip region on every load, subtracting
+`deadRegions` from `subRegions`. Those two are traced from the SAME triangles,
+so they share long stretches of boundary and the difference leaves slivers along
+them. **55 of the chair's 142 live pieces came back under one nozzle square**,
+worst on `seat-right`/`chair-wheel-mount-right` at 11 of 23, and one of them —
+0.0253mm², 0.020mm wide, 8.08mm long on `chair-seat-back-top`'s Front chart —
+cut a visible 0.4mm mark into surface the cushion covers.
+
+The subtraction is baked now, as `cutRegions`, done once and cleaned once at
+`MIN_CUT_PIECE_MM2`. The chair ships **0 sub-floor pieces of 87**, and the
+baked result agrees with an independent turf difference to within 0.68mm² on
+the worst of its 26 charts.
+
+- Sidecar schema 6. A stale sidecar is refused rather than silently read.
+- `CLIP_REMNANT_FLOOR_MM2` still runs at each of the three clips as a backstop,
+  naming what it drops. With the bake clean it fires on a genuinely too-small
+  design and not on ordinary ones.
+- **A side effect worth knowing**: `npm run check:zone-occlusion` went from 6
+  failures to 2. Most of its "picked a zone on bare body" samples were landing
+  on the dust.
+
+**What is still open is the seam ribbon**, in "A seam sliver warns as if artwork
+were lost" above. That one is 29.85mm², two orders of magnitude over both
+floors, and unprintable by its 0.15mm WIDTH rather than its area. Neither the
+bake filter nor the cut floor reaches it, and raising either would start eating
+printable regions. It needs a min-width test — a morphological opening at one
+nozzle, the shape `narrowFeatureArea` in
+[src/geometry/hubcapOutline.ts](../src/geometry/hubcapOutline.ts) already uses.

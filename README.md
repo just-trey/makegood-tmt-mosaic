@@ -143,11 +143,6 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - Three of the chair's thirteen pieces can't carry artwork, because no design
   zone reaches them: the two caster mounts, and Seat center, which the cushion
   covers whole.
-- On the chair, "Seat back (top)" takes artwork on one side of the centre line
-  only, whether Mirror is on or off. Nothing warns about the bare half. It's the
-  Front zone's coverage of that piece, not the mirror, and it's the one place a
-  design lands on less of a part than it looks like it should. See
-  [docs/tech-debt.md](docs/tech-debt.md).
 - The chair's prime-tower positions are verified on 270mm and 256mm beds only
   (Snapmaker and Bambu A1). Any other bed inherits the 270mm positions untested
   — check the tower in your slicer. See [docs/tech-debt.md](docs/tech-debt.md).

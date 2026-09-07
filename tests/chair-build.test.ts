@@ -533,6 +533,76 @@ describe('per-zone artwork binding', () => {
   }, 180000);
 });
 
+// The seat back's phantom mark, from the bake's side. `chair-seat-back-top`'s Front clip used to
+// come back as TWO pieces: the 2,634.33mm² band at the top of the part and a 0.0253mm² hairline
+// 0.020mm wide and 8.08mm long, where the cushion's dead region failed to cover the claim exactly.
+// The hairline cut a 0.4mm mark into surface the cushion covers, which check-mirror-design reported
+// as the part taking ink on one side of its centre line only.
+//
+// The bake subtracts the dead region once and cleans the result now (`cutRegions`), so there is no
+// hairline left to reach the cut. A design placed where it was lands on hidden surface and says so.
+describe('the seat back hairline', () => {
+  const ZONE = 'front';
+  const PART = 'chair-seat-back-top';
+  // Where the hairline was, and big enough that all 8mm of it would be inside the square. Every
+  // other millimetre of the square is under the cushion.
+  const HAIRLINE_OFF_X = -39.42;
+  const HAIRLINE_OFF_Z = -9.64;
+
+  async function frontPart(): Promise<AssemblyPart> {
+    const mesh = await loadPacked(PART);
+    return chairPart(
+      PART,
+      mesh,
+      zonesFor(PART, mesh).filter((z) => z.id === ZONE),
+    );
+  }
+
+  it('is gone, so a design there cuts nothing and is told why', async () => {
+    clearWarnings();
+    const part = await frontPart();
+    const build = await buildAssemblyGeometry(
+      chairInput([part], 12, [
+        { zoneId: ZONE, sizeMM: 12, offX: HAIRLINE_OFF_X, offZ: HAIRLINE_OFF_Z },
+      ]),
+    );
+    expect(build, 'build returned null').not.toBeNull();
+    const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
+    expect(Object.keys(out.inlaySoups), 'an inlay was built where the hairline was').toEqual([]);
+    // The no-cutter path copies part.positions verbatim, so an identical soup is the whole claim.
+    expect(out.bodySoup.length).toBe(part.positions!.length);
+    // And the RIGHT message: it landed on surface the cushion hides, not on ink too small to
+    // print. Those have opposite remedies.
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(
+      expect.stringContaining("only reaches surface that's hidden once assembled"),
+    );
+  }, 180000);
+
+  it('leaves the real band cutting, with nothing down where the hairline was', async () => {
+    clearWarnings();
+    const part = await frontPart();
+    const zone = sidecar.zones.find((z) => z.id === ZONE)!;
+    // Covers the whole chart: the band at v 270..327 and where the hairline sat at v 149.8..157.8.
+    const build = await buildAssemblyGeometry(
+      chairInput([part], 200, [
+        {
+          zoneId: ZONE,
+          sizeMM: 200,
+          offX: 109.8 - zone.uvBounds.maxU / 2,
+          offZ: 238 - zone.uvBounds.maxV / 2,
+        },
+      ]),
+    );
+    const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
+    expect(Object.keys(out.inlaySoups).length, 'the band cut nothing').toBeGreaterThan(0);
+    // The band is at y 525.3..556.3 on the chair; the hairline sat at y 380.0..387.9.
+    const soup = out.inlaySoups[Number(Object.keys(out.inlaySoups)[0])];
+    let minY = Infinity;
+    for (let i = 1; i < soup.length; i += 3) minY = Math.min(minY, soup[i]);
+    expect(minY, 'an inlay reached where the hairline was').toBeGreaterThan(400);
+  }, 180000);
+});
+
 describe('a design that lands only on hidden surface', () => {
   // A seat side is the zone where this is reachable by accident: 80% of it is under the cushion.
   const ZONE = 'seat-left';

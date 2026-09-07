@@ -1137,7 +1137,11 @@ describe('fill mode', () => {
   );
 
   it(
-    'refuses an unreasonable tile count, warns, and places a single copy',
+    // The single copy it falls back to is a 0.2mm square: 0.04mm², a quarter of one nozzle square,
+    // and it used to be cut. It sliced to nothing and still cost an AMS slot, which is the same
+    // argument MIN_CUT_DEPTH_MM makes about a 0.02mm depth. CLIP_REMNANT_FLOOR_MM2 drops it now,
+    // and the build says so rather than letting the colour disappear.
+    'refuses an unreasonable tile count, warns, and says the one copy is too small to print',
     { timeout: 60000 },
     async () => {
       clearWarnings();
@@ -1145,8 +1149,18 @@ describe('fill mode', () => {
         baseInput({ parsed: tileParsed(), mode: 'fill', scaleMult: 0.05 }),
       ))!;
       expect(WARNINGS.some((w) => /more than \d+ tiles/.test(w.message))).toBe(true);
-      const r = xzRange(built.partOutputs[0].inlaySoups[0]);
-      expect(r.maxX - r.minX).toBeCloseTo(0.2, 3); // the lone 4mm square at 5%
+      expect(built.partOutputs[0].inlaySoups[0]).toBeUndefined();
+      expect(
+        WARNINGS.some((w) => /too fine to print/.test(w.message)),
+        `no speck notice; warnings were ${JSON.stringify(WARNINGS.map((w) => w.message))}`,
+      ).toBe(true);
+      // And NOT the off-the-part message, whose remedy is to lower Scale. The colour reached the
+      // face perfectly well; what it left there could not print, and telling someone to shrink a
+      // design that is already too small sends them the wrong way.
+      expect(
+        WARNINGS.map((w) => w.message),
+        'a too-small design was reported as landing off the part',
+      ).not.toContainEqual(expect.stringContaining('lands entirely off the part'));
     },
   );
 

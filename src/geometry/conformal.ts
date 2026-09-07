@@ -101,6 +101,12 @@ export interface ConformalChart {
    */
   subRegions?: { outer: number[][]; holes: number[][][] }[];
   /**
+   * What this part may actually cut: `subRegions` less `deadRegions`, baked, with pieces under one
+   * nozzle square removed. Absent on a hand-built chart, where `boundary()` falls back to doing the
+   * subtraction itself.
+   */
+  cutRegions?: { outer: number[][]; holes: number[][][] }[];
+  /**
    * Surface of this chart another part hides once assembled, already shrunk by the bake's bleed.
    * Subtracted from `boundary()` so hidden surface spends no filament changes, and exposed via
    * `deadArea()` for the viewport shading. Absent and empty both mean "nothing is hidden".
@@ -472,6 +478,28 @@ export class ConformalZoneMapper implements ZoneMapper {
   boundary(): PolyFeature | null {
     if (this.boundaryComputed) return this.boundaryPoly;
     this.boundaryComputed = true;
+    // The baked clip: this part's claim already less the covers' dead surface, cleaned of pieces
+    // too small to print. Preferred over doing that subtraction here because the two sets are
+    // traced from the same triangles and share long stretches of boundary, so the difference
+    // leaves dust along them — 55 of the chair's 142 pieces, before the bake started cleaning it.
+    // Presence, not length. A baked EMPTY list is a chart the bake found nothing cuttable on, and
+    // falling back to deriving it here would reinstate exactly the dust the bake exists to drop.
+    // Absent means a hand-built chart, which is the only case the derivation is still for.
+    const cut = this.chart.cutRegions;
+    if (cut) {
+      if (!cut.length) {
+        this.boundaryPoly = turf.multiPolygon([]) as PolyFeature;
+        return this.boundaryPoly;
+      }
+      try {
+        this.boundaryPoly = turf.multiPolygon(
+          cut.map((r) => [closeRing(r.outer), ...r.holes.map(closeRing)]),
+        ) as PolyFeature;
+      } catch {
+        this.boundaryPoly = null;
+      }
+      return this.boundaryPoly;
+    }
     const sub = this.chart.subRegions;
     try {
       this.boundaryPoly = sub?.length

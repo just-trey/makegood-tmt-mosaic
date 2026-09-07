@@ -5,6 +5,7 @@ import {
   addPartTooDeepClamp,
   addZeroDepthRaise,
   depthDiffers,
+  CLIP_REMNANT_FLOOR_MM2,
   edgeCutThroughNotice,
   regionLabel,
   requestedDepth,
@@ -30,6 +31,7 @@ import {
   applyColorMerges,
   computeNetRegionsByColor,
   intersectQuiet,
+  dropUnprintableRemnants,
   planarArea,
   cleanFeature,
   differenceChecked,
@@ -641,6 +643,29 @@ function featureBBox(f: PolyFeature): number[] {
   return b;
 }
 
+/**
+ * Names detail too fine to print, so it is never dropped in silence. Per colour and part, which is
+ * the pair the user can act on.
+ *
+ * **Says nothing about what made it small, how much went, or what survived.** Three clips can each
+ * drop something and a design can arrive that size already, so a message about the cause would be
+ * wrong for at least one of them. And the key below dedupes across all three, first push winning,
+ * so any claim about the remainder could be left standing by a later clip that removes the rest —
+ * which is what an earlier two-form version of this did.
+ *
+ * A notice rather than a warning: nothing printable went. One nozzle square is the floor, and a
+ * region under it cannot hold a single bead of any shape.
+ */
+export function unprintableSpeckNotice(label: string, partName: string): string {
+  return (
+    `"${label}" has detail on "${partName}" too fine to print, so it wasn't cut. A recess needs ` +
+    `to be about 0.4 mm across to hold a bead.`
+  );
+}
+
+/** One pill per colour and part, however many of the three clips leave a speck. See Notice.key. */
+const speckKey = (ci: number, partId: number): string => `speck:${ci}:${partId}`;
+
 /** Rule 1 for the net clip: where the part of a whole-part design this zone gave up is cut. */
 export function netShareNotice(design: string, zone: string, toNames: string[]): string {
   const where =
@@ -745,8 +770,12 @@ export function mirrorClipFailedWarning(design: string, zone: string): string {
  * correctly not ink. Slots never overlap each other within one design (net regions are cut apart
  * before they are pooled), so their areas add without double counting.
  *
- * Clipped to the design's kept half exactly as the cutter is, so a mirrored design's two halves
- * are compared on the ink that actually cuts.
+ * Clipped to the design's kept half and its net share exactly as the cutter is, and put through
+ * the same speck floor, so two designs are compared on the ink that actually cuts. Without the
+ * floor the check could name an overlap on a sliver the build then drops.
+ *
+ * Not the per-part boundary clip, which is the one difference: this runs once per design rather
+ * than once per part, and there is no part here to take a boundary from.
  */
 function placedInk(
   featuresByColor: (PolyFeature | null)[][],
@@ -761,7 +790,8 @@ function placedInk(
     if (!f) continue;
     const placed = mapFeatureCoords(f, place);
     const half0 = half ? clipToKeptSide(placed, half).feat : placed;
-    const kept = half0 && netExcl.length ? clipToNetShare(half0, netExcl).feat : half0;
+    const share = half0 && netExcl.length ? clipToNetShare(half0, netExcl).feat : half0;
+    const kept = dropUnprintableRemnants(share, CLIP_REMNANT_FLOOR_MM2).feat;
     if (!kept) continue;
     for (const rings of polysOf(kept))
       out.push(
@@ -1175,6 +1205,34 @@ export async function buildAssemblyGeometry(
     if (!placed || !dead) return;
     if (intersectQuiet(placed, dead)) hiddenColors.add(ci);
   };
+
+  /**
+   * Drop the pieces of a clipped region too small to print, say so once per colour and part
+   * however many of the three clips leave one, and record that the colour did reach this face.
+   *
+   * All three together on purpose: an earlier version did the drop at three sites and the landed
+   * mark at one, which left a colour collecting both the speck notice and "lands entirely off the
+   * part" — whose remedy is to lower Scale, backwards for a design already too small.
+   */
+  const dropSpecks = (
+    feat: PolyFeature | null,
+    ci: number,
+    part: AssemblyPart,
+    c: { hex: string; isMerge: boolean; members: unknown[] },
+  ): PolyFeature | null => {
+    const r = dropUnprintableRemnants(feat, CLIP_REMNANT_FLOOR_MM2);
+    if (!r.dropped) return r.feat;
+    noticeBuild(
+      unprintableSpeckNotice(regionLabel(c.hex, c.isMerge, c.members.length), part.name),
+      speckKey(ci, part.id),
+    );
+    // The color DID reach this face; what it left could not print. Recording that here, in the one
+    // place the drop happens, is what keeps it out of the "lands entirely off the part" bucket at
+    // every clip rather than only the first — whose remedy is to lower Scale, backwards for a
+    // design already too small. An earlier version set it at one of the three sites.
+    landedColors.add(ci);
+    return r.feat;
+  };
   let anyPlacements = false;
   let viewSign = 1,
     viewSignSet = false; // Y direction of the first real part's design face
@@ -1261,10 +1319,17 @@ export async function buildAssemblyGeometry(
           const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
           feat = r.feat;
           clipped = r.clipped;
+          // Before the speck floor, not after: a clip that returns nothing at all is the colour
+          // landing on hidden surface, and that has its own message with its own remedy. Dropping
+          // specks first would report it as ink too small to print, which is a different thing.
           if (!feat) {
             noteHiddenSurface(mapper, placed, ci);
             return;
           }
+          // The dead region on a chart is baked to share that chart's own outline, which is where
+          // this clip leaves a hairline rather than nothing. See dropUnprintableRemnants.
+          feat = dropSpecks(feat, ci, part, c);
+          if (!feat) return;
           // Only a real clip proves the color reached this face. A cut-through zone has no clip
           // boundary (its boolean against the mesh is what bounds the cut), so there a color counts
           // as landed only when that boolean yields an inlay, in the intersection loop below.
@@ -1279,7 +1344,8 @@ export async function buildAssemblyGeometry(
           if (r.failed) warnBuild(mirrorClipFailedWarning(design, half.zoneName));
           else if (r.removed && !artworks[ai].reflected)
             noticeBuild(mirrorHalfNotice(design, half.zoneName, half.side));
-          feat = r.feat;
+          // Same boundaries, same failure: the kept-side clip runs along the zone's own centre line.
+          feat = dropSpecks(r.feat, ci, part, c);
           if (!feat) return;
         }
         // A whole-part design is cut where the net says this zone owns the canvas, and nowhere
@@ -1305,7 +1371,9 @@ export async function buildAssemblyGeometry(
           // One pill per boundary however many zones, colors and directions reach it.
           for (const t of r.torn)
             raiseTornWarning(tornPills, design, [zoneName, t.toName], t.tearMm);
-          feat = r.feat;
+          // The net partition is cut from the same charts, so its patch boundaries coincide with
+          // this zone's claim in exactly the way that leaves a hairline.
+          feat = dropSpecks(r.feat, ci, part, c);
           if (!feat) return;
         }
         const requested = requestedDepth(colorSettings, globalDepth, c.key);

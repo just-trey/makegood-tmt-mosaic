@@ -243,6 +243,35 @@ piece. See [tech-debt.md](tech-debt.md).
 The message clears itself when you're back somewhere Fill works, but the mode
 does not come back with it. Set it again from the row's Sticker/Fill control.
 
+## Troubleshooting: "… has detail on "…" too fine to print"
+
+Full text: _"\"…\" has detail on \"…\" too fine to print, so it wasn't cut. A
+recess needs to be about 0.4 mm across to hold a bead."_
+
+**What it means.** Something in that color on that part is smaller than the
+printer's nozzle. Nothing that small can hold a single bead, so it is dropped
+instead of cut, and this names the color and the part so nothing goes in
+silence. One pill per color and part, however many scraps went.
+
+Two things make them. Your design can simply be that fine. Or trimming can leave
+a scrap: a design is trimmed to the part it sits on, to the piece of it a seam
+gives that part, and to one half when Mirror is on. The message doesn't guess
+which, and doesn't say how much went or what survived, because the fix is the
+same either way and because several trims can each drop something.
+
+**What you get.** Everything else in that color is cut normally. Only the
+scraps go.
+
+**What to do.** Usually nothing. Two cases are worth a look:
+
+- **A design far smaller than the part.** A design scaled down past about
+  0.4 mm has nothing left to cut. Raise Scale.
+- **A design running off the edge of a piece.** The part of it that hangs over
+  is trimmed away, and what is left along the edge can be a hair. Move it in,
+  or scale it down so it sits inside the piece.
+
+If the color vanished from the part entirely, the build says that separately.
+
 ## Troubleshooting: "Couldn't load the design zones for "…"…"
 
 Full text: _"Couldn't load the design zones for "…" (…: …). It will load

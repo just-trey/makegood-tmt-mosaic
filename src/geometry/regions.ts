@@ -297,6 +297,43 @@ function fromGeom(polys: Geom): PolyFeature | null {
   return { type: 'Feature', properties: {}, geometry: geom } as PolyFeature;
 }
 
+/**
+ * Drop the pieces of a clipped region too small to print, and say how many went.
+ *
+ * Where a clip boundary runs ALONG an edge of what it is clipping — a baked dead region sharing
+ * its chart's own outline, a part's claim meeting its neighbour's at a seam — the intersect hands
+ * back a hairline instead of dropping it, and a hairline still extrudes into a real inlay. The
+ * chair shipped one: 0.0253mm², 0.020mm wide and 8.08mm long on `chair-seat-back-top`'s Front
+ * chart, which cut a 0.4mm mark into surface the cushion covers.
+ *
+ * **Per piece, because a hairline usually arrives beside a real region rather than alone.** On that
+ * chart the clip returns the 2,634mm² band AND the hairline; a floor on the feature's total keeps
+ * both.
+ *
+ * **Nothing here asks whether the clip is what made a piece small**, and two rounds of trying said
+ * that is not answerable from a boolean's output. The clipper fuses touching input polygons, so a
+ * fused output piece matches no single source and reads as shrunk: verified end to end, two
+ * abutting 0.3 x 0.2mm dots wholly inside the boundary came back as nothing. Coordinates move too
+ * whenever `boolOpWithRetry` takes its catch, which truncates at 1e-10 and then 1e-8 and 1e-6.
+ * The floor is applied flat instead, and the caller reports what went — the honest trade, since a
+ * piece this size was never going to print whoever made it small, and the user is told rather than
+ * left to find out.
+ *
+ * The floor is an area, so it admits a long enough hairline and refuses a round dot one nozzle
+ * across. The seam ribbon in docs/tech-debt.md is the case that needs the other measure: closing
+ * those means a real min-width test, and there is no measurement here to choose the width from.
+ */
+export function dropUnprintableRemnants(
+  feat: PolyFeature | null,
+  floorMM2: number,
+): { feat: PolyFeature | null; dropped: number } {
+  if (!feat) return { feat, dropped: 0 };
+  const polys = toGeom(feat);
+  const kept = polys.filter((rings) => planarArea(fromGeom([rings])) >= floorMM2);
+  if (kept.length === polys.length) return { feat, dropped: 0 };
+  return { feat: fromGeom(kept), dropped: polys.length - kept.length };
+}
+
 function truncGeom(polys: Geom, precision: number): Geom {
   const f = Math.pow(10, precision);
   return polys.map((p) =>
