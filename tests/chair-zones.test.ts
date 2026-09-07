@@ -80,6 +80,9 @@ beforeAll(async () => {
 const closed = (loop: number[][]): number[][] => [...loop, loop[0]];
 const regionPolygon = (r: { outer: number[][]; holes: number[][][] }): PolyFeature =>
   turf.polygon([closed(r.outer), ...r.holes.map(closed)]) as PolyFeature;
+/** Several `{ outer, holes }` regions as one feature, for intersecting two parts' whole claims. */
+const regionsPolygon = (rs: { outer: number[][]; holes: number[][][] }[]): PolyFeature =>
+  turf.multiPolygon(rs.map((r) => [closed(r.outer), ...r.holes.map(closed)])) as PolyFeature;
 
 describe('chair zone sidecar', () => {
   it('is the chair-body sidecar with the eight shipped zones', () => {
@@ -777,9 +780,56 @@ describe('chart reconstruction', () => {
   });
 
   // The area check above is necessary but NOT sufficient for a partition: two parts overlapping by
-  // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total. Overlap
-  // is the half that actually corrupts output — where two parts both claim a patch of UV, the same
-  // artwork is cut into both, so the design appears twice at the seam on the printed chair.
+  // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total.
+  //
+  // **What the overlap is NOT is output corruption**, which this comment used to say it was.
+  // Measured 2026-09-07 (docs/findings/2026-09-07-seam-ribbon-closed.md): for all 17 overlapping
+  // pairs, the two parts' cutters from the same UV strip land 0.679 to 0.916mm apart, which is the
+  // printed seam clearance. The strip maps to surface on one part and surface on the other, either
+  // side of the join, not twice into one place — a mark there spans the seam, which is what a mark
+  // crossing a printed join should do.
+  //
+  // What this still guards is a claim that CREPT: an overlap between two parts that do not meet on
+  // the chair means a boundary ran somewhere it was not traced from, and the seam-sharing check
+  // below is the half that catches it.
+  // Pins what closed "A seam sliver warns as if artwork were lost": every overlap the chair has
+  // extrudes. That section claimed a seam remnant yields no cutter and so raises `Couldn't cut
+  // color … into …`, and two hunts for a sighting failed because there is none. Measured over all
+  // 17 pairs at four cut depths, 0 of 68 attempts failed; buildCutter only returns null below
+  // about 5 microns of width, and the thinnest overlap here that clears CLIP_REMNANT_FLOOR_MM2 is
+  // 0.274mm. Kept as a test rather than a note because it is the claim, not the reasoning, that
+  // has to stay true.
+  it('builds a valid cutter from every seam overlap', async () => {
+    const wasm = await getManifold();
+    const failed: string[] = [];
+    for (const z of sidecar.zones) {
+      const cs = z.charts.filter((c) => (c.cutRegions ?? []).length);
+      for (let i = 0; i < cs.length; i++)
+        for (let j = i + 1; j < cs.length; j++) {
+          let hit: PolyFeature | null = null;
+          try {
+            hit = turf.intersect(
+              regionsPolygon(cs[i].cutRegions!),
+              regionsPolygon(cs[j].cutRegions!),
+            ) as PolyFeature | null;
+          } catch {
+            continue;
+          }
+          if (!hit || Math.abs(planarArea(hit)) <= 0) continue;
+          const m = partMesh.get(cs[i].libraryPartId)!;
+          const mapper = new ConformalZoneMapper(wasm, reconstructChart(z, cs[i], m.vertices));
+          const soup = mapper.buildCutter(hit, 1, 0.5, {});
+          const where = `${z.id} ${cs[i].libraryPartId}/${cs[j].libraryPartId}`;
+          if (!soup || !soup.length) {
+            failed.push(`${where}: no cutter`);
+            continue;
+          }
+          if (!manifoldIsValid(soupToManifold(wasm, soup))) failed.push(`${where}: invalid solid`);
+        }
+    }
+    expect(failed).toEqual([]);
+  }, 120000);
+
   it('gives no two parts of a zone an overlapping claim on the same UV', () => {
     const overlaps: {
       where: string;

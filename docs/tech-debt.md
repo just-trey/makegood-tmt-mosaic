@@ -719,53 +719,6 @@ scale before the one just typed.
   debounce and the cancel path the Colors and Detail sliders already have, or a notice that says
   the design was traced for a different size.
 
-## A seam sliver warns as if artwork were lost
-
-Where two parts' claims on
-a zone overlap, clipping a color to one part's `subRegions` can leave a
-remnant a fraction of a millimetre wide. It survives the turf clip, then
-yields no cutter, and
-[src/geometry/assembly.ts](../src/geometry/assembly.ts) reports "Couldn't cut
-color … into …. It won't print there." — alarming, and indistinguishable from
-the real failure it shares a message with. The overlaps are inherent to per-part
-clipping and small — the `gives no two parts of a zone an overlapping claim on
-the same UV` test in `tests/chair-zones.test.ts` walks all of them and holds
-them under 0.05% of zone area; on the shipped bake it finds 20 overlapping part
-pairs, all seam-sharing, worst 29.85 mm² on `right`, a 124,747 mm² zone (a
-~0.15 mm ribbon).
-Fix: drop a clip remnant _before_ `buildCutter` rather than attempting it and
-warning.
-
-**Half of that landed and does not reach this.** `dropUnprintableRemnants`
-(`src/geometry/regions.ts`) now runs after the per-part clip, the seam clip and
-the mirror clip, and drops a piece under `CLIP_REMNANT_FLOOR_MM2`, one nozzle
-square, naming what it took. That is 0.16 mm², chosen for a 0.025 mm² hairline.
-**This ribbon is 29.85 mm²**, two orders of magnitude above it, so it still
-reaches `buildCutter`.
-
-Raising the floor to clear the ribbon is not the answer: 29.85 mm² is a
-printable _area_, and what makes the ribbon unprintable is its 0.15 mm _width_.
-Closing this needs a min-width test — a morphological opening at one nozzle,
-the shape `narrowFeatureArea` in `src/geometry/hubcapOutline.ts` already uses —
-applied per piece. What has been missing is a reason to spend it, which is the
-next paragraph.
-
-This bullet used to cite the 2026-07-28 "Seat back (bottom)" warnings as a
-confirmed sighting. Instrumenting the running app on 2026-07-31 showed that
-those had a different cause — cutter vertices landing outside the snap
-tolerance, since fixed — and that they looked permanent only because warnings
-were never cleared per rebuild, also since fixed. So the seam remnant is still
-real geometry and still reaches `buildCutter`, but **no warning has actually
-been traced to it**. Confirm one before spending the fix on it.
-
-A deliberate hunt on 2026-08-08 failed to produce a sighting —
-[docs/findings/seam-sliver-sighting.md](findings/seam-sliver-sighting.md), 18
-checkerboard configurations across three cell densities, two scales and
-sub-millimetre offsets, then a finer rotated pass recording triangle and color
-counts so "no warnings" is a statement about a build that demonstrably ran. Zero
-cut-solid warnings throughout. That is not proof the remnant can't warn, but it
-is the cheap attempts already spent — read it before repeating them.
-
 ## A Fill under a sticker overlaps just like two stickers do, and isn't checked
 
 The overlap check in
@@ -1335,10 +1288,12 @@ the worst of its 26 charts.
   failures to 2. Most of its "picked a zone on bare body" samples were landing
   on the dust.
 
-**What is still open is the seam ribbon**, in "A seam sliver warns as if artwork
-were lost" above. That one is 29.85mm², two orders of magnitude over both
-floors, and unprintable by its 0.15mm WIDTH rather than its area. Neither the
-bake filter nor the cut floor reaches it, and raising either would start eating
-printable regions. It needs a min-width test — a morphological opening at one
-nozzle, the shape `narrowFeatureArea` in
-[src/geometry/hubcapOutline.ts](../src/geometry/hubcapOutline.ts) already uses.
+**The seam ribbon this used to hand off to is closed**, as not a defect. Two
+parts of a zone do still overlap along their shared seam — 17 pairs in
+`cutRegions`, worst 19.21mm² — but every one of them extrudes, and the two
+parts' cuts land 0.68 to 0.92mm apart, which is the printed seam clearance
+rather than one spot cut twice. `buildCutter` only fails below about 5 microns
+of width, and the thinnest overlap here is 0.274mm. The min-width test that
+section asked for is owed to nothing, and would have cost real features.
+Measured in
+[docs/findings/2026-09-07-seam-ribbon-closed.md](findings/2026-09-07-seam-ribbon-closed.md).
