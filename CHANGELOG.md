@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A "Whole chair" design drawn across two sheets that don't join now says
+  so.** The template already drew that part of the edge as a dotted line; the
+  build now warns when a design actually crosses one, names both zones, and
+  gives the distance the two pieces end up apart on the chair (about 34mm on
+  the left flank's edge with the Back, about 178mm on the right's). It stays
+  quiet where the sheets really do join, and where the whole design landed on
+  one sheet and came out in one piece.
 - **A design can now cover the whole chair at once, instead of one zone at a
   time.** "Whole chair" in an artwork row's zone dropdown places that design
   across every sheet of the chair's unfolded layout in one go, cut from a

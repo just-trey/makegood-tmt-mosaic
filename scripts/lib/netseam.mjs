@@ -63,6 +63,21 @@ export function netToZoneUV(place, p) {
 }
 
 /**
+ * That zone's own UV mm -> net mm: R(theta)*p_zone + t itself, the inverse of the above.
+ *
+ * Here rather than at any of its three call sites (the net template's drawing, the bake's
+ * continuity split, and the test that checks the split) because those three have to agree about
+ * where a baked loop lands on the canvas, and a sign slip in one of three hand-written copies is
+ * invisible until a template and a sidecar disagree.
+ */
+export function zoneUVToNet(place, p) {
+  const r = (place.rotationDeg * Math.PI) / 180;
+  const c = Math.cos(r),
+    s = Math.sin(r);
+  return [c * p[0] - s * p[1] + place.offsetU, s * p[0] + c * p[1] + place.offsetV];
+}
+
+/**
  * Cells per axis in the lookup grid below. A memory-for-time trade, not a geometric threshold:
  * every candidate it returns is still tested exactly, so the number changes how long a survey takes
  * and nothing about what it answers. A chair sheet carries ~50k triangles, and the linear scan this

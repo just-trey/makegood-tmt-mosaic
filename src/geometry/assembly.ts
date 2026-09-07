@@ -79,7 +79,7 @@ import {
   type PlacedDesign,
 } from './designOverlap';
 import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
-import { noticeBuild, warnBuild } from '../warnings';
+import { dismissNotice, noticeBuild, warnBuild } from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
 import { throwIfCancelled } from '../cancel';
@@ -551,6 +551,14 @@ export function clipToKeptSide(
   return { feat: r.feat, removed: r.clipped, failed: !r.clipped };
 }
 
+/** What the net clip did: what is left to cut here, where the rest went, and where it is torn. */
+interface NetShareClip {
+  feat: PolyFeature | null;
+  movedTo: string[];
+  torn: { toName: string; tearMm: number }[];
+  failed: boolean;
+}
+
 /**
  * `feat` cut to the canvas this zone owns on the whole-part sheet: the patches another sheet took
  * are removed, one entry at a time so the notice can name where each went.
@@ -562,15 +570,26 @@ export function clipToKeptSide(
  *
  * On a failed boolean the region is handed back whole, exactly as the boundary clip does: that is
  * the pre-partition behaviour, a doubled cut rather than a missing one, and it is named.
+ *
+ * `torn` is the same event judged against the surface rather than the canvas: the patches ink moved
+ * into that lie along a stretch where the two sheets do not actually join. One zone can yield
+ * several such pieces to the same neighbour, so they are pooled per zone at the worst tear — a
+ * design reaching two of them is one design, torn once as far as the user is concerned.
  */
-export function clipToNetShare(
-  feat: PolyFeature,
-  exclusions: NetExclusion[],
-): { feat: PolyFeature | null; movedTo: string[]; failed: boolean } {
+export function clipToNetShare(feat: PolyFeature, exclusions: NetExclusion[]): NetShareClip {
   const movedTo: string[] = [];
+  const worstTear = new Map<string, number>();
   let failed = false;
   let cur: PolyFeature | null = cleanFeature(feat);
-  if (!cur || !exclusions.length) return { feat: cur, movedTo, failed };
+  const done = (): NetShareClip => ({
+    feat: cur,
+    movedTo,
+    // Only where ink is still cut on this zone. A design that fell wholly inside what this zone
+    // yielded is cut once, on the neighbour, and has no second half to be torn from.
+    torn: cur ? [...worstTear].map(([toName, tearMm]) => ({ toName, tearMm })) : [],
+    failed,
+  });
+  if (!cur || !exclusions.length) return done();
   for (const e of exclusions) {
     if (!cur) break;
     const b = featureBBox(cur);
@@ -593,9 +612,19 @@ export function clipToNetShare(
       continue;
     }
     cur = cut.feat;
-    movedTo.push(e.toName);
+    // The bake cuts a patch at the joining stretch's limits, so one entry is wholly one or the
+    // other. `undefined` is "not surveyed", which is not the same as "they join" and says nothing.
+    //
+    // The tear is required, not optional, because the warning quotes it: the bake writes the two
+    // together (a boundary with a torn piece has torn rows to measure), and an entry carrying the
+    // flag without the number is a truncated one. Guessing a distance there would be worse than
+    // the silence, which is what shipped before either field existed.
+    if (e.joins === false && e.tearMm !== undefined)
+      worstTear.set(e.toName, Math.max(e.tearMm, worstTear.get(e.toName) ?? 0));
+    // A patch cut in two pieces is two entries naming one zone; the notice must not say it twice.
+    if (!movedTo.includes(e.toName)) movedTo.push(e.toName);
   }
-  return { feat: cur, movedTo, failed };
+  return done();
 }
 
 /** [minX, minY, maxX, maxY] of a placed feature, for the cheap gate above. */
@@ -620,6 +649,61 @@ export function netShareNotice(design: string, zone: string, toNames: string[]):
     `"${design}" reaches part of the whole-part sheet that ${where} owns. ` +
     `It is cut there, not on "${zone}".`
   );
+}
+
+/**
+ * Rule 1's other half for the net clip: the ink moved, and the two sheets do not meet where it
+ * crossed, so the halves are cut tens of millimetres apart on the real part.
+ *
+ * A warning rather than a notice: the cut is correct, the result is not what anyone drew. The
+ * distance is the bake's measurement of that stretch of boundary (`NetZoneExclusion.tearMm`),
+ * rounded to whole millimetres because it is a median over the stretch and not a spot reading.
+ *
+ * Hung off the net clip rather than tested in rebuild.ts against the whole boundary, which was the
+ * obvious place and is wrong: 31% and 8% of the chair's two boundaries join, so a placed-bbox test
+ * over either would fire for nearly every whole-part design ever drawn. The clip already knows the
+ * one thing that matters, which is whether ink really reached the patch.
+ *
+ * **The two zones are named in a fixed order, not in the order the build reached them.** One
+ * crossing raises this from both sides: the divider between two sheets is ragged, so each zone
+ * yields slivers to the other and a design over the join reaches a torn patch on each. Naming them
+ * "from" and "to" made the text depend on which zone's build ran first, which is two pills for one
+ * boundary. Sorted, the pair reads the same either way, and `raiseTornWarning` keeps one pill
+ * quoting the worse of the two tears.
+ */
+export function netTornWarning(design: string, zones: string[], tearMm: number): string {
+  const [a, b] = [...zones].sort();
+  return (
+    `"${design}" crosses between "${a}" and "${b}", where the two sheets do not join. ` +
+    `It prints in two pieces, about ${Math.round(tearMm)}mm apart. Bind it to one zone instead.`
+  );
+}
+
+/**
+ * One pill per design and boundary, quoting the worst tear measured for it.
+ *
+ * Worst rather than first, and this is why it cannot just ride on the notice list's own dedupe:
+ * `tearMm` is measured over the rows each yielded piece spans, so the two sides of one boundary
+ * report different numbers (33.8mm and 2.6mm across the chair's flank/back join). First-wins would
+ * quote whichever zone the build reached first, and on the chair that can be the 2.6mm sliver for
+ * a design that is really torn by 34mm. The standing pill is retracted and re-raised instead.
+ *
+ * `seen` is per build. Colours share it too, which is the other way one fact arrives twice: the
+ * clip runs per colour and two colours can cross different torn stretches of the same boundary.
+ */
+function raiseTornWarning(
+  seen: Map<string, { message: string; tearMm: number }>,
+  design: string,
+  zones: string[],
+  tearMm: number,
+): void {
+  const key = `net-torn:${design}:${[...zones].sort().join(':')}`;
+  const had = seen.get(key);
+  if (had && had.tearMm >= tearMm) return;
+  if (had) dismissNotice(had.message, key);
+  const message = netTornWarning(design, zones, tearMm);
+  seen.set(key, { message, tearMm });
+  warnBuild(message, key);
 }
 
 /**
@@ -849,6 +933,8 @@ export async function buildAssemblyGeometry(
     keptApart,
   } = input;
   if (!artworks.length || artworks.some((a) => !a.parsed)) return null;
+  /** Standing straddle pills for this build, keyed by design and boundary — raiseTornWarning. */
+  const tornPills = new Map<string, { message: string; tearMm: number }>();
 
   const isRect = designFit === 'rect';
 
@@ -1214,6 +1300,11 @@ export async function buildAssemblyGeometry(
           // each half of that is a thing the user has to be told on its own.
           if (r.failed) warnBuild(netShareFailedWarning(design, zoneName));
           if (r.movedTo.length) noticeBuild(netShareNotice(design, zoneName, r.movedTo));
+          // The notice above says where the ink went; this says the two halves will not line up.
+          // Both, because they are different facts: the move is right and the result still isn't.
+          // One pill per boundary however many zones, colors and directions reach it.
+          for (const t of r.torn)
+            raiseTornWarning(tornPills, design, [zoneName, t.toName], t.tearMm);
           feat = r.feat;
           if (!feat) return;
         }

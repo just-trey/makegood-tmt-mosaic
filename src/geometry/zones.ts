@@ -75,6 +75,14 @@ export interface NetExclusion {
    */
   region: PolyFeature | null;
   bbox: number[];
+  /**
+   * False when the two sheets only abut along the stretch this patch lies on, so a design reaching
+   * across it is cut in two halves `tearMm` apart on the real part. Undefined where the bake
+   * surveyed no boundary here, which says nothing rather than "they join".
+   */
+  joins?: boolean;
+  /** the measured tear, in mm; carried only alongside `joins: false` */
+  tearMm?: number;
 }
 
 /** Which half of a self-mirrored zone a design keeps: 'right' is u at or past the zone's bbox centre. */

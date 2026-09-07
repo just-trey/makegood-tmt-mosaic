@@ -1379,6 +1379,31 @@ this zone gives up would not load.
 skips the trim entirely. Please also report it via **Feedback** or **Report a
 bug on GitHub** — this failing is a bug, not a placement you can draw around.
 
+## Troubleshooting: "…" crosses between "…" and "…", where the two sheets do not join"
+
+Full text: _""…" crosses between "…" and "…", where the two sheets do not join.
+It prints in two pieces, about …mm apart. Bind it to one zone instead."_
+
+**What it means.** Two sheets sit side by side on the whole-part template all
+along their shared edge, but the surfaces under them only meet over part of it.
+The template draws that part as a solid line and the rest as a dotted one. A
+design bound to **Whole chair** that crosses the dotted part is cut correctly on
+both zones and still comes out as two marks, on faces of the chair tens of
+millimetres apart. The distance quoted is the typical gap along that stretch.
+
+On the chair today, the left flank meets the back over about 120mm around the
+storage-box corner, and the right flank over about 16mm. Everywhere else along
+those two edges, this is what happens.
+
+**What to do**, in order of least work:
+
+- Move the design so it sits inside one zone's own area, away from the dotted
+  edge. The template shows where that is.
+- Or bind it to a single zone from its row's dropdown. A per-zone binding cuts
+  all of one zone's surface and stops at its edge, so there is no second piece.
+- Two marks that are meant to line up across the join have to sit on the solid
+  stretch. Nothing else on that edge lines up.
+
 ## Troubleshooting: "Exporting with artwork on … of … zones…" warnings
 
 Full text: _"Exporting with artwork on … of … zones. The other … zones will

@@ -30,6 +30,7 @@ import {
   chartTriangles,
   netPoint,
   netToZoneUV,
+  zoneUVToNet,
   seamContinuity,
   SURVEY_U_STEP_MM,
   surveyBoundary,
@@ -207,6 +208,8 @@ const PAD_SVG = svg(20, 20, '<rect x="0" y="0" width="20" height="20" fill="#1e8
 
 const warnings = (page) => page.evaluate(() => window.__mosaic.warnings());
 const netNotices = async (page) => (await warnings(page)).filter((w) => /whole-part sheet/.test(w));
+/** The straddle warning, which names the sheets rather than the sheet, so it reads differently. */
+const tornWarnings = async (page) => (await warnings(page)).filter((w) => /do not join/.test(w));
 
 async function exportTo(page, file) {
   const [dl] = await Promise.all([
@@ -385,6 +388,15 @@ const offsetFor = (spot) => ({
   offY: spot[1] - NET_CENTRE[1],
 });
 
+/**
+ * The counterpart to `SPOT.seam`, read off the survey below rather than written down: the torn row
+ * of the same boundary nearest this net v, so the bar crosses where the two sheets abut without
+ * joining. Not a constant, because the one thing it must be is torn — a spot fixed by hand goes
+ * quietly continuous on a rebake that moves the join, and the check then proves nothing.
+ */
+const TORN_TARGET_V = 100;
+let tornRow = null;
+
 console.log(`net centre ${NET_CENTRE.map((n) => n.toFixed(2)).join(', ')}`);
 
 console.log('\n--- survey: the whole "Left side"/"Back" boundary, row by row');
@@ -444,6 +456,17 @@ console.log('\n--- survey: the whole "Left side"/"Back" boundary, row by row');
       `the sidecar's continuous span matches this survey: ${baked.met}/${baked.rows} rows, ` +
         `net v ${baked.vFrom}..${baked.vTo}, torn by ${baked.jumpMm.median}mm at the median ` +
         `elsewhere`,
+    );
+
+  const tol = NET.zones.left.seamResidualMm.p95 + SURVEY_U_STEP_MM;
+  tornRow = rows
+    .filter((r) => r.jump > tol)
+    .sort((a, b) => Math.abs(a.v - TORN_TARGET_V) - Math.abs(b.v - TORN_TARGET_V))[0];
+  if (!tornRow) fail('every row of this boundary joins — check 6 has nothing to straddle');
+  else
+    console.log(
+      `   torn spot for check 6: net (${tornRow.u.toFixed(2)}, ${tornRow.v.toFixed(2)}), ` +
+        `where the two sheets are ${tornRow.jump.toFixed(1)}mm apart in 3D`,
     );
 }
 
@@ -536,6 +559,17 @@ try {
   console.log(`   badge: ${badge}`);
   const seamNotices = await netNotices(page);
   console.log(`   net notices: ${JSON.stringify(seamNotices, null, 1)}`);
+  // This bar is on the stretch that really joins, so the straddle warning must stay quiet. It is
+  // the no-fire half of check 6, and it is here because this is where a bar already sits on a join.
+  //
+  // What it proves is that a mark on a join comes out silent, which is the user-visible claim. It
+  // does NOT exercise a joining EXCLUSION patch: the two sheets abut here rather than overlap (the
+  // notice list above is empty), so no clip ran to be silent about. That case is a flag flip on
+  // identical geometry, which is a unit test — tests/net-design.test.ts.
+  const seamTorn = await tornWarnings(page);
+  if (seamTorn.length)
+    fail(`the straddle warning fired on the joining stretch: ${JSON.stringify(seamTorn)}`);
+  else pass('no straddle warning where the two sheets really join');
   const seamExport = await exportTo(page, path.join(OUT, '1-seam-whole.3mf'));
   console.log(
     `   inlays: ${seamExport.map((i) => `${i.part} e${i.extruder} (${i.points.length}v)`).join(', ')}`,
@@ -599,6 +633,79 @@ try {
   console.log('\n--- observation: gizmo with a whole-part binding');
   const gizmoWhole = await gizmoLatency(page);
   console.log(`   whole-chair binding: ${JSON.stringify(gizmoWhole)}`);
+
+  /* ------------------------------------------------------ 6: across a stretch that only abuts */
+  //
+  // The same bar, moved down the same boundary to a row the survey says is torn. Nothing about the
+  // cut changes — both zones place it in bounds and cut cleanly — so the only thing that can tell
+  // a volunteer their mark came out in two pieces is this warning.
+  console.log('\n=== 6. Whole chair, a bar across a stretch of that boundary that only abuts ===');
+  if (tornRow) {
+    const torn = [tornRow.u, tornRow.v];
+    // Read the way the runtime reads it, not off the first torn entry that turns up: `tearMm` is
+    // per yielded patch, one boundary can ship several to one neighbour, and both zones yield to
+    // each other across the ragged divider. clipToNetShare pools per neighbour and
+    // raiseTornWarning pools across directions, both at the worst tear, so this pools the same way.
+    // Off `find()` alone, a rebake that split one patch in two, or that gave the back a worse
+    // sliver, would fail here for the wrong reason or check the wrong boundary's number.
+    const tornTears = (from, to) =>
+      (NET.zones[from].excluded ?? [])
+        .filter((e) => e.to === to && e.joins === false)
+        .map((e) => e.tearMm);
+    const candidates = [...tornTears('left', 'back'), ...tornTears('back', 'left')];
+    const tearMm = candidates.length ? Math.max(...candidates) : undefined;
+    // The two samples the survey itself compared: the last canvas the flank owns and the first the
+    // back does, half a canvas gap either side of the row's midpoint. Their 3D answers are what
+    // `tornRow.jump` measures, so this is the same crossing the sidecar calls torn.
+    const sides = [-1, 1].map(
+      (s) => netPoint(sheets, torn[0] + (s * tornRow.canvasGap) / 2, torn[1]).owner,
+    );
+    console.log(
+      `   net (${torn.map((n) => n.toFixed(2)).join(', ')}): ` +
+        sides.map((o) => `"${o?.zoneId}" ${o ? fmtP(o.P) : '(unowned)'}`).join(' | ') +
+        `; the survey puts them ${tornRow.jump.toFixed(1)}mm apart`,
+    );
+    if (sides.some((o) => !o) || sides[0].zoneId === sides[1].zoneId)
+      fail(`the torn spot does not straddle a sheet boundary: ${JSON.stringify(sides)}`);
+    const tornSvg = path.join(OUT, 'torn-bar.svg');
+    await useDesign(page, tornSvg, BAR_SVG, { zone: '*whole', ...offsetFor(torn) });
+    const got = await tornWarnings(page);
+    console.log(`   straddle warnings: ${JSON.stringify(got, null, 1)}`);
+    if (tearMm === undefined)
+      fail('the sidecar records no torn patch on the "left"/"back" boundary');
+    const [n1, n2] = [zoneName('left'), zoneName('back')].sort();
+    const want =
+      `"${path.basename(tornSvg)}" crosses between "${n1}" and "${n2}", where the two sheets do ` +
+      `not join. It prints in two pieces, about ${Math.round(tearMm)}mm apart. Bind it to one ` +
+      `zone instead.`;
+    if (got.length !== 1)
+      fail(`one crossing of one boundary raised ${got.length} pill(s): ${JSON.stringify(got)}`);
+    else if (got[0] === want) pass(`the straddle warning fired: ${want}`);
+    else
+      fail(
+        `no warning said the mark crosses where the sheets do not join. Wanted:\n         ` +
+          `${want}\n         got: ${JSON.stringify(got)}\n         ` +
+          `(the boundary's torn patches measure ${JSON.stringify(candidates)}mm)`,
+      );
+    // And the export really does come out in two pieces, which is the thing the warning claims.
+    const tornExport = await exportTo(page, path.join(OUT, '6-torn-whole.3mf'));
+    const halves = sides.map((o) => ({ o, hit: nearestInk(tornExport, o.P) }));
+    console.log(
+      `   inlays: ${tornExport.map((i) => `${i.part} e${i.extruder}`).join(', ')}; ` +
+        halves.map((h) => `"${h.o.zoneId}" ${h.hit.d.toFixed(2)}mm on ${h.hit.part}`).join(', '),
+    );
+    const inked = halves.filter((h) => h.hit.d <= INK_NEAR_MM);
+    if (inked.length < 2)
+      fail(
+        `the bar did not come out in two pieces: only ${inked.length} of the two sheets' answers ` +
+          `carries ink (${halves.map((h) => `"${h.o.zoneId}" ${h.hit.d.toFixed(2)}mm`).join(', ')})`,
+      );
+    else
+      pass(
+        `both halves really are cut, on surfaces ${tornRow.jump.toFixed(1)}mm apart — which is ` +
+          `what the warning says`,
+      );
+  }
 
   /* ------------------------------------------------------ 2: inside the shared canvas */
   console.log('\n=== 2. Whole chair, a mark inside canvas the flank yields to the back ===');
@@ -796,16 +903,7 @@ async function gizmoLatency(page) {
 
 /** Smallest net-mm distance from one sheet's charted surface to any other sheet's. */
 function gapToOtherSheets(zoneId) {
-  const netUV = (id, tris) =>
-    tris.flatMap((t) =>
-      t.uv.map((p) => {
-        const pl = NET.zones[id];
-        const r = (pl.rotationDeg * Math.PI) / 180,
-          c = Math.cos(r),
-          s = Math.sin(r);
-        return [c * p[0] - s * p[1] + pl.offsetU, s * p[0] + c * p[1] + pl.offsetV];
-      }),
-    );
+  const netUV = (id, tris) => tris.flatMap((t) => t.uv.map((p) => zoneUVToNet(NET.zones[id], p)));
   // Deduped to 0.1mm: a chart's triangles share almost every corner, and the pairwise walk below
   // is the one place in this script where that multiplies out.
   const thin = (pts) => [

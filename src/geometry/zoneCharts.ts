@@ -128,6 +128,24 @@ export interface NetZoneExclusion {
   to: string;
   toName: string;
   areaMm2: number;
+  /**
+   * Whether the stretch of boundary this patch lies along is a real join. False says the two
+   * sheets merely abut there, so a design reaching across this patch is cut in two halves that
+   * print `tearMm` apart. The bake cuts a patch at the joining stretch's limits so each piece can
+   * answer this at all (`markNetExclusionContinuity`, scripts/lib/zonebake.mjs).
+   *
+   * Optional for the same reason `NetZonePlacement.name` is: it arrived inside schema 5, and a
+   * cached schema-5 sidecar lacking it reads as "not surveyed", which is silence — exactly what
+   * shipped before. The regions themselves are unchanged in meaning, so no cut moves. A bump would
+   * refuse every cached sidecar to add a warning.
+   */
+  joins?: boolean;
+  /**
+   * Median 3D distance between where the two sheets put the same point, over the surveyed rows
+   * this patch spans. Only on a patch with `joins: false`; there is nothing to tear where they
+   * meet.
+   */
+  tearMm?: number;
   regions: { outer: number[][]; holes: number[][][] }[];
 }
 

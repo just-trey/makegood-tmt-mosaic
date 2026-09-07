@@ -546,7 +546,7 @@ export class ConformalZoneMapper implements ZoneMapper {
           if (u > bbox[2]) bbox[2] = u;
           if (v > bbox[3]) bbox[3] = v;
         }
-      out.push({ toName: e.toName, region: poly, bbox });
+      out.push({ toName: e.toName, region: poly, bbox, joins: e.joins, tearMm: e.tearMm });
     }
     return (this.netExclCache = out);
   }

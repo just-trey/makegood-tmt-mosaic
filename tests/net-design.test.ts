@@ -10,6 +10,7 @@ import {
   buildAssemblyGeometry,
   netShareFailedWarning,
   netShareNotice,
+  netTornWarning,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
@@ -343,13 +344,13 @@ describe('a whole-part design is cut on exactly one sheet', () => {
 
   /** Both sheets sit at the identity on the net, so a net offset is a chart offset. */
   const identity = { rotationDeg: 0, offsetU: 0, offsetV: 0 };
-  const build = (netBound: boolean): AssemblyBuildInput => {
+  const build = (netBound: boolean, offX = 0): AssemblyBuildInput => {
     const own: ArtworkBuildInput = {
       parsed: square(20),
       name: 'logo',
       zoneId: null,
       scaleMult: 1,
-      offX: 0,
+      offX,
       offZ: 0,
       flipX: false,
       flipY: false,
@@ -428,6 +429,98 @@ describe('a whole-part design is cut on exactly one sheet', () => {
     const said = WARNINGS.map((w) => w.message);
     expect(said).toContain(netShareFailedWarning('logo', 'a'));
     expect(said).toContain(netShareNotice('logo', 'a', ['Sheet B']));
+  }, 60000);
+
+  /**
+   * The same partition judged against the surface instead of the canvas. Two sheets abut all along
+   * their boundary whatever the part does underneath, so the flag on the yielded patch is the only
+   * thing that separates "the design carries across" from "it prints in two pieces, far apart".
+   *
+   * Both cases run the identical geometry and differ by that flag alone, which is what makes the
+   * fire a fire and the silence a silence.
+   *
+   * The zones are renamed to "Sheet A"/"Sheet B" here, matching what each one's `toName` calls the
+   * other. That is what a real sidecar has (`toName` is the neighbour zone's own display name), and
+   * it matters: the pill is keyed on the pair of display names, so two zones that disagree about
+   * each other's name are two boundaries as far as this can tell.
+   */
+  const NET_NAME: Record<string, string> = { a: 'Sheet A', b: 'Sheet B' };
+  const flagged = (
+    flagsFor: (zoneId: string) => { joins: boolean; tearMm?: number },
+  ): AssemblyPart[] =>
+    parts.map((p) => {
+      const z = p.zones![0];
+      const chart = z.chart as ConformalChart;
+      return {
+        ...p,
+        zones: [
+          {
+            ...z,
+            name: NET_NAME[z.id],
+            chart: {
+              ...chart,
+              netExcluded: chart.netExcluded!.map((e) => ({ ...e, ...flagsFor(z.id) })),
+            },
+          },
+        ],
+      };
+    });
+  const tornSaid = (): string[] =>
+    WARNINGS.filter((w) => /do not join/.test(w.message)).map((w) => w.message);
+
+  // Carries a tear it must not quote, so the FLAG is what this measures. Without it the test passes
+  // for a build that never looked at `joins` at all, since a patch with no tear cannot warn anyway.
+  it('says nothing extra when the ink crosses a stretch the two sheets really join', async () => {
+    const out = await buildAssemblyGeometry({
+      ...build(true),
+      parts: flagged(() => ({ joins: true, tearMm: 44.2 })),
+    });
+    expect(out).not.toBeNull();
+    // the move still happens and is still reported; only the tear is not, because there is none
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      netShareNotice('logo', 'Sheet A', ['Sheet B']),
+    );
+    expect(tornSaid()).toEqual([]);
+  }, 60000);
+
+  it('warns once for the boundary, naming both sheets and the worse of the two tears', async () => {
+    // Both sheets yield to the other and the mark crosses both, so this raises the fact from both
+    // sides — one crossing, one pill. The two sides carry different tears, as the chair's do
+    // (33.8mm one way, 2.6mm the other), and the pill has to quote the worse.
+    const out = await buildAssemblyGeometry({
+      ...build(true),
+      parts: flagged((id) => ({ joins: false, tearMm: id === 'a' ? 3.1 : 44.2 })),
+    });
+    expect(out).not.toBeNull();
+    expect(tornSaid()).toEqual([netTornWarning('logo', ['Sheet A', 'Sheet B'], 44.2)]);
+    expect(WARNINGS.find((w) => /do not join/.test(w.message))!.level).toBe('warn');
+  }, 60000);
+
+  it('keeps the worse tear whichever sheet the build reached first', async () => {
+    // The same boundary with the numbers swapped. First-wins would pass the test above and quote
+    // 3mm here, on a design really torn by 44.
+    const out = await buildAssemblyGeometry({
+      ...build(true),
+      parts: flagged((id) => ({ joins: false, tearMm: id === 'a' ? 44.2 : 3.1 })),
+    });
+    expect(out).not.toBeNull();
+    expect(tornSaid()).toEqual([netTornWarning('logo', ['Sheet A', 'Sheet B'], 44.2)]);
+  }, 60000);
+
+  it('says nothing when the whole design landed on the other sheet, torn or not', async () => {
+    // Nothing is torn when nothing stayed: the mark is wholly inside what sheet A yields, so B cuts
+    // all of it, in one piece, and a warning here would be crying wolf at a design that came out
+    // right. 12mm puts the 20mm square clear of the u = HALF divider.
+    const out = await buildAssemblyGeometry({
+      ...build(true, 12),
+      parts: flagged(() => ({ joins: false, tearMm: 44.2 })),
+    });
+    expect(out).not.toBeNull();
+    // proof it really did reach the yielded patch, rather than missing every exclusion
+    expect(WARNINGS.map((w) => w.message)).toContain(
+      netShareNotice('logo', 'Sheet A', ['Sheet B']),
+    );
+    expect(tornSaid()).toEqual([]);
   }, 60000);
 
   it('cuts the whole design on both sheets when it is bound to them by name', async () => {
