@@ -298,85 +298,39 @@ function fromGeom(polys: Geom): PolyFeature | null {
 }
 
 /**
- * Drop the pieces a clip left too small to print, and only those.
+ * Drop the pieces of a clipped region too small to print, and say how many went.
  *
  * Where a clip boundary runs ALONG an edge of what it is clipping — a baked dead region sharing
  * its chart's own outline, a part's claim meeting its neighbour's at a seam — the intersect hands
  * back a hairline instead of dropping it, and a hairline still extrudes into a real inlay. The
- * chair shipped one: 0.025mm², 0.020mm wide and 8.08mm long on `chair-seat-back-top`'s Front
+ * chair shipped one: 0.0253mm², 0.020mm wide and 8.08mm long on `chair-seat-back-top`'s Front
  * chart, which cut a 0.4mm mark into surface the cushion covers.
  *
- * **Per polygon, because a hairline usually arrives beside a real region rather than alone.** On
- * that same chart the clip returns the 2,634mm² band AND the hairline; a floor on the feature's
- * total keeps both, which is what a first version of this did.
+ * **Per piece, because a hairline usually arrives beside a real region rather than alone.** On that
+ * chart the clip returns the 2,634mm² band AND the hairline; a floor on the feature's total keeps
+ * both.
  *
- * **Only pieces the clip actually shrank.** A piece it left alone still has its own polygon in the
- * input, covering it and no bigger; one it cut down came from a polygon that was bigger. Anything
- * else discards the user's content over a boundary that never touched it — a stipple of sub-floor
- * dots, the 0.2mm square a refused fill falls back to, or any design at all on the two paths where
- * the clip is frequently a no-op (`clipToKeptSide` returns the feature verbatim when the design
- * does not cross the centre line, and every one of these three hands the region back whole when
- * its boolean fails).
+ * **Nothing here asks whether the clip is what made a piece small**, and two rounds of trying said
+ * that is not answerable from a boolean's output: it renormalises coordinates (`boolOpWithRetry`
+ * truncates to 1e-6 absolute, which moves a sub-floor piece's area by ~1e-5 relative) and it fuses
+ * touching input polygons, so an output piece has no reliable source polygon to be compared
+ * against. The floor is applied flat instead, and the caller reports what went — which is the
+ * honest trade: a piece this size was never going to print, whoever made it small, and the user is
+ * told rather than left to find out.
  *
  * The floor is an area, so it admits a long enough hairline and refuses a round dot one nozzle
- * across. Both are edges of what a single number on an area can say, and the seam ribbon in
- * docs/tech-debt.md is the case that needs the other measure: closing them means a real min-width
- * test, and there is no measurement here to choose the width from yet.
+ * across. The seam ribbon in docs/tech-debt.md is the case that needs the other measure: closing
+ * those means a real min-width test, and there is no measurement here to choose the width from.
  */
 export function dropUnprintableRemnants(
-  after: PolyFeature | null,
-  before: PolyFeature | null,
+  feat: PolyFeature | null,
   floorMM2: number,
-): PolyFeature | null {
-  if (!after) return after;
-  const polys = toGeom(after);
-  const src = (before ? toGeom(before) : []).map((rings) => ({
-    area: planarArea(fromGeom([rings])),
-    box: ringBBox(rings[0]),
-  }));
-  const kept = polys.filter((rings) => {
-    const area = planarArea(fromGeom([rings]));
-    if (area >= floorMM2) return true;
-    // Under the floor, so the question is whether the clip put it there. A piece the clip left
-    // alone still has its own polygon in the input, covering it and no bigger than it; one the
-    // clip cut down came from a polygon that was bigger. Comparing per piece rather than per
-    // feature is what keeps a stipple of sub-floor dots, whose areas sum well over the floor and
-    // which no clip has touched.
-    const box = ringBBox(rings[0]);
-    return src.some((c) => boxCovers(c.box, box) && c.area <= area * (1 + AREA_SAME_EPS));
-  });
-  return kept.length === polys.length ? after : fromGeom(kept);
-}
-
-/** Relative slack for "the clip returned this piece unchanged", against a boolean's own rounding. */
-const AREA_SAME_EPS = 1e-6;
-
-function ringBBox(r: Ring): [number, number, number, number] {
-  let x0 = Infinity,
-    y0 = Infinity,
-    x1 = -Infinity,
-    y1 = -Infinity;
-  for (const [x, y] of r) {
-    if (x < x0) x0 = x;
-    if (y < y0) y0 = y;
-    if (x > x1) x1 = x;
-    if (y > y1) y1 = y;
-  }
-  return [x0, y0, x1, y1];
-}
-
-/** Does `outer` contain `inner`, allowing a boolean's rounding at the edges? */
-function boxCovers(
-  outer: [number, number, number, number],
-  inner: [number, number, number, number],
-): boolean {
-  const t = 1e-6;
-  return (
-    outer[0] <= inner[0] + t &&
-    outer[1] <= inner[1] + t &&
-    outer[2] >= inner[2] - t &&
-    outer[3] >= inner[3] - t
-  );
+): { feat: PolyFeature | null; dropped: number } {
+  if (!feat) return { feat, dropped: 0 };
+  const polys = toGeom(feat);
+  const kept = polys.filter((rings) => planarArea(fromGeom([rings])) >= floorMM2);
+  if (kept.length === polys.length) return { feat, dropped: 0 };
+  return { feat: fromGeom(kept), dropped: polys.length - kept.length };
 }
 
 function truncGeom(polys: Geom, precision: number): Geom {

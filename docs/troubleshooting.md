@@ -243,6 +243,31 @@ piece. See [tech-debt.md](tech-debt.md).
 The message clears itself when you're back somewhere Fill works, but the mode
 does not come back with it. Set it again from the row's Sticker/Fill control.
 
+## Troubleshooting: "Trimming "…" to "…" left a speck too small to print"
+
+Full text: _Trimming "…" to "…" left a speck too small to print, so it was not
+cut. A recess needs to be about 0.4 mm across to hold a bead._ Plural:
+_left N specks too small to print, so they were not cut._
+
+**What it means.** Your design is trimmed to the part it sits on, to the piece
+of it a seam gives that part, and to one half when Mirror is on. A trim can
+leave a scrap smaller than the printer's nozzle: nothing that small can hold a
+single bead, so it is dropped instead of cut. This says which color and which
+piece, so nothing goes without being named.
+
+**What you get.** Everything else in that color is cut normally. Only the
+scraps go.
+
+**What to do.** Usually nothing. Two cases are worth a look:
+
+- **A design far smaller than the part.** A design scaled down past about
+  0.4 mm has nothing left to cut. Raise Scale.
+- **A design running off the edge of a piece.** The part of it that hangs over
+  is trimmed away, and what is left along the edge can be a hair. Move it in,
+  or scale it down so it sits inside the piece.
+
+If the color vanished from the part entirely, the build says that separately.
+
 ## Troubleshooting: "Couldn't load the design zones for "…"…"
 
 Full text: _"Couldn't load the design zones for "…" (…: …). It will load

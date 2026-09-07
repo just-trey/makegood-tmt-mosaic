@@ -737,9 +737,9 @@ warning.
 **Half of that landed and does not reach this.** `dropUnprintableRemnants`
 (`src/geometry/regions.ts`) now runs after the per-part clip, the seam clip and
 the mirror clip, and drops a piece under `CLIP_REMNANT_FLOOR_MM2`, one nozzle
-square. That is 0.16 mm², chosen for a 0.025 mm² hairline. **This ribbon is
-29.85 mm²**, two orders of magnitude above it, so it still reaches
-`buildCutter`.
+square, naming what it took. That is 0.16 mm², chosen for a 0.025 mm² hairline.
+**This ribbon is 29.85 mm²**, two orders of magnitude above it, so it still
+reaches `buildCutter`.
 
 Raising the floor to clear the ribbon is not the answer: 29.85 mm² is a
 printable _area_, and what makes the ribbon unprintable is its 0.15 mm _width_.
@@ -1326,9 +1326,15 @@ by running `turf.difference` over that chart's `subRegions` and `deadRegions`
 from `public/stl/chair-body-zones.json`.
 
 - **It no longer cuts.** `CLIP_REMNANT_FLOOR_MM2` in
-  [src/geometry/depth.ts](../src/geometry/depth.ts) drops a clipped region the
-  boundary itself made unprintable, so the hairline builds no cutter. That guard
-  is the general fix and covers seam remnants too, not just this chart.
+  [src/geometry/depth.ts](../src/geometry/depth.ts) drops any piece of a clipped
+  region under one nozzle square, and the build names the colour and part it
+  took them from.
+- **The guard deliberately does not ask whether the clip is what made a piece
+  small.** Two review rounds tried and it is not answerable from a boolean's
+  output: `boolOpWithRetry` truncates to 1e-6 absolute, which moves a sub-floor
+  piece's area by about 1e-5 relative, and the clipper fuses touching input
+  polygons, so an output piece has no reliable source to be compared against. A
+  flat floor plus a notice was the maintainer's call over reverting the guard.
 - **The data is still wrong**, and a wider hairline would clear the floor. This
   is the same class as "A seam sliver warns as if artwork were lost" above,
   seen from the bake rather than the cut.

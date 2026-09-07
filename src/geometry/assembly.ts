@@ -643,6 +643,21 @@ function featureBBox(f: PolyFeature): number[] {
   return b;
 }
 
+/**
+ * Names specks a clip left behind that are too small to print, so they are never dropped in
+ * silence. Reported per colour and part, since that is the pair the user can act on.
+ *
+ * A notice rather than a warning: nothing printable went. One nozzle square is the floor, and a
+ * region under it cannot hold a single bead of any shape.
+ */
+export function unprintableSpeckNotice(hex: string, partName: string, count: number): string {
+  return (
+    `Trimming "${hex}" to "${partName}" left ${count === 1 ? 'a speck' : `${count} specks`} too ` +
+    `small to print, so ${count === 1 ? 'it was' : 'they were'} not cut. A recess needs to be ` +
+    `about 0.4 mm across to hold a bead.`
+  );
+}
+
 /** Rule 1 for the net clip: where the part of a whole-part design this zone gave up is cut. */
 export function netShareNotice(design: string, zone: string, toNames: string[]): string {
   const where =
@@ -1265,7 +1280,10 @@ export async function buildAssemblyGeometry(
           clipped = r.clipped;
           // The dead region on a chart is baked to share that chart's own outline, which is where
           // this clip leaves a hairline rather than nothing. See dropUnprintableRemnants.
-          feat = dropUnprintableRemnants(feat, placed, CLIP_REMNANT_FLOOR_MM2);
+          const trimmed = dropUnprintableRemnants(feat, CLIP_REMNANT_FLOOR_MM2);
+          if (trimmed.dropped)
+            noticeBuild(unprintableSpeckNotice(c.hex, part.name, trimmed.dropped));
+          feat = trimmed.feat;
           if (!feat) {
             noteHiddenSurface(mapper, placed, ci);
             return;
@@ -1285,7 +1303,9 @@ export async function buildAssemblyGeometry(
           else if (r.removed && !artworks[ai].reflected)
             noticeBuild(mirrorHalfNotice(design, half.zoneName, half.side));
           // Same boundaries, same failure: the kept-side clip runs along the zone's own centre line.
-          feat = dropUnprintableRemnants(r.feat, feat, CLIP_REMNANT_FLOOR_MM2);
+          const half2 = dropUnprintableRemnants(r.feat, CLIP_REMNANT_FLOOR_MM2);
+          if (half2.dropped) noticeBuild(unprintableSpeckNotice(c.hex, part.name, half2.dropped));
+          feat = half2.feat;
           if (!feat) return;
         }
         // A whole-part design is cut where the net says this zone owns the canvas, and nowhere
@@ -1313,7 +1333,9 @@ export async function buildAssemblyGeometry(
             raiseTornWarning(tornPills, design, [zoneName, t.toName], t.tearMm);
           // The net partition is cut from the same charts, so its patch boundaries coincide with
           // this zone's claim in exactly the way that leaves a hairline.
-          feat = dropUnprintableRemnants(r.feat, feat, CLIP_REMNANT_FLOOR_MM2);
+          const share = dropUnprintableRemnants(r.feat, CLIP_REMNANT_FLOOR_MM2);
+          if (share.dropped) noticeBuild(unprintableSpeckNotice(c.hex, part.name, share.dropped));
+          feat = share.feat;
           if (!feat) return;
         }
         const requested = requestedDepth(colorSettings, globalDepth, c.key);

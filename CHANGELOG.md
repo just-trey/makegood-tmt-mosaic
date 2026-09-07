@@ -15,15 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   trimmed to runs along an edge of the design itself, the trim can hand back a
   hairline instead of nothing, and a hairline still cuts. This one was 0.02mm
   wide and 8mm long, 0.025mm² against 1,258mm² and up for every other piece the
-  same design reached. The build now discards a piece the trim itself made too
-  small to print, one nozzle square being the line, and it checks each piece
-  rather than the design as a whole: the sliver usually arrives beside a real
-  region, and adding the two together hides it. A design that was already that
-  small before trimming is untouched: that is your drawing, not an artifact. The
+  same design reached. The build now discards any piece of a trimmed design under
+  one nozzle square, and **says which color and which part it took them from** —
+  a piece that small cannot hold a single bead, and nothing goes unnamed. It
+  checks each piece rather than the design as a whole, because the sliver
+  usually arrives beside a real region and adding the two together hides it. The
   same check runs where a mark is split at a seam and where it is split down the
   middle for mirroring, which leave the same kind of sliver for the same reason.
+
+  One thing changes for designs that were always tiny: a recess under about
+  0.4 mm across is no longer cut, where before it was. It sliced to nothing and
+  still cost a filament slot. You get the same notice naming it.
+
   It catches a sliver by how much of it there is, so a long thin one can still
-  get past; that one is written up rather than fixed.
+  get past. That one is written up rather than fixed.
 
 ### Added
 
@@ -41,9 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   stays hidden everywhere, which is unchanged.
 
   Read the limitations in the README before printing one. The prime-tower
-  positions are checked on 270mm and 256mm beds only, the caster mounts take no
-  artwork, and "Seat back (top)" takes it on one side of the centre line only
-  with nothing warning about the bare half.
+  positions are checked on 270mm and 256mm beds only, and the caster mounts and
+  Seat center take no artwork.
 
 ### Fixed
 

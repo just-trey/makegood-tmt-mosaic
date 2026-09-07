@@ -453,41 +453,40 @@ describe('dropUnprintableRemnants', () => {
   // The chair's own numbers: a 2,634mm² live band and a 0.0253mm² hairline, which is what the
   // Front clip on `chair-seat-back-top` returns. The hairline's bbox is 0.020 x 8.08mm and would
   // be 0.1616mm² if it were a filled rectangle — over this floor. It is 0.0253 because it tapers,
-  // which is the same thing the docstring says about area admitting a long enough hairline.
-  it('drops a hairline the clip cut out of a real region, and keeps the region', () => {
-    const before = feat(rect(0, 0, 80, 32.93)); // 2634mm², the live band
-    const after = feat(rect(0, 0, 80, 32.93), rect(70, 150, 0.02, 1.265)); // + a 0.0253mm² sliver
-    const kept = areas(dropUnprintableRemnants(after, before, FLOOR));
-    expect(kept).toHaveLength(1);
-    expect(kept[0]).toBeCloseTo(2634.4, 1);
+  // which is the docstring's "admits a long enough hairline" in numbers.
+  it('drops a hairline and keeps the real region it arrives beside', () => {
+    const r = dropUnprintableRemnants(
+      feat(rect(0, 0, 80, 32.93), rect(70, 150, 0.02, 1.265)),
+      FLOOR,
+    );
+    expect(r.dropped).toBe(1);
+    expect(areas(r.feat)).toHaveLength(1);
+    expect(areas(r.feat)[0]).toBeCloseTo(2634.4, 1);
   });
 
-  // The failure the per-feature gate had: every piece under the floor, summing well over it, and
-  // no clip having touched any of them. A vector stipple, or fill mode tiling a small motif.
-  it('keeps a stipple of sub-floor dots the clip never touched', () => {
-    const dots = Array.from({ length: 40 }, (_, i) => rect(i * 2, 0, 0.3, 0.3)); // 0.09mm² each
-    const f = feat(...dots);
-    expect(areas(f).reduce((s, a) => s + a, 0)).toBeGreaterThan(FLOOR);
-    expect(areas(dropUnprintableRemnants(f, f, FLOOR))).toHaveLength(40);
+  it('counts every piece it drops, so the caller can name them', () => {
+    const dots = Array.from({ length: 5 }, (_, i) => rect(i * 2, 0, 0.3, 0.3)); // 0.09mm² each
+    const r = dropUnprintableRemnants(feat(rect(0, 0, 10, 10), ...dots), FLOOR);
+    expect(r.dropped).toBe(5);
+    expect(areas(r.feat)).toEqual([100]);
   });
 
-  // clipToKeptSide hands the feature back verbatim when the design does not cross the centre line,
-  // and all three clips do the same when their boolean fails. Nothing may be dropped there — not
-  // even the sub-floor dot, which the earlier per-feature gate deleted because the FEATURE cleared
-  // the floor while that piece of it did not.
-  it('drops nothing when the clip was a no-op', () => {
-    const f = feat(rect(0, 0, 10, 10), rect(50, 0, 0.3, 0.3)); // 100mm² and a 0.09mm² dot
-    const kept = areas(dropUnprintableRemnants(f, f, FLOOR));
-    expect(kept).toHaveLength(2);
-    expect(kept[1]).toBeCloseTo(0.09, 6);
+  it('returns everything, and no drop, when every piece can print', () => {
+    const f = feat(rect(0, 0, 10, 10), rect(50, 0, 1, 1));
+    const r = dropUnprintableRemnants(f, FLOOR);
+    expect(r.dropped).toBe(0);
+    expect(r.feat).toBe(f);
   });
 
-  it('keeps every piece when the clip took nothing off a printable one', () => {
-    const before = feat(rect(0, 0, 10, 10));
-    expect(areas(dropUnprintableRemnants(before, before, FLOOR))).toEqual([100]);
+  // Every piece under the floor: the result is null, and `dropped` is what tells the caller to say
+  // so rather than let the colour vanish.
+  it('reports the count even when nothing survives', () => {
+    const r = dropUnprintableRemnants(feat(rect(0, 0, 0.3, 0.3), rect(5, 0, 0.3, 0.3)), FLOOR);
+    expect(r.feat).toBeNull();
+    expect(r.dropped).toBe(2);
   });
 
   it('passes a null result straight through', () => {
-    expect(dropUnprintableRemnants(null, feat(rect(0, 0, 10, 10)), FLOOR)).toBeNull();
+    expect(dropUnprintableRemnants(null, FLOOR)).toEqual({ feat: null, dropped: 0 });
   });
 });
