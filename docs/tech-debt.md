@@ -432,10 +432,11 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
 `debug-csg-failure` skills and every chair drive script depend on. Nothing
 public names that parameter: it is out of the README's `?kind=` example list.
 
-Neither flag is the fix. The chair's own gate is clear — nothing above blocks
-offering it with Sticker. Restoring the pattern library needs defect 1 closed,
-and clearing `withholdFill` needs that plus the accumulator-or-worker fix in
-"Rebuild performance needs ongoing work" above.
+Neither flag is the fix. Nothing above blocks offering the chair with Sticker
+any more, so `hidden: true` now survives only because no change has taken it
+off — not because this section still holds it. Restoring the pattern library
+needs defect 1 closed, and clearing `withholdFill` needs that plus the
+accumulator-or-worker fix in "Rebuild performance needs ongoing work" above.
 
 ## A zone template's outline is faceted, because nothing curve-fits a zone boundary
 

@@ -667,12 +667,16 @@ describe('chart reconstruction', () => {
   // passed and which the Back template drew as no-print slots. Guarding the shipped sidecar rather
   // than the bake, because the sidecar is the artifact and a bake nobody re-runs proves nothing.
   //
-  // The floor is the MEASURED separation, deliberately not MIN_HOLE_WIDTH_MM. Asserting against the
-  // constant the filter reads would make both vacuous together: lower it, and the four phantom Back
-  // slots come back with the test still green. 2.6 is just under this sidecar's narrowest real hole
-  // (2.62mm, the 10.13 x 16.65mm one on chair-storage-right) and well above its worst fold
-  // (1.46mm), so it fails on a regression whatever the bake is configured to do.
-  const REAL_HOLE_FLOOR_MM = 2.6;
+  // The floor is the MEASURED separation, deliberately NOT MIN_HOLE_WIDTH_MM even though it lands
+  // on the same number. Asserting against the constant the filter reads would make both vacuous
+  // together: lower it, and the four phantom Back slots come back with the test still green.
+  //
+  // This sidecar's gap runs 1.46mm (worst fold) to 2.615mm (narrowest real hole, the
+  // 10.13 x 16.65mm one on chair-storage-right). Its geometric mean is 1.954, so 2.0 is the round
+  // number sitting in the middle of it: 1.37x of clearance below and 1.31x above. Pinning just
+  // under 2.615 instead would guard folds a little harder and turn a 0.6% drift in a re-packed
+  // mesh into a failure.
+  const REAL_HOLE_FLOOR_MM = 2.0;
   it('punches no hole that encloses perimeter but no width', () => {
     const meanWidth = (loop: number[][]): number => {
       let a = 0;
