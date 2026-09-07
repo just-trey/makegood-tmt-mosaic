@@ -792,10 +792,10 @@ describe('chart reconstruction', () => {
   //
   // **What the overlap is NOT is output corruption**, which this comment used to say it was.
   // Measured 2026-09-07 (docs/findings/2026-09-07-seam-ribbon-closed.md): put the same UV point
-  // through each part's warp and it lands 0.217 to 1.116mm apart on the two. They are distinct
+  // through each part's warp and it lands 0.220 to 0.589mm apart on the two. They are distinct
   // surfaces either side of a printed join, not one surface cut twice, so a mark there spans the
-  // seam — which is what a mark crossing a join should do. That range straddles the config's
-  // 0.530mm widest contact gap, so it is what it is rather than "the seam clearance".
+  // seam — which is what a mark crossing a join should do. That range sits either side of the
+  // config's 0.530mm widest contact gap, so it is what it is rather than "the seam clearance".
   //
   // What this still guards is a claim that CREPT: an overlap between two parts that do not meet on
   // the chair means a boundary ran somewhere it was not traced from, and the seam-sharing check
@@ -832,10 +832,13 @@ describe('chart reconstruction', () => {
             examined++;
             // Both parts, because "Couldn't cut color … into <part>" names one part, and which of
             // the two claims the strip is the whole question.
-            for (const c of [cs[i], cs[j]]) {
+            for (const [c, other] of [
+              [cs[i], cs[j]],
+              [cs[j], cs[i]],
+            ]) {
               const mesh = partMesh.get(c.libraryPartId)!;
               const mapper = new ConformalZoneMapper(wasm, reconstructChart(z, c, mesh.vertices));
-              const where = `${z.id} ${c.libraryPartId} (with ${cs[i === 0 ? j : i].libraryPartId})`;
+              const where = `${z.id} ${c.libraryPartId} (with ${other.libraryPartId})`;
               const soup = mapper.buildCutter(piece, 1, 0.5, {});
               if (!soup || !soup.length) {
                 failed.push(`${where}: no cutter`);
@@ -857,54 +860,14 @@ describe('chart reconstruction', () => {
   // The area check above is necessary but NOT sufficient for a partition: two parts overlapping by
   // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total.
   //
-  // **What the overlap is NOT is output corruption**, which this comment used to say it was.
-  // Measured 2026-09-07 (docs/findings/2026-09-07-seam-ribbon-closed.md): for all 17 overlapping
-  // pairs, the two parts' cutters from the same UV strip land 0.679 to 0.916mm apart, which is the
-  // printed seam clearance. The strip maps to surface on one part and surface on the other, either
-  // side of the join, not twice into one place — a mark there spans the seam, which is what a mark
-  // crossing a printed join should do.
+  // **What the overlap is NOT is output corruption**, which this comment used to say it was. See
+  // the cutter test above and docs/findings/2026-09-07-seam-ribbon-closed.md: the two parts are
+  // distinct surfaces either side of a printed join, so a mark there spans the seam rather than
+  // being cut twice into one place.
   //
   // What this still guards is a claim that CREPT: an overlap between two parts that do not meet on
   // the chair means a boundary ran somewhere it was not traced from, and the seam-sharing check
   // below is the half that catches it.
-  // Pins what closed "A seam sliver warns as if artwork were lost": every overlap the chair has
-  // extrudes. That section claimed a seam remnant yields no cutter and so raises `Couldn't cut
-  // color … into …`, and two hunts for a sighting failed because there is none. Measured over all
-  // 17 pairs at four cut depths, 0 of 68 attempts failed; buildCutter only returns null below
-  // about 5 microns of width, and the thinnest overlap here that clears CLIP_REMNANT_FLOOR_MM2 is
-  // 0.274mm. Kept as a test rather than a note because it is the claim, not the reasoning, that
-  // has to stay true.
-  it('builds a valid cutter from every seam overlap', async () => {
-    const wasm = await getManifold();
-    const failed: string[] = [];
-    for (const z of sidecar.zones) {
-      const cs = z.charts.filter((c) => (c.cutRegions ?? []).length);
-      for (let i = 0; i < cs.length; i++)
-        for (let j = i + 1; j < cs.length; j++) {
-          let hit: PolyFeature | null = null;
-          try {
-            hit = turf.intersect(
-              regionsPolygon(cs[i].cutRegions!),
-              regionsPolygon(cs[j].cutRegions!),
-            ) as PolyFeature | null;
-          } catch {
-            continue;
-          }
-          if (!hit || Math.abs(planarArea(hit)) <= 0) continue;
-          const m = partMesh.get(cs[i].libraryPartId)!;
-          const mapper = new ConformalZoneMapper(wasm, reconstructChart(z, cs[i], m.vertices));
-          const soup = mapper.buildCutter(hit, 1, 0.5, {});
-          const where = `${z.id} ${cs[i].libraryPartId}/${cs[j].libraryPartId}`;
-          if (!soup || !soup.length) {
-            failed.push(`${where}: no cutter`);
-            continue;
-          }
-          if (!manifoldIsValid(soupToManifold(wasm, soup))) failed.push(`${where}: invalid solid`);
-        }
-    }
-    expect(failed).toEqual([]);
-  }, 120000);
-
   it('gives no two parts of a zone an overlapping claim on the same UV', () => {
     const overlaps: {
       where: string;
@@ -976,9 +939,9 @@ describe('chart reconstruction', () => {
         }
     }
 
-    // The figures docs/tech-debt.md and this file's own comments cite, computed rather than
-    // remembered. 20 pairs, and the worst is 29.85mm² on `right`, whose per-part regions sum to
-    // 124,747mm² — 0.024%, a 0.15mm ribbon along a shared seam.
+    // Computed rather than remembered. 20 pairs on `subRegions`, worst 29.85mm² on `right`, whose
+    // per-part regions sum to 124,747mm² — 0.024%. `scripts/measure-seam-overlap.mjs` prints the
+    // same two figures, and the `cutRegions` pair the cut actually clips to (17, worst 19.21mm²).
     expect(overlaps.length).toBe(20);
     const worst = overlaps.reduce((w, o) => (o.overlap > w.overlap ? o : w));
     expect(worst.where).toBe('right: chair-wing-right/chair-wheel-mount-right');

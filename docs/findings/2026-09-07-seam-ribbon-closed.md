@@ -1,9 +1,14 @@
 # The seam ribbon does not warn, and no width makes it
 
-**Commit** `f32e0ac` (after #296). **Machine** WSL2, RTX 2060. Every figure below
-is node-side against the shipped `public/stl/chair-body-zones.json`, and
-re-derivable with `npx vite-node scripts/measure-seam-overlap.mjs`, committed
-with this report.
+**Commit** `f32e0ac` (after #296). **Machine** WSL2, RTX 2060. Every figure and
+every table below prints from one command against the shipped
+`public/stl/chair-body-zones.json`:
+
+```
+npx vite-node scripts/measure-seam-overlap.mjs
+```
+
+committed with this report.
 
 **Result: closed as not a defect.** `docs/tech-debt.md`'s "A seam sliver warns
 as if artwork were lost" claimed a seam remnant "yields no cutter" and so raises
@@ -44,13 +49,16 @@ names one part and which of the two claims the strip is the whole question.
 
 **They are not a doubled cut either**, which is what the overlap test's own
 comment feared. Putting the same UV point through each part's warp lands it
-**0.217 to 1.116mm apart** on the two parts. They are distinct surfaces either
+**0.220 to 0.589mm apart** on the two parts. They are distinct surfaces either
 side of a printed join, not one surface cut twice. A mark there spans the seam,
 which is what a mark crossing a join should do.
 
-That range straddles the 0.530mm widest real contact gap in
-`scripts/zone-configs/chair-body.json`, so it is reported as what it is — how
-far apart the two surfaces are — and not claimed to be the seam clearance.
+The sample has to be a point that is actually inside the piece.
+`turf.centroid` is the vertex mean and falls outside a curved sliver — on 4 of
+the 41 it sampled surface neither part owns, and published a 1.116mm maximum
+that was not a separation at all. With `turf.pointOnFeature` the range is
+0.220-0.589mm, which sits either side of the 0.530mm widest real contact gap in
+`scripts/zone-configs/chair-body.json` rather than being claimed as it.
 
 ## There is no failure width
 
@@ -62,15 +70,17 @@ length, not width — every width from 0.2mm to 0.001mm behaves identically.
 
 The nulls are not a thinness failure at all. They are the strip leaving the
 chart, which is `buildCutter`'s `'outside'` return and correct. Clipped to the
-chart's own cut region first, as the build always does:
+chart's own cut region first, as the build always does, nothing fails at all:
 
-| width  | length | area      | buildCutter |
-| ------ | ------ | --------- | ----------- |
-| 0.01mm | 10mm   | 0.0695mm² | ok          |
-| 0.01mm | 40mm   | 0.2430mm² | ok          |
-| 0.01mm | 120mm  | 1.0430mm² | ok          |
+| width   | 1mm | 5mm | 20mm | 40mm | 80mm | 120mm |
+| ------- | --- | --- | ---- | ---- | ---- | ----- |
+| 0.200mm | ok  | ok  | ok   | ok   | ok   | ok    |
+| 0.050mm | ok  | ok  | ok   | ok   | ok   | ok    |
+| 0.010mm | ok  | ok  | ok   | ok   | ok   | ok    |
+| 0.002mm | ok  | ok  | ok   | ok   | ok   | ok    |
+| 0.001mm | ok  | ok  | ok   | ok   | ok   | ok    |
 
-A ribbon 0.01mm wide and 120mm long extrudes without complaint.
+A ribbon one micron wide and 120mm long extrudes without complaint.
 
 ## What this closes
 
@@ -100,3 +110,8 @@ said what to do instead: "Confirm one before spending the fix on it."
 twice over — the per-piece thinnest is 50x smaller than the per-pair figure, and
 the failure it was a margin against turned out not to be a width failure at all.
 A safety margin is a claim like any other, and it needs the same measurement.
+
+**Sampling a shape by its centroid.** The vertex mean of a curved sliver is
+outside it. Four of the 41 separations were measured on surface neither part
+owns, and the largest of them became this report's headline maximum. Any figure
+sampled from a shape needs the sample checked against the shape.
