@@ -48,6 +48,21 @@ export const SIMPLIFY_TOL_MM = 0.2;
 /** Interior loops smaller than this (mm²) are tessellation/fillet slivers, not real holes. */
 export const MIN_HOLE_AREA_MM2 = 15;
 /**
+ * Interior loops whose isoperimetric mean width (4·area/perimeter) falls below this are folds, not
+ * holes: a ribbon that doubles back on itself, enclosing perimeter but no width. Area cannot catch
+ * them — the four on the chair's two handle charts carry 42-45mm², well over MIN_HOLE_AREA_MM2 —
+ * and neither can a caliper width or a morphological opening, because the narrowest REAL hole on
+ * the chair (a 1.43 x 16.56mm radiused slot on chair-storage-right) is narrower by bounding box
+ * than three of the four folds.
+ *
+ * Measured over chair-body's 42 sub-region holes: the folds run 1.05-1.46mm and every real hole is
+ * 2.62mm or above, a factor of 1.79 with nothing between. Re-baked at simplifyTolMm 0 the folds
+ * survive at 1.08-1.43 against 2.68, so Douglas-Peucker does not create them — the handles' own
+ * unwrap does. 2.0 sits inside both gaps. Not per-kind configurable like minHoleAreaMm2: that one
+ * trades coverage against fillet dust, this one asks whether a loop encloses anything at all.
+ */
+export const MIN_HOLE_WIDTH_MM = 2;
+/**
  * Islands smaller than this (mm²) are dropped from a part's clip region. Far below MIN_HOLE_AREA_MM2
  * on purpose: a hole that small is a fillet artifact worth closing up, but an *island* that small is
  * surface a cutter would otherwise be clipped away from, so only true tessellation dust (a sliver a
@@ -2354,6 +2369,25 @@ const loopArea = (pts) => {
 };
 
 /**
+ * Isoperimetric mean width (mm), 4·area/perimeter. On a long thin rectangle this reads about twice
+ * the true width, so it is not a caliper — it is the measure that tells a real narrow slot from a
+ * zero-area fold, which a caliper cannot. See MIN_HOLE_WIDTH_MM.
+ */
+const loopMeanWidth = (pts) => {
+  let p = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % pts.length];
+    p += Math.hypot(x2 - x1, y2 - y1);
+  }
+  return p > 0 ? (4 * Math.abs(loopArea(pts))) / p : 0;
+};
+
+/** A hole worth punching: one enclosing both real area and real width. */
+const isRealHole = (pts, minArea) =>
+  Math.abs(loopArea(pts)) >= minArea && loopMeanWidth(pts) >= MIN_HOLE_WIDTH_MM;
+
+/**
  * Area (mm²) of one `{ outer, holes }` region: the outer loop less its holes, unsigned.
  *
  * Exported because the same sum is what the bake log reports, what dropSmallRegions filters on, and
@@ -3952,7 +3986,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     const zoneRegions = classifyRegions(loops)
       .map((r) => ({
         outer: r.outer,
-        holes: r.holes.filter((h) => Math.abs(loopArea(h)) >= minHoleArea),
+        holes: r.holes.filter((h) => isRealHole(h, minHoleArea)),
         area: Math.abs(loopArea(r.outer)),
       }))
       .sort((a, b) => b.area - a.area);
@@ -4182,10 +4216,27 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       const subLoops = boundaryVertexLoops(list.map((e) => e.zTri))
         .map((loop) => simplifyLoop(loop.map(uvOf), simplifyTol))
         .filter((pts) => pts.length >= 3);
-      const allRegions = classifyRegions(subLoops)
+      const rawRegions = classifyRegions(subLoops);
+      // Folds, not holes. Reported rather than dropped quietly, because a hole that stops being
+      // punched *adds* clip region: artwork now cuts where the sidecar used to exclude. That is the
+      // intent — a zero-width ribbon excluded nothing real — but it is still the clip region moving,
+      // and the bake log is where that has to be visible. Opposite direction to the island warning
+      // below, which reports surface going away.
+      const folds = rawRegions
+        .flatMap((r) => r.holes)
+        .filter((h) => Math.abs(loopArea(h)) >= minHoleArea && !isRealHole(h, minHoleArea))
+        .map((h) => loopMeanWidth(h))
+        .sort((a, b) => b - a);
+      if (folds.length)
+        warnings.push(
+          `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": dropped ${folds.length} ` +
+            `fold(s) under ${MIN_HOLE_WIDTH_MM}mm mean width (widest ${folds[0].toFixed(2)}mm) ` +
+            `from the clip region's holes — they enclosed perimeter but no width`,
+        );
+      const allRegions = rawRegions
         .map((r) => ({
           outer: roundLoop(r.outer),
-          holes: r.holes.filter((h) => Math.abs(loopArea(h)) >= minHoleArea).map(roundLoop),
+          holes: r.holes.filter((h) => isRealHole(h, minHoleArea)).map(roundLoop),
           area: Math.abs(loopArea(r.outer)),
         }))
         .sort((a, b) => b.area - a.area);
@@ -4231,7 +4282,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
           chart.deadRegions = classifyRegions(rings)
             .map((r) => ({
               outer: r.outer,
-              holes: r.holes.filter((h) => Math.abs(loopArea(h)) >= minHoleArea),
+              holes: r.holes.filter((h) => isRealHole(h, minHoleArea)),
             }))
             // Net area, the same measure the bake log, dropSmallRegions and the tests use. On the
             // outer loop alone a ring of hidden surface reads as solid, so a region hiding almost

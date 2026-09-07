@@ -23,6 +23,7 @@ import type { PolyFeature } from '../src/types';
 import {
   measureZoneMirror,
   measureZoneSeam,
+  MIN_HOLE_WIDTH_MM,
   MIN_ISLAND_AREA_MM2,
   netSheetOverlaps,
   nearestPoints,
@@ -203,22 +204,22 @@ describe('the whole-chair net', () => {
 
   // Every figure here re-derives from
   // `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`, whose net lines
-  // print the same areas: left yields 8668mm2 to back, right 8158mm2, and back yields 29mm2 back
+  // print the same areas: left yields 8669mm2 to back, right 8159mm2, and back yields 29mm2 back
   // to left and 27mm2 to right — the slivers of each patch that fall on the flank's side of the
-  // seam. 16,882mm2 reassigned in total, and 0 pairs still overlapping.
+  // seam. 16,884mm2 reassigned in total, and 0 pairs still overlapping.
   //
   // Each of those four patches ships cut at the limits of its boundary's joining stretch, so the
-  // eight rows below are the same four patches: 2201.7 + 6465.9 = 8667.6mm2 of the flank's, and so
+  // eight rows below are the same four patches: 2202 + 6467.2 = 8669.2mm2 of the flank's, and so
   // on, a tenth off the undivided figure because each piece rounds its own area.
   it('divides every patch two sheets both claim, and records what each yields', () => {
     const yields = Object.entries(net.zones).flatMap(([id, p]) =>
       (p.excluded ?? []).map((e) => [id, e.to, e.areaMm2, e.joins]),
     );
     expect(yields).toEqual([
-      ['left', 'back', 2201.7, true],
-      ['left', 'back', 6465.9, false],
+      ['left', 'back', 2202, true],
+      ['left', 'back', 6467.2, false],
       ['right', 'back', 559.6, true],
-      ['right', 'back', 7598.7, false],
+      ['right', 'back', 7599.8, false],
       ['back', 'left', 27.5, true],
       ['back', 'left', 1.4, false],
       ['back', 'right', 9.4, true],
@@ -661,6 +662,35 @@ describe('chart reconstruction', () => {
     }
   });
 
+  // A hole in a clip region excludes surface from the cut, so a loop that encloses no width has no
+  // business being one. The chair's two handle charts each carried two folded ribbons — ~60mm long,
+  // enclosing 42-45mm² of area against a perimeter twice their length — which the area-only filter
+  // passed and which the Back template drew as no-print slots. Guarding the shipped sidecar rather
+  // than the bake, because the sidecar is the artifact and a bake nobody re-runs proves nothing.
+  it('punches no hole that encloses perimeter but no width', () => {
+    const meanWidth = (loop: number[][]): number => {
+      let a = 0;
+      let p = 0;
+      for (let i = 0; i < loop.length; i++) {
+        const [x1, y1] = loop[i];
+        const [x2, y2] = loop[(i + 1) % loop.length];
+        a += x1 * y2 - x2 * y1;
+        p += Math.hypot(x2 - x1, y2 - y1);
+      }
+      return p > 0 ? (4 * Math.abs(a / 2)) / p : 0;
+    };
+    const folds: string[] = [];
+    for (const z of sidecar.zones)
+      for (const c of z.charts)
+        for (const r of c.subRegions)
+          for (const h of r.holes) {
+            const w = meanWidth(h);
+            if (w < MIN_HOLE_WIDTH_MM)
+              folds.push(`${z.id}/${c.libraryPartId}: ${w.toFixed(2)}mm across ${h.length} pts`);
+          }
+    expect(folds).toEqual([]);
+  });
+
   // The area check above is necessary but NOT sufficient for a partition: two parts overlapping by
   // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total. Overlap
   // is the half that actually corrupts output — where two parts both claim a patch of UV, the same
@@ -1039,9 +1069,9 @@ describe('hidden surface (deadRegions)', () => {
     // handed an exclusion list own none of the patch and draw nothing at all.
     expect(Object.fromEntries(drew)).toEqual({
       'left/chair-storage-left': 4650,
-      'left/chair-handle-left': 10853,
+      'left/chair-handle-left': 10854,
       'right/chair-storage-right': 3867,
-      'right/chair-handle-right': 9325,
+      'right/chair-handle-right': 9196,
       'back/chair-handle-left': 143,
       'back/chair-handle-right': 168,
     });

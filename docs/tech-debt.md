@@ -327,7 +327,7 @@ result has not been re-measured.
 on it and no user can reach the numbers above. This is a gate, not a fix: the
 path is unchanged and every measurement here still stands. Clearing the flag
 needs the accumulator-or-worker fix and the "Handle (left)" color loss (defect
-2 of "One open defect in the chair / pattern-library workflow", below).
+1 of "Three open defects in the chair / pattern-library Fill path", below).
 Sticker on the chair is unaffected and was measured at 19.5s for a full
 five-zone rebuild on the same box, which is why only Fill was withheld.
 
@@ -384,27 +384,17 @@ behind them.
   rects and takes only a region count and a repeat count, so a chair run means
   teaching it a kind and a Fill mode.
 
-## One open defect in the chair / pattern-library workflow, and what's blocked on it
+## Three open defects in the chair / pattern-library Fill path
 
-One of four defects the maintainer named on 2026-08-05; the other three are
-fixed, dead zones with this change. Defects 2-4 below are longer-standing ones
-against the same two features, folded in here by #275.
-Both features are withheld from the UI for the beta: `chair-body` carries
-`hidden: true` and `PATTERN_LIBRARY_ENABLED` is `false`. The report is the
-maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
+All four defects the maintainer named on 2026-08-05 are now closed: dead zones
+took three, and the clip-region folds took the last. What is left below are
+longer-standing ones against the same two features, folded in here by #275, and
+all three are about Fill. Both features are still withheld from the UI for the
+beta: `chair-body` carries `hidden: true` and `PATTERN_LIBRARY_ENABLED` is
+`false`. The report is the maintainer's, the diagnosis is not, and where the
+cause is confirmed it says so.
 
-1. **The SVG templates have odd/wrong edges — confirmed, same root as the cut
-   outline.** Every shipped template in `public/templates/` is a pure `L`
-   polyline with no curve commands: the zone boundary is traced along mesh
-   triangle edges and emitted vertex-for-vertex. So a template's outline is as
-   faceted as the tessellation under it. Two of them are also very ragged
-   rather than merely faceted — `back` carries a 355-point boundary with **18
-   holes**, `front` 146 points with 3 — which is what a grown-region boundary
-   looks like when it stops mid-surface, and is the same boundary the cut
-   clips to. Note the repo already has curve fitting for the raster tracer
-   (`src/raster/curve.ts`); nothing equivalent runs on a zone boundary.
-
-2. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
+1. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
    Measured on `MOSAIC_GPU=1` production build, 2026-08-03: zebra in Fill mode
    on the chair's Left side settles clean apart from a single `Couldn't cut
 color #0a0a0a into "Handle (left)"`, so that part prints without the black.
@@ -416,18 +406,18 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
    specific solid Manifold rejects; worth trying first whether the handle's
    own mesh density or a near-tangent cut at its curvature is what trips it.
 
-3. **The extrude repair never runs on a conformal zone — related,
+2. **The extrude repair never runs on a conformal zone — related,
    unmeasured on the chair.** `ConformalZoneMapper.buildCutter` absorbs an
    invalid prism and returns `null`, so the escalating erode ladder that
    fixed a lost color on the wheel (a `FlatZoneMapper`) buys the chair body
    nothing: a conformal zone gets no repair attempt and goes straight to the
-   warning in defect 2. Whether the chair body actually hits self-touching
+   warning in defect 1. Whether the chair body actually hits self-touching
    regions is unmeasured — nobody has driven dense artwork through a
    conformal zone to find out. Closing it means either giving the conformal
    mapper the same retry, or establishing that its null return means
    something different enough that a retry would be wrong.
 
-4. **`export-chair-examples.mjs` cannot reach Fill — tooling, broken since
+3. **`export-chair-examples.mjs` cannot reach Fill — tooling, broken since
    #137.** The script sets `.artwork-mode` to `fill` and asserts it took, but
    `chair-body` carries `withholdFill: true` so `artworkListPanel` never
    renders that select: the step times out. Not a selector to update — the
@@ -440,8 +430,32 @@ color #0a0a0a into "Handle (left)"`, so that part prints without the black.
 `debug-csg-failure` skills and every chair drive script depend on. Nothing
 public names that parameter: it is out of the README's `?kind=` example list.
 
-Neither flag is the fix. Restoring the chair needs defect 1 closed; restoring
-the pattern library needs defect 2 closed.
+Neither flag is the fix. The chair's own gate is clear — nothing above blocks
+offering it with Sticker. Restoring the pattern library needs defect 1 closed,
+and clearing `withholdFill` needs that plus the accumulator-or-worker fix in
+"Rebuild performance needs ongoing work" above.
+
+## A zone template's outline is faceted, because nothing curve-fits a zone boundary
+
+The remainder of the 2026-08-05 "templates have odd/wrong edges" report, after
+the clip-region folds were removed. What is left is cosmetic, and is not a
+reason to withhold anything.
+
+A zone boundary is traced along mesh triangle edges and emitted vertex for
+vertex, then simplified by `simplifyLoop` at `SIMPLIFY_TOL_MM` and written as
+`L` commands. So an outline is as faceted as the tessellation under it.
+Measured across all eight chair templates: **zero curve commands**, in every
+one.
+
+- Not wrong, just angular. The outline is the surface, to within 0.2mm.
+- The repo already curve-fits, in `src/raster/curve.ts`, but that is built for
+  the raster tracer's pixel-derived paths. Fitting a mesh-derived boundary is a
+  different problem and an unmeasured one: nobody has established how much
+  smoothing a 57.9 x 140.1mm opening's corners tolerate before the template
+  stops matching the cut.
+- Closing it means measuring that first. Until then any tolerance would be a
+  number invented to satisfy the complaint.
+- Applies to every part that ships zones, not only the chair.
 
 ## The raster edge-density reading depends on how big the file is
 
