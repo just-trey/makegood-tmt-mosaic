@@ -1323,7 +1323,9 @@ worst on `seat-right`/`chair-wheel-mount-right` at 11 of 23, and one of them —
 cut a visible 0.4mm mark into surface the cushion covers.
 
 The subtraction is baked now, as `cutRegions`, done once and cleaned once at
-`MIN_CUT_PIECE_MM2`. The chair ships **0 sub-floor pieces of 87**.
+`MIN_CUT_PIECE_MM2`. The chair ships **0 sub-floor pieces of 87**, and the
+baked result agrees with an independent turf difference to within 0.68mm² on
+the worst of its 26 charts.
 
 - Sidecar schema 6. A stale sidecar is refused rather than silently read.
 - `CLIP_REMNANT_FLOOR_MM2` still runs at each of the three clips as a backstop,

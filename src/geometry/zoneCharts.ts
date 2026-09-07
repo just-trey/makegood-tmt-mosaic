@@ -171,6 +171,9 @@ export interface ZoneNet {
  * failure, so it takes the same hard refusal. Schema 4 adds `mirror`: a cached schema-3 sidecar
  * would silently offer no Mirror on a kind whose bake says otherwise, so same again. Schema 5 adds
  * `net`, and repeats it once more: a cached schema-4 sidecar would offer no whole-part zone at all.
+ * Schema 6 adds `cutRegions`, the clip the cut uses, which the runtime used to derive by
+ * subtracting `deadRegions` from `subRegions` on every load: a cached schema-5 sidecar read here
+ * would fall through to `subRegions` alone and cut into surface the covers hide.
  */
 export const SIDECAR_SCHEMA = 6;
 

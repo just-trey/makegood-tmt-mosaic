@@ -724,6 +724,18 @@ describe('chart reconstruction', () => {
     expect(dust).toEqual([]);
   });
 
+  // The guard that would have caught a stale bake. With nothing to subtract there is nothing to
+  // do, so `subtractRegions` hands the claim straight back and these two must be identical — not
+  // close, identical. 14 of the chair's 26 charts have no dead region, and all 14 differed in a
+  // sidecar baked before that no-covers path existed.
+  it('leaves a chart with nothing hidden byte-identical to its claim', () => {
+    for (const z of sidecar.zones)
+      for (const c of z.charts) {
+        if (c.deadRegions?.length) continue;
+        expect(c.cutRegions, `${z.id}/${c.libraryPartId}`).toEqual(c.subRegions);
+      }
+  });
+
   // It must also still BE the claim less the hidden surface. A filter that ate real surface would
   // pass the test above by emptying everything.
   //
@@ -749,15 +761,18 @@ describe('chart reconstruction', () => {
           : multi(c.subRegions);
         const want = ref ? Math.abs(planarArea(ref)) : 0;
         const got = area(c.cutRegions!);
-        // Bounded both ways and on both scales, because neither alone fits: measured across all
-        // 26 charts, the worst SHORTFALL is 3.8mm² on `back`/`chair-seat-back-top`, which is
-        // 0.027% of its 13,967mm²; the worst RELATIVE gap is 2.2% on
-        // `seat-right`/`chair-storage-right`, where the region is 6.5mm² and the gap is 0.1mm²,
-        // under one nozzle square. A relative bound alone fails the small regions and an absolute
-        // one alone fails the large.
-        const slack = Math.max(4, want * 0.001);
-        expect(want - got, `${where}: lost real surface`).toBeLessThan(slack);
-        expect(got - want, `${where}: gained surface it should not have`).toBeLessThan(slack);
+        // An ABSOLUTE bound, deliberately. What separates the two engines is the handful of
+        // sub-nozzle pieces the bake drops, and that is an absolute quantity: it does not grow
+        // with the region. Measured across all 26 charts of the shipped bake, the worst gap is
+        // 0.68mm² on `seat-right`/`chair-wheel-mount-right`, and the worst in relative terms is
+        // 2.2% only because that region is 6.5mm² and the gap 0.14mm², under one nozzle square.
+        //
+        // 2mm² is three times the worst and still catches a real island going: an earlier version
+        // allowed 0.1% of the region, which on the 35,313mm² left fender would have hidden a 35mm²
+        // loss. It was also calibrated against a stale bake — the sidecar had not been re-baked
+        // since `subtractRegions` gained its no-covers path, and the 3.8mm² it was sized for was
+        // that drift, not the filter.
+        expect(Math.abs(got - want), `${where}: cut region disagrees with turf`).toBeLessThan(2);
       }
   });
 

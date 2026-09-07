@@ -2419,8 +2419,13 @@ export function subtractRegions(wasm, regions, holes, minPieceArea) {
     return regions
       .map((r) => ({ outer: r.outer, holes: r.holes ?? [] }))
       .filter((r) => regionNetArea(r) >= minPieceArea);
+  // EvenOdd on the subject: these are outer/hole regions, where a hole ring inside its outer is
+  // exactly what EvenOdd is for.
   const a = new wasm.CrossSection(regions.flatMap(ringsOfRegion), 'EvenOdd');
-  const b = new wasm.CrossSection(holes.flatMap(ringsOfRegion), 'EvenOdd');
+  // NonZero, like the rest of the bake. EvenOdd would cancel two dead regions that overlap on one
+  // chart and leave the overlap unsubtracted. No shipped chart carries more than one, so this is a
+  // guard rather than a fix.
+  const b = new wasm.CrossSection(holes.flatMap(ringsOfRegion), 'NonZero');
   const diff = a.subtract(b);
   const out = classifyRegions(diff.toPolygons().map((p) => p.map(([x, y]) => [x, y])));
   a.delete();
@@ -4648,7 +4653,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
   config.parts.forEach((p, pi) => {
     meshes[p.libraryPartId] = meshFingerprint(parts[pi]);
   });
-  // Sidecar schema 5 (a multi-zone kind carries `net`; zones may carry `mirror`, charts
+  // Sidecar schema 6 (a multi-zone kind carries `net`; zones may carry `mirror`, charts
   // `deadRegions`); independent of the zone *config* schema checked in validateConfig, which is
   // still 1. Must match SIDECAR_SCHEMA in src/geometry/zoneCharts.ts.
   return {
