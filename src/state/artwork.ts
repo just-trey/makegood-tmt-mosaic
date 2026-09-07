@@ -705,10 +705,12 @@ export function clampArtworkModes(): boolean {
   // of being retracted and re-raised. What ends it is Fill working again, and that is the one
   // condition checked here.
   //
-  // Leaves one narrow staleness: chair to hubcap with Cut to artwork shape already on keeps Fill
-  // withheld throughout, so the chair's message stands on the hubcap until the user dismisses it.
-  // Tracking a per-notice part to close that buys module state for a case that needs the toggle
-  // set before the switch.
+  // Leaves one narrow staleness, in both directions: moving between the chair and a hubcap that
+  // already has Cut to artwork shape on keeps Fill withheld throughout, so nothing is dismissed and
+  // the mode is already `sticker` so nothing re-raises, and the pill keeps the wording it was
+  // raised with. Going that way it names a toggle the chair does not render. Closing it means
+  // keying the notice on the part as well as the design; it needs the toggle set before the switch
+  // to reach, and the pill is dismissable, so it is written down rather than patched.
   if (!fillWithheld()) {
     for (const id of [...state.sources.map((s) => s.id), ...state.artworks.map((a) => a.id)])
       dismissNotice('', fillClampKey(id));

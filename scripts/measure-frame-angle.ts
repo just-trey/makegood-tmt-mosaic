@@ -48,7 +48,9 @@ import type { AssemblyPart, FlatPatch } from '../src/types';
 /**
  * The design meshes a user can actually reach today, and only those.
  *
- * chair-body is withheld from the UI (PR #133). `hubcap-clips` is deliberately absent: it is the
+ * chair-body is absent because it designs on baked zones rather than on ranked flat patches, so a
+ * patch's frame angle says nothing about it — not because it is withheld, which it no longer is.
+ * `hubcap-clips` is deliberately absent too: it is the
  * four mounting clips alone, and the hubcap role's `buildMesh` generates the disc the design
  * lands on at `state.hubcapDiameterMm`, so the part's mesh is never that file (kinds.ts says so
  * on the role). Measuring it would be measuring a face nothing designs on.
