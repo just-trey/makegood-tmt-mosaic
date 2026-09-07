@@ -7,6 +7,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 vi.mock('../src/app/scheduler', () => ({ scheduleRebuild: vi.fn() }));
 vi.mock('../src/ui/fitPanel', () => ({ refreshFitInputsFromState: vi.fn() }));
 vi.mock('../src/scene/designGizmo', () => ({ refreshGizmo: vi.fn() }));
+vi.mock('../src/app/rebuild', () => ({ refreshNetYieldOverlays: vi.fn() }));
 vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/assembly/kinds', () => ({
   fillModeOffered: () => false,
@@ -31,6 +32,7 @@ import {
 import { WARNINGS, clearWarnings, notice } from '../src/warnings';
 import { track } from '../src/analytics/track';
 import { scheduleRebuild } from '../src/app/scheduler';
+import { refreshNetYieldOverlays } from '../src/app/rebuild';
 import { WHOLE_CHAIR_ZONE } from '../src/geometry/zones';
 import type { ConformalChart } from '../src/geometry/conformal';
 import type { ZoneNet } from '../src/geometry/zoneCharts';
@@ -445,6 +447,29 @@ describe('Whole chair (net binding)', () => {
     expect(document.querySelector<HTMLSelectElement>('.artwork-zone')!.value).toBe(
       WHOLE_CHAIR_ZONE,
     );
+  });
+
+  // Selecting a row schedules no rebuild, so nothing else re-answers "is the active binding a
+  // whole-part one" for the yielded-canvas hatch already in the scene. This click is the only
+  // caller of that refresh.
+  it('refreshes the yielded-canvas hatch when a click changes the active row', () => {
+    const { parts, net } = netFixture();
+    state.assembly.parts = parts;
+    state.assembly.net = net;
+    const first = loadArtworkSource(fakeParsed(), 'a.svg');
+    setArtworkZone(first.id, WHOLE_CHAIR_ZONE);
+    loadArtworkSource(fakeParsed(), 'b.svg');
+    render();
+    vi.mocked(refreshNetYieldOverlays).mockClear();
+    vi.mocked(scheduleRebuild).mockClear();
+
+    document
+      .querySelectorAll('.artwork-row')[0]
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(state.activeArtworkId).toBe(first.id);
+    expect(refreshNetYieldOverlays).toHaveBeenCalled();
+    expect(scheduleRebuild).not.toHaveBeenCalled();
   });
 
   it('badges a whole-chair binding, with no Mirror checkbox offered', () => {
