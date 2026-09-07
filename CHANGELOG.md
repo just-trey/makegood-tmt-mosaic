@@ -11,24 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **A design on the chair's Front no longer cuts a phantom mark into the top of
   the seat back.** A 0.4mm inlay, in surface the cushion covers, on one side of
-  the centre line only. It came from a clip: where the boundary a design is
-  trimmed to runs along an edge of the design itself, the trim can hand back a
-  hairline instead of nothing, and a hairline still cuts. This one was 0.02mm
-  wide and 8mm long, 0.025mm² against 1,258mm² and up for every other piece the
-  same design reached. The build now discards any piece of a design under one
-  nozzle square, and **says which color and which part it took them from** — a
-  piece that small cannot hold a single bead, and nothing goes unnamed. It checks
-  each piece rather than the design as a whole, because the sliver usually
-  arrives beside a real region and adding the two together hides it. The same
-  check runs where a mark is split at a seam and where it is split down the
-  middle for mirroring, which leave the same kind of sliver for the same reason.
+  the centre line only.
 
-  One thing changes for designs that were always tiny: a recess under about
-  0.4 mm across is no longer cut, where before it was. It sliced to nothing and
-  still cost a filament slot. You get the same notice naming it.
+  The chair's design surfaces are worked out by taking each piece's share of a
+  zone and subtracting what the wheels and cushions hide once it's assembled.
+  That was done fresh every time the app loaded, and the two shapes are traced
+  from the same triangles, so they run along each other for long stretches and
+  the subtraction left slivers all down them. 55 of the chair's 142 pieces of
+  design surface were smaller than the printer's nozzle. One of them is the mark
+  on the seat back.
 
-  It catches a sliver by how much of it there is, so a long thin one can still
-  get past. That one is written up rather than fixed.
+  The subtraction happens once now, when the part's zones are baked, and
+  anything left under one nozzle across is dropped there. The chair ships none.
+  Your designs are unaffected: the surface they can cut is the same, minus
+  slivers nothing could have printed.
+
+  Two things you may notice. Clicking a zone in the 3D view is more accurate,
+  since some of those slivers were pickable. And a design with a piece genuinely
+  too small to print now says so, naming the color and the part, instead of
+  going quiet — a recess needs to be about 0.4 mm across to hold a bead.
 
 ### Added
 

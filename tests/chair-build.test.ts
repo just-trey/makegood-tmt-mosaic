@@ -533,34 +533,34 @@ describe('per-zone artwork binding', () => {
   }, 180000);
 });
 
-// A clip whose boundary runs ALONG an edge of the region being clipped can hand back a hairline
-// instead of null, and a hairline still extrudes into a real inlay. The chair ships one: on the
-// Front zone, `chair-seat-back-top`'s live area is the 2,634mm² band at the top of the part PLUS a
-// second polygon of 0.025mm², 0.020mm wide and 8.08mm long, at u 70.387..70.407 v 149.751..157.827,
-// where the cushion's dead region fails to cover the claim exactly. Reproduce with
-// `npx vite-node` over public/stl/chair-body-zones.json: turf.difference(claim, dead) returns two
-// polygons for that chart.
+// The seat back's phantom mark, from the bake's side. `chair-seat-back-top`'s Front clip used to
+// come back as TWO pieces: the 2,634.33mm² band at the top of the part and a 0.0253mm² hairline
+// 0.020mm wide and 8.08mm long, where the cushion's dead region failed to cover the claim exactly.
+// The hairline cut a 0.4mm mark into surface the cushion covers, which check-mirror-design reported
+// as the part taking ink on one side of its centre line only.
 //
-// It cut. The mirror check saw it as `Seat back (top)` taking ink on one side of the centre line
-// only — a 0.4mm inlay in surface the cushion covers, on the side whose mirrored copy reached the
-// hairline. Guarding the build rather than the bake, because the same shape arises wherever a clip
-// boundary is collinear with what it clips, including at part seams.
-describe('a clip remnant too small to print', () => {
+// The bake subtracts the dead region once and cleans the result now (`cutRegions`), so there is no
+// hairline left to reach the cut. A design placed where it was lands on hidden surface and says so.
+describe('the seat back hairline', () => {
   const ZONE = 'front';
   const PART = 'chair-seat-back-top';
-  // Centred on the hairline, and big enough that the whole 8mm of it is inside the square. Every
+  // Where the hairline was, and big enough that all 8mm of it would be inside the square. Every
   // other millimetre of the square is under the cushion.
   const HAIRLINE_OFF_X = -39.42;
   const HAIRLINE_OFF_Z = -9.64;
 
-  it('builds no cutter from it, and leaves the part uncut', async () => {
-    clearWarnings();
+  async function frontPart(): Promise<AssemblyPart> {
     const mesh = await loadPacked(PART);
-    const part = chairPart(
+    return chairPart(
       PART,
       mesh,
       zonesFor(PART, mesh).filter((z) => z.id === ZONE),
     );
+  }
+
+  it('is gone, so a design there cuts nothing and is told why', async () => {
+    clearWarnings();
+    const part = await frontPart();
     const build = await buildAssemblyGeometry(
       chairInput([part], 12, [
         { zoneId: ZONE, sizeMM: 12, offX: HAIRLINE_OFF_X, offZ: HAIRLINE_OFF_Z },
@@ -568,34 +568,21 @@ describe('a clip remnant too small to print', () => {
     );
     expect(build, 'build returned null').not.toBeNull();
     const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
-    expect(Object.keys(out.inlaySoups), 'an inlay was built from a 0.025mm² remnant').toEqual([]);
-    // The no-cutter path copies part.positions verbatim, so an identical soup is the whole claim
-    // and needs no Manifold solids to say it.
+    expect(Object.keys(out.inlaySoups), 'an inlay was built where the hairline was').toEqual([]);
+    // The no-cutter path copies part.positions verbatim, so an identical soup is the whole claim.
     expect(out.bodySoup.length).toBe(part.positions!.length);
-    // And it must be the guard that dropped it, not the hairline having gone. Re-baking that away
-    // is still owed (docs/tech-debt.md), and without this the test would pass with the guard
-    // deleted the day it lands.
-    expect(
-      WARNINGS.map((w) => w.message),
-      'nothing said the speck was dropped',
-    ).toContainEqual(
-      expect.stringContaining('is too small to print on "chair-seat-back-top", so nothing was cut'),
+    // And the RIGHT message: it landed on surface the cushion hides, not on ink too small to
+    // print. Those have opposite remedies.
+    expect(WARNINGS.map((w) => w.message)).toContainEqual(
+      expect.stringContaining("only reaches surface that's hidden once assembled"),
     );
   }, 180000);
 
-  // The case a floor on the feature's TOTAL area misses, and the first version of this fix did:
-  // the hairline usually arrives beside the real band rather than alone, and 2,634.33 + 0.025 is
-  // comfortably over any floor. Only a per-polygon test drops the one and keeps the other.
-  it('drops the hairline while keeping the real band it arrives with', async () => {
+  it('leaves the real band cutting, with nothing down where the hairline was', async () => {
     clearWarnings();
-    const mesh = await loadPacked(PART);
-    const part = chairPart(
-      PART,
-      mesh,
-      zonesFor(PART, mesh).filter((z) => z.id === ZONE),
-    );
+    const part = await frontPart();
     const zone = sidecar.zones.find((z) => z.id === ZONE)!;
-    // Covers the whole chart: the band at v 270..327 and the hairline at v 149.8..157.8 together.
+    // Covers the whole chart: the band at v 270..327 and where the hairline sat at v 149.8..157.8.
     const build = await buildAssemblyGeometry(
       chairInput([part], 200, [
         {
@@ -608,39 +595,11 @@ describe('a clip remnant too small to print', () => {
     );
     const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
     expect(Object.keys(out.inlaySoups).length, 'the band cut nothing').toBeGreaterThan(0);
-
-    // The band is at y 525.3..556.3 on the chair; the hairline sat at y 380.0..387.9. Nothing the
-    // build cuts may reach down there.
+    // The band is at y 525.3..556.3 on the chair; the hairline sat at y 380.0..387.9.
     const soup = out.inlaySoups[Number(Object.keys(out.inlaySoups)[0])];
     let minY = Infinity;
     for (let i = 1; i < soup.length; i += 3) minY = Math.min(minY, soup[i]);
-    expect(minY, 'an inlay reached the hairline at the bottom of the chart').toBeGreaterThan(400);
-  }, 180000);
-
-  // The floor must not be reachable by anything a user meant. On the same zone and the same
-  // design, every other chart's clipped region is 1,258mm² or more.
-  it('still cuts a region the design really lands on', async () => {
-    clearWarnings();
-    const mesh = await loadPacked(PART);
-    const part = chairPart(
-      PART,
-      mesh,
-      zonesFor(PART, mesh).filter((z) => z.id === ZONE),
-    );
-    // The band at the top of the part, which is the surface this chart genuinely offers.
-    const zone = sidecar.zones.find((z) => z.id === ZONE)!;
-    const build = await buildAssemblyGeometry(
-      chairInput([part], 40, [
-        {
-          zoneId: ZONE,
-          sizeMM: 40,
-          offX: 109.8 - zone.uvBounds.maxU / 2,
-          offZ: 300 - zone.uvBounds.maxV / 2,
-        },
-      ]),
-    );
-    const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
-    expect(Object.keys(out.inlaySoups).length, 'the live band cut nothing').toBeGreaterThan(0);
+    expect(minY, 'an inlay reached where the hairline was').toBeGreaterThan(400);
   }, 180000);
 });
 

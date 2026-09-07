@@ -40,6 +40,8 @@ Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair:
 | ---------------------------------------- | -------- | --------------------------------------------------------------------------- |
 | `main` (fenders only, 2026-08-16)        | 3        | a0-front "too few bare-body samples", wing-left/right no ink                |
 | dead zones, hemisphere bake (2026-08-30) | 5        | 4 x "picked a zone on bare body" (36/31/1/25 samples) + an orbit-drag throw |
+| whole-chair zones (2026-09-07)           | 6        | the four above, plus one on the `*whole` zone, plus the throw               |
+| baked `cutRegions` (2026-09-07)          | 2        | a0-front (48 samples) + the throw — the rest were landing on bake dust      |
 
 - The pick itself is right: the zone is there, and the hatch overlay says why
   artwork will not appear. Only the check's model is stale.
@@ -1306,43 +1308,35 @@ warning for it.
 to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
 scheduled.
 
-## The chair's bake leaves a 0.02mm live hairline the cut no longer builds from
+## The bake's cut regions are clean; the seam ribbon still is not
 
 Closing the "`Seat back (top)` takes ink on one side" report found the cause one
-layer up from where that report looked, and the build now guards it. What is
-left is the bad data underneath.
+layer up from where that report looked, and it turned out not to be one hairline
+but dust everywhere.
 
-On the Front zone, `chair-seat-back-top`'s live area — its claim less the
-cushion's dead region — is **two** polygons, not one:
+The runtime used to derive a part's clip region on every load, subtracting
+`deadRegions` from `subRegions`. Those two are traced from the SAME triangles,
+so they share long stretches of boundary and the difference leaves slivers along
+them. **55 of the chair's 142 live pieces came back under one nozzle square**,
+worst on `seat-right`/`chair-wheel-mount-right` at 11 of 23, and one of them —
+0.0253mm², 0.020mm wide, 8.08mm long on `chair-seat-back-top`'s Front chart —
+cut a visible 0.4mm mark into surface the cushion covers.
 
-| polygon       | area        | extent                                |
-| ------------- | ----------- | ------------------------------------- |
-| the real band | 2634.33 mm² | u 69.665..149.985, v 270.313..326.856 |
-| a hairline    | 0.025 mm²   | u 70.387..70.407, v 149.751..157.827  |
+The subtraction is baked now, as `cutRegions`, done once and cleaned once at
+`MIN_CUT_PIECE_MM2`. The chair ships **0 sub-floor pieces of 87**.
 
-The hairline is 0.020mm wide and 8.08mm long, at the bottom edge where the dead
-region is meant to cover the claim exactly and misses by a fraction. Reproduce
-by running `turf.difference` over that chart's `subRegions` and `deadRegions`
-from `public/stl/chair-body-zones.json`.
+- Sidecar schema 6. A stale sidecar is refused rather than silently read.
+- `CLIP_REMNANT_FLOOR_MM2` still runs at each of the three clips as a backstop,
+  naming what it drops. With the bake clean it fires on a genuinely too-small
+  design and not on ordinary ones.
+- **A side effect worth knowing**: `npm run check:zone-occlusion` went from 6
+  failures to 2. Most of its "picked a zone on bare body" samples were landing
+  on the dust.
 
-- **It no longer cuts.** `CLIP_REMNANT_FLOOR_MM2` in
-  [src/geometry/depth.ts](../src/geometry/depth.ts) drops any piece of a clipped
-  region under one nozzle square, and the build names the colour and part it
-  took them from.
-- **The guard deliberately does not ask whether the clip is what made a piece
-  small.** Two review rounds tried and it is not answerable from a boolean's
-  output: the clipper fuses touching input polygons, so a fused output piece
-  matches no single source and reads as shrunk — two abutting 0.3 x 0.2mm dots
-  wholly inside the boundary came back as nothing. Coordinates also move
-  whenever `boolOpWithRetry` takes its catch, which truncates at 1e-10, 1e-8
-  and 1e-6. A flat floor plus a notice was the maintainer's call over reverting
-  the guard.
-- **The data is still wrong**, and a wider hairline would clear the floor. This
-  is the same class as "A seam sliver warns as if artwork were lost" above,
-  seen from the bake rather than the cut.
-- Closing it means the dead-region union sharing the claim's boundary exactly
-  where the two are meant to coincide, rather than to within a bake tolerance.
-  Check every chart, not just this one: the same probe over all 12 charts that
-  carry a dead region is the measurement to take first.
-- Direction is safe either way. A surviving hairline costs a sliver of pocket in
-  covered surface; it never leaves blank plastic where artwork was expected.
+**What is still open is the seam ribbon**, in "A seam sliver warns as if artwork
+were lost" above. That one is 29.85mm², two orders of magnitude over both
+floors, and unprintable by its 0.15mm WIDTH rather than its area. Neither the
+bake filter nor the cut floor reaches it, and raising either would start eating
+printable regions. It needs a min-width test — a morphological opening at one
+nozzle, the shape `narrowFeatureArea` in
+[src/geometry/hubcapOutline.ts](../src/geometry/hubcapOutline.ts) already uses.

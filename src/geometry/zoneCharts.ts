@@ -28,6 +28,8 @@ export interface SidecarChart {
    * A part's slice can be several disjoint islands, hence a list.
    */
   subRegions: { outer: number[][]; holes: number[][][] }[];
+  /** `subRegions` less `deadRegions`, baked and cleaned — what the cut clips to. */
+  cutRegions?: { outer: number[][]; holes: number[][][] }[];
   /**
    * Surface of this chart another part hides once assembled (wheels, cushions), already shrunk by
    * the config's bleed so artwork still runs past the visible edge. Subtracted from the artwork
@@ -170,7 +172,7 @@ export interface ZoneNet {
  * would silently offer no Mirror on a kind whose bake says otherwise, so same again. Schema 5 adds
  * `net`, and repeats it once more: a cached schema-4 sidecar would offer no whole-part zone at all.
  */
-export const SIDECAR_SCHEMA = 5;
+export const SIDECAR_SCHEMA = 6;
 
 export interface ZoneSidecar {
   schema: number;
@@ -255,6 +257,7 @@ export function reconstructChart(
     boundary: zone.boundary,
     holes: zone.holes,
     subRegions: chart.subRegions,
+    cutRegions: chart.cutRegions,
     deadRegions: chart.deadRegions,
     zoneBounds: zone.uvBounds,
     netExcluded,

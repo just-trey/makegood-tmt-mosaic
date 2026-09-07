@@ -64,6 +64,21 @@ export const MIN_HOLE_AREA_MM2 = 15;
  * escape `minHoleAreaMm2` gives the area floor. Re-measure the separation before using it.
  */
 export const MIN_HOLE_WIDTH_MM = 2;
+
+/**
+ * Smallest piece of a part's cut region the bake keeps, in mm².
+ *
+ * One 0.4mm nozzle square — the same floor `CLIP_REMNANT_FLOOR_MM2` applies at cut time, and the
+ * same reason: a piece under it cannot hold a single extrusion of any shape.
+ *
+ * It matters here because `cutRegions` is a difference between two loops traced from the SAME
+ * triangles, so they share long stretches of boundary and the subtraction leaves dust along them.
+ * Measured on the chair before this filter: 55 of 142 pieces under the floor, worst on
+ * `seat-right`/`chair-wheel-mount-right` at 11 of 23, and one of them cut a visible 0.4mm mark
+ * into the seat back. Cleaning it here rather than at cut time is what keeps the runtime from
+ * having to tell the user about the bake's own dust.
+ */
+export const MIN_CUT_PIECE_MM2 = 0.16;
 /**
  * Islands smaller than this (mm²) are dropped from a part's clip region. Far below MIN_HOLE_AREA_MM2
  * on purpose: a hole that small is a fillet artifact worth closing up, but an *island* that small is
@@ -2390,6 +2405,31 @@ const isRealHole = (pts, minArea, minWidth) =>
   Math.abs(loopArea(pts)) >= minArea && loopMeanWidth(pts) >= minWidth;
 
 /**
+ * `regions` less `holes`, as `{ outer, holes }` pieces, with anything under `minPieceArea` gone.
+ *
+ * Through the boolean engine rather than by loop arithmetic: the two sets are traced from the same
+ * triangles and interleave along shared boundaries, which is exactly the case ring-level
+ * subtraction gets wrong.
+ */
+export function subtractRegions(wasm, regions, holes, minPieceArea) {
+  const ringsOfRegion = (r) => [r.outer, ...(r.holes ?? [])];
+  // Nothing to subtract, so nothing to normalise: the regions are already classified, and a kind
+  // with no covers reaches bakeZones without a boolean engine at all.
+  if (!holes.length)
+    return regions
+      .map((r) => ({ outer: r.outer, holes: r.holes ?? [] }))
+      .filter((r) => regionNetArea(r) >= minPieceArea);
+  const a = new wasm.CrossSection(regions.flatMap(ringsOfRegion), 'EvenOdd');
+  const b = new wasm.CrossSection(holes.flatMap(ringsOfRegion), 'EvenOdd');
+  const diff = a.subtract(b);
+  const out = classifyRegions(diff.toPolygons().map((p) => p.map(([x, y]) => [x, y])));
+  a.delete();
+  b.delete();
+  diff.delete();
+  return out.filter((r) => regionNetArea(r) >= minPieceArea);
+}
+
+/**
  * Area (mm²) of one `{ outer, holes }` region: the outer loop less its holes, unsigned.
  *
  * Exported because the same sum is what the bake log reports, what dropSmallRegions filters on, and
@@ -3673,6 +3713,7 @@ const CONFIG_KEYS = new Set([
   'covers',
   'kindId',
   'minHoleAreaMm2',
+  'minCutPieceMm2',
   'minHoleWidthMm',
   'minIslandAreaMm2',
   'mirrorAxis',
@@ -3876,6 +3917,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
   const simplifyTol = config.simplifyTolMm ?? SIMPLIFY_TOL_MM;
   const minHoleArea = config.minHoleAreaMm2 ?? MIN_HOLE_AREA_MM2;
   const minHoleWidth = config.minHoleWidthMm ?? MIN_HOLE_WIDTH_MM;
+  const minCutPieceArea = config.minCutPieceMm2 ?? MIN_CUT_PIECE_MM2;
   const minIslandArea = config.minIslandAreaMm2 ?? MIN_ISLAND_AREA_MM2;
   const zones = [];
   const templates = [];
@@ -4329,6 +4371,29 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
             }));
         }
       }
+      // The clip the runtime actually uses: this part's claim less the surface the covers hide,
+      // with anything left under one nozzle square thrown away.
+      //
+      // Baked rather than left to the runtime, which used to subtract `deadRegions` from
+      // `subRegions` on every load. That subtraction is between two loops traced from the SAME
+      // triangles, so they share long stretches of boundary and the difference leaves dust along
+      // them: 55 of the chair's 142 live pieces came back under a nozzle square, and one of them
+      // cut a visible 0.4mm mark into the seat back. Done once here, cleaned once here, and the
+      // sheet keeps drawing `subRegions` so the hatch still has a silhouette to sit on.
+      chart.cutRegions = subtractRegions(
+        opts.wasm,
+        subRegions,
+        chart.deadRegions ?? [],
+        minCutPieceArea,
+      ).map((r) => ({
+        outer: roundLoop(r.outer),
+        holes: r.holes.map(roundLoop),
+      }));
+      if (!chart.cutRegions.length)
+        warnings.push(
+          `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": every bit of its claim is ` +
+            `hidden once assembled, so it can take no artwork at all`,
+        );
       charts.push(chart);
     }
     if (deadCS) deadCS.delete();
@@ -4586,7 +4651,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
   // `deadRegions`); independent of the zone *config* schema checked in validateConfig, which is
   // still 1. Must match SIDECAR_SCHEMA in src/geometry/zoneCharts.ts.
   return {
-    sidecar: { schema: 5, kindId: config.kindId, meshes, zones, ...(net ? { net } : {}) },
+    sidecar: { schema: 6, kindId: config.kindId, meshes, zones, ...(net ? { net } : {}) },
     templates,
     warnings,
   };
