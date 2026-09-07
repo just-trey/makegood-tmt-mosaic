@@ -45,18 +45,24 @@ const piecesOf = (f) => {
     turf.polygon(rings),
   );
 };
+// Walks any nesting, because a pair's intersect can be a MultiPolygon while a single piece is a
+// Polygon, and reading the deeper one a level too shallow silently returns Infinity.
 const bboxOf = (f) => {
   let x0 = Infinity,
     y0 = Infinity,
     x1 = -Infinity,
     y1 = -Infinity;
-  for (const ring of f.geometry.coordinates)
-    for (const [x, y] of ring) {
-      if (x < x0) x0 = x;
-      if (y < y0) y0 = y;
-      if (x > x1) x1 = x;
-      if (y > y1) y1 = y;
+  const walk = (c) => {
+    if (typeof c[0] === 'number') {
+      if (c[0] < x0) x0 = c[0];
+      if (c[1] < y0) y0 = c[1];
+      if (c[0] > x1) x1 = c[0];
+      if (c[1] > y1) y1 = c[1];
+      return;
     }
+    for (const k of c) walk(k);
+  };
+  walk(f.geometry.coordinates);
   return [x1 - x0, y1 - y0];
 };
 // Outer ring only. `planarArea` subtracts holes, so counting hole perimeter here would divide a
@@ -75,7 +81,8 @@ const perimOf = (f) => {
 for (const field of ['subRegions', 'cutRegions']) {
   let pairs = 0,
     worst = 0,
-    where = '';
+    where = '',
+    pairNarrow = Infinity;
   for (const zone of z.zones) {
     const cs = zone.charts.filter((c) => (c[field] ?? []).length);
     for (let i = 0; i < cs.length; i++)
@@ -85,6 +92,11 @@ for (const field of ['subRegions', 'cutRegions']) {
         const a = Math.abs(planarArea(hit));
         if (a <= 0) continue;
         pairs++;
+        // The narrow side of the WHOLE pair's intersect, which is the figure the first draft of
+        // the report quoted before it was measured per piece. Printed so that correction is
+        // re-derivable rather than remembered.
+        const [pw, ph] = bboxOf(hit);
+        pairNarrow = Math.min(pairNarrow, Math.min(pw, ph));
         if (a > worst) {
           worst = a;
           where = `${zone.id} ${cs[i].libraryPartId}/${cs[j].libraryPartId}`;
@@ -92,7 +104,8 @@ for (const field of ['subRegions', 'cutRegions']) {
       }
   }
   console.log(
-    `${field.padEnd(11)} ${pairs} overlapping pair(s), worst ${worst.toFixed(2)}mm² on ${where}`,
+    `${field.padEnd(11)} ${pairs} overlapping pair(s), worst ${worst.toFixed(2)}mm² on ${where}; ` +
+      `thinnest pair by bbox ${pairNarrow.toFixed(4)}mm`,
   );
 }
 console.log('');
@@ -141,7 +154,10 @@ for (const zone of z.zones) {
           );
           // frameAt takes an offset from the zone's own anchor, which is what uvCu/uvCv hold.
           const f = mp.frameAt(cxp - zone.uvBounds.maxU / 2, cyp - zone.uvBounds.maxV / 2);
-          pts.push(Number.isFinite(f.offChartMM) ? [f.origin.x, f.origin.y, f.origin.z] : null);
+          // `=== 0`, not `isFinite`. frameAt snaps a query to the nearest triangle and reports how
+          // far it moved; Infinity is only an empty chart. Accepting anything non-Infinite
+          // published 7 of 82 samples that had been snapped by up to 0.0863mm.
+          pts.push(f.offChartMM === 0 ? [f.origin.x, f.origin.y, f.origin.z] : null);
         }
         const apart =
           pts[0] && pts[1]
@@ -183,6 +199,9 @@ console.log(
 );
 const outside = rows.filter((r) => !r.sampledInside).length;
 if (outside) console.log(`WARNING: the sample point fell outside ${outside} piece(s)`);
+const snapped = rows.filter((r) => r.apart === null).length;
+if (snapped)
+  console.log(`${snapped} piece(s) had a sample land off one part's chart and are not counted`);
 const ap = rows.map((r) => r.apart).filter((x) => x !== null);
 if (ap.length)
   console.log(
@@ -219,7 +238,7 @@ if (ap.length)
           [cu - w / 2, cv - len / 2],
         ],
       ]);
-      let piece = null;
+      let piece;
       try {
         piece = turf.intersect(raw, clip);
       } catch {

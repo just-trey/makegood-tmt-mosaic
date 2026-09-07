@@ -787,19 +787,6 @@ describe('chart reconstruction', () => {
       }
   });
 
-  // The area check above is necessary but NOT sufficient for a partition: two parts overlapping by
-  // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total.
-  //
-  // **What the overlap is NOT is output corruption**, which this comment used to say it was.
-  // Measured 2026-09-07 (docs/findings/2026-09-07-seam-ribbon-closed.md): put the same UV point
-  // through each part's warp and it lands 0.220 to 0.589mm apart on the two. They are distinct
-  // surfaces either side of a printed join, not one surface cut twice, so a mark there spans the
-  // seam — which is what a mark crossing a join should do. That range sits either side of the
-  // config's 0.530mm widest contact gap, so it is what it is rather than "the seam clearance".
-  //
-  // What this still guards is a claim that CREPT: an overlap between two parts that do not meet on
-  // the chair means a boundary ran somewhere it was not traced from, and the seam-sharing check
-  // below is the half that catches it.
   // Pins what closed "A seam sliver warns as if artwork were lost": every overlap the chair has
   // extrudes, on BOTH the parts that claim it. That section said a seam remnant yields no cutter
   // and so raises `Couldn't cut color … into …`, and two hunts for a sighting failed because

@@ -33,8 +33,8 @@ not `subRegions`:
 
 **Measured per PIECE, not per pair.** A pair's intersect can be several polygons,
 and the narrowest of them is what a design clipped down to one would face. That
-is 41 pieces, and it is the correction that matters: by pair the thinnest looks
-like 0.274mm, by piece it is 0.0055mm.
+is 41 pieces, and it is the correction that matters: by pair the thinnest is
+0.0830mm by bounding box, by piece 0.0055mm. Both are printed by the script.
 
 |                                             |                                                |
 | ------------------------------------------- | ---------------------------------------------- |
@@ -86,9 +86,15 @@ A ribbon one micron wide and 120mm long extrudes without complaint.
 
 - The tech-debt section goes. So does the one above it recording the `cutRegions`
   bake, which had no open thread left once this closed.
-- **The min-width test it asked for is owed to nothing.** A morphological opening
-  at one nozzle would guard a case that does not exist and would cost real
-  features: the chair has genuine overlap pieces at 0.15mm.
+- **The min-width test it asked for is owed to nothing _by this item_.** What is
+  closed is that item's claim: a seam remnant yields no cutter and so warns. A
+  width guard may still be worth having for a different reason — the hairline
+  #296 removed was 0.020 x 8.08mm, extruded perfectly well, and cut a visible
+  0.4mm mark, which is a width problem that `CLIP_REMNANT_FLOOR_MM2` happened to
+  catch on area by a factor of six. Nothing here says that case cannot recur
+  wider. What is settled is that the seam overlaps are not it, and that a width
+  guard would have to be sized against real features: the chair has genuine
+  overlap pieces at 0.15mm.
 - The overlap test in `tests/chair-zones.test.ts` stays. What it really guards is
   a claim creeping far from a seam, which is a different thing and still worth
   catching. Its comment said the overlap corrupts output; it now says what was
@@ -98,7 +104,7 @@ A ribbon one micron wide and 120mm long extrudes without complaint.
 
 ## The wrong turns
 
-Two, both worth not repeating.
+Three, all worth not repeating.
 
 **Reaching for the filter.** The section names the shape (`narrowFeatureArea`)
 and #296 had just finished a sibling fix, so writing it was the obvious next
@@ -114,4 +120,8 @@ A safety margin is a claim like any other, and it needs the same measurement.
 **Sampling a shape by its centroid.** The vertex mean of a curved sliver is
 outside it. Four of the 41 separations were measured on surface neither part
 owns, and the largest of them became this report's headline maximum. Any figure
-sampled from a shape needs the sample checked against the shape.
+sampled from a shape needs the sample checked against the shape — and against
+the surface too: `frameAt` snaps a query to the nearest triangle rather than
+refusing it, so 7 of 82 samples had been quietly moved by up to 0.0863mm. Six
+pieces are excluded for that now, and the range over the remaining 35 is
+unchanged.
