@@ -386,10 +386,12 @@ behind them.
 
 ## Three open defects in the chair / pattern-library Fill path
 
-All four defects the maintainer named on 2026-08-05 are now closed: dead zones
-took three, and the clip-region folds took the last. What is left below are
-longer-standing ones against the same two features, folded in here by #275, and
-all three are about Fill. Both features are still withheld from the UI for the
+None of the four defects the maintainer named on 2026-08-05 blocks the chair any
+more: dead zones took three, and the clip-region folds took the part of the
+fourth that excluded real surface. What is left of that fourth one is cosmetic
+and has its own section below, "A zone template's outline is faceted". What is
+left HERE are longer-standing defects against the same two features, folded in
+by #275, and all three are about Fill. Both features are still withheld from the UI for the
 beta: `chair-body` carries `hidden: true` and `PATTERN_LIBRARY_ENABLED` is
 `false`. The report is the maintainer's, the diagnosis is not, and where the
 cause is confirmed it says so.

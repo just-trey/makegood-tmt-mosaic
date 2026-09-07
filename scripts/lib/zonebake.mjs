@@ -53,7 +53,7 @@ export const MIN_HOLE_AREA_MM2 = 15;
  * them — the four on the chair's two handle charts carry 42-45mm², well over MIN_HOLE_AREA_MM2 —
  * and neither can a caliper width or a morphological opening, because the narrowest REAL hole on
  * the chair (a 1.43 x 16.56mm radiused slot on chair-storage-right) is narrower by bounding box
- * than three of the four folds.
+ * than every one of the four folds (2.64, 2.17, 1.62 and 1.59mm across).
  *
  * Measured over chair-body's 42 sub-region holes: the folds run 1.05-1.46mm and every real hole is
  * 2.62mm or above, a factor of 1.79 with nothing between. Re-baked at simplifyTolMm 0 the folds
@@ -3983,7 +3983,22 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     // on the chair's left flank that assumption made the second-largest LOBE a hole of the first,
     // leaving `boundary` enclosing 22,941mm² of a 124,728mm² zone with 17 of its 18 "holes" lying
     // outside it entirely.
-    const zoneRegions = classifyRegions(loops)
+    const zoneLoops = classifyRegions(loops);
+    // Reported separately from the per-part folds below, and worded differently, because these two
+    // are not the same loops: the display outline chains across stitched seams and fans into folds
+    // the per-part regions never see. On the chair it drops six against the clip regions' four.
+    const zoneFolds = zoneLoops
+      .flatMap((r) => r.holes)
+      .filter((h) => Math.abs(loopArea(h)) >= minHoleArea && !isRealHole(h, minHoleArea))
+      .map(loopMeanWidth)
+      .sort((a, b) => b - a);
+    if (zoneFolds.length)
+      warnings.push(
+        `zone "${zoneCfg.id}": dropped ${zoneFolds.length} fold(s) under ${MIN_HOLE_WIDTH_MM}mm ` +
+          `mean width (widest ${zoneFolds[0].toFixed(2)}mm) from the display outline's holes — ` +
+          `nothing cuts against it, so this changes the sidecar's outline fields and no geometry`,
+      );
+    const zoneRegions = zoneLoops
       .map((r) => ({
         outer: r.outer,
         holes: r.holes.filter((h) => isRealHole(h, minHoleArea)),
@@ -4282,7 +4297,11 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
           chart.deadRegions = classifyRegions(rings)
             .map((r) => ({
               outer: r.outer,
-              holes: r.holes.filter((h) => isRealHole(h, minHoleArea)),
+              // Area alone here, deliberately, unlike the two clip-region filters above. A hole in
+              // a dead region is a window of live surface inside hidden surface, so dropping one
+              // GROWS the dead region and takes design surface away — the opposite direction to a
+              // fold in a clip region, and the direction MIN_HOLE_WIDTH_MM must not act in.
+              holes: r.holes.filter((h) => Math.abs(loopArea(h)) >= minHoleArea),
             }))
             // Net area, the same measure the bake log, dropSmallRegions and the tests use. On the
             // outer loop alone a ring of hidden surface reads as solid, so a region hiding almost

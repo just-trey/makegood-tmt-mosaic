@@ -18,10 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the cut. The bake now measures a loop's width as well as its area, and says in
   its log when it drops one. Nothing real goes with them: the narrowest genuine
   hole on the chair is a 1.43 x 16.56mm slot, which a width test alone would
-  have deleted first, so the measure is 4 x area / perimeter. Only the Back sheet
-  changed. Its two handle sheets stop excluding those strips, which moves what
-  the flanks hand it on the whole-chair sheet by 2.7mm² in total. Re-baked by
-  `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`.
+  have deleted first, so the measure is 4 x area / perimeter. The Back is the only
+  sheet whose drawing changed. Its two handle pieces stop excluding those strips,
+  which moves what the flanks hand it on the whole-chair sheet by 2.7mm² in
+  total. Re-baked by `npx vite-node scripts/bake-zones.mjs
+scripts/zone-configs/chair-body.json`.
 
 ### Changed
 
