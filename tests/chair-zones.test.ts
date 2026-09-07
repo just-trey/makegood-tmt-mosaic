@@ -38,6 +38,7 @@ import {
   netPoint,
   seamContinuity,
   SURVEY_U_STEP_MM,
+  SURVEY_V_STEP_MM,
   surveyBoundary,
   zoneUVToNet,
   // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
@@ -374,19 +375,29 @@ describe('the whole-chair net', () => {
 
   // Built once and shared: the two boundary surveys are this file's heaviest work, and running
   // them per test starved the vitest worker's RPC heartbeat on CI ("Timeout calling
-  // onTaskUpdate", every test green) — the cost is the sync stretch, not the assertions.
+  // onTaskUpdate", every test green) — the cost is the sync stretch, not the assertions. Surveyed
+  // one v-row per call with the loop yielded back every few rows for the same reason: rows are
+  // independent, and the v walk accumulates exactly as surveyBoundary's own loop does, so the
+  // samples are float-identical to one whole-range call.
   let sheetsOnce: Map<string, object> | undefined;
   const theSheets = (): Map<string, object> => (sheetsOnce ??= buildSheets());
   const surveys = new Map<string, { v: number; jump: number }[]>();
-  const surveyFor = (id: string, to: string): { v: number; jump: number }[] => {
+  const surveyFor = async (id: string, to: string): Promise<{ v: number; jump: number }[]> => {
     let rows = surveys.get(id);
     if (!rows) {
-      rows = surveyBoundary(theSheets(), id, to, {
-        uFrom: net.bounds.minU,
-        uTo: net.bounds.maxU,
-        vFrom: net.bounds.minV,
-        vTo: net.bounds.maxV,
-      }) as { v: number; jump: number }[];
+      rows = [];
+      let n = 0;
+      for (let v = net.bounds.minV; v <= net.bounds.maxV; v += SURVEY_V_STEP_MM) {
+        rows.push(
+          ...(surveyBoundary(theSheets(), id, to, {
+            uFrom: net.bounds.minU,
+            uTo: net.bounds.maxU,
+            vFrom: v,
+            vTo: v,
+          }) as { v: number; jump: number }[]),
+        );
+        if (++n % 20 === 0) await new Promise((r) => setImmediate(r));
+      }
       surveys.set(id, rows);
     }
     return rows;
@@ -447,13 +458,13 @@ describe('the whole-chair net', () => {
   // over the stretch those vertices span: on this chair, 61 of the flank/back boundary's 197 rows.
   // The rest abuts and tears, and the sidecar has to say so or the template draws a join that is
   // not there.
-  it('records how much of each attached seam is a join rather than an abutment', () => {
+  it('records how much of each attached seam is a join rather than an abutment', async () => {
     for (const [id, place] of Object.entries(net.zones)) {
       if (!place.seamResidualMm) {
         expect(place.seamContinuity, id).toBeUndefined();
         continue;
       }
-      const rows = surveyFor(id, place.seamResidualMm.to);
+      const rows = await surveyFor(id, place.seamResidualMm.to);
       const got = seamContinuity(rows, place.seamResidualMm.p95 + SURVEY_U_STEP_MM);
       const baked = place.seamContinuity!;
       expect(baked.rows, id).toBe(got.rows);
@@ -474,13 +485,13 @@ describe('the whole-chair net', () => {
    * limits. Checked against the joining span the survey re-derives above, not against the flag
    * itself, so a patch marked joining while lying out in the torn part fails here.
    */
-  it('cuts each yielded patch at the limits of its boundary’s joining stretch', () => {
+  it('cuts each yielded patch at the limits of its boundary’s joining stretch', async () => {
     // one survey per attached sheet; the back's own patches lie on the same two boundaries
     const rowsFor = new Map<string, { v: number; jump: number }[]>();
     const spanFor = new Map<string, { vFrom: number; vTo: number; tol: number }>();
     for (const [id, place] of Object.entries(net.zones)) {
       if (!place.seamResidualMm) continue;
-      const rows = surveyFor(id, place.seamResidualMm.to);
+      const rows = await surveyFor(id, place.seamResidualMm.to);
       const c = place.seamContinuity!;
       for (const key of [`${id}>${place.seamResidualMm.to}`, `${place.seamResidualMm.to}>${id}`]) {
         rowsFor.set(key, rows);

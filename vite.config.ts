@@ -67,11 +67,6 @@ export default defineConfig(({ mode }) => {
       },
     },
     test: {
-      // chair-zones re-derives the net's boundary surveys: long synchronous stretches that, under
-      // coverage instrumentation on 2-core CI, starve the threads pool's RPC heartbeat ("Timeout
-      // calling onTaskUpdate" with every test green). A forked process reports when it is done
-      // instead of heartbeating through it.
-      poolMatchGlobs: [['**/tests/chair-zones.test.ts', 'forks']],
       coverage: {
         provider: 'v8',
         // Report on every source file, not just the ones some test imported. Without
