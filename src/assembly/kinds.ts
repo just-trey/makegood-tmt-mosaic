@@ -188,9 +188,11 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
   {
     id: 'chair-body',
     name: 'Chair body',
-    hidden: true,
     // per-zone rect semantics: each zone's template maps its SVG 1:1 in mm, centered on the chart.
     designFit: 'rect',
+    // Sticker only. Fill on one chair zone was measured at 93.6s to settle and "All zones" did not
+    // finish inside 900s, and it drops a colour on "Handle (left)" — see docs/tech-debt.md. Sticker
+    // is 4.0s for an auto-fit design across five zones, which is why only Fill is withheld.
     withholdFill: true,
     // The chair is packed in its CAD frame (up is +Y, the front where the wings/footrest sit is
     // +Z), not design-face-up like the wheel and footrest — a body with seven design surfaces has

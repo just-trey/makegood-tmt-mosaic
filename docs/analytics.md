@@ -50,7 +50,6 @@ row's "+zone" button.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-add-zone` click handler in `renderArtworkList`.
 - **Props:** none.
-- **Dormant:** no offered kind ships design zones, so the button never renders.
 
 ### `artwork_instance_zone_changed`
 
@@ -61,7 +60,6 @@ dropdown.
 - **Props:** `{ zone: string }` (the zone id, `'all'` for the unbound/"every
   zone" option, or `'whole'` for "Whole chair" — the reserved zone id itself
   is never sent)
-- **Dormant:** no offered kind ships design zones, so the dropdown never renders.
 
 ### `artwork_mirror_toggled`
 
@@ -70,8 +68,8 @@ Fired when the user ticks or unticks an artwork row's Mirror checkbox.
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-mirror-check` change handler in `renderArtworkList`.
 - **Props:** `{ on: boolean, kind: 'twin' | 'centre' }` (`kind` is `'twin'` for a zone mirrored
   onto a paired zone, `'centre'` for a zone mirrored across its own middle)
-- **Dormant:** no offered kind ships design zones, so the checkbox never renders — `chair-body`
-  is the only kind with mirrored zones and it stays hidden (see `docs/tech-debt.md`).
+- **Only the chair:** it is the one offered kind with mirrored zones, so the checkbox renders on
+  its rows and nowhere else.
 
 ### `artwork_mode_changed`
 
@@ -88,7 +86,6 @@ after any confirm() dialog is accepted.
 
 - **Where:** [src/assembly/parts.ts](../src/assembly/parts.ts) — `switchChairVariant`.
 - **Props:** `{ variant: string }` (the variant id, e.g. `standard` / `kit`)
-- **Dormant:** the only kind with variants carries `hidden: true`, so the picker is reachable through `?kind=` alone.
 
 ### `zone_selected`
 
@@ -97,7 +94,6 @@ active artwork instance to it.
 
 - **Where:** [src/scene/zonePick.ts](../src/scene/zonePick.ts) — `onPointerUp`.
 - **Props:** `{ zone: string }` (the zone id)
-- **Dormant:** no offered kind ships design zones, so this is reachable through `?kind=` alone.
 
 ### `mode_switch`
 
@@ -142,7 +138,7 @@ Fired on a successful export, just before the file download starts.
   - `printer: string` (`state.printerId`)
   - `colors: number` (material/color count)
   - `warnings: number` (3MF only — placement warnings emitted)
-  - `kind: string` (3MF, assembly mode only — `state.assembly.kindId`, e.g. `wheel` / `footrest` / `hubcap`: which part was exported. Absent in flat mode, which has no assembly kind, on `stl_zip`, which is flat-only, and in the unreachable case where a kind hasn't loaded yet.)
+  - `kind: string` (3MF, assembly mode only — `state.assembly.kindId`, e.g. `wheel` / `footrest` / `hubcap` / `chair-body`: which part was exported. Absent in flat mode, which has no assembly kind, on `stl_zip`, which is flat-only, and in the unreachable case where a kind hasn't loaded yet.)
 
 ### `export_failed`
 

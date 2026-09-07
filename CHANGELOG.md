@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **The chair body is back in the Part dropdown.** It has been reachable only by
+  URL since the beta narrowed to three parts, while the work behind it kept
+  going: design zones across the whole chair, mirroring onto a zone's twin or
+  across its own centre line, the Whole chair sheet that lets one design cross
+  every zone, and the seam and hidden-surface warnings that go with them. The
+  help panel and this README already described all of it. Picking Standard or
+  Kit casters comes back with it.
+
+  Two things it does not get. **Fill is still not offered on the chair**: it took
+  93.6s to settle on one zone, "All zones" did not finish inside 900s, and it
+  dropped a colour on one part. Sticker is 4.0s for a design auto-fitted across
+  five zones, and works normally. And the pattern strip stays hidden everywhere,
+  which is unchanged.
+
+  Read the limitations in the README before printing one. The prime-tower
+  positions are checked on 270mm and 256mm beds only, the caster mounts take no
+  artwork, and "Seat back (top)" takes it on one side of the centre line only
+  with nothing warning about the bare half.
+
 ### Fixed
 
 - **The Back design sheet no longer draws four no-print slots that aren't

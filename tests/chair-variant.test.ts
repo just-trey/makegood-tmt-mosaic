@@ -29,8 +29,12 @@ afterEach(() => {
 });
 
 describe('chair-body kind shape', () => {
-  it('is withheld from the Part dropdown, rect, with 13 roles and Standard/Kit variants', () => {
-    expect(chair.hidden).toBe(true);
+  it('is offered in the Part dropdown, rect, with 13 roles and Standard/Kit variants', () => {
+    expect(chair.hidden).toBeUndefined();
+    // Sticker only, still. Dropping this needs the Fill defects in docs/tech-debt.md closed, and
+    // the panel renders no mode select while it is set, which is what export-chair-examples.mjs
+    // times out on.
+    expect(chair.withholdFill).toBe(true);
     expect(chair.designFit).toBe('rect');
     expect(chair.roles).toHaveLength(13);
     expect(chair.variants?.map((v) => v.id)).toEqual(['standard', 'kit']);
