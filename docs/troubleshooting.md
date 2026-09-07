@@ -221,10 +221,13 @@ something your artwork or settings caused.
 Full text: _"…" is a sticker now. The … can't repeat a design across it yet._
 Plural: _"…", "…" are stickers now._
 
-**What it means.** You had a design set to **Fill** and then switched to a part
-that doesn't offer Fill. Only the chair body does this today. The mode is
-rewritten to **Sticker** rather than carried across, and this says so, because
-the Sticker/Fill control isn't on screen on that part to show you it changed.
+**What it means.** You had a design set to **Fill** and then moved it somewhere
+Fill isn't offered. Two things do that: picking the chair body, which doesn't
+offer Fill at all, and ticking **Cut to artwork shape** on the hubcap, which
+would otherwise tile a shape with copies of itself. The message names whichever
+one it was. The mode is rewritten to **Sticker** rather than carried across, and
+this says so, because the Sticker/Fill control isn't on screen to show you it
+changed.
 
 **What you get.** Each named design is placed once instead of repeated. Nothing
 else about it moves: its zone, scale, offset, rotation and colors are untouched.
@@ -235,8 +238,8 @@ repeated across the surface, either scale it up and place copies by hand with
 purpose — it took 93.6s to settle on a single zone and dropped a color on one
 piece. See [tech-debt.md](tech-debt.md).
 
-Switching back to a part that offers Fill does not restore the old mode. Set it
-again from the row's Sticker/Fill control.
+The message clears itself when you're back somewhere Fill works, but the mode
+does not come back with it. Set it again from the row's Sticker/Fill control.
 
 ## Troubleshooting: "Couldn't load the design zones for "…"…"
 

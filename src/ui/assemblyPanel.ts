@@ -229,13 +229,16 @@ export async function applyHubcapSilhouette(on: boolean): Promise<void> {
   // toggle gates the hubcap's verified arrangement (buildPlacement), so it flips the placement
   // notice and the blocked-tower warning on or off — but only when it actually changes something.
   clearStalePlacementNotices();
-  renderWarnings();
   const kind = currentAssemblyKind();
   // Fill is withheld while the part follows the artwork, so a Fill already chosen has to be
   // rewritten here — the same clamp a kind that withholds Fill outright applies on a part switch.
   // The list has to be re-rendered too: clamping rewrites the stored mode, but the dropdown's
   // options were built when the toggle was off and still offer the mode that is now withheld.
+  //
+  // Ahead of renderWarnings, not after it: the clamp raises a notice naming what it rewrote, and
+  // a render that ran first would not paint it.
   clampArtworkModes();
+  renderWarnings();
   renderArtworkList();
   syncBuildParamControl();
   syncTemplateLink();

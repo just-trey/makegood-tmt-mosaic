@@ -132,10 +132,10 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   where two sheets lie over each other, the seam between them decides which,
   and the sheet hatches the part each one gives up. So does the 3D view, while
   a **Whole chair** row is the active one.
-- Large wrapped surfaces stretch the artwork. On the chair, Left side and Right
-  side are the worst at 1.23x, Back 1.13x, Front 1.11x, the seat sides 1.08x,
-  and the fenders barely at all (1.02x). The bake prints these, and they are in
-  `public/stl/chair-body-zones.json`.
+- Large wrapped surfaces stretch the artwork. On the chair, Right side is the
+  worst at 1.23x and Left side 1.22x, then Back 1.13x, Front 1.11x, the seat
+  sides 1.08x, and the fenders barely at all (1.02x). The bake prints these, and
+  they are in `public/stl/chair-body-zones.json`.
 - **Fill isn't offered on the chair body.** It was measured at 93.6s to settle
   on one zone, "All zones" didn't finish inside 900s, and it dropped a color on
   one part. Sticker works normally there. See

@@ -8,7 +8,7 @@ import { boundsCentre, netOffsetToZone, WHOLE_CHAIR_ZONE } from '../geometry/zon
 import { currentAssemblyKind, currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
-import { notice } from '../warnings';
+import { dismissNotice, notice } from '../warnings';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
@@ -650,13 +650,21 @@ export function allowedArtworkMode(mode: ArtworkInstance['mode']): ArtworkInstan
   return mode === 'fill' && fillWithheld() ? 'sticker' : mode;
 }
 
-/** Names the designs a part switch took out of Fill, so the rewrite is never silent. */
-export function fillClampedNotice(names: string[], partName: string): string {
-  const which = names.map((n) => `"${n}"`).join(', ');
-  return names.length === 1
-    ? `${which} is a sticker now. The ${partName} can't repeat a design across it yet.`
-    : `${which} are stickers now. The ${partName} can't repeat a design across it yet.`;
+/**
+ * Names one design a switch took out of Fill, so the rewrite is never silent.
+ *
+ * Two reasons reach here and they are not interchangeable: a kind carrying `withholdFill`, where
+ * the part is what can't do it, and Cut to artwork shape on the hubcap, where the setting is. The
+ * message has to name whichever is actually true, or it tells the user to blame the wrong thing.
+ */
+export function fillClampedNotice(name: string, partName: string, bySetting: boolean): string {
+  return bySetting
+    ? `"${name}" is a sticker now. Cut to artwork shape can't repeat a design across the shape it cut.`
+    : `"${name}" is a sticker now. The ${partName} can't repeat a design across it yet.`;
 }
+
+/** One key per design, so a second clamped design is reported instead of colliding with the first. */
+const fillClampKey = (sourceId: string): string => `fill-clamped:${sourceId}`;
 
 /**
  * Re-clamp every loaded design's mode against the current part. Artwork outlives a part switch
@@ -671,22 +679,38 @@ export function fillClampedNotice(names: string[], partName: string): string {
  */
 export function clampArtworkModes(): boolean {
   let changed = false;
-  const clamped: string[] = [];
+  const clamped = new Map<string, string>();
   state.artworks.forEach((a) => {
     const next = allowedArtworkMode(a.mode);
     if (next === a.mode) return;
     a.mode = next;
     changed = true;
-    // Two instances of one design clamp together and are one row on screen, so name it once. A
-    // source that cannot be named is never a reason to say nothing, which is why `changed` is
-    // tracked apart from the names.
-    const name = state.sources.find((src) => src.id === a.sourceId)?.name;
-    if (name && !clamped.includes(name)) clamped.push(name);
+    // Two placements of one design clamp together and are one row on screen, so it is named once.
+    // An artwork whose source has gone still gets an entry, under its own id: not being nameable
+    // is not a reason to say nothing.
+    const src = state.sources.find((s) => s.id === a.sourceId);
+    clamped.set(src?.id ?? a.id, src?.name ?? 'A design');
   });
-  if (changed) {
-    const names = clamped.length ? clamped : ['a design'];
-    notice(fillClampedNotice(names, currentAssemblyKind()?.name ?? 'part'), 'fill-clamped');
+  // These are session-scoped rather than build-scoped, so nothing else takes them down, and they
+  // state a standing fact rather than an event: this design is a sticker here. Once clamped, a
+  // design's mode is plain `sticker` and indistinguishable from one the user chose, so the fact
+  // cannot be re-derived on a later call — which is why a still-true notice is left alone instead
+  // of being retracted and re-raised. What ends it is Fill working again, and that is the one
+  // condition checked here.
+  //
+  // Leaves one narrow staleness: chair to hubcap with Cut to artwork shape already on keeps Fill
+  // withheld throughout, so the chair's message stands on the hubcap until the user dismisses it.
+  // Tracking a per-notice part to close that buys module state for a case that needs the toggle
+  // set before the switch.
+  if (!fillWithheld()) {
+    for (const id of [...state.sources.map((s) => s.id), ...state.artworks.map((a) => a.id)])
+      dismissNotice('', fillClampKey(id));
+    return changed;
   }
+  const bySetting = !currentAssemblyKind()?.withholdFill;
+  const partName = currentAssemblyKind()?.name ?? 'part';
+  for (const [id, name] of clamped)
+    notice(fillClampedNotice(name, partName, bySetting), fillClampKey(id));
   return changed;
 }
 

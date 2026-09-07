@@ -103,6 +103,41 @@ describe('Fill withheld on a kind that opts out', () => {
     expect(said[0]).toContain('Chair body');
   });
 
+  // Keyed per design. A single constant key made push() drop the second one, so a user who loaded
+  // two Fill designs was told about one and silently lost the other — the exact failure the notice
+  // exists to prevent.
+  it('names a second clamped design too, rather than colliding with the first', () => {
+    onKind('wheel');
+    loadArtworkSource(fakeParsed(), 'zebra.svg');
+    setArtworkMode(activeArtworkInstance()!.id, 'fill');
+    onKind('chair-body');
+    WARNINGS.length = 0;
+    clampArtworkModes();
+    onKind('wheel');
+    loadArtworkSource(fakeParsed(), 'tiger.svg');
+    setArtworkMode(activeArtworkInstance()!.id, 'fill');
+    onKind('chair-body');
+    clampArtworkModes();
+    const said = WARNINGS.map((w) => w.message).join(' | ');
+    expect(said).toContain('"zebra.svg"');
+    expect(said).toContain('"tiger.svg"');
+  });
+
+  // Session-scoped, so nothing else retracts it: left standing it would name a part the user has
+  // already left, on one that offers Fill perfectly well.
+  it('retracts the notice once the design is back on a part that offers Fill', () => {
+    onKind('wheel');
+    loadArtworkSource(fakeParsed(), 'zebra.svg');
+    setArtworkMode(activeArtworkInstance()!.id, 'fill');
+    onKind('chair-body');
+    WARNINGS.length = 0;
+    clampArtworkModes();
+    expect(WARNINGS).toHaveLength(1);
+    onKind('wheel');
+    clampArtworkModes();
+    expect(WARNINGS).toEqual([]);
+  });
+
   it('says nothing when nothing was rewritten', () => {
     onKind('chair-body');
     loadArtworkSource(fakeParsed(), 'zebra.svg');
