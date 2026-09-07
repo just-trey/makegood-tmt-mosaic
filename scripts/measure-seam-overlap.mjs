@@ -190,8 +190,10 @@ for (const r of rows)
 const over = rows.filter((r) => r.overFloor);
 console.log(`\n${over.length} of ${rows.length} pieces clear the floor.`);
 console.log(
-  `Thinnest that does: ${Math.min(...over.map((r) => r.meanWidth)).toFixed(4)}mm by 2A/P, ` +
-    `${Math.min(...over.map((r) => r.bboxNarrow)).toFixed(4)}mm by bbox.`,
+  over.length
+    ? `Thinnest that does: ${Math.min(...over.map((r) => r.meanWidth)).toFixed(4)}mm by 2A/P, ` +
+        `${Math.min(...over.map((r) => r.bboxNarrow)).toFixed(4)}mm by bbox.`
+    : 'Thinnest that does: none — no piece clears the floor.',
 );
 console.log(
   `Failed to build on one or both parts: ${rows.filter((r) => !r.builtBoth).length}` +
