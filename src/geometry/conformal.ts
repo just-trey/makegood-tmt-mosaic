@@ -11,7 +11,7 @@ import {
   type ManifoldAPI,
   type ManifoldSolid,
 } from './manifold';
-import { safeDiff } from './regions';
+import { intersectQuiet, safeDiff, safeUnionAll } from './regions';
 import { warn } from '../warnings';
 import {
   rotatePointY,
@@ -122,6 +122,21 @@ export interface ConformalChart {
    */
   netExcluded?: NetZoneExclusion[];
 }
+
+/** A viewport shading mesh: interleaved 3D positions plus the chart UV each vertex came from. */
+export interface OverlayMesh {
+  positions: Float32Array;
+  uv: Float32Array;
+}
+
+/** A turf result back in the outer/holes form the baked regions and the overlay triangulator use. */
+const polyRings = (f: PolyFeature): { outer: number[][]; holes: number[][][] }[] => {
+  const g = f.geometry;
+  const polys = (g.type === 'Polygon' ? [g.coordinates] : g.coordinates) as number[][][][];
+  return polys
+    .filter((p) => p.length)
+    .map(([outer, ...holes]) => ({ outer: outer as number[][], holes: holes as number[][][] }));
+};
 
 /** GeoJSON rings repeat their first point; baked loops don't, so close before handing to turf. */
 const closeRing = (ring: number[][]): number[][] => {
@@ -697,24 +712,80 @@ export class ConformalZoneMapper implements ZoneMapper {
   }
 
   /**
-   * Display mesh of the chart's hidden surface, for the viewport shading: `deadRegions`
-   * triangulated in UV, subdivided so it follows the curvature, each vertex lifted `liftMm` off
-   * the surface along its smooth normal. Returns interleaved 3D positions plus the UV each vertex
-   * came from (true mm, for a striped texture), or null when nothing is hidden. Pure display: no
-   * boolean engine, not watertight, and T-junctions from the per-triangle subdivision are fine at
-   * this lift.
+   * Display mesh of the chart's hidden surface, for the viewport shading: `deadRegions` through
+   * `regionOverlayMesh`, or null when nothing is hidden.
    */
-  deadOverlayMesh(
-    liftMm = 0.4,
-    refineMm = 4,
-  ): { positions: Float32Array; uv: Float32Array } | null {
+  deadOverlayMesh(liftMm = 0.4, refineMm = 4): OverlayMesh | null {
     const dead = this.chart.deadRegions;
     if (!dead?.length) return null;
+    const built = this.regionOverlayMesh(dead, liftMm, refineMm);
+    // warn(), not warnBuild(): rebuild.ts caches this mesh per chart, so a build-scoped pill would
+    // show on the rebuild that computed it and vanish on every cache hit after. The key dedupes it.
+    if (built.failed)
+      warn(
+        `Couldn't shade the hidden surface on "${this.zoneId ?? 'this zone'}". ` +
+          `Artwork still won't cut there. Only the hatching is missing. Please report this.`,
+        `dead-overlay-${this.zoneId ?? ''}`,
+      );
+    return built.mesh;
+  }
+
+  /**
+   * Display mesh of the canvas this chart gives up to another sheet of the net (`netExcluded`),
+   * for the viewport shading while a whole-part design is the one being placed. Null when this
+   * chart yields nothing.
+   *
+   * **The regions are clipped to `boundary()` first, and that is load-bearing.** The bake's
+   * exclusions are ZONE-wide — every chart of a seam-spanning zone is handed the same list — while
+   * `lookup` answers the nearest triangle at any distance. Warped raw, `left`'s 8,668mm² patch
+   * (UV u 497..631) would also be drawn on `chair-wing-left` and `chair-wheel-mount-left`, whose
+   * charts reach u 224 and u 434, with every corner snapped to their nearest triangle. `boundary()`
+   * is the same per-part clip the cutter is held to, so the hatch and the cut agree by
+   * construction.
+   *
+   * It also takes hidden surface off, `boundary()` having already subtracted it — belt and braces
+   * rather than the reason: no shipped chart's dead regions meet its yielded ones at all (0.0mm²
+   * over all 14 charts that carry exclusions, re-derived per chart by the yielded-canvas overlay
+   * test in tests/chair-zones.test.ts), so the two hatches do not fight for surface today.
+   *
+   * `intersectQuiet`, not `safeIntersect`: that one hands the subject back UNCLIPPED when the
+   * boolean flakes, which here is exactly the smear being prevented. A flake draws no hatch and
+   * says nothing, which is the shipped behaviour this overlay improves on rather than a regression,
+   * and a design that really reaches the patch is still named by `clipToNetShare`'s notice.
+   */
+  netExcludedOverlayMesh(liftMm = 0.4, refineMm = 4): OverlayMesh | null {
+    const yielded = safeUnionAll(
+      this.netExcluded().map((e) => e.region),
+      `the canvas "${this.zoneId ?? 'this zone'}" yields`,
+    );
+    const mine = intersectQuiet(yielded, this.boundary());
+    if (!mine) return null;
+    const regions = polyRings(mine);
+    if (!regions.length) return null;
+    // No warning on a `failed` count here, unlike the dead hatch. That one is the only thing that
+    // says surface takes no ink at all; this one only says a whole-part design lands elsewhere, and
+    // `clipToNetShare` already names the zone the ink went to at the moment it happens. A patch
+    // that fails to triangulate leaves the shipped behaviour, which is the notice on its own.
+    return this.regionOverlayMesh(regions, liftMm, refineMm).mesh;
+  }
+
+  /**
+   * Rings in chart UV triangulated, subdivided so they follow the curvature, each vertex lifted
+   * `liftMm` off the surface along its smooth normal. Returns interleaved 3D positions plus the UV
+   * each vertex came from (true mm, for a striped texture), and how many regions the triangulator
+   * could not use. Pure display: no boolean engine, not watertight, and T-junctions from the
+   * per-triangle subdivision are fine at this lift.
+   */
+  private regionOverlayMesh(
+    regions: { outer: number[][]; holes: number[][][] }[],
+    liftMm: number,
+    refineMm: number,
+  ): { mesh: OverlayMesh | null; failed: number } {
     // A chart with no triangles has no surface to shade, and it is also the only input that makes
     // `lookup` answer null: cellIdxU/V clamp a query into the grid and the ring search spans all of
     // it, so any populated chart returns its nearest triangle however far the query lands. Taken
     // here so the emit loop below has nothing left to drop.
-    if (!this.chart.triangles.length) return null;
+    if (!this.chart.triangles.length) return { mesh: null, failed: 0 };
     const positions: number[] = [];
     const uvOut: number[] = [];
     let failed = 0;
@@ -728,7 +799,8 @@ export class ConformalZoneMapper implements ZoneMapper {
         // public/stl/chair-body-zones.json that carry one: worst corner 0.0006mm off, none past the
         // snap tolerance, no lookup answering null (tests/chair-zones.test.ts pins it over every
         // one of them). Bounding it would put pinholes in the hatch over surface the cut really
-        // does clip.
+        // does clip. A yielded region is zone-wide rather than chart-cut, which is why
+        // netExcludedOverlayMesh clips it to `boundary()` before it ever reaches here.
         const hit = this.lookup(u, v);
         // Unreachable given the guard above, and narrowing rather than a `!` so it stays that way.
         if (!hit) return;
@@ -771,7 +843,7 @@ export class ConformalZoneMapper implements ZoneMapper {
         b = ring[ring.length - 1];
       return ring.length > 1 && a[0] === b[0] && a[1] === b[1] ? ring.slice(0, -1) : ring;
     };
-    for (const region of dead) {
+    for (const region of regions) {
       const outer = open(region.outer);
       const holes = region.holes.map(open);
       const contour = outer.map(([u, v]) => new THREE.Vector2(u, v));
@@ -783,32 +855,26 @@ export class ConformalZoneMapper implements ZoneMapper {
       } catch {
         tris = [];
       }
-      // The one drop left in here, and it takes a whole patch of hatching with it. Said out loud
-      // rather than skipped: the hatch is how a user is told where artwork will not print, and the
-      // hidden-surface warning's own remedy sends them to it. Missing hatch over surface the cut
-      // still clips reads as a place artwork is welcome.
+      // The one drop left in here, and it takes a whole patch of hatching with it. Counted and
+      // handed back so the caller can say it out loud: the hatch is how a user is told where
+      // artwork will not print, and the hidden-surface warning's own remedy sends them to it.
+      // Missing hatch over surface the cut still clips reads as a place artwork is welcome.
       //
       // Both outcomes counted, not just the throw: this triangulator answers a ring it cannot use
       // with an empty list about as often as it raises, and an empty list drops the patch just as
       // silently.
-      //
-      // warn(), not warnBuild(): rebuild.ts caches this mesh per chart, so a build-scoped pill
-      // would show on the rebuild that computed it and vanish on every cache hit after. The key
-      // dedupes it instead.
       if (!tris.length) {
         failed++;
         continue;
       }
       for (const [i, j, k] of tris) subdivide([all[i], all[j], all[k]], 0);
     }
-    if (failed)
-      warn(
-        `Couldn't shade the hidden surface on "${this.zoneId ?? 'this zone'}". ` +
-          `Artwork still won't cut there. Only the hatching is missing. Please report this.`,
-        `dead-overlay-${this.zoneId ?? ''}`,
-      );
-    if (!positions.length) return null;
-    return { positions: Float32Array.from(positions), uv: Float32Array.from(uvOut) };
+    return {
+      mesh: positions.length
+        ? { positions: Float32Array.from(positions), uv: Float32Array.from(uvOut) }
+        : null,
+      failed,
+    };
   }
 
   frameAt(u: number, v: number, giveUpMM?: number): ZoneFrame {

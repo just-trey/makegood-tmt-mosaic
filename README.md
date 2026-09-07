@@ -130,7 +130,8 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   everything else on a solid line. Its other sheets sit apart with a visible
   gap, same as before. A point on that sheet still cuts in exactly one place:
   where two sheets lie over each other, the seam between them decides which,
-  and the sheet hatches the part each one gives up.
+  and the sheet hatches the part each one gives up. So does the 3D view, while
+  a **Whole chair** row is the active one.
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.
 - Input parts must be watertight/manifold for assembly cutting.

@@ -26,12 +26,13 @@ import {
   WHOLE_CHAIR_ZONE,
   type KeepSide,
 } from '../geometry/zones';
-import { ConformalZoneMapper } from '../geometry/conformal';
+import { ConformalZoneMapper, type OverlayMesh } from '../geometry/conformal';
 import { currentAssemblyKind, hubcapSilhouetteOffset } from '../assembly/kinds';
 import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
 import {
   frameModelIfPending,
   getModelGroup,
+  invalidate,
   newModelGroup,
   refreshModelShadows,
   setPreferredViewDir,
@@ -288,8 +289,13 @@ async function rebuildScene(): Promise<void> {
   frameModelIfPending();
 }
 
+/** Stripe texture size (px) and stroke width, and the surface pitch (mm) one tile repeats over. */
+const HATCH_TILE_PX = 64;
+const HATCH_STROKE_PX = 12;
+const HATCH_PITCH_MM = 8;
+
 /**
- * One material and its stripe texture for every hatched zone on every part, cached as ONE pair.
+ * One material and its stripe texture per hatch kind, each shared by every zone on every part.
  *
  * Dropped on the material's own dispose event rather than held forever, because `newModelGroup`
  * disposes the materials of everything it clears: keeping the handle would hand the next rebuild a
@@ -302,23 +308,40 @@ async function rebuildScene(): Promise<void> {
  * a theme change re-read a colour it then did not use. Dropped together, and disposed rather than
  * abandoned: `newModelGroup` frees the material, never the texture hanging off it.
  */
-let hatch: { material: THREE.MeshBasicMaterial; texture: THREE.CanvasTexture | null } | null = null;
-function hiddenSurfaceMaterial(): THREE.MeshBasicMaterial {
-  if (hatch) return hatch.material;
-  const accent = new THREE.Color(tokenColor('--accent', 0x6d93ff));
+type HatchKind = 'dead' | 'yielded';
+const hatches = new Map<
+  HatchKind,
+  { material: THREE.MeshBasicMaterial; texture: THREE.CanvasTexture | null }
+>();
+function hatchMaterial(kind: HatchKind): THREE.MeshBasicMaterial {
+  const held = hatches.get(kind);
+  if (held) return held.material;
+  const yielded = kind === 'yielded';
+  const accent = new THREE.Color(
+    yielded ? tokenColor('--accent-2', 0x5eead4) : tokenColor('--accent', 0x6d93ff),
+  );
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  c.width = c.height = HATCH_TILE_PX;
   // jsdom has no 2D canvas; a plain translucent tint is the same signal minus the stripes
   const ctx = c.getContext('2d');
   let texture: THREE.CanvasTexture | null = null;
   if (ctx) {
-    ctx.clearRect(0, 0, 64, 64);
+    ctx.clearRect(0, 0, HATCH_TILE_PX, HATCH_TILE_PX);
     ctx.strokeStyle = `#${accent.getHexString()}`;
-    ctx.lineWidth = 12;
-    for (const x of [-64, 0, 64]) {
+    ctx.lineWidth = HATCH_STROKE_PX;
+    for (const x of [-HATCH_TILE_PX, 0, HATCH_TILE_PX]) {
       ctx.beginPath();
-      ctx.moveTo(x, 64);
-      ctx.lineTo(x + 64, 0);
+      ctx.moveTo(x, HATCH_TILE_PX);
+      ctx.lineTo(x + HATCH_TILE_PX, 0);
+      // The yielded hatch is the dead one plus the perpendicular set, at the same pitch, width and
+      // opacity — the same relation the printed net template's `shared` pattern has to its `hidden`
+      // one (`M0 4 L4 0 M0 0 L4 4` against `M0 4 L4 0`, zonebake.mjs), so the sheet and the
+      // viewport draw the two meanings the same way. The second accent carries it at a glance;
+      // the crossing is what still separates them when the theme moves the hues together.
+      if (yielded) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + HATCH_TILE_PX, HATCH_TILE_PX);
+      }
       ctx.stroke();
     }
     texture = new THREE.CanvasTexture(c);
@@ -332,11 +355,11 @@ function hiddenSurfaceMaterial(): THREE.MeshBasicMaterial {
     side: THREE.DoubleSide,
   });
   mat.addEventListener('dispose', () => {
-    if (hatch?.material !== mat) return;
-    hatch.texture?.dispose();
-    hatch = null;
+    if (hatches.get(kind)?.material !== mat) return;
+    hatches.get(kind)!.texture?.dispose();
+    hatches.delete(kind);
   });
-  hatch = { material: mat, texture };
+  hatches.set(kind, { material: mat, texture });
   return mat;
 }
 
@@ -348,56 +371,137 @@ function hiddenSurfaceMaterial(): THREE.MeshBasicMaterial {
 // `uv` is already divided by the stripe pitch. A BufferAttribute never writes to the array it
 // wraps and geometry disposal frees the GPU buffer rather than the array, so both are handed
 // straight to each rebuild's fresh attributes instead of being copied and rescaled per rebuild.
-const overlayCache = new WeakMap<object, { positions: Float32Array; uv: Float32Array } | null>();
+const overlayCache = new WeakMap<
+  object,
+  { dead: OverlayMesh | null; yielded: OverlayMesh | null }
+>();
+
+/** The mapper hands back true surface mm; one texture tile spans HATCH_PITCH_MM of it. */
+const scaleToPitch = (m: OverlayMesh | null): OverlayMesh | null =>
+  m && { positions: m.positions, uv: m.uv.map((x) => x / HATCH_PITCH_MM) };
 
 /**
- * Hatch each zone's hidden surface (chart deadRegions) onto the part, floating just off the
- * mesh. Drawn in both render paths so the "artwork stops here" line is visible before anything
- * is placed, not discovered after a cut comes out trimmed.
+ * Whether the yielded-canvas hatch tells the truth right now: only while the row being edited is
+ * bound to the whole part. A row bound to a zone by name reaches every bit of that zone's surface,
+ * yielded patches included, so hatching them on that binding is a lie in the other direction.
+ *
+ * **Nothing selected shows nothing**, the same answer as a per-zone row. The hatch says "the design
+ * you are placing will not cut here", and with no row in focus there is no design being placed —
+ * hatching then would mark live surface dead with nothing on screen to explain it. It is also
+ * barely reachable: `setActiveArtwork` keeps a row in focus while any exists and only
+ * `clearArtwork` empties it, so in practice no selection means no artwork at all.
  */
-function addHiddenSurfaceOverlays(
+function yieldedHatchVisible(): boolean {
+  return activeArtworkInstance()?.zone?.zoneId === WHOLE_CHAIR_ZONE;
+}
+
+/** Marks the meshes `refreshNetYieldOverlays` toggles, so a selection change costs no rebuild. */
+const YIELD_OVERLAY = 'netYieldOverlay';
+
+/**
+ * Re-answer `yieldedHatchVisible()` for the overlays already in the scene. Every binding change
+ * (the zone dropdown, +zone, a zone picked in the 3D view) schedules a rebuild, which rebuilds
+ * these with the right answer; clicking another artwork row does not, and that is the one path
+ * that changes which binding is active without touching geometry.
+ */
+export function refreshNetYieldOverlays(): void {
+  const show = yieldedHatchVisible();
+  let changed = false;
+  getModelGroup().traverse((o) => {
+    if (!o.userData[YIELD_OVERLAY] || o.visible === show) return;
+    o.visible = show;
+    changed = true;
+  });
+  if (changed) invalidate();
+}
+
+/**
+ * Hatch each zone's hidden surface (chart deadRegions) onto the part, and the canvas it yields to
+ * another sheet of the net, floating just off the mesh. Drawn in both render paths so the "artwork
+ * stops here" line is visible before anything is placed, not discovered after a cut comes out
+ * trimmed.
+ *
+ * The yielded overlay is built whatever the current binding and hidden when it does not apply,
+ * rather than built on demand: the warp behind it is cached per chart, so the only per-rebuild cost
+ * is the BufferGeometry, and a `visible` flip is what lets a row click refresh it without a rebuild.
+ */
+function addZoneOverlays(
   xf: ReturnType<typeof asmPartTransformGroup>,
   part: (typeof state.assembly.parts)[number],
 ): void {
   if (!part.zones?.length) return;
+  const showYield = yieldedHatchVisible();
   for (const z of part.zones) {
-    if (!z.chart?.deadRegions?.length) continue;
-    let overlay = overlayCache.get(z.chart);
-    if (overlay === undefined) {
+    const chart = z.chart;
+    if (!chart) continue;
+    const hasDead = !!chart.deadRegions?.length;
+    const hasYield = !!chart.netExcluded?.length;
+    if (!hasDead && !hasYield) continue;
+    let built = overlayCache.get(chart);
+    if (built === undefined) {
       // Caught per zone, because this decoration must never cost the model. renderRawAssemblyParts
       // is the fallback that keeps the bare parts on screen when a build fails, and it calls here
       // too — so a throw out of this loop empties the very viewport that path exists to keep
       // filled, and reads as a crash. The mapper's constructor validates the chart for the first
       // time here (reconstructChart only range-checks vertex indices) and deadOverlayMesh reads
       // ring[0] straight out, so a malformed sidecar reaches it as a TypeError, not a null.
+      // One mapper for both hatches, and the two builds caught apart. A malformed ring in one
+      // region list must not take the other's hatch with it, and only the hidden-surface one is
+      // worth a warning — and only on a zone that HAS hidden surface: a refused chart on a
+      // yield-only zone loses a hatch about surface that still cuts elsewhere, which is the
+      // silence netExcludedOverlayMesh records, not a missing shade.
+      let mapper: ConformalZoneMapper | null = null;
+      let dead: OverlayMesh | null = null;
+      let yielded: OverlayMesh | null;
+      let deadFailed = false;
       try {
-        // z.id, or deadOverlayMesh's failure warning says "this zone" and every zone shares its
-        // dedupe key, so the second one to fail is swallowed by the first.
-        const built = new ConformalZoneMapper(null, z.chart, z.id).deadOverlayMesh();
-        // stripes every 8mm of surface
-        overlay = built && { positions: built.positions, uv: built.uv.map((x) => x / 8) };
+        mapper = new ConformalZoneMapper(null, chart, z.id);
       } catch {
-        overlay = null;
+        deadFailed = true;
+      }
+      try {
+        dead = mapper && hasDead ? scaleToPitch(mapper.deadOverlayMesh()) : null;
+      } catch {
+        deadFailed = true;
+      }
+      if (hasDead && deadFailed)
+        // z.id, or every zone shares the dedupe key and the second failure is swallowed.
         warn(
           `Couldn't shade the hidden surface on "${z.id}". Artwork still won't cut there. ` +
             `Only the hatching is missing. Please report this.`,
           `dead-overlay-${z.id}`,
         );
+      try {
+        yielded = mapper && hasYield ? scaleToPitch(mapper.netExcludedOverlayMesh()) : null;
+      } catch {
+        yielded = null;
       }
-      overlayCache.set(z.chart, overlay);
+      built = { dead, yielded };
+      overlayCache.set(chart, built);
     }
-    if (!overlay) continue;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(overlay.positions, 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(overlay.uv, 2));
-    const mesh = new THREE.Mesh(geo, hiddenSurfaceMaterial());
-    // Invisible to every raycast. It floats 0.4mm proud of the surface, which zone picking's
-    // occlusion test (OCCLUSION_TOL_MM = 0.05) reads as a solid part covering the chart. Measured
-    // on the chair over a 61x61 grid of NDC points at a 1440x900 viewport, default framed view:
-    // without this the seat drops from 50 pickable points to 18, the front zone from 111 to 76 and
-    // the left fender from 63 to 52, so a click on hatched surface selects nothing, not its zone.
-    mesh.raycast = () => {};
-    xf.add(mesh);
+    const { dead, yielded } = built;
+    for (const [built, kind] of [
+      [dead, 'dead'],
+      [yielded, 'yielded'],
+    ] as const) {
+      if (!built) continue;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(built.positions, 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(built.uv, 2));
+      const mesh = new THREE.Mesh(geo, hatchMaterial(kind));
+      // Invisible to every raycast. It floats 0.4mm proud of the surface, which zone picking's
+      // occlusion test (OCCLUSION_TOL_MM = 0.05) reads as a solid part covering the chart. Measured
+      // on the chair over a 61x61 grid of NDC points at a 1440x900 viewport, default framed view:
+      // without this the seat drops from 50 pickable points to 18, the front zone from 111 to 76
+      // and the left fender from 63 to 52, so a click on hatched surface selects nothing, not its
+      // zone.
+      mesh.raycast = () => {};
+      if (kind === 'yielded') {
+        mesh.userData[YIELD_OVERLAY] = true;
+        mesh.visible = showYield;
+      }
+      xf.add(mesh);
+    }
   }
 }
 
@@ -421,7 +525,7 @@ function renderRawAssemblyParts(): void {
     modelGroup.add(xf.outer);
     const soup = Float32Array.from(part.positions);
     xf.add(new THREE.Mesh(bufferGeometryFromTris(soup, part.indexed), rawMat));
-    addHiddenSurfaceOverlays(xf, part);
+    addZoneOverlays(xf, part);
     tris += part.positions.length / 9;
   });
   $('#stat-tris').textContent = Math.round(tris) + ' tris';
@@ -678,7 +782,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     // output because `bodyIndexed` is also what 3MF export writes, and this must not change what
     // an uncut part exports.
     xf.add(new THREE.Mesh(bufferGeometryFromTris(bodySoup, bodyIndexed ?? part.indexed), baseMat));
-    addHiddenSurfaceOverlays(xf, part);
+    addZoneOverlays(xf, part);
     tris += bodySoup.length / 9;
     Object.entries(inlaySoups).forEach(([ci, soup]) => {
       const hex = built.palette[+ci].hex;

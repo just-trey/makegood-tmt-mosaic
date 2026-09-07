@@ -988,6 +988,64 @@ describe('hidden surface (deadRegions)', () => {
     // The count conformal.ts's comment quotes. A rebake that changes it dates that comment too.
     expect(checked).toBe(12);
   });
+
+  // The viewport's second hatch, over the canvas a whole-part design gives up. The bake's
+  // exclusions are ZONE-wide: `left` hands the same 8,668mm² list to all four of its charts, and
+  // `lookup` answers the nearest triangle at any distance, so an unclipped overlay would be warped
+  // onto `chair-wing-left` (chart u 0..224) and `chair-wheel-mount-left` (u 223..434) as well as
+  // onto the two parts that really carry it (u 497..631). Both halves are checked here: what is
+  // drawn stays inside the chart that drew it, and the charts owning none of the patch draw nothing.
+  it('the yielded-canvas overlay stays on the chart that yields it', () => {
+    const drew = new Map<string, number>();
+    for (const z of sidecar.zones) {
+      const excl = sidecar.net?.zones[z.id]?.excluded ?? [];
+      if (!excl.length) continue;
+      for (const c of z.charts) {
+        const m = partMesh.get(c.libraryPartId)!;
+        const chart = reconstructChart(z, c, m.vertices, excl);
+        const mapper = new ConformalZoneMapper(null, chart, z.id);
+        const overlay = mapper.netExcludedOverlayMesh();
+        const where = `${z.id}/${c.libraryPartId}`;
+        // The figure conformal.ts's docstring quotes: no chart's dead regions meet its yielded
+        // ones, so the two hatches never fight for surface. Re-derived per chart, all fourteen.
+        const dead = mapper.deadArea();
+        if (dead)
+          for (const e of mapper.netExcluded())
+            if (e.region) {
+              const hit = turf.intersect(dead, e.region);
+              expect(hit ? Math.abs(planarArea(hit as PolyFeature)) : 0, where).toBeCloseTo(0, 3);
+            }
+        if (!overlay) continue;
+        expect(overlay.positions.length / 3, where).toBe(overlay.uv.length / 2);
+        drew.set(where, overlay.positions.length / 9);
+        // Inside this chart's own UV, which is what the boundary() clip buys. The snap tolerance is
+        // the same slack a baked claim is allowed against its triangles.
+        const cb = [Infinity, Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < c.uv.length; i += 2) {
+          cb[0] = Math.min(cb[0], c.uv[i]);
+          cb[1] = Math.min(cb[1], c.uv[i + 1]);
+          cb[2] = Math.max(cb[2], c.uv[i]);
+          cb[3] = Math.max(cb[3], c.uv[i + 1]);
+        }
+        for (let i = 0; i < overlay.uv.length; i += 2) {
+          expect(overlay.uv[i], where).toBeGreaterThanOrEqual(cb[0] - CHART_SNAP_MM);
+          expect(overlay.uv[i], where).toBeLessThanOrEqual(cb[2] + CHART_SNAP_MM);
+          expect(overlay.uv[i + 1], where).toBeGreaterThanOrEqual(cb[1] - CHART_SNAP_MM);
+          expect(overlay.uv[i + 1], where).toBeLessThanOrEqual(cb[3] + CHART_SNAP_MM);
+        }
+      }
+    }
+    // Measured on this sidecar by the same call this test makes. Eight of the fourteen charts
+    // handed an exclusion list own none of the patch and draw nothing at all.
+    expect(Object.fromEntries(drew)).toEqual({
+      'left/chair-storage-left': 4650,
+      'left/chair-handle-left': 10853,
+      'right/chair-storage-right': 3867,
+      'right/chair-handle-right': 9325,
+      'back/chair-handle-left': 143,
+      'back/chair-handle-right': 168,
+    });
+  });
 });
 
 describe('mirror relations', () => {

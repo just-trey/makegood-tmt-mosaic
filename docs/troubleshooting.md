@@ -1361,9 +1361,16 @@ shared area. A design bound to **Whole chair** that reaches into it is cut on
 the zone that owns it, once — not on both, and not nowhere. The whole-part
 template hatches those areas and names the zone that cuts them.
 
+**Where those areas are on the part.** The 3D view cross-hatches them too,
+while a **Whole chair** row is the active one. That hatch crosses in two
+directions and is drawn in the second accent, so it does not read as the
+single-direction hidden-surface hatch beside it, which means something else.
+
 **What to do.** Nothing, unless you wanted that mark on the other zone. For
 that, bind a separate design to that zone from its own row's dropdown: a
 per-zone binding reaches all of its zone's surface, hatched areas included.
+Select that row and the cross-hatch goes, since nothing is being withheld
+from it.
 
 ## Troubleshooting: "Couldn't trim "…" to the part of the whole-part sheet "…" owns"
 

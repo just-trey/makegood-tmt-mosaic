@@ -26,6 +26,7 @@ import {
 import { dismissNotice, notice, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { scheduleRebuild } from '../app/scheduler';
+import { refreshNetYieldOverlays } from '../app/rebuild';
 import { refreshFitInputsFromState } from './fitPanel';
 import { refreshGizmo } from '../scene/designGizmo';
 import { track } from '../analytics/track';
@@ -92,6 +93,9 @@ export function renderArtworkList(): void {
       renderArtworkList();
       refreshFitInputsFromState();
       refreshGizmo();
+      // The yielded-canvas hatch is true only while a whole-part row is the one being edited, and
+      // this is the only handler that changes which row that is without scheduling a rebuild.
+      refreshNetYieldOverlays();
     });
 
     const modeSel = row.querySelector<HTMLSelectElement>('.artwork-mode');
