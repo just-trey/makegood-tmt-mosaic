@@ -23,7 +23,6 @@ import type { PolyFeature } from '../src/types';
 import {
   measureZoneMirror,
   measureZoneSeam,
-  MIN_HOLE_WIDTH_MM,
   MIN_ISLAND_AREA_MM2,
   netSheetOverlaps,
   nearestPoints,
@@ -667,6 +666,13 @@ describe('chart reconstruction', () => {
   // enclosing 42-45mm² of area against a perimeter twice their length — which the area-only filter
   // passed and which the Back template drew as no-print slots. Guarding the shipped sidecar rather
   // than the bake, because the sidecar is the artifact and a bake nobody re-runs proves nothing.
+  //
+  // The floor is the MEASURED separation, deliberately not MIN_HOLE_WIDTH_MM. Asserting against the
+  // constant the filter reads would make both vacuous together: lower it, and the four phantom Back
+  // slots come back with the test still green. 2.6 is just under this sidecar's narrowest real hole
+  // (2.62mm, the 10.13 x 16.65mm one on chair-storage-right) and well above its worst fold
+  // (1.46mm), so it fails on a regression whatever the bake is configured to do.
+  const REAL_HOLE_FLOOR_MM = 2.6;
   it('punches no hole that encloses perimeter but no width', () => {
     const meanWidth = (loop: number[][]): number => {
       let a = 0;
@@ -685,7 +691,7 @@ describe('chart reconstruction', () => {
         for (const r of c.subRegions)
           for (const h of r.holes) {
             const w = meanWidth(h);
-            if (w < MIN_HOLE_WIDTH_MM)
+            if (w < REAL_HOLE_FLOOR_MM)
               folds.push(`${z.id}/${c.libraryPartId}: ${w.toFixed(2)}mm across ${h.length} pts`);
           }
     expect(folds).toEqual([]);

@@ -58,8 +58,10 @@ export const MIN_HOLE_AREA_MM2 = 15;
  * Measured over chair-body's 42 sub-region holes: the folds run 1.05-1.46mm and every real hole is
  * 2.62mm or above, a factor of 1.79 with nothing between. Re-baked at simplifyTolMm 0 the folds
  * survive at 1.08-1.43 against 2.68, so Douglas-Peucker does not create them — the handles' own
- * unwrap does. 2.0 sits inside both gaps. Not per-kind configurable like minHoleAreaMm2: that one
- * trades coverage against fillet dust, this one asks whether a loop encloses anything at all.
+ * unwrap does. 2.0 sits inside both gaps, but the margin above it is only 1.31x, so a part with a
+ * genuinely narrower slot than the chair's would lose it — and be told it enclosed no width, which
+ * would be a lie. `minHoleWidthMm` in the zone config lowers it per kind for that case, the same
+ * escape `minHoleAreaMm2` gives the area floor. Re-measure the separation before using it.
  */
 export const MIN_HOLE_WIDTH_MM = 2;
 /**
@@ -2384,8 +2386,8 @@ const loopMeanWidth = (pts) => {
 };
 
 /** A hole worth punching: one enclosing both real area and real width. */
-const isRealHole = (pts, minArea) =>
-  Math.abs(loopArea(pts)) >= minArea && loopMeanWidth(pts) >= MIN_HOLE_WIDTH_MM;
+const isRealHole = (pts, minArea, minWidth) =>
+  Math.abs(loopArea(pts)) >= minArea && loopMeanWidth(pts) >= minWidth;
 
 /**
  * Area (mm²) of one `{ outer, holes }` region: the outer loop less its holes, unsigned.
@@ -3671,6 +3673,7 @@ const CONFIG_KEYS = new Set([
   'covers',
   'kindId',
   'minHoleAreaMm2',
+  'minHoleWidthMm',
   'minIslandAreaMm2',
   'mirrorAxis',
   'parts',
@@ -3872,6 +3875,7 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
 
   const simplifyTol = config.simplifyTolMm ?? SIMPLIFY_TOL_MM;
   const minHoleArea = config.minHoleAreaMm2 ?? MIN_HOLE_AREA_MM2;
+  const minHoleWidth = config.minHoleWidthMm ?? MIN_HOLE_WIDTH_MM;
   const minIslandArea = config.minIslandAreaMm2 ?? MIN_ISLAND_AREA_MM2;
   const zones = [];
   const templates = [];
@@ -3987,21 +3991,29 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
     // Reported separately from the per-part folds below, and worded differently, because these two
     // are not the same loops: the display outline chains across stitched seams and fans into folds
     // the per-part regions never see. On the chair it drops six against the clip regions' four.
-    const zoneFolds = zoneLoops
-      .flatMap((r) => r.holes)
-      .filter((h) => Math.abs(loopArea(h)) >= minHoleArea && !isRealHole(h, minHoleArea))
+    //
+    // Measured over the LARGEST lobe alone, because that is the only one `boundary`/`holes` can
+    // carry (see the note below the sort). Counting every lobe would let this claim the sidecar
+    // moved for a fold in a lobe that never ships.
+    const shipped = [...zoneLoops].sort(
+      (a, b) => Math.abs(loopArea(b.outer)) - Math.abs(loopArea(a.outer)),
+    )[0];
+    const zoneFolds = (shipped ? shipped.holes : [])
+      .filter(
+        (h) => Math.abs(loopArea(h)) >= minHoleArea && !isRealHole(h, minHoleArea, minHoleWidth),
+      )
       .map(loopMeanWidth)
       .sort((a, b) => b - a);
     if (zoneFolds.length)
       warnings.push(
-        `zone "${zoneCfg.id}": dropped ${zoneFolds.length} fold(s) under ${MIN_HOLE_WIDTH_MM}mm ` +
+        `zone "${zoneCfg.id}": dropped ${zoneFolds.length} fold(s) under ${minHoleWidth}mm ` +
           `mean width (widest ${zoneFolds[0].toFixed(2)}mm) from the display outline's holes — ` +
           `nothing cuts against it, so this changes the sidecar's outline fields and no geometry`,
       );
     const zoneRegions = zoneLoops
       .map((r) => ({
         outer: r.outer,
-        holes: r.holes.filter((h) => isRealHole(h, minHoleArea)),
+        holes: r.holes.filter((h) => isRealHole(h, minHoleArea, minHoleWidth)),
         area: Math.abs(loopArea(r.outer)),
       }))
       .sort((a, b) => b.area - a.area);
@@ -4239,19 +4251,21 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       // below, which reports surface going away.
       const folds = rawRegions
         .flatMap((r) => r.holes)
-        .filter((h) => Math.abs(loopArea(h)) >= minHoleArea && !isRealHole(h, minHoleArea))
+        .filter(
+          (h) => Math.abs(loopArea(h)) >= minHoleArea && !isRealHole(h, minHoleArea, minHoleWidth),
+        )
         .map((h) => loopMeanWidth(h))
         .sort((a, b) => b - a);
       if (folds.length)
         warnings.push(
           `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": dropped ${folds.length} ` +
-            `fold(s) under ${MIN_HOLE_WIDTH_MM}mm mean width (widest ${folds[0].toFixed(2)}mm) ` +
+            `fold(s) under ${minHoleWidth}mm mean width (widest ${folds[0].toFixed(2)}mm) ` +
             `from the clip region's holes — they enclosed perimeter but no width`,
         );
       const allRegions = rawRegions
         .map((r) => ({
           outer: roundLoop(r.outer),
-          holes: r.holes.filter((h) => isRealHole(h, minHoleArea)).map(roundLoop),
+          holes: r.holes.filter((h) => isRealHole(h, minHoleArea, minHoleWidth)).map(roundLoop),
           area: Math.abs(loopArea(r.outer)),
         }))
         .sort((a, b) => b.area - a.area);
