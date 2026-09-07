@@ -320,8 +320,10 @@ function fromGeom(polys: Geom): PolyFeature | null {
  * left to find out.
  *
  * The floor is an area, so it admits a long enough hairline and refuses a round dot one nozzle
- * across. The seam ribbon in docs/tech-debt.md is the case that needs the other measure: closing
- * those means a real min-width test, and there is no measurement here to choose the width from.
+ * across. A min-width test would settle both, and measurement says it is owed to nothing here:
+ * `buildCutter` extrudes a ribbon 0.01mm wide and 120mm long without complaint, and every one of
+ * the chair's 41 seam overlaps builds on both its parts
+ * (docs/findings/2026-09-07-seam-ribbon-closed.md).
  */
 export function dropUnprintableRemnants(
   feat: PolyFeature | null,

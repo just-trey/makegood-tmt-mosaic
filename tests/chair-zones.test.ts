@@ -15,6 +15,7 @@ import { CHART_SNAP_MM, ConformalZoneMapper } from '../src/geometry/conformal';
 import { boundsCentre, netOffsetToZone } from '../src/geometry/zones';
 import {
   getManifold,
+  manifoldDelete,
   manifoldIsValid,
   soupToManifold,
   type ManifoldAPI,
@@ -83,6 +84,13 @@ const regionPolygon = (r: { outer: number[][]; holes: number[][][] }): PolyFeatu
 /** Several `{ outer, holes }` regions as one feature, for intersecting two parts' whole claims. */
 const regionsPolygon = (rs: { outer: number[][]; holes: number[][][] }[]): PolyFeature =>
   turf.multiPolygon(rs.map((r) => [closed(r.outer), ...r.holes.map(closed)])) as PolyFeature;
+/** Each polygon of a feature on its own, so a multi-piece intersect can be judged piece by piece. */
+const polygonsOf = (f: PolyFeature): PolyFeature[] => {
+  const g = f.geometry as { type: string; coordinates: number[][][] | number[][][][] };
+  const polys =
+    g.type === 'Polygon' ? [g.coordinates as number[][][]] : (g.coordinates as number[][][][]);
+  return polys.map((rings) => turf.polygon(rings) as PolyFeature);
+};
 
 describe('chair zone sidecar', () => {
   it('is the chair-body sidecar with the eight shipped zones', () => {
@@ -778,6 +786,73 @@ describe('chart reconstruction', () => {
         expect(Math.abs(got - want), `${where}: cut region disagrees with turf`).toBeLessThan(2);
       }
   });
+
+  // The area check above is necessary but NOT sufficient for a partition: two parts overlapping by
+  // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total.
+  //
+  // **What the overlap is NOT is output corruption**, which this comment used to say it was.
+  // Measured 2026-09-07 (docs/findings/2026-09-07-seam-ribbon-closed.md): put the same UV point
+  // through each part's warp and it lands 0.217 to 1.116mm apart on the two. They are distinct
+  // surfaces either side of a printed join, not one surface cut twice, so a mark there spans the
+  // seam — which is what a mark crossing a join should do. That range straddles the config's
+  // 0.530mm widest contact gap, so it is what it is rather than "the seam clearance".
+  //
+  // What this still guards is a claim that CREPT: an overlap between two parts that do not meet on
+  // the chair means a boundary ran somewhere it was not traced from, and the seam-sharing check
+  // below is the half that catches it.
+  // Pins what closed "A seam sliver warns as if artwork were lost": every overlap the chair has
+  // extrudes, on BOTH the parts that claim it. That section said a seam remnant yields no cutter
+  // and so raises `Couldn't cut color … into …`, and two hunts for a sighting failed because
+  // there is none.
+  //
+  // Per PIECE, not per pair — a pair's intersect can be several polygons and the narrowest of them
+  // is what a design clipped down to one would face. 41 pieces across 17 pairs, 25 of them over
+  // CLIP_REMNANT_FLOOR_MM2, thinnest of those 0.0631mm by 2·area/perimeter. None fails.
+  //
+  // Re-derive with `npx vite-node scripts/measure-seam-overlap.mjs`, which also prints how far
+  // apart the same UV point lands on the two parts. Full run in
+  // docs/findings/2026-09-07-seam-ribbon-closed.md.
+  it('builds a valid cutter from every seam overlap, on both parts', async () => {
+    const wasm = await getManifold();
+    const failed: string[] = [];
+    let examined = 0;
+    for (const z of sidecar.zones) {
+      const cs = z.charts.filter((c) => (c.cutRegions ?? []).length);
+      for (let i = 0; i < cs.length; i++)
+        for (let j = i + 1; j < cs.length; j++) {
+          // No try/catch: a throw here is `boolOpWithRetry`'s own failure and must fail the test,
+          // not be swallowed into a pass.
+          const hit = turf.intersect(
+            regionsPolygon(cs[i].cutRegions!),
+            regionsPolygon(cs[j].cutRegions!),
+          ) as PolyFeature | null;
+          if (!hit || Math.abs(planarArea(hit)) <= 0) continue;
+          for (const piece of polygonsOf(hit)) {
+            if (Math.abs(planarArea(piece)) <= 0) continue;
+            examined++;
+            // Both parts, because "Couldn't cut color … into <part>" names one part, and which of
+            // the two claims the strip is the whole question.
+            for (const c of [cs[i], cs[j]]) {
+              const mesh = partMesh.get(c.libraryPartId)!;
+              const mapper = new ConformalZoneMapper(wasm, reconstructChart(z, c, mesh.vertices));
+              const where = `${z.id} ${c.libraryPartId} (with ${cs[i === 0 ? j : i].libraryPartId})`;
+              const soup = mapper.buildCutter(piece, 1, 0.5, {});
+              if (!soup || !soup.length) {
+                failed.push(`${where}: no cutter`);
+                continue;
+              }
+              const man = soupToManifold(wasm, soup);
+              if (!manifoldIsValid(man)) failed.push(`${where}: invalid solid`);
+              manifoldDelete(man);
+            }
+          }
+        }
+    }
+    // Not just "nothing failed": a re-bake that drops `cutRegions`, or one that partitions the
+    // claims cleanly, would leave this measuring nothing and passing.
+    expect(examined, 'no overlap pieces were examined').toBe(41);
+    expect(failed).toEqual([]);
+  }, 120000);
 
   // The area check above is necessary but NOT sufficient for a partition: two parts overlapping by
   // 30cm² while a 30cm² strip of the zone goes unclaimed sums to exactly the right total.
