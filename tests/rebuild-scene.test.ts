@@ -564,6 +564,42 @@ describe('hidden-surface overlay (deadRegions)', () => {
     );
   });
 
+  // The same refusal on a zone with NO hidden surface must stay quiet: the hidden-surface warning
+  // says "Artwork still won't cut there", which is false for a yield-only zone — its surface still
+  // cuts, on the sheet that owns it, and the silent yielded hatch is documented at
+  // netExcludedOverlayMesh.
+  it('does not raise the hidden-surface warning when a yield-only zone’s chart is refused', async () => {
+    const chart = flatChart(false) as ReturnType<typeof flatChart> & { netExcluded: object[] };
+    chart.netExcluded = [
+      {
+        to: 'back',
+        toName: 'Back',
+        areaMm2: 4,
+        regions: [
+          {
+            outer: [
+              [1, 1],
+              [3, 1],
+              [3, 3],
+              [1, 3],
+            ],
+            holes: [],
+          },
+        ],
+      },
+    ];
+    chart.uv = new Float32Array(chart.uv.subarray(0, chart.uv.length - 2));
+    state.assembly.parts = [asmPart({ zones: [{ id: 'left', name: 'left', chart }] } as never)];
+    clearWarnings();
+
+    await rebuildCurrent();
+
+    expect(sceneMeshes().length).toBeGreaterThan(0);
+    expect(WARNINGS.map((w) => w.message)).not.toContainEqual(
+      expect.stringContaining('hidden surface'),
+    );
+  });
+
   it('shares one hatch material across parts, and lets go of it when the scene disposes it', async () => {
     state.assembly.parts = [zonedPart(true), zonedPart(true)];
 

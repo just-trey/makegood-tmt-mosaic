@@ -371,8 +371,10 @@ function hatchMaterial(kind: HatchKind): THREE.MeshBasicMaterial {
 // `uv` is already divided by the stripe pitch. A BufferAttribute never writes to the array it
 // wraps and geometry disposal frees the GPU buffer rather than the array, so both are handed
 // straight to each rebuild's fresh attributes instead of being copied and rescaled per rebuild.
-const deadCache = new WeakMap<object, OverlayMesh | null>();
-const yieldCache = new WeakMap<object, OverlayMesh | null>();
+const overlayCache = new WeakMap<
+  object,
+  { dead: OverlayMesh | null; yielded: OverlayMesh | null }
+>();
 
 /** The mapper hands back true surface mm; one texture tile spans HATCH_PITCH_MM of it. */
 const scaleToPitch = (m: OverlayMesh | null): OverlayMesh | null =>
@@ -435,9 +437,8 @@ function addZoneOverlays(
     const hasDead = !!chart.deadRegions?.length;
     const hasYield = !!chart.netExcluded?.length;
     if (!hasDead && !hasYield) continue;
-    let dead = deadCache.get(chart);
-    let yielded = yieldCache.get(chart);
-    if (dead === undefined || yielded === undefined) {
+    let built = overlayCache.get(chart);
+    if (built === undefined) {
       // Caught per zone, because this decoration must never cost the model. renderRawAssemblyParts
       // is the fallback that keeps the bare parts on screen when a build fails, and it calls here
       // too — so a throw out of this loop empties the very viewport that path exists to keep
@@ -446,30 +447,39 @@ function addZoneOverlays(
       // ring[0] straight out, so a malformed sidecar reaches it as a TypeError, not a null.
       // One mapper for both hatches, and the two builds caught apart. A malformed ring in one
       // region list must not take the other's hatch with it, and only the hidden-surface one is
-      // worth a warning (netExcludedOverlayMesh records why the yielded one is silent). A chart the
-      // mapper itself refuses loses both, and the warning is right about that.
+      // worth a warning — and only on a zone that HAS hidden surface: a refused chart on a
+      // yield-only zone loses a hatch about surface that still cuts elsewhere, which is the
+      // silence netExcludedOverlayMesh records, not a missing shade.
       let mapper: ConformalZoneMapper | null = null;
+      let dead: OverlayMesh | null = null;
+      let yielded: OverlayMesh | null;
+      let deadFailed = false;
       try {
-        // z.id, or deadOverlayMesh's failure warning says "this zone" and every zone shares its
-        // dedupe key, so the second one to fail is swallowed by the first.
         mapper = new ConformalZoneMapper(null, chart, z.id);
-        dead = hasDead ? scaleToPitch(mapper.deadOverlayMesh()) : null;
       } catch {
-        dead = null;
+        deadFailed = true;
+      }
+      try {
+        dead = mapper && hasDead ? scaleToPitch(mapper.deadOverlayMesh()) : null;
+      } catch {
+        deadFailed = true;
+      }
+      if (hasDead && deadFailed)
+        // z.id, or every zone shares the dedupe key and the second failure is swallowed.
         warn(
           `Couldn't shade the hidden surface on "${z.id}". Artwork still won't cut there. ` +
             `Only the hatching is missing. Please report this.`,
           `dead-overlay-${z.id}`,
         );
-      }
       try {
         yielded = mapper && hasYield ? scaleToPitch(mapper.netExcludedOverlayMesh()) : null;
       } catch {
         yielded = null;
       }
-      deadCache.set(chart, dead);
-      yieldCache.set(chart, yielded);
+      built = { dead, yielded };
+      overlayCache.set(chart, built);
     }
+    const { dead, yielded } = built;
     for (const [built, kind] of [
       [dead, 'dead'],
       [yielded, 'yielded'],
