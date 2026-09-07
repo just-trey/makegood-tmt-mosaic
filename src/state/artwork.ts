@@ -8,6 +8,7 @@ import { boundsCentre, netOffsetToZone, WHOLE_CHAIR_ZONE } from '../geometry/zon
 import { currentAssemblyKind, currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
+import { notice } from '../warnings';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
@@ -649,21 +650,43 @@ export function allowedArtworkMode(mode: ArtworkInstance['mode']): ArtworkInstan
   return mode === 'fill' && fillWithheld() ? 'sticker' : mode;
 }
 
+/** Names the designs a part switch took out of Fill, so the rewrite is never silent. */
+export function fillClampedNotice(names: string[], partName: string): string {
+  const which = names.map((n) => `"${n}"`).join(', ');
+  return names.length === 1
+    ? `${which} is a sticker now. The ${partName} can't repeat a design across it yet.`
+    : `${which} are stickers now. The ${partName} can't repeat a design across it yet.`;
+}
+
 /**
  * Re-clamp every loaded design's mode against the current part. Artwork outlives a part switch
  * (only its zone bindings are cleared), so a design set to Fill on the wheel would otherwise arrive
  * on the chair still set to Fill and rebuild through the path the flag exists to keep it out of.
  * Returns whether anything changed, so callers can skip a needless rebuild.
+ *
+ * Says so when it does. Before the chair was offered in the Part dropdown this could only be
+ * reached by loading a URL, which starts with no artwork, so the rewrite had nothing to take. Now
+ * a design carried over from the wheel loses a mode the user chose, and the control it was chosen
+ * with is not on screen to show it.
  */
 export function clampArtworkModes(): boolean {
   let changed = false;
+  const clamped: string[] = [];
   state.artworks.forEach((a) => {
     const next = allowedArtworkMode(a.mode);
-    if (next !== a.mode) {
-      a.mode = next;
-      changed = true;
-    }
+    if (next === a.mode) return;
+    a.mode = next;
+    changed = true;
+    // Two instances of one design clamp together and are one row on screen, so name it once. A
+    // source that cannot be named is never a reason to say nothing, which is why `changed` is
+    // tracked apart from the names.
+    const name = state.sources.find((src) => src.id === a.sourceId)?.name;
+    if (name && !clamped.includes(name)) clamped.push(name);
   });
+  if (changed) {
+    const names = clamped.length ? clamped : ['a design'];
+    notice(fillClampedNotice(names, currentAssemblyKind()?.name ?? 'part'), 'fill-clamped');
+  }
   return changed;
 }
 

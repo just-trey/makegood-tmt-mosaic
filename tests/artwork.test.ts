@@ -19,6 +19,7 @@ import {
   zoneCoverage,
 } from '../src/state/artwork';
 import { state } from '../src/state/store';
+import { WARNINGS } from '../src/warnings';
 import { OVERLAP_WARN_FRACTION } from '../src/geometry/designOverlap';
 import { WHOLE_CHAIR_ZONE } from '../src/geometry/zones';
 import type { ConformalChart } from '../src/geometry/conformal';
@@ -84,6 +85,30 @@ describe('Fill withheld on a kind that opts out', () => {
     onKind('chair-body');
     expect(clampArtworkModes()).toBe(true);
     expect(activeArtworkInstance()!.mode).toBe('sticker');
+  });
+
+  // The switch is now reachable from the Part dropdown, not just from a URL that starts with no
+  // artwork, so this rewrite takes a mode the user picked — and the control it was picked with is
+  // not on screen on the chair to show that it went.
+  it('names the design it took out of Fill, rather than rewriting it silently', () => {
+    onKind('wheel');
+    loadArtworkSource(fakeParsed(), 'zebra.svg');
+    setArtworkMode(activeArtworkInstance()!.id, 'fill');
+    onKind('chair-body');
+    WARNINGS.length = 0;
+    clampArtworkModes();
+    const said = WARNINGS.map((w) => w.message);
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('"zebra.svg"');
+    expect(said[0]).toContain('Chair body');
+  });
+
+  it('says nothing when nothing was rewritten', () => {
+    onKind('chair-body');
+    loadArtworkSource(fakeParsed(), 'zebra.svg');
+    WARNINGS.length = 0;
+    expect(clampArtworkModes()).toBe(false);
+    expect(WARNINGS).toEqual([]);
   });
 
   it('keeps Fill through a detour into a flat mode, which only ignores it', () => {

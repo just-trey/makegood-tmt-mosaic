@@ -118,9 +118,9 @@ try {
       const { page, errors } = await newPage(browser, { viewport: { width: 1440, height: 900 } });
 
       console.log(`\n=== ${label} / ${variant} ===`);
-      // ?kind= rather than a selectOption below: the chair is withheld from the Part dropdown, so
-      // it has no option to select, and main.ts honours the parameter for a hidden kind. It also
-      // skips building the wheel first.
+      // ?kind= rather than a selectOption below: it lands on the chair without building the wheel
+      // first, which is minutes of CSG this script has no use for. The chair is offered in the Part
+      // dropdown now, so selecting it would also work — just slower.
       await page.goto(`http://localhost:${PORT}/?kind=chair-body`);
       await page.waitForFunction(
         () => {

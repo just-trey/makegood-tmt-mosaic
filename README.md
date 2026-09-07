@@ -132,16 +132,17 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   where two sheets lie over each other, the seam between them decides which,
   and the sheet hatches the part each one gives up. So does the 3D view, while
   a **Whole chair** row is the active one.
-- Large wrapped surfaces stretch the artwork. On the chair the flanks are the
-  worst at 1.23x, the seat back 1.13x, and the fenders barely at all (1.02x).
-  The per-zone figures are in `public/stl/chair-body-zones.json`, and the bake
-  prints them.
+- Large wrapped surfaces stretch the artwork. On the chair, Left side and Right
+  side are the worst at 1.23x, Back 1.13x, Front 1.11x, the seat sides 1.08x,
+  and the fenders barely at all (1.02x). The bake prints these, and they are in
+  `public/stl/chair-body-zones.json`.
 - **Fill isn't offered on the chair body.** It was measured at 93.6s to settle
   on one zone, "All zones" didn't finish inside 900s, and it dropped a color on
-  one part. Sticker works normally there and is 4.0s for a design auto-fitted
-  across five zones. See [docs/tech-debt.md](docs/tech-debt.md).
-- The chair's caster mounts can't carry artwork: they're the two pieces no
-  design zone covers.
+  one part. Sticker works normally there. See
+  [docs/tech-debt.md](docs/tech-debt.md).
+- Three of the chair's thirteen pieces can't carry artwork, because no design
+  zone reaches them: the two caster mounts, and Seat center, which the cushion
+  covers whole.
 - On the chair, "Seat back (top)" takes artwork on one side of the centre line
   only, whether Mirror is on or off. Nothing warns about the bare half. It's the
   Front zone's coverage of that piece, not the mirror, and it's the one place a
