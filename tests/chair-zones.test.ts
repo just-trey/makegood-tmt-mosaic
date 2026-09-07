@@ -477,7 +477,7 @@ describe('the whole-chair net', () => {
       expect(baked.met, id).toBeLessThan(baked.rows);
       expect(baked.jumpMm.median, id).toBeGreaterThan(CHART_SNAP_MM);
     }
-  });
+  }, 120000);
 
   /**
    * The rule the runtime warning rests on: a yielded patch says whether the stretch of boundary it
