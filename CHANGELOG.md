@@ -25,7 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **The 3D view now cross-hatches the surface a "Whole chair" design gives up
   to another sheet.** It looked live and refused the mark anyway, which read
   as the design vanishing and reappearing 44mm away on the Back. On the chair
-  that is 8,668mm² of the left flank and 8,158mm² of the right. The hatch is
+  that is 8,668mm² of the left flank and 8,158mm² of the right (the bake
+  prints each: `npx vite-node scripts/bake-zones.mjs
+scripts/zone-configs/chair-body.json`). The hatch is
   only drawn while the row being edited is bound to Whole chair, because a row
   bound to a zone by name still cuts every bit of it. Click that row and the
   hatch goes. It crosses in two directions in the second accent colour, the

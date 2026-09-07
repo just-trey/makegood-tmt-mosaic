@@ -1003,8 +1003,18 @@ describe('hidden surface (deadRegions)', () => {
       for (const c of z.charts) {
         const m = partMesh.get(c.libraryPartId)!;
         const chart = reconstructChart(z, c, m.vertices, excl);
-        const overlay = new ConformalZoneMapper(null, chart, z.id).netExcludedOverlayMesh();
+        const mapper = new ConformalZoneMapper(null, chart, z.id);
+        const overlay = mapper.netExcludedOverlayMesh();
         const where = `${z.id}/${c.libraryPartId}`;
+        // The figure conformal.ts's docstring quotes: no chart's dead regions meet its yielded
+        // ones, so the two hatches never fight for surface. Re-derived per chart, all fourteen.
+        const dead = mapper.deadArea();
+        if (dead)
+          for (const e of mapper.netExcluded())
+            if (e.region) {
+              const hit = turf.intersect(dead, e.region);
+              expect(hit ? Math.abs(planarArea(hit as PolyFeature)) : 0, where).toBeCloseTo(0, 3);
+            }
         if (!overlay) continue;
         expect(overlay.positions.length / 3, where).toBe(overlay.uv.length / 2);
         drew.set(where, overlay.positions.length / 9);
@@ -1025,8 +1035,8 @@ describe('hidden surface (deadRegions)', () => {
         }
       }
     }
-    // Measured on this sidecar by the same call this test makes. Six of the fourteen charts handed
-    // an exclusion list own none of the patch and draw nothing at all.
+    // Measured on this sidecar by the same call this test makes. Eight of the fourteen charts
+    // handed an exclusion list own none of the patch and draw nothing at all.
     expect(Object.fromEntries(drew)).toEqual({
       'left/chair-storage-left': 4650,
       'left/chair-handle-left': 10853,

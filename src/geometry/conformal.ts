@@ -745,7 +745,8 @@ export class ConformalZoneMapper implements ZoneMapper {
    *
    * It also takes hidden surface off, `boundary()` having already subtracted it — belt and braces
    * rather than the reason: no shipped chart's dead regions meet its yielded ones at all (0.0mm²
-   * over all 14 charts that carry exclusions), so the two hatches do not fight for surface today.
+   * over all 14 charts that carry exclusions, re-derived per chart by the yielded-canvas overlay
+   * test in tests/chair-zones.test.ts), so the two hatches do not fight for surface today.
    *
    * `intersectQuiet`, not `safeIntersect`: that one hands the subject back UNCLIPPED when the
    * boolean flakes, which here is exactly the smear being prevented. A flake draws no hatch and
