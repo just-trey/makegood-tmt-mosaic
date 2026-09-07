@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A design on the chair's Front no longer cuts a phantom mark into the top of
+  the seat back.** A 0.4mm inlay, in surface the cushion covers, on one side of
+  the centre line only. It came from a clip: where the boundary a design is
+  trimmed to runs along an edge of the design itself, the trim can hand back a
+  hairline instead of nothing, and a hairline still cuts. This one was 0.02mm
+  wide and 8mm long, 0.025mm² against 1,258mm² and up for every other piece the
+  same design reached. The build now discards a region the trim itself made too
+  small to print, one nozzle square being the line. A design that was already
+  that small before trimming is untouched: that is your drawing, not an artifact.
+  The same guard covers the seam between two pieces, where the trim can leave the
+  same kind of sliver.
+
 ### Added
 
 - **The chair body is back in the Part dropdown.** It has been reachable only by

@@ -1293,19 +1293,35 @@ warning for it.
 to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
 scheduled.
 
-## `Seat back (top)` takes ink on one side of the centre line only, Mirror on or off
+## The chair's bake leaves a 0.02mm live hairline the cut no longer builds from
 
-Measured 2026-09-04 on `f97035a` by `npm run build && MOSAIC_GPU=1 npm run check:mirror-design`
-(the `front-mirror-off-control.3mf` export it keeps): with the sample badge on the Front at
-offset 0 and Mirror off, `Seat back (top)` carries one inlay at x −39.6..−39.2, y 381.4..387.9,
-z −471.3..−470.0 and nothing at +x, while `Seat back (bottom)` cuts both halves. Mirror on gives
-the same one-sided result, so this is the Front zone's coverage of that part, not the mirror.
+Closing the "`Seat back (top)` takes ink on one side" report found the cause one
+layer up from where that report looked, and the build now guards it. What is
+left is the bad data underneath.
 
-- No warning names the missing +x side. The "only reaches surface that's hidden" warning fires
-  for a colour, not for a half of one part.
-- Not diagnosed: whether the +x half is inside the cushion's dead region (then correct and only
-  the silence is wrong), or the chart's `subRegions` for that part stop short of it.
-- Closing it: dump the Front zone's `subRegions` and `deadRegions` for `chair-seat-back-top`
-  (`public/stl/chair-body-zones.json`), compare the +x and −x claims, then either fix the bake
-  or add a per-part notice. The live check keeps that export as the control for which sides can
-  take ink, so it stays green either way.
+On the Front zone, `chair-seat-back-top`'s live area — its claim less the
+cushion's dead region — is **two** polygons, not one:
+
+| polygon       | area        | extent                                |
+| ------------- | ----------- | ------------------------------------- |
+| the real band | 2634.33 mm² | u 69.665..149.985, v 270.313..326.856 |
+| a hairline    | 0.025 mm²   | u 70.387..70.407, v 149.751..157.827  |
+
+The hairline is 0.020mm wide and 8.08mm long, at the bottom edge where the dead
+region is meant to cover the claim exactly and misses by a fraction. Reproduce
+by running `turf.difference` over that chart's `subRegions` and `deadRegions`
+from `public/stl/chair-body-zones.json`.
+
+- **It no longer cuts.** `CLIP_REMNANT_FLOOR_MM2` in
+  [src/geometry/depth.ts](../src/geometry/depth.ts) drops a clipped region the
+  boundary itself made unprintable, so the hairline builds no cutter. That guard
+  is the general fix and covers seam remnants too, not just this chart.
+- **The data is still wrong**, and a wider hairline would clear the floor. This
+  is the same class as "A seam sliver warns as if artwork were lost" above,
+  seen from the bake rather than the cut.
+- Closing it means the dead-region union sharing the claim's boundary exactly
+  where the two are meant to coincide, rather than to within a bake tolerance.
+  Check every chart, not just this one: the same probe over all 12 charts that
+  carry a dead region is the measurement to take first.
+- Direction is safe either way. A surviving hairline costs a sliver of pocket in
+  covered surface; it never leaves blank plastic where artwork was expected.

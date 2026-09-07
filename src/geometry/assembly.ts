@@ -5,6 +5,7 @@ import {
   addPartTooDeepClamp,
   addZeroDepthRaise,
   depthDiffers,
+  CLIP_REMNANT_FLOOR_MM2,
   edgeCutThroughNotice,
   regionLabel,
   requestedDepth,
@@ -1261,6 +1262,27 @@ export async function buildAssemblyGeometry(
           const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
           feat = r.feat;
           clipped = r.clipped;
+          // The clip cutting a printable region down to an unprintable hairline is the clip failing
+          // to return nothing, not a region. Where its boundary runs ALONG an edge of what it is
+          // clipping — a dead region baked to share its chart's own outline, a part's claim meeting
+          // its neighbour's at a seam — the intersect hands back a sliver instead of null, and a
+          // sliver still extrudes into a real inlay. Measured on the chair's Front zone with the
+          // mirror check's asymmetric design: `chair-seat-back-top` came back with 0.025mm²,
+          // 0.020mm wide and 8.08mm long, against 1,258 to 3,029mm² for every other chart that
+          // design reaches. It cut a 0.4mm inlay into surface the cushion covers.
+          //
+          // BOTH sides of the comparison, and the same floor for each. A region already under one
+          // nozzle square before the clip is the user's own design being small — the 0.2mm square a
+          // refused fill falls back to, say — and dropping that would be discarding their content
+          // over a boundary that took nothing off it. What is dropped here is only a region the
+          // boundary itself made unprintable.
+          const kept = feat ? Math.abs(planarArea(feat)) : 0;
+          if (
+            feat &&
+            kept < CLIP_REMNANT_FLOOR_MM2 &&
+            Math.abs(planarArea(placed)) >= CLIP_REMNANT_FLOOR_MM2
+          )
+            feat = null;
           if (!feat) {
             noteHiddenSurface(mapper, placed, ci);
             return;

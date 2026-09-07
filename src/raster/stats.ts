@@ -1,5 +1,6 @@
 import type { ImageStats, RasterImage, TraceParams } from './types';
 import { ALPHA_THRESHOLD } from './types';
+import { NOZZLE_MM } from '../geometry/depth';
 
 /** The Detail slider's multiplier on despeckle/simplify strength: 4x at full left, 1/4 at full right. */
 export function detailStrength(detail: number): number {
@@ -70,17 +71,6 @@ const PHOTO_PARAMS: TraceParams = {
   alphaMax: 1.2,
   flatness: 0.4,
 };
-
-/**
- * Nozzle width in mm: the reference for what a printer can lay down at all.
- *
- * A component with less area than one nozzle square cannot hold a single extrusion of any shape,
- * so nothing this floor removes was going to print. That is deliberately the weakest claim
- * available about a feature size, and it is why the Detail slider does not scale it: coarseness is
- * a taste control and this is not one. Everything between one nozzle and comfortably printable
- * stays the fractional floor's business.
- */
-const NOZZLE_MM = 0.4;
 
 /**
  * Despeckle floor in working pixels for a design placed at `mmPerPixel`, or 0 where the placement

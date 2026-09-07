@@ -533,6 +533,76 @@ describe('per-zone artwork binding', () => {
   }, 180000);
 });
 
+// A clip whose boundary runs ALONG an edge of the region being clipped can hand back a hairline
+// instead of null, and a hairline still extrudes into a real inlay. The chair ships one: on the
+// Front zone, `chair-seat-back-top`'s live area is the 2,634mm² band at the top of the part PLUS a
+// second polygon of 0.025mm², 0.020mm wide and 8.08mm long, at u 70.387..70.407 v 149.751..157.827,
+// where the cushion's dead region fails to cover the claim exactly. Reproduce with
+// `npx vite-node` over public/stl/chair-body-zones.json: turf.difference(claim, dead) returns two
+// polygons for that chart.
+//
+// It cut. The mirror check saw it as `Seat back (top)` taking ink on one side of the centre line
+// only — a 0.4mm inlay in surface the cushion covers, on the side whose mirrored copy reached the
+// hairline. Guarding the build rather than the bake, because the same shape arises wherever a clip
+// boundary is collinear with what it clips, including at part seams.
+describe('a clip remnant too small to print', () => {
+  const ZONE = 'front';
+  const PART = 'chair-seat-back-top';
+  // Centred on the hairline, and big enough that the whole 8mm of it is inside the square. Every
+  // other millimetre of the square is under the cushion.
+  const HAIRLINE_OFF_X = -39.42;
+  const HAIRLINE_OFF_Z = -9.64;
+
+  it('builds no cutter from it, and leaves the part uncut', async () => {
+    clearWarnings();
+    const mesh = await loadPacked(PART);
+    const part = chairPart(
+      PART,
+      mesh,
+      zonesFor(PART, mesh).filter((z) => z.id === ZONE),
+    );
+    const build = await buildAssemblyGeometry(
+      chairInput([part], 12, [
+        { zoneId: ZONE, sizeMM: 12, offX: HAIRLINE_OFF_X, offZ: HAIRLINE_OFF_Z },
+      ]),
+    );
+    expect(build, 'build returned null').not.toBeNull();
+    const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
+    expect(Object.keys(out.inlaySoups), 'an inlay was built from a 0.025mm² remnant').toEqual([]);
+
+    const wasm = await getManifold();
+    const cut = soupToManifold(wasm, out.bodySoup);
+    const orig = soupToManifold(wasm, part.positions!);
+    expect(orig.volume() - cut.volume()).toBeCloseTo(0, 6);
+  }, 180000);
+
+  // The floor must not be reachable by anything a user meant. On the same zone and the same
+  // design, every other chart's clipped region is 1,258mm² or more.
+  it('still cuts a region the design really lands on', async () => {
+    clearWarnings();
+    const mesh = await loadPacked(PART);
+    const part = chairPart(
+      PART,
+      mesh,
+      zonesFor(PART, mesh).filter((z) => z.id === ZONE),
+    );
+    // The band at the top of the part, which is the surface this chart genuinely offers.
+    const zone = sidecar.zones.find((z) => z.id === ZONE)!;
+    const build = await buildAssemblyGeometry(
+      chairInput([part], 40, [
+        {
+          zoneId: ZONE,
+          sizeMM: 40,
+          offX: 109.8 - zone.uvBounds.maxU / 2,
+          offZ: 300 - zone.uvBounds.maxV / 2,
+        },
+      ]),
+    );
+    const out = build!.partOutputs.find((o) => o.part.id === part.id)!;
+    expect(Object.keys(out.inlaySoups).length, 'the live band cut nothing').toBeGreaterThan(0);
+  }, 180000);
+});
+
 describe('a design that lands only on hidden surface', () => {
   // A seat side is the zone where this is reachable by accident: 80% of it is under the cushion.
   const ZONE = 'seat-left';

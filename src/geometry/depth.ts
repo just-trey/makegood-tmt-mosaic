@@ -14,6 +14,31 @@ import type { ColorSettings } from '../types';
 export const MIN_CUT_DEPTH_MM = 0.2;
 
 /**
+ * Nozzle width in mm: the reference for what a printer can lay down at all.
+ *
+ * Here rather than in raster/stats.ts, which held it privately, because both the trace despeckle
+ * and the assembly clip need the same physical fact and the printer does not care which one is
+ * asking. raster/stats.ts imports it.
+ */
+export const NOZZLE_MM = 0.4;
+
+/**
+ * Smallest clipped region assembly mode will build a cutter from, in mm².
+ *
+ * One nozzle square, for the reason NOZZLE_MM carries: an area smaller than this cannot hold a
+ * single extrusion of any shape, so nothing it removes was going to print. That is deliberately
+ * the weakest claim available about a feature size.
+ *
+ * It exists because an intersect whose clip boundary runs ALONG an edge of the region being
+ * clipped can hand back a hairline instead of null, and a hairline still extrudes into a real
+ * inlay. Measured on the chair's Front zone with the mirror check's asymmetric design: the
+ * remnant on `chair-seat-back-top` was 0.025mm², 0.02mm wide and 8mm long, against 1,258 to
+ * 3,029mm² for every other chart that design reaches — five orders of magnitude of daylight
+ * either side of this floor.
+ */
+export const CLIP_REMNANT_FLOOR_MM2 = NOZZLE_MM * NOZZLE_MM;
+
+/**
  * How much material a recess leaves behind it, so a clamped cut is still a recess.
  *
  * Shared with flat mode rather than duplicated: it had this rule ("depth is capped at the plate

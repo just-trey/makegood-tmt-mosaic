@@ -1137,6 +1137,10 @@ describe('fill mode', () => {
   );
 
   it(
+    // Also the keep side of CLIP_REMNANT_FLOOR_MM2: the single copy this falls back to is a
+    // 0.2mm square, 0.04mm² and under that floor, and it must still cut. The floor drops a region
+    // the clip made unprintable, never one that arrived that way. An earlier version compared only
+    // the survivor and this test is what caught it.
     'refuses an unreasonable tile count, warns, and places a single copy',
     { timeout: 60000 },
     async () => {
