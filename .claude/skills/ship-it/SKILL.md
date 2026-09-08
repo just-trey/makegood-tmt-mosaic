@@ -181,15 +181,74 @@ be, and the gap let a 700-line bench through unreviewed; the review that
 eventually ran found three claims in its findings report read off rows the
 shipping code never uses.
 
-Then run it **again after acting on the findings**. A fix written to close one
-complaint is exactly where a too-narrow patch lands.
+### Run it twice, at least
 
-**How many rounds**: as many as keep returning wrong output. Stop when a round
-returns only arguable defaults, which is taste and never runs out. There is no
-cap, and there is no credit for stopping early. See CLAUDE.md's "Stop on the
-kind of finding, not on the count" for the two guards that matter more than the
-number: never invent a constant to satisfy a reviewer, and suspect the diff if
-rounds keep finding real defects.
+Once **before pushing**, and again **after you act on its findings**.
+
+- A fix to a finding is itself a change, written under pressure, to make one
+  specific complaint go away.
+- That is exactly when a too-narrow patch gets bolted on.
+- PR #113: three rounds in a row, each found a real bug introduced by the
+  previous round's fix. Round 2 found it in code a live run had already
+  reported clean.
+- Reviewing only after the push means announcing green, then withdrawing it.
+
+### Stop on the kind of finding, not on the count
+
+Keep going while rounds return wrong output. Stop when a round returns taste.
+
+A reviewer looking hard at a big diff will always return something. So "it
+found a real thing" is not the test. What matters is _which kind_ of thing:
+
+- **Wrong output**: a bad number, a wrong pose, a warning that never fires, a
+  claim the measurement does not support. Fix it. The next round is earned.
+- **Arguable defaults**: a margin, a fallback, one of two defensible
+  behaviors. That is taste. Another round produces more of it, forever.
+
+There is no round cap. A fourth round that keeps surfacing wrong numbers is
+worth running. A second round that returns only judgment calls is where to
+stop.
+
+PR #147 is the worked example of stopping:
+
+- Round 1 found four real defects. Round 2 found a genuine latent bug.
+- Round 3 returned four more. One was introduced by round 2's own fix, two
+  were judgment calls, and the fix invented a constant to satisfy a reviewer
+  rather than a measurement.
+- All three rounds found "real things". Only the first two were worth acting
+  on, and round 3 is where the churn started.
+- The churn landed on `suggestTowerPos`, a _suggestion_ that already warns
+  when unsure. The numbers that decide whether a print succeeds (the verified
+  plate constants) had been stable and live-verified since they landed.
+
+Six guards that matter more than the count:
+
+- **Findings anchor in the diff.** A finding lands on the changed lines or
+  their direct blast radius. A pre-existing issue becomes a
+  `docs/tech-debt.md` item, never review commentary.
+- **A settled finding stays settled.** One judged fixed or no-change-needed
+  in an earlier round is never re-raised in a later one.
+- **Never invent a constant to satisfy a reviewer.** A number that closes a
+  finding without a measurement behind it is worse than the finding.
+- **If rounds keep finding real defects, suspect the diff.** A change that
+  needs four rounds is usually too big rather than unsound. Splitting it is
+  the fix, not another pass.
+- **A defect in the previous round's fix, in the same area, twice: cut the
+  area.** Revert it to what shipped, write the open threads into
+  `docs/tech-debt.md` with what each round found, and let the rest of the
+  change ship. #241 is the worked example: three rounds each found a defect
+  in the markup-splitting regex, and the area went rather than a fourth
+  patch. #230 is the counter-example: the same wrong-axis bug survived three
+  rounds because each fix got a third patch instead.
+- **Prose has no stop signal, so it gets one pass, at the end.** Code rounds
+  review the code diff; a finding on a comment, a CHANGELOG bullet, a
+  tech-debt section, a troubleshooting entry, or the PR body is applied
+  without re-entering review. After the last clean code round, one
+  `/code-review low` pass over the prose, applied, then ship. #270 ran ten
+  rounds and rounds 2-10 were all prose, with the code correct after round
+  1; #269 repeated it in rounds 7-8; #264 took 15 rounds on 3 prose files.
+  "There is no round cap" above still holds — what changed is what counts as
+  a round.
 
 Say which round you stopped at and why, in terms of what the last round
 returned.

@@ -27,80 +27,10 @@ The one exemption is a diff that is only prose: docs, CHANGELOG, comments. If
 it changes a line anything executes, including scripts and config, it gets
 reviewed.
 
-It used to be scoped to `src/geometry/` and `src/export/`, on a token-cost
-argument that no longer applies. That scoping had a real failure mode: a
-700-line measurement bench sat outside it, and the review that eventually ran
-found three claims in its report read off rows the shipping code never uses.
-Wrong numbers do not respect directory boundaries.
-
-### Run it twice, at least
-
-Once **before pushing**, and again **after you act on its findings**.
-
-- A fix to a finding is itself a change, written under pressure, to make one
-  specific complaint go away.
-- That is exactly when a too-narrow patch gets bolted on.
-- PR #113: three rounds in a row, each found a real bug introduced by the
-  previous round's fix. Round 2 found it in code a live run had already
-  reported clean.
-- Reviewing only after the push means announcing green, then withdrawing it.
-
-### Stop on the kind of finding, not on the count
-
-Keep going while rounds return wrong output. Stop when a round returns taste.
-
-A reviewer looking hard at a big diff will always return something. So "it
-found a real thing" is not the test. What matters is _which kind_ of thing:
-
-- **Wrong output**: a bad number, a wrong pose, a warning that never fires, a
-  claim the measurement does not support. Fix it. The next round is earned.
-- **Arguable defaults**: a margin, a fallback, one of two defensible
-  behaviors. That is taste. Another round produces more of it, forever.
-
-There is no round cap. A fourth round that keeps surfacing wrong numbers is
-worth running. A second round that returns only judgment calls is where to
-stop.
-
-PR #147 is the worked example of stopping:
-
-- Round 1 found four real defects. Round 2 found a genuine latent bug.
-- Round 3 returned four more. One was introduced by round 2's own fix, two
-  were judgment calls, and the fix invented a constant to satisfy a reviewer
-  rather than a measurement.
-- All three rounds found "real things". Only the first two were worth acting
-  on, and round 3 is where the churn started.
-- The churn landed on `suggestTowerPos`, a _suggestion_ that already warns
-  when unsure. The numbers that decide whether a print succeeds (the verified
-  plate constants) had been stable and live-verified since they landed.
-
-Six guards that matter more than the count:
-
-- **Findings anchor in the diff.** A finding lands on the changed lines or
-  their direct blast radius. A pre-existing issue becomes a
-  `docs/tech-debt.md` item, never review commentary.
-- **A settled finding stays settled.** One judged fixed or no-change-needed
-  in an earlier round is never re-raised in a later one.
-- **Never invent a constant to satisfy a reviewer.** A number that closes a
-  finding without a measurement behind it is worse than the finding.
-- **If rounds keep finding real defects, suspect the diff.** A change that
-  needs four rounds is usually too big rather than unsound. Splitting it is
-  the fix, not another pass.
-- **A defect in the previous round's fix, in the same area, twice: cut the
-  area.** Revert it to what shipped, write the open threads into
-  `docs/tech-debt.md` with what each round found, and let the rest of the
-  change ship. #241 is the worked example: three rounds each found a defect
-  in the markup-splitting regex, and the area went rather than a fourth
-  patch. #230 is the counter-example: the same wrong-axis bug survived three
-  rounds because each fix got a third patch instead.
-- **Prose has no stop signal, so it gets one pass, at the end.** Code rounds
-  review the code diff; a finding on a comment, a CHANGELOG bullet, a
-  tech-debt section, a troubleshooting entry, or the PR body is applied
-  without re-entering review. After the last clean code round, one
-  `/code-review low` pass over the prose, applied, then ship. #270 ran ten
-  rounds and rounds 2-10 were all prose, with the code correct after round
-  1; #269 repeated it in rounds 7-8; #264 took 15 rounds on 3 prose files.
-  "There is no round cap" above still holds — what changed is what counts as
-  a round.
+How many rounds to run, when to stop, and the six guards that matter more
+than the count live in the `ship-it` skill, step 3. Load it before the first
+round: the short version is run it before pushing and again after acting on
+the findings, and stop when a round returns taste instead of wrong output.
 
 ## Git workflow
 
@@ -194,14 +124,14 @@ Pick one destination per topic. Don't split a topic across two.
 | **README**                                             | Orientation only: what it is, how to run it, how it works, what it can't do. Under ~200 lines |
 | **[docs/audience.md](docs/audience.md)**               | Who this is for, and the success measure                                                      |
 | **[docs/pipeline.md](docs/pipeline.md)**               | How the geometry actually works                                                               |
-| **[docs/ui-conventions.md](docs/ui-conventions.md)**   | Numbered behavior rubric for anything user-facing (rules below)                               |
+| **[docs/ui-conventions.md](docs/ui-conventions.md)**   | Numbered behavior rubric for anything user-facing (rules in docs/CLAUDE.md)                   |
 | **`design-system/`**                                   | Color, type, spacing, radius, states, component specs                                         |
-| **[docs/system-audit.md](docs/system-audit.md)**       | Generated by the `system` lens, never authored (rules below)                                  |
+| **[docs/system-audit.md](docs/system-audit.md)**       | Generated by the `system` lens, never authored (rules in docs/CLAUDE.md)                      |
 | **[docs/analytics.md](docs/analytics.md)**             | The event catalog                                                                             |
-| **[docs/tech-debt.md](docs/tech-debt.md)**             | Open deferred work and known-wrong behavior (rules below)                                     |
-| **`docs/findings/`**                                   | One dated report per driven investigation (rules below)                                       |
-| **`docs/review-cycles/`**                              | One dated file per `/review-cycle` run (rules below)                                          |
-| **`docs/spikes/`**                                     | One write-up per throwaway prototype (rules below)                                            |
+| **[docs/tech-debt.md](docs/tech-debt.md)**             | Open deferred work and known-wrong behavior (rules in docs/CLAUDE.md)                         |
+| **`docs/findings/`**                                   | One dated report per driven investigation (rules in docs/CLAUDE.md)                           |
+| **`docs/review-cycles/`**                              | One dated file per `/review-cycle` run (rules in docs/CLAUDE.md)                              |
+| **`docs/spikes/`**                                     | One write-up per throwaway prototype (rules in docs/CLAUDE.md)                                |
 | **DECISIONS-NEEDED.md**                                | Per-run inbox for things an agent can't decide (rules below)                                  |
 | **[docs/troubleshooting.md](docs/troubleshooting.md)** | One section per user-visible warning string                                                   |
 | **[docs/roadmap.md](docs/roadmap.md)**                 | Ideas not yet built                                                                           |
@@ -214,101 +144,9 @@ Read `docs/pipeline.md` before touching `src/geometry/` or `src/export/`.
 `6.5.0` on purpose. Read [docs/tech-debt.md](docs/tech-debt.md) first. It
 explains why, and what an upgrade would take.
 
-### docs/ui-conventions.md
-
-- Findings against it cite convention numbers, not prose.
-- It **verifies** a change against a fixed bar. It does not discover problems
-  nobody knew about.
-- Discovery is `maker-workflow-review` and the `review-gauntlet` lenses. This
-  file does not replace them.
-- Recurring review findings graduate into conventions. The conventions then
-  stop them recurring.
-- Behavior only. `design-system/` owns the visual language, and is silent on
-  the model.
-
-### docs/system-audit.md
-
-- The `system` lens of `/review-gauntlet` overwrites it every run.
-- Its header pins the commit, viewport, and drive script behind it.
-- Don't hand-edit it. To change what it says, run the lens.
-- Don't cite it for a measurement it doesn't contain. A hand-added claim is
-  indistinguishable from a measured one, which is the failure this file
-  exists to prevent.
-
-### docs/tech-debt.md
-
-Holds **open** work only. One `##` section per item, stating what was
-measured, why it was deferred, and what closing it would take. This is where
-"write deferred work down, don't just remember it" points.
-
-**When the work lands, delete the section.**
-
-- Don't mark it `FIXED` and leave it. A list that only grows stops being a
-  work list. This one had reached 1100 lines.
-- The record of the fix is the CHANGELOG entry and the commit.
-- Anything a future reader still needs (the measurement behind a constant,
-  the approach that was tried and lost) goes in a comment next to the code it
-  constrains, where someone changing that line will hit it.
-- `CREASE_ANGLE_RAD` in [src/app/rebuild.ts](src/app/rebuild.ts) is the
-  worked example. It carries the numbers that chose it over the alternative,
-  and its tech-debt section is gone.
-
-**Before deleting, move out what the section still owes.**
-
-- A section can be almost entirely closed and still carry one open thread: a
-  follow-up, an unclaimed optimization, an unmeasured caveat.
-- That thread survives as its own section. Only the closed part goes.
-- This rule's first use got it wrong. #140 deleted the flat-shading section
-  along with the "index the display meshes" follow-up inside it, and a review
-  had to put it back.
-
-**And grep for what points at it.** The rule above covers what the section
-still owes; it does not cover what points at the section from outside.
-Before deleting, grep `docs/tech-debt.md` for `(above)`, `(below)`, the
-section's title words, and any count it contributed to a surviving section.
-#268 deleted a closed section and orphaned an `(above)` in the surviving
-quote-gate section, which also still cited four counts that PR had moved.
-
-Keep a closed item only when it is still load-bearing for something open, for
-example an entry in a list whose own conclusion is that an audit is owed.
-
-### docs/findings/
-
-One dated report per driven investigation, or per work run that measured its
-way through several.
-
-- Record what was measured or hunted, on which commit and machine, and what
-  came back.
-- Include the null results and the wrong turns. Nobody else can reconstruct
-  those, and they are why a run report earns a place here. `main` keeps the
-  conclusions in code and CHANGELOG. Only the report says which of them were
-  nearly something else.
-- A report is pinned to its run and never edited to stay current.
-- When a report changes what an open item claims, the pointer goes _from_ the
-  item in `tech-debt.md` _to_ the report. The item stays the thing you read
-  first.
-- `tech-debt.md` says what is owed. A finding says what was seen.
-
-### docs/review-cycles/
-
-One dated file per `/review-cycle` run, written by the skill, not by hand.
-
-- Each pins the frozen build it judged and the slate of lenses it ran.
-- The next cycle grades itself against the last one, so an old cycle is
-  evidence of what was true then. Never edit one to stay current.
-- Findings that survive adjudication leave for `tech-debt.md`, `roadmap.md`,
-  or a convention. A cycle file records the review, not the work list.
-
-### docs/spikes/
-
-One write-up per throwaway prototype: what was built to answer a question,
-what it answered, what it could not reach.
-
-- The code is thrown away and the write-up is the deliverable.
-- Nothing here describes shipped behavior, and nothing is built from it.
-- A spike that finds a defect promotes it out to `tech-debt.md` or
-  `roadmap.md`, where someone will meet it again. A write-up nobody re-reads
-  is not a work list.
+The rules for each destination under `docs/` load from
+[docs/CLAUDE.md](docs/CLAUDE.md) whenever you work on a file there. Read it
+before closing a tech-debt item or writing a findings report.
 
 ### DECISIONS-NEEDED.md
 
