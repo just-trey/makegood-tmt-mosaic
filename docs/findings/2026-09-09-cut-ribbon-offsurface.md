@@ -15,8 +15,14 @@ both committed with this report. Nothing was re-baked.
 premise is wrong.** The thin `cutRegions` strips are not surface a cover hides.
 They are not surface. 14 of the chair's 87 cut pieces lie at least half outside
 their own chart's triangles, and the driven run shows one of them cutting a
-**1.000 x 32.543mm** mark into `Wheel mount (left)` — 5x wider and 4x longer
-than the #296 hairline that started all of this.
+**1.000 x 32.543mm** mark into `Wheel mount (left)`.
+
+Two bases, kept apart deliberately. In UV the piece is 0.1950 x 32.5mm against
+the #296 hairline's 0.020 x 8.08mm — 9.75x wider and 4.02x longer, the same
+comparison the sibling report rounds to "ten times wider and four times longer".
+The 1.000 x 32.543mm above is the EXPORTED mark, measured off the 3MF, and the
+two are not the same measurement: the width grows because the snap smears
+off-chart UV onto the patch edge. Neither figure is a rescaling of the other.
 
 The three strips the section tabulated come out 99.91%, 99.70% and 98.41%
 off-surface.
@@ -53,7 +59,7 @@ Two checks that the oracle is the oracle:
 | check                                              | catches                          | result                     |
 | -------------------------------------------------- | -------------------------------- | -------------------------- |
 | chart footprint against summed triangle area       | self-overlap, cancelling winding | worst 0.0752%              |
-| sampled point-in-triangle against the CrossSection | wrong fill rule, bad subtract    | worst 1.98pp at 2000/piece |
+| sampled point-in-triangle against the CrossSection | wrong fill rule, bad subtract    | worst 1.10pp at 2000/piece |
 
 The second shares nothing with the first but the rings. The first is also what
 would catch a chart whose triangle winding made `NonZero` cancel part of itself:
@@ -133,6 +139,18 @@ now is that `boundary()` itself carries UV off the chart.
   boundary lies on `subRegions` ∪ `deadRegions` with a neither-fraction of
   exactly 0 — true by construction, since the piece IS their difference. The
   50/50 split on the small pieces is a ribbon's signature but not evidence.
+- **The independent check was first run on a broken sampler.** `seed * 1103515245`
+  exceeds 2^53, so the LCG lost its low bits and repeated after 5,233 pairs. On
+  `left/chair-wing-left#7`, whose bbox the rejection sampler accepts rarely, 2000
+  nominal draws were 332 distinct points. Worst disagreement read 1.98pp; on
+  mulberry32 it reads **1.10pp**. Nothing else moved — the population figures come
+  from the boolean, not the sampler — but the one check that is not the boolean
+  was the thing being blunted.
+- **The isolation gate pooled every other piece into one EvenOdd section.**
+  Charts of a zone do overlap (four pairs on `left`), and pooled that way each
+  overlap reads as a hole, cancelling neighbourhood area — the one direction the
+  gate must not err in. Unioned per piece now. The driven piece measures
+  0.0000mm² either way, so no number here changed.
 - **The first depth figure was wrong by 147x.** Nearest-triangle distance
   searched only triangles whose bbox met the piece's, so a point's real nearest
   triangle could be outside the search. It read 6.9452mm on a piece whose true

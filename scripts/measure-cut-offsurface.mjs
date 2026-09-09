@@ -204,18 +204,22 @@ console.log(
 );
 let deepN = 0;
 let deepArea = 0;
+let deepUnderHoleFloor = 0;
 for (const zone of z.zones)
   for (const chart of zone.charts) {
     const chartCS = chartSection(chart);
     const filled = filledSection(chartCS);
     (chart.cutRegions ?? []).forEach((piece, i) => {
       const pcs = pieceSection(piece);
-      const edge = pcs.subtract(chartCS).subtract(filled);
+      const off = pcs.subtract(chartCS);
+      const edge = off.subtract(filled);
+      off.delete();
       for (const comp of edge.decompose()) {
         const d = comp.area() > 1e-9 ? outsideDepth(comp, chartCS) : 0;
         if (d > SIMPLIFY_TOL_MM) {
           deepN++;
           deepArea += comp.area();
+          if (comp.area() < MIN_HOLE_AREA_MM2) deepUnderHoleFloor++;
           const pts = comp.toPolygons().flat();
           const us = pts.map((q) => q[0]);
           const vs = pts.map((q) => q[1]);
@@ -241,9 +245,10 @@ for (const zone of z.zones)
     chartCS.delete();
   }
 console.log(
-  `  ${deepN} such component(s), ${deepArea.toFixed(3)}mm² in all. Each is under ` +
-    `MIN_HOLE_AREA_MM2 (${MIN_HOLE_AREA_MM2}) and pinches to the outer boundary, so it is a ` +
-    `dropped hole in cause and an edge in position — the split above cannot separate those two.`,
+  `  ${deepN} such component(s), ${deepArea.toFixed(3)}mm² in all; ${deepUnderHoleFloor} of them ` +
+    `under MIN_HOLE_AREA_MM2 (${MIN_HOLE_AREA_MM2}). A component under that floor and touching ` +
+    `the outer boundary is a dropped hole in cause and an edge in position, which is the case the ` +
+    `split above cannot separate. One at or over the floor would not be, and would want its own look.`,
 );
 
 /* ------------------------------------------------- the cross-check that is not the boolean */
@@ -255,7 +260,16 @@ console.log(
 // and the big regions do not need it.
 const SAMPLES = 2000;
 let seed = 7;
-const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+// mulberry32, not an LCG. `seed * 1103515245` exceeds 2^53 and loses its low bits in a double, so
+// that generator repeats after 5,233 pairs — on `left/chair-wing-left#7`, whose bbox the rejection
+// sampler accepts rarely, 2000 nominal draws were 332 distinct points. Every operation here is
+// Math.imul or a shift, so the state stays exactly 32 bits.
+const rnd = () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
 const insideRing = (p, ring) => {
   let c = false;
   for (let i = 0; i < ring.length; i++) {

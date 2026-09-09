@@ -1279,8 +1279,9 @@ twice against the same build:
 
 The mark measures **1.000 x 0.211 x 32.543mm** on `Wheel mount (left)`, and the
 nearest inlay vertex that survives on that part is 30.80mm away — it vanished
-rather than moved. That is 5x wider and 4x longer than the #296 hairline this
-whole thread started from.
+rather than moved. In UV the piece is 0.1950 x 32.5mm against the #296
+hairline's 0.020 x 8.08mm, 9.75x wider and 4.02x longer; the exported mark is a
+separate measurement, not a rescaling of it.
 
 | piece                                | net mm² | width  | off-surface | depth  |
 | ------------------------------------ | ------- | ------ | ----------- | ------ |

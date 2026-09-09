@@ -88,13 +88,18 @@ function neighbourArea(rib) {
   const vs = rib.piece.outer.map((p) => p[1]);
   const c = [(Math.min(...us) + Math.max(...us)) / 2, (Math.min(...vs) + Math.max(...vs)) / 2];
   const zone = sidecar.zones.find((z) => z.id === rib.zone);
-  const others = [];
+  // Unioned per piece, not pooled into one EvenOdd section. EvenOdd is right for ONE piece's
+  // outer-with-holes and wrong across pieces: charts of a zone do overlap (four pairs on `left`),
+  // and a pooled section reads each overlap as a hole. That cancels neighbourhood area, which is
+  // the one direction an isolation gate must never err in.
+  const sections = [];
   for (const ch of zone.charts)
     (ch.cutRegions ?? []).forEach((p, j) => {
       if (ch.libraryPartId === rib.part && j === rib.i) return;
-      others.push(...ringsOf(p));
+      sections.push(new wasm.CrossSection(ringsOf(p), 'EvenOdd'));
     });
-  const oc = new wasm.CrossSection(others, 'EvenOdd');
+  const oc = wasm.CrossSection.union(sections);
+  for (const cs of sections) cs.delete();
   const disc = wasm.CrossSection.circle(ISOLATION_MM, 64).translate(c);
   const hit = oc.intersect(disc);
   const a = hit.area();
@@ -284,7 +289,10 @@ if (!readable.length) throw new Error(`no isolated off-surface ribbon in zone "$
 // One preview for both variants. The page fetches the sidecar on load, so patching what `dist/`
 // serves between page loads is enough — and it keeps the build, the port and the browser fixed
 // across A and B, which is the whole point of running them as a pair.
-const preview = await startPreview({ port: PORT, allowStaleDist: true });
+// No allowStaleDist. The freshness check runs here, before the first variant patches `dist/`, so
+// the opt-out would buy nothing and cost the exact failure harness.mjs exists to stop: an A/B whose
+// numbers describe the previous build.
+const preview = await startPreview({ port: PORT });
 const browser = await launchBrowser();
 let A, B;
 try {
@@ -353,6 +361,15 @@ for (const t of readable) {
       ).length,
   );
   const { only, b: bp } = perPart.get(partName);
+  // A > B near the point with no A-only vertex on that part means the mark moved rather than
+  // appeared, and the bbox below would come out Infinity. Say that instead of printing NaN.
+  if (!only.length) {
+    fail(
+      `${where}: ${a} inlay vertices within ${NEAR_MM}mm in A against ${b} in B on "${partName}", ` +
+        `but every A vertex there matches one of B's — the difference is a count, not new geometry.`,
+    );
+    continue;
+  }
   const ax = [0, 1, 2].map((k) => [
     Math.min(...only.map((q) => q.v[k])),
     Math.max(...only.map((q) => q.v[k])),
