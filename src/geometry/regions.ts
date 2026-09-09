@@ -328,7 +328,9 @@ function fromGeom(polys: Geom): PolyFeature | null {
  * scripts/measure-cut-width.mjs`. That sweep says nothing about the ink this floor guards, which
  * nobody has measured — open in docs/tech-debt.md, "Nobody has swept the design ink
  * CLIP_REMNANT_FLOOR_MM2 actually guards". The bake's own thread is the section beside it,
- * "Nothing says whether a thin cut-region strip is surface a cover hides".
+ * "A cut region claims surface the part does not have, and it prints" — where the sweep's
+ * conclusion held but the question turned out to be the wrong one: those pieces are not thin
+ * surface, they are off the chart's triangles altogether, and no floor of any kind reaches them.
  *
  * What measurement HAS retired is the seam overlap — every one of the chair's 41 overlap pieces
  * builds a cutter on both its parts, and `buildCutter` extrudes a ribbon one micron wide and 120mm
