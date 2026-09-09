@@ -36,7 +36,7 @@ off-surface.
 
 ## Why there is anything to measure
 
-`subRegions` and `deadRegions` are two descriptions of one patch edge, and they
+`subRegions` and `deadRegions` are two descriptions of one boundary, and they
 are not built the same way:
 
 | set           | built from                                           | then                            |
@@ -44,9 +44,18 @@ are not built the same way:
 | `subRegions`  | `boundaryVertexLoops` of the chart's triangles       | `simplifyLoop(SIMPLIFY_TOL_MM)` |
 | `deadRegions` | `deadCS.intersect(chartCS)`, `chartCS` the RAW rings | `simplifyLoop(SIMPLIFY_TOL_MM)` |
 
-So along a shared edge the dead set follows the real triangles and the claim
-follows a Douglas-Peucker approximation of them. Subtracting the first from the
-second cuts the outward half of that slack free as its own polygon.
+So along a shared boundary the dead set follows the real triangles and the claim
+follows a Douglas-Peucker approximation of them. `cutRegions` is `subRegions`
+less `deadRegions`, and subtracting the second from the first cuts the outward
+half of that slack free as its own polygon.
+
+**Shared boundary, not shared edge.** It is the patch's outer edge on 6 of the
+14 and a hole's rim on the other 8, and the two behave identically because
+`simplifyLoop` is applied to hole loops as well. The 8 sit at the rim of holes
+the bake KEEPS — 772 to 1673mm², 23 to 43mm mean width, nowhere near
+`MIN_HOLE_AREA_MM2` or `MIN_HOLE_WIDTH_MM` — so no piece here is a gap in the
+mesh that the claim filled in. All 14 reach at most 0.1945mm past the
+triangles, under `SIMPLIFY_TOL_MM` either way.
 
 The slack is not new and not a defect on its own — `SIMPLIFY_TOL_MM`'s own
 comment says `CHART_SNAP_MM` covers it. What is new is it becoming a _standalone
@@ -104,7 +113,8 @@ piece.
 | `left/chair-wheel-mount-left#4`      | 3.172   | 0.1950 | 99.70 | 0.1945   |
 | `seat-left/chair-wheel-mount-left#2` | 2.860   | 0.1881 | 98.41 | 0.1872   |
 
-Depth is how far past the patch edge the piece reaches. All three sit just under
+Depth is how far past the triangles the piece reaches — past a kept hole's rim
+on the first two, past the outer edge on the third. All three sit just under
 `SIMPLIFY_TOL_MM` (0.2), which is what says they are the tolerance rather than
 geometry.
 
@@ -173,21 +183,28 @@ now is that `boundary()` itself carries UV off the chart.
   triangle could be outside the search. It read 6.9452mm on a piece whose true
   reach is 0.0471mm. Bisecting on `piece.subtract(chart.offset(d)).isEmpty()`
   needs no search and is what the committed script does.
-- **The edge/hole split is not clean, and the report does not need it to be.**
-  Off-surface area inside the chart's filled silhouette is a hole the
-  triangulation has and `subRegions` does not — dropped under
-  `MIN_HOLE_AREA_MM2` or `MIN_HOLE_WIDTH_MM`, and logged by the bake. Deepest
-  such reach 2.1511mm, about a 15mm² hole's inradius, as expected. But four
-  components on the two wing charts read as EDGE at 0.7870-0.8510mm, past what
-  Douglas-Peucker can move a boundary: 4.1949 and 4.4375mm² on `left`, 4.1876
-  and 4.4969mm² on `right`, at v 5-10, mirrored, 17.317mm² in all. Each is
-  under `MIN_HOLE_AREA_MM2` and pinches to the outer boundary, so it is
-  dropped-hole in cause and edge in position. Bounded, located, and on the big
-  `#0` piece rather than a ribbon, so no conclusion here rests on it.
-- **A bridge between two components of a chart was the wrong guess for those
-  four.** The left wing has a second component of 0.17mm², far too small and in
-  the wrong place; the right wing has exactly one component and shows the same
-  two excursions.
+- **The "hole" half of the split was read as a second cause, and it is not
+  one.** Off-surface area inside the chart's filled silhouette was taken to mean
+  a hole the triangulation has and `subRegions` dropped — the claim filling a
+  gap in the mesh, which would be a different defect. Asked directly, all 8 such
+  pieces lie at the rim of holes the bake KEEPS (772-1673mm², 23-43mm mean
+  width). They are rim slack, the same mechanism as the outer edge. The
+  committed script prints the ring and its `isRealHole` verdict per piece,
+  because the wrong expectation is the one the next reader will arrive with.
+- **A dropped hole is real, just not here.** Deepest hole-side reach over ALL
+  pieces is 2.1511mm, about a 15mm² hole's inradius — that IS a dropped loop,
+  on a big `#0` piece, not on any of the 14. One number covering both cases is
+  why the first reading went wrong, and the summary line now refuses to be read
+  as either.
+- **Four edge components exceed what Douglas-Peucker can move a boundary.**
+  0.7870-0.8510mm on the two wing charts: 4.1949 and 4.4375mm² on `left`, 4.1876
+  and 4.4969mm² on `right`, at v 5-10, mirrored, 17.317mm² in all. Each is under
+  `MIN_HOLE_AREA_MM2` and pinches to the outer boundary, so it is dropped-hole
+  in cause and edge in position. Bounded, located, and on the big `#0` piece
+  rather than a ribbon, so no conclusion here rests on it. A bridge between two
+  components of a chart was the wrong guess: the left wing's second component is
+  0.17mm² and in the wrong place, and the right wing has one component and shows
+  the same two.
 - **The covers file was never available.** `stubs/dead-zones.3mf` lives outside
   the repo, so the bake's own 3D cover classifier could not be re-run, and
   neither could `measure-wheel-shadow.mjs`. That is what made the sidecar's

@@ -1302,8 +1302,19 @@ The slack itself is not the bug and predates this: charts with no dead region
 carry more of it (649.41mm² against 211.13mm²) and produce no ribbons, because
 nothing cuts it loose.
 
-**Closing it** is one line at the bake: intersect `cutRegions` with `chartCS`,
-which `bakeZones` already builds three lines above the `subtractRegions` call.
+**Closing it** is an intersect against the chart's own triangles after
+`subtractRegions`. Not one line: `bakeZones` does build a `chartCS`, but for the
+dead intersection only — constructed at `zonebake.mjs:4353` and deleted at 4360,
+inside `if (coverIdx)`/`if (deadCS)`, about 30 lines before the
+`subtractRegions` call at 4391, and not built at all for a chart with no dead
+set. So it needs that section hoisted and kept.
+
+It also needs a decision on the charts with no dead region. They carry the same
+slack — more of it, 649.41mm² — but attached to their one piece rather than cut
+free, and it has never made a standalone piece. Clipping them too would trim
+that band; clipping only the charts with a dead set would fix every piece this
+run found.
+
 Then **re-bake** — and that needs `stubs/dead-zones.3mf`, which lives outside
 the repo. Fixing the code without re-baking would repeat #296's eighth-round
 finding, where a corrected `subtractRegions` shipped a stale sidecar.

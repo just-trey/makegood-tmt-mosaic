@@ -19,7 +19,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getManifold } from '../src/geometry/manifold';
-import { regionNetArea, SIMPLIFY_TOL_MM, MIN_HOLE_AREA_MM2 } from './lib/zonebake.mjs';
+import {
+  regionNetArea,
+  SIMPLIFY_TOL_MM,
+  MIN_HOLE_AREA_MM2,
+  MIN_HOLE_WIDTH_MM,
+} from './lib/zonebake.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const z = JSON.parse(readFileSync(path.join(REPO, 'public/stl/chair-body-zones.json'), 'utf8'));
@@ -146,6 +151,8 @@ for (const zone of z.zones)
       const offHole = outside.intersect(filled);
       const offEdge = outside.subtract(filled);
       rows.push({
+        chart,
+        piece,
         holeArea: offHole.area(),
         edgeArea: offEdge.area(),
         edgeDepth: offEdge.area() > 0 ? outsideDepth(offEdge, chartCS) : 0,
@@ -158,7 +165,6 @@ for (const zone of z.zones)
         width: criticalWidth(piece),
         offArea,
         offFrac: offArea / pcs.area(),
-        depth: offArea > 0 ? outsideDepth(outside, chartCS) : 0,
         bbox: (() => {
           const us = piece.outer.map((q) => q[0]);
           const vs = piece.outer.map((q) => q[1]);
@@ -200,6 +206,93 @@ for (const r of rows)
       `${r.edgeArea.toFixed(4).padStart(9)} ${r.edgeDepth.toFixed(4).padStart(7)} ` +
       `${r.holeArea.toFixed(4).padStart(9)} ${r.holeDepth.toFixed(4).padStart(7)}`,
   );
+
+/* --------------------------------------------------------- which hole the hole-type pieces sit in */
+
+// Which triangulation hole a hole-type piece lies in, and whether `isRealHole` kept that hole.
+//
+// Written expecting the answer DROPPED — a gap in the mesh that `subRegions` filled in would be a
+// second, separate cause. Every one comes back KEPT, on holes of 772-1673mm² at 23-43mm mean
+// width, so there is no second cause: these pieces are slack along a kept hole's RIM, which is a
+// shared boundary like the patch edge and is bounded the same way. Left in because the expectation
+// was wrong and the next reader will have it too.
+//
+// `4·area/perimeter` is `loopMeanWidth`'s formula, recomputed here because it is module-private in
+// zonebake.mjs. On a long thin rectangle it reads about twice the true width, which is the point:
+// it separates a real narrow slot from a zero-area fold, and a caliper cannot.
+const meanWidth = (pts) => {
+  let per = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % pts.length];
+    per += Math.hypot(x2 - x1, y2 - y1);
+  }
+  const a = Math.abs(
+    pts.reduce((t, _, i) => {
+      const [x1, y1] = pts[i];
+      const [x2, y2] = pts[(i + 1) % pts.length];
+      return t + (x1 * y2 - x2 * y1) / 2;
+    }, 0),
+  );
+  return per > 0 ? (4 * a) / per : 0;
+};
+
+console.log('\nHole-type pieces, and the triangulation hole each one fills:');
+console.log(
+  `${'piece'.padEnd(42)} ${'hole mm²'.padStart(9)} ${'ring mm²'.padStart(9)} ` +
+    `${'4A/P mm'.padStart(8)}  isRealHole? why not`,
+);
+for (const zone of z.zones)
+  for (const chart of zone.charts) {
+    const chartCS = chartSection(chart);
+    const filled = filledSection(chartCS);
+    const holeRings = chartCS
+      .toPolygons()
+      .map((r) => r.map(([x, y]) => [x, y]))
+      .filter((r) => {
+        let a = 0;
+        for (let i = 0; i < r.length; i++) {
+          const [x1, y1] = r[i];
+          const [x2, y2] = r[(i + 1) % r.length];
+          a += x1 * y2 - x2 * y1;
+        }
+        return a < 0;
+      });
+    (chart.cutRegions ?? []).forEach((piece, i) => {
+      const row = rows.find(
+        (r) => r.zone === zone.id && r.part === chart.libraryPartId && r.i === i,
+      );
+      if (!row || row.holeArea <= 1e-9 || row.offFrac < 0.5) return;
+      const pcs = pieceSection(piece);
+      const outside = pcs.subtract(chartCS);
+      const offHole = outside.intersect(filled);
+      for (const ring of holeRings) {
+        const rc = new wasm.CrossSection([[...ring].reverse()], 'NonZero');
+        const hit = rc.intersect(offHole);
+        const share = hit.area();
+        hit.delete();
+        if (share > 1e-6) {
+          const ra = rc.area();
+          const mw = meanWidth(ring);
+          const real = ra >= MIN_HOLE_AREA_MM2 && mw >= MIN_HOLE_WIDTH_MM;
+          console.log(
+            `${`${zone.id}/${chart.libraryPartId}#${i}`.padEnd(42)} ` +
+              `${row.holeArea.toFixed(4).padStart(9)} ${ra.toFixed(4).padStart(9)} ` +
+              `${mw.toFixed(4).padStart(8)}  ${real ? 'kept' : 'DROPPED'}: ` +
+              `${ra < MIN_HOLE_AREA_MM2 ? `area under ${MIN_HOLE_AREA_MM2}mm²` : ''}` +
+              `${ra < MIN_HOLE_AREA_MM2 && mw < MIN_HOLE_WIDTH_MM ? ' and ' : ''}` +
+              `${mw < MIN_HOLE_WIDTH_MM ? `mean width under ${MIN_HOLE_WIDTH_MM}mm` : ''}`,
+          );
+        }
+        rc.delete();
+      }
+      offHole.delete();
+      outside.delete();
+      pcs.delete();
+    });
+    filled.delete();
+    chartCS.delete();
+  }
 
 /* ------------------------------------------------------- the edge excursions past the tolerance */
 
@@ -303,8 +396,9 @@ console.log(
 let worstDelta = 0;
 let minSamples = Infinity;
 for (const r of rows.filter((q) => q.offFrac >= 0.5)) {
-  const chart = z.zones.find((q) => q.id === r.zone).charts.find((c) => c.libraryPartId === r.part);
-  const piece = chart.cutRegions[r.i];
+  // Held on the row, not looked back up by (zone, libraryPartId): that pair is unique in today's
+  // sidecar and nothing guarantees it stays so.
+  const { chart, piece } = r;
   const rings = triRingsOf(chart);
   const us = piece.outer.map((q) => q[0]);
   const vs = piece.outer.map((q) => q[1]);
@@ -371,9 +465,11 @@ console.log(
     `Deepest EDGE reach, over every piece with off-surface edge area: ` +
     `${deepest(band, 'edgeDepth')} against SIMPLIFY_TOL_MM ` +
     `${SIMPLIFY_TOL_MM}. Deepest HOLE reach: ` +
-    `${deepest(band, 'holeDepth')} — a loop the triangulation has and ` +
-    `subRegions does not, dropped under MIN_HOLE_AREA_MM2 or MIN_HOLE_WIDTH_MM and logged by the ` +
-    `bake, so bounded by a dropped hole's inradius rather than by the simplify tolerance.`,
+    `${deepest(band, 'holeDepth')} — off-surface area inside the chart's outer silhouette, which ` +
+    `is two different things: slack along a KEPT hole's rim, bounded by the simplify tolerance ` +
+    `like any other shared boundary, and a hole subRegions dropped outright, bounded instead by ` +
+    `that hole's inradius. The table above says which each piece is; do not read this one number ` +
+    `as either.`,
 );
 
 // The control. A chart with no dead region ships `subRegions` as its cut region verbatim, so it

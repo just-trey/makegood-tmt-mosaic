@@ -422,14 +422,17 @@ for (const t of readable) {
     Math.max(...only.map((q) => q.v[k])),
   ]);
   const c = [0, 1, 2].map((k) => (ax[k][0] + ax[k][1]) / 2);
-  const survivorMm = Math.min(
-    ...bp.map((q) => Math.hypot(q.v[0] - c[0], q.v[1] - c[1], q.v[2] - c[2])),
-  );
+  // B having no inlay left on the part at all is a real outcome, not an error: it means the piece
+  // was the only thing inking it. `Math.min()` of nothing is Infinity, which would print as a
+  // distance.
+  const survivorMm = bp.length
+    ? Math.min(...bp.map((q) => Math.hypot(q.v[0] - c[0], q.v[1] - c[1], q.v[2] - c[2])))
+    : null;
   fail(
     `${where} cuts a mark on "${partName}": ${a} inlay vertices within ${NEAR_MM}mm of the snap ` +
       `point in A, ${b} in B. The whole A-only cluster on that part is ${only.length} vertices, ` +
       `${ax.map(([lo, hi]) => (hi - lo).toFixed(3)).join(' x ')}mm, and the nearest inlay vertex ` +
-      `B still has on that part is ${survivorMm.toFixed(2)}mm away — so it vanished rather than moved.`,
+      `B still has on that part is ${survivorMm === null ? 'nowhere — B leaves that part uninked' : `${survivorMm.toFixed(2)}mm away`} — so it vanished rather than moved.`,
   );
 }
 
