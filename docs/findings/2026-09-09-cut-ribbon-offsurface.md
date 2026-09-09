@@ -116,8 +116,8 @@ sidecar differs: A is shipped, B has the 14 off-surface pieces deleted from
 `cutRegions`.
 
 `left/chair-wheel-mount-left#4` was the piece driven, because it is the one that
-can be read: no other cut region of its zone lies within a 6mm disc around it in
-**zone UV** (**0.0000mm²**). That is a UV gate on ink counted in 3D, so it is a
+can be read: no other cut region of its zone lies within a 6mm disc around a
+point inside it, in **zone UV** (**0.0000mm²**). That is a UV gate on ink counted in 3D, so it is a
 selection criterion rather than a proof. What carries the attribution is the
 A-only vertex differencing below, which does not depend on it.
 
@@ -127,14 +127,14 @@ A-only vertex differencing below, which does not depend on it.
 | within 6mm of the snap point   | 40          | 0           |
 | A-only on `Wheel mount (left)` | 131         | —           |
 
-- The piece's UV centre snaps **0.105mm** to (170.0, 160.4, -298.7).
+- The interior sample point snaps **0.050mm** to (170.0, 160.4, -299.6).
 - The A-only cluster measures **1.000 x 0.211 x 32.543mm**.
 - The nearest inlay vertex B still has on that part is **30.80mm** away. The
   mark vanished; it did not move.
 
 `Wing (left)` also loses 58 A-only vertices, from
 `left/chair-wing-left#7` (0.215mm², 100% off). Not attributed: that piece has
-27.3mm² of other cut region within 6mm, so its ink cannot be told from real ink.
+28.6mm² of other cut region within 6mm, so its ink cannot be told from real ink.
 
 **The mechanism is `lookup` answering the nearest triangle at any distance.** UV
 with no surface under it does not fall out of the cut. It snaps to the patch
@@ -155,6 +155,14 @@ now is that `boundary()` itself carries UV off the chart.
   mulberry32 it reads **1.10pp**. Nothing else moved — the population figures come
   from the boolean, not the sampler — but the one check that is not the boolean
   was the thing being blunted.
+- **The bbox centre was used to stand for the piece, and these pieces are
+  curved.** 6 of the 14 have a bbox centre outside their own outer ring, the
+  worst by about 14mm. Both the isolation gate and the snap-point prediction
+  hang off that point, so on one of those six the run would have looked for ink
+  in free space and reported "cuts nothing" for a piece that cuts. A vertex of
+  the piece inset as far as it will go is inside by construction, and is what
+  the committed script uses. The driven piece's centre was inside either way,
+  so no A/B figure moved — only the sample point, 0.105mm to 0.050mm.
 - **The isolation gate pooled every other piece into one EvenOdd section.**
   Charts of a zone do overlap (four pairs on `left`), and pooled that way each
   overlap reads as a hole, cancelling neighbourhood area — the one direction the

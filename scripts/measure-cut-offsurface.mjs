@@ -350,6 +350,11 @@ console.log(
 
 const mostly = rows.filter((r) => r.offFrac >= 0.5);
 const band = rows.filter((r) => r.offArea > 0);
+// `Math.max()` of nothing is -Infinity, and a sidecar with no off-surface area at all is exactly
+// what the proposed bake fix plus a re-bake should produce — so the run that confirms the fix is
+// the run this would have printed nonsense on.
+const deepest = (rs, k) =>
+  rs.length ? `${Math.max(...rs.map((r) => r[k])).toFixed(4)}mm` : 'nothing off-surface at all';
 console.log('\nHow far off-surface the population goes:');
 for (const cut of [0.5, 0.9, 0.99, 1]) {
   const set = rows.filter((r) => r.offFrac >= cut - 1e-9);
@@ -364,9 +369,9 @@ console.log(
     `All of them are on a chart that carries a dead region: ` +
     `${mostly.every((r) => r.hasDead)}.\n` +
     `Deepest EDGE reach, over every piece with off-surface edge area: ` +
-    `${Math.max(...band.map((r) => r.edgeDepth)).toFixed(4)}mm against SIMPLIFY_TOL_MM ` +
+    `${deepest(band, 'edgeDepth')} against SIMPLIFY_TOL_MM ` +
     `${SIMPLIFY_TOL_MM}. Deepest HOLE reach: ` +
-    `${Math.max(...band.map((r) => r.holeDepth)).toFixed(4)}mm — a loop the triangulation has and ` +
+    `${deepest(band, 'holeDepth')} — a loop the triangulation has and ` +
     `subRegions does not, dropped under MIN_HOLE_AREA_MM2 or MIN_HOLE_WIDTH_MM and logged by the ` +
     `bake, so bounded by a dropped hole's inradius rather than by the simplify tolerance.`,
 );

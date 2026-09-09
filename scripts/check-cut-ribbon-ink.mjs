@@ -82,11 +82,52 @@ function offSurfacePieces() {
   return out;
 }
 
-/** Other cut-region area of the whole zone within `ISOLATION_MM` of a piece's centre. */
+const ringArea = (pts) => {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % pts.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return a / 2;
+};
+
+/**
+ * A point genuinely inside a piece: a vertex of the largest ring left after insetting it as far as
+ * it will go. An inset boundary lies strictly inside the original, so this cannot fall outside.
+ *
+ * NOT the bbox centre, which was the first version and is wrong here: these pieces are curved
+ * ribbons, and 6 of the 14 have a bbox centre outside their own outer ring — by up to ~14mm on the
+ * longest. Both the isolation gate and the snap-point prediction hang off this point, so a centre
+ * in free space would gate on the wrong neighbourhood and then look for ink in the wrong place,
+ * which reads as "cuts nothing" for a piece that cuts.
+ */
+function interiorPoint(piece) {
+  const cs = new wasm.CrossSection(ringsOf(piece), 'EvenOdd');
+  try {
+    for (let d = 0.05; d > 1e-5; d /= 2) {
+      const inset = cs.offset(-d, 'Miter', 2, 16);
+      try {
+        if (inset.isEmpty()) continue;
+        const rings = inset
+          .toPolygons()
+          .map((r) => r.map(([x, y]) => [x, y]))
+          .filter((r) => ringArea(r) > 0)
+          .sort((a, b) => ringArea(b) - ringArea(a));
+        if (rings.length) return rings[0][0];
+      } finally {
+        inset.delete();
+      }
+    }
+    throw new Error('a cut piece survives no inset at all, so it has no interior to sample');
+  } finally {
+    cs.delete();
+  }
+}
+
+/** Other cut-region area of the whole zone within `ISOLATION_MM` of a point inside the piece. */
 function neighbourArea(rib) {
-  const us = rib.piece.outer.map((p) => p[0]);
-  const vs = rib.piece.outer.map((p) => p[1]);
-  const c = [(Math.min(...us) + Math.max(...us)) / 2, (Math.min(...vs) + Math.max(...vs)) / 2];
+  const c = interiorPoint(rib.piece);
   const zone = sidecar.zones.find((z) => z.id === rib.zone);
   // Unioned per piece, not pooled into one EvenOdd section. EvenOdd is right for ONE piece's
   // outer-with-holes and wrong across pieces: charts of a zone do overlap (four pairs on `left`),
