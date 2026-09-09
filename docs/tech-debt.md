@@ -1261,27 +1261,61 @@ warning for it.
 to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
 scheduled.
 
-## Nothing measures whether a cut region is too NARROW to print, only how small
+## Nothing says whether a thin cut-region strip is surface a cover hides
 
-`CLIP_REMNANT_FLOOR_MM2` drops a clipped piece under one nozzle square. That is
-an area, and a long enough hairline clears it: the one #296 removed from
-`chair-seat-back-top` was 0.020 x 8.08mm, extruded perfectly well, and cut a
-visible 0.4mm mark into surface the cushion covers. The area floor caught it by
-a factor of six, which is luck rather than design.
+`MIN_CUT_PIECE_MM2` (0.16mm², one nozzle square) is shipping three pieces that
+clear it while looking exactly like the #296 hairline that motivated it:
 
-The measure that would catch it directly is a morphological opening at one
-nozzle — the shape `narrowFeatureArea` in
-[src/geometry/hubcapOutline.ts](../src/geometry/hubcapOutline.ts) already uses.
+| piece                                | width  | length | area     | x the floor |
+| ------------------------------------ | ------ | ------ | -------- | ----------- |
+| `seat-left/chair-wheel-mount-left#2` | 0.19mm | 30.4mm | 2.860mm² | 17.9x       |
+| `right/chair-wheel-mount-right#5`    | 0.19mm | 32.5mm | 3.159mm² | 19.7x       |
+| `left/chair-wheel-mount-left#4`      | 0.20mm | 32.5mm | 3.172mm² | 19.8x       |
 
-**What retired the case that used to motivate it**: the seam overlaps, which
-"A seam sliver warns as if artwork were lost" said would yield no cutter and
-warn. They do not.
-[docs/findings/2026-09-07-seam-ribbon-closed.md](findings/2026-09-07-seam-ribbon-closed.md)
-measures all 41 of them building on both parts, and `buildCutter` extruding a
-ribbon one micron wide and 120mm long. Re-derive with
-`npx vite-node scripts/measure-seam-overlap.mjs`.
+Ten times wider and four times longer than the #296 hairline (0.020 x 8.08mm,
+0.025mm²), and still the same shape: a thin ribbon riding a clip boundary.
 
-So this is open on the #296 hairline alone, and closing it needs a width chosen
-against real features rather than against that one. The chair has genuine
-overlap pieces at 0.15mm and a real radiused slot at 1.43mm, so an opening at
-0.4mm is not obviously safe and wants measuring across every kind first.
+**A width guard on top of the area floor is ruled out.** A morphological
+opening swept over the 87 `cutRegions` pieces the sidecar ships — the survivors
+of 142, the other 55 already dropped at `MIN_CUT_PIECE_MM2` — found no gap to
+put a threshold in: the widest step among
+the 46 sub-millimetre pieces is 1.445x, between two pieces of the same ribbon
+shape, not a boundary between populations. Full sweep, method, and the two
+retired worries — the 1.43mm slot (a hole, survives every width) and the
+0.15mm seam overlaps (a different population, 0 of 41 in `cutRegions`) — are in
+[docs/findings/2026-09-08-cut-region-width.md](findings/2026-09-08-cut-region-width.md).
+Re-derive with `npx vite-node scripts/measure-cut-width.mjs`.
+
+**What's still open** is a different question: is any of these strips hidden
+surface the cover subtraction should have removed entirely, the way the #296
+mark actually harmed the print? Nothing in the sidecar records which of the 87
+pieces sit under a cover — that's a driven run (load the chair, place a cover
+over each candidate zone, check visibility), not something the bake output can
+answer on its own.
+
+A second candidate, unmeasured: fix `subtractRegions`
+(`scripts/lib/zonebake.mjs`) so it stops emitting a ribbon along a boundary
+shared by two loops traced from the same triangles, rather than filtering the
+ribbons out afterward. Worth sizing on its own measurement if someone wants it.
+
+## Nobody has swept the design ink `CLIP_REMNANT_FLOOR_MM2` actually guards
+
+`docs/findings/2026-09-08-cut-region-width.md` swept the bake's population, part
+geometry, and found no width separating dust from surface. That says nothing
+about the runtime floor, which sees something else entirely: a placed design's
+ink clipped to a part (`placedInk` and `dropSpecks`, `src/geometry/assembly.ts`).
+Those pieces have never been measured.
+
+The floor stays an area there deliberately, and that part is not open:
+
+- A width test on ink would delete a deliberate 0.3mm stroke in someone's
+  artwork. That is a real choice, honoured the way a sub-layer depth is
+  (`MIN_CUT_DEPTH_MM`, docs/audience.md).
+- The #296 hairline was removed at the bake, not here, so the one worked example
+  never reached this floor.
+
+What is open is that the claim rests on the argument, not on a measurement. What
+would close it: sweep clipped ink across the shipped example designs and say how
+narrow real artwork gets. If the narrowest deliberate stroke turns out to be far
+above the floor, the argument gains a number. If artwork routinely runs at 0.2mm,
+the speck notice is firing on content people meant, which is a different bug.

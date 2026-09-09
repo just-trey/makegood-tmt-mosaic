@@ -320,14 +320,20 @@ function fromGeom(polys: Geom): PolyFeature | null {
  * left to find out.
  *
  * The floor is an area, so it admits a long enough hairline and refuses a round dot one nozzle
- * across. A min-width test would settle both, and it has not been written because no case has
- * needed it yet rather than because none could: the hairline above was one, and this floor caught
- * it on area by a factor of six. That thread is open in docs/tech-debt.md, "Nothing measures
- * whether a cut region is too NARROW to print". What measurement HAS retired is the seam overlap —
- * every one of the chair's 41 overlap pieces builds a cutter on both its parts, and `buildCutter`
- * extrudes a ribbon one micron wide and 120mm long without complaint. Re-derive with
- * `npx vite-node scripts/measure-seam-overlap.mjs`; the run is in
- * docs/findings/2026-09-07-seam-ribbon-closed.md.
+ * across. **It stays an area here on purpose, and the reason is not the one measured at the bake.**
+ * This floor sees clipped design INK, so a width test would delete a deliberate 0.3mm stroke in
+ * someone's artwork — a real choice, honoured the way a sub-layer depth is (docs/audience.md).
+ * Swept at the bake, where the population is part geometry, no width separates dust from surface
+ * at all: docs/findings/2026-09-08-cut-region-width.md, `npx vite-node
+ * scripts/measure-cut-width.mjs`. That sweep says nothing about the ink this floor guards, which
+ * nobody has measured — open in docs/tech-debt.md, "Nobody has swept the design ink
+ * CLIP_REMNANT_FLOOR_MM2 actually guards". The bake's own thread is the section beside it,
+ * "Nothing says whether a thin cut-region strip is surface a cover hides".
+ *
+ * What measurement HAS retired is the seam overlap — every one of the chair's 41 overlap pieces
+ * builds a cutter on both its parts, and `buildCutter` extrudes a ribbon one micron wide and 120mm
+ * long without complaint. Re-derive with `npx vite-node scripts/measure-seam-overlap.mjs`; the run
+ * is in docs/findings/2026-09-07-seam-ribbon-closed.md.
  */
 export function dropUnprintableRemnants(
   feat: PolyFeature | null,
