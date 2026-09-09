@@ -221,7 +221,13 @@ async function inlayPoints(file) {
   const out = [];
   for (const [partName, ids] of parts)
     for (const id of ids) {
-      if ((extruderOf.get(id) ?? 1) === 1) continue;
+      const e = extruderOf.get(id);
+      // Defaulting a missing entry to the body would score a config/model id mismatch as "no inlay
+      // anywhere", in BOTH variants, and this script would print that everything is fine. It is the
+      // one that can conclude "no defect", so it needs the throw more than check-net-design does.
+      if (e === undefined)
+        throw new Error(`sub-object ${id} of "${partName}" has no model_settings.config entry`);
+      if (e === 1) continue;
       for (const v of verts.get(id) ?? []) out.push({ partName, v });
     }
   return out;

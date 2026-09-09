@@ -159,6 +159,13 @@ for (const zone of z.zones)
         offArea,
         offFrac: offArea / pcs.area(),
         depth: offArea > 0 ? outsideDepth(outside, chartCS) : 0,
+        bbox: (() => {
+          const us = piece.outer.map((q) => q[0]);
+          const vs = piece.outer.map((q) => q[1]);
+          return [Math.max(...us) - Math.min(...us), Math.max(...vs) - Math.min(...vs)].sort(
+            (x, y) => x - y,
+          );
+        })(),
       });
       offHole.delete();
       offEdge.delete();
@@ -182,13 +189,14 @@ console.log(
   'Every piece, most off-surface first. "off" is area outside the chart\'s own triangles.',
 );
 console.log(
-  `${'piece'.padEnd(42)} ${'dead?'.padStart(5)} ${'net mm²'.padStart(10)} ${'width'.padStart(8)} ${'off mm²'.padStart(9)} ${'off %'.padStart(7)} ${'edge mm²'.padStart(9)} ${'edgeDep'.padStart(7)} ${'hole mm²'.padStart(9)} ${'holeDep'.padStart(7)}`,
+  `${'piece'.padEnd(42)} ${'dead?'.padStart(5)} ${'net mm²'.padStart(10)} ${'width'.padStart(8)} ${'off mm²'.padStart(9)} ${'off %'.padStart(7)} ${'bbox mm'.padStart(17)} ${'edge mm²'.padStart(9)} ${'edgeDep'.padStart(7)} ${'hole mm²'.padStart(9)} ${'holeDep'.padStart(7)}`,
 );
 for (const r of rows)
   console.log(
     `${`${r.zone}/${r.part}#${r.i}`.padEnd(42)} ${(r.hasDead ? 'yes' : 'no').padStart(5)} ` +
       `${r.net.toFixed(3).padStart(10)} ${r.width.toFixed(4).padStart(8)} ` +
       `${r.offArea.toFixed(4).padStart(9)} ${(r.offFrac * 100).toFixed(2).padStart(6)}% ` +
+      `${`${r.bbox[0].toFixed(3)} x ${r.bbox[1].toFixed(1)}`.padStart(17)} ` +
       `${r.edgeArea.toFixed(4).padStart(9)} ${r.edgeDepth.toFixed(4).padStart(7)} ` +
       `${r.holeArea.toFixed(4).padStart(9)} ${r.holeDepth.toFixed(4).padStart(7)}`,
   );
@@ -293,6 +301,7 @@ console.log(
   `${'piece'.padEnd(42)} ${'sampled'.padStart(8)} ${'boolean'.padStart(8)} ${'delta'.padStart(7)}`,
 );
 let worstDelta = 0;
+let minSamples = Infinity;
 for (const r of rows.filter((q) => q.offFrac >= 0.5)) {
   const chart = z.zones.find((q) => q.id === r.zone).charts.find((c) => c.libraryPartId === r.part);
   const piece = chart.cutRegions[r.i];
@@ -323,6 +332,8 @@ for (const r of rows.filter((q) => q.offFrac >= 0.5)) {
     n++;
     if (!cand.some((t) => inTri(p, t))) off++;
   }
+  if (!n) throw new Error(`${r.zone}/${r.part}#${r.i}: the sampler accepted no point at all`);
+  minSamples = Math.min(minSamples, n);
   const sampled = off / n;
   worstDelta = Math.max(worstDelta, Math.abs(sampled - r.offFrac));
   console.log(
@@ -331,8 +342,10 @@ for (const r of rows.filter((q) => q.offFrac >= 0.5)) {
   );
 }
 console.log(
-  `Worst disagreement between the two derivations: ${(worstDelta * 100).toFixed(2)} percentage points ` +
-    `at ${SAMPLES} samples a piece.`,
+  `Worst disagreement between the two derivations: ${(worstDelta * 100).toFixed(2)} percentage points, ` +
+    `at ${minSamples} accepted samples on the thinnest piece (${SAMPLES} asked for). The rejection ` +
+    `sampler gives up after 4,000,000 draws, so a piece far thinner than these would report fewer ` +
+    `and say so here rather than quietly resolve worse.`,
 );
 
 const mostly = rows.filter((r) => r.offFrac >= 0.5);

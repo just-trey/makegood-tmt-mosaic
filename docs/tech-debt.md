@@ -1279,9 +1279,10 @@ twice against the same build:
 
 The mark measures **1.000 x 0.211 x 32.543mm** on `Wheel mount (left)`, and the
 nearest inlay vertex that survives on that part is 30.80mm away — it vanished
-rather than moved. In UV the piece is 0.1950 x 32.5mm against the #296
-hairline's 0.020 x 8.08mm, 9.75x wider and 4.02x longer; the exported mark is a
-separate measurement, not a rescaling of it.
+rather than moved. Bounding box against bounding box, the piece is 0.256 x
+32.5mm against the #296 hairline's 0.020 x 8.08mm: 12.8x wider and 4.02x longer.
+Its opening width, 0.1950mm, is a different measure of the same piece and does
+not divide into a bounding box; the exported mark is a third.
 
 | piece                                | net mm² | width  | off-surface | depth  |
 | ------------------------------------ | ------- | ------ | ----------- | ------ |
@@ -1314,11 +1315,12 @@ Re-derive with `npx vite-node scripts/measure-cut-offsurface.mjs` and
 `npm run build && npx vite-node scripts/check-cut-ribbon-ink.mjs`.
 
 **Retired by this run**: the question this section used to ask, whether the
-strips are surface a cover hides. A cover has nothing to do with them. Also
-retired is the width guard the previous section proposed — no width separates
-the population ([docs/findings/2026-09-08-cut-region-width.md](findings/2026-09-08-cut-region-width.md),
-`npx vite-node scripts/measure-cut-width.mjs`), and clipping to the chart makes
-the question moot: it removes the pieces by where they are, not by how thin.
+strips are surface a cover hides. A cover has nothing to do with them. The
+min-width guard this section asked for before that also stays retired — no width
+separates the population
+([docs/findings/2026-09-08-cut-region-width.md](findings/2026-09-08-cut-region-width.md),
+`npx vite-node scripts/measure-cut-width.mjs`) — and clipping to the chart makes
+it moot anyway: it removes these pieces by where they are, not by how thin.
 
 **Not measured**: the other 13. One piece was driven end to end; the rest are
 the same shape by the same mechanism, which is an argument, not a run.

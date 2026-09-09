@@ -17,12 +17,19 @@ They are not surface. 14 of the chair's 87 cut pieces lie at least half outside
 their own chart's triangles, and the driven run shows one of them cutting a
 **1.000 x 32.543mm** mark into `Wheel mount (left)`.
 
-Two bases, kept apart deliberately. In UV the piece is 0.1950 x 32.5mm against
-the #296 hairline's 0.020 x 8.08mm — 9.75x wider and 4.02x longer, the same
-comparison the sibling report rounds to "ten times wider and four times longer".
-The 1.000 x 32.543mm above is the EXPORTED mark, measured off the 3MF, and the
-two are not the same measurement: the width grows because the snap smears
-off-chart UV onto the patch edge. Neither figure is a rescaling of the other.
+Three measurements, and they are not interchangeable:
+
+| of the same piece   | figure           | basis                          |
+| ------------------- | ---------------- | ------------------------------ |
+| UV bounding box     | 0.256 x 32.5mm   | the piece's own extent         |
+| UV opening width    | 0.1950mm         | morphological, `criticalWidth` |
+| the mark it exports | 1.000 x 32.543mm | 3MF inlay vertices             |
+
+Against the #296 hairline at 0.020 x 8.08mm, which is a bounding box, the
+like-for-like row is the first: **12.8x wider and 4.02x longer**. The opening
+width is a smaller number for the same piece and must not be divided into a
+bounding box. The exported mark is wider again because the snap smears
+off-chart UV onto the patch edge, so it is not a rescaling of either.
 
 The three strips the section tabulated come out 99.91%, 99.70% and 98.41%
 off-surface.
@@ -109,8 +116,10 @@ sidecar differs: A is shipped, B has the 14 off-surface pieces deleted from
 `cutRegions`.
 
 `left/chair-wheel-mount-left#4` was the piece driven, because it is the one that
-can be read: no other cut region of its zone comes within 6mm of it
-(**0.0000mm²**), so ink near it can only have arrived through it.
+can be read: no other cut region of its zone lies within a 6mm disc around it in
+**zone UV** (**0.0000mm²**). That is a UV gate on ink counted in 3D, so it is a
+selection criterion rather than a proof. What carries the attribution is the
+A-only vertex differencing below, which does not depend on it.
 
 |                                | A (shipped) | B (cleaned) |
 | ------------------------------ | ----------- | ----------- |
