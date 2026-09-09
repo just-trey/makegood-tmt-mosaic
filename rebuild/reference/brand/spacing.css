@@ -1,0 +1,19 @@
+:root {
+  --space-hair: 2px; /* optical correction inside a control: swatch-grid gaps,
+                       badge insets. Never rhythm between rows — that is --space-row up. */
+  --space-tight: 4px; /* inside a control: label-to-input, icon-to-text */
+  --space-row: 8px; /* between rows within a panel */
+  --space-section: 16px; /* between labelled groups inside a panel */
+  --space-panel: 24px; /* between panels */
+
+  /* sharper, near-square corners — industrial/blueprint feel over default soft-rounded UI */
+  --radius-sm: 0px;
+  --radius-md: 1px;
+  --radius-lg: 2px;
+  --radius-2xl: 3px;
+
+  /* No --border-width. Borders are 1px everywhere by rule (see the README), so a token buys no
+     flexibility, and the three deliberate exceptions (1.5px badge ring, 1.5px dashed dropzone,
+     2px spinner) would each need their own anyway. */
+  --transition-fast: 0.12s;
+}

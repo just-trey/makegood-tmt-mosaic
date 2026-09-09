@@ -1,5 +1,5 @@
 import { loadEnv, type Plugin } from 'vite';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -67,6 +67,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     test: {
+      exclude: [...configDefaults.exclude, 'rebuild/**'],
       coverage: {
         provider: 'v8',
         // Report on every source file, not just the ones some test imported. Without

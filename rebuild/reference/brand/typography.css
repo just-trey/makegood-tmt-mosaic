@@ -1,0 +1,36 @@
+:root {
+  /* Outfit for headings, Inter for body/labels, IBM Plex Mono for values/data */
+  --heading: 'Outfit', -apple-system, 'Segoe UI', sans-serif;
+  /* system-ui / ui-monospace resolve to the platform's own UI font (San Francisco on macOS,
+     Segoe UI on Windows, Roboto on Android/ChromeOS) and its monospace counterpart (SF Mono,
+     Consolas), so one keyword replaces the whole per-platform fallback list and can't go stale
+     as platforms change. Neither this file's prior chain nor the app's wider one (which this
+     branch also carried) was a considered decision — see PR #154. */
+  --sans: 'Inter', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* --text-label and --text-meta share a value on purpose, and are not merged into one token:
+     label is sans and tracked, meta is mono, and mono at 11px optically matches sans at 12px —
+     they diverge the moment body size moves. */
+  --text-label: 11px; /* uppercase section labels, tracked. Only size below body. */
+  --text-meta: 11px; /* MONO ONLY: tris counts, hex, filenames, HUD, version. */
+  --text-body: 12px; /* everything else: control labels, inputs, buttons, help prose */
+  --text-emphasis: 16px; /* the one size above body. Empty states, dialog titles. Rare. */
+  --text-display: 20px; /* wordmark only */
+
+  /* --weight-regular is referenced by no rule and should stay that way: 400 is the initial value,
+     so it renders on most of the app without anything declaring it. It names the baseline of the
+     scale rather than marking a gap. */
+  --weight-regular: 400;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --tracking-label: 0.08em;
+
+  /* Three roles, matching what the app renders. There is deliberately no --leading-tight: its
+     1.2 rendered nowhere for as long as the token existed, which made it a scale entry no
+     reviewer could enforce. Set these from what a block is for, not from how tight it looks. */
+  --leading-none: 1; /* glyph-as-icon buttons: the glyph is the box, no leading wanted */
+  --leading-normal: 1.5; /* UI text: hints, empty states, the viewport HUD */
+  --leading-prose: 1.55; /* paragraphs meant to be read: help sections, dialogs, the narrow notice */
+}

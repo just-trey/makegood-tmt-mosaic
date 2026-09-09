@@ -7,3 +7,6 @@ package-lock.json
 # but prettier walks the working tree, so without this line `npm run format:check` fails locally
 # for anyone who has one, on every branch, while passing in CI.
 .claude/settings.local.json
+
+# The from-scratch rebuild experiment is its own project with its own tooling.
+rebuild/

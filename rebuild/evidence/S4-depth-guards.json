@@ -1,0 +1,12 @@
+{
+  "depth0": [
+    "A depth of 0 cuts nothing, so #0a0a0a is cut 0.2 mm deep, one layer.",
+    "A depth of 0 cuts nothing, so #f4f4f2 is cut 0.2 mm deep, one layer.",
+    "Plate layout, part orientation and prime tower positions were computed, not checked on a printer. Look them over in your slicer before printing."
+  ],
+  "depth60": [
+    "#0a0a0a on Wheel half is cut shallower over 100% of its area: the wall there is as thin as 10 mm, so the recess is 9.4 mm deep there instead of 60 mm.",
+    "#f4f4f2 on Wheel half is cut shallower over 100% of its area: the wall there is as thin as 21.75 mm, so the recess is 21.15 mm deep there instead of 60 mm.",
+    "Plate layout, part orientation and prime tower positions were computed, not checked on a printer. Look them over in your slicer before printing."
+  ]
+}
