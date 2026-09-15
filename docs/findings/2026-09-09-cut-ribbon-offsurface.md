@@ -138,7 +138,9 @@ A-only vertex differencing below, which does not depend on it.
 | A-only on `Wheel mount (left)` | 131         | —           |
 
 - The interior sample point snaps **0.050mm** to (170.0, 160.4, -299.6).
-- The A-only cluster measures **1.000 x 0.211 x 32.543mm**.
+- The A-only cluster within 25mm of the snap point measures
+  **1.000 x 0.211 x 32.543mm**, and no A-only vertex on that part lies outside
+  it — so the dimensions describe one mark, not two summed.
 - The nearest inlay vertex B still has on that part is **30.80mm** away. The
   mark vanished; it did not move.
 - The nearest OTHER off-surface piece on the same part is

@@ -37,6 +37,8 @@ const ZONE = 'left';
 const NEAR_MM = 6;
 /** Neighbourhood in zone UV that has to hold no OTHER cut region for a ribbon to be readable. */
 const ISOLATION_MM = 6;
+/** How far from the snap point an A-only vertex still counts as part of THIS mark, in 3D. */
+const CLUSTER_MM = 25;
 
 const SIDECAR_REL = 'stl/chair-body-zones.json';
 const DIST = path.join(REPO, 'dist', SIDECAR_REL);
@@ -354,7 +356,7 @@ for (const t of readable) {
   const others = [];
   for (const r of ribbons) {
     if (r.part !== t.part) continue;
-    if (r.zone === t.zone && r.i === t.i) continue;
+    if (r.chart === t.chart && r.i === t.i) continue;
     const snap = await snapPoint(r.chart, interiorPoint(r.piece));
     others.push({
       id: `${r.zone}/${r.part}#${r.i}`,
@@ -418,9 +420,11 @@ try {
   writeFileSync(DIST, JSON.stringify(patched));
   B = await runVariant(browser, 'B-cleaned');
   if (A.length === B.length)
-    console.log(
-      `   NOTE: B has the same inlay vertex count as A. ${removed} pieces were removed from the ` +
-        `sidecar, so either none of them took ink or the variant did not reach the browser.`,
+    throw new Error(
+      `B has the same inlay vertex count as A (${A.length}) after ${removed} cut pieces were ` +
+        `removed from its sidecar. Either the variant did not reach the browser or it read the ` +
+        `unpatched file — and every verdict below would then read "cuts nothing" for that reason ` +
+        `rather than because the pieces are harmless.`,
     );
 } finally {
   copyFileSync(SHIPPED, DIST);
@@ -490,11 +494,21 @@ for (const t of readable) {
     );
     continue;
   }
+  // Bounded to the mark's own neighbourhood. Taken over every A-only vertex on the part, the bbox
+  // would absorb a second deleted piece — the rival guard only reaches 12mm — and the dimensions
+  // quoted in the report would describe two marks as one. Anything outside is counted and named
+  // rather than dropped.
+  const cluster = near(only, t.snap.p, CLUSTER_MM);
+  const strays = only.length - cluster.length;
   const ax = [0, 1, 2].map((k) => [
-    Math.min(...only.map((q) => q.v[k])),
-    Math.max(...only.map((q) => q.v[k])),
+    Math.min(...cluster.map((q) => q.v[k])),
+    Math.max(...cluster.map((q) => q.v[k])),
   ]);
   const c = [0, 1, 2].map((k) => (ax[k][0] + ax[k][1]) / 2);
+  if (!cluster.length) {
+    fail(`${where}: ${only.length} A-only vertices on "${partName}", none within ${CLUSTER_MM}mm`);
+    continue;
+  }
   // B having no inlay left on the part at all is a real outcome, not an error: it means the piece
   // was the only thing inking it. `Math.min()` of nothing is Infinity, which would print as a
   // distance.
@@ -503,7 +517,8 @@ for (const t of readable) {
     : null;
   fail(
     `${where} cuts a mark on "${partName}": ${a} inlay vertices within ${NEAR_MM}mm of the snap ` +
-      `point in A, ${b} in B. The whole A-only cluster on that part is ${only.length} vertices, ` +
+      `point in A, ${b} in B. The A-only cluster within ${CLUSTER_MM}mm is ${cluster.length} ` +
+      `vertices (${strays} more A-only on that part lie outside it), ` +
       `${ax.map(([lo, hi]) => (hi - lo).toFixed(3)).join(' x ')}mm, and the nearest inlay vertex ` +
       `B still has on that part is ${survivorMm === null ? 'nowhere — B leaves that part uninked' : `${survivorMm.toFixed(2)}mm away`} — so it vanished rather than moved.`,
   );

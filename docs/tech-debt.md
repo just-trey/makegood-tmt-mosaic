@@ -1349,8 +1349,12 @@ The floor stays an area there deliberately, and that part is not open:
 - A width test on ink would delete a deliberate 0.3mm stroke in someone's
   artwork. That is a real choice, honoured the way a sub-layer depth is
   (`MIN_CUT_DEPTH_MM`, docs/audience.md).
-- The #296 hairline was removed at the bake, not here, so the one worked example
-  never reached this floor.
+- The #296 hairline no longer reaches this floor, because the bake removes it
+  first. It did reach it before that: #296's own guard was written against the
+  pre-fix build and reported an inlay built from the 0.025mm² remnant, and the
+  bake move landed six rounds later in the same PR. So the worked example is
+  historical, not absent — which leaves the argument below standing on the
+  0.3mm-stroke case alone.
 
 What is open is that the claim rests on the argument, not on a measurement. What
 would close it: sweep clipped ink across the shipped example designs and say how

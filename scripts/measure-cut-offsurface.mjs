@@ -463,10 +463,19 @@ console.log(
     `${mostly.reduce((s, r) => s + r.net, 0).toFixed(3)}mm² between them.\n` +
     `All of them are on a chart that carries a dead region: ` +
     `${mostly.every((r) => r.hasDead)}.\n` +
-    `Deepest EDGE reach, over every piece with off-surface edge area: ` +
-    `${deepest(band, 'edgeDepth')} against SIMPLIFY_TOL_MM ` +
+    `Deepest EDGE reach, over the ${band.filter((r) => r.edgeArea > 0).length} pieces that have ` +
+    `off-surface EDGE area: ` +
+    `${deepest(
+      band.filter((r) => r.edgeArea > 0),
+      'edgeDepth',
+    )} against SIMPLIFY_TOL_MM ` +
     `${SIMPLIFY_TOL_MM}. Deepest HOLE reach: ` +
-    `${deepest(band, 'holeDepth')} — off-surface area inside the chart's outer silhouette, which ` +
+    `${deepest(
+      band.filter((r) => r.holeArea > 0),
+      'holeDepth',
+    )} over the ` +
+    `${band.filter((r) => r.holeArea > 0).length} pieces that have any — off-surface area inside ` +
+    `the chart's outer silhouette, which ` +
     `is two different things: slack along a KEPT hole's rim, bounded by the simplify tolerance ` +
     `like any other shared boundary, and a hole subRegions dropped outright, bounded instead by ` +
     `that hole's inradius. The table above says which each piece is; do not read this one number ` +
