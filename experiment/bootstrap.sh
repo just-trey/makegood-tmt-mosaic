@@ -6,6 +6,9 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 OUT=${1:-"$ROOT/../tmt-mosaic-rebuild"}
+# Verified prints and extra test designs come from experiment/inputs/ (tracked) or stubs/ (gitignored).
+IN="$HERE/inputs"
+[ -d "$IN" ] || IN="$ROOT/stubs"
 
 if [ -e "$OUT" ] && [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then
   echo "refusing to write into non-empty $OUT" >&2
@@ -57,11 +60,11 @@ missing=()
   echo "| ---- | ---------- |"
   for entry in "${VERIFIED[@]}"; do
     src=${entry%%|*}; desc=${entry#*|}
-    if [ -f "$ROOT/stubs/$src" ]; then
-      cp "$ROOT/stubs/$src" "$OUT/reference/verified-prints/$src"
+    if [ -f "$IN/$src" ]; then
+      cp "$IN/$src" "$OUT/reference/verified-prints/$src"
       echo "| \`$src\` | $desc |"
     else
-      missing+=("stubs/$src")
+      missing+=("$src")
     fi
   done
   echo
@@ -78,19 +81,19 @@ missing=()
   echo "| \`gradient.svg\` | One flat-filled shape beside one gradient-filled shape. For the unsupported-content scenario. |"
   for entry in "${ARTWORK[@]}"; do
     src=${entry%%|*}; dest=${entry#*|}
-    if [ -f "$ROOT/stubs/$src" ]; then
-      cp "$ROOT/stubs/$src" "$OUT/reference/artwork/$dest"
+    if [ -f "$IN/$src" ]; then
+      cp "$IN/$src" "$OUT/reference/artwork/$dest"
       echo "| \`$dest\` | Volunteer-style test design. |"
     else
-      missing+=("stubs/$src")
+      missing+=("$src")
     fi
   done
-  if [ -d "$ROOT/stubs/raster stock" ]; then
+  if [ -d "$IN/photos" ]; then
     mkdir -p "$OUT/reference/artwork/photos"
-    cp "$ROOT/stubs/raster stock"/* "$OUT/reference/artwork/photos/"
-    echo "| \`photos/\` | Stock photographs, for the photograph scenario. |"
+    cp "$IN/photos"/* "$OUT/reference/artwork/photos/"
+    echo "| \`photos/\` | Photographs, for the photograph scenario. |"
   else
-    missing+=("stubs/raster stock/ (run: node scripts/fetch-raster-stock.mjs)")
+    missing+=("photos/ (any JPG of a face or a pet)")
   fi
 } > "$OUT/reference/artwork/MANIFEST.md"
 
@@ -124,7 +127,7 @@ echo "assembled $OUT"
 echo "  $(git ls-files | wc -l | tr -d ' ') files, $(du -sh . | cut -f1) on disk"
 if [ ${#missing[@]} -gt 0 ]; then
   echo
-  echo "not found in $ROOT/stubs/ (add them and re-run, or fill MANIFEST.md by hand):"
+  echo "not found in $IN (add them and re-run, or fill MANIFEST.md by hand):"
   printf '  %s\n' "${missing[@]}"
 fi
 echo
