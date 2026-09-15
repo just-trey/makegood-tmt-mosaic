@@ -331,6 +331,42 @@ for (const r of inZone) {
   );
 }
 const readable = targets.filter((t) => t.area === 0);
+
+// The A-only cluster is counted per PART, and B deletes every off-surface piece at once, so a
+// second such piece landing near this one in 3D would put both marks in one cluster and the
+// attribution would name the wrong piece. Asked across every off-surface piece of every zone,
+// because a part carries charts in more than one zone — `chair-wheel-mount-left` is in `left` and
+// in `seat-left`. Distances are between snapped 3D points, which is where the marks actually land.
+for (const t of readable) {
+  const others = [];
+  for (const r of ribbons) {
+    if (r.part !== t.part) continue;
+    if (r.zone === t.zone && r.i === t.i) continue;
+    const chart = sidecar.zones
+      .find((z) => z.id === r.zone)
+      .charts.find((c) => c.libraryPartId === r.part);
+    const snap = await snapPoint(chart, interiorPoint(r.piece));
+    others.push({
+      id: `${r.zone}/${r.part}#${r.i}`,
+      mm: Math.hypot(...[0, 1, 2].map((k) => snap.p[k] - t.snap.p[k])),
+    });
+  }
+  others.sort((a, b) => a.mm - b.mm);
+  t.rival = others[0] ?? null;
+  const where = `${t.zone}/${t.part}#${t.i}`;
+  if (!t.rival)
+    pass(`${where} is the only off-surface piece on "${t.part}" — nothing to confuse it with`);
+  else if (t.rival.mm > 2 * NEAR_MM)
+    pass(
+      `${where}: nearest other off-surface piece on the same part is ${t.rival.id} at ` +
+        `${t.rival.mm.toFixed(1)}mm, well outside the ${NEAR_MM}mm the verdict counts in`,
+    );
+  else
+    fail(
+      `${where}: ${t.rival.id} snaps ${t.rival.mm.toFixed(1)}mm away on the same part, inside ` +
+        `2x the ${NEAR_MM}mm radius — B deletes both, so a cluster here names neither piece alone`,
+    );
+}
 if (!readable.length) throw new Error(`no isolated off-surface ribbon in zone "${ZONE}"`);
 
 // One preview for both variants. The page fetches the sidecar on load, so patching what `dist/`

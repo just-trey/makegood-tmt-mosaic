@@ -141,6 +141,12 @@ A-only vertex differencing below, which does not depend on it.
 - The A-only cluster measures **1.000 x 0.211 x 32.543mm**.
 - The nearest inlay vertex B still has on that part is **30.80mm** away. The
   mark vanished; it did not move.
+- The nearest OTHER off-surface piece on the same part is
+  `seat-left/chair-wheel-mount-left#6`, **116.9mm** away. B deletes all 14 at
+  once, so a second one landing near this would put two marks in one cluster and
+  the attribution would name the wrong piece. On `chair-wheel-mount-left` the
+  rest are 117mm and further, and only `left` was inked, so their pieces took no
+  ink in either variant.
 
 `Wing (left)` also loses 58 A-only vertices, from
 `left/chair-wing-left#7` (0.215mm², 100% off). Not attributed: that piece has
