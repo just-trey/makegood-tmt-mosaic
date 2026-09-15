@@ -270,6 +270,11 @@ async function inlayPoints(file) {
     const nm = /\bname="([^"]*)"/.exec(attrs)?.[1] ?? '';
     if (!id) throw new Error('3MF has an <object> with no id');
     if (body.includes('<components>')) {
+      // Two placements sharing a name would overwrite each other here, and one part's inlay
+      // vertices would then be missing from A and from B alike — a difference this run would read
+      // as zero. Unique on chair-body today; the same collision hazard is guarded at the two
+      // sidecar lookups above, so it is guarded here too rather than left to stay true.
+      if (parts.has(nm)) throw new Error(`the export has two parts named "${nm}"`);
       parts.set(
         nm,
         [...body.matchAll(/objectid="(\d+)"/g)].map(([, sid]) => sid),

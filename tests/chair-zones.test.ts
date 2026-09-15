@@ -783,7 +783,16 @@ describe('chart reconstruction', () => {
         // loss. It was also calibrated against a stale bake — the sidecar had not been re-baked
         // since `subtractRegions` gained its no-covers path, and the 3.8mm² it was sized for was
         // that drift, not the filter.
-        expect(Math.abs(got - want), `${where}: cut region disagrees with turf`).toBeLessThan(2);
+        //
+        // **One-sided, since the bake clips the cut region to the chart's own triangles.** The
+        // claim less the dead set is no longer the whole story: `clipRegionsToChart` then removes
+        // what falls outside the part, which on this sidecar would be up to 94.98mm² on
+        // `right`/`chair-wing-right` and over 2mm² on 9 of the 12 charts that carry a dead region.
+        // So the direction this still pins is the one that matters — the bake must never claim
+        // MORE than the claim less what is hidden. That it does not claim LESS than it should is
+        // carried by the on-chart invariant in tests/zone-bake.test.ts and by the piece-count and
+        // floor guards above, which a mass deletion would trip.
+        expect(got - want, `${where}: cut region claims more than claim-less-dead`).toBeLessThan(2);
       }
   });
 

@@ -1329,6 +1329,17 @@ lives outside the repo:
    shown to reach the print" after.
 3. `npx vite-node scripts/measure-cut-offsurface.mjs` — "at least 50% off"
    should go 14 to 0.
+4. **`expect(examined).toBe(41)` in `tests/chair-zones.test.ts` will move.** That
+   pin exists to force a human look when a re-bake changes the cut region, so it
+   doing its job is the point. Re-derive the new value from
+   `npx vite-node scripts/measure-seam-overlap.mjs` rather than guessing it: an
+   in-memory preview of the clip over the shipped sidecar gave 47 pieces and
+   131.04mm², but it re-rounds coordinates instead of re-baking, so treat that
+   as the shape of the change and not the number.
+5. **Consider tightening the conservation bound back.** It is one-sided now,
+   because the clip removes up to 94.98mm² from a chart and the old two-sided
+   2mm² bound would fail on 9 of 12. With the sidecar re-baked, the reference
+   can include the clip and go two-sided again.
 
 Until then the section stays open. Merging the code without the re-baked sidecar
 would repeat #296's eighth-round finding, where a corrected `subtractRegions`
