@@ -44,10 +44,14 @@ are not built the same way:
 | `subRegions`  | `boundaryVertexLoops` of the chart's triangles       | `simplifyLoop(SIMPLIFY_TOL_MM)` |
 | `deadRegions` | `deadCS.intersect(chartCS)`, `chartCS` the RAW rings | `simplifyLoop(SIMPLIFY_TOL_MM)` |
 
-So along a shared boundary the dead set follows the real triangles and the claim
-follows a Douglas-Peucker approximation of them. `cutRegions` is `subRegions`
-less `deadRegions`, and subtracting the second from the first cuts the outward
-half of that slack free as its own polygon.
+**Both go through Douglas-Peucker, at the same tolerance, over different source
+polylines** — the chart's own boundary loop on one side, the boundary of
+`dead ∩ the chart's raw triangles` on the other. Where the two describe the same
+physical boundary they are two independent approximations of it, each free to
+wander up to `SIMPLIFY_TOL_MM` from its own source, so they can disagree by up
+to **twice** that: 0.4mm. `cutRegions` is `subRegions` less `deadRegions`, and
+the subtraction cuts the part of that disagreement lying outside the triangles
+free as its own polygon.
 
 **Shared boundary, not shared edge.** It is the patch's outer edge on 6 of the
 14 and a hole's rim on the other 8, and the two behave identically because
@@ -55,7 +59,8 @@ half of that slack free as its own polygon.
 the bake KEEPS — 772 to 1673mm², 23 to 43mm mean width, nowhere near
 `MIN_HOLE_AREA_MM2` or `MIN_HOLE_WIDTH_MM` — so no piece here is a gap in the
 mesh that the claim filled in. All 14 reach at most 0.1945mm past the
-triangles, under `SIMPLIFY_TOL_MM` either way.
+triangles — inside the 0.4mm two independent simplifications can differ by, and
+in fact under a single tolerance.
 
 The slack is not new and not a defect on its own — `SIMPLIFY_TOL_MM`'s own
 comment says `CHART_SNAP_MM` covers it. What is new is it becoming a _standalone
@@ -114,9 +119,14 @@ piece.
 | `seat-left/chair-wheel-mount-left#2` | 2.860   | 0.1881 | 98.41 | 0.1872   |
 
 Depth is how far past the triangles the piece reaches — past a kept hole's rim
-on the first two, past the outer edge on the third. All three sit just under
-`SIMPLIFY_TOL_MM` (0.2), which is what says they are the tolerance rather than
-geometry.
+on the first two, past the outer edge on the third.
+
+All three land just under `SIMPLIFY_TOL_MM` (0.2). That is **consistent with**
+the slack being the tolerance and is not proof of it: the bound two independent
+Douglas-Peucker passes have to respect is 0.4mm, not 0.2, so landing under 0.2
+is comfortably inside the bound rather than pinned to it. What carries the
+claim is the control — the same slack exists on the charts with no dead region,
+in more total area, and makes no standalone piece there.
 
 ## The driven run
 

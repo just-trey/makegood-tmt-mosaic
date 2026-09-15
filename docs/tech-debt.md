@@ -1290,13 +1290,18 @@ not divide into a bounding box; the exported mark is a third.
 | `left/chair-wheel-mount-left#4`      | 3.172   | 0.1950 | 99.70%      | 0.1945 |
 | `seat-left/chair-wheel-mount-left#2` | 2.860   | 0.1881 | 98.41%      | 0.1872 |
 
-**The cause is two descriptions of one edge.** `subRegions` is the chart's
-boundary loop through `simplifyLoop`; `deadRegions` is the dead set intersected
-with the chart's RAW triangle rings. Subtracting the second from the first cuts
-the outward half of the simplification slack free as its own polygon. Every one
-of the 14 is on a chart that carries a dead region, and the depths sit just
-under `SIMPLIFY_TOL_MM` (0.2), which is what says they are the tolerance rather
-than geometry.
+**The cause is two descriptions of one boundary.** Both go through
+`simplifyLoop` at the same tolerance, over different source polylines:
+`subRegions` from the chart's own boundary loop, `deadRegions` from the boundary
+of the dead set intersected with the chart's RAW triangle rings. Two independent
+Douglas-Peucker passes over one physical boundary can disagree by up to twice
+the tolerance — 0.4mm — and subtracting one from the other cuts the part of that
+disagreement lying outside the triangles free as its own polygon.
+
+Every one of the 14 is on a chart that carries a dead region, and none reaches
+more than 0.1945mm past the triangles. That sits inside the 0.4mm bound and
+under a single tolerance, which is consistent with the slack being the tolerance
+without proving it. What carries the claim is the control below.
 
 The slack itself is not the bug and predates this: charts with no dead region
 carry more of it (649.41mm² against 211.13mm²) and produce no ribbons, because
@@ -1335,6 +1340,27 @@ it moot anyway: it removes these pieces by where they are, not by how thin.
 
 **Not measured**: the other 13. One piece was driven end to end; the rest are
 the same shape by the same mechanism, which is an argument, not a run.
+
+## `measure-cut-width.mjs` breaks on the sidecar its own conclusion asks for
+
+Three defects in the script behind
+[docs/findings/2026-09-08-cut-region-width.md](findings/2026-09-08-cut-region-width.md),
+found by review on the branch that added the off-surface run and deliberately
+left there.
+
+| line | what                                                                  | when it bites                                                |
+| ---- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| 471  | `holes.reduce` with no initial value, so it throws on an empty list   | a sidecar whose cut pieces carry no holes                    |
+| 541  | `Math.min(...[])` prints `Infinity` as a thinnest-overlap width       | no seam overlap clears the area floor                        |
+| 230  | `part-eaten>50%` divides a `CrossSection.area()` by a `regionNetArea` | every run — the basis mix its own comment at 197-199 forbids |
+
+The first two are the state a re-bake after the fix in the section above is
+meant to produce, so the script would die on the run that confirms the fix.
+
+**Why it is still open**: the report is pinned to its run, and the third changes
+a published column. Script and report should move together, by their author. The
+sibling `measure-cut-offsurface.mjs` guards both empty-input cases, and its
+`deepest()` helper is the shape to copy.
 
 ## Nobody has swept the design ink `CLIP_REMNANT_FLOOR_MM2` actually guards
 

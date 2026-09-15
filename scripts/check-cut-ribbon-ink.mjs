@@ -45,8 +45,12 @@ const DIST = path.join(REPO, 'dist', SIDECAR_REL);
 const SHIPPED = path.join(REPO, 'public', SIDECAR_REL);
 
 const failures = [];
-const fail = (m) => {
+// `cuts` are the pieces shown to reach the print; the rest are the run failing to be able to say.
+// Reporting both as one number would let a broken isolation gate read as a defect count.
+const cuts = [];
+const fail = (m, isCut = false) => {
   failures.push(m);
+  if (isCut) cuts.push(m);
   console.log(`  FAIL ${m}`);
 };
 const pass = (m) => console.log(`  ok   ${m}`);
@@ -368,15 +372,15 @@ for (const t of readable) {
   const where = `${t.zone}/${t.part}#${t.i}`;
   if (!t.rival)
     pass(`${where} is the only off-surface piece on "${t.part}" — nothing to confuse it with`);
-  else if (t.rival.mm > 2 * NEAR_MM)
+  else if (t.rival.mm > CLUSTER_MM)
     pass(
       `${where}: nearest other off-surface piece on the same part is ${t.rival.id} at ` +
-        `${t.rival.mm.toFixed(1)}mm, well outside the ${NEAR_MM}mm the verdict counts in`,
+        `${t.rival.mm.toFixed(1)}mm, outside the ${CLUSTER_MM}mm the mark's own cluster is read over`,
     );
   else
     fail(
       `${where}: ${t.rival.id} snaps ${t.rival.mm.toFixed(1)}mm away on the same part, inside ` +
-        `2x the ${NEAR_MM}mm radius — B deletes both, so a cluster here names neither piece alone`,
+        `the ${CLUSTER_MM}mm cluster radius — B deletes both, so a cluster here names neither alone`,
     );
 }
 if (!readable.length) throw new Error(`no isolated off-surface ribbon in zone "${ZONE}"`);
@@ -521,12 +525,21 @@ for (const t of readable) {
       `vertices (${strays} more A-only on that part lie outside it), ` +
       `${ax.map(([lo, hi]) => (hi - lo).toFixed(3)).join(' x ')}mm, and the nearest inlay vertex ` +
       `B still has on that part is ${survivorMm === null ? 'nowhere — B leaves that part uninked' : `${survivorMm.toFixed(2)}mm away`} — so it vanished rather than moved.`,
+    true,
   );
 }
 
 console.log(
-  failures.length
-    ? `\n${failures.length} off-surface piece(s) reach the print. UV with no triangle under it ` +
+  cuts.length
+    ? `\n${cuts.length} off-surface piece(s) reach the print. UV with no triangle under it ` +
         `does not fall out of the cut: it snaps to the patch edge and extrudes there.`
-    : `\nNo off-surface piece reached the print in this run.`,
+    : `\nNo off-surface piece was shown to reach the print in this run.`,
 );
+if (failures.length > cuts.length)
+  console.log(
+    `${failures.length - cuts.length} other failure(s) above are the run being unable to attribute ` +
+      `a piece, not a piece reaching the print.`,
+  );
+// 2. Every other check-*.mjs sets this. Without it a run where a ribbon DOES cut exits 0, so CI or
+// an `&&` chain reads the defect as a pass.
+process.exitCode = failures.length ? 1 : 0;
