@@ -144,16 +144,21 @@ function neighbourArea(rib) {
   const sections = [];
   for (const ch of zone.charts)
     (ch.cutRegions ?? []).forEach((p, j) => {
-      if (ch.libraryPartId === rib.part && j === rib.i) return;
+      // By chart identity, not by (libraryPartId, index): a zone carrying two charts of one part
+      // would otherwise drop the wrong piece here and UNDER-count the neighbourhood, the one
+      // direction this gate must not err in.
+      if (ch === rib.chart && j === rib.i) return;
       sections.push(new wasm.CrossSection(ringsOf(p), 'EvenOdd'));
     });
   const oc = wasm.CrossSection.union(sections);
   for (const cs of sections) cs.delete();
-  const disc = wasm.CrossSection.circle(ISOLATION_MM, 64).translate(c);
+  const circle = wasm.CrossSection.circle(ISOLATION_MM, 64);
+  const disc = circle.translate(c);
   const hit = oc.intersect(disc);
   const a = hit.area();
   hit.delete();
   disc.delete();
+  circle.delete();
   oc.delete();
   return { centre: c, area: a };
 }
@@ -309,8 +314,11 @@ async function runVariant(browser, label) {
   if ((await sel.inputValue()) !== ZONE) await afterRebuild(page, () => sel.selectOption(ZONE));
   await afterRebuild(page, () => page.fill('#p-scale-num', '400'));
   await shot(page, path.join(REPO, OUT), `${label}.png`);
-  const warn = await page.evaluate(() => window.__mosaic.warnings());
   const pts = await exportOnce(page, label);
+  // AFTER the export, not before. The export itself raises warnings as it runs — a dropped part, a
+  // coverage gap, a placement problem — and a B run that quietly lost a whole part would otherwise
+  // print "0 warning(s)" while its vertex delta got blamed on the ribbon.
+  const warn = await page.evaluate(() => window.__mosaic.warnings());
   console.log(`   ${label}: ${pts.length} inlay vertices, ${warn.length} warning(s)`);
   for (const w of warn) console.log(`     warn: ${w}`);
   for (const e of errors) console.log(`     console: ${e}`);
@@ -390,14 +398,30 @@ try {
 
   console.log(`\nB: the same build with ${ribbons.length} off-surface pieces deleted.`);
   const patched = JSON.parse(readFileSync(SHIPPED, 'utf8'));
+  let removed = 0;
   patched.zones.forEach((zone, zi) =>
     zone.charts.forEach((chart, ci) => {
       const drop = new Set(ribbons.filter((r) => r.zi === zi && r.ci === ci).map((r) => r.i));
-      if (drop.size) chart.cutRegions = chart.cutRegions.filter((_, i) => !drop.has(i));
+      if (!drop.size) return;
+      const before = chart.cutRegions.length;
+      chart.cutRegions = chart.cutRegions.filter((_, i) => !drop.has(i));
+      removed += before - chart.cutRegions.length;
     }),
   );
+  // A patch that removed nothing would make B a copy of A, and every verdict below would then read
+  // "cuts nothing" — this script's own no-defect answer, produced by the control being broken
+  // rather than by the pieces being harmless. That is the one failure it must not report quietly.
+  if (removed !== ribbons.length)
+    throw new Error(
+      `the B sidecar should have lost ${ribbons.length} cut pieces and lost ${removed}`,
+    );
   writeFileSync(DIST, JSON.stringify(patched));
   B = await runVariant(browser, 'B-cleaned');
+  if (A.length === B.length)
+    console.log(
+      `   NOTE: B has the same inlay vertex count as A. ${removed} pieces were removed from the ` +
+        `sidecar, so either none of them took ink or the variant did not reach the browser.`,
+    );
 } finally {
   copyFileSync(SHIPPED, DIST);
   await browser?.close();

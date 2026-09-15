@@ -259,9 +259,9 @@ for (const zone of z.zones)
         return a < 0;
       });
     (chart.cutRegions ?? []).forEach((piece, i) => {
-      const row = rows.find(
-        (r) => r.zone === zone.id && r.part === chart.libraryPartId && r.i === i,
-      );
+      // By chart identity and index, not by (zone, libraryPartId, index) — the same lookup this
+      // file refuses in the sampling pass below, for the same reason.
+      const row = rows.find((r) => r.chart === chart && r.i === i);
       if (!row || row.holeArea <= 1e-9 || row.offFrac < 0.5) return;
       const pcs = pieceSection(piece);
       const outside = pcs.subtract(chartCS);
@@ -437,7 +437,8 @@ for (const r of rows.filter((q) => q.offFrac >= 0.5)) {
 }
 console.log(
   `Worst disagreement between the two derivations: ${(worstDelta * 100).toFixed(2)} percentage points, ` +
-    `at ${minSamples} accepted samples on the thinnest piece (${SAMPLES} asked for). The rejection ` +
+    `at ${minSamples === Infinity ? 'no' : minSamples} accepted samples on the thinnest piece ` +
+    `(${SAMPLES} asked for). The rejection ` +
     `sampler gives up after 4,000,000 draws, so a piece far thinner than these would report fewer ` +
     `and say so here rather than quietly resolve worse.`,
 );
