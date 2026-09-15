@@ -59,8 +59,12 @@ const triRingsOf = (c) => c.chartTris.map((t) => t.map((i) => [c.uv[2 * i], c.uv
 /** Every cut piece at least half outside its chart's triangles, as measure-cut-offsurface counts. */
 function offSurfacePieces() {
   const out = [];
-  for (const zone of sidecar.zones)
-    for (const chart of zone.charts) {
+  // zi/ci are how the B variant finds these again in its own parse of the file. (zone.id,
+  // libraryPartId) is unique in today's sidecar and nothing promises it stays so — a zone carrying
+  // two charts of one part would delete the wrong pieces, silently, in the variant that is meant
+  // to be the control.
+  sidecar.zones.forEach((zone, zi) =>
+    zone.charts.forEach((chart, ci) => {
       const cs = new wasm.CrossSection(triRingsOf(chart), 'NonZero');
       (chart.cutRegions ?? []).forEach((piece, i) => {
         const pcs = new wasm.CrossSection(ringsOf(piece), 'EvenOdd');
@@ -69,7 +73,10 @@ function offSurfacePieces() {
           out.push({
             zone: zone.id,
             part: chart.libraryPartId,
+            zi,
+            ci,
             i,
+            chart,
             net: regionNetArea(piece),
             offFrac: off.area() / pcs.area(),
             piece,
@@ -78,7 +85,8 @@ function offSurfacePieces() {
         pcs.delete();
       });
       cs.delete();
-    }
+    }),
+  );
   return out;
 }
 
@@ -318,10 +326,7 @@ const inZone = ribbons.filter((r) => r.zone === ZONE);
 const targets = [];
 for (const r of inZone) {
   const n = neighbourArea(r);
-  const chart = sidecar.zones
-    .find((z) => z.id === r.zone)
-    .charts.find((c) => c.libraryPartId === r.part);
-  const snap = await snapPoint(chart, n.centre);
+  const snap = await snapPoint(r.chart, n.centre);
   targets.push({ ...r, ...n, snap });
   console.log(
     `  ${r.zone}/${r.part}#${r.i}: ${r.net.toFixed(3)}mm², ${(r.offFrac * 100).toFixed(1)}% off, ` +
@@ -342,10 +347,7 @@ for (const t of readable) {
   for (const r of ribbons) {
     if (r.part !== t.part) continue;
     if (r.zone === t.zone && r.i === t.i) continue;
-    const chart = sidecar.zones
-      .find((z) => z.id === r.zone)
-      .charts.find((c) => c.libraryPartId === r.part);
-    const snap = await snapPoint(chart, interiorPoint(r.piece));
+    const snap = await snapPoint(r.chart, interiorPoint(r.piece));
     others.push({
       id: `${r.zone}/${r.part}#${r.i}`,
       mm: Math.hypot(...[0, 1, 2].map((k) => snap.p[k] - t.snap.p[k])),
@@ -376,27 +378,29 @@ if (!readable.length) throw new Error(`no isolated off-surface ribbon in zone "$
 // the opt-out would buy nothing and cost the exact failure harness.mjs exists to stop: an A/B whose
 // numbers describe the previous build.
 const preview = await startPreview({ port: PORT });
-const browser = await launchBrowser();
 let A, B;
+let browser;
 try {
+  // Inside the try: a launchBrowser that throws used to leave the preview serving, and the next run
+  // then died on startPreview's own port guard rather than on the real cause.
+  browser = await launchBrowser();
   console.log(`\nA: the shipped sidecar.`);
   copyFileSync(SHIPPED, DIST);
   A = await runVariant(browser, 'A-shipped');
 
   console.log(`\nB: the same build with ${ribbons.length} off-surface pieces deleted.`);
   const patched = JSON.parse(readFileSync(SHIPPED, 'utf8'));
-  for (const zone of patched.zones)
-    for (const chart of zone.charts) {
-      const drop = ribbons
-        .filter((r) => r.zone === zone.id && r.part === chart.libraryPartId)
-        .map((r) => r.i);
-      if (drop.length) chart.cutRegions = chart.cutRegions.filter((_, i) => !drop.includes(i));
-    }
+  patched.zones.forEach((zone, zi) =>
+    zone.charts.forEach((chart, ci) => {
+      const drop = new Set(ribbons.filter((r) => r.zi === zi && r.ci === ci).map((r) => r.i));
+      if (drop.size) chart.cutRegions = chart.cutRegions.filter((_, i) => !drop.has(i));
+    }),
+  );
   writeFileSync(DIST, JSON.stringify(patched));
   B = await runVariant(browser, 'B-cleaned');
 } finally {
   copyFileSync(SHIPPED, DIST);
-  await browser.close();
+  await browser?.close();
   await preview.stop();
 }
 
@@ -424,25 +428,34 @@ const near = (pts, p, r) =>
   pts.filter((q) => Math.hypot(q.v[0] - p[0], q.v[1] - p[1], q.v[2] - p[2]) <= r);
 for (const t of readable) {
   const where = `${t.zone}/${t.part}#${t.i} (${t.net.toFixed(3)}mm², ${(t.offFrac * 100).toFixed(1)}% off)`;
-  const a = near(A, t.snap.p, NEAR_MM).length;
-  const b = near(B, t.snap.p, NEAR_MM).length;
-  if (a <= b) {
+  // Counted PER PART and ranked by what each part GAINED, not pooled across the export and then
+  // attributed to whichever part happens to have ink nearby. Parts abut: at a snap point on a seam
+  // two of them can both carry vertices inside NEAR_MM, and a pooled count lets one part's ink
+  // stand in for another's — which reads as a mark on the wrong part, or as no mark at all when the
+  // neighbour's unchanged vertices cancel the gain.
+  const ranked = [...perPart.keys()]
+    .map((n) => {
+      const p = perPart.get(n);
+      return {
+        n,
+        aN: near(p.a, t.snap.p, NEAR_MM).length,
+        bN: near(p.b, t.snap.p, NEAR_MM).length,
+      };
+    })
+    .map((r) => ({ ...r, gain: r.aN - r.bN }))
+    .sort((x, y) => y.gain - x.gain);
+  const best = ranked[0];
+  if (!best || best.gain <= 0) {
+    const tot = ranked.reduce((s2, r) => s2 + r.aN, 0);
     pass(
-      `${where} cuts nothing the pair can tell apart: ${a} inlay vertices within ${NEAR_MM}mm in A, ${b} in B`,
+      `${where} cuts nothing the pair can tell apart: no part gains an inlay vertex within ` +
+        `${NEAR_MM}mm of the snap point (${tot} there in A across all parts)`,
     );
     continue;
   }
-  // Which part it landed on, and how big the mark is. The cluster is every A-only vertex on that
-  // part, which is worth stating as such: if it were bigger than the neighbourhood of this piece
-  // the attribution would be the thing to doubt.
-  const partName = [...perPart.keys()].find(
-    (n) =>
-      near(
-        A.filter((q) => q.partName === n),
-        t.snap.p,
-        NEAR_MM,
-      ).length,
-  );
+  const partName = best.n;
+  const a = best.aN;
+  const b = best.bN;
   const { only, b: bp } = perPart.get(partName);
   // A > B near the point with no A-only vertex on that part means the mark moved rather than
   // appeared, and the bbox below would come out Infinity. Say that instead of printing NaN.
