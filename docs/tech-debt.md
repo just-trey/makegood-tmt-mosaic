@@ -1307,22 +1307,43 @@ The slack itself is not the bug and predates this: charts with no dead region
 carry more of it (649.41mm² against 211.13mm²) and produce no ribbons, because
 nothing cuts it loose.
 
-**Closing it** is an intersect against the chart's own triangles after
-`subtractRegions`. Not one line: `bakeZones` does build a `chartCS`, but for the
-dead intersection only — constructed at `zonebake.mjs:4353` and deleted at 4360,
-inside `if (coverIdx)`/`if (deadCS)`, about 30 lines before the
-`subtractRegions` call at 4391, and not built at all for a chart with no dead
-set. So it needs that section hoisted and kept.
+**The code is written; the sidecar is not re-baked.** `clipRegionsToChart` in
+`scripts/lib/zonebake.mjs` intersects the cut region with the chart's own
+triangles after `subtractRegions`, and `chartCS` is now kept alive from the dead
+intersection to that call rather than deleted between them.
 
-It also needs a decision on the charts with no dead region. They carry the same
-slack — more of it, 649.41mm² — but attached to their one piece rather than cut
-free, and it has never made a standalone piece. Clipping them too would trim
-that band; clipping only the charts with a dead set would fix every piece this
-run found.
+It runs only on a chart that has a dead region. Where nothing is subtracted,
+`subtractRegions` hands the claim straight back and `cutRegions` must stay
+byte-identical to `subRegions` — the guard in `tests/chair-zones.test.ts` that
+catches a stale bake. All 14 off-surface pieces are on charts that do carry a
+dead region, so this fixes every one the run found. The 649.41mm² of the same
+slack on the 14 coverless charts stays, attached to its one piece rather than
+cut free, and has never made a standalone piece; that remainder is unmeasured.
 
-Then **re-bake** — and that needs `stubs/dead-zones.3mf`, which lives outside
-the repo. Fixing the code without re-baking would repeat #296's eighth-round
-finding, where a corrected `subtractRegions` shipped a stale sidecar.
+**What is left is the re-bake**, and it needs `stubs/dead-zones.3mf`, which
+lives outside the repo:
+
+1. Re-bake the chair (`bake-zones`).
+2. `npm run build && npx vite-node scripts/check-cut-ribbon-ink.mjs` — it exits
+   1 and names the mark today, and should exit 0 with "No off-surface piece was
+   shown to reach the print" after.
+3. `npx vite-node scripts/measure-cut-offsurface.mjs` — "at least 50% off"
+   should go 14 to 0.
+4. **`expect(examined).toBe(41)` in `tests/chair-zones.test.ts` will move.** That
+   pin exists to force a human look when a re-bake changes the cut region, so it
+   doing its job is the point. Re-derive the new value from
+   `npx vite-node scripts/measure-seam-overlap.mjs` rather than guessing it: an
+   in-memory preview of the clip over the shipped sidecar gave 47 pieces and
+   131.04mm², but it re-rounds coordinates instead of re-baking, so treat that
+   as the shape of the change and not the number.
+5. **Consider tightening the conservation bound back.** It is one-sided now,
+   because the clip removes up to 94.98mm² from a chart and the old two-sided
+   2mm² bound would fail on 9 of 12. With the sidecar re-baked, the reference
+   can include the clip and go two-sided again.
+
+Until then the section stays open. Merging the code without the re-baked sidecar
+would repeat #296's eighth-round finding, where a corrected `subtractRegions`
+shipped a stale sidecar.
 
 Full method, the two independent derivations, the control, and the four wing
 excursions the split cannot explain are in

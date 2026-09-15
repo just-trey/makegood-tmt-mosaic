@@ -22,6 +22,8 @@ import { fileURLToPath } from 'node:url';
 import { getManifold } from '../src/geometry/manifold';
 import {
   regionNetArea,
+  clipRegionsToChart,
+  MIN_CUT_PIECE_MM2,
   SIMPLIFY_TOL_MM,
   MIN_HOLE_AREA_MM2,
   MIN_HOLE_WIDTH_MM,
@@ -351,6 +353,40 @@ console.log(
     `under MIN_HOLE_AREA_MM2 (${MIN_HOLE_AREA_MM2}). A component under that floor and touching ` +
     `the outer boundary is a dropped hole in cause and an edge in position, which is the case the ` +
     `split above cannot separate. One at or over the floor would not be, and would want its own look.`,
+);
+
+/* ----------------------------------------------- what clipping to the chart would take off each */
+
+// The preview `tests/chair-zones.test.ts` cites for its one-sided bound, and the tech-debt
+// checklist for the re-bake. Applies `clipRegionsToChart` to the SHIPPED cut regions in memory:
+// not a re-bake (it re-rounds coordinates rather than re-deriving them), so read it as the size of
+// the change and not as the sidecar that results.
+console.log('\nWhat clipping the cut region to the chart would remove, per chart:');
+console.log(
+  `${'chart'.padEnd(40)} ${'removed mm²'.padStart(11)} ${'of'.padStart(10)} ${'pieces'.padStart(10)}`,
+);
+let clipWorst = 0;
+let clipOverTwo = 0;
+let clipCharts = 0;
+for (const zone of z.zones)
+  for (const chart of zone.charts) {
+    if (!(chart.deadRegions ?? []).length) continue;
+    clipCharts++;
+    const chartCS = chartSection(chart);
+    const clipped = clipRegionsToChart(wasm, chart.cutRegions, chartCS, MIN_CUT_PIECE_MM2);
+    chartCS.delete();
+    const was = chart.cutRegions.reduce((t, r) => t + regionNetArea(r), 0);
+    const now = clipped.reduce((t, r) => t + regionNetArea(r), 0);
+    clipWorst = Math.max(clipWorst, was - now);
+    if (was - now > 2) clipOverTwo++;
+    console.log(
+      `${`${zone.id}/${chart.libraryPartId}`.padEnd(40)} ${(was - now).toFixed(3).padStart(11)} ` +
+        `${was.toFixed(1).padStart(10)} ${`${chart.cutRegions.length} to ${clipped.length}`.padStart(10)}`,
+    );
+  }
+console.log(
+  `  Worst on one chart ${clipWorst.toFixed(2)}mm²; over 2mm² on ${clipOverTwo} of the ` +
+    `${clipCharts} charts that carry a dead region.`,
 );
 
 /* ------------------------------------------------- the cross-check that is not the boolean */

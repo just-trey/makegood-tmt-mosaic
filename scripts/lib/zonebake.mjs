@@ -2438,6 +2438,34 @@ export function subtractRegions(wasm, regions, holes, minPieceArea) {
 }
 
 /**
+ * `regions` clipped to the chart's own triangles, with anything left under `minPieceArea` gone.
+ *
+ * Runs after `subtractRegions` because the subtraction is what makes this necessary. `subRegions`
+ * and `deadRegions` are two INDEPENDENT `simplifyLoop` passes over one physical boundary, from
+ * different source polylines, so they can disagree by twice the tolerance; the difference cuts the
+ * part of that disagreement lying outside the triangles free as its own polygon. Such a polygon
+ * still cuts — `lookup` answers the nearest triangle at any distance, so the runtime snaps it to
+ * the patch edge and extrudes a mark on surface the design never covered.
+ *
+ * Measured before this clip: 14 of the chair's 87 cut pieces at least half off-surface, and a
+ * driven A/B put one of them on the print as a 1.000 x 32.543mm mark on `Wheel mount (left)`.
+ * docs/findings/2026-09-09-cut-ribbon-offsurface.md, `npx vite-node
+ * scripts/check-cut-ribbon-ink.mjs`.
+ */
+export function clipRegionsToChart(wasm, regions, chartCS, minPieceArea) {
+  if (!regions.length) return regions;
+  const a = new wasm.CrossSection(
+    regions.flatMap((r) => [r.outer, ...(r.holes ?? [])]),
+    'EvenOdd',
+  );
+  const kept = a.intersect(chartCS);
+  const out = classifyRegions(kept.toPolygons().map((p) => p.map(([x, y]) => [x, y])));
+  a.delete();
+  kept.delete();
+  return out.filter((r) => regionNetArea(r) >= minPieceArea);
+}
+
+/**
  * Area (mm²) of one `{ outer, holes }` region: the outer loop less its holes, unsigned.
  *
  * Exported because the same sum is what the bake log reports, what dropSmallRegions filters on, and
@@ -4347,17 +4375,21 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         chartTris,
         subRegions,
       };
+      // Built once and kept: the dead intersection needs it, and so does the clip below. Only on a
+      // chart that HAS something subtracted — where nothing is, `subtractRegions` hands the claim
+      // straight back and `cutRegions` must stay byte-identical to `subRegions`, which is the guard
+      // that catches a stale bake.
+      let chartCS = null;
       if (coverIdx) {
         chart.deadRegions = [];
         if (deadCS) {
-          const chartCS = new opts.wasm.CrossSection(
+          chartCS = new opts.wasm.CrossSection(
             list.map((e) => triRing(e.zTri)),
             'NonZero',
           );
           const cut = deadCS.intersect(chartCS);
           const rings = cut.toPolygons().map((ring) => ring.map(([x, y]) => [x, y]));
           cut.delete();
-          chartCS.delete();
           chart.deadRegions = classifyRegions(rings)
             .map((r) => ({
               outer: r.outer,
@@ -4388,15 +4420,46 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       // them: 55 of the chair's 142 live pieces came back under a nozzle square, and one of them
       // cut a visible 0.4mm mark into the seat back. Done once here, cleaned once here, and the
       // sheet keeps drawing `subRegions` so the hatch still has a silhouette to sit on.
-      chart.cutRegions = subtractRegions(
+      const cutPieces = subtractRegions(
         opts.wasm,
         subRegions,
         chart.deadRegions ?? [],
         minCutPieceArea,
-      ).map((r) => ({
+      );
+      // And then back onto the surface the part actually has. See clipRegionsToChart: the
+      // subtraction is between two independent simplifications of one boundary, and what it leaves
+      // outside the triangles still cuts.
+      // Clipped with NO floor, then floored separately, because the two remove different things
+      // and only one of them is surface. What the clip takes is off the part: nothing was ever
+      // printable there and nobody needs telling. What the FLOOR then takes is on-chart surface a
+      // design could have used, so it gets a warning of its own, the way the island and fold drops
+      // above do.
+      let onChart = cutPieces;
+      if (chartCS && chart.deadRegions?.length) {
+        const clipped = clipRegionsToChart(opts.wasm, cutPieces, chartCS, 0);
+        const offChart =
+          cutPieces.reduce((t, r) => t + regionNetArea(r), 0) -
+          clipped.reduce((t, r) => t + regionNetArea(r), 0);
+        if (offChart > 1e-6)
+          log(
+            `  zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": clipped ` +
+              `${offChart.toFixed(3)}mm² of cut region off the chart's own triangles`,
+          );
+        onChart = clipped.filter((r) => regionNetArea(r) >= minCutPieceArea);
+        const shed = clipped.filter((r) => regionNetArea(r) < minCutPieceArea);
+        if (shed.length)
+          warnings.push(
+            `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": dropped ${shed.length} ` +
+              `cut piece(s) under ${minCutPieceArea}mm² (largest ` +
+              `${Math.max(...shed.map(regionNetArea)).toFixed(3)}mm²) after clipping to the ` +
+              `chart — artwork placed there will not cut`,
+          );
+      }
+      chart.cutRegions = onChart.map((r) => ({
         outer: roundLoop(r.outer),
         holes: r.holes.map(roundLoop),
       }));
+      if (chartCS) chartCS.delete();
       if (!chart.cutRegions.length)
         warnings.push(
           `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": nothing of its claim survives ` +
