@@ -755,7 +755,8 @@ describe('chart reconstruction', () => {
   // arithmetic subtract the same surface twice — 24.7% out on `seat-left`/`chair-storage-left`.
   // turf is also a different engine from the Manifold CrossSection the bake subtracts with, so
   // agreement between them is a real cross-check rather than the bake grading itself.
-  it("bakes the cut region as the claim less what's hidden", () => {
+  it("bakes the cut region as the claim less what's hidden", async () => {
+    const wasm = await getManifold();
     const area = (rs: { outer: number[][]; holes: number[][][] }[]): number =>
       rs.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
     const close = (r: number[][]): number[][] =>
@@ -763,10 +764,40 @@ describe('chart reconstruction', () => {
     const multi = (rs: { outer: number[][]; holes: number[][][] }[]): PolyFeature =>
       turf.multiPolygon(rs.map((r) => [close(r.outer), ...r.holes.map(close)])) as PolyFeature;
 
+    /**
+     * How much of a turf reference lies off the chart's own triangles — the amount the bake's clip
+     * is entitled to remove. Manifold rather than turf: unioning thousands of triangles in turf is
+     * the slow, fragile half of this, and the reference itself is still turf's, so the engines
+     * still disagree where it matters.
+     */
+    const refOffChartArea = (
+      ref: PolyFeature | null,
+      chartCS: InstanceType<ManifoldAPI['CrossSection']>,
+    ): number => {
+      if (!ref) return 0;
+      const g = ref.geometry;
+      const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+      const refCS = new wasm.CrossSection(
+        polys.flat().map((ring) => ring.map(([x, y]: number[]) => [x, y])) as [number, number][][],
+        'EvenOdd',
+      );
+      const off = refCS.subtract(chartCS);
+      const a = off.area();
+      off.delete();
+      refCS.delete();
+      return a;
+    };
+
     for (const z of sidecar.zones)
       for (const c of z.charts) {
         const where = `${z.id}/${c.libraryPartId}`;
         const dead = c.deadRegions ?? [];
+        const chartCS = new wasm.CrossSection(
+          c.chartTris.map((tri: number[]) =>
+            tri.map((i: number) => [c.uv[2 * i], c.uv[2 * i + 1]]),
+          ) as [number, number][][],
+          'NonZero',
+        );
         const ref = dead.length
           ? (turf.difference(multi(c.subRegions), multi(dead)) as PolyFeature | null)
           : multi(c.subRegions);
@@ -784,15 +815,20 @@ describe('chart reconstruction', () => {
         // since `subtractRegions` gained its no-covers path, and the 3.8mm² it was sized for was
         // that drift, not the filter.
         //
-        // **One-sided, since the bake clips the cut region to the chart's own triangles.** The
-        // claim less the dead set is no longer the whole story: `clipRegionsToChart` then removes
-        // what falls outside the part, which on this sidecar would be up to 94.98mm² on
-        // `right`/`chair-wing-right` and over 2mm² on 9 of the 12 charts that carry a dead region.
-        // So the direction this still pins is the one that matters — the bake must never claim
-        // MORE than the claim less what is hidden. That it does not claim LESS than it should is
-        // carried by the on-chart invariant in tests/zone-bake.test.ts and by the piece-count and
-        // floor guards above, which a mass deletion would trip.
+        // **Two-sided still, but the lower bound moves with the clip.** The claim less the dead
+        // set stopped being the whole story when the bake started clipping the cut region to the
+        // chart's own triangles, so `want` overstates by whatever of it falls off the part. That
+        // amount is measured here rather than assumed, which keeps the bound tight in both
+        // directions and valid before and after the re-bake. Preview across the shipped sidecar:
+        // up to 94.46mm² on `right`/`chair-wing-right`, over 2mm² on 9 of the 12 charts with a
+        // dead region — `npx vite-node scripts/measure-cut-offsurface.mjs`.
+        const offChart = refOffChartArea(ref, chartCS);
         expect(got - want, `${where}: cut region claims more than claim-less-dead`).toBeLessThan(2);
+        expect(
+          want - got,
+          `${where}: cut region claims less than the part of claim-less-dead that is ON the part`,
+        ).toBeLessThan(offChart + 2);
+        chartCS.delete();
       }
   });
 

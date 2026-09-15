@@ -504,9 +504,9 @@ for (const t of readable) {
     continue;
   }
   // Bounded to the mark's own neighbourhood. Taken over every A-only vertex on the part, the bbox
-  // would absorb a second deleted piece — the rival guard only reaches 12mm — and the dimensions
-  // quoted in the report would describe two marks as one. Anything outside is counted and named
-  // rather than dropped.
+  // would absorb a second deleted piece — the rival guard reaches exactly CLUSTER_MM — and the
+  // dimensions quoted in the report would describe two marks as one. Anything outside is counted
+  // and named rather than dropped.
   const cluster = near(only, t.snap.p, CLUSTER_MM);
   const strays = only.length - cluster.length;
   const ax = [0, 1, 2].map((k) => [

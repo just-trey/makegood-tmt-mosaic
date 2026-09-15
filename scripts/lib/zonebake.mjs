@@ -4429,18 +4429,30 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       // And then back onto the surface the part actually has. See clipRegionsToChart: the
       // subtraction is between two independent simplifications of one boundary, and what it leaves
       // outside the triangles still cuts.
-      const onChart =
-        chartCS && chart.deadRegions?.length
-          ? clipRegionsToChart(opts.wasm, cutPieces, chartCS, minCutPieceArea)
-          : cutPieces;
-      if (onChart !== cutPieces) {
-        const was = cutPieces.reduce((t, r) => t + regionNetArea(r), 0);
-        const now = onChart.reduce((t, r) => t + regionNetArea(r), 0);
-        if (cutPieces.length !== onChart.length || was - now > 1e-6)
+      // Clipped with NO floor, then floored separately, because the two remove different things
+      // and only one of them is surface. What the clip takes is off the part: nothing was ever
+      // printable there and nobody needs telling. What the FLOOR then takes is on-chart surface a
+      // design could have used, so it gets a warning of its own, the way the island and fold drops
+      // above do.
+      let onChart = cutPieces;
+      if (chartCS && chart.deadRegions?.length) {
+        const clipped = clipRegionsToChart(opts.wasm, cutPieces, chartCS, 0);
+        const offChart =
+          cutPieces.reduce((t, r) => t + regionNetArea(r), 0) -
+          clipped.reduce((t, r) => t + regionNetArea(r), 0);
+        if (offChart > 1e-6)
           log(
             `  zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": clipped ` +
-              `${(was - now).toFixed(3)}mm² of cut region off the chart's own triangles ` +
-              `(${cutPieces.length} pieces to ${onChart.length})`,
+              `${offChart.toFixed(3)}mm² of cut region off the chart's own triangles`,
+          );
+        onChart = clipped.filter((r) => regionNetArea(r) >= minCutPieceArea);
+        const shed = clipped.filter((r) => regionNetArea(r) < minCutPieceArea);
+        if (shed.length)
+          warnings.push(
+            `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": dropped ${shed.length} ` +
+              `cut piece(s) under ${minCutPieceArea}mm² (largest ` +
+              `${Math.max(...shed.map(regionNetArea)).toFixed(3)}mm²) after clipping to the ` +
+              `chart — artwork placed there will not cut`,
           );
       }
       chart.cutRegions = onChart.map((r) => ({

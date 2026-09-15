@@ -1173,8 +1173,11 @@ describe('hidden surface classification', () => {
       pcs.delete();
     }
     chartCS.delete();
-    // Boolean noise only. Anything approaching MIN_CUT_PIECE_MM2 is a piece, not noise.
-    expect(worst).toBeLessThan(1e-6);
+    // Not 1e-6: `roundLoop` snaps the clip's output to 3dp afterwards, which can move a piece's
+    // area by about its perimeter x 1e-3, and this fixture only survives a tighter bound because
+    // it is grid-aligned. 0.01mm² is an order of magnitude under MIN_CUT_PIECE_MM2, so anything
+    // this admits is rounding and anything it rejects is a piece.
+    expect(worst).toBeLessThan(0.01);
   });
 
   it('a flush box on a finely meshed plate leaves one clean patch, inset by the bleed', () => {
