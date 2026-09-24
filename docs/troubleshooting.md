@@ -1250,9 +1250,7 @@ be offered again.
 
 **What to do.** Reload the page before carrying on. Most failures stop before
 touching your printer, shape or colour settings, so those are usually still what
-they were. The one case that can still change something is a failure while
-switching to the saved session's part: the part can already be the saved one
-while its designs never came back. A reload starts clean.
+they were. A reload starts clean.
 
 **Why it happens.** The stored session is JSON in the browser's local storage for
 this site. It reads as valid JSON but describes something this build cannot use:
@@ -1267,10 +1265,33 @@ ever being offered.
 
 **What it does affect.** The printer, shape and colour settings only change once
 every design in the session has come back, so a failed one usually leaves them
-exactly as they were. Switching to the saved session's part happens separately,
-and can still leave that part set while its designs do not come back. The app
-stops saving until you reload, so nothing gets written over what you had, but it
-also means anything you do before reloading will not be saved. Reload first.
+exactly as they were. A saved part that does not load has its own message
+(below). The app stops saving until you reload, so nothing gets written over
+what you had, but it also means anything you do before reloading will not be
+saved. Reload first.
+
+## Troubleshooting: "Couldn't restore your session: the … didn't load"
+
+Full text: _Couldn't restore your session: the Footrest didn't load. Reload the
+page to try again._ The part named is the one the session was saved on.
+
+A second form: _Your session wasn't restored: the part changed before the
+Footrest loaded. Reload the page to try again._ That one means a different part
+was picked while the saved one was still loading.
+
+**What it means.** You asked for a saved session back, and the part it was saved
+on did not load. Usually the parts library could not be reached: a dropped
+connection, or a site update landing mid-visit.
+
+**What it does affect.** Nothing from the session is applied. Your settings and
+designs stay as they were before you clicked Restore, on the part you had, or on
+the one you picked. The saved session is kept, and the next visit offers it
+again.
+
+The app stops saving until you reload, so the saved session is not replaced.
+Anything you do before reloading will not be saved.
+
+**What to do.** Reload once the connection is back, and click Restore again.
 
 ## Troubleshooting: "… could not be restored from the saved session…"
 

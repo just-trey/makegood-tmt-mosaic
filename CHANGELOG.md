@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   malformed `min=` used to make the guard compare against `NaN`, which is
   never `>=` anything.
 
+- **A restore whose part doesn't load now leaves the app as it was.** If the
+  parts library can't be reached, the app goes back to the part and settings you
+  had before clicking Restore, says which part didn't load, and keeps the saved
+  session to offer again on reload. It used to switch to the saved part anyway,
+  without its pieces.
+
+- **A part whose file doesn't load no longer gets empty rotated copies.** On
+  the wheel, a failed Top used to leave an empty Bottom in the part list too.
+
 - **An image's notice pill no longer jumps to the bottom of the list when
   Detail or Colors changes it.** Flipping between the traced and the capped
   notice now rewrites the pill where it stands.

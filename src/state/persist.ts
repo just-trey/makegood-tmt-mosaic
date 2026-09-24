@@ -12,7 +12,7 @@ import {
 import { ASSEMBLY_KINDS, buildParamMax, firstOfferedKind } from '../assembly/kinds';
 import { HUBCAP_MIN_DIAMETER_MM } from '../geometry/hubcap';
 import { getPrinter } from '../export/printers';
-import { asmLoadFullAssembly } from '../assembly/parts';
+import { asmSwitchKindAndLoad } from '../assembly/switchKind';
 import { parseSVGDocument } from '../svg/parse';
 import { decodeWorkingImage, encodeWorkingImage } from '../raster/store';
 import {
@@ -342,12 +342,28 @@ function savedSessionIsOnHiddenKind(): boolean {
  * mid-work. Mirrors helpPanel.ts's degrade-silently pattern for the same reason. lastSaveFailed
  * is the one exception — read only at unload, to decide whether the native prompt is warranted.
  */
+/**
+ * A restore stopped before its designs were applied, because the saved part did not load or the
+ * user switched part while it loaded. Nothing of the session reached `state`, so, unlike any other
+ * failed restore, storage is left alone and the session can be offered again.
+ */
+export class SessionPartsError extends Error {
+  constructor(partName: string, why: 'failed' | 'superseded') {
+    super(
+      why === 'failed'
+        ? `Couldn't restore your session: the ${partName} didn't load. Reload the page to try again.`
+        : `Your session wasn't restored: the part changed before the ${partName} loaded. Reload the page to try again.`,
+    );
+    this.name = 'SessionPartsError';
+  }
+}
+
 /** The notice shown when a restore failed. Exported so the banner and the re-announce agree. */
 export const SESSION_WRITES_DISABLED_MSG =
   'That saved session could not be opened, so it was cleared. Reload the page to start clean.';
 
 export function saveSession(): void {
-  if (writesDisabledAfterFailedRestore) {
+  if (writesDisabledAfterFailedRestore !== null) {
     // Two things this must not skip.
     //
     // `lastSaveFailed` drives the beforeunload prompt, so leaving it false meant the guard went
@@ -358,7 +374,7 @@ export function saveSession(): void {
     // while persisting nothing. warn() dedupes by message, so this is free. Same reason csgFault.ts
     // re-announces rather than pushing once.
     // It lands one render late, since this runs on the debounced save rather than inside a build.
-    warn(SESSION_WRITES_DISABLED_MSG);
+    warn(writesDisabledAfterFailedRestore);
     return;
   }
   // An empty snapshot (no artwork, no loaded parts) isn't worth restoring — and saving one
@@ -416,19 +432,33 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let restoring = false;
 
 /**
- * Set when a restore failed part-way, and never cleared: writes stay off until the page reloads.
+ * Set when a restore failed, and never cleared: writes stay off until the page reloads. Holds the
+ * notice the failure raised, re-stated on every skipped save.
  *
- * The failure message tells the user to reload precisely because a throw from asmLoadFullAssembly
- * can still leave state.assembly.kindId pointing at the restored part while its sources and
- * artwork never got applied, so what is in memory at that point can be inconsistent. Without this
- * the next rebuild's debounced save wrote exactly that state back over the session the catch had
- * just cleared, and the next visit offered a session built from the thing that had failed.
+ * Two reasons. Most throws can land after the parts loaded but before the artwork was fully
+ * applied, so memory is not trusted: without this the next rebuild's debounced save wrote exactly
+ * that state back over the session the catch had just cleared. A SessionPartsError rolls back
+ * cleanly, but tells the user to reload and try again, which only holds if storage still has the
+ * session: a save of the rolled-back work, when the user had designs loaded, would replace it.
  */
-let writesDisabledAfterFailedRestore = false;
+let writesDisabledAfterFailedRestore: string | null = null;
 
-/** Called by the restore banner when a restore throws part-way. */
-export function disableSessionWritesAfterFailedRestore(): void {
-  writesDisabledAfterFailedRestore = true;
+/** Called by the restore banner when a restore throws. */
+export function disableSessionWritesAfterFailedRestore(notice = SESSION_WRITES_DISABLED_MSG): void {
+  writesDisabledAfterFailedRestore = notice;
+}
+
+/**
+ * Called by the restore banner after a SessionPartsError. Written back, not just left: a save that
+ * ran before the click, once the user had designs loaded, has already replaced it in storage.
+ */
+export function keepSessionForRetry(session: PersistedSession, notice: string): void {
+  disableSessionWritesAfterFailedRestore(notice);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // storage unavailable or full: the session is lost to a reload either way
+  }
 }
 
 /** Debounced save — called after every rebuild (see app/rebuild.ts) and a couple of state changes
@@ -623,7 +653,7 @@ export function loadSavedSession(): PersistedSession | null {
  * assembly-kind switch does (see applyPartKind). Re-parses each source's saved SVG text rather
  * than trying to persist `ParsedSVG` directly (see the note on DesignSource.svgText).
  *
- * Assembly restore awaits asmLoadFullAssembly() directly rather than going through
+ * Assembly restore awaits the load (asmSwitchKindAndLoad) rather than going through
  * maybeAutoLoadAssembly()'s fire-and-forget call, because the zone bindings below need the
  * restored parts (and their fresh session-local ids) to already exist.
  *
@@ -721,6 +751,15 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   // decode is caught (per-image) or has already propagated (an SVG's parseSVGDocument, uncaught by
   // design — see the comment on `sources`), and either way this line is never reached with `state`
   // still holding the pre-restore values it would otherwise be a mix of.
+  //
+  // Committed before the parts load rather than after it, because the load reads some of these
+  // (a generated role's mesh follows `hubcapDiameterMm`). So they are snapshotted, and put back
+  // if that load does not complete; asmSwitchKindAndLoad puts the kind back itself.
+  const before = {
+    scalars: Object.fromEntries(
+      Object.keys(pending).map((k) => [k, state[k as keyof AppState]]),
+    ) as Partial<AppState>,
+  };
   Object.assign(state, pending);
 
   const kind =
@@ -729,17 +768,14 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       : undefined;
   let keepSavedZones = true;
   if (session.shapeKind === 'assembly' && kind) {
-    state.assembly.kindId = kind.id;
-    state.assembly.variantId = session.assembly.variantId;
-    // Cleared before the load, not left to asmLoadFullAssembly's own clear. That clear sits behind
-    // a confirm ("Load the full X? This clears any parts you've already added"), and the boot's
-    // auto-load has always filled this list, so restoring raised a second dialog on top of the one
-    // the user just accepted. Cancelling it returned without touching the scene while `kindId` and
-    // the dropdown had already moved: the export then wrote the *previous* kind's parts under the
-    // restored kind's filename. Measured 2026-08-24: a restored footrest session exported
-    // `mosaic-footrest.3mf` holding the wheel's Top/Bottom/Cap, valid and printable, no warning.
-    state.assembly.parts = [];
-    await asmLoadFullAssembly();
+    // The designs are applied below this, so a load that did not complete must not leave the
+    // saved kind standing without them. A newer part switch owns the kind; the session's designs
+    // are not applied to a part they were not saved for.
+    const outcome = await asmSwitchKindAndLoad(kind.id, session.assembly.variantId);
+    if (outcome === 'failed' || outcome === 'superseded') {
+      Object.assign(state, before.scalars);
+      throw new SessionPartsError(kind.name, outcome);
+    }
   } else {
     // Either an assembly kind that no longer exists (renamed/retired since the session was saved),
     // or a retired flat mode ('disc', 'rect', 'round', 'stl'). Neither has an option in the

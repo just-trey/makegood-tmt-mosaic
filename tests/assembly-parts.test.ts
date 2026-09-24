@@ -663,6 +663,29 @@ describe('asmLoadFullAssembly', () => {
     expect(copy.angleDeg).toBe(180);
   });
 
+  // A copy clones the primary's mesh, so a copy of a primary that never loaded has none: it sits
+  // in the part list as a second unloaded "Bottom" the alert never named.
+  it('makes no rotated copies of a primary whose file did not load', async () => {
+    state.assembly.library = wheelLibrary();
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation(async (url: string) =>
+          url.includes('wheel-half')
+            ? { ok: false, status: 404 }
+            : { ok: true, arrayBuffer: async () => twoFacedMesh() },
+        ),
+    );
+
+    expect(await asmLoadFullAssembly()).toBe('failed');
+
+    expect(state.assembly.parts.map((p) => [p.roleId, p.loaded])).toEqual([
+      ['wheel-half', false],
+      ['wheel-hub-cap', true],
+    ]);
+  });
+
   it('does not ask before loading into an empty assembly', async () => {
     state.assembly.library = wheelLibrary();
     vi.stubGlobal(
