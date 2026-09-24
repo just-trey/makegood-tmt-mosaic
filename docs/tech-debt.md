@@ -744,7 +744,12 @@ that the notice did not close.
   says lower Colors or Detail, dropped-color says raise Detail — so both on one image contradict
   each other. Reproduced synthetically (1024 six-pixel blocks over two flat bands plus one-pixel
   specks, 320x320 at Colors 5 and Detail 100: `capped: true`, `droppedColors: 1`), never on the
-  corpus. The section below is why it is not ruled out: the cap is a target, not a bound.
+  corpus.
+- **The cap now raises until the count is under, so a capped floor can go much higher.** On
+  512px 8-label noise at placed floor 1 it settles at 47px
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). The same command against the
+  previous `src/raster/trace.ts` stops at 7px with 9237 components. The higher the floor, the
+  likelier a whole color goes under it on a source that caps.
 - **A floor Detail cannot lower** covers two shapes of the same thing, and `detailLowersFloor`
   measures both rather than inferring either: a placement's nozzle-width floor pinning the floor
   (128px across 12.8mm drops a color at Detail 0, 50 and 100 alike), and the slider already at
@@ -777,37 +782,25 @@ that the notice did not close.
   a color on a capped trace at all, and the pinned-floor one needs the re-trace-on-resize item
   first.
 
-## `MAX_COMPONENTS` is a target, not the bound its name implies
+## `deChecker` can leave a component under the despeckle floor
 
-`traceLabelMap` ([src/raster/trace.ts](../src/raster/trace.ts)) raises the despeckle floor when the
-component count exceeds `MAX_COMPONENTS` (800), then never rechecks. The raise now reliably cuts
-the count, which it did not before 2026-08-20
-([2026-08-20 despeckle floor](findings/2026-08-20-despeckle-floor.md)), but it still does not bound
-it. Two ways past the cap, both after the count was taken:
+`despeckle` leaves nothing under the floor, but `deChecker` runs after it
+([src/raster/trace.ts](../src/raster/trace.ts)). Breaking a 2x2 checkerboard rewrites one cell,
+which can shave a pinch point and split a surviving component in two. One half can be under the
+floor the trace reports.
 
-- **Absorbing specks merges them into each other**, minting components above the new floor. So
-  putting the floor above all but the largest 799 does not leave 799. Reproduces on a speck field
-  handed straight to `traceLabelMap` with a high floor. **Not reproduced through the real decode
-  path since the despeckle fix**: the pixel art that looked like it did reads as photographic at
-  the measurement size (0.3045), so the app traces it at 512px, where the raise fires and 78
-  components come back. Whether a decodable image can still get past the cap is open.
-- **`deChecker` breaks 2x2 checkerboards by rewriting one cell**, which can shave a pinch point and
-  split a surviving component in two. Off-corpus it is common: about 8% of random label grids come
-  back with a component under the floor the trace reports, against 0% straight out of `despeckle`.
-  No corpus source does it, so what it costs a real image is unmeasured. Swapping the order is not
-  the fix, since `despeckle` relabels whole components and can create the checkerboard `deChecker`
-  exists to remove, and a self-touching ring is the worse failure.
-
-- The cap is a performance guard on `shapeToFeature`, so being over by a few hundred on a
-  pathological source costs time rather than correctness.
-- Closing it: loop the raise until `realCount()` is actually under (and decide what a second raise
-  does when a `deChecker` split is what pushed it over), or rename the constant and the flag to say
-  what they do. `capped` today means "a raise happened", not "the count is under".
-- The bench's `despeckle` mode checks the floor and the cap on every row, but only over CORPUS, so
-  its cap line has never had a source that could trip it. Both columns also read the components the
-  trace _returns_, which is fewer than the count it capped on: background components and any whose
-  ring collapsed are already gone. A transparent speck left under the floor would be a real defect,
-  and this guard would miss it.
+- **Off-corpus it happens**: 2 of 24 uniform-noise rows return a component under their floor.
+  Reproduce with `node_modules/.bin/vite-node scripts/bench-raster.ts cap`.
+- **No corpus source does it**, so what it costs a real image is unmeasured.
+- **Swapping the order is not the fix.** `despeckle` relabels whole components and can create the
+  checkerboard `deChecker` exists to remove, and a self-touching ring is the worse failure.
+- The cap is not affected: its loop rechecks the count after `deChecker`, so a split can cost it a
+  further raise but not the bound.
+- **The bench's `despeckle` mode can miss one.** Its `under` column reads the components the trace
+  _returns_: background components and any whose ring collapsed are already gone. A transparent
+  speck left under the floor would be a real defect, and this check would not see it.
+- Closing it needs a way to absorb the split pieces that cannot recreate a checkerboard, and a
+  check that counts background components too.
 
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 

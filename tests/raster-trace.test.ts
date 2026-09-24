@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { traceLabelMap } from '../src/raster/trace';
+import { MAX_COMPONENTS, traceLabelMap } from '../src/raster/trace';
 import { printableFloorPx } from '../src/raster/stats';
 import type { TracedComponent } from '../src/raster/trace';
 import { BACKGROUND } from '../src/raster/types';
@@ -297,6 +297,51 @@ describe('traceLabelMap', () => {
           expect(planarArea(inter)).toBeLessThanOrEqual(1);
         }
     }
+  });
+
+  it('comes back under MAX_COMPONENTS whenever it raises the floor', () => {
+    // No despeckle floor to start from, so the cap does all of the work on 25600 one-pixel specks.
+    // Absorbing them merges them into each other, and the merged ones clear the floor that was
+    // meant to remove them, so one raise is not enough here.
+    const { components, raises } = traceLabelMap(noise(1, 160, 8), params());
+    expect(raises).toBeGreaterThan(1);
+    expect(components.length).toBeLessThanOrEqual(MAX_COMPONENTS);
+  });
+
+  it('answers a deChecker split that tips it over the cap with the smallest raise', () => {
+    // 794 blocks of 6px, plus two gadgets of three components each: 800, not over. In each gadget
+    // the A,B/B,A where the two 'a' pieces meet diagonally is broken by rewriting the cell that
+    // joins the second piece's arm and tail, and the 'c' block stops that rewrite cascading into
+    // the next 2x2. The arm (1px) and tail (3px) come back as two pieces under the floor of 4, so
+    // the count after deChecker is 802.
+    const w = 121,
+      h = 90;
+    const rows = Array.from({ length: h }, () => Array<string>(w).fill('.'));
+    const paint = (x0: number, y0: number, pattern: string[]) =>
+      pattern.forEach((line, y) =>
+        [...line].forEach((ch, x) => {
+          if (ch !== '.') rows[y0 + y][x0 + x] = ch;
+        }),
+      );
+    for (let n = 0; n < 794; n++)
+      paint(1 + 3 * (n % 40), 1 + 4 * Math.floor(n / 40), ['aa', 'aa', 'aa']);
+    const gadget = ['aa...', 'aa...', 'aa...', '..aa.', '..acc', '..acc', '..acc'];
+    paint(1, 82, gadget);
+    paint(10, 82, gadget);
+    const floor = 4;
+    const { components, raises, floorPx } = traceLabelMap(
+      grid(
+        rows.map((r) => r.join('')),
+        'ac',
+      ),
+      params(),
+      floor,
+    );
+    // Floor + 1 absorbs the split pieces and nothing that cleared the floor: every block, both
+    // first 'a' pieces and both 'c' blocks come back.
+    expect(raises).toBe(1);
+    expect(floorPx).toBe(floor + 1);
+    expect(components).toHaveLength(794 + 4);
   });
 
   it('ignores background — a transparent margin cuts nothing', () => {

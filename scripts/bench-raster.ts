@@ -12,6 +12,7 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts blur        compensating blur against downscale
 //   node_modules/.bin/vite-node scripts/bench-raster.ts knee        does a knee survive a cheaper image?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts despeckle   does the despeckle floor hold?
+//   node_modules/.bin/vite-node scripts/bench-raster.ts cap         does MAX_COMPONENTS bound the count?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts floor       despeckle floor in mm, per placement
 //   node_modules/.bin/vite-node scripts/bench-raster.ts look        write traced SVGs to look at
 //
@@ -244,7 +245,7 @@ function sharpTurns(shapes: SVGShape[]): number {
 function traceWith(img: RasterImage, colors: number, params: TraceParams, placedFloor = 0) {
   const t0 = performance.now();
   const map = quantize(img, colors, params.blurRadius);
-  const { components, capped, floorPx } = traceLabelMap(map, params, placedFloor);
+  const { components, raises, floorPx } = traceLabelMap(map, params, placedFloor);
   const ms = performance.now() - t0;
   const painted = new Set(components.map((c) => map.palette[c.label]));
   const shapes: SVGShape[] = components.map((c, i) => ({
@@ -265,7 +266,7 @@ function traceWith(img: RasterImage, colors: number, params: TraceParams, placed
     rings,
     points,
     sharp: sharpTurns(shapes),
-    capped,
+    capped: raises > 0,
     ms: +ms.toFixed(1),
     shapes,
   };
@@ -964,6 +965,65 @@ async function modeDespeckle(names: string[]) {
 }
 
 /**
+ * Does MAX_COMPONENTS bound what the trace returns, and how many raises does it take to get there?
+ *
+ * Synthetic on purpose, where `despeckle` above is corpus-only: no corpus source reaches the cap, so
+ * that mode's cap line has never had anything to catch. Uniform label noise is the worst case for
+ * the cap, since every speck it absorbs has other specks to merge with.
+ */
+function modeCap() {
+  const rows: {
+    size: number;
+    labels: number;
+    placedFloor: number;
+    components: number;
+    floorPx: number;
+    under: number;
+    raises: number;
+    ms: number;
+  }[] = [];
+  for (const size of [160, 256, 400, 512])
+    for (const labels of [3, 8, 16])
+      for (const placedFloor of [1, 2]) {
+        const rng = mulberry32(size * 1000 + labels);
+        const grid = new Int16Array(size * size);
+        for (let i = 0; i < grid.length; i++) grid[i] = Math.floor(rng() * labels);
+        const palette = Array.from({ length: labels }, (_, i) => '#' + i.toString(16).repeat(6));
+        const params: TraceParams = {
+          blurRadius: 0,
+          despeckleFrac: 0,
+          alphaMax: 1,
+          flatness: 0.25,
+        };
+        const t0 = performance.now();
+        const r = traceLabelMap({ labels: grid, w: size, h: size, palette }, params, placedFloor);
+        const ms = performance.now() - t0;
+        rows.push({
+          size,
+          labels,
+          placedFloor,
+          components: r.components.length,
+          floorPx: r.floorPx,
+          // A `deChecker` split can leave a piece under the floor; the cap loop only answers for
+          // the count, so this stays visible here rather than folded into the pass/fail line.
+          under: r.components.filter((c) => c.area < r.floorPx).length,
+          raises: r.raises,
+          ms: +ms.toFixed(1),
+        });
+      }
+  console.table(rows);
+  const over = rows.filter((r) => r.components > MAX_COMPONENTS);
+  console.log(
+    over.length
+      ? `\n${over.length} row(s) came back over MAX_COMPONENTS (${MAX_COMPONENTS}).`
+      : `\nNo row exceeds MAX_COMPONENTS (${MAX_COMPONENTS}).`,
+  );
+  console.log(`Most raises on one row: ${Math.max(...rows.map((r) => r.raises))}.`);
+  console.log(`Rows with a component under their floor: ${rows.filter((r) => r.under).length}.`);
+  console.log(`Total trace time: ${rows.reduce((t, r) => t + r.ms, 0).toFixed(0)}ms.`);
+}
+
+/**
  * Real placements, as mm per working pixel. Every one goes through the scale rule the build uses
  * for that kind, not a restatement of it: a floor argued from a size the cut disagrees with would
  * be measuring nothing.
@@ -1318,6 +1378,9 @@ switch (mode) {
   case 'despeckle':
     await modeDespeckle(rest);
     break;
+  case 'cap':
+    modeCap();
+    break;
   case 'floor':
     await modeFloor(rest);
     break;
@@ -1332,7 +1395,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, blur, knee, despeckle, floor, look, ` +
+          `sizes, blur, knee, despeckle, cap, floor, look, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));
