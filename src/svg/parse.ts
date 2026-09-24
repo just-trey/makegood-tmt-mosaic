@@ -73,10 +73,15 @@ export function svgLengthToMM(value: string | null): number | null {
   return factor == null ? null : l.n * factor;
 }
 
-/** Invalid or missing fill-opacity falls back to the SVG default: fully opaque. */
+/**
+ * An `<alpha-value>`: a number or a percentage, clamped to 0..1 as the spec says, so `-1` hides a
+ * shape the way a browser does. Anything else is invalid, which a browser renders fully opaque.
+ */
 export function parseFillOpacity(raw: string | null): number {
-  const n = parseFloat(raw || '');
-  return Number.isFinite(n) ? n : 1;
+  const m = /^([+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?)(%?)$/i.exec((raw ?? '').trim());
+  if (!m) return 1;
+  const n = parseFloat(m[1]) / (m[2] ? 100 : 1);
+  return Math.min(1, Math.max(0, n));
 }
 
 /**
@@ -91,16 +96,32 @@ export function svgLengthIsPhysical(value: string | null): boolean {
   return !!l && PHYSICAL_UNITS.has(l.unit);
 }
 
-function getInlineStyleProp(el: Element, prop: string): string | null {
-  const style = el.getAttribute('style');
-  if (!style) return null;
-  const m = style.match(new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)'));
-  return m ? m[1].trim() : null;
+interface StyleDecl {
+  value: string;
+  important: boolean;
 }
+type StyleDecls = Map<string, StyleDecl>;
 
-/** Read a presentation property from the style attribute first, then the attribute. */
-export function getStyleProp(el: Element, prop: string): string | null {
-  return getInlineStyleProp(el, prop) ?? el.getAttribute(prop);
+const CSS_COMMENT = /\/\*[\s\S]*?\*\//g;
+const IMPORTANT = /\s*!\s*important$/i;
+
+/**
+ * Declarations in one CSS block, with `!important` split off the value so no reader ever sees it.
+ * Merged into `into`, where a later declaration wins unless it would demote an `!important` one.
+ */
+function parseDeclarations(block: string, into: StyleDecls = new Map()): StyleDecls {
+  for (const decl of block.replace(CSS_COMMENT, '').split(';')) {
+    const idx = decl.indexOf(':');
+    if (idx < 0) continue;
+    const prop = decl.slice(0, idx).trim().toLowerCase();
+    const raw = decl.slice(idx + 1).trim();
+    const value = raw.replace(IMPORTANT, '');
+    const important = value !== raw;
+    if (!prop || !value) continue;
+    if (into.get(prop)?.important && !important) continue;
+    into.set(prop, { value, important });
+  }
+  return into;
 }
 
 /**
@@ -109,30 +130,44 @@ export function getStyleProp(el: Element, prop: string): string | null {
  * export pattern) — tag/id/combinator selectors are deliberately ignored so this can never
  * change the resolved fill of an SVG that has no `class` attributes on its shapes.
  */
-function parseClassRules(doc: Document): Map<string, Record<string, string>> {
-  const rules = new Map<string, Record<string, string>>();
+function parseClassRules(doc: Document): Map<string, StyleDecls> {
+  const rules = new Map<string, StyleDecls>();
   doc.querySelectorAll('style').forEach((styleEl) => {
-    const css = (styleEl.textContent || '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const css = (styleEl.textContent || '').replace(CSS_COMMENT, '');
     const blockRe = /([^{}]+)\{([^{}]*)\}/g;
     let m: RegExpExecArray | null;
     while ((m = blockRe.exec(css))) {
-      const decls: Record<string, string> = {};
-      m[2].split(';').forEach((decl) => {
-        const idx = decl.indexOf(':');
-        if (idx < 0) return;
-        const prop = decl.slice(0, idx).trim();
-        const value = decl.slice(idx + 1).trim();
-        if (prop && value) decls[prop] = value;
-      });
-      if (!Object.keys(decls).length) continue;
       const classNames = m[1].match(/\.[-\w]+/g) || [];
-      classNames.forEach((c) => {
+      for (const c of classNames) {
         const name = c.slice(1);
-        rules.set(name, { ...rules.get(name), ...decls });
-      });
+        rules.set(name, parseDeclarations(m[2], rules.get(name)));
+      }
     }
   });
   return rules;
+}
+
+/**
+ * Resolves a presentation property through the cascade: `!important` inline style, then
+ * `!important` class rule, then plain inline style, class rule, and finally the attribute.
+ * No value it returns from a style declaration carries `!important`.
+ */
+export function createStyleResolver(doc: Document): (el: Element, prop: string) => string | null {
+  const classRules = parseClassRules(doc);
+  return (el, prop) => {
+    const inline = parseDeclarations(el.getAttribute('style') ?? '').get(prop);
+    if (inline?.important) return inline.value;
+    let cls: StyleDecl | undefined;
+    const classes = (el.getAttribute('class') ?? '').trim().split(/\s+/).filter(Boolean);
+    for (let i = classes.length - 1; i >= 0; i--) {
+      const d = classRules.get(classes[i])?.get(prop);
+      if (d && (!cls || (d.important && !cls.important))) cls = d;
+    }
+    if (cls?.important) return cls.value;
+    // Not stripped here: `!important` is invalid in an attribute, so a browser ignores the whole
+    // value. Stripping it turned `fill="none !important"`, which a browser draws black, into a drop.
+    return inline?.value ?? cls?.value ?? el.getAttribute(prop);
+  };
 }
 
 /**
@@ -228,23 +263,9 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   let rawSVGCircle: ParsedSVG['rawSVGCircle'] = null;
   let bestR = -1;
 
-  // Cascade: inline `style` attribute > matched <style> class rule > presentation attribute.
   // Elements with no `class` attribute (i.e. every shape in SVGs we already support) fall
-  // straight through the empty middle step to the same two lookups as before.
-  const classRules = parseClassRules(doc);
-  function resolveProp(el: Element, prop: string): string | null {
-    const inline = getInlineStyleProp(el, prop);
-    if (inline != null) return inline;
-    const classAttr = el.getAttribute('class');
-    if (classAttr) {
-      const classes = classAttr.trim().split(/\s+/).filter(Boolean);
-      for (let i = classes.length - 1; i >= 0; i--) {
-        const decls = classRules.get(classes[i]);
-        if (decls && prop in decls) return decls[prop];
-      }
-    }
-    return el.getAttribute(prop);
-  }
+  // straight through the empty class-rule step to the inline style and the attribute.
+  const resolveProp = createStyleResolver(doc);
 
   function getAncestorFill(el: Element): string | null {
     let p = el.parentElement;
@@ -304,7 +325,9 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
     const fillRaw = resolveProp(el, 'fill');
     const fillUrl = fillRaw && /url\(/.test(fillRaw);
-    const opacity = parseFillOpacity(resolveProp(el, 'fill-opacity'));
+    const opacity =
+      parseFillOpacity(resolveProp(el, 'fill-opacity')) *
+      parseFillOpacity(resolveProp(el, 'opacity'));
     const displayNone = resolveProp(el, 'display') === 'none';
 
     if (SHAPE_TAGS.includes(tag)) {
@@ -320,8 +343,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         } else if (opacity === 0) {
           // Deliberately silent, unlike the gradient branch above: fill-opacity="0" is how an
           // artist hides a shape, and a pill per hidden shape would nag on a file behaving as
-          // drawn. A clamp in parseFillOpacity would land -1 and -50% here too, and nothing in
-          // this branch tells those apart from a deliberate hide.
+          // drawn.
         } else {
           const hex = normalizeColor(fillRaw || getAncestorFill(el) || '#000000');
           let loops: Loop[] = [];
