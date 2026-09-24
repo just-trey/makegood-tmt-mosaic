@@ -99,8 +99,9 @@ export async function asmLoadFullAssembly({ quiet = false } = {}): Promise<Assem
       const partId = roleLibraryPartId(role, variantId);
       const entry = partId ? state.assembly.library.find((e) => e.id === partId) : undefined;
       const primary = asmCreateRolePart(role);
-      if (entry && !(await asmLoadLibraryEntryIntoPart(primary, entry, { quiet })))
-        outcome = 'failed';
+      const primaryFailed =
+        !!entry && !(await asmLoadLibraryEntryIntoPart(primary, entry, { quiet }));
+      if (primaryFailed) outcome = 'failed';
       // A part-kind switch mid-load replaces state.assembly.parts with a fresh array and kicks off
       // its own load; if that happened while we awaited the fetch, stop here so we don't push this
       // kind's parts into the new kind's list. The newer load owns the overlay and final refresh.
@@ -108,7 +109,8 @@ export async function asmLoadFullAssembly({ quiet = false } = {}): Promise<Assem
         abandonedLists.add(myParts);
         return 'superseded';
       }
-      if (role.allowRotatedCopies) {
+      // A copy clones its primary's mesh, so a failed primary's copies would have none.
+      if (role.allowRotatedCopies && !primaryFailed) {
         for (let i = 0; i < (role.copies || 0); i++) {
           const dup = asmAddDuplicate(primary.id, role.copyName);
           if (dup && role.copyDefaults) Object.assign(dup, role.copyDefaults);

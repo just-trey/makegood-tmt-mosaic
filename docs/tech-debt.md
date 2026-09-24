@@ -986,6 +986,20 @@ Measured at **2727 errors** (`npx tsc --noEmit --noUncheckedIndexedAccess`)
 on `main` @ 8db8c6d, up from 2240 @ 04c2c81. Enabling it is a real project,
 not a flag flip.
 
+## A caster-mount fetch that fails leaves the chair on the new variant with the mount missing
+
+**Needs a decision: what a partly failed variant switch should leave.** `switchChairVariant`
+([src/assembly/parts.ts](../src/assembly/parts.ts)) ignores `asmLoadLibraryEntryIntoPart`'s
+result.
+
+- It sets `variantId` and drops the old mounts before fetching the new ones.
+- A failed fetch shows an alert naming the file. The variant stays switched, and that mount stays
+  unloaded, so the chair renders and exports without it.
+- Unmeasured: not driven live. Reached only if a caster file is unreachable mid-visit.
+- Options: roll back to the previous variant and its mounts, the way a restore now rolls back its
+  kind (`asmSwitchKindAndLoad`, [src/assembly/switchKind.ts](../src/assembly/switchKind.ts)); or
+  keep the switch and warn in the panel until the mount loads.
+
 ## A regenerated source mesh would leave its rotated copies on the old geometry
 
 `asmAddDuplicate` ([src/assembly/parts.ts](../src/assembly/parts.ts)) shares

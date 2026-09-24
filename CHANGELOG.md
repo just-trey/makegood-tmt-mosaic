@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   session to offer again on reload. It used to switch to the saved part anyway,
   without its pieces.
 
+- **A part whose file doesn't load no longer gets empty rotated copies.** On
+  the wheel, a failed Top used to leave an empty Bottom in the part list too.
+
 - **An image's notice pill no longer jumps to the bottom of the list when
   Detail or Colors changes it.** Flipping between the traced and the capped
   notice now rewrites the pill where it stands.
