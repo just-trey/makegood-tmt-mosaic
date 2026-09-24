@@ -266,10 +266,8 @@ one, which is the failure being prevented.
 Mechanical rules are enforced by lint/CI, not this file: the shape
 of user-facing copy by `npm run check:copy`, the troubleshooting quotes by
 `npm run check:troubleshooting`, unsafe `any` flow and
-`parseInt` radix by ESLint, formatting by Prettier. Numeric input guards
-route through `toFiniteNumber`/`toFiniteInt` in
-[src/util/number.ts](src/util/number.ts) — a convention enforced by review,
-not a lint rule. `docs/tech-debt.md`'s `noUncheckedIndexedAccess` section is
-a separate gap: unchecked array/record access, not numeric coercion.
-Workflow rules (test proven to fail pre-fix) live in the review and ship
-skills. Do not duplicate them here.
+`parseInt` radix by ESLint, formatting by Prettier. New external numbers go
+through `toFiniteNumber`/`toFiniteInt`
+([src/util/number.ts](src/util/number.ts)); older SVG and color sites guard
+inline. Enforced by review, not lint. Workflow rules (test proven to fail
+pre-fix) live in the review and ship skills. Do not duplicate them here.
