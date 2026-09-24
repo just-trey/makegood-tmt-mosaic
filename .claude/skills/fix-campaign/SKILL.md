@@ -40,7 +40,7 @@ rather than assuming this date.
   | docs, judgment per section (triage, moving measurements) | `sonnet-high`             | Sonnet | high   | none                        | none; orchestrator read (VIS) |
 
   Why: effort is only settable in an agent definition; the user's global
-  `effortLevel: xhigh` is otherwise inherited by every subagent. `low`
+  `effortLevel` is otherwise inherited by every subagent. `low`
   returns fewer, high-confidence findings, the set worth acting on. Pass the
   level explicitly every time — `/code-review` reuses the last level typed
   when none is given.
