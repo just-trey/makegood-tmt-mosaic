@@ -149,7 +149,11 @@ export function resyncShapeInputs(): void {
   resyncBoundInput.forEach((f) => f());
 }
 
-function bindShapeInput(sel: string, apply: (v: number) => void): void {
+/** Exported for its own unit test: the only live caller (asmRadius, below) always sets a valid
+ * numeric `min` before binding, so the non-numeric-`min` guard below has no reachable caller of
+ * its own right now — a future numeric field bound here without doing the same should still get
+ * the guard right rather than reject every value it's given. */
+export function bindShapeInput(sel: string, apply: (v: number) => void): void {
   const el = input(sel);
   // toFiniteNumber, not a bare parseFloat: a non-numeric min= (an authoring mistake, not
   // anything a user types) used to parse to NaN, and `v >= NaN` rejects every value.

@@ -39,7 +39,6 @@ function mountFitPanelDom(): void {
 
 beforeEach(() => {
   mountFitPanelDom();
-  state.shapeKind = 'assembly';
   initFitPanel();
 });
 
