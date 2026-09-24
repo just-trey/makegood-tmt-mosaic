@@ -746,8 +746,9 @@ that the notice did not close.
   specks, 320x320 at Colors 5 and Detail 100: `capped: true`, `droppedColors: 1`), never on the
   corpus.
 - **The cap now raises until the count is under, so a capped floor can go much higher.** On
-  512px 8-label noise it settles at 47px, where one raise stopped at 7px and left 9237 components
-  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`, row 20). The higher the floor, the
+  512px 8-label noise at placed floor 1 it settles at 47px
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). The same command against the
+  previous `src/raster/trace.ts` stops at 7px with 9237 components. The higher the floor, the
   likelier a whole color goes under it on a source that caps.
 - **A floor Detail cannot lower** covers two shapes of the same thing, and `detailLowersFloor`
   measures both rather than inferring either: a placement's nozzle-width floor pinning the floor

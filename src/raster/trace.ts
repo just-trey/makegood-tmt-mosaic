@@ -629,9 +629,10 @@ export function traceLabelMap(map: LabelMap, params: TraceParams, placedFloor = 
     // Raise the floor to exactly the size that fits under the cap, rather than guessing a
     // multiplier and re-running blind. It still has to be rechecked: absorbing specks merges them
     // into each other, and the merged ones can clear the floor meant to remove them. When a
-    // `deChecker` split is what put the count back over, the split pieces are already under the
-    // floor and this lands on floor + 1, the smallest raise that absorbs them. That + 1 is also
-    // what ends the loop: the floor rises every pass, and at w*h the image is one component.
+    // `deChecker` split is all that put the count back over, the 800th largest is one of the split
+    // pieces, under the floor, so this lands on floor + 1: the smallest raise that absorbs them.
+    // That + 1 is also what ends the loop: the floor rises every pass, and at w*h the image is one
+    // component.
     real.sort((a, b) => b - a);
     minArea = Math.max(minArea + 1, real[MAX_COMPONENTS - 1] + 1);
     despeckle(labels, w, h, minArea);

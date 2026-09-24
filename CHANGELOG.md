@@ -38,9 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   800-region limit.** The trace raised the speckle floor once and never checked
   again. Merging specks can build new ones big enough to survive, so a noisy
   image could still come back with thousands of regions. It now raises the floor
-  until the count is under. On generated noise, 16 of 24 fields came back over
-  before this, up to 9237 regions, and none do now
-  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`).
+  until the count is under. On generated noise none of 24 fields come back over
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). Run against the
+  previous `src/raster/trace.ts`, the same command gives 16 of 24 over, up to
+  9237 regions.
 
 ### Added
 
