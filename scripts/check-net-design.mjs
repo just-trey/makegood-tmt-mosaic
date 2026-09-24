@@ -325,8 +325,11 @@ const zoneCounts = (page) =>
     const counts = {};
     for (let i = 0; i < 9; i++)
       for (let j = 0; j < 9; j++) {
-        const id = window.__mosaic.zoneIdAtNdc(-0.6 + (1.2 * i) / 8, -0.6 + (1.2 * j) / 8);
-        if (id) counts[id] = (counts[id] ?? 0) + 1;
+        const { zoneId } = window.__mosaic.zonePickAtNdc(
+          -0.6 + (1.2 * i) / 8,
+          -0.6 + (1.2 * j) / 8,
+        );
+        if (zoneId) counts[zoneId] = (counts[zoneId] ?? 0) + 1;
       }
     return counts;
   });

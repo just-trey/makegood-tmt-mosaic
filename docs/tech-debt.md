@@ -24,47 +24,44 @@ approach that lost belongs in a comment next to the code it constrains, or in
 [docs/pipeline.md](pipeline.md) for the geometry pipeline — not here. What stays
 here is closeable: it names code work under a “Closing it” line.
 
-## check:zone-occlusion reads hidden surface as "no zone here" and reports four false failures
+## check:zone-occlusion's five-view identity sweep never inks four small zones
 
-`scripts/check-zone-occlusion.mjs` classifies a pixel by whether the inked zone
-color shows there: ink means the zone is visible, no ink means bare body. A
-click landing on a zone where no ink shows is reported as a through-pick.
+`scripts/check-zone-occlusion.mjs`'s per-zone identity pass (`IDENTITY_SWEEP`)
+drives five camera views and requires every zone to land at least one interior
+ink sample in one of them, so "never looked" can't read the same as "checked
+and right." Four zones never do.
 
-Dead zones add a third state that classifier has no name for: the zone is
-present and correctly pickable, but the surface is hidden once assembled, so it
-takes no artwork and shows no ink.
+Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair,
+2026-09-24: `wing-left`, `wing-right`, `seat-left`, `seat-right` each report
+"produced no interior ink sample anywhere in the sweep." Nothing else fails —
+the through-pick and `*whole`-identity failures this same run used to report
+are gone (see the CHANGELOG entry that closed them).
 
-Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair:
+The previous version of this entry also recorded an orbit-drag throw ending
+the run partway through this same sweep, and told the next reader to re-run
+before trusting any count. Two full runs of the command above (one on
+unfixed `main`-equivalent code, one after the fix) both completed all five
+angles with no throw. Treating it as gone rather than chasing further: the
+"stale zone name" cause that entry guessed at doesn't hold either way — the
+sweep already reads zone ids live off the DOM, never a hardcoded one — so the
+throw looks like the `orbitTo`/gizmo-drag flakiness `run-app`'s skill already
+documents, not a defect specific to this check. The 4-failure count above is
+from a full, un-thrown run and can be trusted.
 
-| Run                                      | Failures | What they are                                                               |
-| ---------------------------------------- | -------- | --------------------------------------------------------------------------- |
-| `main` (fenders only, 2026-08-16)        | 3        | a0-front "too few bare-body samples", wing-left/right no ink                |
-| dead zones, hemisphere bake (2026-08-30) | 5        | 4 x "picked a zone on bare body" (36/31/1/25 samples) + an orbit-drag throw |
-| whole-chair zones (2026-09-07)           | 6        | the four above, plus one on the `*whole` zone, plus the throw               |
-| baked `cutRegions` (2026-09-07)          | 2        | a0-front (48 samples) + the throw — the rest were landing on bake dust      |
-
-- The pick itself is right: the zone is there, and the hatch overlay says why
-  artwork will not appear. Only the check's model is stale.
-- The numbers corroborate the mechanism: `main` had just 96 bare-body samples
-  at a0-front ("too few for the assertion to mean anything"); with hidden
-  surface unlinked there are enough that the complaint becomes through-picks.
-- The throw ends the run inside the per-zone identity sweep, after its first
-  angle (`v0`), so this run never reaches the later angles or the named
-  cases. Reproduced twice with identical sample counts, so it's a real stop,
-  not sampling noise — a second, separate defect in the script from the
-  classifier gap this section is about. The zone whose `v0` pass showed 0
-  interior ink samples was `seat`, which no longer exists: the seat pan left
-  every zone and the two mount tops became `seat-left`/`seat-right`. Re-run
-  before trusting the failure count above.
-- Closing it: teach the sweep to read each chart's `deadRegions`, and expect
-  "zone pickable, no ink" over them rather than counting it a through-pick.
-  The orbit-drag throw needs its own fix first to reach the later stages.
+- `wing-left`/`wing-right` predate this run: the sweep's angles never see
+  enough of a fender face-on to sample one.
+- `seat-left`/`seat-right` are new to the list. They're the two mount tops
+  left behind when the seat pan (once its own zone, inked fine by `v0`) left
+  every zone; both are apparently too small or too edge-on across all five
+  views.
+- Closing it: widen `IDENTITY_SWEEP` (or add a view) until each of the four
+  lands an interior sample, then re-measure. Not attempted here — the sweep's
+  own comment already called this out as separate from the classifier fix
+  this run closed, and widening it deserves its own pass with a real
+  chart-coverage measurement behind the new angles, not a guess.
 - Not in CI (nothing runs this script), so it blocks nothing today. It is the
   only automated guard on convention 12, which is why it is worth repairing
   rather than deleting.
-- `wing-left`/`wing-right` never producing an ink sample predates this and
-  came in with the fender zones: the sweep's angles never see enough of a
-  fender to sample one.
 
 ## The covers reference has no tires, so each flank keeps artwork the tire hides — unmeasured
 
