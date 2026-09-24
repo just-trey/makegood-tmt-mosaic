@@ -8,7 +8,7 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
 vi.mock('../src/assembly/parts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/assembly/parts')>();
-  return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
+  return { ...actual, asmLoadFullAssembly: vi.fn(async () => 'loaded' as const) };
 });
 
 import {
@@ -167,6 +167,8 @@ describe('the Mirror flag across a reload', () => {
     // is the case that flag has to survive — the saved zone is still offered and still mirrors.
     vi.mocked(asmLoadFullAssembly).mockImplementationOnce(async () => {
       state.assembly.parts = [zonedPart(1, 'right', { twin: 'left' })];
+
+      return 'loaded' as const;
     });
     const saved = session([{ ...instance({ mirror: true }), zoneId: 'right' }]);
     saved.assembly = { kindId: 'wheel', variantId: null };

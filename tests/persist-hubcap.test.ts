@@ -8,7 +8,7 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
 vi.mock('../src/assembly/parts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/assembly/parts')>();
-  return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
+  return { ...actual, asmLoadFullAssembly: vi.fn(async () => 'loaded' as const) };
 });
 
 import {

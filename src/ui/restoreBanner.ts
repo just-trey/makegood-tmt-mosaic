@@ -6,6 +6,8 @@ import {
   SESSION_WRITES_DISABLED_MSG,
   loadSavedSession,
   markSavedSessionAnswered,
+  markSavedSessionUnanswered,
+  SessionPartsError,
   type PersistedSession,
 } from '../state/persist';
 import { clearWarnings, warn } from '../warnings';
@@ -77,15 +79,24 @@ export function initRestoreBanner(): void {
         await applyRestoredSession(session);
       } catch (e) {
         console.error('Session restore failed:', e);
+        if (e instanceof SessionPartsError) {
+          // Rolled back, so what is on screen is the part the user had before clicking, and a
+          // reload (library reachable again) can still restore the session: keep it, and offer it
+          // again. Re-rendered because the aborted load drew the saved part's controls.
+          clearWarnings();
+          warn(e.message);
+          markSavedSessionUnanswered();
+          applyPartKind();
+          renderWarnings();
+          return;
+        }
         // Say so, and render it. This used to delete the session and return with nothing on
         // screen, so the user clicked Restore, saw no change, and had lost the work. warn() only
         // pushes onto the list; this path returns before applyPartKind(), which is the only call
         // on it that would otherwise reach renderWarnings().
         //
-        // "Reload the page" is not boilerplate: the printer, depth and color grouping commit
-        // atomically now, but the assembly-kind switch below that commit still doesn't —
-        // asmLoadFullAssembly() can throw after state.assembly.kindId has already moved, leaving
-        // the part changed while the sources and artwork list never got their turn.
+        // "Reload the page" is not boilerplate: any other throw can land after the parts loaded
+        // but before the artwork list was fully applied, so memory is not trusted.
         //
         // Cleared first: applyRestoredSessionInner's own per-source loop can warn about a source
         // (a raster that failed to decode) before hitting the one that threw, and `state` was never

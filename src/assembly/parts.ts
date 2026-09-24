@@ -57,18 +57,22 @@ export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
  * One-click "load the whole assembly": fetch + face-detect every role's primary, then add its
  * default rotated copies. Awaits each primary's load before duplicating it, since a rotated
  * copy clones the source's (by-then loaded) geometry.
+ *
+ * Every failure is already told to the user by an alert; the result is for a caller that has to
+ * undo something when the load did not complete (session restore). `skipped` covers a manifest
+ * still in flight, a cancelled confirm and a newer load taking over — none of them a failure.
  */
-export async function asmLoadFullAssembly(): Promise<void> {
+export async function asmLoadFullAssembly(): Promise<'loaded' | 'skipped' | 'failed'> {
   const kind = currentAssemblyKind();
-  if (!kind) return;
+  if (!kind) return 'skipped';
   if (!asmKindCanAutoLoad(kind)) {
     // Only once the fetch has come back. While it is still in flight this returns quietly and
     // loadPartsLibrary calls back through maybeAutoLoadAssembly when it lands, so a restore
     // accepted mid-flight loads a moment later instead of opening a "reload the page" dialog over
     // a session that was about to work.
-    if (partsLibrarySettled())
-      await alertDialog("Couldn't load this part. Reload the page to try again.");
-    return;
+    if (!partsLibrarySettled()) return 'skipped';
+    await alertDialog("Couldn't load this part. Reload the page to try again.");
+    return 'failed';
   }
   if (
     state.assembly.parts.length &&
@@ -76,21 +80,22 @@ export async function asmLoadFullAssembly(): Promise<void> {
       `Load the full ${kind.name}? This clears any parts you've already added.`,
     ))
   )
-    return;
+    return 'skipped';
   state.assembly.parts = [];
   const myParts = state.assembly.parts;
   showOverlay(`Loading ${kind.name}…`);
+  let outcome: 'loaded' | 'failed' = 'loaded';
   try {
     const variantId = currentVariantId();
     for (const role of kind.roles) {
       const partId = roleLibraryPartId(role, variantId);
       const entry = partId ? state.assembly.library.find((e) => e.id === partId) : undefined;
       const primary = asmCreateRolePart(role);
-      if (entry) await asmLoadLibraryEntryIntoPart(primary, entry);
+      if (entry && !(await asmLoadLibraryEntryIntoPart(primary, entry))) outcome = 'failed';
       // A part-kind switch mid-load replaces state.assembly.parts with a fresh array and kicks off
       // its own load; if that happened while we awaited the fetch, stop here so we don't push this
       // kind's parts into the new kind's list. The newer load owns the overlay and final refresh.
-      if (state.assembly.parts !== myParts) return;
+      if (state.assembly.parts !== myParts) return 'skipped';
       if (role.allowRotatedCopies) {
         for (let i = 0; i < (role.copies || 0); i++) {
           const dup = asmAddDuplicate(primary.id, role.copyName);
@@ -100,11 +105,13 @@ export async function asmLoadFullAssembly(): Promise<void> {
     }
   } catch (e) {
     console.error(e);
+    outcome = 'failed';
     await alertDialog('Failed to load the assembly: ' + (e as Error).message);
   }
   notifyPartsChanged();
   hideOverlay();
   scheduleRebuild();
+  return outcome;
 }
 
 /**
@@ -153,7 +160,7 @@ export async function switchChairVariant(variantId: string): Promise<void> {
 export async function asmLoadLibraryEntryIntoPart(
   part: AssemblyPart,
   entry: LibraryEntry,
-): Promise<void> {
+): Promise<boolean> {
   if (entry.baseDepth) part.baseDepth = entry.baseDepth;
   part.libraryPartId = entry.id;
   beginWork();
@@ -162,10 +169,12 @@ export async function asmLoadLibraryEntryIntoPart(
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const buf = await res.arrayBuffer();
     await asmLoadPartBuffer(part, buf, entry.file);
+    return true;
   } catch (e) {
     await alertDialog(
       `Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`,
     );
+    return false;
   } finally {
     endWork();
   }

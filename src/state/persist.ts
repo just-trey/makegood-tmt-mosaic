@@ -314,6 +314,11 @@ export function markSavedSessionAnswered(): void {
   unansweredSavedSession = false;
 }
 
+/** Called by the restore banner when a restore was rolled back: the offer stands again. */
+export function markSavedSessionUnanswered(): void {
+  holdSavedSessionUntilAnswered();
+}
+
 /**
  * Whether the session already in storage is on an assembly kind that's currently withheld from
  * the UI (`AssemblyKind.hidden`). Such a session is never offered back — initRestoreBanner()
@@ -342,6 +347,19 @@ function savedSessionIsOnHiddenKind(): boolean {
  * mid-work. Mirrors helpPanel.ts's degrade-silently pattern for the same reason. lastSaveFailed
  * is the one exception — read only at unload, to decide whether the native prompt is warranted.
  */
+/**
+ * A restore stopped because the saved part did not load. `state` is back to what it was before the
+ * restore started, so, unlike any other failed restore, the saved session is still worth keeping.
+ */
+export class SessionPartsError extends Error {
+  constructor(partName: string) {
+    super(
+      `Couldn't restore your session: the ${partName} didn't load. Reload the page to try again.`,
+    );
+    this.name = 'SessionPartsError';
+  }
+}
+
 /** The notice shown when a restore failed. Exported so the banner and the re-announce agree. */
 export const SESSION_WRITES_DISABLED_MSG =
   'That saved session could not be opened, so it was cleared. Reload the page to start clean.';
@@ -418,9 +436,8 @@ let restoring = false;
 /**
  * Set when a restore failed part-way, and never cleared: writes stay off until the page reloads.
  *
- * The failure message tells the user to reload precisely because a throw from asmLoadFullAssembly
- * can still leave state.assembly.kindId pointing at the restored part while its sources and
- * artwork never got applied, so what is in memory at that point can be inconsistent. Without this
+ * Not set for a SessionPartsError, which rolls back first. Any other throw can land after the
+ * parts loaded but before the artwork was fully applied, so memory is not trusted. Without this
  * the next rebuild's debounced save wrote exactly that state back over the session the catch had
  * just cleared, and the next visit offered a session built from the thing that had failed.
  */
@@ -721,6 +738,18 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   // decode is caught (per-image) or has already propagated (an SVG's parseSVGDocument, uncaught by
   // design — see the comment on `sources`), and either way this line is never reached with `state`
   // still holding the pre-restore values it would otherwise be a mix of.
+  //
+  // Committed before the parts load rather than after it, because the load reads some of these
+  // (a generated role's mesh follows `hubcapDiameterMm`). So they are snapshotted, and put back
+  // with the kind if that load does not complete.
+  const before = {
+    scalars: Object.fromEntries(
+      Object.keys(pending).map((k) => [k, state[k as keyof AppState]]),
+    ) as Partial<AppState>,
+    kindId: state.assembly.kindId,
+    variantId: state.assembly.variantId,
+    parts: state.assembly.parts,
+  };
   Object.assign(state, pending);
 
   const kind =
@@ -739,7 +768,24 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     // restored kind's filename. Measured 2026-08-24: a restored footrest session exported
     // `mosaic-footrest.3mf` holding the wheel's Top/Bottom/Cap, valid and printable, no warning.
     state.assembly.parts = [];
-    await asmLoadFullAssembly();
+    // Rolled back rather than loaded into a staging list: the load is live and progressive (parts
+    // appear as each role arrives), its mid-load guard compares this very array by identity, and
+    // the new parts look their role up through the live `kindId`. The designs are applied below
+    // this, so a load that did not complete must not leave the saved kind standing without them.
+    let outcome: Awaited<ReturnType<typeof asmLoadFullAssembly>>;
+    try {
+      outcome = await asmLoadFullAssembly();
+    } catch (e) {
+      console.error(e);
+      outcome = 'failed';
+    }
+    if (outcome === 'failed') {
+      Object.assign(state, before.scalars);
+      state.assembly.kindId = before.kindId;
+      state.assembly.variantId = before.variantId;
+      state.assembly.parts = before.parts;
+      throw new SessionPartsError(kind.name);
+    }
   } else {
     // Either an assembly kind that no longer exists (renamed/retired since the session was saved),
     // or a retired flat mode ('disc', 'rect', 'round', 'stl'). Neither has an option in the

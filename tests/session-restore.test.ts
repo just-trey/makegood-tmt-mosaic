@@ -8,7 +8,7 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
 vi.mock('../src/assembly/parts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/assembly/parts')>();
-  return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
+  return { ...actual, asmLoadFullAssembly: vi.fn(async () => 'loaded' as const) };
 });
 
 import {
@@ -311,6 +311,8 @@ describe('applyRestoredSession: assembly mode', () => {
     let partsWhenLoadRan: number | undefined;
     vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {
       partsWhenLoadRan = state.assembly.parts.length;
+
+      return 'loaded' as const;
     });
     state.assembly.parts = [
       { id: 1, name: 'Top' },
@@ -404,6 +406,8 @@ describe('applyRestoredSession: assembly mode', () => {
           zones: [{ id: 'left', name: 'Left side' }],
         },
       ] as unknown as typeof state.assembly.parts;
+
+      return 'loaded' as const;
     });
     const [art] = session().artworks;
 
@@ -440,6 +444,8 @@ describe('applyRestoredSession: assembly mode', () => {
       state.assembly.parts = [
         { id: 7, name: 'Mount', zones: [{ id: 'left', name: 'Left side' }] },
       ] as unknown as typeof state.assembly.parts;
+
+      return 'loaded' as const;
     });
     const base = session();
     const [art] = base.artworks;
@@ -475,7 +481,9 @@ describe('applyRestoredSession: assembly mode', () => {
   // list that leaves as "every zone was retired" would discard every binding before the deferred
   // load could arrive — a total wipe, on a supported path, from a check meant to prevent a loss.
   it('keeps zone bindings when no zones are offered yet, and says nothing', async () => {
-    vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {});
+    vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {
+      return 'loaded' as const;
+    });
     const [art] = session().artworks;
 
     await applyRestoredSession(

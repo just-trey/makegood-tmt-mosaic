@@ -8,7 +8,7 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
 vi.mock('../src/assembly/parts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/assembly/parts')>();
-  return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
+  return { ...actual, asmLoadFullAssembly: vi.fn(async () => 'loaded' as const) };
 });
 
 import {
@@ -141,7 +141,9 @@ beforeEach(() => {
   state.artworks = [];
   state.activeArtworkId = null;
   vi.mocked(asmLoadFullAssembly).mockReset();
-  vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {});
+  vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {
+    return 'loaded' as const;
+  });
 });
 
 describe('the reserved Whole-chair zone id across a reload', () => {
@@ -160,6 +162,8 @@ describe('the reserved Whole-chair zone id across a reload', () => {
     vi.mocked(asmLoadFullAssembly).mockImplementationOnce(async () => {
       state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
       state.assembly.net = NET;
+
+      return 'loaded' as const;
     });
 
     await applyRestoredSession(session([{ ...instance(), zoneId: WHOLE_CHAIR_ZONE }]));
@@ -174,6 +178,8 @@ describe('the reserved Whole-chair zone id across a reload', () => {
     vi.mocked(asmLoadFullAssembly).mockImplementationOnce(async () => {
       state.assembly.parts = [netZonedPart(1, 'left')];
       state.assembly.net = null;
+
+      return 'loaded' as const;
     });
 
     await applyRestoredSession(session([{ ...instance(), zoneId: WHOLE_CHAIR_ZONE }]));

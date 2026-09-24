@@ -558,34 +558,21 @@ the untested candidate rather than a rejected one. Whatever the test, it needs r
 resampled to several sizes on disk, since no mode here can produce them, and the traces need looking
 at rather than counting: region count cannot tell a cleaner trace from a coarser one.
 
-## A restored session's assembly-kind switch still isn't atomic
+## A rolled-back restore can put back a half-loaded boot part
 
-What is left of the restore-atomicity item after `applyRestoredSessionInner`'s
-scalar fields (printer, fit, depth, colour grouping — 18 fields: count the
-keys `buildRestoredScalarState` sets, 14 always plus 4 conditional) were
-made atomic: built into a local object and committed in one `Object.assign`
-only once every source in the session has come back
-([src/state/persist.ts](../src/state/persist.ts)).
+**Unmeasured, and needs two faults at once.** A restore whose parts don't load rolls back to the
+parts list it found (`applyRestoredSessionInner`, [src/state/persist.ts](../src/state/persist.ts)).
 
-The switch to the saved session's assembly kind still assigns straight into
-`state` before the one thing in that branch that can throw:
-`state.assembly.kindId`, `state.assembly.variantId` and
-`state.assembly.parts = []` are all set, then `await asmLoadFullAssembly()`
-runs. If it throws (an unreachable parts library, e.g.), the part has already
-switched but the sources and artwork list — computed after this await
-returns — never get applied. A reload shows a session that thinks it's the
-saved part with none of that part's designs on it.
-
-Not the same bug this item started as: it can no longer put a value from the
-session into one of the 18 scalar fields while the picker or the model shows
-something else. Only the assembly kind and its parts can lag behind.
-
-Closing it would mean giving `asmLoadFullAssembly` a way to report success
-without having already mutated `state.assembly.parts` piecemeal as it loads
-each role — a bigger change to a function whose job is that live progressive
-load (the confirm dialog and the mid-load kind-switch guard both depend on
-`state.assembly.parts` being the live list). Deferred rather than folded into
-the fields fix, which does not touch `asmLoadFullAssembly`'s contract.
+- If Restore is clicked while the boot's own auto-load is still fetching, the restore's
+  `parts = []` makes that load stop at its mid-load guard (`asmLoadFullAssembly`,
+  [src/assembly/parts.ts](../src/assembly/parts.ts)).
+- If the restore's own load then fails, the rollback puts back the boot's list as it stood: some
+  roles loaded, the rest never created.
+- Nothing says so. "Load full …" in the Part panel recovers it.
+- Not driven. The live check blocked one kind's part files, where the boot kind had finished long
+  before the click.
+- Closing it: on rollback, re-run `maybeAutoLoadAssembly` when the list put back is short of the
+  kind's roles, or have the load report that it was superseded.
 
 ## The printable despeckle floor is fixed at the moment of the trace
 

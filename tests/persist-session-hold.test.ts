@@ -8,7 +8,7 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
 vi.mock('../src/assembly/parts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/assembly/parts')>();
-  return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
+  return { ...actual, asmLoadFullAssembly: vi.fn(async () => 'loaded' as const) };
 });
 import {
   applyRestoredSession,
@@ -161,7 +161,7 @@ describe('a save already armed when a restore starts', () => {
     vi.useFakeTimers();
     let releaseLoad: () => void = () => {};
     vi.mocked(asmLoadFullAssembly).mockImplementation(
-      () => new Promise<void>((r) => (releaseLoad = r)),
+      () => new Promise<'loaded'>((r) => (releaseLoad = () => r('loaded'))),
     );
     try {
       withLoadedWork();
