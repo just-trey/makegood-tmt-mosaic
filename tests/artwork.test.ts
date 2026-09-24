@@ -255,10 +255,6 @@ describe('loadArtworkSource', () => {
 // A design landing exactly on top of the one already there produces overlapping recesses that
 // nothing downstream can tell apart from one design — see geometry/designOverlap.ts.
 describe('stacked-instance cascade', () => {
-  // assembly mode only — flat plate mode renders state.parsed alone, so there is no second design
-  // on screen for a step to separate from
-  beforeEach(() => {});
-
   it('steps a second design off the first on a single-zone part', () => {
     state.assembly.parts = [zonedPart(1, 'only', 'Only')];
     const first = loadArtworkSource(fakeParsed(), 'first.svg');

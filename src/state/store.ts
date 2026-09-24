@@ -92,7 +92,7 @@ export interface AppState {
    */
   sources: DesignSource[];
   artworks: ArtworkInstance[];
-  /** the instance the gizmo, fit sliders, and (in assembly mode) the build currently target */
+  /** the instance the gizmo, fit sliders, and the build currently target */
   activeArtworkId: string | null;
 }
 

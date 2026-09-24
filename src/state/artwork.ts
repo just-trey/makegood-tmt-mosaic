@@ -18,9 +18,9 @@ let nextArtworkId = 1;
  * face, per step.
  *
  * A new instance seeds its placement from the current fit settings, so on a part with one design
- * zone — the wheel, the footrest, and every flat kind — a second design used to land exactly
- * coplanar with the first: same offset, same scale, same depth, no separation and nothing on screen
- * saying there were two of them. Stepping it makes the second design visible as its own object and
+ * zone — the wheel, the footrest — a second design used to land exactly coplanar with the first:
+ * same offset, same scale, same depth, no separation and nothing on screen saying there were two
+ * of them. Stepping it makes the second design visible as its own object and
  * draggable without first having to move the one on top of it.
  *
  * Deliberately small rather than "clear of the first design": the app has no say in how big a
@@ -624,9 +624,7 @@ export function setArtworkMode(instanceId: string, mode: ArtworkInstance['mode']
  * Fill coerced to Sticker on a kind that withholds it. State never holds Fill for a part where Fill
  * misbehaves, so the build pipeline needs no matching check — the alternative, letting `mode` stay
  * 'fill' and reinterpreting it downstream, is the one shared value meaning two things at once that
- * CLAUDE.md warns about. Deliberately keyed on fillWithheld() and not on whether the control is
- * currently shown: a flat part hides Fill but merely ignores it, and clamping there would discard a
- * setting the user picked in assembly mode the moment they glanced at a disc.
+ * CLAUDE.md warns about.
  */
 export function allowedArtworkMode(mode: ArtworkInstance['mode']): ArtworkInstance['mode'] {
   return mode === 'fill' && fillWithheld() ? 'sticker' : mode;
@@ -794,8 +792,8 @@ export function netZones(): {
  * How many of the assembly's design zones currently carry at least one artwork instance, out of
  * how many the part offers — the number behind the chair's "N of M zones have artwork" notice
  * and the pre-export coverage check. An instance with `zone: null` ("All zones") counts every zone
- * covered, since that's what it actually cuts onto. `{ total: 0, ... }` outside assembly mode or on
- * a single/no-zone kind, where there's nothing to reconcile.
+ * covered, since that's what it actually cuts onto. `{ total: 0, ... }` on a single/no-zone kind,
+ * where there's nothing to reconcile.
  */
 export function zoneCoverage(): { total: number; covered: number } {
   // The whole-part entry is every other entry at once, not a surface of its own, so it is not a

@@ -561,15 +561,15 @@ at rather than counting: region count cannot tell a cleaner trace from a coarser
 ## A restored session's assembly-kind switch still isn't atomic
 
 What is left of the restore-atomicity item after `applyRestoredSessionInner`'s
-scalar fields (printer, base shape, depth, colour grouping — 24 fields: count
-the keys `buildRestoredScalarState` sets, 20 always plus 4 conditional) were
+scalar fields (printer, fit, depth, colour grouping — 18 fields: count the
+keys `buildRestoredScalarState` sets, 14 always plus 4 conditional) were
 made atomic: built into a local object and committed in one `Object.assign`
 only once every source in the session has come back
 ([src/state/persist.ts](../src/state/persist.ts)).
 
 The switch to the saved session's assembly kind still assigns straight into
 `state` before the one thing in that branch that can throw:
-`state.shapeKind`, `state.assembly.kindId`, `state.assembly.variantId` and
+`state.assembly.kindId`, `state.assembly.variantId` and
 `state.assembly.parts = []` are all set, then `await asmLoadFullAssembly()`
 runs. If it throws (an unreachable parts library, e.g.), the part has already
 switched but the sources and artwork list — computed after this await
@@ -577,7 +577,7 @@ returns — never get applied. A reload shows a session that thinks it's the
 saved part with none of that part's designs on it.
 
 Not the same bug this item started as: it can no longer put a value from the
-session into one of the 24 scalar fields while the picker or the model shows
+session into one of the 18 scalar fields while the picker or the model shows
 something else. Only the assembly kind and its parts can lag behind.
 
 Closing it would mean giving `asmLoadFullAssembly` a way to report success
