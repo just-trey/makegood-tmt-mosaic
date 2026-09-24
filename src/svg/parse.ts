@@ -364,10 +364,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       if (displayNone) {
         // Silent, for the reason on the `opacity === 0` branch below.
       } else if (hiddenBy) {
-        // Counted only when nothing else would have dropped it, so the warning's number is what
+        // Counted only when nothing else would have dropped it, so the warning's count is what
         // the hidden group took out of the print.
         if (!fillUrl && fillRaw !== 'none' && ownOpacity !== 0 && ownFillOpacity !== 0) {
-          if (hiddenBy.count++ === 0) hiddenBy.firstShape = shapeCount;
+          hiddenBy.count++;
         }
       } else {
         if (fillUrl) {
@@ -472,7 +472,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         el.getAttribute('data-name') ||
         el.getAttribute('id') ||
         null,
-      firstShape: 0,
+      firstShape: shapeCount + 1,
       count: 0,
     };
     const next: Inherited = {

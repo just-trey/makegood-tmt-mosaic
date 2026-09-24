@@ -719,11 +719,11 @@ describe('a hidden group', () => {
     expect(messages()).toHaveLength(2);
   });
 
-  it('leaves a gradient shape out of the count, since it would not have printed anyway', () => {
+  it('leaves a gradient shape out of the count, but starts the group at it', () => {
     clearWarnings();
     fills(`<g id="g" display="none"><rect fill="url(#a)" width="4" height="4"/>${RED}</g>${GREEN}`);
     expect(messages()).toEqual([
-      'The hidden group "g" starting at shape 2 was skipped, with its 1 shape. Show it in your editor to print it.',
+      'The hidden group "g" starting at shape 1 was skipped, with its 1 shape. Show it in your editor to print it.',
     ]);
   });
 

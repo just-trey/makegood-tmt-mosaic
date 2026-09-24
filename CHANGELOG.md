@@ -72,8 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `fill-opacity="0"` group still imports, as it draws in a browser
   (`npx vitest run tests/parse.test.ts`).
 - **The `opacity` property is now read at all.** `opacity="0"` on a shape hides
-  it; before, only `fill-opacity` could. A group at opacity 0 still leaks its
-  shapes; `docs/tech-debt.md` has it (`npx vitest run tests/parse.test.ts`).
+  it; before, only `fill-opacity` could (`npx vitest run tests/parse.test.ts`).
 
 ### Added
 

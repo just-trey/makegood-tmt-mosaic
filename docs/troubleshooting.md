@@ -823,10 +823,14 @@ any of:
 
 **What you get.** The file loads as your editor shows it. The name is the
 layer's name (`inkscape:label`, or Illustrator's `data-name`), else its `id`.
-The first number counts every shape element from the top of the file, as the
-gradient warning's does. The second counts only shapes that would otherwise
-have printed: stroke-only, gradient-filled and self-hidden shapes are left out. One hidden group inside another
-is covered by the outer one's warning.
+
+- The first number is the group's first shape element, counted from the top of
+  the file as the gradient warning's is.
+- The second counts only shapes that would otherwise have printed. Stroke-only,
+  gradient-filled and self-hidden shapes are left out of it.
+- A group hidden inside another hidden group raises no warning of its own. The
+  exception is an outer group hidden only by `fill-opacity`: an inner group
+  hidden by `display` or `opacity` then warns instead.
 
 **What to do.** Nothing, if you hid the layer on purpose. If you meant it to
 print, show the layer (or set its opacity back to 100%) in your editor, save,
