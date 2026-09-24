@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   says so, naming the color and the part, instead of going quiet. A recess needs
   to be about 0.4 mm across to hold a bead.
 
+- **A traced image that says its detail was merged now really comes in under the
+  800-region limit.** The trace raised the speckle floor once and never checked
+  again. Merging specks can build new ones big enough to survive, so a noisy
+  image could still come back with thousands of regions. It now raises the floor
+  until the count is under. On generated noise, 16 of 24 fields came back over
+  before this, up to 9237 regions, and none do now
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`).
+
 ### Added
 
 - **The chair body is back in the Part dropdown.** It has been reachable only by

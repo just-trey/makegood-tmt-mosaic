@@ -11,10 +11,6 @@ import { fracFloorPx } from './stats';
  * component cap rather than a point cap: components are what drive ring count, and ring count is
  * what `shapeToFeature` is quadratic in. Raising it means re-running
  * scripts/bench-raster.ts and scripts/bench-shape-to-feature.ts.
- *
- * A target, not a bound: the raise is never rechecked, and absorbing specks merges them into each
- * other, which can mint components above the new floor. `capped` means "a raise happened", never
- * "the count is under" (docs/tech-debt.md).
  */
 export const MAX_COMPONENTS = 800;
 
@@ -27,9 +23,9 @@ export interface TracedComponent {
 
 export interface TraceResult {
   components: TracedComponent[];
-  /** True when MAX_COMPONENTS forced the despeckle floor up — the caller turns this into a notice. */
-  capped: boolean;
-  /** The floor in pixels this trace actually applied, which is the raised one when `capped`. */
+  /** Times MAX_COMPONENTS forced the despeckle floor up. Any at all is the caller's capped notice. */
+  raises: number;
+  /** The floor in pixels this trace actually applied, which is the raised one after any raise. */
   floorPx: number;
 }
 
@@ -625,17 +621,22 @@ export function traceLabelMap(map: LabelMap, params: TraceParams, placedFloor = 
   deChecker(labels, w, h);
 
   let { compId, areas, labelOf } = labelComponents(labels, w, h);
-  let capped = false;
-  const realCount = () => areas.filter((_, i) => labelOf[i] !== BACKGROUND).length;
-  if (realCount() > MAX_COMPONENTS) {
+  let raises = 0;
+  for (;;) {
+    const real = areas.filter((_, i) => labelOf[i] !== BACKGROUND);
+    if (real.length <= MAX_COMPONENTS) break;
+    raises++;
     // Raise the floor to exactly the size that fits under the cap, rather than guessing a
-    // multiplier and re-running blind.
-    const sorted = areas.filter((_, i) => labelOf[i] !== BACKGROUND).sort((a, b) => b - a);
-    minArea = Math.max(minArea + 1, sorted[MAX_COMPONENTS - 1] + 1);
+    // multiplier and re-running blind. It still has to be rechecked: absorbing specks merges them
+    // into each other, and the merged ones can clear the floor meant to remove them. When a
+    // `deChecker` split is what put the count back over, the split pieces are already under the
+    // floor and this lands on floor + 1, the smallest raise that absorbs them. That + 1 is also
+    // what ends the loop: the floor rises every pass, and at w*h the image is one component.
+    real.sort((a, b) => b - a);
+    minArea = Math.max(minArea + 1, real[MAX_COMPONENTS - 1] + 1);
     despeckle(labels, w, h, minArea);
     deChecker(labels, w, h);
     ({ compId, areas, labelOf } = labelComponents(labels, w, h));
-    capped = true;
   }
 
   const chainSet = buildChains(labels, w, h, params);
@@ -649,5 +650,5 @@ export function traceLabelMap(map: LabelMap, params: TraceParams, placedFloor = 
     components.push({ label: labelOf[comp], loops: entry.loops, area: areas[comp] });
   }
   components.sort((a, b) => b.area - a.area);
-  return { components, capped, floorPx: minArea };
+  return { components, raises, floorPx: minArea };
 }

@@ -111,7 +111,7 @@ export function parseRasterImage(
     throw new Error('No opaque pixels were found in this image. There is nothing to cut.');
 
   const floor = despeckleFloorPx(params, img.w, img.h, stats, opts.detail, opts.mmPerPixel ?? 0);
-  const { components, capped, floorPx } = traceLabelMap(map, params, floor);
+  const { components, raises, floorPx } = traceLabelMap(map, params, floor);
   // What the dropped-color notice's remedy is worth here, asked directly rather than inferred from
   // which floor binds: the floor this image would get at DETAIL_MAX, against the one it got. A
   // placement's nozzle floor pinning it and the slider already being at its end are the same answer.
@@ -182,7 +182,7 @@ export function parseRasterImage(
     droppedColors,
     detailLowersFloor,
     componentCount: components.length,
-    capped,
+    capped: raises > 0,
     floorPx,
   };
 }
