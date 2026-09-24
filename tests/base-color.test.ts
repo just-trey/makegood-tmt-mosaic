@@ -11,7 +11,6 @@ import {
   addToBase,
   baseColorHex,
   clearBaseColor,
-  currentBaseParams,
   removeFromBase,
   state,
 } from '../src/state/store';
@@ -137,75 +136,5 @@ describe('baseColorHex', () => {
     state.baseFilamentId = 'retired-filament';
 
     expect(baseColorHex()).toBe(DEFAULT_BASE_COLOR);
-  });
-});
-
-describe('currentBaseParams', () => {
-  const fit = {
-    marginPct: 7,
-    scalePct: 120,
-    offsetX: 1,
-    offsetY: -2,
-    flipX: true,
-    flipY: false,
-    rotationDeg: 45,
-  };
-
-  beforeEach(() => {
-    Object.assign(state, fit);
-  });
-
-  it('carries the shared fit fields through for every shape kind', () => {
-    for (const kind of ['disc', 'rect', 'round', 'stl'] as const) {
-      state.shapeKind = kind;
-      expect(currentBaseParams(), kind).toMatchObject({
-        marginPct: 7,
-        scaleMult: 1.2, // percent -> multiplier
-        offsetX: 1,
-        offsetY: -2,
-        flipX: true,
-        flipY: false,
-        rotationDeg: 45,
-      });
-    }
-  });
-
-  it('reads disc dimensions for disc', () => {
-    state.shapeKind = 'disc';
-    state.disc = { diameter: 90, thickness: 5 };
-
-    expect(currentBaseParams()).toMatchObject({ diameter: 90, thickness: 5 });
-  });
-
-  it('reads rect dimensions for rect', () => {
-    state.shapeKind = 'rect';
-    state.rect = { width: 100, height: 70, thickness: 3 };
-
-    expect(currentBaseParams()).toMatchObject({ width: 100, height: 70, thickness: 3 });
-  });
-
-  it('reads round dimensions, including the corner radius, for round', () => {
-    state.shapeKind = 'round';
-    state.round = { width: 100, height: 70, corner: 12, thickness: 3 };
-
-    expect(currentBaseParams()).toMatchObject({
-      width: 100,
-      height: 70,
-      corner: 12,
-      thickness: 3,
-    });
-  });
-
-  it('reads the plate (not the mesh) dimensions for stl', () => {
-    state.shapeKind = 'stl';
-    state.stlPlate = { width: 120, height: 80, thickness: 6, faceZ: 2 };
-
-    expect(currentBaseParams()).toMatchObject({ width: 120, height: 80, thickness: 6 });
-  });
-
-  it('is null in assembly mode, which has no flat base plate', () => {
-    state.shapeKind = 'assembly';
-
-    expect(currentBaseParams()).toBeNull();
   });
 });

@@ -100,12 +100,11 @@ type PersistedArtwork = Omit<ArtworkInstance, 'zone'> & { zoneId: string | null 
 export interface PersistedSession {
   version: typeof SCHEMA_VERSION;
   savedAt: number;
-  shapeKind: AppState['shapeKind'];
-  disc: AppState['disc'];
-  rect: AppState['rect'];
-  round: AppState['round'];
-  stlPlate: AppState['stlPlate'];
-  marginPct: number;
+  /**
+   * Always 'assembly' when written now. A session saved while the flat plate modes existed can
+   * still hold 'disc', 'rect', 'round' or 'stl', and restores onto the first offered kind.
+   */
+  shapeKind: string;
   scalePct: number;
   offsetX: number;
   offsetY: number;
@@ -113,7 +112,6 @@ export interface PersistedSession {
   flipY: boolean;
   rotationDeg: number;
   globalDepth: number;
-  recessBg: boolean;
   printerId: string;
   asmRadius: number;
   /** Optional: sessions written before the hubcap kind existed have no value for it. */
@@ -217,12 +215,7 @@ function snapshotSession(): PersistedSession {
   return {
     version: SCHEMA_VERSION,
     savedAt: Date.now(),
-    shapeKind: state.shapeKind,
-    disc: state.disc,
-    rect: state.rect,
-    round: state.round,
-    stlPlate: state.stlPlate,
-    marginPct: state.marginPct,
+    shapeKind: 'assembly',
     scalePct: state.scalePct,
     offsetX: state.offsetX,
     offsetY: state.offsetY,
@@ -230,7 +223,6 @@ function snapshotSession(): PersistedSession {
     flipY: state.flipY,
     rotationDeg: state.rotationDeg,
     globalDepth: state.globalDepth,
-    recessBg: state.recessBg,
     printerId: state.printerId,
     asmRadius: state.asmRadius,
     hubcapDiameterMm: state.hubcapDiameterMm,
@@ -518,10 +510,6 @@ function repairSessionContainers(s: PersistedSession): PersistedSession {
     keptApart: arr(s.keptApart, []),
     mergeGroups: arr(s.mergeGroups, []),
     baseColorMembers: arr(s.baseColorMembers, []),
-    disc: obj(s.disc, { ...state.disc }),
-    rect: obj(s.rect, { ...state.rect }),
-    round: obj(s.round, { ...state.round }),
-    stlPlate: obj(s.stlPlate, { ...state.stlPlate }),
     assembly: obj(s.assembly, { kindId: null, variantId: null }),
   };
 }
@@ -550,18 +538,12 @@ function buildRestoredScalarState(session: PersistedSession): Partial<AppState> 
   // would use one printer's plate while the picker named none.
   const printerId = getPrinter(session.printerId).id;
   const pending: Partial<AppState> = {
-    disc: session.disc,
-    rect: session.rect,
-    round: session.round,
-    stlPlate: session.stlPlate,
-    marginPct: session.marginPct,
     scalePct: session.scalePct,
     offsetX: session.offsetX,
     offsetY: session.offsetY,
     flipX: session.flipX,
     flipY: session.flipY,
     rotationDeg: session.rotationDeg,
-    recessBg: session.recessBg,
     printerId,
     baseFilamentId: session.baseFilamentId,
     autoMergeLevel: session.autoMergeLevel,
@@ -638,7 +620,7 @@ export function loadSavedSession(): PersistedSession | null {
 /**
  * Apply a saved session to `state`. Deliberately does not touch the DOM or trigger a rebuild —
  * the caller (ui/restoreBanner.ts) does that once, after this resolves, the same way any other
- * assembly-kind switch does (see setShapeKind). Re-parses each source's saved SVG text rather
+ * assembly-kind switch does (see applyPartKind). Re-parses each source's saved SVG text rather
  * than trying to persist `ParsedSVG` directly (see the note on DesignSource.svgText).
  *
  * Assembly restore awaits asmLoadFullAssembly() directly rather than going through
@@ -747,7 +729,6 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       : undefined;
   let keepSavedZones = true;
   if (session.shapeKind === 'assembly' && kind) {
-    state.shapeKind = 'assembly';
     state.assembly.kindId = kind.id;
     state.assembly.variantId = session.assembly.variantId;
     // Cleared before the load, not left to asmLoadFullAssembly's own clear. That clear sits behind
@@ -761,12 +742,11 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     await asmLoadFullAssembly();
   } else {
     // Either an assembly kind that no longer exists (renamed/retired since the session was saved),
-    // or a flat mode from a session saved back when one was offered. Neither has an option in the
+    // or a retired flat mode ('disc', 'rect', 'round', 'stl'). Neither has an option in the
     // Part dropdown any more, so falling back to the saved value would leave the select blank and
     // the next switch away from it one-way. Take the first offered kind instead of failing the
-    // whole restore. The parts are left to restoreBanner's own setShapeKind, which auto-loads
+    // whole restore. The parts are left to restoreBanner's own applyPartKind, which auto-loads
     // them: loading here would alert about an unreachable library the caller is about to retry.
-    state.shapeKind = 'assembly';
     state.assembly.kindId = firstOfferedKind().id;
     state.assembly.variantId = null;
     // Cleared for the same reason `#shape-kind`'s own handler clears them (ui/partPanel.ts):

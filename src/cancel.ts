@@ -64,7 +64,7 @@ export function cancelHonoured(): boolean {
  *     all. This is where a heavy design actually spends its time, and checking there took a
  *     6000-region wheel from 140.4s to 0.3s. The assembly sites left it at 132.2s.
  *
- * **The trap, hit once already:** the flat path's cooperative union looked safe and was not. It is
+ * **The trap, hit once already:** the 2D pass's cooperative union looked safe and was not. It is
  * shared with Fill's tiling (geometry/patterns.ts), which runs inside the per-part body, so a check
  * there aborted while that body held Manifold solids nothing would free. The finally closed that
  * hole, and the rule it taught stands: before adding a call site, follow every caller of the

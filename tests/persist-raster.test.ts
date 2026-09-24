@@ -106,8 +106,8 @@ describe('session persistence with a raster source', () => {
     saveSession();
     // Not an empty-but-valid session offering to restore nothing — there is genuinely nothing to
     // restore, so the banner must not appear. Asserted as a hard null: restoreBanner.ts shows the
-    // banner for any session that parses, and an artwork-less one describes itself as "the Disc,
-    // saved just now" with no designs listed.
+    // banner for any session that parses, and an artwork-less one describes itself as the part,
+    // saved just now, with no designs listed.
     expect(loadSavedSession()).toBeNull();
   });
 

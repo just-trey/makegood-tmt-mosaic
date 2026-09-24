@@ -105,15 +105,14 @@ beforeEach(() => {
   clearArtwork();
   clearSavedSession();
   state.assembly.parts = [];
-  state.shapeKind = 'disc';
+  state.assembly.kindId = null;
 });
 
 describe('a raster source that the browser can encode', () => {
   it('is persisted, with the settings needed to reproduce its trace', () => {
     // On the wheel, so the trace has a placement to size its printable floor from. Only this test
-    // needs one, and the restore tests below must stay in a flat mode: an assembly session pulls
-    // the parts back in, which jsdom has no canvas for.
-    state.shapeKind = 'assembly';
+    // needs one, and the restore tests below must stay on no kind: a session naming one pulls the
+    // parts back in, which jsdom has no canvas for.
     state.assembly.kindId = 'wheel';
     state.asmRadius = 138;
     loadRaster();

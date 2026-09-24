@@ -57,43 +57,6 @@ export interface ParsedSVG {
   origin?: 'svg' | 'raster';
 }
 
-export type ShapeKind = 'assembly' | 'disc' | 'rect' | 'round' | 'stl';
-
-export interface BaseParams {
-  diameter?: number;
-  width?: number;
-  height?: number;
-  corner?: number;
-  thickness: number;
-  marginPct: number;
-  scaleMult: number;
-  offsetX: number;
-  offsetY: number;
-  /** user horizontal mirror (fixes artwork that reads back-to-front) */
-  flipX: boolean;
-  /** user vertical mirror, on top of the built-in SVG y-down correction */
-  flipY: boolean;
-  /** design rotation about its center, in degrees (0 = as authored) */
-  rotationDeg: number;
-}
-
-export interface FitTransform {
-  scale: number;
-  cx: number;
-  cy: number;
-  /** ±1 horizontal multiplier (−1 = user mirror) */
-  xMul: number;
-  /** ±1 vertical multiplier: base −1 (SVG y-down to plate y-up), flipped again by the user toggle */
-  yMul: number;
-  /** sin/cos of the design rotation, applied after scale/mirror and before offset */
-  rotSin: number;
-  rotCos: number;
-  /** rings need winding reversal when the net transform is a reflection (odd # of axis flips) */
-  reverse: boolean;
-  offsetX: number;
-  offsetY: number;
-}
-
 /** One recess region after user merges are applied (key is a hex or "merge:a,b"). */
 export interface ResolvedRegion {
   key: string;

@@ -41,9 +41,7 @@ export const CLIP_REMNANT_FLOOR_MM2 = NOZZLE_MM * NOZZLE_MM;
 /**
  * How much material a recess leaves behind it, so a clamped cut is still a recess.
  *
- * Shared with flat mode rather than duplicated: it had this rule ("depth is capped at the plate
- * thickness less a 0.05 mm floor, so a recess cannot cut through", docs/pipeline.md) and assembly
- * mode had no upper bound at all. Clamping to the bare extent instead put the cutter floor exactly
+ * Clamping to the bare extent instead put the cutter floor exactly
  * coplanar with the part's back face — a through-hole and a coincident-face boolean, reported to
  * the user as a recess "cut at 48.50 mm".
  */
@@ -51,7 +49,7 @@ export const CUT_FLOOR_MM = 0.05;
 
 /**
  * Compare a requested depth against the one cut at the precision the warnings print (2dp), not at
- * machine epsilon: a 3.951 mm request on a 4 mm plate otherwise reports "set to 3.95 mm … cut at
+ * machine epsilon: a 3.951 mm request cut at 3.95 mm otherwise reports "set to 3.95 mm … cut at
  * 3.95 mm instead."
  *
  * Rounds the same way the message does rather than using an epsilon that stands in for it. A 0.005
@@ -62,21 +60,16 @@ export const depthDiffers = (a: number, b: number): boolean => a.toFixed(2) !== 
 
 /**
  * How the color list labels a region. Every depth message must name a row the user can see, and a
- * merged group's row reads "Merged (N)": its dominant hex appears nowhere as text. Both modes go
- * through here, so fixing the label in one can't leave the other pointing at a phantom row, which
- * is how assembly mode kept a bug flat mode had already fixed.
+ * merged group's row reads "Merged (N)": its dominant hex appears nowhere as text.
  */
 export function regionLabel(color: string, isMerge: boolean, memberCount: number): string {
   return isMerge ? `Merged (${memberCount})` : color;
 }
 
 /**
- * The one message both modes raise, so it can't drift in wording the way the label once did.
- *
- * Describes the *setting* and the raise, never the cut that followed. Assembly mode hands the
- * raised value to a mapper that may discard it (a cutThrough part holes any depth the whole way
- * through), so "would cut nothing" would be false there and true in flat mode. Everything this
- * says is true wherever the color lands.
+ * Describes the *setting* and the raise, never the cut that followed. The raised value goes to a
+ * mapper that may discard it (a cutThrough part holes any depth the whole way through), so "would
+ * cut nothing" would be false there. Everything this says is true wherever the color lands.
  *
  * Takes every color at once, like edgeCutThroughNotice: a global Depth of 0 raises every row, so a
  * message per row stacked one identical-looking pill per color, and an imported photo starts at
@@ -104,8 +97,7 @@ export interface ZeroDepthRaise {
  * Keyed by both numbers as the message prints them, never by "was raised at all": `requested` is
  * per color, so merging two pairs would quote some of the colors named the other pair's number.
  * `raisedTo` is in the key for the same reason, though nothing reachable today varies it within one
- * build (flat mode's bound is the one plate; assembly's maxCutDepth() declines rather than
- * returning below MIN_CUT_DEPTH_MM). A label already staged for a pair is not repeated, which is
+ * build (maxCutDepth() declines rather than returning below MIN_CUT_DEPTH_MM). A label already staged for a pair is not repeated, which is
  * what keeps a color sitting on several parts to one mention.
  */
 export function addZeroDepthRaise(
@@ -134,7 +126,7 @@ export function addZeroDepthRaise(
  *
  * Takes every color clamped to the same depth on the same part at once, like zeroDepthWarning:
  * without grouping, a merged-color palette on one part stacked one identical-looking pill per
- * color (see addTooDeepClamp).
+ * color (see addPartTooDeepClamp).
  */
 export function tooDeepWarning(
   labels: string[],
@@ -152,58 +144,18 @@ export function tooDeepWarning(
   );
 }
 
-/**
- * The warning for a depth deeper than the flat-mode plate can hold. Same shape as tooDeepWarning,
- * but a plate has no part to name — the bound is the one thickness the whole build shares.
- */
-export function tooDeepPlateWarning(
-  labels: string[],
-  requested: number,
-  cutAt: number,
-  thickness: number,
-): string {
-  const one = labels.length === 1;
-  const which = labels.map((l) => `"${l}"`).join(', ');
-  return (
-    `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ${requested.toFixed(2)} mm, ` +
-    `but a ${thickness.toFixed(2)} mm plate can only cut ${cutAt.toFixed(2)} mm deep. ` +
-    `${one ? 'It was' : 'They were'} cut at ${cutAt.toFixed(2)} mm instead.`
-  );
-}
-
-export interface DepthClamp {
+export interface PartDepthClamp {
   requested: number;
   cutAt: number;
   labels: string[];
-}
-
-/**
- * Stage one color's too-deep clamp for a single flat-mode message at the end of the build. Keyed
- * like addZeroDepthRaise, by both numbers the message prints: `requested` is per row (any row can
- * carry its own colorSettings override), and `cutAt` for the same reason, though within one flat
- * build it never varies — there is only the one plate.
- */
-export function addTooDeepClamp(
-  into: Map<string, DepthClamp>,
-  label: string,
-  requested: number,
-  cutAt: number,
-): void {
-  const key = `${requested.toFixed(2)}|${cutAt.toFixed(2)}`;
-  const at = into.get(key);
-  if (!at) into.set(key, { requested, cutAt, labels: [label] });
-  else if (!at.labels.includes(label)) at.labels.push(label);
-}
-
-export interface PartDepthClamp extends DepthClamp {
   partName: string;
 }
 
 /**
- * Stage one color's too-deep clamp for a single assembly-mode message at the end of the build.
- * Keyed by a third component addTooDeepClamp doesn't need: `maxCutDepth()` is a per-part bound, so
- * two parts can genuinely clamp the same color to two different depths, and the message has to
- * keep naming the part.
+ * Stage one color's too-deep clamp for a single message at the end of the build. Keyed like
+ * addZeroDepthRaise, by both numbers the message prints (any row can carry its own depth), plus the
+ * part: `maxCutDepth()` is a per-part bound, so two parts can genuinely clamp the same color to two
+ * different depths, and the message has to keep naming the part.
  */
 export function addPartTooDeepClamp(
   into: Map<string, PartDepthClamp>,
@@ -229,9 +181,7 @@ export function subLayerDepth(depth: number): boolean {
 }
 
 /**
- * The note both modes raise for a depth that prints only on a fine profile. Shared for the same
- * reason as zeroDepthWarning and regionLabel: two copies of a string is how assembly kept a bug
- * flat mode had already fixed.
+ * The note for a depth that prints only on a fine profile.
  *
  * **An `ℹ`, not a `⚠`. Proposed and rejected (UX review 2026-08-03).** The icon tracks "did the
  * app change your number?", not "might you be disappointed?". A zero is raised, and a value

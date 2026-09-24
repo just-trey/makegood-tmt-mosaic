@@ -2,16 +2,10 @@ import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { $, input, numVal } from './dom';
 
-/** Push state.globalDepth/recessBg into the DOM — needed by session restore (state/persist.ts),
- * which sets them directly rather than through these controls' own handlers. */
+/** Push state.globalDepth into the DOM — needed by session restore (state/persist.ts), which sets
+ * it directly rather than through the control's own handler. */
 export function refreshDepthControls(): void {
   input('#p-depth').value = String(state.globalDepth);
-  input('#p-recess-bg').checked = state.recessBg;
-  $('#bg-depth-hint').style.display = state.recessBg ? 'inline' : 'none';
-  // state.recessBg is read only by buildGeometry (geometry/flat.ts), and assembly mode never calls
-  // it — so the checkbox cannot change what an assembly part prints. Hidden rather than cleared:
-  // flat.ts still honors the value, and clearing it would discard the setting silently.
-  $('#p-recess-bg-row').style.display = state.shapeKind === 'assembly' ? 'none' : '';
 }
 
 /**
@@ -71,8 +65,8 @@ export function initDepthPanel(): void {
     if (focused instanceof HTMLInputElement && focused.classList.contains('depth-input'))
       focused.blur();
     // Only what the readout named. state.colorSettings can also hold keys this count never
-    // included: flat-mode entries that survive a switch to an assembly kind, and colors the
-    // shipped filter dropped. Clearing those would make the button do more than it says.
+    // included: unprefixed keys restored from a session saved in a retired flat mode, and colors
+    // the shipped filter dropped. Clearing those would make the button do more than it says.
     namedOverrides.forEach((k) => delete state.colorSettings[k]);
     scheduleRebuild();
   };
@@ -113,10 +107,5 @@ export function initDepthPanel(): void {
   input('#p-depth').addEventListener('input', () => {
     state.globalDepth = numVal('#p-depth', 1.0);
     scheduleRebuild('typed');
-  });
-  input('#p-recess-bg').addEventListener('change', () => {
-    state.recessBg = input('#p-recess-bg').checked;
-    $('#bg-depth-hint').style.display = state.recessBg ? 'inline' : 'none';
-    scheduleRebuild();
   });
 }

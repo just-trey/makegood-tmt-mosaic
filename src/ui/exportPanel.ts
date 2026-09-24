@@ -1,6 +1,6 @@
 import { baseColorHex, state } from '../state/store';
 import { nearestFilamentName } from '../state/filaments';
-import { getLastAssemblyBuild, getLastBuild } from '../app/rebuild';
+import { getLastAssemblyBuild } from '../app/rebuild';
 import { asmPartFaceNormal, shippedColorIndices } from '../geometry/assembly';
 import {
   build3MFCombined,
@@ -16,8 +16,6 @@ import { getPrinter } from '../export/printers';
 import { clampBuildParamToPrinter } from './assemblyPanel';
 import { refreshSlotCountCapacity } from './colorList';
 import { refreshSlotBudgetNotice } from './slotBudget';
-import { meshToSTLBytes, soupFromObject } from '../export/stl';
-import { zipStore, type ZipEntry } from '../export/zip';
 import { hideOverlay, showOverlay } from './overlay';
 import { $ } from './dom';
 import { WARNINGS, warn, notice } from '../warnings';
@@ -81,8 +79,8 @@ const COVERAGE_WARNING_SUFFIX = 'will print body-colored with no design.';
 export function renderExportSummary(): void {
   const el = document.querySelector<HTMLElement>('#export-summary');
   if (!el) return;
-  // Tied to the button it describes, rather than to the last build: neither rebuild path clears
-  // `lastBuild` when the artwork is removed, so reading the build alone left "13 parts · 11
+  // Tied to the button it describes, rather than to the last build: the rebuild doesn't clear
+  // `lastAssemblyBuild` when the artwork is removed, so reading the build alone left "13 parts · 11
   // plates" sitting beside an export button that same rebuild had just disabled.
   if ($<HTMLButtonElement>('#btn-export').disabled) {
     el.hidden = true;
@@ -90,70 +88,43 @@ export function renderExportSummary(): void {
   }
   const rows: string[] = [];
 
-  if (state.shapeKind === 'assembly') {
-    const built = getLastAssemblyBuild();
-    const kept = built ? keptPartOutputs(built) : [];
-    if (!kept.length) {
-      el.hidden = true;
-      return;
-    }
-    const shipped = shippedColorIndices(kept);
-    const filaments = [
-      { name: 'Body', hex: baseColorHex() },
-      ...built!.palette.flatMap((p, ci) =>
-        shipped.has(ci) ? [{ name: nearestFilamentName(p.hex), hex: p.hex }] : [],
-      ),
-    ];
-    const hinted = platePlan(kept).map((h) => ({ name: h.part.name, plateHint: h.plateHint }));
-    rows.push(`${kept.length} part${kept.length === 1 ? '' : 's'}`);
-    if (partsCarryPlateHints(hinted)) {
-      const plates = groupByPlateHint(hinted, (h) => h.plateHint);
-      rows.push(`${plates.length} plate${plates.length === 1 ? '' : 's'}`);
-      el.dataset.plates = plates.map((pl) => pl.map((h) => h.name).join(', ')).join(' | ');
-    } else {
-      delete el.dataset.plates;
-    }
-    rows.push(`${filaments.length} filament${filaments.length === 1 ? '' : 's'}`);
-    el.innerHTML =
-      `<div class="export-summary-line">${rows.join(' · ')}</div>` +
-      `<div class="export-summary-swatches">${filaments
-        .map(
-          (f) =>
-            `<span class="export-summary-swatch" style="background:${f.hex}" title="${f.name}"></span>`,
-        )
-        .join('')}</div>` +
-      (el.dataset.plates
-        ? `<div class="export-summary-plates">${el.dataset.plates
-            .split(' | ')
-            .map((p, i) => `Plate ${i + 1}: ${p}`)
-            .join('<br>')}</div>`
-        : '');
-    el.hidden = false;
-    return;
-  }
-
-  const built = getLastBuild();
-  if (!built) {
+  const built = getLastAssemblyBuild();
+  const kept = built ? keptPartOutputs(built) : [];
+  if (!kept.length) {
     el.hidden = true;
     return;
   }
+  const shipped = shippedColorIndices(kept);
   const filaments = [
     { name: 'Body', hex: baseColorHex() },
-    ...built.colorMeshes.map((c) => ({
-      name: c.isBackground ? 'Background' : nearestFilamentName(c.color),
-      hex: c.color,
-    })),
+    ...built!.palette.flatMap((p, ci) =>
+      shipped.has(ci) ? [{ name: nearestFilamentName(p.hex), hex: p.hex }] : [],
+    ),
   ];
+  const hinted = platePlan(kept).map((h) => ({ name: h.part.name, plateHint: h.plateHint }));
+  rows.push(`${kept.length} part${kept.length === 1 ? '' : 's'}`);
+  if (partsCarryPlateHints(hinted)) {
+    const plates = groupByPlateHint(hinted, (h) => h.plateHint);
+    rows.push(`${plates.length} plate${plates.length === 1 ? '' : 's'}`);
+    el.dataset.plates = plates.map((pl) => pl.map((h) => h.name).join(', ')).join(' | ');
+  } else {
+    delete el.dataset.plates;
+  }
+  rows.push(`${filaments.length} filament${filaments.length === 1 ? '' : 's'}`);
   el.innerHTML =
-    `<div class="export-summary-line">1 plate · ${filaments.length} filament${
-      filaments.length === 1 ? '' : 's'
-    }</div>` +
+    `<div class="export-summary-line">${rows.join(' · ')}</div>` +
     `<div class="export-summary-swatches">${filaments
       .map(
         (f) =>
           `<span class="export-summary-swatch" style="background:${f.hex}" title="${f.name}"></span>`,
       )
-      .join('')}</div>`;
+      .join('')}</div>` +
+    (el.dataset.plates
+      ? `<div class="export-summary-plates">${el.dataset.plates
+          .split(' | ')
+          .map((p, i) => `Plate ${i + 1}: ${p}`)
+          .join('<br>')}</div>`
+      : '');
   el.hidden = false;
 }
 
@@ -231,35 +202,34 @@ function warnIfIncompleteZoneCoverage(): void {
 }
 
 export async function exportPrintReady3MF(): Promise<void> {
-  let materials: ExportMaterial[], parts: ExportPart[], fname: string;
   const bodyColor = baseColorHex().toUpperCase();
   // captured now, not read at track() time below: the export button disables itself during the
   // awaits ahead, but #shape-kind doesn't, so state.assembly.kindId can move under us mid-export
-  const exportedKindId = state.shapeKind === 'assembly' ? state.assembly.kindId : null;
+  const exportedKindId = state.assembly.kindId;
 
-  if (state.shapeKind === 'assembly') {
-    const built = getLastAssemblyBuild();
-    if (!built || !built.partOutputs.length) return;
-    clearStalePlacementNotices();
-    warnIfIncompleteZoneCoverage();
-    const palette = built.palette;
-    const kept = keptPartOutputs(built, (msg) => warn(msg));
-    // Only palette colors with an inlay on some exported part become materials. A color whose
-    // regions all fell off the parts would otherwise ship as a filament nothing references,
-    // costing the user an AMS slot that prints nothing (the build warns naming such colors).
-    const shipped = shippedColorIndices(kept);
-    const matIndexByColor = new Map<number, number>();
-    materials = [{ name: 'Body', color: bodyColor }];
-    palette.forEach((p, ci) => {
-      if (!shipped.has(ci)) return;
-      matIndexByColor.set(ci, materials.length);
-      materials.push({ name: nearestFilamentName(p.hex), color: p.hex });
-    });
-    // Plate layout comes from PLACEMENT — verified constants, not computed. platePlan applies it,
-    // and the pre-export summary reads the same plan so the two cannot disagree about what the
-    // file will contain.
-    const plan = platePlan(kept);
-    parts = kept.map(({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }, i) => {
+  const built = getLastAssemblyBuild();
+  if (!built || !built.partOutputs.length) return;
+  clearStalePlacementNotices();
+  warnIfIncompleteZoneCoverage();
+  const palette = built.palette;
+  const kept = keptPartOutputs(built, (msg) => warn(msg));
+  // Only palette colors with an inlay on some exported part become materials. A color whose
+  // regions all fell off the parts would otherwise ship as a filament nothing references,
+  // costing the user an AMS slot that prints nothing (the build warns naming such colors).
+  const shipped = shippedColorIndices(kept);
+  const matIndexByColor = new Map<number, number>();
+  const materials: ExportMaterial[] = [{ name: 'Body', color: bodyColor }];
+  palette.forEach((p, ci) => {
+    if (!shipped.has(ci)) return;
+    matIndexByColor.set(ci, materials.length);
+    materials.push({ name: nearestFilamentName(p.hex), color: p.hex });
+  });
+  // Plate layout comes from PLACEMENT — verified constants, not computed. platePlan applies it,
+  // and the pre-export summary reads the same plan so the two cannot disagree about what the
+  // file will contain.
+  const plan = platePlan(kept);
+  const parts: ExportPart[] = kept.map(
+    ({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }, i) => {
       const nrm = asmPartFaceNormal(part, state.assembly.parts);
       const nsign = nrm && nrm[1] < 0 ? -1 : 1;
       const subs: ExportSub[] = [
@@ -284,32 +254,9 @@ export async function exportPrintReady3MF(): Promise<void> {
         ...(resolution.verified ? resolution.placement : {}),
         ...(plan[i].plateHint != null ? { plateHint: plan[i].plateHint } : {}),
       };
-    });
-    fname = `mosaic-${state.assembly.kindId}.3mf`;
-  } else {
-    const built = getLastBuild();
-    if (!built) return;
-    clearStalePlacementNotices();
-    // flat-plate mode: the already-built slab-stack body + per-color plugs become one
-    // multi-part object. nsign 0 = exported upright, no face-down tilt — the design face
-    // is already +Z and the underside already sits at Z=0.
-    materials = [{ name: 'Body', color: bodyColor }].concat(
-      built.colorMeshes.map((c) => ({
-        name: c.isBackground ? 'Background' : nearestFilamentName(c.color),
-        color: c.color,
-      })),
-    );
-    const bodySoup = soupFromObject(built.baseGroup);
-    const subs = [{ name: 'Body', matIndex: 0, soup: bodySoup }].concat(
-      built.colorMeshes.map((c, i) => ({
-        name: materials[i + 1].name,
-        matIndex: i + 1,
-        soup: soupFromObject(c.mesh),
-      })),
-    );
-    parts = [{ name: 'Mosaic plate', nsign: 0, bodySoup, subs }];
-    fname = 'mosaic-plate.3mf';
-  }
+    },
+  );
+  const fname = `mosaic-${state.assembly.kindId}.3mf`;
 
   // the color list already posts this live; re-run it here against the export's own material count,
   // which is the authoritative one
@@ -324,11 +271,10 @@ export async function exportPrintReady3MF(): Promise<void> {
     placementWarnings.forEach((msg) => warn(msg));
     track('export', {
       format: '3mf',
-      mode: state.shapeKind === 'assembly' ? 'assembly' : 'flat',
+      mode: 'assembly',
       printer: state.printerId,
       colors: materials.length - 1,
       warnings: placementWarnings.length,
-      // flat mode has no assembly kind to name
       ...(exportedKindId ? { kind: exportedKindId } : {}),
     });
     download(blob, fname);
@@ -343,61 +289,11 @@ export async function exportPrintReady3MF(): Promise<void> {
   hideOverlay();
 }
 
-async function exportSTLSet(): Promise<void> {
-  const built = getLastBuild();
-  if (!built) return;
-  showOverlay('Exporting STL set…');
-  await new Promise((r) => setTimeout(r, 10));
-  try {
-    const files: ZipEntry[] = [{ name: 'base.stl', data: meshToSTLBytes(built.baseGroup) }];
-    built.colorMeshes.forEach((c, idx) => {
-      let label: string;
-      if (c.isBackground) label = 'background';
-      else if (c.isMergeGroup)
-        label = 'merged_' + c.members.map((h) => h.replace('#', '')).join('+');
-      else label = c.color.replace('#', '');
-      files.push({
-        name: `color_${String(idx + 1).padStart(2, '0')}_${label}.stl`,
-        data: meshToSTLBytes(c.mesh),
-      });
-    });
-    const readme = `Mosaic for TMT export
-======================
-${built.colorMeshes.length} color STL(s) + base.stl (uncut plate body).
-
-Bambu Studio workflow:
-1. File > Import > import all STLs from this folder as separate objects.
-2. Select all imported objects, then right-click > "Assemble" (or drag them together).
-   That gives them one build plate position, as a single multi-part object.
-3. In the object list, click each part and assign it a filament / AMS slot from the color swatch.
-4. Slice as normal. Bambu Studio will generate the per-color toolpaths and AMS color changes automatically.
-
-Generated by TMT Mosaic, a MakeGood tool for the Toddler Mobility Trainer
-(TMT): makegood.design / 3d-mobility.org. A browser-based tool, not
-affiliated with Bambu Lab.
-`;
-    files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
-    const blob = zipStore(files);
-    track('export', {
-      format: 'stl_zip',
-      mode: 'flat',
-      printer: state.printerId,
-      colors: built.colorMeshes.length,
-    });
-    download(blob, 'mosaic-export.zip');
-  } catch (e) {
-    console.error(e);
-    track('export_failed', { format: 'stl_zip' });
-    await alertDialog('Export failed: ' + (e as Error).message);
-  }
-  hideOverlay();
-}
-
 /**
- * Guards both export buttons against re-entrancy — confirmed live (5 rapid clicks on #btn-export)
- * that neither export function had any guard at all: every click ran its own full export and
- * download, independent of any already in flight. The flag is the actual guard, checked before
- * either export starts; the `disabled` toggle on top is only a visual affordance during the
+ * Guards the export button against re-entrancy — confirmed live (5 rapid clicks on #btn-export)
+ * that the export had no guard at all: every click ran its own full export and download,
+ * independent of any already in flight. The flag is the actual guard, checked before the export
+ * starts; the `disabled` toggle on top is only a visual affordance during the
  * export, not the mechanism — rebuild.ts owns #btn-export's disabled state the rest of the time
  * (enabled/disabled based on whether the current build has exportable geometry), and this
  * shouldn't fight that ownership by unconditionally forcing it back to enabled once an export
@@ -439,6 +335,4 @@ export function initExportPanel(): void {
   });
   const exportBtn = $<HTMLButtonElement>('#btn-export');
   exportBtn.addEventListener('click', () => void guardExport(exportBtn, exportPrintReady3MF));
-  const exportStlBtn = $<HTMLButtonElement>('#btn-export-stl');
-  exportStlBtn.addEventListener('click', () => void guardExport(exportStlBtn, exportSTLSet));
 }

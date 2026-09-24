@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { state } from '../state/store';
-import { currentBaseParams } from '../state/store';
 import { currentAssemblyKind, currentDesignScaleContext } from '../assembly/kinds';
 import { primaryZoneMapper, zoneMappersFor } from '../geometry/zoneMappers';
 import { designAnchor, designMmPerUnit } from '../geometry/assembly';
@@ -38,7 +37,7 @@ export interface FaceFrame {
    * curved counterpart of `origin + du·uAxis + dv·vAxis`. The gizmo traces its outline through this
    * so the frame follows the part instead of floating off it: a tangent-plane rectangle leaves the
    * chair's flank by 16mm at 100mm across and 110mm at 300mm, which reads as the frame hanging in
-   * space beside the part. Flat kinds return exactly the plane formula.
+   * space beside the part. A flat face returns exactly the plane formula.
    */
   pointAt(du: number, dv: number): THREE.Vector3;
   /**
@@ -69,48 +68,7 @@ export interface FaceFrame {
  */
 export function computeFaceFrame(): FaceFrame | null {
   if (!state.parsed) return null;
-  return state.shapeKind === 'assembly' ? assemblyFrame() : flatFrame();
-}
-
-function flatFrame(): FaceFrame | null {
-  const bp = currentBaseParams();
-  if (!bp) return null;
-  const bbox = state.parsed!.bbox;
-  const svgW = bbox.maxX - bbox.minX,
-    svgH = bbox.maxY - bbox.minY;
-  if (!(svgW > 0) || !(svgH > 0)) return null;
-  const footW = state.shapeKind === 'disc' ? bp.diameter || 0 : bp.width || 0;
-  const footH = state.shapeKind === 'disc' ? bp.diameter || 0 : bp.height || 0;
-  // mirror fitTransform's auto-fit: margin shrinks the usable footprint on both sides
-  const mW = footW * (1 - bp.marginPct / 50),
-    mH = footH * (1 - bp.marginPct / 50);
-  const autoScale = Math.min(mW / svgW, mH / svgH);
-  const scale = autoScale * (state.scalePct / 100);
-  // Captured, not read live inside pointAt below. The gizmo passes displacements measured from the
-  // center of the frame it is holding, so a closure that re-read state.offsetX during a move drag
-  // would add the delta a second time and send the outline off at twice the cursor. The assembly
-  // path captures its center for the same reason.
-  const ox = state.offsetX,
-    oy = state.offsetY;
-  // Flat mode never poses the model group, so this is the grid lift alone today — routed through
-  // the same helpers as the assembly path so it stays right if that ever changes.
-  return {
-    origin: modelToWorldPoint(new THREE.Vector3(ox, oy, bp.thickness)),
-    uAxis: modelToWorldDir(new THREE.Vector3(1, 0, 0)),
-    vAxis: modelToWorldDir(new THREE.Vector3(0, 1, 0)),
-    normal: modelToWorldDir(new THREE.Vector3(0, 0, 1)),
-    halfW: (svgW * scale) / 2,
-    halfH: (svgH * scale) / 2,
-    // A flat plate IS its own tangent plane, so tracing the outline reduces to the plane formula —
-    // kept in the same shape as the assembly path rather than special-cased in the gizmo.
-    pointAt: (du, dv) => modelToWorldPoint(new THREE.Vector3(ox + du, oy + dv, bp.thickness)),
-    offSurfaceMM: 0,
-    offSurfaceAt: () => 0,
-    offsetX: ox,
-    offsetY: oy,
-    scalePct: state.scalePct,
-    rotationDeg: state.rotationDeg,
-  };
+  return assemblyFrame();
 }
 
 /**

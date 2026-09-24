@@ -8,14 +8,13 @@
   reconciled here (rebuilding a 1000-line React mockup was out of scope for that pass):
 
     1. Part renders a SegmentedControl (Disc/Rect/Round rect/STL ref/Assembly). The app
-       renders a native <select> with five different options — the assembly kinds plus Disc.
+       renders a native <select> of the assembly kinds, and has no flat plate modes.
     2. Assembly roles render two ThumbnailSelect dropdowns. The app has a reload button,
        "+ Add {role}" buttons, and a drop-zone row per part.
     3. Colors detected renders a "Merge selected into one recess" button over checkbox rows.
        The app merges per-row, via a drag grip or a "Merge with…" select.
     4. Panels run Artwork first, then Part. The app puts Part first.
-    5. Export renders one primary button. The app has a primary "Export print-ready 3MF"
-       plus a small "Export STL set (.zip)" below it.
+    5. Artwork fit renders a Margin slider. The app has none.
 
   See docs/system-audit.md for the measurements behind each.
 -->

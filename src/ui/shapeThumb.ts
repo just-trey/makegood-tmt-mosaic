@@ -438,10 +438,6 @@ function drawEdge(
 export function refreshShapeThumb(): void {
   const el = $('#shape-thumb');
   if (!el) return;
-  // Not our box to touch outside assembly mode: flat kinds keep the glyph setShapeThumb painted.
-  // Clearing here emptied it whenever a part finished loading after the user switched away. Start
-  // a 13-part chair, pick Disc, and the next per-part notification wiped the disc.
-  if (state.shapeKind !== 'assembly') return;
   const key = thumbKey();
   if (!key) {
     el.innerHTML = '';

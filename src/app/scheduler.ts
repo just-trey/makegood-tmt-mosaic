@@ -4,7 +4,6 @@ import { hideOverlay, showOverlay, updateOverlay } from '../ui/overlay';
 import { setProgressSink } from '../progress';
 import { beginWork, endWork, noteRebuildDone } from './idle';
 import { armCancel, cancelHonoured } from '../cancel';
-import { state } from '../state/store';
 
 let handler: () => void | Promise<void> = () => {};
 let costHint: () => boolean = () => false;
@@ -76,17 +75,7 @@ async function runNow(): Promise<void> {
   const showsOverlay = isRebuildLikelySlow();
   const t0 = performance.now();
   if (showsOverlay) {
-    // Assembly only, which is every part the app offers — the flat modes ship compiled and
-    // unrendered (docs/tech-debt.md), so this condition selects everything reachable.
-    //
-    // The reason recorded here used to be that flat had no safe abort point, and that is no longer
-    // true twice over: the check went into computeNetRegionsByColor, which both paths run and
-    // which holds no Manifold solids, and Fill's tiling — the case that made
-    // `unionAllCooperative` unsafe — now runs inside the per-part body's finally over its
-    // solids. flat.ts imports no Manifold at all. So offering flat a Cancel is untested
-    // rather than unsafe, and there is no reachable flat mode to test it on
-    // (docs/tech-debt.md).
-    showOverlay('Rebuilding geometry…', { cancellable: state.shapeKind === 'assembly' });
+    showOverlay('Rebuilding geometry…', { cancellable: true });
     // The rebuild reports progress as it chunks through the boolean pass; show it as a live
     // percentage, and once it's dragged on a while add a "hang tight" so it reads as working.
     setProgressSink((fraction) => {

@@ -372,128 +372,7 @@
             <select id="shape-kind" aria-label="Part shape"></select>
           </div>
 
-          <div id="shape-params-disc">
-            <div class="row">
-              <label for="p-diameter">Diameter</label>
-              <div class="field">
-                <input type="number" id="p-diameter" value="80" min="1" step="1" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-            <div class="row">
-              <label for="p-thickness">Thickness</label>
-              <div class="field">
-                <input type="number" id="p-thickness" value="4" min="0.4" step="0.1" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-          </div>
-          <div id="shape-params-rect" style="display: none">
-            <div class="row">
-              <label for="p-width">Width</label>
-              <div class="field">
-                <input type="number" id="p-width" value="80" min="1" step="1" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-            <div class="row">
-              <label for="p-height">Height</label>
-              <div class="field">
-                <input type="number" id="p-height" value="60" min="1" step="1" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-            <div class="row">
-              <label for="p-thickness-r">Thickness</label>
-              <div class="field">
-                <input type="number" id="p-thickness-r" value="4" min="0.4" step="0.1" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-          </div>
-          <div id="shape-params-round" style="display: none">
-            <div class="row">
-              <label for="p-width-rr">Width</label>
-              <div class="field">
-                <input type="number" id="p-width-rr" value="80" min="1" step="1" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-            <div class="row">
-              <label for="p-height-rr">Height</label>
-              <div class="field">
-                <input type="number" id="p-height-rr" value="60" min="1" step="1" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-            <div class="row">
-              <label for="p-corner">Corner r</label>
-              <div class="field">
-                <input type="number" id="p-corner" value="8" min="0" step="0.5" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-            <div class="row">
-              <label for="p-thickness-rr">Thickness</label>
-              <div class="field">
-                <input type="number" id="p-thickness-rr" value="4" min="0.4" step="0.1" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-          </div>
-          <div id="shape-params-stl" style="display: none">
-            <div
-              id="stl-dropzone"
-              style="
-                border: 1.5px dashed var(--line);
-                border-radius: var(--radius-2xl);
-                padding: var(--space-section) var(--space-row);
-                text-align: center;
-                color: var(--text-dim);
-                cursor: pointer;
-              "
-            >
-              Drop base STL for reference<br /><span class="fname" id="stl-fname"></span>
-              <input
-                type="file"
-                id="stl-input"
-                accept=".stl"
-                aria-label="Upload STL reference mesh"
-                style="display: none"
-              />
-            </div>
-            <div class="row" style="margin-top: var(--space-row)">
-              <label for="p-facez">Face Z</label>
-              <div class="field"><input type="number" id="p-facez" value="0" step="0.1" /></div>
-              <button class="btn small" id="btn-autoz">Auto (top)</button>
-            </div>
-            <div class="row">
-              <label for="p-width-stl">Footprint</label>
-              <div class="field"><input type="number" id="p-width-stl" value="80" step="1" /></div>
-              <div class="field">
-                <input
-                  type="number"
-                  id="p-height-stl"
-                  value="60"
-                  step="1"
-                  aria-label="Footprint height"
-                />
-              </div>
-            </div>
-            <div class="row">
-              <label for="p-thickness-stl">Insert thick.</label>
-              <div class="field">
-                <input type="number" id="p-thickness-stl" value="4" min="0.4" step="0.1" />
-              </div>
-              <span class="hint">mm</span>
-            </div>
-            <div class="hint">
-              STL is <b>reference-only</b>. The mesh guides sizing and alignment. Export produces a
-              flat plate insert sized to the face above.
-            </div>
-          </div>
-
-          <div id="shape-params-assembly" style="display: none">
+          <div id="shape-params-assembly">
             <div
               class="row"
               id="asm-variant-row"
@@ -589,21 +468,6 @@
 
         <details class="sec" open>
           <summary>Artwork fit</summary>
-          <div class="row" id="p-margin-row">
-            <label for="p-margin">Margin</label>
-            <div class="field pair">
-              <input type="range" id="p-margin" min="0" max="30" step="1" value="5" /><input
-                type="number"
-                id="p-margin-num"
-                min="0"
-                max="30"
-                step="1"
-                value="5"
-                aria-label="Margin, exact value"
-              />
-            </div>
-            <span class="hint">%</span>
-          </div>
           <div class="row">
             <label for="p-scale">Scale</label>
             <div class="field pair">
@@ -690,9 +554,8 @@
           </div>
           <button class="btn small full" id="btn-reset-fit">Reset to auto-fit</button>
           <div class="hint" id="p-fit-hint">
-            Margin sets the auto-fit border. Scale multiplies on top; over 100% bleeds past the
-            edge. Flip H mirrors the artwork left to right, which fixes text that reads backwards.
-            Flip V mirrors it top to bottom.
+            Scale multiplies the artwork; over 100% bleeds past the part face. Flip H mirrors it
+            left to right, which fixes text that reads backwards. Flip V mirrors it top to bottom.
           </div>
         </details>
 
@@ -706,13 +569,6 @@
             <span class="hint">mm</span>
           </div>
           <div class="depth-overrides" id="depth-overrides" hidden></div>
-          <div class="row" id="p-recess-bg-row">
-            <label for="p-recess-bg">Recess bg too</label>
-            <div class="field" style="flex: 0"><input type="checkbox" id="p-recess-bg" /></div>
-            <span class="hint" id="bg-depth-hint" style="display: none"
-              >uses the default depth</span
-            >
-          </div>
           <div class="hint">
             Measured down from the top face. Individual colors can override it.
           </div>
@@ -763,17 +619,9 @@
           </div>
           <div class="export-summary" id="export-summary" hidden></div>
           <button class="btn primary full" id="btn-export" disabled>Export print-ready 3MF</button>
-          <button
-            class="btn small full"
-            id="btn-export-stl"
-            disabled
-            style="margin-top: var(--space-tight)"
-          >
-            Export STL set (.zip)
-          </button>
           <div class="hint" id="export-hint">
-            The 3MF is print-ready for Bambu Studio, OrcaSlicer, or Snapmaker Orca, with colors
-            pre-assigned to filament slots. The STL set is the fallback for other slicers.
+            Exports a Bambu Studio project 3MF. Parts are spread across build plates, with colors
+            pre-assigned to filament slots.
           </div>
         </details>
       </div>

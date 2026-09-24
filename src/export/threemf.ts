@@ -11,7 +11,7 @@ export interface ExportSub {
   matIndex: number;
   /** Manifold's native index, emitted as-is when available (skips re-welding the soup). */
   indexed?: IndexedMesh;
-  /** Unindexed soup; welded on the fly when `indexed` is absent (flat mode, fallback parts). */
+  /** Unindexed soup; welded on the fly when `indexed` is absent (fallback parts). */
   soup?: Float32Array;
 }
 export interface ExportPart {
@@ -67,7 +67,7 @@ export interface ExportOptions {
 /**
  * Triangle soup to indexed {verts, tris} for compact 3MF output. The key rounds to 4 decimals
  * (0.1 micron) via integer scaling: Math.round is markedly cheaper than toFixed(4) on large
- * meshes. Only for meshes that don't arrive pre-indexed (flat mode, fallback parts); Manifold
+ * meshes. Only for meshes that don't arrive pre-indexed (fallback parts); Manifold
  * assembly meshes carry their own index and skip this.
  */
 export function soupToIndexed(soup: Float32Array): { verts: number[]; tris: number[] } {

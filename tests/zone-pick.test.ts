@@ -120,7 +120,6 @@ beforeEach(() => {
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld(true);
 
-  state.shapeKind = 'assembly';
   state.assembly.kindId = 'chair-body';
   state.assembly.parts = [part()];
   state.artworks = [
@@ -137,7 +136,6 @@ afterEach(() => {
   state.assembly.kindId = null;
   state.assembly.parts = [];
   state.artworks = [];
-  state.shapeKind = 'disc';
 });
 
 describe('refreshZonePickMeshes', () => {
@@ -220,19 +218,6 @@ describe('refreshZonePickMeshes', () => {
     refreshZonePickMeshes();
 
     expect(disposed).toHaveBeenCalled();
-  });
-
-  it('registers nothing outside assembly mode', () => {
-    initZonePicking();
-    state.shapeKind = 'disc';
-
-    refreshZonePickMeshes();
-
-    let meshes = 0;
-    sceneOverlays[0].traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) meshes++;
-    });
-    expect(meshes).toBe(0);
   });
 });
 

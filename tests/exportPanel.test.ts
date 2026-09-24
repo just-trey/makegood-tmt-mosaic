@@ -5,7 +5,6 @@ import type { AssemblyPart, AssemblyPartOutput } from '../src/types';
 
 vi.mock('../src/app/rebuild', () => ({
   getLastAssemblyBuild: vi.fn(),
-  getLastBuild: vi.fn(),
 }));
 vi.mock('../src/geometry/assembly', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/geometry/assembly')>()),
@@ -102,7 +101,6 @@ beforeEach(() => {
     unitLabel: 'AMS unit',
   } as ReturnType<typeof getPrinter>);
   document.body.innerHTML = '<div id="warnings"></div>';
-  state.shapeKind = 'assembly';
   state.printerId = 'p1';
 });
 

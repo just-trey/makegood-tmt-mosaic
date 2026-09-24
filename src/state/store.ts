@@ -1,13 +1,10 @@
-import type * as THREE from 'three';
 import type {
   ArtworkInstance,
   AssemblyPart,
-  BaseParams,
   ColorSettings,
   DesignSource,
   LibraryEntry,
   ParsedSVG,
-  ShapeKind,
 } from '../types';
 import type { ZoneNet } from '../geometry/zoneCharts';
 import { getFilament } from './filaments';
@@ -20,10 +17,8 @@ import { HUBCAP_DEFAULT_DIAMETER_MM } from '../geometry/hubcap';
  */
 export interface AppState {
   parsed: ParsedSVG | null;
-  shapeKind: ShapeKind;
-  /** key (hex, "merge:a,b,c", or "__background__") -> per-recess settings */
+  /** key (hex or "merge:a,b,c") -> per-recess settings */
   colorSettings: ColorSettings;
-  stlRefMesh: THREE.Mesh | null;
   /** each inner array of raw hex codes = one merged AMS slot */
   mergeGroups: string[][];
   /** auto-merge slider stop — index into AUTO_MERGE_LEVELS (0 = off, default 1 = Slight/dedupe) */
@@ -38,14 +33,7 @@ export interface AppState {
    * re-swallow them; in-memory only (not persisted), reset on new artwork */
   keptApart: string[];
 
-  // base-shape parameters (mirrors the left-panel inputs)
-  disc: { diameter: number; thickness: number };
-  rect: { width: number; height: number; thickness: number };
-  round: { width: number; height: number; corner: number; thickness: number };
-  stlPlate: { width: number; height: number; thickness: number; faceZ: number };
-
   // artwork fit
-  marginPct: number;
   /** Bounded by SCALE_MIN_PCT/SCALE_MAX_PCT below. */
   scalePct: number;
   offsetX: number;
@@ -57,7 +45,6 @@ export interface AppState {
 
   // depth
   globalDepth: number;
-  recessBg: boolean;
 
   // export
   printerId: string;
@@ -98,34 +85,26 @@ export interface AppState {
   baseFilamentId: string | null;
 
   /**
-   * Multi-zone artwork model (assembly mode). `parsed` above stays the single source of parsed
-   * SVG geometry both modes build from — `sources`/`artworks` are a parallel bookkeeping layer
+   * Multi-zone artwork model. `parsed` above stays the single source of parsed
+   * SVG geometry the build reads — `sources`/`artworks` are a parallel bookkeeping layer
    * that mirrors it into named instances so a future multi-instance panel (Phase 2b) can list and
    * target them individually. Today there is always at most one of each; see state/artwork.ts.
    */
   sources: DesignSource[];
   artworks: ArtworkInstance[];
-  /** the instance the gizmo, fit sliders, and (in assembly mode) the build currently target */
+  /** the instance the gizmo, fit sliders, and the build currently target */
   activeArtworkId: string | null;
 }
 
 export const state: AppState = {
   parsed: null,
-  shapeKind: 'disc',
   colorSettings: {},
-  stlRefMesh: null,
   mergeGroups: [],
   autoMergeLevel: 1,
   baseColorKey: null,
   baseColorMembers: [],
   keptApart: [],
 
-  disc: { diameter: 80, thickness: 4 },
-  rect: { width: 80, height: 60, thickness: 4 },
-  round: { width: 80, height: 60, corner: 8, thickness: 4 },
-  stlPlate: { width: 80, height: 60, thickness: 4, faceZ: 0 },
-
-  marginPct: 5,
   scalePct: 100,
   offsetX: 0,
   offsetY: 0,
@@ -134,7 +113,6 @@ export const state: AppState = {
   rotationDeg: 0,
 
   globalDepth: 1.0,
-  recessBg: false,
 
   printerId: DEFAULT_PRINTER_ID,
 
@@ -226,42 +204,4 @@ export function removeFromBase(hex: string): void {
 export function clearBaseColor(): void {
   state.baseColorKey = null;
   state.baseColorMembers = [];
-}
-
-/** Derive the flat-mode base parameters for the current shape from state. */
-export function currentBaseParams(): BaseParams | null {
-  const fit = {
-    marginPct: state.marginPct,
-    scaleMult: state.scalePct / 100,
-    offsetX: state.offsetX,
-    offsetY: state.offsetY,
-    flipX: state.flipX,
-    flipY: state.flipY,
-    rotationDeg: state.rotationDeg,
-  };
-  if (state.shapeKind === 'disc')
-    return { diameter: state.disc.diameter, thickness: state.disc.thickness, ...fit };
-  if (state.shapeKind === 'rect')
-    return {
-      width: state.rect.width,
-      height: state.rect.height,
-      thickness: state.rect.thickness,
-      ...fit,
-    };
-  if (state.shapeKind === 'round')
-    return {
-      width: state.round.width,
-      height: state.round.height,
-      corner: state.round.corner,
-      thickness: state.round.thickness,
-      ...fit,
-    };
-  if (state.shapeKind === 'stl')
-    return {
-      width: state.stlPlate.width,
-      height: state.stlPlate.height,
-      thickness: state.stlPlate.thickness,
-      ...fit,
-    };
-  return null;
 }

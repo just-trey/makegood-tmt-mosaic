@@ -16,6 +16,9 @@ vi.mock('../src/assembly/kinds', () => ({
   // with just what that lookup needs.
   currentAssemblyKind: () =>
     state.assembly.kindId === 'chair-body' ? { name: 'Chair body' } : null,
+  // A rect fit with no design face yet: no placement to size a printable floor from, so a trace
+  // keeps the fraction-of-the-image floor these cases were written against.
+  currentDesignScaleContext: () => ({ isRect: true, radius: 138, designFace: () => null }),
 }));
 
 import { renderArtworkList } from '../src/ui/artworkListPanel';
@@ -175,7 +178,6 @@ beforeEach(() => {
   state.assembly.parts = [];
   state.assembly.net = null;
   state.assembly.kindId = null;
-  state.shapeKind = 'disc';
   clearWarnings();
 });
 

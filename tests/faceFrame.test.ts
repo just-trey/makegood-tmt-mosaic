@@ -114,7 +114,6 @@ const CHART_A = planeChart([170, 0, -600], [0, 0, 1], [0, 1, 0]);
 const CHART_B = planeChart([-50, 233, -450], [1, 0, 0], [0, 0, 1]);
 
 beforeEach(() => {
-  state.shapeKind = 'assembly';
   state.assembly.kindId = 'chair-body';
   state.sources = [];
   state.artworks = [];
@@ -334,28 +333,7 @@ describe('assembly gizmo frame picks the part the design center lands on', () =>
  * double the cursor.
  */
 describe('gizmo frame reports positions relative to its own center', () => {
-  const flatFrame = () => {
-    state.shapeKind = 'disc';
-    state.marginPct = 0;
-    state.disc = { ...state.disc, diameter: 200, thickness: 3 };
-    state.parsed = parsed();
-    state.offsetX = 0;
-    state.offsetY = 0;
-    return computeFaceFrame()!;
-  };
-
-  it('does not move a flat frame’s pointAt when the drag writes a new offset', () => {
-    const f = flatFrame();
-    const before = f.pointAt(10, 0);
-
-    state.offsetX = 10; // what a 10mm move drag has already written by redraw time
-
-    expect(f.pointAt(10, 0).distanceTo(before)).toBeLessThan(1e-9);
-    // one delta from the frame's origin, not two
-    expect(f.pointAt(10, 0).distanceTo(f.origin)).toBeCloseTo(10, 6);
-  });
-
-  it('does the same on an assembly frame', () => {
+  it('does not move an assembly frame’s pointAt when the drag writes a new offset', () => {
     const a = loadArtworkSource(parsed(), 'a.svg');
     setArtworkZone(a.id, 'left');
     const f = computeFaceFrame()!;
@@ -385,13 +363,6 @@ describe('gizmo frame answers off-surface for a displaced center', () => {
     // 10mm past the chart edge — beyond the budget, so only "further than the tolerance" is promised
     expect(f.offSurfaceAt(60, 0, 5)).toBeGreaterThan(5);
     expect(f.offSurfaceAt(0, -60, 5)).toBeGreaterThan(5);
-  });
-
-  it('is always on-surface for a flat plate, which has no chart to leave', () => {
-    state.shapeKind = 'disc';
-    state.parsed = parsed();
-
-    expect(computeFaceFrame()!.offSurfaceAt(1e4, 1e4, 5)).toBe(0);
   });
 });
 

@@ -68,7 +68,6 @@ beforeEach(() => {
   // Without this each case would depend on the previous one's arming surviving, so inserting or
   // reordering a test could mask the thing under test.
   holdSavedSessionUntilAnswered();
-  state.shapeKind = 'assembly';
   state.assembly.kindId = firstOfferedKind().id;
   state.sources = [];
   state.artworks = [];

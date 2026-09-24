@@ -70,7 +70,6 @@ beforeEach(() => {
   document.body.innerHTML =
     '<div class="hint" id="asm-zone-template-row" style="display: none">' +
     '<span id="asm-zone-template-links"></span></div>';
-  state.shapeKind = 'assembly';
   state.assembly.kindId = 'chair-body';
   state.assembly.parts = [];
   state.assembly.net = null;

@@ -11,7 +11,7 @@ import { loadPartsLibrary } from './assembly/parts';
 import { ASSEMBLY_KINDS, firstOfferedKind } from './assembly/kinds';
 import { initColorListPanel, renderColorList } from './ui/colorList';
 import { initAssemblyPanel } from './ui/assemblyPanel';
-import { initPartPanel, renderBaseColorSwatches, setShapeKind } from './ui/partPanel';
+import { applyPartKind, initPartPanel, renderBaseColorSwatches } from './ui/partPanel';
 import { initFitPanel } from './ui/fitPanel';
 import { initDepthPanel } from './ui/depthPanel';
 import { initArtworkPanel, renderPatternPicker } from './ui/artworkPanel';
@@ -75,14 +75,14 @@ initBeforeUnloadGuard();
 
 renderColorList(null);
 
-// Open on the wheel by default so a part is on screen from the first frame — setShapeKind arms
+// Open on the wheel by default so a part is on screen from the first frame — applyPartKind arms
 // the auto-load, and loadPartsLibrary() triggers it once the manifest arrives. A verify/drive
 // script can skip straight past that first build with ?kind=<id> (e.g. ?kind=chair-body).
 const requestedKindId = new URLSearchParams(location.search).get('kind');
 const bootKind = ASSEMBLY_KINDS.find((k) => k.id === requestedKindId) ?? firstOfferedKind();
 state.assembly.kindId = bootKind.id;
 $<HTMLSelectElement>('#shape-kind').value = 'asm:' + state.assembly.kindId;
-setShapeKind('assembly');
+applyPartKind();
 void loadPartsLibrary();
 // Armed before anything decides whether to offer the session, including the two paths that decide
 // not to: a ?kind= link, and a session on a withheld kind. Those used to let the first bare

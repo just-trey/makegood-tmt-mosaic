@@ -17,7 +17,7 @@ vi.mock('../src/assembly/parts', async (importOriginal) => {
 // tests/rebuild-scene.test.ts, so importing restoreBanner.ts doesn't drag in three.js/canvas work
 // this test has no interest in.
 vi.mock('../src/ui/partPanel', () => ({
-  setShapeKind: vi.fn(),
+  applyPartKind: vi.fn(),
   renderBaseColorSwatches: vi.fn(),
   refreshShapeParamInputs: vi.fn(),
 }));
@@ -40,12 +40,7 @@ function session(over: Partial<PersistedSession> = {}): PersistedSession {
   return {
     version: 1,
     savedAt: Date.now(),
-    shapeKind: 'disc',
-    disc: { diameter: 90, thickness: 5 },
-    rect: { width: 100, height: 70, thickness: 3 },
-    round: { width: 100, height: 70, corner: 12, thickness: 3 },
-    stlPlate: { width: 120, height: 80, thickness: 6, faceZ: 2 },
-    marginPct: 7,
+    shapeKind: 'assembly',
     scalePct: 100,
     offsetX: 0,
     offsetY: 0,
@@ -53,7 +48,6 @@ function session(over: Partial<PersistedSession> = {}): PersistedSession {
     flipY: false,
     rotationDeg: 0,
     globalDepth: 1.5,
-    recessBg: true,
     printerId: 'snapmaker-u1',
     asmRadius: 140,
     assembly: { kindId: null, variantId: null },
@@ -79,7 +73,6 @@ beforeEach(() => {
     '<button id="btn-restore-session"></button>' +
     '<button id="btn-restore-dismiss"></button>' +
     '<div id="warnings"></div>';
-  state.shapeKind = 'disc';
   state.assembly.kindId = null;
   state.assembly.parts = [];
   state.sources = [];

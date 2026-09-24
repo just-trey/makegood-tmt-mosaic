@@ -78,7 +78,7 @@ describe('hashDriveSequence', () => {
       initial: {
         tokens: { colors: { '--accent': { direct: 'rgb(1, 2, 3)' } } },
         button: {
-          selector: '#btn-export-stl',
+          selector: '#btn-reset-fit',
           outerHTML: '<button>Export</button>',
           style: { color: 'red' },
         },

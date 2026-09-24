@@ -601,30 +601,26 @@ export async function loadPartsLibrary(): Promise<void> {
       /* no manifest reachable — `librarySettled` is what says so */
     }
     librarySettled = true;
-    // The manifest may land after the user already opened Assembly mode — re-render either way, so
-    // the panel swaps "Loading assembly…" for the parts or for the error. This is also what loads a
-    // restore that was accepted while the fetch was still in flight.
+    // Re-render either way, so the panel swaps "Loading assembly…" for the parts or for the error.
+    // This is also what loads a restore that was accepted while the fetch was still in flight.
     //
     // Inside the work window on purpose: the part fetches this kicks off take their own
     // beginWork(), and idle.ts forbids the outstanding count touching zero across a handoff that
     // is really one continuous busy stretch. Released after, a settle() waiting on the manifest
     // resolves in the gap and measures an empty scene.
-    if (state.shapeKind === 'assembly') {
-      notifyPartsChanged();
-      maybeAutoLoadAssembly();
-    }
+    notifyPartsChanged();
+    maybeAutoLoadAssembly();
   } finally {
     endWork();
   }
 }
 
 /**
- * Auto-load the whole assembly the moment Assembly mode is active and the library is reachable,
- * so the user never has to click "Load full …". No-op if parts are already present or the
- * library isn't available, where manual add buttons are shown instead.
+ * Auto-load the whole assembly the moment a kind is chosen and the library is reachable, so the
+ * user never has to click "Load full …". No-op if parts are already present or the library isn't
+ * available, where manual add buttons are shown instead.
  */
 export function maybeAutoLoadAssembly(): void {
-  if (state.shapeKind !== 'assembly') return;
   const kind = currentAssemblyKind();
   if (kind && asmKindCanAutoLoad(kind) && state.assembly.parts.length === 0) {
     void asmLoadFullAssembly();

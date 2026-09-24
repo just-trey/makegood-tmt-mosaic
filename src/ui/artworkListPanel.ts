@@ -58,9 +58,7 @@ export function renderArtworkList(): void {
   list.style.display = '';
   const zones = availableZones();
   const rasterBlocksDrawn = new Set<string>();
-  // Fill repeats the design across a zone, which only the assembly-mode cut pipeline implements —
-  // a flat plate would show the control and then ignore it. A kind carrying `withholdFill` opts out
-  // too; fillModeOffered() covers both.
+  // A kind carrying `withholdFill` doesn't offer Fill; fillModeOffered() says which.
   const canFill = fillModeOffered();
 
   state.artworks.forEach((a) => {

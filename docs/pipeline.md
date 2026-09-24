@@ -28,9 +28,7 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
   minimum (`printableFloorPx`), which Detail deliberately does not scale. The
   fraction caps it, so small placements keep their coarser floor.
 - Photographs keep the fraction: theirs is simplification taste, not a feature
-  size. Flat plates stay fractional too, since their fit needs the traced
-  content that does not exist yet (docs/tech-debt.md). The user never picks a
-  mode.
+  size. The user never picks a mode.
 - Flat art gets a one-pixel blur, but only when the 1024px pass ran. The
   photograph denoise blur stops at the photo cutoff instead of interpolating
   ([stats.ts](../src/raster/stats.ts) explains both).
@@ -79,49 +77,32 @@ subtracted from that fill. 2D polygon overlap maths via Turf.js
 
 ### 3. Place the artwork
 
-Scale, X/Y offset, rotation and mirror are applied before any cutting, in both
-modes. Set them from the Artwork fit sliders, or drag the artwork on the part in
-the 3D view.
+Scale, X/Y offset, rotation and mirror are applied before any cutting. Set them
+from the Artwork fit sliders, or drag the artwork on the part in the 3D view.
 
-### 4. Flat-plate mode
-
-**Not reachable from the UI.** The Part dropdown lists assembly kinds and
-nothing else, so `disc`/`rect`/`round`/`stl` all ship compiled and unrendered.
-The code below is live and tested; nothing drives it. See
-[tech-debt.md](tech-debt.md).
-
-The plate is a stack of flat slabs between depth boundaries. Pure 2D maths, no
-3D booleans ([flat.ts](../src/geometry/flat.ts)).
-
-- Depth is capped at the plate thickness less a 0.05 mm floor, so a recess
-  cannot cut through.
-- Zero or less is raised to 0.2 mm, one typical layer.
-- Both cases warn, naming the region and both numbers. The zero case collects
-  across the build: one warning per distinct pair of numbers, naming every
-  region raised to that pair.
-- A positive depth thinner than a layer is honoured and only noted: a real
-  choice on a fine-layer profile.
-
-One place resolves what a region asked for, for both modes
-([depth.ts](../src/geometry/depth.ts)): an explicit per-row override if it is
-finite, otherwise the global depth (`Infinity`/`NaN` fall back too). A stored
-`0` is a real answer, not a
-missing one, and the capped result is never written back into the settings.
-
-### 5. Assembly mode
+### 4. Cut the part
 
 Pockets are cut into real part meshes. Each colour region is extruded into a
 prism in the part's own coordinates and subtracted from the mesh with
 [Manifold](https://github.com/elalish/manifold), a 3D solid-boolean engine (CSG)
 loaded on demand ([assembly.ts](../src/geometry/assembly.ts)).
 
-**The shallow end** is raised to the same 0.2 mm floor, and the warning names the
+**Which depth a region asked for** is resolved in one place
+([depth.ts](../src/geometry/depth.ts)): an explicit per-row override if it is
+finite, otherwise the global depth (`Infinity`/`NaN` fall back too). A stored
+`0` is a real answer, not a missing one, and a clamped result is never written
+back into the settings.
+
+**The shallow end** is raised to 0.2 mm, one typical layer. The warning names the
 raised _setting_ rather than a cut depth, because a cut-through part holes the
-whole way through regardless.
+whole way through regardless. It collects across the build: one warning per
+distinct pair of numbers, naming every region raised to that pair. A positive
+depth thinner than a layer is honoured and only noted: a real choice on a
+fine-layer profile.
 
 **The deep end is bounded by the part, not by its wall.** `ZoneMapper.maxCutDepth()`
 gives the material behind the design face along Y, the axis the cutter extrudes
-down, less flat mode's `CUT_FLOOR_MM` so a clamped cut stays a recess rather than
+down, less `CUT_FLOOR_MM` (0.05 mm) so a clamped cut stays a recess rather than
 landing coplanar with the back face. Past that the cut is clamped and named. Three
 cases decline instead of guessing, all returning `Infinity`: a conformal zone (it
 cuts along a normal field, not one axis), a face whose normal is not substantially
@@ -343,7 +324,7 @@ them. Either way the design is placed once and the pill names which limit it
 hit. The ceiling was swept in
 [2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md).
 
-### 6. Export
+### 5. Export
 
 A Bambu Studio _project_ 3MF, with the vendor metadata that makes it import
 without warnings: named parts, per-part filament slots, multi-plate placement
