@@ -1051,61 +1051,6 @@ too, or rebuilding a source's copies when it re-adopts. It stays open because
 the first role to pair `buildMesh` with `allowRotatedCopies` makes it real, and
 nothing today can produce a case to test against.
 
-## A group hidden by `display="none"` or opacity 0 does not hide the shapes inside it
-
-`parseSVGDocument` (`svg/parse.ts`) resolves `display` per element, and `walk`
-recurses into children regardless, so the flag is never inherited. CSS removes
-the whole subtree. This removes only the element carrying the attribute.
-
-Measured 2026-08-30 with a throwaway jsdom vitest file that called
-`parseSVGDocument` on a hidden group plus one visible `<rect>`, and printed
-`out.shapes.length`:
-
-| Document                                                     | Shapes imported | Should be |
-| ------------------------------------------------------------ | --------------- | --------- |
-| `<g display="none"><rect …/></g>` + a visible `<rect>`       | 2               | 1         |
-| `<g style="display:none"><rect …/></g>` + a visible `<rect>` | 2               | 1         |
-| `<g opacity="0"><rect …/></g>` + a visible `<rect>`          | 2               | 1         |
-| `<g fill-opacity="0"><rect …/></g>` + a visible `<rect>`     | 2               | 1         |
-
-The two opacity rows were measured 2026-09-24. All four re-run from the repo
-root with `npx vite-node group.mts`, where `group.mts` is:
-
-```ts
-import { JSDOM } from 'jsdom';
-const { window } = new JSDOM();
-Object.assign(globalThis, { DOMParser: window.DOMParser, document: window.document });
-const { parseSVGDocument } = await import(process.cwd() + '/src/svg/parse.ts');
-for (const g of ['display="none"', 'style="display:none"', 'opacity="0"', 'fill-opacity="0"']) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg"><g ${g}><rect width="4" height="4"/></g><rect width="4" height="4"/></svg>`;
-  console.log(g, parseSVGDocument(svg).shapes.length);
-}
-```
-
-- `opacity="0"` or `fill-opacity="0"` on the shape itself hides it. Only the
-  group case leaks.
-- `opacity` and `fill-opacity` are read on the shape alone. A group's value
-  never reaches the shapes inside it.
-- In CSS `fill-opacity` inherits: a child with its own `fill-opacity` keeps it.
-
-A hidden Inkscape or Illustrator layer is exactly this markup. The artwork the
-user hid is inlaid into the print and costs an AMS slot.
-
-Found by `/code-review` on the branch that fixed the warning numbers next to
-it, and not fixed there because the fix needs a decision first.
-
-**Closing it** is two lines in `walk`: pass the resolved flag down and or it
-with the element's own. `opacity="0"` ors down the same way. `fill-opacity`
-passes its resolved value down instead, since it inherits. The open question is whether a hidden layer vanishing
-is silent. `fill-opacity="0"` on one shape is silent on purpose, for the reason
-in the comment on the `opacity === 0` branch of `walk`. A hidden layer is much
-more artwork to drop with nothing said, and CLAUDE.md code rule 1 wants a named
-warning for it.
-
-**Decided 2026-08-30**: warn, named, per CLAUDE.md code rule 1 — a hidden layer is enough content
-to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
-scheduled.
-
 ## Nothing says whether a thin cut-region strip is surface a cover hides
 
 `MIN_CUT_PIECE_MM2` (0.16mm², one nozzle square) is shipping three pieces that

@@ -63,6 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Inkscape and Illustrator show it: `style="fill:#ff0000;fill:#00ff00"` imports
   green, not red. Property names are read in any case, so `FILL:` counts
   (`npx vitest run tests/parse.test.ts`).
+- **A hidden layer in an SVG no longer prints.** A group hidden with
+  `display="none"` (attribute, style or class rule), `opacity="0"` or
+  `fill-opacity="0"` used to import every shape inside it, and cost a filament
+  slot. Hidden Inkscape and Illustrator layers are exactly this. Each hidden
+  group now raises one warning naming it by its layer name or `id`, and saying
+  how many shapes it left out. A shape that sets its own `fill-opacity` inside a
+  `fill-opacity="0"` group still imports, as it draws in a browser
+  (`npx vitest run tests/parse.test.ts`).
 - **The `opacity` property is now read at all.** `opacity="0"` on a shape hides
   it; before, only `fill-opacity` could. A group at opacity 0 still leaks its
   shapes; `docs/tech-debt.md` has it (`npx vitest run tests/parse.test.ts`).

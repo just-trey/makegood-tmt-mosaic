@@ -75,13 +75,39 @@ export function svgLengthToMM(value: string | null): number | null {
 
 /**
  * An `<alpha-value>`: a number or a percentage, clamped to 0..1 as the spec says, so `-1` hides a
- * shape the way a browser does. Anything else is invalid, which a browser renders fully opaque.
+ * shape the way a browser does. Null when missing or invalid: a browser then uses the inherited
+ * value for `fill-opacity`, and fully opaque for `opacity`, which does not inherit.
  */
-export function parseFillOpacity(raw: string | null): number {
+function parseAlpha(raw: string | null): number | null {
   const m = /^([+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?)(%?)$/i.exec((raw ?? '').trim());
-  if (!m) return 1;
+  if (!m) return null;
   const n = parseFloat(m[1]) / (m[2] ? 100 : 1);
   return Math.min(1, Math.max(0, n));
+}
+
+export function parseFillOpacity(raw: string | null): number {
+  return parseAlpha(raw) ?? 1;
+}
+
+/**
+ * A group that hides what is under it, and how many of those shapes would otherwise have been
+ * imported, so it can raise one warning for all of them.
+ */
+interface HiddenGroup {
+  name: string | null;
+  firstShape: number;
+  count: number;
+}
+
+/**
+ * What an element takes from its ancestors. `display:none` and `opacity:0` hide the whole subtree
+ * and nothing below can undo either (opacity multiplies, so a zero anywhere stays zero), so the
+ * outermost one is kept. `fill-opacity` inherits and a child's own value replaces it, so it is the
+ * nearest group that set it, and only while that value is 0: no other value hides anything.
+ */
+interface Inherited {
+  hiddenBy: HiddenGroup | null;
+  fillOpacityZeroFrom: HiddenGroup | null;
 }
 
 /**
@@ -277,7 +303,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     return null;
   }
 
-  function walk(el: Element, parentM: Mat6): void {
+  function walk(el: Element, parentM: Mat6, inherited: Inherited): void {
     const tag = el.tagName ? el.tagName.toLowerCase() : '';
     if (!tag) return;
     if (
@@ -325,15 +351,25 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
     const fillRaw = resolveProp(el, 'fill');
     const fillUrl = fillRaw && /url\(/.test(fillRaw);
-    const opacity =
-      parseFillOpacity(resolveProp(el, 'fill-opacity')) *
-      parseFillOpacity(resolveProp(el, 'opacity'));
+    const ownOpacity = parseFillOpacity(resolveProp(el, 'opacity'));
+    const ownFillOpacity = parseAlpha(resolveProp(el, 'fill-opacity'));
+    const opacity = (ownFillOpacity ?? 1) * ownOpacity;
     const displayNone = resolveProp(el, 'display') === 'none';
 
     if (SHAPE_TAGS.includes(tag)) {
       shapeCount++;
       if (tag === 'path') pathCount++;
-      if (!displayNone) {
+      const hiddenBy =
+        inherited.hiddenBy ?? (ownFillOpacity == null ? inherited.fillOpacityZeroFrom : null);
+      if (displayNone) {
+        // Silent, for the reason on the `opacity === 0` branch below.
+      } else if (hiddenBy) {
+        // Counted only when nothing else would have dropped it, so the warning's number is what
+        // the hidden group took out of the print.
+        if (fillRaw !== 'none' && ownOpacity !== 0 && ownFillOpacity !== 0) {
+          if (hiddenBy.count++ === 0) hiddenBy.firstShape = shapeCount;
+        }
+      } else {
         if (fillUrl) {
           warn(
             `Shape ${shapeCount} (a <${tag}>) has a gradient/pattern fill (not a flat color), so it was skipped.`,
@@ -428,11 +464,33 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         }
       }
     }
-    for (const child of el.children) walk(child, M);
+    const own: HiddenGroup = {
+      // An Inkscape layer's name is its label, and Illustrator writes one with spaces as data-name.
+      name:
+        el.getAttribute('inkscape:label') ||
+        el.getAttribute('data-name') ||
+        el.getAttribute('id') ||
+        null,
+      firstShape: 0,
+      count: 0,
+    };
+    const next: Inherited = {
+      hiddenBy: inherited.hiddenBy ?? (displayNone || ownOpacity === 0 ? own : null),
+      fillOpacityZeroFrom:
+        ownFillOpacity == null ? inherited.fillOpacityZeroFrom : ownFillOpacity === 0 ? own : null,
+    };
+    for (const child of el.children) walk(child, M, next);
+    if (own.count) {
+      // Both ternaries inline, so check:troubleshooting reads every wording this can ship.
+      warn(
+        `The hidden group ${own.name ? `"${own.name}"` : `starting at shape ${own.firstShape}`} was skipped, with its ${own.count === 1 ? '1 shape' : `${own.count} shapes`}. Show it in your editor to print it.`,
+      );
+    }
   }
 
   try {
-    for (const child of svgEl.children) walk(child, rootM);
+    for (const child of svgEl.children)
+      walk(child, rootM, { hiddenBy: null, fillOpacityZeroFrom: null });
   } catch (e) {
     rethrowStackOverflowAs(
       e,

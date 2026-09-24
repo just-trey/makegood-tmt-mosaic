@@ -806,6 +806,31 @@ flat fill (a "rasterize" or "expand" style operation, or a manual re-fill),
 or accept the shape is left out — a gradient rarely reads as intended on a
 3-4 color print anyway.
 
+## Troubleshooting: "The hidden group … was skipped, with its … shapes" warnings
+
+Full text: _"The hidden group "…" was skipped, with its N shapes. Show it in your
+editor to print it."_ A group with no name reads _"The hidden group starting at
+shape N…"_ instead.
+
+**What it means.** A group in the SVG is hidden, and nothing inside it was
+imported. A hidden Inkscape or Illustrator layer is the usual case. Hidden means
+any of:
+
+- `display="none"`, as an attribute, an inline style or a class rule.
+- `opacity="0"`.
+- `fill-opacity="0"`. A shape inside that sets its own `fill-opacity` still
+  imports, as it would draw in a browser.
+
+**What you get.** The file loads as your editor shows it. The name is the
+layer's name (`inkscape:label`, or Illustrator's `data-name`), else its `id`.
+N counts only shapes that would otherwise have printed: stroke-only shapes and
+shapes hidden on their own are left out of it. One hidden group inside another
+is covered by the outer one's warning.
+
+**What to do.** Nothing, if you hid the layer on purpose. If you meant it to
+print, show the layer (or set its opacity back to 100%) in your editor, save,
+and load the SVG again.
+
 ## Troubleshooting: "No flat-filled shapes were found in this SVG."
 
 Full text: _"No flat-filled shapes were found in this SVG."_
@@ -824,6 +849,8 @@ exactly as it was.
 - Every shape uses a gradient or pattern fill, and all of them were skipped.
 - Everything meaningful sits inside a `<defs>` or `<clipPath>` and nothing is
   actually drawn from it.
+- Every layer is hidden (see the hidden-group warning above). Show the ones
+  you want printed.
 
 **What to do.** Open the file in your editor and confirm it has filled
 shapes, not just outlines: select all and check the Fill/Stroke panel. Give
