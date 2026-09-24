@@ -670,7 +670,12 @@ that the notice did not close.
   says lower Colors or Detail, dropped-color says raise Detail — so both on one image contradict
   each other. Reproduced synthetically (1024 six-pixel blocks over two flat bands plus one-pixel
   specks, 320x320 at Colors 5 and Detail 100: `capped: true`, `droppedColors: 1`), never on the
-  corpus. The section below is why it is not ruled out: the cap is a target, not a bound.
+  corpus.
+- **The cap now raises until the count is under, so a capped floor can go much higher.** On
+  512px 8-label noise at placed floor 1 it settles at 47px
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). The same command against the
+  previous `src/raster/trace.ts` stops at 7px with 9237 components. The higher the floor, the
+  likelier a whole color goes under it on a source that caps.
 - **A floor Detail cannot lower** covers two shapes of the same thing, and `detailLowersFloor`
   measures both rather than inferring either: a placement's nozzle-width floor pinning the floor
   (128px across 12.8mm drops a color at Detail 0, 50 and 100 alike), and the slider already at
@@ -703,37 +708,25 @@ that the notice did not close.
   a color on a capped trace at all, and the pinned-floor one needs the re-trace-on-resize item
   first.
 
-## `MAX_COMPONENTS` is a target, not the bound its name implies
+## `deChecker` can leave a component under the despeckle floor
 
-`traceLabelMap` ([src/raster/trace.ts](../src/raster/trace.ts)) raises the despeckle floor when the
-component count exceeds `MAX_COMPONENTS` (800), then never rechecks. The raise now reliably cuts
-the count, which it did not before 2026-08-20
-([2026-08-20 despeckle floor](findings/2026-08-20-despeckle-floor.md)), but it still does not bound
-it. Two ways past the cap, both after the count was taken:
+`despeckle` leaves nothing under the floor, but `deChecker` runs after it
+([src/raster/trace.ts](../src/raster/trace.ts)). Breaking a 2x2 checkerboard rewrites one cell,
+which can shave a pinch point and split a surviving component in two. One half can be under the
+floor the trace reports.
 
-- **Absorbing specks merges them into each other**, minting components above the new floor. So
-  putting the floor above all but the largest 799 does not leave 799. Reproduces on a speck field
-  handed straight to `traceLabelMap` with a high floor. **Not reproduced through the real decode
-  path since the despeckle fix**: the pixel art that looked like it did reads as photographic at
-  the measurement size (0.3045), so the app traces it at 512px, where the raise fires and 78
-  components come back. Whether a decodable image can still get past the cap is open.
-- **`deChecker` breaks 2x2 checkerboards by rewriting one cell**, which can shave a pinch point and
-  split a surviving component in two. Off-corpus it is common: about 8% of random label grids come
-  back with a component under the floor the trace reports, against 0% straight out of `despeckle`.
-  No corpus source does it, so what it costs a real image is unmeasured. Swapping the order is not
-  the fix, since `despeckle` relabels whole components and can create the checkerboard `deChecker`
-  exists to remove, and a self-touching ring is the worse failure.
-
-- The cap is a performance guard on `shapeToFeature`, so being over by a few hundred on a
-  pathological source costs time rather than correctness.
-- Closing it: loop the raise until `realCount()` is actually under (and decide what a second raise
-  does when a `deChecker` split is what pushed it over), or rename the constant and the flag to say
-  what they do. `capped` today means "a raise happened", not "the count is under".
-- The bench's `despeckle` mode checks the floor and the cap on every row, but only over CORPUS, so
-  its cap line has never had a source that could trip it. Both columns also read the components the
-  trace _returns_, which is fewer than the count it capped on: background components and any whose
-  ring collapsed are already gone. A transparent speck left under the floor would be a real defect,
-  and this guard would miss it.
+- **Off-corpus it happens**: 2 of 24 uniform-noise rows return a component under their floor.
+  Reproduce with `node_modules/.bin/vite-node scripts/bench-raster.ts cap`.
+- **No corpus source does it**, so what it costs a real image is unmeasured.
+- **Swapping the order is not the fix.** `despeckle` relabels whole components and can create the
+  checkerboard `deChecker` exists to remove, and a self-touching ring is the worse failure.
+- The cap is not affected: its loop rechecks the count after `deChecker`, so a split can cost it a
+  further raise but not the bound.
+- **The bench's `despeckle` mode can miss one.** Its `under` column reads the components the trace
+  _returns_: background components and any whose ring collapsed are already gone. A transparent
+  speck left under the floor would be a real defect, and this check would not see it.
+- Closing it needs a way to absorb the split pieces that cannot recreate a checkerboard, and a
+  check that counts background components too.
 
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
@@ -1089,45 +1082,7 @@ too, or rebuilding a source's copies when it re-adopts. It stays open because
 the first role to pair `buildMesh` with `allowRotatedCopies` makes it real, and
 nothing today can produce a case to test against.
 
-## `parseFillOpacity` reads a percentage and an out-of-range value wrong, and three attempts to fix it each broke something else
-
-`parseFillOpacity` (`svg/parse.ts`) is `parseFloat` plus a finite check. Two
-values it gets wrong, measured 2026-08-28 with a throwaway jsdom vitest file
-that imported the shipped function and printed it against each input:
-
-| Input  | Returns | Should be | Why it matters                                  |
-| ------ | ------- | --------- | ----------------------------------------------- |
-| `50%`  | 50      | 0.5       | inert today: the sole reader tests `=== 0`      |
-| `0%`   | 0       | 0         | correct by luck                                 |
-| `-1`   | -1      | 0         | imports opaque; the spec clamps `<alpha-value>` |
-| `-50%` | -50     | 0         | same                                            |
-| `150%` | 150     | 1         | inert today                                     |
-
-The sole reader is `else if (opacity === 0)` in `parseSVGDocument`, so only the
-`-1` / `-50%` rows change what ships: a shape the artist hid comes in as a
-visible color and costs an AMS slot.
-
-**Cut under CLAUDE.md's second-repeat rule**, on the branch that fixed the arc
-tokenizer. Three `/code-review` rounds each found a defect in the previous
-round's fix to this one function:
-
-| Round | The fix it reviewed         | What it found                                                                                                       |
-| ----- | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| 1     | `%` handling                | no clamp, so `-1` still imported opaque — the thing the whole change was for                                        |
-| 3     | `%` handling plus the clamp | `endsWith('%')` and `parseFloat` disagree where the number ends: `50% !important` clamped 50 to 1                   |
-| 4     | anchored regex              | that anchoring made `0 !important` fall back to opaque, so a hidden shape imported as a **visible** one, no warning |
-
-Round 4's defect is strictly worse than the bug being fixed, and it was
-introduced by round 3's fix to round 1's fix. The function shipped unchanged.
-
-**Closing it** needs the CSS side settled first, not another patch here.
-`parseClassRules` and `getInlineStyleProp` (`svg/parse.ts`) do not strip
-`!important` from any declaration, so every consumer of a class-rule value has
-the same trailing-text problem and `fill-opacity` is only where it was noticed.
-Strip it once at the resolver, then this function is a two-line clamp with no
-string parsing in it.
-
-## `display="none"` on a group does not hide the shapes inside it
+## A group hidden by `display="none"` or opacity 0 does not hide the shapes inside it
 
 `parseSVGDocument` (`svg/parse.ts`) resolves `display` per element, and `walk`
 recurses into children regardless, so the flag is never inherited. CSS removes
@@ -1141,6 +1096,28 @@ Measured 2026-08-30 with a throwaway jsdom vitest file that called
 | ------------------------------------------------------------ | --------------- | --------- |
 | `<g display="none"><rect …/></g>` + a visible `<rect>`       | 2               | 1         |
 | `<g style="display:none"><rect …/></g>` + a visible `<rect>` | 2               | 1         |
+| `<g opacity="0"><rect …/></g>` + a visible `<rect>`          | 2               | 1         |
+| `<g fill-opacity="0"><rect …/></g>` + a visible `<rect>`     | 2               | 1         |
+
+The two opacity rows were measured 2026-09-24. All four re-run from the repo
+root with `npx vite-node group.mts`, where `group.mts` is:
+
+```ts
+import { JSDOM } from 'jsdom';
+const { window } = new JSDOM();
+Object.assign(globalThis, { DOMParser: window.DOMParser, document: window.document });
+const { parseSVGDocument } = await import(process.cwd() + '/src/svg/parse.ts');
+for (const g of ['display="none"', 'style="display:none"', 'opacity="0"', 'fill-opacity="0"']) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg"><g ${g}><rect width="4" height="4"/></g><rect width="4" height="4"/></svg>`;
+  console.log(g, parseSVGDocument(svg).shapes.length);
+}
+```
+
+- `opacity="0"` or `fill-opacity="0"` on the shape itself hides it. Only the
+  group case leaks.
+- `opacity` and `fill-opacity` are read on the shape alone. A group's value
+  never reaches the shapes inside it.
+- In CSS `fill-opacity` inherits: a child with its own `fill-opacity` keeps it.
 
 A hidden Inkscape or Illustrator layer is exactly this markup. The artwork the
 user hid is inlaid into the print and costs an AMS slot.
@@ -1149,7 +1126,8 @@ Found by `/code-review` on the branch that fixed the warning numbers next to
 it, and not fixed there because the fix needs a decision first.
 
 **Closing it** is two lines in `walk`: pass the resolved flag down and or it
-with the element's own. The open question is whether a hidden layer vanishing
+with the element's own. `opacity="0"` ors down the same way. `fill-opacity`
+passes its resolved value down instead, since it inherits. The open question is whether a hidden layer vanishing
 is silent. `fill-opacity="0"` on one shape is silent on purpose, for the reason
 in the comment on the `opacity === 0` branch of `walk`. A hidden layer is much
 more artwork to drop with nothing said, and CLAUDE.md code rule 1 wants a named

@@ -34,6 +34,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   says so, naming the color and the part, instead of going quiet. A recess needs
   to be about 0.4 mm across to hold a bead.
 
+- **A traced image that says its detail was merged now really comes in under the
+  800-region limit.** The trace raised the speckle floor once and never checked
+  again. Merging specks can build new ones big enough to survive, so a noisy
+  image could still come back with thousands of regions. It now raises the floor
+  until the count is under. On generated noise none of 24 fields come back over
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). Run against the
+  previous `src/raster/trace.ts`, the same command gives 16 of 24 over, up to
+  9237 regions.
+- **A shape hidden with a negative or `!important` opacity in an SVG no longer
+  imports as a color.** `fill-opacity="-1"` or `-50%` is hidden in a browser
+  and now here too. A `<style>` rule or inline style marked `!important` is
+  read: `fill: #00ff00 !important` used to import black, and
+  `display: none !important` used to import anyway. An `!important` rule also
+  beats a plain inline style, as in a browser. `fill-opacity` percentages now
+  read as fractions (`npx vitest run tests/parse.test.ts`).
+- **A shape with a malformed `fill-opacity` now imports, as a browser draws
+  it.** `fill-opacity="0px"`, `"0,5"` or an attribute `"0 !important"` used to
+  hide the shape by accident: the leading `0` was read and the rest ignored.
+  A browser rejects the whole value and draws the shape opaque
+  (`npx vitest run tests/parse.test.ts`).
+- **An inline style that repeats a property now uses the last one**, as
+  Inkscape and Illustrator show it: `style="fill:#ff0000;fill:#00ff00"` imports
+  green, not red. Property names are read in any case, so `FILL:` counts
+  (`npx vitest run tests/parse.test.ts`).
+- **The `opacity` property is now read at all.** `opacity="0"` on a shape hides
+  it; before, only `fill-opacity` could. A group at opacity 0 still leaks its
+  shapes; `docs/tech-debt.md` has it (`npx vitest run tests/parse.test.ts`).
+
 ### Added
 
 - **The chair body is back in the Part dropdown.** It has been reachable only by

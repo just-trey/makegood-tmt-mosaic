@@ -583,15 +583,18 @@ into its surroundings. Lower Colors, or lower Detail, for a cleaner result."_
 **An informational notice, not a failure.** The image loaded and cut normally.
 
 Tracing produced more separate regions than `MAX_COMPONENTS`
-([trace.ts](../src/raster/trace.ts)) allows, so the speckle floor was raised to
-exactly the size that fits and the image re-traced. Without that cap a busy
-photograph hands thousands of speckle islands downstream and freezes the tab for
-tens of seconds (cost measured in [tech-debt.md](tech-debt.md)).
+([trace.ts](../src/raster/trace.ts)) allows, so the speckle floor was raised and
+the image re-traced, as many times as it took to come in under the cap. Without
+that cap a busy photograph hands thousands of speckle islands downstream and
+freezes the tab for tens of seconds (cost measured in
+[tech-debt.md](tech-debt.md)).
 
 In practice: features below the new floor were absorbed into whichever colour
-surrounds them. Nothing was dropped or left as a hole, and the regions still
-tile the image exactly, but fine texture is gone. That is usually right anyway,
-since detail near that size is below what a 0.4mm nozzle can express.
+surrounds them. Nothing was left as a hole, and the regions still tile the
+image exactly, but fine texture is gone. That is usually right anyway, since
+detail near that size is below what a 0.4mm nozzle can express. A colour whose
+every piece was under the floor is gone from the colour list too, and this
+notice does not say so.
 
 The notice names the image, so each loaded image gets its own, and re-tracing
 one at a setting that no longer needs capping retracts only that one.
