@@ -56,9 +56,9 @@ describe('clearWarnings', () => {
   });
 });
 
-// A keyed push replaces its standing entry; nothing else about push() changes. The two halves below
-// are the first and third failure modes of the replace-in-place attempt that was reverted before
-// (the second, the dismiss button's reference, is in warningsView.test.ts).
+// A keyed push replaces its standing entry; nothing else about push() changes. The first block pins
+// what broke the reverted attempt's first round (unkeyed callers overwritten, `build` flipped); the
+// by-reference dismiss that broke its second is in warningsView.test.ts.
 describe('push: unkeyed callers keep skip-if-present', () => {
   beforeEach(() => clearWarnings());
 

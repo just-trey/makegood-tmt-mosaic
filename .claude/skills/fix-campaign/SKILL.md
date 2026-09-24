@@ -84,10 +84,11 @@ needing:
   new round. After the last clean code round, one `low` pass over the prose;
   apply, ship. #270 ran ten rounds, of which 2-10 were all prose with the
   code correct after round 1; #269's rounds 7-8 were the same; #264 took 15
-  rounds on 3 files. `push()` in `src/warnings.ts` replaces a keyed entry in
-  place and skips an unkeyed one; don't swap in a new object or widen it to
-  unkeyed entries (three reverted rounds, now pinned by tests/warnings.test.ts
-  and tests/warningsView.test.ts).
+  rounds on 3 files. `push()` in `src/warnings.ts` replaces a standing keyed
+  entry in place and skips an unkeyed one already present; don't swap in a
+  new object or widen it to unkeyed entries (three reverted rounds, now pinned
+  by tests/warnings.test.ts, tests/warningsView.test.ts and the capped/traced
+  test in tests/artworkListPanel.test.ts).
 - **Run the gate chain in the foreground** — `ship-it`, vitest, and the CI
   watch each as a foreground Bash call with a 600000 timeout, never as a
   background task you then wait on. 3 of 5 agents stalled on this in the
