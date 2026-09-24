@@ -20,6 +20,7 @@ import { refreshShapeThumb } from './shapeThumb';
 import { clearStalePlacementNotices } from './exportPanel';
 import { renderWarnings } from './warningsView';
 import { $, input, numVal } from './dom';
+import { toFiniteNumber } from '../util/number';
 import { track } from '../analytics/track';
 
 /** Push state.asmRadius into the DOM — needed by session restore (state/persist.ts), which sets it
@@ -150,7 +151,9 @@ export function resyncShapeInputs(): void {
 
 function bindShapeInput(sel: string, apply: (v: number) => void): void {
   const el = input(sel);
-  const min = el.min !== '' ? parseFloat(el.min) : -Infinity;
+  // toFiniteNumber, not a bare parseFloat: a non-numeric min= (an authoring mistake, not
+  // anything a user types) used to parse to NaN, and `v >= NaN` rejects every value.
+  const min = toFiniteNumber(el.min) ?? -Infinity;
   const isValid = (v: number) => Number.isFinite(v) && v >= min;
   let lastValid = numVal(sel, min > 0 ? min : 0);
   resyncBoundInput.push(() => {

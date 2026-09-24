@@ -4,6 +4,7 @@ import { currentAssemblyKind } from '../assembly/kinds';
 import { refreshGizmo } from '../scene/designGizmo';
 import { track } from '../analytics/track';
 import { input } from './dom';
+import { toFiniteNumber } from '../util/number';
 
 type FitField = 'move' | 'scale' | 'rotate';
 
@@ -25,7 +26,7 @@ function syncPair(
     num = input(numSel);
   slider.addEventListener('input', () => {
     num.value = slider.value;
-    apply(parseFloat(slider.value) || 0);
+    apply(toFiniteNumber(slider.value) ?? 0);
     // On a heavy model rebuilds are slow — stay smooth during the drag and rebuild once
     // on release (below) instead of flooding slow redraws.
     if (!isRebuildLikelySlow()) scheduleRebuild();
@@ -36,7 +37,7 @@ function syncPair(
   });
   num.addEventListener('input', () => {
     slider.value = num.value;
-    apply(parseFloat(clampNum ? slider.value : num.value) || 0);
+    apply(toFiniteNumber(clampNum ? slider.value : num.value) ?? 0);
     scheduleRebuild('typed');
   });
   if (clampNum)
