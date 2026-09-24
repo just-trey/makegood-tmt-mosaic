@@ -692,7 +692,7 @@ describe('a hidden group', () => {
         `${RED}${RED}<rect fill="none" width="4" height="4"/></g>${GREEN}`,
     );
     expect(messages()).toEqual([
-      'The hidden group "Background" was skipped, with its 2 shapes. Show it in your editor to print it.',
+      'The hidden group "Background" starting at shape 1 was skipped, with its 2 shapes. Show it in your editor to print it.',
     ]);
   });
 
@@ -700,7 +700,7 @@ describe('a hidden group', () => {
     clearWarnings();
     fills(`${GREEN}<g id="Layer_2" opacity="0">${RED}</g><g fill-opacity="0">${GREEN}${RED}</g>`);
     expect(messages()).toEqual([
-      'The hidden group "Layer_2" was skipped, with its 1 shape. Show it in your editor to print it.',
+      'The hidden group "Layer_2" starting at shape 2 was skipped, with its 1 shape. Show it in your editor to print it.',
       'The hidden group starting at shape 3 was skipped, with its 2 shapes. Show it in your editor to print it.',
     ]);
   });
@@ -709,7 +709,21 @@ describe('a hidden group', () => {
     clearWarnings();
     fills(`<g id="outer" display="none">${RED}<g id="inner" opacity="0">${RED}</g></g>${GREEN}`);
     expect(messages()).toEqual([
-      'The hidden group "outer" was skipped, with its 2 shapes. Show it in your editor to print it.',
+      'The hidden group "outer" starting at shape 1 was skipped, with its 2 shapes. Show it in your editor to print it.',
+    ]);
+  });
+
+  it('warns for each of two hidden groups sharing a name, so neither hides the other', () => {
+    clearWarnings();
+    fills(`<g id="L" display="none">${RED}</g>${GREEN}<g id="L" display="none">${RED}</g>`);
+    expect(messages()).toHaveLength(2);
+  });
+
+  it('leaves a gradient shape out of the count, since it would not have printed anyway', () => {
+    clearWarnings();
+    fills(`<g id="g" display="none"><rect fill="url(#a)" width="4" height="4"/>${RED}</g>${GREEN}`);
+    expect(messages()).toEqual([
+      'The hidden group "g" starting at shape 2 was skipped, with its 1 shape. Show it in your editor to print it.',
     ]);
   });
 

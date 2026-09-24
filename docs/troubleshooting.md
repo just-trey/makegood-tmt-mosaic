@@ -808,9 +808,9 @@ or accept the shape is left out — a gradient rarely reads as intended on a
 
 ## Troubleshooting: "The hidden group … was skipped, with its … shapes" warnings
 
-Full text: _"The hidden group "…" was skipped, with its N shapes. Show it in your
-editor to print it."_ A group with no name reads _"The hidden group starting at
-shape N…"_ instead.
+Full text: _"The hidden group "…" starting at shape N was skipped, with its N
+shapes. Show it in your editor to print it."_ A group with no name has no
+quoted name.
 
 **What it means.** A group in the SVG is hidden, and nothing inside it was
 imported. A hidden Inkscape or Illustrator layer is the usual case. Hidden means
@@ -823,8 +823,9 @@ any of:
 
 **What you get.** The file loads as your editor shows it. The name is the
 layer's name (`inkscape:label`, or Illustrator's `data-name`), else its `id`.
-N counts only shapes that would otherwise have printed: stroke-only shapes and
-shapes hidden on their own are left out of it. One hidden group inside another
+The first number counts every shape element from the top of the file, as the
+gradient warning's does. The second counts only shapes that would otherwise
+have printed: stroke-only, gradient-filled and self-hidden shapes are left out. One hidden group inside another
 is covered by the outer one's warning.
 
 **What to do.** Nothing, if you hid the layer on purpose. If you meant it to

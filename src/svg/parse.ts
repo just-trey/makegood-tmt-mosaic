@@ -366,7 +366,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       } else if (hiddenBy) {
         // Counted only when nothing else would have dropped it, so the warning's number is what
         // the hidden group took out of the print.
-        if (fillRaw !== 'none' && ownOpacity !== 0 && ownFillOpacity !== 0) {
+        if (!fillUrl && fillRaw !== 'none' && ownOpacity !== 0 && ownFillOpacity !== 0) {
           if (hiddenBy.count++ === 0) hiddenBy.firstShape = shapeCount;
         }
       } else {
@@ -464,6 +464,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         }
       }
     }
+    if (!el.children.length) return;
     const own: HiddenGroup = {
       // An Inkscape layer's name is its label, and Illustrator writes one with spaces as data-name.
       name:
@@ -481,9 +482,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     };
     for (const child of el.children) walk(child, M, next);
     if (own.count) {
-      // Both ternaries inline, so check:troubleshooting reads every wording this can ship.
+      // The shape number stays even with a name: warn() dedupes by message, and two layers can
+      // share one. Both ternaries inline, so check:troubleshooting reads every wording it ships.
       warn(
-        `The hidden group ${own.name ? `"${own.name}"` : `starting at shape ${own.firstShape}`} was skipped, with its ${own.count === 1 ? '1 shape' : `${own.count} shapes`}. Show it in your editor to print it.`,
+        `The hidden group ${own.name ? `"${own.name}" ` : ''}starting at shape ${own.firstShape} was skipped, with its ${own.count === 1 ? '1 shape' : `${own.count} shapes`}. Show it in your editor to print it.`,
       );
     }
   }
