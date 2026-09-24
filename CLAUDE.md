@@ -174,4 +174,4 @@ Mechanical rules live in lint/CI, not here: copy shape (`check:copy`),
 troubleshooting quotes (`check:troubleshooting`), unsafe `any` and `parseInt`
 radix (ESLint), formatting (Prettier). Numeric input guards are only partly
 covered; `docs/tech-debt.md` says which part. Workflow rules live in the
-review and ship skills.
+review and ship skills. Don't duplicate them here.
