@@ -175,4 +175,4 @@ troubleshooting quotes (`check:troubleshooting`), unsafe `any` and `parseInt`
 radix (ESLint), formatting (Prettier). New external numbers go through
 `toFiniteNumber`/`toFiniteInt` ([src/util/number.ts](src/util/number.ts));
 older SVG and color sites guard inline. Enforced by review, not lint. Workflow
-rules live in the review and ship skills.
+rules live in the review and ship skills. Don't duplicate them here.
