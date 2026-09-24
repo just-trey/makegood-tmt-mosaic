@@ -110,34 +110,6 @@ row is the flank's whole dead area summed out of
   seam instead of stopping dead at it.
 - The owner has seen the trade and chose to leave tires out for now.
 
-## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted
-
-`rasterControls().apply()` ([src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts)) must call
-`dismissNotice()` before `notice()` when flipping a source's keyed capped/traced notice. `push()`
-([src/warnings.ts](../src/warnings.ts)) skips a new entry when its key is already taken, so calling
-`notice()` first drops the replacement, and the following `dismissNotice()` then removes it —
-leaving nothing standing for that source.
-
-A `push()` that upserts a same-key entry in place, removing the ordering requirement, was tried and
-reverted after three rounds each found a real defect:
-
-- **Unconfined to keyed entries**: overwriting any same-message match changed every unkeyed
-  `warn()`/`notice()`/`warnBuild()`/`noticeBuild()` caller from skip-if-present to
-  overwrite-if-present, and could flip an existing entry's `build` flag.
-- **Confined to keyed entries, but swapping in a new object**: broke
-  [src/ui/warningsView.ts](../src/ui/warningsView.ts)'s dismiss button, which finds its pill's
-  entry by reference (`WARNINGS.indexOf(w)`) — a swapped object left that reference dangling and
-  the × silently did nothing.
-- **Confined and mutating fields in place instead of swapping**: fixed the reference bug, but was
-  the third round in a row to need a real fix in the same mechanism — the signal to cut the area
-  rather than patch a fourth time.
-
-Closing this means either documenting the ordering constraint as permanent, or re-attempting the
-upsert with a test for each of the three failure modes above written before the fix.
-
-**Decided 2026-08-30**: re-attempt, with the test for each of the three failure modes above written
-first. Not yet scheduled.
-
 ## The placement frame's angle is unrelated to the face it acts on, and it shares the viewport with a second affordance
 
 Conventions 13–14 of [ui-conventions.md](ui-conventions.md): a gizmo is aligned to the frame of

@@ -299,34 +299,24 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
       colors.value = String(source.raster.colors);
       detail.value = String(source.raster.detail);
       readout.textContent = describe();
-      // Same key as the capped/traced notices this source's row carries: clear whichever of them
-      // currently stands, or push() would skip the new warn as a duplicate key and leave the old,
-      // now-false notice standing instead. The message passed doesn't matter once a key is given.
-      dismissNotice(rasterCappedMessage(source.name), source.id);
+      // Same key as the capped/traced notices, so the warn takes over whichever of them stands.
       dismissColorLoss(source.id);
       warn((e as Error).message, source.id);
       renderWarnings();
       return false;
     }
     if (!result) return false;
-    // dismissNotice() before notice(), not after: push() skips a new entry whose key is already
-    // taken, so notice()-then-dismissNotice() on the same key would drop the replacement and then
-    // remove it, leaving nothing standing for this source at all.
-    if (result.capped) {
-      dismissNotice(rasterTracedMessage(source.name), source.id);
-      notice(rasterCappedMessage(source.name), source.id);
-    } else {
-      dismissNotice(rasterCappedMessage(source.name), source.id);
-      notice(rasterTracedMessage(source.name), source.id);
-    }
-    // Its own key, so it stands beside whichever of those two this source holds — and so the same
-    // dismiss-then-notice order applies to it separately.
-    dismissColorLoss(source.id);
+    notice(
+      result.capped ? rasterCappedMessage(source.name) : rasterTracedMessage(source.name),
+      source.id,
+    );
+    // Its own key, so it stands beside whichever of those two this source holds.
     if (rasterLostColors(result))
       notice(
         rasterColorLossMessage(source.name, result.droppedColors),
         rasterColorLossKey(source.id),
       );
+    else dismissColorLoss(source.id);
     renderWarnings();
     readout.textContent = describe();
     scheduleRebuild();

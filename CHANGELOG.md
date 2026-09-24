@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An image's notice pill no longer jumps to the bottom of the list when
+  Detail or Colors changes it.** Flipping between the traced and the capped
+  notice now rewrites the pill where it stands.
+
 - **A design on the chair's Front no longer cuts a phantom mark into the top of
   the seat back.** A 0.4mm inlay, in surface the cushion covers, on one side of
   the centre line only.

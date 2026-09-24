@@ -1,6 +1,7 @@
 /**
  * Session notice list, rendered as pills over the viewport. Deduplicated by `key` when given,
- * falling back to `message` — most callers have one notice per message and never set `key`.
+ * falling back to `message` — most callers have one notice per message and never set `key`. A keyed
+ * push replaces its standing entry; an unkeyed one is skipped (see push).
  */
 export interface Notice {
   message: string;
@@ -29,9 +30,20 @@ export interface Notice {
 }
 export const WARNINGS: Notice[] = [];
 
+/**
+ * The entry is rewritten in place, never swapped: warningsView.ts's × finds its entry by reference,
+ * so a new object would leave the pill on screen dismissing nothing. Unkeyed pushes keep
+ * skip-if-present, or `warnBuild(m)` after `warn(m)` would hand a standing fact to the next rebuild.
+ */
 function push(n: Notice): void {
   const key = n.key ?? n.message;
-  if (!WARNINGS.some((w) => (w.key ?? w.message) === key)) WARNINGS.push(n);
+  const standing = WARNINGS.find((w) => (w.key ?? w.message) === key);
+  if (!standing) WARNINGS.push(n);
+  else if (n.key !== undefined && standing.key === n.key) {
+    standing.message = n.message;
+    standing.level = n.level;
+    standing.build = n.build;
+  }
 }
 
 /** Something failed or degraded — rendered as a red pill. Pass `key` per Notice.key. */
