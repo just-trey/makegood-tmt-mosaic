@@ -1005,46 +1005,15 @@ Closing this again means clearing, at minimum:
 - The no-op regime: mean width is never under 0.5 (a lone pixel is 2*1/4), so any threshold
   at or under 0.5 must skip the O(w*h) perimeter scan entirely.
 
-## Numeric coercion has no lint rule
+## `noUncheckedIndexedAccess` is not enforced
 
-Numeric input guards are enforced by lint and CI in part, not in full. What
-holds and what does not:
+Split out from the now-closed "Numeric coercion has no lint rule" section,
+which decided the parsing-helper convention (`src/util/number.ts`) for that
+half. This half is unrelated and still open.
 
-**Enforced.** `strict: true`, plus the five type-aware
-`@typescript-eslint/no-unsafe-*` rules on `src/**/*.ts`. Those caught 12 real
-cases of untrusted input reaching typed state, all fixed. ESLint's built-in
-`radix` rule also catches a `parseInt` with no base. The one site it found reads
-an app-generated `<select>` value, so it was latent, not live.
-
-**Not enforced.** `parseFloat` / `Number` / unary `+` coercion. No lint rule in
-the current plugin ecosystem covers the pattern, and a custom parser rule was
-ruled out as too much machinery for one check. Nothing catches a `parseFloat`
-whose `NaN` is never guarded.
-
-Counted 2026-08-28 (`grep -rn parseFloat src/ | wc -l`): of 9 `parseFloat` sites in `src/`, **0** parse an
-external number with no finite check. The last two were guarded in the same pass that closed this
-count: `parsePathD` (`svg/path.ts`) never throws; on a malformed coordinate it drops the subpath it
-was building whole (token misalignment makes anything after that point unrecoverable, and closing
-a truncated loop into a shape the artist never drew would be worse) and keeps every subpath already
-closed, and `parseSVGDocument` (`svg/parse.ts`) warns naming which `<path>` it was — a per-document
-count, since two malformed paths would otherwise collapse into one warning under `warn()`'s
-exact-message dedup, which is also why the sibling gradient/pattern-fill warning in the same
-function now names its element the same way. The new `parseFillOpacity` helper (`svg/parse.ts`)
-falls back to the SVG default (fully opaque) instead of an unguarded NaN. Every remaining site
-guards, most on the next line, so the exposure is narrower than the call count suggests. Count the
-guards, not the calls. One of them, `bindShapeInput` in `ui/partPanel.ts`, guards against a value it parses from an
-authored `min=` attribute rather than from anything a user types, and a non-numeric one there would
-reject every input; that is a latent bug in the markup, not in the guard.
-
-**Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
-on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
-
-**Closing it** would take either a custom ESLint rule for the coercion pattern,
-or a convention that all external numbers land through one parsing helper that
-the type system can then police.
-
-**Decided 2026-08-30**: the parsing-helper convention, not a custom lint rule. `parsePathD` and
-`parseFillOpacity` are already converging on that shape. Not yet scheduled.
+Measured at **2727 errors** (`npx tsc --noEmit --noUncheckedIndexedAccess`)
+on `main` @ 8db8c6d, up from 2240 @ 04c2c81. Enabling it is a real project,
+not a flag flip.
 
 ## A regenerated source mesh would leave its rotated copies on the old geometry
 

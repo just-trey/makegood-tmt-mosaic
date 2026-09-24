@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A Diameter, Width or Height field with a non-numeric authored minimum no
+  longer rejects every value you type.** Custom-part markup that set a
+  malformed `min=` used to make the guard compare against `NaN`, which is
+  never `>=` anything.
+
 - **An image's notice pill no longer jumps to the bottom of the list when
   Detail or Colors changes it.** Flipping between the traced and the capped
   notice now rewrites the pill where it stands.
