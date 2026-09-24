@@ -1283,9 +1283,10 @@ was picked while the saved one was still loading.
 on did not load. Usually the parts library could not be reached: a dropped
 connection, or a site update landing mid-visit.
 
-**What it does affect.** The app goes back to the part, settings and designs it
-had before you clicked Restore. The saved session is kept, and the next visit
-offers it again.
+**What it does affect.** Nothing from the session is applied. Your settings and
+designs stay as they were before you clicked Restore, on the part you had, or on
+the one you picked. The saved session is kept, and the next visit offers it
+again.
 
 The app stops saving until you reload, so the saved session is not replaced.
 Anything you do before reloading will not be saved.
