@@ -150,7 +150,7 @@ function parseClassRules(doc: Document): Map<string, StyleDecls> {
 /**
  * Resolves a presentation property through the cascade: `!important` inline style, then
  * `!important` class rule, then plain inline style, class rule, and finally the attribute.
- * Every value it returns has `!important` already stripped, whatever the source.
+ * No value it returns from a style declaration carries `!important`.
  */
 export function createStyleResolver(doc: Document): (el: Element, prop: string) => string | null {
   const classRules = parseClassRules(doc);
@@ -164,12 +164,9 @@ export function createStyleResolver(doc: Document): (el: Element, prop: string) 
       if (d && (!cls || (d.important && !cls.important))) cls = d;
     }
     if (cls?.important) return cls.value;
-    // `!important` is not valid in an attribute, so a browser ignores `fill-opacity="0 !important"`
-    // and shows the shape. Stripped anyway: whoever wrote it meant hidden, and a hidden shape
-    // imported as a visible color costs an AMS slot.
-    return (
-      inline?.value ?? cls?.value ?? el.getAttribute(prop)?.trim().replace(IMPORTANT, '') ?? null
-    );
+    // Not stripped here: `!important` is invalid in an attribute, so a browser ignores the whole
+    // value. Stripping it turned `fill="none !important"`, which a browser draws black, into a drop.
+    return inline?.value ?? cls?.value ?? el.getAttribute(prop);
   };
 }
 

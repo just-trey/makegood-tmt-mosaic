@@ -1173,9 +1173,25 @@ Measured 2026-08-30 with a throwaway jsdom vitest file that called
 | `<g opacity="0"><rect …/></g>` + a visible `<rect>`          | 2               | 1         |
 | `<g fill-opacity="0"><rect …/></g>` + a visible `<rect>`     | 2               | 1         |
 
-The two opacity rows measured 2026-09-24 the same way. `opacity="0"` or
-`fill-opacity="0"` on the shape itself does hide it; only the group case leaks.
-`fill-opacity` inherits, so a child's own `fill-opacity` overrides the group's.
+The two opacity rows were measured 2026-09-24. All four re-run from the repo
+root with `npx vite-node group.mts`, where `group.mts` is:
+
+```ts
+import { JSDOM } from 'jsdom';
+const { window } = new JSDOM();
+Object.assign(globalThis, { DOMParser: window.DOMParser, document: window.document });
+const { parseSVGDocument } = await import(process.cwd() + '/src/svg/parse.ts');
+for (const g of ['display="none"', 'style="display:none"', 'opacity="0"', 'fill-opacity="0"']) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg"><g ${g}><rect width="4" height="4"/></g><rect width="4" height="4"/></svg>`;
+  console.log(g, parseSVGDocument(svg).shapes.length);
+}
+```
+
+- `opacity="0"` or `fill-opacity="0"` on the shape itself hides it. Only the
+  group case leaks.
+- `opacity` and `fill-opacity` are read on the shape alone. A group's value
+  never reaches the shapes inside it.
+- In CSS `fill-opacity` inherits: a child with its own `fill-opacity` keeps it.
 
 A hidden Inkscape or Illustrator layer is exactly this markup. The artwork the
 user hid is inlaid into the print and costs an AMS slot.

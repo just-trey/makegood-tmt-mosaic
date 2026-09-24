@@ -49,10 +49,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `display: none !important` used to import at all. An `!important` rule also
   beats a plain inline style, as in a browser. `fill-opacity` percentages now
   read as fractions (`npx vitest run tests/parse.test.ts`).
-- **A shape with `opacity="0"` in an SVG no longer imports.** Only
-  `fill-opacity` hid a shape before; `opacity` was never read. A group at
-  opacity 0 still leaks its shapes; `docs/tech-debt.md` has it
+- **A shape with a malformed `fill-opacity` now imports, as a browser draws
+  it.** `fill-opacity="0px"`, `"0,5"` or an attribute `"0 !important"` used to
+  hide the shape by accident: the leading `0` was read and the rest ignored.
+  A browser rejects the whole value and draws the shape opaque
   (`npx vitest run tests/parse.test.ts`).
+- **An inline style that repeats a property now uses the last one**, as
+  Inkscape and Illustrator show it: `style="fill:#ff0000;fill:#00ff00"` imports
+  green, not red. Property names are read in any case, so `FILL:` counts
+  (`npx vitest run tests/parse.test.ts`).
+- **The `opacity` property is now read at all.** `opacity="0"` on a shape hides
+  it; before, only `fill-opacity` could. A group at opacity 0 still leaks its
+  shapes; `docs/tech-debt.md` has it (`npx vitest run tests/parse.test.ts`).
 
 ### Added
 

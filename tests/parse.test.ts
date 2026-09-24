@@ -505,10 +505,7 @@ describe('fill-opacity through the style cascade', () => {
     ).toBe(1);
   });
 
-  it('keeps a shape hidden by fill-opacity="0 !important" as an attribute, or with a comment after it', () => {
-    expect(hidden('<rect width="4" height="4" fill="#ff0000" fill-opacity="0 !important"/>')).toBe(
-      1,
-    );
+  it('keeps a shape hidden by fill-opacity 0 with a comment after it', () => {
     expect(
       hidden('<rect style="fill-opacity:0 /* hidden */" width="4" height="4" fill="#ff0000"/>'),
     ).toBe(1);
@@ -517,6 +514,13 @@ describe('fill-opacity through the style cascade', () => {
   it('hides a shape at opacity 0, from an attribute or an inline style', () => {
     expect(hidden('<rect width="4" height="4" fill="#ff0000" opacity="0"/>')).toBe(1);
     expect(hidden('<rect style="opacity:0" width="4" height="4" fill="#ff0000"/>')).toBe(1);
+  });
+
+  it('imports a shape whose attribute holds !important, which a browser ignores and draws', () => {
+    expect(hidden('<rect width="4" height="4" fill="#ff0000" fill-opacity="0 !important"/>')).toBe(
+      2,
+    );
+    expect(hidden('<rect width="4" height="4" fill="none !important"/>')).toBe(2);
   });
 
   it('reads 50% !important as 0.5, not a 50 clamped to 1', () => {
@@ -573,6 +577,24 @@ describe('!important in a style declaration', () => {
       ),
     );
     expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00', '#ff0000']);
+  });
+
+  it('reads the last of two inline declarations of the same property, as a design tool shows it', () => {
+    const out = parseSVGDocument(
+      svg('<rect style="fill:#ff0000;fill:#00ff00" width="4" height="4"/>'),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('reads a property name written in capitals, from a class rule or an inline style', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.a { FILL: #00ff00; }</style>' +
+          '<rect class="a" width="4" height="4"/>' +
+          '<rect style="Fill:#0000ff" width="4" height="4"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00', '#0000ff']);
   });
 
   it('lets an !important rule win over a plain one from another class on the same shape', () => {
