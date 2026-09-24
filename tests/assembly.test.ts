@@ -1744,6 +1744,86 @@ describe('buildAssemblyGeometry too-deep clamp handling', () => {
   );
 });
 
+/**
+ * A 3mm plate (y 7..10) with a solid block under its +X quarter reaching y=-15. The part reaches
+ * 25mm behind its face, so its own bound is 24.95mm, while the wall under most of the face is 3mm.
+ */
+function steppedPart(): AssemblyPart {
+  const profile: [number, number][] = [
+    [-20, 7],
+    [10, 7],
+    [10, -15],
+    [20, -15],
+    [20, 10],
+    [-20, 10],
+  ];
+  const shape = new THREE.Shape(profile.map(([x, y]) => new THREE.Vector2(x, y)));
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 40,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  geo.translate(0, 0, -20);
+  const flat = geo.index ? geo.toNonIndexed() : geo;
+  return boxPart({
+    name: 'stepped',
+    positions: Float32Array.from(flat.attributes.position.array as Float32Array),
+  });
+}
+
+describe('buildAssemblyGeometry wall clamp', () => {
+  beforeEach(() => clearWarnings());
+
+  // The part bound let this through: 20mm is well under the 24.95mm the part reaches behind its
+  // face, and the 3mm plate the square stands on was cut clean through with no warning.
+  it(
+    'cuts a pocket deeper than the wall under it at the wall, and says so',
+    { timeout: 30000 },
+    async () => {
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parts: [steppedPart()],
+          offX: -8,
+          colorSettings: { 'asm:#ff0000': { depth: 20 } },
+        }),
+      ))!;
+      const inlay = built.partOutputs[0].inlaySoups[0];
+      const x = xzRange(inlay);
+      expect(x.maxX).toBeLessThan(10);
+      // A floor is left under the pocket, rather than the inlay being the whole 3mm plug.
+      expect(yRange(inlay).min).toBeCloseTo(7 + 0.05, 4);
+      expect(built.palette.find((p) => p.hex === '#ff0000')?.appliedDepth).toBeCloseTo(2.95, 4);
+      const messages = WARNINGS.map((w) => w.message);
+      expect(messages).toContain(
+        'Depth for "#ff0000" was set to 20.00 mm, but "stepped" is only 3.00 mm thick under it. ' +
+          'It was cut at 2.95 mm instead.',
+      );
+      // One fact, one pill: the part bound was not what stopped it.
+      expect(messages.filter((m) => m.includes('goes.'))).toEqual([]);
+    },
+  );
+
+  // On a plain box the wall is the whole part, so the part bound already took the depth to the
+  // wall. One fact, one pill.
+  it('leaves a clamp the part bound made to the part warning', { timeout: 30000 }, async () => {
+    await buildAssemblyGeometry(baseInput({ colorSettings: { 'asm:#ff0000': { depth: 9999 } } }));
+    const messages = WARNINGS.map((w) => w.message);
+    expect(messages.filter((m) => m.includes('goes.'))).toHaveLength(1);
+    expect(messages.filter((m) => m.includes('thick under'))).toEqual([]);
+  });
+
+  it('stays quiet about a region the wall can hold', { timeout: 30000 }, async () => {
+    await buildAssemblyGeometry(
+      baseInput({
+        parts: [steppedPart()],
+        offX: -8,
+        colorSettings: { 'asm:#ff0000': { depth: 2 } },
+      }),
+    );
+    expect(WARNINGS.filter((w) => w.message.includes('thick under'))).toEqual([]);
+  });
+});
+
 describe('buildAssemblyGeometry depth labels and thin cuts', () => {
   beforeEach(() => clearWarnings());
 

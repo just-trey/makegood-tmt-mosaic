@@ -119,10 +119,8 @@ export function addZeroDepthRaise(
  * same setting can be fine on the wheel and clamped on the cap, and a message without the name
  * would read as a fact about the number.
  *
- * **This is not a wall-thickness check**, and it is worded so it cannot be read as one. It bounds
- * the recess by how far the part extends behind its design face, which is the deepest any cut
- * could go before leaving the part entirely. A recess shallower than that can still break through
- * a thin wall, and nothing here measures that (docs/tech-debt.md).
+ * **Not the wall check**, and worded so it cannot be read as one: this is how far the whole part
+ * extends behind its design face. A thinner wall under a region is thinWallWarning's.
  *
  * Takes every color clamped to the same depth on the same part at once, like zeroDepthWarning:
  * without grouping, a merged-color palette on one part stacked one identical-looking pill per
@@ -141,6 +139,27 @@ export function tooDeepWarning(
   return (
     `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ${requested.toFixed(2)} mm, ` +
     `deeper than "${partName}" goes. ${one ? 'It was' : 'They were'} cut at ${cutAt.toFixed(2)} mm instead.`
+  );
+}
+
+/**
+ * The warning for a depth deeper than the wall under a region, where the part as a whole had room.
+ *
+ * Quotes the wall as well as the cut, since the cut stops CUT_FLOOR_MM short of it and "only 2.95mm
+ * thick" would be wrong about the part. Grouped and keyed exactly like tooDeepWarning.
+ */
+export function thinWallWarning(
+  labels: string[],
+  partName: string,
+  requested: number,
+  cutAt: number,
+): string {
+  const one = labels.length === 1;
+  const which = labels.map((l) => `"${l}"`).join(', ');
+  return (
+    `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ${requested.toFixed(2)} mm, ` +
+    `but "${partName}" is only ${(cutAt + CUT_FLOOR_MM).toFixed(2)} mm thick under ${one ? 'it' : 'them'}. ` +
+    `${one ? 'It was' : 'They were'} cut at ${cutAt.toFixed(2)} mm instead.`
   );
 }
 

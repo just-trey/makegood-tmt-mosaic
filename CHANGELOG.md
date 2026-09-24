@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A pocket deeper than the wall under it is now cut at that wall, with a
+  warning.** Depth was only checked against how far the whole part reaches
+  behind its face. On the hubcap that is 8.12mm over a 3mm shell, so any depth
+  from 3mm up cut clean through and exported without a word. The warning names
+  the color, the part and the wall. The chair body is still unchecked.
+
 - **A Diameter, Width or Height field with a non-numeric authored minimum no
   longer rejects every value you type.** Custom-part markup that set a
   malformed `min=` used to make the guard compare against `NaN`, which is
