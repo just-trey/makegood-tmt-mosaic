@@ -42,6 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). Run against the
   previous `src/raster/trace.ts`, the same command gives 16 of 24 over, up to
   9237 regions.
+- **A shape hidden with a negative or `!important` opacity in an SVG no longer
+  imports as a color.** `fill-opacity="-1"` or `-50%` is hidden in a browser
+  and now here too. A `<style>` rule or inline style marked `!important` is
+  read: `fill: #00ff00 !important` used to import black, and
+  `display: none !important` used to import at all. An `!important` rule also
+  beats a plain inline style, as in a browser. `fill-opacity` percentages now
+  read as fractions (`npx vitest run tests/parse.test.ts`).
+- **A shape with `opacity="0"` in an SVG no longer imports.** Only
+  `fill-opacity` hid a shape before; `opacity` was never read. A group at
+  opacity 0 still leaks its shapes; `docs/tech-debt.md` has it
+  (`npx vitest run tests/parse.test.ts`).
 
 ### Added
 

@@ -2,6 +2,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   SVG_LENGTH_UNIT_MM,
+  createStyleResolver,
   normalizeColor,
   parseFillOpacity,
   parseSVGDocument,
@@ -462,11 +463,136 @@ describe('parseFillOpacity', () => {
   it('falls back to fully opaque on a non-numeric value, instead of NaN', () => {
     expect(parseFillOpacity('abc')).toBe(1);
     expect(parseFillOpacity(null)).toBe(1);
+    expect(parseFillOpacity('0px')).toBe(1);
+    expect(parseFillOpacity('0,5')).toBe(1);
   });
 
   it('still reads a valid value through', () => {
     expect(parseFillOpacity('0.5')).toBeCloseTo(0.5, 9);
     expect(parseFillOpacity('0')).toBe(0);
+  });
+
+  it.each([
+    ['50%', 0.5],
+    ['0%', 0],
+    ['-1', 0],
+    ['-50%', 0],
+    ['150%', 1],
+  ])('reads %s as %s: a percentage is a fraction, and the result clamps to 0..1', (raw, want) => {
+    expect(parseFillOpacity(raw)).toBeCloseTo(want, 9);
+  });
+});
+
+describe('fill-opacity through the style cascade', () => {
+  const hidden = (shape: string): number =>
+    parseSVGDocument(
+      svg(
+        '<style>.h { fill-opacity: 0 !important; }</style>' +
+          shape +
+          '<rect width="4" height="4" fill="#00ff00"/>',
+      ),
+    ).shapes.length;
+
+  it('hides a shape at fill-opacity -1 or -50%, which the spec clamps to 0', () => {
+    expect(hidden('<rect width="4" height="4" fill="#ff0000" fill-opacity="-1"/>')).toBe(1);
+    expect(hidden('<rect width="4" height="4" fill="#ff0000" fill-opacity="-50%"/>')).toBe(1);
+  });
+
+  it('keeps a shape hidden by 0 !important, from a class rule or an inline style', () => {
+    expect(hidden('<rect class="h" width="4" height="4" fill="#ff0000"/>')).toBe(1);
+    expect(
+      hidden('<rect style="fill-opacity: 0 !important" width="4" height="4" fill="#ff0000"/>'),
+    ).toBe(1);
+  });
+
+  it('keeps a shape hidden by fill-opacity="0 !important" as an attribute, or with a comment after it', () => {
+    expect(hidden('<rect width="4" height="4" fill="#ff0000" fill-opacity="0 !important"/>')).toBe(
+      1,
+    );
+    expect(
+      hidden('<rect style="fill-opacity:0 /* hidden */" width="4" height="4" fill="#ff0000"/>'),
+    ).toBe(1);
+  });
+
+  it('hides a shape at opacity 0, from an attribute or an inline style', () => {
+    expect(hidden('<rect width="4" height="4" fill="#ff0000" opacity="0"/>')).toBe(1);
+    expect(hidden('<rect style="opacity:0" width="4" height="4" fill="#ff0000"/>')).toBe(1);
+  });
+
+  it('reads 50% !important as 0.5, not a 50 clamped to 1', () => {
+    const doc = new DOMParser().parseFromString(
+      svg(
+        '<style>.a { fill-opacity: 50% !important; }</style>' +
+          '<rect class="a" width="4" height="4"/>' +
+          '<rect style="fill-opacity:50% !important" width="4" height="4"/>',
+      ),
+      'image/svg+xml',
+    );
+    const resolve = createStyleResolver(doc);
+    for (const el of doc.querySelectorAll('rect')) {
+      expect(parseFillOpacity(resolve(el, 'fill-opacity'))).toBeCloseTo(0.5, 9);
+    }
+  });
+});
+
+describe('!important in a style declaration', () => {
+  it('reads the fill color, not black, when a class rule marks it !important', () => {
+    const out = parseSVGDocument(
+      svg('<style>.a { fill: #00ff00 !important; }</style><rect class="a" width="4" height="4"/>'),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('skips a shape whose fill is none !important', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<rect style="fill: none !important" width="4" height="4"/>' +
+          '<rect width="4" height="4" fill="#00ff00"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('hides a shape marked display: none !important', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.x { display: none !important; }</style>' +
+          '<rect class="x" width="4" height="4" fill="#ff0000"/>' +
+          '<rect width="4" height="4" fill="#00ff00"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('lets an !important class rule beat an inline style, as a browser does', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.a { fill: #00ff00 !important; }</style>' +
+          '<rect class="a" style="fill:#0000ff" width="4" height="4"/>' +
+          '<rect class="a" style="fill:#ff0000 !important" width="4" height="4"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00', '#ff0000']);
+  });
+
+  it('lets an !important rule win over a plain one from another class on the same shape', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.a { fill: #00ff00 !important; } .b { fill: #0000ff; }</style>' +
+          '<rect class="a b" width="4" height="4"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('keeps an earlier !important declaration over a later plain one for the same class', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.a { fill: #00ff00 !important; } .a { fill: #0000ff; }</style>' +
+          '<rect class="a" width="4" height="4"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
   });
 });
 
