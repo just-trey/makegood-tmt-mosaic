@@ -35,7 +35,7 @@ vi.mock('../src/ui/artworkListPanel', () => ({ renderArtworkList: vi.fn() }));
 vi.mock('../src/ui/fitPanel', () => ({ refreshFitInputsFromState: vi.fn() }));
 vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 
-import { initZonePicking, refreshZonePickMeshes, zoneIdAtNdc } from '../src/scene/zonePick';
+import { initZonePicking, refreshZonePickMeshes, zonePickAtNdc } from '../src/scene/zonePick';
 import { isGizmoDragging } from '../src/scene/designGizmo';
 import { scheduleRebuild } from '../src/app/scheduler';
 import { track } from '../src/analytics/track';
@@ -44,7 +44,7 @@ import type { AssemblyPart, DesignZone } from '../src/types';
 import type { ConformalChart } from '../src/geometry/conformal';
 
 /** A 40×40mm square centred on the origin in the z=0 plane, facing the camera. */
-function squareChart(): ConformalChart {
+function squareChart(deadRegions?: ConformalChart['deadRegions']): ConformalChart {
   return {
     positions3: new Float32Array([-20, -20, 0, 20, -20, 0, 20, 20, 0, -20, 20, 0]),
     uv: new Float32Array([0, 0, 40, 0, 40, 40, 0, 40]),
@@ -56,10 +56,15 @@ function squareChart(): ConformalChart {
       [40, 40],
       [0, 40],
     ],
+    ...(deadRegions ? { deadRegions } : {}),
   };
 }
 
-const zone = (id: string): DesignZone => ({ id, name: id, chart: squareChart() });
+const zone = (id: string, deadRegions?: ConformalChart['deadRegions']): DesignZone => ({
+  id,
+  name: id,
+  chart: squareChart(deadRegions),
+});
 
 function part(over: Partial<AssemblyPart> = {}): AssemblyPart {
   return {
@@ -377,28 +382,53 @@ describe('picking a zone in the viewport', () => {
   });
 });
 
-describe('zoneIdAtNdc', () => {
+describe('zonePickAtNdc', () => {
   // The hook scripts/check-zone-occlusion.mjs drives. It has to answer the same question a click
-  // does, or that check is measuring something the user never touches.
+  // does, or that check is measuring something the user never touches. `dead` is its third state:
+  // a pick can be right (the zone is really there) while the surface is hidden once assembled, so
+  // it takes no ink — that reads as a pass, not a through-pick.
   beforeEach(() => {
     initZonePicking();
     refreshZonePickMeshes();
   });
 
   it('answers with the zone a click at the same point would bind', () => {
-    expect(zoneIdAtNdc(0, 0)).toBe('front');
+    expect(zonePickAtNdc(0, 0)).toEqual({ zoneId: 'front', dead: false });
   });
 
   it('answers null off the model', () => {
-    expect(zoneIdAtNdc(0.95, 0.95)).toBeNull();
+    expect(zonePickAtNdc(0.95, 0.95)).toEqual({ zoneId: null, dead: false });
   });
 
   it('answers null where a part covers the zone, exactly as a click there does', () => {
     solidAt(50);
 
-    expect(zoneIdAtNdc(0, 0)).toBeNull();
+    expect(zonePickAtNdc(0, 0)).toEqual({ zoneId: null, dead: false });
     clickAt(10, 10);
     expect(boundZone()).toBeNull();
+  });
+
+  it('flags dead over a zone chart declares hidden, even though the pick itself is still right', () => {
+    state.assembly.parts = [
+      part({
+        zones: [
+          zone('front', [
+            {
+              outer: [
+                [0, 0],
+                [40, 0],
+                [40, 40],
+                [0, 40],
+              ],
+              holes: [],
+            },
+          ]),
+        ],
+      }),
+    ];
+    refreshZonePickMeshes();
+
+    expect(zonePickAtNdc(0, 0)).toEqual({ zoneId: 'front', dead: true });
   });
 });
 

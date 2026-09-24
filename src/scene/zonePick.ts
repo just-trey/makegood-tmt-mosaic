@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import * as turf from '@turf/turf';
 import { state } from '../state/store';
 import { activeArtworkInstance, setArtworkZone } from '../state/artwork';
 import { asmPartTransformGroup } from '../geometry/assembly';
@@ -15,6 +16,11 @@ import { isGizmoDragging, refreshGizmo } from './designGizmo';
 import { renderArtworkList } from '../ui/artworkListPanel';
 import { refreshFitInputsFromState } from '../ui/fitPanel';
 import { track } from '../analytics/track';
+import type { ConformalChart } from '../geometry/conformal';
+import { zoneMappersFor } from '../geometry/zoneMappers';
+import { currentAssemblyKind } from '../assembly/kinds';
+import { warn } from '../warnings';
+import type { PolyFeature } from '../types';
 
 /** Pointer movement (px) below which a pointerdown→pointerup pair reads as a click, not a drag. */
 const CLICK_MOVE_TOLERANCE_PX = 5;
@@ -43,6 +49,61 @@ const OCCLUSION_TOL_MM = 0.05;
 interface PickTarget {
   mesh: THREE.Mesh;
   zoneId: string;
+  /** This zone's hidden-surface region in chart UV (mm), or null when none/unbuildable. */
+  deadArea: PolyFeature | null;
+}
+
+/**
+ * `deadArea()` per chart, cached like `overlayCache` in rebuild.ts: `zoneMappersFor` builds a
+ * fresh mapper every call — its own `deadArea()` memoization is per-instance, not per-chart — and
+ * refreshZonePickMeshes runs after every rebuild, so this is what stops that construction
+ * repeating for no reason.
+ *
+ * A failure is warned, not cached: caching `null` for a chart that merely threw this time would
+ * read as "nothing is hidden here" forever, which is the exact false-through-pick shape this
+ * whole mechanism exists to close. Retrying on the next rebuild costs one mapper construction and
+ * gives a chart that starts loading correctly a chance to stop failing.
+ */
+const deadAreaCache = new WeakMap<ConformalChart, PolyFeature | null>();
+
+/**
+ * `mappers` is one part's zone mappers (read-only, `wasm: null` — the same dispatch faceFrame.ts
+ * uses), built lazily by the caller so a part whose every chart is already cached never pays for
+ * it.
+ */
+function deadAreaFor(
+  mappers: () => ReturnType<typeof zoneMappersFor>,
+  zoneId: string,
+  chart: ConformalChart,
+): PolyFeature | null {
+  const cached = deadAreaCache.get(chart);
+  if (cached !== undefined) return cached;
+  const fail = (): null => {
+    warn(
+      `Couldn't test "${zoneId}" for hidden surface. Zone picking may flag it as a through-pick. ` +
+        `Please report this.`,
+      `dead-area-${zoneId}`,
+    );
+    return null; // not cached — see the comment on deadAreaCache above
+  };
+  let mapper: ReturnType<typeof zoneMappersFor>[number] | undefined;
+  try {
+    mapper = mappers().find((m) => m.zoneId === zoneId);
+  } catch {
+    return fail();
+  }
+  // A miss here is the same "can't answer" as a throw, not "nothing is hidden": every zone this
+  // function is called for came straight out of `part.zones`, so a mapper dispatch that can't find
+  // that id back is a real dispatch problem, and caching `null` for it would hide one.
+  if (!mapper) return fail();
+  let poly: PolyFeature | null;
+  try {
+    poly = mapper.deadArea();
+  } catch {
+    return fail();
+  }
+  deadAreaCache.set(chart, poly);
+  return poly;
 }
 
 // Kept outside modelGroup (a persistent scene-level overlay, like the design gizmo) rather than
@@ -59,7 +120,13 @@ let downPos: { x: number; y: number } | null = null;
 let downPointerId: number | null = null;
 let downSuppressed = false;
 
-function pickAtNdc(ndc: THREE.Vector2): PickTarget | null {
+/** A target plus where on its chart the ray landed — the UV a dead-region test needs. */
+interface PickHit {
+  target: PickTarget;
+  uv: THREE.Vector2 | null;
+}
+
+function pickHitAtNdc(ndc: THREE.Vector2): PickHit | null {
   if (!targets.length) return null;
   raycaster.setFromCamera(ndc, getCamera());
   const hits = raycaster.intersectObjects(
@@ -95,7 +162,12 @@ function pickAtNdc(ndc: THREE.Vector2): PickTarget | null {
     }
     if (covered) return null;
   }
-  return targets.find((t) => t.mesh === hits[0].object) ?? null;
+  const target = targets.find((t) => t.mesh === hits[0].object);
+  return target ? { target, uv: hits[0].uv ?? null } : null;
+}
+
+function pickAtNdc(ndc: THREE.Vector2): PickTarget | null {
+  return pickHitAtNdc(ndc)?.target ?? null;
 }
 
 function pick(e: PointerEvent): PickTarget | null {
@@ -104,14 +176,25 @@ function pick(e: PointerEvent): PickTarget | null {
 
 /**
  * The zone a click at this normalized-device-coordinate point would select, by the same path the
- * click itself takes. Exposed on `window.__mosaic` for
+ * click itself takes, plus whether that hit sits in the zone's own hidden-surface region
+ * (`ConformalChart.deadRegions`) — pickable, but a cover hides it once assembled, so it never
+ * shows ink. One raycast, so `dead` is always about the exact hit `zoneId` came from.
+ *
+ * Exposed on `window.__mosaic` for
  * [scripts/check-zone-occlusion.mjs](../../scripts/check-zone-occlusion.mjs): a real click also
  * binds artwork and schedules a rebuild, so asking the question through one costs a rebuild per
  * sample and the check needs hundreds. That script drives real clicks too, on the two named cases,
  * so the two paths are checked against each other rather than this one being trusted alone.
  */
-export function zoneIdAtNdc(x: number, y: number): string | null {
-  return pickAtNdc(new THREE.Vector2(x, y))?.zoneId ?? null;
+export function zonePickAtNdc(x: number, y: number): { zoneId: string | null; dead: boolean } {
+  const hit = pickHitAtNdc(new THREE.Vector2(x, y));
+  if (!hit) return { zoneId: null, dead: false };
+  const dead = !!(
+    hit.target.deadArea &&
+    hit.uv &&
+    turf.booleanPointInPolygon([hit.uv.x, hit.uv.y], hit.target.deadArea)
+  );
+  return { zoneId: hit.target.zoneId, dead };
 }
 
 function onPointerDown(e: PointerEvent): void {
@@ -176,15 +259,25 @@ export function refreshZonePickMeshes(): void {
   // alone would leave every pick target un-rotated behind a posed chair, so clicks would select a
   // zone by where it used to be. See poseAssemblyForDisplay() in rebuild.ts.
   syncToModelGroup(pickRoot);
+  const isRect = currentAssemblyKind()?.designFit === 'rect';
 
   for (const part of state.assembly.parts) {
     if (!part.loaded || !part.zones?.length) continue;
     const xf = asmPartTransformGroup(part);
     let any = false;
+    // Lazy and memoized per part: only a chart this part hasn't seen before needs its mappers, so
+    // a fully-cached part (every rebuild after the first) never builds one.
+    let mappers: ReturnType<typeof zoneMappersFor> | null = null;
+    const mappersOnce = () =>
+      (mappers ??= zoneMappersFor(part, state.assembly.parts, isRect, null));
     for (const zone of part.zones) {
       if (!zone.chart) continue;
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(zone.chart.positions3, 3));
+      // Parallel to `position` (both come from reconstructChart's per-vertex arrays), so three's
+      // raycaster hands back a barycentric-interpolated chart UV on every hit — the coordinate
+      // space zonePickAtNdc's point-in-polygon test needs, with no separate lookup.
+      geo.setAttribute('uv', new THREE.BufferAttribute(zone.chart.uv, 2));
       geo.setIndex(new THREE.BufferAttribute(zone.chart.triangles, 1));
       const mesh = new THREE.Mesh(geo, pickMaterial!);
       // Picking target only — never rendered. It stays hittable because three.js 0.160's
@@ -192,7 +285,11 @@ export function refreshZonePickMeshes(): void {
       // pickAtNdc has to ask the model group separately whether anything is in front of it.
       mesh.visible = false;
       xf.add(mesh);
-      targets.push({ mesh, zoneId: zone.id });
+      targets.push({
+        mesh,
+        zoneId: zone.id,
+        deadArea: deadAreaFor(mappersOnce, zone.id, zone.chart),
+      });
       any = true;
     }
     if (any) pickRoot.add(xf.outer);

@@ -27,6 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Detail or Colors changes it.** Flipping between the traced and the capped
   notice now rewrites the pill where it stands.
 
+- **`check:zone-occlusion` no longer reports a pass over a dead zone as a
+  through-pick.** The driven check classified a pixel by whether the design's
+  ink showed there; a zone hidden by a cover once assembled (a `deadRegions`
+  cutout) is correctly pickable but never inked, and the check read that as a
+  click landing on something invisible. It now asks the same question the app
+  itself answers: whether the pick's point on the chart falls in that zone's
+  own hidden-surface region. `npm run build && MOSAIC_GPU=1 npm run
+check:zone-occlusion` on the chair went from 13 failures (48/42/1/42
+  through-picks across four camera angles, plus five bad-identity failures on
+  the whole-chair sheet) to 4, all pre-existing and unrelated (see
+  tech-debt.md).
+- **The same check's whole-chair-sheet identity test could never pass.** It
+  compared each pick against the zone dropdown's value, but the whole-chair
+  binding (`*whole`) has no chart of its own — a click there always resolves
+  to whichever physical zone is under it, by design. The check now accepts
+  any non-null pick for that entry instead of demanding an id nothing can
+  ever produce.
+
 - **A design on the chair's Front no longer cuts a phantom mark into the top of
   the seat back.** A 0.4mm inlay, in surface the cushion covers, on one side of
   the centre line only.

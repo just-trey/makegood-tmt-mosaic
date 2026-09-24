@@ -1,7 +1,7 @@
 import './styles.css';
 import { initViewport, modelNdcExtent } from './scene/viewport';
 import { initDesignGizmo } from './scene/designGizmo';
-import { initZonePicking, zoneIdAtNdc } from './scene/zonePick';
+import { initZonePicking, zonePickAtNdc } from './scene/zonePick';
 import { setRebuildCostHint, setRebuildHandler } from './app/scheduler';
 import { estimateRebuildSlow, rebuildCurrent } from './app/rebuild';
 import { loadFilaments } from './state/filaments';
@@ -26,6 +26,7 @@ import { $ } from './ui/dom';
 import { getAppVersion } from './version';
 import { rebuildsSoFar, whenIdle } from './app/idle';
 import { WARNINGS } from './warnings';
+import { WHOLE_CHAIR_ZONE } from './geometry/zones';
 
 // Not DEV-gated: the drive scripts hit vite-preview output (built, not dev), where
 // import.meta.env.DEV is false. `warnings` is here rather than read off the DOM because the panel
@@ -38,7 +39,10 @@ import { WARNINGS } from './warnings';
       rebuildsSoFar: typeof rebuildsSoFar;
       warnings: () => string[];
       modelNdcExtent: typeof modelNdcExtent;
-      zoneIdAtNdc: typeof zoneIdAtNdc;
+      zonePickAtNdc: typeof zonePickAtNdc;
+      // check-zone-occlusion.mjs reads this rather than hardcoding '*whole', so its identity
+      // sweep can't drift from the id this app actually uses.
+      WHOLE_CHAIR_ZONE: typeof WHOLE_CHAIR_ZONE;
     };
   }
 ).__mosaic = {
@@ -46,7 +50,8 @@ import { WARNINGS } from './warnings';
   rebuildsSoFar,
   warnings: () => WARNINGS.map((w) => w.message),
   modelNdcExtent,
-  zoneIdAtNdc,
+  zonePickAtNdc,
+  WHOLE_CHAIR_ZONE,
 };
 
 $('#app-version').textContent =
