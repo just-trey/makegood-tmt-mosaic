@@ -5,7 +5,7 @@ One section per user-visible warning string.
 ## Troubleshooting: "Couldn't merge the shapes" / "Couldn't trim the overlap" warnings
 
 The polygon maths failed on one colour's shape. The warning usually names the
-colour. One form of it does not: the flat build merges the shapes painted over
+colour. One form of it does not: the build merges the shapes painted over
 each region in batches, and a batch holds whatever colours fell in it, so a
 failure there names none. Treat it as "somewhere in this design" and read on.
 There are two causes and the warning does not guess between them: a
@@ -513,33 +513,9 @@ it**, naming the part.
 A refusal reached you without naming itself. A bug in the app, not your design.
 Please report it.
 
-## Troubleshooting: "Depth for … was set to … mm" warnings (flat mode)
-
-The flat shape modes cut every recess into a plate of one fixed thickness. A
-recess reaching the back would cut clean through, so no depth is allowed past
-the thickness less a 0.05 mm floor (3.95 mm on a 4 mm plate). One of your depths
-was past that, and the recess was cut at the deepest the plate allows.
-
-- **The file is still valid and printable.** The depth actually cut is the last
-  number in the message. Nothing is dropped; only the depth differs.
-- Fix from either end: lower that region's depth, or raise **Thickness** in the
-  Part section.
-- The name in the message is the colour list row, worded as that row labels
-  itself: a hex, "Merged (N)", or "Background".
-- A region with no depth of its own uses the global **Depth**, so a global depth
-  larger than the plate warns for every region at once. Raise the thickness or
-  lower the global rather than editing rows one by one.
-- A row carrying its own depth is highlighted and has a "↺" beside it. That
-  button, or clearing the field, returns it to the global. **If the global Depth
-  field seems to do nothing, those are the rows to look at.**
-
-Assembly mode has the same hazard but catches it later and words it differently,
-because wall thickness varies across the part: see "Part … has no geometry to
-export" above.
-
 ## Troubleshooting: "Depth for … is … thinner than the usual 0.20 mm print layer"
 
-A quiet note, not an error, in both modes. The recess is cut exactly as deep as
+A quiet note, not an error. The recess is cut exactly as deep as
 you asked, nothing clamped and nothing dropped, but it is shallower than one
 layer at the default 0.2 mm layer height. On a standard profile the slicer has
 no layer to put it in, so it prints as bare body.
@@ -630,7 +606,7 @@ To get a result you are happier with:
   fine stuff deliberately. Raising Detail quarters the floor and makes this
   notice more likely, up to the point where a nozzle width takes over: on a part,
   the floor never goes below what the design's placed size can print, and Detail
-  does not move that half. The flat disc and plate shapes have no such bound.
+  does not move that half.
 - **Crop or simplify the source.** A busy background the design doesn't need is
   what usually blows the budget.
 

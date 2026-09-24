@@ -970,7 +970,7 @@ export async function buildAssemblyGeometry(
 
   const anchorOf = (parsed: ParsedSVG) => designAnchor(parsed, isRect, noticeBuild);
 
-  // Progress split like flat.ts: net regions ~0-40%, the per-part Manifold CSG loop ~40-100%.
+  // Progress split: net regions ~0-40%, the per-part Manifold CSG loop ~40-100%.
   // `byColor` pools each artwork's regions by hex, so color detection, merging, base assignment
   // and depth all see one palette across every design in the scene.
   const perArtworkColors: Record<string, PolyFeature>[] = [];
@@ -1139,8 +1139,8 @@ export async function buildAssemblyGeometry(
   // and skipping it is what keeps the ink transform off the per-part path.
   const overlapCheckedZones = new Set<string>();
 
-  // Per-part Manifold CSG is the heavy work (turf's is done above). Yield on the same time budget
-  // flat.ts's boolean passes use, and report per-part progress so the curtain climbs.
+  // Per-part Manifold CSG is the heavy work (turf's is done above). Yield on a time budget and
+  // report per-part progress so the curtain climbs.
   const totalParts = parts.filter((p) => p.loaded && p.boundaryLoops && p.positions).length || 1;
   let partsDone = 0;
   let lastYield = performance.now();
@@ -1386,10 +1386,8 @@ export async function buildAssemblyGeometry(
         // through-cut. No part name either, so a color on both halves of a wheel is named once.
         const raised = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
         // And bounded above by how far this part actually extends behind its design face. Without
-        // this, assembly mode had no upper bound at all: 20 mm and 9999 mm on the wheel both built
-        // and exported with no warning, while flat mode clamped and warned for the same input, and
-        // depth.ts's own comment claimed both did. The flat modes then left the UI, making the
-        // unbounded path the only one a user can reach.
+        // this there was no upper bound at all: 20 mm and 9999 mm on the wheel both built and
+        // exported with no warning.
         //
         // **Not a wall-thickness check.** A recess shallower than this can still break through a
         // thin wall; measuring that is still owed (docs/tech-debt.md). This bounds the absurd.

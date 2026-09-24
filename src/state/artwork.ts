@@ -171,11 +171,6 @@ function surfaceClearanceMM(zoneId: string | null, incoming: CascadeSubject): nu
  * stepping diagonally until the spot is free (or `steps` runs out, so a pathological pile of
  * designs can't spin here). Returns the seed untouched when nothing is there — which is the
  * first/only design on a part, the common case, so its placement is bit-for-bit what it was.
- *
- * Assembly mode only. Flat plate mode renders `state.parsed` alone, so a second design isn't drawn
- * at all and there is nothing for a new one to sit on top of — stepping there would just walk each
- * freshly loaded SVG further off the plate with no second design on screen to explain why, and no
- * overlap warning either, since that check runs in the assembly build.
  */
 function cascadedOffset(
   zoneId: string | null,
@@ -183,7 +178,6 @@ function cascadedOffset(
   offsetV: number,
   incoming: CascadeSubject,
 ): { offsetU: number; offsetV: number } {
-  if (state.shapeKind !== 'assembly') return { offsetU, offsetV };
   const taken = state.artworks.flatMap((a) =>
     placedMarks(a.zone?.zoneId ?? null, a.offsetU, a.offsetV),
   );
@@ -204,11 +198,10 @@ function cascadedOffset(
  * traced for. Undefined when there is nothing to answer with, and the trace then falls back to its
  * fraction-of-the-image floor alone.
  *
- * **Assembly kinds only.** A flat plate fits the design's *drawn content*, which does not exist
- * until the trace has run, and the closest pre-trace stand-in (the opaque pixels) is wrong in the
- * damaging direction: one stray opaque speck in a corner inflates the extent, shrinks mm per pixel
- * and raises the floor over printable detail. An assembly places an image on its own frame
- * (`designAnchor`), so nothing there needs the traced bbox. docs/tech-debt.md carries the rest.
+ * Needs no traced bbox, because an assembly places an image on its own frame (`designAnchor`). A
+ * fit to the design's drawn content would: the closest pre-trace stand-in, the opaque pixels, is
+ * wrong in the damaging direction, since one stray opaque speck in a corner inflates the extent,
+ * shrinks mm per pixel and raises the floor over printable detail.
  *
  * This is the half the raster stage never had. It runs strictly before placement is known, so
  * without this value its despeckle floor could only be a share of the image, which for one
@@ -224,7 +217,6 @@ function cascadedOffset(
  * Colors or Detail re-runs it (docs/tech-debt.md).
  */
 export function rasterMmPerPixel(img: RasterImage, sourceId?: string): number | undefined {
-  if (state.shapeKind !== 'assembly') return undefined;
   const mm = assemblyMmPerUnit(img, sourceId);
   return mm !== undefined && Number.isFinite(mm) && mm > 0 ? mm : undefined;
 }
@@ -275,13 +267,13 @@ function assemblyMmPerUnit(img: RasterImage, sourceId?: string): number | undefi
  * from that same snapshot rather than the *previous* active instance's placement, since the two
  * designs aren't related — stepped off it when that snapshot would drop it exactly on a design
  * already there (see INSTANCE_CASCADE_MM). The new instance becomes active, and `state.parsed` —
- * the field flat mode and legacy single-instance code still read — mirrors it.
+ * the field legacy single-instance code still reads — mirrors it.
  *
  * The instance binds to the first offered zone when the assembly has more than one. `zone: null`
  * ("All zones" in the picker) stays available and unchanged, but it is the wrong *default* on a
  * multi-zone kind: it stamps the same design onto every surface at once, which on the chair means
  * 25 conformal charts recut on every slider nudge to produce a result nobody asked for. Kinds with
- * one zone or none (wheel, footrest, flat mode) still start unbound, so their behavior is
+ * one zone or none (wheel, footrest) still start unbound, so their behavior is
  * bit-for-bit what it was.
  */
 export function loadArtworkSource(
@@ -429,15 +421,11 @@ export function isRasterSource(s: DesignSource): s is DesignSource & { raster: R
 const SETTING_REMAP_DE = 6;
 
 /**
- * The two forms a per-color depth key takes: the bare hex in flat-plate mode, and the same hex
- * behind the "asm:" prefix geometry/assembly.ts builds its per-region keys with.
- *
- * Both have to be carried. Assembly mode is the app's primary mode, so remapping only the bare form
- * meant that in the mode nearly every user is in, a nudge of the Colors slider moved no setting and
- * pruneSettingsToPalette — which does read past the prefix — then deleted every custom recess depth:
- * exactly the destructive slider this function exists to prevent.
+ * The prefix geometry/assembly.ts builds its per-region depth keys with. Remapping the bare hex
+ * instead moved no setting on a Colors nudge, and pruneSettingsToPalette — which does read past
+ * the prefix — then deleted every custom recess depth.
  */
-const DEPTH_KEY_PREFIXES = ['', 'asm:'];
+const DEPTH_KEY_PREFIX = 'asm:';
 
 /**
  * Carry per-color settings across a palette change, for colors no longer painted by anything.
@@ -462,12 +450,10 @@ function remapSettingsToPalette(oldPalette: string[], newPalette: string[]): voi
     }
     if (!best) continue;
     const target = best;
-    for (const prefix of DEPTH_KEY_PREFIXES) {
-      const from = prefix + oldHex;
-      const to = prefix + target;
-      if (state.colorSettings[from] && !state.colorSettings[to])
-        state.colorSettings[to] = state.colorSettings[from];
-    }
+    const from = DEPTH_KEY_PREFIX + oldHex;
+    const to = DEPTH_KEY_PREFIX + target;
+    if (state.colorSettings[from] && !state.colorSettings[to])
+      state.colorSettings[to] = state.colorSettings[from];
     const swap = (list: string[]) => list.map((h) => (h === oldHex ? target : h));
     state.keptApart = swap(state.keptApart);
     state.baseColorMembers = swap(state.baseColorMembers);
@@ -494,12 +480,8 @@ export function requantizeSource(
   // Re-derived rather than reused: this is a fresh trace, so it gets the size the design is placed
   // at now, not the one it happened to be loaded at. The stored value stands in when the placement
   // cannot be read (a rect kind mid-reload), which keeps the last real measurement rather than
-  // dropping the floor and saving that loss into the session — but only inside assembly mode, or
-  // switching to a plate would apply a part's floor to a shape that has none.
-  const mmPerPixel =
-    state.shapeKind === 'assembly'
-      ? (rasterMmPerPixel(source.raster.image, source.id) ?? source.raster.mmPerPixel)
-      : undefined;
+  // dropping the floor and saving that loss into the session.
+  const mmPerPixel = rasterMmPerPixel(source.raster.image, source.id) ?? source.raster.mmPerPixel;
   const result = parseRasterImage(source.raster.image, {
     colors,
     detail,
@@ -575,7 +557,7 @@ export function activeArtworkInstance(): ArtworkInstance | null {
  * gizmo still read/write — the sliders don't know about instances directly, so "switch which design
  * you're editing" has to happen by re-seeding those globals (the reverse of syncActiveArtworkPlacement,
  * which pushes edits back out before a build). Also mirrors `state.parsed` to the newly active
- * instance's source so flat-mode/bbox code keeps reading the right design.
+ * instance's source so bbox code keeps reading the right design.
  */
 export function setActiveArtwork(id: string | null): void {
   if (id === null) {

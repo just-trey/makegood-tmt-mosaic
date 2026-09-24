@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import type ManifoldModule from 'manifold-3d';
 import type { IndexedMesh, PolyFeature, SVGShape } from '../types';
-import { featureToShapes } from './flat';
 import { shapeToFeature } from './regions';
 
 export type ManifoldAPI = Awaited<ReturnType<typeof ManifoldModule>>;
@@ -9,9 +8,8 @@ export type ManifoldSolid = InstanceType<ManifoldAPI['Manifold']>;
 
 type Ring = number[][];
 
-// Lazy-init the Manifold WASM boolean engine. Assembly mode cuts pockets into real part
-// meshes via true 3D booleans; flat-plate mode never touches it, so the dynamic import keeps
-// the WASM chunk out of the initial page load until Assembly geometry is actually built.
+// Lazy-init the Manifold WASM boolean engine. The dynamic import keeps the WASM chunk out of the
+// initial page load until assembly geometry is actually built.
 let _manifoldWasm: ManifoldAPI | null = null;
 export async function getManifold(): Promise<ManifoldAPI> {
   if (_manifoldWasm) return _manifoldWasm;
@@ -139,6 +137,32 @@ export function normalizeFeatureWinding(feature: PolyFeature): PolyFeature {
     properties: {},
     geometry: { type: g.type, coordinates: coords },
   } as PolyFeature;
+}
+
+function ringToShapePoints(ring: Ring): THREE.Vector2[] {
+  // drop duplicate closing point; three.Shape doesn't want it repeated
+  const pts = ring.map((c) => new THREE.Vector2(c[0], c[1]));
+  if (pts.length > 1 && pts[0].distanceTo(pts[pts.length - 1]) < 1e-6) pts.pop();
+  return pts;
+}
+
+function featureToShapes(feature: PolyFeature | null): THREE.Shape[] {
+  if (!feature) return [];
+  const polys =
+    feature.geometry.type === 'Polygon'
+      ? [feature.geometry.coordinates as Ring[]]
+      : (feature.geometry.coordinates as Ring[][]);
+  const shapes: THREE.Shape[] = [];
+  polys.forEach((poly) => {
+    if (!poly.length) return;
+    const outer = poly[0];
+    const shape = new THREE.Shape(ringToShapePoints(outer));
+    for (let i = 1; i < poly.length; i++) {
+      shape.holes.push(new THREE.Path(ringToShapePoints(poly[i])));
+    }
+    shapes.push(shape);
+  });
+  return shapes;
 }
 
 /**

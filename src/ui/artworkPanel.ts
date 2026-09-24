@@ -62,9 +62,8 @@ export function applyParsedSVG(
 
 /**
  * Load one of the built-in library patterns (public/patterns/*.svg) as a new design source.
- * Defaults to Fill mode in assembly mode — a pattern exists to repeat across a surface, not to
- * sit as one copy — but stays Sticker in flat-plate mode, which has no fill pipeline at all
- * (see the "fill is assembly-mode only" limitation in README).
+ * Defaults to Fill — a pattern exists to repeat across a surface, not to sit as one copy — unless
+ * the kind withholds it.
  */
 // Exported for the mode-selection regression test; not used outside this module.
 export async function applyPattern(id: string): Promise<void> {

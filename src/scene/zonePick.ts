@@ -163,15 +163,14 @@ function onPointerMove(e: PointerEvent): void {
  * Rebuild the pickable zone surfaces from the current assembly parts — one mesh per baked
  * conformal zone, built directly from its chart (the same triangles/positions the cut pipeline
  * uses), invisible and non-recursive so raycasting stays cheap. Called after every rebuild; a
- * no-op outside assembly mode or before any part carries zones (single-zone parts like the wheel
- * have nothing to pick between).
+ * no-op before any part carries zones (single-zone parts like the wheel have nothing to pick
+ * between).
  */
 export function refreshZonePickMeshes(): void {
   if (!pickRoot) return; // initZonePicking() hasn't run yet
   targets.forEach((t) => t.mesh.geometry.dispose());
   targets = [];
   pickRoot.clear();
-  if (state.shapeKind !== 'assembly') return;
   // pickRoot is a scene-level sibling of modelGroup, not a child, so it needs the model group's
   // transform applied manually — the grid lift AND the kind's display rotation. Copying position
   // alone would leave every pick target un-rotated behind a posed chair, so clicks would select a

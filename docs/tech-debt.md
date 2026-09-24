@@ -587,80 +587,6 @@ load (the confirm dialog and the mid-load kind-switch guard both depend on
 `state.assembly.parts` being the live list). Deferred rather than folded into
 the fields fix, which does not touch `asmLoadFullAssembly`'s contract.
 
-## The flat-plate modes ship compiled and unrendered
-
-`disc`, `rect`, `round` and `stl` are all still `ShapeKind`s, with their param
-panels, their input bindings, [flat.ts](../src/geometry/flat.ts), the per-color
-STL-set export and their branches in `store.ts` and `rebuild.ts`. None is
-reachable: `renderShapeKindOptions`
-([src/ui/partPanel.ts](../src/ui/partPanel.ts)) writes assembly kinds into the
-Part dropdown and nothing else.
-
-`rect`/`round`/`stl` have been unrendered since before 2026-08-02 and were
-re-confirmed deliberate by review then. `disc` joined them for the beta, closing
-the 2026-08-08 cycle's **A3**: it produced a plain flat cylinder related to no
-TMT part, sitting in the primary picker at the same weight as four real ones.
-
-Three consequences worth knowing:
-
-- `#btn-export-stl` and the per-color STL-set export go with it. `setShapeKind`
-  hides that button in assembly mode, so no offered part reaches it, and the
-  README no longer offers it as a fallback for slicers that can't read a
-  pre-mapped 3MF.
-- Two `'disc'` fallbacks had to move, since a select value with no matching
-  option renders blank and the next switch away is one-way: the option-list
-  default in `renderShapeKindOptions`, and the retired-kind branch of session
-  restore ([src/state/persist.ts](../src/state/persist.ts)). Both now take
-  `firstOfferedKind()`.
-- A session saved in a flat mode before this release restores onto the wheel.
-
-Everything here still compiles and is still covered by `tests/flat.test.ts` and
-`tests/depth.test.ts`. It is a maintenance question (why keep four dead panels
-building) rather than a bug. The option list is what to touch if a future part
-wants a flat mode again.
-
-**Decided 2026-08-30**: delete the code — `flat.ts`, the per-color STL-set export, and their
-branches in `store.ts`/`rebuild.ts`, plus `tests/flat.test.ts` and `tests/depth.test.ts`'s
-flat-only coverage. Not yet scheduled. Closing this also closes the next section ("Flat plate
-modes have no printable despeckle floor"), which is only reachable through these panels.
-
-**What `npm run smoke` no longer covers.** Four of its steps drove the disc:
-switch to flat mode, override the background recess depth, export a flat 3MF,
-export the per-color STL zip. They came out, since they drove UI that no longer
-exists. So the flat 3MF writer and the STL-zip writer now have unit coverage
-only, with nothing exercising either through a browser. The PNG-raster step was
-not flat-specific and was kept, now running against the assembly part.
-
-## Flat plate modes have no printable despeckle floor
-
-**Unreachable as of the beta** (see "The flat-plate modes ship compiled and
-unrendered"), so nothing can hit this today. Kept because reopening any flat
-mode reopens it, unfixed.
-
-**Decided 2026-08-30**: the flat-plate modes are slated for deletion, not reopening (see the
-section above). Once that lands, this section goes with it rather than staying open.
-
-The floor that stops the trace keeping detail under one nozzle width
-([2026-08-20 printable floor](findings/2026-08-20-printable-floor.md)) applies on assembly kinds
-only. `rasterMmPerPixel` returns nothing in disc/rect/round/STL-plate mode, so those keep the
-fraction-of-the-image floor alone, which is what every mode had before.
-
-- **Why**: a plate fits the design's drawn content (`fitTransform` over `parsed.bbox`), and that
-  bbox does not exist until the trace has run. The pre-trace stand-in, the bounds of the opaque
-  pixels, is wrong in the damaging direction: a stray opaque speck in a corner inflates the extent,
-  shrinks mm per pixel and raises the floor over detail that would print. It was built that way and
-  cut on review rather than shipped.
-- **What it costs**: an 80mm disc at the 5% margin is a 72mm design, where the flat-art fraction is
-  already a 0.88mm floor, so the printable one is inert at Detail 50 and would bite below about
-  65mm placed at Detail 100. Small plates and scaled-down designs are the gap.
-- Closing it means an extent the trace agrees with: either trace once at the fractional floor and
-  re-trace when the printable one turns out to bind (two passes, ~830ms each on a photograph), or
-  a cheap despeckle-equivalent pass over the alpha channel before measuring.
-- Closing it now buys more than when this was written: assembly kinds also size the floor _down_ in
-  mm ([2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md)), so a flat plate keeps a
-  fractional floor that over-prunes detailed flat art (mario: 55mm² of print on a wheel-sized
-  plate), not just the missing nozzle floor.
-
 ## The printable despeckle floor is fixed at the moment of the trace
 
 `rasterMmPerPixel` ([src/state/artwork.ts](../src/state/artwork.ts)) reads the placement when an
@@ -1113,7 +1039,7 @@ exact-message dedup, which is also why the sibling gradient/pattern-fill warning
 function now names its element the same way. The new `parseFillOpacity` helper (`svg/parse.ts`)
 falls back to the SVG default (fully opaque) instead of an unguarded NaN. Every remaining site
 guards, most on the next line, so the exposure is narrower than the call count suggests. Count the
-guards, not the calls. One of them, `ui/partPanel.ts:208`, guards against a value it parses from an
+guards, not the calls. One of them, `bindShapeInput` in `ui/partPanel.ts`, guards against a value it parses from an
 authored `min=` attribute rather than from anything a user types, and a non-numeric one there would
 reject every input; that is a latent bug in the markup, not in the guard.
 

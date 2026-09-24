@@ -1,5 +1,5 @@
 A range input paired with an **editable** number input, two-way synced. Used for every Artwork fit
-control: Margin, Scale, Offset X/Y, Rotation.
+control: Scale, Offset X/Y, Rotation.
 
 The number is a real input, not a readout. Typing in it moves the slider, and dragging the slider
 rewrites it.
@@ -38,10 +38,10 @@ component.
 Two behaviours, chosen per control. The difference is what happens to a typed value outside the
 slider's range.
 
-| Kind                              | Source of truth | Typing out of range                   |
-| --------------------------------- | --------------- | ------------------------------------- |
-| Clamped (Margin, Scale, Rotation) | slider          | snaps back into range on blur         |
-| Free (Offset X, Offset Y)         | number          | kept; the slider just pegs at its end |
+| Kind                      | Source of truth | Typing out of range                   |
+| ------------------------- | --------------- | ------------------------------------- |
+| Clamped (Scale, Rotation) | slider          | snaps back into range on blur         |
+| Free (Offset X, Offset Y) | number          | kept; the slider just pegs at its end |
 
 Offsets are free because their slider travel is derived from the part's own footprint, and a user
 may legitimately want the artwork further off it than the slider can express.
@@ -50,5 +50,4 @@ may legitimately want the artwork further off it than the slider can express.
 
 - Dragging the slider rebuilds live, except on a model heavy enough that rebuilds are slow, where
   it rebuilds once on release instead. Typing in the number always schedules a rebuild.
-- A control that does not apply is hidden by its `.row`, not disabled. Margin only feeds flat-mode
-  auto-fit, so `#p-margin-row` is hidden entirely in assembly mode.
+- A control that does not apply is hidden by its `.row`, not disabled.

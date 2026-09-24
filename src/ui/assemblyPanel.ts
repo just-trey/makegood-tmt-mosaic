@@ -352,7 +352,7 @@ export function renderAssemblyRoleControls(): void {
   }
 
   // Still waiting on stl/parts.json. Says nothing rather than reporting a failure that hasn't
-  // happened: `main.ts` calls setShapeKind('assembly') a line before loadPartsLibrary(), so this
+  // happened: `main.ts` calls applyPartKind() a line before loadPartsLibrary(), so this
   // is the state every healthy boot passes through for as long as the fetch takes.
   if (!partsLibrarySettled()) {
     box.innerHTML = '';

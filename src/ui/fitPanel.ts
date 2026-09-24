@@ -1,4 +1,4 @@
-import { currentBaseParams, state } from '../state/store';
+import { state } from '../state/store';
 import { isRebuildLikelySlow, scheduleRebuild } from '../app/scheduler';
 import { currentAssemblyKind } from '../assembly/kinds';
 import { refreshGizmo } from '../scene/designGizmo';
@@ -46,36 +46,14 @@ function syncPair(
 }
 
 /**
- * Offset slider travel is ±half the base footprint: full deflection puts the artwork's center
- * on the base edge. Recomputed whenever the base dimensions or shape change.
+ * Offset slider travel is ±half the design face: full deflection puts the artwork's center on its
+ * edge. Recomputed whenever the part or its design radius changes.
  */
 export function updateOffsetSliderRanges(): void {
-  // Margin only feeds flat.ts's auto-fit sizing; assembly mode (wheel and rect alike) maps the
-  // design straight onto the part face and never reads marginPct, so the control is a no-op there.
-  const isAssembly = state.shapeKind === 'assembly';
-  const marginRow = document.getElementById('p-margin-row');
-  if (marginRow) marginRow.style.display = isAssembly ? 'none' : '';
-  const fitHint = document.getElementById('p-fit-hint');
-  if (fitHint)
-    fitHint.textContent = isAssembly
-      ? 'Scale multiplies the artwork; over 100% bleeds past the part face. Flip H mirrors it left to right, which fixes text that reads backwards. Flip V mirrors it top to bottom.'
-      : 'Margin sets the auto-fit border. Scale multiplies on top; over 100% bleeds past the edge. Flip H mirrors the artwork left to right, which fixes text that reads backwards. Flip V mirrors it top to bottom.';
-
-  let w: number, h: number;
-  if (state.shapeKind === 'assembly') {
-    if (currentAssemblyKind()?.designFit === 'rect') {
-      // rect parts have no radius; give the offset sliders a fixed nudge range around the face
-      w = h = 300;
-    } else {
-      // assembly artwork maps onto the wheel face: ±radius puts the design center at the rim
-      w = h = 2 * (state.asmRadius || 138);
-    }
-  } else {
-    const bp = currentBaseParams();
-    if (!bp) return;
-    w = state.shapeKind === 'disc' ? bp.diameter || 0 : bp.width || 0;
-    h = state.shapeKind === 'disc' ? bp.diameter || 0 : bp.height || 0;
-  }
+  // rect parts have no radius; give the offset sliders a fixed nudge range around the face.
+  // Wheel-fit artwork maps onto the wheel face: ±radius puts the design center at the rim.
+  const w = currentAssemblyKind()?.designFit === 'rect' ? 300 : 2 * (state.asmRadius || 138);
+  const h = w;
   const setRange = (sel: string, half: number) => {
     if (!(half > 0)) return;
     const el = input(sel);
@@ -99,8 +77,6 @@ export function updateOffsetSliderRanges(): void {
  * removing one) reseeds those globals from a different instance without any slider handler firing.
  */
 export function refreshFitInputsFromState(): void {
-  input('#p-margin').value = String(state.marginPct);
-  input('#p-margin-num').value = String(state.marginPct);
   input('#p-scale').value = String(state.scalePct);
   input('#p-scale-num').value = String(state.scalePct);
   input('#p-offset-x').value = String(state.offsetX);
@@ -114,9 +90,6 @@ export function refreshFitInputsFromState(): void {
 }
 
 export function initFitPanel(): void {
-  syncPair('#p-margin', '#p-margin-num', true, (v) => {
-    state.marginPct = v;
-  });
   syncPair(
     '#p-scale',
     '#p-scale-num',

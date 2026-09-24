@@ -11,7 +11,7 @@ import {
 import { clearWarnings, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
-import { setShapeKind, renderBaseColorSwatches, refreshShapeParamInputs } from './partPanel';
+import { applyPartKind, renderBaseColorSwatches, refreshShapeParamInputs } from './partPanel';
 import { renderArtworkList } from './artworkListPanel';
 import { refreshFitInputsFromState, updateOffsetSliderRanges } from './fitPanel';
 import { refreshDepthControls } from './depthPanel';
@@ -31,9 +31,9 @@ function describeAge(savedAt: number): string {
 
 function describeSession(session: PersistedSession): string {
   // Name the part the restore will actually land on, not the one the session was saved on. A kind
-  // that has since been retired, and a session saved back when a flat mode was offered, both fall
-  // back to the first offered kind (state/persist.ts) — the banner used to promise "the Disc" for
-  // the second, a part that is no longer in the dropdown and not where the click leads.
+  // that has since been retired, and a session saved in a retired flat mode, both fall back to the
+  // first offered kind (state/persist.ts) — the banner used to promise "the Disc" for the second, a
+  // part that is not in the dropdown and not where the click leads.
   const saved =
     session.shapeKind === 'assembly'
       ? ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId)
@@ -48,7 +48,7 @@ function describeSession(session: PersistedSession): string {
  * Offers to bring back a saved session, deliberately as a dismissible in-panel banner rather than
  * a dialog or an automatic restore — the app's default boot (the wheel, per main.ts) still runs
  * either way, so declining costs nothing and a corrupt/failed restore just leaves that default in
- * place. Doesn't touch the DOM beyond the banner itself and one bare `setShapeKind` call, which
+ * place. Doesn't touch the DOM beyond the banner itself and one bare `applyPartKind` call, which
  * does the same render/rebuild pass any other part switch triggers.
  */
 export function initRestoreBanner(): void {
@@ -79,7 +79,7 @@ export function initRestoreBanner(): void {
         console.error('Session restore failed:', e);
         // Say so, and render it. This used to delete the session and return with nothing on
         // screen, so the user clicked Restore, saw no change, and had lost the work. warn() only
-        // pushes onto the list; this path returns before setShapeKind(), which is the only call
+        // pushes onto the list; this path returns before applyPartKind(), which is the only call
         // on it that would otherwise reach renderWarnings().
         //
         // "Reload the page" is not boilerplate: the printer, depth and color grouping commit
@@ -101,9 +101,8 @@ export function initRestoreBanner(): void {
         disableSessionWritesAfterFailedRestore();
         return;
       }
-      $<HTMLSelectElement>('#shape-kind').value =
-        state.shapeKind === 'assembly' ? 'asm:' + state.assembly.kindId : state.shapeKind;
-      setShapeKind(state.shapeKind);
+      $<HTMLSelectElement>('#shape-kind').value = 'asm:' + state.assembly.kindId;
+      applyPartKind();
       // Nothing else syncs this select from state — every other path only ever sets
       // state.printerId *from* the dropdown's own change handler (exportPanel.ts), so restore is
       // the first caller that needs the reverse direction too.

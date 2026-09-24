@@ -52,13 +52,11 @@ beforeEach(() => {
   state.keptApart = [];
   state.assembly.parts = [];
   state.assembly.net = null;
-  state.shapeKind = 'disc';
   state.assembly.kindId = null;
 });
 
 describe('Fill withheld on a kind that opts out', () => {
   function onKind(kindId: string): void {
-    state.shapeKind = 'assembly';
     state.assembly.kindId = kindId;
   }
 
@@ -144,15 +142,6 @@ describe('Fill withheld on a kind that opts out', () => {
     WARNINGS.length = 0;
     expect(clampArtworkModes()).toBe(false);
     expect(WARNINGS).toEqual([]);
-  });
-
-  it('keeps Fill through a detour into a flat mode, which only ignores it', () => {
-    onKind('wheel');
-    const a = loadArtworkSource(fakeParsed(), 'a.svg');
-    setArtworkMode(a.id, 'fill');
-    state.shapeKind = 'disc';
-    expect(clampArtworkModes()).toBe(false);
-    expect(activeArtworkInstance()!.mode).toBe('fill');
   });
 
   it('does not inherit a withheld Fill onto a second placement', () => {
@@ -268,9 +257,7 @@ describe('loadArtworkSource', () => {
 describe('stacked-instance cascade', () => {
   // assembly mode only — flat plate mode renders state.parsed alone, so there is no second design
   // on screen for a step to separate from
-  beforeEach(() => {
-    state.shapeKind = 'assembly';
-  });
+  beforeEach(() => {});
 
   it('steps a second design off the first on a single-zone part', () => {
     state.assembly.parts = [zonedPart(1, 'only', 'Only')];
@@ -438,7 +425,6 @@ describe('cascade step against the placed design size', () => {
     state.activeArtworkId = null;
     state.offsetX = 0;
     state.offsetY = 0;
-    state.shapeKind = 'assembly';
     state.asmRadius = asmRadius;
     loadArtworkSource(fakeParsed(), 'first.svg');
     return loadArtworkSource(fakeParsed(), 'second.svg').offsetU;
@@ -486,22 +472,6 @@ describe('cascade step against the placed design size', () => {
         true,
       );
     }
-  });
-});
-
-// Flat plate mode draws state.parsed and nothing else, so a second design is never on screen —
-// stepping would walk each freshly loaded SVG further off the plate for no visible reason, and the
-// overlap warning that explains the step in assembly mode never runs here.
-describe('stacked-instance cascade — flat mode', () => {
-  it('leaves every load at the seed offset', () => {
-    state.shapeKind = 'disc';
-
-    const first = loadArtworkSource(fakeParsed(), 'a.svg');
-    const second = loadArtworkSource(fakeParsed(), 'b.svg');
-    const third = loadArtworkSource(fakeParsed(), 'c.svg');
-
-    expect([first.offsetU, second.offsetU, third.offsetU]).toEqual([0, 0, 0]);
-    expect(state.offsetX).toBe(0);
   });
 });
 
@@ -908,7 +878,9 @@ describe('availableZones / zoneCoverage — Whole chair', () => {
 describe('addInstanceForSource', () => {
   it('creates a second instance on the same source with neutral placement, and activates it', () => {
     const a = loadArtworkSource(fakeParsed(), 'a.svg');
-    state.offsetX = 20; // simulate the user having moved the first instance
+    // simulate the user having moved the first instance, clear of where the second one seeds
+    a.offsetU = a.offsetV = 20;
+    state.offsetX = 20;
     state.assembly.parts = [zonedPart(1, 'right', 'Right side')];
 
     const b = addInstanceForSource(a.sourceId, 'right');

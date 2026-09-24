@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { AssemblyBuild, IndexedMesh } from '../types';
-import { baseColorHex, currentBaseParams, SCALE_MAX_PCT, state } from '../state/store';
+import { baseColorHex, SCALE_MAX_PCT, state } from '../state/store';
 import {
   activeArtworkInstance,
   availableZones,
@@ -12,7 +12,6 @@ import {
 } from '../state/artwork';
 import { creasedNormalsFromIndex, indexMatchesSoup } from '../geometry/creasedNormals';
 import { clearBuildWarnings, noticeBuild, warn, warnBuild } from '../warnings';
-import { buildGeometry, featureToShapes, footprintFeature, type FlatBuild } from '../geometry/flat';
 import {
   asmPartFaceNormal,
   asmPartTransformGroup,
@@ -48,12 +47,8 @@ import { $ } from '../ui/dom';
 import { renderExportSummary } from '../ui/exportPanel';
 import { RebuildCancelled } from '../cancel';
 
-let lastBuild: FlatBuild | null = null;
 let lastAssemblyBuild: AssemblyBuild | null = null;
 
-export function getLastBuild(): FlatBuild | null {
-  return lastBuild;
-}
 export function getLastAssemblyBuild(): AssemblyBuild | null {
   return lastAssemblyBuild;
 }
@@ -105,52 +100,23 @@ export function bufferGeometryFromTris(
   return toCreasedNormals(geo, CREASE_ANGLE_RAD);
 }
 
-function updateTriStat(): void {
-  let tris = 0;
-  getModelGroup().traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (mesh.isMesh) tris += mesh.geometry.attributes.position.count / 3;
-  });
-  $('#stat-tris').textContent = Math.round(tris) + ' tris';
-}
-
-function setExportEnabled(enabled: boolean): void {
-  $<HTMLButtonElement>('#btn-export').disabled = !enabled;
-  $<HTMLButtonElement>('#btn-export-stl').disabled = !enabled;
-}
-
 /**
- * Assembly rebuilds do 3D boolean CSG per part and are always heavy enough (hundreds of
- * ms) to warrant the "Rebuilding…" curtain. Flat rebuilds are a 2D extrude and usually
- * fast, but a very dense design still bites — so gauge those by the artwork's total
- * polygon-vertex count, which is what the boolean/extrude cost scales with. Calibrated so
- * the sample badge (fast) stays under and a detailed multi-hundred-point SVG goes over.
- */
-const SLOW_FLAT_POINTS = 4000;
-
-/**
- * Up-front guess of whether the next rebuild will be slow, from the current design/mode —
- * see setRebuildCostHint. Cheap: a point-count sum, no geometry work.
+ * Up-front guess of whether the next rebuild will be slow — see setRebuildCostHint. Every rebuild
+ * with artwork does 3D boolean CSG per part, which is always heavy enough to warrant the curtain.
  */
 export function estimateRebuildSlow(): boolean {
-  if (!state.parsed) return false; // no artwork yet — bare plate/wheel render is fast
-  if (state.shapeKind === 'assembly') return true;
-  let points = 0;
-  for (const shape of state.parsed.shapes) for (const loop of shape.loops) points += loop.length;
-  return points > SLOW_FLAT_POINTS;
+  return !!state.parsed; // no artwork yet — a bare part render is fast
 }
 
 /** Entry point the scheduler debounces into. */
 export async function rebuildCurrent(): Promise<void> {
-  if (state.shapeKind === 'assembly') await rebuildAssemblyScene();
-  else await rebuildScene();
+  await rebuildAssemblyScene();
   // The on-face gizmo tracks the just-built geometry (including the assembly's post-rebuild grid
   // lift); a no-op mid-drag so it doesn't fight the pointer.
   refreshGizmo();
   refreshZonePickMeshes();
-  // Here rather than beside setExportEnabled: assembly mode sets #btn-export.disabled directly in
-  // three places and never calls that helper, so hanging the summary off it left the panel blank
-  // on exactly the kind whose export needed describing. This is the choke point both modes share.
+  // Here rather than beside the three places that set #btn-export.disabled, so the summary follows
+  // every one of them.
   renderExportSummary();
   // Every rebuild is the state settling after some edit — the one choke point nearly every
   // mutation already funnels through, so this is the cheapest place to keep the autosave current
@@ -177,116 +143,6 @@ async function catchCancel<T>(run: () => Promise<T | null>): Promise<T | null> {
     clearBuildWarnings();
     return null;
   }
-}
-
-async function rebuildScene(): Promise<void> {
-  setPreferredViewDir(null); // flat mode: keep the user's current view direction when re-framing
-  const modelGroup = newModelGroup(state.stlRefMesh);
-  const baseParams = currentBaseParams();
-
-  if (!state.parsed) {
-    // No artwork yet: still show the bare plate (and STL reference) so picking a shape gives
-    // instant feedback instead of an empty viewport.
-    if (baseParams) {
-      const shapes = featureToShapes(footprintFeature(state.shapeKind, baseParams));
-      if (shapes.length) {
-        const geo = new THREE.ExtrudeGeometry(shapes, {
-          depth: baseParams.thickness,
-          bevelEnabled: false,
-          curveSegments: 1,
-        });
-        const mat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(baseColorHex()),
-          roughness: 0.75,
-          metalness: 0.05,
-          side: THREE.DoubleSide,
-        });
-        modelGroup.add(new THREE.Mesh(geo, mat));
-      }
-    }
-    if (state.stlRefMesh && state.shapeKind === 'stl') modelGroup.add(state.stlRefMesh);
-    renderColorList(null);
-    renderWarnings();
-    updateTriStat();
-    setExportEnabled(false);
-    refreshModelShadows();
-    frameModelIfPending();
-    return;
-  }
-
-  if (!baseParams) return;
-  // Captured before the closure: the null check above cannot narrow `state.parsed` inside a
-  // callback, since nothing stops the state changing between here and the call.
-  const parsed = state.parsed;
-  const built = await catchCancel(() =>
-    buildGeometry({
-      parsed,
-      colorSettings: state.colorSettings,
-      baseParams,
-      shapeKind: state.shapeKind,
-      globalDepth: state.globalDepth,
-      recessBg: state.recessBg,
-      mergeGroups: state.mergeGroups,
-      baseColorHex: baseColorHex(),
-      autoMergeLevel: state.autoMergeLevel,
-      baseColorKey: state.baseColorKey,
-      baseColorMembers: state.baseColorMembers,
-      keptApart: state.keptApart,
-    }),
-  );
-  lastBuild = built;
-  // Refused: leave the panels describing nothing rather than the previous build, whose meshes
-  // newModelGroup() has already removed. catchCancel returns null on a cancel, so a cancel does
-  // reach here — this branch is both, and the panels want clearing either way.
-  if (!built) {
-    renderColorList(null);
-    renderWarnings();
-    updateTriStat();
-    setExportEnabled(false);
-    refreshModelShadows();
-    frameModelIfPending();
-    return;
-  }
-
-  modelGroup.add(built.baseGroup);
-  built.colorMeshes.forEach((c) => modelGroup.add(c.mesh));
-  if (state.stlRefMesh && state.shapeKind === 'stl') modelGroup.add(state.stlRefMesh);
-
-  updateTriStat();
-  const listEntries: ColorListEntry[] = built.colorMeshes.map((c) => ({
-    color: c.color,
-    key: c.key,
-    members: c.members,
-    isMergeGroup: c.isMergeGroup,
-    areaPct: c.areaPct,
-    isBackground: c.isBackground,
-    appliedDepth: c.depth,
-  }));
-  if (built.baseAssigned) {
-    listEntries.push({
-      color: built.baseAssigned.hex,
-      key: 'base:' + built.baseAssigned.hex,
-      members: state.baseColorMembers,
-      isMergeGroup: false,
-      areaPct: built.baseAssigned.areaPct,
-      isBackground: false,
-      isBase: true,
-    });
-    // keep the dominant member in sync so the top fallback area and the 3D body agree — no
-    // scheduleRebuild here, this just mirrors what the build already computed
-    state.baseColorKey = built.baseAssigned.hex;
-  }
-  // The background recess is a colour the app adds rather than one found in the artwork, so
-  // detectedColors doesn't carry it. It still prints, and still costs a slot, so leaving it out
-  // made the line read "3 colors -> 5 AMS slots" beside a "4 colors" chip: two numbers for one
-  // word, and a +2 where the help dialog promises the body's +1.
-  const bgColors = built.colorMeshes.filter((c) => c.isBackground).length;
-  renderColorList(listEntries, { rawColorCount: built.detectedColors.length + bgColors });
-  renderBaseColorSwatches();
-  renderWarnings();
-  setExportEnabled(true);
-  refreshModelShadows();
-  frameModelIfPending();
 }
 
 /** Stripe texture size (px) and stroke width, and the surface pitch (mm) one tile repeats over. */
@@ -626,9 +482,8 @@ export function artworkBuildInputs(): ArtworkBuildInput[] {
     const own = { ...paired, keepSide };
     return [own, mirroredBuildInput(own, own.zoneId ?? null)];
   });
-  // state.parsed without an instance shouldn't happen (loadArtworkSource creates one), but the
-  // globals remain the source of truth for flat mode, so fall back to them rather than silently
-  // building nothing.
+  // state.parsed without an instance shouldn't happen (loadArtworkSource creates one), so fall back
+  // to the globals rather than silently building nothing.
   //
   // Gated on there being no instance at all, not on the expansion coming back empty. An instance
   // that expanded to nothing has already said why in a warning, and this would then cut it across
@@ -650,7 +505,7 @@ export function artworkBuildInputs(): ArtworkBuildInput[] {
 }
 
 async function rebuildAssemblyScene(): Promise<void> {
-  newModelGroup(state.stlRefMesh);
+  newModelGroup();
 
   // The fit sliders and the gizmo write the legacy globals; the instance is where the rest of
   // assembly mode reads placement from. Sync FIRST, because a part whose shape follows the artwork
@@ -813,7 +668,6 @@ async function rebuildAssemblyScene(): Promise<void> {
       members: c.members,
       isMergeGroup: c.isMerge,
       areaPct: area,
-      isBackground: false,
       appliedDepth: c.appliedDepth,
     });
   });
@@ -831,7 +685,6 @@ async function rebuildAssemblyScene(): Promise<void> {
       members: state.baseColorMembers,
       isMergeGroup: false,
       areaPct: built.baseAssigned.areaPct,
-      isBackground: false,
       isBase: true,
     });
     // keep the dominant member in sync so the top fallback area and the 3D body agree — no

@@ -386,16 +386,10 @@ export function currentDesignScaleContext(): DesignScaleContext {
  * state may hold — see fillWithheld() for that distinction.
  */
 export function fillModeOffered(): boolean {
-  if (state.shapeKind !== 'assembly') return false;
   return !fillWithheld();
 }
 
-/**
- * Whether Fill is withheld on the current kind because it would misbehave, as opposed to merely
- * being unimplemented (flat modes). Only this warrants rewriting a mode the user already chose:
- * a flat part just ignores Fill, so clamping there would quietly discard the setting on a
- * round-trip out to a disc and back.
- */
+/** Whether Fill is withheld on the current kind because it would misbehave there. */
 export function fillWithheld(): boolean {
   if (currentAssemblyKind()?.withholdFill) return true;
   // Cutting the part to the artwork's own outline and then repeating that artwork across it tiles

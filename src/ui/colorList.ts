@@ -13,7 +13,6 @@ export interface ColorListEntry {
   members: string[];
   isMergeGroup: boolean;
   areaPct: number;
-  isBackground: boolean;
   /** printed in the body instead of cut — a distinct status row, no depth/merge controls */
   isBase?: boolean;
   /**
@@ -300,12 +299,10 @@ export function renderColorList(
   // Labels for the "merge with…" dropdown below, keyed by the same joined-hex string each row
   // uses as its own drag payload (row.dataset.hexes) — so a row's own entry can be excluded and
   // picking another produces exactly what dragging one onto the other would.
-  const mergeTargets = rows
-    .filter((c) => !c.isBackground)
-    .map((c) => ({
-      key: c.members.join(','),
-      label: c.isMergeGroup ? `Merged (${c.members.length})` : c.color,
-    }));
+  const mergeTargets = rows.map((c) => ({
+    key: c.members.join(','),
+    label: c.isMergeGroup ? `Merged (${c.members.length})` : c.color,
+  }));
   rows.forEach((c) => {
     const row = document.createElement('div');
     row.className = 'color-row';
@@ -347,11 +344,7 @@ export function renderColorList(
       labelHtml: string,
       rightControlHtml: string,
       membersRowHtml = '';
-    if (c.isBackground) {
-      swatchHtml = `<div class="swatch" style="background:${c.color}"></div>`;
-      labelHtml = `Background`;
-      rightControlHtml = '';
-    } else if (c.isMergeGroup) {
+    if (c.isMergeGroup) {
       swatchHtml = `<div class="swatch" style="background:${c.color}" title="Prints as this color (the group's dominant member)"></div>`;
       membersRowHtml = `<div class="merge-members">${c.members
         .map(
@@ -370,9 +363,9 @@ export function renderColorList(
 
     // Keyboard/non-drag alternative to the drag-to-merge gesture below — same effect, listed by
     // the same label a target row shows itself. Only offered when there's something else to
-    // merge with, and never on Background (it isn't a mergeable color).
+    // merge with.
     const ownKey = c.members.join(',');
-    const otherTargets = c.isBackground ? [] : mergeTargets.filter((t) => t.key !== ownKey);
+    const otherTargets = mergeTargets.filter((t) => t.key !== ownKey);
     const mergeSelectHtml = otherTargets.length
       ? `<select class="merge-with" title="Merge this color with another, same as dragging one onto the other" aria-label="Merge ${c.isMergeGroup ? `Merged (${c.members.length})` : c.color} with another color">
           <option value="">Merge with…</option>
@@ -384,7 +377,7 @@ export function renderColorList(
     // reason it reads as a column and doesn't need moving (see wireDepthReset).
     row.innerHTML = `
       <div class="top">
-        ${c.isBackground ? '' : '<span class="drag-grip" aria-hidden="true" title="Drag to merge with another color">⠿</span>'}
+        <span class="drag-grip" aria-hidden="true" title="Drag to merge with another color">⠿</span>
         ${swatchHtml}
         <div class="hex">${labelHtml}</div>
         <div class="area">${c.areaPct.toFixed(1)}%</div>
@@ -393,7 +386,7 @@ export function renderColorList(
       ${membersRowHtml}
       <div class="depth-row">
         <label>depth</label>
-        <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}" title="${
+        <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${labelHtml}" title="${
           isOverridden
             ? `Using its own depth (${shownDepth.toFixed(2)} mm) instead of the ${state.globalDepth.toFixed(2)} mm default`
             : 'Following the default depth set in Depth. Type here to give this row its own'
@@ -401,12 +394,12 @@ export function renderColorList(
         <span class="hint">mm</span>
         ${
           isOverridden
-            ? `<button type="button" class="btn small depth-reset" data-reset-key="${c.key}" title="Reset to the default depth (${state.globalDepth.toFixed(2)} mm)" aria-label="Reset depth for ${c.isBackground ? 'Background' : labelHtml} to the default">↺</button>`
+            ? `<button type="button" class="btn small depth-reset" data-reset-key="${c.key}" title="Reset to the default depth (${state.globalDepth.toFixed(2)} mm)" aria-label="Reset depth for ${labelHtml} to the default">↺</button>`
             : ''
         }
         ${raisedFromZero ? `<span class="hint">raised to ${MIN_CUT_DEPTH_MM.toFixed(2)}</span>` : ''}
         ${tooDeepClamped ? `<span class="hint">cut at ${c.appliedDepth!.toFixed(2)}</span>` : ''}
-        <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
+        <span class="preset">≈ ${nearestFilamentName(c.color)}</span>
       </div>
       ${mergeSelectHtml ? `<div class="merge-row">${mergeSelectHtml}</div>` : ''}`;
 
@@ -462,47 +455,44 @@ export function renderColorList(
 
     // Drag-and-drop merge: drag one color onto another (or onto a merged group) to fuse them.
     // The draggable handle is the row's top strip so the depth field stays freely editable.
-    if (!c.isBackground) {
-      row.dataset.hexes = c.members.join(',');
-      const handle = row.querySelector<HTMLElement>('.top')!;
-      handle.setAttribute('draggable', 'true');
-      handle.style.cursor = 'grab';
-      handle.addEventListener('dragstart', (e) => {
-        e.dataTransfer!.setData('text/plain', row.dataset.hexes!);
-        e.dataTransfer!.effectAllowed = 'move';
-        row.classList.add('dragging');
-      });
-      handle.addEventListener('dragend', () => {
-        row.classList.remove('dragging');
-        $all('.color-row.drop-target').forEach((r) => r.classList.remove('drop-target'));
-      });
-      row.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer!.dropEffect = 'move';
-        row.classList.add('drop-target');
-      });
-      row.addEventListener('dragleave', (e) => {
-        if (!row.contains(e.relatedTarget as Node)) row.classList.remove('drop-target');
-      });
-      row.addEventListener('drop', (e) => {
-        e.preventDefault();
-        row.classList.remove('drop-target');
-        const src = (e.dataTransfer!.getData('text/plain') || '').split(',').filter(Boolean);
-        const tgt = row.dataset.hexes!.split(',').filter(Boolean);
-        if (src.join(',') === tgt.join(',')) return; // dropped onto itself
-        mergeHexes([...src, ...tgt]);
-      });
-    }
+    row.dataset.hexes = c.members.join(',');
+    const handle = row.querySelector<HTMLElement>('.top')!;
+    handle.setAttribute('draggable', 'true');
+    handle.style.cursor = 'grab';
+    handle.addEventListener('dragstart', (e) => {
+      e.dataTransfer!.setData('text/plain', row.dataset.hexes!);
+      e.dataTransfer!.effectAllowed = 'move';
+      row.classList.add('dragging');
+    });
+    handle.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      $all('.color-row.drop-target').forEach((r) => r.classList.remove('drop-target'));
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'move';
+      row.classList.add('drop-target');
+    });
+    row.addEventListener('dragleave', (e) => {
+      if (!row.contains(e.relatedTarget as Node)) row.classList.remove('drop-target');
+    });
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.classList.remove('drop-target');
+      const src = (e.dataTransfer!.getData('text/plain') || '').split(',').filter(Boolean);
+      const tgt = row.dataset.hexes!.split(',').filter(Boolean);
+      if (src.join(',') === tgt.join(',')) return; // dropped onto itself
+      mergeHexes([...src, ...tgt]);
+    });
 
     list.appendChild(row);
   });
   // +1 for AMS slots: the body itself always occupies one physical filament slot (materials[0] in
-  // both export paths — see exportPanel.ts), on top of every cut color/group listed below the Base
-  // row. The colors stat stays rows.length — it counts cut regions, not filament slots.
+  // exportPanel.ts), on top of every cut color/group listed below the Base row. The colors stat
+  // stays rows.length — it counts cut regions, not filament slots.
   //
-  // rows.length + 1 matches the export's material count in both modes: flat mode never emits a
-  // color mesh without geometry, and assembly mode derives rows and materials from one predicate
-  // (shippedColorIndices in geometry/assembly.ts). Export still re-checks the pill against its
+  // rows.length + 1 matches the export's material count: rows and materials come from one
+  // predicate (shippedColorIndices in geometry/assembly.ts). Export still re-checks the pill against its
   // own material count as the authoritative last word.
   const cutColors = rows.length;
   lastSlotsNeeded = cutColors + 1;

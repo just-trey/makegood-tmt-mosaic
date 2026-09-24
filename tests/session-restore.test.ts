@@ -55,12 +55,7 @@ function session(over: Partial<PersistedSession> = {}): PersistedSession {
   return {
     version: 1,
     savedAt: Date.now(),
-    shapeKind: 'disc',
-    disc: { diameter: 90, thickness: 5 },
-    rect: { width: 100, height: 70, thickness: 3 },
-    round: { width: 100, height: 70, corner: 12, thickness: 3 },
-    stlPlate: { width: 120, height: 80, thickness: 6, faceZ: 2 },
-    marginPct: 7,
+    shapeKind: 'assembly',
     scalePct: 120,
     offsetX: 1,
     offsetY: -2,
@@ -68,7 +63,6 @@ function session(over: Partial<PersistedSession> = {}): PersistedSession {
     flipY: false,
     rotationDeg: 45,
     globalDepth: 1.5,
-    recessBg: true,
     printerId: 'snapmaker-u1',
     asmRadius: 140,
     assembly: { kindId: null, variantId: null },
@@ -101,7 +95,6 @@ function session(over: Partial<PersistedSession> = {}): PersistedSession {
 }
 
 beforeEach(() => {
-  state.shapeKind = 'disc';
   state.assembly.kindId = null;
   state.assembly.variantId = null;
   state.assembly.parts = [];
@@ -114,20 +107,9 @@ beforeEach(() => {
 
 afterEach(() => {
   state.assembly.kindId = null;
-  state.shapeKind = 'disc';
 });
 
 describe('applyRestoredSession: the settings the user had', () => {
-  it('restores every base-shape dimension', async () => {
-    await applyRestoredSession(session());
-
-    expect(state.disc).toEqual({ diameter: 90, thickness: 5 });
-    expect(state.rect).toEqual({ width: 100, height: 70, thickness: 3 });
-    expect(state.round).toEqual({ width: 100, height: 70, corner: 12, thickness: 3 });
-    expect(state.stlPlate).toEqual({ width: 120, height: 80, thickness: 6, faceZ: 2 });
-    expect(state.marginPct).toBe(7);
-  });
-
   it('lets the active artwork’s own placement win over the session’s global fit fields', async () => {
     // setActiveArtwork pushes the instance's placement into the global fit inputs, and it runs
     // last — so these come back from the artwork (110/3/4/15), not the session (120/1/-2/45).
@@ -221,7 +203,6 @@ describe('applyRestoredSession: the settings the user had', () => {
     await applyRestoredSession(session());
 
     expect(state.globalDepth).toBe(1.5);
-    expect(state.recessBg).toBe(true);
     // A real id, and deliberately not the default, so this proves the saved value was adopted
     // rather than the fallback happening to match.
     expect(state.printerId).toBe('snapmaker-u1');
@@ -312,7 +293,6 @@ describe('applyRestoredSession: assembly mode', () => {
       }),
     );
 
-    expect(state.shapeKind).toBe('assembly');
     expect(state.assembly.kindId).toBe('chair-body');
     expect(state.assembly.variantId).toBe('kit');
     expect(asmLoadFullAssembly).toHaveBeenCalledTimes(1);
@@ -347,7 +327,7 @@ describe('applyRestoredSession: assembly mode', () => {
 
   // The Part dropdown offers assembly kinds and nothing else, so a saved value it cannot show
   // would leave the select blank and the next switch away from it one-way. Loading the fallback's
-  // parts is left to restoreBanner's own setShapeKind.
+  // parts is left to restoreBanner's own applyPartKind.
   it('falls back to the first offered kind when the saved kind has since been retired', async () => {
     await applyRestoredSession(
       session({
@@ -356,18 +336,39 @@ describe('applyRestoredSession: assembly mode', () => {
       }),
     );
 
-    expect(state.shapeKind).toBe('assembly');
     expect(state.assembly.kindId).toBe(firstOfferedKind().id);
     expect(asmLoadFullAssembly).not.toHaveBeenCalled();
   });
 
-  it('falls back the same way for a session saved in a flat mode', async () => {
-    await applyRestoredSession(session({ shapeKind: 'rect' }));
+  // Stored exactly as a build with the flat plate modes wrote it: their kind, and the four
+  // shape blocks plus Margin and "Recess bg too" that went with them.
+  it.each(['disc', 'rect', 'round', 'stl'])(
+    'falls back the same way for a session saved in the retired %s mode',
+    async (flatKind) => {
+      localStorage.setItem(
+        'tmt-mosaic:session:v1',
+        JSON.stringify({
+          ...session({ shapeKind: flatKind }),
+          disc: { diameter: 90, thickness: 5 },
+          rect: { width: 100, height: 70, thickness: 3 },
+          round: { width: 100, height: 70, corner: 12, thickness: 3 },
+          stlPlate: { width: 120, height: 80, thickness: 6, faceZ: 2 },
+          marginPct: 7,
+          recessBg: true,
+        }),
+      );
+      const loaded = loadSavedSession();
+      expect(loaded, 'a flat-mode session must still load').not.toBeNull();
 
-    expect(state.shapeKind).toBe('assembly');
-    expect(state.assembly.kindId).toBe(firstOfferedKind().id);
-    expect(asmLoadFullAssembly).not.toHaveBeenCalled();
-  });
+      await applyRestoredSession(loaded!);
+
+      expect(state.assembly.kindId).toBe(firstOfferedKind().id);
+      expect(asmLoadFullAssembly).not.toHaveBeenCalled();
+      expect(state.artworks.map((a) => a.id)).toEqual(['a1']);
+      for (const k of ['shapeKind', 'disc', 'rect', 'round', 'stlPlate', 'marginPct', 'recessBg'])
+        expect(state, `${k} must not come back into state`).not.toHaveProperty(k);
+    },
+  );
 
   // maybeAutoLoadAssembly no-ops while any part is present, so leaving the previous kind's parts
   // in place would name the fallback kind in the dropdown while the scene and the export still
@@ -519,13 +520,13 @@ describe('applyRestoredSession: failure handling', () => {
   // saved session's values while every source and artwork stayed on the pre-restore ones.
   it('leaves state exactly as it was when a source fails to parse part-way through', async () => {
     state.printerId = 'bambu-x1c';
-    state.disc = { diameter: 42, thickness: 3 };
+    state.globalDepth = 1.25;
     state.asmRadius = 130;
     state.baseColorKey = '#111111';
     state.keptApart = ['#222222'];
     const before = {
       printerId: state.printerId,
-      disc: { ...state.disc },
+      globalDepth: state.globalDepth,
       asmRadius: state.asmRadius,
       baseColorKey: state.baseColorKey,
       keptApart: [...state.keptApart],
@@ -534,7 +535,7 @@ describe('applyRestoredSession: failure handling', () => {
     const bad = session({
       // Different from `before` on every field captured above, so a leak from any of them shows.
       printerId: 'snapmaker-u1',
-      disc: { diameter: 999, thickness: 999 },
+      globalDepth: 9.99,
       asmRadius: 999,
       baseColorKey: '#ff0000',
       keptApart: ['#00ff00'],
@@ -544,7 +545,7 @@ describe('applyRestoredSession: failure handling', () => {
     await expect(applyRestoredSession(bad)).rejects.toBeTruthy();
 
     expect(state.printerId).toBe(before.printerId);
-    expect(state.disc).toEqual(before.disc);
+    expect(state.globalDepth).toBe(before.globalDepth);
     expect(state.asmRadius).toBe(before.asmRadius);
     expect(state.baseColorKey).toBe(before.baseColorKey);
     expect(state.keptApart).toEqual(before.keptApart);

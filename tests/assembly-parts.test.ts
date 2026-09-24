@@ -110,7 +110,6 @@ function loadedPart(over: Partial<AssemblyPart> = {}): AssemblyPart {
 }
 
 beforeEach(() => {
-  state.shapeKind = 'assembly';
   state.assembly.kindId = 'wheel';
   state.assembly.variantId = null;
   state.assembly.parts = [];
@@ -125,7 +124,6 @@ beforeEach(() => {
 afterEach(() => {
   state.assembly.kindId = null;
   state.assembly.parts = [];
-  state.shapeKind = 'disc';
   vi.unstubAllGlobals();
 });
 
@@ -497,7 +495,7 @@ describe('loadPartsLibrary', () => {
     const lib: LibraryEntry[] = [{ id: 'w', name: 'Wheel', file: 'stl/w.stl' }];
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => lib });
     vi.stubGlobal('fetch', fetchMock);
-    state.shapeKind = 'disc'; // keep auto-load out of this test
+    state.assembly.kindId = null; // keep auto-load out of this test
 
     await loadPartsLibrary();
 
@@ -507,7 +505,7 @@ describe('loadPartsLibrary', () => {
 
   it('leaves the library empty and stays silent when there is no manifest', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
-    state.shapeKind = 'disc';
+    state.assembly.kindId = null;
 
     await loadPartsLibrary();
 
@@ -524,7 +522,7 @@ describe('loadPartsLibrary', () => {
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, json: async () => [] as LibraryEntry[] }),
     );
-    state.shapeKind = 'disc';
+    state.assembly.kindId = null;
 
     await loadPartsLibrary();
 
@@ -545,7 +543,7 @@ describe('loadPartsLibrary', () => {
         return { ok: true, json: async () => lib };
       }),
     );
-    state.shapeKind = 'disc';
+    state.assembly.kindId = null;
 
     const pending = loadPartsLibrary();
     expect(state.assembly.library).toEqual([]);
@@ -563,7 +561,7 @@ describe('loadPartsLibrary', () => {
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, json: async () => ({ wheel: 'stl/w.3mf' }) }),
     );
-    state.shapeKind = 'disc';
+    state.assembly.kindId = null;
 
     await expect(loadPartsLibrary()).resolves.toBeUndefined();
 
@@ -581,7 +579,7 @@ describe('loadPartsLibrary', () => {
         },
       }),
     );
-    state.shapeKind = 'disc';
+    state.assembly.kindId = null;
 
     await expect(loadPartsLibrary()).resolves.toBeUndefined();
     expect(state.assembly.library).toEqual([]);
@@ -589,8 +587,8 @@ describe('loadPartsLibrary', () => {
 });
 
 describe('maybeAutoLoadAssembly', () => {
-  it('does nothing outside assembly mode', () => {
-    state.shapeKind = 'disc';
+  it('does nothing before a kind is chosen', () => {
+    state.assembly.kindId = null;
 
     maybeAutoLoadAssembly();
 

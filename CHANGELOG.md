@@ -435,6 +435,14 @@ tests/restoreBanner.test.ts`).
   what the grammar says it is. `npx vitest run tests/path.test.ts` covers both;
   8 of the 9 new arc cases fail on the previous code.
 
+### Removed
+
+- **The disc, rectangle, rounded-rectangle and STL-reference plates are gone
+  from the code.** None had been in the Part dropdown since the beta, so nothing
+  you can pick changes. Their panels, the Margin slider, "Recess bg too" and the
+  per-color STL set went with them. A session saved on one of them still opens,
+  on the first part in the dropdown, with its artwork.
+
 ## [0.7.0] - 2026-08-28
 
 ### Added

@@ -108,11 +108,6 @@ function session(artworks: PersistedSession['artworks']): PersistedSession {
     version: 1,
     savedAt: Date.now(),
     shapeKind: 'assembly',
-    disc: { diameter: 90, thickness: 5 },
-    rect: { width: 100, height: 70, thickness: 3 },
-    round: { width: 100, height: 70, corner: 12, thickness: 3 },
-    stlPlate: { width: 120, height: 80, thickness: 6, faceZ: 2 },
-    marginPct: 7,
     scalePct: 100,
     offsetX: 0,
     offsetY: 0,
@@ -120,7 +115,6 @@ function session(artworks: PersistedSession['artworks']): PersistedSession {
     flipY: false,
     rotationDeg: 0,
     globalDepth: 1.5,
-    recessBg: true,
     printerId: 'snapmaker-u1',
     asmRadius: 140,
     assembly: { kindId: 'chair-body', variantId: null },
@@ -140,7 +134,6 @@ function session(artworks: PersistedSession['artworks']): PersistedSession {
 
 beforeEach(() => {
   localStorage.clear();
-  state.shapeKind = 'disc';
   state.assembly.kindId = null;
   state.assembly.parts = [];
   state.assembly.net = null;

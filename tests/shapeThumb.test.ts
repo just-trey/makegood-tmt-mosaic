@@ -41,7 +41,6 @@ const kind = ASSEMBLY_KINDS[0];
 
 beforeEach(() => {
   document.body.innerHTML = '<div id="shape-thumb"><svg id="glyph"></svg></div>';
-  state.shapeKind = 'assembly';
   state.assembly.kindId = kind.id;
   state.assembly.parts = [part()];
 });
@@ -173,16 +172,6 @@ describe('thumbKey', () => {
 });
 
 describe('refreshShapeThumb', () => {
-  it('leaves a flat kind it did not draw alone', () => {
-    // Regression: this used to clear the box, so a part finishing its load after the user switched
-    // to Disc wiped the disc glyph setShapeThumb had just painted.
-    state.shapeKind = 'disc';
-
-    refreshShapeThumb();
-
-    expect(document.querySelector('#shape-thumb #glyph')).not.toBeNull();
-  });
-
   it('empties the box when no part has a mesh yet, rather than showing a stale one', () => {
     state.assembly.parts = [part({ positions: null })];
 

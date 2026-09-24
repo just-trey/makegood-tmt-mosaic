@@ -131,20 +131,20 @@ band rather than a fingerprintable exact value.
 
 Fired on a successful export, just before the file download starts.
 
-- **Where:** [src/ui/exportPanel.ts](../src/ui/exportPanel.ts) — `exportPrintReady3MF` and `exportSTLSet`.
+- **Where:** [src/ui/exportPanel.ts](../src/ui/exportPanel.ts) — `exportPrintReady3MF`.
 - **Props:**
-  - `format: '3mf' | 'stl_zip'` — `stl_zip` is dormant: `#btn-export-stl` renders only outside assembly mode, and no flat mode is offered
-  - `mode: 'assembly' | 'flat'` — `flat` is dormant for the same reason
+  - `format: '3mf'` — the only value now. Older data also holds `stl_zip`, from the per-color STL-set export of the retired flat plate modes.
+  - `mode: 'assembly'` — the only value now. Older data also holds `flat`, from the same retired modes.
   - `printer: string` (`state.printerId`)
   - `colors: number` (material/color count)
-  - `warnings: number` (3MF only — placement warnings emitted)
-  - `kind: string` (3MF, assembly mode only — `state.assembly.kindId`, e.g. `wheel` / `footrest` / `hubcap` / `chair-body`: which part was exported. Absent in flat mode, which has no assembly kind, on `stl_zip`, which is flat-only, and in the unreachable case where a kind hasn't loaded yet.)
+  - `warnings: number` (placement warnings emitted)
+  - `kind: string` (`state.assembly.kindId`, e.g. `wheel` / `footrest` / `hubcap` / `chair-body`: which part was exported. Absent only in the unreachable case where a kind hasn't loaded yet.)
 
 ### `export_failed`
 
-Fired when an export throws, in the same handlers as `export`.
+Fired when an export throws, in the same handler as `export`.
 
-- **Props:** `{ format: '3mf' | 'stl_zip' }`
+- **Props:** `{ format: '3mf' }` (older data also holds `stl_zip`)
 
 ### `fit_adjust`
 

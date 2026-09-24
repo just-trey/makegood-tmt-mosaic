@@ -204,14 +204,12 @@ export function refreshModelShadows(): void {
 /**
  * Discard the current model group and return a fresh one already in the scene, disposing the
  * GPU geometry/material buffers of everything it held — rebuilds fire on every debounced slider
- * tick, so without this VRAM grows for the whole session. `keep`, if given (the persistent STL
- * reference ghost, which rebuild.ts re-adds to every new group), is skipped so it survives.
+ * tick, so without this VRAM grows for the whole session.
  */
-export function newModelGroup(keep?: THREE.Object3D | null): THREE.Group {
+export function newModelGroup(): THREE.Group {
   scene.remove(modelGroup);
   const materials = new Set<THREE.Material>();
   modelGroup.traverse((o) => {
-    if (keep && (o === keep || keep.getObjectById(o.id))) return;
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
     mesh.geometry.dispose();
@@ -221,8 +219,8 @@ export function newModelGroup(keep?: THREE.Object3D | null): THREE.Group {
   materials.forEach((m) => m.dispose());
   modelGroup = new THREE.Group();
   scene.add(modelGroup);
-  // Not just belt-and-braces with refreshModelShadows(): rebuildScene() bails out between the two
-  // when there is nothing to build (no base params, no built result), leaving the scene cleared —
+  // Not just belt-and-braces with refreshModelShadows(): a rebuild can bail out between the two
+  // when there is nothing to build, leaving the scene cleared —
   // that emptying still has to reach the screen.
   invalidate();
   return modelGroup;

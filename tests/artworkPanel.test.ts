@@ -190,18 +190,11 @@ describe('applyPattern', () => {
     }) as unknown as typeof fetch;
   });
 
-  it('loads as a pattern source, defaulting to Fill mode in assembly mode', async () => {
-    state.shapeKind = 'assembly';
+  it('loads as a pattern source, defaulting to Fill mode', async () => {
     await applyPattern('cow');
     expect(state.sources).toHaveLength(1);
     expect(state.sources[0].kind).toBe('pattern');
     expect(state.artworks[0].mode).toBe('fill');
-  });
-
-  it('stays Sticker outside assembly mode, which has no fill pipeline', async () => {
-    state.shapeKind = 'disc';
-    await applyPattern('cow');
-    expect(state.artworks[0].mode).toBe('sticker');
   });
 
   it('a pattern id not in the manifest is a no-op', async () => {
