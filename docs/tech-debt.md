@@ -558,22 +558,6 @@ the untested candidate rather than a rejected one. Whatever the test, it needs r
 resampled to several sizes on disk, since no mode here can produce them, and the traces need looking
 at rather than counting: region count cannot tell a cleaner trace from a coarser one.
 
-## A rolled-back restore can put back a half-loaded boot part
-
-**Unmeasured, and needs two faults at once.** A restore whose parts don't load rolls back to the
-parts list it found (`applyRestoredSessionInner`, [src/state/persist.ts](../src/state/persist.ts)).
-
-- If Restore is clicked while the boot's own auto-load is still fetching, the restore's
-  `parts = []` makes that load stop at its mid-load guard (`asmLoadFullAssembly`,
-  [src/assembly/parts.ts](../src/assembly/parts.ts)).
-- If the restore's own load then fails, the rollback puts back the boot's list as it stood: some
-  roles loaded, the rest never created.
-- Nothing says so. "Load full …" in the Part panel recovers it.
-- Not driven. The live check blocked one kind's part files, where the boot kind had finished long
-  before the click.
-- Closing it: on rollback, re-run `maybeAutoLoadAssembly` when the list put back is short of the
-  kind's roles, or have the load report that it was superseded.
-
 ## The printable despeckle floor is fixed at the moment of the trace
 
 `rasterMmPerPixel` ([src/state/artwork.ts](../src/state/artwork.ts)) reads the placement when an

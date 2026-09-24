@@ -53,16 +53,24 @@ export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
   return part;
 }
 
+export type AssemblyLoadOutcome = 'loaded' | 'skipped' | 'superseded' | 'failed';
+
+/** Part lists whose load stopped part-way because another load replaced them. */
+const abandonedLists = new WeakSet<AssemblyPart[]>();
+export function asmLoadWasAbandoned(list: AssemblyPart[]): boolean {
+  return abandonedLists.has(list);
+}
+
 /**
  * One-click "load the whole assembly": fetch + face-detect every role's primary, then add its
  * default rotated copies. Awaits each primary's load before duplicating it, since a rotated
  * copy clones the source's (by-then loaded) geometry.
  *
- * Every failure is already told to the user by an alert; the result is for a caller that has to
- * undo something when the load did not complete (session restore). `skipped` covers a manifest
- * still in flight, a cancelled confirm and a newer load taking over — none of them a failure.
+ * Every failure is already told to the user by an alert; the result is for asmSwitchKindAndLoad.
+ * `skipped` is a manifest still in flight or a cancelled confirm; `superseded` is a newer load
+ * taking the list over mid-way.
  */
-export async function asmLoadFullAssembly(): Promise<'loaded' | 'skipped' | 'failed'> {
+export async function asmLoadFullAssembly({ quiet = false } = {}): Promise<AssemblyLoadOutcome> {
   const kind = currentAssemblyKind();
   if (!kind) return 'skipped';
   if (!asmKindCanAutoLoad(kind)) {
@@ -71,7 +79,7 @@ export async function asmLoadFullAssembly(): Promise<'loaded' | 'skipped' | 'fai
     // accepted mid-flight loads a moment later instead of opening a "reload the page" dialog over
     // a session that was about to work.
     if (!partsLibrarySettled()) return 'skipped';
-    await alertDialog("Couldn't load this part. Reload the page to try again.");
+    if (!quiet) await alertDialog("Couldn't load this part. Reload the page to try again.");
     return 'failed';
   }
   if (
@@ -91,11 +99,15 @@ export async function asmLoadFullAssembly(): Promise<'loaded' | 'skipped' | 'fai
       const partId = roleLibraryPartId(role, variantId);
       const entry = partId ? state.assembly.library.find((e) => e.id === partId) : undefined;
       const primary = asmCreateRolePart(role);
-      if (entry && !(await asmLoadLibraryEntryIntoPart(primary, entry))) outcome = 'failed';
+      if (entry && !(await asmLoadLibraryEntryIntoPart(primary, entry, { quiet })))
+        outcome = 'failed';
       // A part-kind switch mid-load replaces state.assembly.parts with a fresh array and kicks off
       // its own load; if that happened while we awaited the fetch, stop here so we don't push this
       // kind's parts into the new kind's list. The newer load owns the overlay and final refresh.
-      if (state.assembly.parts !== myParts) return 'skipped';
+      if (state.assembly.parts !== myParts) {
+        abandonedLists.add(myParts);
+        return 'superseded';
+      }
       if (role.allowRotatedCopies) {
         for (let i = 0; i < (role.copies || 0); i++) {
           const dup = asmAddDuplicate(primary.id, role.copyName);
@@ -106,7 +118,7 @@ export async function asmLoadFullAssembly(): Promise<'loaded' | 'skipped' | 'fai
   } catch (e) {
     console.error(e);
     outcome = 'failed';
-    await alertDialog('Failed to load the assembly: ' + (e as Error).message);
+    if (!quiet) await alertDialog('Failed to load the assembly: ' + (e as Error).message);
   }
   notifyPartsChanged();
   hideOverlay();
@@ -160,6 +172,7 @@ export async function switchChairVariant(variantId: string): Promise<void> {
 export async function asmLoadLibraryEntryIntoPart(
   part: AssemblyPart,
   entry: LibraryEntry,
+  { quiet = false } = {},
 ): Promise<boolean> {
   if (entry.baseDepth) part.baseDepth = entry.baseDepth;
   part.libraryPartId = entry.id;
@@ -171,9 +184,9 @@ export async function asmLoadLibraryEntryIntoPart(
     await asmLoadPartBuffer(part, buf, entry.file);
     return true;
   } catch (e) {
-    await alertDialog(
-      `Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`,
-    );
+    const msg = `Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`;
+    if (quiet) console.error(msg);
+    else await alertDialog(msg);
     return false;
   } finally {
     endWork();

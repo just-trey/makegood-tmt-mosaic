@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **A restore whose part doesn't load now leaves the app as it was.** If the
   parts library can't be reached, the app goes back to the part and settings you
   had before clicking Restore, says which part didn't load, and keeps the saved
-  session to offer again. It used to switch to the saved part anyway, without
-  its pieces.
+  session to offer again on reload. It used to switch to the saved part anyway,
+  without its pieces.
 
 - **An image's notice pill no longer jumps to the bottom of the list when
   Detail or Colors changes it.** Flipping between the traced and the capped

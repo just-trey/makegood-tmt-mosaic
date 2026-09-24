@@ -6,8 +6,8 @@ import {
   SESSION_WRITES_DISABLED_MSG,
   loadSavedSession,
   markSavedSessionAnswered,
-  markSavedSessionUnanswered,
   SessionPartsError,
+  keepSessionForRetry,
   type PersistedSession,
 } from '../state/persist';
 import { clearWarnings, warn } from '../warnings';
@@ -80,12 +80,12 @@ export function initRestoreBanner(): void {
       } catch (e) {
         console.error('Session restore failed:', e);
         if (e instanceof SessionPartsError) {
-          // Rolled back, so what is on screen is the part the user had before clicking, and a
-          // reload (library reachable again) can still restore the session: keep it, and offer it
-          // again. Re-rendered because the aborted load drew the saved part's controls.
+          // Rolled back, so what is on screen is the part the user had before clicking. The session
+          // goes back into storage and writes stay off, so the reload the message asks for offers
+          // it again. Re-rendered because the aborted load drew the saved part's controls.
           clearWarnings();
           warn(e.message);
-          markSavedSessionUnanswered();
+          keepSessionForRetry(session, e.message);
           applyPartKind();
           renderWarnings();
           return;
