@@ -618,6 +618,132 @@ describe('!important in a style declaration', () => {
   });
 });
 
+describe('a hidden group', () => {
+  const RED = '<rect width="4" height="4" fill="#ff0000"/>';
+  const GREEN = '<rect width="4" height="4" fill="#00ff00"/>';
+  const fills = (inner: string): string[] => parseSVGDocument(svg(inner)).shapes.map((s) => s.fill);
+  const messages = (): string[] => WARNINGS.map((w) => w.message);
+
+  it.each([
+    ['display="none"'],
+    ['style="display:none"'],
+    ['opacity="0"'],
+    ['style="opacity:0"'],
+    ['fill-opacity="0"'],
+    ['style="fill-opacity:0"'],
+  ])('imports nothing inside <g %s>', (attr) => {
+    expect(fills(`<g ${attr}>${RED}<g>${RED}</g></g>${GREEN}`)).toEqual(['#00ff00']);
+  });
+
+  it('hides a group hidden by a class rule', () => {
+    expect(fills(`<style>.h { display: none; }</style><g class="h">${RED}</g>${GREEN}`)).toEqual([
+      '#00ff00',
+    ]);
+  });
+
+  it('keeps a child hidden by display none on its group, whatever the child says', () => {
+    expect(
+      fills(`<g display="none"><rect display="inline" width="4" height="4"/></g>${GREEN}`),
+    ).toEqual(['#00ff00']);
+  });
+
+  it('keeps a child hidden by opacity 0 on its group, since opacity multiplies', () => {
+    expect(fills(`<g opacity="0"><rect opacity="1" width="4" height="4"/></g>${GREEN}`)).toEqual([
+      '#00ff00',
+    ]);
+  });
+
+  it('imports a shape under two half-opacity groups, since only a zero hides', () => {
+    expect(fills(`<g opacity="0.5"><g opacity="0.5">${RED}</g></g>`)).toEqual(['#ff0000']);
+  });
+
+  it('imports a child whose own fill-opacity overrides the group it inherits 0 from', () => {
+    expect(
+      fills(
+        '<g fill-opacity="0">' +
+          '<rect fill-opacity="1" width="4" height="4" fill="#0000ff"/>' +
+          `<g fill-opacity="0.5">${RED}</g>` +
+          '</g>',
+      ),
+    ).toEqual(['#0000ff', '#ff0000']);
+  });
+
+  it('hides a child whose own fill-opacity is invalid, since an invalid value inherits', () => {
+    expect(
+      fills(`<g fill-opacity="0"><rect fill-opacity="abc" width="4" height="4"/></g>${GREEN}`),
+    ).toEqual(['#00ff00']);
+  });
+
+  it('hides a nested hidden group inside a visible one, and keeps its visible sibling', () => {
+    expect(fills(`<g><g display="none">${RED}</g>${GREEN}</g>`)).toEqual(['#00ff00']);
+  });
+
+  it('still leaves out <defs> and <clipPath> content inside a visible group', () => {
+    expect(fills(`<g><defs>${RED}</defs><clipPath id="c">${RED}</clipPath>${GREEN}</g>`)).toEqual([
+      '#00ff00',
+    ]);
+  });
+
+  it('names a hidden group by its layer name and says how many shapes it dropped', () => {
+    clearWarnings();
+    fills(
+      '<g inkscape:label="Background" id="layer1" display="none" ' +
+        'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">' +
+        `${RED}${RED}<rect fill="none" width="4" height="4"/></g>${GREEN}`,
+    );
+    expect(messages()).toEqual([
+      'The hidden group "Background" starting at shape 1 was skipped, with its 2 shapes. Show it in your editor to print it.',
+    ]);
+  });
+
+  it('names a hidden group by its id, or by its first shape when it has neither', () => {
+    clearWarnings();
+    fills(`${GREEN}<g id="Layer_2" opacity="0">${RED}</g><g fill-opacity="0">${GREEN}${RED}</g>`);
+    expect(messages()).toEqual([
+      'The hidden group "Layer_2" starting at shape 2 was skipped, with its 1 shape. Show it in your editor to print it.',
+      'The hidden group starting at shape 3 was skipped, with its 2 shapes. Show it in your editor to print it.',
+    ]);
+  });
+
+  it('warns once for the outermost hidden group, not again for one hidden inside it', () => {
+    clearWarnings();
+    fills(`<g id="outer" display="none">${RED}<g id="inner" opacity="0">${RED}</g></g>${GREEN}`);
+    expect(messages()).toEqual([
+      'The hidden group "outer" starting at shape 1 was skipped, with its 2 shapes. Show it in your editor to print it.',
+    ]);
+  });
+
+  it('warns for each of two hidden groups sharing a name, so neither hides the other', () => {
+    clearWarnings();
+    fills(`<g id="L" display="none">${RED}</g>${GREEN}<g id="L" display="none">${RED}</g>`);
+    expect(messages()).toHaveLength(2);
+  });
+
+  it('leaves a gradient shape out of the count, but starts the group at it', () => {
+    clearWarnings();
+    fills(`<g id="g" display="none"><rect fill="url(#a)" width="4" height="4"/>${RED}</g>${GREEN}`);
+    expect(messages()).toEqual([
+      'The hidden group "g" starting at shape 1 was skipped, with its 1 shape. Show it in your editor to print it.',
+    ]);
+  });
+
+  it('says nothing for a hidden group with nothing to print, or whose children override it', () => {
+    clearWarnings();
+    fills(
+      '<g display="none"><rect fill="none" width="4" height="4"/></g>' +
+        `<g fill-opacity="0"><g fill-opacity="1">${RED}</g></g>` +
+        '<g display="none"><rect display="none" width="4" height="4"/></g>',
+    );
+    expect(messages()).toEqual([]);
+  });
+
+  it('stays silent on a single shape hidden by its own fill-opacity 0', () => {
+    clearWarnings();
+    fills(`<rect fill-opacity="0" width="4" height="4"/>${GREEN}`);
+    expect(messages()).toEqual([]);
+  });
+});
+
 describe('svgLengthToMM', () => {
   it('converts absolute units to mm', () => {
     expect(svgLengthToMM('266mm')).toBeCloseTo(266, 9);
