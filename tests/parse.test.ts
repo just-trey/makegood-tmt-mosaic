@@ -568,7 +568,7 @@ describe('!important in a style declaration', () => {
     expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
   });
 
-  it('lets an !important class rule beat an inline style, as a browser does', () => {
+  it('lets an !important class rule beat a plain inline style, and lose to an !important one', () => {
     const out = parseSVGDocument(
       svg(
         '<style>.a { fill: #00ff00 !important; }</style>' +

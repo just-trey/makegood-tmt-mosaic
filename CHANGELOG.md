@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   imports as a color.** `fill-opacity="-1"` or `-50%` is hidden in a browser
   and now here too. A `<style>` rule or inline style marked `!important` is
   read: `fill: #00ff00 !important` used to import black, and
-  `display: none !important` used to import at all. An `!important` rule also
+  `display: none !important` used to import anyway. An `!important` rule also
   beats a plain inline style, as in a browser. `fill-opacity` percentages now
   read as fractions (`npx vitest run tests/parse.test.ts`).
 - **A shape with a malformed `fill-opacity` now imports, as a browser draws

@@ -1200,8 +1200,8 @@ Found by `/code-review` on the branch that fixed the warning numbers next to
 it, and not fixed there because the fix needs a decision first.
 
 **Closing it** is two lines in `walk`: pass the resolved flag down and or it
-with the element's own. `fill-opacity` passes its resolved value down instead,
-since it inherits. The open question is whether a hidden layer vanishing
+with the element's own. `opacity="0"` ors down the same way. `fill-opacity`
+passes its resolved value down instead, since it inherits. The open question is whether a hidden layer vanishing
 is silent. `fill-opacity="0"` on one shape is silent on purpose, for the reason
 in the comment on the `opacity === 0` branch of `walk`. A hidden layer is much
 more artwork to drop with nothing said, and CLAUDE.md code rule 1 wants a named
