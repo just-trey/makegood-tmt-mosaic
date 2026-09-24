@@ -96,12 +96,29 @@ export function detectFlatPatches(positions: Float32Array): FlatPatch[] {
   return Array.from(buckets.values()).sort((a, b) => b.area - a.area);
 }
 
+export interface PatchBoundary {
+  /** Closed rings of [x,y,z] points, each with the patch on its left. */
+  loops: number[][][];
+  /**
+   * Boundary edges no closed ring could take. Non-zero only for a patch whose triangles overlap or
+   * fold (a vertex with more edges leaving than arriving), and it means the face's shape is only
+   * partly known. Zero for every selectable face of every packed part (tests/patch-boundary.test.ts).
+   */
+  openEdges: number;
+}
+
 /**
  * Chain the boundary edges of a triangle patch into closed loops (an edge with no matching
- * reverse edge in the patch is a boundary edge). Returns loops of [x,y,z] points.
+ * reverse edge in the patch is a boundary edge).
+ *
+ * Keyed by directed edge, not by vertex. Two loops of one patch meet at a point often (a hole
+ * touching the outline, two islands sharing a corner) and that vertex then has two edges leaving
+ * it. A vertex-keyed walk kept one and lost the other, returning a chain that ran off the end as
+ * if it were a ring: 19 of the 114 faces the Advanced dropdown offers. At such a vertex the leaving
+ * edge is chosen by angle so the wedge between arriving and leaving is face interior, which is what
+ * keeps a bowtie as two rings and never sends a walk across a hole.
  */
-export function extractPatchBoundary(positions: Float32Array, triIndices: number[]): number[][][] {
-  const edgeMap = new Map<string, string>(); // vertex-key -> next vertex-key along the boundary
+export function extractPatchBoundary(positions: Float32Array, triIndices: number[]): PatchBoundary {
   const posOf = new Map<string, number[]>();
   function addVert(x: number, y: number, z: number): string {
     const k = [x, y, z].map((v) => v.toFixed(4)).join(',');
@@ -109,6 +126,9 @@ export function extractPatchBoundary(positions: Float32Array, triIndices: number
     return k;
   }
   const seen = new Map<string, number>(); // edge "a|b" -> count
+  let nx = 0,
+    ny = 0,
+    nz = 0;
   triIndices.forEach((i) => {
     const o = i * 9;
     const pts = [0, 1, 2].map((k) =>
@@ -119,28 +139,139 @@ export function extractPatchBoundary(positions: Float32Array, triIndices: number
         b = pts[(k + 1) % 3];
       seen.set(a + '|' + b, (seen.get(a + '|' + b) || 0) + 1);
     }
+    const e1x = positions[o + 3] - positions[o],
+      e1y = positions[o + 4] - positions[o + 1],
+      e1z = positions[o + 5] - positions[o + 2];
+    const e2x = positions[o + 6] - positions[o],
+      e2y = positions[o + 7] - positions[o + 1],
+      e2z = positions[o + 8] - positions[o + 2];
+    nx += e1y * e2z - e1z * e2y;
+    ny += e1z * e2x - e1x * e2z;
+    nz += e1x * e2y - e1y * e2x;
   });
-  seen.forEach((_cnt, key) => {
+
+  // Directed boundary edges in first-seen order, which is also the order rings start from.
+  const tail: string[] = [];
+  const head: string[] = [];
+  const outsAt = new Map<string, number[]>();
+  const insAt = new Map<string, number[]>();
+  for (const key of seen.keys()) {
     const [a, b] = key.split('|');
-    const rev = b + '|' + a;
-    if (!seen.has(rev)) edgeMap.set(a, b);
-  });
-  const loops: number[][][] = [];
-  const used = new Set<string>();
-  for (const start of edgeMap.keys()) {
-    if (used.has(start)) continue;
-    const loop = [start];
-    used.add(start);
-    let cur = edgeMap.get(start)!;
-    let guard = 0;
-    while (cur !== start && edgeMap.has(cur) && !used.has(cur) && guard++ < 100000) {
-      loop.push(cur);
-      used.add(cur);
-      cur = edgeMap.get(cur)!;
-    }
-    loops.push(loop.map((k) => posOf.get(k)!));
+    if (seen.has(b + '|' + a)) continue;
+    const e = tail.length;
+    tail.push(a);
+    head.push(b);
+    const outs = outsAt.get(a);
+    if (outs) outs.push(e);
+    else outsAt.set(a, [e]);
+    const ins = insAt.get(b);
+    if (ins) ins.push(e);
+    else insAt.set(b, [e]);
   }
-  return loops;
+  const E = tail.length;
+
+  // Angles are measured in the patch plane, counter-clockwise about the winding normal, so the
+  // patch lies to the left of every boundary edge and the interior wedge at a vertex runs
+  // counter-clockwise from a leaving edge to an arriving one.
+  const nl = Math.hypot(nx, ny, nz) || 1;
+  nx /= nl;
+  ny /= nl;
+  nz /= nl;
+  const ax = Math.abs(nx) < 0.9 ? 1 : 0,
+    ay = ax ? 0 : 1;
+  let ux = ay * nz,
+    uy = -ax * nz,
+    uz = ax * ny - ay * nx;
+  const ul = Math.hypot(ux, uy, uz) || 1;
+  ux /= ul;
+  uy /= ul;
+  uz /= ul;
+  const wx = ny * uz - nz * uy,
+    wy = nz * ux - nx * uz,
+    wz = nx * uy - ny * ux;
+  const angleFrom = (v: string, to: string): number => {
+    const p = posOf.get(v)!,
+      q = posOf.get(to)!;
+    const dx = q[0] - p[0],
+      dy = q[1] - p[1],
+      dz = q[2] - p[2];
+    return Math.atan2(dx * wx + dy * wy + dz * wz, dx * ux + dy * uy + dz * uz);
+  };
+
+  // next[e] is the edge a walk takes after arriving along e, or -1. Each leaving edge is given to
+  // at most one arriving edge, so following `next` from any edge either returns to it or ends: a
+  // walk can never enter a cycle it did not start on, which is what let an earlier attempt spin
+  // to its iteration guard on the chair's default face.
+  const next = new Int32Array(E).fill(-1);
+  const hasPrev = new Uint8Array(E);
+  for (const [v, outs] of outsAt) {
+    const ins = insAt.get(v);
+    if (!ins) continue;
+    if (outs.length === 1 && ins.length === 1) {
+      next[ins[0]] = outs[0];
+      hasPrev[outs[0]] = 1;
+      continue;
+    }
+    // Around the vertex counter-clockwise, a leaving edge opens an interior wedge and the next
+    // arriving edge closes it. Two spokes share an angle only when two different vertices sit on
+    // one ray from v (overlapping soup); leaving-before-arriving there just keeps the order
+    // deterministic.
+    const spokes = outs
+      .map((e) => ({ e, out: true, ang: angleFrom(v, head[e]) }))
+      .concat(ins.map((e) => ({ e, out: false, ang: angleFrom(v, tail[e]) })))
+      .sort((p, q) => p.ang - q.ang || (p.out === q.out ? 0 : p.out ? -1 : 1));
+    const open: number[] = [];
+    const onStack = new Set<number>();
+    // Exactly two passes, because the order is circular: an arriving edge sorted before its
+    // leaving edge can only pop it once pass one has pushed the wrap-around, and after pass two
+    // every arriving edge still unpaired has no unpaired leaving edge left to take.
+    for (let pass = 0; pass < 2; pass++) {
+      for (const s of spokes) {
+        if (s.out) {
+          if (!hasPrev[s.e] && !onStack.has(s.e)) {
+            open.push(s.e);
+            onStack.add(s.e);
+          }
+        } else if (next[s.e] === -1 && open.length) {
+          const o = open.pop()!;
+          onStack.delete(o);
+          next[s.e] = o;
+          hasPrev[o] = 1;
+        }
+      }
+    }
+  }
+
+  // Linear: every edge is marked the first time any walk reaches it, and a walk that ends anywhere
+  // but its own start is an open chain, so no chain is retried from each of its edges in turn.
+  const used = new Uint8Array(E);
+  let openEdges = 0;
+  const loops: number[][][] = [];
+  for (let start = 0; start < E; start++) {
+    if (used[start]) continue;
+    const loop: number[][] = [];
+    let cur = start;
+    do {
+      used[cur] = 1;
+      loop.push(posOf.get(tail[cur])!);
+      cur = next[cur];
+    } while (cur !== start && cur !== -1 && !used[cur]);
+    if (cur === start) loops.push(loop);
+    else openEdges += loop.length;
+  }
+  return { loops, openEdges };
+}
+
+/**
+ * Unsigned shoelace area of a loop projected to X/Z, the plane a design face is measured in. The
+ * one rule for "which loop is the face outline": the app and scripts/gen-templates.mjs both sort
+ * by it, and a template traced from a hole is the wrong drawing at the wrong size.
+ */
+export function loopXZArea(loop: number[][]): number {
+  let a = 0;
+  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++)
+    a += loop[j][0] * loop[i][2] - loop[i][0] * loop[j][2];
+  return Math.abs(a) / 2;
 }
 
 /**

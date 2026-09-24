@@ -16,7 +16,8 @@ import { dirname, resolve } from 'node:path';
 import JSZip from 'jszip';
 import { ACCENT, GRAY, LABEL_SIZE } from './lib/svgstyle.mjs';
 
-const { detectFlatPatches, extractPatchBoundary } = await import('../src/geometry/meshparts.ts');
+const { detectFlatPatches, extractPatchBoundary, loopXZArea } =
+  await import('../src/geometry/meshparts.ts');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
@@ -150,19 +151,16 @@ async function genRectTemplate({
         .map(n2)
         .join(', ')}), not +Y — the template mapping only handles a +Y-facing face`,
     );
-  const loops3d = extractPatchBoundary(positions, face.triIndices);
-  // Project to native (x, z) — the two axes the app uses for the rect face.
+  const { loops: loops3d, openEdges } = extractPatchBoundary(positions, face.triIndices);
+  if (openEdges)
+    throw new Error(
+      `${partLabel}: ${openEdges} boundary edge(s) of the design face close no ring — a template ` +
+        `traced from a partly known face is the wrong drawing`,
+    );
+  // The app's own rule for which loop is the outline (applyAsmPatchChoice sorts by the same
+  // function), then project to native (x, z), the two axes the app uses for the rect face.
+  loops3d.sort((a, b) => loopXZArea(b) - loopXZArea(a));
   const loopsXZ = loops3d.map((loop) => loop.map((p) => [p[0], p[2]]));
-  // Area, the rule applyAsmPatchChoice uses to put the outline at loops[0]. Point count was the
-  // old key and disagrees with it: a cut-out can carry more points than the ring enclosing it, and
-  // a template traced from a hole is the wrong drawing at the wrong size.
-  const area2d = (r) => {
-    let a = 0;
-    for (let i = 0, j = r.length - 1; i < r.length; j = i++)
-      a += r[j][0] * r[i][1] - r[i][0] * r[j][1];
-    return Math.abs(a) / 2;
-  };
-  loopsXZ.sort((a, b) => area2d(b) - area2d(a));
   const outer = loopsXZ[0];
   const ob = bbox2d(outer);
   const faceCx = (ob.minA + ob.maxA) / 2;

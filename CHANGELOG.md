@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   "Advanced: per-part face & alignment" used to draw the frame flat and
   floating beside the part, in the normal color, on 8 of the 18 faces offered.
 
+- **A design face whose edge touches itself at a point now clips artwork to
+  its real shape.** Where a hole met the outline, or two islands shared a
+  corner, the edge trace used to run off the end and hand back a broken chain
+  as if it were a ring, which could read a solid area as a hole. Every face the
+  Advanced dropdown offers on every shipped part now traces as closed rings
+  (it was 19 of 114 that did not). The shipped wheel and chair exports are
+  unchanged. A face whose edge still can't be traced in full says so instead
+  of clipping silently.
+
 - **A Diameter, Width or Height field with a non-numeric authored minimum no
   longer rejects every value you type.** Custom-part markup that set a
   malformed `min=` used to make the guard compare against `NaN`, which is

@@ -8,11 +8,12 @@ import { hideOverlay, showOverlay } from '../ui/overlay';
 import {
   detectFlatPatches,
   extractPatchBoundary,
+  loopXZArea,
   excludeTriangles,
   load3MF,
 } from '../geometry/meshparts';
 import { fingerprintMatches, loadZonesSidecar, reconstructChart } from '../geometry/zoneCharts';
-import { dismissNotice, warn } from '../warnings';
+import { WARNINGS, dismissNotice, warn } from '../warnings';
 import { track } from '../analytics/track';
 import { alertDialog, confirmDialog } from '../ui/dialogs';
 import {
@@ -24,10 +25,24 @@ import {
 
 // The assembly panel registers its render functions here, so part management can refresh the
 // UI without importing it (keeps the module graph acyclic).
-let notifyPartsChanged: () => void = () => {};
+let onPartsChanged: () => void = () => {};
 export function onAssemblyPartsChanged(fn: () => void): void {
-  notifyPartsChanged = fn;
+  onPartsChanged = fn;
 }
+// Every path that drops a part (remove, variant switch, kind switch, full reload) ends here, so
+// this is where a face-edge notice for a part no longer in the list is retracted. Doing it at the
+// six removal sites instead is how a standing per-part notice ends up naming a part that is gone.
+function notifyPartsChanged(): void {
+  const live = new Set(state.assembly.parts.map((p) => faceEdgeKey(p)));
+  const stale: string[] = [];
+  for (const w of WARNINGS)
+    if (w.key && w.key.startsWith(FACE_EDGE_PREFIX) && !live.has(w.key)) stale.push(w.key);
+  for (const k of stale) dismissNotice('', k);
+  onPartsChanged();
+}
+
+const FACE_EDGE_PREFIX = 'face-edge:';
+const faceEdgeKey = (part: AssemblyPart): string => FACE_EDGE_PREFIX + part.id;
 
 export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
   const id = state.assembly.nextPartId++;
@@ -536,14 +551,6 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
   part.zones = zones;
 }
 
-/** Unsigned shoelace area of a loop projected to X/Z, the plane a design face is measured in. */
-function loopXZArea(loop: number[][]): number {
-  let a = 0;
-  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++)
-    a += loop[j][0] * loop[i][2] - loop[i][0] * loop[j][2];
-  return Math.abs(a) / 2;
-}
-
 /**
  * Push a source's face onto its rotated copies. A copy shares the source's mesh and has no face
  * control of its own, so these five fields are a cache of the source's choice rather than state a
@@ -565,13 +572,28 @@ export function applyAsmPatchChoice(part: AssemblyPart): void {
   const patch = part.patches[part.patchIdx];
   part.topZ = patch.offset;
   part.patchNormal = patch.normal;
-  const loops = extractPatchBoundary(part.positions, patch.triIndices);
+  const { loops, openEdges } = extractPatchBoundary(part.positions, patch.triIndices);
   // Area, not vertex count: readers that want the face outline take loops[0], and an intricate
   // cut-out can carry more vertices than the ring enclosing it. Sorting by size instead puts a
   // hole after its parent always, because a hole is smaller than what contains it.
   // scripts/gen-templates.mjs picks a part's outline by the same rule and must stay in step.
   loops.sort((a, b) => loopXZArea(b) - loopXZArea(a));
   part.boundaryLoops = loops.length ? loops : null;
+  // Keyed per part so a re-pick replaces or retracts it rather than stacking one per face. With no
+  // ring at all the build skips the part (assembly.ts tests `boundaryLoops` before cutting), which
+  // is the opposite of "cut to the wrong shape", so that case says what actually happens.
+  const key = faceEdgeKey(part);
+  if (!loops.length)
+    warn(
+      `Couldn't trace the edge of the design face on "${part.name}", so no artwork will be cut on it. Try another design face.`,
+      key,
+    );
+  else if (openEdges)
+    warn(
+      `Couldn't trace the whole edge of the design face on "${part.name}". Artwork may be cut to the wrong shape there. Try another design face.`,
+      key,
+    );
+  else dismissNotice('', key);
   part.restPositions = excludeTriangles(part.positions, patch.triIndices);
   syncDuplicateFaces(part);
 }

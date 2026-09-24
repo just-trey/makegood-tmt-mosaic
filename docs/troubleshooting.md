@@ -1665,6 +1665,29 @@ setting) and report it via **Feedback** or **Report a bug on GitHub** with that
 detail — the message itself does not say which vertex or part is at fault, so
 reproducing it is what makes the report useful.
 
+## Troubleshooting: "Couldn't trace the whole edge of the design face on …" (assembly mode)
+
+The chosen design face has edges that no closed outline can take. That happens
+only on a face whose triangles overlap or fold over each other, so that a vertex
+has more edges leaving it than arriving. No packed part in `public/stl/` has such
+a face: `tests/patch-boundary.test.ts` traces every face the Advanced dropdown
+offers on each of them. The Hubcap's disc is generated at run time and is not in
+that corpus; it comes out of the boolean engine as a closed solid, which cannot
+produce an open edge.
+
+- **The rings that did close are kept and clip the artwork.** The edges that
+  did not are what the warning is about. Artwork near them may be cut past a
+  gap or stop short of one.
+- **"… so no artwork will be cut on it"** is the same fault with no ring
+  closing at all. The part then has no design face, the build skips it, and it
+  exports in body colour only.
+- **Pick another design face** from the Advanced disclosure. The warning
+  clears when the new face traces in full, and goes with the part when the part
+  is removed.
+- A face whose edge touches itself at a single point (a hole meeting the
+  outline, two islands sharing a corner) does not raise this. That case traces
+  correctly.
+
 ## Troubleshooting: "Couldn't send that" in the feedback panel
 
 The Feedback panel posts to Formspree. Two failures show there, and neither

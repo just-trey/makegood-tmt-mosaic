@@ -504,10 +504,6 @@ interior detail on a 220mm disc should stay a recess.
 - The split only fires on a region that really was clipped. An unclipped region
   overruns the boundary everywhere and would read as entirely edge.
 
-The face measured against is a **single** boundary loop, so a silhouette
-enclosing a hole keeps a base-colour rim around it. The fix is in
-[tech-debt.md](tech-debt.md).
-
 **Export placement is baked from a verified reference 3MF, never computed at
 runtime.** Once a part's print pose has been checked in the slicer, those
 numbers become constants in [threemf.ts](../src/export/threemf.ts), wired onto
