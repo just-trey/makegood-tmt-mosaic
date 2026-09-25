@@ -43,10 +43,15 @@ vi.mock('../src/assembly/parts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/assembly/parts')>()),
   asmRebuildGeneratedParts: vi.fn(async () => true),
 }));
+vi.mock('../src/raster/parse', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/raster/parse')>();
+  return { ...actual, parseRasterImage: vi.fn(actual.parseRasterImage) };
+});
 vi.mock('../src/ui/dom', () => ({ $: (sel: string) => document.querySelector(sel) }));
 
 import { rebuildCurrent } from '../src/app/rebuild';
 import { scheduleRebuild } from '../src/app/scheduler';
+import { asmRebuildGeneratedParts } from '../src/assembly/parts';
 import { clearArtwork, loadArtworkSource, rasterMmPerPixel } from '../src/state/artwork';
 import { state } from '../src/state/store';
 import { parseRasterImage, rasterColorLossKey } from '../src/raster/parse';
@@ -195,19 +200,48 @@ describe('re-tracing after a resize', () => {
   it('keeps the old trace, and says why, when the new size leaves nothing to print', async () => {
     const source = loadAt(220, false);
     const loaded = source.parsed;
+    notice('"photo.png" was traced from a photo.', source.id);
     state.assembly.parts = [hubcap(2)];
     settled = true;
 
     await rebuildCurrent();
 
     expect(source.parsed).toBe(loaded);
-    const said = WARNINGS.find((w) => w.key === source.id);
-    expect(said?.level).toBe('warn');
-    expect(said?.message).toMatch(/bigger/);
+    const failed = () => WARNINGS.find((w) => w.key === `${source.id}:retrace`);
+    expect(failed()?.level).toBe('warn');
+    expect(failed()?.message).toMatch(/bigger/);
+    // The kept trace keeps what it said about itself.
+    expect(WARNINGS.find((w) => w.key === source.id)?.level).toBe('info');
 
     // Not re-run on every later pass: the same floors would throw the same way.
-    clearWarnings();
+    vi.mocked(parseRasterImage).mockClear();
     await rebuildCurrent();
-    expect(WARNINGS.find((w) => w.key === source.id)).toBeUndefined();
+    expect(parseRasterImage).not.toHaveBeenCalled();
+    expect(failed()).toBeDefined();
+
+    // Back at the size it was traced for, the failure no longer describes anything on screen.
+    state.assembly.parts = [hubcap(220)];
+    await rebuildCurrent();
+    expect(failed()).toBeUndefined();
+    expect(source.parsed).toBe(loaded);
+    expect(vi.mocked(scheduleRebuild)).not.toHaveBeenCalled();
+  });
+
+  it('cuts a hubcap shaped to the artwork before reading its size, then again to the new trace', async () => {
+    const source = loadAt(32);
+    const loaded = source.parsed;
+    state.hubcapSilhouette = true;
+    const seen: unknown[] = [];
+    vi.mocked(asmRebuildGeneratedParts).mockImplementation(async () => {
+      seen.push(source.parsed);
+      return true;
+    });
+    state.assembly.parts = [hubcap(220)];
+    settled = true;
+
+    await rebuildCurrent();
+
+    expect(source.parsed).not.toBe(loaded);
+    expect(seen).toEqual([loaded, source.parsed]);
   });
 });

@@ -601,6 +601,22 @@ part bigger when the nozzle-width floor pins it. Two cases are left silent, both
   Neither is a wording change: the capped one needs an answer to whether raising Detail can recover
   a color on a capped trace at all.
 
+## A hubcap cut to its artwork may re-trace on every edit — unmeasured
+
+A resize re-traces a raster once its placed floors move (`retraceMovedSources` in
+[src/state/artwork.ts](../src/state/artwork.ts)). On a hubcap cut to its artwork, the part's size
+follows the trace: when the outline overhangs the wheel, the shrink that fits it
+(`generatedFitFactor`) comes from the traced outline's reach.
+
+- A re-trace that removes or restores a speck at the outline's far edge changes that shrink, and
+  with it the floors. The trace is then stale again.
+- **Bounded**: a settled pass never asks for another, so this costs at most one re-trace per edit,
+  not a loop.
+- **Unmeasured**: whether any real image has a speck at its edge between the two floors. No test
+  or bench builds one.
+- Closing it needs that measurement first. If it happens, the fix is a fit that does not read the
+  trace's own specks, not a cap on re-traces.
+
 ## `deChecker` can leave a component under the despeckle floor
 
 `despeckle` leaves nothing under the floor, but `deChecker` runs after it

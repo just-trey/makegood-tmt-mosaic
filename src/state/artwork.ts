@@ -495,6 +495,7 @@ export function requantizeSource(
     name: source.name,
   });
   failedRetraces.delete(source.id);
+  dismissNotice('', retraceFailedKey(source.id));
   const oldPalette = source.raster.palette;
   // A brand-new ParsedSVG with a brand-new `shapes` array, never a mutation of the old one:
   // computeNetRegionsByColor memoizes on that array's identity, so an in-place edit would serve
@@ -550,42 +551,52 @@ function floorsKey(source: DesignSource & { raster: RasterState }, mmPerPixel?: 
   return `${f.floor}/${f.floorAtMax}`;
 }
 
+/** The key of the warning a failed re-trace raises, beside the notices the kept trace still owns. */
+function retraceFailedKey(sourceId: string): string {
+  return `${sourceId}:retrace`;
+}
+
 /**
- * Raster sources whose placement has moved their despeckle floor since they were traced.
+ * Re-trace every raster source whose placement has moved its despeckle floor, when `settled`;
+ * otherwise only report whether one is owed.
  *
  * Compared as floors, not as a resize ratio, because no ratio exists (`bench-raster.ts steps`). On
  * a 32-270mm hubcap, flat art moves its floors at a 0.01-4% resize where a placed floor binds and
  * holds them through 8.9-65% where the fraction does; a 512px photo holds them through any
  * enlargement. Equal floors trace identically, so skipping them loses nothing. An unreadable
  * placement (a rect kind mid-reload) is never stale: there is nothing better to trace at.
+ *
+ * Per source: one that comes back empty keeps its old trace and says why, and the rest still
+ * re-trace. That warning goes once the placement leaves the floors it failed at.
  */
-export function staleRasterSources(): (DesignSource & { raster: RasterState })[] {
-  return state.sources.filter((s): s is DesignSource & { raster: RasterState } => {
-    if (!isRasterSource(s)) return false;
-    const now = rasterMmPerPixel(s.raster.image, s.id);
-    if (now === undefined) return false;
-    const key = floorsKey(s, now);
-    return key !== floorsKey(s, s.raster.mmPerPixel) && key !== failedRetraces.get(s.id);
-  });
-}
-
-/**
- * Re-trace each source at its current placement. Per source: one that comes back empty keeps its
- * old trace and says why, and the rest still re-trace.
- */
-export function retraceSources(sources: (DesignSource & { raster: RasterState })[]): void {
-  for (const source of sources) {
+export function retraceMovedSources(settled: boolean): { retraced: boolean; owed: boolean } {
+  let retraced = false,
+    owed = false;
+  for (const source of state.sources) {
+    if (!isRasterSource(source)) continue;
     const mmPerPixel = rasterMmPerPixel(source.raster.image, source.id);
+    if (mmPerPixel === undefined) continue;
+    const key = floorsKey(source, mmPerPixel);
+    const failed = failedRetraces.get(source.id);
+    if (failed !== undefined && failed !== key) {
+      failedRetraces.delete(source.id);
+      dismissNotice('', retraceFailedKey(source.id));
+    }
+    if (key === floorsKey(source, source.raster.mmPerPixel) || key === failed) continue;
+    if (!settled) {
+      owed = true;
+      continue;
+    }
     try {
       const result = requantizeSource(source.id, {});
       if (result) announceTrace(source.id, source.name, result);
+      retraced = true;
     } catch (e) {
-      failedRetraces.set(source.id, floorsKey(source, mmPerPixel));
-      dismissNotice('', rasterColorLossKey(source.id));
-      // The source's own key, so it takes over whichever of the traced/capped pair stands.
-      warn((e as Error).message, source.id);
+      failedRetraces.set(source.id, key);
+      warn((e as Error).message, retraceFailedKey(source.id));
     }
   }
+  return { retraced, owed };
 }
 
 /**

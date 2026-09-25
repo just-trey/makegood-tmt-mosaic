@@ -6,8 +6,7 @@ import {
   activeArtworkInstance,
   availableZones,
   netZones,
-  retraceSources,
-  staleRasterSources,
+  retraceMovedSources,
   syncActiveArtworkPlacement,
   zoneCoverage,
   zoneMirrorOf,
@@ -519,21 +518,23 @@ async function rebuildAssemblyScene(): Promise<void> {
   // stays where it is so the non-generated path is unchanged.
   syncActiveArtworkPlacement();
 
-  // Here, once per pass, because every input that sizes a design ends in a rebuild: Scale, the
-  // hubcap diameter, the Design radius, a kind or Sticker/Fill switch, a second placement. Before
-  // the generated parts, so a hubcap cut to the artwork is cut to the new trace. A trace can cost
-  // ~830ms, so a live pass only asks for a settled one, and a settled pass never asks again.
-  const stale = staleRasterSources();
-  if (stale.length && rebuildSettled()) {
-    retraceSources(stale);
-    renderArtworkList();
-  } else if (stale.length) scheduleRebuild('typed');
-
   // BEFORE the no-artwork branch below, not after it. A part whose shape follows the artwork has
   // to be rebuilt when the artwork goes away, and that is exactly the case that branch returns
   // early for — so removing the last image left the hubcap still cut to its silhouette, with
   // nothing on screen to explain why.
   if (generatedPartsNeedRebuild()) await asmRebuildGeneratedParts({ schedule: false });
+
+  // Here, once per pass, because every input that sizes a design ends in a rebuild: Scale, the
+  // hubcap diameter, the Design radius, a kind or Sticker/Fill switch, a second placement. After
+  // the generated parts, because a hubcap cut to the artwork sets the size the trace is read at;
+  // then again, since that part follows the new trace. A trace can cost ~830ms, so a live pass
+  // only asks for a settled one, and a settled pass never asks again.
+  const traces = retraceMovedSources(rebuildSettled());
+  if (traces.retraced) {
+    renderArtworkList();
+    if (generatedPartsNeedRebuild()) await asmRebuildGeneratedParts({ schedule: false });
+  }
+  if (traces.owed) scheduleRebuild('typed');
 
   // A part cut to its own artwork centres itself on its mounting axis, and the artwork's offset is
   // then solved for rather than chosen — moving the picture relative to a part that IS the picture
