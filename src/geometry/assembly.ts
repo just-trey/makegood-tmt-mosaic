@@ -1469,68 +1469,62 @@ export async function buildAssemblyGeometry(
           (colorPrisms[ci] ||= []).push(man);
           if (region.edge) partEdgeColors.set(label, region.depth);
         };
+        // Null for "no solid", whichever step failed: a flat mapper hands back a prism that will
+        // not seal, while a conformal one tests its own prism before warping and returns null
+        // instead. Both mean the same thing to the repair below, so both reach it.
+        const solidFor = (feat: PolyFeature | null, depth: number): ManifoldSolid | null => {
+          const soup = feat && mapper.buildCutter(feat, depth, OVERSHOOT_MM, cutterOpts);
+          if (!soup || !soup.length) return null;
+          const man = soupToManifold(wasm, soup);
+          if (manifoldIsValid(man)) return man;
+          // Freed rather than dropped: an un-watertight soup comes back as an *empty* solid rather
+          // than a throw, so this is the common path here, and a discarded solid is WASM memory
+          // that never reaches `held`. The ladder below can discard one per rung.
+          manifoldDelete(man);
+          return null;
+        };
         for (const region of regions) {
-          const soup = mapper.buildCutter(region.feat, region.depth, OVERSHOOT_MM, cutterOpts);
-          if (soup && soup.length) {
-            try {
-              const man = soupToManifold(wasm, soup);
-              // Freed rather than dropped: an un-watertight soup comes back as an *empty* solid
-              // rather than a throw, so this is the common path here, and a discarded solid is WASM
-              // memory that never reaches `held`. The ladder below can discard one per rung.
-              if (!manifoldIsValid(man)) {
-                manifoldDelete(man);
-                throw new Error('empty manifold');
-              }
-              keep(man, region);
-              continue;
-            } catch {
-              /* retry below with self-intersections repaired */
-            }
-            // Clipping dense line-work to the part boundary can leave the region self-touching:
-            // valid to turf, non-watertight to Manifold. Repair with Manifold's own 2D boolean
-            // engine and retry, widening the erode when the narrow one does not clear it.
-            //
-            // The ladder is the fix for a real failure rather than defensive retrying: a gravel
-            // photograph on the wheel put eleven regions through here, and one of them needed the
-            // wider distance. Ordered smallest first so a region that repairs at 0.01mm never pays
-            // the extra geometry loss, and it stops well inside what a nozzle can resolve.
-            //
-            // An edge slice stands on the part's outer wall and `keep` records it in
-            // `partEdgeColors` as "the rim prints in this color". Eroding it pulls it off that rim
-            // and leaves a rind of body material, so the wider rungs are withheld there: an edge
-            // slice gets the original single attempt and warns exactly as it did before.
-            let repairedOk = false;
-            const rungs = region.edge ? REPAIR_ERODE_MM.slice(0, 1) : REPAIR_ERODE_MM;
-            // No notice when a wider rung is used. An inward offset of `e` removes only what is
-            // thinner than `2e`, so the 0.05mm rung cannot touch anything wider than a quarter of a
-            // 0.4mm nozzle: nothing printable is at stake. An earlier version raised one, and its
-            // test could never be false because an erode is monotone, so it fired on every
-            // escalation. See docs/findings/2026-08-20-extrude-repair-erode.md.
-            for (const erodeMm of rungs) {
-              try {
-                const repaired = repairSelfIntersections(wasm, region.feat, erodeMm);
-                const soup2 =
-                  repaired && mapper.buildCutter(repaired, region.depth, OVERSHOOT_MM, cutterOpts);
-                if (soup2 && soup2.length) {
-                  const man2 = soupToManifold(wasm, soup2);
-                  if (manifoldIsValid(man2)) {
-                    keep(man2, region);
-                    repairedOk = true;
-                    break;
-                  }
-                  manifoldDelete(man2);
-                }
-              } catch {
-                /* try the next distance, then warn */
-              }
-            }
-            if (repairedOk) continue;
+          let man: ManifoldSolid | null = null;
+          try {
+            man = solidFor(region.feat, region.depth);
+          } catch {
+            /* retry below with self-intersections repaired */
           }
-          // The artwork survived the boundary clip but no cutter came out. On a conformal zone the
-          // warp found no surface under part of the region (usually a baked boundary claiming more
-          // area than the chart covers); on a flat one, a region too degenerate to extrude. Same
-          // user-facing outcome as a cutter that fails to become a solid, so they share this message
-          // (warnings dedupe by text). Silence would drop the color with no explanation.
+          // Clipping dense line-work to the part boundary can leave the region self-touching:
+          // valid to turf, non-watertight to Manifold. Repair with Manifold's own 2D boolean
+          // engine and retry, widening the erode when the narrow one does not clear it.
+          //
+          // The ladder is the fix for a real failure rather than defensive retrying: a gravel
+          // photograph on the wheel put eleven regions through here, and one of them needed the
+          // wider distance. Ordered smallest first so a region that repairs at 0.01mm never pays
+          // the extra geometry loss, and it stops well inside what a nozzle can resolve.
+          //
+          // An edge slice stands on the part's outer wall and `keep` records it in
+          // `partEdgeColors` as "the rim prints in this color". Eroding it pulls it off that rim
+          // and leaves a rind of body material, so the wider rungs are withheld there: an edge
+          // slice gets only the narrowest one.
+          const rungs = region.edge ? REPAIR_ERODE_MM.slice(0, 1) : REPAIR_ERODE_MM;
+          // No notice when a wider rung is used. An inward offset of `e` removes only what is
+          // thinner than `2e`, so the 0.05mm rung cannot touch anything wider than a quarter of a
+          // 0.4mm nozzle: nothing printable is at stake. An earlier version raised one, and its
+          // test could never be false because an erode is monotone, so it fired on every
+          // escalation. See docs/findings/2026-08-20-extrude-repair-erode.md.
+          for (const erodeMm of rungs) {
+            if (man) break;
+            try {
+              man = solidFor(repairSelfIntersections(wasm, region.feat, erodeMm), region.depth);
+            } catch {
+              /* try the next distance, then warn */
+            }
+          }
+          if (man) {
+            keep(man, region);
+            continue;
+          }
+          // The artwork survived the boundary clip but no cutter came out, repaired or not: a region
+          // too degenerate to extrude, or on a conformal zone one the warp found no surface under
+          // (usually a baked boundary claiming more area than the chart covers). Silence would drop
+          // the color with no explanation.
           //
           // `continue`, not `return`: a color split across two depths must not lose its interior
           // recess because the edge slice failed to extrude, or the other way round.

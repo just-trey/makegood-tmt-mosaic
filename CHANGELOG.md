@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **A color dropped because the design is placed too small now says so.** It
   used to be dropped silently, since raising Detail can't bring it back there.
   The notice says to make the design or the part bigger.
+- **A chair zone now repairs a shape that touches itself before cutting it,
+  as flat parts already did.** It used to skip the repair and drop that color
+  with `Couldn't cut color … into …`.
 - **A pocket deeper than the wall under it is now cut at that wall, with a
   warning.** Depth was only checked against how far the whole part reaches
   behind its face. On the hubcap that is 8.12mm over a 3mm shell, so any depth

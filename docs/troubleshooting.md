@@ -75,10 +75,11 @@ it via **Feedback** or **Report a bug on GitHub**.
 Assembly mode clips each colour's region to the part's face, then extrudes it
 into a 3D pocket. Dense line-work can come out of that clip touching itself at a
 point: valid to the 2D maths, but not a sealed solid to the 3D engine. The app
-repairs it automatically via Manifold's own 2D boolean engine, offsetting the
-region by a hair and back to break the exact-touching topology, and retries
-once. If the warning survives, that pocket was skipped, and the same source fix
-as above usually resolves it.
+repairs it automatically via Manifold's own 2D boolean engine, shrinking the
+region by a hair to break the exact-touching topology, and retries: 0.01mm,
+then 0.05mm away from the part's edge. The chair's curved zones get the same
+repair as a flat part. If the warning survives, that pocket was skipped, and
+the same source fix as above usually resolves it.
 
 **How much of the colour you lose depends on the colour.** The warning is raised
 per region, not per colour, and the build carries on with the rest. A colour

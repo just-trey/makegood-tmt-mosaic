@@ -429,8 +429,7 @@ export interface AssemblyKind {
    * where tiling works but isn't fit to put in front of a user. Sticker placement is unaffected.
    *
    * Set on the chair body: `docs/tech-debt.md` measures one zone in Fill at 93.6s and "All zones"
-   * at over 900s with no cancel, and records `Zebra + Fill` losing a color on "Handle (left)",
-   * which prints that part without its black. Clear this flag once those close.
+   * at over 900s with no cancel. Clear this flag once that closes.
    */
   withholdFill?: boolean;
 }
