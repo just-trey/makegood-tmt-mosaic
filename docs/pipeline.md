@@ -100,19 +100,33 @@ distinct pair of numbers, naming every region raised to that pair. A positive
 depth thinner than a layer is honoured and only noted: a real choice on a
 fine-layer profile.
 
-**The deep end is bounded by the part, not by its wall.** `ZoneMapper.maxCutDepth()`
-gives the material behind the design face along Y, the axis the cutter extrudes
-down, less `CUT_FLOOR_MM` (0.05 mm) so a clamped cut stays a recess rather than
-landing coplanar with the back face. Past that the cut is clamped and named. Three
-cases decline instead of guessing, all returning `Infinity`: a conformal zone (it
-cuts along a normal field, not one axis), a face whose normal is not substantially
-along Y (the plane offset is then an X or Z distance), and a part too thin to hold
-the minimum.
+**The deep end is bounded twice, by the part and by the wall under each
+region.** Both measure along Y, the axis the cutter extrudes down, and both stop
+`CUT_FLOOR_MM` (0.05 mm) short so a clamped cut stays a recess rather than
+landing coplanar with the back face.
 
-**Wall thickness is still not checked.** It varies across a part and nothing
-measures it, so a pocket deeper than the wall in one spot exports as a part with a
-hole through it, silently. On the wheel the bound is 48.45 mm, so it catches a
-mistyped number and not a 20 mm pocket in a 3 mm wall.
+- **The part**: `ZoneMapper.maxCutDepth()`, how far the whole part reaches behind
+  its design face. Past it the cut is clamped and the warning names the part.
+- **The wall**: `FlatZoneMapper.resolveCutRegions` bounds each slice at the
+  setting by the thinnest wall anywhere under it ([wall.ts](../src/geometry/wall.ts)).
+  One prism cuts one depth, so the thinnest spot sets it. The warning names the
+  colour, the part and the wall.
+- The wall is the one that bites on shipped parts: the hubcap's part bound is
+  8.12 mm over a 3 mm shell, the footrest's 23.95 mm over 11.80 mm
+  (`scripts/measure-wall.ts`).
+- The wall is exact, not sampled: triangle corners, region corners and edge
+  crossings, over the surfaces a cut leaves the part through.
+- An edge slice and a cut-through part keep their own depth. Neither is at the
+  setting, and both cut through on purpose.
+
+**Three cases decline both bounds instead of guessing**, returning `Infinity` and
+warning nothing: a conformal zone (it cuts along a normal field, not one axis), a
+face whose normal is not substantially along Y or whose plane lands off the mesh,
+and a part too thin to hold the minimum. The wall alone also skips a region the
+face clip failed on, since it reaches past the face. A wall thinner than the
+0.20 mm minimum recess clamps to that minimum rather than declining: declining
+let a region touching one undercut edge take the full setting through the plate
+beside it. What stays unbounded is in [tech-debt.md](tech-debt.md).
 
 **Rotated copies** are supported (a wheel's two halves): the slice of the design
 landing on the copy is mapped back into the part's own print orientation.

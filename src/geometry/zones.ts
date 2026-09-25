@@ -1,4 +1,4 @@
-import { CUT_FLOOR_MM, MIN_CUT_DEPTH_MM } from './depth';
+import { CUT_FLOOR_MM, MIN_CUT_DEPTH_MM, depthDiffers } from './depth';
 import * as THREE from 'three';
 import * as turf from '@turf/turf';
 import type { AssemblyPart, PolyFeature } from '../types';
@@ -6,6 +6,7 @@ import type { ArtworkBuildInput } from './assembly';
 import { extrudeRegionToSoup, type ManifoldAPI } from './manifold';
 import { EDGE_TOUCH_TOL_MM, erodeBoundary, splitAtBoundary } from './edgeRegions';
 import { shapeToFeature } from './regions';
+import { buildWallField, minWallUnder, type WallField } from './wall';
 
 /** How far each cutter pokes above the face so the pocket opens cleanly at the surface. */
 export const OVERSHOOT_MM = 0.5;
@@ -283,13 +284,15 @@ export interface CutterOptions {
 
 /**
  * One slice of a color's region and the depth it is cut at. `edge` marks a slice that took a
- * part's edge-cut-through depth instead of the setting, so the caller can say which colors that
- * happened to without re-deriving the rule.
+ * part's edge-cut-through depth instead of the setting, and `wall` (the thinnest wall under it, mm)
+ * one cut shallower than the setting because of that wall, so the caller can say which colors
+ * either happened to without re-deriving the rule.
  */
 export interface CutRegion {
   feat: PolyFeature;
   depth: number;
   edge?: boolean;
+  wall?: number;
 }
 
 /** What `resolveCutRegions` needs to know about the region it is being handed. */
@@ -374,8 +377,9 @@ export interface ZoneMapper {
   /**
    * How a color's placed, already-clipped region actually gets cut: one entry per depth the zone
    * wants used, each carrying the slice of the region cut at it. Usually a single pass-through
-   * entry; a cut-through zone replaces the depth, and a zone with an edge rule splits the region
-   * into the polygons standing on its outer wall and the rest.
+   * entry; a cut-through zone replaces the depth, a zone with an edge rule splits the region
+   * into the polygons standing on its outer wall and the rest, and a flat zone cuts a slice
+   * shallower where the wall under it is thinner than the setting.
    *
    * The mapper answers with regions rather than a bare depth so nothing upstream has to know which
    * kind of zone it is holding — the caller extrudes whatever it is handed. Returning an empty
@@ -390,8 +394,8 @@ export interface ZoneMapper {
    * one face normal and can measure the part behind it; a conformal zone cuts along a whole normal
    * field and has no single axis to measure, so it declines.
    *
-   * **A bound on the part, never on its wall.** A recess shallower than this can still break
-   * through a thin one, and nothing here measures that (docs/tech-debt.md).
+   * **A bound on the part, not on its wall.** The wall under each region is resolveCutRegions'
+   * business, and bounds only where this one does.
    */
   maxCutDepth(): number;
   /** build the cutter geometry from a placed+clipped 2D feature */
@@ -430,6 +434,7 @@ export class FlatZoneMapper implements ZoneMapper {
   // Cached like every other per-part measurement here: it is asked once per colour per artwork
   // (16 scans of 53,904 vertices on a two-half wheel with an 8-colour palette) and cannot change.
   private maxCutDepthCache: number | null = null;
+  private wallFieldCache: WallField | null = null;
   private fillExtentCache: FillExtent | null | undefined;
 
   constructor(
@@ -604,8 +609,8 @@ export class FlatZoneMapper implements ZoneMapper {
    * build has ever read it, so adopting it here would give a dormant, user-editable field control
    * of cut depth as a side effect of a bug fix.
    *
-   * **A bound on the part, never on its wall.** A recess shallower than this can still break
-   * through a thin one, and nothing here measures that (docs/tech-debt.md).
+   * **A bound on the part, not on its wall.** On the hubcap this is 8.12mm over a 3mm shell
+   * (scripts/measure-wall.ts), so resolveCutRegions also bounds each region by the wall under it.
    */
   maxCutDepth(): number {
     if (this.maxCutDepthCache != null) return this.maxCutDepthCache;
@@ -650,6 +655,38 @@ export class FlatZoneMapper implements ZoneMapper {
     // flagged `edge`: that flag drives a notice about the *edge rule*, and saying it here would
     // announce a new behavior on the wheel cap, which has cut this way since it shipped.
     if (this.part.cutThrough) return [{ feat, depth: this.throughDepth() }];
+    // Asked by flag, never by comparing depths: an edge slice deliberately cuts the full shell,
+    // and on a 3mm shell a 3mm setting would read as equal to it.
+    return this.splitAtEdge(feat, depthSetting, opts).map((r) =>
+      r.edge ? r : this.boundByWall(r, opts),
+    );
+  }
+
+  /**
+   * Bounds a slice by the thinnest wall anywhere under it, less CUT_FLOOR_MM: a cutter is one
+   * prism, so anything deeper cuts through at that spot. Only where maxCutDepth() measured
+   * something, along the same axis, and only on a clipped region: an unclipped one reaches past the
+   * face and would be measured against whatever lies beside it.
+   *
+   * A wall too thin for the minimum recess still clamps, to the minimum. Declining there let a
+   * region touching one undercut edge cut the full setting through the 3mm plate beside it.
+   */
+  private boundByWall(r: CutRegion, opts?: CutRegionOptions): CutRegion {
+    if (!Number.isFinite(this.maxCutDepth()) || opts?.clipped === false) return r;
+    const pos = this.part.positions!;
+    const field = (this.wallFieldCache ??= buildWallField(pos, this.faceY, this.nsign));
+    const wall = minWallUnder(field, r.feat);
+    if (!Number.isFinite(wall)) return r;
+    const bound = Math.max(wall - CUT_FLOOR_MM, MIN_CUT_DEPTH_MM);
+    if (r.depth <= bound || !depthDiffers(bound, r.depth)) return r;
+    return { feat: r.feat, depth: bound, wall: Math.max(wall, 0) };
+  }
+
+  private splitAtEdge(
+    feat: PolyFeature,
+    depthSetting: number,
+    opts?: CutRegionOptions,
+  ): CutRegion[] {
     const edgeDepth = this.part.edgeCutThroughDepth;
     const boundary = this.boundary();
     if (edgeDepth == null || !boundary) return [{ feat, depth: depthSetting }];

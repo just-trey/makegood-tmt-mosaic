@@ -552,10 +552,9 @@ recess, no inlay, no message.
   `Depth for` with one colour and `Depths for` with several.
 - Two warnings only when two different depths were asked for: 0 on one row and
   -1 on another are separate facts, and each names its own colours.
-- **Nothing checks the depth against the wall**, which varies across a part, so
-  a depth deeper than the wall in one spot cuts a hole and exports silently.
-  "Part … has no geometry to export" only fires when the cut consumed the
-  _whole_ part, so its absence is not a report that the depth was safe.
+- **The deep end is checked separately**, against the part and the wall under
+  each colour. See "… deeper than "Wheel top" goes" and "… mm thick under it"
+  below. On the chair body nothing checks it.
 
 ## Troubleshooting: "TMT Mosaic couldn't save this session. Leaving now loses it" warnings
 
@@ -1320,9 +1319,9 @@ colour's row in the colour list shows the same number beside its Depth field
 **What to do.** Nothing, if the number was a slip. If you meant a deep pocket,
 the part is the limit, so there is nothing to raise it to.
 
-**This is not a wall check.** A part's wall varies across it, and a recess well
-under this limit can still break through a thin spot without any warning. Look
-at the cut in the 3D view, and in your slicer's preview, before printing.
+**This is not the wall check.** A part's wall varies across it, and a recess under
+this limit can still reach the back of a thin spot. That case has its own warning,
+"… mm thick under it" below, and this one stays quiet for it.
 
 **Some parts raise no limit at all, and cut silently to whatever you asked —
 this is not a bug, and both cases below are read straight from the code, not
@@ -1355,6 +1354,40 @@ guessed at from outside it:**
 and a colour on both is named in a pill for each. Colours clamped from the same
 depth setting share one pill per half; a colour given its own depth in the
 colour list gets its own.
+
+## Troubleshooting: "… is only … mm thick under it"
+
+Full form: `Depth for "#ff0000" was set to 5.00 mm, but "Hubcap" is only 3.00 mm
+thick under it. It was cut at 2.95 mm instead.`
+
+**What it means.** The part as a whole had room for the depth, but the wall
+under that colour doesn't. Cut as asked, the pocket would break out the back.
+It was cut 0.05 mm short of the thinnest wall anywhere under the colour instead.
+Over a wall thinner than 0.25 mm it is cut at the 0.20 mm minimum, which still
+reaches the back there. The colour's row in the colour list shows the same
+number ("cut at … ").
+
+- One depth per colour per part. A colour spread over thick and thin spots is
+  cut to the thinnest.
+- The shipped hubcap is the usual case: 8.12 mm deep at its clips, but a 3 mm
+  shell everywhere else.
+
+**What to do.** Nothing, if a recess this deep is fine. For a deeper pocket where
+the part is thicker, give that area its own colour. A colour that never reaches
+the thin spot keeps its full depth.
+
+**When it stays quiet**, and a pocket can still break through:
+
+- **The chair body.** Its curved zones aren't measured.
+- **The part-wide checks declined.** The same cases as "… deeper than "Wheel
+  top" goes" above: a sideways or tilted face, a face plane off the part.
+- **Cut-through parts and edge regions.** They go the whole way through on
+  purpose.
+- **A colour that couldn't be trimmed to the face.** That has its own warning,
+  "Clipping color region to the design face failed…".
+
+Grouped like the part-wide warning: one pill per part per pair of numbers,
+naming every colour that shares it.
 
 ## Troubleshooting: "… zones still blank" notices (assembly mode)
 

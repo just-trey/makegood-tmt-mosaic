@@ -11,6 +11,7 @@ import {
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
+  thinWallWarning,
   tooDeepWarning,
   zeroDepthWarning,
   type PartDepthClamp,
@@ -1169,6 +1170,9 @@ export async function buildAssemblyGeometry(
   // Same staging, for a depth clamped by a part's maxCutDepth() instead of raised from zero — see
   // addPartTooDeepClamp. Keyed with the part name, unlike zeroDepthRaises: the bound is per-part.
   const tooDeepClamps = new Map<string, PartDepthClamp>();
+  // And for a region cut shallower than that because the wall under it is thinner. A separate
+  // message, because "deeper than the part goes" is false of a pocket the part had room for.
+  const thinWallClamps = new Map<string, PartDepthClamp>();
   // The depth actually cut per palette index, for the colour list's Depth field (display-only,
   // docs/tech-debt.md). Keyed by palette index rather than key/label, matching every other
   // build-wide colour map here.
@@ -1387,10 +1391,8 @@ export async function buildAssemblyGeometry(
         const raised = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
         // And bounded above by how far this part actually extends behind its design face. Without
         // this there was no upper bound at all: 20 mm and 9999 mm on the wheel both built and
-        // exported with no warning.
-        //
-        // **Not a wall-thickness check.** A recess shallower than this can still break through a
-        // thin wall; measuring that is still owed (docs/tech-debt.md). This bounds the absurd.
+        // exported with no warning. The wall under each region bounds it further, per region, in
+        // resolveCutRegions below.
         const depthSetting = Math.min(raised, mapper.maxCutDepth());
         const label = regionLabel(c.hex, c.isMerge, c.members.length);
         // One entry per depth this zone wants, each carrying the slice cut at it, usually just one.
@@ -1408,15 +1410,22 @@ export async function buildAssemblyGeometry(
         // cut, the failure CLAUDE.md's shared-value rule exists to catch (`some`, not `every`,
         // because a split color is cut at two depths at once and only the matching slice counts).
         const landedAtSetting = regions.some((r) => !depthDiffers(r.depth, depthSetting));
+        // A slice the wall under it cut shallower is still the setting, bounded, so the colour list
+        // shows it the same way it shows the part bound.
+        const wallCuts = regions.filter((r) => r.wall != null);
+        const wallDepths = wallCuts.map((r) => r.depth);
         // The depth the colour list's Depth field shows, display-only (docs/tech-debt.md): gated
         // the same way, so a cutThrough or all-edge part (which discards depthSetting entirely)
         // never reports a recess it did not cut. The minimum across parts/zones, so a colour
         // landing on two parts at two depths shows the more-clamped one rather than whichever ran
         // last.
-        if (landedAtSetting) {
+        if (landedAtSetting || wallDepths.length) {
+          const cut = Math.min(landedAtSetting ? depthSetting : Infinity, ...wallDepths);
           const prev = colorAppliedDepth.get(ci);
-          colorAppliedDepth.set(ci, prev == null ? depthSetting : Math.min(prev, depthSetting));
+          colorAppliedDepth.set(ci, prev == null ? cut : Math.min(prev, cut));
         }
+        for (const r of wallCuts)
+          addPartTooDeepClamp(thinWallClamps, label, part.name, raised, r.depth, r.wall);
         if (requested <= 0) addZeroDepthRaise(zeroDepthRaises, label, requested, depthSetting);
         // Gated on what the mapper did with the number, exactly like the sub-layer note below, and
         // for the same reason: a cutThrough part discards the setting and holes the whole way
@@ -1800,6 +1809,8 @@ export async function buildAssemblyGeometry(
     warnBuild(zeroDepthWarning(r.labels, r.requested, r.raisedTo));
   for (const c of tooDeepClamps.values())
     warnBuild(tooDeepWarning(c.labels, c.partName, c.requested, c.cutAt));
+  for (const c of thinWallClamps.values())
+    warnBuild(thinWallWarning(c.labels, c.partName, c.requested, c.cutAt, c.wall!));
   // Once, after every part: one notice naming every color the edge rule took the full way through.
   // Grouped by cut depth, a single value in practice (one part has the rule) but per-part in the
   // model, so grouping keeps the message honest if a second such part lands.

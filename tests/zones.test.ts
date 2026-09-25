@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { FlatZoneMapper, implicitZoneFor, type DesignPlacement } from '../src/geometry/zones';
 import { getManifold } from '../src/geometry/manifold';
+import { buildHubcapBody } from '../src/geometry/hubcap';
+import { detectFlatPatches, extractPatchBoundary } from '../src/geometry/meshparts';
 import type { AssemblyPart, PolyFeature } from '../src/types';
+import {
+  readMesh,
+  // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
+} from '../scripts/lib/mesh.mjs';
 
 /** An axis-aligned rectangle as a turf polygon feature, in the face's own X/Z mm frame. */
 function square(x0: number, y0: number, x1: number, y1: number): PolyFeature {
@@ -660,5 +666,267 @@ describe('maxCutDepth', () => {
   it('declines when the part has no mesh yet', () => {
     const bare = boxPart({ positions: null as unknown as Float32Array });
     expect(new FlatZoneMapper(bare, [], false).maxCutDepth()).toBe(Infinity);
+  });
+});
+
+/**
+ * A part extruded along Z from an X/Y cross-section, with the box's design face (y=10, 40mm
+ * square) on top. Profiles are listed counter-clockwise; ExtrudeGeometry winds them outward.
+ */
+function profilePart(profile: [number, number][], overrides: Partial<AssemblyPart> = {}) {
+  const shape = new THREE.Shape(profile.map(([x, y]) => new THREE.Vector2(x, y)));
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 40,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  geo.translate(0, 0, -20);
+  const flat = geo.index ? geo.toNonIndexed() : geo;
+  return boxPart({
+    name: 'stepped',
+    positions: Float32Array.from(flat.attributes.position.array as Float32Array),
+    ...overrides,
+  });
+}
+
+/** A 3mm plate (y 7..10), with a solid block under its +X quarter reaching down to y=-15. */
+const STEPPED: [number, number][] = [
+  [-20, 7],
+  [10, 7],
+  [10, -15],
+  [20, -15],
+  [20, 10],
+  [-20, 10],
+];
+
+/** 25mm deep at both X ends, with a 10mm channel up the middle leaving a 3mm wall (y 7..10). */
+const CHANNEL: [number, number][] = [
+  [-20, -15],
+  [-5, -15],
+  [-5, 7],
+  [5, 7],
+  [5, -15],
+  [20, -15],
+  [20, 10],
+  [-20, 10],
+];
+
+/**
+ * The per-part bound is how far the whole part reaches behind its face: 24.95mm on both fixtures
+ * here, over a 3mm wall under most of the face. A 20mm pocket passes that bound and must still be
+ * stopped by the wall.
+ */
+describe('the wall under a cut region', () => {
+  it('clamps a pocket deeper than the wall under it, which the part bound allows', () => {
+    const m = new FlatZoneMapper(profilePart(STEPPED), [], false);
+    expect(m.maxCutDepth()).toBeCloseTo(25 - 0.05, 4);
+    const feat = square(-15, -5, -5, 5);
+    const regions = m.resolveCutRegions(feat, 20);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].feat).toBe(feat);
+    expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
+    expect(regions[0].wall).toBeCloseTo(3, 4);
+  });
+
+  // Per region, not the part's thinnest spot: a region standing only on the block keeps its depth.
+  it('leaves a region over thick material at the setting', () => {
+    const m = new FlatZoneMapper(profilePart(STEPPED), [], false);
+    const feat = square(12, -5, 18, 5);
+    expect(m.resolveCutRegions(feat, 20)).toEqual([{ feat, depth: 20 }]);
+  });
+
+  it('leaves a depth the wall can hold alone', () => {
+    const m = new FlatZoneMapper(profilePart(STEPPED), [], false);
+    const feat = square(-15, -5, -5, 5);
+    expect(m.resolveCutRegions(feat, 2)).toEqual([{ feat, depth: 2 }]);
+  });
+
+  // Every corner of this region stands on 25mm of material, and so does every vertex of the thin
+  // ceiling's triangles that lies inside it: none do. Only where the region's edges cross the
+  // channel's does the 3mm wall show. A check sampling vertices would pass this and cut through.
+  it('finds a thin wall that only the edges of the region cross', () => {
+    const m = new FlatZoneMapper(profilePart(CHANNEL), [], false);
+    const regions = m.resolveCutRegions(square(-8, -5, 8, 5), 20);
+    expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
+    expect(regions[0].wall).toBeCloseTo(3, 4);
+  });
+
+  // The other way round: the channel's ceiling lies wholly inside the region.
+  it('finds a thin wall lying wholly inside the region', () => {
+    const m = new FlatZoneMapper(profilePart(CHANNEL), [], false);
+    const regions = m.resolveCutRegions(square(-8, -25, 8, 25), 20);
+    expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
+  });
+
+  // Each polygon of a colour is part of one cut at one depth, so a colour with one polygon over
+  // the thin plate is bounded by it, wherever its other polygons stand.
+  it('bounds a multi-polygon color by its thinnest polygon', () => {
+    const m = new FlatZoneMapper(profilePart(STEPPED), [], false);
+    const regions = m.resolveCutRegions(
+      multi([square(12, -5, 18, 5), square(-15, -5, -12, -2)]),
+      20,
+    );
+    expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
+  });
+
+  // A face pointing -Y cuts up, so its wall is measured up from it.
+  it('measures up from a face pointing -Y', () => {
+    const flipped: [number, number][] = STEPPED.map(([x, y]) => [x, -y]);
+    flipped.reverse();
+    const m = new FlatZoneMapper(
+      profilePart(flipped, { patchNormal: [0, -1, 0], topZ: 10 }),
+      [],
+      false,
+    );
+    expect(m.nsign).toBe(-1);
+    const regions = m.resolveCutRegions(square(-15, -5, -5, 5), 20);
+    expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
+  });
+
+  // The three cases the part bound declines on stay declined here too: there is no one axis to
+  // measure along, or no face plane on the mesh to measure from.
+  it('clamps nothing where the part bound declines', () => {
+    const sideFacing = profilePart(STEPPED, { patchNormal: [0, 0, 1], topZ: 20 });
+    const offMesh = profilePart(STEPPED, { patchNormal: [0, 0.15, 0.99], topZ: 29.7 });
+    const feat = square(-15, -5, -5, 5);
+    for (const part of [sideFacing, offMesh]) {
+      const m = new FlatZoneMapper(part, [], false);
+      expect(m.maxCutDepth()).toBe(Infinity);
+      expect(m.resolveCutRegions(feat, 20)).toEqual([{ feat, depth: 20 }]);
+    }
+  });
+
+  // The plate's left side is undercut, so its wall runs to 0mm at the face's edge. A region
+  // reaching that edge cannot hold even the minimum recess there, and must still not take the
+  // full setting through the 3mm plate beside it: it clamps to the minimum and names the wall.
+  it('clamps to the minimum recess where the wall under the region is thinner than that', () => {
+    const undercut: [number, number][] = [
+      [-18, 7],
+      [10, 7],
+      [10, -15],
+      [20, -15],
+      [20, 10],
+      [-20, 10],
+    ];
+    const m = new FlatZoneMapper(profilePart(undercut), [], false);
+    const regions = m.resolveCutRegions(square(-20, -5, -10, 5), 20);
+    expect(regions[0].depth).toBeCloseTo(0.2, 6);
+    expect(regions[0].wall).toBeCloseTo(0, 6);
+    // Away from the edge the same plate bounds at its 3mm.
+    expect(m.resolveCutRegions(square(-15, -5, -10, 5), 20)[0].depth).toBeCloseTo(2.95, 4);
+  });
+
+  // A region the clip failed on reaches past the face, over whatever lies beside it, so the wall
+  // it would measure is not the face's. The clip failure is already warned about.
+  it('leaves an unclipped region at the setting', () => {
+    const m = new FlatZoneMapper(profilePart(STEPPED), [], false);
+    const feat = square(-15, -5, -5, 5);
+    expect(m.resolveCutRegions(feat, 20, { clipped: false })).toEqual([{ feat, depth: 20 }]);
+  });
+
+  // The shipped case. The hubcap's clips hang 5.2mm under its 3mm shell, so the part bound is
+  // 8.12mm, and every depth from 3mm up to that cut through the shell with no warning.
+  it('clamps a pocket in the shipped hubcap to its 3mm shell', { timeout: 30000 }, async () => {
+    const clips = await readMesh(
+      new URL('../public/stl/hubcap-clips.3mf', import.meta.url).pathname,
+    );
+    const body = await buildHubcapBody({ kind: 'circle', diameterMm: 220 }, clips);
+    // The face as the app picks it: the role prefers +Y, and topZ is that patch's own offset.
+    const face = detectFlatPatches(body.positions).find((p) => p.normal[1] > 0.9)!;
+    const m = new FlatZoneMapper(
+      boxPart({ name: 'Hubcap', positions: body.positions, topZ: face.offset }),
+      [],
+      true,
+    );
+    expect(m.maxCutDepth()).toBeCloseTo(8.12, 2);
+    const regions = m.resolveCutRegions(square(40, -10, 60, 10), 5);
+    expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
+    expect(regions[0].wall).toBeCloseTo(3, 3);
+  });
+
+  // A chamfer climbing to the face meets it at 0mm along the face's edge. It faces up, back into
+  // the part, so no cut leaves through it: read as a wall, it would pin every region reaching the
+  // edge to the minimum recess.
+  it('reads a chamfer up to the face as no wall', () => {
+    const chamfered: [number, number][] = [
+      [-20, 7],
+      [10, 7],
+      [10, -15],
+      [20, -15],
+      [20, 10],
+      [-18, 10],
+      [-20, 8],
+    ];
+    const m = new FlatZoneMapper(profilePart(chamfered), [], false);
+    const regions = m.resolveCutRegions(square(-18, -5, -10, 5), 20);
+    expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
+  });
+
+  // The part's own side wall at the face's edge, leaning in under the face by 0.00001mm: float
+  // noise on a real mesh does this. Counted as a surface the cut leaves through, it read as a 0mm
+  // wall along the edge, with the same effect as the chamfer above.
+  it('reads a side wall a hair off vertical as no wall', () => {
+    const leaning: [number, number][] = [
+      [-19.99999, 7],
+      [10, 7],
+      [10, -15],
+      [20, -15],
+      [20, 10],
+      [-20, 10],
+    ];
+    const m = new FlatZoneMapper(profilePart(leaning), [], false);
+    const regions = m.resolveCutRegions(square(-20, -5, -10, 5), 20);
+    expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
+  });
+
+  // The shipped footrest's design face, whole, as a region: 11.80mm of wall under it against a
+  // 23.95mm part bound. It also carries a downward-facing sliver lying in the face's own plane at
+  // one corner of the outline, which is face, not wall.
+  it('clamps a region covering the shipped footrest face to the wall under it', async () => {
+    const positions = (await readMesh(
+      new URL('../public/stl/footrest.3mf', import.meta.url).pathname,
+    )) as Float32Array;
+    const face = detectFlatPatches(positions).find((p) => p.normal[1] > 0.9)!;
+    const m = new FlatZoneMapper(
+      boxPart({
+        name: 'Footrest',
+        positions,
+        topZ: face.offset,
+        patchNormal: face.normal,
+        boundaryLoops: extractPatchBoundary(positions, face.triIndices),
+      }),
+      [],
+      true,
+    );
+    expect(m.maxCutDepth()).toBeCloseTo(23.95, 2);
+    const regions = m.resolveCutRegions(m.boundary()!, 20);
+    expect(regions[0].depth).toBeCloseTo(11.8 - 0.05, 2);
+    expect(regions[0].wall).toBeCloseTo(11.8, 2);
+  });
+
+  it('leaves a cut-through part at the depth it chose', () => {
+    const through = new FlatZoneMapper(
+      profilePart(STEPPED, { cutThrough: true, cutThroughDepth: 3 }),
+      [],
+      false,
+    );
+    expect(through.resolveCutRegions(square(-15, -5, -5, 5), 20)).toEqual([
+      { feat: expect.anything(), depth: 3 },
+    ]);
+  });
+
+  // The hubcap silhouette's rule: an edge slice cuts the full 3mm shell on purpose, which the wall
+  // under it would otherwise clamp to 2.95mm and leave a skin of base colour around the rim.
+  it('leaves an edge slice at the full depth the edge rule asks for', async () => {
+    const wasm = await getManifold();
+    const m = new FlatZoneMapper(profilePart(STEPPED, { edgeCutThroughDepth: 3 }), [], false, wasm);
+    const regions = m.resolveCutRegions(
+      multi([square(-20, -5, -15, 5), square(-10, -5, -5, 5)]),
+      20,
+    );
+    expect(regions.find((r) => r.edge)).toEqual(expect.objectContaining({ depth: 3, edge: true }));
+    const interior = regions.find((r) => !r.edge)!;
+    expect(interior.depth).toBeCloseTo(3 - 0.05, 4);
+    expect(interior.wall).toBeCloseTo(3, 4);
   });
 });

@@ -186,48 +186,26 @@ checks that a tower lands on the bed, not that a given footprint clears the
 edge. Both reference files put a tower at exactly x = 15 on a 256mm bed,
 which a center-based check would wrongly reject.
 
-## Assembly mode bounds a depth by the part, not by its wall
+## A depth on the chair body, or on a face the Y axis can't measure, has no upper bound
 
-The 2026-08-24 cycle's **T0-3**, half closed.
+A pocket deeper than the wall cuts a hole through it and exports with no depth
+warning. How thin the chair's walls get is **unmeasured**.
 
-**What was wrong.** Assembly mode had no upper bound on recess depth at all.
-Depth 20mm and 9999mm on the wheel both built and exported with **zero
-warnings**, while flat mode clamped and warned for the same input, and
-`geometry/depth.ts`'s own comment stated the contract as "a zero is raised and a
-too-deep value clamped, so both warn". That second half was false for every part
-a user could select, and the flat modes leaving the UI made the unbounded path
-the only reachable one.
+- A flat face bounds each colour region by the wall under it
+  (`FlatZoneMapper.boundByWall`), inside the part-wide bound (`maxCutDepth`).
+- A conformal zone declines both, and raises nothing. Its cut follows a normal
+  field, so there is no one axis to measure along.
+- A flat face declines both when its normal is not near Y or its plane lands
+  off the mesh. Such a face already gets the "isn't vertical" warning, but not a
+  depth one. In `scripts/measure-wall.ts`'s table: the wheel's ranks 3-5, the
+  footrest's 2-5.
+- Every shipped default face is flat and bounded: wheel, footrest and hubcap
+  (`node_modules/.bin/vite-node scripts/measure-wall.ts`). The chair body is the
+  one shipped part with conformal zones.
 
-**What is fixed.** `ZoneMapper.maxCutDepth()` bounds the setting, and a clamp is
-warned about by name. The flat mapper measures how far the part extends behind
-its design face **along Y, the axis `buildCutter` extrudes down**, off the loaded
-mesh. Measuring along the face normal instead was tried and is wrong: on
-wheel-half's -Z patch it read 139.88mm against 24.13mm of real material. A face
-whose normal is not substantially along Y declines outright, since the plane
-offset is then an X or Z distance and there is nothing to measure. The conformal
-mapper declines too: it cuts along a normal field rather than one axis.
-
-**What is not.** That bound is the part, not the wall. On the wheel it is
-**48.45mm**, so a mistyped 9999 is caught and a 20mm pocket in a 3mm wall is not.
-**The wall is what closes the rest, and nothing measures it.** A part's wall
-varies across it, so a pocket deeper than the wall in one spot still cuts a hole
-clean through and exports without comment. That is the open half of this item, not
-a separate one: the prose that used to carry it lived in the README's limitations
-list and now points here.
-
-**Three cases decline outright** rather than guessing, and raise no warning at
-all: a conformal zone (it cuts along a normal field, not one axis), a face whose
-plane lands outside the mesh, and a part too thin to hold the minimum. On those
-the deep end is unbounded exactly as before.
-
-Deliberately not solved with a constant. `AssemblyPart.baseDepth` states "mm of
-material behind the face this replaces" and looks like the answer, but nothing in
-the build has ever read it, so adopting it would have given a dormant,
-user-editable field control of cut depth as a side effect of a bug fix.
-
-Closing it means measuring the wall under each cut region, most likely by casting
-into the mesh along the cut direction, and comparing that against the setting per
-region rather than per part.
+Closing it means measuring the material behind each point of a region along the
+normal the warp cuts it at, then clamping and warning the way the flat mapper
+does.
 
 ## Rebuild performance needs ongoing work — this is a heavy application
 
