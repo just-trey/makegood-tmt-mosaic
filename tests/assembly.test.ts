@@ -410,7 +410,7 @@ describe('buildAssemblyGeometry', () => {
         positions,
         topZ: patch.offset,
         patchNormal: patch.normal,
-        boundaryLoops: extractPatchBoundary(positions, patch.triIndices),
+        boundaryLoops: extractPatchBoundary(positions, patch.triIndices).loops,
         cutThrough: role.cutThrough,
         cutThroughDepth: role.cutThroughDepth,
       });

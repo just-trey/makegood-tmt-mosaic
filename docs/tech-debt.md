@@ -870,45 +870,6 @@ were: a generated part has no stable mesh to seal a pose against, so every
 arrangement is only ever verified for the parameters it was checked at. More
 entries narrow the gap; they don't close the category.
 
-## A patch boundary that meets itself at a point traces as an open chain
-
-`extractPatchBoundary` ([src/geometry/meshparts.ts](../src/geometry/meshparts.ts)) keys its edge
-map by **vertex**. Where two boundary loops of one patch touch at a single point, one loses its
-outgoing edge, the walk runs off the end, and the truncated chain is returned as if it were a ring.
-
-**What it costs.** `applyAsmPatchChoice` now keeps every loop and
-[zones.ts](../src/geometry/zones.ts) nests them by containment depth, so a truncated chain that
-encloses area can be read as a hole where the face is solid, or as solid face inside a real hole.
-The artwork is then clipped to the wrong shape, and on a hubcap cut to a silhouette the edge rule
-reads the wrong rims as the part's outer wall.
-
-**Measured.** Over every packed part's first six patches, 18 of 114 contain a chain that does not
-close. All 18 are chair pieces, which take artwork through baked zones instead, plus `wheel-half`
-patch 2 (its -Y back: 7 closed chains and 99 open ones). **None of the four kinds' actual design
-faces is affected**: wheel-half patch 0, wheel-hub-cap patch 0 and footrest patch 1 are 1, 1 and 3
-loops with no open chain at all, and the exported wheel and chair are byte-identical across the
-loop-set change. So this is reachable by choosing a non-default design face, or by dropping a
-pinched mesh on a role, and not by the shipped workflow.
-
-**Why it isn't fixed here.** Two attempts were made while closing the loop-set item and both
-introduced worse bugs than the one they closed, which is what argued for splitting it out:
-
-- Discarding chains that do not close, marking vertices consumed as the walk goes: a chain running
-  off the end ate a genuine loop it had entered, and both were lost. Six patches returned no loops
-  at all, and `chair-seat-center` patch 0 dropped its 2101.5 mm² outline and kept a 1097.1 mm²
-  sub-loop as the face.
-- Consuming vertices only on close: a chain entering a cycle it did not start on then runs to the
-  100000-iteration guard. `chair-seat-center` patch 0 is the **default** patch, hit on every chair
-  load, and went from under 2 ms to 317 ms, emitting 1.6 M points of garbage; `wheel-half` patch 2
-  went to 2162 ms.
-
-**What closing it takes.** Key the walk by directed edge rather than by vertex, so a pinch vertex
-keeps one outgoing edge per loop, and pair incoming with outgoing by angle around that vertex so
-the loops are separated the way the geometry actually runs. A per-walk visited set merged into the
-global one only on close, so a failed walk consumes nothing and cannot spin. Then decide what a
-patch with no closed ring should do: today it yields a boundary that is wrong rather than absent,
-and callers only ask whether a face was detected at all.
-
 ## Boundary fringe threads survive the trace
 
 A hair-thin thread of a third color can hug a high-contrast boundary in a traced image

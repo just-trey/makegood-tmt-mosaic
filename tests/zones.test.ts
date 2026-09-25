@@ -1030,7 +1030,7 @@ describe('the wall under a cut region', () => {
         positions,
         topZ: face.offset,
         patchNormal: face.normal,
-        boundaryLoops: extractPatchBoundary(positions, face.triIndices),
+        boundaryLoops: extractPatchBoundary(positions, face.triIndices).loops,
       }),
       [],
       true,
