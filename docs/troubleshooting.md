@@ -146,10 +146,11 @@ in the 3D preview and in your slicer before printing: the cut is attempted,
 not guaranteed correct.
 
 **Why it's rare in practice.** Every shipped part's default face is
-horizontal, so ordinary use never reaches this. See
-[tech-debt.md](tech-debt.md), "The placement frame's angle is unrelated to
-the face it acts on…", for which of the library's other face choices land
-here and what they cut when they do.
+horizontal, so ordinary use never reaches this. On a face pointing sideways
+the placement frame is drawn on that face in amber: the design doesn't land
+on it. The
+[findings report](findings/2026-08-24-placement-frame-angle.md) lists which
+of the library's other face choices land here.
 
 ## Troubleshooting: "isn't a watertight/manifold mesh" warnings (assembly mode)
 

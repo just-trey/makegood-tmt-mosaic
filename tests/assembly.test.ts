@@ -21,6 +21,13 @@ import { getPrinter } from '../src/export/printers';
 import { partObjectSummaries } from './lib/threemf';
 import type { AssemblyPart, AssemblyPartOutput, ParsedSVG } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
+import { detectFlatPatches, extractPatchBoundary } from '../src/geometry/meshparts';
+import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
+import { readFileSync } from 'node:fs';
+import {
+  read3MF,
+  // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
+} from '../scripts/lib/mesh.mjs';
 
 function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   const geo = new THREE.BoxGeometry(40, 10, 40).toNonIndexed();
@@ -379,6 +386,39 @@ describe('buildAssemblyGeometry', () => {
       clearWarnings();
       await buildAssemblyGeometry(baseInput({ offX: 1000, offZ: 1000 }));
 
+      expect(WARNINGS.map((w) => w.message)).toContainEqual(
+        expect.stringContaining(`"#ff0000" lands entirely off the part and won't print`),
+      );
+    },
+  );
+
+  // A cut-through part skips the clip, so only the boolean can notice the face is sideways: the
+  // prism stands at the side face's plane offset, which is no height on this part, and misses it.
+  it(
+    'warns rather than cutting when the hub cap is set to its sideways face',
+    { timeout: 30000 },
+    async () => {
+      const role = ASSEMBLY_KINDS.flatMap((k) => k.roles).find((r) => r.id === 'wheel-hub-cap')!;
+      const positions: Float32Array = await read3MF(
+        readFileSync(new URL('../public/stl/wheel-hub-cap.3mf', import.meta.url)),
+      );
+      const patches = detectFlatPatches(positions).slice(0, 6);
+      const patch = patches.find((p) => Math.abs(p.normal[1]) <= 0.1)!;
+      expect(patch).toBeDefined();
+      const part = boxPart({
+        name: 'Hub cap',
+        positions,
+        topZ: patch.offset,
+        patchNormal: patch.normal,
+        boundaryLoops: extractPatchBoundary(positions, patch.triIndices),
+        cutThrough: role.cutThrough,
+        cutThroughDepth: role.cutThroughDepth,
+      });
+      clearWarnings();
+
+      const built = (await buildAssemblyGeometry(baseInput({ parts: [part] })))!;
+
+      expect(built.partOutputs[0].inlaySoups).toEqual({});
       expect(WARNINGS.map((w) => w.message)).toContainEqual(
         expect.stringContaining(`"#ff0000" lands entirely off the part and won't print`),
       );

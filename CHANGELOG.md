@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   behind its face. On the hubcap that is 8.12mm over a 3mm shell, so any depth
   from 3mm up cut clean through and exported without a word. The warning names
   the color, the part and the wall. The chair body is still unchecked.
+- **The placement frame now sits on the design face you pick, and turns amber
+  on a side face, where the design can't land.** Picking a side face under
+  "Advanced: per-part face & alignment" used to draw the frame flat and
+  floating beside the part, in the normal color, on 8 of the 18 faces offered.
 
 - **A Diameter, Width or Height field with a non-numeric authored minimum no
   longer rejects every value you type.** Custom-part markup that set a
