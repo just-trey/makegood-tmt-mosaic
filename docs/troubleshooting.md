@@ -398,9 +398,35 @@ everywhere. Moving or rescaling cannot clear it. Switch one to Sticker, move it
 elsewhere, or remove it.
 
 A fill _under_ a sticker is not flagged, because a pattern background with a
-design on top is a real workflow. It has the same overlapping-inlay problem
-where the sticker's colours differ from the pattern's. Known gap, also in
-[tech-debt.md](tech-debt.md).
+design on top is a real workflow. The fill is cut back from under the sticker's
+colours, so the two never share space in the export.
+
+## Troubleshooting: "Couldn't fit … of … around the design on top of it on …"
+
+Full text: _"Couldn't fit "…" of "…" around the design on top of it on "…".
+Where they meet, both print in the same space. Move the design on top
+slightly."_
+
+**What it means.** A Fill is cut back from under every Sticker on the same
+part, so the sticker shows through cleanly. For this one fill colour on this
+part, that trim failed. The colour is kept whole instead, so where it lies under
+the sticker the export carries two inlays in the same space, and the slicer
+picks between them. Every other colour and part is unaffected.
+
+**What to do.** Move the design on top a millimetre and let it rebuild: the
+trim fails on exact coordinates, and a new position usually clears it. If it
+keeps failing, please report it via **Feedback** or **Report a bug on
+GitHub**.
+
+## Troubleshooting: "… is hidden everywhere by the designs on top of it, so it isn't cut" notice
+
+Full text: _""…" is hidden everywhere by the designs on top of it, so it isn't
+cut."_
+
+**This is not a warning.** A Fill is cut back from under every Sticker on its
+part. This colour of the fill only appears where stickers cover it, on every
+part, so none of it is left to cut. It takes no filament slot. Move or shrink
+the sticker if you want the colour to show.
 
 ## Troubleshooting: "… crosses the centre line of …" notice (assembly mode)
 

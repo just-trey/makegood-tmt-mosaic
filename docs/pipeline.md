@@ -148,6 +148,12 @@ share, clipped to it. That second number bounds the real artwork-on-artwork
 overlap from above, which clears a design nested in another's hollow without
 putting a boolean on the rebuild.
 
+**A Fill under a Sticker is not an overlap: the fill yields.** Each fill colour
+has every sticker's placed ink on its zone subtracted before it is extruded,
+so the background is never cut where a design sits on it. A fill colour with
+nothing left anywhere gets a notice; a failed subtraction keeps that colour
+whole and warns.
+
 **Design zones: a part can carry more than one design surface.** Baked ahead of
 time by `scripts/bake-zones.mjs`. The chair body has eight (left, right, front,
 back, seat-left, seat-right, wing-left, wing-right). The seat pan is in none of

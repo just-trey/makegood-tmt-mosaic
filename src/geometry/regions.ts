@@ -432,18 +432,30 @@ export function safeDiffAll(
   clippings: (PolyFeature | null)[],
   label?: string,
 ): PolyFeature | null {
+  const r = differenceAllChecked(subject, clippings);
+  if (r.trimmed) return r.feat;
+  let acc: PolyFeature | null = r.feat;
+  for (const c of clippings) acc = safeDiff(acc, c, label);
+  return acc;
+}
+
+/**
+ * The one sweep of `safeDiffAll`, with no fallback and no warning: the subject back whole and
+ * `trimmed: false` when the sweep fails, for a caller that names the failure itself.
+ */
+export function differenceAllChecked(
+  subject: PolyFeature | null,
+  clippings: (PolyFeature | null)[],
+): { feat: PolyFeature | null; trimmed: boolean } {
   const s = cleanFeature(subject);
-  if (!s) return null;
+  if (!s) return { feat: null, trimmed: true };
   const live = clippings.map(cleanFeature).filter((f): f is PolyFeature => !!f);
-  if (!live.length) return s;
+  if (!live.length) return { feat: s, trimmed: true };
   const r = naryOpWithRetry(
     (a) => polygonClipping.difference(a[0], ...a.slice(1)),
     [toGeom(s), ...live.map(toGeom)],
   );
-  if (r.ok) return r.val ?? null;
-  let acc: PolyFeature | null = s;
-  for (const c of live) acc = safeDiff(acc, c, label);
-  return acc;
+  return r.ok ? { feat: r.val ?? null, trimmed: true } : { feat: s, trimmed: false };
 }
 
 /**

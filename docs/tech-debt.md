@@ -245,6 +245,16 @@ needs the accumulator-or-worker fix.
 Sticker on the chair is unaffected and was measured at 19.5s for a full
 five-zone rebuild on the same box, which is why only Fill was withheld.
 
+**A Fill now cuts itself back from under every sticker on its zone** — one
+polygon difference per fill color per part. On the wheel it measures 0.3-0.6s of
+the build with a three-band sticker and 0.9-1.1s with `snoopy.svg`
+(`node_modules/.bin/vite-node scripts/bench-fill-yield.ts [sticker.svg]`, the
+`yield ms` column). **Unmeasured on the chair**, where Fill is withheld. Expect
+it to grow with the fill's points per part: the Left zone's `uvBounds` are
+642x509mm (`public/stl/chair-body-zones.json`) against the wheel's 276mm
+design circle, over four parts: a few seconds on the 93.6s single-zone figure
+above, estimated. Measure it before clearing `withholdFill`.
+
 **Don't quote that 19.5s without saying at what design size.** It used a design
 covering the zones;
 [docs/findings/zone-rebuild-cost.md](findings/zone-rebuild-cost.md) reproduces it
@@ -502,42 +512,6 @@ a fixed working size it helps exactly one and hurts or no-ops the rest.
 the untested candidate rather than a rejected one. Whatever the test, it needs raster inputs
 resampled to several sizes on disk, since no mode here can produce them, and the traces need looking
 at rather than counting: region count cannot tell a cleaner trace from a coarser one.
-
-## A Fill under a sticker overlaps just like two stickers do, and isn't checked
-
-The overlap check in
-[src/geometry/designOverlap.ts](../src/geometry/designOverlap.ts) compares
-two stickers by their placed footprints and then by how much of each one's
-ink reaches the footprint they share, and treats two Fills on one zone as
-always overlapping. It deliberately says nothing about a Fill paired with a
-sticker, because a pattern background with a design on top is a real
-workflow and flagging it would fire on the intended use.
-
-But the geometry doesn't care about intent: the sticker's pockets and the
-fill's pockets are separate cutters, so wherever the sticker's colors differ
-from the pattern's underneath it, the export carries two inlay solids in the
-same volume — exactly what the sticker-vs-sticker warning exists for. It is
-unmeasured: no export of that combination has been opened in a slicer to see
-what actually prints, and the app ships no example using it.
-
-Two ways to close it, neither cheap enough to bundle with the check that
-prompted this note. (1) Make it correct rather than warned: subtract the
-sticker's pockets from the fill's before the inlay intersection, so the
-background yields to what sits on it. That is the behavior a user expects,
-and it makes the pairing supported instead of merely tolerated — but it is a
-per-color boolean on the fill's full tiled region, on the path already
-measured at 405s for one chair zone (see the rebuild-performance section).
-(2) Warn only where the fill's ink actually lies under the sticker. The
-plumbing for that now exists: `placedInk` in
-[src/geometry/assembly.ts](../src/geometry/assembly.ts) hands the sticker
-comparison each design's placed cut regions. A fill's are the tiled ones, so
-this still needs the grid, and the check would have to stop skipping the
-mixed pair. Start by measuring (1) on the wheel, where the fill region is
-small enough to time honestly.
-
-**Decided 2026-08-30**: go with (1), make it correct — subtract the sticker's pockets from the
-fill's before the inlay intersection. Not yet scheduled; still needs the wheel measurement above
-before committing to the full-tiled-region cost on the chair.
 
 ## Two traces still drop a color and say nothing about it
 
