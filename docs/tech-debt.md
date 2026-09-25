@@ -241,8 +241,7 @@ result has not been re-measured.
 on it and no user can reach the numbers above. The kind itself is offered in the
 Part dropdown; only Fill on it is not. This is a gate, not a fix: the path is
 unchanged and every measurement here still stands. Clearing the flag
-needs the accumulator-or-worker fix and the "Handle (left)" color loss (defect
-1 of "Three open defects in the chair / pattern-library Fill path", below).
+needs the accumulator-or-worker fix.
 Sticker on the chair is unaffected and was measured at 19.5s for a full
 five-zone rebuild on the same box, which is why only Fill was withheld.
 
@@ -318,59 +317,46 @@ behind them.
   rects and takes only a region count and a repeat count, so a chair run means
   teaching it a kind and a Fill mode.
 
-## Three open defects in the chair / pattern-library Fill path
+## `export-chair-examples.mjs` can't reach Fill on the chair
 
-None of the four defects the maintainer named on 2026-08-05 blocks the chair any
-more: dead zones took three, and the clip-region folds took the part of the
-fourth that excluded real surface. What is left of that fourth one is cosmetic
-and has its own section below, "A zone template's outline is faceted". What is
-left HERE are longer-standing defects against the same two features, folded in
-by #275, and all three are about Fill. The chair itself is offered now, with
-Sticker: what is still withheld is Fill on it (`withholdFill`) and the pattern
-library everywhere (`PATTERN_LIBRARY_ENABLED` is `false`). The report is the
-maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
+Tooling, broken since #137. The script sets `.artwork-mode` to `fill` and
+asserts it took. `chair-body` carries `withholdFill: true`, so
+`artworkListPanel` never renders that select and the step times out.
 
-1. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
-   Measured on `MOSAIC_GPU=1` production build, 2026-08-03: zebra in Fill mode
-   on the chair's Left side settles clean apart from a single `Couldn't cut
-color #0a0a0a into "Handle (left)"`, so that part prints without the black.
-   Net improvement over the pre-thinning asset (8 union failures across 4
-   parts down to 1 CSG failure on 1 part), but "one part quietly loses a
-   color" is still the outcome. Different layer from the union problem (this
-   one is Manifold, not turf 6.5). Closing it means reproducing against
-   `?csgfault` (see the `debug-csg-failure` skill) and narrowing to the
-   specific solid Manifold rejects; worth trying first whether the handle's
-   own mesh density or a near-tangent cut at its curvature is what trips it.
+- Not a selector to update. The script exists to put several colours on every
+  part, so each plate's prime tower sees real swaps. Sticker on one zone isn't
+  that.
+- Closing it means either `withholdFill` coming off, or a different way to put
+  several colours on every part.
+- Clearing `withholdFill` needs the accumulator-or-worker fix in "Rebuild
+  performance needs ongoing work" (above). Nothing else in this file blocks
+  it.
 
-2. **The extrude repair never runs on a conformal zone — related,
-   unmeasured on the chair.** `ConformalZoneMapper.buildCutter` absorbs an
-   invalid prism and returns `null`, so the escalating erode ladder that
-   fixed a lost color on the wheel (a `FlatZoneMapper`) buys the chair body
-   nothing: a conformal zone gets no repair attempt and goes straight to the
-   warning in defect 1. Whether the chair body actually hits self-touching
-   regions is unmeasured — nobody has driven dense artwork through a
-   conformal zone to find out. Closing it means either giving the conformal
-   mapper the same retry, or establishing that its null return means
-   something different enough that a retry would be wrong.
+## The pattern library is still switched off, and nothing measured blocks it
 
-3. **`export-chair-examples.mjs` cannot reach Fill — tooling, broken since
-   #137.** The script sets `.artwork-mode` to `fill` and asserts it took, but
-   `chair-body` carries `withholdFill: true` so `artworkListPanel` never
-   renders that select: the step times out. Not a selector to update — the
-   script exists to put several colours on every part so each plate's prime
-   tower sees real swaps, and Sticker on one zone isn't that. Either the Fill
-   defects above close and `withholdFill` comes off, or the script needs a
-   different way to put several colours on every part.
+`PATTERN_LIBRARY_ENABLED` is `false` in
+[src/state/patterns.ts](../src/state/patterns.ts), so the picker strip is empty
+on every part. Its one named blocker was zebra + Fill dropping the black on
+"Handle (left)", and that no longer reproduces.
 
-`?kind=chair-body` reaches the chair without going through the dropdown, which
-the `bake-zones` and `debug-csg-failure` skills and every chair drive script
-depend on. It is a documented parameter now that the chair is offered, and the
-README lists it beside the other three.
-
-Neither remaining flag is a fix. Restoring the pattern library needs defect 1
-closed. Clearing `withholdFill` needs that plus the accumulator-or-worker fix
-in "Rebuild performance needs ongoing work" above, and closing defect 3 is what
-gives the chair drive script several colours on every part again.
+- **Not reproduced, 2026-09-24**: patch `withholdFill: false` in
+  `src/assembly/kinds.ts`, `npm run build`, open `?kind=chair-body` on a
+  `MOSAIC_GPU=1` preview, load `public/patterns/zebra.svg` (it binds to Left
+  side) and set Fill. No `Couldn't cut color`, and the exported 3MF gives
+  "Handle (left)" a Black part.
+- Same on the #137 tree (`04af2f9`): no `Couldn't cut color`. The 2026-08-03
+  report can't be reproduced from what it recorded.
+- Engine sweep, 47 builds: all four patterns in Fill on all eight chair
+  zones, and zebra on "Handle (left)" at 4 scales x 3 offsets plus 3 more
+  offsets at 100% (32 + 12 + 3). `ConformalZoneMapper.buildCutter` returned
+  null 0 times in 228 calls. The three builds at 50% cut nothing: zebra is
+  refused as too detailed there.
+- One build of the sweep:
+  `node_modules/.bin/vite-node scripts/measure-conformal-cutter-nulls.ts zebra left 1 0 0 chair-handle-left`.
+  Arguments are pattern, zone, scale, offX, offZ and an optional part id. The
+  full job list and the live drive are in the PR body of #PR.
+- Turning the library back on is the maintainer's call. A kind carrying
+  `withholdFill` hides the strip anyway, so the chair is unaffected.
 
 ## A zone template's outline is faceted, because nothing curve-fits a zone boundary
 
