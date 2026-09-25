@@ -641,8 +641,9 @@ export async function unionAllCooperative(
  * loop, and a finer sweep puts 4 through 12 on a flat plateau with 8 on it. Bigger batches beat it
  * at 50 shapes (3.0x) and are the numbers above at 400.
  *
- * It also bounds one engine call, which is what keeps the yield below honest. A batch of every
- * shape is one atomic multi-second sweep with no frame to give back.
+ * It bounds how many shapes one engine call takes, not how many vertices: on 800 disjoint blobs
+ * the accumulator never collapses, and one fold still took 281ms. See "Many disjoint shapes" in
+ * docs/tech-debt.md. A batch of every shape is one multi-second sweep.
  */
 const COVERED_BATCH = 8;
 
@@ -673,8 +674,8 @@ let regionsCacheDiagnostics: string[] = [];
  * Unbuilt on purpose: a `disjoint` fast path. Raster-traced regions are disjoint by construction,
  * so every safeDiff here is provably a no-op and the whole pass collapses to array concatenation.
  * It would make per-component raster granularity viable and cut the per-color path's 136ms too,
- * but at the 8 shades that path actually produces the pass is not where the time goes. Build it
- * only if MAX_COMPONENTS (src/raster/trace.ts) is ever raised enough to change that.
+ * but at the 8 shades that path actually produces the pass is not where the time goes. An SVG of
+ * many disjoint shapes is where it would pay: "Many disjoint shapes" in docs/tech-debt.md.
  */
 export async function computeNetRegionsByColor(
   shapes: SVGShape[],
@@ -733,13 +734,14 @@ export async function computeNetRegionsByColor(
         lastYield = performance.now();
       }
     }
-    // One sweep per color, and unlike the accumulator fold it is bounded by nothing: the piece
-    // count comes from the artwork. The yield below runs *between* colors, so a single color with
-    // very many pieces is still one atomic call. Measured small on everything real (30ms over the
-    // corpus, 18ms worst), and worth keeping n-ary: folding it cooperatively instead costs dino
-    // ring 123ms -> 158ms. The unbounded case is a raster trace near MAX_COMPONENTS with one
-    // dominant shade, and it is written up in docs/tech-debt.md rather than closed with a chunk
-    // size nobody measured.
+    // One sweep per color, unchunked on purpose. A color's pieces are interior-disjoint (each is
+    // its shape minus everything above it), so chunking only dissolves shared edges and the last
+    // sweep still carries nearly every vertex: on 800 disjoint pieces, chunks of 25-400 took the
+    // longest call from 345ms to 248-322ms at 1.3-1.9x the total, and at 400 pieces from 186ms to
+    // 146-194ms at 1.05-1.7x (`bench-regions.ts chunks dots:800 dots:400`). Neither curve has a
+    // plateau to pick. The pairwise extreme, unionAllCooperative, cost dino ring 123ms -> 158ms
+    // when #218 tried it. A raster trace reaches this with one piece per color, since
+    // parseRasterImage makes each color one shape.
     const byColor: Record<string, PolyFeature> = {};
     const colors = Object.entries(pieces);
     for (let c = 0; c < colors.length; c++) {
@@ -749,9 +751,8 @@ export async function computeNetRegionsByColor(
       if (merged) byColor[color] = merged;
       onProgress(0.9 + (0.1 * (c + 1)) / colors.length);
       if (performance.now() - lastYield > YIELD_BUDGET_MS) {
-        // Same safety as the visibility loop above, and the same reason to want it: this merge is
-        // the unbounded case the comment on COVERED_BATCH names, so a cancel landing here waited
-        // it out with no check of its own.
+        // Same safety as the visibility loop above. Without it a cancel landing here waited out
+        // every remaining color's sweep.
         throwIfCancelled();
         await yieldToBrowser();
         lastYield = performance.now();
