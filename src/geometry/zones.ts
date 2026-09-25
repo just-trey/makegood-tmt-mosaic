@@ -769,7 +769,8 @@ export class FlatZoneMapper implements ZoneMapper {
 
   /**
    * The design is placed in native X/Z and cut straight down Y, so the frame is that X/Z point
-   * lifted along Y onto the face. A horizontal face gets exactly (x, faceY, z) and the X/Z axes.
+   * lifted along Y onto the face. A horizontal face gets exactly (x, faceY, z) and the X/Z axes. A
+   * face running along Y has no such lift, and gets a frame of its own, flagged off-surface.
    */
   frameAt(u: number, v: number): ZoneFrame {
     const x = u + this.faceCx,
