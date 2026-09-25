@@ -15,6 +15,7 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts cap         does MAX_COMPONENTS bound the count?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts floor       despeckle floor in mm, per placement
 //   node_modules/.bin/vite-node scripts/bench-raster.ts look        write traced SVGs to look at
+//   node_modules/.bin/vite-node scripts/bench-raster.ts steps       resize that moves the floors
 //
 // corpus, colors, curve and despeckle read the cached corpus. scale, render and alpha bring their
 // own source.
@@ -41,7 +42,7 @@
 // and no lossy history, which is the entire subject. They run against real files decoded through
 // the browser (scripts/lib/rastercorpus.ts) and drive quantize/traceLabelMap directly, because a
 // sweep has to set the parameters autoParams would otherwise derive.
-import { parseRasterImage } from '../src/raster/parse';
+import { parseRasterImage, placedFloors } from '../src/raster/parse';
 import type { ShapeGranularity } from '../src/raster/parse';
 import { computeNetRegionsByColor, shapeToFeature } from '../src/geometry/regions';
 import { MAX_COLORS, MIN_COLORS, quantize } from '../src/raster/quantize';
@@ -1165,6 +1166,61 @@ async function modeFloor(names: string[]) {
   console.table(effect);
 }
 
+/**
+ * How far a placed design has to be resized before its despeckle floors move, which is when the
+ * rebuild re-traces it (`retraceMovedSources`). Reads `placedFloors`, the function the app compares,
+ * so the answer is the app's own. Needs no corpus: the floors read only the working size and the
+ * edge density, so one flat and one photographic working image at their shipping sizes cover both
+ * branches.
+ */
+function modeSteps() {
+  const images = [
+    { name: `flat ${MAX_WORKING_EDGE}px`, w: MAX_WORKING_EDGE, edgeDensity: 0.05 },
+    { name: `photo ${MEASURE_EDGE}px`, w: MEASURE_EDGE, edgeDensity: 0.6 },
+  ];
+  const faces = [32, 50, 80, 120, 170, 220, 270];
+  const pct = (r: number | null) => (r === null ? 'never' : +(r * 100).toFixed(2));
+  const rows = [];
+  for (const im of images) {
+    const img: RasterImage = {
+      data: new Uint8ClampedArray(0),
+      w: im.w,
+      h: im.w,
+      edgeDensity: im.edgeDensity,
+    };
+    for (const detail of [0, DETAIL_DEFAULT, 100]) {
+      const key = (mm: number) => {
+        const f = placedFloors(img, detail, mm);
+        return `${f.floor}/${f.floorAtMax}`;
+      };
+      // Smallest resize, in 0.01% steps up to 20x, that changes the pair. Null when none does.
+      const firstChange = (mm: number, dir: 1 | -1): number | null => {
+        const at = key(mm);
+        for (let r = 1.0001; r < 20; r *= 1.0001)
+          if (key(dir > 0 ? mm * r : mm / r) !== at) return dir > 0 ? r - 1 : 1 - 1 / r;
+        return null;
+      };
+      for (const face of faces) {
+        const mm = rectMmPerPixel(img, face, face, 1);
+        rows.push({
+          image: im.name,
+          detail,
+          face,
+          floors: key(mm),
+          'grow %': pct(firstChange(mm, 1)),
+          'shrink %': pct(firstChange(mm, -1)),
+        });
+      }
+    }
+  }
+  console.table(rows);
+  console.log(
+    '\n`floors` is the floor at this Detail / the floor at DETAIL_MAX, in working px. `grow %` and\n' +
+      '`shrink %` are the smallest resize that changes either one. There is no single ratio: where\n' +
+      'a placed floor binds, almost any resize moves it; where the fractional floor binds, none may.',
+  );
+}
+
 /** Traced shapes as a standalone SVG, in paint order, so a trace can be looked at rather than counted. */
 function shapesToSVG(shapes: SVGShape[], w: number, h: number): string {
   const paths = shapes.map((s) => {
@@ -1387,6 +1443,9 @@ switch (mode) {
   case 'look':
     await modeLook(rest);
     break;
+  case 'steps':
+    modeSteps();
+    break;
   default: {
     // Numeric arguments keep the original invocation working, which the header and two tech-debt
     // sections quote. A non-numeric word is a typo, not a request for the synthetic bench.
@@ -1395,7 +1454,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, blur, knee, despeckle, cap, floor, look, ` +
+          `sizes, blur, knee, despeckle, cap, floor, look, steps, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));

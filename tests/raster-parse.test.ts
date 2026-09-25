@@ -4,8 +4,10 @@ import {
   EmptyTraceError,
   rasterCappedMessage,
   rasterColorLossMessage,
+  rasterColorLossNotice,
   rasterEmptyTraceMessage,
   rasterLostColors,
+  rasterSizeColorLossMessage,
 } from '../src/raster/parse';
 import {
   measureImage,
@@ -351,6 +353,14 @@ describe('parseRasterImage', () => {
       expect(rasterLostColors({ capped: true, droppedColors: 1, detailLowersFloor: true })).toBe(
         false,
       );
+      expect(
+        rasterColorLossNotice('a.png', {
+          capped: true,
+          droppedColors: 1,
+          detailLowersFloor: false,
+          floorReason: 'printable',
+        }),
+      ).toBeNull();
     });
 
     // A centroid can win a cluster from the source histogram and label no pixel at all, because
@@ -383,17 +393,23 @@ describe('parseRasterImage', () => {
     });
 
     // Placed small, the nozzle-width floor sits above the fractional one, and Detail never scales
-    // that half: the color is gone at Detail 0, 50 and 100 alike. The notice says "raise Detail"
-    // and nothing else, so it must not fire here at all. 128px across 12.8mm gives a printable
+    // that half: the color is gone at Detail 0, 50 and 100 alike. "Raise Detail" would be false
+    // here; the size is the lever, and a resize re-traces. 128px across 12.8mm gives a printable
     // floor of 16px² against a fractional 2 at Detail 50.
-    it('stays silent under a printable floor, which Detail cannot move', () => {
+    it('points a floor the placement pins at the size, not at Detail', () => {
       for (const detail of [0, 50, 100]) {
         const result = parseRasterImage(sprinkled(128), { colors: 4, detail, mmPerPixel: 0.1 });
 
         expect(result.droppedColors).toBe(1);
         expect(result.detailLowersFloor).toBe(false);
+        expect(result.floorReason).toBe('printable');
         expect(rasterLostColors(result)).toBe(false);
+        expect(rasterColorLossNotice('a.png', result)).toBe(rasterSizeColorLossMessage('a.png', 1));
       }
+      expect(rasterSizeColorLossMessage('a.png', 1)).toBe(
+        '1 color in "a.png" was too small to print at this size. ' +
+          'Make the design or the part bigger to keep more.',
+      );
     });
 
     // A placement is not itself the printable case: at part scale it runs the other way. 512px
@@ -429,6 +445,8 @@ describe('parseRasterImage', () => {
         expect(atTop.capped).toBe(false);
         expect(atTop.detailLowersFloor).toBe(false);
         expect(rasterLostColors(atTop)).toBe(false);
+        // No placement holds this floor up, so a bigger size is no answer either.
+        expect(rasterColorLossNotice('a.png', atTop)).toBeNull();
 
         expect(below.droppedColors).toBe(1);
         expect(below.detailLowersFloor).toBe(true);

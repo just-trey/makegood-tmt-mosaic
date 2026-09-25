@@ -24,6 +24,18 @@ let running = false;
 let dirty = false;
 let lastRebuildMs = 0;
 let debouncePending = false;
+/** Set by whichever debounce timer fired last; read once by the pass it starts. */
+let nextPassSettled = false;
+let passSettled = false;
+
+/**
+ * Whether the pass now running was started by the typed debounce, so nothing scheduled a rebuild in
+ * the TYPED_DEBOUNCE_MS before it. Work too heavy to repeat per slider step (a re-trace) runs only
+ * on such a pass, and a live pass that finds it owed calls `scheduleRebuild('typed')` to get one.
+ */
+export function rebuildSettled(): boolean {
+  return passSettled;
+}
 
 /** main.ts registers the actual rebuild entry point here (breaks the ui <-> rebuild cycle). */
 export function setRebuildHandler(h: () => void | Promise<void>): void {
@@ -66,6 +78,8 @@ async function runNow(): Promise<void> {
     return;
   }
   running = true;
+  passSettled = nextPassSettled;
+  nextPassSettled = false;
   beginWork();
   armCancel();
   // Fresh diagnostics for this attempt — a warning from whatever the last rebuild's inputs were
@@ -159,6 +173,7 @@ export function scheduleRebuild(mode: RebuildMode = 'live'): void {
   timer = setTimeout(
     () => {
       debouncePending = false;
+      nextPassSettled = mode === 'typed';
       // runNow() does its own beginWork() before this reservation is released, so the
       // outstanding count never touches zero on the handoff.
       void runNow();

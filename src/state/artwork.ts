@@ -1,14 +1,22 @@
 import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState, ZoneMirror } from '../types';
 import { clearBaseColor, state } from './store';
 import { deltaE, hexToLab } from '../color';
-import { parseRasterImage } from '../raster/parse';
+import {
+  parseRasterImage,
+  placedFloors,
+  rasterCappedMessage,
+  rasterColorLossKey,
+  rasterColorLossNotice,
+  rasterTracedMessage,
+} from '../raster/parse';
+import type { RasterParseResult } from '../raster/parse';
 import type { RasterImage } from '../raster/types';
 import type { NetZonePlacement } from '../geometry/zoneCharts';
 import { boundsCentre, netOffsetToZone, WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { currentAssemblyKind, currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
-import { dismissNotice, notice } from '../warnings';
+import { dismissNotice, notice, warn } from '../warnings';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
@@ -211,10 +219,8 @@ function cascadedOffset(
  * Asking the two scale rules the build already uses, rather than restating a third one here, is
  * what keeps the floor and the cut talking about the same design.
  *
- * Fixed at the moment of the trace: the Scale slider does not re-trace, because a trace measured
- * ~830ms and a drag would fire it per step. Shrinking afterwards therefore keeps the older, more
- * permissive floor, and enlarging keeps detail removed that the new size could print, until
- * Colors or Detail re-runs it (docs/tech-debt.md).
+ * Read again on every rebuild, which re-traces once the floors it gives stop matching the ones the
+ * trace ran at (`retraceMovedSources`).
  */
 export function rasterMmPerPixel(img: RasterImage, sourceId?: string): number | undefined {
   const mm = assemblyMmPerUnit(img, sourceId);
@@ -471,7 +477,7 @@ function remapSettingsToPalette(oldPalette: string[], newPalette: string[]): voi
 export function requantizeSource(
   sourceId: string,
   patch: { colors?: number; detail?: number },
-): { capped: boolean; droppedColors: number; detailLowersFloor: boolean } | null {
+): TraceOutcome | null {
   const source = state.sources.find((s) => s.id === sourceId);
   if (!source || !isRasterSource(source)) return null;
   const colors = patch.colors ?? source.raster.colors;
@@ -488,6 +494,8 @@ export function requantizeSource(
     mmPerPixel,
     name: source.name,
   });
+  failedRetraces.delete(source.id);
+  dismissNotice('', retraceFailedKey(source.id));
   const oldPalette = source.raster.palette;
   // A brand-new ParsedSVG with a brand-new `shapes` array, never a mutation of the old one:
   // computeNetRegionsByColor memoizes on that array's identity, so an in-place edit would serve
@@ -510,7 +518,85 @@ export function requantizeSource(
     capped: result.capped,
     droppedColors: result.droppedColors,
     detailLowersFloor: result.detailLowersFloor,
+    floorReason: result.floorReason,
   };
+}
+
+/** What a finished trace says about itself, for `announceTrace`. */
+export type TraceOutcome = Pick<
+  RasterParseResult,
+  'capped' | 'droppedColors' | 'detailLowersFloor' | 'floorReason'
+>;
+
+/**
+ * Raise the notices a finished trace owes, the same at load, restore, a slider and a resize. Both
+ * keys replace in place (warnings.ts push), so a re-trace rewrites what the last one said.
+ */
+export function announceTrace(sourceId: string, name: string, result: TraceOutcome): void {
+  notice(result.capped ? rasterCappedMessage(name) : rasterTracedMessage(name), sourceId);
+  const loss = rasterColorLossNotice(name, result);
+  if (loss) notice(loss, rasterColorLossKey(sourceId));
+  // Empty text: the key decides which entry goes (warnings.ts).
+  else dismissNotice('', rasterColorLossKey(sourceId));
+}
+
+/**
+ * The floors a re-trace already came back empty at, per source. The same floors fail the same way,
+ * so without this every later rebuild would pay for the trace again to say the same thing.
+ */
+const failedRetraces = new Map<string, string>();
+
+function floorsKey(source: DesignSource & { raster: RasterState }, mmPerPixel?: number): string {
+  const f = placedFloors(source.raster.image, source.raster.detail, mmPerPixel);
+  return `${f.floor}/${f.floorAtMax}`;
+}
+
+/** The key of the warning a failed re-trace raises, beside the notices the kept trace still owns. */
+function retraceFailedKey(sourceId: string): string {
+  return `${sourceId}:retrace`;
+}
+
+/**
+ * Re-trace every raster source whose placement has moved its despeckle floor, when `settled`;
+ * otherwise only report whether one is owed.
+ *
+ * Compared as floors, not as a resize ratio, because no ratio exists (`bench-raster.ts steps`). On
+ * a 32-270mm hubcap, flat art moves its floors at a 0.01-4% resize where a placed floor binds and
+ * holds them through 8.9-65% where the fraction does; a 512px photo holds them through any
+ * enlargement. Equal floors trace identically, so skipping them loses nothing. An unreadable
+ * placement (a rect kind mid-reload) is never stale: there is nothing better to trace at.
+ *
+ * Per source: one that comes back empty keeps its old trace and says why, and the rest still
+ * re-trace. That warning goes once the placement leaves the floors it failed at.
+ */
+export function retraceMovedSources(settled: boolean): { retraced: boolean; owed: boolean } {
+  let retraced = false,
+    owed = false;
+  for (const source of state.sources) {
+    if (!isRasterSource(source)) continue;
+    const mmPerPixel = rasterMmPerPixel(source.raster.image, source.id);
+    if (mmPerPixel === undefined) continue;
+    const key = floorsKey(source, mmPerPixel);
+    const failed = failedRetraces.get(source.id);
+    if (failed !== undefined && failed !== key) {
+      failedRetraces.delete(source.id);
+      dismissNotice('', retraceFailedKey(source.id));
+    }
+    if (key === floorsKey(source, source.raster.mmPerPixel) || key === failed) continue;
+    if (!settled) {
+      owed = true;
+      continue;
+    }
+    try {
+      const result = requantizeSource(source.id, {});
+      if (result) announceTrace(source.id, source.name, result);
+      retraced = true;
+    } catch (e) {
+      failedRetraces.set(source.id, key);
+      warn((e as Error).message, retraceFailedKey(source.id));
+    }
+  }
+  return { retraced, owed };
 }
 
 /**
