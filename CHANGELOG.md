@@ -103,6 +103,14 @@ check:zone-occlusion` on the chair went from 13 failures (48/42/1/42
 
 ### Added
 
+- **`scripts/bench-regions.ts` times the region pass's per-colour merge.**
+  `merge` times it inside the real pass; `chunks` sweeps a chunk size over it.
+  The sweep closed the plan to chunk that merge: a colour's pieces never
+  overlap, so the last call still carries nearly every point. On 800 disjoint
+  pieces, chunks of 25-400 cut the longest call only from 345ms to 248-322ms,
+  at 1.3-1.9x the total time
+  (`node_modules/.bin/vite-node scripts/bench-regions.ts chunks`).
+
 - **The chair body is back in the Part dropdown.** It has been reachable only by
   URL since the beta narrowed to three parts, while the work behind it kept
   going: design zones across the whole chair, mirroring onto a zone's twin or

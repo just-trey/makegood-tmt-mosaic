@@ -310,26 +310,45 @@ at 400% (17.0s) and measures an ordinary auto-fit sticker on all five zones at
 4.0s — a 5x spread on the same path. What is paid for is pocket area, not
 surfaces touched.
 
-## The per-color union in the flat pass is one atomic sweep, bounded by nothing
+## Many disjoint shapes of one SVG make the flat pass superlinear
 
-`computeNetRegionsByColor` ([src/geometry/regions.ts](../src/geometry/regions.ts)) merges each
-color's visible pieces with a single n-ary call. The accumulator fold beside it is capped at
-`COVERED_BATCH`, so it always hands the engine a bounded call; this one hands it however many
-pieces the artwork produced. The pass yields between colors, never inside one.
+Unmeasured on real artwork; measured on a synthetic spotted design. One colour of
+N non-overlapping blobs over a background, one run each
+(`MOSAIC_BENCH_REPEATS=1 node_modules/.bin/vite-node scripts/bench-regions.ts merge dots:400 dots:800 overlap:800`):
 
-**Measured, and small on everything real**: 30ms across the whole corpus, 18ms worst
-(`scripts/bench-regions.ts`). It is kept n-ary because the alternative costs real time: folding it
-through `unionAllCooperative` instead measures dino ring at 158ms against 123ms.
+| Fixture     | Whole pass | Longest difference | Longest fold | Merge call |
+| ----------- | ---------- | ------------------ | ------------ | ---------- |
+| dots:400    | 15.9s      | 119ms              | 114ms        | 132ms      |
+| dots:800    | 91.7s      | 434ms              | 281ms        | 371ms      |
+| overlap:800 | 1.9s       | 15ms               | 16ms         | 30ms       |
 
-The case that is not covered is a raster trace near `MAX_COMPONENTS` (800, src/raster/trace.ts)
-where one shade owns most of the components. Nothing in the corpus reaches it, so the freeze is
-unobserved rather than ruled out.
+One run per row, so read ±20%: `chunks dots:800` (median of 5) puts the same
+merge call at 345ms.
 
-**Closing it means chunking the sweep, and the chunk size has to be measured, not picked.**
-`COVERED_BATCH` was swept over 50/100/200/400 shapes before it was chosen; this is a different
-operation (many small pieces unioned, rather than a growing accumulator subtracted) and its curve
-has not been taken. Do that first. A constant copied across from the other call site would close
-the finding without measuring anything, which is the failure this file exists to prevent.
+- Twice the blobs cost 5.8x the time. Disjoint blobs never collapse the
+  accumulator, so every difference and fold carries every blob above it.
+- `COVERED_BATCH` bounds how many shapes one call takes, not how many
+  vertices. No single call reaches 0.5s; the pass is long, not frozen.
+- An image-traced SVG or a spotted pattern is the input that would do this. A
+  PNG or JPG cannot: the tracer hands over one shape per colour.
+- No corpus file comes close. Its largest per-colour list is 37 pieces
+  (`bench-regions.ts merge` over the corpus files).
+- Chunking the per-colour merge was measured and does not help. The numbers are
+  on that merge in `computeNetRegionsByColor`.
+
+**Why deferred**: no real file has shown it yet.
+
+**Closing it**:
+
+1. Measure a real image-traced SVG from Illustrator or Inkscape first.
+2. The fix is to stop differencing against blobs that cannot overlap.
+   A bbox pre-filter is the obvious one and was recorded ~2x slower on real
+   artwork (full-canvas backgrounds overlap everything; no command was kept, so
+   re-measure before relying on it). It needs a spatial
+   index on the accumulator, or the disjoint fast path the
+   `computeNetRegionsByColor` docstring describes.
+3. Whatever lands must keep the corpus at or under its current time
+   (`bench-regions.ts attribute`).
 
 ## A cancel still waits for the one Manifold call already running
 
