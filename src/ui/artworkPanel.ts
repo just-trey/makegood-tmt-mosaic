@@ -1,5 +1,10 @@
 import type { ArtworkInstance, DesignSource } from '../types';
-import { loadArtworkSource, pruneSettingsToPalette, rasterMmPerPixel } from '../state/artwork';
+import {
+  announceTrace,
+  loadArtworkSource,
+  pruneSettingsToPalette,
+  rasterMmPerPixel,
+} from '../state/artwork';
 import { getPatterns } from '../state/patterns';
 import { fillModeOffered } from '../assembly/kinds';
 import { scheduleRebuild } from '../app/scheduler';
@@ -7,16 +12,9 @@ import { beginWork, endWork } from '../app/idle';
 import { requestFrame } from '../scene/viewport';
 import { parseSVGDocument } from '../svg/parse';
 import { decodeImageFile, isRasterBuffer } from '../raster/decode';
-import {
-  rasterCappedMessage,
-  rasterColorLossKey,
-  rasterColorLossMessage,
-  rasterLostColors,
-  rasterTracedMessage,
-} from '../raster/parse';
 import { parseRasterImage } from '../raster/parse';
 import { DETAIL_DEFAULT } from '../raster/stats';
-import { clearWarnings, notice, warn } from '../warnings';
+import { clearWarnings, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { renderArtworkList } from './artworkListPanel';
 import { refreshFitInputsFromState, updateOffsetSliderRanges } from './fitPanel';
@@ -165,13 +163,7 @@ async function applyRasterFile(file: File): Promise<void> {
       palette: result.palette,
       regions: result.componentCount,
     });
-    if (result.capped) notice(rasterCappedMessage(file.name), instance.sourceId);
-    else notice(rasterTracedMessage(file.name), instance.sourceId);
-    if (rasterLostColors(result))
-      notice(
-        rasterColorLossMessage(file.name, result.droppedColors),
-        rasterColorLossKey(instance.sourceId),
-      );
+    announceTrace(instance.sourceId, file.name, result);
     afterArtworkLoaded(file.name);
     renderWarnings();
     track('artwork_load', { source: 'raster' });

@@ -2,6 +2,7 @@ import type { DesignSource, RasterState } from '../types';
 import { state } from '../state/store';
 import {
   addInstanceForSource,
+  announceTrace,
   availableZones,
   isRasterSource,
   netZones,
@@ -17,14 +18,8 @@ import { WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { fillModeOffered } from '../assembly/kinds';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
 import { DETAIL_MAX, DETAIL_MIN } from '../raster/stats';
-import {
-  rasterCappedMessage,
-  rasterColorLossKey,
-  rasterColorLossMessage,
-  rasterLostColors,
-  rasterTracedMessage,
-} from '../raster/parse';
-import { dismissNotice, notice, warn } from '../warnings';
+import { rasterCappedMessage, rasterColorLossKey } from '../raster/parse';
+import { dismissNotice, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { scheduleRebuild } from '../app/scheduler';
 import { refreshNetYieldOverlays } from '../app/rebuild';
@@ -304,17 +299,7 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
       return false;
     }
     if (!result) return false;
-    notice(
-      result.capped ? rasterCappedMessage(source.name) : rasterTracedMessage(source.name),
-      source.id,
-    );
-    // Its own key, so it stands beside whichever of those two this source holds.
-    if (rasterLostColors(result))
-      notice(
-        rasterColorLossMessage(source.name, result.droppedColors),
-        rasterColorLossKey(source.id),
-      );
-    else dismissColorLoss(source.id);
+    announceTrace(source.id, source.name, result);
     renderWarnings();
     readout.textContent = describe();
     scheduleRebuild();

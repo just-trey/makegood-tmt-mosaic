@@ -6,6 +6,8 @@ import {
   activeArtworkInstance,
   availableZones,
   netZones,
+  retraceSources,
+  staleRasterSources,
   syncActiveArtworkPlacement,
   zoneCoverage,
   zoneMirrorOf,
@@ -42,6 +44,8 @@ import { refreshZonePickMeshes } from '../scene/zonePick';
 import { renderColorList, type ColorListEntry } from '../ui/colorList';
 import { renderBaseColorSwatches } from '../ui/partPanel';
 import { renderWarnings } from '../ui/warningsView';
+import { renderArtworkList } from '../ui/artworkListPanel';
+import { rebuildSettled, scheduleRebuild } from './scheduler';
 import { schedulePersist } from '../state/persist';
 import { $ } from '../ui/dom';
 import { renderExportSummary } from '../ui/exportPanel';
@@ -514,6 +518,16 @@ async function rebuildAssemblyScene(): Promise<void> {
   // which is the drift the whole placement seam exists to prevent. Idempotent, and the call below
   // stays where it is so the non-generated path is unchanged.
   syncActiveArtworkPlacement();
+
+  // Here, once per pass, because every input that sizes a design ends in a rebuild: Scale, the
+  // hubcap diameter, the Design radius, a kind or Sticker/Fill switch, a second placement. Before
+  // the generated parts, so a hubcap cut to the artwork is cut to the new trace. A trace can cost
+  // ~830ms, so a live pass only asks for a settled one, and a settled pass never asks again.
+  const stale = staleRasterSources();
+  if (stale.length && rebuildSettled()) {
+    retraceSources(stale);
+    renderArtworkList();
+  } else if (stale.length) scheduleRebuild('typed');
 
   // BEFORE the no-artwork branch below, not after it. A part whose shape follows the artwork has
   // to be rebuilt when the artwork goes away, and that is exactly the case that branch returns

@@ -640,21 +640,34 @@ nothing saying it differed from what was asked for.
   flat art keeps: a 1.6mm square, four nozzle widths (`DESPECKLE_FEATURE_MM`).
   At 512px across 185mm that is 20px², under the fractional floor's 39. With no
   placement it is that fraction instead. Neither is a nozzle width, and where
-  the nozzle floor does bind this notice is withheld.
+  the nozzle floor does bind the notice below replaces this one.
 - **The count is against the colors that labelled pixels, not the slider.** An
   image that simply has fewer colors than Colors asks for (a three-color logo at
   Colors 8) has lost nothing, and never raises this. Neither does a color that
   won a cluster and then labelled no pixel at all, which the blur before
   clustering can produce: nothing of it was ever traced, so there is nothing to
   bring back.
-- **Where Detail cannot lower the floor, nothing is said at all.** Two cases:
-  the design is placed small enough that the nozzle-width floor pins the floor
-  (128px across 12.8mm has a printable floor of 16px² against a fractional 2,
-  and drops a color silently at every Detail), or Detail is already at 100. The
-  same image at 512px across 185mm has a printable floor of 1px², the no-op,
-  against a fractional 39, and does raise the notice. Measured by
-  `npx vitest run tests/raster-parse.test.ts -t "stays silent"` and
-  `-t "part scale"`. `docs/tech-debt.md` carries it, with the capped case.
+- **Detail already at 100 says nothing.** There is no raising left. Measured by
+  `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`.
+  `docs/tech-debt.md` carries it, with the capped case.
+
+## Troubleshooting: "… too small to print at this size…"
+
+Full text: _"1 color in "yourfile.png" was too small to print at this size.
+Make the design or the part bigger to keep more."_
+
+**An informational notice, not a failure.** The image loaded and cut normally.
+
+- **The design is placed small enough that the nozzle width sets the floor.**
+  Nothing under one nozzle square (0.4mm across) can hold a bead, and Detail
+  never scales that floor. At 128px across 12.8mm it is 16px², against a
+  fractional 2, and the color goes at every Detail. Measured by
+  `npx vitest run tests/raster-parse.test.ts -t "placement pins"`.
+- **Make the design or the part bigger.** Scale, the hubcap diameter or the
+  Design radius all work. The image is traced again about half a second after
+  you stop, so the color can come back without touching Colors or Detail.
+- **It says "keep more", not "get it back".** A bigger size lowers the floor,
+  but a color's pieces can still be under the new one.
 
 ## Troubleshooting: "No opaque pixels were found in this image…"
 

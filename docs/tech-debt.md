@@ -517,36 +517,6 @@ the untested candidate rather than a rejected one. Whatever the test, it needs r
 resampled to several sizes on disk, since no mode here can produce them, and the traces need looking
 at rather than counting: region count cannot tell a cleaner trace from a coarser one.
 
-## The printable despeckle floor is fixed at the moment of the trace
-
-`rasterMmPerPixel` ([src/state/artwork.ts](../src/state/artwork.ts)) reads the placement when an
-image is traced, which is at load and again whenever Colors or Detail re-runs it. Nothing else
-re-traces, because a trace measured ~830ms on a photograph and a slider drag would fire it per
-step.
-
-**Every input to the floor can move afterwards, and Scale is the smallest of them**: hubcap
-diameter (32mm to the plate's short side, up to 270mm), the wheel's Design radius, switching
-assembly kind, and the one-click Sticker/Fill switch, which changes the scale _rule_ rather than a
-number. Scale itself only spans 25-400%. "+ add to another zone" is the quickest of all: it places
-a second instance at 100% against a trace made for a smaller one, so the largest-instance rule the
-floor was chosen by is stale the moment it lands. A hubcap cut to artwork shape adds one more: the
-floor is read before the new source is registered, so it sees the _previous_ design's silhouette
-face. And within the Scale field's 550ms typed debounce, `ArtworkInstance.scalePct` still holds the
-old value (only a rebuild syncs it), so a Detail nudge inside that window sizes the floor from the
-scale before the one just typed.
-
-- **Getting smaller after loading** leaves the older, more permissive floor: features under a
-  nozzle width survive that a fresh trace would remove. That is the pre-2026-08-20 behaviour, so it
-  is a missed improvement rather than a regression.
-- **Getting larger is the one that loses something**: detail removed at the size it was traced for
-  would print at the new size. Load onto a 32mm hubcap and raise it to 220mm and it is gone, with
-  nothing said. Only a nudge of Colors or Detail brings it back.
-- The help panel now says to nudge Colors or Detail after a big resize, which is a note in a
-  dialog, not the app noticing. Nothing in the panel that did the resizing says anything.
-- Closing it means re-tracing when the placed size moves far enough to matter, which needs the
-  debounce and the cancel path the Colors and Detail sliders already have, or a notice that says
-  the design was traced for a different size.
-
 ## A Fill under a sticker overlaps just like two stickers do, and isn't checked
 
 The overlap check in
@@ -585,15 +555,15 @@ before committing to the full-tiled-region cost on the chair.
 
 ## Two traces still drop a color and say nothing about it
 
-`rasterLostColors` ([src/raster/parse.ts](../src/raster/parse.ts)) raises the dropped-color notice
-only where its one sentence — raise Detail — is both true and available. Two cases are left silent,
-both `droppedColors > 0`. They are the half of "a traced image can lose a color with nothing said"
-that the notice did not close.
+`rasterColorLossNotice` ([src/raster/parse.ts](../src/raster/parse.ts)) raises a dropped-color
+notice only where its remedy is both true and available: raise Detail, or make the design or the
+part bigger when the nozzle-width floor pins it. Two cases are left silent, both
+`droppedColors > 0`.
 
-| Case                        | Suppressed by        | Reproduced by                                                    |
-| --------------------------- | -------------------- | ---------------------------------------------------------------- |
-| Capped, and short a color   | `capped`             | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"` |
-| A floor Detail cannot lower | `!detailLowersFloor` | `npx vitest run tests/raster-parse.test.ts -t "stays silent"`    |
+| Case                      | Suppressed by                | Reproduced by                                                    |
+| ------------------------- | ---------------------------- | ---------------------------------------------------------------- |
+| Capped, and short a color | `capped`                     | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"` |
+| Detail already at 100     | `!detailLowersFloor`, no pin | `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`      |
 
 - **Capped**: the trace shows `rasterCappedMessage` only, which says detail "was merged into its
   surroundings" and never that a color left the palette. The two remedies are opposites — capped
@@ -606,21 +576,15 @@ that the notice did not close.
   (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). The same command against the
   previous `src/raster/trace.ts` stops at 7px with 9237 components. The higher the floor, the
   likelier a whole color goes under it on a source that caps.
-- **A floor Detail cannot lower** covers two shapes of the same thing, and `detailLowersFloor`
-  measures both rather than inferring either: a placement's nozzle-width floor pinning the floor
-  (128px across 12.8mm drops a color at Detail 0, 50 and 100 alike), and the slider already at
-  `DETAIL_MAX`. Saying either needs a second message, and the placement one's remedy is a resize,
-  which does not re-trace — see "The printable despeckle floor is fixed at the moment of the trace".
+- **Detail at 100** with no placement pinning the floor has no remedy to offer. A bigger size
+  can still lower the feature floor there, so saying nothing is not always right, but no
+  measured rule says when it is.
 - **A partly-pinned floor still fires, with a weak remedy.** Where the nozzle floor sits just under
   the fractional one, raising Detail lowers the floor by a little and may not bring the color back.
   The notice is still true — it says what Detail does, never that the color returns — and no notice
   can promise recovery, since a quartered floor can still be above a color's pieces. Drawing a "how
   much movement is enough" line would be an invented constant, so it is left as is. **Unmeasured**:
   how often that band is where real artwork lands.
-- **The claim also goes stale on a resize**, since nothing re-traces on a placement change: a notice
-  raised at part scale keeps standing after the design is scaled down onto a face where the nozzle
-  floor pins the floor, which is the case `detailLowersFloor` exists to suppress. Same root as "The
-  printable despeckle floor is fixed at the moment of the trace", and closed by the same fix.
 - **The notice can also vanish mid-remedy, which reads as fixed.** Its presence tracks "Detail can
   still move this floor", not "a color is missing". On `sprinkled(384)` with no placement, Detail 90
   gives floor 7 and the notice; Detail 95 gives floor 6, `detailLowersFloor` false, and the notice is
@@ -635,8 +599,7 @@ that the notice did not close.
   suppressions above silence any of those five at their own placements. **Unmeasured.**
 - Closing either takes a message carrying both facts, or a measured rule for which remedy wins.
   Neither is a wording change: the capped one needs an answer to whether raising Detail can recover
-  a color on a capped trace at all, and the pinned-floor one needs the re-trace-on-resize item
-  first.
+  a color on a capped trace at all.
 
 ## `deChecker` can leave a component under the despeckle floor
 

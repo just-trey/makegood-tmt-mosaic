@@ -3,6 +3,7 @@ import { MIN_DESIGN_RADIUS_MM, state } from './store';
 import type { ArtworkInstance, DesignSource } from '../types';
 import {
   allowedArtworkMode,
+  announceTrace,
   pruneSettingsToPalette,
   availableZones,
   restoreArtworkPool,
@@ -15,15 +16,8 @@ import { getPrinter } from '../export/printers';
 import { asmSwitchKindAndLoad } from '../assembly/switchKind';
 import { parseSVGDocument } from '../svg/parse';
 import { decodeWorkingImage, encodeWorkingImage } from '../raster/store';
-import {
-  parseRasterImage,
-  rasterCappedMessage,
-  rasterColorLossKey,
-  rasterColorLossMessage,
-  rasterLostColors,
-  rasterTracedMessage,
-} from '../raster/parse';
-import { clearWarnings, notice, warn } from '../warnings';
+import { parseRasterImage } from '../raster/parse';
+import { clearWarnings, warn } from '../warnings';
 import type { RasterImage } from '../raster/types';
 
 const STORAGE_KEY = 'tmt-mosaic:session:v1';
@@ -712,11 +706,10 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       const opts = {
         colors: s.raster.colors,
         detail: s.raster.detail,
-        // Whatever was saved, in every shape kind. This is a reconstruction, not a fresh trace:
-        // the design in the saved session carries this floor whether or not the mode it was
-        // switched into would derive one now (nothing re-traces on a shape-kind change), and a
-        // restore that quietly returns a different design is the failure this payload exists to
-        // prevent. `requantizeSource` is the other half, and re-derives.
+        // Whatever was saved: this is a reconstruction, not a fresh trace, and it runs before the
+        // parts are back, so there is no placement to derive one from. A restore that quietly
+        // returns a different design is the failure this payload exists to prevent. The first
+        // settled rebuild re-traces if the restored placement disagrees (`staleRasterSources`).
         mmPerPixel: s.raster.mmPerPixel,
       };
       // name is passed alongside opts, not folded into it: opts is spread into the stored
@@ -725,10 +718,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       const result = parseRasterImage(image, { ...opts, name: s.name });
       // The same notice the first load gave. Without it a design that comes back simplified looks
       // like the app quietly changed it.
-      if (result.capped) notice(rasterCappedMessage(s.name), s.id);
-      else notice(rasterTracedMessage(s.name), s.id);
-      if (rasterLostColors(result))
-        notice(rasterColorLossMessage(s.name, result.droppedColors), rasterColorLossKey(s.id));
+      announceTrace(s.id, s.name, result);
       sources.push({
         id: s.id,
         kind: s.kind,

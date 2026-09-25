@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A traced image is traced again when you resize it.** Loaded onto a 32mm
+  hubcap and raised to 220mm, it used to keep the detail it lost at 32mm until
+  you nudged Colors or Detail. Scale, the hubcap diameter, the Design radius,
+  a part or Sticker/Fill switch and "+zone" all count. It runs once, about half
+  a second after you stop, and only when the new size changes what gets
+  removed.
+- **A color dropped because the design is placed too small now says so.** It
+  used to be dropped silently, since raising Detail can't bring it back there.
+  The notice says to make the design or the part bigger.
 - **A pocket deeper than the wall under it is now cut at that wall, with a
   warning.** Depth was only checked against how far the whole part reaches
   behind its face. On the hubcap that is 8.12mm over a 3mm shell, so any depth
