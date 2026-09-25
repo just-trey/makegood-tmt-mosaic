@@ -156,11 +156,10 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   [docs/tech-debt.md](docs/tech-debt.md).
   The shallow end (zero or negative) is caught up front and raised to a safe
   minimum.
-- Fill can't repeat a very detailed design. The polygon clipper was swept as
-  failing from 503k-600k points in one operation, so a design whose copies would
-  pass a 500k budget is placed once instead, with a warning saying so. Raising
-  Scale fixes it where a bigger tile gets under the budget; the warning says when
-  it can't.
+- Fill can't repeat a very detailed design. Past 600k points across the copies
+  the design is placed once instead, with a warning saying so: the cut ran out
+  of memory at 720k on the one part measured. Raising Scale fixes it where a
+  bigger tile gets under the budget; the warning says when it can't.
 - Gradients/patterns in an SVG are detected and skipped with a warning.
 - A raster image is processed at 1024px on its long edge for flat art (logos,
   drawings, cartoons) and 512px for photographs, chosen from the image itself —

@@ -225,9 +225,9 @@ the interaction consequence.
 
 **Partly superseded, 2026-08-03.** Those numbers were taken against a zebra
 asset carrying 13.6k vertices per tile, most of which were marching-squares
-oversampling rather than shape (see "Turf's tile union has a vertex ceiling"
-below). With the thinned asset the same single-zone case measures
-**93.6s**, against **468.7s** re-measured on the old one — and it is doing
+oversampling rather than shape (see
+[2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md)).
+With the thinned asset the same single-zone case measures **93.6s**, against **468.7s** re-measured on the old one — and it is doing
 _more_ work, not less: 2.07M triangles against 853k, because the old asset's
 tile union was failing and falling back to unmerged shapes. So a large share
 of what was recorded here as "conformal-wrap + per-part CSG is slow" was one
@@ -617,77 +617,62 @@ active turf upgrade, and writing it now costs about what re-deriving it later co
 upgrade becomes live work it is step one rather than an afterthought, over the
 union-accumulation path at a few shape counts, with the numbers above as the baseline to beat.
 
-## Turf's tile union has a vertex ceiling, and the fix is a refusal rather than a batch
+## `FILL_POINT_BUDGET` was measured on one part shape
 
-Fill mode unions one copy of the design per tile, and `@turf/turf` 6.5's polygon
-clipping gives up on a big union without throwing: it returns a partial result,
-so the part loses geometry behind a `Couldn't merge the shapes …` warning naming
-no cause. That message used to assert a cause it could not know ("likely a
-self-intersecting path in the source SVG"), which was wrong here: the paths were
-fine, there were simply too many of them.
+The 600k fill budget ([patterns.ts](../src/geometry/patterns.ts)) guards
+Manifold's WASM heap, and was set from one 240mm box face.
 
-**Where the ceiling is: a 503k-600k band, swept 2026-08-30.** Not the 800k this
-section used to quote, which was an estimate off one live build.
-[2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md)
-carries both sweeps and the command.
+- Zebra filled at 658,724 points and ran out of memory at 719,969
+  ([2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md)).
+- Memory follows the part's own mesh and the cutter's triangles, not only the
+  points counted. A denser part, or a conformal zone's refined cutter, may run
+  out sooner. **Unmeasured.**
+- Past the limit the part exports with no artwork, behind a named warning.
+- Closing it: `scripts/bench-fill-build.ts` against a real part mesh (the
+  hubcap, and a chair zone once Fill is offered there), or a budget on
+  triangles rather than points.
 
-| pattern   | points per tile | highest clean | lowest failure |
-| --------- | --------------- | ------------- | -------------- |
-| zebra     | 1361            | 544,400       | 600,201        |
-| dalmatian | 559             | 503,100       | 537,199        |
+## The segment cap is enforced at one boolean entry point, not all of them
 
-The two overlap, so no point count separates clean from failing, and neither
-does tile count. The band replaces the 800k figure in `scripts/gen-patterns.mjs`
-and `tests/patterns-assets.test.ts`; their constants and assertions are untouched.
+`boolOpUnderCap` ([regions.ts](../src/geometry/regions.ts)) splits a union,
+clip or subtraction past polygon-clipping's 500,000-segment cap. The fill path
+goes through it; these do not, or not fully. All **unmeasured**.
 
-The original 2026-08-03 observation, zebra in Fill mode on one chair zone
-(`MOSAIC_GPU=1` production build), is what made it concrete:
+- **The n-ary sweeps** (`safeUnionAll`, `safeUnionAllCooperative`,
+  `naryOpWithRetry`). Reachable from `computeNetRegionsByColor` on one colour
+  past 500k segments. The sweep throws at once (no retries on a size limit),
+  then the pairwise fallback goes through the cap. Closing it: count first and
+  skip the doomed sweep.
+- **`splitAtBoundary`** ([edgeRegions.ts](../src/geometry/edgeRegions.ts)) calls
+  `boolOpWithRetry` per polygon. Only one polygon plus the eroded boundary past
+  the cap reaches it; it degrades to a recess with a warning. Closing it: route
+  it through `boolOpUnderCap`.
+- **The clip side is never split.** A clip over the cap alone is `tooBig`. Part
+  boundaries are far smaller; a sticker set on one zone is the likeliest to grow.
+- **`SPLIT_CALL_LIMIT` (256)** bounds a split union that halves without
+  converging. Nothing measured how close a real fill comes to it.
+- **The crossing limit.** The engine also throws once its sweep line holds
+  1,000,000 pieces, which crossings multiply: 500 strips each way reach it from
+  4,000 segments (`tests/regions-sweep-cap.test.ts`). Nothing counts it ahead
+  of time. The tile union catches it as `tooBig` and refuses the fill; a clip
+  that hits it later leaves the region unclipped behind a warning.
+- **Fill holds every colour's tiles at once** before cutting any, so a refusal
+  can drop them together. Peak JS memory is then the sum over colours, not the
+  largest. Unmeasured: `scripts/bench-fill-build.ts` reports time, not heap.
 
-|                                      | 13.6k verts/tile  | 1.3k verts/tile |
-| ------------------------------------ | ----------------- | --------------- |
-| vertices across the zone's 143 tiles | 1.95M             | 187k            |
-| union failures                       | 8, across 4 parts | 0               |
-| triangles produced                   | 853k              | 2.07M           |
-| rebuild                              | 468.7s            | 93.6s           |
+## The bundled-pattern asset test freezes a chair zone at 143 tiles by hand
 
-The doubled triangle count is the tell that this was data loss rather than
-slowness: the failing run produced _less_ geometry because four parts fell back
-to unmerged shapes.
+`TILES_PER_CHAIR_ZONE = 143` in `tests/patterns-assets.test.ts` is written down,
+not derived from live zone geometry.
 
-**Fixed: nothing crosses the ceiling unannounced now.** Two mechanisms, one per
-source of tiles.
-
-- Bundled patterns, at build time. `scripts/gen-patterns.mjs` thins zebra's
-  contours (`simplifyEps`), and `tests/patterns-assets.test.ts` fails any
-  pattern whose vertex count times a chair zone's tile count would approach the
-  ceiling.
-- User SVGs, at build time in the app. `tileCoverage()`
-  ([patterns.ts](../src/geometry/patterns.ts)) multiplies the real tile count by
-  the heaviest colour's points, refuses past `TILE_UNION_VERTEX_BUDGET` (500k),
-  and reports `too-detailed` through the same refusal path the other four causes
-  use. The user gets one tile and a message naming the numbers.
-
-**Still open: a refusal is a cap, not a cure.** 500k gives up two measured
-successes (zebra's 544,400 and dalmatian's 503,100). A volunteer who wants that
-fill has no way to get it. A design that is over budget even with Scale wound to
-its 400% maximum is refused outright, and the message says so rather than
-sending the user up the slider.
-
-Closing it means chunking the union into batches small enough to stay under the
-ceiling and merging the results. That removes the ceiling for the bundled
-patterns too, which would make the asset budget a performance concern rather
-than a correctness one. Upgrading turf past 6.5 may move the ceiling but is
-separately blocked — see the `@turf/turf` pin section.
-
-**`TILES_PER_CHAIR_ZONE = 143` is still frozen by hand**, not derived from live
-zone geometry: `tileCoverage()` needs a real placer and extent, which only exist
-mid-build, and pulling the full chair build into an otherwise fast,
-dependency-light asset test is not worth it. Its 300k budget is a 1.8x margin
-under the measured onset. What changed is the consequence of letting it rot. A
-zone that outgrows 143 tiles now reaches the runtime refusal instead of dropping
-tiles, so a shipped pattern stops filling and says so. That is a visible
-regression for the user rather than a hidden one, and still nothing flags the
-stale constant to the maintainer.
+- `tileCoverage()` needs a real placer and extent, which only exist mid-build.
+- Pulling the full chair build into a fast, dependency-light asset test is not
+  worth it.
+- Its 300k budget sits at half of `FILL_POINT_BUDGET` (600k,
+  [patterns.ts](../src/geometry/patterns.ts)), the build-time refusal.
+- **If it rots**: a zone that outgrows 143 tiles reaches that refusal, so a
+  shipped pattern stops filling and says so. Visible to the user, not silent.
+- Nothing flags the stale constant to the maintainer.
 
 ## A concave part's prime-tower footprint is scored as its convex hull
 

@@ -29,22 +29,19 @@ export const MAX_FILL_TILES = 1024;
 /**
  * Refuse to repeat a design when one color's tiles would carry more points than this.
  *
- * turf 6.5's polygon clipping gives up on a big union without throwing: it returns a partial
- * result, so the part comes out missing geometry behind a "Couldn't merge the shapes" warning that
- * names no cause.
+ * It guards the 3D cut, not the polygon maths: past it Manifold's WASM heap runs out ("memory
+ * access out of bounds") and the part exports with no artwork at all. The clipping engine's own
+ * limit is SWEEP_SEGMENT_CAP, split around in src/geometry/regions.ts and refused as UnionTooBig
+ * where it can't be.
  *
- * Swept with `node_modules/.bin/vite-node scripts/bench-tile-union.ts` over the two bundled
- * patterns dense enough to reach it (docs/findings/2026-08-30-tile-union-ceiling.md). Failures
- * start in a 503k-600k band, not at the 800k this repo used to quote: zebra merged 544,400 points
- * clean and failed at 600,201, while dalmatian merged 503,100 clean and failed at 537,199. The two
- * overlap, so no threshold separates every clean reading from every failing one.
- *
- * 500k is the round number at the bottom of that band. It is under every failure measured, and
- * gives up two readings that did merge (zebra's 544,400 and dalmatian's 503,100), both of which
- * cost 13-24s to merge. Giving up a slow success is the cheaper mistake: a design over the budget
- * that is let through still reaches the old warning and the old partial part.
+ * Measured on a 240mm face with this constant set to Infinity, `node_modules/.bin/vite-node
+ * scripts/bench-fill-build.ts zebra 240 <scale> [0.5]` (docs/findings/2026-09-24-tile-union-cap.md):
+ * zebra filled at 544,400, 600,201 and 658,724 points (285-390s) and ran out of memory at 719,969.
+ * 600k keeps zebra's 544,400 and dalmatian's 503,100, the fills a user most plausibly asks for past
+ * 500k, with 17% under the failure. Memory follows the part's own mesh as well as the fill, so the
+ * margin is kept rather than spent.
  */
-export const TILE_UNION_VERTEX_BUDGET = 500_000;
+export const FILL_POINT_BUDGET = 600_000;
 
 /** Points in a feature's rings, which is what a tiled union pays for. */
 export function featureVertexCount(f: PolyFeature | null): number {
@@ -78,8 +75,10 @@ export type TileRefusal =
   | 'not-affine'
   /** The design is small enough against the surface to need more than MAX_FILL_TILES copies. */
   | 'too-many-tiles'
-  /** Repeating the design would hand the clipper more points than TILE_UNION_VERTEX_BUDGET. */
-  | 'too-detailed';
+  /** Repeating the design would carry more points than FILL_POINT_BUDGET. */
+  | 'too-detailed'
+  /** A color's tiles joined into one shape too big for the clipping engine, found while tiling. */
+  | 'joins-too-big';
 
 /**
  * What `tileCoverage` fills in when it refuses. `detail` carries what 'too-detailed' reports and is
@@ -107,12 +106,11 @@ export interface TileRefusalReport {
  * Returns null when the map isn't invertible, isn't affine (a future non-affine mapper would make
  * the whole grid wrong rather than slightly off), when the design has no repeat size at all, when
  * the fill needs more than MAX_FILL_TILES, or when the copies would carry more points than
- * TILE_UNION_VERTEX_BUDGET.
+ * FILL_POINT_BUDGET.
  *
- * `vertsPerTile` is the biggest single color's point count, not the design's total: `tileFeature`
- * runs one union per color, so that is the operation the ceiling applies to. The refusal still
- * covers the whole design, because tiling one color and not another would land them out of
- * register.
+ * `vertsPerTile` is the biggest single color's point count, not the design's total, which is what
+ * the budget was measured against. The refusal still covers the whole design, because tiling one
+ * color and not another would land them out of register.
  *
  * `refusal`, when passed, is filled in with which of those it was. It is an out-parameter rather
  * than a richer return type so a caller that only wants "can this be tiled?" keeps the plain
@@ -198,9 +196,8 @@ export function tileCoverage(
   if (!Number.isFinite(count) || count <= 0) return refuse('not-invertible');
   if (count > MAX_FILL_TILES) return refuse('too-many-tiles');
   // After the tile cap, not before: over MAX_FILL_TILES both are true and the count is the older,
-  // more specific complaint. The product is an upper bound on the biggest merge, since a tileable
-  // design's seam-straddling copies weld and lose points on the way up the union tree.
-  if (count * vertsPerTile > TILE_UNION_VERTEX_BUDGET) {
+  // more specific complaint.
+  if (count * vertsPerTile > FILL_POINT_BUDGET) {
     if (refusal) refusal.detail = { tiles: count, points: vertsPerTile };
     return refuse('too-detailed');
   }
@@ -212,6 +209,9 @@ export function tileCoverage(
  * just collected: a tileable pattern draws every border-straddling shape on both sides of the seam,
  * so neighbouring copies overlap exactly — and an overlapping MultiPolygon extrudes into a
  * self-intersecting cutter that Manifold rejects as non-watertight.
+ *
+ * Throws UnionTooBig when the copies weld into one polygon too big for the clipping engine, which
+ * no split can divide: dalmatian's background does, one polygon per fill however many tiles.
  */
 export async function tileFeature(
   feature: PolyFeature,
@@ -229,5 +229,5 @@ export async function tileFeature(
       );
     }
   }
-  return unionAllCooperative(copies, onProgress, label);
+  return unionAllCooperative(copies, onProgress, label, true);
 }

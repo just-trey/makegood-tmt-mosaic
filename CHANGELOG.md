@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Fill no longer cuts part of a big design and drops the rest.** The polygon
+  maths takes at most 500,000 edges at a time, and past that a fill used to lose
+  tiles behind a "Couldn't merge the shapes" warning. The work is now split into
+  pieces that fit. A fill can carry 600,000 points instead of 500,000, a margin
+  under the 720,000 where the cut itself ran out of memory. A colour that joins
+  into one shape too big to split is placed once, with the "too detailed"
+  warning.
 - **A Fill under a Sticker now gives way to it.** Wherever the sticker's
   colors differed from the pattern's, the export used to carry two inlays in
   the same space and the slicer picked one. The fill is now cut back from under

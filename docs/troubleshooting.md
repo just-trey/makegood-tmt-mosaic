@@ -24,19 +24,24 @@ lower precision. If the warning still appears:
 - Common causes: strokes converted to outlines (sharp mitre joins), leftover
   boolean results from the design tool, hand-edited paths with crossed segments.
 
-**In Fill mode, size is usually caught before the merge.** Fill repeats one
-design per tile, and the polygon library fails on sheer size as well as on bad
-paths, in a band swept at 503k-600k points in one operation. A fill whose copies
-would come near that is turned away up front with "… is too detailed to fill …"
-(below), so most size failures no longer arrive here.
+**Size is rarely the cause.** The polygon library takes at most 500,000 edges
+in one operation. Past that the app splits the work into pieces that each fit,
+and in Fill mode a design too big even for that is turned away with "… is too
+detailed to fill …" (below) instead of reaching here.
 
-Two cases still do. The budget is a margin under a band rather than a line, so a
-fill just under it can still fail. And each colour's own shapes are merged before
-any tiling, which the budget does not cover at all. The tell is the same either
-way: failures arrive per-part in a batch rather than on one colour, and the model
-carries visibly _less_ geometry than it should, so parts of the design come out
-blank. Fix by simplifying the design (fewer, larger shapes). Numbers in
-[tech-debt.md](tech-debt.md), "Turf's tile union has a vertex ceiling".
+Two cases can still reach here on size:
+
+- **One shape of more than 500,000 edges**, which no split can divide.
+- **Very many crossing edges.** The library also stops once the pieces it is
+  tracking pass a million, which crossings multiply. 500 strips each way reach
+  it from 4,000 edges.
+
+Each colour's own shapes are merged before any tiling, so a size failure there
+names no fill. The tell is the same either way: failures arrive per-part in a
+batch rather than on one colour, and the model carries visibly _less_ geometry
+than it should, so parts of the design come out blank. Fix by simplifying the
+design (fewer, larger shapes). The limits and how they were found:
+[2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md).
 
 **One "Couldn't trim the overlap" is not about a colour at all.** It names `the
 hidden surface on "<zone id>"` (`left`, `seat-left`, …). That is the chair's artwork
@@ -485,11 +490,17 @@ wanted anyway: a pattern at 5% reads as texture, not as a pattern.
 ### "… is too detailed to fill …"
 
 **"Repeating its busiest color means merging 529 tiles of 1201 points each."**
-The tile count is fine; the points inside it are not. The polygon maths behind
-Fill was swept as failing from 503k-600k points in one operation, and it fails by
-dropping tiles rather than by stopping, so the app refuses past 500k rather than
-ship a part that is quietly half blank. The points figure is per tile and for
-one colour, the busiest one, because the merge runs once per colour.
+The tile count is fine; the points inside it are not. Two limits say this:
+
+- **Past 600,000 points** (tiles times points) the app refuses. On the one
+  part measured the cut ran out of memory at 720,000, and the part exported
+  with no artwork at all.
+- **A colour whose tiles join into one shape of more than 500,000 edges**, such
+  as a background that runs through every tile. The polygon maths can't take it
+  in one piece. This one is found while tiling, so the product can be under
+  600,000 and it still appears.
+
+The points figure is per tile and for one colour, the busiest one.
 
 **Raise Scale.** Fewer, larger tiles multiply out to fewer points, and the
 message says so whenever that can work.
@@ -500,12 +511,10 @@ message drops the Scale advice and asks you to simplify the design instead: fewe
 nodes and fewer shapes in Illustrator or Inkscape. Placing it as a Sticker also
 works, at the cost of the repeat.
 
-This is the same limit as the size half of "Couldn't merge the shapes" at the
-top of this file, caught before the merge rather than after, so nothing is
-dropped. Bundled patterns get a separate build-time check in
-`tests/patterns-assets.test.ts`, against a stricter budget and a fixed tile
-count. Numbers and the sweep behind them:
-[tech-debt.md](tech-debt.md), "Turf's tile union has a vertex ceiling".
+Either way nothing is dropped: the whole design is placed once. Bundled patterns
+get a separate build-time check in `tests/patterns-assets.test.ts`, against half
+the budget and a fixed tile count. Numbers and the sweeps behind them:
+[2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md).
 
 ### "… measures zero in one direction, so there is no tile to repeat across …"
 
