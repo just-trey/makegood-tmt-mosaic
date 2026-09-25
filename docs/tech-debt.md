@@ -354,7 +354,7 @@ on every part. Its one named blocker was zebra + Fill dropping the black on
 - One build of the sweep:
   `node_modules/.bin/vite-node scripts/measure-conformal-cutter-nulls.ts zebra left 1 0 0 chair-handle-left`.
   Arguments are pattern, zone, scale, offX, offZ and an optional part id. The
-  full job list and the live drive are in the PR body of #PR.
+  full job list and the live drive are in the PR body of #316.
 - Turning the library back on is the maintainer's call. A kind carrying
   `withholdFill` hides the strip anyway, so the chair is unaffected.
 
