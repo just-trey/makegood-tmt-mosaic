@@ -35,6 +35,7 @@ import {
   dropUnprintableRemnants,
   planarArea,
   cleanFeature,
+  differenceAllChecked,
   differenceChecked,
   intersectChecked,
   safeIntersectChecked,
@@ -764,6 +765,22 @@ export function mirrorClipFailedWarning(design: string, zone: string): string {
 }
 
 /**
+ * Rules 1 and 3 for a fill yielding to a sticker: that one color keeps the overlap, and says so.
+ * The remedy is a nudge because the failure is the clipper's, on these exact coordinates.
+ */
+export function fillYieldFailedWarning(label: string, fill: string, partName: string): string {
+  return (
+    `Couldn't fit "${label}" of "${fill}" around the design on top of it on "${partName}". ` +
+    `Where they meet, both print in the same space. Move the design on top slightly.`
+  );
+}
+
+/** Said once per color, and only when no part cuts it: covered on one part, it prints on another. */
+export function fillCoveredNotice(label: string): string {
+  return `"${label}" is hidden everywhere by the designs on top of it, so it isn't cut.`;
+}
+
+/**
  * The regions one design actually cuts, pushed through the zone's placer: what the overlap check
  * consults when two placed bounding boxes alone would warn about artwork that never touches.
  *
@@ -786,14 +803,7 @@ function placedInk(
   netExcl: NetExclusion[] = [],
 ): InkPolygon[] {
   const out: InkPolygon[] = [];
-  for (const perArtwork of featuresByColor) {
-    const f = perArtwork[ai];
-    if (!f) continue;
-    const placed = mapFeatureCoords(f, place);
-    const half0 = half ? clipToKeptSide(placed, half).feat : placed;
-    const share = half0 && netExcl.length ? clipToNetShare(half0, netExcl).feat : half0;
-    const kept = dropUnprintableRemnants(share, CLIP_REMNANT_FLOOR_MM2).feat;
-    if (!kept) continue;
+  for (const kept of placedInkFeatures(featuresByColor, ai, place, half, netExcl)) {
     for (const rings of polysOf(kept))
       out.push(
         rings.map((r) => {
@@ -804,6 +814,27 @@ function placedInk(
           return (closed ? r.slice(0, -1) : r) as number[][];
         }),
       );
+  }
+  return out;
+}
+
+/** `placedInk` as features, one per palette slot: what a fill yields to beneath a sticker. */
+function placedInkFeatures(
+  featuresByColor: (PolyFeature | null)[][],
+  ai: number,
+  place: (pt: number[]) => number[],
+  half: KeptHalf | null,
+  netExcl: NetExclusion[],
+): PolyFeature[] {
+  const out: PolyFeature[] = [];
+  for (const perArtwork of featuresByColor) {
+    const f = perArtwork[ai];
+    if (!f) continue;
+    const placed = mapFeatureCoords(f, place);
+    const half0 = half ? clipToKeptSide(placed, half).feat : placed;
+    const share = half0 && netExcl.length ? clipToNetShare(half0, netExcl).feat : half0;
+    const kept = dropUnprintableRemnants(share, CLIP_REMNANT_FLOOR_MM2).feat;
+    if (kept) out.push(kept);
   }
   return out;
 }
@@ -1186,6 +1217,10 @@ export async function buildAssemblyGeometry(
   // a color cut nothing decides which warning it gets at the end, and the two causes have opposite
   // remedies: bring the design back onto the part, or move it off surface the assembly covers.
   const hiddenColors = new Set<number>();
+  // A fill color left with nothing once it yielded to the stickers on top, and every color that
+  // reached a cutter. The first minus the second is a color the stickers hide everywhere.
+  const coveredColors = new Set<number>();
+  const exposedColors = new Set<number>();
   /**
    * Record a color whose placed region reached this zone's hidden surface, and nothing else.
    *
@@ -1291,6 +1326,7 @@ export async function buildAssemblyGeometry(
         netExcl: NetExclusion[],
         zoneName: string,
         grid: TileGrid | null,
+        under: PolyFeature[],
         c: AssemblyPaletteEntry,
         ci: number,
         ai: number,
@@ -1380,6 +1416,38 @@ export async function buildAssemblyGeometry(
           feat = dropSpecks(r.feat, ci, part, c);
           if (!feat) return;
         }
+        // A fill is the background, so it yields to every sticker on the zone: without this each
+        // color's inlay is `part ∩ prism` with both designs in the same prism set, and wherever
+        // their colors differ the export carries two inlays in one volume. One sweep per color and
+        // part: 0.3-0.6s of a wheel build (`yield ms`, scripts/bench-fill-yield.ts). Chair
+        // unmeasured.
+        if (under.length) {
+          const r = differenceAllChecked(feat, under);
+          if (!r.trimmed)
+            warnBuild(
+              fillYieldFailedWarning(
+                regionLabel(c.hex, c.isMerge, c.members.length),
+                artworks[ai].name || 'design',
+                part.name,
+              ),
+            );
+          if (!r.feat) {
+            // Landed for a cut-through part too, which has no clip to have said so: the color is
+            // under a sticker, not off the part, and the off-part warning's remedy would be wrong.
+            landedColors.add(ci);
+            coveredColors.add(ci);
+            return;
+          }
+          // A sticker's edge crossing a stripe leaves its tip, often under the speck floor (a 0.12mm²
+          // one in tests/fill-yield.test.ts). Not floored with no boundary: that region still reaches
+          // off the part, so the notice would name specks the mesh never cuts.
+          // Exposed before the floor: a color left only a speck here reached this face, and the
+          // speck notice says why it isn't cut, so "hidden everywhere" would be false.
+          exposedColors.add(ci);
+          feat = boundaryPoly ? dropSpecks(r.feat, ci, part, c) : r.feat;
+          if (!feat) return;
+        }
+        exposedColors.add(ci);
         const requested = requestedDepth(colorSettings, globalDepth, c.key);
         // A depth at or below zero cuts nothing and used to drop the color silently, deleting its
         // color-list row and with it the depth field needed to fix it. Raise to a printable depth so
@@ -1567,6 +1635,24 @@ export async function buildAssemblyGeometry(
           overlapCheckedZones.add(mapper.zoneId ?? '');
         }
         const boundaryPoly = mapper.boundary();
+        // What every fill on this zone yields to: each sticker's ink, placed as it is cut. Only
+        // built when a fill shares the zone with one. A fill never yields to another fill; that
+        // pairing is warned instead (warnOverlappingDesigns).
+        const stickersHere = zoneWork[zi].filter((ai) => artworks[ai].mode !== 'fill');
+        const fillHere = zoneWork[zi].some((ai) => artworks[ai].mode === 'fill');
+        const under =
+          stickersHere.length && fillHere
+            ? stickersHere.flatMap((ai) => {
+                const place = mapper.placer(placements[ai]);
+                return placedInkFeatures(
+                  featuresByColor,
+                  ai,
+                  place,
+                  keptHalfFor(mapper, artworks[ai], place, zoneName),
+                  artworks[ai].netBound ? mapper.netExcluded() : [],
+                );
+              })
+            : [];
         for (const ai of zoneWork[zi]) {
           anyPlacements = true;
           const place = mapper.placer(placements[ai]);
@@ -1632,6 +1718,7 @@ export async function buildAssemblyGeometry(
               netExcl,
               zoneName,
               grid,
+              artworks[ai].mode === 'fill' ? under : [],
               palette[ci],
               ci,
               ai,
@@ -1878,6 +1965,15 @@ export async function buildAssemblyGeometry(
         ),
       );
   }
+  // Not gated on landedColors: the boundary clip already counted these as landed, which is true,
+  // and is why nothing else would say where they went.
+  for (const ci of coveredColors)
+    if (!exposedColors.has(ci))
+      noticeBuild(
+        fillCoveredNotice(
+          regionLabel(palette[ci].hex, palette[ci].isMerge, palette[ci].members.length),
+        ),
+      );
   palette.forEach((c, ci) => {
     const d = colorAppliedDepth.get(ci);
     if (d != null) c.appliedDepth = d;

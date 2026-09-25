@@ -174,7 +174,7 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   cut, and a very busy image says so instead of tracing thousands of specks.
 - Two designs placed over each other are warned about by name,
   not resolved for you — their recesses still both get cut. A Fill underneath
-  a sticker isn't checked at all; see [docs/tech-debt.md](docs/tech-debt.md).
+  a sticker is the exception: the fill is cut back from under it.
 - The hubcap's plate is verified up to 220mm on 256mm and 270mm beds only.
   Within that it exports at a hand-checked position with the prime tower placed
   clear of it (7mm of clearance on a 256mm bed, 19mm on a 270mm one). Larger

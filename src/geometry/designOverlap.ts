@@ -154,7 +154,7 @@ function crossing(prev: number[], cur: number[], dp: number, dc: number): number
  * Two fills always qualify: a fill repeats across the whole zone by definition, so a second one is
  * guaranteed to land on the first. A fill paired with a sticker is deliberately left alone — a
  * pattern background under a sticker is a real workflow, and flagging it would fire on the intended
- * use (see the note in docs/tech-debt.md on what that combination isn't checked for).
+ * use. The build cuts the fill back from under the sticker, so the pair never shares a volume.
  *
  * Quads first, then ink. The quads answer "could these cut into each other" cheaply, and on their
  * own they answer it wrong for a design nested in another's hollow — a logo centered in a frame

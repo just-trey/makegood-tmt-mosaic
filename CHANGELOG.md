@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A Fill under a Sticker now gives way to it.** Wherever the sticker's
+  colors differed from the pattern's, the export used to carry two inlays in
+  the same space and the slicer picked one. The fill is now cut back from under
+  the sticker. On the wheel that adds about half a second to a rebuild
+  (`scripts/bench-fill-yield.ts`).
 - **A traced image is traced again when you resize it.** Loaded onto a 32mm
   hubcap and raised to 220mm, it used to keep the detail it lost at 32mm until
   you nudged Colors or Detail. Scale, the hubcap diameter, the Design radius,
