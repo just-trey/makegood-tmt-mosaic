@@ -128,7 +128,7 @@ function tracePlan(img: RasterImage, detail: number, mmPerPixel: number) {
 /**
  * The two floors a trace at this placement would run under, cheap enough to ask on every rebuild:
  * no quantize, no trace. Equal answers for two placements mean the traces are identical, which is
- * how a resize decides whether to re-trace (state/artwork.ts `staleRasterSources`).
+ * how a resize decides whether to re-trace (state/artwork.ts `retraceMovedSources`).
  */
 export function placedFloors(
   img: RasterImage,

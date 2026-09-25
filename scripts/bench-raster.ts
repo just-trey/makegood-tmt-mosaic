@@ -1168,7 +1168,7 @@ async function modeFloor(names: string[]) {
 
 /**
  * How far a placed design has to be resized before its despeckle floors move, which is when the
- * rebuild re-traces it (`staleRasterSources`). Reads `placedFloors`, the function the app compares,
+ * rebuild re-traces it (`retraceMovedSources`). Reads `placedFloors`, the function the app compares,
  * so the answer is the app's own. Needs no corpus: the floors read only the working size and the
  * edge density, so one flat and one photographic working image at their shipping sizes cover both
  * branches.

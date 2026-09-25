@@ -709,7 +709,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
         // Whatever was saved: this is a reconstruction, not a fresh trace, and it runs before the
         // parts are back, so there is no placement to derive one from. A restore that quietly
         // returns a different design is the failure this payload exists to prevent. The first
-        // settled rebuild re-traces if the restored placement disagrees (`staleRasterSources`).
+        // settled rebuild re-traces if the restored placement disagrees (`retraceMovedSources`).
         mmPerPixel: s.raster.mmPerPixel,
       };
       // name is passed alongside opts, not folded into it: opts is spread into the stored

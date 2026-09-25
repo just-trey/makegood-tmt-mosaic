@@ -220,7 +220,7 @@ function cascadedOffset(
  * what keeps the floor and the cut talking about the same design.
  *
  * Read again on every rebuild, which re-traces once the floors it gives stop matching the ones the
- * trace ran at (`staleRasterSources`).
+ * trace ran at (`retraceMovedSources`).
  */
 export function rasterMmPerPixel(img: RasterImage, sourceId?: string): number | undefined {
   const mm = assemblyMmPerUnit(img, sourceId);
