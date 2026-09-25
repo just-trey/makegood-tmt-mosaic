@@ -22,9 +22,9 @@ import { modelToWorldDir, modelToWorldPoint, modelWorldMatrix } from './viewport
 export interface FaceFrame {
   /** world position of the design center (where the SVG anchor lands) */
   origin: THREE.Vector3;
-  /** unit world vector the +offsetX slider moves the design along */
+  /** world vector a drag reads the +offsetX change against: see ZoneFrame.uAxis */
   uAxis: THREE.Vector3;
-  /** unit world vector the +offsetY slider moves the design along */
+  /** the same for +offsetY */
   vAxis: THREE.Vector3;
   /** unit plane normal (for raycasting the face) */
   normal: THREE.Vector3;

@@ -11,6 +11,9 @@ import { buildWallField, minWallUnder, type WallField } from './wall';
 /** How far each cutter pokes above the face so the pocket opens cleanly at the surface. */
 export const OVERSHOOT_MM = 0.5;
 
+/** The flat cut's axis. Read-only: clone it before writing. */
+const UP = new THREE.Vector3(0, 1, 0);
+
 export function rotatePointY(
   x: number,
   z: number,
@@ -312,18 +315,23 @@ export interface CutRegionOptions {
 export interface ZoneFrame {
   /** design-center position in the part's native model space (before the model-group grid lift) */
   origin: THREE.Vector3;
-  /** unit vector the +u (offsetX) axis moves along */
+  /**
+   * In-plane vector a drag is read against: (p - origin)·uAxis is the offsetX change that brings
+   * the design center to p. Unit wherever the design space is the surface's own; a flat face
+   * tilted off horizontal places by projection, and has it shorter.
+   */
   uAxis: THREE.Vector3;
-  /** unit vector the +v (offsetY) axis moves along */
+  /** the same for offsetY */
   vAxis: THREE.Vector3;
   /** unit plane normal */
   normal: THREE.Vector3;
   /**
    * How far the queried (u, v) fell outside the surface this mapper covers, in mm — 0 when it
-   * landed on it. A flat face is unbounded in its own plane, so it is always 0; a conformal chart
-   * covers only part of its UV rectangle and answers an outside query with the nearest triangle it
-   * has, which can be a long way off on unrelated geometry. Reported so the gizmo can say so
-   * instead of drawing a frame there as if it were on the design surface.
+   * landed on it. A flat face is unbounded in its own plane, so it is 0 there, and Infinity on a
+   * face running along the cut axis, which nothing lands on. A conformal chart covers only part of
+   * its UV rectangle and answers an outside query with the nearest triangle it has, which can be a
+   * long way off on unrelated geometry. Reported so the gizmo can say so instead of drawing a frame
+   * there as if it were on the design surface.
    */
   offChartMM: number;
 }
@@ -426,6 +434,8 @@ export class FlatZoneMapper implements ZoneMapper {
   readonly nsign: number;
   private readonly faceY: number;
   private readonly faceYKnown: boolean;
+  private readonly frameNormal: THREE.Vector3;
+  private readonly faceMidY: number;
   private readonly faceCx: number;
   private readonly faceCz: number;
   private boundaryComputed = false;
@@ -458,6 +468,17 @@ export class FlatZoneMapper implements ZoneMapper {
     // tall, and caught the tilted case only when topZ happened to come out negative.
     this.faceYKnown = !!nrm && Math.abs(nrm[1]) > 0.1;
     this.faceY = this.faceYKnown ? part.topZ / nrm![1] : part.topZ;
+    this.frameNormal = nrm ? new THREE.Vector3(nrm[0], nrm[1], nrm[2]).normalize() : UP.clone();
+    // Where on a sideways face to draw the frame, since faceY is no height there.
+    const outline = part.boundaryLoops?.[0];
+    let yLo = Infinity,
+      yHi = -Infinity;
+    if (!this.faceYKnown && outline)
+      for (const pt of outline) {
+        if (pt[1] < yLo) yLo = pt[1];
+        if (pt[1] > yHi) yHi = pt[1];
+      }
+    this.faceMidY = yHi >= yLo ? (yLo + yHi) / 2 : 0;
 
     // Rect parts center the design on the detected face (its native X/Z bbox center); wheel parts
     // anchor on the hub at the origin.
@@ -746,13 +767,45 @@ export class FlatZoneMapper implements ZoneMapper {
     };
   }
 
+  /**
+   * The design is placed in native X/Z and cut straight down Y, so the frame is that X/Z point
+   * lifted along Y onto the face. A horizontal face gets exactly (x, faceY, z) and the X/Z axes. A
+   * face running along Y has no such lift, and gets a frame of its own, flagged off-surface.
+   */
   frameAt(u: number, v: number): ZoneFrame {
+    const x = u + this.faceCx,
+      z = v + this.faceCz;
+    const n = this.frameNormal;
+    if (this.faceYKnown || !this.faceNormal) {
+      // X and Z projected onto the face, not lifted: for any point p on it, (p - origin)·uAxis is
+      // then exactly the X change that lifts onto p, so a drag keeps the design under the cursor.
+      // Shorter than unit, and not square, on a tilted face.
+      return {
+        origin: new THREE.Vector3(x, this.faceY - (n.x * x + n.z * z) / n.y, z),
+        uAxis: new THREE.Vector3(1, 0, 0).addScaledVector(n, -n.x),
+        vAxis: new THREE.Vector3(0, 0, 1).addScaledVector(n, -n.z),
+        normal: n.clone(),
+        offChartMM: 0,
+      };
+    }
+    // A face running along Y: no X/Z point lifts onto it, and the cut runs at `topZ` standing in for
+    // a height, so the design does not land on this face. Drawn on it anyway, where the user picked,
+    // and flagged as off it. The frame is the face's own 2D frame so a drag still follows the
+    // cursor; the offset that moves a point along the face keeps its axis, the other gets up.
+    const up = UP.clone().addScaledVector(n, -n.y).normalize();
+    const across = new THREE.Vector3().crossVectors(up, n);
+    const facesZ = Math.abs(n.z) >= Math.abs(n.x);
+    if ((facesZ ? across.x : across.z) < 0) across.negate();
+    const uAxis = facesZ ? across : up;
+    const vAxis = facesZ ? up : across;
+    const anchor = new THREE.Vector3(this.faceCx, this.faceMidY, this.faceCz);
+    anchor.addScaledVector(n, this.part.topZ - n.dot(anchor));
     return {
-      origin: new THREE.Vector3(u + this.faceCx, this.faceY, v + this.faceCz),
-      uAxis: new THREE.Vector3(1, 0, 0),
-      vAxis: new THREE.Vector3(0, 0, 1),
-      normal: new THREE.Vector3(0, this.nsign, 0),
-      offChartMM: 0,
+      origin: anchor.addScaledVector(uAxis, u).addScaledVector(vAxis, v),
+      uAxis,
+      vAxis,
+      normal: n.clone(),
+      offChartMM: Infinity,
     };
   }
 }

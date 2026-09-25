@@ -107,51 +107,16 @@ row is the flank's whole dead area summed out of
   seam instead of stopping dead at it.
 - The owner has seen the trade and chose to leave tires out for now.
 
-## The placement frame's angle is unrelated to the face it acts on, and it shares the viewport with a second affordance
+## Corner handles and an axis handle compete for the same drag
 
-Conventions 13–14 of [ui-conventions.md](ui-conventions.md): a gizmo is aligned to the frame of
-the thing it acts on, and only one manipulation affordance is offered at a time. Both are
-reported broken — the placement frame renders at an angle with no relation to the part face, and
-corner handles compete with an axis handle for the same drag.
+Convention 14 of [ui-conventions.md](ui-conventions.md): only one manipulation affordance is
+offered at a time. The placement gizmo draws corner handles and an axis handle that both answer
+the same drag.
 
-**Measured 2026-08-24, and it is a bug, not a rendering choice**
-([findings report](findings/2026-08-24-placement-frame-angle.md)). `scripts/measure-frame-angle.ts`
-re-measures it. The anchor hijack that faked this in the 2026-08-16 run is fixed (PR E), so the
-angle now reads honestly.
+- A UI decision, not a geometry one: which affordance a drag on the frame belongs to.
 
-- **8 of the 18 patches the part panel offers put the frame 90.0° off the face**, across the three
-  file-based design meshes. Always exactly 90.0°: `FlatZoneMapper.frameAt` returns a literal
-  horizontal basis whatever the part is shaped like.
-- **7 of the 8 clip the cut to exactly 0 mm².** Nothing prints there, so the build's "the cut may
-  be wrong" understates it. The eighth is `wheel-hub-cap`, which sets `cutThrough` and so is not
-  clipped at all; what it cuts on a sideways face is untested.
-- **Every kind's default face reads 0.0°**, all four parts, read from the app rather than from the
-  area ranking (`defaultPatchIdx` prefers the role's `preferFaceNormal`, and two default to rank
-  1). That is why ordinary use never shows it.
-- Not silent: the sideways-face warning and the "colors land entirely off the part" warning both
-  fire, and the second is accurate.
-
-Two defects left open. A third, the "face detected" line not tracking the dropdown, is fixed: the
-row now recomputes it in place through `faceStatusText`.
-
-1. `frameAt` hardcodes the horizontal basis. `faceY` already carries a fallback for a sideways
-   normal, so the case is known and drawn through anyway.
-2. The gizmo cannot warn: the amber off-surface state keys on `offSurfaceMM`, and the flat path
-   returns `offChartMM: 0` unconditionally, so that state is unreachable on every flat part.
-
-**Bounded, which is what keeps the fix small.** Every shipped part's default face is horizontal
-because `pack-part.mjs` aligns it, so all 8 measured cases need a deliberate pick from the
-dropdown, behind the "Advanced: per-part face & alignment" disclosure. An uploaded mesh has no
-such guarantee and would hit both defects at its default face with no interaction at all, but the
-STL/3MF drop target is only offered when the parts library is unreachable (see
-`buildAsmPartRow`'s docstring in [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts)), so that
-is a degraded-mode path rather than a normal one. Undriven either way.
-
-The competing-affordances half (corner handles against an axis handle for the same drag,
-convention 14) is separable, is a UI decision, and was not touched here. This is the last of the
-group that made the viewport not behave like the direct-manipulation surface it looks like; the
-other one, "Zone picking has no occlusion test," is closed (`npm run check:zone-occlusion`
-re-measures it — by hand, it is not in CI).
+**Closing it**: pick the one affordance each drag starts, in
+[src/scene/designGizmo.ts](../src/scene/designGizmo.ts), and drop or separate the other.
 
 ## The chair's prime-tower positions have only been verified on one bed size
 

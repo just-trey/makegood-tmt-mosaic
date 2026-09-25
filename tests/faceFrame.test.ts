@@ -416,3 +416,61 @@ describe('assembly gizmo frame traces the surface', () => {
     expect(f.pointAt(du, 0).distanceTo(onPlane)).toBeGreaterThan(5);
   });
 });
+
+/**
+ * The amber state is the gizmo's only way to say the design is not landing where the frame is, so
+ * a flat part has to be able to reach it: on a face the cut cannot reach at all, it must.
+ */
+describe('assembly gizmo frame on a flat part', () => {
+  /** A footrest-kind part whose chosen design face points -Z, as the dropdown's side faces do. */
+  function sidewaysPart(): AssemblyPart {
+    return {
+      id: 1,
+      name: 'side',
+      roleId: 'footrest',
+      positions: new Float32Array(9),
+      patches: null,
+      patchIdx: 0,
+      boundaryLoops: [
+        [
+          [-50, 0, -20],
+          [50, 0, -20],
+          [50, 40, -20],
+          [-50, 40, -20],
+        ],
+      ],
+      patchNormal: [0, 0, -1],
+      topZ: 20,
+      baseDepth: 1,
+      isDuplicateOf: null,
+      pivotX: 0,
+      pivotZ: 0,
+      angleDeg: 0,
+      loaded: true,
+      cutThrough: false,
+    } as unknown as AssemblyPart;
+  }
+
+  beforeEach(() => {
+    state.assembly.kindId = 'footrest';
+    state.assembly.parts = [sidewaysPart()];
+    loadArtworkSource(parsed(), 'a.svg');
+  });
+
+  it('turns amber on a face the cut cannot reach', () => {
+    const f = computeFaceFrame()!;
+    expect(f.offSurfaceMM).toBeGreaterThan(5);
+    expect(f.offSurfaceAt(10, 0, 5)).toBeGreaterThan(5);
+  });
+
+  it('is drawn in that face, not in a horizontal plane beside it', () => {
+    const f = computeFaceFrame()!;
+    expect(Math.abs(f.normal.z)).toBeCloseTo(1, 9);
+    for (const [du, dv] of [
+      [0, 0],
+      [8, -6],
+      [-10, 10],
+    ])
+      expect(f.pointAt(du, dv).z).toBeCloseTo(-20, 9);
+  });
+});

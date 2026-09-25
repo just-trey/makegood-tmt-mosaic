@@ -589,6 +589,143 @@ describe('FlatZoneMapper surface geometry', () => {
       true,
     ).frameAt(0, 0);
     expect(rect.origin.toArray()).toEqual([5, 10, 5]);
+    expect(rect.offChartMM).toBe(0);
+  });
+});
+
+/**
+ * The gizmo is drawn in the plane frameAt returns, so a plane that is not the face's is a gizmo at
+ * an arbitrary angle (convention 13). scripts/measure-frame-angle.ts sweeps the shipped patches.
+ */
+describe('FlatZoneMapper.frameAt lies in the face it was given', () => {
+  const v3 = (n: number[]) => new THREE.Vector3(n[0], n[1], n[2]).normalize();
+  // `+ 0` folds -0 into 0, which toEqual would otherwise report as a difference
+  const rounded = (v: THREE.Vector3) => v.toArray().map((c) => Math.round(c * 1e9) / 1e9 + 0);
+
+  type Frame = ReturnType<FlatZoneMapper['frameAt']>;
+
+  function expectInFace(f: Frame, n: THREE.Vector3, topZ: number) {
+    expect(Math.abs(f.normal.dot(n))).toBeCloseTo(1, 9);
+    expect(f.origin.dot(n)).toBeCloseTo(topZ, 9);
+    expect(f.uAxis.dot(n)).toBeCloseTo(0, 9);
+    expect(f.vAxis.dot(n)).toBeCloseTo(0, 9);
+    expect(f.uAxis.clone().cross(f.vAxis).length()).toBeGreaterThan(0.1);
+  }
+
+  /**
+   * The gizmo turns a drag to a point p on the face into offsets by (p - origin)·axis. The frame at
+   * those offsets has to be at p, or the design runs ahead of the cursor or snaps back on release.
+   */
+  function expectDragFollows(m: FlatZoneMapper, u: number, v: number) {
+    const f = m.frameAt(u, v);
+    const along = f.uAxis.clone().multiplyScalar(7).add(f.vAxis.clone().multiplyScalar(-11));
+    const p = f.origin.clone().add(along.normalize().multiplyScalar(13));
+    const d = p.clone().sub(f.origin);
+    const moved = m.frameAt(u + d.dot(f.uAxis), v + d.dot(f.vAxis));
+    expect(moved.origin.distanceTo(p)).toBeLessThan(1e-9);
+  }
+
+  it('keeps a drag under the cursor on a horizontal face', () => {
+    expectDragFollows(new FlatZoneMapper(boxPart(), [], false), 3, -4);
+  });
+
+  for (const tilt of [
+    { name: 'about X', n: [0, 2, 1] },
+    { name: 'about both X and Z', n: [1, 3, 1] },
+  ]) {
+    it(`lifts a face tilted ${tilt.name} onto the face, above where the cut is placed`, () => {
+      const n = v3(tilt.n);
+      const topZ = n.dot(new THREE.Vector3(0, 10, 0));
+      const m = new FlatZoneMapper(boxPart({ patchNormal: n.toArray(), topZ }), [], false);
+      const f = m.frameAt(3, -4);
+      expectInFace(f, n, topZ);
+      // X and Z are where the design is placed; Y is only the face's height above that point
+      expect(f.origin.x).toBeCloseTo(3, 9);
+      expect(f.origin.z).toBeCloseTo(-4, 9);
+      expect(f.offChartMM).toBe(0);
+      expectDragFollows(m, 3, -4);
+    });
+  }
+
+  it('reads a drag on a tilted face as the X/Z distance the design moves', () => {
+    // 45° about X: 10mm of +offsetY climbs 14.1mm of face, and must still read back as 10
+    const n = v3([0, 1, 1]);
+    const topZ = n.dot(new THREE.Vector3(0, 10, 0));
+    const m = new FlatZoneMapper(boxPart({ patchNormal: n.toArray(), topZ }), [], false);
+    const f = m.frameAt(0, 0);
+    const d = m.frameAt(0, 10).origin.sub(f.origin);
+    expect(d.length()).toBeCloseTo(10 * Math.SQRT2, 9);
+    expect(d.dot(f.vAxis)).toBeCloseTo(10, 9);
+    expect(d.dot(f.uAxis)).toBeCloseTo(0, 9);
+  });
+
+  // The three sideways shapes the shipped meshes offer: facing Z, facing X, and 17° between.
+  const faces: { name: string; n: number[]; loop: number[][] }[] = [
+    {
+      name: 'a face pointing -Z',
+      n: [0, 0, -1],
+      loop: [
+        [-20, 0, -20],
+        [20, 0, -20],
+        [20, 10, -20],
+        [-20, 10, -20],
+      ],
+    },
+    {
+      name: 'a face pointing +X',
+      n: [1, 0, 0],
+      loop: [
+        [20, 0, -20],
+        [20, 0, 20],
+        [20, 10, 20],
+        [20, 10, -20],
+      ],
+    },
+    {
+      name: 'a face turned between X and Z',
+      n: [0.29237, 0, -0.9563],
+      loop: [
+        [0, 0, -20],
+        [10, 0, -16.94],
+        [10, 10, -16.94],
+        [0, 10, -20],
+      ],
+    },
+  ];
+  for (const face of faces) {
+    it(`draws ${face.name} in that face, and flags it as somewhere the design cannot land`, () => {
+      const n = v3(face.n);
+      const topZ = n.dot(new THREE.Vector3().fromArray(face.loop[0]));
+      const part = boxPart({ patchNormal: n.toArray(), topZ, boundaryLoops: [face.loop] });
+      const m = new FlatZoneMapper(part, [], true);
+      const f = m.frameAt(3, -4);
+      expectInFace(f, n, topZ);
+      // centred halfway up the patch, not at the plane offset standing in for a Y
+      expect(m.frameAt(0, 0).origin.y).toBeCloseTo(5, 9);
+      expect(f.offChartMM).toBe(Infinity);
+      expectDragFollows(m, 3, -4);
+    });
+  }
+
+  it('keeps the offset that still runs along a sideways face on its own axis', () => {
+    const [facingZ, facingX] = faces;
+    const z = new FlatZoneMapper(
+      boxPart({ patchNormal: facingZ.n, topZ: 20, boundaryLoops: [facingZ.loop] }),
+      [],
+      true,
+    ).frameAt(3, -4);
+    // offsetX moves along X on a face pointing Z; offsetY runs into it, so it takes the face's up
+    expect(rounded(z.origin)).toEqual([3, 1, -20]);
+    expect(rounded(z.uAxis)).toEqual([1, 0, 0]);
+    expect(rounded(z.vAxis)).toEqual([0, 1, 0]);
+    const x = new FlatZoneMapper(
+      boxPart({ patchNormal: facingX.n, topZ: 20, boundaryLoops: [facingX.loop] }),
+      [],
+      true,
+    ).frameAt(3, -4);
+    expect(rounded(x.origin)).toEqual([20, 8, -4]);
+    expect(rounded(x.vAxis)).toEqual([0, 0, 1]);
+    expect(rounded(x.uAxis)).toEqual([0, 1, 0]);
   });
 });
 
