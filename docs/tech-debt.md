@@ -953,3 +953,23 @@ would close it: sweep clipped ink across the shipped example designs and say how
 narrow real artwork gets. If the narrowest deliberate stroke turns out to be far
 above the floor, the argument gains a number. If artwork routinely runs at 0.2mm,
 the speck notice is firing on content people meant, which is a different bug.
+
+## A Fill hidden under a sticker on a cut-through part can read as off the part — unmeasured
+
+**The case.** A cut-through part has no clip boundary, so its fill still reaches past the mesh.
+
+- A sticker can hide every bit of a fill colour that lies on the mesh and still leave pieces of it
+  off the mesh.
+- The cut-back then leaves the colour non-empty, so it is not counted as covered.
+- Those pieces cut nothing, so the colour never counts as landed.
+- If no other part cuts that colour, the build says "… lands entirely off the part", whose remedy
+  (lower Scale, move the design) is wrong. The true message is `fillCoveredNotice`.
+
+**Why it is rare.** Every part carrying the colour must end that way: a bounded part clips to its
+face first, so it reports correctly. On the wheel that means a sticker covering all of Top, Bottom
+and Cap. Not reproduced: no test or drive has built it.
+
+**Closing it** means deciding "covered" against the mesh rather than the 2D region, in
+`buildColorPrism` ([src/geometry/assembly.ts](../src/geometry/assembly.ts)). For example, clip a
+boundary-less fill to the part's footprint before the cut-back, or count a colour covered when the
+cut-back removed area and what is left produced no inlay.
