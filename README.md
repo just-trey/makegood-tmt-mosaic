@@ -149,10 +149,11 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.
 - Input parts must be watertight/manifold for assembly cutting.
-- On the chair body, nothing bounds a depth. A pocket deeper than its wall cuts
-  a hole clean through and exports without comment. Flat faces (wheel, footrest,
-  hubcap) cut a too-deep pocket at the wall under it instead, with a warning
-  naming the color and the part. See [docs/tech-debt.md](docs/tech-debt.md).
+- On the chair body, and on a sideways face picked by hand, nothing bounds a
+  depth. A pocket deeper than the wall there cuts a hole clean through. The
+  default faces of the wheel, footrest and hubcap cut a too-deep pocket at the
+  wall under it instead, with a warning naming the color and the part. See
+  [docs/tech-debt.md](docs/tech-debt.md).
   The shallow end (zero or negative) is caught up front and raised to a safe
   minimum.
 - Fill can't repeat a very detailed design. The polygon clipper was swept as

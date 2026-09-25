@@ -116,14 +116,14 @@ describe('thinWallWarning', () => {
   // The wall is quoted as well as the cut: the cut stops a floor short of it, so saying the part is
   // "only 2.95 mm thick" would be wrong about the part by that floor.
   it('quotes the wall and the cut as two numbers', () => {
-    expect(thinWallWarning(['#ff0000'], 'Hubcap', 5, 2.95)).toBe(
+    expect(thinWallWarning(['#ff0000'], 'Hubcap', 5, 2.95, 3)).toBe(
       'Depth for "#ff0000" was set to 5.00 mm, but "Hubcap" is only 3.00 mm thick under it. ' +
         'It was cut at 2.95 mm instead.',
     );
   });
 
   it('names every color clamped to the same depth on the same part at once', () => {
-    expect(thinWallWarning(['#ff0000', 'Merged (2)'], 'Hubcap', 5, 2.95)).toBe(
+    expect(thinWallWarning(['#ff0000', 'Merged (2)'], 'Hubcap', 5, 2.95, 3)).toBe(
       'Depths for "#ff0000", "Merged (2)" were set to 5.00 mm, but "Hubcap" is only 3.00 mm ' +
         'thick under them. They were cut at 2.95 mm instead.',
     );

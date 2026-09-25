@@ -144,21 +144,21 @@ export function tooDeepWarning(
 
 /**
  * The warning for a depth deeper than the wall under a region, where the part as a whole had room.
- *
- * Quotes the wall as well as the cut, since the cut stops CUT_FLOOR_MM short of it and "only 2.95mm
- * thick" would be wrong about the part. Grouped and keyed exactly like tooDeepWarning.
+ * Quotes the wall as well as the cut: the cut stops CUT_FLOOR_MM short of it, or at
+ * MIN_CUT_DEPTH_MM over a wall thinner than that, so neither number stands for the other.
  */
 export function thinWallWarning(
   labels: string[],
   partName: string,
   requested: number,
   cutAt: number,
+  wall: number,
 ): string {
   const one = labels.length === 1;
   const which = labels.map((l) => `"${l}"`).join(', ');
   return (
     `${one ? 'Depth' : 'Depths'} for ${which} ${one ? 'was' : 'were'} set to ${requested.toFixed(2)} mm, ` +
-    `but "${partName}" is only ${(cutAt + CUT_FLOOR_MM).toFixed(2)} mm thick under ${one ? 'it' : 'them'}. ` +
+    `but "${partName}" is only ${wall.toFixed(2)} mm thick under ${one ? 'it' : 'them'}. ` +
     `${one ? 'It was' : 'They were'} cut at ${cutAt.toFixed(2)} mm instead.`
   );
 }
@@ -168,6 +168,8 @@ export interface PartDepthClamp {
   cutAt: number;
   labels: string[];
   partName: string;
+  /** the wall under the colors, for a clamp by the wall rather than the part */
+  wall?: number;
 }
 
 /**
@@ -182,10 +184,11 @@ export function addPartTooDeepClamp(
   partName: string,
   requested: number,
   cutAt: number,
+  wall?: number,
 ): void {
-  const key = `${requested.toFixed(2)}|${cutAt.toFixed(2)}|${partName}`;
+  const key = `${requested.toFixed(2)}|${cutAt.toFixed(2)}|${wall?.toFixed(2)}|${partName}`;
   const at = into.get(key);
-  if (!at) into.set(key, { requested, cutAt, partName, labels: [label] });
+  if (!at) into.set(key, { requested, cutAt, partName, labels: [label], wall });
   else if (!at.labels.includes(label)) at.labels.push(label);
 }
 

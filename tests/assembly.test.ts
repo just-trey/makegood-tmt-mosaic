@@ -1774,8 +1774,8 @@ function steppedPart(): AssemblyPart {
 describe('buildAssemblyGeometry wall clamp', () => {
   beforeEach(() => clearWarnings());
 
-  // The part bound let this through: 20mm is well under the 24.95mm the part reaches behind its
-  // face, and the 3mm plate the square stands on was cut clean through with no warning.
+  // The part bound allows this: 20mm is well under the 24.95mm the part reaches behind its face,
+  // and the 3mm plate the square stands on is what stops it.
   it(
     'cuts a pocket deeper than the wall under it at the wall, and says so',
     { timeout: 30000 },

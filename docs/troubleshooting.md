@@ -1363,7 +1363,9 @@ thick under it. It was cut at 2.95 mm instead.`
 **What it means.** The part as a whole had room for the depth, but the wall
 under that colour doesn't. Cut as asked, the pocket would break out the back.
 It was cut 0.05 mm short of the thinnest wall anywhere under the colour instead.
-The colour's row in the colour list shows the same number ("cut at … ").
+Over a wall thinner than 0.25 mm it is cut at the 0.20 mm minimum, which still
+reaches the back there. The colour's row in the colour list shows the same
+number ("cut at … ").
 
 - One depth per colour per part. A colour spread over thick and thin spots is
   cut to the thinnest.
@@ -1379,10 +1381,10 @@ the thin spot keeps its full depth.
 - **The chair body.** Its curved zones aren't measured.
 - **The part-wide checks declined.** The same cases as "… deeper than "Wheel
   top" goes" above: a sideways or tilted face, a face plane off the part.
-- **A wall under 0.25 mm.** Too thin to hold the smallest recess, so the colour
-  cuts as asked rather than at a depth that won't print.
 - **Cut-through parts and edge regions.** They go the whole way through on
   purpose.
+- **A colour that couldn't be trimmed to the face.** That has its own warning,
+  "Clipping color region to the design face failed…".
 
 Grouped like the part-wide warning: one pill per part per pair of numbers,
 naming every colour that shares it.

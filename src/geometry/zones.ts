@@ -284,15 +284,15 @@ export interface CutterOptions {
 
 /**
  * One slice of a color's region and the depth it is cut at. `edge` marks a slice that took a
- * part's edge-cut-through depth instead of the setting, and `wall` one cut shallower than the
- * setting because the wall under it is thinner, so the caller can say which colors either happened
- * to without re-deriving the rule.
+ * part's edge-cut-through depth instead of the setting, and `wall` (the thinnest wall under it, mm)
+ * one cut shallower than the setting because of that wall, so the caller can say which colors
+ * either happened to without re-deriving the rule.
  */
 export interface CutRegion {
   feat: PolyFeature;
   depth: number;
   edge?: boolean;
-  wall?: boolean;
+  wall?: number;
 }
 
 /** What `resolveCutRegions` needs to know about the region it is being handed. */
@@ -658,23 +658,28 @@ export class FlatZoneMapper implements ZoneMapper {
     // Asked by flag, never by comparing depths: an edge slice deliberately cuts the full shell,
     // and on a 3mm shell a 3mm setting would read as equal to it.
     return this.splitAtEdge(feat, depthSetting, opts).map((r) =>
-      r.edge ? r : this.boundByWall(r),
+      r.edge ? r : this.boundByWall(r, opts),
     );
   }
 
   /**
    * Bounds a slice by the thinnest wall anywhere under it, less CUT_FLOOR_MM: a cutter is one
    * prism, so anything deeper cuts through at that spot. Only where maxCutDepth() measured
-   * something, along the same axis. A wall too thin for the minimum recess declines, as a part does.
+   * something, along the same axis, and only on a clipped region: an unclipped one reaches past the
+   * face and would be measured against whatever lies beside it.
+   *
+   * A wall too thin for the minimum recess still clamps, to the minimum. Declining there let a
+   * region touching one undercut edge cut the full setting through the 3mm plate beside it.
    */
-  private boundByWall(r: CutRegion): CutRegion {
-    if (!Number.isFinite(this.maxCutDepth())) return r;
+  private boundByWall(r: CutRegion, opts?: CutRegionOptions): CutRegion {
+    if (!Number.isFinite(this.maxCutDepth()) || opts?.clipped === false) return r;
     const pos = this.part.positions!;
     const field = (this.wallFieldCache ??= buildWallField(pos, this.faceY, this.nsign));
-    const bound = minWallUnder(field, r.feat) - CUT_FLOOR_MM;
-    if (!Number.isFinite(bound) || bound < MIN_CUT_DEPTH_MM) return r;
+    const wall = minWallUnder(field, r.feat);
+    if (!Number.isFinite(wall)) return r;
+    const bound = Math.max(wall - CUT_FLOOR_MM, MIN_CUT_DEPTH_MM);
     if (r.depth <= bound || !depthDiffers(bound, r.depth)) return r;
-    return { feat: r.feat, depth: bound, wall: true };
+    return { feat: r.feat, depth: bound, wall: Math.max(wall, 0) };
   }
 
   private splitAtEdge(

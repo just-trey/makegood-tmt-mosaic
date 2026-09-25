@@ -122,9 +122,11 @@ landing coplanar with the back face.
 **Three cases decline both bounds instead of guessing**, returning `Infinity` and
 warning nothing: a conformal zone (it cuts along a normal field, not one axis), a
 face whose normal is not substantially along Y or whose plane lands off the mesh,
-and a part too thin to hold the minimum. A wall too thin for the minimum under
-one region declines for that region the same way. The chair body's missing bound is in
-[tech-debt.md](tech-debt.md).
+and a part too thin to hold the minimum. The wall alone also skips a region the
+face clip failed on, since it reaches past the face. A wall thinner than the
+0.20 mm minimum recess clamps to that minimum rather than declining: declining
+let a region touching one undercut edge take the full setting through the plate
+beside it. What stays unbounded is in [tech-debt.md](tech-debt.md).
 
 **Rotated copies** are supported (a wheel's two halves): the slice of the design
 landing on the copy is mapped back into the part's own print orientation.

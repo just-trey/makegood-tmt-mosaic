@@ -186,15 +186,19 @@ checks that a tower lands on the bed, not that a given footprint clears the
 edge. Both reference files put a tower at exactly x = 15 on a 256mm bed,
 which a center-based check would wrongly reject.
 
-## A depth on the chair body has no upper bound
+## A depth on the chair body, or on a face the Y axis can't measure, has no upper bound
 
-A pocket deeper than the chair's wall cuts a hole through it and exports with no
-warning. How thin those walls get is **unmeasured**.
+A pocket deeper than the wall cuts a hole through it and exports with no depth
+warning. How thin the chair's walls get is **unmeasured**.
 
 - A flat face bounds each colour region by the wall under it
   (`FlatZoneMapper.boundByWall`), inside the part-wide bound (`maxCutDepth`).
 - A conformal zone declines both, and raises nothing. Its cut follows a normal
   field, so there is no one axis to measure along.
+- A flat face declines both when its normal is not near Y or its plane lands
+  off the mesh. Such a face already gets the "isn't vertical" warning, but not a
+  depth one. In `scripts/measure-wall.ts`'s table: the wheel's ranks 3-5, the
+  footrest's 2-5.
 - Every shipped default face is flat and bounded: wheel, footrest and hubcap
   (`node_modules/.bin/vite-node scripts/measure-wall.ts`). The chair body is the
   one shipped part with conformal zones.

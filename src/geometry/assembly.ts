@@ -1412,7 +1412,8 @@ export async function buildAssemblyGeometry(
         const landedAtSetting = regions.some((r) => !depthDiffers(r.depth, depthSetting));
         // A slice the wall under it cut shallower is still the setting, bounded, so the colour list
         // shows it the same way it shows the part bound.
-        const wallDepths = regions.filter((r) => r.wall).map((r) => r.depth);
+        const wallCuts = regions.filter((r) => r.wall != null);
+        const wallDepths = wallCuts.map((r) => r.depth);
         // The depth the colour list's Depth field shows, display-only (docs/tech-debt.md): gated
         // the same way, so a cutThrough or all-edge part (which discards depthSetting entirely)
         // never reports a recess it did not cut. The minimum across parts/zones, so a colour
@@ -1423,8 +1424,8 @@ export async function buildAssemblyGeometry(
           const prev = colorAppliedDepth.get(ci);
           colorAppliedDepth.set(ci, prev == null ? cut : Math.min(prev, cut));
         }
-        for (const d of wallDepths)
-          addPartTooDeepClamp(thinWallClamps, label, part.name, raised, d);
+        for (const r of wallCuts)
+          addPartTooDeepClamp(thinWallClamps, label, part.name, raised, r.depth, r.wall);
         if (requested <= 0) addZeroDepthRaise(zeroDepthRaises, label, requested, depthSetting);
         // Gated on what the mapper did with the number, exactly like the sub-layer note below, and
         // for the same reason: a cutThrough part discards the setting and holes the whole way
@@ -1809,7 +1810,7 @@ export async function buildAssemblyGeometry(
   for (const c of tooDeepClamps.values())
     warnBuild(tooDeepWarning(c.labels, c.partName, c.requested, c.cutAt));
   for (const c of thinWallClamps.values())
-    warnBuild(thinWallWarning(c.labels, c.partName, c.requested, c.cutAt));
+    warnBuild(thinWallWarning(c.labels, c.partName, c.requested, c.cutAt, c.wall!));
   // Once, after every part: one notice naming every color the edge rule took the full way through.
   // Grouped by cut depth, a single value in practice (one part has the rule) but per-part in the
   // model, so grouping keeps the message honest if a second such part lands.

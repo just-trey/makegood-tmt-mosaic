@@ -713,11 +713,11 @@ const CHANNEL: [number, number][] = [
 
 /**
  * The per-part bound is how far the whole part reaches behind its face: 24.95mm on both fixtures
- * here. The wall under most of the face is 3mm, so a 20mm pocket there used to pass that bound and
- * cut a hole out the back with no warning.
+ * here, over a 3mm wall under most of the face. A 20mm pocket passes that bound and must still be
+ * stopped by the wall.
  */
 describe('the wall under a cut region', () => {
-  it('clamps a pocket deeper than the wall under it, which the part bound let through', () => {
+  it('clamps a pocket deeper than the wall under it, which the part bound allows', () => {
     const m = new FlatZoneMapper(profilePart(STEPPED), [], false);
     expect(m.maxCutDepth()).toBeCloseTo(25 - 0.05, 4);
     const feat = square(-15, -5, -5, 5);
@@ -725,7 +725,7 @@ describe('the wall under a cut region', () => {
     expect(regions).toHaveLength(1);
     expect(regions[0].feat).toBe(feat);
     expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
-    expect(regions[0].wall).toBe(true);
+    expect(regions[0].wall).toBeCloseTo(3, 4);
   });
 
   // Per region, not the part's thinnest spot: a region standing only on the block keeps its depth.
@@ -748,7 +748,7 @@ describe('the wall under a cut region', () => {
     const m = new FlatZoneMapper(profilePart(CHANNEL), [], false);
     const regions = m.resolveCutRegions(square(-8, -5, 8, 5), 20);
     expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
-    expect(regions[0].wall).toBe(true);
+    expect(regions[0].wall).toBeCloseTo(3, 4);
   });
 
   // The other way round: the channel's ceiling lies wholly inside the region.
@@ -796,20 +796,32 @@ describe('the wall under a cut region', () => {
     }
   });
 
-  // A wall too thin to hold the minimum recess is the part-level "too thin" decline, per region:
-  // clamping would cut the colour at a depth that does not print and call it the user's number.
-  it('clamps nothing where the wall under the region is too thin to hold a recess', () => {
-    const sliver: [number, number][] = [
-      [-20, 9.8],
-      [10, 9.8],
+  // The plate's left side is undercut, so its wall runs to 0mm at the face's edge. A region
+  // reaching that edge cannot hold even the minimum recess there, and must still not take the
+  // full setting through the 3mm plate beside it: it clamps to the minimum and names the wall.
+  it('clamps to the minimum recess where the wall under the region is thinner than that', () => {
+    const undercut: [number, number][] = [
+      [-18, 7],
+      [10, 7],
       [10, -15],
       [20, -15],
       [20, 10],
       [-20, 10],
     ];
-    const m = new FlatZoneMapper(profilePart(sliver), [], false);
+    const m = new FlatZoneMapper(profilePart(undercut), [], false);
+    const regions = m.resolveCutRegions(square(-20, -5, -10, 5), 20);
+    expect(regions[0].depth).toBeCloseTo(0.2, 6);
+    expect(regions[0].wall).toBeCloseTo(0, 6);
+    // Away from the edge the same plate bounds at its 3mm.
+    expect(m.resolveCutRegions(square(-15, -5, -10, 5), 20)[0].depth).toBeCloseTo(2.95, 4);
+  });
+
+  // A region the clip failed on reaches past the face, over whatever lies beside it, so the wall
+  // it would measure is not the face's. The clip failure is already warned about.
+  it('leaves an unclipped region at the setting', () => {
+    const m = new FlatZoneMapper(profilePart(STEPPED), [], false);
     const feat = square(-15, -5, -5, 5);
-    expect(m.resolveCutRegions(feat, 20)).toEqual([{ feat, depth: 20 }]);
+    expect(m.resolveCutRegions(feat, 20, { clipped: false })).toEqual([{ feat, depth: 20 }]);
   });
 
   // The shipped case. The hubcap's clips hang 5.2mm under its 3mm shell, so the part bound is
@@ -829,12 +841,12 @@ describe('the wall under a cut region', () => {
     expect(m.maxCutDepth()).toBeCloseTo(8.12, 2);
     const regions = m.resolveCutRegions(square(40, -10, 60, 10), 5);
     expect(regions[0].depth).toBeCloseTo(3 - 0.05, 4);
-    expect(regions[0].wall).toBe(true);
+    expect(regions[0].wall).toBeCloseTo(3, 3);
   });
 
   // A chamfer climbing to the face meets it at 0mm along the face's edge. It faces up, back into
-  // the part, so no cut leaves through it: read as a wall, it zeroed the bound of any region
-  // reaching the edge, and the too-thin decline then let the 20mm pocket through the plate.
+  // the part, so no cut leaves through it: read as a wall, it would pin every region reaching the
+  // edge to the minimum recess.
   it('reads a chamfer up to the face as no wall', () => {
     const chamfered: [number, number][] = [
       [-20, 7],
@@ -852,7 +864,7 @@ describe('the wall under a cut region', () => {
 
   // The part's own side wall at the face's edge, leaning in under the face by 0.00001mm: float
   // noise on a real mesh does this. Counted as a surface the cut leaves through, it read as a 0mm
-  // wall along the edge, with the same result as the chamfer above.
+  // wall along the edge, with the same effect as the chamfer above.
   it('reads a side wall a hair off vertical as no wall', () => {
     const leaning: [number, number][] = [
       [-19.99999, 7],
@@ -889,7 +901,7 @@ describe('the wall under a cut region', () => {
     expect(m.maxCutDepth()).toBeCloseTo(23.95, 2);
     const regions = m.resolveCutRegions(m.boundary()!, 20);
     expect(regions[0].depth).toBeCloseTo(11.8 - 0.05, 2);
-    expect(regions[0].wall).toBe(true);
+    expect(regions[0].wall).toBeCloseTo(11.8, 2);
   });
 
   it('leaves a cut-through part at the depth it chose', () => {
@@ -915,6 +927,6 @@ describe('the wall under a cut region', () => {
     expect(regions.find((r) => r.edge)).toEqual(expect.objectContaining({ depth: 3, edge: true }));
     const interior = regions.find((r) => !r.edge)!;
     expect(interior.depth).toBeCloseTo(3 - 0.05, 4);
-    expect(interior.wall).toBe(true);
+    expect(interior.wall).toBeCloseTo(3, 4);
   });
 });
