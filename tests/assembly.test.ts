@@ -13,7 +13,7 @@ import {
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
 import { getManifold, type ManifoldAPI, type ManifoldSolid } from '../src/geometry/manifold';
-import { TILE_UNION_VERTEX_BUDGET } from '../src/geometry/patterns';
+import { FILL_POINT_BUDGET } from '../src/geometry/patterns';
 import { armCancel, RebuildCancelled, requestCancel } from '../src/cancel';
 import { setProgressSink } from '../src/progress';
 import { build3MFCombined, type ExportPart, type ExportSub } from '../src/export/threemf';
@@ -1025,9 +1025,10 @@ describe('fillRefusalMessage', () => {
     'not-invertible',
     'not-affine',
     'too-detailed',
+    'joins-too-big',
   ] as const;
   // Only 'too-detailed' reads it; the rest are describable from the reason alone.
-  // A product over TILE_UNION_VERTEX_BUDGET, so the example a reader multiplies out is one the
+  // A product over FILL_POINT_BUDGET, so the example a reader multiplies out is one the
   // app would really refuse. troubleshooting.md quotes the same pair.
   const DETAIL = { tiles: 529, points: 1201, scalable: true };
   const message = (design: string, part: string, r: (typeof reasons)[number]): string =>
@@ -1044,7 +1045,7 @@ describe('fillRefusalMessage', () => {
 
   it('offers "Raise Scale" only where scaling up is what fixes it', () => {
     const scaled = reasons.filter((r) => /Raise Scale/.test(message('d.svg', 'P', r)));
-    expect(scaled).toEqual(['too-many-tiles', 'too-detailed']);
+    expect(scaled).toEqual(['too-many-tiles', 'too-detailed', 'joins-too-big']);
   });
 
   it('states one remedy per message, not a list', () => {
@@ -1102,6 +1103,20 @@ describe('fillRefusalMessage', () => {
 
   // A limit named without the numbers behind it is a report, not something to act on, so it takes
   // the same treatment as a refusal that never named itself at all.
+  // Found while tiling, in whichever color joined: often a background, rarely the busiest.
+  it('names no color for a shape that joined across the tiles', () => {
+    for (const scalable of [true, false]) {
+      const m = fillRefusalMessage('d.svg', 'P', 'joins-too-big', {
+        tiles: 961,
+        points: 555,
+        scalable,
+      });
+      expect(m).not.toContain('busiest');
+      expect(m).toContain('joins');
+      expect(/Raise Scale/.test(m)).toBe(scalable);
+    }
+  });
+
   it('falls back to "didn\'t record" when too-detailed arrives without its numbers', () => {
     const m = fillRefusalMessage('d.svg', 'P', 'too-detailed');
     expect(m).not.toMatch(/Raise Scale/);
@@ -1232,7 +1247,7 @@ describe('fill mode', () => {
       const hit = WARNINGS.filter((w) => /too detailed/.test(w.message));
       expect(hit).toHaveLength(1);
       const [, tiles, points] = /(\d+) tiles of (\d+) points/.exec(hit[0].message)!;
-      expect(Number(tiles) * Number(points)).toBeGreaterThan(TILE_UNION_VERTEX_BUDGET);
+      expect(Number(tiles) * Number(points)).toBeGreaterThan(FILL_POINT_BUDGET);
       // 1201 points a tile is under a ninth of the budget, so raising Scale really is the remedy.
       expect(hit[0].message).toMatch(/Raise Scale/);
       // The point of the refusal: not the misleading warning that silent tile-dropping produced.
@@ -1254,7 +1269,7 @@ describe('fill mode', () => {
           parsed: densePetalParsed(1200),
           mode: 'fill',
           scaleMult: 0.2,
-          maxScaleMult: 0.22,
+          maxScaleMult: 0.21,
         }),
       ))!;
       const hit = WARNINGS.filter((w) => /too detailed/.test(w.message));

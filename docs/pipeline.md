@@ -338,11 +338,23 @@ design's own SVG coordinates, so it stays correct under whatever rotation and
 scale the zone applies ([patterns.ts](../src/geometry/patterns.ts)). Four
 tileable patterns ship (Cow, Dalmatian, Zebra, Tiger) and default to Fill.
 
-A fill is refused before it runs when the copies would carry more points than
-the polygon clipper merges reliably, or would need more than `MAX_FILL_TILES` of
-them. Either way the design is placed once and the pill names which limit it
-hit. The ceiling was swept in
-[2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md).
+A fill is refused before it runs when the copies would carry more than
+`FILL_POINT_BUDGET` points (the 3D cut's memory), or would need more than
+`MAX_FILL_TILES` of them. Either way the design is placed once and the pill
+names which limit it hit.
+
+**The polygon library takes at most 500,000 edges per call**
+(`SWEEP_SEGMENT_CAP`, [regions.ts](../src/geometry/regions.ts)).
+
+- `boolOpUnderCap` splits a bigger union, clip or subtraction into calls that
+  fit. A polygon out of reach of the other side skips the engine.
+- The split is exact, not approximate: every polygon lands in one call or
+  passes through untouched.
+- One polygon over the cap can't be split. A fill whose colour welds into one
+  (dalmatian's background does) is refused after tiling, all colours together,
+  so they stay in register.
+- Measured in
+  [2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md).
 
 ### 5. Export
 

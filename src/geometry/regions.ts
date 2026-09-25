@@ -262,21 +262,262 @@ export function boolOpWithRetry(
   fn: (a: PolyFeature, b: PolyFeature) => PolyFeature | null,
   a: PolyFeature,
   b: PolyFeature,
-): { ok: boolean; val?: PolyFeature | null } {
+): CappedResult {
   try {
     return { ok: true, val: cleanFeature(fn(a, b)) };
-  } catch {
+  } catch (e) {
+    if (isSizeLimit(e)) return { ok: false, tooBig: true };
     for (const p of [10, 8, 6]) {
       try {
         const ta = turf.truncate(a, { precision: p, mutate: false });
         const tb = turf.truncate(b, { precision: p, mutate: false });
         return { ok: true, val: cleanFeature(fn(ta, tb)) };
-      } catch {
-        /* next precision */
+      } catch (e2) {
+        if (isSizeLimit(e2)) return { ok: false, tooBig: true };
       }
     }
     return { ok: false };
   }
+}
+
+/**
+ * The engine's two size limits, told apart from its precision failures by their messages (pinned
+ * in tests/regions-sweep-cap.test.ts). Truncating coordinates cannot bring either under, so a
+ * retry is four doomed sweeps of the same size.
+ */
+function isSizeLimit(e: unknown): boolean {
+  return e instanceof Error && /queue size too big|too many sweep line segments/.test(e.message);
+}
+
+/**
+ * The most segments one call into the clipping engine can hold. polygon-clipping 0.15.7 queues two
+ * sweep events per segment and throws once the queue passes 1,000,000: a hard line, which
+ * tests/regions-sweep-cap.test.ts takes exactly and one square past.
+ *
+ * Not the engine's only limit. It also throws once its sweep line holds 1,000,000 pieces, which
+ * crossings multiply: 500 strips each way reach it from 4,000 segments. Nothing counts that ahead
+ * of time; it is caught as `tooBig` when it happens.
+ */
+export const SWEEP_SEGMENT_CAP = 500_000;
+
+/** Segments the engine queues for a feature: one per ring edge, closing edge included. */
+export function segmentCount(f: PolyFeature | null): number {
+  return f ? toGeom(f).reduce((n, p) => n + polySegments(p), 0) : 0;
+}
+
+/** Segments left for the subject once every clip is in the call. */
+export function roomBesideClips(clips: (PolyFeature | null)[], cap = SWEEP_SEGMENT_CAP): number {
+  return clips.reduce((n, c) => n - segmentCount(c), cap);
+}
+
+/**
+ * Whether `subject` can be clipped by `clips`, all in one call, however it is split: its biggest
+ * polygon is the one piece no split divides. The same test the split itself refuses on.
+ */
+export function fitsBesideClips(
+  subject: PolyFeature | null,
+  clips: (PolyFeature | null)[],
+  cap = SWEEP_SEGMENT_CAP,
+): boolean {
+  const room = roomBesideClips(clips, cap);
+  return !!subject && toGeom(subject).every((p) => polySegments(p) <= room);
+}
+
+/**
+ * Thrown by a union told to refuse rather than degrade when it is too big to run. Fill mode asks
+ * for it: its fallback is one tile placed instead of a part that is quietly half blank.
+ */
+export class UnionTooBig extends Error {
+  constructor() {
+    super('A union is too big for the clipping engine, even split.');
+  }
+}
+
+function polySegments(rings: Ring[]): number {
+  return rings.reduce((n, r) => n + r.length - 1, 0);
+}
+
+type Box = [number, number, number, number];
+
+/** Of the exterior ring alone: a hole lies inside it. */
+function polyBox(rings: Ring[]): Box {
+  const b: Box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const p of rings[0]) {
+    if (p[0] < b[0]) b[0] = p[0];
+    if (p[1] < b[1]) b[1] = p[1];
+    if (p[0] > b[2]) b[2] = p[0];
+    if (p[1] > b[3]) b[3] = p[1];
+  }
+  return b;
+}
+
+function boxOf(polys: Geom): Box {
+  const b: Box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const p of polys) {
+    const q = polyBox(p);
+    b[0] = Math.min(b[0], q[0]);
+    b[1] = Math.min(b[1], q[1]);
+    b[2] = Math.max(b[2], q[2]);
+    b[3] = Math.max(b[3], q[3]);
+  }
+  return b;
+}
+
+/** Closed, so two boxes that only touch count: touching polygons still have to weld. */
+function boxesMeet(a: Box, b: Box): boolean {
+  return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+}
+
+const UNION = (x: PolyFeature, y: PolyFeature): PolyFeature | null =>
+  turf.union(x, y) as PolyFeature | null;
+
+const BOOL_OPS = {
+  union: UNION,
+  intersect: (x: PolyFeature, y: PolyFeature) => INTERSECT(x, y),
+  difference: (x: PolyFeature, y: PolyFeature) => DIFFERENCE(x, y),
+};
+
+/** What `boolOpUnderCap` did. `tooBig` is set on a failure no split could bring under the cap. */
+export interface CappedResult {
+  ok: boolean;
+  val?: PolyFeature | null;
+  tooBig?: boolean;
+}
+
+/**
+ * `boolOpWithRetry` for two cleaned features that may together pass SWEEP_SEGMENT_CAP, split into
+ * calls that each stay under it. Only an op that would throw takes the split, so everything under
+ * the cap runs exactly as it always did.
+ *
+ * Both sides must be merged sets, no two polygons overlapping, which every boolean result is. That
+ * is what makes the split exact rather than approximate: a polygon whose box misses the other side
+ * cannot touch it and skips the engine untouched, and a subject clipped a group of polygons at a
+ * time is the same as one clipped whole, since each polygon's clip depends on nothing else in it.
+ * Every polygon lands in exactly one of those, so nothing can fall between them.
+ *
+ * Any one call failing fails the whole op, so the caller's fallback and its warning cover all of
+ * it. What cannot be split is one polygon: a single ring set over the cap, which a fill whose
+ * background welds across every seam produces, is `tooBig` and never handed to the engine.
+ */
+export function boolOpUnderCap(
+  kind: keyof typeof BOOL_OPS,
+  a: PolyFeature,
+  b: PolyFeature,
+  cap = SWEEP_SEGMENT_CAP,
+): CappedResult {
+  const fn = BOOL_OPS[kind];
+  if (segmentCount(a) + segmentCount(b) <= cap) return boolOpWithRetry(fn, a, b);
+  if (kind === 'union') {
+    const r = unionUnderCap(toGeom(a), toGeom(b), cap, { calls: 0 });
+    return r.ok ? { ok: true, val: fromGeom(r.val) } : r;
+  }
+  return splitSubject(a, [b], kind === 'difference', (g) => boolOpWithRetry(fn, g, b), cap);
+}
+
+/**
+ * `run` over `subject` a group of polygons at a time, each group sized to share one call with
+ * every clip. A polygon whose box misses the clips skips the engine: nothing of it survives an
+ * intersect (`keepFar` false), and a subtraction leaves it whole (`keepFar` true).
+ */
+function splitSubject(
+  subject: PolyFeature,
+  clips: PolyFeature[],
+  keepFar: boolean,
+  run: (group: PolyFeature) => CappedResult,
+  cap: number,
+): CappedResult {
+  const room = roomBesideClips(clips, cap);
+  const clipBox = boxOf(clips.flatMap(toGeom));
+  const out: Geom = [];
+  let group: Geom = [];
+  let groupSegs = 0;
+  let failed: CappedResult | null = null;
+  const flush = (): boolean => {
+    if (!group.length) return true;
+    const r = run(fromGeom(group)!);
+    group = [];
+    groupSegs = 0;
+    if (!r.ok) failed = r;
+    else if (r.val) for (const p of toGeom(r.val)) out.push(p);
+    return r.ok;
+  };
+  for (const p of toGeom(subject)) {
+    if (!boxesMeet(polyBox(p), clipBox)) {
+      if (keepFar) out.push(p);
+      continue;
+    }
+    const s = polySegments(p);
+    if (s > room) return { ok: false, tooBig: true };
+    if (group.length && groupSegs + s > room && !flush()) return failed!;
+    group.push(p);
+    groupSegs += s;
+  }
+  if (!flush()) return failed!;
+  return { ok: true, val: fromGeom(out) };
+}
+
+/**
+ * Engine calls one split union may make before it gives up as `tooBig`. The halving below always
+ * shrinks the first half's problem but not the second's, so nothing else bounds it.
+ */
+const SPLIT_CALL_LIMIT = 256;
+
+/**
+ * The union half of `boolOpUnderCap`. Polygons out of reach of the other side pass through; the
+ * rest go to the engine, and if even they pass the cap, the side with more of them is halved along
+ * its longer axis and merged in one half at a time. Halving is what rescues a long, thin fill,
+ * where every polygon of a row can sit within reach of the seam below it.
+ */
+function unionUnderCap(
+  pa: Geom,
+  pb: Geom,
+  cap: number,
+  budget: { calls: number },
+): { ok: true; val: Geom } | { ok: false; tooBig?: boolean } {
+  const engine = (x: Geom, y: Geom): { ok: true; val: Geom } | { ok: false; tooBig?: boolean } => {
+    budget.calls++;
+    const r = boolOpWithRetry(UNION, fromGeom(x)!, fromGeom(y)!);
+    return r.ok ? { ok: true, val: r.val ? toGeom(r.val) : [] } : { ok: false, tooBig: r.tooBig };
+  };
+  if (!pa.length || !pb.length) return { ok: true, val: [...pa, ...pb] };
+  const segsOf = (g: Geom): number => g.reduce((n, p) => n + polySegments(p), 0);
+  if (segsOf(pa) + segsOf(pb) <= cap) return engine(pa, pb);
+  // Narrowed twice: b's polygons within reach of a, then a's within reach of those. The second
+  // pass is what keeps a tile union's merge to the rows either side of one seam.
+  const aBox = boxOf(pa);
+  const bNear = pb.filter((p) => boxesMeet(polyBox(p), aBox));
+  const nearBox = boxOf(bNear);
+  const aNear = bNear.length ? pa.filter((p) => boxesMeet(polyBox(p), nearBox)) : [];
+  const nearA = new Set(aNear);
+  const nearB = new Set(bNear);
+  const out: Geom = [];
+  for (const p of pa) if (!nearA.has(p)) out.push(p);
+  for (const p of pb) if (!nearB.has(p)) out.push(p);
+  let merged: { ok: true; val: Geom } | { ok: false; tooBig?: boolean };
+  if (!aNear.length) merged = { ok: true, val: bNear };
+  else if (segsOf(aNear) + segsOf(bNear) <= cap) merged = engine(aNear, bNear);
+  else {
+    const [x, y] = aNear.length >= bNear.length ? [aNear, bNear] : [bNear, aNear];
+    if (x.length < 2 || budget.calls >= SPLIT_CALL_LIMIT) return { ok: false, tooBig: true };
+    const [x1, x2] = halves(x);
+    const first = unionUnderCap(x1, y, cap, budget);
+    merged = first.ok ? unionUnderCap(first.val, x2, cap, budget) : first;
+  }
+  if (!merged.ok) return merged;
+  for (const p of merged.val) out.push(p);
+  return { ok: true, val: out };
+}
+
+function halves(polys: Geom): [Geom, Geom] {
+  const b = boxOf(polys);
+  const axis = b[2] - b[0] >= b[3] - b[1] ? 0 : 1;
+  const centre = (p: Ring[]): number => {
+    const q = polyBox(p);
+    return (q[axis] + q[axis + 2]) / 2;
+  };
+  const sorted = [...polys].sort((p, q) => centre(p) - centre(q));
+  const mid = sorted.length >> 1;
+  return [sorted.slice(0, mid), sorted.slice(mid)];
 }
 
 /** MultiPolygon coordinates, the form the clipping engine takes and returns. */
@@ -365,18 +606,16 @@ function truncGeom(polys: Geom, precision: number): Geom {
  * inputs Turf's truncate would have rescued, and a degraded region is a wrong region, not a slow
  * one.
  */
-function naryOpWithRetry(
-  fn: (args: Geom[]) => Geom,
-  args: Geom[],
-): { ok: boolean; val?: PolyFeature | null } {
+function naryOpWithRetry(fn: (args: Geom[]) => Geom, args: Geom[]): CappedResult {
   try {
     return { ok: true, val: cleanFeature(fromGeom(fn(args))) };
-  } catch {
+  } catch (e) {
+    if (isSizeLimit(e)) return { ok: false, tooBig: true };
     for (const p of [10, 8, 6]) {
       try {
         return { ok: true, val: cleanFeature(fromGeom(fn(args.map((a) => truncGeom(a, p))))) };
-      } catch {
-        /* next precision */
+      } catch (e2) {
+        if (isSizeLimit(e2)) return { ok: false, tooBig: true };
       }
     }
     return { ok: false };
@@ -451,10 +690,15 @@ export function differenceAllChecked(
   if (!s) return { feat: null, trimmed: true };
   const live = clippings.map(cleanFeature).filter((f): f is PolyFeature => !!f);
   if (!live.length) return { feat: s, trimmed: true };
-  const r = naryOpWithRetry(
-    (a) => polygonClipping.difference(a[0], ...a.slice(1)),
-    [toGeom(s), ...live.map(toGeom)],
-  );
+  const sweep = (g: PolyFeature): CappedResult =>
+    naryOpWithRetry(
+      (a) => polygonClipping.difference(a[0], ...a.slice(1)),
+      [toGeom(g), ...live.map(toGeom)],
+    );
+  const r =
+    segmentCount(s) <= roomBesideClips(live, SWEEP_SEGMENT_CAP)
+      ? sweep(s)
+      : splitSubject(s, live, true, sweep, SWEEP_SEGMENT_CAP);
   return r.ok ? { feat: r.val ?? null, trimmed: true } : { feat: s, trimmed: false };
 }
 
@@ -470,17 +714,20 @@ function warnBool(message: string): void {
   warnBuild(message);
 }
 
+/** `refuseTooBig` throws UnionTooBig where the fallback below would otherwise drop `b`. */
 export function safeUnion(
   a: PolyFeature | null,
   b: PolyFeature | null,
   label?: string,
+  refuseTooBig = false,
 ): PolyFeature | null {
   a = cleanFeature(a);
   b = cleanFeature(b);
   if (!a) return b;
   if (!b) return a;
-  const r = boolOpWithRetry((x, y) => turf.union(x, y) as PolyFeature | null, a, b);
+  const r = boolOpUnderCap('union', a, b);
   if (r.ok) return r.val ?? null;
+  if (r.tooBig && refuseTooBig) throw new UnionTooBig();
   warnBool(
     `Couldn't merge the shapes${label ? ` for ${label}` : ''}. They are used unmerged, so this region may be missing part of its area.`,
   );
@@ -517,7 +764,7 @@ export function differenceChecked(
   b = cleanFeature(b);
   if (!a) return { feat: null, trimmed: true };
   if (!b) return { feat: a, trimmed: true };
-  const r = boolOpWithRetry(DIFFERENCE, a, b);
+  const r = boolOpUnderCap('difference', a, b);
   return r.ok ? { feat: r.val ?? null, trimmed: true } : { feat: a, trimmed: false };
 }
 
@@ -566,7 +813,7 @@ export function intersectChecked(
   a = cleanFeature(a);
   b = cleanFeature(b);
   if (!a || !b) return { feat: null, clipped: true };
-  const r = boolOpWithRetry(INTERSECT, a, b);
+  const r = boolOpUnderCap('intersect', a, b);
   return r.ok ? { feat: r.val ?? null, clipped: true } : { feat: a, clipped: false };
 }
 
@@ -589,7 +836,7 @@ export function intersectQuiet(a: PolyFeature | null, b: PolyFeature | null): Po
   a = cleanFeature(a);
   b = cleanFeature(b);
   if (!a || !b) return null;
-  const r = boolOpWithRetry(INTERSECT, a, b);
+  const r = boolOpUnderCap('intersect', a, b);
   return r.ok ? (r.val ?? null) : null;
 }
 
@@ -606,12 +853,13 @@ export function yieldToBrowser(): Promise<void> {
  * Union a list of features by balanced pairwise merging (pairs, then pairs of pairs), yielding on
  * a time budget and reporting progress. A left fold re-processes the ever-growing accumulator
  * every step; the tree does the same math in O(log n) levels and benchmarks 2-4x faster on dense
- * designs. safeUnion's fallback semantics are preserved per merge.
+ * designs. safeUnion's fallback semantics are preserved per merge, `refuseTooBig` included.
  */
 export async function unionAllCooperative(
   features: (PolyFeature | null)[],
   onProgress?: (fraction: number) => void,
   label?: string,
+  refuseTooBig = false,
 ): Promise<PolyFeature | null> {
   let level = features.filter((f): f is PolyFeature => !!f);
   if (!level.length) return null;
@@ -625,7 +873,7 @@ export async function unionAllCooperative(
         next.push(level[i]);
         continue;
       }
-      const u = safeUnion(level[i], level[i + 1], label);
+      const u = safeUnion(level[i], level[i + 1], label, refuseTooBig);
       if (u) next.push(u);
       done++;
       onProgress?.(done / totalOps);

@@ -106,3 +106,17 @@ export function dismissNotice(message: string, key?: string): void {
 export function clearBuildWarnings(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) if (WARNINGS[i].build) WARNINGS.splice(i, 1);
 }
+
+/** What `dropBuildWarningsSince` measures from: the entries standing now. */
+export function warningMark(): ReadonlySet<Notice> {
+  return new Set(WARNINGS);
+}
+
+/**
+ * Drop the build diagnostics pushed since `mark`, for a step whose result was thrown away. A keyed
+ * entry rewritten in place since then is not put back: it was standing at the mark, so it stays.
+ */
+export function dropBuildWarningsSince(mark: ReadonlySet<Notice>): void {
+  for (let i = WARNINGS.length - 1; i >= 0; i--)
+    if (WARNINGS[i].build && !mark.has(WARNINGS[i])) WARNINGS.splice(i, 1);
+}

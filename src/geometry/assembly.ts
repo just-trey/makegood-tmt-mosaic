@@ -39,7 +39,10 @@ import {
   differenceChecked,
   intersectChecked,
   safeIntersectChecked,
+  fitsBesideClips,
+  roomBesideClips,
   safeUnion,
+  UnionTooBig,
   YIELD_BUDGET_MS,
   yieldToBrowser,
 } from './regions';
@@ -83,7 +86,13 @@ import {
   type PlacedDesign,
 } from './designOverlap';
 import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
-import { dismissNotice, noticeBuild, warnBuild } from '../warnings';
+import {
+  dismissNotice,
+  dropBuildWarningsSince,
+  noticeBuild,
+  warnBuild,
+  warningMark,
+} from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
 import { throwIfCancelled } from '../cancel';
@@ -910,6 +919,18 @@ export function fillRefusalMessage(
               `carries ${detail.points} points per tile. ${placed} Simplify the design in ` +
               'Illustrator or Inkscape.';
       break;
+    // Not necessarily the busiest color, so it names none: a background that runs through every
+    // tile joins into one shape however few points it has.
+    case 'joins-too-big':
+      if (detail)
+        return detail.scalable
+          ? `${design} is too detailed to fill "${partName}". One of its colors joins across ` +
+              `all ${detail.tiles} tiles into one shape too big to cut. ${placed} Raise Scale ` +
+              'to fill it with fewer, larger tiles.'
+          : `${design} is too detailed to fill "${partName}" at any Scale. One of its colors ` +
+              `joins across the tiles into one shape too big to cut. ${placed} Simplify the ` +
+              'design in Illustrator or Inkscape.';
+      break;
     // Not a missing viewBox: tileCellOf already falls back to the artwork bbox when the viewBox
     // isn't positive in both axes. Reaching here means the DRAWING has no extent in one direction.
     case 'no-tile-size':
@@ -1325,21 +1346,13 @@ export async function buildAssemblyGeometry(
         half: KeptHalf | null,
         netExcl: NetExclusion[],
         zoneName: string,
-        grid: TileGrid | null,
+        fills: (PolyFeature | null)[] | null,
         under: PolyFeature[],
         c: AssemblyPaletteEntry,
         ci: number,
         ai: number,
-        onProgress: (fraction: number) => void,
       ): Promise<void> => {
-        const source = featuresByColor[ci][ai];
-        if (!source) return;
-        // Fill: repeat the regions across the grid *in SVG space*, before placement, so tiles
-        // inherit the placement's rotation/scale/offset and seam-straddling copies overlap where the
-        // union can weld them.
-        const tiled = grid
-          ? await tileFeature(source, grid, onProgress, `color ${c.hex} on ${part.name}`)
-          : source;
+        const tiled = fills ? fills[ci] : featuresByColor[ci][ai];
         if (!tiled) return;
         let feat: PolyFeature | null = mapFeatureCoords(tiled, place);
         // Whether the region really is bounded by the face. On a clipper failure safeIntersect hands
@@ -1523,7 +1536,7 @@ export async function buildAssemblyGeometry(
           noticeBuild(thinDepthNotice(label, depthSetting));
         // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
         // step); the snap tolerance is a property of the bake, so both modes take the same one.
-        const cutterOpts = grid ? { refineMM: FILL_REFINE_MM } : undefined;
+        const cutterOpts = fills ? { refineMM: FILL_REFINE_MM } : undefined;
         // Each slice becomes its own prism, landing in the colorPrisms[ci] list the multi-zone case
         // already fills, so the union below welds them into one solid per color.
         //
@@ -1608,7 +1621,14 @@ export async function buildAssemblyGeometry(
       // +1 reserved for the body/inlay CSG stage below, so progress reaches 1 only once every color
       // on every zone plus the final cuts are done.
       const zoneWork = mappers.map(artworksOn);
-      const partUnits = palette.length * zoneWork.reduce((s, l) => s + l.length, 0) + 1;
+      // A fill's colors take two units each, one to tile and one to cut.
+      const partUnits =
+        palette.length *
+          zoneWork.reduce(
+            (s, l) => s + l.reduce((n, ai) => n + (artworks[ai].mode === 'fill' ? 2 : 1), 0),
+            0,
+          ) +
+        1;
       let unitsDone = 0;
       for (let zi = 0; zi < mappers.length; zi++) {
         const mapper = mappers[zi];
@@ -1665,43 +1685,108 @@ export async function buildAssemblyGeometry(
           // One grid per (zone, artwork): every color of a fill repeats identically, so the
           // inverted-placement coverage math runs once, not per palette slot. A fill that can't be
           // tiled degrades to a single copy plus a warning rather than an empty part.
-          let grid: TileGrid | null = null;
-          if (artworks[ai].mode === 'fill') {
-            const extent = mapper.fillExtent();
-            if (!extent) {
-              warnBuild(
-                `Couldn't measure the area to fill on "${part.name}", so "${artworks[ai].name || 'design'}" ` +
-                  `can't be tiled across it. ${FILL_FELL_BACK_TO_ONE_TILE} Please report this.`,
+          const fill = artworks[ai].mode === 'fill';
+          const extent = fill ? mapper.fillExtent() : null;
+          // Named per design, not just per part: a part can carry several, both remedies write fit
+          // state reaching only the ACTIVE one, and warnings dedupe on the exact string. Two designs
+          // failing the same way would otherwise become one pill pointing at neither. Two
+          // placements of the SAME design still collapse, since they share a name; splitting those
+          // needs warnOverlappingDesigns's counted phrasing, which nothing asks for yet.
+          // `fits` answers the remedy: whether the grid at maximum Scale would get under the limit
+          // that refused. Asked of the same refusal path rather than derived, so a future change
+          // to how a grid is laid can't leave the remedy behind.
+          const refuseFill = (
+            refusal: TileRefusalReport,
+            fits: (maxGrid: TileGrid) => boolean = () => true,
+          ): void => {
+            const maxGrid =
+              extent &&
+              tileCoverage(
+                mapper.placer(maxScalePlacement(ai)),
+                tileCells[ai],
+                extent,
+                tileVerts[ai],
               );
-            } else {
-              const refusal: TileRefusalReport = {};
-              grid = tileCoverage(place, tileCells[ai], extent, tileVerts[ai], refusal);
-              // Named per design, not just per part: a part can carry several, both remedies write
-              // fit state reaching only the ACTIVE one, and warnings dedupe on the exact string. Two
-              // designs failing the same way would otherwise become one pill pointing at neither.
-              // Two placements of the SAME design still collapse, since they share a name; splitting
-              // those needs warnOverlappingDesigns's counted phrasing, which nothing asks for yet.
-              if (!grid)
-                warnBuild(
-                  fillRefusalMessage(
-                    artworks[ai].name || 'design',
-                    part.name,
-                    refusal.reason,
-                    refusal.detail && {
-                      ...refusal.detail,
-                      // Asked, not derived: the same refusal path answers it, so a future change to
-                      // how a grid is laid can't leave the remedy behind.
-                      scalable: !!tileCoverage(
-                        mapper.placer(maxScalePlacement(ai)),
-                        tileCells[ai],
-                        extent,
-                        tileVerts[ai],
-                      ),
-                    },
-                  ),
-                );
+            warnBuild(
+              fillRefusalMessage(
+                artworks[ai].name || 'design',
+                part.name,
+                refusal.reason,
+                refusal.detail && { ...refusal.detail, scalable: !!maxGrid && fits(maxGrid) },
+              ),
+            );
+          };
+          let grid: TileGrid | null = null;
+          if (fill && !extent) {
+            warnBuild(
+              `Couldn't measure the area to fill on "${part.name}", so "${artworks[ai].name || 'design'}" ` +
+                `can't be tiled across it. ${FILL_FELL_BACK_TO_ONE_TILE} Please report this.`,
+            );
+          } else if (extent) {
+            const refusal: TileRefusalReport = {};
+            grid = tileCoverage(place, tileCells[ai], extent, tileVerts[ai], refusal);
+            if (!grid) refuseFill(refusal);
+          }
+          // Every color is tiled before any is cut, because one that can't be tiled sends the whole
+          // design back to a single copy: tiling one color and not another lands them out of
+          // register. Repeat the regions across the grid *in SVG space*, before placement, so tiles
+          // inherit the placement's rotation/scale/offset and seam-straddling copies overlap where
+          // the union can weld them.
+          const unitsBefore = unitsDone;
+          // Every call ahead takes the whole of one color's fill beside one of these: the face, the
+          // kept half, each patch another zone owns, and every sticker it gives way to at once.
+          const clipSets: PolyFeature[][] = [
+            boundaryPoly ? [boundaryPoly] : [],
+            half ? [half.clip] : [],
+            ...netExcl.flatMap((e) => (e.region ? [[e.region]] : [])),
+            under,
+          ];
+          const warnedBefore = warningMark();
+          let fills: (PolyFeature | null)[] | null = null;
+          let tiling = -1;
+          if (grid) {
+            try {
+              fills = [];
+              for (let ci = 0; ci < palette.length; ci++) {
+                tiling = ci;
+                throwIfCancelled();
+                const source = featuresByColor[ci][ai];
+                const base = unitsDone;
+                const tiled = source
+                  ? await tileFeature(
+                      source,
+                      grid,
+                      (f) => reportPartProgress((base + f) / partUnits),
+                      `color ${palette[ci].hex} on ${part.name}`,
+                    )
+                  : null;
+                // Those calls can split a fill between its polygons but never inside one.
+                if (tiled && !clipSets.every((clips) => fitsBesideClips(tiled, clips)))
+                  throw new UnionTooBig();
+                fills.push(tiled);
+                reportPartProgress(++unitsDone / partUnits);
+                await maybeYield();
+              }
+            } catch (e) {
+              if (!(e instanceof UnionTooBig)) throw e;
+              fills = null;
+              // What tiling said about colors already tiled is about tiles now thrown away.
+              dropBuildWarningsSince(warnedBefore);
+              // The shape that joined can't be bigger than every tile's copy of its color, so a
+              // grid whose copies fit is one where Scale is a real remedy. It has to be a smaller
+              // grid as well: the engine's crossing limit can refuse copies that fit.
+              const points = featureVertexCount(featuresByColor[tiling][ai]);
+              const tiles = grid.count;
+              refuseFill(
+                { reason: 'joins-too-big', detail: { tiles, points } },
+                (maxGrid) =>
+                  maxGrid.count < tiles &&
+                  clipSets.every((clips) => maxGrid.count * points <= roomBesideClips(clips)),
+              );
             }
           }
+          // A fill that never tiled still owes the progress its tiling units would have reported.
+          if (fill && !fills) unitsDone = unitsBefore + palette.length;
           for (let ci = 0; ci < palette.length; ci++) {
             // Per colour, not per part. The part-loop check above leaves cancel latency at one
             // whole part, which on a 6000-region wheel was measured at 140.4s with the button
@@ -1709,7 +1794,6 @@ export async function buildAssemblyGeometry(
             // finest boundary where nothing is half-built: buildColorPrism either pushed a cutter
             // into colorPrisms or it did not.
             throwIfCancelled();
-            const base = unitsDone;
             await buildColorPrism(
               mapper,
               boundaryPoly,
@@ -1717,12 +1801,11 @@ export async function buildAssemblyGeometry(
               half,
               netExcl,
               zoneName,
-              grid,
+              fills,
               artworks[ai].mode === 'fill' ? under : [],
               palette[ci],
               ci,
               ai,
-              (f) => reportPartProgress((base + f) / partUnits),
             );
             reportPartProgress(++unitsDone / partUnits);
             await maybeYield();

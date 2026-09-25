@@ -132,12 +132,11 @@ describe('every built-in pattern tiles seamlessly', () => {
 });
 
 /**
- * Vertex count is a shipping constraint, not a nicety. Fill mode unions one copy of the pattern
- * per tile, and turf 6.5's polygon clipping starts failing in a 503k-600k band — at which point it
- * doesn't throw, it drops tiles, so the surface comes out partly blank with only a "Couldn't merge
- * the shapes" warning to go on, which names no cause. That band was swept in
- * docs/findings/2026-08-30-tile-union-ceiling.md and replaces the 800k this comment used to quote,
- * which puts BUDGET below at a 1.8x margin rather than 2.6x.
+ * Vertex count is a shipping constraint, not a nicety. Fill mode refuses a design whose copies
+ * carry more than FILL_POINT_BUDGET (600k, src/geometry/patterns.ts) points in one colour, since
+ * past that the cut runs out of memory, so a pattern over it stops filling on the part
+ * (docs/findings/2026-09-24-tile-union-cap.md). BUDGET below sits at half the refusal, a margin
+ * nobody has measured against the cut's memory.
  *
  * Zebra shipped at 13.6k vertices per tile, which is 1.9M across the 143 tiles a 60mm pattern
  * needs to cover a chair zone: straight past the limit. Marching squares is why — it emits a
@@ -145,7 +144,7 @@ describe('every built-in pattern tiles seamlessly', () => {
  * badly while the blobbier ones don't. scripts/gen-patterns.mjs thins zebra's contours
  * (`simplifyEps`) to bring it in line with the rest.
  *
- * The budget below is deliberately far below the failure point rather than just under it: the tile
+ * The budget below is deliberately far below the refusal rather than just under it: the tile
  * count scales with the zone, and a future part with a larger design surface asks for more copies
  * of the same pattern.
  */
