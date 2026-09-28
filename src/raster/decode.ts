@@ -1,4 +1,5 @@
-import type { RasterImage } from './types';
+import type { ImageStats, RasterImage } from './types';
+import { ALPHA_THRESHOLD } from './types';
 import { measureImage, isPhotographic } from './stats';
 
 /**
@@ -31,6 +32,45 @@ export const MAX_WORKING_EDGE = 1024;
  * blur and despeckle strength derived from them, were calibrated at this size.
  */
 export const MEASURE_EDGE = 512;
+
+/**
+ * `measureImage` with the opaque artwork enlarged to MEASURE_EDGE by repeating pixels: zebra.svg
+ * exported at 128px reads 0.63 at its own size, photographic, and 0.18-0.21 from 512 up
+ * (`bench-raster.ts render`). Not smoothed: that turns each boundary into a ramp that still counts
+ * as edge. The cost: at 384px and under, some photographs read flat (`bench-raster.ts sizes`).
+ */
+export function measureAtReferenceSize(reference: RasterImage): ImageStats {
+  const { data, w, h } = reference;
+  // Sized by what measureImage counts, the opaque pixels: a small logo on a big transparent sheet
+  // is small artwork, and would otherwise read as inflated as any other small export.
+  let x0 = w,
+    y0 = h,
+    x1 = -1,
+    y1 = -1;
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      if (data[(y * w + x) * 4 + 3] >= ALPHA_THRESHOLD) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+  const bw = x1 - x0 + 1;
+  const bh = y1 - y0 + 1;
+  const scale = MEASURE_EDGE / Math.max(bw, bh);
+  if (x1 < 0 || scale <= 1) return measureImage(reference);
+  const W = Math.max(1, Math.round(bw * scale));
+  const H = Math.max(1, Math.round(bh * scale));
+  const out = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    const row = (y0 + Math.floor((y * bh) / H)) * w + x0;
+    for (let x = 0; x < W; x++) {
+      const from = (row + Math.floor((x * bw) / W)) * 4;
+      out.set(data.subarray(from, from + 4), (y * W + x) * 4);
+    }
+  }
+  return measureImage({ data: out, w: W, h: H });
+}
 
 /**
  * Is this buffer a raster image rather than an SVG?
@@ -80,8 +120,8 @@ function drawAt(bitmap: ImageBitmap, maxEdge: number): RasterImage {
 /**
  * Decode an image file to RGBA pixels at the working size its own content earns.
  *
- * Two passes, and the first one is not wasted: the image is always drawn at MEASURE_EDGE and
- * measured there, both because that is the size stats.ts's thresholds were calibrated against and
+ * Two passes, and the first one is not wasted: the image is always measured at MEASURE_EDGE,
+ * both because that is the size stats.ts's thresholds were calibrated against and
  * because the answer decides the second pass. Flat art is redrawn larger, where its outlines have
  * detail worth keeping; a photograph keeps the first draw, where the extra pixels would buy noise.
  *
@@ -101,7 +141,7 @@ export async function decodeImageFile(file: Blob): Promise<RasterImage> {
   }
   try {
     const reference = drawAt(bitmap, MEASURE_EDGE);
-    const { edgeDensity } = measureImage(reference);
+    const { edgeDensity } = measureAtReferenceSize(reference);
     if (isPhotographic(edgeDensity)) return { ...reference, edgeDensity };
 
     const detailed = drawAt(bitmap, MAX_WORKING_EDGE);

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_WORKING_EDGE, MEASURE_EDGE, isRasterBuffer, workingSize } from '../src/raster/decode';
-import { isPhotographic } from '../src/raster/stats';
+import {
+  MAX_WORKING_EDGE,
+  MEASURE_EDGE,
+  isRasterBuffer,
+  measureAtReferenceSize,
+  workingSize,
+} from '../src/raster/decode';
+import { isPhotographic, measureImage } from '../src/raster/stats';
+import type { RasterImage } from '../src/raster/types';
 
 const bytes = (...b: number[]) => new Uint8Array(b);
 const ascii = (s: string) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
@@ -104,5 +111,58 @@ describe('isPhotographic', () => {
     // Below the flat endpoint and above the photo endpoint the answer must not be in doubt.
     expect(isPhotographic(0.12)).toBe(false);
     expect(isPhotographic(0.45)).toBe(true);
+  });
+});
+
+/**
+ * One piece of flat artwork exported at `w` x `h`: two-colour diagonal stripes, anti-aliased by
+ * 4x4 supersampling the way an exporter would, with the same stripe count at every size.
+ */
+function stripes(w: number, h = w): RasterImage {
+  const data = new Uint8ClampedArray(w * h * 4);
+  const period = Math.max(w, h) / 14;
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      let ink = 0;
+      for (let sy = 0; sy < 4; sy++)
+        for (let sx = 0; sx < 4; sx++) {
+          const u = x + (sx + 0.5) / 4 + 0.6 * (y + (sy + 0.5) / 4);
+          if (u % period < period / 2) ink++;
+        }
+      const v = 255 - Math.round((ink / 16) * 255);
+      const i = (y * w + x) * 4;
+      data[i] = data[i + 1] = data[i + 2] = v;
+      data[i + 3] = 255;
+    }
+  return { data, w, h };
+}
+
+describe('measureAtReferenceSize', () => {
+  // public/patterns/zebra.svg exported at 128px read 0.6324, photographic, against 0.18-0.21 at 512
+  // and up (`vite-node scripts/bench-raster.ts render`). Same artwork, only the export size moved.
+  it('reads flat art the same whatever size it was exported at', () => {
+    const readings = [128, 192, 256, 384, 512].map(
+      (edge) => measureAtReferenceSize(stripes(edge)).edgeDensity,
+    );
+    for (const d of readings) expect(isPhotographic(d)).toBe(false);
+    // measureImage at their own sizes spreads these 4x, 0.41 to 0.10. What is left is the anti-aliased
+    // fringe, one pixel wide at every export size and so a larger share of a smaller one.
+    expect(Math.max(...readings) / Math.min(...readings)).toBeLessThan(2);
+  });
+
+  it('leaves a reference already at MEASURE_EDGE exactly as calibrated', () => {
+    const img = stripes(MEASURE_EDGE, 300);
+    expect(measureAtReferenceSize(img)).toEqual(measureImage(img));
+  });
+
+  it('sizes a small logo by the logo, not by the transparent sheet around it', () => {
+    const logo = stripes(100);
+    const sheet = new Uint8ClampedArray(MEASURE_EDGE * MEASURE_EDGE * 4);
+    for (let y = 0; y < 100; y++)
+      sheet.set(logo.data.subarray(y * 400, (y + 1) * 400), ((200 + y) * MEASURE_EDGE + 200) * 4);
+    const padded = { data: sheet, w: MEASURE_EDGE, h: MEASURE_EDGE };
+    expect(measureAtReferenceSize(padded).edgeDensity).toBe(
+      measureAtReferenceSize(logo).edgeDensity,
+    );
   });
 });

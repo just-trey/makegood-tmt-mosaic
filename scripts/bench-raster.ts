@@ -59,7 +59,12 @@ import {
 } from '../src/raster/stats';
 import { designMmPerUnit } from '../src/geometry/assembly';
 import { HUBCAP_CHAMFER_MM, HUBCAP_MIN_DIAMETER_MM } from '../src/geometry/hubcap';
-import { MAX_WORKING_EDGE, MEASURE_EDGE, workingSize } from '../src/raster/decode';
+import {
+  MAX_WORKING_EDGE,
+  MEASURE_EDGE,
+  measureAtReferenceSize,
+  workingSize,
+} from '../src/raster/decode';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -526,7 +531,7 @@ async function modeScale(args: string[]) {
   );
   const { srcW, srcH, images } = await decodeAtEdges(file, edges, entry?.renderEdge);
   const reference = images.get(MEASURE_EDGE)!;
-  const { edgeDensity } = measureImage(reference);
+  const { edgeDensity } = measureAtReferenceSize(reference);
   // decodeImageFile only ever produces one working size for a given file: MEASURE_EDGE for a
   // photograph, MAX_WORKING_EDGE for anything else, and neither upscales. Every other rung is a
   // hypothetical, and marking them all as shipping is what forced the first report to hand-annotate
@@ -574,10 +579,10 @@ async function modeScale(args: string[]) {
   console.table(rows);
   console.log(
     `\n${file} is ${srcW}x${srcH}, edgeDensity ${edgeDensity.toFixed(4)} measured at ` +
-      `${Math.max(reference.w, reference.h)}` +
+      `${MEASURE_EDGE}` +
       (Math.max(reference.w, reference.h) === MEASURE_EDGE
         ? ''
-        : ` (MEASURE_EDGE is ${MEASURE_EDGE}, but nothing is upscaled)`) +
+        : ` (enlarged from ${Math.max(reference.w, reference.h)} for the measurement only)`) +
       `, traced at ${colors} colors.` +
       '\nDETAIL_PASS_BLUR is 1, added on top of the interpolated blur whenever the working long' +
       '\nedge exceeds MEASURE_EDGE. The `ships` column marks the row the app would actually take.' +
@@ -589,10 +594,10 @@ async function modeScale(args: string[]) {
 /**
  * The same vector artwork rasterized at several sizes, measured at each.
  *
- * Isolates the half of edge density that has nothing to do with what the picture is of. A pattern
- * exported small is measured at its own size, where its stripes take up a large share of the
- * pixels, and reads photographic; exported large it is measured after a downscale to MEASURE_EDGE
- * and reads flat. Nothing about the artwork changed.
+ * Isolates the half of edge density that has nothing to do with what the picture is of. Measured
+ * at its own size (`ownSize`), a pattern exported small reads photographic, because its stripes
+ * take up a large share of the pixels. `edgeDensity` is what the app reads, at MEASURE_EDGE
+ * whatever the export size. Nothing about the artwork changed between rows.
  */
 async function modeRender(args: string[]) {
   const file = args[0] || 'public/patterns/zebra.svg';
@@ -609,10 +614,11 @@ async function modeRender(args: string[]) {
   const rows = [];
   for (const edge of edges) {
     const { image } = rendered.get(edge)!;
-    const { edgeDensity } = measureImage(image);
+    const { edgeDensity } = measureAtReferenceSize(image);
     rows.push({
       renderEdge: edge,
-      measuredAt: `${image.w}x${image.h}`,
+      drawn: `${image.w}x${image.h}`,
+      ownSize: +measureImage(image).edgeDensity.toFixed(4),
       edgeDensity: +edgeDensity.toFixed(4),
       reads: isPhotographic(edgeDensity) ? 'photo' : 'flat',
     });
@@ -683,15 +689,17 @@ async function modeAlpha() {
  * artefact of downscale ratio rather than content. It is not, and the confound runs the reassuring
  * way: heavier downscale *lowers* density, and the largest files still score the highest.
  *
- * It also shows the separation is only stable because the app pins the measurement at MEASURE_EDGE.
- * Measured elsewhere the ordering breaks: flat art reads photographic at 256.
+ * A rung under MEASURE_EDGE stands for the file exported that small, and its cell reads
+ * `own size -> what the app reads`: measured at its own size flat art reads photographic at 256,
+ * and enlarged to MEASURE_EDGE a photograph that small can read flat. A rung above MEASURE_EDGE is
+ * a size the app never measures at, shown raw.
  */
 async function modeSizes(args: string[]) {
   // Both decode constants forced in, for the same reason `scale` does it: the footer says
   // MEASURE_EDGE is the deciding column, and a retune must not remove that column from the table.
-  const edges = [...new Set([256, 512, 1024, 1600, MEASURE_EDGE, MAX_WORKING_EDGE])].sort(
-    (a, b) => a - b,
-  );
+  const edges = [
+    ...new Set([128, 192, 256, 384, 512, 1024, 1600, MEASURE_EDGE, MAX_WORKING_EDGE]),
+  ].sort((a, b) => a - b);
   // Regenerated before the existence check below, so an edit to GRADIENT_SVG cannot leave this
   // mode measuring the previous render while `corpus` measures the current one. A no-op unless
   // an authored source is named, since none is in the default list.
@@ -744,12 +752,13 @@ async function modeSizes(args: string[]) {
     };
     for (const e of edges) {
       const img = images.get(e)!;
-      const d = measureImage(img).edgeDensity;
-      // The size measured, not the size asked for. `drawInPage` scales by min(1, edge / longEdge),
+      // The size drawn, not the size asked for. `drawInPage` scales by min(1, edge / longEdge),
       // so a small source silently repeats itself across the wider columns and the table would
       // invite reading down a column that holds two different measurements.
       const at = Math.max(img.w, img.h);
+      const d = measureAtReferenceSize(img).edgeDensity;
       row[`@${e}`] =
+        (at < MEASURE_EDGE ? `${measureImage(img).edgeDensity.toFixed(3)} -> ` : '') +
         `${d.toFixed(3)} ${isPhotographic(d) ? 'photo' : 'flat'}${at === e ? '' : ` (@${at})`}`;
     }
     rows.push(row);
@@ -763,13 +772,15 @@ async function modeSizes(args: string[]) {
   const order = (e: number) => rows.map((r) => `${r.name}:${readAt(r, e) ? 'P' : 'f'}`).join(' ');
   const disagree = order(256) !== order(MEASURE_EDGE);
   console.log(
-    `\nThe app always measures at ${MEASURE_EDGE}, which is the only column that decides anything.` +
-      '\nA column heading is the size asked for; the size actually measured is in the cell, since' +
-      '\nnothing is ever upscaled.' +
+    `\nThe app always measures at ${MEASURE_EDGE}. A column under it is the file exported that` +
+      '\nsmall: its own-size reading, then what the app reads once it is enlarged to' +
+      `\n${MEASURE_EDGE}. A column over it is a size the app never measures at, shown raw.` +
+      '\nA column heading is the size asked for; the size actually drawn is in the cell, since' +
+      '\nthe draw never enlarges.' +
       `\n\nRegime at 256:   ${order(256)}` +
       `\nRegime at ${MEASURE_EDGE}:   ${order(MEASURE_EDGE)}` +
       (disagree
-        ? '\nThese disagree, which is the point: a reading is meaningless without its size.'
+        ? `\nThese disagree: under ${MEASURE_EDGE} the reading still moves with export size.`
         : '\nThese agree on this selection, which does not mean they always do.'),
   );
 }
@@ -834,7 +845,7 @@ async function modeBlur(args: string[]) {
     );
     entries.forEach((entry, i) => {
       const { srcW, srcH, images } = decoded[i];
-      const { edgeDensity } = measureImage(images.get(MEASURE_EDGE)!);
+      const { edgeDensity } = measureAtReferenceSize(images.get(MEASURE_EDGE)!);
       const working = images.get(workingEdge)!;
       const downscale = +(Math.max(srcW, srcH) / Math.max(working.w, working.h)).toFixed(2);
       const run = (compensated: boolean) => {

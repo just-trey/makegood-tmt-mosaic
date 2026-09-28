@@ -25,8 +25,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import type { Browser, Page } from 'playwright';
-import { MAX_WORKING_EDGE, MEASURE_EDGE, workingSize } from '../../src/raster/decode';
-import { isPhotographic, measureImage } from '../../src/raster/stats';
+import {
+  MAX_WORKING_EDGE,
+  MEASURE_EDGE,
+  measureAtReferenceSize,
+  workingSize,
+} from '../../src/raster/decode';
+import { isPhotographic } from '../../src/raster/stats';
 import type { RasterImage } from '../../src/raster/types';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -658,14 +663,15 @@ async function decodeAll(only?: string[]): Promise<DecodedSource[]> {
         null;
 
       if (onDisk) {
-        // Which draw was kept as `working` was decided by measureImage and isPhotographic at write
-        // time, and neither is in the key: the key covers what the *pixels* depend on, not what was
-        // decided about them. Recomputing the statistic on the cached measure pixels catches a
-        // retune of either one exactly, with no constant to sample and no sampling step to be finer
-        // than. Retuning EDGE_BUCKET_SHIFT is a change this bench argues for, and without this an
-        // entry would stay "fresh" while `working` came off disk from the old decision.
+        // Which draw was kept as `working` was decided by measureAtReferenceSize and isPhotographic
+        // at write time, and neither is in the key: the key covers what the *pixels* depend on, not
+        // what was decided about them. Recomputing the statistic on the cached measure pixels
+        // catches a retune of either one exactly, with no constant to sample and no sampling step
+        // to be finer than. Retuning EDGE_BUCKET_SHIFT is a change this bench argues for, and
+        // without this an entry would stay "fresh" while `working` came off disk from the old
+        // decision.
         const cachedMeasure = { ...hit.measure, data: readBin(`${src.name}.measure`) };
-        const nowDensity = measureImage(cachedMeasure).edgeDensity;
+        const nowDensity = measureAtReferenceSize(cachedMeasure).edgeDensity;
         if (nowDensity === hit.edgeDensity && isPhotographic(nowDensity) === hit.photographic)
           draws = {
             measure: cachedMeasure,
@@ -688,7 +694,7 @@ async function decodeAll(only?: string[]): Promise<DecodedSource[]> {
         const m = res.draws[String(MEASURE_EDGE)];
         const drawn: RasterImage = { w: m.w, h: m.h, data: b64ToPixels(m.b64) };
         const big = res.draws[String(MAX_WORKING_EDGE)];
-        const kept = isPhotographic(measureImage(drawn).edgeDensity)
+        const kept = isPhotographic(measureAtReferenceSize(drawn).edgeDensity)
           ? drawn
           : { w: big.w, h: big.h, data: b64ToPixels(big.b64) };
         writeBin(`${src.name}.measure`, drawn.data);
@@ -699,7 +705,7 @@ async function decodeAll(only?: string[]): Promise<DecodedSource[]> {
       const { srcW, srcH } = draws;
       let { measure, working } = draws;
 
-      const edgeDensity = measureImage(measure).edgeDensity;
+      const edgeDensity = measureAtReferenceSize(measure).edgeDensity;
       const photographic = isPhotographic(edgeDensity);
       // Carried the way decode.ts carries it: re-measuring the working image would read a
       // different number, which is the whole reason RasterImage has the field.
