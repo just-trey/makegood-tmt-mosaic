@@ -977,3 +977,23 @@ and Cap. Not reproduced: no test or drive has built it.
 `buildColorPrism` ([src/geometry/assembly.ts](../src/geometry/assembly.ts)). For example, clip a
 boundary-less fill to the part's footprint before the cut-back, or count a colour covered when the
 cut-back removed area and what is left produced no inlay.
+
+## The assembly color list's area% is triangle count, not area
+
+`renderColorList`'s rows read `areaPct` off `colorListEntries`, built in `rebuildAssembly`
+([src/app/rebuild.ts](../src/app/rebuild.ts)) as each color's total inlay soup length divided by 9
+(a triangle count), normalized to the shipped colors' combined count. It is not a measure of area:
+a thin flush inlay's triangle count tracks its boundary complexity, not its footprint, so three
+sticker bands cut to equal shares can read 1.0% / 0.2% / 0.0% instead of roughly a third each.
+
+- `computeNetRegionsByColor`'s own `detectedColors.areaPct` (`src/geometry/assembly.ts`, the
+  `byColor` palette before merges) is the real planar-area percentage and does not have this bug;
+  it is on the pre-merge, pre-cut 2D design, not the built mesh.
+- The code already flags the mismatch as an approximation (`rebuild.ts`, the comment above the
+  `baseAssigned` push), but that note describes a footing difference between two percentage scales,
+  not that the mesh-side one is a triangle count with no area weighting at all.
+- Found by wave-2 item F's (#317, fill-yields-to-sticker) live check while comparing sticker bands
+  that should have split area evenly.
+- **Closing it** means weighting `inlaySoups[ci]`'s triangles by their own area (or projecting to
+  the flat design and reusing `planarArea`) instead of counting them, in the `colorListEntries`
+  loop around `src/app/rebuild.ts:676-691`.

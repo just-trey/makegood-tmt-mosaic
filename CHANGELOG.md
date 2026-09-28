@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The three-wave tech-debt fix campaign's round-trip measurement report**
+  (`docs/findings/2026-09-24-round-trip-measurement.md`), measured against
+  the 2026-08 process review baseline across all 18 merged PRs (#303-#320).
+  Filed the `areaPct` display bug it named as its own tech-debt section: the
+  assembly color list's area% is a triangle count, not an area, so equal
+  sticker bands can read 1.0% / 0.2% / 0.0% instead of a third each.
 - **`scripts/measure-clip-ink.test.ts` sweeps how narrow clipped design ink
   actually gets against `CLIP_REMNANT_FLOOR_MM2`.** The floor is not
   comfortably clear of shipped Fill content: 9.4% of recorded ink pieces
