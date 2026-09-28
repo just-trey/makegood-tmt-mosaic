@@ -19,9 +19,9 @@ const EDGE_BUCKET_SHIFT = 5;
  * Where the flat-art and photograph regimes are taken to start and end. Between them the trace
  * parameters interpolate, so there is no cliff an image can sit on the wrong side of.
  *
- * These two are the plan's "measure, don't guess" numbers: they are seeded from the rasterized
- * fixtures in scripts/gen-raster-fixtures.mjs (flat art lands near 0.05, photographs near 0.6) and
- * should be re-checked against that set rather than adjusted by eye on one file.
+ * Neither endpoint has been measured, only the midpoint between them (PHOTO_RESOLUTION_CUTOFF).
+ * Their seed fixtures, scripts/gen-raster-fixtures.mjs, are not in the tree. Real flat art reaches
+ * 0.2532 (`vite-node scripts/bench-raster.ts corpus`), twice the flat endpoint.
  */
 const FLAT_EDGE_DENSITY = 0.12;
 const PHOTO_EDGE_DENSITY = 0.45;
@@ -33,6 +33,10 @@ const PHOTO_EDGE_DENSITY = 0.45;
  * draw at, and a value halfway between two resolutions doesn't exist. Set at the midpoint of the
  * band the parameters blend across, so an image has to read clearly more photographic than flat
  * before it loses the detail pass.
+ *
+ * Measured, and it holds: the corpus's flat art tops out at 0.2532 (mario) and six of its seven
+ * photographs start at 0.2905 (`vite-node scripts/bench-raster.ts corpus`). The seventh, a balloon
+ * against clear sky, reads 0.1762 and gets flat-art treatment, which suits its content.
  */
 const PHOTO_RESOLUTION_CUTOFF = (FLAT_EDGE_DENSITY + PHOTO_EDGE_DENSITY) / 2;
 

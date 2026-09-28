@@ -1,6 +1,6 @@
 import type { Loop, ParsedSVG, SVGShape } from '../types';
-import { autoParams, despeckleFloorPx, DETAIL_MAX, fracFloorPx, measureImage } from './stats';
-import { MEASURE_EDGE } from './decode';
+import { autoParams, despeckleFloorPx, DETAIL_MAX, fracFloorPx } from './stats';
+import { MEASURE_EDGE, measureAtReferenceSize } from './decode';
 import { quantize } from './quantize';
 import { traceLabelMap } from './trace';
 import type { TracedComponent } from './trace';
@@ -95,7 +95,7 @@ function tracePlan(img: RasterImage, detail: number, mmPerPixel: number) {
   // RasterImage.edgeDensity. Re-measuring here would read the *working* image, whose size now
   // varies with that very statistic, and quietly shift every threshold that depends on it.
   const stats =
-    img.edgeDensity === undefined ? measureImage(img) : { edgeDensity: img.edgeDensity };
+    img.edgeDensity === undefined ? measureAtReferenceSize(img) : { edgeDensity: img.edgeDensity };
   // Whether the detail pass actually enlarged this image, which is what decides the compensating
   // blur. Read off the working size rather than passed down: the size is the fact, and an image too
   // small to be enlarged gave up no downscale filtering and must not be blurred for it.

@@ -1,4 +1,4 @@
-import type { RasterImage } from './types';
+import type { ImageStats, RasterImage } from './types';
 import { measureImage, isPhotographic } from './stats';
 
 /**
@@ -31,6 +31,29 @@ export const MAX_WORKING_EDGE = 1024;
  * blur and despeckle strength derived from them, were calibrated at this size.
  */
 export const MEASURE_EDGE = 512;
+
+/**
+ * `measureImage` at MEASURE_EDGE, a smaller draw enlarged by repeating pixels: zebra.svg exported at
+ * 128px reads 0.63 at its own size, photographic, and 0.18-0.21 from 512 up (`bench-raster.ts
+ * render`). Not smoothed, which would turn each boundary into a ramp that still counts as edge.
+ * The cost: at 384px and under, some photographs read flat (`bench-raster.ts sizes`).
+ */
+export function measureAtReferenceSize(reference: RasterImage): ImageStats {
+  const { data, w, h } = reference;
+  const scale = MEASURE_EDGE / Math.max(w, h);
+  if (scale <= 1) return measureImage(reference);
+  const W = Math.max(1, Math.round(w * scale));
+  const H = Math.max(1, Math.round(h * scale));
+  const out = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    const row = Math.floor((y * h) / H) * w;
+    for (let x = 0; x < W; x++) {
+      const from = (row + Math.floor((x * w) / W)) * 4;
+      out.set(data.subarray(from, from + 4), (y * W + x) * 4);
+    }
+  }
+  return measureImage({ data: out, w: W, h: H });
+}
 
 /**
  * Is this buffer a raster image rather than an SVG?
@@ -80,8 +103,8 @@ function drawAt(bitmap: ImageBitmap, maxEdge: number): RasterImage {
 /**
  * Decode an image file to RGBA pixels at the working size its own content earns.
  *
- * Two passes, and the first one is not wasted: the image is always drawn at MEASURE_EDGE and
- * measured there, both because that is the size stats.ts's thresholds were calibrated against and
+ * Two passes, and the first one is not wasted: the image is always measured at MEASURE_EDGE,
+ * both because that is the size stats.ts's thresholds were calibrated against and
  * because the answer decides the second pass. Flat art is redrawn larger, where its outlines have
  * detail worth keeping; a photograph keeps the first draw, where the extra pixels would buy noise.
  *
@@ -101,7 +124,7 @@ export async function decodeImageFile(file: Blob): Promise<RasterImage> {
   }
   try {
     const reference = drawAt(bitmap, MEASURE_EDGE);
-    const { edgeDensity } = measureImage(reference);
+    const { edgeDensity } = measureAtReferenceSize(reference);
     if (isPhotographic(edgeDensity)) return { ...reference, edgeDensity };
 
     const detailed = drawAt(bitmap, MAX_WORKING_EDGE);

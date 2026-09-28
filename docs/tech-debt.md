@@ -390,45 +390,47 @@ one.
   number invented to satisfy the complaint.
 - Applies to every part that ships zones, not only the chair.
 
-## The raster edge-density reading depends on how big the file is
+## The flat and photo edge-density endpoints are unmeasured, and small photos read flat
 
-**Measured**: [2026-08-19 photo cluster](findings/2026-08-19-raster-photo-cluster.md) supersedes
-result 1 of
-[2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). Six of
-seven photographs separate cleanly from the flat cluster and the 0.285 cutoff sits in that gap;
-the seventh, a balloon against a clear sky, stays inside the flat band. The size dependence below
-is what is left open.
+**Open**: `FLAT_EDGE_DENSITY` (0.12) and `PHOTO_EDGE_DENSITY` (0.45) in `src/raster/stats.ts` have
+never been measured. Only their midpoint, the 0.285 cutoff, has; its numbers sit on the constant.
 
-`measureImage().edgeDensity` counts the share of pixels that differ from a neighbour, and that
-share depends on the size the image is measured at. `MEASURE_EDGE` caps rather than resamples, so
-a source under 512px is measured at its own size and reads higher for it.
+- **Measured**: [2026-08-19 photo cluster](findings/2026-08-19-raster-photo-cluster.md), which
+  supersedes result 1 of
+  [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md).
+- Real flat art reaches 0.2532 (`mario`), twice the flat endpoint. Mild evidence against it.
+- Six of the seven photographs are CC-licensed Commons files. They show the statistic _can_ score
+  a busy photograph high. They are not a sample of volunteer uploads.
+- Moving an endpoint moves blur, despeckle and curve fit for every image between the two. Judging
+  that needs traced output looked at, not readings.
 
-| Source                                        | Measured         | Reads                                 |
-| --------------------------------------------- | ---------------- | ------------------------------------- |
-| `public/patterns/zebra.svg` exported at 128px | 0.6324           | photo                                 |
-| the same file exported at 256px               | 0.3661           | photo                                 |
-| the same file exported at 384px               | 0.2430           | flat, and this is where it flips      |
-| the same file at 512px and above              | 0.1823 to 0.2086 | flat, a noisy band and not one number |
-| `red-sox-logo`, a real 300px logo             | 0.2531           | flat, 0.03 from the cutoff            |
+### Under 384px no cutoff separates the corpus
 
-Two flat colours at every size. Only the export resolution changed.
+Every image is measured at 512px; a smaller one is first enlarged by repeating pixels
+(`measureAtReferenceSize` in `src/raster/decode.ts`). Small flat art no longer reads photographic.
+Small photographs now read flatter instead.
 
-The `sizes` bench mode shows the same effect from the other direction, on the measurement rather
-than the file: `mario` reads 0.433 (photo) measured at 256 and 0.253 (flat) at 512. That rung is
-diagnostic rather than shipping, since `mario` is always worked at 1024, but it isolates the
-measurement size from the file size.
+App readings for each file exported small, from
+`vite-node scripts/bench-raster.ts sizes pattern-zebra mario red-sox-logo cartoon photo stock-gravel stock-foliage stock-brick stock-crowd stock-night stock-bokeh-food`:
 
-**Closing it**: derive the reading from something size-independent, or measure at a fixed size the
-source is always resampled _to_ rather than capped at. The second is the smaller change and would
-alter what every existing threshold means, so it wants its own measurement pass.
+| Exported at | Flat art, highest  | Stock photos, lowest | Stock photos reading flat         |
+| ----------- | ------------------ | -------------------- | --------------------------------- |
+| 128         | 0.252 zebra        | 0.160 foliage        | 4 of 6: foliage crowd night bokeh |
+| 192         | 0.296 zebra, photo | 0.220 foliage        | 3 of 6: foliage night bokeh       |
+| 256         | 0.275 mario        | 0.247 bokeh          | 2 of 6: foliage bokeh             |
+| 384         | 0.272 mario        | 0.275 bokeh          | 1 of 6: bokeh                     |
+| 512         | 0.253 mario        | 0.290 bokeh          | none                              |
 
-### Still unmeasured
+- Flat art is `pattern-zebra`, `mario`, `red-sox-logo` and `cartoon`. The balloon `photo` reads
+  flat at every size, as it does at full size.
+- `pattern-zebra` at 192 is downscaled from a 1024px render and still reads photo. Rendered
+  straight at 192 it reads 0.2637, flat (`vite-node scripts/bench-raster.ts render`).
+- Measured at their own sizes, as before, every stock photo read photo at every size. So did all
+  four flat sources at 192 and below, zebra and mario at 256, and mario at 384.
+- A small photo reading flatter gets less blur and a lower despeckle floor, so it traces busier.
 
-Where volunteer uploads land. Six of the seven photographs are CC-licensed Commons files, which is
-sound for asking whether the statistic _can_ score a busy photograph high and is not a sample of
-what this app receives. `FLAT_EDGE_DENSITY` (0.12) and `PHOTO_EDGE_DENSITY` (0.45) are untested by
-that run, which exercised only the midpoint. Flat art reaching 0.2532 is mild evidence against the
-flat endpoint.
+**Closing it**: a statistic that separates at small sizes, or a photo corpus showing volunteers
+never upload small photographs.
 
 ## Colors is the one trace control still fixed, and no single value suits real artwork
 
