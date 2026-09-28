@@ -565,10 +565,12 @@ function fromGeom(polys: Geom): PolyFeature | null {
  * someone's artwork — a real choice, honoured the way a sub-layer depth is (docs/audience.md).
  * Swept at the bake, where the population is part geometry, no width separates dust from surface
  * at all: docs/findings/2026-09-08-cut-region-width.md, `npx vite-node
- * scripts/measure-cut-width.mjs`. That sweep says nothing about the ink this floor guards, which
- * nobody has measured — open in docs/tech-debt.md, "Nobody has swept the design ink
- * CLIP_REMNANT_FLOOR_MM2 actually guards". The bake's own thread is the section beside it,
- * "Nothing says whether a thin cut-region strip is surface a cover hides".
+ * scripts/measure-cut-width.mjs`. The ink this floor guards is a different population, swept
+ * separately: docs/findings/2026-09-27-clip-ink-sweep.md, `RUN_CLIP_INK_SWEEP=1 npx vitest run
+ * scripts/measure-clip-ink.test.ts`. 9.4% of the recorded pieces sit below this floor, mostly one
+ * pattern's fine detail — open in docs/tech-debt.md, "Whether a near-floor clipped-ink piece is
+ * dust or a drawn detail is unmeasured". The bake's own thread is the section beside it, "Nothing
+ * says whether a thin cut-region strip is surface a cover hides".
  *
  * What measurement HAS retired is the seam overlap — every one of the chair's 41 overlap pieces
  * builds a cutter on both its parts, and `buildCutter` extrudes a ribbon one micron wide and 120mm
