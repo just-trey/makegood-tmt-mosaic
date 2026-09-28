@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- **A small logo is no longer traced like a photo.** An image under 512px was
-  judged at its own size, where outlines take up more of the picture, so it
-  got a photo's blur and speck removal and lost fine detail. Every image is now
-  judged at 512px. A photo under 384px can now trace busier; move Detail left
-  to calm it.
+- **A small logo is no longer traced like a photo.** An image under 512px, or a
+  small logo on a big transparent sheet, was judged at its own size. Outlines
+  took up more of the picture there, so it got a photo's blur and speck removal
+  and lost fine detail. Every image is now judged at 512px. A photo of 384px or
+  less can now trace busier; move Detail left to calm it. A design in a saved
+  session keeps its old look until you load the image again.
 - **Fill no longer cuts part of a big design and drops the rest.** The polygon
   maths takes at most 500,000 edges at a time, and past that a fill used to lose
   tiles behind a "Couldn't merge the shapes" warning. The work is now split into

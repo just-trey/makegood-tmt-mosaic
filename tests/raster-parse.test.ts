@@ -331,9 +331,6 @@ describe('parseRasterImage', () => {
         img.data[i + 1] = 255;
         img.data[i + 2] = 0;
       }
-      // Pinned to the reading this fixture was built around: the test is about the two notices,
-      // and at 320px the decode-time reading is a different, lower number.
-      img.edgeDensity = measureImage(img).edgeDensity;
       const result = parseRasterImage(img, { colors: 5, detail: 100 });
 
       expect(result.capped).toBe(true);

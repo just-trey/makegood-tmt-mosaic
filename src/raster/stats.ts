@@ -21,7 +21,7 @@ const EDGE_BUCKET_SHIFT = 5;
  *
  * Neither endpoint has been measured, only the midpoint between them (PHOTO_RESOLUTION_CUTOFF).
  * Their seed fixtures, scripts/gen-raster-fixtures.mjs, are not in the tree. Real flat art reaches
- * 0.2532 (`vite-node scripts/bench-raster.ts corpus`), twice the flat endpoint.
+ * 0.2042 (`vite-node scripts/bench-raster.ts corpus`), 1.7x the flat endpoint.
  */
 const FLAT_EDGE_DENSITY = 0.12;
 const PHOTO_EDGE_DENSITY = 0.45;
@@ -32,11 +32,9 @@ const PHOTO_EDGE_DENSITY = 0.45;
  * Deliberately a hard line rather than another interpolation: the decoder has to pick one size to
  * draw at, and a value halfway between two resolutions doesn't exist. Set at the midpoint of the
  * band the parameters blend across, so an image has to read clearly more photographic than flat
- * before it loses the detail pass.
- *
- * Measured, and it holds: the corpus's flat art tops out at 0.2532 (mario) and six of its seven
- * photographs start at 0.2905 (`vite-node scripts/bench-raster.ts corpus`). The seventh, a balloon
- * against clear sky, reads 0.1762 and gets flat-art treatment, which suits its content.
+ * before it loses the detail pass. Measured: flat art tops out at 0.2042, six of seven photographs
+ * start at 0.2905, and the seventh (a balloon on clear sky, 0.1762) suits flat treatment
+ * (`vite-node scripts/bench-raster.ts corpus`).
  */
 const PHOTO_RESOLUTION_CUTOFF = (FLAT_EDGE_DENSITY + PHOTO_EDGE_DENSITY) / 2;
 

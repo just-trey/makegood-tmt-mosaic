@@ -397,8 +397,9 @@ never been measured. Only their midpoint, the 0.285 cutoff, has; its numbers sit
 
 - **Measured**: [2026-08-19 photo cluster](findings/2026-08-19-raster-photo-cluster.md), which
   supersedes result 1 of
-  [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md).
-- Real flat art reaches 0.2532 (`mario`), twice the flat endpoint. Mild evidence against it.
+  [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). Its
+  flat-art readings predate measuring at a fixed size: `mario` then read 0.2532, now 0.2042.
+- Real flat art reaches 0.2042 (`mario`), 1.7x the flat endpoint. Mild evidence against it.
 - Six of the seven photographs are CC-licensed Commons files. They show the statistic _can_ score
   a busy photograph high. They are not a sample of volunteer uploads.
 - Moving an endpoint moves blur, despeckle and curve fit for every image between the two. Judging
@@ -406,7 +407,7 @@ never been measured. Only their midpoint, the 0.285 cutoff, has; its numbers sit
 
 ### Under 384px no cutoff separates the corpus
 
-Every image is measured at 512px; a smaller one is first enlarged by repeating pixels
+Every image is measured with its opaque artwork enlarged to 512px by repeating pixels
 (`measureAtReferenceSize` in `src/raster/decode.ts`). Small flat art no longer reads photographic.
 Small photographs now read flatter instead.
 
@@ -417,17 +418,20 @@ App readings for each file exported small, from
 | ----------- | ------------------ | -------------------- | --------------------------------- |
 | 128         | 0.252 zebra        | 0.160 foliage        | 4 of 6: foliage crowd night bokeh |
 | 192         | 0.296 zebra, photo | 0.220 foliage        | 3 of 6: foliage night bokeh       |
-| 256         | 0.275 mario        | 0.247 bokeh          | 2 of 6: foliage bokeh             |
-| 384         | 0.272 mario        | 0.275 bokeh          | 1 of 6: bokeh                     |
-| 512         | 0.253 mario        | 0.290 bokeh          | none                              |
+| 256         | 0.254 zebra        | 0.247 bokeh          | 2 of 6: foliage bokeh             |
+| 384         | 0.245 zebra        | 0.275 bokeh          | 1 of 6: bokeh                     |
+| 512         | 0.204 mario        | 0.290 bokeh          | none                              |
 
 - Flat art is `pattern-zebra`, `mario`, `red-sox-logo` and `cartoon`. The balloon `photo` reads
   flat at every size, as it does at full size.
 - `pattern-zebra` at 192 is downscaled from a 1024px render and still reads photo. Rendered
   straight at 192 it reads 0.2637, flat (`vite-node scripts/bench-raster.ts render`).
-- Measured at their own sizes, as before, every stock photo read photo at every size. So did all
-  four flat sources at 192 and below, zebra and mario at 256, and mario at 384.
+- Measured at their own sizes, every stock photo reads photo at every size. So do all four flat
+  sources at 192 and below, zebra and mario at 256, and mario at 384.
 - A small photo reading flatter gets less blur and a lower despeckle floor, so it traces busier.
+- A cutoff near 0.26 would separate the table's 384 and 512 rows. It was not moved: at full size
+  it cuts the margin over flat art from 0.081 to 0.056, and there the cutoff decides working
+  resolution. The photo set is not a volunteer sample either.
 
 **Closing it**: a statistic that separates at small sizes, or a photo corpus showing volunteers
 never upload small photographs.

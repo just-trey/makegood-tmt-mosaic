@@ -155,12 +155,14 @@ describe('measureAtReferenceSize', () => {
     expect(measureAtReferenceSize(img)).toEqual(measureImage(img));
   });
 
-  it('judges a small logo on the logo, not on the transparent sheet around it', () => {
-    const img = stripes(100);
-    for (let p = 0; p < 100 * 100; p++) if (p % 100 < 50) img.data[p * 4 + 3] = 0;
-    expect(measureAtReferenceSize(img).edgeDensity).toBeCloseTo(
-      measureAtReferenceSize(stripes(50, 100)).edgeDensity,
-      1,
+  it('sizes a small logo by the logo, not by the transparent sheet around it', () => {
+    const logo = stripes(100);
+    const sheet = new Uint8ClampedArray(MEASURE_EDGE * MEASURE_EDGE * 4);
+    for (let y = 0; y < 100; y++)
+      sheet.set(logo.data.subarray(y * 400, (y + 1) * 400), ((200 + y) * MEASURE_EDGE + 200) * 4);
+    const padded = { data: sheet, w: MEASURE_EDGE, h: MEASURE_EDGE };
+    expect(measureAtReferenceSize(padded).edgeDensity).toBe(
+      measureAtReferenceSize(logo).edgeDensity,
     );
   });
 });

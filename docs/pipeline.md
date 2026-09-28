@@ -17,8 +17,9 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
 - Decoded at 512px to measure, then again at 1024px if it reads as flat art.
   Photos stay at 512px ([decode.ts](../src/raster/decode.ts)).
 - Measurement stays pinned at 512px whatever the working size, and rides on
-  `RasterImage.edgeDensity` so a re-trace can't re-derive it. A smaller image
-  is enlarged to 512px by repeating pixels, for the measurement only.
+  `RasterImage.edgeDensity` so a re-trace can't re-derive it. Smaller artwork,
+  sized by its opaque pixels, is enlarged to 512px by repeating pixels, for the
+  measurement only.
 - Pixels under 50% alpha are background and cut nothing.
 - Edge density (how much of the image is colour boundary) sets blur, despeckle
   and curve-fit strength; the Detail slider scales them.

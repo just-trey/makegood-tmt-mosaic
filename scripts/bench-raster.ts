@@ -756,10 +756,9 @@ async function modeSizes(args: string[]) {
       // so a small source silently repeats itself across the wider columns and the table would
       // invite reading down a column that holds two different measurements.
       const at = Math.max(img.w, img.h);
-      const own = measureImage(img).edgeDensity;
-      const d = at > MEASURE_EDGE ? own : measureAtReferenceSize(img).edgeDensity;
+      const d = measureAtReferenceSize(img).edgeDensity;
       row[`@${e}`] =
-        (at < MEASURE_EDGE ? `${own.toFixed(3)} -> ` : '') +
+        (at < MEASURE_EDGE ? `${measureImage(img).edgeDensity.toFixed(3)} -> ` : '') +
         `${d.toFixed(3)} ${isPhotographic(d) ? 'photo' : 'flat'}${at === e ? '' : ` (@${at})`}`;
     }
     rows.push(row);
