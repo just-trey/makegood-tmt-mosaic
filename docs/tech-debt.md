@@ -923,27 +923,40 @@ A second candidate, unmeasured: fix `subtractRegions`
 shared by two loops traced from the same triangles, rather than filtering the
 ribbons out afterward. Worth sizing on its own measurement if someone wants it.
 
-## Nobody has swept the design ink `CLIP_REMNANT_FLOOR_MM2` actually guards
+## Whether a near-floor clipped-ink piece is dust or a drawn detail is unmeasured
 
-`docs/findings/2026-09-08-cut-region-width.md` swept the bake's population, part
-geometry, and found no width separating dust from surface. That says nothing
-about the runtime floor, which sees something else entirely: a placed design's
-ink clipped to a part (`placedInk` and `dropSpecks`, `src/geometry/assembly.ts`).
-Those pieces have never been measured.
+`docs/findings/2026-09-27-clip-ink-sweep.md` swept the runtime floor's own
+population — a placed design's ink clipped to a part (`placedInk` and
+`dropSpecks`, `src/geometry/assembly.ts`) — across the four shipped patterns
+on real parts. Re-derive with `RUN_CLIP_INK_SWEEP=1 npx vitest run
+scripts/measure-clip-ink.test.ts`.
 
-The floor stays an area there deliberately, and that part is not open:
+**The floor is not comfortably clear of shipped content.** 9.4% of the
+recorded foreground-ink pieces (760 of 8,056) sit below `CLIP_REMNANT_FLOOR_MM2`
+(0.16mm²), and the narrowest surviving piece is 0.160048mm² — 1.00003x the
+floor. 86% of the sub-floor pieces are the zebra pattern alone (already
+flagged elsewhere for needing its marching-squares contours thinned to fit
+the vertex budget); cow contributes only 5.
+
+The floor stays an area, not a width, deliberately, and that part is still
+not open:
 
 - A width test on ink would delete a deliberate 0.3mm stroke in someone's
   artwork. That is a real choice, honoured the way a sub-layer depth is
   (`MIN_CUT_DEPTH_MM`, docs/audience.md).
-- The #296 hairline was removed at the bake, not here, so the one worked example
-  never reached this floor.
+- The #296 hairline was removed at the bake, not here, so the one worked
+  example never reached this floor.
 
-What is open is that the claim rests on the argument, not on a measurement. What
-would close it: sweep clipped ink across the shipped example designs and say how
-narrow real artwork gets. If the narrowest deliberate stroke turns out to be far
-above the floor, the argument gains a number. If artwork routinely runs at 0.2mm,
-the speck notice is firing on content people meant, which is a different bug.
+**What is still open**: whether the sub/near-floor pieces this sweep found are
+dust (a clip-boundary numerical artifact, the failure mode the floor's own
+docstring names) or genuine zebra-pattern detail. Many are extreme slivers
+(aspect ratios into the hundreds), consistent with dust, but not all — some
+are close to square. Answering it needs tracing individual pieces back to
+their source loop, which this sweep didn't attempt. If the near-floor zebra
+content turns out to be dust, the floor is vindicated with a sharper margin
+than "five orders of magnitude" ever claimed. If it's real stripe detail, the
+speck notice is firing on content people meant, and either the floor or
+zebra's own tracing needs a second look.
 
 ## A Fill hidden under a sticker on a cut-through part can read as off the part — unmeasured
 

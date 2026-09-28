@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/measure-clip-ink.test.ts` sweeps how narrow clipped design ink
+  actually gets against `CLIP_REMNANT_FLOOR_MM2`.** The floor is not
+  comfortably clear of shipped Fill content: 9.4% of recorded ink pieces
+  (760 of 8,056) across the four built-in patterns fall under it, and the
+  narrowest survivor sits at 1.00003x the floor. 86% of the sub-floor pieces
+  are the zebra pattern. `docs/findings/2026-09-27-clip-ink-sweep.md`;
+  re-derive with `RUN_CLIP_INK_SWEEP=1 npx vitest run
+scripts/measure-clip-ink.test.ts`.
+
 ### Fixed
 
 - **A small logo is no longer traced like a photo.** An image under 512px, or a

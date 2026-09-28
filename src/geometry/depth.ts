@@ -35,6 +35,15 @@ export const NOZZLE_MM = 0.4;
  * remnant on `chair-seat-back-top` was 0.025mm², 0.02mm wide and 8mm long, against 1,258 to
  * 3,029mm² for every other chart that design reaches — five orders of magnitude of daylight
  * either side of this floor.
+ *
+ * That margin is the bake's own population (part geometry), not this floor's. Swept against real
+ * design ink — the four shipped patterns, Fill mode, real parts — this floor sits much closer to
+ * what ships: 9.4% of recorded ink pieces (760 of 8,056) fall under it, and the narrowest survivor
+ * is 0.1600478mm², 1.00003x this value. 86% of the sub-floor pieces are one pattern (zebra).
+ * docs/findings/2026-09-27-clip-ink-sweep.md, `RUN_CLIP_INK_SWEEP=1 npx vitest run
+ * scripts/measure-clip-ink.test.ts`. Whether that near-floor population is dust or drawn detail is
+ * still open — docs/tech-debt.md, "Whether a near-floor clipped-ink piece is dust or a drawn
+ * detail is unmeasured".
  */
 export const CLIP_REMNANT_FLOOR_MM2 = NOZZLE_MM * NOZZLE_MM;
 
