@@ -96,7 +96,7 @@ function renderBaseRow(list: HTMLElement, c: ColorListEntry): void {
     .join('')}</div>`;
   row.innerHTML = `
     <div class="top">
-      <div class="swatch" style="background:${c.color}" title="Prints as this color (the base's dominant member)"></div>
+      <div class="swatch" style="background:${c.color}" title="Prints as this color (the base's main color)"></div>
       <div class="hex">Base: prints as the body</div>
       <div class="area">${c.areaPct.toFixed(1)}%</div>
     </div>
@@ -306,7 +306,7 @@ export function renderColorList(
       rightControlHtml: string,
       membersRowHtml = '';
     if (c.isMergeGroup) {
-      swatchHtml = `<div class="swatch" style="background:${c.color}" title="Prints as this color (the group's dominant member)"></div>`;
+      swatchHtml = `<div class="swatch" style="background:${c.color}" title="Prints as this color (the group's main color)"></div>`;
       membersRowHtml = `<div class="merge-members">${c.members
         .map(
           (h) =>
@@ -326,7 +326,7 @@ export function renderColorList(
     const ownKey = c.members.join(',');
     const otherTargets = mergeTargets.filter((t) => t.key !== ownKey);
     const mergeSelectHtml = otherTargets.length
-      ? `<select class="merge-with" title="Merge this color with another, same as dragging one onto the other" aria-label="Merge ${c.isMergeGroup ? `Merged (${c.members.length})` : c.color} with another color">
+      ? `<select class="merge-with" title="Merge with another color, same as dragging one onto it" aria-label="Merge ${c.isMergeGroup ? `Merged (${c.members.length})` : c.color} with another color">
           <option value="">Merge with…</option>
           ${otherTargets.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
         </select>`
@@ -347,7 +347,7 @@ export function renderColorList(
         <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${labelHtml}" title="${
           isOverridden
             ? `Using its own depth (${shownDepth.toFixed(2)} mm) instead of the ${state.globalDepth.toFixed(2)} mm default`
-            : 'Following the default depth set in Depth. Type here to give this row its own'
+            : 'Following the default depth. Type here to give this row its own'
         }">
         <span class="hint">mm</span>
         ${

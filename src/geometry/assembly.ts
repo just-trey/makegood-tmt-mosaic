@@ -305,9 +305,8 @@ export function designAnchor(
   // refresh and pointerdown.
   if (notice && circle && looksLikeAnEscapedBoundary(circle, parsed))
     notice(
-      'This SVG has a circle around most of the artwork, but some of it falls outside. The ' +
-        'design was fitted by its overall size instead, so it may print smaller than the ' +
-        'template intends. Remove any stray marks outside the circle.',
+      "Some artwork falls outside this SVG's circle. It was fitted by overall size, so it may " +
+        'print smaller than the template intends. Remove stray marks outside the circle.',
     );
   // A raster anchors on its frame on every kind, wheel included, and says nothing: an image cannot
   // contain a boundary circle, so the notice below would ask every image for the impossible.
@@ -405,13 +404,13 @@ export function designMmPerUnit(
     notice(
       parsed.origin === 'raster'
         ? 'This image has no real-world size, so it was auto-fit to the part face. Use Scale to fine-tune.'
-        : 'This SVG has no size in millimeters, so it was auto-fit to the part face. Set the document size in millimeters for an exact size, or use Scale to fine-tune.',
+        : 'This SVG has no size in millimeters, so it was auto-fit to the part face. Set its size in millimeters for an exact fit, or fine-tune with Scale.',
     );
     return Math.min(designFace.w / sheet.w, designFace.h / sheet.h) * scaleMult * fit;
   }
   if (designFace)
     notice(
-      'This SVG has no size in millimeters, so its true print size is unknown. It was placed 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
+      'This SVG has no size in millimeters, so its true print size is unknown. It was placed 1:1 with its coordinate units. Set its size in millimeters, or use Scale to correct the fit.',
     );
   return scaleMult * fit;
 }
@@ -842,14 +841,12 @@ function warnOverlappingDesigns(placed: PlacedDesign[]): void {
       both
         ? // No move or rescale remedy: a fill covers the whole face, and Fill is only offered on
           // zoneless kinds (chair-body sets withholdFill), so there is nowhere to move one.
-          `${subject} are both set to Fill, so they cover each other completely. Where their` +
-            ' colors differ the export will carry two inlays claiming the same space. Switch one' +
-            ' to Sticker, or remove it.'
+          `${subject} are both set to Fill, so they cover each other. Where their colors` +
+            ' differ, two inlays claim the same space. Switch one to Sticker, or remove it.'
         : // "may": the check bounds ink reaching the shared box rather than intersecting, so
           // artwork sharing a box without touching trips it (designOverlap.ts).
-          `${subject} overlap. Where they cross, their recesses cut into each other and the` +
-            ' export may carry two inlays claiming the same space. Move, rescale, or rotate one' +
-            ' of them.',
+          `${subject} overlap. Where they cross, their recesses cut into each other and two` +
+            ' inlays may claim the same space. Move, rescale, or rotate one.',
     );
   }
 }
@@ -979,7 +976,7 @@ export async function buildAssemblyGeometry(
     wasm = await getManifold();
   } catch (e) {
     warnBuild(
-      'Could not load the Manifold boolean engine, so assembly cutting is unavailable. ' +
+      'Could not load the Manifold engine, so assembly cutting is unavailable. ' +
         (e as Error).message,
     );
     return null;
@@ -1608,7 +1605,7 @@ export async function buildAssemblyGeometry(
       if (!manifoldIsValid(partMan)) {
         prismEntries.forEach(([pci]) => landedColors.add(pci));
         warnBuild(
-          `Part "${part.name}" isn't a watertight/manifold mesh, so it can't be cut cleanly. Repair it (close holes, fix flipped faces) and retry. Exporting it uncut for now.`,
+          `Part "${part.name}" isn't watertight, so it can't be cut cleanly. Close its holes and fix flipped faces, then retry. It exports uncut.`,
         );
         partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
         finishPart();

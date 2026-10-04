@@ -201,7 +201,7 @@ export function parseRasterImage(
  */
 export function rasterCappedMessage(name: string): string {
   return (
-    `Some detail in "${name}" was too fine to print and was merged into its surroundings. ` +
+    `Some detail in "${name}" was too fine to print and was merged away. ` +
     'Lower Colors, or lower Detail, for a cleaner result.'
   );
 }

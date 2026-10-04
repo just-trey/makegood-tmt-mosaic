@@ -384,18 +384,17 @@ export const HUBCAP_SILHOUETTE_TOO_MANY =
  * it. A deliberately rectangular logo trips this too, which is why it reports rather than refuses.
  */
 export const HUBCAP_SILHOUETTE_NO_TRANSPARENCY =
-  'This image has no transparent background, so the hubcap came out as its rectangle. Export it ' +
-  "as a PNG with the background removed to cut it to the artwork's real shape.";
+  'This image has no transparent background, so the hubcap came out rectangular. Export a PNG ' +
+  "with the background removed to cut it to the artwork's shape.";
 
 /**
  * The outline shrank to clear the wheel's rim. Said rather than done silently: the visible symptom
  * is the size control no longer changing anything, which reads as a broken input.
  */
 export const HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL =
-  'This shape was too big for the wheel, so it was scaled down to fit. The hubcap and the ' +
-  'artwork on it are both smaller than the size you set. Reduce the size or the scale to take ' +
-  'control of it yourself.';
+  'This shape was too big for the wheel, so it was scaled down to fit. The hubcap and its ' +
+  'artwork are smaller than the size you set. Reduce the size or the scale to set it yourself.';
 
 export const HUBCAP_SILHOUETTE_THIN_DETAIL =
   'Some of this shape is thinner than 1mm, about one nozzle wide. Those parts will be ' +
-  'fragile. Simplifying the artwork or making the hubcap bigger will thicken them.';
+  'fragile. Simplify the artwork or enlarge the hubcap to thicken them.';
