@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   re-derive with `RUN_CLIP_INK_SWEEP=1 npx vitest run
 scripts/measure-clip-ink.test.ts`.
 
+### Changed
+
+- **Seventeen in-app notices, warnings and tooltips say the same thing in fewer words.**
+  The edge-cut, Fill-overlap, overlap, SVG-size, hubcap and depth-field
+  messages are shorter, and "dominant member" tooltips read "main color".
+  `docs/troubleshooting.md` quotes match.
+
 ### Fixed
 
 - **A design on the chair's Left side no longer cuts a stray mark.** It cut a

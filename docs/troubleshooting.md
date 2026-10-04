@@ -52,9 +52,9 @@ the cost is filament changes on surface nobody sees once the chair is together.
 The hatch in the 3D view and on the template still show what should have been
 trimmed.
 
-## Troubleshooting: "Could not load the Manifold boolean engine, so assembly cutting is unavailable"
+## Troubleshooting: "Could not load the Manifold engine, so assembly cutting is unavailable"
 
-Full text: _"Could not load the Manifold boolean engine, so assembly cutting is
+Full text: _"Could not load the Manifold engine, so assembly cutting is
 unavailable. "_ — followed by the browser's own error.
 
 Assembly mode's whole cutting pipeline — clipping colors to a face, cutting
@@ -158,11 +158,11 @@ on it. The
 [findings report](findings/2026-08-24-placement-frame-angle.md) lists which
 of the library's other face choices land here.
 
-## Troubleshooting: "isn't a watertight/manifold mesh" warnings (assembly mode)
+## Troubleshooting: "isn't a watertight mesh" warnings (assembly mode)
 
-Full text: _"Part "Top" isn't a watertight/manifold mesh, so it can't be cut
-cleanly. Repair it (close holes, fix flipped faces) and retry. Exporting it
-uncut for now."_
+Full text: _"Part "Top" isn't a watertight mesh, so it can't be cut cleanly.
+Repair it (close holes, fix flipped faces) and retry. Exporting it uncut for
+now."_
 
 **This fails earlier than the cut warnings above.** Those happen when a clipped
 _region_ comes out non-watertight. This one fires when the part's own base
@@ -939,8 +939,7 @@ file (thousands of independent shapes, not nested ones) does not trip it.
 ## Troubleshooting: "This SVG has no size in millimeters…"
 
 Full text: _"This SVG has no size in millimeters, so it was auto-fit to the part
-face. Set the document size in millimeters for an exact size, or use Scale to
-fine-tune."_
+face. Set the document size in millimeters for an exact fit, or fine-tune with Scale."_
 
 **Expected on every artwork the app ships, and on most editor exports.** The
 document sheet is fitted to the part's design face, so a template round-trip
@@ -1082,11 +1081,11 @@ one option, either one alone is another, and nothing says which was meant.
 Rather than guess, the part stays round. Remove the extra artwork with the ×
 on its row, or turn the checkbox off to keep both as designs on a round part.
 
-## Troubleshooting: "This image has no transparent background, so the hubcap came out as its rectangle"
+## Troubleshooting: "This image has no transparent background, so the hubcap came out rectangular"
 
 Full text: _"This image has no transparent background, so the hubcap came out
-as its rectangle. Export it as a PNG with the background removed to cut it to
-the artwork's real shape."_
+rectangular. Export a PNG with the background removed to cut it to the
+artwork's shape."_
 
 **Not a refusal.** A rectangular hubcap is a legitimate thing to want, so the
 part builds. This checks for the more likely case: a WebP or flattened PNG that
@@ -1183,7 +1182,7 @@ patch, so it is the second opinion. Then report it, with the zone name from the
 message — it is a bug in the app, not in your file, and nothing you change in
 the design will clear it.
 
-## Troubleshooting: "This SVG has a circle around most of the artwork, but some of it falls outside"
+## Troubleshooting: "This SVG has a circle around most of the artwork, but some falls outside"
 
 A design template marks its boundary with a circle drawn around everything, and on a
 round part the app sizes your artwork to that circle. This says the circle is
@@ -1213,8 +1212,8 @@ the rest of the design was thrown off the part in silence.
 ## Troubleshooting: "This shape was too big for the wheel, so it was scaled down to fit"
 
 Full text: _"This shape was too big for the wheel, so it was scaled down to fit.
-The hubcap and the artwork on it are both smaller than the size you set. Reduce
-the size or the scale to take control of it yourself."_
+The hubcap and its artwork are smaller than the size you set. Reduce the size
+or the scale to take control."_
 
 Nothing may overhang the wheel the hubcap mounts on, which is 280mm across. A
 silhouette can exceed that while its **Hubcap diameter** reading looks fine,
@@ -1229,9 +1228,9 @@ clears puts you back in control.
 
 ## Troubleshooting: "Some of this shape is thinner than 1mm"
 
-Full text: _"Some of this shape is thinner than 1mm, about one
-nozzle wide. Those parts will be fragile. Simplifying the artwork or making
-the hubcap bigger will thicken them."_
+Full text: _"Some of this shape is thinner than 1mm, about one nozzle wide.
+Those parts will be fragile. Simplify the artwork or enlarge the hubcap to
+thicken them."_
 
 Unlike the other silhouette warnings this one does **not** fall back to a
 circle. The part builds at the shape and size you set, because a thin spike
