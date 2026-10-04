@@ -1,17 +1,15 @@
 # Rules for docs/
 
 One rule set per destination. The destination list, DECISIONS-NEEDED.md, and
-the writing style all stay in the root CLAUDE.md.
+the writing style stay in the root CLAUDE.md.
 
 ### docs/ui-conventions.md
 
 - Findings against it cite convention numbers, not prose.
-- It **verifies** a change against a fixed bar. It does not discover problems
-  nobody knew about.
-- Discovery is `maker-workflow-review` and the `review-gauntlet` lenses. This
-  file does not replace them.
-- Recurring review findings graduate into conventions. The conventions then
-  stop them recurring.
+- It **verifies** a change against a fixed bar. It doesn't discover problems.
+- Discovery is `maker-workflow-review` and the `review-gauntlet` lenses.
+- Recurring review findings graduate into conventions, which then stop them
+  recurring.
 - Behavior only. `design-system/` owns the visual language, and is silent on
   the model.
 
@@ -26,9 +24,8 @@ the writing style all stay in the root CLAUDE.md.
 
 ### docs/tech-debt.md
 
-Holds **open** work only. One `##` section per item, stating what was
-measured, why it was deferred, and what closing it would take. This is where
-"write deferred work down, don't just remember it" points.
+Holds **open** work only. One `##` section per item: what was measured, why it
+was deferred, what closing it would take.
 
 **When the work lands, delete the section.**
 
@@ -36,26 +33,22 @@ measured, why it was deferred, and what closing it would take. This is where
   work list. This one had reached 1100 lines.
 - The record of the fix is the CHANGELOG entry and the commit.
 - Anything a future reader still needs (the measurement behind a constant,
-  the approach that was tried and lost) goes in a comment next to the code it
-  constrains, where someone changing that line will hit it.
+  the approach that lost) goes in a comment next to the code it constrains.
 - `CREASE_ANGLE_RAD` in [src/app/rebuild.ts](src/app/rebuild.ts) is the
-  worked example. It carries the numbers that chose it over the alternative,
-  and its tech-debt section is gone.
+  worked example: it carries the numbers that chose it, and its tech-debt
+  section is gone.
 
 **Before deleting, move out what the section still owes.**
 
-- A section can be almost entirely closed and still carry one open thread: a
-  follow-up, an unclaimed optimization, an unmeasured caveat.
-- That thread survives as its own section. Only the closed part goes.
-- This rule's first use got it wrong. #140 deleted the flat-shading section
-  along with the "index the display meshes" follow-up inside it, and a review
-  had to put it back.
+- A mostly closed section can carry one open thread: a follow-up, an
+  unclaimed optimization, an unmeasured caveat. That thread becomes its own
+  section; only the closed part goes.
+- #140 deleted the flat-shading section along with the "index the display
+  meshes" follow-up inside it, and a review had to put it back.
 
-**And grep for what points at it.** The rule above covers what the section
-still owes; it does not cover what points at the section from outside.
-Before deleting, grep `docs/tech-debt.md` for `(above)`, `(below)`, the
-section's title words, and any count it contributed to a surviving section.
-#268 deleted a closed section and orphaned an `(above)` in the surviving
+**And grep for what points at it.** Before deleting, grep `docs/tech-debt.md`
+for `(above)`, `(below)`, the section's title words, and any count it
+contributed to a surviving section. #268 orphaned an `(above)` in the
 quote-gate section, which also still cited four counts that PR had moved.
 
 Keep a closed item only when it is still load-bearing for something open, for
@@ -68,10 +61,9 @@ way through several.
 
 - Record what was measured or hunted, on which commit and machine, and what
   came back.
-- Include the null results and the wrong turns. Nobody else can reconstruct
-  those, and they are why a run report earns a place here. `main` keeps the
-  conclusions in code and CHANGELOG. Only the report says which of them were
-  nearly something else.
+- Include the null results and wrong turns. Nobody else can reconstruct them,
+  and they are why a run report earns a place. `main` keeps the conclusions in
+  code and CHANGELOG; only the report says which were nearly something else.
 - A report is pinned to its run and never edited to stay current.
 - When a report changes what an open item claims, the pointer goes _from_ the
   item in `tech-debt.md` _to_ the report. The item stays the thing you read
@@ -82,19 +74,18 @@ way through several.
 
 One dated file per `/review-cycle` run, written by the skill, not by hand.
 
-- Each pins the frozen build it judged and the slate of lenses it ran.
-- The next cycle grades itself against the last one, so an old cycle is
-  evidence of what was true then. Never edit one to stay current.
+- Each pins the frozen build it judged and the lenses it ran.
+- The next cycle grades itself against the last, so an old cycle is evidence
+  of what was true then. Never edit one to stay current.
 - Findings that survive adjudication leave for `tech-debt.md`, `roadmap.md`,
   or a convention. A cycle file records the review, not the work list.
 
 ### docs/spikes/
 
 One write-up per throwaway prototype: what was built to answer a question,
-what it answered, what it could not reach.
+what it answered, what it couldn't reach.
 
-- The code is thrown away and the write-up is the deliverable.
+- The code is thrown away; the write-up is the deliverable.
 - Nothing here describes shipped behavior, and nothing is built from it.
-- A spike that finds a defect promotes it out to `tech-debt.md` or
-  `roadmap.md`, where someone will meet it again. A write-up nobody re-reads
-  is not a work list.
+- A spike that finds a defect promotes it to `tech-debt.md` or `roadmap.md`,
+  where someone will meet it again.

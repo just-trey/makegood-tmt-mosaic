@@ -9,7 +9,7 @@ How the geometry actually works — read this before touching `src/geometry/` or
 **An SVG is read as shapes, not pixels** ([src/svg/](../src/svg/)): geometry
 straight off the elements, transforms applied, curves broken into straight
 segments, shapes grouped by fill colour. Curves are broken up adaptively
-([path.ts](../src/svg/path.ts)) so detail is spent where the curve is sharp.
+([path.ts](../src/svg/path.ts)), spending detail where the curve is sharp.
 
 **A PNG, JPG or WebP reaches the same `ParsedSVG`** by another route
 ([src/raster/](../src/raster/)). Nothing after step 1 can tell which it was.
@@ -35,20 +35,20 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
   photograph denoise blur stops at the photo cutoff instead of interpolating
   ([stats.ts](../src/raster/stats.ts) explains both).
 - Colours are clustered in CIELAB, then forced a minimum perceptual distance
-  (ΔE 3) apart. That's deliberately the same space, metric, and value the
-  default "Slight" auto-merge threshold uses
+  (ΔE 3) apart. That is deliberately the same space, metric, and value as the
+  default "Slight" auto-merge threshold
   ([`PALETTE_SEPARATION_DE`](../src/raster/quantize.ts) and
-  [`AUTO_MERGE_LEVELS`](../src/geometry/regions.ts)), so freshly-traced colours
+  [`AUTO_MERGE_LEVELS`](../src/geometry/regions.ts)), so freshly traced colours
   are a provable no-op for it. Colours decides which regions exist, auto-merge
-  decides which share a filament slot; keep the two values equal.
+  which share a filament slot; keep the two values equal.
 
 **The tracer walks the cracks between pixels, not the pixels**
 ([trace.ts](../src/raster/trace.ts)), so two touching regions share one boundary
 line exactly. That network is cut into **chains** (runs of boundary between
 junctions where three or more regions meet, plus junction-free island outlines),
-and each chain is fitted to a curve ([curve.ts](../src/raster/curve.ts)) instead
-of being emitted as pixel corners. Pixel corners can only step in whole pixels,
-which prints as a visible staircase on every diagonal.
+and each chain is fitted to a curve ([curve.ts](../src/raster/curve.ts)) rather
+than emitted as pixel corners, which step in whole pixels and print as a
+staircase on every diagonal.
 
 **Each shared chain is fitted once, and that is load-bearing.** Fitting each
 region separately pulls the shared chain two ways and leaves a sliver of bare
@@ -58,8 +58,8 @@ whole chains, so both sides splice identical points. **Don't fit per region**:
 pins the fit, and trace.ts carries the reasoning.
 
 It does not stop a region crossing one it shares no chain with, worth up to one
-working pixel of overlap. Paint order absorbs it; the bound is measured and
-pinned by the "keeps any overlap between components down to a sliver" test in
+working pixel of overlap. Paint order absorbs it; the bound is pinned by the
+"keeps any overlap between components down to a sliver" test in
 `tests/raster-trace.test.ts`.
 
 ### 2. Work out what each colour actually shows
@@ -84,23 +84,23 @@ from the Artwork fit sliders, or drag the artwork on the part in the 3D view.
 
 ### 4. Cut the part
 
-Pockets are cut into real part meshes. Each colour region is extruded into a
-prism in the part's own coordinates and subtracted from the mesh with
+Each colour region is extruded into a prism in the part's own coordinates and
+subtracted from the real part mesh with
 [Manifold](https://github.com/elalish/manifold), a 3D solid-boolean engine (CSG)
 loaded on demand ([assembly.ts](../src/geometry/assembly.ts)).
 
 **Which depth a region asked for** is resolved in one place
-([depth.ts](../src/geometry/depth.ts)): an explicit per-row override if it is
-finite, otherwise the global depth (`Infinity`/`NaN` fall back too). A stored
-`0` is a real answer, not a missing one, and a clamped result is never written
-back into the settings.
+([depth.ts](../src/geometry/depth.ts)): an explicit per-row override if finite,
+otherwise the global depth (`Infinity`/`NaN` fall back too). A stored `0` is a
+real answer, not a missing one, and a clamped result is never written back into
+the settings.
 
 **The shallow end** is raised to 0.2 mm, one typical layer. The warning names the
-raised _setting_ rather than a cut depth, because a cut-through part holes the
-whole way through regardless. It collects across the build: one warning per
-distinct pair of numbers, naming every region raised to that pair. A positive
-depth thinner than a layer is honoured and only noted: a real choice on a
-fine-layer profile.
+raised _setting_, not a cut depth, because a cut-through part holes the whole
+way through regardless. It collects across the build: one warning per distinct
+pair of numbers, naming every region raised to that pair. A positive depth
+thinner than a layer is honoured and only noted: a real choice on a fine-layer
+profile.
 
 **The deep end is bounded twice, by the part and by the wall under each
 region.** Both measure along Y, the axis the cutter extrudes down, and both stop
@@ -151,61 +151,59 @@ overlap from above, which clears a design nested in another's hollow without
 putting a boolean on the rebuild.
 
 **A Fill under a Sticker is not an overlap: the fill yields.** Each fill colour
-has every sticker's placed ink on its zone subtracted before it is extruded,
-so the background is never cut where a design sits on it. A fill colour with
-nothing left anywhere gets a notice; a failed subtraction keeps that colour
-whole and warns.
+has every sticker's placed ink on its zone subtracted before extrusion, so the
+background is never cut where a design sits on it. A fill colour with nothing
+left anywhere gets a notice; a failed subtraction keeps that colour whole and
+warns.
 
 **Design zones: a part can carry more than one design surface.** Baked ahead of
 time by `scripts/bake-zones.mjs`. The chair body has eight (left, right, front,
 back, seat-left, seat-right, wing-left, wing-right). The seat pan is in none of
 them: the cushion covers it whole, so it prints in one colour and takes no
-artwork at all. Each zone is a true-scale flat map of its
-surface (a UV chart) that
+artwork. Each zone is a true-scale flat map of its surface (a UV chart) that
 artwork wraps onto **conformally**: a sticker follows the surface around a
 rounded edge the way real vinyl would
 ([conformal.ts](../src/geometry/conformal.ts)).
 
 - A zone spans the printed parts under it rather than stopping at a part edge.
-  (The fender zones happen to live on one part each: the wing's forward face
-  never reaches a seam.)
+  (The fender zones live on one part each: the wing's forward face never
+  reaches a seam.)
 - Surface hidden by another part once assembled (wheels, cushions) is baked
-  as per-chart `deadRegions`: the config's `covers` file marks the covering
-  bodies, and a bake pass samples each zone (~25mm² per sub-cell) and calls a
-  sample hidden when a cover touches it (within `COVER_CONTACT_MM`) or blocks
-  most of its outward hemisphere (`COVER_HEMI_DIRS` rays,
-  `COVER_HIDDEN_FRACTION` blocked) — the contact test catches a flush cushion
-  the hemisphere test misses on an angled wall, the hemisphere test catches a
-  curved wheel shadow a single along-normal ray missed. Five things then keep
-  that verdict honest, and each fixes a shape the sheets came out wrong:
+  as per-chart `deadRegions`. The config's `covers` file marks the covering
+  bodies; a bake pass samples each zone (~25mm² per sub-cell) and calls a sample
+  hidden when a cover touches it (within `COVER_CONTACT_MM`) or blocks most of
+  its outward hemisphere (`COVER_HEMI_DIRS` rays, `COVER_HIDDEN_FRACTION`
+  blocked). Contact catches a flush cushion the hemisphere test misses on an
+  angled wall; the hemisphere catches a curved wheel shadow a single
+  along-normal ray missed. Five guards keep the verdict honest, each fixing a
+  shape the sheets came out wrong (reasoning in
+  [zonebake.mjs](../scripts/lib/zonebake.mjs), which also holds the constants and
+  their measurements):
   - **Declared solids** (`covers.solids`) replace cover bodies with an exact
-    primitive. The wheel arrives as its two hollow printed halves, and rays
-    reach the far wall through its own spoke openings, so its shadow baked as a
-    ragged patch. It is now one solid 280mm disc, posed from the bodies it
-    replaces and checked against their diameter.
+    primitive. Rays reach the wheel's far wall through its spoke openings, so its
+    shadow baked ragged; it is now one solid 280mm disc, checked against the
+    diameter of the bodies it replaces.
   - **A declared solid's own shadow is drawn, not derived**
-    (`declaredShadow: true`): the dead area is the disc of radius
-    `radiusMm − bleedMm` about the solid's snapped axis, gated the way the
-    classifier gates (within ray reach, facing the solid, on a part carrying
-    it). Classify-and-bleed could never return a clean arc there — the bleed
-    also erodes 20mm out from every through-hole inside the shadow. Derived
-    regions that would add nothing beyond the disc but post-bleed rags (under
-    π·bleedMm²) are absorbed into it; anything larger — another cover's real
-    shadow — is kept whole and unioned.
+    (`declaredShadow: true`): the disc of radius `radiusMm − bleedMm` about the
+    solid's snapped axis. The bleed erodes 20mm out from every through-hole in the
+    shadow, so classify-and-bleed never returns a clean arc. Derived regions that
+    add only post-bleed rags (under π·bleedMm²) are absorbed; larger ones —
+    another cover's real shadow — are unioned whole.
   - **Mirror-paired covers** are snapped onto exactly mirrored poses
     (`covers.mirrorAxis`), keeping each body's own mesh.
-  - **The question is asked twice**, at each sample and at its mirror image,
-    hidden if either says so. The parts and covers are exact mirrors but the
-    twins are tessellated differently and the hemisphere's ray frame is not
-    mirror-equivariant, so without this the two flanks disagree by 5%.
-  - **Smoothing runs before the bleed**, not after. Both the covered and the
-    visible set arrive as a staircase of sample cells, and dilating one of those
-    by `bleedMm` (20) bites twice that out of the dead region — enough to take a
-    whole fender's wheel shadow on one flank and leave it on the other.
-    A cover resting on parts hides on the parts it rests on; one resting on
-    nothing hides wherever it occludes. The runtime subtracts dead regions from the
-    artwork clip; the viewport and templates draw them hatched. Constants and
-    their measurements: [zonebake.mjs](../scripts/lib/zonebake.mjs).
+  - **The question is asked twice**, at each sample and its mirror image, hidden
+    if either says so. The twins are tessellated differently and the hemisphere's
+    ray frame isn't mirror-equivariant, so otherwise the two flanks disagree by
+    5%.
+  - **Smoothing runs before the bleed.** Both sets arrive as a staircase of
+    sample cells, and dilating one by `bleedMm` (20) bites twice that out of the
+    dead region, enough to take a whole fender's wheel shadow on one flank and
+    leave it on the other.
+
+  A cover resting on parts hides on the parts it rests on; one resting on
+  nothing hides wherever it occludes. The runtime subtracts dead regions from the
+  artwork clip; the viewport and templates draw them hatched.
+
 - Artwork laid across a seam is split, cut into each part separately, and
   exported under that part's object.
 - Target a zone from the Artwork list's per-row dropdown, or by clicking the
@@ -213,54 +211,52 @@ rounded edge the way real vinyl would
 - **Whole chair** (a reserved zone id, `WHOLE_CHAIR_ZONE` in
   [zones.ts](../src/geometry/zones.ts)) binds one design to the kind's whole
   unfolded layout instead of one zone. `rebuild.ts` expands it into one
-  ordinary build input per zone the layout places
-  (`netToZoneBuildInput`), each moved by that zone's baked net transform —
-  geometry never sees a whole-part binding, only the same per-zone artworks
-  it already handles. Clicking a zone directly in the 3D view rebinds away
-  from Whole chair to that one zone (`zonePick.ts`).
+  ordinary build input per zone the layout places (`netToZoneBuildInput`), each
+  moved by that zone's baked net transform, so geometry never sees a whole-part
+  binding. Clicking a zone directly in the 3D view rebinds from Whole chair to
+  that zone (`zonePick.ts`).
 - **The layout is partitioned, so a point on it cuts exactly once.** Two
   sheets can lie over each other: on the chair the flanks reach 8,668 and
   8,158mm² across the back's (the bake prints all four yielded areas:
   `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`,
-  pinned in `tests/chair-zones.test.ts`). The divider is the registered seam itself —
-  the total-least-squares line through the vertices the two zones share, the
-  same ones whose fit placed the sheet — and each keeps the side its own body
-  is on. **A sheet only ever yields canvas the sheet taking it can chart**:
-  the per-part clip regions are simplified outlines and bulge over notches the
-  triangles leave open, so a partition run on them alone handed the back 24.0
-  and 21.8mm² it could not warp onto — ink dropped, with a notice saying it had
-  moved. Both figures come from the "yields no canvas the sheet taking it
-  cannot chart" test in `tests/chair-zones.test.ts`; re-derive them by
-  dropping the `chartedSheet` intersection from `netLiveSheets` in
-  `scripts/lib/zonebake.mjs`, rebaking, and re-running that test. What it gives
-  up is baked as `net.zones[<id>].excluded`, and
-  `clipToNetShare` takes that off a whole-part cut with a notice naming the
-  zone the ink went to. Binding a zone by name ignores it entirely and still
-  reaches every bit of surface that zone owns. `netSheetOverlaps` re-run over
-  the partitioned sheets is the proof, and reports none.
+  pinned in `tests/chair-zones.test.ts`).
+  - The divider is the registered seam itself: the total-least-squares line
+    through the vertices the two zones share, the ones whose fit placed the
+    sheet. Each sheet keeps the side its own body is on.
+  - **A sheet only yields canvas the sheet taking it can chart.** The per-part
+    clip regions are simplified outlines that bulge over notches the triangles
+    leave open, so a partition run on them alone handed the back 24.0 and
+    21.8mm² it couldn't warp onto: ink dropped, with a notice saying it had
+    moved. Both figures come from the "yields no canvas the sheet taking it
+    cannot chart" test in `tests/chair-zones.test.ts`; re-derive them by dropping
+    the `chartedSheet` intersection from `netLiveSheets` in
+    `scripts/lib/zonebake.mjs`, rebaking, and re-running that test.
+  - What a sheet gives up is baked as `net.zones[<id>].excluded`, and
+    `clipToNetShare` takes that off a whole-part cut with a notice naming the zone
+    the ink went to. Binding a zone by name ignores it and still reaches every bit
+    of surface that zone owns. `netSheetOverlaps` over the partitioned sheets is
+    the proof, and reports none.
 - **The viewport cross-hatches what a sheet gives up**, so the refusal is
-  visible before a mark is dragged there rather than only in the notice after.
-  `ConformalZoneMapper.netExcludedOverlayMesh` is the dead-surface overlay's
-  own warp (`regionOverlayMesh`) over the yielded regions, clipped to
-  `boundary()` first: the bake's exclusions are zone-wide, so unclipped they
-  smear onto every chart of a seam-spanning zone. Two hatches in one viewport,
-  and they mean opposite things, so they are drawn as the printed net template
-  draws them: hidden surface is one set of diagonals in `--accent`, yielded
-  canvas crosses them in `--accent-2`.
+  visible before a mark is dragged there, not only in the notice after.
+  `ConformalZoneMapper.netExcludedOverlayMesh` is the dead-surface overlay's own
+  warp (`regionOverlayMesh`) over the yielded regions, clipped to `boundary()`
+  first: the bake's exclusions are zone-wide, so unclipped they smear onto every
+  chart of a seam-spanning zone. The two hatches mean opposite things, so they
+  are drawn as the printed net template draws them: hidden surface is one set of
+  diagonals in `--accent`, yielded canvas crosses them in `--accent-2`.
 - **It is shown only while the active artwork row binds to the whole part.**
-  A row bound to a zone by name cuts every bit of that zone, so hatching a
-  yielded patch on that binding is the same lie in the other direction. No row
-  selected shows nothing, the same as a per-zone row. `rebuild.ts` builds the
-  mesh whatever the binding and flips `visible`, so clicking another row costs
-  a `refreshNetYieldOverlays()` rather than a rebuild. Every path that changes
-  a binding already schedules one.
+  A row bound to a zone by name cuts all of that zone, so hatching a yielded
+  patch there is the same lie in the other direction. No row selected shows
+  nothing. `rebuild.ts` builds the mesh whatever the binding and flips
+  `visible`, so clicking another row costs a `refreshNetYieldOverlays()`, not a
+  rebuild; every path that changes a binding already schedules one.
 - A zone pair mirrored across the config's `mirrorAxis` (or a zone seeded on
   that plane, mirrored across its own centre) bakes a `mirror` relation and a
   measured residual into the sidecar. Ticking Mirror on a bound artwork row
   cuts the same design on the twin zone, reflected about its `uvBounds`
-  centre; a self-mirrored zone instead keeps whichever half the design's
-  placed centre lands on and reflects it onto the other, with a notice when
-  that crops content. The residual re-derives from
+  centre; a self-mirrored zone keeps whichever half the design's placed centre
+  lands on and reflects it onto the other, with a notice when that crops
+  content. The residual re-derives from
   [scripts/measure-zone-mirror.mjs](../scripts/measure-zone-mirror.mjs).
 
 **A single zone is a chart, not a surface that flows into its neighbours.**
@@ -271,65 +267,63 @@ its area. Widening one zone is capped by stretch first, which doubles for 5°
 more on the chair's flanks. A design bound to one zone stops at its boundary.
 
 Three ways to merge the charts into one continuous surface were prototyped
-against the shipped bake and measured dead ends, so nobody re-derives them:
+against the shipped bake and measured dead ends:
 
-- **A cylindrical band** (unwrap left→back→right around the chair like a
-  bottle label) loses too much: only 69.6% of today's surface fits inside
-  `DISTORTION_WARN`, because the chair isn't a cylinder (per-part radii run
-  0.73–1.62× the best-fit R₀).
+- **A cylindrical band** (unwrap left→back→right like a bottle label) loses too
+  much: only 69.6% of today's surface fits inside `DISTORTION_WARN`, because the
+  chair isn't a cylinder (per-part radii run 0.73–1.62× the best-fit R₀).
 - **One merged LSCM zone** unwraps cleanly by every stretch metric (0 flipped
-  triangles, max stretch 1.54) but fails on UV injectivity instead: 4.85% of
-  the chart area is covered by more than one triangle, so a cutter can land on
-  the wrong sheet of surface — worse than the seam it removes.
-- **Cross-chart registration** (keep separate charts, give each a rigid offset
-  into a shared UV coordinate) has a real transform (−0.1° rotation, scale
-  1.0074, 1.26mm rms from `left` to `back`) but failed on geometry, not maths,
-  at the time: `left`/`back` shared only 10 vertices, on a ~22mm stretch of
-  one handle fillet, and zero on the storage boxes, where an 89.6° corner
-  opened a wedge of surface orientation neither zone's angle limit claimed.
+  triangles, max stretch 1.54) but fails on UV injectivity: 4.85% of the chart
+  area is covered by more than one triangle, so a cutter can land on the wrong
+  sheet of surface — worse than the seam it removes.
+- **Cross-chart registration** (separate charts, each with a rigid offset into
+  a shared UV coordinate) has a real transform (−0.1° rotation, scale 1.0074,
+  1.26mm rms from `left` to `back`) but failed on geometry at the time:
+  `left`/`back` shared only 10 vertices, on a ~22mm stretch of one handle
+  fillet, and zero on the storage boxes, where an 89.6° corner opened a wedge of
+  surface orientation neither zone's angle limit claimed.
 
-What's left of the surface-merging goal is a different parameterization
-family (cone-singularity methods like BFF/OptCuts, rather than plain LSCM) —
-a substantially bigger change than any of the three above. A prebuilt BFF
-was spiked against it and closed no-go
+What's left is a different parameterization family (cone-singularity methods
+like BFF/OptCuts, not plain LSCM), a substantially bigger change. A prebuilt
+BFF was spiked and closed no-go
 ([docs/spikes/2026-09-04-cone-wrap.md](spikes/2026-09-04-cone-wrap.md)); the
 whole-part sheet (**Whole chair**, above) is the shipped stand-in.
 
 **Cross-chart registration was later closed for two of those boundaries.**
 `claimWedge` (a zone-config option) hands an unclaimed wedge of surface to
 whichever neighbouring zone's seed normal is nearer, so `left`/`back` and
-`back`/`right` abut with 0mm gap instead of the ~8mm strip claimWedge's
-predecessor left in no zone at all
+`back`/`right` abut with 0mm gap instead of the ~8mm strip its predecessor left
+in no zone
 ([docs/findings/2026-09-04-seam-closing.md](findings/2026-09-04-seam-closing.md)).
-The whole-part sheet (above, "Whole chair") uses exactly the registration this
-unlocked, and it reaches only as far as the vertices that registration was fit
-through. The fit is one rigid transform over the vertices two zones SHARE, so
-it lands the sheets on each other over that stretch and nowhere else, while the
-partition makes them abut along the whole boundary regardless. Surveyed row by
-row (`scripts/lib/netseam.mjs`, baked as `net.zones[<id>].seamContinuity`, run
-by `npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`):
+The whole-part sheet uses exactly the registration this unlocked, and it reaches
+only as far as the vertices that registration was fit through. The fit is one
+rigid transform over the vertices two zones SHARE, so it lands the sheets on
+each other over that stretch and nowhere else, while the partition makes them
+abut along the whole boundary regardless. Surveyed row by row
+(`scripts/lib/netseam.mjs`, baked as `net.zones[<id>].seamContinuity`, run by
+`npx vite-node scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`):
 
 | Boundary   | Rows joining | Median tear elsewhere | Worst   |
 | ---------- | ------------ | --------------------- | ------- |
 | left/back  | 61 of 197    | 33.6mm                | 135.1mm |
 | right/back | 8 of 99      | 164.4mm               | 179.1mm |
 
-So a design carries across the ~120mm of the flank/back join around the storage
-box corner, and is torn everywhere else on that boundary — the two halves cut
-on surfaces tens of mm apart. The net template draws the joining stretch
-dashed and the rest on a solid line saying the sheets do not join there. Every
-boundary the wedge didn't close still sits with a visible gap.
+A design carries across the ~120mm of the flank/back join around the storage
+box corner and is torn everywhere else on that boundary: the two halves cut on
+surfaces tens of mm apart. The net template draws the joining stretch dashed and
+the rest on a solid line. Every boundary the wedge didn't close still sits with
+a visible gap.
 
 **The runtime says the same thing, at the point a design does it.** Each patch
 one sheet yields to another is baked cut at the limits of that boundary's
 joining stretch (`markNetExclusionContinuity`, zonebake.mjs), so every piece
-carries `joins` and, where it does not, the `tearMm` measured along it. When
+carries `joins` and, where it doesn't, the `tearMm` measured along it. When
 `clipToNetShare` finds a whole-part design's ink really reached a non-joining
 piece **and** left ink behind on this zone, the build warns naming both zones
 and that distance. Both conditions matter: a design wholly inside what one
 sheet yields is cut once on the neighbour, in one piece, and is not torn. A
-placed-bbox test over the whole boundary was rejected instead — 31% and 8% of
-these two boundaries join, so it would fire for nearly every design drawn.
+placed-bbox test over the whole boundary was rejected: 31% and 8% of these two
+boundaries join, so it would fire for nearly every design drawn.
 
 **Hardware variants** (the chair's Standard/Kit caster mounts) show a version
 picker above the part list. Switching reloads only the parts that differ.
@@ -341,17 +335,17 @@ scale the zone applies ([patterns.ts](../src/geometry/patterns.ts)). Four
 tileable patterns ship (Cow, Dalmatian, Zebra, Tiger) and default to Fill.
 
 A fill is refused before it runs when the copies would carry more than
-`FILL_POINT_BUDGET` points (the 3D cut's memory), or would need more than
-`MAX_FILL_TILES` of them. Either way the design is placed once and the pill
-names which limit it hit.
+`FILL_POINT_BUDGET` points (the 3D cut's memory) or need more than
+`MAX_FILL_TILES`. Either way the design is placed once and the pill names which
+limit it hit.
 
 **The polygon library takes at most 500,000 edges per call**
 (`SWEEP_SEGMENT_CAP`, [regions.ts](../src/geometry/regions.ts)).
 
 - `boolOpUnderCap` splits a bigger union, clip or subtraction into calls that
   fit. A polygon out of reach of the other side skips the engine.
-- The split is exact, not approximate: every polygon lands in one call or
-  passes through untouched.
+- The split is exact: every polygon lands in one call or passes through
+  untouched.
 - One polygon over the cap can't be split. A fill whose colour welds into one
   (dalmatian's background does) is refused after tiling, all colours together,
   so they stay in register.
@@ -404,35 +398,35 @@ Assemblies live in [kinds.ts](../src/assembly/kinds.ts), one entry per assembly
 listing its part roles. A role's `libraryPartId` links to
 [parts.json](../public/stl/parts.json): drop the STL/3MF in `public/stl/`, add a
 manifest entry, and the role auto-loads. Every role needs one. There is no
-drag-and-drop fallback: the app cannot check an arbitrary mesh is the part it
+drag-and-drop fallback: the app can't check an arbitrary mesh is the part it
 claims to be, and every verified export pose is keyed to the shipped one.
 
 Two fields tune non-wheel parts:
 
 - **`AssemblyRole.preferFaceNormal`** (unit vector) steers the auto-picked
-  design face toward the largest patch facing that way, rather than the largest
-  patch overall. The footrest needs it: its flat back outsizes its seat.
+  design face toward the largest patch facing that way, not the largest overall.
+  The footrest needs it: its flat back outsizes its seat.
 - **`AssemblyKind.designFit: 'rect'`** maps the SVG 1:1 in millimetres and
   centres it on the detected face, instead of the wheel's Design-radius circle
   model. Where an SVG declares no mm size, rect placement fits the document
   canvas to the face so a template trace still lands life-size. The Footrest
   kind uses both fields.
 
-  A size given only in `px` counts as no size, viewBox or not. A `px` is 1/96
-  inch per the SVG spec but whatever the editor's DPI in practice, and Affinity
-  re-exports our 266mm footrest template as `width="755px"` at 72: read at 96
-  that is 199.8mm, exactly 75%. A matching `viewBox="0 0 755 525"` does not
-  rescue it, since 755px over 755 units cancels to the same 96dpi constant. Only
-  an axis in `mm`/`cm`/`in`/`pt`/`pc` sets `userUnitMM`, with no exceptions: a
-  lone px axis leaves no canvas either, so it lands on the 1:1 branch and is
-  visibly 3x oversized rather than quietly 25% small.
+A size given only in `px` counts as no size, viewBox or not. A `px` is 1/96
+inch per the SVG spec but whatever the editor's DPI in practice, and Affinity
+re-exports our 266mm footrest template as `width="755px"` at 72: read at 96
+that is 199.8mm, exactly 75%. A matching `viewBox="0 0 755 525"` does not
+rescue it, since 755px over 755 units cancels to the same 96dpi constant. Only
+an axis in `mm`/`cm`/`in`/`pt`/`pc` sets `userUnitMM`, with no exceptions: a
+lone px axis leaves no canvas either, so it lands on the 1:1 branch and is
+visibly 3x oversized rather than quietly 25% small.
 
 The full procedure, including packing the mesh and baking placement, is the
 `add-part` skill.
 
 ### A generated part
 
-Every part above ships as a mesh. The hubcap does not: only its four mounting
+Every part above ships as a mesh. The hubcap doesn't: only its four mounting
 clips ship (`public/stl/hubcap-clips.3mf`), and the disc they carry is built at
 the chosen diameter and unioned onto them.
 
@@ -445,19 +439,18 @@ panel renders it without knowing the kind.
 The generator is [hubcap.ts](../src/geometry/hubcap.ts). Its constants are
 measurements off the mesh a human modelled, and `tests/hubcap.test.ts`
 regenerates the disc and checks it back against them. Two things that look
-cosmetic are not, and hubcap.ts explains both: the disc and clip tops are
-exactly coincident so joining them must be a real boolean, and face winding
-decides which side is solid.
+cosmetic are not (hubcap.ts explains both): the disc and clip tops are exactly
+coincident, so joining them must be a real boolean, and face winding decides
+which side is solid.
 
 **The disc can be cut to the shape of its own artwork.** `hubcapShapeFromState`
 ([kinds.ts](../src/assembly/kinds.ts)) is the seam. It returns the circle when
-the **Cut to artwork shape** box is off, when no artwork is loaded, or when more
-than one is; otherwise it reads the outline off the loaded artwork
-(`silhouetteFromShapes`,
-[hubcapOutline.ts](../src/geometry/hubcapOutline.ts)) and hands that to
-`buildHubcapBody`. There is deliberately no second upload: the picture and the
-cutline are one object, which is also why only one design is allowed. The edge
-is cut square, not chamfered.
+**Cut to artwork shape** is off, when no artwork is loaded, or when more than one
+is; otherwise it reads the outline off the loaded artwork
+(`silhouetteFromShapes`, [hubcapOutline.ts](../src/geometry/hubcapOutline.ts))
+and hands it to `buildHubcapBody`. There is deliberately no second upload: the
+picture and the cutline are one object, which is also why only one design is
+allowed. The edge is cut square, not chamfered.
 
 The outline is measured before it becomes a part:
 
@@ -466,21 +459,21 @@ The outline is measured before it becomes a part:
 - An outline within 2% of its own bounding box is flagged as probably opaque,
   the usual sign of an image that lost its alpha channel.
 - `narrowFeatureArea` reports how much of the outline sits in features narrower
-  than 1mm, and warns rather than refusing: a thin spike still makes a valid,
-  if fragile, solid.
+  than 1mm, and warns rather than refusing: a thin spike is a valid, if fragile,
+  solid.
 
-**The outline is placed by the same transform as the cut**, not by a parallel
-rule meant to match it. `hubcapShapeFromState` builds an `OutlinePlacement` from
-`designAnchor` and `designMmPerUnit`, the two helpers the cut itself uses, and
+**The outline is placed by the same transform as the cut**, not a parallel rule
+meant to match it. `hubcapShapeFromState` builds an `OutlinePlacement` from
+`designAnchor` and `designMmPerUnit`, the cut's own helpers, and
 `placeArtworkPoint` applies them in `ZoneMapper.placer`'s order. Part and
-picture cannot disagree by construction.
+picture can't disagree.
 
 **Offset is derived, not read.** The outline centres on the mounting axis and
 the artwork's offset is solved to put the picture on it. That is a correctness
-requirement, not a shortcut: `ZoneMapper.placer` ends with `+ faceCx`, and for a
-silhouette that face _is_ the outline being placed, so any offset moves the
-surface it is measured against. hubcapOutline.ts records the axis conventions
-and the padded-PNG drift that proved it.
+requirement: `ZoneMapper.placer` ends with `+ faceCx`, and for a silhouette that
+face _is_ the outline being placed, so any offset moves the surface it is
+measured against. hubcapOutline.ts records the axis conventions and the
+padded-PNG drift that proved it.
 
 Two more factors size the part:
 
@@ -492,25 +485,23 @@ Two more factors size the part:
   maximum size, because a shape's corners reach further than its longest side.
   The factor `min(1, R / outlineReach)` goes to the outline via
   `scaleOutlineAbout` and to the artwork via `generatedFitFactor`, which
-  `designMmPerUnit` multiplies into **every** branch. `generatedFitFactor`'s
-  docstring in [kinds.ts](../src/assembly/kinds.ts) explains why that must not
-  ride on the design face: an SVG with an absolute mm size never consults the
-  face branch at all, so folding the cap in there made it a silent no-op for
-  exactly the files this app hands out as design templates.
+  `designMmPerUnit` multiplies into **every** branch. It must not ride on the
+  design face (docstring in [kinds.ts](../src/assembly/kinds.ts)): an SVG with an
+  absolute mm size never consults the face branch, so the cap there was a silent
+  no-op for exactly the files this app hands out as design templates.
 
 **Artwork touching an edge of the design face cuts the shell's full thickness;
 interior artwork stays a recess.** Recessing the picture 1mm into a 3mm shell
 would leave that edge as a 2mm band of base colour. This is per **region**, not
-per part, which distinguishes it from `wheel-hub-cap`'s kind-wide `cutThrough`:
-interior detail on a 220mm disc should stay a recess.
+per part, unlike `wheel-hub-cap`'s kind-wide `cutThrough`: interior detail on a
+220mm disc should stay a recess.
 
 - **Every** edge, not just the outline. A face keeps all the loops of its patch
   (`AssemblyPart.boundaryLoops`), resolved into a polygon with holes by the same
   containment-depth rule `shapeToFeature` uses for SVG rings, so a doughnut's
-  inner rim is an edge exactly as its outside is. Eroding the holed face is what
-  gets that for free.
+  inner rim is an edge exactly as its outside is.
 - The generator declares it, via `GeneratedMesh.edgeCutThroughDepth`, and only
-  for a silhouette. That shape is cut flat, so its design face _is_ its outline.
+  for a silhouette: that shape is cut flat, so its design face _is_ its outline.
   The circle is chamfered and declares nothing.
 - `ZoneMapper.resolveCutRegions` splits on it, one entry per depth. Nothing
   upstream learns what a hubcap is.
@@ -519,8 +510,8 @@ interior detail on a 220mm disc should stay a recess.
   the edge would leave a trench through the middle of a colour.
 - A colour can be split across both depths, so the thin-depth note asks whether
   **any** slice took the setting.
-- The touch test uses an **absolute** area floor, not a fraction of the region.
-  See `MIN_TOUCH_AREA_MM2`, which records both measurements behind that.
+- The touch test uses an **absolute** area floor, not a fraction of the region
+  (`MIN_TOUCH_AREA_MM2` records both measurements).
 - The split only fires on a region that really was clipped. An unclipped region
   overruns the boundary everywhere and would read as entirely edge.
 
@@ -539,13 +530,13 @@ numbers become constants in [threemf.ts](../src/export/threemf.ts), wired onto
 
 Brim is off project-wide via `brim_type`, so the footrest carries support only.
 The chair's two handles do override brim (`chairPlacement.ts`), a deliberate
-per-part exception rather than a duplicate of the default.
+per-part exception.
 
 Those constants are handed back only for a mesh matching the fingerprint they
 were verified against, so **a generated part can never be vouched for that way**:
 its mesh varies by design and never matches a seal. `resolvePlacement` reports
 `'generated-part'` rather than a mismatch, because a mismatch means the repo's
-own assets drifted and this isn't that.
+own assets drifted.
 
 What a generated part _can_ have is an arrangement verified at one size, which
 `AssemblyRole.buildPlacement` returns. The hubcap's (`hubcapPlacement`) applies
@@ -555,7 +546,7 @@ was verified at. Two mechanisms serve it, neither a general escape hatch:
 - `fixedPosByPlate`, an absolute position authored for one exact bed, taken
   verbatim and skipping the re-centering `fixedPos` gets.
 - `projectSettings`, a project-wide Bambu key (the hubcap sets
-  `prime_tower_width`, since its verified clearance is only true at that width),
+  `prime_tower_width`, since its verified clearance only holds at that width),
   listed in `different_settings_to_system` so a resave can't reconcile it away.
 
 **The part position and the tower position are one claim.** On both verified
@@ -565,15 +556,16 @@ without the matching position puts it through the part.
 Where nothing was verified, the part falls through to the computed path: centred
 on its plate, with `suggestTowerPos` parking the tower in whichever corner the
 parts intrude on least, warning when every corner is occupied. That search runs
-for **any** plate with no baked tower position, not just hinted ones: while it
-didn't, an unhinted plate wrote no `wipe_tower_x/y` at all and the slicer fell
-back to its own preset default, quite possibly through the part the export had
-just centred there. The corner probe tests each part's measured footprint, not
-its bounding box: sixteen support directions off every body vertex
-(`FOOTPRINT_AXIS`), whose thirty-two half-planes wrap the part's **convex hull**
-to within 0.48%. Always a superset of the body soup, never a subset, so a corner
-is only called free when it is. Same soup the bounding box used, so the same
-caveat: an inlay filling an edge cut-through is not in it.
+for **any** plate with no baked tower position, not just hinted ones: otherwise
+an unhinted plate wrote no `wipe_tower_x/y` and the slicer fell back to its
+preset default, quite possibly through the part just centred there.
+
+The corner probe tests each part's measured footprint, not its bounding box:
+sixteen support directions off every body vertex (`FOOTPRINT_AXIS`), whose
+thirty-two half-planes wrap the part's **convex hull** to within 0.48%. Always a
+superset of the body soup, so a corner is only called free when it is. Same soup
+the bounding box used, so same caveat: an inlay filling an edge cut-through is
+not in it.
 
 | Part                                          | Scored footprint                                                                   |
 | --------------------------------------------- | ---------------------------------------------------------------------------------- |

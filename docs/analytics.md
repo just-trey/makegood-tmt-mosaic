@@ -1,19 +1,19 @@
 # Analytics
 
 Umami (cloud, cookieless) is injected at build time only when
-`UMAMI_WEBSITE_ID` is set — see the "Analytics" section in
-[README.md](../README.md). It always captures pageviews. This doc catalogs the
-custom events layered on top via [src/analytics/track.ts](../src/analytics/track.ts).
+`UMAMI_WEBSITE_ID` is set — see "Analytics" in [README.md](../README.md). It
+always captures pageviews. This doc catalogs the custom events layered on top
+via [src/analytics/track.ts](../src/analytics/track.ts).
 
 ## Rules
 
 - **No PII, ever.** No file names, file sizes, or artwork/geometry contents in
-  event props. Only low-cardinality categorical/numeric dimensions.
+  props. Only low-cardinality categorical/numeric dimensions.
 - **snake_case** event names; flat `{ key: string | number | boolean }` props.
-- Fire from the DOM handler that represents real user intent — not from
-  shared functions that also run during app init or on every rebuild.
-- `track()` is a no-op when `window.umami` isn't present (dev, forks) — no
-  guards needed at call sites.
+- Fire from the DOM handler that represents real user intent, not from shared
+  functions that also run during app init or on every rebuild.
+- `track()` is a no-op when `window.umami` isn't present (dev, forks), so call
+  sites need no guards.
 
 ## Events
 
@@ -28,12 +28,11 @@ Fired when artwork is loaded into the scene.
 ### `raster_adjust`
 
 Fired when the user commits a change to a loaded image's Colors or Detail
-slider — on `change` (drag release), not on every intermediate `input` tick,
-matching `fit_adjust`. Not fired when the re-trace threw and the slider was put
-back, since nothing was committed.
+slider — on `change` (drag release), not each `input` tick, matching
+`fit_adjust`. Not fired when the re-trace threw and the slider was put back.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — the `.raster-colors` and `.raster-detail` change handlers in `rasterControls`.
-- **Props:** `{ field: 'colors' | 'detail' }`. Deliberately not the value: it would be a per-image fingerprint of the artwork, and the rules above rule that out.
+- **Props:** `{ field: 'colors' | 'detail' }`. Not the value: it would fingerprint the artwork.
 
 ### `artwork_removed`
 
@@ -57,19 +56,16 @@ Fired when the user retargets an artwork instance's zone binding from its row
 dropdown.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-zone` change handler in `renderArtworkList`.
-- **Props:** `{ zone: string }` (the zone id, `'all'` for the unbound/"every
-  zone" option, or `'whole'` for "Whole chair" — the reserved zone id itself
-  is never sent)
+- **Props:** `{ zone: string }` (the zone id; `'all'` for the unbound "every
+  zone" option; `'whole'` for "Whole chair", never the reserved zone id itself)
 
 ### `artwork_mirror_toggled`
 
 Fired when the user ticks or unticks an artwork row's Mirror checkbox.
 
 - **Where:** [src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts) — `.artwork-mirror-check` change handler in `renderArtworkList`.
-- **Props:** `{ on: boolean, kind: 'twin' | 'centre' }` (`kind` is `'twin'` for a zone mirrored
-  onto a paired zone, `'centre'` for a zone mirrored across its own middle)
-- **Only the chair:** it is the one offered kind with mirrored zones, so the checkbox renders on
-  its rows and nowhere else.
+- **Props:** `{ on: boolean, kind: 'twin' | 'centre' }` (`'twin'`: mirrored onto a paired zone; `'centre'`: mirrored across the zone's own middle)
+- **Only the chair:** the one offered kind with mirrored zones, so the checkbox renders nowhere else.
 
 ### `artwork_mode_changed`
 
@@ -100,29 +96,28 @@ active artwork instance to it.
 Fired when the user changes the part-shape mode.
 
 - **Where:** [src/ui/partPanel.ts](../src/ui/partPanel.ts) — `#shape-kind` change handler in `initPartPanel`.
-- **Props:** `{ kind: 'assembly' }`. The dropdown offers assembly kinds only, so no other value can be sent. It still does not record _which_ kind — see `assembly_kind_select` below.
+- **Props:** `{ kind: 'assembly' }`, the only value the dropdown can send. It doesn't record _which_ kind — see `assembly_kind_select` below.
 
 ### `template_download`
 
 Fired when the user downloads an assembly kind's design template from the Part
-panel — either the single per-kind template, or (for a part with more than
-one design zone, like the chair) one of the per-zone templates.
+panel: the single per-kind template, or (for a part with several design zones,
+like the chair) a per-zone template.
 
 - **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `#asm-template-link` click handler in `initAssemblyPanel`, and the per-zone link handlers in `renderZoneTemplateLinks`.
-- **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`), plus `zone: string` (the zone id, or `'whole'` for the whole-part sheet — the reserved id itself is never sent) on a per-zone download
+- **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `wheel` / `footrest`), plus `zone: string` (the zone id, or `'whole'` for the whole-part sheet, never the reserved id itself) on a per-zone download
 
 ### `build_param_changed`
 
 Fired when the user commits a change to an assembly kind's numeric build
 parameter — today the hubcap's disc diameter. On the input's `change` (blur or
-Enter), not per keystroke, and only when the value actually moved: the same
-handler is what regenerates the part's mesh.
+Enter), not per keystroke, and only when the value moved: the same handler
+regenerates the part's mesh.
 
-Deliberately **not** fired when the app re-clamps the value itself, which
-happens when switching to a printer whose plate is smaller than the current
-diameter — that is the app correcting state, not user intent (see the `Rules`
-below). The diameter is rounded to a whole millimetre, so the prop is a size
-band rather than a fingerprintable exact value.
+Not fired when the app re-clamps the value itself (switching to a printer whose
+plate is smaller than the diameter): that is the app correcting state, not user
+intent (see `Rules`). The diameter is rounded to a whole millimetre, so the prop
+is a size band, not a fingerprintable exact value.
 
 - **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `applyBuildParam`, called from the `#p-asm-buildparam` change handler in `initPartPanel`.
 - **Props:** `{ kind: string }` (`state.assembly.kindId`, e.g. `hubcap`), `param: string` (the state key, e.g. `hubcapDiameterMm`), `value: number` (millimetres, rounded)
@@ -138,7 +133,7 @@ Fired on a successful export, just before the file download starts.
   - `printer: string` (`state.printerId`)
   - `colors: number` (material/color count)
   - `warnings: number` (placement warnings emitted)
-  - `kind: string` (`state.assembly.kindId`, e.g. `wheel` / `footrest` / `hubcap` / `chair-body`: which part was exported. Absent only in the unreachable case where a kind hasn't loaded yet.)
+  - `kind: string` (`state.assembly.kindId`, e.g. `wheel` / `footrest` / `hubcap` / `chair-body`: the part exported. Absent only if a kind hasn't loaded yet, which is unreachable.)
 
 ### `export_failed`
 
@@ -149,9 +144,8 @@ Fired when an export throws, in the same handler as `export`.
 ### `fit_adjust`
 
 Fired when the user commits a move/scale/rotate change to the artwork
-placement — on slider release (`change`) or on pointer-up from an on-face
-gizmo drag in the 3D viewport. Not fired on every intermediate `input` tick,
-only once per gesture.
+placement: on slider release (`change`) or pointer-up from an on-face gizmo drag
+in the 3D viewport. Once per gesture, not each `input` tick.
 
 - **Where:** [src/ui/fitPanel.ts](../src/ui/fitPanel.ts) — `syncPair`'s
   slider `change` handler (Scale/Offset X/Offset Y/Rotation).
@@ -181,16 +175,15 @@ Fired when the user flips the hubcap's **Cut to artwork shape** checkbox,
 either direction.
 
 - **Where:** [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts) — `applyHubcapSilhouette`, called from the `#p-asm-silhouette` change handler in `initPartPanel`.
-- **Props:** `{ kind: string }` (`state.assembly.kindId`, always `hubcap` today but kept consistent with `build_param_changed`), `on: boolean`.
+- **Props:** `{ kind: string }` (`state.assembly.kindId`, always `hubcap` today, kept consistent with `build_param_changed`), `on: boolean`.
 
 ### `feedback_sent`
 
 Fired when the in-app feedback widget finishes a submit, either way. The
-message and the email are never in the props: they go to Formspree and nowhere
-else.
+message and email never go in props: they go to Formspree only.
 
 - **Where:** [src/ui/feedbackWidget.ts](../src/ui/feedbackWidget.ts) — the `#feedback-form` submit handler.
-- **Props:** `{ status: 'ok' | 'error' }`. `'error'` covers both a non-2xx from Formspree and a failed connection; which one is not recorded.
+- **Props:** `{ status: 'ok' | 'error' }`. `'error'` covers a non-2xx from Formspree and a failed connection; which is not recorded.
 - **Dormant:** cannot fire unless `FEEDBACK_ENDPOINT` was set at build time — the widget renders nothing without it, so a fork never reaches this.
 
 ### `help_opened`
@@ -209,23 +202,22 @@ Fired when the user clicks a table-of-contents pill inside the help dialog.
 
 ## Future / not yet wired
 
-Candidates for a later pass, roughly in order of likely value. Follow the same
-pattern: wire at the DOM handler, add the entry here, keep props PII-free.
+Candidates for a later pass, roughly by likely value. Wire at the DOM handler,
+add the entry here, keep props PII-free.
 
-- `assembly_kind_select` — `src/ui/partPanel.ts`, `#shape-kind` change handler. Prop: `kindId`. `mode_switch` fires here but only ever records `kind: 'assembly'`, which is now the only value it can carry, so which part the user picked is not recorded at all. `wheel`, `footrest` and `hubcap` are offered; worth wiring as more parts ship.
+- `assembly_kind_select` — `src/ui/partPanel.ts`, `#shape-kind` change handler. Prop: `kindId`. `mode_switch` only ever records `kind: 'assembly'`, so which part the user picked isn't recorded. `wheel`, `footrest` and `hubcap` are offered; worth wiring as more parts ship.
 - `base_color_change` — `src/ui/partPanel.ts`, `renderBaseColorSwatches` swatch click. Prop: `default` vs `filament`.
 - `automerge_change` — `src/ui/colorList.ts`, `#p-automerge` slider. Prop: `level` (0-3).
 - `color_merge` / `color_to_base` — `src/ui/colorList.ts` drag-merge and "→ base" actions. Prop: resulting group size.
-- `depth_override` / `depth_reset` — `src/ui/colorList.ts`, a row's depth field committing a value and its "↺" clearing one. Prop: whether the value was deeper or shallower than the global. Worth knowing together: how often per-row depths get set at all is what says whether the affordance marking them earns its space.
+- `depth_override` / `depth_reset` — `src/ui/colorList.ts`, a row's depth field committing a value and its "↺" clearing one. Prop: deeper or shallower than the global. Together they show whether per-row depths get set often enough to earn the affordance marking them.
 - `fit_reset` — `src/ui/fitPanel.ts`, `#btn-reset-fit`.
 - `fit_flip` — `src/ui/fitPanel.ts`, flip checkboxes.
-- `feedback_opened` — `src/ui/feedbackWidget.ts`, the `#feedback-trigger` click. Props: none. Worth wiring against `feedback_sent` to see how many people open the form and then abandon it, which is the number that says whether the form is too long.
+- `feedback_opened` — `src/ui/feedbackWidget.ts`, the `#feedback-trigger` click. Props: none. Against `feedback_sent` it shows how many open the form and abandon it, which says whether the form is too long.
 
 ## Adding a new event
 
 1. Add a `track('event_name', { ...props })` call at the DOM handler for the
-   action (see the pattern in the three modules above).
+   action.
 2. Add an entry to this catalog (event, where, props).
-3. If the change also adds/removes/renames a left-panel control, remember
-   the [index.html](../index.html) `#help-dialog` also needs updating (see
-   CLAUDE.md) — the two often go together.
+3. If the change also adds/removes/renames a left-panel control, update the
+   [index.html](../index.html) `#help-dialog` too (see CLAUDE.md).
