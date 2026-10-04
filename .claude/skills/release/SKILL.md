@@ -27,8 +27,8 @@ The script makes all three edits identically every time, so they can't drift:
   displayed version derives from it via `__APP_VERSION__` in `vite.config.ts`
   (`getAppVersion` → `src/version.ts`).
 - **README.md version badge**, the step that has been missed before. The script
-  preserves the badge's existing suffix and colour (`--beta-orange`) and swaps
-  only the number.
+  keeps the badge's suffix and colour (`--beta-orange`) and swaps only the
+  number.
 - **CHANGELOG.md**: moves `## [Unreleased]` entries into a new
   `## [X.Y.Z] - YYYY-MM-DD` section using today's real date, leaves
   `## [Unreleased]` empty, and rewrites the compare links at the bottom.
@@ -57,21 +57,20 @@ to go ahead.
 The tag push also mints the **GitHub Release**. `deploy.yml`'s `release` job
 creates it from this version's CHANGELOG section (via
 `scripts/changelog-extract.mjs`), gated on the build passing. No manual
-`gh release create`. For a while tags ran ahead of the Releases page (releases
-stopped at v0.2.1 while tags reached v0.6.0) precisely because that step was
-manual. If they drift again, the **Backfill GitHub Releases** workflow
-(`backfill-releases.yml`, from the Actions tab) creates a Release for every
-`v*` tag missing one, and is idempotent.
+`gh release create`: when that step was manual, releases stopped at v0.2.1 while
+tags reached v0.6.0. If they drift again, the **Backfill GitHub Releases**
+workflow (`backfill-releases.yml`, from the Actions tab) creates a Release for
+every `v*` tag missing one, and is idempotent.
 
-Because the notes come from the CHANGELOG, a tag whose CHANGELOG section is
-wrong ships wrong notes. Get step 1 right before tagging.
+The notes come from the CHANGELOG, so a wrong CHANGELOG section ships wrong
+notes. Get step 1 right before tagging.
 
 ### Watch the deploy
 
 One blocking background call, not polling. `gh run watch` needs an explicit run
-ID when non-interactive, and without one it fails instantly with a usage error
-that is easy to mistake for a broken deploy. Resolve the ID first, **pinned to
-this tag**:
+ID when non-interactive; without one it fails instantly with a usage error that
+is easy to mistake for a broken deploy. Resolve the ID first, **pinned to this
+tag**:
 
 ```bash
 export tag=vX.Y.Z
@@ -94,9 +93,9 @@ the _previous_ release's, completed and successful. `gh run watch` on it returns
 green in under a second, so the last release's deploy reads as this one's.
 
 That is a worse version of the `gh pr checks` race `ship-it` guards against
-(#125): not "nothing to watch and exit 0", but a real pass from the wrong
-commit. Filtering on the tag's commit and `headBranch` asserts the run _is_ this
-tag's; the `until` loop waits for it and hard-fails if it never appears.
+(#125): a real pass from the wrong commit, not "nothing to watch and exit 0".
+Filtering on the tag's commit and `headBranch` asserts the run _is_ this tag's;
+the `until` loop waits for it and hard-fails if it never appears.
 
 The loop runs inside one shell call: one model turn, not one per iteration. The
 no-polling rule is about model-side loops.
@@ -115,8 +114,7 @@ protection rules
 A fast red, not a hang: `build` succeeds and uploads the artifact, then `deploy`
 fails immediately. The `github-pages` _environment_ carries its own
 deployment-branch policies, separate from `deploy.yml`'s `push: tags: ['v*']`
-trigger. Satisfying the trigger says nothing about satisfying the environment.
-They allowed only `main` at first, which is exactly how the first tag-triggered
+trigger. They allowed only `main` at first, which is how the first tag-triggered
 deploy failed: the workflow ran because the tag matched, then the deploy was
 refused because the tag didn't.
 
@@ -129,8 +127,8 @@ gh api --method POST \
 ```
 
 **That policy is in place today**, verified 2026-08-03: the environment lists
-`main` (branch) and `v*` (tag). It should persist, so if a tagged deploy fails
-this way again, check the policy still exists before adding a second:
+`main` (branch) and `v*` (tag). If a tagged deploy fails this way again, check
+the policy still exists before adding a second:
 
 ```bash
 gh api repos/just-trey/makegood-tmt-mosaic/environments/github-pages/deployment-branch-policies

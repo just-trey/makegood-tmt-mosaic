@@ -14,9 +14,9 @@ untested to verified.
 **It has a human step in the middle that cannot be automated.** Plan for that
 when scheduling.
 
-Before running any of this, re-read each script's own `USAGE` header rather than
-trusting the flags below. They are transcribed from what's there today; this
-skill orchestrates, it doesn't own the contract.
+Re-read each script's own `USAGE` header before running any of this. The flags
+below are transcribed from what's there today; this skill orchestrates, it
+doesn't own the contract.
 
 ## 1. Generate the example exports
 
@@ -39,9 +39,9 @@ Open each exported `.3mf` in Bambu Studio or Orca Slicer configured for the
 **new** bed size. For every plate, drag the prime tower into a position that
 actually clears the geometry, then save the file back.
 
-**Stop here and hand off explicitly.** There is no way to work this out from
-outside the slicer: it depends on what the slicer lays down for that bed, which
-is the whole reason this step exists rather than being computed.
+**Stop here and hand off explicitly.** Nothing outside the slicer can work this
+out: it depends on what the slicer lays down for that bed, which is why this
+step exists rather than being computed.
 
 ## 3. Bake placement from the verified files
 
@@ -59,9 +59,9 @@ the first supplies the default deltas, later ones override only where they
 disagree.
 
 The script re-verifies every shipped mesh's plate-space bounding box against the
-reference before writing, and **refuses to write on a mismatch**. That guard
-catches a part re-packed or revised since the reference was captured, rather
-than silently baking a pose against a mesh that no longer matches.
+reference before writing, and **refuses to write on a mismatch**. That catches a
+part re-packed or revised since the reference was captured, rather than baking a
+pose against a mesh that no longer matches.
 
 Tower deltas are stored as an offset from each plate's anchor part, not a bed
 coordinate, so they survive the re-centering a different bed applies.
@@ -75,6 +75,6 @@ coordinate, so they survive the re-centering a different bed applies.
   [tech-debt.md](../../../docs/tech-debt.md) with the newly verified bed, so the
   next reader doesn't re-derive which sizes are checked from git history.
 
-Then run `ship-it`, whose step 3 runs `/code-review`. That is required on any
-diff that changes code. Keep taking rounds while they return wrong numbers: a
-bad placement here is invisible until something prints.
+Then run `ship-it`, whose step 3 runs `/code-review` (required on any code
+diff). Keep taking rounds while they return wrong numbers: a bad placement here
+is invisible until something prints.
