@@ -45,30 +45,30 @@ npm run build && MOSAIC_GPU=1 node scripts/export-chair-examples.mjs
 ```
 
 **The `npm run build &&` is not optional.** See "Stale builds" below. Every
-driven script needs it; only `npm run smoke` builds on your behalf.
+driven script needs it; only `npm run smoke` builds for you.
 
 `launchBrowser()` in [harness.mjs](../../../scripts/lib/harness.mjs) reads the
 flag and adds the ANGLE and `GALLIUM_DRIVER=d3d12` flags that select the GPU, so
-it applies to any script built on the harness, which is all of them.
+it applies to every script built on the harness.
 
 **Whether it helps depends on the machine, and the flag tells you which you
 have.** Those flags are specific to WSL2's d3d12 passthrough (`/dev/dxg` plus
-Mesa in `/usr/lib/wsl/lib`); elsewhere there may be nothing to select. Asking
-for hardware and not getting it is a deliberate hard error, not a silent slow
-run: the harness reads the GL renderer string once per browser and refuses to
-continue if it names SwiftShader or llvmpipe. So trying it is self-verifying.
-Either it prints `GPU: ANGLE (…)`, or it stops and tells you it fell back.
+Mesa in `/usr/lib/wsl/lib`); elsewhere there may be nothing to select. Asking for
+hardware and not getting it is a deliberate hard error, not a silent slow run:
+the harness reads the GL renderer string once per browser and refuses to
+continue if it names SwiftShader or llvmpipe. So it prints `GPU: ANGLE (…)`, or
+it stops and says it fell back.
 
 **Omitting the flag is always correct.** Everything works software-rendered,
 just slower, and that is the path CI takes since its Playwright container has no
 GPU. Leave it off if you are unsure, if the error above fires, or if you are
-reproducing CI. Background on the flags, and what software rendering costs, is
-on `GPU_ARGS` in [harness.mjs](../../../scripts/lib/harness.mjs).
+reproducing CI. Background on the flags and the software-rendering cost is on
+`GPU_ARGS` in [harness.mjs](../../../scripts/lib/harness.mjs).
 
 **Don't invent the launch and wait-for-server shape.** Copy it from
-[export-chair-examples.mjs](../../../scripts/export-chair-examples.mjs), which
-drives the real app end to end (load a part, bind artwork, export) and is the
-maintained reference.
+[export-chair-examples.mjs](../../../scripts/export-chair-examples.mjs), the
+maintained reference: it drives the real app end to end (load a part, bind
+artwork, export).
 
 Read its `settled()` helper before writing a new wait condition. **`#btn-export`
 staying enabled is not a signal that a rebuild finished**: it stays enabled from
@@ -76,10 +76,9 @@ the _previous_ build while the next is scheduled and running. Wait for the
 `#loading-overlay` curtain to rise and fall instead.
 
 The browser plumbing (`startPreview`, `launchBrowser`, `newPage`) is factored
-out in [harness.mjs](../../../scripts/lib/harness.mjs); reuse it rather than
-re-deriving a Playwright launch. It also filters the Google Fonts noise that
-appears on localhost, so console-error assertions built on it need no special
-case.
+out in [harness.mjs](../../../scripts/lib/harness.mjs); reuse it. It also
+filters the Google Fonts noise that appears on localhost, so console-error
+assertions built on it need no special case.
 
 ## Stale builds, the failure this repo keeps hitting
 
@@ -89,13 +88,13 @@ build: the app loads, the check passes, the screenshots look right, and every
 number describes code no longer on disk.
 
 **This needs no leftover process.** A freshly spawned, correctly started preview
-serves stale bytes just as happily, which is why "kill the old server and retry"
-doesn't fix it.
+serves stale bytes just as happily, so "kill the old server and retry" doesn't
+fix it.
 
 `startPreview()` refuses to start when anything under `src/`, `public/`,
 `index.html` or `vite.config.ts` is newer than `dist/index.html`, and names what
-was stale. Run `npm run build`. Don't reach for `allowStaleDist: true` unless
-you specifically mean to drive the older build.
+was stale. Run `npm run build`. Don't reach for `allowStaleDist: true` unless you
+mean to drive the older build.
 
 ## Ports, don't conflate them
 
@@ -106,5 +105,5 @@ you specifically mean to drive the older build.
 - **4174**: `export-chair-examples.mjs` runs its own preview here, so it can run
   alongside an interactive preview on 4173.
 
-Writing a new driven check? Prefer 4174 or another free port over 4173, unless
-you specifically want to reuse a running preview (`startPreview({ reuse: true })`).
+For a new driven check, prefer 4174 or another free port over 4173, unless you
+want to reuse a running preview (`startPreview({ reuse: true })`).
