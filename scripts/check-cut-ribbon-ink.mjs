@@ -12,8 +12,8 @@
 //   B  the reference with its off-surface pieces deleted, the clean control;
 //   C  the sidecar under test.
 // A has to show the mark and B has to lack it, or the run proves nothing and says so. The verdict
-// is C: no more inlay than B where the mark lands, no off-surface piece of its own, and no export
-// warning A did not raise.
+// is C: at most a tenth of the mark's ink where it landed (inlay surface area, over B's), no
+// off-surface piece of its own, and no export warning A did not raise.
 //
 // Usage:
 //   npm run build && MOSAIC_GPU=1 npx vite-node scripts/check-cut-ribbon-ink.mjs [outDir] [--sidecar=path]
@@ -24,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import { startPreview, launchBrowser, newPage, afterRebuild, shot } from './lib/harness.mjs';
-import { eachElement, meshVerts, modelXML } from './lib/mesh.mjs';
+import { eachElement, meshTris, meshVerts, modelXML } from './lib/mesh.mjs';
 import { getManifold } from '../src/geometry/manifold';
 import { regionNetArea } from './lib/zonebake.mjs';
 
@@ -53,8 +53,8 @@ const shownUnderTest = UNDER_TEST.startsWith(REPO + path.sep)
 const SIDECAR_REL = 'stl/chair-body-zones.json';
 const DIST = path.join(REPO, 'dist', SIDECAR_REL);
 const SHIPPED = path.join(REPO, 'public', SIDECAR_REL);
-/** The last commit whose sidecar predates the clip. Its mark is what proves this harness can see one. */
-const REFERENCE_REV = 'a91ef30';
+/** The last commit whose sidecar predates the clip; its mark proves this harness can see one. */
+const REFERENCE_REV = 'a91ef30c4e63bfe6762ca06f3b91e5e9adb5ffe2';
 
 const failures = [];
 // `cuts` are the pieces shown to reach the print; the rest are the run failing to be able to say.
@@ -69,11 +69,21 @@ const pass = (m) => console.log(`  ok   ${m}`);
 
 /* --------------------------------------------------- which pieces, and where they would land */
 
-const referenceText = execFileSync('git', ['show', `${REFERENCE_REV}:public/${SIDECAR_REL}`], {
-  cwd: REPO,
-  maxBuffer: 1 << 30,
-  encoding: 'utf8',
-});
+let referenceText;
+try {
+  referenceText = execFileSync('git', ['show', `${REFERENCE_REV}:public/${SIDECAR_REL}`], {
+    cwd: REPO,
+    maxBuffer: 1 << 30,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+} catch (e) {
+  throw new Error(
+    `cannot read the reference sidecar from commit ${REFERENCE_REV}: it is missing from this ` +
+      `clone (a shallow clone? run \`git fetch --unshallow\`). ${e.stderr ?? e.message}`,
+    { cause: e },
+  );
+}
 const sidecar = JSON.parse(referenceText);
 const underTest = JSON.parse(readFileSync(UNDER_TEST, 'utf8'));
 const wasm = await getManifold();
@@ -281,6 +291,7 @@ async function inlayPoints(file) {
     if (m) extruderOf.set(id, +m[1]);
   }
   const verts = new Map();
+  const triIdx = new Map();
   const parts = new Map();
   for (const { attrs, body } of eachElement(model, 'object')) {
     if (!body) continue;
@@ -300,8 +311,10 @@ async function inlayPoints(file) {
       continue;
     }
     verts.set(id, [...meshVerts(body)]);
+    triIdx.set(id, [...meshTris(body)]);
   }
   const out = [];
+  const tris = [];
   for (const [partName, ids] of parts)
     for (const id of ids) {
       const e = extruderOf.get(id);
@@ -311,9 +324,11 @@ async function inlayPoints(file) {
       if (e === undefined)
         throw new Error(`sub-object ${id} of "${partName}" has no model_settings.config entry`);
       if (e === 1) continue;
-      for (const v of verts.get(id) ?? []) out.push({ partName, v });
+      const vs = verts.get(id) ?? [];
+      for (const v of vs) out.push({ partName, v });
+      for (const t of triIdx.get(id) ?? []) tris.push({ partName, t: t.map((i) => vs[i]) });
     }
-  return out;
+  return { pts: out, tris };
 }
 
 /* ------------------------------------------------------------------- driving */
@@ -343,7 +358,7 @@ async function runVariant(browser, label) {
   if ((await sel.inputValue()) !== ZONE) await afterRebuild(page, () => sel.selectOption(ZONE));
   await afterRebuild(page, () => page.fill('#p-scale-num', '400'));
   await shot(page, path.join(REPO, OUT), `${label}.png`);
-  const pts = await exportOnce(page, label);
+  const { pts, tris } = await exportOnce(page, label);
   // AFTER the export, not before. The export itself raises warnings as it runs — a dropped part, a
   // coverage gap, a placement problem — and a B run that quietly lost a whole part would otherwise
   // print "0 warning(s)" while its vertex delta got blamed on the ribbon.
@@ -352,14 +367,14 @@ async function runVariant(browser, label) {
   for (const w of warn) console.log(`     warn: ${w}`);
   for (const e of errors) console.log(`     console: ${e}`);
   await page.close();
-  return { pts, warn };
+  return { pts, tris, warn };
 }
 
 /* ------------------------------------------------------------------- the run */
 
 const ribbons = offSurfacePieces(sidecar);
 console.log(
-  `Reference (${REFERENCE_REV}): ${ribbons.length} cut pieces at least half off-surface.`,
+  `Reference (${REFERENCE_REV.slice(0, 12)}): ${ribbons.length} cut pieces at least half off-surface.`,
 );
 const ownRibbons = offSurfacePieces(underTest);
 console.log(`Under test (${shownUnderTest}): ${ownRibbons.length}.`);
@@ -432,7 +447,7 @@ try {
   // Inside the try: a launchBrowser that throws used to leave the preview serving, and the next run
   // then died on startPreview's own port guard rather than on the real cause.
   browser = await launchBrowser();
-  console.log(`\nA: the reference sidecar (${REFERENCE_REV}).`);
+  console.log(`\nA: the reference sidecar (${REFERENCE_REV.slice(0, 12)}).`);
   writeFileSync(DIST, referenceText);
   A = await runVariant(browser, 'A-reference');
 
@@ -476,36 +491,94 @@ try {
 
 console.log(`\nInlay vertices: A ${A.pts.length}, B ${B.pts.length}, C ${C.pts.length}.`);
 
-const byPart = (pts, partName) => pts.filter((q) => q.partName === partName);
+const byPart = (items, partName) => items.filter((q) => q.partName === partName);
 const near = (pts, p, r) =>
   pts.filter((q) => Math.hypot(q.v[0] - p[0], q.v[1] - p[1], q.v[2] - p[2]) <= r);
-const extent = (pts) =>
-  [0, 1, 2]
-    .map((k) => Math.max(...pts.map((q) => q.v[k])) - Math.min(...pts.map((q) => q.v[k])))
-    .map((d) => d.toFixed(3))
-    .join(' x ');
+const sub3 = (u, v) => [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
+const dot3 = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+const cross3 = (u, v) => [
+  u[1] * v[2] - u[2] * v[1],
+  u[2] * v[0] - u[0] * v[2],
+  u[0] * v[1] - u[1] * v[0],
+];
+/** Distance from p to triangle abc (Ericson, Real-Time Collision Detection 5.1.5). */
+function triDist(p, [a, b, c]) {
+  const ab = sub3(b, a);
+  const ac = sub3(c, a);
+  const ap = sub3(p, a);
+  const d1 = dot3(ab, ap);
+  const d2 = dot3(ac, ap);
+  let q;
+  if (d1 <= 0 && d2 <= 0) q = a;
+  else {
+    const bp = sub3(p, b);
+    const d3 = dot3(ab, bp);
+    const d4 = dot3(ac, bp);
+    const cp = sub3(p, c);
+    const d5 = dot3(ab, cp);
+    const d6 = dot3(ac, cp);
+    const vc = d1 * d4 - d3 * d2;
+    const vb = d5 * d2 - d1 * d6;
+    const va = d3 * d6 - d5 * d4;
+    const lerp = (u, v, w) => [0, 1, 2].map((k) => u[k] + (v[k] - u[k]) * w);
+    if (d3 >= 0 && d4 <= d3) q = b;
+    else if (vc <= 0 && d1 >= 0 && d3 <= 0) q = lerp(a, b, d1 / (d1 - d3));
+    else if (d6 >= 0 && d5 <= d6) q = c;
+    else if (vb <= 0 && d2 >= 0 && d6 <= 0) q = lerp(a, c, d2 / (d2 - d6));
+    else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0)
+      q = lerp(b, c, (d4 - d3) / (d4 - d3 + (d5 - d6)));
+    else {
+      const den = 1 / (va + vb + vc);
+      const v = vb * den;
+      const w = vc * den;
+      q = [0, 1, 2].map((k) => a[k] + ab[k] * v + ac[k] * w);
+    }
+  }
+  return Math.hypot(...sub3(p, q));
+}
+/**
+ * Inlay surface (mm²) of the triangles reaching within `r` of `p`, and their extent: area rather
+ * than vertex count, since a re-bake re-triangulates the inlay and a count moves with tessellation.
+ */
+function inkNear(tris, p, r) {
+  let area = 0;
+  const hit = [];
+  for (const { t } of tris)
+    if (triDist(p, t) <= r) {
+      area += Math.hypot(...cross3(sub3(t[1], t[0]), sub3(t[2], t[0]))) / 2;
+      hit.push(...t);
+    }
+  const extent = hit.length
+    ? [0, 1, 2]
+        .map((k) => Math.max(...hit.map((v) => v[k])) - Math.min(...hit.map((v) => v[k])))
+        .map((d) => d.toFixed(3))
+        .join(' x ')
+    : 'none';
+  return { area, extent };
+}
 // Exact vertex identity between A and B, which share every cut piece but the deleted ones, so the
-// mark's own vertices are the A-only ones. Never between C and either: a re-bake re-triangulates the
-// whole inlay, and C has to be read by how much ink lands near the mark, not by which vertices.
+// mark's own vertices are the A-only ones. Never between C and either: a re-bake re-triangulates.
 const key = (q) => q.v.map((x) => x.toFixed(4)).join(',');
+/** C may keep at most this share of the ink the mark adds in A over B. */
+const MARK_SHARE = 0.1;
 const parts = [...new Set(A.pts.map((q) => q.partName))];
 let controlSeen = 0;
 for (const t of readable) {
   const where = `${t.zone}/${t.part}#${t.i} (${t.net.toFixed(3)}mm², ${(t.offFrac * 100).toFixed(1)}% off)`;
-  // Per PART and ranked by what each part gained in A over B: parts abut, and at a snap point on a
-  // seam a pooled count lets one part's ink stand in for another's.
+  // Per PART, ranked by the ink each gained in A over B: at a seam a pooled measure lets one part's
+  // ink stand in for another's.
   const ranked = parts
     .map((n) => ({
       n,
-      aN: near(byPart(A.pts, n), t.snap.p, NEAR_MM).length,
-      bN: near(byPart(B.pts, n), t.snap.p, NEAR_MM).length,
-      cN: near(byPart(C.pts, n), t.snap.p, NEAR_MM).length,
+      a: inkNear(byPart(A.tris, n), t.snap.p, NEAR_MM),
+      b: inkNear(byPart(B.tris, n), t.snap.p, NEAR_MM),
+      c: inkNear(byPart(C.tris, n), t.snap.p, NEAR_MM),
     }))
-    .sort((x, y) => y.aN - y.bN - (x.aN - x.bN));
+    .sort((x, y) => y.a.area - y.b.area - (x.a.area - x.b.area));
   const best = ranked[0];
-  if (!best || best.aN <= best.bN) {
+  if (!best || best.a.area <= best.b.area) {
     fail(
-      `${where}: the reference no longer cuts its mark (no part gains inlay within ${NEAR_MM}mm in ` +
+      `${where}: the reference no longer cuts its mark (no part gains ink within ${NEAR_MM}mm in ` +
         `A over B), so this run cannot tell a clean sidecar from a blind check`,
     );
     continue;
@@ -516,24 +589,40 @@ for (const t of readable) {
     t.snap.p,
     CLUSTER_MM,
   );
-  controlSeen++;
-  pass(
-    `control: the reference cuts ${where} on "${best.n}" — ${best.aN} inlay vertices within ` +
-      `${NEAR_MM}mm in A, ${best.bN} in B; the A-only cluster is ${mark.length} vertices, ` +
-      `${mark.length ? extent(mark) : 'n/a'}mm`,
-  );
-  if (best.cN > best.bN) {
-    const cNear = near(byPart(C.pts, best.n), t.snap.p, CLUSTER_MM);
+  // A gaining ink with no A-only vertex nearby is a re-meshed neighbour, not the mark: the control
+  // has to reproduce the mark itself or nothing below means anything.
+  if (!mark.length) {
     fail(
-      `the sidecar under test cuts where ${where} did, on "${best.n}": ${best.cN} inlay vertices ` +
-        `within ${NEAR_MM}mm against the clean control's ${best.bN}; C's ink within ` +
-        `${CLUSTER_MM}mm spans ${extent(cNear)}mm`,
+      `${where}: A has ${best.a.area.toFixed(2)}mm² of ink within ${NEAR_MM}mm on "${best.n}" ` +
+        `against B's ${best.b.area.toFixed(2)}mm², but no A-only vertex within ${CLUSTER_MM}mm — ` +
+        `the control did not reproduce the mark`,
+    );
+    continue;
+  }
+  controlSeen++;
+  const markExtent = [0, 1, 2]
+    .map((k) => Math.max(...mark.map((q) => q.v[k])) - Math.min(...mark.map((q) => q.v[k])))
+    .map((d) => d.toFixed(3))
+    .join(' x ');
+  pass(
+    `control: the reference cuts ${where} on "${best.n}" — ${best.a.area.toFixed(2)}mm² of ink ` +
+      `within ${NEAR_MM}mm in A, ${best.b.area.toFixed(2)}mm² in B; the A-only cluster is ` +
+      `${mark.length} vertices, ${markExtent}mm`,
+  );
+  const allowed = best.b.area + MARK_SHARE * (best.a.area - best.b.area);
+  if (best.c.area > allowed)
+    fail(
+      `the sidecar under test cuts where ${where} did, on "${best.n}": ` +
+        `${best.c.area.toFixed(2)}mm² of ink within ${NEAR_MM}mm (spanning ${best.c.extent}mm) ` +
+        `against the clean control's ${best.b.area.toFixed(2)}mm², over the ${allowed.toFixed(2)}mm² ` +
+        `allowed`,
       true,
     );
-  } else
+  else
     pass(
-      `the sidecar under test leaves that spot clean on "${best.n}": ${best.cN} inlay vertices ` +
-        `within ${NEAR_MM}mm, clean control ${best.bN}`,
+      `the sidecar under test leaves that spot clean on "${best.n}": ` +
+        `${best.c.area.toFixed(2)}mm² of ink within ${NEAR_MM}mm, clean control ` +
+        `${best.b.area.toFixed(2)}mm², allowed ${allowed.toFixed(2)}mm²`,
     );
 }
 if (!controlSeen)

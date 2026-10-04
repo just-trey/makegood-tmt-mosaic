@@ -889,22 +889,34 @@ nothing today can produce a case to test against.
 ## Charts with no dead region keep up to 0.2mm of cut region past their triangles
 
 **Whether that band prints is unmeasured.** The bake clips the cut region back
-onto the chart's own triangles only where a dead region was subtracted. The 14
-charts without one keep their claim as `subRegions` drew it.
+onto its chart only where a dead region was subtracted. The 14 charts without
+one keep their claim as `subRegions` drew it.
 
-- **649.41mm²** off-surface across those 14 pieces, against 0.48mm² on the 12
-  clipped charts (`npx vite-node scripts/measure-cut-offsurface.mjs`).
+- **649.41mm²** off their triangles across those 14 pieces, against 118.63mm²
+  on the 12 clipped charts (`npx vite-node scripts/measure-cut-offsurface.mjs`).
+- Both figures include holes the claim closes on purpose, which the clip keeps.
 - The slack is attached to its one piece per chart, not cut free. It has never
   made a standalone piece.
 - `lookup` answers the nearest triangle at any distance, so this band may still
   extrude along the chart edge.
-- Clipping these charts too would break the stale-bake guard in
-  `tests/chair-zones.test.ts`: it relies on `cutRegions` matching `subRegions`
-  byte for byte where nothing is subtracted.
+
+**Clipping every chart was measured and rejected.** The same clip applied to
+`subRegions` on all 26 charts, before the dead subtraction:
+
+| measure                                    | result                                                                               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `check-cut-ribbon-ink.mjs --sidecar=…`     | exit 1: new "too fine to print" on `Handle (left)`                                   |
+| templates changed                          | 9 of 11                                                                              |
+| `npx vitest run tests/chair-zones.test.ts` | 4 failures beyond the seam pin: fold holes, net yields, overlap pairs, yield overlay |
+| stale-bake guard                           | holds                                                                                |
+
+Reproduce by moving the clip in `bakeZones` onto `subRegions` for every chart,
+re-baking, and running the gate (`npm run build && MOSAIC_GPU=1 npx vite-node
+scripts/check-cut-ribbon-ink.mjs --sidecar=<it>`) and the tests above.
 
 **Closing it** takes a driven export over a coverless chart's edge, like the
 reference variant in `scripts/check-cut-ribbon-ink.mjs`. Either it shows no ink
-past the triangles, or the clip extends to every chart and the guard is rebuilt.
+past the triangles, or a wider clip lands without the four regressions above.
 
 ## `measure-cut-width.mjs` breaks on the sidecar its own conclusion asks for
 

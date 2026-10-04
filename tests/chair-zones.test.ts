@@ -765,10 +765,9 @@ describe('chart reconstruction', () => {
       turf.multiPolygon(rs.map((r) => [close(r.outer), ...r.holes.map(close)])) as PolyFeature;
 
     /**
-     * How much of a turf reference lies off the chart's own triangles — the amount the bake's clip
-     * is entitled to remove. Manifold rather than turf: unioning thousands of triangles in turf is
-     * the slow, fragile half of this, and the reference itself is still turf's, so the engines
-     * still disagree where it matters.
+     * How much of a turf reference lies off the chart's triangles: an upper bound on what the
+     * bake's clip may remove (it keeps closed holes). Manifold, since a turf union of thousands of
+     * triangles is slow and fragile; the reference stays turf's.
      */
     const refOffChartArea = (
       ref: PolyFeature | null,
@@ -815,13 +814,9 @@ describe('chart reconstruction', () => {
         // since `subtractRegions` gained its no-covers path, and the 3.8mm² it was sized for was
         // that drift, not the filter.
         //
-        // **Two-sided still, but the lower bound moves with the clip.** The claim less the dead
-        // set stopped being the whole story when the bake started clipping the cut region to the
-        // chart's own triangles, so `want` overstates by whatever of it falls off the part. That
-        // amount is measured here rather than assumed, which keeps the bound tight in both
-        // directions. The bake logs what it clipped: up to 94.496mm² on `right`/`chair-wing-right`,
-        // over 2mm² on 9 of the 12 charts with a dead region — `npx vite-node
-        // scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`.
+        // The lower bound allows for what the clip removes from dead-region charts: at most what
+        // lies off the triangles, measured here. The bake logs each chart's clip (`npx vite-node
+        // scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`).
         const offChart = refOffChartArea(ref, chartCS);
         expect(got - want, `${where}: cut region claims more than claim-less-dead`).toBeLessThan(2);
         expect(
@@ -838,7 +833,7 @@ describe('chart reconstruction', () => {
   // there is none.
   //
   // Per PIECE, not per pair — a pair's intersect can be several polygons and the narrowest of them
-  // is what a design clipped down to one would face. 46 pieces across 17 pairs, 23 of them over
+  // is what a design clipped down to one would face. 45 pieces across 17 pairs, 23 of them over
   // CLIP_REMNANT_FLOOR_MM2, thinnest of those 0.0734mm by 2·area/perimeter. None fails.
   //
   // Re-derive with `npx vite-node scripts/measure-seam-overlap.mjs`, which also prints how far
@@ -886,7 +881,7 @@ describe('chart reconstruction', () => {
     }
     // Not just "nothing failed": a re-bake that drops `cutRegions`, or one that partitions the
     // claims cleanly, would leave this measuring nothing and passing.
-    expect(examined, 'no overlap pieces were examined').toBe(46);
+    expect(examined, 'no overlap pieces were examined').toBe(45);
     expect(failed).toEqual([]);
   }, 120000);
 

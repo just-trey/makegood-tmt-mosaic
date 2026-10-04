@@ -27,10 +27,10 @@ scripts/measure-clip-ink.test.ts`.
 ### Fixed
 
 - **A design on the chair's Left side no longer cuts a stray mark.** It cut a
-  thin 1 x 32mm mark on Wheel mount (left), on surface the design never
-  covered. The chair's design areas now stop at the part's real surface. The
-  mark was one of 14 such spots in the chair's zones; 0 remain
-  (`npx vite-node scripts/measure-cut-offsurface.mjs`).
+  thin 1 x 32mm mark on Wheel mount (left), past the edge of the part's
+  surface. On the 12 chair pieces a wheel or cushion partly hides, the area a
+  design cuts now stops at that edge. The mark was one of 14 such strips; 0
+  remain (`npx vite-node scripts/measure-cut-offsurface.mjs`).
 - **A small logo is no longer traced like a photo.** An image under 512px, or a
   small logo on a big transparent sheet, was judged at its own size. Outlines
   took up more of the picture there, so it got a photo's blur and speck removal

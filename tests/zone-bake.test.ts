@@ -9,6 +9,7 @@ import {
   asymmetricPart,
   regionNetArea,
   clipRegionsToChart,
+  chartClipSection,
   buildCoverSolids,
   measureZoneSeam,
   NET_SHEET_GAP_MM,
@@ -818,11 +819,8 @@ describe('simplifyLoop', () => {
 });
 
 /**
- * A cut region outside the chart's own triangles is not thin surface, it is no surface — and it
- * still cuts, because `lookup` answers the nearest triangle at any distance and the runtime snaps
- * it to the patch edge. Measured on the chair before the clip: 14 of 87 pieces at least half
- * off-surface, one of them a 1.000 x 32.543mm mark on `Wheel mount (left)` in a driven A/B.
- * docs/findings/2026-09-09-cut-ribbon-offsurface.md.
+ * A cut region off the chart's triangles is no surface, and it still cuts: `lookup` answers the
+ * nearest triangle at any distance, so the runtime snaps it to the patch edge.
  */
 describe('clipping the cut region back onto the chart', () => {
   let wasm: ManifoldAPI;
@@ -830,23 +828,20 @@ describe('clipping the cut region back onto the chart', () => {
     wasm = await getManifold();
   });
 
-  /** A 10 x 10 patch as two triangles, the shape `chartCS` is built from in the bake. */
-  const chartSection = () =>
-    new wasm.CrossSection(
-      [
-        [
-          [0, 0],
-          [10, 0],
-          [10, 10],
-        ],
-        [
-          [0, 0],
-          [10, 10],
-          [0, 10],
-        ],
-      ],
-      'NonZero',
-    );
+  /** A 10 x 10 patch as two triangles, the shape the bake builds a chart's section from. */
+  const triRings = [
+    [
+      [0, 0],
+      [10, 0],
+      [10, 10],
+    ],
+    [
+      [0, 0],
+      [10, 10],
+      [0, 10],
+    ],
+  ];
+  const chartSection = () => chartClipSection(wasm, triRings, []);
 
   const rect = (x0: number, y0: number, x1: number, y1: number) => ({
     outer: [
@@ -860,43 +855,76 @@ describe('clipping the cut region back onto the chart', () => {
 
   it('drops a piece that lies wholly off the triangles', () => {
     const chartCS = chartSection();
-    // 0.2 x 10mm, just outside the patch edge: the shape the two simplify passes leave behind, and
-    // 2mm² is an order of magnitude over MIN_CUT_PIECE_MM2, so no area floor reaches it.
+    // 2mm², an order of magnitude over MIN_CUT_PIECE_MM2, so no area floor reaches it.
     const ribbon = rect(10.05, 0, 10.25, 10);
     expect(regionNetArea(ribbon)).toBeGreaterThan(1);
     const out = clipRegionsToChart(wasm, [ribbon], chartCS, 0.16);
-    expect(out).toEqual([]);
+    expect(out.kept).toEqual([]);
+    expect(out.shed).toEqual([]);
+    expect(out.removed).toBeCloseTo(2, 3);
     chartCS.delete();
   });
 
   it('trims a piece that straddles the edge instead of dropping it', () => {
     const chartCS = chartSection();
     const straddler = rect(8, 2, 10.2, 8);
-    const out = clipRegionsToChart(wasm, [straddler], chartCS, 0.16);
-    expect(out).toHaveLength(1);
-    // 2 x 6 of the 2.2 x 6 survives: the real surface is kept, only the overhang goes.
-    expect(regionNetArea(out[0])).toBeCloseTo(12, 3);
-    for (const [x] of out[0].outer) expect(x).toBeLessThanOrEqual(10 + 1e-6);
+    const { kept } = clipRegionsToChart(wasm, [straddler], chartCS, 0.16);
+    expect(kept).toHaveLength(1);
+    expect(regionNetArea(kept[0])).toBeCloseTo(12, 3);
+    for (const [x] of kept[0].outer) expect(x).toBeLessThanOrEqual(10 + 1e-6);
     chartCS.delete();
   });
 
   it('leaves a piece wholly on the triangles alone', () => {
     const chartCS = chartSection();
-    const inside = rect(2, 2, 8, 8);
-    const out = clipRegionsToChart(wasm, [inside], chartCS, 0.16);
-    expect(out).toHaveLength(1);
-    expect(regionNetArea(out[0])).toBeCloseTo(36, 3);
+    const { kept } = clipRegionsToChart(wasm, [rect(2, 2, 8, 8)], chartCS, 0.16);
+    expect(kept).toHaveLength(1);
+    expect(regionNetArea(kept[0])).toBeCloseTo(36, 3);
     chartCS.delete();
   });
 
-  // The floor still applies after the clip, or a straddler trimmed to a sliver would survive as
-  // one — which is the same defect arriving by a different route.
+  // 0.3 x 0.3mm: wider than the 2 x CLIP_OPEN_MM the opening removes, so only the floor drops it.
   it('applies the piece floor to what the clip leaves', () => {
     const chartCS = chartSection();
-    const sliver = rect(9.99, 0, 10.4, 10);
-    const out = clipRegionsToChart(wasm, [sliver], chartCS, 0.16);
-    expect(out).toEqual([]);
+    const { kept, shed } = clipRegionsToChart(wasm, [rect(9.7, 0, 10.4, 0.3)], chartCS, 0.16);
+    expect(kept).toEqual([]);
+    expect(shed).toHaveLength(1);
+    expect(shed[0]).toBeCloseTo(0.09, 3);
     chartCS.delete();
+  });
+
+  it('keeps a hole the claim closed closed', () => {
+    // The patch with a 1 x 1 hole at its centre, which a claim drawn over it closed.
+    const hole: [number, number][] = [
+      [4.5, 4.5],
+      [5.5, 4.5],
+      [5.5, 5.5],
+      [4.5, 5.5],
+    ];
+    const withHole = new wasm.CrossSection(
+      [
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+          [0, 10],
+        ] as [number, number][],
+        hole,
+      ],
+      'EvenOdd',
+    );
+    const holeRings = withHole.toPolygons().map((r: number[][]) => r.map(([x, y]) => [x, y]));
+    withHole.delete();
+    const claim = rect(2, 2, 8, 8);
+    const open = chartClipSection(wasm, holeRings, []);
+    expect(clipRegionsToChart(wasm, [claim], open, 0.16).kept[0].holes).toHaveLength(1);
+    open.delete();
+    const closed = chartClipSection(wasm, holeRings, [hole]);
+    const { kept } = clipRegionsToChart(wasm, [claim], closed, 0.16);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].holes).toEqual([]);
+    expect(regionNetArea(kept[0])).toBeCloseTo(36, 3);
+    closed.delete();
   });
 });
 
@@ -1143,18 +1171,9 @@ describe('hidden surface classification', () => {
   const deadArea = (baked: ReturnType<typeof bakeZones>): number =>
     deadOf(baked).reduce((s, r) => s + regionNetArea(r), 0);
 
-  // **This one passes with the clip disabled too, and is kept anyway.** It was run against the
-  // un-clipped bake to check, and reported the same 0. The defect needs a boundary the two
-  // simplify passes can disagree along, which means a curved, finely tessellated one shared
-  // between the claim and the dead region; this fixture's cover sits wholly inside a flat plate,
-  // so its dead region never reaches the chart's own edge and there is nothing to disagree about.
-  //
-  // So it is a forward guard, not the proof. The proof is the chair: 14 of 87 pieces at least half
-  // off-surface before the clip, and a driven A/B putting one of them on the print. What proves
-  // the clip is WIRED is re-baking the chair and re-running
-  // `npx vite-node scripts/check-cut-ribbon-ink.mjs`, which needs the covers file. The four tests
-  // above prove the operation itself, and the first of them fails without it by construction: the
-  // ribbon is 2mm², an order of magnitude over the area floor, so nothing else would drop it.
+  // A forward guard, not the proof: it also passes with the clip disabled, since this cover sits
+  // inside a flat plate and leaves the claim no overhang to strand. The chair is the proof
+  // (`npx vite-node scripts/check-cut-ribbon-ink.mjs`).
   it('leaves no cut piece off the chart it belongs to', () => {
     const baked = bake(finePlate, [boxCover([50, 50, 1], [150, 150, 31])]);
     const chart = baked.sidecar.zones[0].charts[0];
@@ -1173,10 +1192,8 @@ describe('hidden surface classification', () => {
       pcs.delete();
     }
     chartCS.delete();
-    // Not 1e-6: `roundLoop` snaps the clip's output to 3dp afterwards, which can move a piece's
-    // area by about its perimeter x 1e-3, and this fixture only survives a tighter bound because
-    // it is grid-aligned. 0.01mm² is an order of magnitude under MIN_CUT_PIECE_MM2, so anything
-    // this admits is rounding and anything it rejects is a piece.
+    // `roundLoop`'s 3dp snap moves an area by about perimeter x 1e-3; 0.01mm² admits that and is an
+    // order of magnitude under MIN_CUT_PIECE_MM2.
     expect(worst).toBeLessThan(0.01);
   });
 

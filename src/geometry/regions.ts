@@ -526,10 +526,10 @@ function fromGeom(polys: Geom): PolyFeature | null {
  * scripts/measure-clip-ink.test.ts` — 9.4% of pieces sit below this floor, mostly one pattern's
  * fine detail. Open in docs/tech-debt.md: "Whether a near-floor clipped-ink piece is dust or a
  * drawn detail is unmeasured". Bake pieces off their chart's triangles are the bake's to clip,
- * not this floor's: 0 of 87 at least half off since the clip (`npx vite-node
+ * not this floor's: 0 of 82 at least half off since the clip (`npx vite-node
  * scripts/measure-cut-offsurface.mjs`).
  *
- * Retired: the seam overlap. All 46 chair overlap pieces build a cutter on both parts, and
+ * Retired: the seam overlap. All 45 chair overlap pieces build a cutter on both parts, and
  * `buildCutter` extrudes a ribbon one micron wide and 120mm long fine (`npx vite-node
  * scripts/measure-seam-overlap.mjs`, docs/findings/2026-09-07-seam-ribbon-closed.md).
  */
