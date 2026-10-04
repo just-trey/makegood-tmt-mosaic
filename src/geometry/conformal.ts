@@ -41,40 +41,30 @@ export const WARP_REFINE_MM = 1.5;
 export const FILL_REFINE_MM = 3;
 
 /**
- * How far (mm) outside the chart a cutter vertex may land and still be snapped to the nearest
- * chart triangle. Anything past this is misplaced artwork, and fails the cut rather than being
- * silently dragged onto the surface.
+ * How far (mm) outside the chart a cutter vertex may land and still snap to the nearest triangle;
+ * past it the artwork is misplaced and the cut fails rather than being dragged onto the surface.
  *
- * The number is set by the bake, not by taste: a part's baked claim on a zone (`subRegions`) is
- * slightly more generous than the triangulation inside it, so points within the claim can sit a
- * little off every real triangle. Measured across all 26 shipped chair charts (2026-09-04) by the
- * `claims no patch further off its triangles than the snap tolerance` cases in
- * tests/chair-zones.test.ts, one per chart: worst **2.150mm** (`right/chair-wing-right`), then
- * 2.104 (`back/chair-seat-back-top`) and 2.101 (`left/chair-storage-left`); the rest under 1mm.
- * So 3 bounds a real bake artifact with ~28% headroom, and a re-bake that widens the gap fails CI
- * instead of silently dropping cuts.
+ * Set by the bake, not taste: a part's claim (`subRegions`) is slightly more generous than its
+ * triangulation. Across all 26 shipped chair charts (2026-09-04, the `claims no patch further off
+ * its triangles than the snap tolerance` cases in tests/chair-zones.test.ts): worst **2.150mm**
+ * (`right/chair-wing-right`), then 2.104 (`back/chair-seat-back-top`) and 2.101
+ * (`left/chair-storage-left`), the rest under 1mm. So 3 gives ~28% headroom, and a re-bake that
+ * widens the gap fails CI instead of silently dropping cuts.
  *
- * **Measure this by refinement, never by rastering.** The depth is a distance function, so it is
- * 1-Lipschitz: sampling it on a grid of step h under-reports by up to h/√2, and the peaks here are
- * narrow spikes where the claim outline pokes a thin tendril past the end of the triangulation. A
- * 1mm raster put the worst at 1.915mm and made 2 look like it had headroom; it does not. The test
- * seeds from a coarse scan and then hill-climbs each seed, which is what produces the figures above.
+ * **Measure by refinement, never by rastering**: a grid of step h under-reports this 1-Lipschitz
+ * distance by up to h/√2, and the peaks are narrow tendrils. A 1mm raster read 1.915mm and made 2
+ * look safe; it is not. The test hill-climbs each seed from a coarse scan.
  *
- * This used to be 0.5 for stickers with a separate 2mm for fills, on the theory that only a fill
- * runs along the clipped boundary. That was wrong: the gaps sit inside the claim, so they hit both
- * modes identically — a sticker large enough to cover one just failed, which is what dropped two
- * colors off the chair's seat-back parts.
- *
- * The real fix is re-baking so each claim matches its triangulation, which would let this go back
- * to a tight misplacement guard instead of tracking a bake artifact. Deferred: it invalidates
- * every downloaded template and the sidecar.
+ * Once 0.5 for stickers and 2mm for fills; the gaps sit inside the claim and hit both modes, which
+ * dropped two colors off the chair's seat-back parts. Real fix: re-bake claims to match their
+ * triangulation. Deferred: it invalidates every downloaded template and the sidecar.
  */
 export const CHART_SNAP_MM = 3;
 
 /**
  * One baked UV chart: a patch of a part's surface mesh unwrapped into a flat 2D space where
- * 1 UV unit = 1 mm of surface (true scale). Produced by the zone bake pipeline (Phase 4) and
- * loaded from the kind's zones sidecar (Phase 5); tests hand-build analytic ones.
+ * 1 UV unit = 1 mm of surface (true scale). Baked, loaded from the kind's zones sidecar; tests
+ * hand-build analytic ones.
  *
  * Convention: UV is the surface as seen from OUTSIDE, +v up ("up" per the zone's bake config),
  * u/v right-handed. Triangle winding is CCW in UV when `normalSign` is +1; −1 says the baked
@@ -93,11 +83,9 @@ export interface ConformalChart {
   /** interior hole rings in UV mm */
   holes?: number[][][];
   /**
-   * This part's own slice of the zone, in UV mm — what the cutter is clipped to. Absent (or a
-   * single region equal to the zone outline) while a zone lives on one printed part; on a zone
-   * that spans a seam each part gets only its own share, so artwork can't be cut past the chart
-   * this mapper can actually warp against. `boundary` stays the whole zone: the template is
-   * zone-wide regardless of how many parts carry it.
+   * This part's own slice of the zone, in UV mm: the cutter's clip. On a seam-spanning zone each
+   * part gets only its share, so artwork can't be cut past the chart this mapper can warp.
+   * `boundary` stays zone-wide, like the template.
    */
   subRegions?: { outer: number[][]; holes: number[][][] }[];
   /**
@@ -113,11 +101,9 @@ export interface ConformalChart {
    */
   deadRegions?: { outer: number[][]; holes: number[][][] }[];
   /**
-   * The whole zone's UV bbox, measured across every part's chart at bake time — the template's
-   * coordinate space. Placement and fill tiling anchor here rather than on this chart's own
-   * vertices, so a zone spanning a seam places one design across the parts (each part cutting its
-   * share of it) instead of a whole copy centred on each half. Absent for a hand-built chart, which
-   * falls back to this chart's UV bbox — identical for a single-part zone.
+   * The whole zone's UV bbox across every part's chart (the template's space). Placement and fill
+   * anchor here, so a seam-spanning zone places one design across its parts, not a copy per half.
+   * Absent on a hand-built chart, which falls back to its own UV bbox.
    */
   zoneBounds?: { minU: number; minV: number; maxU: number; maxV: number };
   /**
@@ -387,16 +373,11 @@ export class ConformalZoneMapper implements ZoneMapper {
   }
 
   /**
-   * Nearest chart triangle to (u,v): ring search outward from the containing grid cell, stopping
-   * once no closer triangle can exist in an unvisited ring. Always returns the best candidate
-   * found — callers decide whether `dist` (0 = inside the chart) is within tolerance.
-   *
-   * `giveUpMM` caps how far out to look, for a caller that only needs "on the chart, or not". A
-   * query landing *inside* the chart resolves in the first ring or two, but one outside it walks
-   * rings until it reaches the chart — up to the whole grid, since cells are only populated where
-   * the chart is. Cutting pays that rarely and needs the true nearest; the gizmo asks dozens of
-   * times per pointer-move, across every part of the zone, and most of those misses are on parts
-   * it does not care about. Uncapped by default, so the cut path is untouched.
+   * Nearest chart triangle to (u,v): ring search outward from the containing cell, stopping once no
+   * closer triangle can exist. Always returns the best found; callers judge `dist` (0 = inside).
+   * `giveUpMM` caps the search for a caller needing only "on the chart or not": an outside query
+   * walks rings up to the whole grid, and the gizmo asks dozens of times per pointer-move across
+   * every part of the zone. Uncapped by default, so the cut path is untouched.
    */
   private lookup(u: number, v: number, giveUpMM?: number): ChartHit | null {
     const cu = this.cellIdxU(u),
@@ -470,21 +451,17 @@ export class ConformalZoneMapper implements ZoneMapper {
   }
 
   /**
-   * The UV region a cut on this chart is clipped to: this part's own sub-regions when the bake
-   * supplied them (a MultiPolygon, since a part's share of a zone can be several islands),
-   * otherwise the whole zone outline. Identical geometry for a single-part zone — every chart's
-   * only sub-region is the zone itself — so this is inert until a zone actually spans a seam.
+   * The UV region a cut on this chart is clipped to: this part's sub-regions when baked (a
+   * MultiPolygon: a share can be several islands), else the whole zone outline — identical on a
+   * single-part zone.
    */
   boundary(): PolyFeature | null {
     if (this.boundaryComputed) return this.boundaryPoly;
     this.boundaryComputed = true;
-    // The baked clip: this part's claim already less the covers' dead surface, cleaned of pieces
-    // too small to print. Preferred over doing that subtraction here because the two sets are
-    // traced from the same triangles and share long stretches of boundary, so the difference
-    // leaves dust along them — 55 of the chair's 142 pieces, before the bake started cleaning it.
-    // Presence, not length. A baked EMPTY list is a chart the bake found nothing cuttable on, and
-    // falling back to deriving it here would reinstate exactly the dust the bake exists to drop.
-    // Absent means a hand-built chart, which is the only case the derivation is still for.
+    // The baked clip: this part's claim less dead surface, cleaned of unprintable pieces. Deriving
+    // it here leaves dust along the two sets' shared traced edges (55 of the chair's 142 pieces).
+    // Presence, not length: a baked EMPTY list means nothing cuttable, and deriving would bring the
+    // dust back; absent means a hand-built chart, the only case the derivation is for.
     const cut = this.chart.cutRegions;
     if (cut) {
       if (!cut.length) {
@@ -513,28 +490,18 @@ export class ConformalZoneMapper implements ZoneMapper {
     } catch {
       this.boundaryPoly = null;
     }
-    // Hidden surface takes no artwork: anything outside the clip just stays base color, so
-    // subtracting here is the whole mechanism.
+    // Hidden surface takes no artwork: subtracting it from the clip is the whole mechanism.
+    // safeDiff, not turf.difference, for the retry ladder and warning (a silent catch reported turf
+    // 6.5 flakes as "nothing is hidden"). Its two empty-looking outcomes are opposites, both
+    // wanted: a FAILURE keeps the clip unsubtracted (wasteful, never wrong-looking; a null boundary
+    // would cut everywhere); an EMPTY RESULT means everything is hidden, so the clip admits
+    // nothing. No shipped chart reaches that (most-covered: `seat-right`'s storage sliver at 99.4%;
+    // tests/chair-zones.test.ts pins that none is hidden outright).
     //
-    // safeDiff rather than turf.difference direct, for the retry ladder and the warning: turf 6.5
-    // throws on inputs a truncate-to-precision pass rescues, and the silent catch this replaced
-    // reported that flake as "nothing is hidden on this chart".
-    //
-    // Its two empty-looking outcomes are opposite answers and both are wanted. A FAILURE hands the
-    // subject back, so the clip stays unsubtracted: wasteful (a filament change on surface nobody
-    // sees), never wrong-looking, and the direction that matters, because a null boundary upstream
-    // means "no clip at all" and cuts everywhere. An EMPTY RESULT is null, and here that is real:
-    // everything this chart owns is hidden, so the clip must admit nothing rather than fall back to
-    // admitting all of it. No shipped chart reaches it — the most-covered is `seat-right`'s storage
-    // sliver at 99.4%, and tests/chair-zones.test.ts pins that none is hidden outright — so this
-    // arm is for the bake that first does.
-    //
-    // **Partial clipping stays silent, deliberately.** A design straddling a cushion edge prints as
-    // whatever survives this subtraction, with no warning, exactly as one straddling a zone
-    // boundary already does. Nothing is dropped without being shown: the viewport hatches the dead
-    // area and the template prints it hatched, both before any artwork is placed. Any "most of it
-    // was trimmed" trigger needs a fraction, and no measurement chooses one. A color trimmed to
-    // NOTHING is a different case and does get named, in buildAssemblyGeometry.
+    // **Partial clipping stays silent, deliberately**, like a design straddling a zone boundary:
+    // viewport and template hatch the dead area before any artwork is placed, and a "most of it was
+    // trimmed" trigger needs a fraction no measurement chooses. A color trimmed to NOTHING is named
+    // in buildAssemblyGeometry.
     const dead = this.deadArea();
     if (this.boundaryPoly && dead)
       this.boundaryPoly =
@@ -547,12 +514,9 @@ export class ConformalZoneMapper implements ZoneMapper {
   }
 
   /**
-   * The canvas this zone yields to other sheets of the net, one entry per owning zone, in chart UV.
-   *
-   * Deliberately NOT folded into `boundary()`: that clip is the same for every binding, and this
-   * one applies to a whole-part design only. A design bound to this zone by name still cuts here,
-   * which is what keeps the partition from losing surface — it only decides which of two zones a
-   * whole-part design lands on.
+   * The canvas this zone yields to other sheets of the net, per owning zone, in chart UV. NOT in
+   * `boundary()`: that clip serves every binding, this only whole-part designs, so a design bound
+   * here by name still cuts here and the partition loses no surface.
    */
   netExcluded(): NetExclusion[] {
     if (this.netExclCache) return this.netExclCache;
@@ -570,15 +534,10 @@ export class ConformalZoneMapper implements ZoneMapper {
       } catch {
         poly = null;
       }
-      // Kept with a null region rather than dropped: dropping it puts the patch back on both
-      // sheets with nothing said, which is the one doubled cut the partition exists to remove.
-      // clipToNetShare reads the null as "cannot trim this" and the build names it.
-      //
-      // Straight off the baked loops rather than through turf: the shim in src/turf.d.ts declares
-      // only the surface this app calls, and a min/max over the same arrays is the whole of it.
-      // No loops at all leaves that min/max inverted, and an inverted bbox never overlaps
-      // anything, so the gate would skip the entry silently — unbounded instead, so every design
-      // consults it and the null region fails the clip out loud.
+      // Kept with a null region, not dropped: dropping puts the patch back on both sheets silently.
+      // clipToNetShare reads null as "cannot trim" and the build names it. The bbox is a min/max
+      // over the baked loops (src/turf.d.ts declares no bbox); with no loops it is unbounded, not
+      // inverted, so every design consults the entry and the null region fails out loud.
       const bbox = e.regions.length
         ? [Infinity, Infinity, -Infinity, -Infinity]
         : [-Infinity, -Infinity, Infinity, Infinity];
@@ -641,10 +600,9 @@ export class ConformalZoneMapper implements ZoneMapper {
   }
 
   /**
-   * The zone's UV bounding box (this chart's own when the bake supplied none), not the baked
-   * boundary's: a fill tiles over everything the zone can carry, and `boundary()` still clips the
-   * result back to this part's share of it. Zone-wide so the tile grid of a seam-spanning zone has
-   * one origin and phase across the parts rather than restarting on each.
+   * The zone's UV bbox (this chart's own when none was baked), not the boundary's: a fill tiles
+   * everything the zone carries and `boundary()` clips it back. Zone-wide, so a seam-spanning
+   * zone's tile grid keeps one origin and phase across parts.
    */
   fillExtent(): FillExtent | null {
     const bb = this.uvBBox;
@@ -759,27 +717,19 @@ export class ConformalZoneMapper implements ZoneMapper {
   }
 
   /**
-   * Display mesh of the canvas this chart gives up to another sheet of the net (`netExcluded`),
-   * for the viewport shading while a whole-part design is the one being placed. Null when this
-   * chart yields nothing.
+   * Display mesh of the canvas this chart yields (`netExcluded`), shaded while a whole-part design
+   * is placed; null when it yields nothing.
    *
-   * **The regions are clipped to `boundary()` first, and that is load-bearing.** The bake's
-   * exclusions are ZONE-wide — every chart of a seam-spanning zone is handed the same list — while
-   * `lookup` answers the nearest triangle at any distance. Warped raw, `left`'s 8,668mm² patch
-   * (UV u 497..631) would also be drawn on `chair-wing-left` and `chair-wheel-mount-left`, whose
-   * charts reach u 224 and u 434, with every corner snapped to their nearest triangle. `boundary()`
-   * is the same per-part clip the cutter is held to, so the hatch and the cut agree by
-   * construction.
+   * **Clipped to `boundary()` first, load-bearing**: exclusions are ZONE-wide and `lookup` answers
+   * the nearest triangle at any distance, so warped raw, `left`'s 8,668mm² patch (u 497..631) would
+   * also land on `chair-wing-left` and `chair-wheel-mount-left` (charts reaching u 224 and u 434).
+   * It is the cutter's own clip, so hatch and cut agree by construction. Removing hidden surface is
+   * incidental: dead and yielded regions meet on 0.0mm² over all 14 charts carrying exclusions
+   * (yielded-canvas overlay test, tests/chair-zones.test.ts).
    *
-   * It also takes hidden surface off, `boundary()` having already subtracted it — belt and braces
-   * rather than the reason: no shipped chart's dead regions meet its yielded ones at all (0.0mm²
-   * over all 14 charts that carry exclusions, re-derived per chart by the yielded-canvas overlay
-   * test in tests/chair-zones.test.ts), so the two hatches do not fight for surface today.
-   *
-   * `intersectQuiet`, not `safeIntersect`: that one hands the subject back UNCLIPPED when the
-   * boolean flakes, which here is exactly the smear being prevented. A flake draws no hatch and
-   * says nothing, which is the shipped behaviour this overlay improves on rather than a regression,
-   * and a design that really reaches the patch is still named by `clipToNetShare`'s notice.
+   * `intersectQuiet`, not `safeIntersect`, which returns UNCLIPPED on a flake — the very smear
+   * being prevented. A flake draws no hatch; `clipToNetShare`'s notice still names a design
+   * reaching it.
    */
   netExcludedOverlayMesh(liftMm = 0.4, refineMm = 4): OverlayMesh | null {
     const yielded = safeUnionAll(
@@ -790,10 +740,8 @@ export class ConformalZoneMapper implements ZoneMapper {
     if (!mine) return null;
     const regions = polyRings(mine);
     if (!regions.length) return null;
-    // No warning on a `failed` count here, unlike the dead hatch. That one is the only thing that
-    // says surface takes no ink at all; this one only says a whole-part design lands elsewhere, and
-    // `clipToNetShare` already names the zone the ink went to at the moment it happens. A patch
-    // that fails to triangulate leaves the shipped behaviour, which is the notice on its own.
+    // No warning on `failed`, unlike the dead hatch: this one only says a whole-part design lands
+    // elsewhere, and `clipToNetShare` already names where, at the moment it happens.
     return this.regionOverlayMesh(regions, liftMm, refineMm).mesh;
   }
 
@@ -809,10 +757,8 @@ export class ConformalZoneMapper implements ZoneMapper {
     liftMm: number,
     refineMm: number,
   ): { mesh: OverlayMesh | null; failed: number } {
-    // A chart with no triangles has no surface to shade, and it is also the only input that makes
-    // `lookup` answer null: cellIdxU/V clamp a query into the grid and the ring search spans all of
-    // it, so any populated chart returns its nearest triangle however far the query lands. Taken
-    // here so the emit loop below has nothing left to drop.
+    // No triangles means no surface, and is the only input where `lookup` returns null (queries
+    // clamp into the grid and the ring search spans it), so the emit loop drops nothing.
     if (!this.chart.triangles.length) return { mesh: null, failed: 0 };
     const positions: number[] = [];
     const uvOut: number[] = [];
@@ -820,15 +766,11 @@ export class ConformalZoneMapper implements ZoneMapper {
     const emit = (tri: number[][]): void => {
       const pts: number[][] = [];
       for (const [u, v] of tri) {
-        // The nearest triangle whatever its distance, with no CHART_SNAP_MM bound. That bound
-        // refuses MISPLACED ARTWORK, and there is none here: a dead region is cut against this
-        // chart's own triangle union at bake time, so its corners sit on the triangulation rather
-        // than in the gap the snap covers. Measured over all 12 charts of
-        // public/stl/chair-body-zones.json that carry one: worst corner 0.0006mm off, none past the
-        // snap tolerance, no lookup answering null (tests/chair-zones.test.ts pins it over every
-        // one of them). Bounding it would put pinholes in the hatch over surface the cut really
-        // does clip. A yielded region is zone-wide rather than chart-cut, which is why
-        // netExcludedOverlayMesh clips it to `boundary()` before it ever reaches here.
+        // Nearest triangle at any distance, no CHART_SNAP_MM: that refuses MISPLACED ARTWORK, and a
+        // dead region is cut against this chart's own triangles at bake time. Over all 12 charts of
+        // public/stl/chair-body-zones.json carrying one, the worst corner is 0.0006mm off
+        // (tests/chair-zones.test.ts pins it); a bound would pinhole the hatch. Yielded regions are
+        // zone-wide, hence netExcludedOverlayMesh's `boundary()` clip.
         const hit = this.lookup(u, v);
         // Unreachable given the guard above, and narrowing rather than a `!` so it stays that way.
         if (!hit) return;
@@ -883,14 +825,9 @@ export class ConformalZoneMapper implements ZoneMapper {
       } catch {
         tris = [];
       }
-      // The one drop left in here, and it takes a whole patch of hatching with it. Counted and
-      // handed back so the caller can say it out loud: the hatch is how a user is told where
-      // artwork will not print, and the hidden-surface warning's own remedy sends them to it.
-      // Missing hatch over surface the cut still clips reads as a place artwork is welcome.
-      //
-      // Both outcomes counted, not just the throw: this triangulator answers a ring it cannot use
-      // with an empty list about as often as it raises, and an empty list drops the patch just as
-      // silently.
+      // The one drop left, taking a whole patch of hatching: counted so the caller warns, since a
+      // missing hatch over clipped surface reads as a place artwork is welcome. Empty lists count
+      // too: this triangulator returns one about as often as it throws.
       if (!tris.length) {
         failed++;
         continue;

@@ -238,25 +238,15 @@ export function extrudeRegionToSoup(
 export const REPAIR_ERODE_MM = [0.01, 0.05] as const;
 
 /**
- * Repair a self-intersecting/pinched region (e.g. dense line-work that touches itself after
- * being clipped to a part boundary) using Manifold's own 2D boolean engine, CrossSection —
- * turf's clipper can emit such regions without throwing, but they then fail Manifold's
- * watertight check at extrusion time. Feeding every ring in flat (outer and hole alike) and
- * resolving with a fill rule handles genuine self-crossings regardless of winding, but doesn't
- * by itself fix contours that merely *touch* (a hole pinched against its own outer boundary at a
- * single point, or two adjacent shapes sharing an edge) — THREE's earcut triangulator still
- * chokes on that exact-touching topology. A small inward offset breaks those exact coincidences
- * by construction; simplify() cleans up the sliver segments the offset introduces.
+ * Repair a self-intersecting or pinched region (dense line-work touching itself after clipping)
+ * with Manifold's CrossSection: turf emits such regions without throwing, and they fail Manifold's
+ * watertight check. A fill rule over every ring handles real self-crossings; a small inward offset
+ * breaks exact *touches* (a hole pinched to its outline, shapes sharing an edge) that THREE's
+ * earcut still chokes on, and simplify() cleans the offset's slivers. Re-nested by shapeToFeature's
+ * containment depth, whatever CrossSection's winding.
  *
- * The offset is inward only and never put back, and below 2 x erodeMm it deletes rather than
- * shrinks. At the distances shipped nothing printable is at stake: 2 x 0.05mm is a quarter of a
- * 0.4mm nozzle.
- *
- * The cleaned contours are re-nested into proper outer/hole polygons by shapeToFeature's
- * containment-depth algorithm, which doesn't care about CrossSection's own winding convention.
- *
- * `erodeMm` is a parameter rather than a constant because one distance does not clear every
- * region. See REPAIR_ERODE_MM for the ladder the caller walks.
+ * Inward only, never put back: below 2 x erodeMm it deletes, but 2 x 0.05mm is a quarter of a
+ * 0.4mm nozzle. A parameter because one distance doesn't clear every region (REPAIR_ERODE_MM).
  */
 export function repairSelfIntersections(
   wasm: ManifoldAPI,
@@ -269,9 +259,8 @@ export function repairSelfIntersections(
   const contours = polys.flat().filter((r) => r.length >= 4);
   if (!contours.length) return null;
   const cs = new wasm.CrossSection(contours as [number, number][][], 'NonZero');
-  // try/finally at every level, matching erodeBoundary in edgeRegions.ts: `offset` and `simplify`
-  // each return a fresh CrossSection, and the caller now runs this up to twice per failing region
-  // with a catch that treats a throw as ordinary, so a leak on the throwing path would compound.
+  // try/finally at every level: `offset` and `simplify` each return a fresh CrossSection, and the
+  // caller runs this once per rung with throws treated as ordinary, so a leak would compound.
   try {
     const offset = cs.offset(-erodeMm, 'Round');
     try {

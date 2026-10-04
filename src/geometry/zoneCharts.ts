@@ -3,10 +3,9 @@ import type { ZoneMirror } from '../types';
 
 /**
  * Runtime side of the design-zone sidecar (`public/stl/<kind>-zones.json`, baked by
- * scripts/bake-zones.mjs). It reconstructs the `ConformalChart` a zone's mapper needs from the
- * baked UV data plus the part's own loaded mesh — the sidecar stores per-part *vertex indices*
- * (into the packed 3MF's vertex order, which load3MF now returns), not 3D positions, so the chart
- * always resolves against the exact mesh the app loaded. A per-part fingerprint guards that pairing.
+ * scripts/bake-zones.mjs): rebuilds a zone's `ConformalChart` from baked UV plus the part's loaded
+ * mesh. The sidecar stores per-part *vertex indices* (packed 3MF order, as load3MF returns), not
+ * positions, so a chart resolves against the exact mesh loaded; a per-part fingerprint guards that.
  */
 
 /** One printed part's slice of a zone's chart (indices are part-local, into the packed mesh order). */
@@ -21,11 +20,9 @@ export interface SidecarChart {
   /** chart-local index triples (into `verts`/`uv`) */
   chartTris: number[][];
   /**
-   * This part's own slice of the zone in UV, as outer/hole regions — what its cutter is clipped
-   * to. Equal to the zone outline while a zone lives on one part; once a zone spans a printed
-   * seam it is strictly smaller, and clipping to the zone outline instead would push artwork past
-   * this part's chart, where the warp reports it off-chart and drops the color on both parts.
-   * A part's slice can be several disjoint islands, hence a list.
+   * This part's own slice of the zone in UV (possibly several islands): its cutter's clip. On a
+   * seam-spanning zone it is strictly smaller than the outline, and clipping to the outline would
+   * push artwork past this part's chart, where the warp drops the color on both parts.
    */
   subRegions: { outer: number[][]; holes: number[][][] }[];
   /** `subRegions` less `deadRegions`, baked and cleaned — what the cut clips to. */
@@ -75,14 +72,10 @@ export interface SidecarZone {
  */
 export interface NetZonePlacement {
   /**
-   * The zone's display name, carried here for the same reason `NetZoneExclusion.toName` is: the
-   * build names a zone the net places but nothing loaded, and with no loaded part there is no zone
-   * list to resolve the id against.
-   *
-   * Optional because it arrived inside schema 5 rather than with it, so a cached sidecar can be
-   * this schema and still lack it. Its one reader falls back to the id, which is what shipped
-   * before — not worth a schema bump, which would refuse every cached sidecar to fix a name in a
-   * warning that only fires when a part failed to load.
+   * The zone's display name, carried like `NetZoneExclusion.toName`: the build names a zone the net
+   * places but nothing loaded, with no zone list to resolve against. Optional because it arrived
+   * inside schema 5; its one reader falls back to the id, and a bump would refuse every cached
+   * sidecar for a warning that only fires when a part failed to load.
    */
   name?: string;
   rotationDeg: number;
@@ -92,17 +85,12 @@ export interface NetZonePlacement {
   /** How well the shared seam really registers, in mm; absent on the root and on detached sheets. */
   seamResidualMm?: { to: string; pairs: number; rms: number; p95: number; max: number };
   /**
-   * How much of that seam is a join rather than an abutment, surveyed row by row along the
-   * boundary the two sheets share.
-   *
-   * `seamResidualMm` says how well the fit landed on the vertices the two zones SHARE. It says
-   * nothing about the rest of the boundary, where the sheets still sit flush on the canvas and the
-   * surfaces under them are far apart: on the chair's flank/back boundary 61 of 197 rows join, and
-   * a design crossing one of the other 136 is torn by 33.5mm at the median. `vFrom`/`vTo` bound
-   * the joining stretch in net mm, and are absent when no row joins at all.
-   *
-   * Measured by scripts/lib/netseam.mjs, which scripts/check-net-design.mjs re-runs against the
-   * shipped file.
+   * How much of that seam is a join rather than an abutment, surveyed row by row. `seamResidualMm`
+   * covers only the SHARED vertices; elsewhere the sheets sit flush on the canvas over surfaces far
+   * apart: on the chair's flank/back boundary 61 of 197 rows join, and a design crossing one of the
+   * other 136 is torn by 33.5mm at the median. `vFrom`/`vTo` bound the joining stretch in net mm,
+   * absent when no row joins. Measured by scripts/lib/netseam.mjs; scripts/check-net-design.mjs
+   * re-runs it against the shipped file.
    */
   seamContinuity?: {
     rows: number;
@@ -119,27 +107,20 @@ export interface NetZonePlacement {
 }
 
 /**
- * A patch of this zone's own UV that another sheet of the net owns: a whole-part design is cut
- * there on `to` alone, and never here. The zone stays reachable through its own per-zone binding,
- * which does not consult this at all.
- *
- * `toName` is the owning zone's display name, carried rather than looked up because the notice
- * this feeds is user-facing and the geometry layer has no zone list to resolve an id against.
+ * A patch of this zone's UV another sheet of the net owns: a whole-part design is cut there on `to`
+ * alone; the zone's own per-zone binding ignores it. `toName` is carried because the notice is
+ * user-facing and the geometry layer has no zone list to resolve an id against.
  */
 export interface NetZoneExclusion {
   to: string;
   toName: string;
   areaMm2: number;
   /**
-   * Whether the stretch of boundary this patch lies along is a real join. False says the two
-   * sheets merely abut there, so a design reaching across this patch is cut in two halves that
-   * print `tearMm` apart. The bake cuts a patch at the joining stretch's limits so each piece can
-   * answer this at all (`markNetExclusionContinuity`, scripts/lib/zonebake.mjs).
-   *
-   * Optional for the same reason `NetZonePlacement.name` is: it arrived inside schema 5, and a
-   * cached schema-5 sidecar lacking it reads as "not surveyed", which is silence — exactly what
-   * shipped before. The regions themselves are unchanged in meaning, so no cut moves. A bump would
-   * refuse every cached sidecar to add a warning.
+   * Whether this patch's stretch of boundary is a real join. False: the sheets merely abut, so a
+   * design across the patch prints in two halves `tearMm` apart. The bake cuts patches at the
+   * joining stretch's limits so each can answer (`markNetExclusionContinuity`,
+   * scripts/lib/zonebake.mjs). Optional like `NetZonePlacement.name`: a cached schema-5 sidecar
+   * lacking it reads as "not surveyed" (silence); regions are unchanged, so no cut moves.
    */
   joins?: boolean;
   /**
@@ -162,18 +143,11 @@ export interface ZoneNet {
 }
 
 /**
- * The only sidecar format this build understands. The per-part mesh fingerprints guard the
- * *geometry* pairing; this guards the *format*, so a visitor holding a cached schema-1 sidecar
- * (whose charts carry `subBoundary` rather than `subRegions`, and whose zones have no `uvBounds`)
- * can't be paired with newer code that would read its per-part clip region as absent and clip every
- * part to the whole zone. Schema 3 adds `deadRegions`: a cached schema-2 sidecar read by this code
- * would silently report "nothing is hidden" on a kind whose bake says otherwise, the same class of
- * failure, so it takes the same hard refusal. Schema 4 adds `mirror`: a cached schema-3 sidecar
- * would silently offer no Mirror on a kind whose bake says otherwise, so same again. Schema 5 adds
- * `net`, and repeats it once more: a cached schema-4 sidecar would offer no whole-part zone at all.
- * Schema 6 adds `cutRegions`, the clip the cut uses, which the runtime used to derive by
- * subtracting `deadRegions` from `subRegions` on every load: a cached schema-5 sidecar read here
- * would fall through to `subRegions` alone and cut into surface the covers hide.
+ * The only sidecar format this build reads (mesh fingerprints guard the geometry; this the format).
+ * Each bump hard-refuses a cached older sidecar that would otherwise fail silently: schema 1 has
+ * `subBoundary`, no `uvBounds` (every part clips to the whole zone); 3 adds `deadRegions` (else
+ * "nothing is hidden"); 4 `mirror` (else no Mirror); 5 `net` (else no whole-part zone); 6
+ * `cutRegions` (else falls through to `subRegions` and cuts into surface the covers hide).
  */
 export const SIDECAR_SCHEMA = 6;
 
