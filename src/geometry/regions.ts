@@ -525,8 +525,9 @@ function fromGeom(polys: Geom): PolyFeature | null {
  * Ink sweep: docs/findings/2026-09-27-clip-ink-sweep.md, `RUN_CLIP_INK_SWEEP=1 npx vitest run
  * scripts/measure-clip-ink.test.ts` — 9.4% of pieces sit below this floor, mostly one pattern's
  * fine detail. Open in docs/tech-debt.md: "Whether a near-floor clipped-ink piece is dust or a
- * drawn detail is unmeasured", and beside it "Nothing says whether a thin cut-region strip is
- * surface a cover hides".
+ * drawn detail is unmeasured", and beside it "A cut region claims surface the part does not have,
+ * and it prints" — 14 of 87 bake pieces lie off their chart's triangles, so no floor here reaches
+ * them (`npx vite-node scripts/measure-cut-offsurface.mjs`).
  *
  * Retired: the seam overlap. All 41 chair overlap pieces build a cutter on both parts, and
  * `buildCutter` extrudes a ribbon one micron wide and 120mm long fine (`npx vite-node
