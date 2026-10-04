@@ -158,10 +158,11 @@ on it. The
 [findings report](findings/2026-08-24-placement-frame-angle.md) lists which
 of the library's other face choices land here.
 
-## Troubleshooting: "isn't watertight" warnings (assembly mode)
+## Troubleshooting: "isn't a watertight mesh" warnings (assembly mode)
 
-Full text: _"Part "Top" isn't watertight, so it can't be cut cleanly. Close its
-holes and fix flipped faces, then retry. It exports uncut."_
+Full text: _"Part "Top" isn't a watertight mesh, so it can't be cut cleanly.
+Repair it (close holes, fix flipped faces) and retry. Exporting it uncut for
+now."_
 
 **This fails earlier than the cut warnings above.** Those happen when a clipped
 _region_ comes out non-watertight. This one fires when the part's own base
@@ -613,7 +614,7 @@ in most cases, so what you see may not match the string above.
 ## Troubleshooting: "Some detail in … was too fine to print…"
 
 Full text: _"Some detail in "yourfile.png" was too fine to print and was merged
-away. Lower Colors, or lower Detail, for a cleaner result."_
+into its surroundings. Lower Colors, or lower Detail, for a cleaner result."_
 
 **An informational notice, not a failure.** The image loaded and cut normally.
 
@@ -938,7 +939,7 @@ file (thousands of independent shapes, not nested ones) does not trip it.
 ## Troubleshooting: "This SVG has no size in millimeters…"
 
 Full text: _"This SVG has no size in millimeters, so it was auto-fit to the part
-face. Set its size in millimeters for an exact fit, or fine-tune with Scale."_
+face. Set the document size in millimeters for an exact fit, or fine-tune with Scale."_
 
 **Expected on every artwork the app ships, and on most editor exports.** The
 document sheet is fitted to the part's design face, so a template round-trip
@@ -980,7 +981,7 @@ reload, so a design placed before this changed comes back at the new size.
 ### The 1:1 variant
 
 Full text: _"This SVG has no size in millimeters, so its true print size is
-unknown. It was placed 1:1 with its coordinate units. Set its size in
+unknown. It was placed 1:1 with its coordinate units. Set the document size in
 millimeters, or use Scale to correct the fit."_
 
 The file gives no sheet to fit: no `viewBox`, and not both of width and height.
@@ -1181,7 +1182,7 @@ patch, so it is the second opinion. Then report it, with the zone name from the
 message — it is a bug in the app, not in your file, and nothing you change in
 the design will clear it.
 
-## Troubleshooting: "Some artwork falls outside this SVG's circle"
+## Troubleshooting: "This SVG has a circle around most of the artwork, but some falls outside"
 
 A design template marks its boundary with a circle drawn around everything, and on a
 round part the app sizes your artwork to that circle. This says the circle is
@@ -1212,7 +1213,7 @@ the rest of the design was thrown off the part in silence.
 
 Full text: _"This shape was too big for the wheel, so it was scaled down to fit.
 The hubcap and its artwork are smaller than the size you set. Reduce the size
-or the scale to set it yourself."_
+or the scale to take control."_
 
 Nothing may overhang the wheel the hubcap mounts on, which is 280mm across. A
 silhouette can exceed that while its **Hubcap diameter** reading looks fine,
@@ -1227,8 +1228,8 @@ clears puts you back in control.
 
 ## Troubleshooting: "Some of this shape is thinner than 1mm"
 
-Full text: _"Some of this shape is thinner than 1mm, about one
-nozzle wide. Those parts will be fragile. Simplify the artwork or enlarge the hubcap to
+Full text: _"Some of this shape is thinner than 1mm, about one nozzle wide.
+Those parts will be fragile. Simplify the artwork or enlarge the hubcap to
 thicken them."_
 
 Unlike the other silhouette warnings this one does **not** fall back to a

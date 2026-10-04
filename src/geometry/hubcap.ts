@@ -393,7 +393,7 @@ export const HUBCAP_SILHOUETTE_NO_TRANSPARENCY =
  */
 export const HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL =
   'This shape was too big for the wheel, so it was scaled down to fit. The hubcap and its ' +
-  'artwork are smaller than the size you set. Reduce the size or the scale to set it yourself.';
+  'artwork are smaller than the size you set. Reduce the size or the scale to take control.';
 
 export const HUBCAP_SILHOUETTE_THIN_DETAIL =
   'Some of this shape is thinner than 1mm, about one nozzle wide. Those parts will be ' +

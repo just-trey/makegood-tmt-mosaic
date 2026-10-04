@@ -305,8 +305,9 @@ export function designAnchor(
   // refresh and pointerdown.
   if (notice && circle && looksLikeAnEscapedBoundary(circle, parsed))
     notice(
-      "Some artwork falls outside this SVG's circle. It was fitted by overall size, so it may " +
-        'print smaller than the template intends. Remove stray marks outside the circle.',
+      'This SVG has a circle around most of the artwork, but some falls outside. It was fitted ' +
+        'by overall size, so it may print smaller than the template intends. Remove stray marks ' +
+        'outside the circle.',
     );
   // A raster anchors on its frame on every kind, wheel included, and says nothing: an image cannot
   // contain a boundary circle, so the notice below would ask every image for the impossible.
@@ -404,13 +405,13 @@ export function designMmPerUnit(
     notice(
       parsed.origin === 'raster'
         ? 'This image has no real-world size, so it was auto-fit to the part face. Use Scale to fine-tune.'
-        : 'This SVG has no size in millimeters, so it was auto-fit to the part face. Set its size in millimeters for an exact fit, or fine-tune with Scale.',
+        : 'This SVG has no size in millimeters, so it was auto-fit to the part face. Set the document size in millimeters for an exact fit, or fine-tune with Scale.',
     );
     return Math.min(designFace.w / sheet.w, designFace.h / sheet.h) * scaleMult * fit;
   }
   if (designFace)
     notice(
-      'This SVG has no size in millimeters, so its true print size is unknown. It was placed 1:1 with its coordinate units. Set its size in millimeters, or use Scale to correct the fit.',
+      'This SVG has no size in millimeters, so its true print size is unknown. It was placed 1:1 with its coordinate units. Set the document size in millimeters, or use Scale to correct the fit.',
     );
   return scaleMult * fit;
 }
@@ -1605,7 +1606,7 @@ export async function buildAssemblyGeometry(
       if (!manifoldIsValid(partMan)) {
         prismEntries.forEach(([pci]) => landedColors.add(pci));
         warnBuild(
-          `Part "${part.name}" isn't watertight, so it can't be cut cleanly. Close its holes and fix flipped faces, then retry. It exports uncut.`,
+          `Part "${part.name}" isn't a watertight mesh, so it can't be cut cleanly. Repair it (close holes, fix flipped faces) and retry. Exporting it uncut for now.`,
         );
         partOutputs.push({ part, bodySoup: Float32Array.from(part.positions), inlaySoups: {} });
         finishPart();
