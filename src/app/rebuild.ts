@@ -57,35 +57,27 @@ export function getLastAssemblyBuild(): AssemblyBuild | null {
 }
 
 /**
- * Below this angle between two faces, they're taken to be a tessellated curve and shaded as one
- * smooth surface; at or above it, a real edge that stays crisp.
- *
- * 30° rather than three's 60° default because the parts carry chamfers: a 45° chamfer meets its
- * face at a 45° normal difference, which a 60° threshold would smooth away — turning a machined
- * edge into a soft one. Measured against the alternative, a blanket `mergeVertices` +
- * `computeVertexNormals` (no threshold at all): it visibly melted the embossed logo on the
- * storage box and softened the seat-clip detail, and ran slower and less predictably
- * (3.8-5.2s against a steady 4.1s for the chair's 13 parts).
+ * Below this angle between two faces they're a tessellated curve, shaded smooth; at or above, a
+ * crisp edge. 30° not three's 60° because the parts carry chamfers: a 45° chamfer meets its face at
+ * a 45° normal difference, which 60° smooths away. A blanket `mergeVertices` +
+ * `computeVertexNormals` melted the embossed logo on the storage box and softened the seat-clip
+ * detail, and ran slower and less predictably (3.8-5.2s against a steady 4.1s for the chair's 13 parts).
  */
 const CREASE_ANGLE_RAD = (30 * Math.PI) / 180;
 
 /**
  * Display geometry for one triangle soup.
  *
- * The soup is non-indexed — every triangle carries its own three vertices — and
- * `computeVertexNormals()` on non-indexed geometry gives each vertex its own face's normal, so it
- * produced flat shading by construction: curved surfaces banded and silhouettes read as polygonal
- * on every part, worst on the chair. Normals are averaged across shared vertices instead, up to
- * the crease angle.
+ * The soup is non-indexed, so `computeVertexNormals()` gives each vertex its own face's normal —
+ * flat shading by construction, curved surfaces banded. Normals are averaged across shared vertices
+ * up to the crease angle instead.
  *
- * **Pass `indexed` whenever the caller has it.** Manifold returns one from every boolean and a
- * packed 3MF carries one in the file, and with it the sharing is read instead of rediscovered by
- * hashing every corner twice: 8.7x measured in Chrome on five chair parts. Without it this falls
- * back to three's `toCreasedNormals`, unchanged, which is what any mesh the user supplies takes.
- * That fallback is the reason this is a swap rather than a migration.
+ * **Pass `indexed` whenever the caller has it** (Manifold returns one from every boolean, a packed
+ * 3MF carries one): the sharing is read instead of rediscovered by hashing every corner twice, 8.7x
+ * measured in Chrome on five chair parts. Without it this falls back to three's `toCreasedNormals`
+ * unchanged, which any user-supplied mesh takes — why this is a swap, not a migration.
  *
- * Display only. The cut and export paths never read these normals — they work from the same soup
- * this is built from, already cut.
+ * Display only: the cut and export paths work from the already-cut soup, never these normals.
  */
 export function bufferGeometryFromTris(
   float32arr: Float32Array,
@@ -103,10 +95,7 @@ export function bufferGeometryFromTris(
   return toCreasedNormals(geo, CREASE_ANGLE_RAD);
 }
 
-/**
- * Up-front guess of whether the next rebuild will be slow — see setRebuildCostHint. Every rebuild
- * with artwork does 3D boolean CSG per part, which is always heavy enough to warrant the curtain.
- */
+/** Up-front guess of whether the next rebuild will be slow (setRebuildCostHint). Every rebuild with artwork does per-part 3D boolean CSG, always heavy enough for the curtain. */
 export function estimateRebuildSlow(): boolean {
   return !!state.parsed; // no artwork yet — a bare part render is fast
 }
@@ -114,35 +103,28 @@ export function estimateRebuildSlow(): boolean {
 /** Entry point the scheduler debounces into. */
 export async function rebuildCurrent(): Promise<void> {
   await rebuildAssemblyScene();
-  // The on-face gizmo tracks the just-built geometry (including the assembly's post-rebuild grid
-  // lift); a no-op mid-drag so it doesn't fight the pointer.
+  // Tracks the just-built geometry (incl. the assembly's post-rebuild grid lift); a no-op mid-drag so it doesn't fight the pointer.
   refreshGizmo();
   refreshZonePickMeshes();
-  // Here rather than beside the three places that set #btn-export.disabled, so the summary follows
-  // every one of them.
+  // Here, not beside the three places that set #btn-export.disabled, so the summary follows every one.
   renderExportSummary();
-  // Every rebuild is the state settling after some edit — the one choke point nearly every
-  // mutation already funnels through, so this is the cheapest place to keep the autosave current
-  // rather than hooking each individual setter.
+  // Every rebuild is the state settling after an edit — the one choke point nearly every mutation funnels through, cheaper than hooking each setter.
   schedulePersist();
 }
 
 /**
  * Run a build, returning null if the user cancelled it.
  *
- * Caught here rather than in the scheduler so the rest of rebuildCurrent still runs: its tail
- * carries the only schedulePersist outside export, and skipping that left a cancelled rebuild's
- * change unsaved, which is the loss this button exists to prevent. Null then takes the same path a
- * refused build does, which is a state the app already knows how to be in.
+ * Caught here, not in the scheduler, so the rest of rebuildCurrent still runs: its tail has the
+ * only schedulePersist outside export, and skipping it left a cancelled rebuild's change unsaved.
+ * Null then takes the same path a refused build does.
  */
 async function catchCancel<T>(run: () => Promise<T | null>): Promise<T | null> {
   try {
     return await run();
   } catch (e) {
     if (!(e instanceof RebuildCancelled)) throw e;
-    // Drop what the aborted build had already said. Its per-part diagnostics ("isn't watertight",
-    // "couldn't merge color …") describe parts that were never finished, and leaving them up puts
-    // failure pills in front of someone who pressed Cancel.
+    // Drop what the aborted build already said: its per-part diagnostics describe unfinished parts and would show failure pills after a Cancel.
     clearBuildWarnings();
     return null;
   }
@@ -154,18 +136,16 @@ const HATCH_STROKE_PX = 12;
 const HATCH_PITCH_MM = 8;
 
 /**
- * One material and its stripe texture per hatch kind, each shared by every zone on every part.
+ * One material and its stripe texture per hatch kind, shared by every zone on every part.
  *
- * Dropped on the material's own dispose event rather than held forever, because `newModelGroup`
- * disposes the materials of everything it clears: keeping the handle would hand the next rebuild a
- * material whose GPU program has been released. The listener makes the cache last exactly as long
- * as the scene does, so the accent is re-read once per rebuild and a theme change lands.
+ * Dropped on the material's own dispose event, not held forever: `newModelGroup` disposes the
+ * materials of everything it clears, so a kept handle would be a material with a released GPU
+ * program. The cache lasts as long as the scene, so the accent is re-read once per rebuild and a
+ * theme change lands.
  *
- * **The texture goes with it, which is the part that makes that true.** The stripes are DRAWN in
- * the accent, so the colour lives in the texture, not in the material. Cached separately, the
- * texture outlived every dispose and the rebuilt material kept mapping the old accent's stripes —
- * a theme change re-read a colour it then did not use. Dropped together, and disposed rather than
- * abandoned: `newModelGroup` frees the material, never the texture hanging off it.
+ * **The texture goes with it.** The stripes are DRAWN in the accent, so the colour lives in the
+ * texture; cached separately it outlived every dispose and the rebuilt material kept the old
+ * accent's stripes. Dropped together and disposed, since `newModelGroup` frees the material, never its texture.
  */
 type HatchKind = 'dead' | 'yielded';
 const hatches = new Map<
@@ -192,11 +172,10 @@ function hatchMaterial(kind: HatchKind): THREE.MeshBasicMaterial {
       ctx.beginPath();
       ctx.moveTo(x, HATCH_TILE_PX);
       ctx.lineTo(x + HATCH_TILE_PX, 0);
-      // The yielded hatch is the dead one plus the perpendicular set, at the same pitch, width and
-      // opacity — the same relation the printed net template's `shared` pattern has to its `hidden`
-      // one (`M0 4 L4 0 M0 0 L4 4` against `M0 4 L4 0`, zonebake.mjs), so the sheet and the
-      // viewport draw the two meanings the same way. The second accent carries it at a glance;
-      // the crossing is what still separates them when the theme moves the hues together.
+      // The yielded hatch is the dead one plus the perpendicular set at the same pitch, width and
+      // opacity — the relation the printed net template's `shared` pattern has to its `hidden` one
+      // (`M0 4 L4 0 M0 0 L4 4` against `M0 4 L4 0`, zonebake.mjs). The second accent carries it at a
+      // glance; the crossing still separates them when a theme moves the hues together.
       if (yielded) {
         ctx.moveTo(x, 0);
         ctx.lineTo(x + HATCH_TILE_PX, HATCH_TILE_PX);
@@ -222,14 +201,12 @@ function hatchMaterial(kind: HatchKind): THREE.MeshBasicMaterial {
   return mat;
 }
 
-// The warp (triangulate, subdivide, per-vertex surface lookup) is static per chart, but every
-// rebuild disposes scene geometry (newModelGroup), so what is cached is the computed arrays and
-// a fresh BufferGeometry is built from them each time. Keyed by the chart object: charts live as
-// long as the loaded part they came from.
+// The warp (triangulate, subdivide, per-vertex surface lookup) is static per chart but every rebuild
+// disposes scene geometry (newModelGroup), so the computed arrays are cached and a fresh
+// BufferGeometry built from them each time, keyed by chart (which lives as long as its part).
 //
-// `uv` is already divided by the stripe pitch. A BufferAttribute never writes to the array it
-// wraps and geometry disposal frees the GPU buffer rather than the array, so both are handed
-// straight to each rebuild's fresh attributes instead of being copied and rescaled per rebuild.
+// `uv` is already divided by the stripe pitch. BufferAttribute never writes its array and disposal
+// frees the GPU buffer, not the array, so both are handed to each rebuild's attributes uncopied.
 const overlayCache = new WeakMap<
   object,
   { dead: OverlayMesh | null; yielded: OverlayMesh | null }
@@ -240,15 +217,13 @@ const scaleToPitch = (m: OverlayMesh | null): OverlayMesh | null =>
   m && { positions: m.positions, uv: m.uv.map((x) => x / HATCH_PITCH_MM) };
 
 /**
- * Whether the yielded-canvas hatch tells the truth right now: only while the row being edited is
- * bound to the whole part. A row bound to a zone by name reaches every bit of that zone's surface,
- * yielded patches included, so hatching them on that binding is a lie in the other direction.
+ * Whether the yielded-canvas hatch tells the truth right now: only while the edited row is bound to
+ * the whole part. A zone-bound row reaches all of that zone's surface, yielded patches included, so
+ * hatching them there lies the other way.
  *
- * **Nothing selected shows nothing**, the same answer as a per-zone row. The hatch says "the design
- * you are placing will not cut here", and with no row in focus there is no design being placed —
- * hatching then would mark live surface dead with nothing on screen to explain it. It is also
- * barely reachable: `setActiveArtwork` keeps a row in focus while any exists and only
- * `clearArtwork` empties it, so in practice no selection means no artwork at all.
+ * **Nothing selected shows nothing**, like a per-zone row: the hatch means "the design you are
+ * placing won't cut here", and with no row in focus it would mark live surface dead unexplained.
+ * Barely reachable: `setActiveArtwork` keeps a row in focus while any exists.
  */
 function yieldedHatchVisible(): boolean {
   return activeArtworkInstance()?.zone?.zoneId === WHOLE_CHAIR_ZONE;
@@ -258,10 +233,9 @@ function yieldedHatchVisible(): boolean {
 const YIELD_OVERLAY = 'netYieldOverlay';
 
 /**
- * Re-answer `yieldedHatchVisible()` for the overlays already in the scene. Every binding change
- * (the zone dropdown, +zone, a zone picked in the 3D view) schedules a rebuild, which rebuilds
- * these with the right answer; clicking another artwork row does not, and that is the one path
- * that changes which binding is active without touching geometry.
+ * Re-answer `yieldedHatchVisible()` for overlays already in the scene. Binding changes schedule a
+ * rebuild, which rebuilds them correctly; clicking another artwork row doesn't, and is the one path
+ * that changes the active binding without touching geometry.
  */
 export function refreshNetYieldOverlays(): void {
   const show = yieldedHatchVisible();
@@ -276,13 +250,12 @@ export function refreshNetYieldOverlays(): void {
 
 /**
  * Hatch each zone's hidden surface (chart deadRegions) onto the part, and the canvas it yields to
- * another sheet of the net, floating just off the mesh. Drawn in both render paths so the "artwork
- * stops here" line is visible before anything is placed, not discovered after a cut comes out
- * trimmed.
+ * another net sheet, floating just off the mesh. Drawn in both render paths so the "artwork stops
+ * here" line shows before anything is placed.
  *
- * The yielded overlay is built whatever the current binding and hidden when it does not apply,
- * rather than built on demand: the warp behind it is cached per chart, so the only per-rebuild cost
- * is the BufferGeometry, and a `visible` flip is what lets a row click refresh it without a rebuild.
+ * The yielded overlay is built whatever the binding and hidden when it doesn't apply: the warp is
+ * cached per chart, so the per-rebuild cost is the BufferGeometry, and a `visible` flip lets a row
+ * click refresh it without a rebuild.
  */
 function addZoneOverlays(
   xf: ReturnType<typeof asmPartTransformGroup>,
@@ -298,17 +271,15 @@ function addZoneOverlays(
     if (!hasDead && !hasYield) continue;
     let built = overlayCache.get(chart);
     if (built === undefined) {
-      // Caught per zone, because this decoration must never cost the model. renderRawAssemblyParts
-      // is the fallback that keeps the bare parts on screen when a build fails, and it calls here
-      // too — so a throw out of this loop empties the very viewport that path exists to keep
-      // filled, and reads as a crash. The mapper's constructor validates the chart for the first
-      // time here (reconstructChart only range-checks vertex indices) and deadOverlayMesh reads
-      // ring[0] straight out, so a malformed sidecar reaches it as a TypeError, not a null.
-      // One mapper for both hatches, and the two builds caught apart. A malformed ring in one
-      // region list must not take the other's hatch with it, and only the hidden-surface one is
-      // worth a warning — and only on a zone that HAS hidden surface: a refused chart on a
-      // yield-only zone loses a hatch about surface that still cuts elsewhere, which is the
-      // silence netExcludedOverlayMesh records, not a missing shade.
+      // Caught per zone: this decoration must never cost the model. renderRawAssemblyParts is the
+      // fallback that keeps bare parts on screen and calls here too, so a throw would empty that
+      // viewport. The mapper's constructor is the first real validation of the chart
+      // (reconstructChart only range-checks indices) and deadOverlayMesh reads ring[0] directly, so a
+      // malformed sidecar arrives as a TypeError, not a null.
+      // One mapper for both hatches, builds caught apart: a malformed ring in one list mustn't take
+      // the other's hatch, and only the hidden-surface one warrants a warning, and only on a zone that
+      // HAS hidden surface (a refused chart on a yield-only zone loses a hatch about surface that
+      // still cuts elsewhere — the silence netExcludedOverlayMesh records).
       let mapper: ConformalZoneMapper | null = null;
       let dead: OverlayMesh | null = null;
       let yielded: OverlayMesh | null;
@@ -348,12 +319,10 @@ function addZoneOverlays(
       geo.setAttribute('position', new THREE.BufferAttribute(built.positions, 3));
       geo.setAttribute('uv', new THREE.BufferAttribute(built.uv, 2));
       const mesh = new THREE.Mesh(geo, hatchMaterial(kind));
-      // Invisible to every raycast. It floats 0.4mm proud of the surface, which zone picking's
-      // occlusion test (OCCLUSION_TOL_MM = 0.05) reads as a solid part covering the chart. Measured
-      // on the chair over a 61x61 grid of NDC points at a 1440x900 viewport, default framed view:
-      // without this the seat drops from 50 pickable points to 18, the front zone from 111 to 76
-      // and the left fender from 63 to 52, so a click on hatched surface selects nothing, not its
-      // zone.
+      // Invisible to every raycast: floating 0.4mm proud, it reads to zone picking's occlusion test
+      // (OCCLUSION_TOL_MM = 0.05) as a solid part covering the chart. Measured on the chair over a
+      // 61x61 NDC grid at 1440x900, default view: without this the seat drops from 50 pickable points
+      // to 18, the front zone 111 to 76, the left fender 63 to 52 — a click on hatch selects nothing.
       mesh.raycast = () => {};
       if (kind === 'yielded') {
         mesh.userData[YIELD_OVERLAY] = true;
@@ -364,11 +333,7 @@ function addZoneOverlays(
   }
 }
 
-/**
- * Show the bare loaded parts (no cuts) so the wheel is visible as soon as it loads, before any
- * artwork is applied — otherwise selecting the assembly leaves the viewport empty until an SVG
- * is dropped in.
- */
+/** Show the bare loaded parts (no cuts) as soon as they load, so selecting the assembly doesn't leave the viewport empty until an SVG is dropped in. */
 function renderRawAssemblyParts(): void {
   const modelGroup = getModelGroup();
   const rawMat = new THREE.MeshStandardMaterial({
@@ -391,18 +356,16 @@ function renderRawAssemblyParts(): void {
 }
 
 /**
- * Pose the assembly for display: turn it into the kind's authored display frame, then stand it on
- * the grid — centered over it, resting on it.
+ * Pose the assembly for display: turn it into the kind's display frame, then stand it on the grid,
+ * centered and resting on it.
  *
- * All of it exists because parts are never transformed at load — the wheel's native coordinates
- * are hub-centered and straddle z=0, and the chair's are its CAD frame, whose origin is a CAD datum
- * rather than the middle of the part (the chair's footprint runs 4..662mm along the grid's Y, so
- * uncentered it stood almost entirely off the back edge of the stage). All viewport-only: the cut
- * pipeline, the baked charts and export placement read the parts, not the scene.
+ * Parts are never transformed at load: the wheel's native coordinates straddle z=0 and the chair's
+ * are a CAD frame whose origin is a datum, not the middle (its footprint runs 4..662mm along grid Y,
+ * so uncentered it stood almost entirely off the back edge). Viewport-only: cuts, baked charts and
+ * export placement read the parts, not the scene.
  *
- * The rotation has to be applied BEFORE measuring, since it changes both which face is lowest and
- * where the footprint lies — that is the whole point for the chair, whose rearmost face was
- * resting on the grid.
+ * Rotation is applied BEFORE measuring, since it changes which face is lowest and where the
+ * footprint lies — the chair's rearmost face was resting on the grid.
  */
 function poseAssemblyForDisplay(): void {
   const modelGroup = getModelGroup();
@@ -416,12 +379,9 @@ function poseAssemblyForDisplay(): void {
 }
 
 /**
- * Every instance whose source still resolves, each carrying its own placement and zone binding.
- * With one unbound instance — every flow that exists until the panel can add a second — this is
- * exactly the single global placement the build used to take.
- *
- * Exported for the tests: it is the whole of the whole-part and mirror expansion, and every branch
- * of it either produces a placement or says why it produced none.
+ * Every instance whose source still resolves, each with its own placement and zone binding.
+ * Exported for tests: it is the whole of the whole-part and mirror expansion, and every branch
+ * produces a placement or says why not.
  */
 export function artworkBuildInputs(): ArtworkBuildInput[] {
   const artworks: ArtworkBuildInput[] = state.artworks.flatMap((a) => {
@@ -441,13 +401,10 @@ export function artworkBuildInputs(): ArtworkBuildInput[] {
       rotationDeg: a.rotationDeg,
       mode: a.mode,
     };
-    // A whole-part instance is one placement per zone of the net, each moved onto that zone's own
-    // sheet. Same shape as the mirror expansion below: the build sees ordinary artworks and nothing
-    // in the geometry knows the net exists.
+    // A whole-part instance is one placement per net zone, each moved onto its own sheet. Same shape as the mirror expansion: the build sees ordinary artworks and the geometry never knows the net exists.
     if (a.zone?.zoneId === WHOLE_CHAIR_ZONE) {
       const net = netZones();
-      // The binding survives a part switch and a session restore, so it can outlive the net it
-      // named. Cutting nothing without saying so is the failure rule 1 is about.
+      // The binding survives a part switch and a restore, so it can outlive its net. Cutting nothing unsaid is what rule 1 forbids.
       if (!net) {
         warnBuild(
           `"${source?.name ?? 'This design'}" is set to cover the whole part, but this part has no ` +
@@ -455,8 +412,7 @@ export function artworkBuildInputs(): ArtworkBuildInput[] {
         );
         return [];
       }
-      // Named, not id'd: every string beside these reads a zone by the name the dropdown shows, and
-      // "wing-left" is the bake's word for it.
+      // Named, not id'd: "wing-left" is the bake's word; everything beside it reads the dropdown's name.
       for (const z of net.missing)
         warnBuild(
           `The "${z.name}" zone isn't loaded, so "${source?.name ?? 'this design'}" won't be cut ` +
@@ -471,26 +427,21 @@ export function artworkBuildInputs(): ArtworkBuildInput[] {
         netToZoneBuildInput(primary, z.zoneId, z.place, net.netCentre, z.zoneCentre),
       );
     }
-    // A mirrored instance is two placements: its own, and its reflection bound to the twin zone,
-    // or to the other half of a self-mirrored one. The build sees two ordinary artworks and nothing
-    // in the geometry knows they are related. A flag on a zone that offers no mirror is ignored
-    // rather than guessed at; state clears it when the binding changes.
+    // A mirrored instance is two placements: its own and its reflection on the twin zone (or the other half of a self-mirrored one); the geometry never knows they're related. A flag on a zone with no mirror is ignored, not guessed at; state clears it on rebind.
     const mirror = a.mirror && a.zone ? zoneMirrorOf(a.zone.zoneId) : undefined;
     if (!mirror) return [primary];
     const paired = { ...primary, mirrorPair: a.id };
     if ('twin' in mirror) return [paired, mirroredBuildInput(paired, mirror.twin)];
-    // Tie rule only (see ArtworkBuildInput.keepSide): at Offset 0 the right half is the one kept,
-    // which is what "design the right half" on the template promises.
+    // Tie rule only (ArtworkBuildInput.keepSide): at Offset 0 the right half is kept, as the template's "design the right half" promises.
     const keepSide: KeepSide = primary.offX >= 0 ? 'right' : 'left';
     const own = { ...paired, keepSide };
     return [own, mirroredBuildInput(own, own.zoneId ?? null)];
   });
   // state.parsed without an instance shouldn't happen (loadArtworkSource creates one), so fall back
-  // to the globals rather than silently building nothing.
+  // to the globals rather than build nothing.
   //
-  // Gated on there being no instance at all, not on the expansion coming back empty. An instance
-  // that expanded to nothing has already said why in a warning, and this would then cut it across
-  // every zone at the global placement — the exact opposite of what the app just said it would do.
+  // Gated on no instance at all, not an empty expansion: an instance that expanded to nothing has
+  // already said why, and this would cut it across every zone — the opposite of what was said.
   if (!state.artworks.length && state.parsed)
     artworks.push({
       parsed: state.parsed,
@@ -510,25 +461,19 @@ export function artworkBuildInputs(): ArtworkBuildInput[] {
 async function rebuildAssemblyScene(): Promise<void> {
   newModelGroup();
 
-  // The fit sliders and the gizmo write the legacy globals; the instance is where the rest of
-  // assembly mode reads placement from. Sync FIRST, because a part whose shape follows the artwork
-  // is regenerated below and reads that instance — left until its usual spot further down, the
-  // outline was built from the previous scale/rotation/offset and the picture from the new one,
-  // which is the drift the whole placement seam exists to prevent. Idempotent, and the call below
-  // stays where it is so the non-generated path is unchanged.
+  // The sliders and gizmo write the legacy globals; the instance is where assembly mode reads
+  // placement. Sync FIRST: a part whose shape follows the artwork is regenerated below and reads the
+  // instance, and left later its outline was built from the previous placement and the picture from
+  // the new one. Idempotent; the call further down stays so the non-generated path is unchanged.
   syncActiveArtworkPlacement();
 
-  // BEFORE the no-artwork branch below, not after it. A part whose shape follows the artwork has
-  // to be rebuilt when the artwork goes away, and that is exactly the case that branch returns
-  // early for — so removing the last image left the hubcap still cut to its silhouette, with
-  // nothing on screen to explain why.
+  // BEFORE the no-artwork branch: a part whose shape follows the artwork must rebuild when the artwork goes, which that branch returns early for — removing the last image left the hubcap cut to a silhouette unexplained.
   if (generatedPartsNeedRebuild()) await asmRebuildGeneratedParts({ schedule: false });
 
-  // Here, once per pass, because every input that sizes a design ends in a rebuild: Scale, the
-  // hubcap diameter, the Design radius, a kind or Sticker/Fill switch, a second placement. After
-  // the generated parts, because a hubcap cut to the artwork sets the size the trace is read at;
-  // then again, since that part follows the new trace. A trace can cost ~830ms, so a live pass
-  // only asks for a settled one, and a settled pass never asks again.
+  // Once per pass, since every input that sizes a design ends in a rebuild (Scale, hubcap diameter,
+  // Design radius, kind or Sticker/Fill switch, a second placement). After the generated parts,
+  // because a cut-to-artwork hubcap sets the size the trace is read at; then again, since that part
+  // follows the new trace. A trace can cost ~830ms, so a live pass only asks for a settled one.
   const traces = retraceMovedSources(rebuildSettled());
   if (traces.retraced) {
     renderArtworkList();
@@ -536,11 +481,10 @@ async function rebuildAssemblyScene(): Promise<void> {
   }
   if (traces.owed) scheduleRebuild('typed');
 
-  // A part cut to its own artwork centres itself on its mounting axis, and the artwork's offset is
-  // then solved for rather than chosen — moving the picture relative to a part that IS the picture
-  // isn't a meaningful request, and honouring one can't be made consistent anyway (the cut adds the
-  // design face's own centre, which for a silhouette is the thing being offset). Written back to
-  // both the instance and the legacy globals so the Fit sliders show what is actually in force.
+  // A part cut to its own artwork centres on its mounting axis and the offset is solved for, not
+  // chosen: moving the picture relative to a part that IS the picture isn't meaningful, and the cut
+  // adds the face's own centre, which for a silhouette is what's being offset. Written to the
+  // instance and the legacy globals so the Fit sliders show what's in force.
   const silOff = hubcapSilhouetteOffset();
   if (silOff) {
     state.offsetX = silOff.x;
@@ -568,18 +512,14 @@ async function rebuildAssemblyScene(): Promise<void> {
     return;
   }
 
-  // Placement still comes from the global fit sliders (the instance-aware panel wires them to the
-  // active instance directly); sync the instance here so assembly-mode code reads placement
-  // through it rather than the legacy fields, without changing what value actually reaches the
-  // build.
+  // Placement still comes from the global sliders (the panel wires them to the active instance); synced so assembly code reads it through the instance without changing the value reaching the build.
   syncActiveArtworkPlacement();
 
   const artworks = artworkBuildInputs();
-  // The default zone binding (loadArtworkSource) picks the first zone silently, since binding
-  // every zone recuts the whole assembly on every nudge — see that function's comment. Surface the
-  // decision here instead of leaving it discoverable only via the per-row dropdown: this is what
-  // caught scripts/export-chair-examples.mjs's own author, and it produces a print that looks right
-  // (a colored patch, a nonzero color count) right up until it's opened in a slicer.
+  // The default binding (loadArtworkSource) silently picks the first zone, since binding every zone
+  // recuts everything on each nudge. Surfaced here rather than left to the per-row dropdown: it
+  // caught scripts/export-chair-examples.mjs's own author, and yields a print that looks right
+  // (colored patch, nonzero color count) until opened in a slicer.
   const { total: zoneTotal, covered: zoneCovered } = zoneCoverage();
   if (zoneTotal > 1 && zoneCovered < zoneTotal) {
     const blank = zoneTotal - zoneCovered;
@@ -594,12 +534,10 @@ async function rebuildAssemblyScene(): Promise<void> {
       `${where}: ${blank} of ${zoneTotal} zone${zoneTotal === 1 ? '' : 's'} still blank. Add more from the zone dropdown, or pick "All zones" to cover every zone.`,
     );
   }
-  // A cancel is caught here, not left to the scheduler, and lands on the `!built` path below.
-  // Letting it escape skipped the tail of rebuildCurrent — including the one schedulePersist call
-  // outside export, so a cancelled rebuild left the autosave stale and lost the change on reload,
-  // which is the failure this button exists to prevent. It also left the stage blank, because
-  // newModelGroup() has already torn the old meshes down by this point, and left #btn-export
-  // enabled over the previous build's geometry.
+  // A cancel is caught here and lands on the `!built` path below. Letting it escape skipped the tail
+  // of rebuildCurrent, including the one schedulePersist outside export (autosave stale, change lost
+  // on reload), left the stage blank (newModelGroup() had already torn down the meshes), and left
+  // #btn-export enabled over the previous build's geometry.
   const built = await catchCancel(() =>
     buildAssemblyGeometry({
       artworks,
@@ -618,8 +556,7 @@ async function rebuildAssemblyScene(): Promise<void> {
   lastAssemblyBuild = built;
   const modelGroup = getModelGroup();
   if (!built) {
-    // Build failed/refused: keep the bare wheel on screen and surface whatever warn()s the
-    // build pushed — a silently emptied viewport reads as a crash.
+    // Build failed/refused: keep the bare wheel on screen and surface the build's warn()s — an emptied viewport reads as a crash.
     renderRawAssemblyParts();
     poseAssemblyForDisplay();
     renderColorList(null);
@@ -630,8 +567,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     return;
   }
 
-  // Open the view looking at the design face (the +normal side), not the blank back of the wheel —
-  // or, for a kind that authors a display frame, at its front.
+  // Open looking at the design face (+normal side), not the wheel's blank back — or a display-frame kind's front.
   setPreferredViewDir(assemblyViewDir(currentAssemblyKind(), built.viewSign || 1));
 
   const baseMat = new THREE.MeshStandardMaterial({
@@ -646,11 +582,10 @@ async function rebuildAssemblyScene(): Promise<void> {
     const xf = asmPartTransformGroup(part); // identity for primaries; pivot-rotates duplicates to their real position
     modelGroup.add(xf.outer);
     // the modified body IS the whole real part (pockets cut in) — no separate context mesh
-    // `bodyIndexed` is absent whenever the part never went through a boolean: no artwork on it, or
-    // a cut that failed. Its soup is then `part.positions` verbatim, which `part.indexed` already
-    // describes, so shading still gets the fast path. Read here rather than filled in on the build
-    // output because `bodyIndexed` is also what 3MF export writes, and this must not change what
-    // an uncut part exports.
+    // `bodyIndexed` is absent when the part never went through a boolean (no artwork, or a failed
+    // cut); its soup is then `part.positions` verbatim, which `part.indexed` describes, so shading
+    // still gets the fast path. Read here, not filled in on the build output, because `bodyIndexed`
+    // is also what 3MF export writes and an uncut part's export must not change.
     xf.add(new THREE.Mesh(bufferGeometryFromTris(bodySoup, bodyIndexed ?? part.indexed), baseMat));
     addZoneOverlays(xf, part);
     tris += bodySoup.length / 9;
@@ -667,8 +602,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     });
   });
 
-  // aggregate color list across the whole assembly (one shared design/palette), keeping exactly
-  // the colors the export will write as materials so the rows, the slot count, and the file agree
+  // Aggregate color list across the whole assembly (one design/palette), matching the colors export writes as materials so rows, slot count and file agree
   const shipped = shippedColorIndices(built.partOutputs);
   const colorListEntries: ColorListEntry[] = [];
   built.palette.forEach((c, ci) => {
@@ -702,8 +636,7 @@ async function rebuildAssemblyScene(): Promise<void> {
       areaPct: built.baseAssigned.areaPct,
       isBase: true,
     });
-    // keep the dominant member in sync so the top fallback area and the 3D body agree — no
-    // scheduleRebuild here, this just mirrors what the build already computed
+    // keep the dominant member in sync so the top fallback area and the 3D body agree; no scheduleRebuild — this mirrors what the build computed
     state.baseColorKey = built.baseAssigned.hex;
   }
 
