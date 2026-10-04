@@ -7,24 +7,22 @@ model: opus
 # Bake a kind's design zones
 
 [add-part](../add-part/SKILL.md) covers a part with **one** design face: the app
-detects the largest flat patch and the SVG maps onto it. A body like the chair
-has eight design surfaces welded across ten of its eleven printed body pieces,
-and no flat patch is any of them. (The eleventh, the seat pan, is in no zone at
-all: the cushion covers it.) Those come from a **zone bake**, an offline unwrap whose committed
-outputs (a sidecar plus per-zone templates) are the real artifacts.
+detects the largest flat patch and the SVG maps onto it. The chair has eight
+design surfaces welded across ten of its eleven printed body pieces, and no flat
+patch is any of them. (The seat pan is in no zone: the cushion covers it.) Those
+come from a **zone bake**, an offline unwrap whose committed outputs (a sidecar
+plus per-zone templates) are the real artifacts.
 [bake-zones.mjs](../../../scripts/bake-zones.mjs) is the reproducible recipe.
 
-**This is inserted into add-part, not a replacement for it.** A new multi-zone
-kind still goes through all six of its steps. Run this bake after **step 3**
-(the kind must exist and its `libraryPartId`s be settled before a config can
-name them) and before **step 6**: the per-zone templates emitted here are what
-artists load, so they supersede the single-face `templateFile`. **Don't run
+**This is inserted into add-part, not a replacement.** A new multi-zone kind
+still goes through all six steps. Run this bake after **step 3** (a config names
+`libraryPartId`s, so the kind must exist) and before **step 6**: the per-zone
+templates emitted here supersede the single-face `templateFile`. **Don't run
 `gen-templates.mjs` for a zoned kind.**
 
-Everything below was read out of
+The numbers below were read out of
 [zonebake.mjs](../../../scripts/lib/zonebake.mjs). Re-read it before trusting
-any number here: the tolerances are the whole game and that file is the only
-place they are true.
+any: it is the only place the tolerances are true.
 
 ## 1. Write the config
 
@@ -51,9 +49,8 @@ shipped example.
 ```
 
 `parts` are the packed 3MFs from add-part step 2, read in their **assembled
-pose**: the bake applies no transform, so parts must already sit where they sit
-on the finished chair. Order matters, and `bakeZones` refuses to run unless the
-loaded parts match `config.parts` by id _and_ index.
+pose**: the bake applies no transform. Order matters: `bakeZones` refuses to run
+unless the loaded parts match `config.parts` by id _and_ index.
 
 Per zone, `validateConfig` enforces a unique `id`, a `name`, `maxAngleDeg` in
 `(0, 180]`, and `up` as a 3-element array. Everything else fails later and
@@ -62,19 +59,18 @@ louder.
 **`seedNormal` or `seedPoint`, one of them, and they are not interchangeable:**
 
 - **`seedNormal`** seeds from the first area-ranked `detectFlatPatches` patch
-  whose normal dots the direction **> 0.9**, the same test the app's own face
-  selection uses, then grows against the **config** direction rather than the
-  matched patch's, so the result doesn't hinge on which same-area patch won the
-  tie. Right when the zone has a real flat face.
+  whose normal dots the direction **> 0.9** (the app's own face-selection test),
+  then grows against the **config** direction, so the result doesn't hinge on
+  which same-area patch won the tie. Right when the zone has a real flat face.
 - **`seedPoint`** takes the triangle whose centroid is nearest that point and
   grows against **that triangle's** normal. Right when the surface is curved
-  everywhere, which is why all five chair zones use it. It also means the seed
-  triangle's tessellation sets the grow direction, so nudging the point can
-  shift the zone more than expected.
+  everywhere, which is why all five chair zones use it. The seed triangle's
+  tessellation sets the grow direction, so nudging the point can shift the zone
+  more than expected.
 
-`up` is a direction in the assembled frame, pulled back through the chart and
-rotated to +v so "up" on the template is up on the part. It must lie _along_ the
-surface: one nearly perpendicular to the zone everywhere aborts with `zone "up"
+`up` is a direction in the assembled frame, rotated to +v so "up" on the
+template is up on the part. It must lie _along_ the surface: one nearly
+perpendicular to the zone everywhere aborts with `zone "up"
 direction ... is nearly perpendicular to the surface everywhere`.
 
 Optional overrides default to the constants in `zonebake.mjs`: `weldTolMm`
@@ -86,23 +82,23 @@ Optional overrides default to the constants in `zonebake.mjs`: `weldTolMm`
 `minHoleWidthMm` is the one most likely to need lowering on a new part. It
 throws out an interior loop whose `4 x area / perimeter` is under it, which is
 how a fold in the unwrap is told from a hole in the part. The default has only
-1.31x of margin over the chair's narrowest real hole, so a part with a genuinely
-narrower slot needs it lowered — and needs the separation re-measured first, or
-the bake will report a real slot as enclosing no width.
+1.31x of margin over the chair's narrowest real hole. A genuinely narrower slot
+needs it lowered — and the separation re-measured first, or the bake will report
+a real slot as enclosing no width.
 
 ### claimWedge: the strip between two zones
 
-Optional, `"claimWedge": true`, off unless a config asks for it. After every
-zone has grown to its `maxAngleDeg`, an unclaimed connected component with
-**exactly two zones** on its boundary is the strip left between them, and each
-of its triangles goes to whichever of the two grow normals its own is nearer —
-grown from each zone's own edge of the strip, so nothing joins a zone it is not
-connected to. Reach for it when two zones have to **abut** rather than merely
-face each other, which is what lets one design be cut across the join.
+Optional, `"claimWedge": true`, off by default. After every zone has grown to
+its `maxAngleDeg`, an unclaimed connected component with **exactly two zones** on
+its boundary is the strip left between them. Each of its triangles goes to
+whichever zone's grow normal its own is nearer, grown from each zone's own edge
+of the strip, so nothing joins a zone it is not connected to. Use it when two
+zones have to **abut** rather than merely face each other, so one design can be
+cut across the join.
 
 **Read the census it logs first, then one line per strip, then one per
-component it left alone.** The census is the surface the gate is protecting, so
-a wedge rule that has started eating it shows up there. On the chair:
+component it left alone.** A wedge rule that has started eating surface shows up
+in the census. On the chair:
 
 ```
 claimWedge: before the rule, of 332784 welded triangles 44613 are in a zone, 134 are
@@ -118,16 +114,15 @@ claimWedge: left a 213688-triangle component (927946mm²) alone — it touches 8
 claimWedge: after the rule, 313 triangle(s) went to a zone and 287724 are still in none
 ```
 
-Every welded triangle is in exactly one class, so the numbers add up and a
-count that has gone missing is visible. The touch classes are the gate doing
-its job: only the two-zone class can ever be handed out, and a rule keyed on
-"touches a zone" would have taken the 3+ component (the hidden interior) and
-the 380 one-zone pockets besides.
+Every welded triangle is in exactly one class, so a missing count is visible.
+Only the two-zone class can ever be handed out; a rule keyed on "touches a zone"
+would have taken the 3+ component (the hidden interior) and the 380 one-zone
+pockets besides.
 
 A component touching three or more zones is always reported, and so is any
 triangle of a strip that neither zone's front reached. **Both also go into the
-returned `warnings`, not just the log**: they are surface no design can be
-placed on, and a caller reading the return value has to see them.
+returned `warnings`, not just the log**: no design can be placed on that
+surface, and a caller reading the return value has to see it.
 
 Raising `maxAngleDeg` instead does not work on the chair — every pair in
 {45,50,55} x {35,40,45} breaks a stretch bar, claims a triangle twice, or both
@@ -135,43 +130,38 @@ Raising `maxAngleDeg` instead does not work on the chair — every pair in
 
 ### seamWeldTolMm is the one that changes everything
 
-Separately-printed parts are never coincident; they meet with real clearance. At
-`WELD_TOL_MM` a zone can only grow to the edge of the part it seeded on.
-`seamWeldTolMm` stitches vertices belonging to **different** parts within a much
-looser distance, so zones span printed seams and artwork flows over the join.
-
-It is deliberately separate from `weldTolMm`: raising that far enough to bridge
-a 0.53mm seam collapses 63% of the vertices _inside_ each part and destroys the
-surface the unwrap runs on. `validateConfig` rejects a `seamWeldTolMm` that
-isn't strictly larger.
+Separately-printed parts meet with real clearance. At `WELD_TOL_MM` a zone can
+only grow to the edge of the part it seeded on. `seamWeldTolMm` stitches
+vertices of **different** parts within a looser distance, so zones span printed
+seams. It is separate from `weldTolMm` on purpose: raising that far enough to
+bridge a 0.53mm seam collapses 63% of the vertices _inside_ each part and
+destroys the surface the unwrap runs on. `validateConfig` rejects a
+`seamWeldTolMm` that isn't strictly larger.
 
 **`SEAM_WELD_TOL_MM = 0.6` is the chair's measured value, not a default.** It
 clears the widest real contact gap (0.530mm, seat-center to seat-back-bottom)
-while leaving the CAD assembly's rear brace unstitched (1.008mm from anything,
-and not a part the app has), so no zone grows onto surface that can never be
-cut. **Measure your own part's contact gaps; don't inherit 0.6 because it is
-written down.**
+and leaves the CAD assembly's rear brace unstitched (1.008mm from anything, not
+a part the app has), so no zone grows onto surface that can never be cut.
+**Measure your own part's contact gaps; don't inherit 0.6.**
 
-Two guards keep stitching from wrecking the surface, and you should know what
-they do _not_ cover:
+Two guards keep stitching from wrecking the surface. Know what they miss:
 
 - A pair only merges when the two parts' surface normals agree
   (`SEAM_NORMAL_DOT`, dot **> 0.3**), which rejects a tab facing into a slot. It
   does **not** reject two parts stacked parallel, same-facing, a clearance
-  apart: those look exactly like one surface from here. Your protection is
-  keeping the tolerance at the measured contact gap and reading the stitch
-  counts.
+  apart: those look like one surface from here. Your protection is keeping the
+  tolerance at the measured contact gap and reading the stitch counts.
 - No merge may pull two vertices of the same part together through a shared
   neighbour.
 
-**Turning `seamWeldTolMm` on re-tunes every zone**, since each now grows until
-`maxAngleDeg` stops it rather than until the part runs out. Retune the angles in
-the same change.
+**Turning `seamWeldTolMm` on re-tunes every zone**: each now grows until
+`maxAngleDeg` stops it, not until the part runs out. Retune the angles in the
+same change.
 
 ### covers: what other parts hide
 
 Optional. Marks the surface that covering parts (wheels, cushions) hide once
-the kind is assembled, so it takes no artwork and no filament changes:
+assembled, so it takes no artwork and no filament changes:
 
 ```json
 "covers": {
@@ -183,71 +173,65 @@ the kind is assembled, so it takes no artwork and no filament changes:
 ```
 
 - `file` is a whole-assembly CAD export holding the kind's own parts in one
-  color (`referenceColor`) and every covering body in any other. Bodies carry
-  no usable names, so color is the only distinction. The file may sit in
-  `stubs/` (untracked); the bake **hard-fails without it** rather than
-  silently baking a sidecar with nothing hidden.
-- The export's frame need not match the bake frame: the reference bodies are
-  matched to the config parts by bounding box and the transform is solved from
-  their consensus, refused above 1mm residual.
+  color (`referenceColor`) and every covering body in any other. Bodies carry no
+  usable names, so color is the only distinction. The file may sit in `stubs/`
+  (untracked); the bake **hard-fails without it** rather than silently baking a
+  sidecar with nothing hidden.
+- The export's frame need not match the bake frame: reference bodies are matched
+  to the config parts by bounding box and the transform is solved from their
+  consensus, refused above 1mm residual.
 - `solids` (optional) replaces cover bodies with a declared primitive, posed
-  from the file. One entry names an `axis`, a `radiusMm`, and the
-  `replacesDims` bbox of the bodies it stands in for; matched bodies whose
-  boxes overlap become one solid, and the radius is checked against their own
-  diameter so a wrong number fails the bake. Reach for it when the CAD body is
-  the printed part rather than the thing that blocks the view — the chair's
-  wheel arrives as two hollow halves with spoke openings, and rays reached its
-  far wall through its own holes until one solid 280mm disc replaced them.
+  from the file. One entry names an `axis`, a `radiusMm`, and the `replacesDims`
+  bbox of the bodies it stands in for; matched bodies whose boxes overlap become
+  one solid, and the radius is checked against their own diameter so a wrong
+  number fails the bake. Use it when the CAD body is the printed part rather than
+  the thing that blocks the view: the chair's wheel arrives as two hollow halves
+  with spoke openings, and rays reached its far wall through its own holes until
+  one solid 280mm disc replaced them.
 - `mirrorAxis` (optional, `x`/`y`/`z`) snaps mirror-paired cover bodies onto
-  exactly mirrored POSES about that axis before classification runs. A CAD export lands each instance a fraction of a
-  millimetre off its own mirror image, which is enough to flip a knife-edge
-  sample from hidden to visible; snapping removes that tie-breaker instead of
-  tuning around it. A cover with no mirror partner (a cushion straddling the
-  plane) is left alone.
-- **The pose only.** Each body keeps its own mesh. Rebuilding one side from
-  the other's mirror is exact symmetry rather than symmetry to a residual, and
-  it is wrong for a pair mounted by rotation: the chair's casters are the same
-  part turned 180 degrees, so mirroring one onto the other moved geometry
-  21.976mm (`npx vite-node scripts/measure-caster-axis-map.mjs`, which takes
-  `solids` off first — the chair's discs replace those bodies before this runs,
-  and a disc pair mirrors exactly). How far a pair is from being mirror images
-  is reported in the bake log as the worst shape residual, never enforced.
+  exactly mirrored POSES about that axis before classification. A CAD export
+  lands each instance a fraction of a millimetre off its mirror image, enough to
+  flip a knife-edge sample from hidden to visible. A cover with no mirror partner
+  (a cushion straddling the plane) is left alone.
+- **The pose only.** Each body keeps its own mesh: rebuilding one side from the
+  other's mirror is wrong for a pair mounted by rotation. The chair's casters are
+  the same part turned 180 degrees, and mirroring one onto the other moved
+  geometry 21.976mm (`npx vite-node scripts/measure-caster-axis-map.mjs`, which
+  takes `solids` off first, since the chair's discs replace those bodies and a
+  disc pair mirrors exactly). The worst shape residual of a pair is reported in
+  the bake log, never enforced.
 - Each zone is sampled at ~`COVER_SAMPLE_MM2` (25mm²) per sub-cell, not per
-  triangle — the CAD faces arrive as coarse fans, and a per-triangle verdict
-  can't draw a shadow edge inside one. A sample is hidden when either:
+  triangle — CAD faces arrive as coarse fans, and a per-triangle verdict can't
+  draw a shadow edge inside one. A sample is hidden when either:
   - a cover sits within `COVER_CONTACT_MM` (2.5mm) straight out along the
-    sample's normal — touching plastic, checked first because it's the cheap
-    answer for what a cushion actually rests on; or
+    sample's normal — touching plastic, checked first as the cheap answer for
+    what a cushion rests on; or
   - its outward hemisphere is mostly blocked: `COVER_HEMI_DIRS` (32)
-    cosine-weighted rays are cast, out to `COVER_RAY_MM` (120mm), and the
-    sample counts as hidden once `COVER_HIDDEN_FRACTION` (0.85) of them hit a
-    cover. This is what a single along-normal ray can't do: it only caught
-    triangles whose own normal happened to aim at the cover, leaving a curved
-    surface (a wheel's fender arch) speckled instead of one clean shadow.
+    cosine-weighted rays are cast out to `COVER_RAY_MM` (120mm), and the sample
+    is hidden once `COVER_HIDDEN_FRACTION` (0.85) of them hit a cover. A single
+    along-normal ray only caught triangles whose own normal aimed at the cover,
+    leaving a curved surface (a wheel's fender arch) speckled instead of one
+    clean shadow.
 - A cover that RESTS on parts (contact within `COVER_CONTACT_MM`) hides only on
-  the parts it rests on. One resting on nothing is unconstrained and hides
-  wherever it occludes. It used to be handed to the single part holding the
-  largest share of its nearest surface, which on the chair gave each wheel its
-  mount and nothing else — and that cut the wheel's shadow off along a straight
-  line down the mount/fender seam, when a mounted wheel plainly hides across it.
-  The hemisphere test already answers whether a cover hides a given sample, so a
-  second, weaker guess on top of it only subtracted right answers.
+  the parts it rests on. One resting on nothing hides wherever it occludes.
+  Handing it to the single part holding the largest share of its nearest surface
+  gave each chair wheel its mount and nothing else, cutting its shadow off along
+  a straight line down the mount/fender seam. The hemisphere test already
+  answers the question; a second guess only subtracted right answers.
 - Both the covered and the visible set are closed-then-opened at a
-  `DEAD_SMOOTH_MM` (5mm) radius FIRST, to clear the sampling grid's own
-  staircase, and only then is the visible set grown by `bleedMm` and subtracted.
-  That order is load-bearing: bleeding first dilates the staircase and takes
-  2 x `bleedMm` out of the dead region, enough to lose a whole narrow strip of
-  it — on the chair it took one fender's entire wheel shadow while leaving the
-  other's. `bleedMm` keeps artwork running that far past the visible edge into
-  the hidden area, so a slightly shifted cover never reveals blank plastic. A
-  dead island under `MIN_DEAD_AREA_MM2` (15mm²) is then dropped.
+  `DEAD_SMOOTH_MM` (5mm) radius FIRST, to clear the sampling grid's staircase,
+  and only then is the visible set grown by `bleedMm` and subtracted. That order
+  is load-bearing: bleeding first dilates the staircase and takes 2 x `bleedMm`
+  out of the dead region, enough to lose a whole narrow strip (on the chair, one
+  fender's entire wheel shadow). `bleedMm` keeps artwork running that far past
+  the visible edge, so a slightly shifted cover never reveals blank plastic. A dead island under
+  `MIN_DEAD_AREA_MM2` (15mm²) is then dropped.
 - Output: per-chart `deadRegions` in the sidecar (schema 3), subtracted from
   the artwork clip at runtime, drawn hatched on templates and in the viewport.
 - The bake log prints `dead <area>mm²` per zone. A zone whose surface faces
   away from every cover correctly reports 0.
-- All the constants above, and the measurements that chose them, live in
-  [zonebake.mjs](../../../scripts/lib/zonebake.mjs). Re-read them before
-  retuning anything.
+- The constants above and the measurements that chose them live in
+  [zonebake.mjs](../../../scripts/lib/zonebake.mjs). Re-read before retuning.
 
 ## 2. Run it
 
@@ -255,8 +239,8 @@ the kind is assembled, so it takes no artwork and no filament changes:
 npx vite-node scripts/bake-zones.mjs scripts/zone-configs/<kind>.json
 ```
 
-Exactly one argument; the script dies on zero or two. Paths inside the config
-resolve from the repo root. Both outputs are committed:
+Exactly one argument. Paths inside the config resolve from the repo root. Both
+outputs are committed:
 
 - **`public/stl/<kindId>-zones.json`**, the sidecar. `schema: 4` (the _sidecar_
   schema, independent of the config's `schema: 1`) and it must match
@@ -265,17 +249,17 @@ resolve from the repo root. Both outputs are committed:
 - **`public/templates/<zoneId>-template.svg`**, one per zone, true-size at 1:1 mm.
   A self-mirrored zone's template also gets a dashed centre line.
 
-A config's top-level `mirrorAxis` (distinct from `covers.mirrorAxis` above,
-which only snaps cover bodies) pairs zones whose `seedPoint`s reflect across
-that axis as mirror twins, or marks a zone seeded on the plane as
-self-mirrored; the bake writes the relation and a measured registration
-residual into each zone's `mirror` field.
+A config's top-level `mirrorAxis` (distinct from `covers.mirrorAxis`, which only
+snaps cover bodies) pairs zones whose `seedPoint`s reflect across that axis as
+mirror twins, or marks a zone seeded on the plane as self-mirrored; the bake
+writes the relation and a measured registration residual into each zone's
+`mirror` field.
 
-The sidecar is written minified, but `public/` isn't in `.prettierignore`, so
-the committed copy is prettier's: ~65k lines against the one line the script
-emits. A fresh bake therefore leaves `npm run format:check` failing on a huge
-generated artifact. Committing fixes it via lint-staged, but if you run
-`ship-it` first, format only that file, never `npm run format`:
+The sidecar is written minified, but `public/` isn't in `.prettierignore`, so the
+committed copy is prettier's: ~65k lines against the script's one. A fresh bake
+leaves `npm run format:check` failing on that file. Committing fixes it via
+lint-staged; if you run `ship-it` first, format only that file, never
+`npm run format`:
 
 ```bash
 npx prettier --write public/stl/<kindId>-zones.json
@@ -283,19 +267,19 @@ npx prettier --write public/stl/<kindId>-zones.json
 
 The templates need no such step. Re-baking `chair-body.json` against the
 committed 3MFs reproduces all six artifacts byte-for-byte after that format
-(verified 2026-08-02), so a non-empty diff there is a real change, not noise.
+(verified 2026-08-02), so a non-empty diff is a real change.
 
 ## 3. Read the log, then tune
 
-The loop: adjust `seedPoint`/`seedNormal`/`maxAngleDeg`, re-run, read the log
-and warnings, repeat. **Open the templates too**; they show the actual coverage.
+Adjust `seedPoint`/`seedNormal`/`maxAngleDeg`, re-run, read the log and
+warnings, repeat. **Open the templates too**; they show the actual coverage.
 
 Each run logs the weld (`welded N part(s): V vertices, T triangles`), then **one
 line per stitched seam pair** with its stitch count, ascending. **Read the small
-ones:** a pair with a handful of stitches is a hinge, not a bridge, so the
-unwrap pivots around it and any zone crossing there distorts. Then per zone:
-triangle count, part count, lobe count, holes, seams, `stretch max`/`mean`, and
-the fitted mm `scale`.
+ones:** a pair with a handful of stitches is a hinge, not a bridge, so the unwrap
+pivots around it and any zone crossing there distorts. Then per zone: triangle
+count, part count, lobe count, holes, seams, `stretch max`/`mean`, and the
+fitted mm `scale`.
 
 Four kinds of warning print last with a `!` prefix. None stops the bake. The
 chair emits four lines across the last two, reporting six dropped folds: five on
@@ -304,49 +288,49 @@ chair emits four lines across the last two, reporting six dropped folds: five on
 
 - **`max stretch <x> exceeds 1.1`** fires when max per-edge stretch (the larger
   of the length ratio and its inverse) passes `DISTORTION_WARN = 1.1`. Fix by
-  lowering `maxAngleDeg` or splitting the zone, not by ignoring it. The chair's
-  config records the measured knee: `back` at 55° wraps around the U onto both
-  handles' inner faces and unwraps at 20×; at 35° it is 962cm² across 6 parts at
-  1.13×. Those angles are measurements, which is why they aren't round numbers.
+  lowering `maxAngleDeg` or splitting the zone. The chair's config records the
+  measured knee: `back` at 55° wraps around the U onto both handles' inner faces
+  and unwraps at 20×; at 35° it is 962cm² across 6 parts at 1.13×. Those angles
+  are measurements, hence not round.
 - **`dropped N sliver island(s) under 0.4mm²`**: a part's slice of a zone can be
-  several disjoint islands, and anything past the largest and under
-  `MIN_ISLAND_AREA_MM2 = 0.4` is discarded as tessellation dust. Note how far
-  that sits below `MIN_HOLE_AREA_MM2 = 15`: a 15mm² interior loop is a fillet
-  artifact worth closing, but a 15mm² _island_ is design surface. **A dropped
-  island is the one failure with no runtime signal**, since artwork over it is
-  silently intersected away, which is why it warns at all. A drop much larger
-  than dust, or several, means the zone is fraying at its angle limit.
+  several disjoint islands; anything past the largest and under
+  `MIN_ISLAND_AREA_MM2 = 0.4` is discarded as tessellation dust. That sits far
+  below `MIN_HOLE_AREA_MM2 = 15`: a 15mm² interior loop is a fillet artifact
+  worth closing, but a 15mm² _island_ is design surface. **A dropped island is
+  the one failure with no runtime signal** (artwork over it is silently
+  intersected away), which is why it warns. A drop much larger than dust, or
+  several, means the zone is fraying at its angle limit.
 - **`dropped N fold(s) under 2mm mean width ... from the clip region's holes`**:
   an interior loop that doubles back on itself, enclosing perimeter but no width,
   which the area test alone passes. The chair's two handle charts on `back`
-  carried two each. This one runs **opposite** to the island warning above: a
-  hole that stops being punched _adds_ clip region rather than removing it. That
-  is the intent, and it is still the clip region moving, which is why it says so.
+  carried two each. This runs **opposite** to the island warning: a hole that
+  stops being punched _adds_ clip region. That is intended, but the clip region
+  is still moving, so it says so.
 - **`dropped N fold(s) ... from the display outline's holes`**: the same test on
-  the zone-level `boundary`/`holes`, which are the display outline and which
-  nothing cuts against. Counts differ from the line above on purpose — the
-  outline chains across stitched seams and fans into folds the per-part regions
-  never see, six against four on the chair. Safe to read as cosmetic.
+  the zone-level `boundary`/`holes`, the display outline, which nothing cuts
+  against. Counts differ from the line above on purpose — the outline chains
+  across stitched seams and fans into folds the per-part regions never see, six
+  against four on the chair. Cosmetic.
 
 Errors that stop the bake:
 
-| Error                                                                                                          | What it means                                                                                                                                                    |
-| -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `no flat patch points along seedNormal [...]`                                                                  | Nothing passes the 0.9 dot. Use a `seedPoint`.                                                                                                                   |
-| `seed patch has no triangles within maxAngleDeg`                                                               | The angle is too tight for the seed itself.                                                                                                                      |
-| `is not a single connected island (N of M triangles reachable from the seed)`                                  | The zone leaked to a disconnected patch. Tighten `maxAngleDeg` or move the seed.                                                                                 |
-| `two zones grew onto the same triangles ... share N`                                                           | Two zones' limits overlap, so the same artwork would be cut into both charts. Lower one, or move a seed.                                                         |
-| `zone config has key(s) nothing reads: ...`                                                                    | A typo in a top-level key. The message lists every key the bake reads; `_note` is the only free-form one.                                                        |
-| `N triangle(s) fold over in UV — the zone is too curved to unwrap as one chart; lower maxAngleDeg or split it` | A fold makes the chart unusable, so this is a hard stop rather than a stretch warning.                                                                           |
-| `part "<id>" contributes triangles but no usable boundary loop`                                                | An empty `subRegions` would read at runtime as "no per-part clipping" and fall back to the whole zone outline: the exact failure `subRegions` exists to prevent. |
-| `LSCM solve did not converge` / `LSCM solution collapsed to a point`                                           | A degenerate zone mesh, not a tuning problem.                                                                                                                    |
+| Error                                                                                                          | What it means                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no flat patch points along seedNormal [...]`                                                                  | Nothing passes the 0.9 dot. Use a `seedPoint`.                                                                                                  |
+| `seed patch has no triangles within maxAngleDeg`                                                               | The angle is too tight for the seed itself.                                                                                                     |
+| `is not a single connected island (N of M triangles reachable from the seed)`                                  | The zone leaked to a disconnected patch. Tighten `maxAngleDeg` or move the seed.                                                                |
+| `two zones grew onto the same triangles ... share N`                                                           | Two zones' limits overlap, so artwork would be cut into both charts. Lower one, or move a seed.                                                 |
+| `zone config has key(s) nothing reads: ...`                                                                    | A typo in a top-level key. The message lists every key the bake reads; `_note` is the only free-form one.                                       |
+| `N triangle(s) fold over in UV — the zone is too curved to unwrap as one chart; lower maxAngleDeg or split it` | A fold makes the chart unusable, so this is a hard stop rather than a stretch warning.                                                          |
+| `part "<id>" contributes triangles but no usable boundary loop`                                                | An empty `subRegions` would read as "no per-part clipping" and fall back to the whole zone outline, the failure `subRegions` exists to prevent. |
+| `LSCM solve did not converge` / `LSCM solution collapsed to a point`                                           | A degenerate zone mesh, not a tuning problem.                                                                                                   |
 
-**Two sidecar fields are display-only and will mislead you if read as the clip
-region.** `boundary` and `holes` are singular, so they carry only the zone's
-**largest lobe**: the chair's `left` lobe is 22,941mm² of a zone whose per-part
-regions sum to 124,728mm², the sum the `splits each zone into per-part clip
-regions that together cover it` test in `tests/chair-zones.test.ts` computes.
-Every chart's `subRegions` is what actually clips a cutter.
+**Two sidecar fields are display-only; don't read them as the clip region.**
+`boundary` and `holes` carry only the zone's **largest lobe**: the chair's `left`
+lobe is 22,941mm² of a zone whose per-part regions sum to 124,728mm² (the sum the
+`splits each zone into per-part clip regions that together cover it` test in
+`tests/chair-zones.test.ts` computes). Every chart's `subRegions` is what
+actually clips a cutter.
 
 ## 4. Wire it into the kind
 
@@ -358,14 +342,14 @@ chart. The chair's entry is the example.
 The sidecar records a `Math.fround`-narrowed bbox and triangle-count fingerprint
 per part, and `fingerprintMatches` drops a part's zones at load when its mesh no
 longer matches. So **re-pack a part, re-run this bake.** Same discipline as
-add-part step 4's `bake-part-fingerprints.mjs`, different file: a re-pack that
-skips this loses that part's zones, with the baked UV indices no longer
-addressing the same vertices.
+add-part step 4's `bake-part-fingerprints.mjs`, different file: skipping it loses
+that part's zones, since the baked UV indices no longer address the same
+vertices.
 
 ## Then
 
-Verify in the app, not just the tests: load the kind, drop artwork on a zone
-that spans a seam, and check it flows across the join and cuts on both parts.
-Then run `ship-it`, whose step 3 runs `/code-review`. That is required on any
-diff that changes code, and a zone that unwraps wrong still looks plausible in
-the viewport, so expect to earn more than one round.
+Verify in the app, not just the tests: load the kind, drop artwork on a zone that
+spans a seam, and check it flows across the join and cuts on both parts. Then run
+`ship-it`, whose step 3 runs `/code-review` (required on any code diff). A zone
+that unwraps wrong still looks plausible in the viewport, so expect more than one
+round.

@@ -99,10 +99,6 @@ non-square bed of the three.
   takes one `--towers` file per bed and works out which plates disagree.
 - The caster plates stay on `suggestTowerPos` in [src/export/threemf.ts](../src/export/threemf.ts),
   which is correct: they print one filament and get no tower.
-- Tooling loose end: whether `wipe_tower_x/y` names the tower's center or its origin corner isn't
-  pinned down, so the export script only checks that a tower lands on the bed, not that a footprint
-  clears the edge. Both reference files put a tower at exactly x = 15 on a 256mm bed, which a
-  center-based check would wrongly reject.
 
 ## A depth on the chair body, or on a face the Y axis can't measure, has no upper bound
 

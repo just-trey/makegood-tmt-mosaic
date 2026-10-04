@@ -45,12 +45,9 @@ const TEST_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60">
 </svg>`;
 
 /**
- * Whether wipe_tower_x/y names the tower's center or its origin corner is not pinned down here,
- * and the difference is the tower's whole width — so this checks only that the position is on the
- * bed, not that a particular footprint clears the edge. A tighter test would have to assume one
- * reading, and assuming "center" flags positions a human placed and verified in the slicer (both
- * reference files put a tower at exactly x = 15 on a 256mm bed). The human pass is the real gate;
- * this catches a delta that transferred somewhere impossible.
+ * wipe_tower_x/y is the tower's front-left corner (both reference files put one at x = 15 on a
+ * 256mm bed). Only the corner is checked: the chair export writes no prime_tower_width, so there
+ * is no footprint to test, and the human pass is the real gate.
  */
 const onBed = (v, bed) => v >= 0 && v <= bed;
 
