@@ -5,12 +5,12 @@ One section per user-visible warning string.
 ## Troubleshooting: "Couldn't merge the shapes" / "Couldn't trim the overlap" warnings
 
 The polygon maths failed on one colour's shape. The warning usually names the
-colour. One form of it does not: the build merges the shapes painted over
-each region in batches, and a batch holds whatever colours fell in it, so a
-failure there names none. Treat it as "somewhere in this design" and read on.
-There are two causes and the warning does not guess between them: a
-**self-intersecting path** in the source SVG (much the commoner one), or sheer
-size, which Fill mostly refuses before it gets here (below).
+colour. One form doesn't: the build merges the shapes painted over each region
+in batches, and a batch holds whatever colours fell in it, so a failure there
+names none. Read it as "somewhere in this design". There are two causes and the
+warning doesn't guess between them: a **self-intersecting path** in the source
+SVG (much the commoner), or sheer size, which Fill mostly refuses before it gets
+here (below).
 
 The app already tries to fix this: near-duplicate points are removed before the
 maths runs (usually two curve segments meeting at a seam a fraction of a unit
@@ -39,18 +39,17 @@ Two cases can still reach here on size:
 Each colour's own shapes are merged before any tiling, so a size failure there
 names no fill. The tell is the same either way: failures arrive per-part in a
 batch rather than on one colour, and the model carries visibly _less_ geometry
-than it should, so parts of the design come out blank. Fix by simplifying the
-design (fewer, larger shapes). The limits and how they were found:
+than it should, so parts of the design come out blank. Simplify the design
+(fewer, larger shapes). Limits and how they were found:
 [2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md).
 
-**One "Couldn't trim the overlap" is not about a colour at all.** It names `the
-hidden surface on "<zone id>"` (`left`, `seat-left`, …). That is the chair's artwork
-clip failing to have the assembled-over surface subtracted from it, in
-`ConformalZoneMapper.boundary()`. Nothing is lost: the clip is kept
-unsubtracted, so artwork cuts where it would otherwise have been trimmed, and
-the cost is filament changes on surface nobody sees once the chair is together.
-The hatch in the 3D view and on the template still show what should have been
-trimmed.
+**One "Couldn't trim the overlap" is not about a colour.** It names `the hidden
+surface on "<zone id>"` (`left`, `seat-left`, …): the chair's artwork clip
+failing to have the assembled-over surface subtracted, in
+`ConformalZoneMapper.boundary()`. Nothing is lost. The clip is kept
+unsubtracted, so artwork cuts where it would have been trimmed, costing filament
+changes on surface nobody sees once the chair is together. The hatch in the 3D
+view and on the template still shows what should have been trimmed.
 
 ## Troubleshooting: "Could not load the Manifold engine, so assembly cutting is unavailable"
 
@@ -62,14 +61,13 @@ pockets, building inlays — runs on Manifold, a WebAssembly boolean engine
 loaded once per session, the first time a rebuild needs it. This fires when
 that load itself fails, before any part-specific work starts.
 
-**What it means.** The dynamic load of the boolean engine didn't come back:
-an interrupted or blocked network fetch, a browser or extension blocking
-WebAssembly, or an unsupported browser. The text appended after this message
-is the browser's own error, and is the actual detail worth reading.
+**What it means.** The engine didn't load: an interrupted or blocked network
+fetch, a browser or extension blocking WebAssembly, or an unsupported browser.
+The appended text is the browser's own error, and is the detail worth reading.
 
-**What you get.** The rebuild stops there and returns nothing: the viewport
-falls back to the parts exactly as loaded, uncut. No colors cut in, nothing
-exports usable geometry, until a rebuild manages to load the engine.
+**What you get.** The rebuild stops and returns nothing: the viewport falls back
+to the parts as loaded, uncut. No colors cut in and nothing exports usable
+geometry until a rebuild manages to load the engine.
 
 **What to do.** Reload the page — a slow or interrupted first load is the
 common cause. If it keeps happening, note the appended error text and report
@@ -79,7 +77,7 @@ it via **Feedback** or **Report a bug on GitHub**.
 
 Assembly mode clips each colour's region to the part's face, then extrudes it
 into a 3D pocket. Dense line-work can come out of that clip touching itself at a
-point: valid to the 2D maths, but not a sealed solid to the 3D engine. The app
+point: valid to the 2D maths, not a sealed solid to the 3D engine. The app
 repairs it automatically via Manifold's own 2D boolean engine, shrinking the
 region by a hair to break the exact-touching topology, and retries: 0.01mm,
 then 0.05mm away from the part's edge. The chair's curved zones get the same
@@ -93,8 +91,8 @@ partly cut. That is why the warning names no outcome: check the part in the
 preview rather than assuming the colour is gone.
 
 **The 3D pass can also fail later.** Each failure degrades to something a slicer
-can print rather than a broken file, and the warning tells you which outcome you
-got. Two of them mean the part carries less artwork than you designed:
+can print rather than a broken file, and the warning says which outcome you got.
+Two of them mean the part carries less artwork than you designed:
 
 | Warning                                                                                                 | What you get                                                                                                                                                                    |
 | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -103,11 +101,11 @@ got. Two of them mean the part carries less artwork than you designed:
 | "Couldn't fit the inlay for color …. Its pocket is cut into the body but will print as an empty recess" | The recess is cut but nothing fills it, so that colour prints as a bare cavity.                                                                                                 |
 | "Part … has no geometry to export. Its pocket cut went all the way through …"                           | The cut succeeded but left nothing: a pocket reached the part's wall thickness and went clean through. The part is dropped from the export rather than shipping a hollow shell. |
 
-These are 3D failures rather than the 2D clip problem above, so path-cleaning is
-less reliably the fix. Suspect the part mesh and the amount of fine detail
-landing on it. What they are _not_ is silent: before this handling existed, the
-same failures either blanked the viewport or shipped an uncut body alongside
-inlays occupying the same space, which a slicer resolves arbitrarily.
+These are 3D failures, not the 2D clip problem above, so path-cleaning is less
+reliably the fix. Suspect the part mesh and the fine detail landing on it. They
+are not silent: before this handling, the same failures either blanked the
+viewport or shipped an uncut body alongside inlays occupying the same space,
+which a slicer resolves arbitrarily.
 
 ## Troubleshooting: "Clipping color region to the design face failed…" (assembly mode)
 
@@ -116,22 +114,20 @@ left unclipped, may extend past the face edge."_
 
 **What it means.** Before a color's shapes are cut into a part, assembly mode
 clips them to the part's design face — the same 2D polygon math behind
-"Couldn't merge the shapes" and "Couldn't cut color … into …" above, applied
-one step earlier. When that clip itself fails (dense or self-touching
-line-work is the usual cause), the region is used unclipped rather than
-dropped.
+"Couldn't merge the shapes" and "Couldn't cut color … into …" above, one step
+earlier. When that clip fails (dense or self-touching line-work is the usual
+cause), the region is used unclipped rather than dropped.
 
-**What you get.** That region is not dropped, but it is also not proven to
-stay inside the part's face: it may reach past the edge into space the part
-doesn't have. An unclipped region is treated as if it reaches the part's
-outer edge, so it can be cut all the way through instead of recessed to its
-usual depth — see "… reaches the part's outer edge…" further down for what
-that looks like. Everything else on the part is unaffected.
+**What you get.** The region isn't dropped, but isn't proven to stay inside the
+face: it may reach past the edge into space the part doesn't have. An unclipped
+region is treated as reaching the part's outer edge, so it can be cut all the
+way through instead of recessed to its usual depth — see "… reaches the part's
+outer edge…" further down. Everything else on the part is unaffected.
 
-**What to do.** Same fix as the other clip failures above: simplify that
-color's source path (Illustrator/Inkscape's Path → Union), or nudge Scale.
-Check the part in the 3D preview afterward — the warning doesn't say which
-outcome you got.
+**What to do.** Same fix as the other clip failures: simplify that color's
+source path (Illustrator/Inkscape's Path → Union), or nudge Scale. Check the
+part in the 3D preview afterward — the warning doesn't say which outcome you
+got.
 
 ## Troubleshooting: "detected face normal … isn't vertical" warnings (assembly mode)
 
@@ -147,16 +143,15 @@ trips this.
 
 **What to do.** If the part offers more than one face — behind the
 "Advanced: per-part face & alignment" disclosure — pick a different one. If
-it doesn't, or the flagged face is the one you actually want, check the part
-in the 3D preview and in your slicer before printing: the cut is attempted,
-not guaranteed correct.
+it doesn't, or the flagged face is the one you want, check the part in the 3D
+preview and in your slicer before printing: the cut is attempted, not
+guaranteed correct.
 
-**Why it's rare in practice.** Every shipped part's default face is
-horizontal, so ordinary use never reaches this. On a face pointing sideways
-the placement frame is drawn on that face in amber: the design doesn't land
-on it. The
-[findings report](findings/2026-08-24-placement-frame-angle.md) lists which
-of the library's other face choices land here.
+**Why it's rare.** Every shipped part's default face is horizontal. On a face
+pointing sideways the placement frame is drawn on that face in amber: the design
+doesn't land on it. The
+[findings report](findings/2026-08-24-placement-frame-angle.md) lists which of
+the library's other face choices land here.
 
 ## Troubleshooting: "isn't a watertight mesh" warnings (assembly mode)
 
@@ -165,21 +160,20 @@ Repair it (close holes, fix flipped faces) and retry. Exporting it uncut for
 now."_
 
 **This fails earlier than the cut warnings above.** Those happen when a clipped
-_region_ comes out non-watertight. This one fires when the part's own base
-mesh — before any cutting is attempted — doesn't pass Manifold's own
-watertight check: an open edge, a flipped face, or some other non-manifold
-defect in the mesh itself.
+_region_ comes out non-watertight. This fires when the part's own base mesh,
+before any cutting, fails Manifold's watertight check: an open edge, a flipped
+face, or some other non-manifold defect.
 
 **What you get.** That part exports uncut: its full, unmodified shape, with no
-colour recesses or inlays. Every other part in the assembly still cuts and
-exports normally — this failure is per-part, not per-build.
+colour recesses or inlays. Every other part still cuts and exports normally —
+this failure is per-part, not per-build.
 
-**What to do.** You cannot fix this from the app; there is no mesh-repair tool
-here. Every part comes from the built-in library (the free-form mesh upload
-path was removed — see [tech-debt.md](tech-debt.md), "The custom-mesh upload
-path was removed, and took a placement guard with it"), so a shipped part
-failing this check is a packaging defect, not something your artwork caused.
-Report it via **Feedback** or **Report a bug on GitHub**, naming the part.
+**What to do.** You can't fix this from the app; there is no mesh-repair tool.
+Every part comes from the built-in library (the free-form mesh upload path was
+removed — see [tech-debt.md](tech-debt.md), "The custom-mesh upload path was
+removed, and took a placement guard with it"), so a shipped part failing this
+check is a packaging defect, not something your artwork caused. Report it via
+**Feedback** or **Report a bug on GitHub**, naming the part.
 
 ## Troubleshooting: "Couldn't load this part. Reload the page to try again."
 
@@ -189,13 +183,12 @@ Shown two ways for the same cause: as a banner in the part panel once the parts
 library manifest has settled, or as a dialog if you click **Load full
 assembly** while it's still unreachable.
 
-Both mean the manifest (`stl/parts.json`) either never loaded, or loaded
-without an entry the selected assembly kind's roles need. Either way it is a
-**broken deployment**, not a mistake you made: the app used to offer a
-mesh-drop fallback here, but it was removed because the app has no way to
-check an arbitrary mesh is the part it claims to be, and every verified export
-placement is baked against the shipped one (see the `PlacementReason` comment
-in [src/export/placement.ts](../src/export/placement.ts)).
+Both mean the manifest (`stl/parts.json`) never loaded, or loaded without an
+entry the selected assembly kind's roles need. It is a **broken deployment**,
+not a mistake you made. The app once offered a mesh-drop fallback, removed
+because it can't check an arbitrary mesh is the part it claims to be, and every
+verified export placement is baked against the shipped one (see the
+`PlacementReason` comment in [src/export/placement.ts](../src/export/placement.ts)).
 
 **What to do.** Reload the page — a flaky connection on first load is the
 common case. If it keeps happening, report it via **Feedback** or **Report a
@@ -211,14 +204,12 @@ valid 3MF: missing 3D/3dmodel.model`.
 
 The app's 3MF reader expects a zip archive containing `3D/3dmodel.model`, the
 XML file every 3MF must have. This fires when the fetched file isn't that: a
-corrupted or truncated download, or a file at that path that isn't actually a
-3MF (a renamed STL, a differently-packaged zip).
+corrupted or truncated download, or a file at that path that isn't a 3MF (a
+renamed STL, a differently-packaged zip).
 
-Every part the app loads comes from its own library over a normal fetch — there
-is no path for you to hand it a bad file (see the previous section on the
-custom-mesh upload path's removal). So like the "Couldn't load this part"
-message, this is either a one-off network hiccup or a broken deployment, not
-something your artwork or settings caused.
+Every part comes from the app's own library over a normal fetch; you can't hand
+it a bad file. So like "Couldn't load this part", this is a one-off network
+hiccup or a broken deployment, not something your artwork or settings caused.
 
 **What to do.** Reload the page. If it recurs on the same part, report it via
 **Feedback** or **Report a bug on GitHub**, naming the part.
@@ -230,25 +221,23 @@ Or: _"…" is a sticker now. Cut to artwork shape can't repeat a design across t
 shape it cut._ Two designs rewritten at once give you one of these each, not a
 combined line.
 
-**What it means.** You had a design set to **Fill** and then moved it somewhere
-Fill isn't offered. Two things do that: picking the chair body, which doesn't
-offer Fill at all, and ticking **Cut to artwork shape** on the hubcap, which
-would otherwise tile a shape with copies of itself. The message names whichever
-one it was. The mode is rewritten to **Sticker** rather than carried across, and
-this says so, because the Sticker/Fill control isn't on screen to show you it
-changed.
+**What it means.** You had a design set to **Fill** and moved it somewhere Fill
+isn't offered. Two things do that: picking the chair body, which doesn't offer
+Fill at all, and ticking **Cut to artwork shape** on the hubcap, which would
+tile a shape with copies of itself. The message names which. The mode is
+rewritten to **Sticker** rather than carried across, and this says so, because
+the Sticker/Fill control isn't on screen to show it changed.
 
-**What you get.** Each named design is placed once instead of repeated. Nothing
-else about it moves: its zone, scale, offset, rotation and colors are untouched.
+**What you get.** Each named design is placed once instead of repeated. Its
+zone, scale, offset, rotation and colors are untouched.
 
-**What to do.** Nothing, if one copy is what you wanted. If you need the design
-repeated across the surface, either scale it up and place copies by hand with
-"+zone", or use a part that offers Fill. Fill on the chair is withheld on
-purpose — it took 93.6s to settle on a single zone and dropped a color on one
-piece. See [tech-debt.md](tech-debt.md).
+**What to do.** Nothing, if one copy is what you wanted. To repeat the design,
+scale it up and place copies by hand with "+zone", or use a part that offers
+Fill. Fill on the chair is withheld on purpose — it took 93.6s to settle on a
+single zone and dropped a color on one piece. See [tech-debt.md](tech-debt.md).
 
 The message clears itself when you're back somewhere Fill works, but the mode
-does not come back with it. Set it again from the row's Sticker/Fill control.
+doesn't come back with it. Set it again from the row's Sticker/Fill control.
 
 ## Troubleshooting: "… has detail on "…" too fine to print"
 
@@ -263,8 +252,8 @@ silence. One pill per color and part, however many scraps went.
 Two things make them. Your design can simply be that fine. Or trimming can leave
 a scrap: a design is trimmed to the part it sits on, to the piece of it a seam
 gives that part, and to one half when Mirror is on. The message doesn't guess
-which, and doesn't say how much went or what survived, because the fix is the
-same either way and because several trims can each drop something.
+which, or say how much went or what survived: the fix is the same either way,
+and several trims can each drop something.
 
 **What you get.** Everything else in that color is cut normally. Only the
 scraps go.
@@ -273,9 +262,9 @@ scraps go.
 
 - **A design far smaller than the part.** A design scaled down past about
   0.4 mm has nothing left to cut. Raise Scale.
-- **A design running off the edge of a piece.** The part of it that hangs over
-  is trimmed away, and what is left along the edge can be a hair. Move it in,
-  or scale it down so it sits inside the piece.
+- **A design running off the edge of a piece.** The part that hangs over is
+  trimmed away, and what's left along the edge can be a hair. Move it in, or
+  scale it down so it sits inside the piece.
 
 If the color vanished from the part entirely, the build says that separately.
 
@@ -285,14 +274,14 @@ Full text: _"Couldn't load the design zones for "…" (…: …). It will load
 without design zones."_
 
 **What it means.** Some parts carry design zones baked separately from their
-mesh: a sidecar file the part loads alongside its geometry (chair-body is
-the only shipped part with one today). This fires when that sidecar can't be
-fetched at all — a network hiccup, or a broken deployment missing the file.
+mesh: a sidecar file loaded alongside the geometry (chair-body is the only
+shipped part with one). This fires when the sidecar can't be fetched at all — a
+network hiccup, or a broken deployment missing the file.
 
-**What you get.** The part still loads and displays normally, just without
-any of its baked design zones: it falls back to the implicit flat zone every
-part has, so it can still take a Sticker or Fill design on its largest flat
-face, only not the per-surface zones the part was meant to offer.
+**What you get.** The part still loads and displays normally, without its baked
+design zones. It falls back to the implicit flat zone every part has, so it can
+still take a Sticker or Fill design on its largest flat face, just not the
+per-surface zones.
 
 **What to do.** Reload the page — a one-off network failure is the common
 case. If it recurs, report it via **Feedback** or **Report a bug on
@@ -305,20 +294,19 @@ Full text: _"Part "…" doesn't match the mesh its design zones were baked
 against, so its design zones are unavailable. Re-run the zone bake for this
 part."_
 
-**What it means.** A part's design zones are baked against one specific
-mesh — the same kind of fingerprint check "has no verified print placement"
-further down uses for plate position, applied here to zones instead. This
-fires when the loaded mesh doesn't match what its zones were baked against,
-usually because the mesh was re-packed after the bake without re-running it.
+**What it means.** A part's design zones are baked against one specific mesh —
+the same kind of fingerprint check "has no verified print placement" further
+down uses for plate position, applied to zones. This fires when the loaded mesh
+doesn't match, usually because it was re-packed after the bake without re-running
+it.
 
-**What you get.** The same fallback as the message above: the part loads
-with no design zones and takes artwork only on its implicit flat zone.
+**What you get.** The same fallback as the message above: the part loads with
+no design zones and takes artwork only on its implicit flat zone.
 
-**What to do.** This is a packaging defect on a shipped part, not something
-fixable from the app. If you're a maintainer, re-run the zone bake (the
-`bake-zones` skill) for this part after any re-pack. If you're a volunteer
-seeing this on a shipped part, report it via **Feedback** or **Report a bug
-on GitHub**, naming the part.
+**What to do.** This is a packaging defect on a shipped part, not fixable from
+the app. Maintainers: re-run the zone bake (the `bake-zones` skill) after any
+re-pack. Volunteers: report it via **Feedback** or **Report a bug on GitHub**,
+naming the part.
 
 ## Troubleshooting: "Design zone "…" couldn't be applied to "…""
 
@@ -326,16 +314,16 @@ Full text: _"Design zone "…" couldn't be applied to "…": …"_
 
 **What it means.** Even once a part's zone sidecar loads and its mesh
 fingerprint checks out, each zone still has to be rebuilt against the part's
-actual vertices. This fires when that step fails for one zone specifically —
-a defect in that zone's stored chart data, or a mismatch narrower than what
-the whole-mesh fingerprint check above catches.
+actual vertices. This fires when that fails for one zone — a defect in its
+stored chart data, or a mismatch narrower than the whole-mesh fingerprint check
+above catches.
 
-**What you get.** Only that one zone is left off the part; every other zone
-it carries still loads and takes artwork normally.
+**What you get.** Only that zone is left off the part; every other zone still
+loads and takes artwork normally.
 
-**What to do.** Same as the two messages above: a packaging defect, not
-something to fix from the app. Report it via **Feedback** or **Report a bug
-on GitHub**, naming the part and the zone.
+**What to do.** Same as the two messages above: a packaging defect, not fixable
+from the app. Report it via **Feedback** or **Report a bug on GitHub**, naming
+the part and the zone.
 
 ## Troubleshooting: "N filament slots needed, but … tops out at M" warnings
 
@@ -357,7 +345,7 @@ across more units.
 To get the count down:
 
 - **Merge two colours.** Drag one colour row onto another, or use that row's
-  "Merge with…" dropdown. The group prints in its dominant member's colour.
+  "Merge with…" dropdown. The group prints in the group's main color.
 - **Print a colour in the body.** "→ base" on a row moves it out of the cut
   colours, so it stops costing a slot.
 - **Auto-merge** raises the similarity threshold, which may or may not help: it
@@ -375,9 +363,9 @@ pauses.
 Two designs in one place are cut independently. The body takes the union of
 their pockets and looks right in the preview, but each colour's inlay is only
 where the part and that colour's pocket overlap. So where two designs of
-_different_ colours cross, the exported file carries two inlay solids in the
-same space and the slicer picks between them however it likes. Invisible until
-the file is opened.
+_different_ colours cross, the file carries two inlay solids in the same space
+and the slicer picks between them however it likes. Invisible until the file is
+opened.
 
 The warning names both designs by filename ("Two placements of …" when they are
 two copies of one file). Any of these clears it:
@@ -395,16 +383,16 @@ routinely share a millimetre or two of empty bounding box.
 from each design's bounding box, then asks how much of each one's artwork
 reaches the box they share. A logo centred in a frame's empty middle no longer
 warns. Two designs whose artwork both reach the shared box without crossing
-still do, and that is a false alarm: the file is safe to print.
+still do: a false alarm, and the file is safe to print.
 
 **Two designs both set to Fill always warn**, with their own message: a fill
 repeats across everything it covers, so the second lands on the first
-everywhere. Moving or rescaling cannot clear it. Switch one to Sticker, move it
+everywhere. Moving or rescaling can't clear it. Switch one to Sticker, move it
 elsewhere, or remove it.
 
-A fill _under_ a sticker is not flagged, because a pattern background with a
-design on top is a real workflow. The fill is cut back from under the sticker's
-colours, so the two never share space in the export.
+A fill _under_ a sticker is not flagged: a pattern background with a design on
+top is a real workflow. The fill is cut back from under the sticker's colours,
+so the two never share space in the export.
 
 ## Troubleshooting: "Couldn't fit … of … around the design on top of it on …"
 
@@ -413,10 +401,10 @@ Where they meet, both print in the same space. Move the design on top
 slightly."_
 
 **What it means.** A Fill is cut back from under every Sticker on the same
-part, so the sticker shows through cleanly. For this one fill colour on this
-part, that trim failed. The colour is kept whole instead, so where it lies under
-the sticker the export carries two inlays in the same space, and the slicer
-picks between them. Every other colour and part is unaffected.
+part, so the sticker shows through cleanly. For this fill colour on this part,
+that trim failed. The colour is kept whole, so where it lies under the sticker
+the export carries two inlays in the same space, and the slicer picks between
+them. Every other colour and part is unaffected.
 
 **What to do.** Move the design on top a millimetre and let it rebuild: the
 trim fails on exact coordinates, and a new position usually clears it. If it
@@ -440,22 +428,21 @@ onto the …."_
 
 A design bound to a zone with no twin (the chair's front and back panels)
 mirrors across its own centre line instead of onto a paired zone. Ticking
-Mirror on a row bound to one of those keeps whichever half your design's
-placed centre lands on and reflects it onto the other half. If your design
-crosses that centre line, the crossing part is cropped off before it's
-mirrored — this notice says which half survived.
+Mirror on such a row keeps whichever half your design's placed centre lands on
+and reflects it onto the other. If your design crosses that centre line, the
+crossing part is cropped off before it's mirrored; this notice says which half
+survived.
 
-**This is not a warning.** Both halves still print; the design is just
-cropped to one half before it repeats. Move the design so it sits entirely on
-one side of the centre line (drawn dashed on the zone's template) if you want
-the whole thing to survive uncropped.
+**This is not a warning.** Both halves still print; the design is just cropped
+to one half before it repeats. To keep the whole design, move it entirely to one
+side of the centre line (drawn dashed on the zone's template).
 
 ## Troubleshooting: "Couldn't crop … to its half of …" warnings (assembly mode)
 
 Full text: _"Couldn't crop "…" to its half of "…". It and its mirror image
 both print in full. Untick Mirror on that design."_
 
-The same half clip as the notice above, except it could not be applied. Two
+The same half clip as the notice above, except it couldn't be applied. Two
 causes, both rare:
 
 - The polygon clipper failed on this design's regions, the same way the
@@ -468,15 +455,15 @@ Either way the design and its reflection are both cut whole, so where they
 cross the centre line the export carries two inlays claiming the same space, the
 same problem the ["Designs … overlap"](#troubleshooting-designs--overlap-warnings)
 warning describes. Untick Mirror on that row and the design cuts once, as
-placed. Simplifying the design in Illustrator or Inkscape can clear the
-clipper failure, after which Mirror can go back on.
+placed. Simplifying the design in Illustrator or Inkscape can clear the clipper
+failure, after which Mirror can go back on.
 
 ## Troubleshooting: Fill warnings, "You have one tile instead"
 
 Fill repeats one design across a whole part. When it can't work out how, it
 places the design once and says why. The first reason below is fixed by changing
-Scale and the second sometimes is, which its own message tells you. The last two
-mean a bug rather than a problem with your design.
+Scale and the second sometimes is, which its own message says. The last two mean
+a bug rather than a problem with your design.
 
 ### "… is too small to fill …: it would take more than 1024 tiles."
 
@@ -552,10 +539,10 @@ Please report it.
 
 ## Troubleshooting: "Depth for … is … thinner than the usual 0.20 mm print layer"
 
-A quiet note, not an error. The recess is cut exactly as deep as
-you asked, nothing clamped and nothing dropped, but it is shallower than one
-layer at the default 0.2 mm layer height. On a standard profile the slicer has
-no layer to put it in, so it prints as bare body.
+A quiet note, not an error. The recess is cut exactly as deep as you asked,
+nothing clamped and nothing dropped, but it is shallower than one layer at the
+default 0.2 mm layer height. On a standard profile the slicer has no layer to
+put it in, so it prints as bare body.
 
 - **On a finer layer height** (0.08-0.12 mm is common for detail work) this is
   fine and the recess will print. The note can't read your slicer settings.
@@ -565,9 +552,9 @@ no layer to put it in, so it prints as bare body.
   is raised to 0.2 mm and warns rather than being noted.
 - **It won't appear for a colour that only lands on a cut-through part** (the
   wheel's cap), which ignores the depth setting and holes the whole way
-  through: the recess prints whatever your layer height is, so the note would
-  be predicting a problem that can't happen. If the same colour is also on a
-  part that cuts to depth, the note appears, and it is about that part.
+  through: the recess prints at any layer height, so the note would predict a
+  problem that can't happen. If the same colour is also on a part that cuts to
+  depth, the note appears, and it is about that part.
 
 ## Troubleshooting: "… is not a depth that can cut" warnings
 
@@ -600,8 +587,8 @@ storage after every change and offers it back next time. Reloading normally
 shows nothing; the browser's "leave site?" prompt appears only when that
 autosave failed.
 
-The browser controls the prompt's wording and substitutes its own generic copy
-in most cases, so what you see may not match the string above.
+The browser controls the prompt's wording and usually substitutes its own
+generic copy, so what you see may not match the string above.
 
 - **The session isn't lost yet, but leaving now would lose it.** Export a 3MF
   before closing the tab.
@@ -625,12 +612,11 @@ that cap a busy photograph hands thousands of speckle islands downstream and
 freezes the tab for tens of seconds (cost measured in
 [tech-debt.md](tech-debt.md)).
 
-In practice: features below the new floor were absorbed into whichever colour
-surrounds them. Nothing was left as a hole, and the regions still tile the
-image exactly, but fine texture is gone. That is usually right anyway, since
-detail near that size is below what a 0.4mm nozzle can express. A colour whose
-every piece was under the floor is gone from the colour list too, and this
-notice does not say so.
+Features below the new floor were absorbed into whichever colour surrounds them.
+Nothing is left as a hole and the regions still tile the image exactly, but fine
+texture is gone. That is usually right anyway: detail near that size is below
+what a 0.4mm nozzle can express. A colour whose every piece was under the floor
+is gone from the colour list too, and this notice doesn't say so.
 
 The notice names the image, so each loaded image gets its own, and re-tracing
 one at a setting that no longer needs capping retracts only that one.
@@ -645,7 +631,7 @@ To get a result you are happier with:
   fine stuff deliberately. Raising Detail quarters the floor and makes this
   notice more likely, up to the point where a nozzle width takes over: on a part,
   the floor never goes below what the design's placed size can print, and Detail
-  does not move that half.
+  doesn't move that half.
 - **Crop or simplify the source.** A busy background the design doesn't need is
   what usually blows the budget.
 
@@ -658,31 +644,30 @@ One color reads in the singular: **"1 color in "yourfile.png" was dropped."**
 
 **An informational notice, not a failure.** The image loaded and cut normally.
 
-The Colors slider asks the quantizer for a number of colors. Tracing then keeps
-only the ones that still paint something once the despeckle floor has run
-([parse.ts](../src/raster/parse.ts)), and a color whose every piece sits under
-that floor leaves the palette. The readout used to show the smaller number with
+The Colors slider asks the quantizer for a number of colors. Tracing keeps only
+the ones that still paint something once the despeckle floor has run
+([parse.ts](../src/raster/parse.ts)); a color whose every piece sits under that
+floor leaves the palette. The readout used to show the smaller number with
 nothing saying it differed from what was asked for.
 
 - **Raise Detail.** It sets how small a speck survives, so raising it lowers
-  the floor and lets the smaller pieces back through. The floor scales 4x at
-  Detail 0 down to 1/4 at Detail 100, so 16x across the slider's full travel,
-  and less than that wherever a placement's own floor is already close. That is
-  the opposite of what "Some detail … was too fine to print…" above asks for,
-  and the two never show on the same image: a capped trace keeps that notice and
-  never raises this one.
-- **It does not say the pieces were unprintable, because usually they were
-  not.** With a placement, the floor that normally binds is the smallest feature
-  flat art keeps: a 1.6mm square, four nozzle widths (`DESPECKLE_FEATURE_MM`).
-  At 512px across 185mm that is 20px², under the fractional floor's 39. With no
-  placement it is that fraction instead. Neither is a nozzle width, and where
-  the nozzle floor does bind the notice below replaces this one.
+  the floor and lets smaller pieces back through. The floor scales 4x at
+  Detail 0 down to 1/4 at Detail 100, so 16x across the slider, and less
+  wherever a placement's own floor is already close. That is the opposite of
+  what "Some detail … was too fine to print…" above asks for, and the two never
+  show on the same image: a capped trace keeps that notice and never raises
+  this one.
+- **It doesn't say the pieces were unprintable, because usually they weren't.**
+  With a placement, the floor that normally binds is the smallest feature flat
+  art keeps: a 1.6mm square, four nozzle widths (`DESPECKLE_FEATURE_MM`). At
+  512px across 185mm that is 20px², under the fractional floor's 39. With no
+  placement it is that fraction. Neither is a nozzle width; where the nozzle
+  floor does bind, the notice below replaces this one.
 - **The count is against the colors that labelled pixels, not the slider.** An
-  image that simply has fewer colors than Colors asks for (a three-color logo at
-  Colors 8) has lost nothing, and never raises this. Neither does a color that
-  won a cluster and then labelled no pixel at all, which the blur before
-  clustering can produce: nothing of it was ever traced, so there is nothing to
-  bring back.
+  image with fewer colors than Colors asks for (a three-color logo at Colors 8)
+  has lost nothing and never raises this. Neither does a color that won a
+  cluster and then labelled no pixel, which the blur before clustering can
+  produce: nothing of it was traced, so nothing comes back.
 - **Detail already at 100 says nothing.** There is no raising left. Measured by
   `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`.
   `docs/tech-debt.md` carries it, with the capped case.
@@ -710,17 +695,17 @@ Make the design or the part bigger to keep more."_
 Full text: _"No opaque pixels were found in this image. There is nothing to
 cut."_
 
-The image decoded fine, but every pixel in it fell below the alpha threshold
-the quantizer uses to tell artwork from background. The load fails as a no-op:
+The image decoded fine, but every pixel fell below the alpha threshold the
+quantizer uses to tell artwork from background. The load fails as a no-op:
 whatever design was already loaded stays exactly as it was.
 
 - **A fully transparent PNG.** Nothing was ever drawn on it, or every layer
   that was got flattened out before export.
 - **A background that reads as "empty" to the app but not to your eyes.** A
-  checkerboard pattern baked into the pixels by an export preview, rather than
-  real alpha, still counts as opaque background — see "This image has no
-  transparent background…" under the hubcap section for the same distinction
-  on a related path.
+  checkerboard baked into the pixels by an export preview, rather than real
+  alpha, still counts as opaque background — see "This image has no transparent
+  background…" under the hubcap section for the same distinction on a related
+  path.
 
 **What to do.** Re-export the image with a real transparent background (most
 editors call it "export with alpha" or "transparent canvas"), and confirm
@@ -736,15 +721,15 @@ every traced region was smaller than the despeckle floor, so nothing survived
 to build shapes from. Like the previous message, the load fails as a no-op and
 whatever was already loaded is untouched.
 
-This is the far end of "Some detail … was too fine to print…" below: that
-notice means _most_ of the image survived and a little texture was merged
-away; this error means the despeckle floor ate the whole image, usually
-because it is uniformly noisy (a busy photograph, heavy film grain, a scan with
-visible dither) rather than made of a few solid-coloured regions.
+This is the far end of "Some detail … was too fine to print…" above: that
+notice means _most_ of the image survived and a little texture was merged away;
+this error means the despeckle floor ate the whole image, usually because it is
+uniformly noisy (a busy photograph, heavy film grain, a scan with visible
+dither) rather than made of a few solid-coloured regions.
 
 If the design's placed size, not noise, is what emptied it, the app shows
 "Nothing … is big enough to print at this size" instead — see the next
-section. Raising Detail cannot help there, so it isn't offered.
+section. Raising Detail can't help there, so it isn't offered.
 
 **What to do**, in order of how much it usually helps:
 
@@ -753,9 +738,9 @@ section. Raising Detail cannot help there, so it isn't offered.
   smaller regions are allowed to survive.
 - **Lower Colors.** Fewer palette entries means fewer, larger regions per
   colour, which is more likely to clear the floor.
-- **Use a less noisy image**, or crop to the part that actually has distinct
-  colour blocks. A photograph with soft gradients everywhere and no flat areas
-  will keep failing here regardless of these settings.
+- **Use a less noisy image**, or crop to the part that has distinct colour
+  blocks. A photograph with soft gradients everywhere and no flat areas will
+  keep failing here regardless of these settings.
 
 ## Troubleshooting: "Nothing in … is big enough to print at this size"
 
@@ -771,9 +756,9 @@ placed size is what holds it above the noise floor. Where Detail still moves
 the floor at all, even a little, the previous message is shown instead.
 
 The nozzle-width floor ([`printableFloorPx`](../src/raster/stats.ts)) is the
-half Detail never scales, on purpose. A nozzle floor merely level with the
-noise floor counts: full Detail quarters the noise half and the nozzle half
-stays put, so the placed size is all that is left.
+half Detail never scales, on purpose. A nozzle floor merely level with the noise
+floor counts: full Detail quarters the noise half and the nozzle half stays put,
+so the placed size is all that is left.
 
 - **Make the design bigger.** Scale it up on the part, or place it on a
   larger design zone if the part offers more than one.
@@ -813,28 +798,27 @@ files are almost always a meaningless 72 or 96, and honouring one would size a
 phone photo at over a metre. The image is fitted to the part's design face and
 `Scale` adjusts from there.
 
-The SVG counterpart of this notice ("This SVG has no size in millimeters…")
-asks you to set the document size in millimetres, which is right there
-and impossible for an image; hence two messages. There is
-no way to give an image an exact real-world size on load. Use the Part section's
-design template to check the fit, and `Scale`/`Offset` to place it.
+The SVG counterpart ("This SVG has no size in millimeters…") asks you to set the
+document size in millimetres, which is impossible for an image; hence two
+messages. An image can't be given an exact real-world size on load. Use the Part
+section's design template to check the fit, and `Scale`/`Offset` to place it.
 
 ## Troubleshooting: "SVG could not be parsed. Check the file is valid XML."
 
 Full text: _"SVG could not be parsed. Check the file is valid XML."_
 
 **What it means.** The browser's own XML parser rejected the file before the
-app ever looked at its shapes: an unclosed tag, an unescaped `&`, mismatched
-quotes, or a file that isn't really XML despite the `.svg` extension.
+app looked at its shapes: an unclosed tag, an unescaped `&`, mismatched quotes,
+or a file that isn't XML despite the `.svg` extension.
 
 **What to do.** Open the file in a text or code editor and look for broken
-markup, or re-export it from the tool that made it — a normal SVG export
-rarely produces broken XML, so a hand-edited file is the likelier cause.
+markup, or re-export it from the tool that made it — a normal SVG export rarely
+produces broken XML, so a hand-edited file is the likelier cause.
 
-As "This image could not be decoded…" above notes, format is decided from
-the file's own bytes, not its extension, so a non-SVG file renamed to `.svg`
-lands here too: check the file really is SVG XML if this message otherwise
-makes no sense for what you dropped in.
+As "This image could not be decoded…" above notes, format is decided from the
+file's own bytes, not its extension, so a non-SVG file renamed to `.svg` lands
+here too: check the file really is SVG XML if this message makes no sense for
+what you dropped in.
 
 ## Troubleshooting: "Shape … has a gradient/pattern fill…" warnings
 
@@ -842,18 +826,18 @@ Full text: _"Shape … (a <…>) has a gradient/pattern fill (not a flat color),
 so it was skipped."_
 
 **What it means.** The app only works in flat colors — that's what becomes a
-printable region — so it cannot trace an element filled with a gradient or a
-pattern. Rather than guess at an average color, that one shape is left out.
+printable region — so it can't trace an element filled with a gradient or a
+pattern. Rather than guess at an average color, that shape is left out.
 
 **What you get.** Only that shape is skipped. The number in the message counts
 every shape element in document order — hidden ones and clip-mask ones
-included — so opening the file's XML/code view and counting down from the top
-finds the shape. Everything else in the file loads and cuts normally.
+included — so counting down from the top of the file's XML/code view finds the
+shape. Everything else loads and cuts normally.
 
 **What to do.** In your editor, flatten the gradient or pattern to a single
-flat fill (a "rasterize" or "expand" style operation, or a manual re-fill),
-or accept the shape is left out — a gradient rarely reads as intended on a
-3-4 color print anyway.
+flat fill (a "rasterize" or "expand" style operation, or a manual re-fill), or
+accept the shape is left out — a gradient rarely reads as intended on a 3-4
+color print anyway.
 
 ## Troubleshooting: "The hidden group … was skipped, with its … shapes" warnings
 
@@ -890,11 +874,10 @@ and load the SVG again.
 Full text: _"No flat-filled shapes were found in this SVG."_
 
 **What it means.** The file parsed as valid XML, but nothing usable was left
-after skipping elements with a gradient or pattern fill (see the message
-above) and elements with no fill at all. Like the raster messages "No opaque
-pixels were found…" and "No color regions survived tracing…" earlier in this
-doc, the load fails as a no-op: whatever design was already loaded stays
-exactly as it was.
+after skipping elements with a gradient or pattern fill (see above) and elements
+with no fill at all. Like "No opaque pixels were found…" and "No color regions
+survived tracing…" earlier, the load fails as a no-op: whatever design was
+already loaded stays exactly as it was.
 
 **Usual causes.**
 
@@ -902,7 +885,7 @@ exactly as it was.
   fills.
 - Every shape uses a gradient or pattern fill, and all of them were skipped.
 - Everything meaningful sits inside a `<defs>` or `<clipPath>` and nothing is
-  actually drawn from it.
+  drawn from it.
 - Every layer is hidden (see the hidden-group warning above). Show the ones
   you want printed.
 
@@ -915,26 +898,25 @@ outline-only art a flat fill first if that's what you want printed.
 Full text: _"This SVG has unusually deeply nested geometry (rings nested past
 a normal depth) and couldn't be processed."_
 
-The app resolves which shapes are holes inside which other shapes by nesting
-depth — a ring inside a ring inside a ring, and so on. That resolution recurses
-once per level of nesting, and this message replaces the raw "Maximum call
-stack size exceeded" a browser would otherwise show when the recursion runs the
-JS call stack out, so the failure names what was nested too deep instead of
-reading as a crash.
+The app resolves which shapes are holes inside which others by nesting depth — a
+ring inside a ring inside a ring. That resolution recurses once per level, and
+this message replaces the raw "Maximum call stack size exceeded" a browser would
+show when the recursion runs the JS call stack out, so the failure names what
+was nested too deep instead of reading as a crash.
 
 **What causes it.** Thousands of concentric rings (holes-within-holes) or, for
 the sibling message from the SVG parser itself — full text: _"This SVG has
 unusually deeply nested groups (elements nested past a normal depth) and
 couldn't be processed."_ — `<g>` elements nested hundreds of layers deep. Both
-are pathological rather than something a normal export produces: a
-hand-authored SVG, a generator script gone wrong, or an editor's "expand"
-operation applied recursively.
+are pathological, not something a normal export produces: a hand-authored SVG, a
+generator script gone wrong, or an editor's "expand" operation applied
+recursively.
 
 **What to do.** Flatten the file in your editor (Illustrator/Inkscape's
-ungroup, applied repeatedly, or Object → Flatten) before loading it. There is
-no setting in the app that raises this — the recursion depth isn't currently
-bounded on purpose, only caught after the fact, so a merely deep-but-normal
-file (thousands of independent shapes, not nested ones) does not trip it.
+ungroup, applied repeatedly, or Object → Flatten) before loading it. No app
+setting raises this: the recursion depth isn't bounded on purpose, only caught
+after the fact, so a merely deep-but-normal file (thousands of independent
+shapes, not nested ones) doesn't trip it.
 
 ## Troubleshooting: "This SVG has no size in millimeters…"
 
@@ -957,26 +939,23 @@ Three files reach it:
 SVG spec, but Affinity writes px at the document's DPI. Our own 266mm footrest
 template, edited in Affinity and re-exported at 72 DPI, comes back as
 `width="755px"`. Read at 96 DPI that is 199.8mm, exactly 75%, and the design
-printed a quarter too small with no warning. The app now treats a size given
-only in pixels as no size at all and fits the sheet to the face instead.
+printed a quarter too small with no warning. A size given only in pixels now
+counts as no size, and the sheet is fitted to the face.
 
-**Ticking "Set viewBox" on export does not fix this.** It writes
-`viewBox="0 0 755 525"` beside the same `755px`, and 755px over 755 units is
-just the 96 DPI assumption again: same 199.5mm, same silence. Both shapes are
-rejected now.
+**Ticking "Set viewBox" on export doesn't fix this.** It writes
+`viewBox="0 0 755 525"` beside the same `755px`, and 755px over 755 units is the
+96 DPI assumption again: same 199.5mm, same silence. Both shapes are rejected.
 
-**To get an exact size instead of a fit**, set the document units to millimetres
+**For an exact size instead of a fit**, set the document units to millimetres
 before exporting: Document Setup in Affinity, Document Properties in Inkscape,
-Artboard settings in Illustrator. `cm`, `in`, `pt` and `pc` are trusted too.
+Artboard settings in Illustrator. `cm`, `in`, `pt` and `pc` are trusted too. If
+the sheet and the part face have the same proportions (every shipped template
+does), the fit is exact anyway.
 
-If the sheet and the part face have the same proportions (they do for every
-template the app ships), the fit is exact anyway.
-
-**It can scale up as well as down.** The sheet is fitted to the face, so a small
-mark on a large px page grows with the page: a 200px icon on a 200px page lands
-at 185mm on the footrest, not 52.9mm. That is the same rule working in the other
-direction, and `Scale` brings it back. A saved session re-reads the file on
-reload, so a design placed before this changed comes back at the new size.
+**It can scale up as well as down.** A small mark on a large px page grows with
+the page: a 200px icon on a 200px page lands at 185mm on the footrest, not
+52.9mm. `Scale` brings it back. A saved session re-reads the file on reload, so a
+design placed before this changed comes back at the new size.
 
 ### The 1:1 variant
 
@@ -985,14 +964,14 @@ unknown. It was placed 1:1 with its coordinate units. Set the document size in
 millimeters, or use Scale to correct the fit."_
 
 The file gives no sheet to fit: no `viewBox`, and not both of width and height.
-A lone `width="755px"` lands here, and so does `width="755px" height="100%"`.
-Each coordinate unit is placed as 1mm, which is a guess and usually a large one.
-Set the document size in millimetres, or use `Scale` to correct it by eye
-against the design template.
+A lone `width="755px"` lands here, as does `width="755px" height="100%"`. Each
+coordinate unit is placed as 1mm, a guess and usually a large one. Set the
+document size in millimetres, or use `Scale` to correct it by eye against the
+design template.
 
-Being visibly wrong here is deliberate. Reading that lone `755px` at 96 DPI
-instead would put the design at 199.5mm on a 266mm face: plausible, printable,
-and 25% wrong with nothing said. A design three times too big gets noticed.
+Being visibly wrong is deliberate. Reading that lone `755px` at 96 DPI would put
+the design at 199.5mm on a 266mm face: plausible, printable, and 25% wrong with
+nothing said. A design three times too big gets noticed.
 
 ## Troubleshooting: "Path N has broken data partway through its outline" warnings
 
@@ -1004,14 +983,14 @@ the SVG's XML/code view in your editor and count from the top to find it.
 
 **What happens.** The one subpath (the run of drawing commands between one
 `M`/moveto and the next) that hit the bad value is dropped whole, not just the
-part after it — a subpath cut off mid-draw and closed on its own would be a
+part after it: a subpath cut off mid-draw and closed on its own would be a
 shape you never drew. Any subpath completed before it is kept. Any subpath
 **after** it in the same path goes too, which is what "everything from that
 point on" means. Other shapes in the file are unaffected.
 
 **What to do.** Open the file in the tool you made it in and re-save, or
-re-export the design. If a shape looks like it is missing part of its outline
-after import, this is why: check that path first.
+re-export the design. If a shape looks like it's missing part of its outline
+after import, check that path first.
 
 An arc command (`A`) also lands here when a flag position holds something
 other than `0` or `1`. Its large-arc flag written `1.0` is the common one: the
@@ -1062,14 +1041,13 @@ Full text: _"That shape doesn't cover the hubcap's mounting clips, so it stays
 round. Make it bigger, or use artwork whose middle is filled in."_
 
 The clips need solid material under them, in a ring 10.6-16.0mm out from the
-axis: the same requirement the plain-circle floor (`HUBCAP_MIN_DIAMETER_MM`)
-enforces. A silhouette can fail it two ways a circle can't. It can be too small
-overall, or it can have a hole or thin waist passing through the clip ring even
-at a reasonable size, such as a ring-shaped logo.
+axis: the requirement the plain-circle floor (`HUBCAP_MIN_DIAMETER_MM`)
+enforces. A silhouette can fail it two ways a circle can't: too small overall,
+or a hole or thin waist passing through the clip ring even at a reasonable size,
+such as a ring-shaped logo.
 
 Either way the part falls back to a circle rather than exporting clips bonded to
-nothing. Increasing the size, or picking artwork that stays solid in the middle,
-both fix it.
+nothing. Increase the size, or pick artwork that stays solid in the middle.
 
 ## Troubleshooting: "A hubcap cut to shape can only follow one design"
 
@@ -1077,9 +1055,9 @@ Full text: _"A hubcap cut to shape can only follow one design. Remove the
 others, or turn \"Cut to artwork shape\" off."_
 
 With two designs loaded there is no single answer to "the shape": their union is
-one option, either one alone is another, and nothing says which was meant.
-Rather than guess, the part stays round. Remove the extra artwork with the ×
-on its row, or turn the checkbox off to keep both as designs on a round part.
+one option, either one alone is another, and nothing says which was meant. So
+the part stays round. Remove the extra artwork with the × on its row, or turn
+the checkbox off to keep both as designs on a round part.
 
 ## Troubleshooting: "This image has no transparent background, so the hubcap came out rectangular"
 
@@ -1088,9 +1066,9 @@ rectangular. Export a PNG with the background removed to cut it to the
 artwork's shape."_
 
 **Not a refusal.** A rectangular hubcap is a legitimate thing to want, so the
-part builds. This checks for the more likely case: a WebP or flattened PNG that
-lost its transparency, where what looked like a cut-out character is actually
-opaque to its bounding box, so the "silhouette" is that box.
+part builds. This checks for the likelier case: a WebP or flattened PNG that
+lost its transparency, where what looked like a cut-out character is opaque to
+its bounding box, so the "silhouette" is that box.
 
 If you wanted a non-rectangular shape, re-export the source as a PNG with the
 background actually removed, not just displayed as transparent in an editor that
@@ -1109,10 +1087,10 @@ whose shapes all sit outside it cuts nothing anywhere. The usual causes are a
 high Scale (at 400% only the middle of a design still fits) or a large offset
 from dragging the design.
 
-The named colors are dropped from the color list, the filament slot count, and the
-exported 3MF's filament list: they cost nothing, they just don't print.
+The named colors are dropped from the color list, the filament slot count, and
+the exported 3MF's filament list: they cost nothing, they just don't print.
 Bringing the design back (lower Scale, or drag it toward the face) restores
-them, and their rows and slots come back with them.
+them, rows and slots included.
 
 If a color should be partly on the face but this fires anyway, check where the
 design is anchored. An SVG with no `<circle>` boundary marker is auto-centered
@@ -1120,7 +1098,7 @@ on its bounding box, which a stray decorative element can move.
 
 **Its sibling below is a different cause with a different fix.** A color that
 reached the part but only on covered surface gets "… only reaches surface
-that's hidden once assembled" instead. Lowering Scale will not help there.
+that's hidden once assembled" instead. Lowering Scale won't help there.
 
 ## Troubleshooting: "… only reaches surface that's hidden once assembled"
 
@@ -1131,36 +1109,34 @@ won't print: "#101010", "#e07020", "#f5d020". Move them off the hatching to
 bring them back."_ A merged group is named the way its row is: _"Merged (3)"_.
 
 Assembly mode, chair only today. The chair's design zones run under the wheels
-and the cushions, and the app does not cut artwork into surface that is covered
-once the chair is put together. This says the only surface the color reached is
-that covered surface, so nothing of it prints.
+and the cushions, and the app doesn't cut artwork into surface that is covered
+once the chair is together. This says the only surface the color reached is that
+covered surface, so nothing of it prints.
 
-**It says nothing about the rest of the design.** The wording is deliberate: a
-color can be mostly off the part while the one piece of it that does reach the
-part sits on a covered strip. That reaches this warning too, and "it all landed
-on covered surface" would be false of it. What the app knows is that no visible
-surface anywhere took the color, and some covered surface did.
+**It says nothing about the rest of the design.** A color can be mostly off the
+part while the one piece that does reach it sits on a covered strip, and "it all
+landed on covered surface" would be false of that. What the app knows is that no
+visible surface took the color, and some covered surface did.
 
 **It is not the same as landing off the part.** Part of the design is on the
 part, on the covered strip, so Scale is the wrong control: a smaller design
-centred on the same spot is still on covered surface. Move it instead. If
-moving it off the hatching does not bring it back, it was the straddling case
-above, and it needs a bigger move than the hatching's own width.
+centred on the same spot is still on covered surface. Move it. If moving it off
+the hatching doesn't bring it back, it was the straddling case and needs a
+bigger move than the hatching's own width.
 
 **Where to move it to.** The covered surface is crosshatched in the 3D view and
 hatched on the printable template, both before any artwork is placed. `Left seat
-side` and `Right seat side` are the ones that catch people out: 81% of each is
-covered once the chair is assembled (the bake log's per-zone `dead` figure over
-the zone's claim), so a design dropped there with no adjustment lands almost
-entirely covered. The seat pan itself is in no zone at all.
+side` and `Right seat side` catch people out: 81% of each is covered once the
+chair is assembled (the bake log's per-zone `dead` figure over the zone's
+claim), so a design dropped there with no adjustment lands almost entirely
+covered. The seat pan itself is in no zone.
 
 The named colors are dropped from the color list, the filament slot count, and
 the exported 3MF's filament list, and come back with the design when it moves.
 
 If a color should be on visible surface but this fires anyway, check the
 placement offsets and the zone the design is bound to. Every zone has its own
-template, and the design is centred on the whole zone rather than on the part
-of it you can see.
+template, and the design is centred on the whole zone, not the part you can see.
 
 ## Troubleshooting: "Couldn't shade the hidden surface on …"
 
@@ -1168,46 +1144,45 @@ Full text: _"Couldn't shade the hidden surface on "seat-left". Artwork still won
 there. Only the hatching is missing. Please report this."_
 
 Assembly mode, chair only today. The app failed to build the crosshatch for one
-patch of covered surface on that zone. Nothing about the print changed: the
-same surface is still covered, and artwork placed on it is still clipped away.
-What is missing is the picture of where that is.
+patch of covered surface on that zone. The print is unchanged: the surface is
+still covered, and artwork placed on it is still clipped away. What's missing is
+the picture of where that is.
 
 **It matters because the hatching is the instruction.** The sibling warning
-above tells you to move a design off the hatching. If a patch of hatching is
-missing, that spot looks like somewhere artwork is welcome and it is not.
+above tells you to move a design off the hatching. If a patch is missing, that
+spot looks like somewhere artwork is welcome and it isn't.
 
-**What to do.** Download the zone's template from the Templates panel: the
-template is drawn from the same baked regions and generally still shows the
-patch, so it is the second opinion. Then report it, with the zone name from the
-message — it is a bug in the app, not in your file, and nothing you change in
-the design will clear it.
+**What to do.** Download the zone's template from the Templates panel: it is
+drawn from the same baked regions and generally still shows the patch, so it is
+the second opinion. Then report it, with the zone name from the message — a bug
+in the app, not your file, and nothing you change in the design will clear it.
 
 ## Troubleshooting: "This SVG has a circle around most of the artwork, but some falls outside"
 
 A design template marks its boundary with a circle drawn around everything, and on a
 round part the app sizes your artwork to that circle. This says the circle is
-there but something in the file sits outside it, so the circle was not used and
+there but something in the file sits outside it, so the circle wasn't used and
 the design was fitted by its overall size instead.
 
 **The usual cause is a stray filled shape**: a dot parked off to one side, a
 leftover filled rectangle, a stray copy of something. It has to be filled to
-count. The app ignores stroke-only objects everywhere, so a loose guide line or
-an unfilled outline is not what tripped this.
+count. Stroke-only objects are ignored everywhere, so a loose guide line or an
+unfilled outline isn't what tripped this.
 
 **It moves the design as well as shrinking it.** The fallback centres on the
-whole drawing, stray included, so the artwork comes out both smaller and
-off-centre. Scale alone will not put it back; use Offset X/Y too, or remove the
-stray and let the circle do its job.
+whole drawing, stray included, so the artwork comes out smaller and off-centre.
+Scale alone won't put it back; use Offset X/Y too, or remove the stray and let
+the circle do its job.
 
 - **Find what is outside the circle** and delete it. In Inkscape or Illustrator,
   select all and compare the selection bounds against the template outline.
 - **Or set the fit by hand** with Design radius / Scale / Offset.
 
-**A circle that holds little or none of your drawing says nothing**, and is not
-used either. That is ordinary decoration, and clipart is full of it: suns,
-balloons, eyes, polka dots. Before this rule existed the largest such circle
-became the boundary, so a corner dot could be blown up to the whole face while
-the rest of the design was thrown off the part in silence.
+**A circle that holds little or none of your drawing says nothing**, and isn't
+used either. That is ordinary decoration (suns, balloons, eyes, polka dots).
+Before this rule the largest such circle became the boundary, so a corner dot
+could be blown up to the whole face while the rest of the design was thrown off
+the part in silence.
 
 ## Troubleshooting: "This shape was too big for the wheel, so it was scaled down to fit"
 
@@ -1221,10 +1196,10 @@ because that number is the longest side and a shape's corners reach further: a
 square 280mm on a side reaches 198mm from the axis and hangs 58mm past the rim.
 
 Rather than refusing, the whole placement is scaled down until it clears, and
-the artwork is scaled by exactly the same factor so the picture still lands on
-the shape cut for it. Without this message the symptom is the size control
-appearing to stop working. Lowering the diameter or the artwork's Scale until it
-clears puts you back in control.
+the artwork by exactly the same factor so the picture still lands on the shape
+cut for it. Without this message the symptom is the size control appearing to
+stop working. Lower the diameter or the artwork's Scale until it clears to take
+control back.
 
 ## Troubleshooting: "Some of this shape is thinner than 1mm"
 
@@ -1232,7 +1207,7 @@ Full text: _"Some of this shape is thinner than 1mm, about one nozzle wide.
 Those parts will be fragile. Simplify the artwork or enlarge the hubcap to
 thicken them."_
 
-Unlike the other silhouette warnings this one does **not** fall back to a
+Unlike the other silhouette warnings, this one does **not** fall back to a
 circle. The part builds at the shape and size you set, because a thin spike
 still makes a valid solid.
 
@@ -1250,11 +1225,11 @@ shape** does on purpose.
 
 The disc is a 3 mm shell. Normally a colour is recessed into it at its depth
 setting (1 mm by default), leaving base-colour plastic underneath. That is right
-for artwork in the middle of the part and wrong for artwork at the very edge:
-the outline is the whole reason the part was cut to your shape, and a recess
-would leave it as a 2 mm band of base colour visible from every angle except
-straight on. So any region reaching the outline is cut the full 3 mm, and the
-rim prints in that colour.
+for artwork in the middle of the part and wrong at the very edge: the outline is
+the whole reason the part was cut to your shape, and a recess would leave it as
+a 2 mm band of base colour visible from every angle except straight on. So any
+region reaching the outline is cut the full 3 mm, and the rim prints in that
+colour.
 
 - **It names the colours it did this to.** A colour's _interior_ regions still
   cut at its recess depth; only those touching the edge go through. A colour
@@ -1293,30 +1268,26 @@ regions, or nudging Scale, usually clears it.
 ## Troubleshooting: "That saved session could not be opened, so it was cleared"
 
 **What it means.** The app found a saved session from a previous visit, you asked
-for it back, and it could not be read. The save has been removed so it will not
-be offered again.
+for it back, and it couldn't be read. The save has been removed so it won't be
+offered again.
 
 **What to do.** Reload the page before carrying on. Most failures stop before
-touching your printer, shape or colour settings, so those are usually still what
-they were. A reload starts clean.
+touching your printer, shape or colour settings, so those are usually unchanged.
+A reload starts clean.
 
 **Why it happens.** The stored session is JSON in the browser's local storage for
-this site. It reads as valid JSON but describes something this build cannot use:
-another tab or extension has written to the same key, or the session came from a
-build whose settings no longer line up. Settings that simply did not exist when
-the session was saved are filled in at their normal values rather than failing, so
-this message means something beyond that.
-
-A save that is damaged outright, rather than merely unusable, does not reach this
-message. It cannot be parsed at all, so it is discarded on load without a banner
-ever being offered.
+this site. It reads as valid JSON but describes something this build can't use:
+another tab or extension wrote to the same key, or the session came from a build
+whose settings no longer line up. Settings that didn't exist when the session
+was saved are filled in at their normal values rather than failing, so this
+message means something beyond that. A save damaged outright can't be parsed at
+all, so it is discarded on load without a banner ever being offered.
 
 **What it does affect.** The printer, shape and colour settings only change once
-every design in the session has come back, so a failed one usually leaves them
-exactly as they were. A saved part that does not load has its own message
-(below). The app stops saving until you reload, so nothing gets written over
-what you had, but it also means anything you do before reloading will not be
-saved. Reload first.
+every design in the session has come back, so a failed one usually leaves them as
+they were. A saved part that doesn't load has its own message (below). The app
+stops saving until you reload, so nothing is written over what you had, but
+anything you do before reloading won't be saved. Reload first.
 
 ## Troubleshooting: "Couldn't restore your session: the … didn't load"
 
@@ -1328,16 +1299,15 @@ Footrest loaded. Reload the page to try again._ That one means a different part
 was picked while the saved one was still loading.
 
 **What it means.** You asked for a saved session back, and the part it was saved
-on did not load. Usually the parts library could not be reached: a dropped
+on didn't load. Usually the parts library couldn't be reached: a dropped
 connection, or a site update landing mid-visit.
 
 **What it does affect.** Nothing from the session is applied. Your settings and
-designs stay as they were before you clicked Restore, on the part you had, or on
-the one you picked. The saved session is kept, and the next visit offers it
-again.
+designs stay as they were before you clicked Restore, on the part you had or the
+one you picked. The saved session is kept, and the next visit offers it again.
 
-The app stops saving until you reload, so the saved session is not replaced.
-Anything you do before reloading will not be saved.
+The app stops saving until you reload, so the saved session isn't replaced.
+Anything you do before reloading won't be saved.
 
 **What to do.** Reload once the connection is back, and click Restore again.
 
@@ -1346,35 +1316,32 @@ Anything you do before reloading will not be saved.
 Full text: _"…" could not be restored from the saved session. Load the image
 again to put it back. Everything else in the session was restored."_
 
-**What it means.** This is different from "That saved session could not be
-opened…" above: the session itself was read fine, but one image inside it
-failed while the app tried to decode it and re-run Colors/Detail on it —
-usually a corrupted or truncated saved copy. Only that one source is lost;
-every other design, and every setting, comes back normally.
+**What it means.** Different from "That saved session could not be opened…"
+above: the session was read fine, but one image inside it failed while the app
+decoded it and re-ran Colors/Detail on it — usually a corrupted or truncated
+saved copy. Only that source is lost; every other design and setting comes back
+normally.
 
-**What to do.** Load that image again from your original file to put it
-back. There is nothing else to fix — the rest of the session is unaffected,
-name and all, so re-adding the design in the same spot is the whole
-recovery.
+**What to do.** Load that image again from your original file. Nothing else needs
+fixing — the rest of the session is unaffected, name and all, so re-adding the
+design in the same spot is the whole recovery.
 
 ## Troubleshooting: "… deeper than "Wheel top" goes. It was cut at … mm instead"
 
-**What it means.** The depth you asked for is more than that part has material
+**What it means.** The depth you asked for is more than the part has material
 for, measured from its design face straight back. It was cut at the deepest the
 part can take, a fraction of a millimetre short of breaking out the back. The
-colour's row in the colour list shows the same number beside its Depth field
-("cut at … "), so you don't have to hold the warning open to see it.
+colour's row shows the same number beside its Depth field ("cut at … ").
 
-**What to do.** Nothing, if the number was a slip. If you meant a deep pocket,
-the part is the limit, so there is nothing to raise it to.
+**What to do.** Nothing, if the number was a slip. For a deep pocket, the part is
+the limit; there is nothing to raise it to.
 
 **This is not the wall check.** A part's wall varies across it, and a recess under
-this limit can still reach the back of a thin spot. That case has its own warning,
+this limit can still reach the back of a thin spot. That has its own warning,
 "… mm thick under it" below, and this one stays quiet for it.
 
-**Some parts raise no limit at all, and cut silently to whatever you asked —
-this is not a bug, and both cases below are read straight from the code, not
-guessed at from outside it:**
+**Some parts raise no limit and cut silently to whatever you asked — not a bug;
+both cases are read straight from the code:**
 
 - **The part declines to measure a limit.** `maxCutDepth()` returns `Infinity`
   when it has nothing to measure against:
@@ -1385,24 +1352,20 @@ guessed at from outside it:**
     the through-safety floor is subtracted.
   - No mesh loaded yet.
   - **Every part on a baked design surface** (the chair body is the only
-    shipped example) declines unconditionally: a curved chart has no single
-    axis to measure a depth against, unlike a flat patch.
-- **A limit applies, but nothing was actually cut at it.** The clamped number
-  gets computed, but the part discards it rather than cutting to it, so
-  nothing in the message would be true:
-  - **A cut-through part** (the wheel's cap) ignores the setting entirely and
-    holes a fixed or measured depth of its own.
+    shipped example): a curved chart has no single axis to measure a depth
+    against, unlike a flat patch.
+- **A limit applies, but nothing was cut at it.** The clamped number is
+  computed, but the part discards it, so nothing in the message would be true:
+  - **A cut-through part** (the wheel's cap) ignores the setting and holes a
+    fixed or measured depth of its own.
   - **A colour that lands entirely on the part's outer wall.** The edge rule
-    (see "reaches the part's outer edge" above) cuts it full thickness
-    instead of to the setting; the warning only fires for the part of a
-    colour actually cut at the clamped number, so an all-edge colour raises
-    nothing.
+    (see "reaches the part's outer edge" above) cuts it full thickness instead.
+    The warning only fires for the part of a colour cut at the clamped number.
 
 **A rotated copy is a part in its own right here.** The wheel's two halves are
-"Top" and "Bottom", so a colour clamped on only one of them names that half,
-and a colour on both is named in a pill for each. Colours clamped from the same
-depth setting share one pill per half; a colour given its own depth in the
-colour list gets its own.
+"Top" and "Bottom", so a colour clamped on only one names that half, and a colour
+on both gets a pill for each. Colours clamped from the same depth setting share
+one pill per half; a colour with its own depth gets its own.
 
 ## Troubleshooting: "… is only … mm thick under it"
 
@@ -1445,20 +1408,18 @@ pick "All zones" to cover every zone."_ ("zone", singular, when only one is
 missing.)
 
 **An informational notice, not a warning**, on a part offering more than one
-design zone (the chair body is the only shipped example today). By default,
-loading a design binds it to one zone only, since binding every zone would
-recut the whole part on every nudge. This notice exists because that default
-is easy to miss: a design bound to one zone of five looks like a finished
-part in the viewport, right up until it's opened in a slicer and most of it
-prints in the base color.
+design zone (the chair body is the only shipped example). By default a loaded
+design binds to one zone only, since binding every zone would recut the whole
+part on every nudge. The notice exists because that default is easy to miss: a
+design bound to one zone of five looks like a finished part in the viewport,
+right up until it's opened in a slicer and most of it prints in the base color.
 
 **What to do.** Either is fine, depending on what you want:
 
 - **Add more designs**, one per zone, from each zone's dropdown.
 - **Pick "All zones"** on one design to cover every zone with it.
 - **Leave it as is**, if you only meant to decorate part of the piece. The
-  notice just makes the coverage visible; it doesn't ask you to change
-  anything.
+  notice makes the coverage visible; it doesn't ask you to change anything.
 
 ## Troubleshooting: "… designs were on zones this part no longer has"
 
@@ -1471,8 +1432,8 @@ saved session stores which zone each design was on by name. A release that
 re-bakes a part's zones can rename or retire one, and the saved name then
 matches nothing on the part that just loaded.
 
-The design is not lost. It is moved to All zones, which is the binding that
-always cuts something, and the zone badge on its row says so.
+The design is not lost. It is moved to All zones, the binding that always cuts
+something, and the zone badge on its row says so.
 
 **What happened to the chair.** The seat pan came out of every zone, because the
 cushion covers all of it, and the `Seat` zone became `Left seat side` and `Right
@@ -1480,7 +1441,7 @@ seat side` on the two shelves either side. A session saved before that names a
 zone the chair no longer has.
 
 **What to do.** Pick the zone you want from the design's dropdown, or leave it
-on All zones. Saving again writes the new name, so the notice does not come back.
+on All zones. Saving again writes the new name, so the notice doesn't come back.
 
 ## Troubleshooting: "…" is set to cover the whole part, but this part has no whole-part sheet"
 
@@ -1488,9 +1449,9 @@ Full text: _""…" is set to cover the whole part, but this part has no
 whole-part sheet. Pick a single zone for it from the list."_
 
 **What it means.** This design's row is bound to **Whole chair**, but the
-loaded part has no whole-part sheet — either it isn't the chair, or its zone
-data predates that option. The binding survives switching parts and reloading
-the page, so it's easy to carry over from a session where it did apply.
+loaded part has no whole-part sheet — it isn't the chair, or its zone data
+predates that option. The binding survives switching parts and reloading the
+page, so it's easy to carry over from a session where it did apply.
 
 **What to do.** Pick a single zone from the row's dropdown. Switching back to
 the chair restores **Whole chair** as an option.
@@ -1513,9 +1474,9 @@ Full text: _"The "…" zone isn't on the whole-part sheet, so "…" won't reach
 it. Add another design and target that zone."_
 
 **An informational notice, not a warning.** The loaded part carries a design
-zone that the whole-part sheet doesn't place — a zone a future re-bake added
-without giving it a spot on the sheet. A design bound to **Whole chair**
-never reaches that zone.
+zone the whole-part sheet doesn't place — a zone a future re-bake added without
+giving it a spot on the sheet. A design bound to **Whole chair** never reaches
+that zone.
 
 **What to do.** Add a separate design and target that zone directly from its
 own row's dropdown.
@@ -1531,30 +1492,29 @@ shared area. A design bound to **Whole chair** that reaches into it is cut on
 the zone that owns it, once — not on both, and not nowhere. The whole-part
 template hatches those areas and names the zone that cuts them.
 
-**Where those areas are on the part.** The 3D view cross-hatches them too,
-while a **Whole chair** row is the active one. That hatch crosses in two
-directions and is drawn in the second accent, so it does not read as the
-single-direction hidden-surface hatch beside it, which means something else.
+**Where those areas are on the part.** The 3D view cross-hatches them too, while
+a **Whole chair** row is the active one. That hatch crosses in two directions in
+the second accent, so it doesn't read as the single-direction hidden-surface
+hatch beside it, which means something else.
 
 **What to do.** Nothing, unless you wanted that mark on the other zone. For
 that, bind a separate design to that zone from its own row's dropdown: a
 per-zone binding reaches all of its zone's surface, hatched areas included.
-Select that row and the cross-hatch goes, since nothing is being withheld
-from it.
+Select that row and the cross-hatch goes, since nothing is withheld from it.
 
 ## Troubleshooting: "Couldn't trim "…" to the part of the whole-part sheet "…" owns"
 
 Full text: _"Couldn't trim "…" to the part of the whole-part sheet "…" owns.
 Some of it prints twice. Bind that design to one zone instead."_
 
-**What it means.** The trim above could not be applied, so this zone cut the
+**What it means.** The trim above couldn't be applied, so this zone cut the
 area another sheet also cuts. That part of the design prints in two places on
 the chair. Either the polygon clipper failed on it, or the baked record of what
-this zone gives up would not load.
+this zone gives up wouldn't load.
 
 **What to do.** Bind the design to a single zone from its row's dropdown, which
-skips the trim entirely. Please also report it via **Feedback** or **Report a
-bug on GitHub** — this failing is a bug, not a placement you can draw around.
+skips the trim. Please also report it via **Feedback** or **Report a bug on
+GitHub** — this failing is a bug, not a placement you can draw around.
 
 ## Troubleshooting: "…" crosses between "…" and "…", where the two sheets do not join"
 
@@ -1578,23 +1538,23 @@ those two edges, this is what happens.
   edge. The template shows where that is.
 - Or bind it to a single zone from its row's dropdown. A per-zone binding cuts
   all of one zone's surface and stops at its edge, so there is no second piece.
-- Two marks that are meant to line up across the join have to sit on the solid
-  stretch. Nothing else on that edge lines up.
+- Two marks meant to line up across the join have to sit on the solid stretch.
+  Nothing else on that edge lines up.
 
 ## Troubleshooting: "Exporting with artwork on … of … zones…" warnings
 
 Full text: _"Exporting with artwork on … of … zones. The other … zones will
 print body-colored with no design."_ ("zone", singular, for one.)
 
-This is the same coverage gap as the notice above, escalated to a red pill at
-the last moment before an export downloads — easy to have scrolled past
-earlier, harder to miss right before the file. It does not block the export:
-the file is valid and prints fine, just with blank zones on it.
+The same coverage gap as the notice above, escalated to a red pill at the last
+moment before an export downloads — easy to have scrolled past earlier, harder
+to miss right before the file. It doesn't block the export: the file is valid
+and prints fine, just with blank zones.
 
-**What to do.** Same as above: add more designs, or switch one to "All
-zones", if the blank zones weren't intentional. If they were — you're
-decorating one panel and leaving the rest plain — there's nothing to change;
-the export proceeds either way.
+**What to do.** Same as above: add more designs, or switch one to "All zones",
+if the blank zones weren't intentional. If they were — you're decorating one
+panel and leaving the rest plain — there's nothing to change; the export
+proceeds either way.
 
 ## Troubleshooting: "has no verified print placement" warnings
 
@@ -1604,18 +1564,18 @@ printing."_
 
 **What it means.** Every shipped part's pose on the plate is normally baked
 from a reference file a human checked in a slicer. This part exported without
-that check, so whatever automatic placement the app fell back to has never been
-verified to avoid overlaps or print cleanly. It still exports — this is a
-warning, not a failure — but check it before printing.
+that check, so the automatic placement it fell back to has never been verified
+to avoid overlaps or print cleanly. It still exports — a warning, not a failure
+— but check it before printing.
 
 The message ends the same way for two different reasons, and one of them is not
 a defect:
 
 - **"…has no verified print placement under its part id…"** — this part id has
   no baked placement at all. Either a new part kind hasn't had its pose baked
-  yet, or the id itself is wrong. See the `PLACEMENT` provenance comment in
-  [src/export/placement.ts](../src/export/placement.ts) for why it's a
-  lookup table keyed by part id rather than data on the part definition.
+  yet, or the id is wrong. See the `PLACEMENT` provenance comment in
+  [src/export/placement.ts](../src/export/placement.ts) for why it's a lookup
+  table keyed by part id rather than data on the part definition.
 - **"…doesn't match the mesh its verified print placement was baked
   against…"** — a placement exists, but the loaded mesh's fingerprint doesn't
   match what it was baked against. This happens when a shipped part's mesh is
@@ -1625,15 +1585,14 @@ a defect:
   pose — see the header comment in
   [scripts/bake-part-fingerprints.mjs](../scripts/bake-part-fingerprints.mjs).
 - **"…is generated to the size you chose. No pre-verified print placement
-  applies…"** is the third and unremarkable case: a part like the hubcap that
-  is built to the dimensions you set has no fixed mesh for a pose to be
-  verified against, by design. It shows as an informational notice, not a
-  warning.
+  applies…"** is the third, unremarkable case: a part like the hubcap, built to
+  the dimensions you set, has no fixed mesh for a pose to be verified against.
+  It shows as an informational notice, not a warning.
 
 **What to do.** Check the part's position and rotation in your slicer before
-printing, same as the prime-tower warning below. If you're a maintainer seeing
-the mesh-mismatch form on a shipped part, that part needs its placement
-re-baked, not a workaround on your end.
+printing, as with the prime-tower warning below. A maintainer seeing the
+mesh-mismatch form on a shipped part needs to re-bake its placement; there's no
+workaround on your end.
 
 ## Troubleshooting: "The prime tower … has no verified position. Every corner … overlaps a part"
 
@@ -1652,41 +1611,38 @@ The message ends one of two ways, and they ask for different things:
 
 **What to do about the crowding.** Fewer colors means a smaller tower. Merging
 two similar colors in Colors detected, or sending one to the base, frees space.
-A smaller part on the plate does too, where the size is yours to choose.
+So does a smaller part on the plate, where the size is yours to choose.
 
 **Why it happens.** The check measures each corner against each part's own
-footprint, drawn a little wider than the real shape. A part with a deep notch in
-it is drawn quite a lot wider, so it can be reported as blocking a corner it
-leaves open. That is on purpose. A tower printed through a part is worse than
-one you place yourself. The tower size the check assumes is nominal, so check
-the real one in your slicer either way.
+footprint, drawn a little wider than the real shape. A part with a deep notch is
+drawn quite a lot wider, so it can be reported as blocking a corner it leaves
+open. That is on purpose: a tower printed through a part is worse than one you
+place yourself. The tower size the check assumes is nominal, so check the real
+one in your slicer either way.
 
 ## Troubleshooting: "Rebuild failed: …"
 
 Full text: _"Rebuild failed: …"_ — followed by whatever error the rebuild
 threw.
 
-**This is the app's last-resort catch, not a specific diagnosis.** Every
-other warning in this doc is raised deliberately by code that expected the
-failure it's reporting and degraded gracefully. This one instead means an
-exception escaped all of that: something the rebuild didn't expect to throw,
-did.
+**This is the app's last-resort catch, not a specific diagnosis.** Every other
+warning in this doc is raised deliberately by code that expected the failure and
+degraded gracefully. This one means an exception escaped all of that: something
+the rebuild didn't expect to throw, did.
 
 **What it means.** The text after the colon is the actual JavaScript error
-message, and it's also logged to the browser console with a full stack
-trace. Neither is written for a volunteer to read; both are there for
-whoever investigates the report.
+message, also logged to the browser console with a full stack trace. Neither is
+written for a volunteer; both are for whoever investigates the report.
 
-**What you get.** The rebuild for that attempt is abandoned. Depending on
-when it threw, the viewport may show the previous build, a partial one, or
-the bare uncut parts — there's no single guaranteed state, since this is
-the path for the unexpected.
+**What you get.** The rebuild for that attempt is abandoned. Depending on when
+it threw, the viewport may show the previous build, a partial one, or the bare
+uncut parts — no single guaranteed state, since this is the path for the
+unexpected.
 
-**What to do.** Try the rebuild again (nudge a setting, or reload the page)
-— many causes are one-off. If it keeps happening, open the browser console,
-copy the full error and stack trace, and report it via **Feedback** or
-**Report a bug on GitHub** with that detail and what you were doing right
-before it happened.
+**What to do.** Try the rebuild again (nudge a setting, or reload the page) —
+many causes are one-off. If it keeps happening, open the browser console, copy
+the full error and stack trace, and report it via **Feedback** or **Report a bug
+on GitHub** with that detail and what you were doing right before.
 
 ## Troubleshooting: "Refusing to write a non-finite coordinate into the exported 3MF."
 
@@ -1695,45 +1651,45 @@ Full text: _"Refusing to write a non-finite coordinate into the exported
 
 You see it as `Export failed: Refusing to write a non-finite coordinate into
 the exported 3MF.` — the export button's generic failure dialog wrapping this
-specific refusal.
+refusal.
 
-**This is a last-line-of-defense guard, not something your artwork can
-trigger directly.** Every vertex coordinate is checked as the file is written,
-and a `NaN` or `Infinity` anywhere refuses the write outright rather than
-shipping a 3MF a slicer could silently mis-render or reject. The same check
-also covers the prime tower's saved position and each plate's transform.
+**This is a last-line-of-defense guard, not something your artwork can trigger
+directly.** Every vertex coordinate is checked as the file is written, and a
+`NaN` or `Infinity` anywhere refuses the write outright rather than shipping a
+3MF a slicer could silently mis-render or reject. The check also covers the
+prime tower's saved position and each plate's transform.
 
 **What it means when it fires.** A geometry operation upstream — a boolean cut,
 a mesh transform, a degenerate zero-area shape — produced a coordinate that
-isn't a real number, and nothing caught it before export. This should not
-happen on ordinary artwork.
+isn't a real number, and nothing caught it before export. This shouldn't happen
+on ordinary artwork.
 
 **What to do.** Note what you last changed (which part, which colour, which
 setting) and report it via **Feedback** or **Report a bug on GitHub** with that
-detail — the message itself does not say which vertex or part is at fault, so
+detail — the message doesn't say which vertex or part is at fault, so
 reproducing it is what makes the report useful.
 
 ## Troubleshooting: "Couldn't trace the whole edge of the design face on …" (assembly mode)
 
 The chosen design face has edges that no closed outline can take. That happens
-only on a face whose triangles overlap or fold over each other, so that a vertex
-has more edges leaving it than arriving. No packed part in `public/stl/` has such
-a face: `tests/patch-boundary.test.ts` traces every face the Advanced dropdown
-offers on each of them. The Hubcap's disc is generated at run time and is not in
-that corpus; it comes out of the boolean engine as a closed solid, which cannot
+only on a face whose triangles overlap or fold over each other, so a vertex has
+more edges leaving it than arriving. No packed part in `public/stl/` has such a
+face: `tests/patch-boundary.test.ts` traces every face the Advanced dropdown
+offers on each of them. The Hubcap's disc is generated at run time and isn't in
+that corpus; it comes out of the boolean engine as a closed solid, which can't
 produce an open edge.
 
 - **The rings that did close are kept and clip the artwork.** The edges that
-  did not are what the warning is about. Artwork near them may be cut past a
-  gap or stop short of one.
+  didn't are what the warning is about. Artwork near them may be cut past a gap
+  or stop short of one.
 - **"… so no artwork will be cut on it"** is the same fault with no ring
   closing at all. The part then has no design face, the build skips it, and it
   exports in body colour only.
-- **Pick another design face** from the Advanced disclosure. The warning
-  clears when the new face traces in full, and goes with the part when the part
-  is removed.
+- **Pick another design face** from the Advanced disclosure. The warning clears
+  when the new face traces in full, and goes with the part when the part is
+  removed.
 - A face whose edge touches itself at a single point (a hole meeting the
-  outline, two islands sharing a corner) does not raise this. That case traces
+  outline, two islands sharing a corner) doesn't raise this. That case traces
   correctly.
 
 ## Troubleshooting: "Couldn't send that" in the feedback panel
@@ -1748,9 +1704,9 @@ touches your work: the app keeps running and the note stays in the box.
 
 - **Your note is still there.** Send again once you are back online. Nothing is
   cleared until a send succeeds.
-- **A 4xx code means the form refused, and retrying will not clear it.** `429`
-  is the monthly cap, `403` a form switched off. The message says to use
-  **Report a bug on GitHub** in the same panel, and that is the fix.
+- **A 4xx code means the form refused, and retrying won't clear it.** `429` is
+  the monthly cap, `403` a form switched off. The message says to use **Report a
+  bug on GitHub** in the same panel, and that is the fix.
 - **A 5xx code is Formspree being down.** That one is worth retrying.
 - **No Feedback button at all** means the build was made without
   `FEEDBACK_ENDPOINT` set, which is every fork. See
