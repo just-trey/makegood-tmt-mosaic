@@ -2,11 +2,10 @@ import { WARNINGS } from '../warnings';
 import { $ } from './dom';
 
 /**
- * Renders every current warning, not just the first 6 — the panel used to cap at 6 pills and
- * collapse the rest into a dead "+ N more warnings" label with no way to read them (see
- * docs/tech-debt.md). #warnings already scrolls (max-height + overflow-y:auto in styles.css), so
- * the fix is just to stop truncating and let the container do what it was already set up to do.
- * window.__mosaic.warnings() (main.ts) reads WARNINGS directly, not this DOM, so it's unaffected.
+ * Renders every current warning, not just the first 6 — the panel capped at 6 pills and collapsed
+ * the rest into a dead "+ N more warnings" label (docs/tech-debt.md). #warnings already scrolls
+ * (max-height + overflow-y:auto in styles.css), so the fix is to stop truncating.
+ * window.__mosaic.warnings() (main.ts) reads WARNINGS directly, not this DOM.
  */
 export function renderWarnings(): void {
   const box = $('#warnings');

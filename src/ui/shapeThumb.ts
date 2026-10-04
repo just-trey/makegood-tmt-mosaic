@@ -8,108 +8,88 @@ import { $ } from './dom';
 /**
  * The part thumbnail beside the Part dropdown, drawn from the part's own mesh.
  *
- * It used to be one of five hand-authored SVG glyphs picked by `designFit`, which describes how
- * artwork is fitted rather than what the part looks like: three of the four kinds carry
- * `designFit: 'rect'`, so the footrest, hubcap and chair all showed the same rectangle. The design
- * system rules out a bigger glyph set ("don't hand-draw SVG icons", `design-system/README.md`
- * Iconography; convention 32 of docs/ui-conventions.md names a mesh-rendered thumbnail as the
- * in-system answer). A silhouette also cannot go stale: re-pack a part and the picture follows.
+ * Replaces five hand-authored glyphs picked by `designFit`, which says how artwork is fitted, not
+ * what the part looks like: footrest, hubcap and chair all showed the same rectangle. The design
+ * system rules out a bigger glyph set (`design-system/README.md` Iconography; convention 32 of
+ * docs/ui-conventions.md names a mesh-rendered thumbnail). A silhouette can't go stale on a re-pack.
  */
 
 /** Rendered box in CSS px, matching what the SVG glyphs occupied inside `.shape-thumb`. */
 const THUMB_CSS_PX = 30;
 /**
- * Supersampling factor for the silhouette mask before it is scaled into the box.
+ * Supersampling factor for the silhouette mask before it is scaled into the box. It buys the
+ * *interior* (smooth depth gradient, not one flat value per device pixel); the boundary is resolved
+ * on the device grid by drawEdge(), since a downscaled boundary ramps over ~two device pixels
+ * whatever the sample count.
  *
- * What it buys is the *interior*: depth shading across a form arrives as a smooth gradient rather
- * than one flat value per device pixel. It no longer sets the boundary, which drawEdge() resolves
- * on the device grid, because a downscaled boundary ramps over roughly two device pixels whatever
- * the sample count.
- *
- * It multiplies the *device* pixel size, not the CSS one. Sized off CSS px it was a real 4x only
- * on a 1x display: at devicePixelRatio 1.5 the same 120px buffer landed on a 45px backing store, a
- * 2.67x downscale, and that extra softness is the whole difference. The backing store itself was
- * never undersized (45 = 30 x 1.5, drawn 1:1), so interpolation was not the problem.
+ * It multiplies the *device* pixel size, not CSS: sized off CSS px it was a real 4x only at 1x —
+ * at devicePixelRatio 1.5 the 120px buffer landed on a 45px backing store, a 2.67x downscale, and
+ * that extra softness was the whole difference (the backing store itself was right, 45 = 30 x 1.5, drawn 1:1).
  */
 const SUPERSAMPLE = 4;
 /**
- * Device pixels per CSS pixel, for the backing store and the buffer above. Unclamped: the cost is
- * a Float32Array of (30 x dpr x 4)^2 cached on `thumbKey()`, 129600 entries even at dpr 3, and
- * clamping it is the same undersized-backing-store bug above, moved to a rarer display.
+ * Device pixels per CSS pixel, for the backing store and the buffer above. Unclamped: the cost is a
+ * Float32Array of (30 x dpr x 4)^2 cached on `thumbKey()`, 129600 entries at dpr 3, and clamping it
+ * is the undersized-backing-store bug above moved to a rarer display.
  */
 const dpr = (): number => (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1;
 
 /**
- * The two pixel sizes a render uses: the canvas backing store, and the mask buffer behind it.
- *
- * Exported so both can be asserted without a 2D canvas. The live check
- * (scripts/check-part-thumbnails.mjs) reads the backing store off the real page, but the buffer is
- * internal, and it is the size this whole path is about.
+ * The two pixel sizes a render uses: the canvas backing store and the mask buffer behind it.
+ * Exported so both can be asserted without a 2D canvas (scripts/check-part-thumbnails.mjs reads the
+ * backing store off the real page, but the buffer is internal and is what this path is about).
  */
 export function thumbPixelSizes(ratio: number = dpr()): { out: number; buffer: number } {
   const out = Math.round(THUMB_CSS_PX * ratio);
   return { out, buffer: out * SUPERSAMPLE };
 }
-/** Fraction of the box the silhouette's longer axis fills, leaving the glyphs' own optical margin. */
+/** Fraction of the box the silhouette's longer axis fills, leaving the glyphs' optical margin. */
 const FILL = 0.86;
 /**
- * The token the silhouette is painted in, and the hex to fall back to if it ever reads empty.
+ * The token the silhouette is painted in, and the hex fallback if it reads empty.
  *
- * Neutral, not `--accent`, and a decision rather than a default. Convention 19 of
- * docs/ui-conventions.md reserves the accent hue for selection, since blue is also a filament a
- * user owns, and this thumbnail sits beside the Part dropdown where an accent-filled picture reads
- * as "this one is selected" rather than "this is the part". The counter-argument (it is chrome
- * describing the part, not a selection affordance) was put to the maintainer and lost.
+ * Neutral, not `--accent`, by decision: convention 19 of docs/ui-conventions.md reserves the accent
+ * for selection (blue is also a filament a user owns), and an accent-filled picture beside the Part
+ * dropdown reads as "this one is selected". The maintainer rejected the chrome-not-selection argument.
  *
- * It is also the more legible of the two, which was not expected. Both measured off rendered
- * pixels against the `--panel-2` tile, same camera and same edge treatment:
+ * It is also more legible, measured off rendered pixels against the `--panel-2` tile, same camera
+ * and edge treatment:
  *
  *   --text-dim  7.3:1 nearest (every kind), 3.9-4.6:1 farthest
  *   --accent    5.3:1 nearest, 2.9-3.5:1 farthest
  *
- * The accent's farthest surface on the hubcap is 2.9:1, under WCAG's 3:1 non-text minimum, on two
- * of six measurements. So the rule and the measurement agree rather than trading off.
- * The live check re-measures every run and holds the 3:1 bar (scripts/check-part-thumbnails.mjs).
+ * The accent's farthest hubcap surface is 2.9:1, under WCAG's 3:1 non-text minimum, on two of six
+ * measurements. The live check re-measures every run and holds 3:1 (scripts/check-part-thumbnails.mjs).
  */
 const THUMB_TOKEN = '--text-dim';
 const THUMB_FALLBACK = '#aab3cf';
 /**
- * The thumbnail's camera, as an angle around and above the part's front. One fixed pair for every
- * kind, which keeps four thumbnails comparable rather than four separately flattering portraits,
- * and is why every CAD tool's part thumbnails look alike.
+ * The thumbnail's camera: an angle around and above the part's front, one fixed pair for every
+ * kind so the four thumbnails read as a comparable set.
  *
- * Deliberately not the angle the viewport opens at, which it used to be. That view is nearly
- * face-on to a plate kind's design face (21° off), and face-on cannot distinguish a 60mm-thick
- * wheel from a 3mm hubcap: same circular outline, and the depth range across it is dominated by
- * the view's own tilt, leaving nothing to shade. Measured on the shipped thumbnails, the two
- * silhouettes overlapped to within 4.5%. From 45°/30°, 52° off the face, a cylinder and a disc are
- * unmistakable and the same figure becomes 13.2%, a bar the live check can hold
- * (scripts/check-part-thumbnails.mjs).
- *
- * Shading by surface normal instead of depth was proposed and rejected: the two parts had the same
- * *outline*, and no shading model changes an outline. Angle was the only lever.
+ * Not the viewport's opening angle: that is nearly face-on to a plate kind's design face (21° off),
+ * and face-on can't tell a 60mm-thick wheel from a 3mm hubcap — same outline, and depth dominated by
+ * the view's own tilt, leaving nothing to shade. Measured on the shipped thumbnails the two
+ * silhouettes overlapped to within 4.5%; from 45°/30° (52° off the face) that becomes 13.2%, a bar
+ * the live check holds (scripts/check-part-thumbnails.mjs). Shading by normal instead was rejected:
+ * the parts share an *outline* and no shading model changes that.
  */
 const THUMB_AZIMUTH_RAD = (45 * Math.PI) / 180;
 const THUMB_ELEVATION_RAD = (30 * Math.PI) / 180;
 /**
- * How dark the farthest surface goes, as a fraction of THUMB_TOKEN. The shading must read as form
- * without dropping the silhouette's contrast against the `--panel-2` tile. Sampled off the
- * rendered thumbnails: nearest 7.3:1, farthest 3.9-4.6:1 depending on the kind's depth span. (The
- * 2.5:1 a review once measured was the linear/sRGB bug below, not this constant: the whole
- * silhouette was too dark, gradient and all.)
+ * How dark the farthest surface goes, as a fraction of THUMB_TOKEN: form must read without losing
+ * contrast against `--panel-2`. Sampled off rendered thumbnails: nearest 7.3:1, farthest 3.9-4.6:1
+ * by depth span. (A review's 2.5:1 was the linear/sRGB bug below, not this constant.)
  *
- * 0.7 has headroom against the 3:1 floor now but did not on the accent it was tuned against, where
- * the hubcap's farthest surface came out at 2.9:1. Lowering it costs contrast at the far end
- * first, so the live check is the thing to re-run if it ever moves.
+ * 0.7 has headroom against the 3:1 floor now but not on the accent it was tuned against (hubcap
+ * farthest 2.9:1). Lowering it costs far-end contrast first; re-run the live check if it moves.
  */
 const NEAR_FAR_FLOOR = 0.7;
 
 /**
- * Cache key: what the silhouette actually depends on.
- *
- * Filters on the same condition renderSilhouette() does, `positions && loaded`, and that pairing
- * is load-bearing: parts.ts sets `positions` before `loaded` across an await, so a key counting a
- * part the render skips could cache a thumbnail that never updates again.
+ * Cache key: what the silhouette depends on. Filters on renderSilhouette()'s own condition,
+ * `positions && loaded`, and that pairing is load-bearing: parts.ts sets `positions` before `loaded`
+ * across an await, so a key counting a part the render skips could cache a thumbnail that never updates.
  */
 export function thumbKey(): string | null {
   const kind = currentAssemblyKind();
@@ -119,8 +99,7 @@ export function thumbKey(): string | null {
   return [
     kind.id,
     currentVariantId() ?? '-',
-    // A part's identity for this purpose is its mesh size and where it sits, which is what a
-    // re-pack or a variant swap changes.
+    // A part's identity here is its mesh size and position — what a re-pack or variant swap changes.
     ...loaded.map((p) => `${p.id}:${p.positions!.length}:${p.pivotX},${p.pivotZ},${p.angleDeg}`),
   ].join('|');
 }
@@ -129,15 +108,12 @@ let cacheKey: string | null = null;
 let cacheCanvas: HTMLCanvasElement | null = null;
 
 /**
- * Target to camera for the thumbnail: the fixed three-quarter angle above, applied to whichever
- * way the kind's front points once `displayQuaternionFor` has posed it.
+ * Target to camera for the thumbnail: the fixed three-quarter angle above, applied to whichever way
+ * the kind's front points once `displayQuaternionFor` has posed it.
  *
- * "A single fixed angle" must mean fixed *relative to the part*, because the two families of kind
- * are posed by different conventions and neither is negotiable: a kind with a displayFrame is
- * turned so its front faces −Y, while a plate-like kind is posed by the "design face is a Y-plane"
- * rule with its camera side at +Y (scene/displayFrame.ts). One world vector for both would show
- * one family its front and the other its back. Same angle off the front for everyone is what makes
- * four thumbnails read as one set.
+ * Fixed *relative to the part*: a kind with a displayFrame is turned so its front faces −Y, while a
+ * plate-like kind is posed by "design face is a Y-plane" with its camera side at +Y
+ * (scene/displayFrame.ts). One world vector would show one family its front and the other its back.
  */
 export function thumbViewDir(kind: AssemblyKind | null | undefined): THREE.Vector3 {
   const front = new THREE.Vector3(0, kind?.displayFrame ? -1 : 1, 0);
@@ -151,9 +127,9 @@ export function thumbViewDir(kind: AssemblyKind | null | undefined): THREE.Vecto
 }
 
 /**
- * World matrix for one part, matching what `asmPartTransformGroup` builds in the viewport: a
- * duplicate is pivot-rotated into its real position, a primary left alone. Without it the wheel's
- * two Top halves draw on top of each other, and the silhouette lies about the part on screen.
+ * World matrix for one part, matching `asmPartTransformGroup` in the viewport: a duplicate is
+ * pivot-rotated into position, a primary left alone. Without it the wheel's two Top halves overlap
+ * and the silhouette lies about the part on screen.
  */
 export function partMatrix(
   pivotX: number,
@@ -171,19 +147,13 @@ export function partMatrix(
 /**
  * Fill one triangle into a nearest-depth buffer, by half-plane test over its pixel bounding box.
  *
- * Depth rather than a flat silhouette, so the picture has form: a binary mask of the chair is a
- * blue blob, and shading is what makes the seat read as a seat. Costs one comparison per covered
- * pixel.
+ * Depth rather than a flat mask so the picture has form (a binary chair mask is a blue blob), at one
+ * comparison per covered pixel. Depth needs a view with depth in it: face-on to a disc the whole
+ * range came from the view's own tilt, which made the wheel and hubcap the same picture.
  *
- * Depth needs a view with depth in it: face-on to a disc the whole range came from the view's own
- * tilt, which is why the wheel and hubcap used to be the same picture. The three-quarter camera
- * above is what gives this something to shade.
- *
- * At thumbnail scale almost every triangle covers less than a pixel, so this is effectively a
- * point plot per triangle and the whole chair (368k) takes a few milliseconds. The few large
- * triangles are why it is a real rasterization and not a bounding-box fill, which would square off
- * every flat face's silhouette.
- *
+ * At thumbnail scale almost every triangle covers under a pixel, so it's effectively a point plot
+ * and the whole chair (368k) takes a few ms. The few large triangles are why it's a real
+ * rasterization, not a bounding-box fill, which would square off every flat face.
  * `z` is distance toward the viewer, so nearer is larger.
  */
 function fillTriangle(
@@ -211,8 +181,7 @@ function fillTriangle(
     if (z > depth[i]) depth[i] = z;
   };
   if (area === 0) {
-    // Degenerate after projection (an edge-on sliver). Still part of the outline, so mark its
-    // pixel rather than dropping it: dropped slivers punch holes along every silhouette edge.
+    // Degenerate after projection (edge-on sliver) but still outline: marked, not dropped, or silhouette edges get holes.
     put(
       Math.min(w - 1, Math.max(0, Math.round(ax))),
       Math.min(h - 1, Math.max(0, Math.round(ay))),
@@ -234,9 +203,7 @@ function fillTriangle(
 
 /**
  * The current assembly's silhouette as a canvas, or null when no part has a mesh yet.
- *
- * Orthographic rather than perspective on purpose: this is an icon at 30px, and a perspective
- * projection at that size buys nothing but a slight keystone on the chair.
+ * Orthographic on purpose: at 30px perspective buys nothing but a slight keystone on the chair.
  */
 function renderSilhouette(): HTMLCanvasElement | null {
   const kind = currentAssemblyKind();
@@ -245,8 +212,7 @@ function renderSilhouette(): HTMLCanvasElement | null {
 
   const q = displayQuaternionFor(kind);
   const dir = thumbViewDir(kind);
-  // The camera's own basis, same construction as fitDistance() in viewport.ts, so the thumbnail is
-  // the view the part opens at rather than a second, differently-derived angle.
+  // Same camera basis as fitDistance() in viewport.ts, so the thumbnail is the view the part opens at, not a second derived angle.
   const worldUp = new THREE.Vector3(0, 0, 1);
   const right = new THREE.Vector3().crossVectors(worldUp, dir);
   if (right.lengthSq() === 0) right.set(1, 0, 0);
@@ -320,23 +286,20 @@ function renderSilhouette(): HTMLCanvasElement | null {
   const bctx = big.getContext('2d');
   if (!bctx) return null;
   const img = bctx.createImageData(px, px);
-  // Read the token back through the 2D context, not THREE.Color. THREE converts sRGB to linear on
-  // construction (three >= r155 colour management), right for a material and wrong for ImageData:
-  // the accent this used to draw in came out as rgb(39,74,254) against a token of #6d93ff, darker
-  // and far more saturated, at 2.5:1 against the tile instead of 5.6:1. Assigning to fillStyle
-  // also normalises any CSS colour form to #rrggbb.
+  // Read the token back through the 2D context, not THREE.Color: THREE converts sRGB to linear on
+  // construction (three >= r155), right for a material and wrong for ImageData — the accent came out
+  // as rgb(39,74,254) against a token of #6d93ff, darker, more saturated, 2.5:1 against the tile
+  // instead of 5.6:1. Assigning to fillStyle also normalises any CSS colour form to #rrggbb.
   bctx.fillStyle = fill || THUMB_FALLBACK;
   const hex = String(bctx.fillStyle);
   const r8 = parseInt(hex.slice(1, 3), 16),
     g8 = parseInt(hex.slice(3, 5), 16),
     b8 = parseInt(hex.slice(5, 7), 16);
-  // Depth to brightness, nearest at the full token and farthest at NEAR_FAR_FLOOR of it. One hue
-  // throughout, so the thumbnail reads as chrome rather than a tiny render.
+  // Depth to brightness, nearest at the full token, farthest at NEAR_FAR_FLOOR of it; one hue so it reads as chrome, not a tiny render.
   const spanZ = maxZ - minZ || 1;
   for (let i = 0; i < depth.length; i++) {
-    // Uncovered pixels stay transparent but keep the fill RGB. At 0,0,0 the browser's downscale
-    // blends every edge toward black, darkening and over-saturating the whole silhouette: measured
-    // when this drew in the accent, at #2546f1 against a token of #6d93ff, 2.3:1 against the tile.
+    // Uncovered pixels stay transparent but keep the fill RGB: at 0,0,0 the browser's downscale
+    // blends every edge toward black (measured in the accent, #2546f1 against a token of #6d93ff, 2.3:1).
     img.data[i * 4] = r8;
     img.data[i * 4 + 1] = g8;
     img.data[i * 4 + 2] = b8;
@@ -366,21 +329,18 @@ function renderSilhouette(): HTMLCanvasElement | null {
 /**
  * Resolve the silhouette's boundary onto the device grid and outline it, over the downscaled fill.
  *
- * The fill must come through a supersampled buffer, which is what gives the interior its smooth
- * depth shading, but a boundary arriving the same way is a ramp of partial alpha whatever the
- * sample count: the downscale filter's footprint sets its width, not the sampling. Measured on the
- * shipped thumbnails it ramped over 2.1 device pixels at every ratio. At 30px a mark reads as
- * sharp when its boundary is defined, which is why icons are outlined.
+ * The fill comes through a supersampled buffer for smooth interior shading, but a boundary arriving
+ * that way is a partial-alpha ramp whatever the sample count (the filter's footprint sets the width;
+ * measured on shipped thumbnails, 2.1 device pixels at every ratio). At 30px a mark reads as sharp
+ * when its boundary is defined, hence outlines.
  *
- * So the boundary is decided here at device resolution, from the same supersamples the fill was
- * averaged from: a device pixel is in when half its samples are covered, and the outermost ring of
- * in-pixels is painted at full accent. Alpha is binary, so the transition is one pixel wide by
- * construction rather than by tuning.
+ * So the boundary is decided here at device resolution from the same supersamples: a device pixel
+ * is in when half its samples are covered, and the outermost ring of in-pixels is painted at full
+ * accent. Alpha is binary, so the transition is one pixel by construction.
  *
- * The tradeoff is real and was why the supersample went in: a binary boundary steps where a ramped
- * one blends. It is acceptable because only the boundary is binary, the shaded interior still
- * arriving through the 4x downscale, so the steps are a 1px contour on a smooth form rather than
- * the whole silhouette as pixel art.
+ * Tradeoff: a binary boundary steps where a ramp blends, acceptable because only the boundary is
+ * binary and the shaded interior still arrives through the 4x downscale — a 1px contour on a smooth
+ * form, not pixel art.
  */
 function drawEdge(
   ctx: CanvasRenderingContext2D,
@@ -403,8 +363,7 @@ function drawEdge(
       cov[y * outPx + x] = n >= half ? 1 : 0;
     }
   }
-  // Out of bounds counts as outside, so a silhouette running off the edge of the box is outlined
-  // along it rather than left open.
+  // Out of bounds counts as outside, so a silhouette running off the box is outlined along it.
   const inside = (x: number, y: number): boolean =>
     x >= 0 && y >= 0 && x < outPx && y < outPx && cov[y * outPx + x] === 1;
 
@@ -413,8 +372,7 @@ function drawEdge(
     for (let x = 0; x < outPx; x++) {
       const i = (y * outPx + x) * 4;
       if (!inside(x, y)) {
-        // Clearing the fill's own ramp is what makes the outline the boundary. Left in place it
-        // reads as a soft halo outside a hard line: the ramp with a line drawn on it, no sharper.
+        // Clearing the fill's own ramp makes the outline the boundary; left in, it's a soft halo outside a hard line.
         img.data[i + 3] = 0;
         continue;
       }
@@ -429,12 +387,7 @@ function drawEdge(
   ctx.putImageData(img, 0, 0);
 }
 
-/**
- * Put the current part's silhouette in `#shape-thumb`, or leave the box empty until a mesh exists.
- *
- * Cached on what the picture depends on, because it is called from the parts-changed hook, which
- * fires several times while an assembly loads.
- */
+/** Put the current part's silhouette in `#shape-thumb`, or leave it empty until a mesh exists. Cached on what the picture depends on: the parts-changed hook fires several times while an assembly loads. */
 export function refreshShapeThumb(): void {
   const el = $('#shape-thumb');
   if (!el) return;

@@ -1,12 +1,9 @@
 /**
- * "Is the app idle" signal for drive scripts, mirroring the setProgressSink / warnings.ts
- * singleton pattern. A counter of outstanding async work (part fetches, an armed rebuild
- * debounce, an in-flight rebuild) plus a waiter list resolved once it drops to zero.
- *
- * Callers must never let the counter touch zero between two back-to-back units of work that
- * are really one continuous busy stretch (e.g. a debounce timer handing off to the rebuild it
- * scheduled) — begin the next unit before ending the current one, or a whenIdle() waiter can
- * resolve on a zero-width gap that isn't actually idle.
+ * "Is the app idle" signal for drive scripts, mirroring the setProgressSink / warnings.ts singleton
+ * pattern: a counter of outstanding async work (part fetches, an armed debounce, an in-flight
+ * rebuild) plus waiters resolved when it hits zero. Never let it touch zero between back-to-back
+ * units of one busy stretch (a debounce handing off to its rebuild): begin the next unit before
+ * ending the current, or a whenIdle() waiter resolves on a zero-width gap.
  */
 let outstanding = 0;
 let waiters: (() => void)[] = [];
@@ -32,12 +29,10 @@ export function whenIdle(): Promise<void> {
 let rebuilds = 0;
 
 /**
- * Bumped once per completed rebuild, for drive scripts only.
- *
- * `whenIdle()` answers "is anything in flight", which cannot distinguish "the rebuild I triggered
- * has finished" from "nothing was ever triggered" — the second is where a driven check asserts
- * against the previous state and reports a pass. Reading this before an action and again after
- * makes that difference observable rather than a 30-second wait that looks like a slow rebuild.
+ * Bumped once per completed rebuild, for drive scripts only. `whenIdle()` can't tell "the rebuild I
+ * triggered finished" from "nothing was triggered", where a driven check asserts against the
+ * previous state and passes. Reading this before and after an action makes that observable instead
+ * of a 30-second wait that looks like a slow rebuild.
  */
 export function noteRebuildDone(): void {
   rebuilds++;

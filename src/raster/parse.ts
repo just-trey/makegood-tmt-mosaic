@@ -9,20 +9,14 @@ import type { RasterImage, RasterOptions } from './types';
 
 export interface RasterParseResult {
   parsed: ParsedSVG;
-  /** The colors the traced shapes actually paint with — can be shorter than the requested count,
-   * and shorter than the quantizer's own palette. */
+  /** The colors the traced shapes paint with — can be fewer than requested, and fewer than the quantizer's palette. */
   palette: string[];
-  /**
-   * How many colors labelled pixels and then painted nothing. Counted against the quantizer's
-   * palette, never against `opts.colors`: an image with fewer colors than the slider asks for lost
-   * nothing, and no Detail setting invents a color it never had.
-   */
+  /** How many colors labelled pixels and then painted nothing. Counted against the quantizer's palette, never `opts.colors`: an image with fewer colors than the slider asks lost nothing, and no Detail setting invents a color. */
   droppedColors: number;
   /**
-   * Whether raising Detail lowers the floor this trace ran under at all, measured rather than
-   * inferred: the floor the same image would get at DETAIL_MAX, against the one it got. False when
-   * a placement's nozzle-width floor pins it (Detail never scales that half) and false at
-   * DETAIL_MAX itself, which is every case where "raise Detail" is not an instruction.
+   * Whether raising Detail lowers this trace's floor at all, measured: the floor at DETAIL_MAX
+   * against the one it got. False when a placement's nozzle-width floor pins it (Detail never scales
+   * that half) and at DETAIL_MAX itself — every case where "raise Detail" isn't an instruction.
    */
   detailLowersFloor: boolean;
   /** Which lever is left when Detail has none: see FloorReason. */
@@ -31,23 +25,21 @@ export interface RasterParseResult {
   componentCount: number;
   /** True when the despeckle floor was raised to stay under MAX_COMPONENTS. */
   capped: boolean;
-  /** The floor the trace actually applied, which is above `despeckleFloorPx`'s answer when capped. */
+  /** The floor the trace applied — above `despeckleFloorPx`'s answer when capped. */
   floorPx: number;
 }
 
 /**
  * How traced components become shapes.
  *
- * 'color' puts every component of one color in a single shape: few shapes, so the paint-order
- * boolean pass in regions.ts stays tiny, at the cost of many rings inside one shape — which is what
- * `shapeToFeature`'s containment resolution is quadratic in. 'component' inverts that trade.
+ * 'color' puts every component of one color in one shape: few shapes, so regions.ts's paint-order
+ * boolean pass stays tiny, at the cost of many rings in one shape (what `shapeToFeature`'s
+ * containment resolution is quadratic in). 'component' inverts the trade.
  *
- * 'color' wins, measured rather than argued (scripts/bench-raster.ts): on a 512px photographic
- * source it totals ~830ms against ~1590ms for 'component', because the paint-order booleans scale
- * with shape count and dominate everything else. The quadratic risk 'color' runs toward never
- * materialises — despeckling holds the worst shape to ~23 rings, where `shapeToFeature` costs
- * ~5ms against a 30ms yield budget. 'component' is kept so the bench can keep re-checking that,
- * since the balance would shift if the despeckle floor were ever lowered a long way.
+ * 'color' wins, measured (scripts/bench-raster.ts): on a 512px photographic source ~830ms against
+ * ~1590ms, since the booleans scale with shape count. The quadratic risk never materialises —
+ * despeckling holds the worst shape to ~23 rings, where `shapeToFeature` costs ~5ms against a 30ms
+ * budget. 'component' stays so the bench keeps re-checking that if the floor is ever lowered a long way.
  */
 export type ShapeGranularity = 'color' | 'component';
 
@@ -86,38 +78,30 @@ function bboxOf(shapes: SVGShape[]): ParsedSVG['bbox'] {
 }
 
 /**
- * Everything a trace takes from its placement: the floor it runs at, and the floor it would get at
- * DETAIL_MAX. `mmPerPixel` reaches parseRasterImage through these two numbers and nowhere else, so
- * two placements that give the same pair trace identically (see `placedFloors`).
+ * Everything a trace takes from its placement: the floor it runs at and the floor it would get at
+ * DETAIL_MAX. `mmPerPixel` reaches parseRasterImage only through these, so two placements giving
+ * the same pair trace identically (see `placedFloors`).
  */
 function tracePlan(img: RasterImage, detail: number, mmPerPixel: number) {
-  // Measured at decode time, at a fixed reference size, and carried on the image — see
-  // RasterImage.edgeDensity. Re-measuring here would read the *working* image, whose size now
-  // varies with that very statistic, and quietly shift every threshold that depends on it.
+  // Measured at decode time at a fixed reference size and carried on the image (RasterImage.edgeDensity). Re-measuring would read the *working* image, whose size varies with that statistic, and shift every threshold.
   const stats =
     img.edgeDensity === undefined ? measureImage(img) : { edgeDensity: img.edgeDensity };
-  // Whether the detail pass actually enlarged this image, which is what decides the compensating
-  // blur. Read off the working size rather than passed down: the size is the fact, and an image too
-  // small to be enlarged gave up no downscale filtering and must not be blurred for it.
+  // Whether the detail pass enlarged this image, which decides the compensating blur. Read off the
+  // working size: an image too small to be enlarged gave up no downscale filtering and mustn't be blurred.
   const ranDetailPass = Math.max(img.w, img.h) > MEASURE_EDGE;
   const params = autoParams(stats, detail, ranDetailPass);
   const floor = despeckleFloorPx(params, img.w, img.h, stats, detail, mmPerPixel);
-  // What the dropped-color notice's remedy is worth here, asked directly rather than inferred from
-  // which floor binds: the floor this image would get at DETAIL_MAX, against the one it got. A
-  // placement's nozzle floor pinning it and the slider already being at its end are the same answer.
-  //
-  // Compared against `floor`, the floor asked for, never the `floorPx` the trace comes back with: a
-  // cap raise puts that one above `floor` on its own, so a capped trace at DETAIL_MAX would come
-  // back claiming Detail has room it does not have.
+  // What the dropped-color remedy is worth, asked directly rather than inferred from which floor
+  // binds: the floor at DETAIL_MAX against the one got. A nozzle floor pinning it and the slider
+  // being at its end are the same answer. Compared against `floor` (asked for), never the `floorPx`
+  // returned: a cap raise puts that above `floor` alone, and a capped trace at DETAIL_MAX would claim Detail has room.
   const maxParams = autoParams(stats, DETAIL_MAX, ranDetailPass);
   const floorAtMax = despeckleFloorPx(maxParams, img.w, img.h, stats, DETAIL_MAX, mmPerPixel);
 
-  // The empty-trace remedy comes off the same measurement, so it stops pointing at Detail wherever
-  // the placed size is the real answer. 'printable' needs both halves: Detail has no room left on
-  // this floor, *and* the placement is what holds it above the fraction at DETAIL_MAX. Asking
-  // `floor > fracFloorPx` instead read a nozzle floor that ties the fraction rather than exceeding
-  // it as 'noise', with the floor pinned at 2 and Detail unable to move it. With no placement the
-  // second half fails and 'noise' stands: no part size is the answer there, and a cleaner source is.
+  // The empty-trace remedy comes off the same measurement. 'printable' needs both halves: Detail
+  // has no room on this floor, *and* the placement holds it above the fraction at DETAIL_MAX.
+  // `floor > fracFloorPx` read a nozzle floor tying the fraction as 'noise' with the floor pinned at
+  // 2 and Detail unable to move it. With no placement the second half fails and 'noise' stands.
   const floorReason: FloorReason =
     floorAtMax >= floor && floorAtMax > fracFloorPx(maxParams, img.w, img.h)
       ? 'printable'
@@ -125,11 +109,7 @@ function tracePlan(img: RasterImage, detail: number, mmPerPixel: number) {
   return { params, floor, floorAtMax, floorReason };
 }
 
-/**
- * The two floors a trace at this placement would run under, cheap enough to ask on every rebuild:
- * no quantize, no trace. Equal answers for two placements mean the traces are identical, which is
- * how a resize decides whether to re-trace (state/artwork.ts `retraceMovedSources`).
- */
+/** The two floors a trace at this placement would run under, cheap enough for every rebuild (no quantize, no trace). Equal answers mean identical traces — how a resize decides to re-trace (state/artwork.ts `retraceMovedSources`). */
 export function placedFloors(
   img: RasterImage,
   detail: number,
@@ -140,12 +120,10 @@ export function placedFloors(
 }
 
 /**
- * Turn a decoded image into the same `ParsedSVG` the SVG parser produces — the whole point of the
- * raster path. One user unit is one working pixel, origin top-left, y down, which is exactly the
- * SVG convention, so every downstream y-flip and fit already applies unchanged.
- *
- * Throws when nothing usable comes out, matching `parseSVGDocument`: the artwork panel relies on a
- * failed load being a no-op that leaves whatever is already loaded alone.
+ * Turn a decoded image into the same `ParsedSVG` the SVG parser produces. One user unit is one
+ * working pixel, origin top-left, y down — the SVG convention, so every downstream y-flip and fit
+ * applies unchanged. Throws when nothing usable comes out, like `parseSVGDocument`: the artwork
+ * panel relies on a failed load leaving what's loaded alone.
  */
 export function parseRasterImage(
   img: RasterImage,
@@ -170,20 +148,16 @@ export function parseRasterImage(
       ? shapesByComponent(components, map.palette)
       : shapesByColor(components, map.palette);
 
-  // The quantizer's palette, narrowed to what survived tracing. A colour can win a cluster and then
-  // paint nothing at all — every component of it despeckled away, absorbed by the component cap, or
-  // collapsed into a neighbour — and counting it anyway makes the panel read "3 colors · 2 regions",
-  // makes the smoke's `shown === traced` check fail against a colour list that only has the two, and
-  // lets remapSettingsToPalette carry a depth onto a hex nothing paints (where the prune then drops
-  // it). Palette entries are ΔE-separated by construction, so no two share a hex and this can't
-  // collapse two live entries into one.
+  // The quantizer's palette narrowed to what survived tracing. A color can win a cluster and paint
+  // nothing (despeckled away, absorbed by the cap, collapsed into a neighbour); counting it reads
+  // "3 colors · 2 regions", fails the smoke's `shown === traced`, and lets remapSettingsToPalette
+  // carry a depth onto a hex nothing paints. Palette entries are ΔE-separated, so none share a hex.
   const painted = new Set(shapes.map((s) => s.fill));
   const palette = map.palette.filter((hex) => painted.has(hex));
 
-  // Only the colors that labelled pixels and then painted none of them. A centroid can win a
-  // cluster from the source histogram and label nothing at all, because assignment is resolved
-  // against the *blurred* copy (see quantize): that color never had pieces to lose, so counting it
-  // would put a "raise Detail" notice on a loss no Detail setting can undo.
+  // Only colors that labelled pixels and then painted none. A centroid can win a cluster from the
+  // source histogram and label nothing, since assignment resolves against the *blurred* copy (see
+  // quantize) — it had no pieces to lose, and counting it would raise a "raise Detail" notice no Detail setting can undo.
   const labelled = new Set<number>();
   for (const label of map.labels) if (label !== BACKGROUND) labelled.add(label);
   let droppedColors = 0;
@@ -194,10 +168,9 @@ export function parseRasterImage(
       shapes,
       bbox: bboxOf(shapes),
       rawSVGCircle: null,
-      // A raster carries no trustworthy physical size: the DPI tags in consumer PNG/JPEG files are
-      // almost always a meaningless 72 or 96, and honoring one would size a phone photo at over a
-      // metre. Leaving it null routes placement through the same meet-fit branch every SVG the app
-      // ships already takes.
+      // A raster has no trustworthy physical size: DPI tags are almost always a meaningless 72 or 96
+      // and honoring one would size a phone photo at over a metre. Null routes placement through the
+      // meet-fit branch every shipped SVG already takes.
       userUnitMM: null,
       viewBox: { w: img.w, h: img.h },
       canvas: { w: img.w, h: img.h },
@@ -214,21 +187,17 @@ export function parseRasterImage(
 }
 
 /**
- * The capped notice, named for the image it is about.
- *
- * Per image rather than one shared string, so the pill names which image it's about once more
- * than one is loaded. Every notice()/dismissNotice() call for this message is keyed by the
- * source's id (warnings.ts's Notice.key), not by this text — two sources can share a filename,
- * and keying by the rendered string would let one land on the wrong side of the capped/traced
- * split or cross-retract the other's still-true notice.
+ * The capped notice, named for the image it is about, so the pill says which once several are loaded.
+ * Every notice()/dismissNotice() call for it is keyed by the source's id (warnings.ts Notice.key),
+ * not this text: two sources can share a filename, and keying by the rendered string would let one
+ * land on the wrong side of the capped/traced split or cross-retract the other's notice.
  *
  * Both suggestions lower the component count. Detail is the counter-intuitive one: `autoParams`
  * scales the despeckle floor by 4^((50-detail)/50), so *raising* Detail quarters the floor and lets
- * through four times the specks — the opposite of what this notice is asking for.
+ * through four times the specks — the opposite of what this notice asks.
  *
- * Lives here rather than in the panel that first showed it because session restore re-traces and
- * has to say the same thing: a design that comes back simplified with nothing said reads as the
- * app having quietly changed it.
+ * Lives here, not in the panel, because session restore re-traces and must say the same thing: a
+ * design that comes back simplified unannounced reads as the app quietly changing it.
  */
 export function rasterCappedMessage(name: string): string {
   return (
@@ -238,26 +207,22 @@ export function rasterCappedMessage(name: string): string {
 }
 
 /**
- * Shown once a photo has traced without hitting the cap above. An SVG is already flat color;
- * a photo has to be quantized and traced to get there, so it never comes out as sharp.
- *
- * Same shape as rasterCappedMessage: keyed by source id, mutually exclusive with it per source,
- * so a row shows exactly one status line once it has traced.
+ * Shown once a photo has traced without hitting the cap. An SVG is already flat color; a photo must
+ * be quantized and traced, so it never comes out as sharp. Same shape as rasterCappedMessage: keyed
+ * by source id and mutually exclusive with it, so a row shows one status line.
  */
 export function rasterTracedMessage(name: string): string {
   return `"${name}" was traced from a photo. An SVG would come out cleaner.`;
 }
 
 /**
- * Shown when tracing painted nothing with colors the quantizer had found, so the readout comes back
- * under the Colors slider with nothing saying why.
+ * Shown when tracing painted nothing with colors the quantizer found, so the readout comes back
+ * under the Colors slider unexplained.
  *
- * Raising Detail is the whole message, and rasterLostColors only raises it where that is the true
- * answer: the fractional floor is the one autoParams scales, by 4^((50-detail)/50). It is also the
- * opposite of what rasterCappedMessage asks for, which is why the two are mutually exclusive.
- *
- * It makes no claim about the pieces being unprintable. Under that floor they usually are printable
- * — NOZZLE_MM is the only floor that claims otherwise, and the one Detail deliberately never scales.
+ * Raising Detail is the whole message, and rasterLostColors only raises it where true: the
+ * fractional floor is the one autoParams scales (4^((50-detail)/50)). Opposite to rasterCappedMessage,
+ * hence mutually exclusive. It doesn't claim the pieces are unprintable — under that floor they
+ * usually are printable; NOZZLE_MM is the only floor that claims otherwise, and Detail never scales it.
  */
 export function rasterColorLossMessage(name: string, dropped: number): string {
   return (
@@ -266,20 +231,12 @@ export function rasterColorLossMessage(name: string, dropped: number): string {
   );
 }
 
-/**
- * The notice key for rasterColorLossMessage, deliberately not the bare source id the capped/traced
- * pair uses: this one stands *beside* the traced notice, and sharing their key would make push()
- * skip whichever arrived second and dismissNotice() retract the wrong one.
- */
+/** The notice key for rasterColorLossMessage — deliberately not the bare source id the capped/traced pair uses: this one stands *beside* the traced notice, and a shared key would make push() skip the second and dismissNotice() retract the wrong one. */
 export function rasterColorLossKey(sourceId: string): string {
   return `${sourceId}:colors`;
 }
 
-/**
- * The dropped-color notice for a trace whose floor the placement pins: the nozzle-width floor,
- * which Detail never scales. A bigger design or part is the one lever, and since a resize re-traces
- * (app/rebuild.ts), pulling it does bring the color back. Here the printability claim is true.
- */
+/** The dropped-color notice for a trace whose floor the placement pins (the nozzle-width floor, which Detail never scales). A bigger design or part is the one lever, and a resize re-traces (app/rebuild.ts), so the color does come back. The printability claim is true here. */
 export function rasterSizeColorLossMessage(name: string, dropped: number): string {
   return (
     `${dropped === 1 ? '1 color' : `${dropped} colors`} in "${name}" ` +
@@ -289,12 +246,10 @@ export function rasterSizeColorLossMessage(name: string, dropped: number): strin
 }
 
 /**
- * Whether a finished trace should raise rasterColorLossMessage. Not simply `droppedColors > 0`: it
- * only fires where raising Detail is an answer the user can actually give.
- *
- * A capped trace already carries rasterCappedMessage, whose remedy is the opposite one. A floor
- * Detail cannot lower gets rasterSizeColorLossMessage where the placement pins it, and nothing at
- * DETAIL_MAX with no placement to blame, which docs/tech-debt.md carries.
+ * Whether a finished trace should raise rasterColorLossMessage — not simply `droppedColors > 0`: only
+ * where raising Detail is an answer the user can give. A capped trace carries rasterCappedMessage
+ * (opposite remedy); a floor Detail can't lower gets rasterSizeColorLossMessage where the placement
+ * pins it, and nothing at DETAIL_MAX with no placement to blame (docs/tech-debt.md).
  */
 export function rasterLostColors(
   result: Pick<RasterParseResult, 'capped' | 'droppedColors' | 'detailLowersFloor'>,
@@ -313,19 +268,10 @@ export function rasterColorLossNotice(
   return null;
 }
 
-/**
- * Which remedy an emptied trace gets. 'printable' means the placement holds the floor up even at
- * DETAIL_MAX, so only a bigger part or design moves it; 'noise' means Detail still has room, or
- * there is no placement to blame. Measured in parseRasterImage, never inferred from which floor
- * binds now — see rasterEmptyTraceMessage.
- */
+/** Which remedy an emptied trace gets. 'printable': the placement holds the floor up even at DETAIL_MAX, so only a bigger part or design moves it. 'noise': Detail still has room, or no placement to blame. Measured in parseRasterImage, not inferred from which floor binds now (see rasterEmptyTraceMessage). */
 export type FloorReason = 'printable' | 'noise';
 
-/**
- * The empty-trace message for either cause: 'printable' offers the only lever left, the size the
- * design is placed at; 'noise' offers Detail, which scales the fractional floor, and a cleaner
- * source. Which arm a trace gets is measured rather than inferred — see FloorReason.
- */
+/** The empty-trace message: 'printable' offers the size the design is placed at, 'noise' offers Detail and a cleaner source. The arm is measured — see FloorReason. */
 export function rasterEmptyTraceMessage(name: string, reason: FloorReason): string {
   return reason === 'printable'
     ? `Nothing in "${name}" is big enough to print at this size. Make the design or the part bigger.`
