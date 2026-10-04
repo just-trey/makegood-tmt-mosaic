@@ -47,10 +47,9 @@ function download(blob: Blob, fname: string): void {
 }
 
 /**
- * Drop any placement message left over from a previous export attempt (a smaller printer, or a part
- * since swapped back to its verified library mesh) so this attempt reports only its own. Callers
- * must re-render afterwards on every path, including the ones that bail — WARNINGS is the model
- * behind the on-screen pills, and mutating it without a render leaves the two disagreeing.
+ * Drop any placement message left from a previous export (a smaller printer, or a part swapped back
+ * to its verified mesh) so this attempt reports only its own. Callers must re-render afterwards on
+ * every path including bail-outs: WARNINGS backs the pills, and mutating it without a render leaves them disagreeing.
  */
 export function clearStalePlacementNotices(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
@@ -65,23 +64,17 @@ const COVERAGE_WARNING_SUFFIX = 'will print body-colored with no design.';
  * What the export will contain, stated before the button is pressed (convention 24).
  *
  * The measured gap: exporting the chair produced a 34 MB, 11-plate, 13-object, 5-filament file
- * with the left panel byte-identical before and after. That is a multi-day, multi-kilogram print
- * behind an unlabelled button.
+ * with the left panel byte-identical — a multi-day, multi-kilogram print behind an unlabelled button.
  *
- * Reads the build the viewport is already showing, so it costs a lookup rather than a pass over
- * geometry, and it is the same data `exportPrintReady3MF` writes: the same kept parts, the same
- * shipped colours, the same `resolvePlacement` and the same plate-grouping rule.
- *
- * Plates are stated only when hints determine them. The greedy packer needs real footprints, and a
- * number this panel guessed would be worse than no number on the one readout a volunteer checks
- * before committing a spool.
+ * Reads the build the viewport already shows (a lookup, not a geometry pass) and the same data
+ * `exportPrintReady3MF` writes: kept parts, shipped colours, `resolvePlacement`, plate grouping.
+ * Plates are stated only when hints determine them: the greedy packer needs real footprints, and a
+ * guessed number is worse than none on the readout checked before committing a spool.
  */
 export function renderExportSummary(): void {
   const el = document.querySelector<HTMLElement>('#export-summary');
   if (!el) return;
-  // Tied to the button it describes, rather than to the last build: the rebuild doesn't clear
-  // `lastAssemblyBuild` when the artwork is removed, so reading the build alone left "13 parts · 11
-  // plates" sitting beside an export button that same rebuild had just disabled.
+  // Tied to the button, not the last build: the rebuild doesn't clear `lastAssemblyBuild` when artwork is removed, which left "13 parts · 11 plates" beside an export button that rebuild had just disabled.
   if ($<HTMLButtonElement>('#btn-export').disabled) {
     el.hidden = true;
     return;
@@ -130,12 +123,9 @@ export function renderExportSummary(): void {
 
 /**
  * Which plate each part is pinned to: the baked placement's hint, except the wheel's rotated
- * duplicate halves, which are the same mesh again and each claim the next plate after the
- * primary's.
- *
- * One implementation, used by the export and by the summary that promises what the export will do.
- * The counter is why this cannot be a pure per-part lookup, and why a copy in the summary would
- * have been a second rule rather than the same one.
+ * duplicate halves (the same mesh again), which each claim the next plate after the primary's.
+ * One implementation for the export and the summary promising it — the counter makes a pure
+ * per-part lookup impossible, and a copy in the summary would be a second rule.
  */
 function platePlan(kept: { part: Parameters<typeof resolvePlacement>[0] }[]): {
   part: Parameters<typeof resolvePlacement>[0];
@@ -143,9 +133,7 @@ function platePlan(kept: { part: Parameters<typeof resolvePlacement>[0] }[]): {
   plateHint?: number;
 }[] {
   let nextHalfPlate = 2;
-  // The resolution rides along because resolvePlacement fingerprints the part mesh, an O(vertices)
-  // scan. This runs on every rebuild for the summary; without returning it the export would pay
-  // for a second pass per part on top.
+  // The resolution rides along because resolvePlacement fingerprints the mesh (O(vertices)); this runs every rebuild for the summary, and without returning it the export pays a second pass per part.
   return kept.map(({ part }) => {
     const resolution = resolvePlacement(part);
     const baked = resolution.verified ? resolution.placement.plateHint : undefined;
@@ -155,13 +143,10 @@ function platePlan(kept: { part: Parameters<typeof resolvePlacement>[0] }[]): {
 }
 
 /**
- * The part outputs that will actually reach the file: one whose pocket cut consumed the whole part
- * has no body left to export.
- *
- * Shared with the pre-export summary below, which must count the same parts the export will write.
- * `report` is how the export raises this as a warning and the summary stays silent — the summary
- * runs on every rebuild, and a pill posted from a passive readout would arrive with no action
- * behind it.
+ * The part outputs that will reach the file: one whose pocket cut consumed the whole part has no
+ * body to export. Shared with the pre-export summary, which must count the same parts. `report`
+ * raises this as a warning from the export while the summary stays silent: it runs every rebuild,
+ * and a pill from a passive readout would arrive with no action behind it.
  */
 function keptPartOutputs(
   built: NonNullable<ReturnType<typeof getLastAssemblyBuild>>,
@@ -178,14 +163,11 @@ function keptPartOutputs(
 }
 
 /**
- * The last guardrail before an incomplete-coverage chair export downloads: rebuild.ts already
- * surfaces this as an info pill the whole time it's true, but that pill is easy to have scrolled
- * past by the time the user reaches Export. Escalated to warn() here rather than notice() because
- * this is the last moment before the file — the same coverage gap that caught
- * scripts/export-chair-examples.mjs's own author. Doesn't block the export: the app's pattern
- * throughout is warn-but-proceed (see the missing-geometry filter below) — a hard block on every
- * incomplete-coverage export, themed dialog or not, would be a bigger behavior change than this
- * warning is trying to make.
+ * The last guardrail before an incomplete-coverage chair export downloads: rebuild.ts shows an info
+ * pill the whole time it's true, easy to have scrolled past by Export. Escalated to warn() as the
+ * last moment before the file (the gap that caught scripts/export-chair-examples.mjs's own author).
+ * Doesn't block: the app's pattern is warn-but-proceed (see the missing-geometry filter below), and
+ * a hard block, themed dialog or not, would be a bigger behavior change than intended.
  */
 function warnIfIncompleteZoneCoverage(): void {
   for (let i = WARNINGS.length - 1; i >= 0; i--) {
@@ -203,8 +185,7 @@ function warnIfIncompleteZoneCoverage(): void {
 
 export async function exportPrintReady3MF(): Promise<void> {
   const bodyColor = baseColorHex().toUpperCase();
-  // captured now, not read at track() time below: the export button disables itself during the
-  // awaits ahead, but #shape-kind doesn't, so state.assembly.kindId can move under us mid-export
+  // captured now, not read at track() time: the export button disables during the awaits but #shape-kind doesn't, so state.assembly.kindId can move mid-export
   const exportedKindId = state.assembly.kindId;
 
   const built = getLastAssemblyBuild();
@@ -213,9 +194,8 @@ export async function exportPrintReady3MF(): Promise<void> {
   warnIfIncompleteZoneCoverage();
   const palette = built.palette;
   const kept = keptPartOutputs(built, (msg) => warn(msg));
-  // Only palette colors with an inlay on some exported part become materials. A color whose
-  // regions all fell off the parts would otherwise ship as a filament nothing references,
-  // costing the user an AMS slot that prints nothing (the build warns naming such colors).
+  // Only palette colors with an inlay on some exported part become materials; one whose regions all
+  // fell off would ship as a filament nothing references, costing an AMS slot (the build warns naming such colors).
   const shipped = shippedColorIndices(kept);
   const matIndexByColor = new Map<number, number>();
   const materials: ExportMaterial[] = [{ name: 'Body', color: bodyColor }];
@@ -224,9 +204,7 @@ export async function exportPrintReady3MF(): Promise<void> {
     matIndexByColor.set(ci, materials.length);
     materials.push({ name: nearestFilamentName(p.hex), color: p.hex });
   });
-  // Plate layout comes from PLACEMENT — verified constants, not computed. platePlan applies it,
-  // and the pre-export summary reads the same plan so the two cannot disagree about what the
-  // file will contain.
+  // Plate layout comes from PLACEMENT — verified constants, not computed. platePlan applies it and the pre-export summary reads the same plan, so they can't disagree.
   const plan = platePlan(kept);
   const parts: ExportPart[] = kept.map(
     ({ part, bodySoup, inlaySoups, bodyIndexed, inlayIndexed }, i) => {
@@ -258,8 +236,7 @@ export async function exportPrintReady3MF(): Promise<void> {
   );
   const fname = `mosaic-${state.assembly.kindId}.3mf`;
 
-  // the color list already posts this live; re-run it here against the export's own material count,
-  // which is the authoritative one
+  // the color list posts this live; re-run against the export's own material count, the authoritative one
   refreshSlotBudgetNotice(materials.length);
   showOverlay('Exporting print-ready 3MF…');
   await new Promise((r) => setTimeout(r, 10));
@@ -283,21 +260,17 @@ export async function exportPrintReady3MF(): Promise<void> {
     track('export_failed', { format: '3mf' });
     await alertDialog('Export failed: ' + (e as Error).message);
   }
-  // outside the try: the per-part messages above were emitted before it, so a failed build still
-  // has to render them rather than leaving the pills showing the previous attempt's
+  // outside the try: the per-part messages above were emitted before it, so a failed build still has to render them rather than leave the previous attempt's pills
   renderWarnings();
   hideOverlay();
 }
 
 /**
- * Guards the export button against re-entrancy — confirmed live (5 rapid clicks on #btn-export)
- * that the export had no guard at all: every click ran its own full export and download,
- * independent of any already in flight. The flag is the actual guard, checked before the export
- * starts; the `disabled` toggle on top is only a visual affordance during the
- * export, not the mechanism — rebuild.ts owns #btn-export's disabled state the rest of the time
- * (enabled/disabled based on whether the current build has exportable geometry), and this
- * shouldn't fight that ownership by unconditionally forcing it back to enabled once an export
- * that raced with a rebuild finishes.
+ * Guards the export button against re-entrancy. Confirmed live (5 rapid clicks on #btn-export): it
+ * had no guard, and every click ran its own full export and download. The flag is the guard,
+ * checked before the export starts; the `disabled` toggle is only a visual affordance — rebuild.ts
+ * owns #btn-export's disabled state otherwise, and forcing it back to enabled would fight that when
+ * an export raced a rebuild.
  */
 let exporting = false;
 
@@ -318,14 +291,10 @@ export function initExportPanel(): void {
   $<HTMLSelectElement>('#p-printer').addEventListener('change', (e) => {
     state.printerId = (e.target as HTMLSelectElement).value;
     // Affects geometry only through a kind whose build parameter is bounded by the plate (the
-    // hubcap's diameter) — clampBuildParamToPrinter regenerates in that one case and is a no-op
-    // otherwise. Beyond that this is still the one state change that needs its own explicit
-    // autosave trigger rather than piggybacking on rebuildCurrent()'s, and its own slot-count
-    // redraw rather than picking one up from a rebuild.
+    // hubcap diameter) — clampBuildParamToPrinter regenerates then and is a no-op otherwise. It's
+    // also the one state change needing its own autosave trigger and slot-count redraw, not a rebuild's.
     void clampBuildParamToPrinter();
-    // Every placement message names a bed, a plate size or a verified pose, so a printer switch
-    // invalidates all of them at once. They used to be cleared only by the *next* export, which
-    // left pills naming a 350x320mm plate sitting over a part on a 256mm bed.
+    // Every placement message names a bed, plate size or verified pose, so a printer switch invalidates all of them. They were cleared only by the *next* export, leaving pills naming a 350x320mm plate over a part on a 256mm bed.
     clearStalePlacementNotices();
     // re-posts the slot-budget pill against the new printer's numbers as well as redrawing the line
     refreshSlotCountCapacity();

@@ -2,23 +2,19 @@ import { state } from '../state/store';
 import { scheduleRebuild } from '../app/scheduler';
 import { $, input, numVal } from './dom';
 
-/** Push state.globalDepth into the DOM — needed by session restore (state/persist.ts), which sets
- * it directly rather than through the control's own handler. */
+/** Push state.globalDepth into the DOM — needed by session restore (state/persist.ts), which sets it directly, not via the control's handler. */
 export function refreshDepthControls(): void {
   input('#p-depth').value = String(state.globalDepth);
 }
 
 /**
- * How many colors are ignoring the Default depth, shown beside the field that sets it.
+ * How many colors are ignoring the Default depth, shown beside the field that sets it. Convention 4:
+ * the override lives in Colors detected, so typing in Default depth could appear to do nothing with
+ * no visible cause; the panel's "override below" pointer was the symptom that convention names.
+ * This shows the state and offers the way back that existed only per row.
  *
- * Convention 4: the override lives in Colors detected, so typing in Default depth could appear to
- * do nothing with no visible cause. The panel used to point at the other panel ("override below"),
- * which is the symptom that convention names; this shows the state instead, and offers the way
- * back that previously existed only per row.
- *
- * Counted from the rows on screen rather than from state.colorSettings, which can hold keys for
- * colors no longer in the artwork until the next prune: a count including those would name
- * overrides the user cannot see.
+ * Counted from rows on screen, not state.colorSettings, which can hold keys for colors no longer in
+ * the artwork until the next prune — a count including those names overrides the user can't see.
  */
 let namedOverrides: string[] = [];
 
@@ -40,33 +36,26 @@ export function refreshDepthOverrides(overriddenKeys: string[]): void {
 
 export function initDepthPanel(): void {
   const overrides = $('#depth-overrides');
-  // The same gesture contract as the per-row "↺" (wireDepthReset in colorList.ts). This one is
-  // bulk and unundoable, so it needs every guard that one has, not fewer.
-  //
-  // Delegated to the container rather than bound to the button: refreshDepthOverrides replaces
-  // innerHTML on every rebuild, and the rebuild a pending depth edit schedules detaches the button
-  // mid-gesture, so a listener on the button itself never fires.
+  // Same gesture contract as the per-row "↺" (wireDepthReset in colorList.ts); this one is bulk and
+  // unundoable, so it needs every guard that one has. Delegated to the container: refreshDepthOverrides
+  // replaces innerHTML every rebuild, and the rebuild a pending depth edit schedules detaches the
+  // button mid-gesture, so a listener on the button never fires.
   const resetBtn = (e: Event): HTMLElement | null => {
     const btn = (e.target as HTMLElement | null)?.closest?.(
       '#depth-reset-all',
     ) as HTMLElement | null;
-    // Primary button only, or the press that opens a context menu wipes every override, with the
-    // menu drawn over the change and nothing to undo it.
+    // Primary button only: a context-menu press would wipe every override with the menu over the change and nothing to undo it.
     return !btn || (e as MouseEvent).button > 0 ? null : btn;
   };
   let pressed = false;
   let mouseHandled = false;
 
   const clearAll = () => {
-    // Commit any half-typed depth first, in this same tick. The mousedown guard below only defers
-    // that field's blur-`change`; without this it fires *after* the clear and re-stores the very
-    // override being removed. Measured: typing 3.5 then clicking Reset all left 3.5 in place.
+    // Commit any half-typed depth first, this tick. The mousedown guard below only defers that field's blur-`change`, which would fire *after* the clear and re-store the override being removed. Measured: typing 3.5 then clicking Reset all left 3.5.
     const focused = document.activeElement;
     if (focused instanceof HTMLInputElement && focused.classList.contains('depth-input'))
       focused.blur();
-    // Only what the readout named. state.colorSettings can also hold keys this count never
-    // included: unprefixed keys restored from a session saved in a retired flat mode, and colors
-    // the shipped filter dropped. Clearing those would make the button do more than it says.
+    // Only what the readout named. state.colorSettings can hold keys the count never included (unprefixed keys from a session saved in a retired flat mode, colors the shipped filter dropped); clearing those would do more than the button says.
     namedOverrides.forEach((k) => delete state.colorSettings[k]);
     scheduleRebuild();
   };
@@ -81,21 +70,17 @@ export function initDepthPanel(): void {
     const started = pressed;
     pressed = false;
     mouseHandled = true;
-    // Press must have started on the button: otherwise a mousedown on the label, dragged onto it
-    // and released, fires the wipe.
+    // The press must have started on the button, or a mousedown on the label dragged onto it fires the wipe.
     if (!resetBtn(e) || !started) return;
     e.stopPropagation();
     clearAll();
   });
-  // A release anywhere else never reaches the listener above, which would leave `pressed` naming an
-  // abandoned press for the next unrelated gesture that happens to end on the button.
+  // A release elsewhere never reaches the listener above, which would leave `pressed` naming an abandoned press for the next unrelated gesture ending on the button.
   document.addEventListener('mouseup', () => {
     pressed = false;
   });
   overrides.addEventListener('click', (e) => {
-    // Enter and Space dispatch only `click`, so without this the button is dead to the keyboard.
-    // A real mouseup already decided the pointer case one listener above; the synthetic click that
-    // follows it must not decide again.
+    // Enter and Space dispatch only `click`, so without this the button is dead to the keyboard. A real mouseup already decided the pointer case; the synthetic click after it mustn't decide again.
     if (mouseHandled) {
       mouseHandled = false;
       return;
