@@ -9,11 +9,10 @@ import { toFiniteNumber } from '../util/number';
 type FitField = 'move' | 'scale' | 'rotate';
 
 /**
- * Keep a slider/number pair in sync and push the canonical value into state.
- * For clamped pairs (margin/scale) the slider is the source of truth, so a typed number snaps
- * back into the slider's range on blur; for offsets the number is the source of truth and may
- * exceed the slider range (the slider just pegs at its end).
- * `field` is omitted for pairs that aren't part of the move/scale/rotate gizmo model (margin).
+ * Keep a slider/number pair in sync and push the canonical value into state. For clamped pairs
+ * (margin/scale) the slider is the source of truth, so a typed number snaps back into range on
+ * blur; for offsets the number is, and may exceed the slider range (the slider pegs).
+ * `field` is omitted for pairs outside the move/scale/rotate gizmo model (margin).
  */
 function syncPair(
   sliderSel: string,
@@ -27,8 +26,7 @@ function syncPair(
   slider.addEventListener('input', () => {
     num.value = slider.value;
     apply(toFiniteNumber(slider.value) ?? 0);
-    // On a heavy model rebuilds are slow — stay smooth during the drag and rebuild once
-    // on release (below) instead of flooding slow redraws.
+    // On a heavy model rebuilds are slow: stay smooth during the drag and rebuild once on release (below).
     if (!isRebuildLikelySlow()) scheduleRebuild();
   });
   slider.addEventListener('change', () => {
@@ -72,11 +70,7 @@ export function updateOffsetSliderRanges(): void {
   refreshGizmo();
 }
 
-/**
- * Push the current global fit fields into the slider/number/checkbox DOM — the counterpart to the
- * gizmo's internal syncFitInputs, needed here too because switching the active artwork instance (or
- * removing one) reseeds those globals from a different instance without any slider handler firing.
- */
+/** Push the global fit fields into the slider/number/checkbox DOM — counterpart to the gizmo's syncFitInputs, needed because switching or removing the active instance reseeds those globals with no slider handler firing. */
 export function refreshFitInputsFromState(): void {
   input('#p-scale').value = String(state.scalePct);
   input('#p-scale-num').value = String(state.scalePct);

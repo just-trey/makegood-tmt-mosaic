@@ -40,21 +40,17 @@ import {
 import { getPrinter } from '../export/printers';
 
 /**
- * An assembly is a fixed, small set of part *roles* (e.g. a wheel is exactly Top + Cap, where
- * Top additionally allows rotated-copy instances — the same physical STL reused at a different
- * position, not a separate upload). This is deliberately inline data, not a fetched manifest
- * like stl/parts.json: it defines what UI even renders, so a fetch dependency here would break
- * Assembly mode's whole UI when the manifest is unreachable instead of just losing an
- * auto-load convenience. Adding a future assembly (other TMT parts) is one array entry.
+ * Each assembly is a fixed set of part *roles* (wheel = Top + Cap; Top also allows rotated copies
+ * of the same STL). Inline, not fetched like stl/parts.json: it defines what UI renders, so an
+ * unreachable manifest would break Assembly mode instead of just losing auto-load.
  */
 export const ASSEMBLY_KINDS: AssemblyKind[] = [
   {
     id: 'wheel',
     name: 'Wheel (Top ×2 + Cap)',
     templateFile: 'wheel-cover-circle.svg',
-    // `copies` = how many rotated copies "load full assembly" auto-adds beyond the primary
-    // (so top = 1 primary + 1 rotated copy = 2 physical tops); copyDefaults seed each copy's
-    // pivot/angle (same values the manual "+ Add rotated copy" button uses).
+    // `copies`: rotated copies auto-added beyond the primary (1 + 1 = 2 tops); copyDefaults seed
+    // each copy's pivot/angle, as the manual "+ Add rotated copy" button does.
     roles: [
       {
         id: 'wheel-half',
@@ -71,8 +67,8 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         libraryPartId: 'wheel-hub-cap',
         allowRotatedCopies: false,
         cutThrough: true,
-        // the cap's shell is 3mm thick above its mounting boss — cut only that far so the
-        // rest prints in base color without extra filament swaps, and the boss stays intact.
+        // the shell is 3mm above the mounting boss: cut only that far, so the boss stays intact
+        // and the rest prints in base color without extra swaps.
         cutThroughDepth: 3,
       },
     ],
@@ -80,13 +76,10 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
   {
     id: 'hubcap',
     name: 'Hubcap',
-    // 1:1 mm, auto-centered on the face — NOT the wheel's circle/Design-radius model, even though
-    // today's disc is a circle. designFit is fixed per kind and can't switch per part, and a
-    // Design radius stops meaning anything as soon as the outline is a user-supplied silhouette
-    // rather than a circle. Choosing rect now is what keeps that from being a breaking change.
+    // rect, not the wheel's Design-radius model, though the disc is round: designFit is fixed per
+    // kind, and a radius means nothing once the outline is a silhouette.
     designFit: 'rect',
-    // Built, not fetched: a static file would be true-to-size at one diameter and wrong at every
-    // other. See hubcapTemplateSvg.
+    // Built, not fetched: a static file is true-to-size at one diameter only.
     buildTemplate: () => hubcapTemplateSvg(hubcapTemplateShape()),
     buildParam: {
       id: 'hubcapDiameterMm',
@@ -98,34 +91,21 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
       {
         id: 'hubcap',
         name: 'Hubcap',
-        // The library asset is the four mounting clips ALONE; buildMesh generates the disc they
-        // carry at state.hubcapDiameterMm and unions it on. So this part's mesh is never the file
-        // that was fetched — see AssemblyRole.buildMesh.
+        // The asset is the four clips ALONE; buildMesh unions on a disc at state.hubcapDiameterMm,
+        // so this part's mesh is never the fetched file.
         libraryPartId: 'hubcap-clips',
         allowRotatedCopies: false,
-        // The disc's underside (a full circle) outsizes its top face (inset 1mm by the chamfer),
-        // so the largest patch is the BACK of the part and auto-detect lands there. The shipped
-        // wheel-hub-cap needs no such nudge — on that part the top face wins — so this can't be
-        // inferred from the small cap.
+        // The underside outsizes the top face (inset 1mm by the chamfer), so auto-detect would land
+        // on the BACK. wheel-hub-cap's top face wins, so this can't be inferred from it.
         preferFaceNormal: [0, 1, 0],
-        // Deliberately no cutThrough, unlike wheel-hub-cap: that part pierces its 3mm shell for
-        // every color, and this one has an identical 3mm shell, so the difference is a choice and
-        // not an omission. A recess keeps a 220mm disc rigid, and inherits the 1mm
-        // state.globalDepth default. The edge of a silhouette is the one place that isn't true —
-        // see GeneratedMesh.edgeCutThroughDepth in buildMesh below, which is per-region rather
-        // than kind-wide precisely so the interior stays a recess.
-        // The verified plate for the size currently set, when there is one — see hubcapPlacement.
-        // A generated part gets no fingerprint-sealed placement, so this is how the one thing a
-        // human *did* check (a specific arrangement at a specific diameter) reaches the export.
-        //
-        // That check was a ROUND disc. Once "cut to artwork shape" is on, hubcapDiameterMm is a
-        // longest-side reading of a shape that isn't a circle, and a silhouette can reach further
-        // off-axis than a circle of the same longest side does — an arrangement verified with 7mm
-        // of tower clearance on a round part is not verified for whatever shape a photo traces to.
-        // Withholding here whenever the toggle is on, rather than only when the built shape ends up
-        // a silhouette, is deliberately conservative: it also covers the moment between the toggle
-        // going on and a fallback-to-circle warning resolving, which this synchronous call has no
-        // way to look ahead to (hubcapShapeFromState needs the wasm module and runs async).
+        // Deliberately no cutThrough, though the shell is the same 3mm as wheel-hub-cap's: a recess
+        // (1mm state.globalDepth default) keeps a 220mm disc rigid. Only a silhouette's edge cuts
+        // through, per region (edgeCutThroughDepth below), so the interior stays a recess.
+        // The verified plate for the current size (hubcapPlacement): a generated part has no
+        // fingerprint seal, so this is how the one human-checked arrangement reaches the export.
+        // That check was a ROUND disc: a silhouette can reach further off-axis than a circle of the
+        // same longest side, past the verified 7mm tower clearance. Withheld whenever the toggle is
+        // on, conservatively: this sync call can't see an async fallback-to-circle resolving.
         buildPlacement: () => {
           if (state.hubcapSilhouette) return undefined;
           const plate = getPrinter(state.printerId).plate;
@@ -137,29 +117,19 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
           return {
             positions: built.positions,
             vertices: built.vertices,
-            // Manifold's own index for the mesh it just built, so display shading reads the vertex
-            // sharing instead of rehashing every corner. Forwarding it is the whole point of
-            // GeneratedMesh.indexed: dropping it here silently leaves this part on the slow path.
+            // Manifold's index, so shading skips rehashing; dropping it is a silent slow path.
             indexed: built.indexed,
-            // Only a silhouette. It is cut FLAT (see HubcapShape) so its design face IS its
-            // outline, and a region touching that boundary is one standing on the part's real
-            // outer wall — cutting it the shell's full 3mm puts the rim in the artwork's color
-            // instead of leaving 2mm of base color around the picture. The circle is chamfered:
-            // its face is inset 1mm from the rim, so the same cut would still leave a base-color
-            // ring and the rule would be a lie. Reading shape.shape rather than
-            // state.hubcapSilhouette also covers every fallback-to-circle path for free.
+            // Silhouette only: cut FLAT, its face IS its outline, so cutting an edge region the
+            // full 3mm colors the rim instead of leaving 2mm of base color. The chamfered circle's
+            // face is inset 1mm, so the rule would be a lie there. shape.shape covers fallbacks.
             edgeCutThroughDepth:
               shape.shape.kind === 'silhouette' ? HUBCAP_THICKNESS_MM : undefined,
-            // Loose pieces wins over everything, because it is the only one of these that comes
-            // off the plate broken. It used to lose: `shape.warning ?? …` dropped it whenever the
-            // shape ALSO had something cosmetic to say, and the two co-occur — clipCoverage only
-            // samples the clip annulus, so a detached island elsewhere passes it and can be
-            // reported as merely thin, or as capped to the wheel, while the part falls apart.
+            // Loose pieces wins: the only one that comes off the plate broken. It co-occurs with
+            // cosmetic warnings (clipCoverage samples only the clip annulus), which hid it before.
             warning:
               built.components > 1
                 ? HUBCAP_DISCONNECTED_WARNING
-                : // Otherwise the generator's own complaint: "your silhouette misses the clips"
-                  // says what to do about it, where a component count only says what happened.
+                : // The generator's complaint says what to do; a component count, what happened.
                   shape.warning,
           };
         },
@@ -169,8 +139,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
   {
     id: 'footrest',
     name: 'Footrest',
-    // rectangular design face — no circle/radius to anchor on, so the SVG maps 1:1 in mm
-    // and centers on the detected face instead.
+    // no circle to anchor on: the SVG maps 1:1 in mm, centered on the detected face.
     designFit: 'rect',
     templateFile: 'footrest-template.svg',
     roles: [
@@ -179,8 +148,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
         name: 'Footrest',
         libraryPartId: 'footrest',
         allowRotatedCopies: false,
-        // the flat back of the shell outsizes the seat face by area, so patch auto-detect
-        // needs a nudge toward the +Y-facing (up, seat-side) patch instead of the largest one.
+        // the flat back outsizes the seat face, so nudge auto-detect to the +Y (seat-side) patch.
         preferFaceNormal: [0, 1, 0],
       },
     ],
@@ -190,29 +158,23 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
     name: 'Chair body',
     // per-zone rect semantics: each zone's template maps its SVG 1:1 in mm, centered on the chart.
     designFit: 'rect',
-    // Sticker only. Fill on one chair zone was measured at 93.6s to settle and "All zones" did not
-    // finish inside 900s — see docs/tech-debt.md. Sticker is 4.0s for an auto-fit design across
-    // five zones, which is why only Fill is withheld.
+    // Fill measured 93.6s to settle on one zone and "All zones" unfinished at 900s
+    // (docs/tech-debt.md); Sticker is 4.0s for an auto-fit design across five zones.
     withholdFill: true,
-    // The chair is packed in its CAD frame (up is +Y, the front where the wings/footrest sit is
-    // +Z), not design-face-up like the wheel and footrest — a body with seven design surfaces has
-    // no single face to point at the camera. Without this the Z-up viewport renders CAD +Y
-    // horizontal and the chair lies on its back. Verified against the shipped meshes: wings and
-    // casters are lowest in Y (15, 92), handles and seat back highest (562); wings sit at z ≈ −4
-    // and the handles you push from behind at z ≈ −631.
+    // Packed in its CAD frame (+Y up, +Z front), not design-face-up: seven design surfaces have no
+    // single face for the camera. Without this the chair lies on its back. Verified on the shipped
+    // meshes: wings and casters lowest in Y (15, 92), handles and seat back highest (562); wings at
+    // z ≈ −4, the handles you push from behind at z ≈ −631.
     displayFrame: { up: [0, 1, 0], front: [0, 0, 1] },
-    // baked design-zone sidecar (public/stl/) — the conformal charts artwork wraps onto. The build
-    // wiring that consumes it lands with the per-zone cut refactor; loading it is already covered by
-    // src/geometry/zoneCharts.ts.
+    // baked design-zone sidecar (public/stl/): the conformal charts artwork wraps onto. The build
+    // wiring lands with the per-zone cut refactor; src/geometry/zoneCharts.ts already loads it.
     zonesFile: 'chair-body-zones.json',
-    // Standard vs Kit differ only in the caster mounts, but the whole chair must be one or the
-    // other — never mixed. The two caster roles resolve per-variant; every other piece is shared.
+    // Standard vs Kit differ only in the caster roles, and a chair is never mixed.
     variants: [
       { id: 'standard', name: 'Standard' },
       { id: 'kit', name: 'Kit' },
     ],
-    // One role per printed piece, all auto-loaded together (no rotated copies — every piece is a
-    // distinct mesh in the shared assembled pose, unlike the wheel's mirrored halves).
+    // One role per printed piece, all auto-loaded; each is a distinct mesh in the assembled pose.
     roles: [
       {
         id: 'handle-left',
@@ -299,11 +261,7 @@ export const ASSEMBLY_KINDS: AssemblyKind[] = [
   },
 ];
 
-/**
- * The library part a role loads, resolving a variant-dependent role against the chosen variant.
- * A `libraryPartIdByVariant` role returns the piece for `variantId` (or undefined if the variant
- * is unknown); a plain role ignores the variant and returns its `libraryPartId`.
- */
+/** The library part a role loads; undefined for a variant-dependent role and an unknown variant. */
 export function roleLibraryPartId(
   role: AssemblyRole,
   variantId: string | null,
@@ -314,25 +272,16 @@ export function roleLibraryPartId(
 }
 
 /**
- * Clearance kept between a generated part and the edge of the bed.
- *
- * Without it the ceiling is the plate exactly, so a 320mm disc on a 320mm bed touches both edges
- * and every downstream check waves it through — the overhang warning allows 0.5mm, which is float
- * slop rather than clearance, and a part 0.03mm inside the border slips under it silently. No bed
- * is usable to its border anyway: brims, bed-exclusion zones and the nozzle's own reach all live
- * in the last few millimetres. A round number and a usability margin, not a measured one.
+ * Generated-part clearance from the bed edge. Without it a 320mm disc fits a 320mm bed and passes
+ * every check (the overhang warning's 0.5mm is float slop: 0.03mm inside slips under). Brims,
+ * exclusion zones and nozzle reach live in the last few mm. A round usability margin, not measured.
  */
 const PLATE_EDGE_MARGIN_MM = 5;
 
 /**
- * The largest a kind's build parameter may go on a given printer: its own `maxMm` if it has one,
- * bounded by the plate minus the edge margin on both axes.
- *
- * Pure — takes `printerId` rather than reading `state.printerId` — so both the live control
- * (assemblyPanel.ts, against `state.printerId`) and a session restore (persist.ts, against the
- * printer the session names) compute the identical ceiling. A restore that re-derived a looser
- * one from the plate alone used to land a hubcap up to 10mm larger than this field would ever let
- * a user type, inside the clearance PLATE_EDGE_MARGIN_MM exists to keep clear of the plate edge.
+ * A build parameter's ceiling on a printer. Takes `printerId` so the live control
+ * (assemblyPanel.ts) and a session restore (persist.ts) agree: a restore deriving its own once
+ * landed a hubcap up to 10mm larger than the field allows, inside PLATE_EDGE_MARGIN_MM.
  */
 export function buildParamMax(
   param: NonNullable<AssemblyKind['buildParam']>,
@@ -347,9 +296,8 @@ export function buildParamMax(
 }
 
 /**
- * The active variant for the current kind: the user's choice when it's valid for the kind,
- * otherwise the kind's first (default) variant. Null for a kind with no variants. Defaulting here
- * (rather than trusting state) keeps part resolution correct before the variant UI ever runs.
+ * The user's variant if valid for the kind, else its first; null without variants. Defaulting here,
+ * not trusting state, keeps part resolution correct before the variant UI runs.
  */
 export function currentVariantId(): string | null {
   const kind = currentAssemblyKind();
@@ -363,12 +311,9 @@ export function currentAssemblyKind(): AssemblyKind | null {
 }
 
 /**
- * What `designMmPerUnit` needs about the part currently loaded, read off live state.
- *
- * One definition because the gizmo (scene/faceFrame.ts) and the stacked-instance cascade
- * (state/artwork.ts) both have to agree with the cut about how big a design is placed, and a scale
- * restated per caller is exactly how the frame once came out several times the size of the cut.
- * The hubcap silhouette builds its own context deliberately, and says why.
+ * `designMmPerUnit`'s context from live state, defined once so the gizmo (scene/faceFrame.ts) and
+ * state/artwork.ts agree with the cut: a per-caller scale once drew the frame several times the
+ * cut's size. The hubcap silhouette builds its own deliberately, and says why.
  */
 export function currentDesignScaleContext(): DesignScaleContext {
   return {
@@ -380,11 +325,7 @@ export function currentDesignScaleContext(): DesignScaleContext {
   };
 }
 
-/**
- * Whether to *show* Fill for the part currently loaded: only the assembly cut pipeline implements
- * it, and the kind must not withhold it. Drives the controls (mode select, pattern strip), not what
- * state may hold — see fillWithheld() for that distinction.
- */
+/** Whether to *show* Fill (mode select, pattern strip); what state may hold is fillWithheld(). */
 export function fillModeOffered(): boolean {
   return !fillWithheld();
 }
@@ -392,25 +333,19 @@ export function fillModeOffered(): boolean {
 /** Whether Fill is withheld on the current kind because it would misbehave there. */
 export function fillWithheld(): boolean {
   if (currentAssemblyKind()?.withholdFill) return true;
-  // Cutting the part to the artwork's own outline and then repeating that artwork across it tiles
-  // a shape with copies of itself. Withheld rather than merely unoffered, for the reason the doc
-  // above gives: it would misbehave, so it is worth rewriting a mode already chosen.
+  // A part cut to the artwork's outline, filled with that artwork, tiles a shape with itself.
   return state.hubcapSilhouette && !!currentAssemblyKind()?.buildParam;
 }
 
 /**
- * The kind to fall back to whenever the app has to pick one for the user: boot with no `?kind=`,
- * and a restore whose saved kind has been retired. It has to be one the Part dropdown actually
- * lists, or the select holds a value with no matching option and renders blank.
+ * Fallback kind (no `?kind=`, or a retired saved kind). Must be one the Part dropdown lists, or the
+ * select renders blank.
  */
 export function firstOfferedKind(): AssemblyKind {
   return ASSEMBLY_KINDS.find((k) => !k.hidden) ?? ASSEMBLY_KINDS[0];
 }
 
-/**
- * True when every library-linked role for this assembly has a manifest entry available
- * (i.e. stl/parts.json loaded).
- */
+/** True when every library-linked role has a stl/parts.json entry. */
 export function asmKindCanAutoLoad(kind: AssemblyKind | null): boolean {
   if (!kind) return false;
   const variantId = currentVariantId();
@@ -421,16 +356,9 @@ export function asmKindCanAutoLoad(kind: AssemblyKind | null): boolean {
 }
 
 /**
- * The shape the hubcap should be cut to right now, plus anything the user needs told about it.
- *
- * Lives here rather than in src/geometry/ because it is the one place that reads *state* — which
- * artwork is loaded, what size was asked for, whether the silhouette toggle is on. The geometry
- * modules stay pure and testable; this is the seam where the app's current situation becomes a
- * shape.
- *
- * Every refusal falls back to the circle rather than to nothing. A hubcap that is round when you
- * expected a character, with a line saying why, is a part you can still print and a problem you
- * can still fix; an empty scene is neither.
+ * The hubcap's current shape plus any warning. Here, not src/geometry/, because it reads *state*.
+ * Every refusal falls back to the circle with a reason: still printable and fixable, unlike an
+ * empty scene.
  */
 export async function hubcapShapeFromState(): Promise<{
   shape: HubcapShape;
@@ -445,8 +373,7 @@ export async function hubcapShapeFromState(): Promise<{
   };
   if (!state.hubcapSilhouette) return round();
 
-  // One design only. Two make an outline of two islands, and there is no answer to which one's
-  // scale sizes the part.
+  // Two designs make two islands, and nothing says whose scale sizes the part.
   if (state.artworks.length > 1) return round(HUBCAP_SILHOUETTE_TOO_MANY);
 
   const art = state.artworks[0];
@@ -456,19 +383,13 @@ export async function hubcapShapeFromState(): Promise<{
   const shapes = parsed?.shapes ?? [];
   if (!parsed || !shapes.length) return round(HUBCAP_SILHOUETTE_NO_ARTWORK);
 
-  // The placement the CUT will use, read from the same two helpers the cut reads it from. Not a
-  // parallel "fit the outline to a size" rule: that is what let the shape and the picture drift
-  // apart, since one measured the traced content and the other the document canvas. designFace is
-  // passed explicitly rather than through generatedDesignFaceOverride because the override reports
-  // the wheel-capped size derived *below*, and reading it here would be circular.
+  // The CUT's placement, from the cut's own helpers: a parallel fit rule let shape and picture
+  // drift (traced content vs document canvas). designFace is explicit because
+  // generatedDesignFaceOverride reports the wheel-capped size derived *below* — circular.
   //
-  // **Offset is deliberately zero here, and is then derived rather than read.** With the part cut
-  // to the artwork, moving the artwork relative to it is not a meaningful thing to ask for — and
-  // trying to honour it cannot be made consistent: the cut's own placer finishes with
-  // `+ faceCx`, the design face's bbox centre, which for a silhouette IS the outline being
-  // placed. Every offset therefore moved the face it was being measured against. So the part
-  // centres on its mounting axis and the artwork's offset is solved for below to put the picture
-  // on it.
+  // **Offset is zero here, then derived.** The cut's placer adds `faceCx`, the face's bbox centre,
+  // which for a silhouette IS this outline, so any offset moved the face it was measured against.
+  // The part centres on its axis and the artwork's offset is solved below.
   const scaleMult = (art?.scalePct ?? state.scalePct) / 100;
   const anchor = designAnchor(parsed, true);
   const pl: OutlinePlacement = {
@@ -479,8 +400,8 @@ export async function hubcapShapeFromState(): Promise<{
       radius: 0,
       designFace: () => ({ w: state.hubcapDiameterMm, h: state.hubcapDiameterMm }),
     }),
-    // The design face points +Y and is seen from above, so it reads mirrored; the user's own
-    // horizontal flip layers on top. Same expression as DesignPlacement's xMul at nsign > 0.
+    // A +Y face seen from above reads mirrored; the user's flip layers on top. Same as
+    // DesignPlacement's xMul at nsign > 0.
     xMul: (art?.flipX ?? state.flipX) ? 1 : -1,
     zMul: (art?.flipY ?? state.flipY) ? 1 : -1,
     rotationDeg: art?.rotationDeg ?? state.rotationDeg,
@@ -492,28 +413,23 @@ export async function hubcapShapeFromState(): Promise<{
   const raw = silhouetteFromShapes(wasm, shapes, pl);
   if (!raw.length) return round(HUBCAP_SILHOUETTE_NO_ARTWORK);
 
-  // Centre the shape on the mounting axis, so the clips sit in the middle of it and the cut's
-  // `faceCx` is zero by construction rather than by luck.
+  // Centred on the mounting axis, so the cut's `faceCx` is zero by construction.
   const [rx0, rz0, rx1, rz1] = outlineBounds(raw);
   const mx = (rx0 + rx1) / 2;
   const mz = (rz0 + rz1) / 2;
   const placed = raw.map((r) => r.map((p) => ({ x: p.x - mx, z: p.z - mz })));
 
-  // Nothing may overhang the wheel it mounts on. Shrinking the whole placement rather than
-  // clamping a "size" number, so the same factor can be handed to the artwork and the picture
-  // stays exactly on the shape cut for it. A plain ratio, not a search: the shape is centred on
-  // the axis now, so every point's distance from it scales by exactly k.
+  // No overhang past the wheel. Scale the whole placement, not a size number, so the artwork gets
+  // the same factor. A plain ratio suffices: centred, every point's distance scales by exactly k.
   const reach = outlineReach(placed);
   const fit = reach > 0 ? Math.min(1, HUBCAP_WHEEL_DIAMETER_MM / 2 / reach) : 1;
   const outline = fit < 1 ? scaleOutlineAbout(placed, 0, 0, fit) : placed;
 
-  // Solve the artwork's offset so the picture lands on the shape. The cut computes
-  // `T(p)*fit + off + faceCx`, and faceCx is 0 because the outline above is centred, while the
-  // outline itself is `(T(p) - m)*fit`. Equal exactly when off = -m*fit.
+  // The cut computes `T(p)*fit + off + faceCx` with faceCx 0; the outline is `(T(p) - m)*fit`.
+  // Equal exactly when off = -m*fit.
   silhouetteOffset = { x: -mx * fit, z: -mz * fit };
 
-  // The one hard gate. A shape that misses the clips exports, looks like a hubcap, and comes off
-  // the plate in pieces — so it is refused up front rather than discovered after the boolean.
+  // The one hard gate: a shape missing the clips exports fine and comes off the plate in pieces.
   const covered = clipCoverage(outline, HUBCAP_CLIP_FACE_INNER_R_MM, HUBCAP_CLIP_FACE_OUTER_R_MM);
   if (covered < HUBCAP_MIN_CLIP_COVERAGE) return round(HUBCAP_SILHOUETTE_MISSES_CLIPS);
 
@@ -524,13 +440,10 @@ export async function hubcapShapeFromState(): Promise<{
     return { shape, warning };
   };
 
-  // Capping is silent otherwise, and the symptom — the size control stops doing anything — reads
-  // as a bug rather than as the wheel being the limit.
+  // Otherwise the size control silently stops working, which reads as a bug.
   if (fit < 1) return keep(HUBCAP_SILHOUETTE_CAPPED_TO_WHEEL);
 
-  // An outline that fills its own bounding box is a rectangle, which on a raster means the image
-  // had no transparency to cut around. Said rather than refused: a rectangular hubcap is a
-  // legitimate thing to want, and this is the far more likely reading of it.
+  // Filling its bbox means no transparency to cut around. Said, not refused: a rectangle is valid.
   const [bx0, bz0, bx1, bz1] = outlineBounds(outline);
   const boxArea = (bx1 - bx0) * (bz1 - bz0);
   if (boxArea > 0 && outlineArea(outline) / boxArea > 0.98)
@@ -542,35 +455,25 @@ export async function hubcapShapeFromState(): Promise<{
 }
 
 /**
- * What the part was last actually built to, and by how much the wheel cap shrank it.
- *
- * Both exist because two synchronous callers — the design-face override below and the 1:1 template
- * — have to describe the mesh that is on screen, and the only function that knows it is async (it
- * needs the boolean engine). The rebuild runs the generator before either is read
- * (`rebuildAssemblyScene`), so this is a cache of the current answer rather than a guess at it.
+ * What the part was last built to, and the wheel cap's shrink. Cached for two sync callers (the
+ * face override, the 1:1 template) because only the async generator knows; `rebuildAssemblyScene`
+ * runs it before either reads, so this is current, not a guess.
  */
 let lastSilhouetteFit = 1;
 let lastBuiltOutline: HubcapShape | null = null;
 let silhouetteOffset: { x: number; z: number } | null = null;
 
 /**
- * The artwork offset that puts the picture on the silhouette, or null when the part isn't one.
- *
- * Derived, never read from the user: see the note in hubcapShapeFromState. The rebuild applies
- * this to the active instance and to the legacy globals right after regenerating, so the Fit
- * sliders show the value actually in force rather than one that gets quietly overruled.
+ * The derived artwork offset for a silhouette (see hubcapShapeFromState), else null. The rebuild
+ * writes it to the active instance and legacy globals so the Fit sliders show the value in force.
  */
 export function hubcapSilhouetteOffset(): { x: number; z: number } | null {
   return state.hubcapSilhouette && lastBuiltOutline ? silhouetteOffset : null;
 }
 
 /**
- * The shape the hubcap template should be drawn for: whatever the part currently is.
- *
- * Only the silhouette comes from the cache. A circle is derived live from the diameter, because
- * the control changes it and the template link is re-read immediately — reading a cached circle
- * there served the previous diameter's drawing, which is exactly the quietly-wrong template
- * hubcapTemplateSvg's comment is about.
+ * The template's shape. Only a silhouette is cached: a circle is live, since the template link is
+ * re-read right after the diameter changes and a cached one served the previous size.
  */
 export function hubcapTemplateShape(): HubcapShape {
   if (state.hubcapSilhouette && lastBuiltOutline?.kind === 'silhouette') return lastBuiltOutline;
@@ -578,25 +481,12 @@ export function hubcapTemplateShape(): HubcapShape {
 }
 
 /**
- * The box a no-declared-size artwork is fitted into, when the part's own shape follows it.
- *
- * Normally `designMmPerUnit` fits such an artwork to the largest design face — but with the
- * silhouette toggle on, that face IS the artwork, and an artwork sized from a face sized from the
- * artwork has no fixed point. It showed up as the part and the picture on it coming out at two
- * different sizes.
- *
- * A square of the size the user asked for breaks it: meet-fit puts the artwork's longer axis on
- * that side, which is the same rule the silhouette's own placement uses, so the shape and the
- * picture agree by construction — and scaling the artwork scales both, because the scale
- * multiplier applies to this exactly as it applies to a real face.
- *
- * The wheel cap is NOT folded in here — it rides on `generatedFitFactor` below, because it has to
- * apply on every one of designMmPerUnit's branches and this face is consulted on only one of them.
- *
- * Null whenever the toggle is off, and equally once the shape has fallen back to a circle: the
- * disc's own face is 2mm smaller than its diameter (the chamfer), so reporting the diameter here
- * auto-fits artwork about 1% oversized, onto the bevel where it gets cut away. `lastBuiltOutline`
- * is what distinguishes "cut to shape" from "asked for it and got a circle".
+ * Fit box for a no-declared-size artwork when the part follows its shape: the face IS the artwork,
+ * so sizing from it has no fixed point (part and picture came out at two sizes). A square of the
+ * asked size meet-fits like the silhouette's placement, so they agree by construction.
+ * The wheel cap rides on `generatedFitFactor`, which every designMmPerUnit branch applies.
+ * Null when off or fallen back to a circle: its face is 2mm under the diameter (chamfer), so this
+ * would fit artwork ~1% oversized onto the bevel. `lastBuiltOutline` tells the two apart.
  */
 export function generatedDesignFaceOverride(): { w: number; h: number } | null {
   const kind = currentAssemblyKind();
@@ -605,11 +495,8 @@ export function generatedDesignFaceOverride(): { w: number; h: number } | null {
 }
 
 /**
- * How much the wheel cap shrank the generated part, for the artwork to follow.
- *
- * Separate from the face above so it survives every sizing branch — an SVG declaring an absolute
- * mm size never consults the face at all, and folding the cap in there made it a silent no-op for
- * exactly the files this app hands out as design templates.
+ * The wheel cap's shrink, for the artwork to follow. Not folded into the face above: an SVG with an
+ * absolute mm size (our own templates) never reads the face, so it was a silent no-op there.
  */
 export function generatedFitFactor(): number {
   const kind = currentAssemblyKind();

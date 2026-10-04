@@ -1,12 +1,8 @@
 import type { Loop, Pt } from '../types';
 
-// Max perpendicular deviation (SVG user units) a subdivided chord may have from the true
-// curve before we stop splitting. ~500-unit-wide artwork is typical (see stubs/*.svg), so this
-// stays well under print-visible error at any reasonable final mm scale while letting flat/small
-// curves bail out after 1-2 segments instead of the old fixed 18.
+// Max perpendicular deviation (SVG user units) a subdivided chord may have from the true curve before splitting stops. ~500-unit-wide artwork is typical (stubs/*.svg), so this stays well under print-visible error at any reasonable mm scale while flat/small curves bail after 1-2 segments instead of the old fixed 18.
 const BEZIER_TOLERANCE = 0.15;
-// Recursion cap: bounds worst case at 2**6 = 64 segments per curve (in line with flattenArc's
-// existing 48-segment cap for a full circle) so a degenerate curve can't blow up rebuild time.
+// Recursion cap: worst case 2**6 = 64 segments per curve (flattenArc caps a full circle at 48), so a degenerate curve can't blow up rebuild time.
 const BEZIER_MAX_DEPTH = 6;
 
 function midpoint(a: Pt, b: Pt): Pt {
@@ -147,10 +143,9 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
     }
     return r;
   }
-  // An arc flag is one character, so `1110` is flag 1, flag 1, then the coordinate 10 — the
-  // blind tokenizer reads it as one number. Split the leading digit off and leave the rest in
-  // place as the next token, which nums() then validates (a remainder like `e2`, from a token
-  // that carried an exponent, is not a number and drops the subpath the way any bad one does).
+  // An arc flag is one character, so `1110` is flag 1, flag 1, then coordinate 10 — the blind
+  // tokenizer reads one number. Split the leading digit off and leave the rest as the next token,
+  // which nums() validates (a remainder like `e2` isn't a number and drops the subpath like any bad one).
   function flag(): number {
     const t = tokens[i];
     if (t === undefined) throw new MalformedPathData();
@@ -170,8 +165,7 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
     startY = 0;
   let prevCmd: string | null = null,
     prevCtrl: Pt | null = null;
-  // S reflects only after C/c/S/s and T only after Q/q/T/t (SVG 1.1 8.3.6): the smooth
-  // shorthands do not read each other's control point across families.
+  // S reflects only after C/c/S/s and T only after Q/q/T/t (SVG 1.1 8.3.6): smooth shorthands don't read each other's control point across families.
   let prevCtrlKind: 'cubic' | 'quad' | null = null;
   try {
     while (i < tokens.length) {
@@ -182,9 +176,7 @@ export function parsePathD(d: string, onMalformed?: () => void): Loop[] {
       const rel: boolean = cmd === cmd.toLowerCase();
       const C = cmd.toUpperCase();
       if (C === 'M') {
-        // Flushed before parsing this M's own coordinates: a malformed M threw here while the
-        // flush still came after nums(), which discarded the already-closed previous subpath
-        // along with the broken one.
+        // Flushed before parsing this M's coordinates: a malformed M threw while the flush still came after nums(), discarding the already-closed previous subpath with the broken one.
         if (cur.length) loops.push(cur);
         const [x, y] = nums(2);
         const nx = rel ? cx + x : x,

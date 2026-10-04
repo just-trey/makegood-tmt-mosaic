@@ -1,10 +1,7 @@
 /**
- * Supported print targets: build volume + the Bambu-Studio-project-format profile-name strings
- * (printer_settings_id / print_settings_id / filament_settings_id / curr_bed_type) that make
- * each slicer auto-select a matching system preset on import. Bambu Studio and OrcaSlicer read
- * these directly; Snapmaker Orca is a downstream OrcaSlicer fork that reads the same
- * project_settings.config shape but needs its own preset names — the `snapmaker-u1` entry below
- * was verified against a real Snapmaker Orca 0.4mm-nozzle export, not guessed.
+ * Print targets: build volume + the profile names (printer_settings_id / print_settings_id /
+ * filament_settings_id / curr_bed_type) that make each slicer auto-select a system preset. Snapmaker
+ * Orca needs its own names: `snapmaker-u1` was verified against a real 0.4mm-nozzle export.
  */
 export interface Printer {
   id: string;
@@ -16,24 +13,15 @@ export interface Printer {
   bedType: string;
   /** printer_variant / nozzle_diameter — only Snapmaker Orca's preset system keys off this. */
   variant?: string;
-  /** Filament slots in a *single* unit — 4 for every entry here: Bambu's original AMS, AMS Lite,
-   * and AMS 2 Pro are all 4-slot units, and the U1's built-in toolchanger has 4 heads. This is the
-   * number most users are actually budgeting against, since one unit is the common setup — but it
-   * is not a ceiling, which is what slotsMax is for. */
+  /** Slots in a *single* unit, 4 everywhere (AMS, AMS Lite, AMS 2 Pro; the U1's 4 heads): what most
+   * users budget against, but not a ceiling — that is slotsMax. */
   slotsPerUnit: number;
-  /** Most slots this printer can address in one print, across daisy-chained units. Above
-   * slotsPerUnit and at or below this, a design is printable but needs hardware beyond the
-   * single unit; above this it can't be printed in one go on this machine at all. The app has no
-   * way to know how many units a given user owns, so the two numbers drive two different messages
-   * rather than one hard capacity claim. */
+  /** Most slots addressable in one print across chained units. The app can't know how many units
+   * a user owns, so above slotsPerUnit ("needs more hardware") and above this ("can't print in one
+   * go") are two different messages. */
   slotsMax: number;
-  /**
-   * What this printer's multi-material hardware is called, for user-facing copy.
-   *
-   * "AMS" is Bambu's brand, not a category: the U1 feeds from a built-in toolchanger and its owner
-   * has no AMS to add a unit to. Naming it per printer is the only way a capacity message can be
-   * true on all three, and every string that would otherwise hardcode "AMS" reads this instead.
-   */
+  /** The multi-material hardware's name for copy: "AMS" is Bambu's brand and the U1 has a built-in
+   * toolchanger, so every string that would hardcode "AMS" reads this. */
   unitLabel: string;
 }
 
@@ -47,8 +35,7 @@ export const PRINTERS: Printer[] = [
     filamentId: 'Generic PETG',
     bedType: 'Textured PEI Plate',
     slotsPerUnit: 4,
-    // up to 4 AMS units daisy-chained. The A1's own AMS Lite is 4 slots and doesn't chain, but the
-    // A1 can drive the regular AMS now, so 16 holds for all three printers this entry covers.
+    // 4 chained AMS units; the A1's AMS Lite doesn't chain, but the A1 can drive the regular AMS.
     slotsMax: 16,
     unitLabel: 'AMS unit',
   },
@@ -61,8 +48,7 @@ export const PRINTERS: Printer[] = [
     filamentId: 'Generic PETG',
     bedType: 'Textured PEI Plate',
     slotsPerUnit: 4,
-    // the outlier: dual nozzles let it reach 24 AMS slots (4 × 4-slot AMS 2 Pro + 8 × single-spool
-    // AMS HT) plus one external spool on the second nozzle
+    // dual nozzles: 24 AMS slots (4 × 4-slot AMS 2 Pro + 8 × single-spool AMS HT) + 1 external spool
     slotsMax: 25,
     unitLabel: 'AMS unit',
   },
@@ -76,7 +62,7 @@ export const PRINTERS: Printer[] = [
     bedType: 'Textured PEI Plate',
     variant: '0.4',
     slotsPerUnit: 4,
-    // a genuine hard ceiling, unlike the Bambus: the 4 toolheads are built in and nothing chains
+    // a hard ceiling: the 4 toolheads are built in and nothing chains
     slotsMax: 4,
     unitLabel: 'toolchanger',
   },

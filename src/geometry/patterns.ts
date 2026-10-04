@@ -16,30 +16,22 @@ export interface TileCell {
 }
 
 /**
- * Refuse to fill beyond this many tiles. A pattern scaled down far enough (5% on a chair panel)
- * would otherwise ask turf for tens of thousands of unions and hang the tab; the user sees a
- * warning and one tile instead.
- *
- * The number reaches the user twice: interpolated into the refusal message, and written out in
- * docs/troubleshooting.md's heading for that message, which quotes the string as a reader would
- * search for it. Change this and that heading is silently wrong — update it in the same commit.
+ * Refuse to fill beyond this many tiles: a pattern scaled down far enough (5% on a chair panel)
+ * would ask turf for tens of thousands of unions and hang the tab. Also written out in
+ * docs/troubleshooting.md's heading for the refusal message; change both in the same commit.
  */
 export const MAX_FILL_TILES = 1024;
 
 /**
- * Refuse to repeat a design when one color's tiles would carry more points than this.
+ * Refuse to repeat a design when one color's tiles would carry more points than this. Guards the 3D
+ * cut: past it Manifold's WASM heap runs out ("memory access out of bounds") and the part exports
+ * with no artwork. (The clipping engine's limit is SWEEP_SEGMENT_CAP, regions.ts.)
  *
- * It guards the 3D cut, not the polygon maths: past it Manifold's WASM heap runs out ("memory
- * access out of bounds") and the part exports with no artwork at all. The clipping engine's own
- * limit is SWEEP_SEGMENT_CAP, split around in src/geometry/regions.ts and refused as UnionTooBig
- * where it can't be.
- *
- * Measured on a 240mm face with this constant set to Infinity, `node_modules/.bin/vite-node
+ * Measured on a 240mm face with this at Infinity, `node_modules/.bin/vite-node
  * scripts/bench-fill-build.ts zebra 240 <scale> [0.5]` (docs/findings/2026-09-24-tile-union-cap.md):
  * zebra filled at 544,400, 600,201 and 658,724 points (285-390s) and ran out of memory at 719,969.
- * 600k keeps zebra's 544,400 and dalmatian's 503,100, the fills a user most plausibly asks for past
- * 500k, with 17% under the failure. Memory follows the part's own mesh as well as the fill, so the
- * margin is kept rather than spent.
+ * 600k keeps zebra's 544,400 and dalmatian's 503,100 (the likeliest fills past 500k) with 17% under
+ * the failure; the margin stays, since memory also follows the part's own mesh.
  */
 export const FILL_POINT_BUDGET = 600_000;
 
@@ -62,10 +54,7 @@ export interface TileGrid {
   count: number;
 }
 
-/**
- * Why a fill couldn't be tiled. Four separate failures used to reach one `null`, and the caller
- * told the user to raise Scale for all of them — advice that is right for exactly one.
- */
+/** Why a fill couldn't be tiled, so the user isn't told to raise Scale where that won't help. */
 export type TileRefusal =
   /** The design declares no repeat size: a zero-width or zero-height tile cell. */
   | 'no-tile-size'
@@ -81,11 +70,9 @@ export type TileRefusal =
   | 'joins-too-big';
 
 /**
- * What `tileCoverage` fills in when it refuses. `detail` carries what 'too-detailed' reports and is
- * set on that reason alone; every other refusal is describable from its name.
- *
- * Whether a bigger Scale could rescue the fill is deliberately not here: answering it needs the
- * placer at the panel's largest Scale, which only the caller has.
+ * Filled in by `tileCoverage` on refusal; `detail` only on 'too-detailed'. Whether a bigger Scale
+ * rescues the fill is not here: that needs the placer at the panel's largest Scale, which only the
+ * caller has.
  */
 export interface TileRefusalReport {
   reason?: TileRefusal;
@@ -93,29 +80,16 @@ export interface TileRefusalReport {
 }
 
 /**
- * The tile offsets that cover `extent` once placed, computed by inverting the placement.
+ * The tile offsets that cover `extent` once placed, found by inverting the placement. Tiling is in
+ * SVG space *before* placement: every `placer()` is affine, so an SVG-axis grid lands correctly
+ * rotated, scaled and mirrored, with phase and size following the fit sliders. Each extent corner
+ * maps back to a tile index; the range is padded one tile per side so a shape overhanging its cell
+ * still reaches in.
  *
- * Tiling happens in SVG user space, *before* the placement is applied: every `placer()` is a pure
- * affine map, so a grid laid out on the SVG axes lands as a correctly rotated, scaled and mirrored
- * grid on the surface — and because offset/scale/rotation all live inside that same map, tile phase
- * and tile size follow the fit sliders for free. Inverting it here is what tells us which copies
- * are actually needed: map each corner of the zone's extent back to SVG space, read off its tile
- * index, and take the range (padded one tile per side, so a shape overhanging its own cell still
- * reaches in from outside).
- *
- * Returns null when the map isn't invertible, isn't affine (a future non-affine mapper would make
- * the whole grid wrong rather than slightly off), when the design has no repeat size at all, when
- * the fill needs more than MAX_FILL_TILES, or when the copies would carry more points than
- * FILL_POINT_BUDGET.
- *
- * `vertsPerTile` is the biggest single color's point count, not the design's total, which is what
- * the budget was measured against. The refusal still covers the whole design, because tiling one
- * color and not another would land them out of register.
- *
- * `refusal`, when passed, is filled in with which of those it was. It is an out-parameter rather
- * than a richer return type so a caller that only wants "can this be tiled?" keeps the plain
- * `TileGrid | null` answer; the one caller that reports to a user needs the reason, because the
- * five have nothing in common to say about them.
+ * Null when the map isn't invertible or affine, the design has no repeat size, or the fill exceeds
+ * MAX_FILL_TILES or FILL_POINT_BUDGET; `refusal` (an out-parameter, so other callers keep the plain
+ * answer) says which. `vertsPerTile` is the biggest single color's count, which the budget was
+ * measured against; the refusal covers the whole design, or colors land out of register.
  */
 export function tileCoverage(
   place: (pt: number[]) => number[],
@@ -189,10 +163,8 @@ export function tileCoverage(
   const j0 = Math.floor(minJ) - 1,
     j1 = Math.floor(maxJ) + 1;
   const count = (i1 - i0 + 1) * (j1 - j0 + 1);
-  // The non-finite/non-positive half is unreachable today (i1 >= i0 always, and the indices were
-  // range-checked above) but is not folded into the tile-count case: they get opposite advice, and
-  // "raise Scale" against a broken index range would be the exact wrong-cause problem this split
-  // exists to remove.
+  // Unreachable today (i1 >= i0; indices range-checked above), but kept apart from the tile-count
+  // case: "raise Scale" against a broken index range is the wrong-cause advice this split removes.
   if (!Number.isFinite(count) || count <= 0) return refuse('not-invertible');
   if (count > MAX_FILL_TILES) return refuse('too-many-tiles');
   // After the tile cap, not before: over MAX_FILL_TILES both are true and the count is the older,

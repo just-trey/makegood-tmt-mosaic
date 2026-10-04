@@ -46,14 +46,12 @@ export async function load3MF(arrayBuffer: ArrayBuffer): Promise<{
       positions[i * 9 + k * 3 + 2] = allVerts[vi][2];
     });
   });
-  // The unique vertex list in file order, kept alongside the (unwelded) soup so a baked design-zone
-  // chart — whose `verts` index this exact order — can be resolved back to 3D positions at load.
-  // For a single-object part (every packed library part) this is just that object's <vertex> list.
+  // Unique vertices in file order beside the unwelded soup, so a baked chart's `verts` resolve back
+  // to positions. For a single-object part (every packed library part), its <vertex> list.
   const vertices = new Float32Array(allVerts.length * 3);
   allVerts.forEach((v, i) => vertices.set(v, i * 3));
-  // The <triangle> elements are already an index into that list, and `positions` above is just it
-  // expanded. Returned rather than dropped so display shading can read the sharing the file states
-  // instead of rediscovering it by hashing every corner.
+  // The <triangle> index into that list, returned so display shading reads the file's sharing
+  // instead of hashing every corner.
   const indices = new Uint32Array(allTris.length * 3);
   allTris.forEach((tri, i) => indices.set(tri, i * 3));
   return { positions, triCount: allTris.length, vertices, indices };
@@ -108,15 +106,11 @@ export interface PatchBoundary {
 }
 
 /**
- * Chain the boundary edges of a triangle patch into closed loops (an edge with no matching
- * reverse edge in the patch is a boundary edge).
- *
- * Keyed by directed edge, not by vertex. Two loops of one patch meet at a point often (a hole
- * touching the outline, two islands sharing a corner) and that vertex then has two edges leaving
- * it. A vertex-keyed walk kept one and lost the other, returning a chain that ran off the end as
- * if it were a ring: 19 of the 114 faces the Advanced dropdown offers. At such a vertex the leaving
- * edge is chosen by angle so the wedge between arriving and leaving is face interior, which is what
- * keeps a bowtie as two rings and never sends a walk across a hole.
+ * Chain a patch's boundary edges (no reverse edge in the patch) into closed loops. Keyed by
+ * directed edge, not vertex: loops meet at points often (a hole touching the outline, islands
+ * sharing a corner), and a vertex-keyed walk lost one of the two leaving edges, passing open chains
+ * off as rings on 19 of the 114 faces the Advanced dropdown offers. The leaving edge is chosen by
+ * angle so the wedge is face interior: a bowtie stays two rings, and no walk crosses a hole.
  */
 export function extractPatchBoundary(positions: Float32Array, triIndices: number[]): PatchBoundary {
   const posOf = new Map<string, number[]>();
@@ -198,10 +192,9 @@ export function extractPatchBoundary(positions: Float32Array, triIndices: number
     return Math.atan2(dx * wx + dy * wy + dz * wz, dx * ux + dy * uy + dz * uz);
   };
 
-  // next[e] is the edge a walk takes after arriving along e, or -1. Each leaving edge is given to
-  // at most one arriving edge, so following `next` from any edge either returns to it or ends: a
-  // walk can never enter a cycle it did not start on, which is what let an earlier attempt spin
-  // to its iteration guard on the chair's default face.
+  // next[e]: the edge a walk takes after arriving along e, or -1. Each leaving edge goes to at most
+  // one arriving edge, so a walk never enters a cycle it did not start on (an earlier attempt spun
+  // to its iteration guard on the chair's default face).
   const next = new Int32Array(E).fill(-1);
   const hasPrev = new Uint8Array(E);
   for (const [v, outs] of outsAt) {
