@@ -5,7 +5,7 @@ rebuilding its steps from memory.
 
 ## Before opening a PR
 
-- Run the `ship-it` skill: the seven CI gates that block merge, plus the four
+- Run the `ship-it` skill: the eight CI gates that block merge, plus the four
   docs that drift silently.
 - `/code-review` is **required** on every PR that changes code. Only a
   prose-only diff (docs, CHANGELOG, comments) is exempt. Scripts and config

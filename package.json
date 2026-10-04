@@ -13,6 +13,7 @@
     "smoke": "vite build && node scripts/smoke.mjs .smoke-out",
     "check:copy": "node scripts/check-copy.mjs",
     "check:troubleshooting": "node scripts/check-troubleshooting.mjs",
+    "check:comments": "node scripts/check-comments.mjs",
     "check:type-scale": "node scripts/check-type-scale.mjs",
     "check:zone-occlusion": "node scripts/check-zone-occlusion.mjs",
     "check:mirror-design": "node scripts/check-mirror-design.mjs",
