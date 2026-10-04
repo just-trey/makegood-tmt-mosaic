@@ -2,68 +2,46 @@ import type { ColorSettings } from '../types';
 
 /**
  * One typical layer, the default profile on every printer this targets. Two uses:
- *
- * - The fallback for a request of zero or less. Zero says nothing about what was wanted, so the
- *   fallback must be a depth that prints. An earlier 0.02 mm fallback was a geometry tolerance
- *   borrowed for the job: well-defined for the boolean, but a tenth of a layer slices to nothing,
- *   so the export gained a color costing an AMS slot and printing as bare body.
- * - The threshold below which a recess only *may* not print, and gets a quiet note rather than a
- *   clamp. A positive depth is a real choice and is honored: someone on a 0.08 mm profile can cut
- *   a 0.12 mm recess, which clamping to 0.2 mm would make unreachable (see docs/audience.md).
+ * - The fallback for a request of zero or less, which must print: a 0.02 mm fallback (a boolean
+ *   tolerance) sliced to nothing yet cost an AMS slot.
+ * - The threshold below which a recess *may* not print: a quiet note, not a clamp. Someone on a
+ *   0.08 mm profile can cut a 0.12 mm recess, which clamping to 0.2 mm would forbid
+ *   (docs/audience.md).
  */
 export const MIN_CUT_DEPTH_MM = 0.2;
 
 /**
- * Nozzle width in mm: the reference for what a printer can lay down at all.
- *
- * Here rather than in raster/stats.ts, which held it privately, because both the trace despeckle
- * and the assembly clip need the same physical fact and the printer does not care which one is
- * asking. raster/stats.ts imports it.
+ * Nozzle width in mm: what a printer can lay down at all. Here, not in raster/stats.ts, because
+ * the trace despeckle and the assembly clip need the same physical fact.
  */
 export const NOZZLE_MM = 0.4;
 
 /**
- * Smallest clipped region assembly mode will build a cutter from, in mm².
+ * Smallest clipped region a cutter is built from, mm²: one nozzle square, which cannot hold a
+ * single extrusion of any shape — deliberately the weakest claim about a feature size. It catches
+ * the hairline an along-edge clip hands back (dropUnprintableRemnants): on the chair's Front zone
+ * the `chair-seat-back-top` remnant was 0.025mm², 0.02mm wide and 8mm long, against 1,258 to
+ * 3,029mm² for every other chart the design reaches.
  *
- * One nozzle square, for the reason NOZZLE_MM carries: an area smaller than this cannot hold a
- * single extrusion of any shape, so nothing it removes was going to print. That is deliberately
- * the weakest claim available about a feature size.
- *
- * It exists because an intersect whose clip boundary runs ALONG an edge of the region being
- * clipped can hand back a hairline instead of null, and a hairline still extrudes into a real
- * inlay. Measured on the chair's Front zone with the mirror check's asymmetric design: the
- * remnant on `chair-seat-back-top` was 0.025mm², 0.02mm wide and 8mm long, against 1,258 to
- * 3,029mm² for every other chart that design reaches — five orders of magnitude of daylight
- * either side of this floor.
- *
- * That margin is the bake's own population (part geometry), not this floor's. Swept against real
- * design ink — the four shipped patterns, Fill mode, real parts — this floor sits much closer to
- * what ships: 9.4% of recorded ink pieces (760 of 8,056) fall under it, and the narrowest survivor
- * is 0.1600478mm², 1.00003x this value. 86% of the sub-floor pieces are one pattern (zebra).
- * docs/findings/2026-09-27-clip-ink-sweep.md, `RUN_CLIP_INK_SWEEP=1 npx vitest run
- * scripts/measure-clip-ink.test.ts`. Whether that near-floor population is dust or drawn detail is
- * still open — docs/tech-debt.md, "Whether a near-floor clipped-ink piece is dust or a drawn
- * detail is unmeasured".
+ * That margin is part geometry's. Against real design ink (four shipped patterns, Fill, real parts)
+ * 9.4% of pieces (760 of 8,056) fall under the floor, 86% of them zebra, and the narrowest survivor
+ * is 0.1600478mm², 1.00003x this value: docs/findings/2026-09-27-clip-ink-sweep.md,
+ * `RUN_CLIP_INK_SWEEP=1 npx vitest run scripts/measure-clip-ink.test.ts`. Dust or drawn detail is
+ * open: docs/tech-debt.md, "Whether a near-floor clipped-ink piece is dust or a drawn detail is
+ * unmeasured".
  */
 export const CLIP_REMNANT_FLOOR_MM2 = NOZZLE_MM * NOZZLE_MM;
 
 /**
- * How much material a recess leaves behind it, so a clamped cut is still a recess.
- *
- * Clamping to the bare extent instead put the cutter floor exactly
- * coplanar with the part's back face — a through-hole and a coincident-face boolean, reported to
- * the user as a recess "cut at 48.50 mm".
+ * Material a clamped recess leaves behind. Clamping to the bare extent put the cutter floor
+ * coplanar with the back face: a through-hole reported as a recess "cut at 48.50 mm".
  */
 export const CUT_FLOOR_MM = 0.05;
 
 /**
- * Compare a requested depth against the one cut at the precision the warnings print (2dp), not at
- * machine epsilon: a 3.951 mm request cut at 3.95 mm otherwise reports "set to 3.95 mm … cut at
- * 3.95 mm instead."
- *
- * Rounds the same way the message does rather than using an epsilon that stands in for it. A 0.005
- * threshold is only *nearly* that rule, and 0.195 lands in the gap: far enough from 0.20 to pass,
- * close enough to print as "0.20". The message is what's being protected, so ask it directly.
+ * Compare depths at the precision the warnings print (2dp), rounding as the message does: at
+ * machine epsilon a 3.951 mm request reports "set to 3.95 mm … cut at 3.95 mm instead", and a 0.005
+ * epsilon lets 0.195 pass yet print as "0.20".
  */
 export const depthDiffers = (a: number, b: number): boolean => a.toFixed(2) !== b.toFixed(2);
 
@@ -76,13 +54,9 @@ export function regionLabel(color: string, isMerge: boolean, memberCount: number
 }
 
 /**
- * Describes the *setting* and the raise, never the cut that followed. The raised value goes to a
- * mapper that may discard it (a cutThrough part holes any depth the whole way through), so "would
- * cut nothing" would be false there. Everything this says is true wherever the color lands.
- *
- * Takes every color at once, like edgeCutThroughNotice: a global Depth of 0 raises every row, so a
- * message per row stacked one identical-looking pill per color, and an imported photo starts at
- * DEFAULT_RASTER_COLORS of them.
+ * Describes the *setting* and the raise, never the cut: a cutThrough mapper holes any depth the
+ * whole way, so "would cut nothing" could be false. Takes every color at once: a global Depth of 0
+ * raises every row, and an imported photo starts with DEFAULT_RASTER_COLORS of them.
  */
 export function zeroDepthWarning(labels: string[], requested: number, raisedTo: number): string {
   const one = labels.length === 1;
@@ -101,13 +75,10 @@ export interface ZeroDepthRaise {
 }
 
 /**
- * Stage one color's raise for a single message at the end of the build.
- *
- * Keyed by both numbers as the message prints them, never by "was raised at all": `requested` is
- * per color, so merging two pairs would quote some of the colors named the other pair's number.
- * `raisedTo` is in the key for the same reason, though nothing reachable today varies it within one
- * build (maxCutDepth() declines rather than returning below MIN_CUT_DEPTH_MM). A label already staged for a pair is not repeated, which is
- * what keeps a color sitting on several parts to one mention.
+ * Stage one color's raise for one end-of-build message, keyed by both numbers as printed:
+ * `requested` is per color, and merging pairs would misquote. `raisedTo` too, though nothing varies
+ * it today (maxCutDepth() declines rather than returning below MIN_CUT_DEPTH_MM). A label is staged
+ * once per pair, so a color on several parts is mentioned once.
  */
 export function addZeroDepthRaise(
   into: Map<string, ZeroDepthRaise>,
@@ -122,18 +93,10 @@ export function addZeroDepthRaise(
 }
 
 /**
- * The warning for a depth deeper than the part has material to give.
- *
- * Names the part, unlike zeroDepthWarning: the bound is a property of one part's geometry, so the
- * same setting can be fine on the wheel and clamped on the cap, and a message without the name
- * would read as a fact about the number.
- *
- * **Not the wall check**, and worded so it cannot be read as one: this is how far the whole part
- * extends behind its design face. A thinner wall under a region is thinWallWarning's.
- *
- * Takes every color clamped to the same depth on the same part at once, like zeroDepthWarning:
- * without grouping, a merged-color palette on one part stacked one identical-looking pill per
- * color (see addPartTooDeepClamp).
+ * The warning for a depth deeper than the part has material. Names the part: the same setting can
+ * be fine on the wheel and clamped on the cap. **Not the wall check**, and worded so it can't read
+ * as one (that is thinWallWarning). Groups every color clamped alike on one part
+ * (addPartTooDeepClamp).
  */
 export function tooDeepWarning(
   labels: string[],
@@ -202,27 +165,20 @@ export function addPartTooDeepClamp(
 }
 
 /**
- * Whether a depth is shallow enough to be worth a note, asked at the precision the note prints at,
- * not machine epsilon. A 0.199 mm cut is a rounding artefact away from a full layer, and
- * announcing it produced "is 0.20 mm, thinner than the usual 0.20 mm print layer", which reads as
- * a bug in the tool. Same reasoning as depthDiffers, on the other comparison.
+ * Whether a depth merits a note, asked at the printed precision: a 0.199 mm cut announced "is
+ * 0.20 mm, thinner than the usual 0.20 mm print layer". Same reasoning as depthDiffers.
  */
 export function subLayerDepth(depth: number): boolean {
   return depth < MIN_CUT_DEPTH_MM && depthDiffers(depth, MIN_CUT_DEPTH_MM);
 }
 
 /**
- * The note for a depth that prints only on a fine profile.
- *
- * **An `ℹ`, not a `⚠`. Proposed and rejected (UX review 2026-08-03).** The icon tracks "did the
- * app change your number?", not "might you be disappointed?". A zero is raised, and a value
- * deeper than the part is clamped, so both warn: something was overridden. A positive sub-layer depth is honored
- * exactly as asked, and someone on a 0.08 mm profile cutting a 0.12 mm recess made a real choice
- * (docs/audience.md). Warning about a value the app then obeys is what stops the two real `⚠`s
- * being trusted.
- *
- * What would change the answer: evidence people reach this by accident, e.g. 0.02 from mis-typing
- * 0.2. Even then the fix is value-shaped (flag that 10x-off case), not a severity bump.
+ * The note for a depth that prints only on a fine profile. **`ℹ`, not `⚠` — proposed and rejected
+ * (UX review 2026-08-03).** The icon tracks "did the app change your number?": zero is raised and
+ * too-deep clamped, so both warn; a positive sub-layer depth is honored (a 0.12 mm recess on a
+ * 0.08 mm profile is a real choice, docs/audience.md), and warning on obeyed values erodes the real
+ * `⚠`s. Would change on evidence of accidents like 0.02 typed for 0.2 — then flag that 10x case,
+ * not bump severity.
  */
 export function thinDepthNotice(label: string, depth: number): string {
   return (
@@ -233,20 +189,12 @@ export function thinDepthNotice(label: string, depth: number): string {
 }
 
 /**
- * The note for colours whose regions reach the part's outer edge and were cut its full thickness
- * instead of their recess depth.
- *
- * **ℹ, not ⚠, deliberately against the rule thinDepthNotice sets out.** By that rule this is a ⚠:
- * the setting *was* overridden at the edge. It stays ℹ for two reasons. The setting is still
- * honoured on the same colour's interior regions, so it was narrowed, not discarded. And it fires
- * on the ordinary path (every hubcap cut to its artwork's shape with artwork reaching the rim),
- * where a ⚠ about the part working as designed stops the two real ⚠s being read.
- *
- * Names the colors rather than describing the rule, which is what makes it checkable: someone who
- * set a depth deliberately can see whether their color was one of them.
- *
- * What would change the answer: reports of people finding a through-cut where they wanted a
- * recess. The fix then is a way to opt a color out, not a louder icon.
+ * The note for colours reaching the part's outer edge, cut full thickness instead of their recess.
+ * **ℹ, against thinDepthNotice's rule, deliberately**: the setting still holds on the colour's
+ * interior (narrowed, not discarded), and this fires on the ordinary path (every hubcap cut to
+ * shape with artwork at the rim), where a ⚠ would bury the real ones. Names the colors so a
+ * deliberate depth is checkable. Would change on reports of unwanted through-cuts — then a
+ * per-color opt-out, not a louder icon.
  */
 export function edgeCutThroughNotice(labels: string[], depth: number): string {
   const one = labels.length === 1;

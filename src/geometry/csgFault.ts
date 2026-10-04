@@ -1,19 +1,13 @@
 import { warn } from '../warnings';
 
 /**
- * Forced failures for the CSG degradation branches in assembly.ts, armed from the URL:
- * `?csgfault=difference`, `?csgfault=intersection:1`.
- *
- * Those branches otherwise only run under vitest with Manifold's booleans replaced by spies
- * (tests/assembly.test.ts, "CSG failure handling"), never in the real app against the real engine.
- * A spy proves the code path; it can't show what a slicer opens afterwards, and that is the half
- * that matters here. scripts/check-csg-failure.mjs is what drives these and asserts the result.
- *
- * Deliberately **not** `import.meta.env.DEV`-gated, for the same reason `window.__mosaic` isn't
- * (src/main.ts): the drive scripts verify `vite preview` output, which is a production build, so
- * a DEV gate would put these branches out of reach of exactly the checks that need them. Arming
- * one is opt-in per page load and announces itself as a warning re-stated on every build (see
- * announce()), so a rigged build can't be mistaken for a broken one.
+ * Forced failures for assembly.ts's CSG degradation branches, armed from the URL
+ * (`?csgfault=difference`, `?csgfault=intersection:1`). Otherwise those run only under vitest with
+ * spied booleans (tests/assembly.test.ts, "CSG failure handling"), which can't show what a slicer
+ * opens; scripts/check-csg-failure.mjs drives these and asserts the result.
+ * Deliberately **not** `import.meta.env.DEV`-gated, like `window.__mosaic` (src/main.ts): the drive
+ * scripts check `vite preview`, a production build. Arming is opt-in per load and re-announced
+ * every build (announce()), so a rigged build can't be mistaken for a broken one.
  */
 export type CsgFaultPoint =
   'color-union' | 'part-union' | 'difference' | 'body-mesh' | 'intersection';
@@ -55,13 +49,9 @@ const fault = armed();
 let fired = 0;
 
 /**
- * (Re-)state the armed notice. warn() dedupes by message, so calling it per build is free.
- *
- * It has to be re-emitted rather than pushed once at import: a user-initiated SVG load calls
- * clearWarnings() (applyParsedSVG, src/ui/artworkPanel.ts), which drops standing notices as well as
- * build ones — so a notice pushed at import survives only until the first artwork lands, and is
- * gone by the build where the fault actually fires. That is the one state where "a rigged build
- * can't be mistaken for a broken one" has to hold.
+ * (Re-)state the armed notice; warn() dedupes, so per build is free. Re-emitted, not pushed once at
+ * import: a user SVG load's clearWarnings() (applyParsedSVG, src/ui/artworkPanel.ts) drops standing
+ * notices too, so an import-time notice is gone by the build where the fault fires.
  */
 function announce(): void {
   if (announcement) warn(announcement);
@@ -84,14 +74,10 @@ export function csgFault(point: CsgFaultPoint): void {
 }
 
 /**
- * Refill the `:N` budget for a fresh build — the counterpart to clearBuildWarnings(), and needed
- * for the same reason. A count is per rebuild, not per session: loading a second artwork rebuilds
- * from scratch, so a session-wide budget would be spent by an intermediate build and the one left
- * on screen would come out clean, with its predecessor's warning already cleared. That reads as
- * "the fault did nothing" rather than "the fault fired earlier".
- *
- * Also where the armed notice is re-stated, since the same artwork load that starts this build
- * cleared it — see announce().
+ * Refill the `:N` budget per rebuild, like clearBuildWarnings(): a session-wide budget would be
+ * spent by an intermediate build, leaving the on-screen one clean with its predecessor's warning
+ * cleared, which reads as "the fault did nothing". Also re-states the armed notice the same artwork
+ * load cleared (announce()).
  */
 export function resetCsgFaults(): void {
   fired = 0;

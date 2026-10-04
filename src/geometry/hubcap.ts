@@ -11,13 +11,10 @@ import {
 } from './manifold';
 
 /**
- * The hubcap is the app's first *generated* part: only its four mounting clips ship as a baked
- * asset (public/stl/hubcap-clips.3mf), and the disc they carry is built here at the requested
- * diameter.
- *
- * Every constant below was measured off the reference mesh the part was modelled from (untracked
- * stubs/hubcap.stl, 5 bodies: 4 clips + 1 disc). tests/hubcap.test.ts regenerates the disc at
- * DEFAULT_DIAMETER and checks it back against those measurements.
+ * The app's first *generated* part: only the four mounting clips ship
+ * (public/stl/hubcap-clips.3mf); the disc is built here. Every constant below is measured off the
+ * reference mesh (untracked stubs/hubcap.stl, 5 bodies: 4 clips + 1 disc), and tests/hubcap.test.ts
+ * regenerates the disc at DEFAULT_DIAMETER to check back against them.
  */
 
 /**
@@ -42,12 +39,9 @@ export const HUBCAP_FACE_Y = HUBCAP_BASE_Y + HUBCAP_THICKNESS_MM;
 export const HUBCAP_REFERENCE_DIAMETER_MM = 220.752;
 
 /**
- * The diameter the app loads with, deliberately *not* HUBCAP_REFERENCE_DIAMETER_MM.
- *
- * One constant until it turned out to answer two questions: what the reference part measures, and
- * what a user should be handed. A volunteer reading "220.75" can't tell whether that digit
- * matters, and the part is no more correct at the reference size: the clips mate with the wheel,
- * and they don't move.
+ * The diameter the app loads with, deliberately *not* HUBCAP_REFERENCE_DIAMETER_MM: a volunteer
+ * reading "220.75" can't tell whether the digits matter, and the part is no more correct at the
+ * reference size (the clips mate with the wheel and don't move).
  */
 export const HUBCAP_DEFAULT_DIAMETER_MM = 220;
 
@@ -59,17 +53,11 @@ export const HUBCAP_DEFAULT_DIAMETER_MM = 220;
 export const HUBCAP_VERIFIED_DIAMETER_MM = 220;
 
 /**
- * The verified plate arrangement for this bed, undefined if none applies. Both conditions are
- * about not claiming more than was checked:
- *
- * - **The bed must have its own entry.** Positions are absolute and bed-specific, with no sensible
- *   way to carry them to a plate nobody verified (the H2D today).
- * - **The disc must not exceed the verified diameter.** Smaller is safe by construction: part and
- *   tower stay put, so the gap between them only opens. Larger is not, and the 256mm bed's
- *   verified clearance is just 7mm.
- *
- * Undefined drops the caller to computed centring plus suggestTowerPos, which warns. That is the
- * honest outcome: nothing was verified for that case.
+ * The verified plate arrangement for this bed, or undefined, never claiming more than was checked:
+ * - **The bed needs its own entry.** Positions are absolute and bed-specific (none for the H2D).
+ * - **The disc must not exceed the verified diameter.** Smaller only opens the part-tower gap;
+ *   larger can close the 256mm bed's verified 7mm clearance.
+ * Undefined drops the caller to computed centring plus suggestTowerPos, which warns.
  */
 export function hubcapPlacement(
   diameterMm: number,
@@ -94,23 +82,17 @@ export function hubcapPlacement(
 }
 
 /**
- * Radial extent of the clips' *top faces*, the only surface the disc can bond to since the bodies
- * meet on one plane and share no volume. Measured at 10.634..16.046mm.
- *
- * NOT the clips' overall reach (corners get to ~19.5mm): a clip is a shaped body, and what matters
- * is the annulus it presents at y = HUBCAP_BASE_Y. The bigger number would reject disc sizes that
- * bond perfectly well.
+ * Radial extent of the clips' *top faces*, measured at 10.634..16.046mm: the only surface the disc
+ * bonds to (the bodies share no volume). NOT the clips' overall reach (~19.5mm at the corners),
+ * which would reject disc sizes that bond fine.
  */
 export const HUBCAP_CLIP_FACE_INNER_R_MM = 10.634;
 export const HUBCAP_CLIP_FACE_OUTER_R_MM = 16.046;
 
 /**
- * Smallest disc fully covering the clip tops, and so the diameter control's floor.
- *
- * Below 2x the *inner* radius (21.3mm) the disc misses the clips entirely and the part exports as
- * five loose bodies (verified, and why `HubcapBody.components` exists). Between the two it catches
- * a sliver of each clip, which fuses but bonds on almost nothing. Clamping to full coverage rather
- * than bare contact is the difference between a part that prints and one that technically slices.
+ * Smallest disc fully covering the clip tops: the diameter control's floor. Below 2x the *inner*
+ * radius (21.3mm) the disc misses the clips and exports as five loose bodies (hence
+ * `HubcapBody.components`); between the two it bonds on a sliver: it slices, but won't hold.
  */
 export const HUBCAP_MIN_DIAMETER_MM = 2 * HUBCAP_CLIP_FACE_OUTER_R_MM;
 
@@ -232,18 +214,11 @@ export function soupVolume(soup: Float32Array): number {
 }
 
 /**
- * The kind's 1:1 design template, built for the shape the part currently is.
- *
- * Other templates are files baked by scripts/gen-templates.mjs, which keeps template and app in
- * agreement by extracting the outline from the shipped mesh. A generated part has no shipped mesh,
- * and a static file would be true-to-size at one diameter and quietly wrong at every other, the
- * worst failure mode for a drawing someone prints and draws on. Agreement here is by construction:
- * this and hubcapDiscSoup read the same constants.
- *
- * That is why the silhouette case is handled rather than left as the circle: a chamfered 220mm
- * disc drawn for a square-cut character outline is exactly that quietly-wrong template.
- *
- * Ink and sizing match the baked templates (scripts/lib/svgstyle.mjs) so the set reads as one.
+ * The kind's 1:1 design template for the part's current shape. Baked templates
+ * (scripts/gen-templates.mjs) extract the shipped mesh; a generated part has none, and a static
+ * file would be quietly wrong at every other diameter, or a chamfered 220mm disc for a square-cut
+ * silhouette. This and hubcapDiscSoup read the same constants. Ink and sizing match
+ * scripts/lib/svgstyle.mjs.
  */
 export function hubcapTemplateSvg(shape: HubcapShape): string {
   const GRAY = '#bcbcbc';
@@ -253,13 +228,9 @@ export function hubcapTemplateSvg(shape: HubcapShape): string {
     const [x0, z0, x1, z1] = outlineBounds(shape.outline);
     const w = round2(x1 - x0);
     const h = round2(z1 - z0);
-    // A silhouette is cut square, no chamfer to inset: the whole outline is design face.
-    //
-    // BOTH axes negate, matching what scripts/gen-templates.mjs bakes for every shipped template
-    // (`bboxCx - (x - faceCx)`): a template is drawn to be seen from the side artwork is applied
-    // from, the mirror of the part's own frame. Emitting `p.x - x0` reads as a 180° rotation,
-    // invisible on the disc and on symmetric silhouettes, wrong on exactly the asymmetric shapes
-    // this feature exists for, and only discoverable after someone draws on it and loads it back.
+    // A silhouette is cut square: the whole outline is design face. BOTH axes negate, as
+    // gen-templates.mjs bakes (`bboxCx - (x - faceCx)`): a template is seen from the side artwork
+    // is applied from. `p.x - x0` reads as a 180° rotation, wrong on exactly the asymmetric shapes.
     const d = shape.outline
       .map((r) => 'M ' + r.map((p) => `${round2(x1 - p.x)},${round2(z1 - p.z)}`).join(' L ') + ' Z')
       .join(' ');
@@ -307,12 +278,9 @@ export interface HubcapBody {
 }
 
 /**
- * What the disc is cut to: a plain circle, or the silhouette of the artwork on it.
- *
- * They build differently on purpose. A circle reproduces the reference part, chamfered edge and
- * all. A silhouette is cut FLAT, square edges, making it a plain prism on the outline, so it goes
- * through `extrudeRegionToSoup` rather than a second chamfer builder that would have to loft
- * between an outline and an erosion of it.
+ * What the disc is cut to. A circle reproduces the reference, chamfer and all; a silhouette is cut
+ * FLAT, a plain prism through `extrudeRegionToSoup`, not a chamfer builder lofting an outline to
+ * its erosion.
  */
 export type HubcapShape =
   { kind: 'circle'; diameterMm: number } | { kind: 'silhouette'; outline: Outline };
@@ -334,13 +302,9 @@ function hubcapDiscFor(shape: HubcapShape): Float32Array {
 }
 
 /**
- * Disc ∪ clips, as one solid.
- *
- * A genuine boolean, not a soup concat, because the bodies meet on exactly coincident faces (see
- * HUBCAP_BASE_Y): concatenating buries a pair of opposed coplanar skins inside the part, which
- * slices as a seam and reads to Manifold as two solids. `components` is reported rather than
- * asserted so the caller can say something useful: an outline that misses the clips is a user
- * error, not a bug.
+ * Disc ∪ clips as one solid: a real boolean, since the bodies meet on exactly coincident faces
+ * (HUBCAP_BASE_Y) and a concat buries opposed coplanar skins that slice as a seam and read to
+ * Manifold as two solids. `components` is reported, not asserted: missing the clips is user error.
  */
 export async function buildHubcapBody(
   shape: HubcapShape,
@@ -370,12 +334,10 @@ export async function buildHubcapBody(
 }
 
 /**
- * The wheel a hubcap mounts on, measured off its mesh: outer radius 140mm.
- *
- * What must fit inside that circle is the outline's furthest CORNER, not its longest side: a
- * square 280mm on a side reaches r=198 and overhangs the rim by 58mm. So the limit is a radius
- * about the mounting axis, and the caller shrinks the whole placement until the outline clears it
- * (`fitFactorForRadius`), rather than a per-shape maximum size the artwork's scaling can't follow.
+ * The wheel a hubcap mounts on, measured: outer radius 140mm. The outline's furthest CORNER must
+ * fit, not its longest side (a 280mm square reaches r=198, 58mm past the rim), so the limit is a
+ * radius about the mounting axis and the caller shrinks the placement to clear it
+ * (`fitFactorForRadius`).
  */
 export const HUBCAP_WHEEL_DIAMETER_MM = 280;
 
@@ -387,10 +349,9 @@ export const HUBCAP_WHEEL_DIAMETER_MM = 280;
 export const HUBCAP_MIN_FEATURE_MM = 1;
 
 /**
- * How much of the clips' bonding face a silhouette must cover. Generous on purpose: the failure
- * worth refusing is a clip over a hole or off the shape, which loses most of the face, while a
- * shape nicking the rim loses a percent or two and still bonds. An earlier version demanded every
- * sample on the outer radius and refused a real silhouette over one sample in sixty-four.
+ * How much of the clips' bonding face a silhouette must cover. Generous: a clip over a hole or off
+ * the shape loses most of the face, while nicking the rim loses a percent or two and bonds.
+ * Demanding every outer-radius sample refused a real silhouette over one sample in sixty-four.
  */
 export const HUBCAP_MIN_CLIP_COVERAGE = 0.9;
 
