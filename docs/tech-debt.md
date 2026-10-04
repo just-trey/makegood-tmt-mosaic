@@ -24,47 +24,44 @@ approach that lost belongs in a comment next to the code it constrains, or in
 [docs/pipeline.md](pipeline.md) for the geometry pipeline — not here. What stays
 here is closeable: it names code work under a “Closing it” line.
 
-## check:zone-occlusion reads hidden surface as "no zone here" and reports four false failures
+## check:zone-occlusion's five-view identity sweep never inks four small zones
 
-`scripts/check-zone-occlusion.mjs` classifies a pixel by whether the inked zone
-color shows there: ink means the zone is visible, no ink means bare body. A
-click landing on a zone where no ink shows is reported as a through-pick.
+`scripts/check-zone-occlusion.mjs`'s per-zone identity pass (`IDENTITY_SWEEP`)
+drives five camera views and requires every zone to land at least one interior
+ink sample in one of them, so "never looked" can't read the same as "checked
+and right." Four zones never do.
 
-Dead zones add a third state that classifier has no name for: the zone is
-present and correctly pickable, but the surface is hidden once assembled, so it
-takes no artwork and shows no ink.
+Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair,
+2026-09-24: `wing-left`, `wing-right`, `seat-left`, `seat-right` each report
+"produced no interior ink sample anywhere in the sweep." Nothing else fails —
+the through-pick and `*whole`-identity failures this same run used to report
+are gone (see the CHANGELOG entry that closed them).
 
-Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair:
+The previous version of this entry also recorded an orbit-drag throw ending
+the run partway through this same sweep, and told the next reader to re-run
+before trusting any count. Two full runs of the command above (one on
+unfixed `main`-equivalent code, one after the fix) both completed all five
+angles with no throw. Treating it as gone rather than chasing further: the
+"stale zone name" cause that entry guessed at doesn't hold either way — the
+sweep already reads zone ids live off the DOM, never a hardcoded one — so the
+throw looks like the `orbitTo`/gizmo-drag flakiness `run-app`'s skill already
+documents, not a defect specific to this check. The 4-failure count above is
+from a full, un-thrown run and can be trusted.
 
-| Run                                      | Failures | What they are                                                               |
-| ---------------------------------------- | -------- | --------------------------------------------------------------------------- |
-| `main` (fenders only, 2026-08-16)        | 3        | a0-front "too few bare-body samples", wing-left/right no ink                |
-| dead zones, hemisphere bake (2026-08-30) | 5        | 4 x "picked a zone on bare body" (36/31/1/25 samples) + an orbit-drag throw |
-| whole-chair zones (2026-09-07)           | 6        | the four above, plus one on the `*whole` zone, plus the throw               |
-| baked `cutRegions` (2026-09-07)          | 2        | a0-front (48 samples) + the throw — the rest were landing on bake dust      |
-
-- The pick itself is right: the zone is there, and the hatch overlay says why
-  artwork will not appear. Only the check's model is stale.
-- The numbers corroborate the mechanism: `main` had just 96 bare-body samples
-  at a0-front ("too few for the assertion to mean anything"); with hidden
-  surface unlinked there are enough that the complaint becomes through-picks.
-- The throw ends the run inside the per-zone identity sweep, after its first
-  angle (`v0`), so this run never reaches the later angles or the named
-  cases. Reproduced twice with identical sample counts, so it's a real stop,
-  not sampling noise — a second, separate defect in the script from the
-  classifier gap this section is about. The zone whose `v0` pass showed 0
-  interior ink samples was `seat`, which no longer exists: the seat pan left
-  every zone and the two mount tops became `seat-left`/`seat-right`. Re-run
-  before trusting the failure count above.
-- Closing it: teach the sweep to read each chart's `deadRegions`, and expect
-  "zone pickable, no ink" over them rather than counting it a through-pick.
-  The orbit-drag throw needs its own fix first to reach the later stages.
+- `wing-left`/`wing-right` predate this run: the sweep's angles never see
+  enough of a fender face-on to sample one.
+- `seat-left`/`seat-right` are new to the list. They're the two mount tops
+  left behind when the seat pan (once its own zone, inked fine by `v0`) left
+  every zone; both are apparently too small or too edge-on across all five
+  views.
+- Closing it: widen `IDENTITY_SWEEP` (or add a view) until each of the four
+  lands an interior sample, then re-measure. Not attempted here — the sweep's
+  own comment already called this out as separate from the classifier fix
+  this run closed, and widening it deserves its own pass with a real
+  chart-coverage measurement behind the new angles, not a guess.
 - Not in CI (nothing runs this script), so it blocks nothing today. It is the
   only automated guard on convention 12, which is why it is worth repairing
   rather than deleting.
-- `wing-left`/`wing-right` never producing an ink sample predates this and
-  came in with the fender zones: the sweep's angles never see enough of a
-  fender to sample one.
 
 ## The covers reference has no tires, so each flank keeps artwork the tire hides — unmeasured
 
@@ -110,79 +107,16 @@ row is the flank's whole dead area summed out of
   seam instead of stopping dead at it.
 - The owner has seen the trade and chose to leave tires out for now.
 
-## rasterControls().apply()'s notice ordering is load-bearing, and a replace-in-place fix to remove it was tried and reverted
+## Corner handles and an axis handle compete for the same drag
 
-`rasterControls().apply()` ([src/ui/artworkListPanel.ts](../src/ui/artworkListPanel.ts)) must call
-`dismissNotice()` before `notice()` when flipping a source's keyed capped/traced notice. `push()`
-([src/warnings.ts](../src/warnings.ts)) skips a new entry when its key is already taken, so calling
-`notice()` first drops the replacement, and the following `dismissNotice()` then removes it —
-leaving nothing standing for that source.
+Convention 14 of [ui-conventions.md](ui-conventions.md): only one manipulation affordance is
+offered at a time. The placement gizmo draws corner handles and an axis handle that both answer
+the same drag.
 
-A `push()` that upserts a same-key entry in place, removing the ordering requirement, was tried and
-reverted after three rounds each found a real defect:
+- A UI decision, not a geometry one: which affordance a drag on the frame belongs to.
 
-- **Unconfined to keyed entries**: overwriting any same-message match changed every unkeyed
-  `warn()`/`notice()`/`warnBuild()`/`noticeBuild()` caller from skip-if-present to
-  overwrite-if-present, and could flip an existing entry's `build` flag.
-- **Confined to keyed entries, but swapping in a new object**: broke
-  [src/ui/warningsView.ts](../src/ui/warningsView.ts)'s dismiss button, which finds its pill's
-  entry by reference (`WARNINGS.indexOf(w)`) — a swapped object left that reference dangling and
-  the × silently did nothing.
-- **Confined and mutating fields in place instead of swapping**: fixed the reference bug, but was
-  the third round in a row to need a real fix in the same mechanism — the signal to cut the area
-  rather than patch a fourth time.
-
-Closing this means either documenting the ordering constraint as permanent, or re-attempting the
-upsert with a test for each of the three failure modes above written before the fix.
-
-**Decided 2026-08-30**: re-attempt, with the test for each of the three failure modes above written
-first. Not yet scheduled.
-
-## The placement frame's angle is unrelated to the face it acts on, and it shares the viewport with a second affordance
-
-Conventions 13–14 of [ui-conventions.md](ui-conventions.md): a gizmo is aligned to the frame of
-the thing it acts on, and only one manipulation affordance is offered at a time. Both are
-reported broken — the placement frame renders at an angle with no relation to the part face, and
-corner handles compete with an axis handle for the same drag.
-
-**Measured 2026-08-24, and it is a bug, not a rendering choice**
-([findings report](findings/2026-08-24-placement-frame-angle.md)). `scripts/measure-frame-angle.ts`
-re-measures it. The anchor hijack that faked this in the 2026-08-16 run is fixed (PR E), so the
-angle now reads honestly.
-
-- **8 of the 18 patches the part panel offers put the frame 90.0° off the face**, across the three
-  file-based design meshes. Always exactly 90.0°: `FlatZoneMapper.frameAt` returns a literal
-  horizontal basis whatever the part is shaped like.
-- **7 of the 8 clip the cut to exactly 0 mm².** Nothing prints there, so the build's "the cut may
-  be wrong" understates it. The eighth is `wheel-hub-cap`, which sets `cutThrough` and so is not
-  clipped at all; what it cuts on a sideways face is untested.
-- **Every kind's default face reads 0.0°**, all four parts, read from the app rather than from the
-  area ranking (`defaultPatchIdx` prefers the role's `preferFaceNormal`, and two default to rank
-  1). That is why ordinary use never shows it.
-- Not silent: the sideways-face warning and the "colors land entirely off the part" warning both
-  fire, and the second is accurate.
-
-Two defects left open. A third, the "face detected" line not tracking the dropdown, is fixed: the
-row now recomputes it in place through `faceStatusText`.
-
-1. `frameAt` hardcodes the horizontal basis. `faceY` already carries a fallback for a sideways
-   normal, so the case is known and drawn through anyway.
-2. The gizmo cannot warn: the amber off-surface state keys on `offSurfaceMM`, and the flat path
-   returns `offChartMM: 0` unconditionally, so that state is unreachable on every flat part.
-
-**Bounded, which is what keeps the fix small.** Every shipped part's default face is horizontal
-because `pack-part.mjs` aligns it, so all 8 measured cases need a deliberate pick from the
-dropdown, behind the "Advanced: per-part face & alignment" disclosure. An uploaded mesh has no
-such guarantee and would hit both defects at its default face with no interaction at all, but the
-STL/3MF drop target is only offered when the parts library is unreachable (see
-`buildAsmPartRow`'s docstring in [src/ui/assemblyPanel.ts](../src/ui/assemblyPanel.ts)), so that
-is a degraded-mode path rather than a normal one. Undriven either way.
-
-The competing-affordances half (corner handles against an axis handle for the same drag,
-convention 14) is separable, is a UI decision, and was not touched here. This is the last of the
-group that made the viewport not behave like the direct-manipulation surface it looks like; the
-other one, "Zone picking has no occlusion test," is closed (`npm run check:zone-occlusion`
-re-measures it — by hand, it is not in CI).
+**Closing it**: pick the one affordance each drag starts, in
+[src/scene/designGizmo.ts](../src/scene/designGizmo.ts), and drop or separate the other.
 
 ## The chair's prime-tower positions have only been verified on one bed size
 
@@ -217,48 +151,26 @@ checks that a tower lands on the bed, not that a given footprint clears the
 edge. Both reference files put a tower at exactly x = 15 on a 256mm bed,
 which a center-based check would wrongly reject.
 
-## Assembly mode bounds a depth by the part, not by its wall
+## A depth on the chair body, or on a face the Y axis can't measure, has no upper bound
 
-The 2026-08-24 cycle's **T0-3**, half closed.
+A pocket deeper than the wall cuts a hole through it and exports with no depth
+warning. How thin the chair's walls get is **unmeasured**.
 
-**What was wrong.** Assembly mode had no upper bound on recess depth at all.
-Depth 20mm and 9999mm on the wheel both built and exported with **zero
-warnings**, while flat mode clamped and warned for the same input, and
-`geometry/depth.ts`'s own comment stated the contract as "a zero is raised and a
-too-deep value clamped, so both warn". That second half was false for every part
-a user could select, and the flat modes leaving the UI made the unbounded path
-the only reachable one.
+- A flat face bounds each colour region by the wall under it
+  (`FlatZoneMapper.boundByWall`), inside the part-wide bound (`maxCutDepth`).
+- A conformal zone declines both, and raises nothing. Its cut follows a normal
+  field, so there is no one axis to measure along.
+- A flat face declines both when its normal is not near Y or its plane lands
+  off the mesh. Such a face already gets the "isn't vertical" warning, but not a
+  depth one. In `scripts/measure-wall.ts`'s table: the wheel's ranks 3-5, the
+  footrest's 2-5.
+- Every shipped default face is flat and bounded: wheel, footrest and hubcap
+  (`node_modules/.bin/vite-node scripts/measure-wall.ts`). The chair body is the
+  one shipped part with conformal zones.
 
-**What is fixed.** `ZoneMapper.maxCutDepth()` bounds the setting, and a clamp is
-warned about by name. The flat mapper measures how far the part extends behind
-its design face **along Y, the axis `buildCutter` extrudes down**, off the loaded
-mesh. Measuring along the face normal instead was tried and is wrong: on
-wheel-half's -Z patch it read 139.88mm against 24.13mm of real material. A face
-whose normal is not substantially along Y declines outright, since the plane
-offset is then an X or Z distance and there is nothing to measure. The conformal
-mapper declines too: it cuts along a normal field rather than one axis.
-
-**What is not.** That bound is the part, not the wall. On the wheel it is
-**48.45mm**, so a mistyped 9999 is caught and a 20mm pocket in a 3mm wall is not.
-**The wall is what closes the rest, and nothing measures it.** A part's wall
-varies across it, so a pocket deeper than the wall in one spot still cuts a hole
-clean through and exports without comment. That is the open half of this item, not
-a separate one: the prose that used to carry it lived in the README's limitations
-list and now points here.
-
-**Three cases decline outright** rather than guessing, and raise no warning at
-all: a conformal zone (it cuts along a normal field, not one axis), a face whose
-plane lands outside the mesh, and a part too thin to hold the minimum. On those
-the deep end is unbounded exactly as before.
-
-Deliberately not solved with a constant. `AssemblyPart.baseDepth` states "mm of
-material behind the face this replaces" and looks like the answer, but nothing in
-the build has ever read it, so adopting it would have given a dormant,
-user-editable field control of cut depth as a side effect of a bug fix.
-
-Closing it means measuring the wall under each cut region, most likely by casting
-into the mesh along the cut direction, and comparing that against the setting per
-region rather than per part.
+Closing it means measuring the material behind each point of a region along the
+normal the warp cuts it at, then clamping and warning the way the flat mapper
+does.
 
 ## Rebuild performance needs ongoing work — this is a heavy application
 
@@ -313,9 +225,9 @@ the interaction consequence.
 
 **Partly superseded, 2026-08-03.** Those numbers were taken against a zebra
 asset carrying 13.6k vertices per tile, most of which were marching-squares
-oversampling rather than shape (see "Turf's tile union has a vertex ceiling"
-below). With the thinned asset the same single-zone case measures
-**93.6s**, against **468.7s** re-measured on the old one — and it is doing
+oversampling rather than shape (see
+[2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md)).
+With the thinned asset the same single-zone case measures **93.6s**, against **468.7s** re-measured on the old one — and it is doing
 _more_ work, not less: 2.07M triangles against 853k, because the old asset's
 tile union was failing and falling back to unmerged shapes. So a large share
 of what was recorded here as "conformal-wrap + per-part CSG is slow" was one
@@ -329,10 +241,19 @@ result has not been re-measured.
 on it and no user can reach the numbers above. The kind itself is offered in the
 Part dropdown; only Fill on it is not. This is a gate, not a fix: the path is
 unchanged and every measurement here still stands. Clearing the flag
-needs the accumulator-or-worker fix and the "Handle (left)" color loss (defect
-1 of "Three open defects in the chair / pattern-library Fill path", below).
+needs the accumulator-or-worker fix.
 Sticker on the chair is unaffected and was measured at 19.5s for a full
 five-zone rebuild on the same box, which is why only Fill was withheld.
+
+**A Fill now cuts itself back from under every sticker on its zone** — one
+polygon difference per fill color per part. On the wheel it measures 0.3-0.6s of
+the build with a three-band sticker and 0.9-1.1s with `snoopy.svg`
+(`node_modules/.bin/vite-node scripts/bench-fill-yield.ts [sticker.svg]`, the
+`yield ms` column). **Unmeasured on the chair**, where Fill is withheld. Expect
+it to grow with the fill's points per part: the Left zone's `uvBounds` are
+642x509mm (`public/stl/chair-body-zones.json`) against the wheel's 276mm
+design circle, over four parts: a few seconds on the 93.6s single-zone figure
+above, estimated. Measure it before clearing `withholdFill`.
 
 **Don't quote that 19.5s without saying at what design size.** It used a design
 covering the zones;
@@ -341,26 +262,45 @@ at 400% (17.0s) and measures an ordinary auto-fit sticker on all five zones at
 4.0s — a 5x spread on the same path. What is paid for is pocket area, not
 surfaces touched.
 
-## The per-color union in the flat pass is one atomic sweep, bounded by nothing
+## Many disjoint shapes of one SVG make the flat pass superlinear
 
-`computeNetRegionsByColor` ([src/geometry/regions.ts](../src/geometry/regions.ts)) merges each
-color's visible pieces with a single n-ary call. The accumulator fold beside it is capped at
-`COVERED_BATCH`, so it always hands the engine a bounded call; this one hands it however many
-pieces the artwork produced. The pass yields between colors, never inside one.
+Unmeasured on real artwork; measured on a synthetic spotted design. One colour of
+N non-overlapping blobs over a background, one run each
+(`MOSAIC_BENCH_REPEATS=1 node_modules/.bin/vite-node scripts/bench-regions.ts merge dots:400 dots:800 overlap:800`):
 
-**Measured, and small on everything real**: 30ms across the whole corpus, 18ms worst
-(`scripts/bench-regions.ts`). It is kept n-ary because the alternative costs real time: folding it
-through `unionAllCooperative` instead measures dino ring at 158ms against 123ms.
+| Fixture     | Whole pass | Longest difference | Longest fold | Merge call |
+| ----------- | ---------- | ------------------ | ------------ | ---------- |
+| dots:400    | 15.9s      | 119ms              | 114ms        | 132ms      |
+| dots:800    | 91.7s      | 434ms              | 281ms        | 371ms      |
+| overlap:800 | 1.9s       | 15ms               | 16ms         | 30ms       |
 
-The case that is not covered is a raster trace near `MAX_COMPONENTS` (800, src/raster/trace.ts)
-where one shade owns most of the components. Nothing in the corpus reaches it, so the freeze is
-unobserved rather than ruled out.
+One run per row, so read ±20%: `chunks dots:800` (median of 5) puts the same
+merge call at 345ms.
 
-**Closing it means chunking the sweep, and the chunk size has to be measured, not picked.**
-`COVERED_BATCH` was swept over 50/100/200/400 shapes before it was chosen; this is a different
-operation (many small pieces unioned, rather than a growing accumulator subtracted) and its curve
-has not been taken. Do that first. A constant copied across from the other call site would close
-the finding without measuring anything, which is the failure this file exists to prevent.
+- Twice the blobs cost 5.8x the time. Disjoint blobs never collapse the
+  accumulator, so every difference and fold carries every blob above it.
+- `COVERED_BATCH` bounds how many shapes one call takes, not how many
+  vertices. No single call reaches 0.5s; the pass is long, not frozen.
+- An image-traced SVG or a spotted pattern is the input that would do this. A
+  PNG or JPG cannot: the tracer hands over one shape per colour.
+- No corpus file comes close. Its largest per-colour list is 37 pieces
+  (`bench-regions.ts merge` over the corpus files).
+- Chunking the per-colour merge was measured and does not help. The numbers are
+  on that merge in `computeNetRegionsByColor`.
+
+**Why deferred**: no real file has shown it yet.
+
+**Closing it**:
+
+1. Measure a real image-traced SVG from Illustrator or Inkscape first.
+2. The fix is to stop differencing against blobs that cannot overlap.
+   A bbox pre-filter is the obvious one and was recorded ~2x slower on real
+   artwork (full-canvas backgrounds overlap everything; no command was kept, so
+   re-measure before relying on it). It needs a spatial
+   index on the accumulator, or the disjoint fast path the
+   `computeNetRegionsByColor` docstring describes.
+3. Whatever lands must keep the corpus at or under its current time
+   (`bench-regions.ts attribute`).
 
 ## A cancel still waits for the one Manifold call already running
 
@@ -387,59 +327,46 @@ behind them.
   rects and takes only a region count and a repeat count, so a chair run means
   teaching it a kind and a Fill mode.
 
-## Three open defects in the chair / pattern-library Fill path
+## `export-chair-examples.mjs` can't reach Fill on the chair
 
-None of the four defects the maintainer named on 2026-08-05 blocks the chair any
-more: dead zones took three, and the clip-region folds took the part of the
-fourth that excluded real surface. What is left of that fourth one is cosmetic
-and has its own section below, "A zone template's outline is faceted". What is
-left HERE are longer-standing defects against the same two features, folded in
-by #275, and all three are about Fill. The chair itself is offered now, with
-Sticker: what is still withheld is Fill on it (`withholdFill`) and the pattern
-library everywhere (`PATTERN_LIBRARY_ENABLED` is `false`). The report is the
-maintainer's, the diagnosis is not, and where the cause is confirmed it says so.
+Tooling, broken since #137. The script sets `.artwork-mode` to `fill` and
+asserts it took. `chair-body` carries `withholdFill: true`, so
+`artworkListPanel` never renders that select and the step times out.
 
-1. **Zebra + Fill still loses one color on "Handle (left)" — confirmed.**
-   Measured on `MOSAIC_GPU=1` production build, 2026-08-03: zebra in Fill mode
-   on the chair's Left side settles clean apart from a single `Couldn't cut
-color #0a0a0a into "Handle (left)"`, so that part prints without the black.
-   Net improvement over the pre-thinning asset (8 union failures across 4
-   parts down to 1 CSG failure on 1 part), but "one part quietly loses a
-   color" is still the outcome. Different layer from the union problem (this
-   one is Manifold, not turf 6.5). Closing it means reproducing against
-   `?csgfault` (see the `debug-csg-failure` skill) and narrowing to the
-   specific solid Manifold rejects; worth trying first whether the handle's
-   own mesh density or a near-tangent cut at its curvature is what trips it.
+- Not a selector to update. The script exists to put several colours on every
+  part, so each plate's prime tower sees real swaps. Sticker on one zone isn't
+  that.
+- Closing it means either `withholdFill` coming off, or a different way to put
+  several colours on every part.
+- Clearing `withholdFill` needs the accumulator-or-worker fix in "Rebuild
+  performance needs ongoing work" (above). Nothing else in this file blocks
+  it.
 
-2. **The extrude repair never runs on a conformal zone — related,
-   unmeasured on the chair.** `ConformalZoneMapper.buildCutter` absorbs an
-   invalid prism and returns `null`, so the escalating erode ladder that
-   fixed a lost color on the wheel (a `FlatZoneMapper`) buys the chair body
-   nothing: a conformal zone gets no repair attempt and goes straight to the
-   warning in defect 1. Whether the chair body actually hits self-touching
-   regions is unmeasured — nobody has driven dense artwork through a
-   conformal zone to find out. Closing it means either giving the conformal
-   mapper the same retry, or establishing that its null return means
-   something different enough that a retry would be wrong.
+## The pattern library is still switched off, and nothing measured blocks it
 
-3. **`export-chair-examples.mjs` cannot reach Fill — tooling, broken since
-   #137.** The script sets `.artwork-mode` to `fill` and asserts it took, but
-   `chair-body` carries `withholdFill: true` so `artworkListPanel` never
-   renders that select: the step times out. Not a selector to update — the
-   script exists to put several colours on every part so each plate's prime
-   tower sees real swaps, and Sticker on one zone isn't that. Either the Fill
-   defects above close and `withholdFill` comes off, or the script needs a
-   different way to put several colours on every part.
+`PATTERN_LIBRARY_ENABLED` is `false` in
+[src/state/patterns.ts](../src/state/patterns.ts), so the picker strip is empty
+on every part. Its one named blocker was zebra + Fill dropping the black on
+"Handle (left)", and that no longer reproduces.
 
-`?kind=chair-body` reaches the chair without going through the dropdown, which
-the `bake-zones` and `debug-csg-failure` skills and every chair drive script
-depend on. It is a documented parameter now that the chair is offered, and the
-README lists it beside the other three.
-
-Neither remaining flag is a fix. Restoring the pattern library needs defect 1
-closed. Clearing `withholdFill` needs that plus the accumulator-or-worker fix
-in "Rebuild performance needs ongoing work" above, and closing defect 3 is what
-gives the chair drive script several colours on every part again.
+- **Not reproduced, 2026-09-24**: patch `withholdFill: false` in
+  `src/assembly/kinds.ts`, `npm run build`, open `?kind=chair-body` on a
+  `MOSAIC_GPU=1` preview, load `public/patterns/zebra.svg` (it binds to Left
+  side) and set Fill. No `Couldn't cut color`, and the exported 3MF gives
+  "Handle (left)" a Black part.
+- Same on the #137 tree (`04af2f9`): no `Couldn't cut color`. The 2026-08-03
+  report can't be reproduced from what it recorded.
+- Engine sweep, 47 builds: all four patterns in Fill on all eight chair
+  zones, and zebra on "Handle (left)" at 4 scales x 3 offsets plus 3 more
+  offsets at 100% (32 + 12 + 3). `ConformalZoneMapper.buildCutter` returned
+  null 0 times in 228 calls. The three builds at 50% cut nothing: zebra is
+  refused as too detailed there.
+- One build of the sweep:
+  `node_modules/.bin/vite-node scripts/measure-conformal-cutter-nulls.ts zebra left 1 0 0 chair-handle-left`.
+  Arguments are pattern, zone, scale, offX, offZ and an optional part id. The
+  full job list and the live drive are in the PR body of #316.
+- Turning the library back on is the maintainer's call. A kind carrying
+  `withholdFill` hides the strip anyway, so the chair is unaffected.
 
 ## A zone template's outline is faceted, because nothing curve-fits a zone boundary
 
@@ -463,45 +390,51 @@ one.
   number invented to satisfy the complaint.
 - Applies to every part that ships zones, not only the chair.
 
-## The raster edge-density reading depends on how big the file is
+## The flat and photo edge-density endpoints are unmeasured, and small photos read flat
 
-**Measured**: [2026-08-19 photo cluster](findings/2026-08-19-raster-photo-cluster.md) supersedes
-result 1 of
-[2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). Six of
-seven photographs separate cleanly from the flat cluster and the 0.285 cutoff sits in that gap;
-the seventh, a balloon against a clear sky, stays inside the flat band. The size dependence below
-is what is left open.
+**Open**: `FLAT_EDGE_DENSITY` (0.12) and `PHOTO_EDGE_DENSITY` (0.45) in `src/raster/stats.ts` have
+never been measured. Only their midpoint, the 0.285 cutoff, has; its numbers sit on the constant.
 
-`measureImage().edgeDensity` counts the share of pixels that differ from a neighbour, and that
-share depends on the size the image is measured at. `MEASURE_EDGE` caps rather than resamples, so
-a source under 512px is measured at its own size and reads higher for it.
+- **Measured**: [2026-08-19 photo cluster](findings/2026-08-19-raster-photo-cluster.md), which
+  supersedes result 1 of
+  [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md). Its
+  flat-art readings predate measuring at a fixed size: `mario` then read 0.2532, now 0.2042.
+- Real flat art reaches 0.2042 (`mario`), 1.7x the flat endpoint. Mild evidence against it.
+- Six of the seven photographs are CC-licensed Commons files. They show the statistic _can_ score
+  a busy photograph high. They are not a sample of volunteer uploads.
+- Moving an endpoint moves blur, despeckle and curve fit for every image between the two. Judging
+  that needs traced output looked at, not readings.
 
-| Source                                        | Measured         | Reads                                 |
-| --------------------------------------------- | ---------------- | ------------------------------------- |
-| `public/patterns/zebra.svg` exported at 128px | 0.6324           | photo                                 |
-| the same file exported at 256px               | 0.3661           | photo                                 |
-| the same file exported at 384px               | 0.2430           | flat, and this is where it flips      |
-| the same file at 512px and above              | 0.1823 to 0.2086 | flat, a noisy band and not one number |
-| `red-sox-logo`, a real 300px logo             | 0.2531           | flat, 0.03 from the cutoff            |
+### Under 384px no cutoff separates the corpus
 
-Two flat colours at every size. Only the export resolution changed.
+Every image is measured with its opaque artwork enlarged to 512px by repeating pixels
+(`measureAtReferenceSize` in `src/raster/decode.ts`). Small flat art no longer reads photographic.
+Small photographs now read flatter instead.
 
-The `sizes` bench mode shows the same effect from the other direction, on the measurement rather
-than the file: `mario` reads 0.433 (photo) measured at 256 and 0.253 (flat) at 512. That rung is
-diagnostic rather than shipping, since `mario` is always worked at 1024, but it isolates the
-measurement size from the file size.
+App readings for each file exported small, from
+`vite-node scripts/bench-raster.ts sizes pattern-zebra mario red-sox-logo cartoon photo stock-gravel stock-foliage stock-brick stock-crowd stock-night stock-bokeh-food`:
 
-**Closing it**: derive the reading from something size-independent, or measure at a fixed size the
-source is always resampled _to_ rather than capped at. The second is the smaller change and would
-alter what every existing threshold means, so it wants its own measurement pass.
+| Exported at | Flat art, highest  | Stock photos, lowest | Stock photos reading flat         |
+| ----------- | ------------------ | -------------------- | --------------------------------- |
+| 128         | 0.252 zebra        | 0.160 foliage        | 4 of 6: foliage crowd night bokeh |
+| 192         | 0.296 zebra, photo | 0.220 foliage        | 3 of 6: foliage night bokeh       |
+| 256         | 0.254 zebra        | 0.247 bokeh          | 2 of 6: foliage bokeh             |
+| 384         | 0.245 zebra        | 0.275 bokeh          | 1 of 6: bokeh                     |
+| 512         | 0.204 mario        | 0.290 bokeh          | none                              |
 
-### Still unmeasured
+- Flat art is `pattern-zebra`, `mario`, `red-sox-logo` and `cartoon`. The balloon `photo` reads
+  flat at every size, as it does at full size.
+- `pattern-zebra` at 192 is downscaled from a 1024px render and still reads photo. Rendered
+  straight at 192 it reads 0.2637, flat (`vite-node scripts/bench-raster.ts render`).
+- Measured at their own sizes, every stock photo reads photo at every size. So do all four flat
+  sources at 192 and below, zebra and mario at 256, and mario at 384.
+- A small photo reading flatter gets less blur and a lower despeckle floor, so it traces busier.
+- A cutoff near 0.26 would separate the table's 384 and 512 rows. It was not moved: at full size
+  it cuts the margin over flat art from 0.081 to 0.056, and there the cutoff decides working
+  resolution. The photo set is not a volunteer sample either.
 
-Where volunteer uploads land. Six of the seven photographs are CC-licensed Commons files, which is
-sound for asking whether the statistic _can_ score a busy photograph high and is not a sample of
-what this app receives. `FLAT_EDGE_DENSITY` (0.12) and `PHOTO_EDGE_DENSITY` (0.45) are untested by
-that run, which exercised only the midpoint. Flat art reaching 0.2532 is mild evidence against the
-flat endpoint.
+**Closing it**: a statistic that separates at small sizes, or a photo corpus showing volunteers
+never upload small photographs.
 
 ## Colors is the one trace control still fixed, and no single value suits real artwork
 
@@ -586,208 +519,38 @@ the untested candidate rather than a rejected one. Whatever the test, it needs r
 resampled to several sizes on disk, since no mode here can produce them, and the traces need looking
 at rather than counting: region count cannot tell a cleaner trace from a coarser one.
 
-## A restored session's assembly-kind switch still isn't atomic
-
-What is left of the restore-atomicity item after `applyRestoredSessionInner`'s
-scalar fields (printer, base shape, depth, colour grouping — 24 fields: count
-the keys `buildRestoredScalarState` sets, 20 always plus 4 conditional) were
-made atomic: built into a local object and committed in one `Object.assign`
-only once every source in the session has come back
-([src/state/persist.ts](../src/state/persist.ts)).
-
-The switch to the saved session's assembly kind still assigns straight into
-`state` before the one thing in that branch that can throw:
-`state.shapeKind`, `state.assembly.kindId`, `state.assembly.variantId` and
-`state.assembly.parts = []` are all set, then `await asmLoadFullAssembly()`
-runs. If it throws (an unreachable parts library, e.g.), the part has already
-switched but the sources and artwork list — computed after this await
-returns — never get applied. A reload shows a session that thinks it's the
-saved part with none of that part's designs on it.
-
-Not the same bug this item started as: it can no longer put a value from the
-session into one of the 24 scalar fields while the picker or the model shows
-something else. Only the assembly kind and its parts can lag behind.
-
-Closing it would mean giving `asmLoadFullAssembly` a way to report success
-without having already mutated `state.assembly.parts` piecemeal as it loads
-each role — a bigger change to a function whose job is that live progressive
-load (the confirm dialog and the mid-load kind-switch guard both depend on
-`state.assembly.parts` being the live list). Deferred rather than folded into
-the fields fix, which does not touch `asmLoadFullAssembly`'s contract.
-
-## The flat-plate modes ship compiled and unrendered
-
-`disc`, `rect`, `round` and `stl` are all still `ShapeKind`s, with their param
-panels, their input bindings, [flat.ts](../src/geometry/flat.ts), the per-color
-STL-set export and their branches in `store.ts` and `rebuild.ts`. None is
-reachable: `renderShapeKindOptions`
-([src/ui/partPanel.ts](../src/ui/partPanel.ts)) writes assembly kinds into the
-Part dropdown and nothing else.
-
-`rect`/`round`/`stl` have been unrendered since before 2026-08-02 and were
-re-confirmed deliberate by review then. `disc` joined them for the beta, closing
-the 2026-08-08 cycle's **A3**: it produced a plain flat cylinder related to no
-TMT part, sitting in the primary picker at the same weight as four real ones.
-
-Three consequences worth knowing:
-
-- `#btn-export-stl` and the per-color STL-set export go with it. `setShapeKind`
-  hides that button in assembly mode, so no offered part reaches it, and the
-  README no longer offers it as a fallback for slicers that can't read a
-  pre-mapped 3MF.
-- Two `'disc'` fallbacks had to move, since a select value with no matching
-  option renders blank and the next switch away is one-way: the option-list
-  default in `renderShapeKindOptions`, and the retired-kind branch of session
-  restore ([src/state/persist.ts](../src/state/persist.ts)). Both now take
-  `firstOfferedKind()`.
-- A session saved in a flat mode before this release restores onto the wheel.
-
-Everything here still compiles and is still covered by `tests/flat.test.ts` and
-`tests/depth.test.ts`. It is a maintenance question (why keep four dead panels
-building) rather than a bug. The option list is what to touch if a future part
-wants a flat mode again.
-
-**Decided 2026-08-30**: delete the code — `flat.ts`, the per-color STL-set export, and their
-branches in `store.ts`/`rebuild.ts`, plus `tests/flat.test.ts` and `tests/depth.test.ts`'s
-flat-only coverage. Not yet scheduled. Closing this also closes the next section ("Flat plate
-modes have no printable despeckle floor"), which is only reachable through these panels.
-
-**What `npm run smoke` no longer covers.** Four of its steps drove the disc:
-switch to flat mode, override the background recess depth, export a flat 3MF,
-export the per-color STL zip. They came out, since they drove UI that no longer
-exists. So the flat 3MF writer and the STL-zip writer now have unit coverage
-only, with nothing exercising either through a browser. The PNG-raster step was
-not flat-specific and was kept, now running against the assembly part.
-
-## Flat plate modes have no printable despeckle floor
-
-**Unreachable as of the beta** (see "The flat-plate modes ship compiled and
-unrendered"), so nothing can hit this today. Kept because reopening any flat
-mode reopens it, unfixed.
-
-**Decided 2026-08-30**: the flat-plate modes are slated for deletion, not reopening (see the
-section above). Once that lands, this section goes with it rather than staying open.
-
-The floor that stops the trace keeping detail under one nozzle width
-([2026-08-20 printable floor](findings/2026-08-20-printable-floor.md)) applies on assembly kinds
-only. `rasterMmPerPixel` returns nothing in disc/rect/round/STL-plate mode, so those keep the
-fraction-of-the-image floor alone, which is what every mode had before.
-
-- **Why**: a plate fits the design's drawn content (`fitTransform` over `parsed.bbox`), and that
-  bbox does not exist until the trace has run. The pre-trace stand-in, the bounds of the opaque
-  pixels, is wrong in the damaging direction: a stray opaque speck in a corner inflates the extent,
-  shrinks mm per pixel and raises the floor over detail that would print. It was built that way and
-  cut on review rather than shipped.
-- **What it costs**: an 80mm disc at the 5% margin is a 72mm design, where the flat-art fraction is
-  already a 0.88mm floor, so the printable one is inert at Detail 50 and would bite below about
-  65mm placed at Detail 100. Small plates and scaled-down designs are the gap.
-- Closing it means an extent the trace agrees with: either trace once at the fractional floor and
-  re-trace when the printable one turns out to bind (two passes, ~830ms each on a photograph), or
-  a cheap despeckle-equivalent pass over the alpha channel before measuring.
-- Closing it now buys more than when this was written: assembly kinds also size the floor _down_ in
-  mm ([2026-08-24](findings/2026-08-24-despeckle-floor-recalibration.md)), so a flat plate keeps a
-  fractional floor that over-prunes detailed flat art (mario: 55mm² of print on a wheel-sized
-  plate), not just the missing nozzle floor.
-
-## The printable despeckle floor is fixed at the moment of the trace
-
-`rasterMmPerPixel` ([src/state/artwork.ts](../src/state/artwork.ts)) reads the placement when an
-image is traced, which is at load and again whenever Colors or Detail re-runs it. Nothing else
-re-traces, because a trace measured ~830ms on a photograph and a slider drag would fire it per
-step.
-
-**Every input to the floor can move afterwards, and Scale is the smallest of them**: hubcap
-diameter (32mm to the plate's short side, up to 270mm), the wheel's Design radius, switching
-assembly kind, and the one-click Sticker/Fill switch, which changes the scale _rule_ rather than a
-number. Scale itself only spans 25-400%. "+ add to another zone" is the quickest of all: it places
-a second instance at 100% against a trace made for a smaller one, so the largest-instance rule the
-floor was chosen by is stale the moment it lands. A hubcap cut to artwork shape adds one more: the
-floor is read before the new source is registered, so it sees the _previous_ design's silhouette
-face. And within the Scale field's 550ms typed debounce, `ArtworkInstance.scalePct` still holds the
-old value (only a rebuild syncs it), so a Detail nudge inside that window sizes the floor from the
-scale before the one just typed.
-
-- **Getting smaller after loading** leaves the older, more permissive floor: features under a
-  nozzle width survive that a fresh trace would remove. That is the pre-2026-08-20 behaviour, so it
-  is a missed improvement rather than a regression.
-- **Getting larger is the one that loses something**: detail removed at the size it was traced for
-  would print at the new size. Load onto a 32mm hubcap and raise it to 220mm and it is gone, with
-  nothing said. Only a nudge of Colors or Detail brings it back.
-- The help panel now says to nudge Colors or Detail after a big resize, which is a note in a
-  dialog, not the app noticing. Nothing in the panel that did the resizing says anything.
-- Closing it means re-tracing when the placed size moves far enough to matter, which needs the
-  debounce and the cancel path the Colors and Detail sliders already have, or a notice that says
-  the design was traced for a different size.
-
-## A Fill under a sticker overlaps just like two stickers do, and isn't checked
-
-The overlap check in
-[src/geometry/designOverlap.ts](../src/geometry/designOverlap.ts) compares
-two stickers by their placed footprints and then by how much of each one's
-ink reaches the footprint they share, and treats two Fills on one zone as
-always overlapping. It deliberately says nothing about a Fill paired with a
-sticker, because a pattern background with a design on top is a real
-workflow and flagging it would fire on the intended use.
-
-But the geometry doesn't care about intent: the sticker's pockets and the
-fill's pockets are separate cutters, so wherever the sticker's colors differ
-from the pattern's underneath it, the export carries two inlay solids in the
-same volume — exactly what the sticker-vs-sticker warning exists for. It is
-unmeasured: no export of that combination has been opened in a slicer to see
-what actually prints, and the app ships no example using it.
-
-Two ways to close it, neither cheap enough to bundle with the check that
-prompted this note. (1) Make it correct rather than warned: subtract the
-sticker's pockets from the fill's before the inlay intersection, so the
-background yields to what sits on it. That is the behavior a user expects,
-and it makes the pairing supported instead of merely tolerated — but it is a
-per-color boolean on the fill's full tiled region, on the path already
-measured at 405s for one chair zone (see the rebuild-performance section).
-(2) Warn only where the fill's ink actually lies under the sticker. The
-plumbing for that now exists: `placedInk` in
-[src/geometry/assembly.ts](../src/geometry/assembly.ts) hands the sticker
-comparison each design's placed cut regions. A fill's are the tiled ones, so
-this still needs the grid, and the check would have to stop skipping the
-mixed pair. Start by measuring (1) on the wheel, where the fill region is
-small enough to time honestly.
-
-**Decided 2026-08-30**: go with (1), make it correct — subtract the sticker's pockets from the
-fill's before the inlay intersection. Not yet scheduled; still needs the wheel measurement above
-before committing to the full-tiled-region cost on the chair.
-
 ## Two traces still drop a color and say nothing about it
 
-`rasterLostColors` ([src/raster/parse.ts](../src/raster/parse.ts)) raises the dropped-color notice
-only where its one sentence — raise Detail — is both true and available. Two cases are left silent,
-both `droppedColors > 0`. They are the half of "a traced image can lose a color with nothing said"
-that the notice did not close.
+`rasterColorLossNotice` ([src/raster/parse.ts](../src/raster/parse.ts)) raises a dropped-color
+notice only where its remedy is both true and available: raise Detail, or make the design or the
+part bigger when the nozzle-width floor pins it. Two cases are left silent, both
+`droppedColors > 0`.
 
-| Case                        | Suppressed by        | Reproduced by                                                    |
-| --------------------------- | -------------------- | ---------------------------------------------------------------- |
-| Capped, and short a color   | `capped`             | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"` |
-| A floor Detail cannot lower | `!detailLowersFloor` | `npx vitest run tests/raster-parse.test.ts -t "stays silent"`    |
+| Case                      | Suppressed by                | Reproduced by                                                    |
+| ------------------------- | ---------------------------- | ---------------------------------------------------------------- |
+| Capped, and short a color | `capped`                     | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"` |
+| Detail already at 100     | `!detailLowersFloor`, no pin | `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`      |
 
 - **Capped**: the trace shows `rasterCappedMessage` only, which says detail "was merged into its
   surroundings" and never that a color left the palette. The two remedies are opposites — capped
   says lower Colors or Detail, dropped-color says raise Detail — so both on one image contradict
   each other. Reproduced synthetically (1024 six-pixel blocks over two flat bands plus one-pixel
   specks, 320x320 at Colors 5 and Detail 100: `capped: true`, `droppedColors: 1`), never on the
-  corpus. The section below is why it is not ruled out: the cap is a target, not a bound.
-- **A floor Detail cannot lower** covers two shapes of the same thing, and `detailLowersFloor`
-  measures both rather than inferring either: a placement's nozzle-width floor pinning the floor
-  (128px across 12.8mm drops a color at Detail 0, 50 and 100 alike), and the slider already at
-  `DETAIL_MAX`. Saying either needs a second message, and the placement one's remedy is a resize,
-  which does not re-trace — see "The printable despeckle floor is fixed at the moment of the trace".
+  corpus.
+- **The cap now raises until the count is under, so a capped floor can go much higher.** On
+  512px 8-label noise at placed floor 1 it settles at 47px
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). The same command against the
+  previous `src/raster/trace.ts` stops at 7px with 9237 components. The higher the floor, the
+  likelier a whole color goes under it on a source that caps.
+- **Detail at 100** with no placement pinning the floor has no remedy to offer. A bigger size
+  can still lower the feature floor there, so saying nothing is not always right, but no
+  measured rule says when it is.
 - **A partly-pinned floor still fires, with a weak remedy.** Where the nozzle floor sits just under
   the fractional one, raising Detail lowers the floor by a little and may not bring the color back.
   The notice is still true — it says what Detail does, never that the color returns — and no notice
   can promise recovery, since a quartered floor can still be above a color's pieces. Drawing a "how
   much movement is enough" line would be an invented constant, so it is left as is. **Unmeasured**:
   how often that band is where real artwork lands.
-- **The claim also goes stale on a resize**, since nothing re-traces on a placement change: a notice
-  raised at part scale keeps standing after the design is scaled down onto a face where the nozzle
-  floor pins the floor, which is the case `detailLowersFloor` exists to suppress. Same root as "The
-  printable despeckle floor is fixed at the moment of the trace", and closed by the same fix.
 - **The notice can also vanish mid-remedy, which reads as fixed.** Its presence tracks "Detail can
   still move this floor", not "a color is missing". On `sprinkled(384)` with no placement, Detail 90
   gives floor 7 and the notice; Detail 95 gives floor 6, `detailLowersFloor` false, and the notice is
@@ -802,40 +565,43 @@ that the notice did not close.
   suppressions above silence any of those five at their own placements. **Unmeasured.**
 - Closing either takes a message carrying both facts, or a measured rule for which remedy wins.
   Neither is a wording change: the capped one needs an answer to whether raising Detail can recover
-  a color on a capped trace at all, and the pinned-floor one needs the re-trace-on-resize item
-  first.
+  a color on a capped trace at all.
 
-## `MAX_COMPONENTS` is a target, not the bound its name implies
+## A hubcap cut to its artwork may re-trace on every edit — unmeasured
 
-`traceLabelMap` ([src/raster/trace.ts](../src/raster/trace.ts)) raises the despeckle floor when the
-component count exceeds `MAX_COMPONENTS` (800), then never rechecks. The raise now reliably cuts
-the count, which it did not before 2026-08-20
-([2026-08-20 despeckle floor](findings/2026-08-20-despeckle-floor.md)), but it still does not bound
-it. Two ways past the cap, both after the count was taken:
+A resize re-traces a raster once its placed floors move (`retraceMovedSources` in
+[src/state/artwork.ts](../src/state/artwork.ts)). On a hubcap cut to its artwork, the part's size
+follows the trace: when the outline overhangs the wheel, the shrink that fits it
+(`generatedFitFactor`) comes from the traced outline's reach.
 
-- **Absorbing specks merges them into each other**, minting components above the new floor. So
-  putting the floor above all but the largest 799 does not leave 799. Reproduces on a speck field
-  handed straight to `traceLabelMap` with a high floor. **Not reproduced through the real decode
-  path since the despeckle fix**: the pixel art that looked like it did reads as photographic at
-  the measurement size (0.3045), so the app traces it at 512px, where the raise fires and 78
-  components come back. Whether a decodable image can still get past the cap is open.
-- **`deChecker` breaks 2x2 checkerboards by rewriting one cell**, which can shave a pinch point and
-  split a surviving component in two. Off-corpus it is common: about 8% of random label grids come
-  back with a component under the floor the trace reports, against 0% straight out of `despeckle`.
-  No corpus source does it, so what it costs a real image is unmeasured. Swapping the order is not
-  the fix, since `despeckle` relabels whole components and can create the checkerboard `deChecker`
-  exists to remove, and a self-touching ring is the worse failure.
+- A re-trace that removes or restores a speck at the outline's far edge changes that shrink, and
+  with it the floors. The trace is then stale again.
+- **Bounded**: a settled pass never asks for another, so this costs at most one re-trace per edit,
+  not a loop.
+- **Unmeasured**: whether any real image has a speck at its edge between the two floors. No test
+  or bench builds one.
+- Closing it needs that measurement first. If it happens, the fix is a fit that does not read the
+  trace's own specks, not a cap on re-traces.
 
-- The cap is a performance guard on `shapeToFeature`, so being over by a few hundred on a
-  pathological source costs time rather than correctness.
-- Closing it: loop the raise until `realCount()` is actually under (and decide what a second raise
-  does when a `deChecker` split is what pushed it over), or rename the constant and the flag to say
-  what they do. `capped` today means "a raise happened", not "the count is under".
-- The bench's `despeckle` mode checks the floor and the cap on every row, but only over CORPUS, so
-  its cap line has never had a source that could trip it. Both columns also read the components the
-  trace _returns_, which is fewer than the count it capped on: background components and any whose
-  ring collapsed are already gone. A transparent speck left under the floor would be a real defect,
-  and this guard would miss it.
+## `deChecker` can leave a component under the despeckle floor
+
+`despeckle` leaves nothing under the floor, but `deChecker` runs after it
+([src/raster/trace.ts](../src/raster/trace.ts)). Breaking a 2x2 checkerboard rewrites one cell,
+which can shave a pinch point and split a surviving component in two. One half can be under the
+floor the trace reports.
+
+- **Off-corpus it happens**: 2 of 24 uniform-noise rows return a component under their floor.
+  Reproduce with `node_modules/.bin/vite-node scripts/bench-raster.ts cap`.
+- **No corpus source does it**, so what it costs a real image is unmeasured.
+- **Swapping the order is not the fix.** `despeckle` relabels whole components and can create the
+  checkerboard `deChecker` exists to remove, and a self-touching ring is the worse failure.
+- The cap is not affected: its loop rechecks the count after `deChecker`, so a split can cost it a
+  further raise but not the bound.
+- **The bench's `despeckle` mode can miss one.** Its `under` column reads the components the trace
+  _returns_: background components and any whose ring collapsed are already gone. A transparent
+  speck left under the floor would be a real defect, and this check would not see it.
+- Closing it needs a way to absorb the split pieces that cannot recreate a checkerboard, and a
+  check that counts background components too.
 
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
@@ -857,77 +623,62 @@ active turf upgrade, and writing it now costs about what re-deriving it later co
 upgrade becomes live work it is step one rather than an afterthought, over the
 union-accumulation path at a few shape counts, with the numbers above as the baseline to beat.
 
-## Turf's tile union has a vertex ceiling, and the fix is a refusal rather than a batch
+## `FILL_POINT_BUDGET` was measured on one part shape
 
-Fill mode unions one copy of the design per tile, and `@turf/turf` 6.5's polygon
-clipping gives up on a big union without throwing: it returns a partial result,
-so the part loses geometry behind a `Couldn't merge the shapes …` warning naming
-no cause. That message used to assert a cause it could not know ("likely a
-self-intersecting path in the source SVG"), which was wrong here: the paths were
-fine, there were simply too many of them.
+The 600k fill budget ([patterns.ts](../src/geometry/patterns.ts)) guards
+Manifold's WASM heap, and was set from one 240mm box face.
 
-**Where the ceiling is: a 503k-600k band, swept 2026-08-30.** Not the 800k this
-section used to quote, which was an estimate off one live build.
-[2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md)
-carries both sweeps and the command.
+- Zebra filled at 658,724 points and ran out of memory at 719,969
+  ([2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md)).
+- Memory follows the part's own mesh and the cutter's triangles, not only the
+  points counted. A denser part, or a conformal zone's refined cutter, may run
+  out sooner. **Unmeasured.**
+- Past the limit the part exports with no artwork, behind a named warning.
+- Closing it: `scripts/bench-fill-build.ts` against a real part mesh (the
+  hubcap, and a chair zone once Fill is offered there), or a budget on
+  triangles rather than points.
 
-| pattern   | points per tile | highest clean | lowest failure |
-| --------- | --------------- | ------------- | -------------- |
-| zebra     | 1361            | 544,400       | 600,201        |
-| dalmatian | 559             | 503,100       | 537,199        |
+## The segment cap is enforced at one boolean entry point, not all of them
 
-The two overlap, so no point count separates clean from failing, and neither
-does tile count. The band replaces the 800k figure in `scripts/gen-patterns.mjs`
-and `tests/patterns-assets.test.ts`; their constants and assertions are untouched.
+`boolOpUnderCap` ([regions.ts](../src/geometry/regions.ts)) splits a union,
+clip or subtraction past polygon-clipping's 500,000-segment cap. The fill path
+goes through it; these do not, or not fully. All **unmeasured**.
 
-The original 2026-08-03 observation, zebra in Fill mode on one chair zone
-(`MOSAIC_GPU=1` production build), is what made it concrete:
+- **The n-ary sweeps** (`safeUnionAll`, `safeUnionAllCooperative`,
+  `naryOpWithRetry`). Reachable from `computeNetRegionsByColor` on one colour
+  past 500k segments. The sweep throws at once (no retries on a size limit),
+  then the pairwise fallback goes through the cap. Closing it: count first and
+  skip the doomed sweep.
+- **`splitAtBoundary`** ([edgeRegions.ts](../src/geometry/edgeRegions.ts)) calls
+  `boolOpWithRetry` per polygon. Only one polygon plus the eroded boundary past
+  the cap reaches it; it degrades to a recess with a warning. Closing it: route
+  it through `boolOpUnderCap`.
+- **The clip side is never split.** A clip over the cap alone is `tooBig`. Part
+  boundaries are far smaller; a sticker set on one zone is the likeliest to grow.
+- **`SPLIT_CALL_LIMIT` (256)** bounds a split union that halves without
+  converging. Nothing measured how close a real fill comes to it.
+- **The crossing limit.** The engine also throws once its sweep line holds
+  1,000,000 pieces, which crossings multiply: 500 strips each way reach it from
+  4,000 segments (`tests/regions-sweep-cap.test.ts`). Nothing counts it ahead
+  of time. The tile union catches it as `tooBig` and refuses the fill; a clip
+  that hits it later leaves the region unclipped behind a warning.
+- **Fill holds every colour's tiles at once** before cutting any, so a refusal
+  can drop them together. Peak JS memory is then the sum over colours, not the
+  largest. Unmeasured: `scripts/bench-fill-build.ts` reports time, not heap.
 
-|                                      | 13.6k verts/tile  | 1.3k verts/tile |
-| ------------------------------------ | ----------------- | --------------- |
-| vertices across the zone's 143 tiles | 1.95M             | 187k            |
-| union failures                       | 8, across 4 parts | 0               |
-| triangles produced                   | 853k              | 2.07M           |
-| rebuild                              | 468.7s            | 93.6s           |
+## The bundled-pattern asset test freezes a chair zone at 143 tiles by hand
 
-The doubled triangle count is the tell that this was data loss rather than
-slowness: the failing run produced _less_ geometry because four parts fell back
-to unmerged shapes.
+`TILES_PER_CHAIR_ZONE = 143` in `tests/patterns-assets.test.ts` is written down,
+not derived from live zone geometry.
 
-**Fixed: nothing crosses the ceiling unannounced now.** Two mechanisms, one per
-source of tiles.
-
-- Bundled patterns, at build time. `scripts/gen-patterns.mjs` thins zebra's
-  contours (`simplifyEps`), and `tests/patterns-assets.test.ts` fails any
-  pattern whose vertex count times a chair zone's tile count would approach the
-  ceiling.
-- User SVGs, at build time in the app. `tileCoverage()`
-  ([patterns.ts](../src/geometry/patterns.ts)) multiplies the real tile count by
-  the heaviest colour's points, refuses past `TILE_UNION_VERTEX_BUDGET` (500k),
-  and reports `too-detailed` through the same refusal path the other four causes
-  use. The user gets one tile and a message naming the numbers.
-
-**Still open: a refusal is a cap, not a cure.** 500k gives up two measured
-successes (zebra's 544,400 and dalmatian's 503,100). A volunteer who wants that
-fill has no way to get it. A design that is over budget even with Scale wound to
-its 400% maximum is refused outright, and the message says so rather than
-sending the user up the slider.
-
-Closing it means chunking the union into batches small enough to stay under the
-ceiling and merging the results. That removes the ceiling for the bundled
-patterns too, which would make the asset budget a performance concern rather
-than a correctness one. Upgrading turf past 6.5 may move the ceiling but is
-separately blocked — see the `@turf/turf` pin section.
-
-**`TILES_PER_CHAIR_ZONE = 143` is still frozen by hand**, not derived from live
-zone geometry: `tileCoverage()` needs a real placer and extent, which only exist
-mid-build, and pulling the full chair build into an otherwise fast,
-dependency-light asset test is not worth it. Its 300k budget is a 1.8x margin
-under the measured onset. What changed is the consequence of letting it rot. A
-zone that outgrows 143 tiles now reaches the runtime refusal instead of dropping
-tiles, so a shipped pattern stops filling and says so. That is a visible
-regression for the user rather than a hidden one, and still nothing flags the
-stale constant to the maintainer.
+- `tileCoverage()` needs a real placer and extent, which only exist mid-build.
+- Pulling the full chair build into a fast, dependency-light asset test is not
+  worth it.
+- Its 300k budget sits at half of `FILL_POINT_BUDGET` (600k,
+  [patterns.ts](../src/geometry/patterns.ts)), the build-time refusal.
+- **If it rots**: a zone that outgrows 143 tiles reaches that refusal, so a
+  shipped pattern stops filling and says so. Visible to the user, not silent.
+- Nothing flags the stale constant to the maintainer.
 
 ## A concave part's prime-tower footprint is scored as its convex hull
 
@@ -1049,45 +800,6 @@ were: a generated part has no stable mesh to seal a pose against, so every
 arrangement is only ever verified for the parameters it was checked at. More
 entries narrow the gap; they don't close the category.
 
-## A patch boundary that meets itself at a point traces as an open chain
-
-`extractPatchBoundary` ([src/geometry/meshparts.ts](../src/geometry/meshparts.ts)) keys its edge
-map by **vertex**. Where two boundary loops of one patch touch at a single point, one loses its
-outgoing edge, the walk runs off the end, and the truncated chain is returned as if it were a ring.
-
-**What it costs.** `applyAsmPatchChoice` now keeps every loop and
-[zones.ts](../src/geometry/zones.ts) nests them by containment depth, so a truncated chain that
-encloses area can be read as a hole where the face is solid, or as solid face inside a real hole.
-The artwork is then clipped to the wrong shape, and on a hubcap cut to a silhouette the edge rule
-reads the wrong rims as the part's outer wall.
-
-**Measured.** Over every packed part's first six patches, 18 of 114 contain a chain that does not
-close. All 18 are chair pieces, which take artwork through baked zones instead, plus `wheel-half`
-patch 2 (its -Y back: 7 closed chains and 99 open ones). **None of the four kinds' actual design
-faces is affected**: wheel-half patch 0, wheel-hub-cap patch 0 and footrest patch 1 are 1, 1 and 3
-loops with no open chain at all, and the exported wheel and chair are byte-identical across the
-loop-set change. So this is reachable by choosing a non-default design face, or by dropping a
-pinched mesh on a role, and not by the shipped workflow.
-
-**Why it isn't fixed here.** Two attempts were made while closing the loop-set item and both
-introduced worse bugs than the one they closed, which is what argued for splitting it out:
-
-- Discarding chains that do not close, marking vertices consumed as the walk goes: a chain running
-  off the end ate a genuine loop it had entered, and both were lost. Six patches returned no loops
-  at all, and `chair-seat-center` patch 0 dropped its 2101.5 mm² outline and kept a 1097.1 mm²
-  sub-loop as the face.
-- Consuming vertices only on close: a chain entering a cycle it did not start on then runs to the
-  100000-iteration guard. `chair-seat-center` patch 0 is the **default** patch, hit on every chair
-  load, and went from under 2 ms to 317 ms, emitting 1.6 M points of garbage; `wheel-half` patch 2
-  went to 2162 ms.
-
-**What closing it takes.** Key the walk by directed edge rather than by vertex, so a pinch vertex
-keeps one outgoing edge per loop, and pair incoming with outgoing by angle around that vertex so
-the loops are separated the way the geometry actually runs. A per-walk visited set merged into the
-global one only on close, so a failed walk consumes nothing and cannot spin. Then decide what a
-patch with no closed ring should do: today it yields a boundary that is wrong rather than absent,
-and callers only ask whether a face was detected at all.
-
 ## Boundary fringe threads survive the trace
 
 A hair-thin thread of a third color can hug a high-contrast boundary in a traced image
@@ -1114,46 +826,29 @@ Closing this again means clearing, at minimum:
 - The no-op regime: mean width is never under 0.5 (a lone pixel is 2*1/4), so any threshold
   at or under 0.5 must skip the O(w*h) perimeter scan entirely.
 
-## Numeric coercion has no lint rule
+## `noUncheckedIndexedAccess` is not enforced
 
-Numeric input guards are enforced by lint and CI in part, not in full. What
-holds and what does not:
+Split out from the now-closed "Numeric coercion has no lint rule" section,
+which decided the parsing-helper convention (`src/util/number.ts`) for that
+half. This half is unrelated and still open.
 
-**Enforced.** `strict: true`, plus the five type-aware
-`@typescript-eslint/no-unsafe-*` rules on `src/**/*.ts`. Those caught 12 real
-cases of untrusted input reaching typed state, all fixed. ESLint's built-in
-`radix` rule also catches a `parseInt` with no base. The one site it found reads
-an app-generated `<select>` value, so it was latent, not live.
+Measured at **2727 errors** (`npx tsc --noEmit --noUncheckedIndexedAccess`)
+on `main` @ 8db8c6d, up from 2240 @ 04c2c81. Enabling it is a real project,
+not a flag flip.
 
-**Not enforced.** `parseFloat` / `Number` / unary `+` coercion. No lint rule in
-the current plugin ecosystem covers the pattern, and a custom parser rule was
-ruled out as too much machinery for one check. Nothing catches a `parseFloat`
-whose `NaN` is never guarded.
+## A caster-mount fetch that fails leaves the chair on the new variant with the mount missing
 
-Counted 2026-08-28 (`grep -rn parseFloat src/ | wc -l`): of 9 `parseFloat` sites in `src/`, **0** parse an
-external number with no finite check. The last two were guarded in the same pass that closed this
-count: `parsePathD` (`svg/path.ts`) never throws; on a malformed coordinate it drops the subpath it
-was building whole (token misalignment makes anything after that point unrecoverable, and closing
-a truncated loop into a shape the artist never drew would be worse) and keeps every subpath already
-closed, and `parseSVGDocument` (`svg/parse.ts`) warns naming which `<path>` it was — a per-document
-count, since two malformed paths would otherwise collapse into one warning under `warn()`'s
-exact-message dedup, which is also why the sibling gradient/pattern-fill warning in the same
-function now names its element the same way. The new `parseFillOpacity` helper (`svg/parse.ts`)
-falls back to the SVG default (fully opaque) instead of an unguarded NaN. Every remaining site
-guards, most on the next line, so the exposure is narrower than the call count suggests. Count the
-guards, not the calls. One of them, `ui/partPanel.ts:208`, guards against a value it parses from an
-authored `min=` attribute rather than from anything a user types, and a non-numeric one there would
-reject every input; that is a latent bug in the markup, not in the guard.
+**Needs a decision: what a partly failed variant switch should leave.** `switchChairVariant`
+([src/assembly/parts.ts](../src/assembly/parts.ts)) ignores `asmLoadLibraryEntryIntoPart`'s
+result.
 
-**Also not enforced.** `noUncheckedIndexedAccess`, measured at **2240 errors**
-on `main` @ 04c2c81. Enabling it is a real project, not a flag flip.
-
-**Closing it** would take either a custom ESLint rule for the coercion pattern,
-or a convention that all external numbers land through one parsing helper that
-the type system can then police.
-
-**Decided 2026-08-30**: the parsing-helper convention, not a custom lint rule. `parsePathD` and
-`parseFillOpacity` are already converging on that shape. Not yet scheduled.
+- It sets `variantId` and drops the old mounts before fetching the new ones.
+- A failed fetch shows an alert naming the file. The variant stays switched, and that mount stays
+  unloaded, so the chair renders and exports without it.
+- Unmeasured: not driven live. Reached only if a caster file is unreachable mid-visit.
+- Options: roll back to the previous variant and its mounts, the way a restore now rolls back its
+  kind (`asmSwitchKindAndLoad`, [src/assembly/switchKind.ts](../src/assembly/switchKind.ts)); or
+  keep the switch and warn in the panel until the mount loads.
 
 ## A regenerated source mesh would leave its rotated copies on the old geometry
 
@@ -1190,76 +885,6 @@ running app.
 too, or rebuilding a source's copies when it re-adopts. It stays open because
 the first role to pair `buildMesh` with `allowRotatedCopies` makes it real, and
 nothing today can produce a case to test against.
-
-## `parseFillOpacity` reads a percentage and an out-of-range value wrong, and three attempts to fix it each broke something else
-
-`parseFillOpacity` (`svg/parse.ts`) is `parseFloat` plus a finite check. Two
-values it gets wrong, measured 2026-08-28 with a throwaway jsdom vitest file
-that imported the shipped function and printed it against each input:
-
-| Input  | Returns | Should be | Why it matters                                  |
-| ------ | ------- | --------- | ----------------------------------------------- |
-| `50%`  | 50      | 0.5       | inert today: the sole reader tests `=== 0`      |
-| `0%`   | 0       | 0         | correct by luck                                 |
-| `-1`   | -1      | 0         | imports opaque; the spec clamps `<alpha-value>` |
-| `-50%` | -50     | 0         | same                                            |
-| `150%` | 150     | 1         | inert today                                     |
-
-The sole reader is `else if (opacity === 0)` in `parseSVGDocument`, so only the
-`-1` / `-50%` rows change what ships: a shape the artist hid comes in as a
-visible color and costs an AMS slot.
-
-**Cut under CLAUDE.md's second-repeat rule**, on the branch that fixed the arc
-tokenizer. Three `/code-review` rounds each found a defect in the previous
-round's fix to this one function:
-
-| Round | The fix it reviewed         | What it found                                                                                                       |
-| ----- | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| 1     | `%` handling                | no clamp, so `-1` still imported opaque — the thing the whole change was for                                        |
-| 3     | `%` handling plus the clamp | `endsWith('%')` and `parseFloat` disagree where the number ends: `50% !important` clamped 50 to 1                   |
-| 4     | anchored regex              | that anchoring made `0 !important` fall back to opaque, so a hidden shape imported as a **visible** one, no warning |
-
-Round 4's defect is strictly worse than the bug being fixed, and it was
-introduced by round 3's fix to round 1's fix. The function shipped unchanged.
-
-**Closing it** needs the CSS side settled first, not another patch here.
-`parseClassRules` and `getInlineStyleProp` (`svg/parse.ts`) do not strip
-`!important` from any declaration, so every consumer of a class-rule value has
-the same trailing-text problem and `fill-opacity` is only where it was noticed.
-Strip it once at the resolver, then this function is a two-line clamp with no
-string parsing in it.
-
-## `display="none"` on a group does not hide the shapes inside it
-
-`parseSVGDocument` (`svg/parse.ts`) resolves `display` per element, and `walk`
-recurses into children regardless, so the flag is never inherited. CSS removes
-the whole subtree. This removes only the element carrying the attribute.
-
-Measured 2026-08-30 with a throwaway jsdom vitest file that called
-`parseSVGDocument` on a hidden group plus one visible `<rect>`, and printed
-`out.shapes.length`:
-
-| Document                                                     | Shapes imported | Should be |
-| ------------------------------------------------------------ | --------------- | --------- |
-| `<g display="none"><rect …/></g>` + a visible `<rect>`       | 2               | 1         |
-| `<g style="display:none"><rect …/></g>` + a visible `<rect>` | 2               | 1         |
-
-A hidden Inkscape or Illustrator layer is exactly this markup. The artwork the
-user hid is inlaid into the print and costs an AMS slot.
-
-Found by `/code-review` on the branch that fixed the warning numbers next to
-it, and not fixed there because the fix needs a decision first.
-
-**Closing it** is two lines in `walk`: pass the resolved flag down and or it
-with the element's own. The open question is whether a hidden layer vanishing
-is silent. `fill-opacity="0"` on one shape is silent on purpose, for the reason
-in the comment on the `opacity === 0` branch of `walk`. A hidden layer is much
-more artwork to drop with nothing said, and CLAUDE.md code rule 1 wants a named
-warning for it.
-
-**Decided 2026-08-30**: warn, named, per CLAUDE.md code rule 1 — a hidden layer is enough content
-to drop that it needs to be surfaced, unlike the single-shape `fill-opacity="0"` case. Not yet
-scheduled.
 
 ## A cut region claims surface the part does not have, and it prints
 
@@ -1307,43 +932,22 @@ The slack itself is not the bug and predates this: charts with no dead region
 carry more of it (649.41mm² against 211.13mm²) and produce no ribbons, because
 nothing cuts it loose.
 
-**The code is written; the sidecar is not re-baked.** `clipRegionsToChart` in
-`scripts/lib/zonebake.mjs` intersects the cut region with the chart's own
-triangles after `subtractRegions`, and `chartCS` is now kept alive from the dead
-intersection to that call rather than deleted between them.
+**Closing it** is an intersect against the chart's own triangles after
+`subtractRegions`. Not one line: `bakeZones` does build a `chartCS`, but for the
+dead intersection only — constructed at `zonebake.mjs:4353` and deleted at 4360,
+inside `if (coverIdx)`/`if (deadCS)`, about 30 lines before the
+`subtractRegions` call at 4391, and not built at all for a chart with no dead
+set. So it needs that section hoisted and kept.
 
-It runs only on a chart that has a dead region. Where nothing is subtracted,
-`subtractRegions` hands the claim straight back and `cutRegions` must stay
-byte-identical to `subRegions` — the guard in `tests/chair-zones.test.ts` that
-catches a stale bake. All 14 off-surface pieces are on charts that do carry a
-dead region, so this fixes every one the run found. The 649.41mm² of the same
-slack on the 14 coverless charts stays, attached to its one piece rather than
-cut free, and has never made a standalone piece; that remainder is unmeasured.
+It also needs a decision on the charts with no dead region. They carry the same
+slack — more of it, 649.41mm² — but attached to their one piece rather than cut
+free, and it has never made a standalone piece. Clipping them too would trim
+that band; clipping only the charts with a dead set would fix every piece this
+run found.
 
-**What is left is the re-bake**, and it needs `stubs/dead-zones.3mf`, which
-lives outside the repo:
-
-1. Re-bake the chair (`bake-zones`).
-2. `npm run build && npx vite-node scripts/check-cut-ribbon-ink.mjs` — it exits
-   1 and names the mark today, and should exit 0 with "No off-surface piece was
-   shown to reach the print" after.
-3. `npx vite-node scripts/measure-cut-offsurface.mjs` — "at least 50% off"
-   should go 14 to 0.
-4. **`expect(examined).toBe(41)` in `tests/chair-zones.test.ts` will move.** That
-   pin exists to force a human look when a re-bake changes the cut region, so it
-   doing its job is the point. Re-derive the new value from
-   `npx vite-node scripts/measure-seam-overlap.mjs` rather than guessing it: an
-   in-memory preview of the clip over the shipped sidecar gave 47 pieces and
-   131.04mm², but it re-rounds coordinates instead of re-baking, so treat that
-   as the shape of the change and not the number.
-5. **Consider tightening the conservation bound back.** It is one-sided now,
-   because the clip removes up to 94.98mm² from a chart and the old two-sided
-   2mm² bound would fail on 9 of 12. With the sidecar re-baked, the reference
-   can include the clip and go two-sided again.
-
-Until then the section stays open. Merging the code without the re-baked sidecar
-would repeat #296's eighth-round finding, where a corrected `subtractRegions`
-shipped a stale sidecar.
+Then **re-bake** — and that needs `stubs/dead-zones.3mf`, which lives outside
+the repo. Fixing the code without re-baking would repeat #296's eighth-round
+finding, where a corrected `subtractRegions` shipped a stale sidecar.
 
 Full method, the two independent derivations, the control, and the four wing
 excursions the split cannot explain are in
@@ -1383,15 +987,23 @@ a published column. Script and report should move together, by their author. The
 sibling `measure-cut-offsurface.mjs` guards both empty-input cases, and its
 `deepest()` helper is the shape to copy.
 
-## Nobody has swept the design ink `CLIP_REMNANT_FLOOR_MM2` actually guards
+## Whether a near-floor clipped-ink piece is dust or a drawn detail is unmeasured
 
-`docs/findings/2026-09-08-cut-region-width.md` swept the bake's population, part
-geometry, and found no width separating dust from surface. That says nothing
-about the runtime floor, which sees something else entirely: a placed design's
-ink clipped to a part (`placedInk` and `dropSpecks`, `src/geometry/assembly.ts`).
-Those pieces have never been measured.
+`docs/findings/2026-09-27-clip-ink-sweep.md` swept the runtime floor's own
+population — a placed design's ink clipped to a part (`placedInk` and
+`dropSpecks`, `src/geometry/assembly.ts`) — across the four shipped patterns
+on real parts. Re-derive with `RUN_CLIP_INK_SWEEP=1 npx vitest run
+scripts/measure-clip-ink.test.ts`.
 
-The floor stays an area there deliberately, and that part is not open:
+**The floor is not comfortably clear of shipped content.** 9.4% of the
+recorded foreground-ink pieces (760 of 8,056) sit below `CLIP_REMNANT_FLOOR_MM2`
+(0.16mm²), and the narrowest surviving piece is 0.160048mm² — 1.00003x the
+floor. 86% of the sub-floor pieces are the zebra pattern alone (already
+flagged elsewhere for needing its marching-squares contours thinned to fit
+the vertex budget); cow contributes only 5.
+
+The floor stays an area, not a width, deliberately, and that part is still
+not open:
 
 - A width test on ink would delete a deliberate 0.3mm stroke in someone's
   artwork. That is a real choice, honoured the way a sub-layer depth is
@@ -1400,11 +1012,56 @@ The floor stays an area there deliberately, and that part is not open:
   first. It did reach it before that: #296's own guard was written against the
   pre-fix build and reported an inlay built from the 0.025mm² remnant, and the
   bake move landed six rounds later in the same PR. So the worked example is
-  historical, not absent — which leaves the argument below standing on the
-  0.3mm-stroke case alone.
+  historical, not absent — which leaves the area-not-width choice standing on
+  the 0.3mm-stroke case alone.
 
-What is open is that the claim rests on the argument, not on a measurement. What
-would close it: sweep clipped ink across the shipped example designs and say how
-narrow real artwork gets. If the narrowest deliberate stroke turns out to be far
-above the floor, the argument gains a number. If artwork routinely runs at 0.2mm,
-the speck notice is firing on content people meant, which is a different bug.
+**What is still open**: whether the sub/near-floor pieces this sweep found are
+dust (a clip-boundary numerical artifact, the failure mode the floor's own
+docstring names) or genuine zebra-pattern detail. Many are extreme slivers
+(aspect ratios into the hundreds), consistent with dust, but not all — some
+are close to square. Answering it needs tracing individual pieces back to
+their source loop, which this sweep didn't attempt. If the near-floor zebra
+content turns out to be dust, the floor is vindicated with a sharper margin
+than "five orders of magnitude" ever claimed. If it's real stripe detail, the
+speck notice is firing on content people meant, and either the floor or
+zebra's own tracing needs a second look.
+
+## A Fill hidden under a sticker on a cut-through part can read as off the part — unmeasured
+
+**The case.** A cut-through part has no clip boundary, so its fill still reaches past the mesh.
+
+- A sticker can hide every bit of a fill colour that lies on the mesh and still leave pieces of it
+  off the mesh.
+- The cut-back then leaves the colour non-empty, so it is not counted as covered.
+- Those pieces cut nothing, so the colour never counts as landed.
+- If no other part cuts that colour, the build says "… lands entirely off the part", whose remedy
+  (lower Scale, move the design) is wrong. The true message is `fillCoveredNotice`.
+
+**Why it is rare.** Every part carrying the colour must end that way: a bounded part clips to its
+face first, so it reports correctly. On the wheel that means a sticker covering all of Top, Bottom
+and Cap. Not reproduced: no test or drive has built it.
+
+**Closing it** means deciding "covered" against the mesh rather than the 2D region, in
+`buildColorPrism` ([src/geometry/assembly.ts](../src/geometry/assembly.ts)). For example, clip a
+boundary-less fill to the part's footprint before the cut-back, or count a colour covered when the
+cut-back removed area and what is left produced no inlay.
+
+## The assembly color list's area% is triangle count, not area
+
+`renderColorList`'s rows read `areaPct` off `colorListEntries`, built in `rebuildAssembly`
+([src/app/rebuild.ts](../src/app/rebuild.ts)) as each color's total inlay soup length divided by 9
+(a triangle count), normalized to the shipped colors' combined count. It is not a measure of area:
+a thin flush inlay's triangle count tracks its boundary complexity, not its footprint, so three
+sticker bands cut to equal shares can read 1.0% / 0.2% / 0.0% instead of roughly a third each.
+
+- `computeNetRegionsByColor`'s own `detectedColors.areaPct` (`src/geometry/assembly.ts`, the
+  `byColor` palette before merges) is the real planar-area percentage and does not have this bug;
+  it is on the pre-merge, pre-cut 2D design, not the built mesh.
+- The code already flags the mismatch as an approximation (`rebuild.ts`, the comment above the
+  `baseAssigned` push), but that note describes a footing difference between two percentage scales,
+  not that the mesh-side one is a triangle count with no area weighting at all.
+- Found by wave-2 item F's (#317, fill-yields-to-sticker) live check while comparing sticker bands
+  that should have split area evenly.
+- **Closing it** means weighting `inlaySoups[ci]`'s triangles by their own area (or projecting to
+  the flat design and reusing `planarArea`) instead of counting them, in the `colorListEntries`
+  loop around `src/app/rebuild.ts:676-691`.

@@ -19,11 +19,7 @@ function linearToSrgb(v: number): number {
   return Math.max(0, Math.min(255, Math.round(c * 255)));
 }
 
-/**
- * sRGB hex -> CIELAB (D65 white point). Used with deltaE wherever "how visually similar are
- * these two colors" needs a real answer: auto-merge clustering, and the nearest-owned-filament
- * match shown on screen. Not for storage; every consumer downstream speaks hex.
- */
+/** sRGB hex -> CIELAB (D65). Used with deltaE wherever "how similar are these colors" needs a real answer: auto-merge clustering and the nearest-owned-filament match. Not for storage; downstream speaks hex. */
 export function hexToLab(hex: string): Lab {
   const { r, g, b } = hexToRgb(hex);
   return rgbToLab(r, g, b);
@@ -44,11 +40,7 @@ export function rgbToLab(r: number, g: number, b: number): Lab {
   return { l: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
 }
 
-/**
- * The inverse of rgbToLab, as `#rrggbb`. The raster quantizer averages colors in Lab (where a mean
- * is perceptually sensible) but every consumer downstream — SVGShape.fill, the swatches, the 3MF
- * materials — speaks hex, so a cluster centroid has to come back out here.
- */
+/** The inverse of rgbToLab, as `#rrggbb`: the quantizer averages in Lab (where a mean is perceptually sensible) but SVGShape.fill, swatches and 3MF materials speak hex, so a centroid must come back out. */
 export function labToHex(lab: Lab): string {
   const fy = (lab.l + 16) / 116;
   const fx = fy + lab.a / 500;
@@ -63,8 +55,7 @@ export function labToHex(lab: Lab): string {
   return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 
-/** CIE76 Euclidean distance in Lab space — coarse but adequate for grouping "visually similar"
- * colors; see the plan's threshold tuning against stubs/ sample artwork. */
+/** CIE76 Euclidean distance in Lab — coarse but adequate for grouping "visually similar" colors; see the plan's threshold tuning against stubs/ sample artwork. */
 export function deltaE(c1: Lab, c2: Lab): number {
   return Math.hypot(c1.l - c2.l, c1.a - c2.a, c1.b - c2.b);
 }

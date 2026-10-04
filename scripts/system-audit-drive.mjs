@@ -234,7 +234,7 @@ async function main() {
     result.meta.userAgent = await page.evaluate(() => navigator.userAgent);
     result.meta.gpu = useGpu() ? await glRenderer(page) : 'software (MOSAIC_GPU not set)';
 
-    // ---- State 1: initial load, disc mode, no artwork ----------------------------------------
+    // ---- State 1: initial load, no artwork ---------------------------------------------------
     result.states.initial = {
       tokens: await resolveTokens(page),
       scale: await scaleCensus(page),
@@ -245,7 +245,7 @@ async function main() {
       panelTitles: await page.$$eval('#left > details.sec > summary', (s) =>
         s.map((x) => x.textContent.trim()),
       ),
-      exportButtons: await page.$$eval('#btn-export, #btn-export-stl', (btns) =>
+      exportButtons: await page.$$eval('#btn-export', (btns) =>
         btns.map((b) => ({
           id: b.id,
           text: b.textContent.trim(),
@@ -254,18 +254,15 @@ async function main() {
         })),
       ),
       button: await elementSnapshot(page, '#btn-export'),
-      buttonSecondary: await elementSnapshot(page, '#btn-export-stl'),
+      buttonSecondary: await elementSnapshot(page, '#btn-reset-fit'),
       buttonSmall: await elementSnapshot(page, '#btn-sample'),
-      // #p-depth (Depth panel) rather than a Disc-only field like #p-diameter: the default
-      // selected shape kind is an assembly part, so #p-diameter's wrapper is `display:none` —
-      // its own computed `display` still reads as if visible (an ancestor's display:none doesn't
-      // change a child's own property value), which silently breaks any interaction (focus,
-      // hover) run against it. #p-depth is never shape-conditional.
+      // #p-depth (Depth panel) rather than a field inside a kind-conditional row: a hidden
+      // wrapper's child still reads its own computed `display` as visible (an ancestor's
+      // display:none doesn't change a child's own property value), which silently breaks any
+      // interaction (focus, hover) run against it. #p-depth is never kind-conditional.
       textInput: await elementSnapshot(page, '#p-depth'),
       select: await elementSnapshot(page, '#shape-kind'),
-      // #p-flip-x for the same reason: #p-recess-bg's row is `display:none` on an assembly part,
-      // so a spec measured off it would describe a checkbox no user can reach. Mirror is never
-      // shape-conditional.
+      // #p-flip-x for the same reason: Mirror is never kind-conditional.
       checkbox: await elementSnapshot(page, '#p-flip-x'),
       slider: await elementSnapshot(page, '#p-scale'),
       panel: await elementSnapshot(page, '#left > details.sec:first-of-type'),
@@ -351,7 +348,7 @@ async function main() {
       swatch: await elementSnapshot(page, '.color-list .color-row:not(.is-base) .swatch'),
       dragGrip: await elementSnapshot(page, '.color-list .drag-grip'),
       mergeSelect: await elementSnapshot(page, '.color-list .merge-with'),
-      exportButtons: await page.$$eval('#btn-export, #btn-export-stl', (btns) =>
+      exportButtons: await page.$$eval('#btn-export', (btns) =>
         btns.map((b) => ({ id: b.id, disabled: b.disabled })),
       ),
       exportEnabledSnapshot: await elementSnapshot(page, '#btn-export'),
@@ -430,7 +427,7 @@ async function main() {
     //
     // Deliberately not scaleCensus() here: it walks `#app *`, and #app is display:none at this
     // width while #narrow-notice sits outside it — the census would just re-tally the 1440px DOM
-    // and confirm nothing (same ancestor-display:none gotcha as the #p-diameter note above).
+    // and confirm nothing (same ancestor-display:none gotcha as the #p-depth note above).
     await page.setViewportSize(NARROW_VIEWPORT);
     await page.waitForTimeout(200);
     result.states.narrowNotice = {

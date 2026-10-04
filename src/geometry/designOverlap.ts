@@ -1,31 +1,17 @@
 /**
- * Do two designs placed on the same zone land on top of each other?
- *
- * Two artworks cut into one surface are independent cutters: the body takes the union of their
- * pockets (fine), but each color's inlay is `part ∩ prism` (see buildAssemblyGeometry), so where
- * two designs of *different* colors cross, the export carries two inlay solids occupying the same
- * volume and a slicer resolves that arbitrarily. Nothing downstream detects it — the preview and
- * the color list both look right — so it has to be caught at placement time.
- *
- * Everything here works in the zone's own 2D design space (mm), which is what both mappers'
- * `placer()` produces, so the same test covers a flat face and a conformal chart.
+ * Do two designs on one zone land on top of each other? Each color's inlay is `part ∩ prism`, so
+ * where designs of *different* colors cross, the export carries two inlays in one volume and the
+ * slicer picks arbitrarily. Preview and color list both look right, so it is caught at placement.
+ * Works in the zone's 2D design space (mm), so it covers flat faces and conformal charts alike.
  */
 
 /**
- * How much of the smaller design's placed footprint another design must cover before this is worth
- * saying out loud, as a fraction of that smaller footprint's area.
- *
- * Not zero: two designs deliberately placed side by side routinely touch bounding boxes by a
- * millimetre or two of whitespace, and warning about that would train users to ignore the pill.
- * Two 50mm designs sharing 2mm of edge come to 4%, so that case stays quiet.
- *
- * The upper bound on this number is the app's own cascade. Stepping a second design diagonally by
- * `INSTANCE_CASCADE_MM` (state/artwork.ts) leaves two w×w designs covering ((w−d)/w)² of each
- * other, so the warning only fires for w ≥ d/(1−√fraction): 16mm at a quarter, 11.7mm at a tenth.
- * A quarter meant the app could cascade two 12mm stickers into an 11% overlap and say nothing about
- * geometry it had positioned itself. A tenth stays well above incidental edge contact, and the
- * cascade now steps a design smaller than that clear of the one it lands on rather than into a
- * silent sub-threshold overlap, so the two meet at every size (CASCADE_CLEAR_MAX_MM).
+ * Fraction of the smaller design's placed footprint another must cover before it is worth saying.
+ * Not zero: side-by-side designs touch boxes by a mm or two (two 50mm designs sharing 2mm of edge:
+ * 4%). Capped by the app's own cascade: stepping by `INSTANCE_CASCADE_MM` (state/artwork.ts) leaves
+ * two w×w designs covering ((w−d)/w)², so it fires only for w ≥ d/(1−√fraction): 16mm at a quarter,
+ * 11.7mm at a tenth. A quarter let two cascaded 12mm stickers overlap 11% silently; the cascade now
+ * steps smaller designs clear (CASCADE_CLEAR_MAX_MM), so the two meet at every size.
  */
 export const OVERLAP_WARN_FRACTION = 0.1;
 
@@ -47,10 +33,8 @@ export interface PlacedDesign {
   /** fill mode repeats the design across the entire zone */
   fill: boolean;
   /**
-   * The regions this design actually cuts, placed. Lazy and read only for a pair whose quads
-   * already overlap enough to warn, so the common case never pays to transform them.
-   *
-   * Omit it and the quads decide alone, which is what every caller did before the ink gate landed.
+   * The regions this design actually cuts, placed. Lazy: read only for a pair whose quads already
+   * overlap enough to warn. Omitted, the quads decide alone.
    */
   ink?: () => InkPolygon[];
   /**
@@ -76,14 +60,9 @@ function counterClockwise(poly: number[][]): number[][] {
 }
 
 /**
- * `subject` clipped to a CONVEX window, by Sutherland-Hodgman.
- *
- * Deliberately not turf: clipping against a convex window is exact in a dozen lines and can't
- * throw, where the turf path would put a boolean (and its retry/fallback machinery, see
- * regions.ts) on the rebuild's hot loop. Convexity of the WINDOW is what makes this valid; the
- * subject may be concave, in which case the result can carry degenerate edges along the window
- * boundary that join otherwise disjoint pieces. Those cost nothing here because every caller
- * wants the area, which they leave unchanged.
+ * `subject` clipped to a CONVEX window by Sutherland-Hodgman: exact, can't throw, and keeps a turf
+ * boolean off the rebuild's hot loop. A concave subject can leave degenerate edges along the window
+ * joining disjoint pieces, which leave the area (all any caller wants) unchanged.
  */
 export function clipToConvex(subject: number[][], window: number[][]): number[][] {
   let out = counterClockwise(subject);
@@ -123,11 +102,8 @@ export function convexIntersectionArea(subject: number[][], clipPoly: number[][]
 }
 
 /**
- * How much of `ink` lands inside a convex `window`, in the same mm as the quads. Pass no window for
- * all of it.
- *
- * Holes are subtracted, so a frame's ink is its border and not the sheet it encloses, which is the
- * whole point of consulting the ink at all.
+ * Area of `ink` inside a convex `window` (all of it with none). Holes subtract, so a frame's ink is
+ * its border, not the sheet it encloses — the point of consulting ink at all.
  */
 function inkArea(ink: InkPolygon[], window?: number[][]): number {
   let total = 0;
@@ -149,32 +125,16 @@ function crossing(prev: number[], cur: number[], dp: number, dc: number): number
 }
 
 /**
- * Which pairs of designs on one zone cover enough of each other to be a problem, in list order.
+ * Pairs of designs on one zone that cover enough of each other to be a problem, in list order.
+ * Two fills always qualify. Fill plus sticker is left alone: a pattern under a sticker is the
+ * intended workflow, and the build cuts the fill back from under it.
  *
- * Two fills always qualify: a fill repeats across the whole zone by definition, so a second one is
- * guaranteed to land on the first. A fill paired with a sticker is deliberately left alone — a
- * pattern background under a sticker is a real workflow, and flagging it would fire on the intended
- * use (see the note in docs/tech-debt.md on what that combination isn't checked for).
- *
- * Quads first, then ink. The quads answer "could these cut into each other" cheaply, and on their
- * own they answer it wrong for a design nested in another's hollow — a logo centered in a frame
- * reads as fully covered while the recesses never touch. So a pair that clears the quad test is
- * then asked how much of each design's ink reaches their shared rectangle, and dropped when the
- * smaller of those two areas is itself under the threshold.
- *
- * That second number is an upper bound on the real ink-on-ink overlap, never the overlap itself:
- * ink lives inside its own quad, so ink(A) ∩ ink(B) sits inside both "ink in the shared rectangle"
- * areas. Bounding rather than computing is what keeps the boolean this check exists to stay off out
- * of the rebuild — and being an upper bound is what makes dropping a pair safe, since a bound under
- * the threshold puts the true overlap under it too. The remaining approximation is the other way:
- * two designs whose ink fills the shared rectangle without ever touching still warn, which is what
- * warnOverlappingDesigns's "may" admits.
- *
- * The two gates measure against different denominators on purpose: the quad against the smaller
- * footprint, the ink against the smaller design's own ink. Sparse artwork is why. Line art covering
- * a twentieth of its sheet can land dead on another copy of itself and still put only a twentieth
- * of a footprint in the shared rectangle, so measuring the ink against the footprint would silence
- * exactly the designs that overlap hardest.
+ * Quads first, then ink (docs/pipeline.md step 4): quads alone call a logo centred in a frame fully
+ * covered. The ink figure is an upper bound on ink-on-ink overlap, so dropping a pair under it is
+ * safe and no boolean runs on the rebuild; ink filling the shared box without touching still warns
+ * (warnOverlappingDesigns's "may"). Denominators differ on purpose: line art covering a twentieth
+ * of its sheet, dead on another copy, puts only a twentieth of a footprint in the box, so ink
+ * measured against the footprint would silence the hardest overlaps.
  */
 export function overlappingDesignPairs(placed: PlacedDesign[]): [PlacedDesign, PlacedDesign][] {
   const pairs: [PlacedDesign, PlacedDesign][] = [];
@@ -202,10 +162,8 @@ export function overlappingDesignPairs(placed: PlacedDesign[]): [PlacedDesign, P
       if (shared.length < 3) continue;
       if (Math.abs(signedArea(shared)) / smaller < OVERLAP_WARN_FRACTION) continue;
       if (a.ink && b.ink) {
-        // Against the smaller design's INK, not its bounding box. Against the box, a design whose
-        // ink covers under a tenth of its own sheet could never reach the threshold however
-        // completely it lands on another: two identical 60mm frames drawn with a 1.5mm border sit
-        // exactly on top of each other at 9.75% of the box.
+        // Against the smaller design's INK, not its box: two identical 60mm frames with a 1.5mm
+        // border sit exactly on top of each other at 9.75% of the box.
         const smallerInk = Math.min(inkArea(inkOf(a)), inkArea(inkOf(b)));
         if (!(smallerInk > 0)) continue; // one of them cuts nothing
         const reach = Math.min(inkArea(inkOf(a), shared), inkArea(inkOf(b), shared));

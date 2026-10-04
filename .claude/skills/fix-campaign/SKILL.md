@@ -40,7 +40,7 @@ rather than assuming this date.
   | docs, judgment per section (triage, moving measurements) | `sonnet-high`             | Sonnet | high   | none                        | none; orchestrator read (VIS) |
 
   Why: effort is only settable in an agent definition; the user's global
-  `effortLevel: xhigh` is otherwise inherited by every subagent. `low`
+  `effortLevel` is otherwise inherited by every subagent. `low`
   returns fewer, high-confidence findings, the set worth acting on. Pass the
   level explicitly every time — `/code-review` reuses the last level typed
   when none is given.
@@ -60,7 +60,9 @@ needing:
 
 - Worktree: `npm install` first (tests pass without it, `vite`/`smoke` fail
   with a misleading Manifold error). **Never `git stash`** (shared across
-  worktrees). Rename the branch to the one the plan names. Do not remove the
+  worktrees), and the repo's lint-staged pre-commit hook backs up via
+  `git stash` too, so workers committing at once can race (wave 1, #322-#324):
+  stagger commits or have workers report before committing. Rename the branch to the one the plan names. Do not remove the
   worktree; the orchestrator does.
 - Triage a second defect found on the way: **fix in the same PR** when it's
   in a file the PR already touches, the fix is small (a regex branch, a
@@ -84,8 +86,11 @@ needing:
   new round. After the last clean code round, one `low` pass over the prose;
   apply, ship. #270 ran ten rounds, of which 2-10 were all prose with the
   code correct after round 1; #269's rounds 7-8 were the same; #264 took 15
-  rounds on 3 files. Never add a `replaceNotice`/upsert to `src/warnings.ts`
-  (tech-debt's first section: tried, three rounds, reverted).
+  rounds on 3 files. `push()` in `src/warnings.ts` replaces a standing keyed
+  entry in place and skips an unkeyed one already present; don't swap in a
+  new object or widen it to unkeyed entries (three reverted rounds, now pinned
+  by tests/warnings.test.ts, tests/warningsView.test.ts and the capped/traced
+  test in tests/artworkListPanel.test.ts).
 - **Run the gate chain in the foreground** — `ship-it`, vitest, and the CI
   watch each as a foreground Bash call with a 600000 timeout, never as a
   background task you then wait on. 3 of 5 agents stalled on this in the
@@ -109,7 +114,14 @@ needing:
   conflicts with all the others.
 - **Draft the PR body in a worktree-local path, not the shared scratchpad.**
   Parallel agents share the scratchpad; one agent's draft overwrote
-  another's there in the worked example.
+  another's there in the worked example. Any other scratch file goes in the
+  agent's own subdirectory (`<scratchpad>/<item>/`): in wave 1 (#322-#324) one
+  agent overwrote another's helper script mid-run.
+- **Keep working until everything asked is done**; stop to ask only when
+  blocked or before a risky step. Then stop and report. Don't add features,
+  files, docs, refactors or tests nobody asked for; mention them at the end.
+  The plan's failing-on-`main` test is asked for. Why: at low/medium effort
+  Sonnet 5.5 checks in early and pads with extras.
 - Do not watch CI. Report the PR URL and the Rounds table, then stop.
 
 Spawn with `isolation: "worktree"`, `run_in_background: true`,
@@ -123,6 +135,11 @@ needs passing. No subagent spawns subagents.
   wake on its own. `SendMessage` it: read the output file (or re-run in the
   foreground with a 600000 timeout), then continue. Happened to three of
   five in the worked example.
+- **A text-only end of turn is a report, not proof the item is done.** Check
+  it against the item's checklist. If items remain and no blocker is stated,
+  `SendMessage` the worker naming the open items. After 2-3 such
+  continuations, stop and surface it to the user. Why: Opus 5.5 sometimes
+  ends a turn announcing the next step instead of taking it.
 - Code-review sub-passes report to you as well as to the agent. Relay only a
   real trap (the upsert above, a rule the agent is about to break). The
   agent already has the findings.

@@ -17,7 +17,9 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
 - Decoded at 512px to measure, then again at 1024px if it reads as flat art.
   Photos stay at 512px ([decode.ts](../src/raster/decode.ts)).
 - Measurement stays pinned at 512px whatever the working size, and rides on
-  `RasterImage.edgeDensity` so a re-trace can't re-derive it.
+  `RasterImage.edgeDensity` so a re-trace can't re-derive it. Smaller artwork,
+  sized by its opaque pixels, is enlarged to 512px by repeating pixels, for the
+  measurement only.
 - Pixels under 50% alpha are background and cut nothing.
 - Edge density (how much of the image is colour boundary) sets blur, despeckle
   and curve-fit strength; the Detail slider scales them.
@@ -28,9 +30,7 @@ segments, shapes grouped by fill colour. Curves are broken up adaptively
   minimum (`printableFloorPx`), which Detail deliberately does not scale. The
   fraction caps it, so small placements keep their coarser floor.
 - Photographs keep the fraction: theirs is simplification taste, not a feature
-  size. Flat plates stay fractional too, since their fit needs the traced
-  content that does not exist yet (docs/tech-debt.md). The user never picks a
-  mode.
+  size. The user never picks a mode.
 - Flat art gets a one-pixel blur, but only when the 1024px pass ran. The
   photograph denoise blur stops at the photo cutoff instead of interpolating
   ([stats.ts](../src/raster/stats.ts) explains both).
@@ -79,59 +79,56 @@ subtracted from that fill. 2D polygon overlap maths via Turf.js
 
 ### 3. Place the artwork
 
-Scale, X/Y offset, rotation and mirror are applied before any cutting, in both
-modes. Set them from the Artwork fit sliders, or drag the artwork on the part in
-the 3D view.
+Scale, X/Y offset, rotation and mirror are applied before any cutting. Set them
+from the Artwork fit sliders, or drag the artwork on the part in the 3D view.
 
-### 4. Flat-plate mode
-
-**Not reachable from the UI.** The Part dropdown lists assembly kinds and
-nothing else, so `disc`/`rect`/`round`/`stl` all ship compiled and unrendered.
-The code below is live and tested; nothing drives it. See
-[tech-debt.md](tech-debt.md).
-
-The plate is a stack of flat slabs between depth boundaries. Pure 2D maths, no
-3D booleans ([flat.ts](../src/geometry/flat.ts)).
-
-- Depth is capped at the plate thickness less a 0.05 mm floor, so a recess
-  cannot cut through.
-- Zero or less is raised to 0.2 mm, one typical layer.
-- Both cases warn, naming the region and both numbers. The zero case collects
-  across the build: one warning per distinct pair of numbers, naming every
-  region raised to that pair.
-- A positive depth thinner than a layer is honoured and only noted: a real
-  choice on a fine-layer profile.
-
-One place resolves what a region asked for, for both modes
-([depth.ts](../src/geometry/depth.ts)): an explicit per-row override if it is
-finite, otherwise the global depth (`Infinity`/`NaN` fall back too). A stored
-`0` is a real answer, not a
-missing one, and the capped result is never written back into the settings.
-
-### 5. Assembly mode
+### 4. Cut the part
 
 Pockets are cut into real part meshes. Each colour region is extruded into a
 prism in the part's own coordinates and subtracted from the mesh with
 [Manifold](https://github.com/elalish/manifold), a 3D solid-boolean engine (CSG)
 loaded on demand ([assembly.ts](../src/geometry/assembly.ts)).
 
-**The shallow end** is raised to the same 0.2 mm floor, and the warning names the
+**Which depth a region asked for** is resolved in one place
+([depth.ts](../src/geometry/depth.ts)): an explicit per-row override if it is
+finite, otherwise the global depth (`Infinity`/`NaN` fall back too). A stored
+`0` is a real answer, not a missing one, and a clamped result is never written
+back into the settings.
+
+**The shallow end** is raised to 0.2 mm, one typical layer. The warning names the
 raised _setting_ rather than a cut depth, because a cut-through part holes the
-whole way through regardless.
+whole way through regardless. It collects across the build: one warning per
+distinct pair of numbers, naming every region raised to that pair. A positive
+depth thinner than a layer is honoured and only noted: a real choice on a
+fine-layer profile.
 
-**The deep end is bounded by the part, not by its wall.** `ZoneMapper.maxCutDepth()`
-gives the material behind the design face along Y, the axis the cutter extrudes
-down, less flat mode's `CUT_FLOOR_MM` so a clamped cut stays a recess rather than
-landing coplanar with the back face. Past that the cut is clamped and named. Three
-cases decline instead of guessing, all returning `Infinity`: a conformal zone (it
-cuts along a normal field, not one axis), a face whose normal is not substantially
-along Y (the plane offset is then an X or Z distance), and a part too thin to hold
-the minimum.
+**The deep end is bounded twice, by the part and by the wall under each
+region.** Both measure along Y, the axis the cutter extrudes down, and both stop
+`CUT_FLOOR_MM` (0.05 mm) short so a clamped cut stays a recess rather than
+landing coplanar with the back face.
 
-**Wall thickness is still not checked.** It varies across a part and nothing
-measures it, so a pocket deeper than the wall in one spot exports as a part with a
-hole through it, silently. On the wheel the bound is 48.45 mm, so it catches a
-mistyped number and not a 20 mm pocket in a 3 mm wall.
+- **The part**: `ZoneMapper.maxCutDepth()`, how far the whole part reaches behind
+  its design face. Past it the cut is clamped and the warning names the part.
+- **The wall**: `FlatZoneMapper.resolveCutRegions` bounds each slice at the
+  setting by the thinnest wall anywhere under it ([wall.ts](../src/geometry/wall.ts)).
+  One prism cuts one depth, so the thinnest spot sets it. The warning names the
+  colour, the part and the wall.
+- The wall is the one that bites on shipped parts: the hubcap's part bound is
+  8.12 mm over a 3 mm shell, the footrest's 23.95 mm over 11.80 mm
+  (`scripts/measure-wall.ts`).
+- The wall is exact, not sampled: triangle corners, region corners and edge
+  crossings, over the surfaces a cut leaves the part through.
+- An edge slice and a cut-through part keep their own depth. Neither is at the
+  setting, and both cut through on purpose.
+
+**Three cases decline both bounds instead of guessing**, returning `Infinity` and
+warning nothing: a conformal zone (it cuts along a normal field, not one axis), a
+face whose normal is not substantially along Y or whose plane lands off the mesh,
+and a part too thin to hold the minimum. The wall alone also skips a region the
+face clip failed on, since it reaches past the face. A wall thinner than the
+0.20 mm minimum recess clamps to that minimum rather than declining: declining
+let a region touching one undercut edge take the full setting through the plate
+beside it. What stays unbounded is in [tech-debt.md](tech-debt.md).
 
 **Rotated copies** are supported (a wheel's two halves): the slice of the design
 landing on the copy is mapped back into the part's own print orientation.
@@ -152,6 +149,12 @@ decide first, then how much of each design's net regions reaches the box the two
 share, clipped to it. That second number bounds the real artwork-on-artwork
 overlap from above, which clears a design nested in another's hollow without
 putting a boolean on the rebuild.
+
+**A Fill under a Sticker is not an overlap: the fill yields.** Each fill colour
+has every sticker's placed ink on its zone subtracted before it is extruded,
+so the background is never cut where a design sits on it. A fill colour with
+nothing left anywhere gets a notice; a failed subtraction keeps that colour
+whole and warns.
 
 **Design zones: a part can carry more than one design surface.** Baked ahead of
 time by `scripts/bake-zones.mjs`. The chair body has eight (left, right, front,
@@ -337,13 +340,25 @@ design's own SVG coordinates, so it stays correct under whatever rotation and
 scale the zone applies ([patterns.ts](../src/geometry/patterns.ts)). Four
 tileable patterns ship (Cow, Dalmatian, Zebra, Tiger) and default to Fill.
 
-A fill is refused before it runs when the copies would carry more points than
-the polygon clipper merges reliably, or would need more than `MAX_FILL_TILES` of
-them. Either way the design is placed once and the pill names which limit it
-hit. The ceiling was swept in
-[2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md).
+A fill is refused before it runs when the copies would carry more than
+`FILL_POINT_BUDGET` points (the 3D cut's memory), or would need more than
+`MAX_FILL_TILES` of them. Either way the design is placed once and the pill
+names which limit it hit.
 
-### 6. Export
+**The polygon library takes at most 500,000 edges per call**
+(`SWEEP_SEGMENT_CAP`, [regions.ts](../src/geometry/regions.ts)).
+
+- `boolOpUnderCap` splits a bigger union, clip or subtraction into calls that
+  fit. A polygon out of reach of the other side skips the engine.
+- The split is exact, not approximate: every polygon lands in one call or
+  passes through untouched.
+- One polygon over the cap can't be split. A fill whose colour welds into one
+  (dalmatian's background does) is refused after tiling, all colours together,
+  so they stay in register.
+- Measured in
+  [2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md).
+
+### 5. Export
 
 A Bambu Studio _project_ 3MF, with the vendor metadata that makes it import
 without warnings: named parts, per-part filament slots, multi-plate placement
@@ -508,10 +523,6 @@ interior detail on a 220mm disc should stay a recess.
   See `MIN_TOUCH_AREA_MM2`, which records both measurements behind that.
 - The split only fires on a region that really was clipped. An unclipped region
   overruns the boundary everywhere and would read as entirely edge.
-
-The face measured against is a **single** boundary loop, so a silhouette
-enclosing a hole keeps a base-colour rim around it. The fix is in
-[tech-debt.md](tech-debt.md).
 
 **Export placement is baked from a verified reference 3MF, never computed at
 runtime.** Once a part's print pose has been checked in the slicer, those

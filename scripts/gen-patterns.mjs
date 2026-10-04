@@ -420,10 +420,13 @@ function closeOpenChains(chains, xmin, ymin, xmax, ymax, eps) {
  *
  * Marching squares emits a vertex on every grid edge the contour crosses — at res 3 that is one
  * every 0.33mm along a smooth curve, and zebra shipped 13.6k of them. Vertex count is what decides
- * whether Fill mode's tile union survives: turf 6.5's polygon-clipping starts failing in a
- * 503k-600k band (swept in docs/findings/2026-08-30-tile-union-ceiling.md, which supersedes the
- * 800k this comment used to quote), and the app asks for 143 tiles of a 60mm pattern to cover a
- * chair zone, so 13.6k/tile blew straight through it and half the tiles were silently dropped.
+ * whether Fill mode can repeat a pattern at all: the app refuses past 600k points across one
+ * colour's copies (FILL_POINT_BUDGET, src/geometry/patterns.ts), where the cut runs out of memory,
+ * and asks for 143 tiles of a 60mm pattern to cover a chair zone. 13.6k/tile is 1.9M there.
+ *
+ * What thinning bought, on one chair zone (`MOSAIC_GPU=1` production build, 2026-08-03): at
+ * 13.6k/tile, 8 union failures across 4 parts, 853k triangles, a 468.7s rebuild; at 1.3k/tile, none,
+ * 2.07M triangles, 93.6s. Fewer triangles from more points was the tell that tiles were dropped.
  *
  * Douglas-Peucker can't be used here. It picks vertices to keep from the *whole chain*, and the
  * chains this runs on are cut arbitrarily by the sampling window, so the same stretch of contour

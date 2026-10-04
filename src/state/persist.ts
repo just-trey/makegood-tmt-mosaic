@@ -3,6 +3,7 @@ import { MIN_DESIGN_RADIUS_MM, state } from './store';
 import type { ArtworkInstance, DesignSource } from '../types';
 import {
   allowedArtworkMode,
+  announceTrace,
   pruneSettingsToPalette,
   availableZones,
   restoreArtworkPool,
@@ -12,49 +13,33 @@ import {
 import { ASSEMBLY_KINDS, buildParamMax, firstOfferedKind } from '../assembly/kinds';
 import { HUBCAP_MIN_DIAMETER_MM } from '../geometry/hubcap';
 import { getPrinter } from '../export/printers';
-import { asmLoadFullAssembly } from '../assembly/parts';
+import { asmSwitchKindAndLoad } from '../assembly/switchKind';
 import { parseSVGDocument } from '../svg/parse';
 import { decodeWorkingImage, encodeWorkingImage } from '../raster/store';
-import {
-  parseRasterImage,
-  rasterCappedMessage,
-  rasterColorLossKey,
-  rasterColorLossMessage,
-  rasterLostColors,
-  rasterTracedMessage,
-} from '../raster/parse';
-import { clearWarnings, notice, warn } from '../warnings';
+import { parseRasterImage } from '../raster/parse';
+import { clearWarnings, warn } from '../warnings';
 import type { RasterImage } from '../raster/types';
 
 const STORAGE_KEY = 'tmt-mosaic:session:v1';
 const SCHEMA_VERSION = 1;
-/** Past this, skip the write rather than risk a QuotaExceededError mid-session — localStorage's
- * per-origin quota is commonly ~5-10MB and this app is the only thing using it, but a
- * dense/multi-design session storing raw SVG text should still have a hard ceiling. */
+/** Past this, skip the write rather than risk a QuotaExceededError — the ceiling for sessions storing raw SVG text. */
 const MAX_BYTES = 4_000_000;
 
 /**
- * How much of a session all its images together may take, as data-URL characters.
+ * Total data-URL characters all images in a session may take.
  *
- * Measured re-encodes: flat art at 1024px is ~24KB of PNG, a photograph at 512px ~703KB, and a
- * data URL is base64, so about a third larger again — one photograph lands near 950,000
- * characters. A per-image cap alone is not enough: four photographs each pass it and together push
- * the JSON past MAX_BYTES, at which point saveSession writes nothing and the SVG half of the
- * session, which saved fine before images were persisted at all, is lost with them.
- *
- * So images are admitted in order until the budget is spent, and the rest drop out the way an
- * unencodable one does, with the unload prompt to say so. 2.5M of the 4M leaves the SVG sources,
- * placements and settings room they will not realistically exceed.
+ * Measured re-encodes: flat art at 1024px ~24KB of PNG, a photograph at 512px ~703KB, +1/3 for
+ * base64 — one photograph is near 950,000 characters. A per-image cap isn't enough: four photographs
+ * pass it and together exceed MAX_BYTES, which loses the SVG half of the session too. Images are
+ * admitted in order until spent; the rest drop out like an unencodable one. 2.5M of 4M leaves the
+ * SVG sources, placements and settings room.
  */
 const MAX_IMAGE_CHARS_TOTAL = 2_500_000;
 
 /**
- * Last encode per source, keyed on the pixel buffer it came from.
- *
- * Every debounced autosave runs snapshotSession, and beforeunload runs it again synchronously.
- * Re-encoding a 512px photograph to PNG on each of those is main-thread work for a result that
- * cannot have changed: the working pixels are replaced wholesale when the Colors or Detail sliders
- * re-run, never mutated in place, so buffer identity is a sound key.
+ * Last encode per source, keyed on its pixel buffer. Autosave and beforeunload both snapshot, and
+ * re-encoding a photograph each time is wasted main-thread work: working pixels are replaced
+ * wholesale on a slider re-run, never mutated, so buffer identity is a sound key.
  */
 const pngCache = new WeakMap<Uint8ClampedArray, string>();
 
@@ -62,26 +47,20 @@ function encodedPng(image: RasterImage): string | null {
   const hit = pngCache.get(image.data);
   if (hit !== undefined) return hit;
   const png = encodeWorkingImage(image);
-  // Only a success is remembered. A failure can be transient (an allocation that lost a race), and
-  // caching it would drop that image from every later save for the rest of the session.
+  // Only a success is cached — a failure can be transient, and caching it would drop the image from every later save.
   if (png) pngCache.set(image.data, png);
   return png;
 }
 
 type PersistedSource = Pick<DesignSource, 'id' | 'kind' | 'name' | 'svgText'> & {
   /**
-   * A raster source's working image, re-encoded as a PNG data URL, plus what the trace needs to
-   * reproduce the same result from it. Absent on an SVG source, and on a raster session saved
-   * before this existed.
+   * A raster source's working image as a PNG data URL, plus what the trace needs to reproduce the
+   * same result. Absent on an SVG source and on raster sessions saved before this existed.
    *
-   * `edgeDensity` travels with the pixels because it cannot be re-derived from them: the same
-   * image measures flatter the larger it is decoded, so re-measuring the working image would move
-   * the flat-vs-photo thresholds and every blur and despeckle strength hanging off them (see
-   * RasterImage in raster/types.ts).
-   *
-   * `mmPerPixel` travels for a different reason: it *could* be re-derived, but not here. The
-   * re-trace below runs before the assembly's parts are back, so the design face it would ask for
-   * does not exist yet, and per-instance scales are still in the session rather than in state.
+   * `edgeDensity` can't be re-derived: the same image measures flatter the larger it is decoded, so
+   * re-measuring would move the flat-vs-photo thresholds (see RasterImage in raster/types.ts).
+   * `mmPerPixel` could be, but the re-trace runs before the parts are back, so the design face
+   * doesn't exist yet and per-instance scales are still in the session.
    */
   raster?: {
     png: string;
@@ -91,21 +70,14 @@ type PersistedSource = Pick<DesignSource, 'id' | 'kind' | 'name' | 'svgText'> & 
     mmPerPixel?: number;
   };
 };
-/** `zone` isn't persisted directly — `AssemblyPart.id` is a fresh per-session counter
- * (asmCreateRolePart), so a saved `partId` can't mean anything after a reload. Only `zoneId`
- * (the zone's stable string id from the zone sidecar) survives; the restore path re-resolves it
- * against the freshly reloaded parts via setArtworkZone(), exactly like a live zone-dropdown pick. */
+/** `zone` isn't persisted: `AssemblyPart.id` is a per-session counter, so a saved `partId` means nothing after reload. Only the stable `zoneId` survives; restore re-resolves it via setArtworkZone(). */
 type PersistedArtwork = Omit<ArtworkInstance, 'zone'> & { zoneId: string | null };
 
 export interface PersistedSession {
   version: typeof SCHEMA_VERSION;
   savedAt: number;
-  shapeKind: AppState['shapeKind'];
-  disc: AppState['disc'];
-  rect: AppState['rect'];
-  round: AppState['round'];
-  stlPlate: AppState['stlPlate'];
-  marginPct: number;
+  /** Always 'assembly' when written. Older sessions may hold 'disc', 'rect', 'round' or 'stl' and restore onto the first offered kind. */
+  shapeKind: string;
   scalePct: number;
   offsetX: number;
   offsetY: number;
@@ -113,7 +85,6 @@ export interface PersistedSession {
   flipY: boolean;
   rotationDeg: number;
   globalDepth: number;
-  recessBg: boolean;
   printerId: string;
   asmRadius: number;
   /** Optional: sessions written before the hubcap kind existed have no value for it. */
@@ -128,13 +99,10 @@ export interface PersistedSession {
   mergeGroups: string[][];
   colorSettings: AppState['colorSettings'];
   /**
-   * Marks a session whose `colorSettings` holds only depths the user deliberately set. Sessions
-   * saved before that was true carry a machine-written override for every color — the color list
-   * used to seed each row from the built (already clamped) depth — which restores as if every
-   * depth had been typed by hand: the global Depth field moves nothing, and an out-of-range depth
-   * stops warning because the stored value already equals its own clamp. The two are
-   * indistinguishable after the fact, so a session without this flag has its depths dropped back
-   * to the global rather than restored as fake overrides.
+   * Marks `colorSettings` as holding only deliberately set depths. Older sessions carry a
+   * machine-written override per color (seeded from the clamped built depth), which restores as if
+   * typed by hand: the global Depth field moves nothing and an out-of-range depth stops warning.
+   * The two are indistinguishable after the fact, so without this flag depths drop back to the global.
    */
   explicitDepths?: true;
   keptApart: string[];
@@ -144,26 +112,19 @@ export interface PersistedSession {
 }
 
 /**
- * Whether there's anything worth losing — gates the beforeunload prompt, and separates "nothing
- * was loaded" from "what was loaded couldn't be persisted" in saveSession(). Deliberately just
- * "is a design loaded," not "are assembly parts
- * loaded": every assembly kind auto-loads its parts on boot with zero user effort (maybeAutoLoadAssembly),
- * so that alone is true on nearly every visit and would defeat both gates — warning on a bare
- * unmodified wheel, and re-arming the restore banner within a second of the user dismissing it
- * (the default boot's own rebuild reaching saveSession() with nothing else to save).
+ * Whether there's anything worth losing — gates the beforeunload prompt and separates "nothing
+ * loaded" from "couldn't be persisted" in saveSession(). Deliberately "is a design loaded", not "are
+ * parts loaded": every kind auto-loads its parts on boot, so that would warn on a bare wheel and
+ * re-arm the restore banner right after dismissal.
  */
 export function hasLoadedWork(): boolean {
   return state.artworks.length > 0;
 }
 
 /**
- * Standard cross-browser beforeunload prompt — every browser ignores the actual returnValue text
- * and shows its own generic "leave site?" copy, so the string here is only for the handful that
- * still don't. Only arms once there's real work to lose, and only once flushPendingSave() has
- * found something the restore banner won't bring back — either the write didn't land at all, or it
- * landed without a loaded image, which never persists. A session that autosaved in full is already
- * recoverable, so warning about it too would just teach makers to reflexively click through the
- * cases where the warning is actually true.
+ * Standard beforeunload prompt; browsers show their own copy. Arms only when flushPendingSave()
+ * finds something the restore banner won't bring back (write failed, or an image was dropped) — a
+ * fully autosaved session is recoverable, and warning anyway would teach makers to click through.
  */
 export function initBeforeUnloadGuard(): void {
   window.addEventListener('beforeunload', (e) => {
@@ -176,27 +137,21 @@ export function initBeforeUnloadGuard(): void {
       : 'TMT Mosaic saved this session, but an image could not be saved. Leaving now means ' +
         're-dropping it.';
   });
-  // beforeunload is skipped outright on mobile backgrounding and bfcache eviction, so this is the
-  // flush that actually runs there.
+  // beforeunload is skipped on mobile backgrounding and bfcache eviction, so this is the flush that runs there.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flushPendingSave();
   });
 }
 
 function snapshotSession(): PersistedSession {
-  // Encoded first, because a source whose image will not encode has to be left out exactly as
-  // every image used to be: its instances dropped with it, or restore rebuilds placements pointing
-  // at a source that is not there.
+  // Encoded first: a source whose image won't encode is left out with its instances, or restore rebuilds placements pointing at nothing.
   const rasterPayloads = new Map<string, NonNullable<PersistedSource['raster']>>();
   let imageChars = 0;
   for (const s of state.sources) {
-    // `!s.raster.image` is not reachable from the app, which always loads pixels with the source,
-    // but a malformed source must drop out of the save rather than throw and take the session
-    // with it — snapshotSession runs outside saveSession's try.
+    // Unreachable from the app, but a malformed source must drop out rather than throw — snapshotSession runs outside saveSession's try.
     if (!s.raster?.image) continue;
     const png = encodedPng(s.raster.image);
-    // Over budget, this image is left out rather than the whole save failing. The data URL is
-    // already base64, so its length is what it costs in the JSON.
+    // Over budget, this image is left out rather than failing the whole save; the data URL's length is its JSON cost.
     if (png && imageChars + png.length <= MAX_IMAGE_CHARS_TOTAL) {
       imageChars += png.length;
       rasterPayloads.set(s.id, {
@@ -217,12 +172,7 @@ function snapshotSession(): PersistedSession {
   return {
     version: SCHEMA_VERSION,
     savedAt: Date.now(),
-    shapeKind: state.shapeKind,
-    disc: state.disc,
-    rect: state.rect,
-    round: state.round,
-    stlPlate: state.stlPlate,
-    marginPct: state.marginPct,
+    shapeKind: 'assembly',
     scalePct: state.scalePct,
     offsetX: state.offsetX,
     offsetY: state.offsetY,
@@ -230,7 +180,6 @@ function snapshotSession(): PersistedSession {
     flipY: state.flipY,
     rotationDeg: state.rotationDeg,
     globalDepth: state.globalDepth,
-    recessBg: state.recessBg,
     printerId: state.printerId,
     asmRadius: state.asmRadius,
     hubcapDiameterMm: state.hubcapDiameterMm,
@@ -244,14 +193,10 @@ function snapshotSession(): PersistedSession {
     colorSettings: state.colorSettings,
     explicitDepths: true,
     keptApart: state.keptApart,
-    // An SVG source restores by re-parsing `svgText`. A raster source has none — it came from
-    // pixels — so it carries its working image re-encoded as PNG, which restore decodes and
-    // re-traces. Raw pixels were rejected here and still are: 1024x1024 RGBA is 4.0MB against a
-    // MAX_BYTES of 4MB, while the same pixels as PNG measure 24KB for flat art and 703KB for a
-    // photograph (see raster/store.ts for why PNG and why the working image). The re-trace itself
-    // measured ~830ms on a 512px photograph (scripts/bench-raster.ts); caching the traced result
-    // instead would mean caching parsed regions, not pixels, a much larger payload that would put
-    // MAX_BYTES back in play — a deliberate trade, not an oversight.
+    // SVG sources restore by re-parsing `svgText`; a raster source carries its working image as PNG,
+    // re-decoded and re-traced. Raw pixels rejected: 1024x1024 RGBA is 4.0MB vs MAX_BYTES 4MB, PNG is
+    // 24KB flat / 703KB photo (raster/store.ts). Re-trace measured ~830ms on a 512px photograph
+    // (scripts/bench-raster.ts); caching traced regions instead would put MAX_BYTES back in play.
     sources: persistedSources.map((s) => ({
       id: s.id,
       kind: s.kind,
@@ -263,51 +208,34 @@ function snapshotSession(): PersistedSession {
       ...rest,
       zoneId: zone?.zoneId ?? null,
     })),
-    // May have pointed at a raster instance that just got filtered out — fall back to a surviving
-    // one rather than restoring a selection that references nothing.
+    // May point at a filtered-out raster instance — fall back to a survivor.
     activeArtworkId: persistedActiveId,
   };
 }
 
-/**
- * Whether the most recent saveSession() call actually landed the write — read by
- * initBeforeUnloadGuard() to decide whether leaving is safe. Not surfaced anywhere mid-work; see
- * the degrade-silently note on saveSession().
- */
+/** Whether the latest saveSession() landed its write — read by initBeforeUnloadGuard(). Not surfaced mid-work; see saveSession(). */
 let lastSaveFailed = false;
 
 /**
- * Whether the most recent snapshot left a loaded design out of the save.
- *
- * A raster source never round-trips (its pixels are the design, and they don't fit in
- * localStorage), so a session holding one is only ever partly recoverable — even when the write
- * itself succeeds. That is the whole case the unload guard exists for, and lastSaveFailed alone
- * cannot see it: a session with one SVG and one image saves cleanly, reports success, and drops the
- * image with nothing said. Tracked separately rather than folded into lastSaveFailed so the two
- * stay honest about which one happened.
+ * Whether the latest snapshot left a loaded design out. A raster source that doesn't fit is only
+ * partly recoverable even when the write succeeds, which lastSaveFailed can't see (one SVG plus one
+ * image saves cleanly and drops the image silently). Separate so each flag says what happened.
  */
 let lastSaveDropped = false;
 
 /**
- * Whether a session that was already in storage when this page loaded is still unanswered.
- *
- * The empty-snapshot clear below is what destroys a saved session, and it fires about a second
- * into any bare boot. Until the offer has been answered there is nothing to act on, so clearing
- * is premature — three separate ways of losing work measured on 2026-08-24 were all this:
- * a `?kind=` link (the banner is never shown, so the session was never offered), a reload while
- * the banner sits unanswered on screen, and a restore that threw.
+ * Whether a session already in storage at page load is still unanswered. The empty-snapshot clear
+ * destroys a saved session about a second into any bare boot, so until the offer is answered
+ * clearing is premature — three losses measured 2026-08-24: a `?kind=` link (banner never shown),
+ * a reload with the banner unanswered, and a restore that threw.
  */
 let unansweredSavedSession = false;
 
 /**
  * Arm the hold if the user arrived with a saved session. Called once at boot, before anything
- * decides whether to offer it — including the paths that decide not to (`?kind=`, a withheld
- * kind), which are the ones that used to destroy it.
- *
- * **Armed rather than defaulting on.** It protects the session the user arrived with, not any
- * session: defaulting to held meant a visitor who arrived with nothing, loaded a design and then
- * deleted it kept an emptied session in storage and was offered it back next visit, which is the
- * exact thing the clear exists to prevent.
+ * decides whether to offer it — including the paths that decide not to (`?kind=`, a withheld kind).
+ * Armed rather than default-on: defaulting to held kept an emptied session from a visitor who
+ * loaded a design and deleted it, and offered it back next visit.
  */
 export function holdSavedSessionUntilAnswered(): void {
   try {
@@ -323,12 +251,9 @@ export function markSavedSessionAnswered(): void {
 }
 
 /**
- * Whether the session already in storage is on an assembly kind that's currently withheld from
- * the UI (`AssemblyKind.hidden`). Such a session is never offered back — initRestoreBanner()
- * skips it — so the empty-snapshot clear in saveSession() would be the thing that destroys it,
- * about a second after a bare default boot and with nothing shown to the user to explain it.
- * Held instead until the kind is offered again, or until real work overwrites it through the
- * normal save path.
+ * Whether the stored session is on an assembly kind currently withheld (`AssemblyKind.hidden`).
+ * Never offered back, so the empty-snapshot clear would destroy it silently about a second after a
+ * bare boot. Held until the kind is offered again or real work overwrites it.
  */
 function savedSessionIsOnHiddenKind(): boolean {
   try {
@@ -343,52 +268,50 @@ function savedSessionIsOnHiddenKind(): boolean {
 }
 
 /**
- * Write the current session, swallowing every failure — private browsing with storage disabled,
- * a quota already full of other sites' data, a circular/unserializable value that shouldn't exist
- * but shouldn't crash a rebuild if it did. A session that fails to save just means the next
- * restore-banner check finds nothing, same as a first visit; never worth surfacing to the user
- * mid-work. Mirrors helpPanel.ts's degrade-silently pattern for the same reason. lastSaveFailed
- * is the one exception — read only at unload, to decide whether the native prompt is warranted.
+ * A restore stopped before its designs were applied (the part failed to load, or the user switched
+ * part meanwhile). Nothing reached `state`, so storage is left alone and the session can be offered again.
  */
-/** The notice shown when a restore failed. Exported so the banner and the re-announce agree. */
+export class SessionPartsError extends Error {
+  constructor(partName: string, why: 'failed' | 'superseded') {
+    super(
+      why === 'failed'
+        ? `Couldn't restore your session: the ${partName} didn't load. Reload the page to try again.`
+        : `Your session wasn't restored: the part changed before the ${partName} loaded. Reload the page to try again.`,
+    );
+    this.name = 'SessionPartsError';
+  }
+}
+
+/** The notice shown when a restore failed; shared by the banner and the re-announce. */
 export const SESSION_WRITES_DISABLED_MSG =
   'That saved session could not be opened, so it was cleared. Reload the page to start clean.';
 
+/**
+ * Write the current session, swallowing every failure (storage disabled, quota full, unserializable
+ * value) — a failed save just means the next restore check finds nothing, as on a first visit.
+ * Mirrors helpPanel.ts; lastSaveFailed is the one exception, read only at unload.
+ */
 export function saveSession(): void {
-  if (writesDisabledAfterFailedRestore) {
-    // Two things this must not skip.
-    //
-    // `lastSaveFailed` drives the beforeunload prompt, so leaving it false meant the guard went
-    // quiet exactly when nothing is being saved: work for ten minutes, close the tab, no prompt.
+  if (writesDisabledAfterFailedRestore !== null) {
+    // `lastSaveFailed` drives the beforeunload prompt; leaving it false would go quiet exactly when nothing is saved.
     lastSaveFailed = true;
-    // And the notice is re-stated, because a user-initiated SVG load calls clearWarnings()
-    // (applyParsedSVG, src/ui/artworkPanel.ts) and drops it, leaving an app that looks healthy
-    // while persisting nothing. warn() dedupes by message, so this is free. Same reason csgFault.ts
-    // re-announces rather than pushing once.
-    // It lands one render late, since this runs on the debounced save rather than inside a build.
-    warn(SESSION_WRITES_DISABLED_MSG);
+    // Re-stated because a user-initiated SVG load calls clearWarnings() (applyParsedSVG) and would
+    // drop the notice, leaving a healthy-looking app that persists nothing. warn() dedupes; same as
+    // csgFault.ts. Lands one render late — this runs on the debounced save, not inside a build.
+    warn(writesDisabledAfterFailedRestore);
     return;
   }
-  // An empty snapshot (no artwork, no loaded parts) isn't worth restoring — and saving one
-  // unconditionally would re-arm the restore banner within a second of a user dismissing it, since
-  // the default boot's own bare-wheel rebuild reaches this same path. Clear instead, so "Start
-  // fresh" actually stays fresh, and so removing the last artwork instance doesn't leave a stale
-  // save behind either.
-  //
-  // Judged on the snapshot rather than on hasLoadedWork(). The two used to disagree for a session
-  // whose only design was an image, because snapshotSession() skipped raster sources; they agree
-  // now that those round-trip, and the snapshot is still the honest thing to judge, since it is
-  // what actually reaches storage.
+  // An empty snapshot isn't worth restoring, and saving one would re-arm the restore banner within a
+  // second of dismissal (the default boot's bare-wheel rebuild reaches here). Clear instead, so
+  // "Start fresh" stays fresh and removing the last artwork leaves no stale save. Judged on the
+  // snapshot, not hasLoadedWork(), because the snapshot is what reaches storage.
   const session = snapshotSession();
-  // Any image that did not make it, not only the case where every one failed: with two images and
-  // one refusal the second and all its placements would otherwise be dropped in silence.
+  // Any dropped image counts, not only all failing — otherwise the second of two images is dropped in silence.
   const savedRasterIds = new Set(session.sources.filter((s) => s.raster).map((s) => s.id));
   lastSaveDropped = state.sources.some((s) => s.raster && !savedRasterIds.has(s.id));
   if (!session.artworks.length) {
-    // Held only while nothing is loaded. `hasLoadedWork()` is the difference between a bare boot,
-    // where the stored session is still the user's only copy and the restore offer may not even
-    // have been seen yet, and a session the user has actively moved past — they loaded something
-    // that could not be saved, which genuinely supersedes what is in storage.
+    // Held only while nothing is loaded: on a bare boot the stored session is the user's only copy,
+    // but one they've moved past (loaded something unsaveable) genuinely supersedes it.
     const held = savedSessionIsOnHiddenKind() || (unansweredSavedSession && !hasLoadedWork());
     if (!held) clearSavedSession();
     lastSaveFailed = hasLoadedWork();
@@ -401,69 +324,62 @@ export function saveSession(): void {
       return;
     }
     localStorage.setItem(STORAGE_KEY, json);
-    // What is in storage is now this page's own work, not the session the user arrived with, so
-    // the hold has nothing left to protect. Without this it never ended on a boot where the banner
-    // is never answered — a `?kind=` link, or a banner the user simply ignores — and deleting the
-    // last design afterwards left the *earlier* work in storage, offered back next visit as a
-    // design they had removed.
+    // Storage now holds this page's own work, so the hold has nothing left to protect. Without this
+    // it never ended on an unanswered-banner boot, and deleting the last design offered the earlier work back.
     unansweredSavedSession = false;
     lastSaveFailed = false;
   } catch {
-    // storage unavailable, full, or the write threw for some other reason — nothing to do
+    // storage unavailable, full, or threw — nothing to do
     lastSaveFailed = true;
   }
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 /**
- * Set for the duration of applyRestoredSession() — its own asmLoadFullAssembly() call schedules a
- * rebuild of the *bare* reloaded parts (artwork isn't reconstructed until after it resolves), and
- * that rebuild's own schedulePersist() call would otherwise autosave that half-restored state,
- * overwriting the very session being restored, before restore finishes.
+ * Set during applyRestoredSession(): its asmLoadFullAssembly() schedules a rebuild of the bare
+ * parts, whose schedulePersist() would autosave that half-restored state over the session being restored.
  */
 let restoring = false;
 
 /**
- * Set when a restore failed part-way, and never cleared: writes stay off until the page reloads.
- *
- * The failure message tells the user to reload precisely because a throw from asmLoadFullAssembly
- * can still leave state.assembly.kindId pointing at the restored part while its sources and
- * artwork never got applied, so what is in memory at that point can be inconsistent. Without this
- * the next rebuild's debounced save wrote exactly that state back over the session the catch had
- * just cleared, and the next visit offered a session built from the thing that had failed.
+ * Set when a restore failed and never cleared: writes stay off until reload. Holds the notice,
+ * re-stated on every skipped save. Memory isn't trusted — most throws land after the parts loaded
+ * but before artwork was applied, and the next debounced save would write that state back. A
+ * SessionPartsError rolls back cleanly, but "reload and try again" only holds if storage keeps the session.
  */
-let writesDisabledAfterFailedRestore = false;
+let writesDisabledAfterFailedRestore: string | null = null;
 
-/** Called by the restore banner when a restore throws part-way. */
-export function disableSessionWritesAfterFailedRestore(): void {
-  writesDisabledAfterFailedRestore = true;
+/** Called by the restore banner when a restore throws. */
+export function disableSessionWritesAfterFailedRestore(notice = SESSION_WRITES_DISABLED_MSG): void {
+  writesDisabledAfterFailedRestore = notice;
 }
 
-/** Debounced save — called after every rebuild (see app/rebuild.ts) and a couple of state changes
- * that don't go through one (the printer picker). One save per burst of activity, not one per
- * keystroke/slider tick. */
+/** Called by the restore banner after a SessionPartsError. Written back because a save before the click may already have replaced it. */
+export function keepSessionForRetry(session: PersistedSession, notice: string): void {
+  disableSessionWritesAfterFailedRestore(notice);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // storage unavailable or full: the session is lost to a reload either way
+  }
+}
+
+/** Debounced save — called after every rebuild (app/rebuild.ts) and state changes that skip one (the printer picker). */
 export function schedulePersist(): void {
   if (restoring) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = undefined;
-    // Re-checked here, not only when scheduling. A save armed a moment *before* the user clicked
-    // Restore fires in the middle of it and writes an empty snapshot over the session being
-    // restored — the exact loss `restoring` exists to prevent, through the one path that skipped
-    // its guard.
+    // Re-checked: a save armed just before Restore fires mid-restore and writes an empty snapshot over the session.
     if (restoring) return;
     saveSession();
   }, 1000);
 }
 
 /**
- * Runs a fresh save immediately, cancelling any pending debounce, so a reload mid-debounce
- * doesn't lose the last second of edits — and so lastSaveFailed reflects an attempt against
- * *current* state rather than a stale flag from whenever the last debounced save happened to
- * fire (or from before any save was ever attempted this session). Called from
- * initBeforeUnloadGuard() (localStorage writes complete synchronously, so this reliably lands
- * before the page actually unloads) and on visibilitychange, since beforeunload itself is
- * skipped outright on mobile backgrounding and bfcache eviction.
+ * Saves immediately, cancelling any pending debounce, so a reload mid-debounce keeps the last
+ * second of edits and lastSaveFailed reflects *current* state. Called from the unload guard
+ * (localStorage writes are synchronous) and on visibilitychange.
  */
 function flushPendingSave(): void {
   if (restoring) return;
@@ -480,8 +396,7 @@ export function clearSavedSession(): void {
   }
 }
 
-/** Basic structural sanity — a corrupt or hand-edited value should read as "nothing saved", not
- * throw partway through a restore. */
+/** Structural sanity — a corrupt or hand-edited value should read as "nothing saved", not throw mid-restore. */
 const isObj = (v: unknown): boolean => !!v && typeof v === 'object' && !Array.isArray(v);
 
 function isPersistedSession(v: unknown): v is PersistedSession {
@@ -496,18 +411,12 @@ function isPersistedSession(v: unknown): v is PersistedSession {
 }
 
 /**
- * Fill in the containers `applyRestoredSession` dereferences, for a session that does not carry
- * them.
+ * Fill in the containers `applyRestoredSession` dereferences when a session lacks them.
  *
- * **Repaired rather than rejected, deliberately.** Seven single-field corruptions used to pass the
- * gate above and throw part-way through the restore (measured 2026-08-24); three left the app
- * unable to build at all, showing the raw exception text, recoverable only by F5. Tightening the
- * gate to reject them was the first fix and was wrong: a session written by an older build, before
- * one of these fields existed, is not corrupt and still carries the user's artwork. Discarding it
- * to avoid a crash trades one kind of lost work for another.
- *
- * So each container is replaced only when it is not the shape the restore needs, and every default
- * here is the same "nothing set" the app boots with.
+ * **Repaired rather than rejected.** Seven single-field corruptions passed the gate above and threw
+ * mid-restore (measured 2026-08-24); three left the app unable to build, showing raw exception text.
+ * Rejecting them was wrong: an older build's session isn't corrupt and still holds the artwork.
+ * Each default is the app's boot "nothing set".
  */
 function repairSessionContainers(s: PersistedSession): PersistedSession {
   const obj = <T>(v: unknown, fallback: T): T => (isObj(v) ? (v as T) : fallback);
@@ -518,50 +427,30 @@ function repairSessionContainers(s: PersistedSession): PersistedSession {
     keptApart: arr(s.keptApart, []),
     mergeGroups: arr(s.mergeGroups, []),
     baseColorMembers: arr(s.baseColorMembers, []),
-    disc: obj(s.disc, { ...state.disc }),
-    rect: obj(s.rect, { ...state.rect }),
-    round: obj(s.round, { ...state.round }),
-    stlPlate: obj(s.stlPlate, { ...state.stlPlate }),
     assembly: obj(s.assembly, { kindId: null, variantId: null }),
   };
 }
 
 /**
- * The depth overrides a restore should adopt. See PersistedSession.explicitDepths: a session saved
- * before per-row depths meant "the user set this" carries one for every color, so it restores with
- * none rather than with overrides nobody typed.
- *
- * Split out from applyRestoredSession so it can be tested against the real rule — inlined, the
- * only way to cover it was to restate the condition in the test, which then passed whatever the
- * source did.
+ * The depth overrides a restore adopts — see PersistedSession.explicitDepths. Split out so a test
+ * covers the real rule instead of restating it.
  */
 export function restoredColorSettings(session: PersistedSession): AppState['colorSettings'] {
   return session.explicitDepths ? session.colorSettings : {};
 }
 
-/**
- * The scalar and settings fields a restore adopts, computed without touching `state` — see the
- * comment on `pending` in applyRestoredSessionInner for why.
- */
+/** The scalar and settings fields a restore adopts, computed without touching `state` (see `pending` in applyRestoredSessionInner). */
 function buildRestoredScalarState(session: PersistedSession): Partial<AppState> {
-  // Coerced to a printer that exists, not adopted verbatim. An unknown id (an older build's, a
-  // hand-edited session) left `#p-printer` blank while getPrinter() silently fell back to the
-  // default bed — and the bed is what every verified placement is checked against, so the export
-  // would use one printer's plate while the picker named none.
+  // Coerced to an existing printer: an unknown id left `#p-printer` blank while getPrinter() fell
+  // back to the default bed, so export would use one plate while the picker named none.
   const printerId = getPrinter(session.printerId).id;
   const pending: Partial<AppState> = {
-    disc: session.disc,
-    rect: session.rect,
-    round: session.round,
-    stlPlate: session.stlPlate,
-    marginPct: session.marginPct,
     scalePct: session.scalePct,
     offsetX: session.offsetX,
     offsetY: session.offsetY,
     flipX: session.flipX,
     flipY: session.flipY,
     rotationDeg: session.rotationDeg,
-    recessBg: session.recessBg,
     printerId,
     baseFilamentId: session.baseFilamentId,
     autoMergeLevel: session.autoMergeLevel,
@@ -571,31 +460,21 @@ function buildRestoredScalarState(session: PersistedSession): Partial<AppState> 
     colorSettings: restoredColorSettings(session),
     keptApart: session.keptApart,
   };
-  // Guarded like asmRadius below. isPersistedSession checks four fields and repairSessionContainers
-  // repairs containers, never scalars, so a session missing this reached colorList's
-  // `shownDepth.toFixed(2)` and threw mid-restore — the half-applied failure this path exists to
-  // avoid.
+  // Guarded like asmRadius: isPersistedSession checks four fields and repairSessionContainers fixes
+  // containers only, so a missing one reached colorList's `shownDepth.toFixed(2)` and threw mid-restore.
   if (Number.isFinite(session.globalDepth)) pending.globalDepth = session.globalDepth;
-  // The same floor the field enforces, from the same constant: a looser guard here let a session
-  // carrying 0.2 through, and the field then snapped itself to its default while state kept 0.2.
-  // A session saved by an earlier build can carry 0 or a negative, so the guard has to be here too
-  // or a reload walks straight past the field's.
+  // Same floor and constant as the field: a looser guard let 0.2 through and the field snapped to
+  // its default while state kept 0.2. Earlier builds can save 0 or negative.
   if (Number.isFinite(session.asmRadius) && session.asmRadius >= MIN_DESIGN_RADIUS_MM)
     pending.asmRadius = session.asmRadius;
   // Older sessions predate the hubcap, so an absent value keeps the default rather than NaN.
-  //
-  // Clamped at BOTH ends here, against the printer resolved above. A stored value never comes
-  // through the control that normally bounds it: below the floor the disc misses its mounting
-  // clips entirely, and above the plate it is a part the machine cannot print. An earlier version
-  // of this only floored, on the grounds that the ceiling would be re-applied once the printer was
-  // known — but no restore path calls that, so a session saved on a big bed came back oversized on
-  // a small one.
+  // Clamped at both ends against the resolved printer: a stored value bypasses the control that
+  // bounds it. Below the floor the disc misses its mounting clips; above the plate it can't print,
+  // and no restore path re-applies the ceiling later.
   if (typeof session.hubcapDiameterMm === 'number' && Number.isFinite(session.hubcapDiameterMm)) {
-    // The same ceiling the live field enforces (buildParamMax), not a looser one re-derived from
-    // the plate alone — that used to let a restore land up to 10mm inside the clearance
-    // PLATE_EDGE_MARGIN_MM exists to keep clear of the plate edge, and skip a kind's own maxMm
-    // entirely. Needs the restored kind's buildParam, which is where maxMm lives; a kind with none
-    // (or a kind that no longer exists) keeps the plate-only clamp so that restore is unaffected.
+    // The live field's ceiling (buildParamMax), not a plate-only one — that let a restore land up to
+    // 10mm inside PLATE_EDGE_MARGIN_MM and skip a kind's own maxMm. A kind with no buildParam, or
+    // one that no longer exists, keeps the plate-only clamp.
     const restoredKind =
       session.shapeKind === 'assembly' && session.assembly.kindId
         ? ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId)
@@ -609,8 +488,7 @@ function buildRestoredScalarState(session: PersistedSession): Partial<AppState> 
       Math.max(HUBCAP_MIN_DIAMETER_MM, session.hubcapDiameterMm),
     );
   }
-  // No clamp to match: the shape checks all run at rebuild, and every one of them falls back to a
-  // circle with a message rather than to something unprintable.
+  // No clamp: every shape check runs at rebuild and falls back to a circle with a message.
   if (typeof session.hubcapSilhouette === 'boolean')
     pending.hubcapSilhouette = session.hubcapSilhouette;
   return pending;
@@ -627,29 +505,24 @@ export function loadSavedSession(): PersistedSession | null {
     }
     return repairSessionContainers(parsed);
   } catch {
-    // Cleared, like the schema branch above. Without this an unparseable blob was held forever:
-    // nothing renders a banner for it, so nothing ever answers the offer, so the empty-snapshot
-    // clear that used to tidy it up stays suppressed for every future visit as well.
+    // Cleared like the schema branch: an unparseable blob was held forever, since no banner renders
+    // for it and the suppressed empty-snapshot clear never tidies it.
     clearSavedSession();
     return null;
   }
 }
 
 /**
- * Apply a saved session to `state`. Deliberately does not touch the DOM or trigger a rebuild —
- * the caller (ui/restoreBanner.ts) does that once, after this resolves, the same way any other
- * assembly-kind switch does (see setShapeKind). Re-parses each source's saved SVG text rather
- * than trying to persist `ParsedSVG` directly (see the note on DesignSource.svgText).
+ * Apply a saved session to `state`. Touches no DOM and triggers no rebuild — the caller
+ * (ui/restoreBanner.ts) does that once after this resolves. Re-parses each source's SVG text
+ * (see DesignSource.svgText).
  *
- * Assembly restore awaits asmLoadFullAssembly() directly rather than going through
- * maybeAutoLoadAssembly()'s fire-and-forget call, because the zone bindings below need the
- * restored parts (and their fresh session-local ids) to already exist.
+ * Awaits the load rather than fire-and-forget maybeAutoLoadAssembly(), because the zone bindings
+ * need the restored parts and their fresh ids.
  *
- * **`state.assembly.parts` is not empty on entry**, and a previous version of this comment said it
- * was. The boot's own auto-load has always filled it, so asmLoadFullAssembly's confirmDialog guard
- * did fire, raising a second question on top of the restore the user had just accepted — and
- * cancelling it exported the boot kind's parts under the restored kind's filename. Both branches
- * below clear the list before loading; do not remove that on the strength of the old claim.
+ * **`state.assembly.parts` is not empty on entry**: the boot auto-load filled it, so
+ * asmLoadFullAssembly's confirmDialog raised a second question and cancelling exported the boot
+ * kind's parts under the restored kind's filename. Both branches below clear it; keep that.
  */
 export async function applyRestoredSession(session: PersistedSession): Promise<void> {
   restoring = true;
@@ -661,27 +534,17 @@ export async function applyRestoredSession(session: PersistedSession): Promise<v
 }
 
 async function applyRestoredSessionInner(session: PersistedSession): Promise<void> {
-  // Once, here, before any source is touched — not inside the loop (that wiped a raster failure's
-  // own warning the moment the next SVG source parsed; see parseSVGDocument) and not per source.
-  // `restoreArtworkPool` below replaces `state.sources` wholesale, so a notice keyed to an old
-  // source id (a capped/traced notice, or a "could not be restored" left over from a previous
-  // restore attempt) would otherwise describe a source that no longer exists once this one commits.
+  // Once, before any source is touched, not per source (that wiped a raster failure's warning when
+  // the next SVG parsed). restoreArtworkPool replaces `state.sources`, so old-id notices would
+  // describe sources that no longer exist.
   clearWarnings();
 
-  // Built rather than assigned straight into `state`, so the source loop below — where a failure
-  // is most likely, an SVG that no longer parses being the common case — cannot leave these
-  // committed while the sources they describe never come back. Committed in one shot once that
-  // loop has run clean, the same "build it, then commit" shape applyRasterFile and the loop itself
-  // already follow.
+  // Built, then committed once the source loop runs clean, so a failing source (an SVG that no
+  // longer parses is the common case) can't leave these committed without the sources they describe.
   const pending = buildRestoredScalarState(session);
 
-  // A raster source is decoded and re-traced; an SVG one is re-parsed. Both are rebuilt before any
-  // state is touched, matching the rest of this function and applyRasterFile: a source that fails
-  // to come back must not leave a half-restored session behind.
-  //
-  // This is the one place restore does real image work, and it is the cost of the feature: on a
-  // 512px photograph the quantize and trace measured ~830ms. It runs inside the same overlay the
-  // restore already shows.
+  // Raster sources are decoded and re-traced, SVG re-parsed, all before state is touched. This is
+  // restore's one real image work: quantize + trace measured ~830ms on a 512px photograph, inside the restore overlay.
   const sources: DesignSource[] = [];
   const lostSources = new Set<string>();
   for (const s of session.sources) {
@@ -689,34 +552,24 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       sources.push({ ...s, raster: undefined, parsed: parseSVGDocument(s.svgText) });
       continue;
     }
-    // Per image, not per session. A decode or trace that throws must cost that one design, not the
-    // restore: the banner treats a rejected restore as a dead session and calls clearSavedSession,
-    // so letting this escape would destroy the SVG designs alongside it, permanently. The save
-    // path already degrades per image; this is the matching half.
+    // Per image: a throw must cost that design, not the restore — the banner treats a rejection as
+    // a dead session and clears it, destroying the SVG designs too.
     try {
       const image = await decodeWorkingImage(s.raster.png);
-      // Put back the statistic that cannot be re-measured from these pixels (see PersistedSource).
+      // Restore the statistic that can't be re-measured from these pixels (see PersistedSource).
       if (s.raster.edgeDensity !== undefined) image.edgeDensity = s.raster.edgeDensity;
       const opts = {
         colors: s.raster.colors,
         detail: s.raster.detail,
-        // Whatever was saved, in every shape kind. This is a reconstruction, not a fresh trace:
-        // the design in the saved session carries this floor whether or not the mode it was
-        // switched into would derive one now (nothing re-traces on a shape-kind change), and a
-        // restore that quietly returns a different design is the failure this payload exists to
-        // prevent. `requantizeSource` is the other half, and re-derives.
+        // As saved: a reconstruction, not a fresh trace, and there's no placement to derive one
+        // from before the parts are back. The first settled rebuild re-traces if the placement
+        // disagrees (`retraceMovedSources`).
         mmPerPixel: s.raster.mmPerPixel,
       };
-      // name is passed alongside opts, not folded into it: opts is spread into the stored
-      // RasterState below, which has no name field of its own — the source's own name already
-      // covers it.
+      // name is passed beside opts, not in it: opts is spread into RasterState, which has no name field.
       const result = parseRasterImage(image, { ...opts, name: s.name });
-      // The same notice the first load gave. Without it a design that comes back simplified looks
-      // like the app quietly changed it.
-      if (result.capped) notice(rasterCappedMessage(s.name), s.id);
-      else notice(rasterTracedMessage(s.name), s.id);
-      if (rasterLostColors(result))
-        notice(rasterColorLossMessage(s.name, result.droppedColors), rasterColorLossKey(s.id));
+      // The same notice the first load gave, so a simplified design doesn't look quietly changed.
+      announceTrace(s.id, s.name, result);
       sources.push({
         id: s.id,
         kind: s.kind,
@@ -735,10 +588,16 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     }
   }
 
-  // Nothing above this point can throw, so it is safe to commit: a source that fails to parse or
-  // decode is caught (per-image) or has already propagated (an SVG's parseSVGDocument, uncaught by
-  // design — see the comment on `sources`), and either way this line is never reached with `state`
-  // still holding the pre-restore values it would otherwise be a mix of.
+  // Nothing above can throw past here: a failing source is caught per image, or propagated (an SVG's
+  // uncaught parseSVGDocument), so `state` never ends up a mix of pre-restore values.
+  // Committed before the parts load because the load reads some of these (a generated role's mesh
+  // follows `hubcapDiameterMm`), so they're snapshotted and put back if it fails; asmSwitchKindAndLoad restores the kind itself.
+  // if that load does not complete; asmSwitchKindAndLoad puts the kind back itself.
+  const before = {
+    scalars: Object.fromEntries(
+      Object.keys(pending).map((k) => [k, state[k as keyof AppState]]),
+    ) as Partial<AppState>,
+  };
   Object.assign(state, pending);
 
   const kind =
@@ -747,45 +606,31 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       : undefined;
   let keepSavedZones = true;
   if (session.shapeKind === 'assembly' && kind) {
-    state.shapeKind = 'assembly';
-    state.assembly.kindId = kind.id;
-    state.assembly.variantId = session.assembly.variantId;
-    // Cleared before the load, not left to asmLoadFullAssembly's own clear. That clear sits behind
-    // a confirm ("Load the full X? This clears any parts you've already added"), and the boot's
-    // auto-load has always filled this list, so restoring raised a second dialog on top of the one
-    // the user just accepted. Cancelling it returned without touching the scene while `kindId` and
-    // the dropdown had already moved: the export then wrote the *previous* kind's parts under the
-    // restored kind's filename. Measured 2026-08-24: a restored footrest session exported
-    // `mosaic-footrest.3mf` holding the wheel's Top/Bottom/Cap, valid and printable, no warning.
-    state.assembly.parts = [];
-    await asmLoadFullAssembly();
+    // A load that didn't complete must not leave the kind standing without its designs; a newer
+    // part switch owns the kind, so the session's designs aren't applied to a part they weren't saved for.
+    const outcome = await asmSwitchKindAndLoad(kind.id, session.assembly.variantId);
+    if (outcome === 'failed' || outcome === 'superseded') {
+      Object.assign(state, before.scalars);
+      throw new SessionPartsError(kind.name, outcome);
+    }
   } else {
-    // Either an assembly kind that no longer exists (renamed/retired since the session was saved),
-    // or a flat mode from a session saved back when one was offered. Neither has an option in the
-    // Part dropdown any more, so falling back to the saved value would leave the select blank and
-    // the next switch away from it one-way. Take the first offered kind instead of failing the
-    // whole restore. The parts are left to restoreBanner's own setShapeKind, which auto-loads
-    // them: loading here would alert about an unreachable library the caller is about to retry.
-    state.shapeKind = 'assembly';
+    // An assembly kind that no longer exists, or a retired flat mode. Neither is in the Part
+    // dropdown, so keeping the saved value leaves the select blank and the next switch one-way. Take
+    // the first offered kind; restoreBanner's applyPartKind auto-loads the parts (loading here would
+    // alert about an unreachable library the caller is about to retry).
     state.assembly.kindId = firstOfferedKind().id;
     state.assembly.variantId = null;
-    // Cleared for the same reason `#shape-kind`'s own handler clears them (ui/partPanel.ts):
-    // maybeAutoLoadAssembly no-ops while any part is present, so leaving the previous kind's in
-    // place would name the fallback kind in the dropdown while the scene and the export still
-    // held the other one's.
+    // Cleared like `#shape-kind`'s handler (ui/partPanel.ts): maybeAutoLoadAssembly no-ops while
+    // parts exist, so the dropdown would name the fallback kind while scene and export held the other's.
     state.assembly.parts = [];
-    // And the saved zone bindings can't be re-applied below, for the other half of that handler's
-    // reasoning: they name zones on a part that is not the one being restored onto. An instance
-    // bound to a zone no mapper matches is dropped by geometry/assembly.ts and never cut, with no
-    // warning and, on a part with one design face, no dropdown to re-target it.
+    // The saved zone bindings can't be re-applied either: they name zones on a different part, and
+    // an instance bound to an unmatched zone is dropped by geometry/assembly.ts uncut and unwarned.
     keepSavedZones = false;
   }
 
-  // Instances of a source that could not be rebuilt go with it, or the placement points at
-  // nothing and every later lookup by sourceId returns undefined. The active selection is
-  // re-pointed below for the same reason: left on a dead id, setActiveArtwork returns early and
-  // the app comes back with no parsed design and Export off, while the artwork that DID restore
-  // sits in state unselected.
+  // Instances of an unrebuilt source go with it, or lookups by sourceId return undefined. The active
+  // selection is re-pointed below: on a dead id setActiveArtwork returns early, leaving no parsed
+  // design and Export off while restored artwork sits unselected.
   const zoneOf = new Map(session.artworks.map((a) => [a.id, a.zoneId]));
   const artworks: ArtworkInstance[] = session.artworks
     .filter((a) => !lostSources.has(a.sourceId))
@@ -799,35 +644,25 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
       rotationDeg: a.rotationDeg,
       flipX: a.flipX,
       flipY: a.flipY,
-      // Absent stays absent: a session saved before Mirror existed reads as off, the same way it
-      // would if the user had never ticked it.
+      // Absent stays absent: a pre-Mirror session reads as off.
       ...(a.mirror === true ? { mirror: true } : {}),
-      // Clamped, not trusted: a session saved before its kind withheld Fill (or before the flag
-      // existed) still carries 'fill', and restoring it verbatim would walk straight into the path
-      // the flag keeps users out of. Runs after the kind is set above, so it clamps against the
-      // part actually being restored.
+      // Clamped: a session saved before its kind withheld Fill still carries 'fill' and would walk
+      // into the path the flag keeps users out of. Runs after the kind is set, so it clamps for the restored part.
       mode: allowedArtworkMode(a.mode),
     }));
   restoreArtworkPool(sources, artworks);
-  // A saved zoneId the loaded parts no longer offer — a zone a re-bake renamed or dropped — matches
-  // no mapper, so geometry/assembly.ts cuts that design nowhere and says nothing about it. Same
-  // silent loss the kind-mismatch branch above avoids, reached from a different direction, and the
-  // dropdown does not show it either: it renders the saved id as no selection at all. Sent to All
-  // zones instead, which cuts something and reads correctly in the badge, and said out loud.
+  // A saved zoneId the loaded parts no longer offer (a re-bake renamed or dropped it) matches no
+  // mapper, so geometry/assembly.ts cuts that design nowhere, silently, and the dropdown shows no
+  // selection. Sent to All zones instead, and said out loud.
   //
-  // **An empty zone list is not evidence of anything**, which is why the whole check is gated on
-  // one being offered at all. asmLoadFullAssembly returns quietly while the parts manifest is still
-  // in flight (its own comment calls that path supported, and loadPartsLibrary calls back through
-  // maybeAutoLoadAssembly when the fetch lands), so "no zones" is far more often "not yet" than
-  // "retired" — and discarding every binding on that reading loses them before the deferred load
-  // can arrive. A part that fails its own fetch mid-load already raises an alert naming the file,
-  // so a partial load is told about; only the false total wipe is worth guarding.
+  // **An empty zone list is not evidence**, so the check is gated on zones being offered:
+  // asmLoadFullAssembly returns quietly while the parts manifest is in flight, making "no zones"
+  // far more often "not yet" than "retired", and discarding every binding then loses them before
+  // the deferred load lands. A part failing its own fetch already alerts; only the false total wipe needs guarding.
   const offered = new Set(availableZones().map((z) => z.zoneId));
   const judgeable = keepSavedZones && offered.size > 0;
   const resolves = (zoneId: string | null): boolean => zoneId === null || offered.has(zoneId);
-  // Over the RESTORED instances, not the saved ones: a design whose source could not be rebuilt was
-  // filtered out above and is not in state to be moved, so counting it would name designs the user
-  // cannot see. It also has its own warning already.
+  // Over the restored instances: a design whose source couldn't be rebuilt is gone from state and already has its own warning.
   const orphaned = judgeable ? artworks.filter((a) => !resolves(zoneOf.get(a.id) ?? null)) : [];
   artworks.forEach((a) => {
     const zoneId = zoneOf.get(a.id) ?? null;

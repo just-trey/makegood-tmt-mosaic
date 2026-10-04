@@ -1,6 +1,6 @@
 # Rules for docs/
 
-One rule set per destination. The destination table, DECISIONS-NEEDED.md, and
+One rule set per destination. The destination list, DECISIONS-NEEDED.md, and
 the writing style all stay in the root CLAUDE.md.
 
 ### docs/ui-conventions.md

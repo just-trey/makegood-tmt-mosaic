@@ -47,12 +47,9 @@ beforeEach(() => {
   state.assembly.parts = [];
   // Placement is test-owned here: the floor tests below set a kind, a radius and a scale, and
   // `clearArtwork` deliberately leaves placement alone (it is a preference, not artwork).
-  state.shapeKind = 'disc';
   state.assembly.kindId = null;
   state.asmRadius = 138;
   state.scalePct = 100;
-  state.disc = { diameter: 80, thickness: 4 };
-  state.marginPct = 5;
 });
 
 describe('raster sources in app state', () => {
@@ -143,7 +140,6 @@ describe('raster sources in app state', () => {
 
   it('sizes the despeckle floor from the part the design is placed on', () => {
     // The wheel: the Design radius over the image's own half-extent, which is what the cut uses.
-    state.shapeKind = 'assembly';
     state.assembly.kindId = 'wheel';
     state.asmRadius = 138;
     state.scalePct = 100;
@@ -153,18 +149,11 @@ describe('raster sources in app state', () => {
     // Half the size, half the millimetres per pixel.
     state.scalePct = 50;
     expect(rasterMmPerPixel(image)).toBeCloseTo(2.875, 6);
-
-    // A flat plate answers nothing: it fits the design's drawn content, which the trace has not
-    // produced yet, and the opaque pixels are wrong in the damaging direction.
-    state.shapeKind = 'disc';
-    state.disc = { diameter: 80, thickness: 4 };
-    expect(rasterMmPerPixel(image)).toBeUndefined();
   });
 
   it('reads the largest instance, since one trace serves them all', () => {
     // The wheel, whose scale is the Design radius over the image's own half-extent and needs no
     // loaded part: a 48px image at radius 138 is 5.75mm a pixel.
-    state.shapeKind = 'assembly';
     state.assembly.kindId = 'wheel';
     state.asmRadius = 138;
     state.scalePct = 100;
@@ -186,7 +175,6 @@ describe('raster sources in app state', () => {
   });
 
   it('keeps the last measured floor when a re-quantize cannot read the placement', () => {
-    state.shapeKind = 'assembly';
     state.assembly.kindId = 'wheel';
     state.asmRadius = 138;
     state.scalePct = 100;
@@ -201,26 +189,10 @@ describe('raster sources in app state', () => {
     expect(source.raster!.mmPerPixel).toBeCloseTo(5.75, 6);
   });
 
-  it("does not carry a part's floor onto a flat plate", () => {
-    state.shapeKind = 'assembly';
-    state.assembly.kindId = 'wheel';
-    state.asmRadius = 138;
-    state.scalePct = 100;
-    const source = loadRaster();
-    expect(source.raster!.mmPerPixel).toBeCloseTo(5.75, 6);
-
-    // A plate has no printable floor of its own, so the part's must not stand in for one.
-    state.shapeKind = 'disc';
-    state.disc = { diameter: 80, thickness: 4 };
-    requantizeSource(source.id, { colors: 4 });
-    expect(source.raster!.mmPerPixel).toBeUndefined();
-  });
-
   it('answers nothing while a rect kind is still loading its parts', () => {
     // No part, no design face to fit to. designMmPerUnit's 1:1 branch would answer 1mm per unit
     // here, which is a real answer for an SVG and a fiction for an image, and it would be saved
     // into the session as if it had been measured.
-    state.shapeKind = 'assembly';
     state.assembly.kindId = 'footrest';
     state.assembly.parts = [];
     state.scalePct = 100;
@@ -228,7 +200,6 @@ describe('raster sources in app state', () => {
   });
 
   it('records the floor it traced at, so a restore can reproduce it', () => {
-    state.shapeKind = 'assembly';
     state.assembly.kindId = 'wheel';
     state.asmRadius = 138;
     state.scalePct = 100;

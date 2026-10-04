@@ -13,7 +13,7 @@ import {
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
 import { getManifold, type ManifoldAPI, type ManifoldSolid } from '../src/geometry/manifold';
-import { TILE_UNION_VERTEX_BUDGET } from '../src/geometry/patterns';
+import { FILL_POINT_BUDGET } from '../src/geometry/patterns';
 import { armCancel, RebuildCancelled, requestCancel } from '../src/cancel';
 import { setProgressSink } from '../src/progress';
 import { build3MFCombined, type ExportPart, type ExportSub } from '../src/export/threemf';
@@ -21,6 +21,13 @@ import { getPrinter } from '../src/export/printers';
 import { partObjectSummaries } from './lib/threemf';
 import type { AssemblyPart, AssemblyPartOutput, ParsedSVG } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
+import { detectFlatPatches, extractPatchBoundary } from '../src/geometry/meshparts';
+import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
+import { readFileSync } from 'node:fs';
+import {
+  read3MF,
+  // @ts-expect-error — plain-JS tooling module, no .d.ts (run by node, not bundled)
+} from '../scripts/lib/mesh.mjs';
 
 function boxPart(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   const geo = new THREE.BoxGeometry(40, 10, 40).toNonIndexed();
@@ -379,6 +386,39 @@ describe('buildAssemblyGeometry', () => {
       clearWarnings();
       await buildAssemblyGeometry(baseInput({ offX: 1000, offZ: 1000 }));
 
+      expect(WARNINGS.map((w) => w.message)).toContainEqual(
+        expect.stringContaining(`"#ff0000" lands entirely off the part and won't print`),
+      );
+    },
+  );
+
+  // A cut-through part skips the clip, so only the boolean can notice the face is sideways: the
+  // prism stands at the side face's plane offset, which is no height on this part, and misses it.
+  it(
+    'warns rather than cutting when the hub cap is set to its sideways face',
+    { timeout: 30000 },
+    async () => {
+      const role = ASSEMBLY_KINDS.flatMap((k) => k.roles).find((r) => r.id === 'wheel-hub-cap')!;
+      const positions: Float32Array = await read3MF(
+        readFileSync(new URL('../public/stl/wheel-hub-cap.3mf', import.meta.url)),
+      );
+      const patches = detectFlatPatches(positions).slice(0, 6);
+      const patch = patches.find((p) => Math.abs(p.normal[1]) <= 0.1)!;
+      expect(patch).toBeDefined();
+      const part = boxPart({
+        name: 'Hub cap',
+        positions,
+        topZ: patch.offset,
+        patchNormal: patch.normal,
+        boundaryLoops: extractPatchBoundary(positions, patch.triIndices).loops,
+        cutThrough: role.cutThrough,
+        cutThroughDepth: role.cutThroughDepth,
+      });
+      clearWarnings();
+
+      const built = (await buildAssemblyGeometry(baseInput({ parts: [part] })))!;
+
+      expect(built.partOutputs[0].inlaySoups).toEqual({});
       expect(WARNINGS.map((w) => w.message)).toContainEqual(
         expect.stringContaining(`"#ff0000" lands entirely off the part and won't print`),
       );
@@ -985,9 +1025,10 @@ describe('fillRefusalMessage', () => {
     'not-invertible',
     'not-affine',
     'too-detailed',
+    'joins-too-big',
   ] as const;
   // Only 'too-detailed' reads it; the rest are describable from the reason alone.
-  // A product over TILE_UNION_VERTEX_BUDGET, so the example a reader multiplies out is one the
+  // A product over FILL_POINT_BUDGET, so the example a reader multiplies out is one the
   // app would really refuse. troubleshooting.md quotes the same pair.
   const DETAIL = { tiles: 529, points: 1201, scalable: true };
   const message = (design: string, part: string, r: (typeof reasons)[number]): string =>
@@ -1004,7 +1045,7 @@ describe('fillRefusalMessage', () => {
 
   it('offers "Raise Scale" only where scaling up is what fixes it', () => {
     const scaled = reasons.filter((r) => /Raise Scale/.test(message('d.svg', 'P', r)));
-    expect(scaled).toEqual(['too-many-tiles', 'too-detailed']);
+    expect(scaled).toEqual(['too-many-tiles', 'too-detailed', 'joins-too-big']);
   });
 
   it('states one remedy per message, not a list', () => {
@@ -1062,6 +1103,20 @@ describe('fillRefusalMessage', () => {
 
   // A limit named without the numbers behind it is a report, not something to act on, so it takes
   // the same treatment as a refusal that never named itself at all.
+  // Found while tiling, in whichever color joined: often a background, rarely the busiest.
+  it('names no color for a shape that joined across the tiles', () => {
+    for (const scalable of [true, false]) {
+      const m = fillRefusalMessage('d.svg', 'P', 'joins-too-big', {
+        tiles: 961,
+        points: 555,
+        scalable,
+      });
+      expect(m).not.toContain('busiest');
+      expect(m).toContain('joins');
+      expect(/Raise Scale/.test(m)).toBe(scalable);
+    }
+  });
+
   it('falls back to "didn\'t record" when too-detailed arrives without its numbers', () => {
     const m = fillRefusalMessage('d.svg', 'P', 'too-detailed');
     expect(m).not.toMatch(/Raise Scale/);
@@ -1192,7 +1247,7 @@ describe('fill mode', () => {
       const hit = WARNINGS.filter((w) => /too detailed/.test(w.message));
       expect(hit).toHaveLength(1);
       const [, tiles, points] = /(\d+) tiles of (\d+) points/.exec(hit[0].message)!;
-      expect(Number(tiles) * Number(points)).toBeGreaterThan(TILE_UNION_VERTEX_BUDGET);
+      expect(Number(tiles) * Number(points)).toBeGreaterThan(FILL_POINT_BUDGET);
       // 1201 points a tile is under a ninth of the budget, so raising Scale really is the remedy.
       expect(hit[0].message).toMatch(/Raise Scale/);
       // The point of the refusal: not the misleading warning that silent tile-dropping produced.
@@ -1214,7 +1269,7 @@ describe('fill mode', () => {
           parsed: densePetalParsed(1200),
           mode: 'fill',
           scaleMult: 0.2,
-          maxScaleMult: 0.22,
+          maxScaleMult: 0.21,
         }),
       ))!;
       const hit = WARNINGS.filter((w) => /too detailed/.test(w.message));
@@ -1742,6 +1797,86 @@ describe('buildAssemblyGeometry too-deep clamp handling', () => {
       ]);
     },
   );
+});
+
+/**
+ * A 3mm plate (y 7..10) with a solid block under its +X quarter reaching y=-15. The part reaches
+ * 25mm behind its face, so its own bound is 24.95mm, while the wall under most of the face is 3mm.
+ */
+function steppedPart(): AssemblyPart {
+  const profile: [number, number][] = [
+    [-20, 7],
+    [10, 7],
+    [10, -15],
+    [20, -15],
+    [20, 10],
+    [-20, 10],
+  ];
+  const shape = new THREE.Shape(profile.map(([x, y]) => new THREE.Vector2(x, y)));
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 40,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  geo.translate(0, 0, -20);
+  const flat = geo.index ? geo.toNonIndexed() : geo;
+  return boxPart({
+    name: 'stepped',
+    positions: Float32Array.from(flat.attributes.position.array as Float32Array),
+  });
+}
+
+describe('buildAssemblyGeometry wall clamp', () => {
+  beforeEach(() => clearWarnings());
+
+  // The part bound allows this: 20mm is well under the 24.95mm the part reaches behind its face,
+  // and the 3mm plate the square stands on is what stops it.
+  it(
+    'cuts a pocket deeper than the wall under it at the wall, and says so',
+    { timeout: 30000 },
+    async () => {
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          parts: [steppedPart()],
+          offX: -8,
+          colorSettings: { 'asm:#ff0000': { depth: 20 } },
+        }),
+      ))!;
+      const inlay = built.partOutputs[0].inlaySoups[0];
+      const x = xzRange(inlay);
+      expect(x.maxX).toBeLessThan(10);
+      // A floor is left under the pocket, rather than the inlay being the whole 3mm plug.
+      expect(yRange(inlay).min).toBeCloseTo(7 + 0.05, 4);
+      expect(built.palette.find((p) => p.hex === '#ff0000')?.appliedDepth).toBeCloseTo(2.95, 4);
+      const messages = WARNINGS.map((w) => w.message);
+      expect(messages).toContain(
+        'Depth for "#ff0000" was set to 20.00 mm, but "stepped" is only 3.00 mm thick under it. ' +
+          'It was cut at 2.95 mm instead.',
+      );
+      // One fact, one pill: the part bound was not what stopped it.
+      expect(messages.filter((m) => m.includes('goes.'))).toEqual([]);
+    },
+  );
+
+  // On a plain box the wall is the whole part, so the part bound already took the depth to the
+  // wall. One fact, one pill.
+  it('leaves a clamp the part bound made to the part warning', { timeout: 30000 }, async () => {
+    await buildAssemblyGeometry(baseInput({ colorSettings: { 'asm:#ff0000': { depth: 9999 } } }));
+    const messages = WARNINGS.map((w) => w.message);
+    expect(messages.filter((m) => m.includes('goes.'))).toHaveLength(1);
+    expect(messages.filter((m) => m.includes('thick under'))).toEqual([]);
+  });
+
+  it('stays quiet about a region the wall can hold', { timeout: 30000 }, async () => {
+    await buildAssemblyGeometry(
+      baseInput({
+        parts: [steppedPart()],
+        offX: -8,
+        colorSettings: { 'asm:#ff0000': { depth: 2 } },
+      }),
+    );
+    expect(WARNINGS.filter((w) => w.message.includes('thick under'))).toEqual([]);
+  });
 });
 
 describe('buildAssemblyGeometry depth labels and thin cuts', () => {

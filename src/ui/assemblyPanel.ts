@@ -33,26 +33,20 @@ export function syncAssemblyKindControls(): void {
   if (radiusRow) radiusRow.style.display = kind?.designFit === 'rect' ? 'none' : '';
 
   syncTemplateLink();
-  // Render synchronously, then correct. Leaving the render to the clamp alone deferred it by a
-  // microtask (the clamp awaits a rebuild), so the panel briefly showed the previous kind's
-  // control — the rest of this function is synchronous and the ordering should not depend on it.
+  // Render synchronously, then correct: leaving it to the clamp (which awaits a rebuild) deferred it a microtask and the panel briefly showed the previous kind's control.
   syncBuildParamControl();
-  // Re-clamp on the way in, not just on printer change: that handler reads the kind that is
-  // active *then*, so it does nothing while a kind without a build parameter is selected. Set a
-  // 320mm hubcap on the H2D, switch to the wheel, switch to the X1C, switch back, and the
-  // diameter survived every step that could have caught it — a 320mm disc on a 256mm bed.
+  // Re-clamp on the way in, not just on printer change: that handler reads the kind active *then*, so
+  // it does nothing while a kind without a build parameter is selected. A 320mm hubcap on the H2D,
+  // then wheel, X1C, back: the diameter survived every step that could have caught it — a 320mm disc on a 256mm bed.
   void clampBuildParamToPrinter();
   renderAssemblyVariantControls();
   renderZoneTemplateLinks();
 }
 
 /**
- * Point the per-kind template download at the current template.
- *
- * Its own function, and called from the build-parameter path as well as on kind switch, because a
- * generated template is only true-to-size for the size it was built at: leaving it to the kind
- * switch alone meant changing the hubcap from 220mm to 180mm still handed out the 220mm
- * drawing — a 1:1 template that is silently the wrong 1:1.
+ * Point the per-kind template download at the current template. Also called from the build-parameter
+ * path: a generated template is only true-to-size for the size it was built at, and kind-switch
+ * alone handed out the 220mm drawing after changing to 180mm — a 1:1 that is silently the wrong 1:1.
  */
 function syncTemplateLink(): void {
   const kind = currentAssemblyKind();
@@ -66,11 +60,7 @@ function syncTemplateLink(): void {
   if (built || kind?.templateFile) tplLink.download = `${kind!.id}-template.svg`;
 }
 
-/**
- * Blob URL for a generated template, replacing the previous one. Revoked rather than left to the
- * GC: this is re-run on every kind switch and every diameter edit, so the leak would be unbounded
- * over a long session.
- */
+/** Blob URL for a generated template, replacing the previous one. Revoked, not left to GC: it re-runs on every kind switch and diameter edit, so the leak would be unbounded. */
 let lastTemplateUrl: string | null = null;
 function templateObjectUrl(svg: string): string {
   if (lastTemplateUrl) URL.revokeObjectURL(lastTemplateUrl);
@@ -79,10 +69,8 @@ function templateObjectUrl(svg: string): string {
 }
 
 /**
- * The kind's numeric build parameter, if it has one (AssemblyKind.buildParam) — the hubcap's disc
- * diameter today. The upper bound is the selected printer's plate rather than a constant: a disc
- * that doesn't fit the bed isn't a part, and letting someone dial past it only to be told at
- * export time is the slower way to find out.
+ * The kind's numeric build parameter (AssemblyKind.buildParam) — the hubcap's disc diameter today.
+ * Upper bound is the printer's plate, not a constant: dialing past it only to be told at export is the slower way to find out.
  */
 export function syncBuildParamControl(): void {
   const row = $('#asm-buildparam-row');
@@ -91,8 +79,7 @@ export function syncBuildParamControl(): void {
   if (!row || !input || !label) return;
   const param = currentAssemblyKind()?.buildParam;
   row.style.display = param ? '' : 'none';
-  // The silhouette toggle rides with the size control: both are "what shape is this part", and
-  // only a kind that generates its own mesh has either.
+  // The silhouette toggle rides with the size control: both are "what shape is this part", and only a kind generating its own mesh has either.
   const silRow = $('#asm-silhouette-row');
   const silInput = $<HTMLInputElement>('#p-asm-silhouette');
   if (silRow) silRow.style.display = param ? '' : 'none';
@@ -101,11 +88,9 @@ export function syncBuildParamControl(): void {
   label.textContent = param.label;
   input.min = String(round2(param.minMm));
   input.max = String(round2(buildParamMax(param, state.printerId)));
-  // `any`, not a fixed step: `min` is the step base, so any real step would put the valid values
-  // on a grid offset by a measured constant (32.09mm), so round diameters land between two of
-  // them — the field reports :invalid and the spinner walks x.09, x.59. A diameter is a
-  // continuous measurement and shouldn't be quantized to make the widget tidy; arrows still step
-  // by 1mm.
+  // `any`, not a fixed step: `min` is the step base, so a real step puts valid values on a grid
+  // offset by a measured constant (32.09mm) and round diameters read :invalid with the spinner
+  // walking x.09, x.59. A diameter is a continuous measurement; arrows still step by 1mm.
   input.step = 'any';
   input.value = String(round2(state[param.id]));
 }
@@ -113,13 +98,10 @@ export function syncBuildParamControl(): void {
 const round2 = (v: number): number => Number(v.toFixed(2));
 
 /**
- * The part's real footprint, in mm, under the size control.
- *
- * Measured off the built mesh rather than recomputed from the outline, so it cannot disagree with
- * the thing you actually get. It exists because the size control stops describing the part the
- * moment the shape stops being a circle: a hubcap cut to a tall character reads 220 in the field
- * and is 168mm wide, and scaling with the gizmo moves both numbers without touching the field at
- * all. Guessing the size of a part that has to fit a wheel is not a reasonable thing to ask.
+ * The part's real footprint, in mm, under the size control. Measured off the built mesh so it can't
+ * disagree with what you get: once the shape stops being a circle the size control stops describing
+ * it (a hubcap cut to a tall character reads 220 in the field and is 168mm wide), and the gizmo
+ * moves both numbers without touching the field.
  */
 export function renderBuildParamSize(): void {
   const el = $('#asm-buildparam-size');
@@ -142,10 +124,9 @@ export function renderBuildParamSize(): void {
     if (pos[i] > maxX) maxX = pos[i];
     if (pos[i + 2] < minZ) minZ = pos[i + 2];
     if (pos[i + 2] > maxZ) maxZ = pos[i + 2];
-    // How far the part ACTUALLY reaches from the axis, vertex by vertex — not the corner of its
-    // bounding box, which a shape need not touch. On a real silhouette the difference is 240mm
-    // against 277mm on a 280mm wheel: the bbox corner reads as nearly overhanging a part with
-    // 40mm to spare, and would have had somebody shrink something that fitted fine.
+    // How far the part ACTUALLY reaches from the axis, vertex by vertex, not the bbox corner a shape
+    // needn't touch. On a real silhouette that's 240mm against 277mm on a 280mm wheel — the corner
+    // reads as nearly overhanging with 40mm to spare and would have someone shrink a part that fit.
     const r = Math.hypot(pos[i], pos[i + 2]);
     if (r > reach) reach = r;
   }
@@ -160,19 +141,15 @@ export function renderBuildParamSize(): void {
     `<b>Actual size ${w.toFixed(1)} × ${d.toFixed(1)} mm</b>` +
     ` (${(reach * 2).toFixed(0)}mm across, on a ${HUBCAP_WHEEL_DIAMETER_MM}mm wheel)`;
 
-  // The unit hint beside the field says "mm", which stops being the useful thing to say the
-  // moment the number in the field is only one of the part's two dimensions.
+  // The unit hint says "mm", which stops being useful once the field is only one of the part's two dimensions.
   const unit = $('#asm-buildparam-unit');
   if (unit) unit.textContent = kind.buildParam && state.hubcapSilhouette ? 'longest side' : 'mm';
 }
 
 /**
- * Commit an edit to the kind's build parameter: clamp to the control's own bounds, then rebuild
- * the generated parts from their cached assets.
- *
- * Clamping here rather than trusting the input's min/max because a typed value bypasses them —
- * and out of range means a disc that misses its clips or overhangs the bed, both of which slice
- * into something that looks fine on screen.
+ * Commit an edit to the kind's build parameter: clamp to the control's bounds, then rebuild the
+ * generated parts from cached assets. Clamped here because a typed value bypasses min/max, and out
+ * of range means a disc that misses its clips or overhangs the bed — both slice fine-looking.
  */
 export async function applyBuildParam(raw: number): Promise<void> {
   const kind = currentAssemblyKind();
@@ -180,15 +157,13 @@ export async function applyBuildParam(raw: number): Promise<void> {
   if (param && Number.isFinite(raw)) {
     const committed = await commitBuildParam(raw);
     if (committed !== undefined) {
-      // Cleared only once the size actually changed. The hubcap's verified arrangement is gated on
-      // the diameter and the silhouette toggle (buildPlacement), so either control can flip the
-      // placement notice and the blocked-tower warning on or off — but a rejected edit changes
-      // nothing, and clearing up front wiped warnings that still described the exported setup.
-      // Emptying the field at the clamp max, or typing over it, both take that path.
+      // Cleared only once the size actually changed. The hubcap's verified arrangement is gated on the
+      // diameter and silhouette toggle (buildPlacement), so either can flip the placement notice and
+      // blocked-tower warning, but a rejected edit changes nothing and clearing up front wiped warnings
+      // that still described the export. Emptying the field at the clamp max, or typing over it, take that path.
       clearStalePlacementNotices();
       renderWarnings();
-      // the value that was BUILT, not the one that was typed: a typed 9999 clamps to the plate,
-      // and reporting the 9999 would put a size nothing was ever generated at into the catalog
+      // the value that was BUILT, not typed: a typed 9999 clamps to the plate, and reporting it would put a size nothing was generated at in the catalog
       track('build_param_changed', {
         kind: kind.id,
         param: param.id,
@@ -202,12 +177,10 @@ export async function applyBuildParam(raw: number): Promise<void> {
 }
 
 /**
- * Re-clamp the build parameter against the *current* printer and regenerate if that moved it.
- *
- * Called when the printer changes: the plate is the parameter's upper bound, so switching to a
- * smaller bed can leave a disc wider than the machine can print. Separate from applyBuildParam
- * because this is not the user editing the value — per docs/analytics.md, events fire on real
- * user intent, not on state the app corrected on their behalf.
+ * Re-clamp the build parameter against the *current* printer and regenerate if that moved it. The
+ * plate is the upper bound, so a smaller bed can leave a disc wider than the machine prints. Separate
+ * from applyBuildParam: not a user edit, and per docs/analytics.md events fire on user intent, not
+ * on corrections the app made.
  */
 export async function clampBuildParamToPrinter(): Promise<void> {
   const param = currentAssemblyKind()?.buildParam;
@@ -216,27 +189,19 @@ export async function clampBuildParamToPrinter(): Promise<void> {
 }
 
 /**
- * Turn the silhouette toggle on or off and rebuild the part around it.
- *
- * Its own entry point rather than a branch of applyBuildParam: this changes what the shape IS
- * rather than how big it is, and it has no value to clamp. The rebuild is the same one, because
- * the part's mesh depends on it exactly as it depends on the size.
+ * Turn the silhouette toggle on or off and rebuild the part around it. Its own entry point: it
+ * changes what the shape IS, not how big, and has no value to clamp. Same rebuild, since the mesh depends on it like the size.
  */
 export async function applyHubcapSilhouette(on: boolean): Promise<void> {
   if (on === state.hubcapSilhouette) return;
   state.hubcapSilhouette = on;
-  // After the no-op guard, for the same reason applyBuildParam clears after its commit: this
-  // toggle gates the hubcap's verified arrangement (buildPlacement), so it flips the placement
-  // notice and the blocked-tower warning on or off — but only when it actually changes something.
+  // After the no-op guard, like applyBuildParam's clear: this toggle gates the hubcap's verified arrangement (buildPlacement), so it flips the placement notice and blocked-tower warning only when it changes something.
   clearStalePlacementNotices();
   const kind = currentAssemblyKind();
-  // Fill is withheld while the part follows the artwork, so a Fill already chosen has to be
-  // rewritten here — the same clamp a kind that withholds Fill outright applies on a part switch.
-  // The list has to be re-rendered too: clamping rewrites the stored mode, but the dropdown's
-  // options were built when the toggle was off and still offer the mode that is now withheld.
-  //
-  // Ahead of renderWarnings, not after it: the clamp raises a notice naming what it rewrote, and
-  // a render that ran first would not paint it.
+  // Fill is withheld while the part follows the artwork, so a chosen Fill is rewritten — the clamp a
+  // Fill-withholding kind applies on a part switch. The list re-renders too: the clamp rewrites the
+  // stored mode but the dropdown's options were built with the toggle off and still offer it.
+  // Ahead of renderWarnings, since the clamp raises a notice a render run first wouldn't paint.
   clampArtworkModes();
   renderWarnings();
   renderArtworkList();
@@ -258,10 +223,9 @@ async function commitBuildParam(raw: number): Promise<number | undefined> {
   syncBuildParamControl();
   syncTemplateLink();
   if (await asmRebuildGeneratedParts()) return next;
-  // Put it back. The mesh in the scene is still the previous size, and this value is what the
-  // rest of the app uses to *describe* that mesh: the verified-plate lookup would pin a 250mm
-  // disc at the arrangement checked for 220mm — off the plate, tower inside the part — and the
-  // template would be re-issued at a size nothing was built at.
+  // Put it back: the scene's mesh is still the previous size and this value is what the app uses to
+  // *describe* that mesh — the verified-plate lookup would pin a 250mm disc at the arrangement
+  // checked for 220mm (off the plate, tower inside the part) and the template re-issue at a size nothing was built at.
   state[param.id] = previous;
   syncBuildParamControl();
   syncTemplateLink();
@@ -269,11 +233,9 @@ async function commitBuildParam(raw: number): Promise<number | undefined> {
 }
 
 /**
- * Per-zone template downloads, for a kind whose parts carry more than one design surface (the
- * chair) — the multi-zone counterpart to the single `#asm-template-link` above, which only makes
- * sense for a kind with exactly one design face. Populated from whatever zones the currently
- * loaded parts actually offer, so it fills in once the async zone charts resolve (see the
- * onAssemblyPartsChanged hook below) rather than at kind-select time.
+ * Per-zone template downloads, for a kind whose parts carry several design surfaces (the chair) —
+ * the counterpart to the single `#asm-template-link`. Filled from the zones the loaded parts offer,
+ * so it populates once the async zone charts resolve (onAssemblyPartsChanged below), not at kind-select.
  */
 export function renderZoneTemplateLinks(): void {
   const row = $('#asm-zone-template-row');
@@ -292,8 +254,7 @@ export function renderZoneTemplateLinks(): void {
   box.querySelectorAll<HTMLAnchorElement>('a').forEach((a, i) =>
     a.addEventListener('click', () => {
       const kind = currentAssemblyKind();
-      // The reserved id is plumbing, not something to leak into analytics — same reason
-      // artwork_instance_zone_changed maps it, in src/ui/artworkListPanel.ts.
+      // The reserved id is plumbing, not for analytics — same as artwork_instance_zone_changed in src/ui/artworkListPanel.ts.
       const zone = zones[i].zoneId === WHOLE_CHAIR_ZONE ? 'whole' : zones[i].zoneId;
       if (kind) track('template_download', { kind: kind.id, zone });
     }),
@@ -301,10 +262,9 @@ export function renderZoneTemplateLinks(): void {
 }
 
 /**
- * The hardware-variant radio (Standard/Kit) for a kind that declares `variants` — hidden for every
- * other kind. Re-rendered after every switch attempt (not just a successful one) so a cancelled
- * confirmDialog() snaps the radio back to the still-current variant instead of leaving it showing
- * the click the user backed out of.
+ * The hardware-variant radio (Standard/Kit) for a kind declaring `variants`, hidden otherwise.
+ * Re-rendered after every switch attempt, not just a successful one, so a cancelled confirmDialog()
+ * snaps the radio back to the current variant.
  */
 export function renderAssemblyVariantControls(): void {
   const row = $('#asm-variant-row');
@@ -351,29 +311,22 @@ export function renderAssemblyRoleControls(): void {
     return;
   }
 
-  // Still waiting on stl/parts.json. Says nothing rather than reporting a failure that hasn't
-  // happened: `main.ts` calls setShapeKind('assembly') a line before loadPartsLibrary(), so this
-  // is the state every healthy boot passes through for as long as the fetch takes.
+  // Still waiting on stl/parts.json: says nothing rather than a failure that hasn't happened.
+  // `main.ts` calls applyPartKind() a line before loadPartsLibrary(), so every healthy boot passes through here.
   if (!partsLibrarySettled()) {
     box.innerHTML = '';
     return;
   }
 
-  // The manifest has come back and this kind still can't load: either it was unreachable, or it
-  // arrived without an entry one of the kind's roles names. Both are a broken deployment. This used to offer per-role add
-  // buttons and a mesh drop target, letting the user supply their own STL/3MF — but the app cannot
-  // check an arbitrary mesh is the part it claims to be, and every verified export pose is keyed to
-  // the shipped one. A broken deployment is the only way here, so say so and stop.
-  // No kind name in the message: `AssemblyKind.name` is the dropdown label ("Wheel (Top ×2 + Cap)")
-  // and reads as a parts list mid-sentence. The user can see which part is selected.
+  // The manifest is back and this kind still can't load: unreachable, or missing an entry a role
+  // names. Both are a broken deployment. This used to offer per-role add buttons and a mesh drop
+  // target, but the app can't check an arbitrary mesh is the part it claims and every verified export
+  // pose is keyed to the shipped one. So say so and stop. No kind name in the message:
+  // `AssemblyKind.name` ("Wheel (Top ×2 + Cap)") reads as a parts list mid-sentence.
   box.innerHTML = `<div class="hint" data-asm-load-error>Couldn't load this part. Reload the page to try again.</div>`;
 }
 
-/**
- * What the detected design face is, as the row states it. Recomputed rather than re-rendered when
- * the face changes: re-running the row's innerHTML from inside its own change handler destroys the
- * <select> that fired the event and collapses the Advanced disclosure around it.
- */
+/** What the detected design face is, as the row states it. Recomputed, not re-rendered: re-running the row's innerHTML from its own change handler destroys the firing <select> and collapses the Advanced disclosure. */
 function faceStatusText(part: AssemblyPart): string {
   if (!part.loaded) return 'no file loaded yet';
   const normal = part.patchNormal!.map((v) => v.toFixed(2)).join(', ');
@@ -421,17 +374,14 @@ function buildAsmPartRow(part: AssemblyPart): HTMLElement {
       const field = t.dataset.asm as 'pivotX' | 'pivotZ' | 'angleDeg' | 'baseDepth' | 'patchIdx';
       const val = field === 'patchIdx' ? parseInt(t.value, 10) : parseFloat(t.value);
       if (!Number.isFinite(val)) {
-        // A cleared field yields '' -> NaN, which reaches three.js as a NaN transform and
-        // blanks the whole viewport (Box3.isEmpty() is false on NaN bounds) — snap back instead.
+        // A cleared field yields '' -> NaN, which reaches three.js as a NaN transform and blanks the viewport (Box3.isEmpty() is false on NaN bounds) — snap back instead.
         t.value = String(part[field]);
         return;
       }
       part[field] = val;
       if (field === 'patchIdx') {
         applyAsmPatchChoice(part);
-        // Without this the line keeps reporting the face the part loaded with, directly above a
-        // dropdown naming a different one. Measured on the footrest in
-        // docs/findings/2026-08-24-placement-frame-angle.md.
+        // Else the line keeps the face the part loaded with above a dropdown naming another (measured on the footrest, docs/findings/2026-08-24-placement-frame-angle.md).
         const status = row.querySelector('[data-asm-face-status]');
         if (status) status.textContent = faceStatusText(part);
       }
@@ -452,16 +402,12 @@ export function renderAssemblyPartList(): void {
 
   if (!kind) return;
   if (!asmKindCanAutoLoad(kind)) {
-    // Two different states, and only one of them is a failure. While stl/parts.json is still in
-    // flight this is the same "Loading assembly…" a selected kind shows before its meshes arrive;
-    // once it has failed, renderAssemblyRoleControls has already said so directly above this box.
+    // Two states, one a failure: while stl/parts.json is in flight this is the "Loading assembly…" a selected kind shows before its meshes arrive; once failed, renderAssemblyRoleControls has already said so above.
     if (!partsLibrarySettled()) box.innerHTML = '<div class="hint">Loading assembly…</div>';
     return;
   }
 
-  // A clean one-line-per-part summary with the detailed face/alignment/remove controls tucked
-  // behind an "Advanced" disclosure, so the default view is just "the wheel loaded" instead of a
-  // wall of options.
+  // One line per part, with face/alignment/remove tucked behind "Advanced", so the default view is "the wheel loaded", not a wall of options.
   if (!parts.length) {
     box.innerHTML = '<div class="hint">Loading assembly…</div>';
     return;
@@ -495,32 +441,24 @@ export function initAssemblyPanel(): void {
   onAssemblyPartsChanged(() => {
     renderAssemblyRoleControls();
     renderAssemblyPartList();
-    // Every placement message names a part, so the parts changing is what makes one stale. Hooked
-    // here rather than at each caller: the per-caller version sat in `.finally()`, so cancelling
-    // "Load the full …?" or "Switch to Kit?" — which changes nothing — still wiped the pill
-    // telling the user to check their prime tower.
+    // Every placement message names a part, so the parts changing makes one stale. Hooked here, not
+    // per caller: the per-caller version sat in `.finally()`, so cancelling "Load the full …?" or
+    // "Switch to Kit?" (no change) still wiped the pill telling the user to check their prime tower.
     clearStalePlacementNotices();
     renderWarnings();
-    // The part thumbnail is the loaded mesh's own silhouette, so it can only be drawn once the
-    // mesh is here — and re-drawn when a variant swap replaces one.
+    // The thumbnail is the loaded mesh's silhouette: drawn once the mesh is here, re-drawn when a variant swap replaces one.
     refreshShapeThumb();
-    // Zone charts resolve asynchronously as parts load, so the list's per-instance zone dropdown
-    // and the per-zone template links (both empty until availableZones() has something to offer)
-    // need a re-render here too.
+    // Zone charts resolve asynchronously, so the per-instance zone dropdown and per-zone template links (empty until availableZones() offers something) re-render here too.
     renderArtworkList();
     renderZoneTemplateLinks();
-    // The footprint is measured off the built mesh, so it can only be right once the part has
-    // been (re)built — which is exactly what this fires for.
+    // The footprint is measured off the built mesh, so it's only right once the part has been (re)built.
     renderBuildParamSize();
-    // And so is the generated template, for the same reason: a hubcap cut to its artwork is drawn
-    // from the outline the build produced. Re-issuing it only where the shape's INPUTS change
-    // (the toggle, the diameter) misses every route that changes the outline without touching
-    // them — Scale, Rotate, a flip, an offset, a re-trace — and left a disc template on a
-    // silhouette part.
+    // As is the generated template: a cut-to-artwork hubcap is drawn from the build's outline.
+    // Re-issuing only where the shape's INPUTS change (toggle, diameter) misses Scale, Rotate, a
+    // flip, an offset or a re-trace, which left a disc template on a silhouette part.
     syncTemplateLink();
   });
-  // The link's href is re-pointed per kind in syncAssemblyKindControls; bind the click once here
-  // so repeated syncs don't stack handlers.
+  // The href is re-pointed per kind in syncAssemblyKindControls; bind the click once so syncs don't stack handlers.
   const tplLink = $('#asm-template-link');
   if (tplLink)
     tplLink.addEventListener('click', () => {

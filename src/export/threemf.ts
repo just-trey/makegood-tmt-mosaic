@@ -11,7 +11,7 @@ export interface ExportSub {
   matIndex: number;
   /** Manifold's native index, emitted as-is when available (skips re-welding the soup). */
   indexed?: IndexedMesh;
-  /** Unindexed soup; welded on the fly when `indexed` is absent (flat mode, fallback parts). */
+  /** Unindexed soup; welded on the fly when `indexed` is absent (fallback parts). */
   soup?: Float32Array;
 }
 export interface ExportPart {
@@ -22,12 +22,8 @@ export interface ExportPart {
   subs: ExportSub[];
   /** in-plane spin (deg) for this part specifically; falls back to ExportOptions.rotZdeg. */
   rotZdeg?: number;
-  /**
-   * Baked full 3x3 plate rotation (row-major, p' = p * R), overriding the default face-down
-   * tilt+spin, for a part whose verified pose isn't "design face flat on the plate" (the footrest
-   * stands on its long edge, see FOOTREST_PLATE_R). Verbatim from the part's reference 3MF
-   * build-item transform, so rotZdeg/nsign don't apply when this is set.
-   */
+  /** Baked 3x3 plate rotation (row-major, p' = p * R), verbatim from the reference 3MF build item,
+   * for a pose that isn't design-face-down (FOOTREST_PLATE_R). Overrides rotZdeg/nsign. */
   plateR?: number[][];
   /** 1-based plate pin: parts sharing a hint share a plate (stride offset only; XY comes from
    * fixedPos below). */
@@ -35,28 +31,21 @@ export interface ExportPart {
   /** Absolute local (pre-stride) plate position, bypassing footprint packing. For a placement that
    * is an externally-verified constant, not something to compute (see WHEEL_TOP_POS/WHEEL_CAP_POS). */
   fixedPos?: { x: number; y: number };
-  /** Bed-specific absolute positions, keyed `"<w>x<d>"` in mm. Like `primeTowerDeltaByPlate`, a key
-   * means that bed was verified in its own right. Unlike `fixedPos`, a match is taken VERBATIM and
-   * skips `placeHintedGroup`'s re-centering, which exists to rescue a coordinate authored for a
-   * different bed. Takes precedence over `fixedPos`. */
+  /** Bed-specific positions, keyed `"<w>x<d>"` in mm; a key means that bed was verified. Beats
+   * `fixedPos` and is taken VERBATIM, skipping `placeHintedGroup`'s re-centering (which rescues a
+   * coordinate authored for another bed). */
   fixedPosByPlate?: Record<string, { x: number; y: number }>;
-  /** Prime/wipe tower offset from this part's final local position, set on the part anchoring its
-   * plate's tower (the wheel's Top half, or the footrest). Held relative so the tower rides along
-   * on every printer. Baked from the reference 3MF (WHEEL_/FOOTREST_PRIME_TOWER_DELTA). */
+  /** Prime tower offset from this part's final local position, on the part anchoring its plate's
+   * tower. Relative, so it rides along on every printer (WHEEL_/FOOTREST_PRIME_TOWER_DELTA). */
   primeTowerDelta?: { x: number; y: number };
-  /** Bed-specific overrides for `primeTowerDelta`, keyed `"<w>x<d>"` in mm. Relative holding
-   * transfers across beds for free in most cases, but not always: a position with room on a 270mm
-   * plate can hit the edge once a 256mm plate re-centers the group. A key means that bed was
-   * verified separately and disagreed; a bed with no key uses primeTowerDelta. */
+  /** Bed-specific `primeTowerDelta`, keyed `"<w>x<d>"`: that bed was verified and disagreed
+   * (room on a 270mm plate can hit the edge once a 256mm plate re-centers the group). */
   primeTowerDeltaByPlate?: Record<string, { x: number; y: number }>;
-  /** Per-object Bambu print overrides, written into model_settings.config as <metadata key value/>
-   * on this part's object (FOOTREST_OBJECT_SETTINGS; the chair's handles ask for a brim). Baked
-   * from the part's reference 3MF. */
+  /** Per-object Bambu overrides for model_settings.config, baked from the part's reference 3MF
+   * (FOOTREST_OBJECT_SETTINGS; the chair's handles ask for a brim). */
   objectSettings?: Record<string, string>;
-  /** Project-wide Bambu settings this part's verified plate depends on, merged into
-   * project_settings.config (`prime_tower_width`: the hubcap's clearance is only true at the width
-   * it was verified at). Unlike `objectSettings`, these are global to the file, so a value here
-   * claims something about the whole plate rather than one object. */
+  /** File-global settings this part's verified plate depends on (`prime_tower_width`: the hubcap's
+   * clearance holds only at the verified width), merged into project_settings.config. */
   projectSettings?: Record<string, string>;
 }
 export interface ExportOptions {
@@ -65,10 +54,8 @@ export interface ExportOptions {
 }
 
 /**
- * Triangle soup to indexed {verts, tris} for compact 3MF output. The key rounds to 4 decimals
- * (0.1 micron) via integer scaling: Math.round is markedly cheaper than toFixed(4) on large
- * meshes. Only for meshes that don't arrive pre-indexed (flat mode, fallback parts); Manifold
- * assembly meshes carry their own index and skip this.
+ * Soup to indexed mesh, for fallback parts only (Manifold meshes arrive indexed). The key rounds to
+ * 4 decimals (0.1 micron) by integer scaling: Math.round is markedly cheaper than toFixed(4).
  */
 export function soupToIndexed(soup: Float32Array): { verts: number[]; tris: number[] } {
   const map = new Map<string, number>();
@@ -104,15 +91,9 @@ export function fmtCoord(v: number): string {
 }
 
 /**
- * Group parts onto plates by their `plateHint`, ascending; anything unhinted opens its own plate.
- *
- * Shared with the pre-export summary (src/ui/exportPanel.ts), which has to state the plate count
- * the export will actually produce. A private copy there would be a second implementation of the
- * one rule a user reads before committing to a multi-day print, and the two would drift.
- *
- * Only the hinted branch. Greedy packing needs real footprints, so a caller that wants a count
- * before the meshes are placed has to check `partsCarryPlateHints` first and say nothing when it
- * is false.
+ * Group parts onto plates by `plateHint`, ascending; anything unhinted opens its own plate.
+ * Shared with src/ui/exportPanel.ts so the plate count it states before export can't drift.
+ * Hinted branch only: greedy packing needs real footprints, so check `partsCarryPlateHints` first.
  */
 export function groupByPlateHint<T>(items: T[], hintOf: (item: T) => number | undefined): T[][] {
   const groups = new Map<number, T[]>();
@@ -130,11 +111,8 @@ export function partsCarryPlateHints(parts: { plateHint?: number }[]): boolean {
 }
 
 /**
- * Columns of logical build plates the slicer lays a project out in: Bambu's own
- * PartPlateList::compute_colum_count, `ceil(sqrt(n))` written the long way. Plates form a
- * square-ish grid, not a row. A 4-plate project is 2x2, a 12-plate one 4x3, both confirmed against
- * real MakeGood project files. It returns 2 for a 2-plate project, one row, which is why the
- * wheel's export was correct while this was hardcoded to a row.
+ * Bambu's PartPlateList::compute_colum_count, `ceil(sqrt(n))`: plates form a square-ish grid, not
+ * a row (4 plates 2x2, 12 plates 4x3, confirmed against real MakeGood project files).
  */
 export function plateColumns(count: number): number {
   const value = Math.sqrt(count);
@@ -161,10 +139,9 @@ export function rotXthenZ(thetaDeg: number, phiDeg: number): number[][] {
 }
 
 /**
- * Minimal Bambu Studio project settings (Metadata/project_settings.config). This is what makes the
- * palette import as real filament colors: Bambu ignores core-spec 3MF basematerials entirely.
- * Only the keys we care about are written. Bambu, Snapmaker Orca and OrcaSlicer (same
- * project_settings.config shape) fill the rest from the named system presets.
+ * Minimal Metadata/project_settings.config: Bambu ignores core-spec 3MF basematerials, so this is
+ * what imports the palette as filament colors. Bambu, Snapmaker Orca and OrcaSlicer share the shape
+ * and fill unwritten keys from the named system presets.
  */
 export function bambuProjectSettings(
   materials: ExportMaterial[],
@@ -176,18 +153,16 @@ export function bambuProjectSettings(
   const { plate } = printer;
   const rep = (v: string) => materials.map(() => v);
   const nozzle = printer.variant || '0.4';
-  // Keys we override on top of the named print preset. Bambu-family slicers (Bambu Studio,
-  // OrcaSlicer, Snapmaker Orca, same config shape, confirmed against a real Snapmaker Orca export)
-  // read `different_settings_to_system` to tell a deliberate per-project override from an
-  // incidentally-resolved value. Without it, a reload/resave silently reconciles them back.
+  // Bambu-family slicers (confirmed against a real Snapmaker Orca export) read
+  // `different_settings_to_system` to tell a deliberate override from a resolved value; without it,
+  // a resave silently reconciles them back to the preset.
   const printOverrideKeys = [
     'brim_type',
     'sparse_infill_density',
     'sparse_infill_pattern',
     'enable_support',
     'support_type',
-    // Baked plate settings listed too, for the reason above: reconciling prime_tower_width back
-    // to the preset default would silently retire the clearance the position was verified against.
+    // Baked settings too: reconciling prime_tower_width would retire the verified clearance.
     ...Object.keys(extra ?? {}),
   ];
   return JSON.stringify(
@@ -212,17 +187,13 @@ export function bambuProjectSettings(
       enable_support: '1',
       support_type: 'tree(auto)',
       support_style: 'default',
-      // No brim on any part: mosaic faces are broad and print flat, so a brim only wastes filament
-      // and adds a peel-off step. Global, not per-object, so every plate is brim-free. Matches the
-      // reference project (mosaic-wheel-mount-left.3mf), which carries brim_type=no_brim tracked
-      // in different_settings_to_system.
+      // No brim: mosaic faces are broad and print flat. Global, so every plate is brim-free, as in
+      // mosaic-wheel-mount-left.3mf (brim_type=no_brim, tracked in different_settings_to_system).
       brim_type: 'no_brim',
       // [print, one per filament, printer]: only the print slot (index 0) differs from system.
       different_settings_to_system: [printOverrideKeys.join(';'), ...rep(''), ''],
-      // Prime/wipe tower position, one entry per plate: the verified primeTowerDelta of a part on
-      // that plate (wheel, footrest), else the free corner suggestTowerPos works out. Deliberately
-      // absent from different_settings_to_system, since the reference files don't track it there
-      // either and a plain value matches real slicer behavior.
+      // Per plate: a part's verified primeTowerDelta, else suggestTowerPos. Deliberately not in
+      // different_settings_to_system, matching the reference files.
       ...(wipeTower
         ? {
             wipe_tower_x: wipeTower.map((w) => fmtCoord(w ? w.x : plate.w / 2)),
@@ -237,92 +208,61 @@ export function bambuProjectSettings(
   );
 }
 
-// Wheel Top (wheel half) and Cap use fixed rotation + plate position, never computed placement:
-// the geometry is an externally-verified real product (stubs/whlle-reference.3mf, the shipped
-// MakeGood TMT project file). Values are that file's own build-item transforms, corrected for the
-// recentering Bambu applies on import (recoverable from its model_settings.config
-// source_offset_y/z). Top's -45° spin is the mirror of what an angle search would land on, and
-// Cap's position is only valid relative to this exact Top placement, so the two must be applied
-// together and never re-derived per printer or export. Verified on all three registered plates.
+// Wheel Top and Cap: fixed rotation + position, never computed. Build-item transforms of
+// stubs/whlle-reference.3mf (the shipped MakeGood TMT project), corrected for Bambu's import
+// recentering (model_settings.config source_offset_y/z). Top's -45° is the mirror of what an angle
+// search lands on; Cap is valid only relative to this Top, so apply both together and never
+// re-derive per printer. Verified on all three registered plates.
 export const WHEEL_TOP_ROT_DEG = -45;
 export const WHEEL_TOP_POS = { x: 104.106567, y: 104.933839 };
 export const WHEEL_CAP_ROT_DEG = 0;
-// Cap relative to Top, from a second reference: stubs/mosaic-wheel-snapmaker.3mf, our own exported
-// wheel reopened and hand-repositioned in Snapmaker Orca (a vendor project reopen, not a fresh
-// import, so no recentering correction). Cap rides with Top under placeHintedGroup's per-plate
-// centering, so this one constant keeps it locked to Top on every printer.
+// Cap relative to Top, from stubs/mosaic-wheel-snapmaker.3mf (our export hand-repositioned in
+// Snapmaker Orca; a vendor reopen, so no recentering correction). Rides with Top when re-centered.
 export const WHEEL_CAP_POS = { x: 87.861827, y: 50.328835 };
-// Prime/wipe tower, also from stubs/mosaic-wheel-snapmaker.3mf, dragged by hand on that file's
-// plate 1 in Snapmaker Orca. An offset from Top's final local position, not an absolute, so the
-// placement reproduces on every printer and every plate a Top half lands on. Passed via Top's
-// ExportPart.primeTowerDelta.
+// Tower hand-dragged on plate 1 of stubs/mosaic-wheel-snapmaker.3mf. An offset from Top's final
+// local position (Top's primeTowerDelta), so it reproduces on every printer and plate.
 export const WHEEL_PRIME_TOWER_DELTA = { x: -87.833131, y: -28.867078 };
-// The plate the fixedPos constants above were authored against (Bambu X1C, 256x256). Used only to
-// recognize that printer and leave the values untouched (see `isRefPlate`). Any other plate
-// re-centers each fixedPos group on its own true bounding box (see `placeHintedGroup`), never by a
-// fixed offset off this constant: the reference placement isn't itself centered on its 256x256
-// plate (off by a few mm), and scaling that skew looked fine on the large H2D bed but was visibly
-// off-center on the Snapmaker U1, which has only 14mm more room per axis than the reference.
+// The bed fixedPos was authored on (Bambu X1C); only `isRefPlate` reads it. Other beds re-center
+// each fixedPos group on its own bounding box, never a fixed offset from this: the reference is
+// off-center by a few mm, fine on the H2D, visibly off on the Snapmaker U1 (14mm more per axis).
 const ASSEMBLY_REF_PLATE = { w: 256, d: 256 };
 
-// Footrest placement, baked from its reference Bambu project: same "use the tested numbers" rule
-// as the wheel. The verified pose is a pure Rz(-45°) standing the part on its long (front-back)
-// edge to print support-free, applied as a full matrix via ExportPart.plateR since it is not a
-// face-down tilt. NO fixedPos: the reference translation (135.329137, 135.329137) is just the
-// Snapmaker U1's 270x270 bed center and isn't portable, so the footrest centers on whatever plate
-// (placeHintedGroup's no-fixedPos branch). The z lift is recovered as -minZ (rest-on-plate).
+// Footrest pose from its reference Bambu project: a pure Rz(-45°) standing it on its long edge to
+// print support-free, via plateR since it isn't a face-down tilt. NO fixedPos: the reference
+// translation (135.329137, 135.329137) is just the U1's 270x270 bed center, so it centers on any
+// plate. Z lift is -minZ.
 //
-// Redundant with the general rotXthenZ(-90 * nsign, angleDeg) path for nsign: 0 + rotZdeg: -45,
-// and kept as an explicit full 3x3 anyway: it generalizes to a future part whose verified
-// reference pose is genuinely tilted, which the axis-aligned path cannot express. Collapse it into
-// rotZdeg if that part never materializes.
+// Equivalent to rotXthenZ(-90 * nsign, angleDeg) at nsign 0, rotZdeg -45; a full 3x3 so a future
+// genuinely tilted reference pose fits. Collapse into rotZdeg if none materializes.
 export const FOOTREST_PLATE_R = [
   [0.707106781, -0.707106781, 0],
   [0.707106781, 0.707106781, 0],
   [0, 0, 1],
 ];
-// Tower offset from the footrest's centered position, baked from stubs/footrest reference
-// tower.3mf: tower at (165.138, 177.187), footrest at the U1 center (135.329137, 135.329137), so
-// the difference is (29.808863, 41.857863). Held relative (ExportPart.primeTowerDelta) so it lands
-// in the empty diagonal corner the 45°-rotated part leaves open, on every printer.
+// stubs/footrest reference tower.3mf: tower (165.138, 177.187) minus footrest at the U1 center
+// (135.329137, 135.329137). Relative, so it lands in the corner the 45° part leaves open.
 export const FOOTREST_PRIME_TOWER_DELTA = { x: 29.808863, y: 41.857863 };
 /**
- * Per-object slicer overrides for the footrest, from the same verified reference: support off,
- * because the 45° standing pose is what makes it printable without any (see FOOTREST_PLATE_R).
- * Brim is off globally rather than per object (see `brim_type` in bambuProjectSettings).
- *
- * Exported so [tests/threemf.test.ts](../../tests/threemf.test.ts) builds its footrest from this
- * value rather than retyping it: a hand-copied duplicate keeps passing after this one changes.
+ * Footrest per-object overrides from the same reference: support off, as the 45° pose needs none.
+ * Brim is off globally (`brim_type`). Exported so tests/threemf.test.ts uses this value, not a
+ * hand-copied duplicate that keeps passing after this one changes.
  */
 export const FOOTREST_OBJECT_SETTINGS: Record<string, string> = { enable_support: '0' };
 
 /**
- * Hubcap plate placement, baked from two reference projects verified in the slicer (2026-08-06):
- * stubs/mosaic-hubcap.3mf (Bambu X1C, 256x256) and stubs/mosaic-hubcap-snap.3mf (Snapmaker U1,
- * 270x270). Both verified at the 220mm default.
+ * Hubcap placement from two slicer-verified references (2026-08-06), both at the 220mm default:
+ * stubs/mosaic-hubcap.3mf (X1C, 256x256) and stubs/mosaic-hubcap-snap.3mf (U1, 270x270).
  *
- * **The disc moved as well as the tower, and the two only work together.** Centred, a 220mm disc
- * leaves no corner a tower fits in on either bed, so the part was pushed up and right and the
- * tower put in the freed corner. Applying the tower position without the matching part position
- * puts the tower through the disc: hence one table, not two constants. Measured rim-to-tower
- * clearance: 7.0mm on the X1C, 18.9mm on the U1.
- *
- * Positions are plate-origin-relative. The Snapmaker file's `printable_area` starts at (0.5, 1),
- * not (0, 0), because Snapmaker Orca rewrites it on save, so its raw numbers were converted here,
- * not copied.
- *
- * `wipe_tower_x/y` is the tower's FRONT-LEFT CORNER, not its centre. Settled by these files, not
- * assumed: read as a centre, the X1C's 35mm tower would hang off the plate at x = -0.7 and clear
- * the disc by 31.6mm rather than the 7.0mm a human placed by eye.
- *
- * `prime_tower_width` is written because the clearance holds only for a tower that wide. It is NOT
- * an override the references carry: `different_settings_to_system` in both is just
- * `brim_type;enable_support;sparse_infill_pattern`, so 35 and 30 are each slicer's own default.
- * Writing it protects the verified clearance from a volunteer whose profile differs.
- *
- * **Only valid up to the verified diameter.** The hubcap is generated, so a larger disc
- * invalidates the arrangement. That condition lives with the geometry, in hubcapPlacement()
- * (src/geometry/hubcap.ts).
+ * - **Disc and tower only work together**, hence one table. Centred, a 220mm disc leaves no tower
+ *   corner, so the disc moved up-right and the tower took the freed corner. Rim-to-tower clearance:
+ *   7.0mm X1C, 18.9mm U1.
+ * - Plate-origin-relative: Snapmaker Orca saves `printable_area` from (0.5, 1), so converted.
+ * - `wipe_tower_x/y` is the FRONT-LEFT CORNER, settled by these files: as a centre, the X1C's 35mm
+ *   tower hangs off at x = -0.7 and clears the disc by 31.6mm, not the 7.0mm placed by eye.
+ * - `prime_tower_width` is written because the clearance holds only at that width. 35 and 30 are
+ *   each slicer's default, not a reference override (both files' different_settings_to_system is
+ *   `brim_type;enable_support;sparse_infill_pattern`).
+ * - **Valid only up to the verified diameter**, enforced in hubcapPlacement() (geometry/hubcap.ts).
  */
 export const HUBCAP_PLATE: Record<
   string,
@@ -341,21 +281,14 @@ export const HUBCAP_PLATE: Record<
 };
 
 /**
- * Directions a part's plate footprint is measured along, for the prime-tower corner search.
+ * Footprint axes for the prime-tower corner search: 16 axes, 32 half-planes, wrapping the CONVEX
+ * HULL to 1/cos(180°/32), 0.48% (0.5mm of radius on a 220mm hubcap). A concave part over-reports by
+ * its concavity: `chair-caster-std-left` in its baked pose measures 1.70x (docs/tech-debt.md).
+ * Always a superset of the BODY SOUP; an inlay filling an edge cut-through can reach a hair past.
  *
- * Sixteen axes, so thirty-two supporting half-planes whose intersection wraps the part's CONVEX
- * HULL to 1/cos(180°/32), 0.48% — on a 220mm hubcap, 0.5mm of radius. Against a concave part it
- * over-reports by the whole concavity on top of that: `chair-caster-std-left` in its baked pose
- * measures 1.70x its true footprint (docs/tech-debt.md carries the measurement). Always a superset
- * of the BODY SOUP, never a subset — the same thing the bounding box measured, and the same
- * caveat: an inlay filling an edge cut-through is not in the body and can reach a hair past it.
- *
- * Derived by quarter-turn rotation rather than from `Math.cos(k * Math.PI / 16)`, because that
- * gives 6.1e-17 rather than 0 at a right angle. Exact axes are what make a part that FILLS its
- * bounding box — a rectangle, not merely an axis-aligned one — measure that box rather than
- * something 1e-14mm² off it. TIE_MM2 would absorb that difference anyway; the axes are exact so
- * that the equality is a property of the geometry rather than of the tolerance. Any other part
- * scores no higher, and lower wherever a corner falls in the gap between the hull and the box.
+ * Quarter-turn rotation, not `Math.cos(k * Math.PI / 16)` (6.1e-17, not 0, at a right angle), so a
+ * part that FILLS its bounding box measures exactly that box, not 1e-14mm² off it, by geometry
+ * rather than by TIE_MM2.
  */
 const FOOTPRINT_AXIS: { x: number; y: number }[] = [];
 for (let k = 0; k < 8; k++) {
@@ -396,28 +329,15 @@ function polygonArea(poly: { x: number; y: number }[]): number {
 }
 
 /**
- * One combined print-ready .3mf, written as a Bambu Studio *project*. A generic core-spec 3MF
- * makes Bambu Studio pop the "not from Bambu Lab" dialog, drop material colors, auto-rename parts,
- * and pile everything onto one plate, so we write the vendor format it honors:
- *   - 3D/3dmodel.model with the BambuStudio:3mfVersion marker (suppresses the dialog), mesh
- *     sub-objects, and one component object per physical part
- *   - Metadata/model_settings.config: part names, per-part extruder assignment, one <plate> block
- *     per build plate
- *   - Metadata/project_settings.config: filament colors (see bambuProjectSettings above)
+ * One print-ready Bambu Studio *project* 3MF. A core-spec 3MF triggers the "not from Bambu Lab"
+ * dialog, drops colors, renames parts and piles everything on one plate, so this writes
+ * 3D/3dmodel.model (with the BambuStudio:3mfVersion marker), model_settings.config and
+ * project_settings.config.
  *
- * Parts lay MOSAIC-FACE-DOWN (or a baked `part.plateR`, see FOOTREST_PLATE_R), spin `opts.rotZdeg`
- * or their own `part.rotZdeg`, then pack onto `opts.printer`'s plates.
- *
- * Placement, in precedence order:
- *   - `fixedPos` goes exactly there, skipping footprint packing. For externally-verified
- *     placements only: bounding-box math can't tell a real overlap from a concave part's open
- *     interior (see WHEEL_TOP_POS/WHEEL_CAP_POS).
- *   - `plateHint` groups parts onto one plate; hinted-but-unfixed (the footrest) centers on it.
- *   - Otherwise the greedy packer claims plates largest-footprint-first, joining an existing row
- *     if it fits, else opening a new plate.
- *
- * A part still overhanging its plate is reported via `warnings`, never assumed safe.
- * materials: index 0 = body/base, then one per color that actually ships.
+ * Parts lay MOSAIC-FACE-DOWN (or `part.plateR`), spin, then place by precedence: `fixedPos` exactly
+ * (externally-verified only: bbox math can't tell overlap from a concave part's open interior);
+ * `plateHint` groups, unfixed ones centered; else greedy, largest footprint first.
+ * Overhangs are reported in `warnings`. materials: index 0 = body/base, then each shipped color.
  */
 export async function build3MFCombined(
   materials: ExportMaterial[],
@@ -467,10 +387,8 @@ export async function build3MFCombined(
     xf?: string;
   }
 
-  // Rotated footprint from every body vertex, NOT from rotating the un-rotated bbox's 8 corners.
-  // That shortcut is exact only at zero spin. Combine a real Z angle with the face-down tilt and
-  // the ghost corners of a non-box shape (a thin curved crescent) land far outside where the mesh
-  // reaches. Transforming all vertices is the only way to get the true rotated AABB.
+  // From every body vertex, NOT the un-rotated bbox's 8 corners: exact only at zero spin; with a Z
+  // angle plus tilt, a non-box shape's (a thin crescent) ghost corners land far outside the mesh.
   function footprintFor(
     part: ExportPart,
     angleDeg: number,
@@ -508,9 +426,8 @@ export async function build3MFCombined(
         if (t > smx[a]) smx[a] = t;
       }
     }
-    // Flush height must account for every sub-mesh, not just the body: a recess cuts into the
-    // body's surface, so the inlay filling it can reach further along the tilt-affected axis than
-    // the now-holed body does. Body-only minZ left the inlay floating below Z=0 in the export.
+    // Every sub-mesh, not just the body: an inlay filling a recess can reach lower than the holed
+    // body. Body-only minZ left inlays floating below Z=0.
     let minZ = tmn[2];
     for (const sub of part.subs) {
       const verts: ArrayLike<number> | undefined = sub.indexed ? sub.indexed.positions : sub.soup;
@@ -541,8 +458,7 @@ export async function build3MFCombined(
   }));
 
   const warnings: string[] = [];
-  // Parts known not to fit at any position, so the off-plate check below stays quiet about them
-  // rather than saying the same thing twice in different words.
+  // Too big for any position: the off-plate check skips these rather than warn twice.
   const tooBig = new Set<ExportPart>();
   for (const pl of placed) {
     const worst = Math.max(pl.w - plateW, pl.d - plateD);
@@ -554,17 +470,14 @@ export async function build3MFCombined(
     }
   }
 
-  // The X1C plate is exactly what fixedPos was authored against, so leave those verbatim there:
-  // it is the real tested layout. Any other plate re-centers each fixedPos group (plate 1's Top +
-  // Cap, each plate 2+ rotated-duplicate Top alone) on its own bounding box (see placeHintedGroup).
+  // fixedPos stays verbatim on the X1C it was authored on; other plates re-center each fixedPos
+  // group (plate 1's Top + Cap, each plate 2+ Top alone) on its own bounding box.
   const isRefPlate = plateW === ASSEMBLY_REF_PLATE.w && plateD === ASSEMBLY_REF_PLATE.d;
   /** Lookup key for ExportPart.primeTowerDeltaByPlate. */
   const bedKey = `${plateW}x${plateD}`;
 
-  // A plateHint pins a part to that plate instead of the greedy packer, used by the wheel assembly
-  // (top half + cap on plate 1, each rotated-duplicate half on its own; see exportPanel.ts).
-  // Placement within the plate comes from fixedPos when set (the normal case, see
-  // WHEEL_TOP_POS/WHEEL_CAP_POS), else plate center.
+  // plateHint pins a part to a plate (wheel: Top + Cap on plate 1, each rotated-duplicate half on
+  // its own; see exportPanel.ts). Position within it: fixedPos, else plate center.
   /** A position authored for exactly this bed, if the part carries one. */
   const bedPos = (part: ExportPart): { x: number; y: number } | undefined =>
     part.fixedPosByPlate?.[bedKey];
@@ -573,9 +486,8 @@ export async function build3MFCombined(
     let groupOffsetX = 0,
       groupOffsetY = 0;
     if (!isRefPlate) {
-      // True world bounding box of this plate's fixedPos group (Top + Cap together), from each
-      // item's own rotated footprint (cx/w/d, cy) plus its raw fixedPos. Never a symmetric
-      // assumption about where the group sits on the reference plate.
+      // This plate's fixedPos group's true bounds from each item's rotated footprint plus fixedPos,
+      // never a symmetry assumption about the reference plate.
       let gMinX = Infinity,
         gMaxX = -Infinity,
         gMinY = Infinity,
@@ -595,9 +507,8 @@ export async function build3MFCombined(
         groupOffsetY = (plateD - (gMaxY - gMinY)) / 2 - gMinY;
       }
     }
-    // Centering is a single-part fallback: two parts taking it on one plate resolve to the same
-    // spot and print through each other. Nothing ships that way today, but it would fail silently,
-    // so say so rather than letting it reach a slicer.
+    // Centering is a single-part fallback: two centered parts print through each other. Nothing
+    // ships that way, but warn rather than fail silently.
     const centered = items.filter((pl) => !pl.part.fixedPos && !bedPos(pl.part));
     if (centered.length > 1)
       warnings.push(
@@ -627,28 +538,18 @@ export async function build3MFCombined(
   }> = [];
 
   /**
-   * Where to park the prime tower on a plate whose parts carry no verified `primeTowerDelta`.
-   * Deliberately NOT a baked position: it is a starting point for the human pass that produces
-   * one, and only has to beat dropping the tower on the plate center, straight through the part.
-   * Insets the tower's nominal footprint into whichever corner the parts intrude on least.
+   * Tower corner for a plate with no verified `primeTowerDelta`: a starting point for the human
+   * pass, NOT a baked position. Only has to beat the plate center, straight through the part.
    */
   function suggestTowerPos(items: Placed[]): { x: number; y: number; clear: boolean } {
     const TOWER = 60; // nominal prime-tower footprint; the slicer sizes the real one per filament count
-    // `wipe_tower_x/y` is the tower's FRONT-LEFT CORNER, not its centre (settled against two
-    // hand-positioned references, see HUBCAP_PLATE). Every position here is therefore a corner and
-    // its footprint runs from it, not around it. Scoring a centred box and returning its centre
-    // put the tower half a tower up and right of the space checked as free: on a 256mm plate the
-    // near corner became 30..90, into a part just centred there, and the far corner 226..286, off
-    // the plate.
-    //
-    // Score whole corners, not each axis alone: "most room to the left" and "most room to the
-    // front" can meet inside the very part they measured around. Score against each part's own
-    // footprint, not the group bounding box, since two parts with a gap between them (the caster
-    // plate) leave corners free that their combined box calls occupied.
-    //
-    // The footprint is FOOTPRINT_AXIS's supporting polygon, not the bounding box, which used to
-    // read a disc as filling the corners a circle never reaches: a 220mm hubcap centred on the
-    // 350x320 H2D bed clears every corner by 14mm and was reported as blocking all four.
+    // `wipe_tower_x/y` is the FRONT-LEFT CORNER (see HUBCAP_PLATE), so a footprint runs from it,
+    // not around it: a centred box put a 256mm plate's near corner at 30..90 (into a centred part)
+    // and the far one at 226..286 (off the plate).
+    // Score whole corners against each part's own footprint: per-axis "most room" can meet inside a
+    // part, and a group box calls the gap between two parts (the caster plate) occupied.
+    // FOOTPRINT_AXIS polygon, not the bbox: the bbox read a 220mm hubcap centred on the 350x320 H2D
+    // as blocking all four corners, which it clears by 14mm.
     const one = (pl: Placed, c: { x: number; y: number }): number => {
       // the square in the part's own rotated frame, where its support distances are measured
       const x0 = c.x - pl.tx!,
@@ -668,18 +569,12 @@ export async function build3MFCombined(
       return polygonArea(poly);
     };
     const overlap = (c: { x: number; y: number }) => items.reduce((sum, pl) => sum + one(pl, c), 0);
-    // Inset from the plate edge, and try front-left LAST. A tower at (0, 0) is a position no plate
-    // can honour: the front-left of a Bambu bed carries the nozzle-wipe exclusion (roughly
-    // 18x28mm). Ordering matters more than the inset, since `reduce` keeps the earlier candidate
-    // on a tie, so front-left wins only when strictly freer than all three alternatives.
-    //
-    // 20mm, not more, because the margin is not free. It does not clear the exclusion above on
-    // its own — 18mm in X, but the zone runs 28mm deep in Y — so ordering front-left last is
-    // still what keeps the tower out of it, and this is a general "off the border" margin.
-    // Measured against a 220mm disc centred on each bed, back-right corner, `Math.hypot` from the
-    // plate centre to the tower's nearest corner minus the 110mm radius: 256 and 270 stay blocked
-    // even flush (-13.8mm, -3.9mm), and the 350x320 clears either way (+14.2mm inset, +42.4mm
-    // flush). So the inset costs no suggestion on any registered bed.
+    // Front-left LAST: it carries the Bambu nozzle-wipe exclusion (roughly 18x28mm), and `reduce`
+    // keeps the earlier candidate on a tie, so front-left wins only when strictly freer. The 20mm
+    // inset clears 18mm in X but not 28mm in Y, so ordering is what keeps the tower out.
+    // The inset costs nothing: a 220mm disc centred on each bed, back-right corner (plate centre to
+    // tower's nearest corner minus the 110mm radius), stays blocked on 256 and 270 even flush
+    // (-13.8mm, -3.9mm) and clears on the 350x320 either way (+14.2mm inset, +42.4mm flush).
     const EDGE = 20;
     const far = (span: number) => Math.max(EDGE, span - TOWER - EDGE);
     const corners = [
@@ -688,32 +583,22 @@ export async function build3MFCombined(
       { x: far(plateW), y: EDGE }, // front-right
       { x: EDGE, y: EDGE }, // front-left, the excluded one, last resort
     ];
-    // Two corners count as tied unless they differ by more than this, in mm². A round part centred
-    // on its plate overlaps all four corners equally, and the ordering above is only a tie-break
-    // if the arithmetic still says "equal" — a clipped polygon's shoelace area does not, where the
-    // old box arithmetic did. Set at 0, 62 of the 193 discs from 150 to 246mm at 0.5mm steps take
-    // some other corner, front-left — the nozzle-wipe exclusion — included; the "keeps the corner
-    // order" test in tests/generated-parts.test.ts is that sweep. Logging the four areas over it
-    // put the 99 geometric ties within 2.3e-12mm² of each other and the 94 real differences at
-    // 0.157mm² or more, so this sits between the two with ~10^5 to spare either way.
+    // Corners tie unless they differ by more than this (mm²): a centred disc overlaps all four
+    // equally, but clipped shoelace areas aren't exactly equal. At 0, 62 of the 193 discs from 150
+    // to 246mm at 0.5mm steps take another corner, front-left included ("keeps the corner order",
+    // tests/generated-parts.test.ts). There the 99 ties sit within 2.3e-12mm² and the 94 real
+    // differences at 0.157mm² or more; this splits them with ~10^5 to spare either way.
     const TIE_MM2 = 1e-6;
     const scored = corners.map((c) => ({ c, area: overlap(c) }));
     const best = scored.reduce((a, b) => (b.area < a.area - TIE_MM2 ? b : a));
-    // A starting point for the human pass, not a promise of clearance: the slicer sizes the real
-    // tower per filament count, so TOWER is nominal and the measured footprint is a superset. A
-    // crowded plate gets a warning rather than a position that quietly prints through a part. A
-    // one-filament plate (the caster plate, no artwork) prints no tower, so whatever this returns
-    // for it is never used.
+    // Not a promise of clearance (TOWER is nominal, the footprint a superset), so a crowded plate
+    // warns. A one-filament plate (the caster plate) prints no tower and never uses this.
     const needsTower = platePrintsTower(items);
-    // Same tolerance as the ranking, or the two disagree: an earlier corner holding a sub-TIE_MM2
-    // sliver wins the tie against a later corner at exactly 0, and this would then call the plate
-    // blocked while a free corner sits on it. 1e-6mm² is a micron square, which is clear.
+    // Same tolerance as the ranking, or a sub-TIE_MM2 sliver winning a tie calls the plate blocked
+    // beside a free corner. 1e-6mm² is a micron square.
     const clear = best.area <= TIE_MM2;
-    // Recorded, not announced. What to tell the user depends on whether the file ends up carrying
-    // this position, and that is decided once for the whole export by the `towerBlocked` gate at
-    // the bottom of this function: a lone blocked plate still gets its corner written, while a
-    // run where every plate is blocked writes no wipe_tower_x/y at all. Said from here, the
-    // message was wrong for one case or the other whichever way it was worded.
+    // Recorded, not announced: the wording depends on the whole-export gate at the bottom (a lone
+    // blocked plate gets its corner written; all blocked writes no wipe_tower_x/y).
     if (needsTower && !clear)
       blockedTowers.push({
         names: items.map((pl) => `"${pl.part.name}"`).join(', '),
@@ -757,10 +642,8 @@ export async function build3MFCombined(
   if (useHints) {
     plates.forEach((plate) => {
       placeHintedGroup(plate.row);
-      // Tower position is relative to this plate's anchor part's final local position (pre-stride,
-      // which is what wipe_tower_x/y want). The anchor is whichever part carries a delta in either
-      // form: matching on `primeTowerDelta` alone missed a part with only per-bed deltas, which
-      // fell through to the suggested corner and discarded a human-verified position.
+      // Relative to the anchor's final local (pre-stride) position, as wipe_tower_x/y want. Match a
+      // delta in either form: `primeTowerDelta` alone discarded a part's verified per-bed delta.
       const anchor = plate.row.find(
         (pl) => pl.part.primeTowerDelta || pl.part.primeTowerDeltaByPlate?.[bedKey],
       );
@@ -785,19 +668,15 @@ export async function build3MFCombined(
         pl.tz = -pl.minZ; // rest the face flat on the plate (Z=0)
         x += pl.w + gap;
       });
-      // Same free-corner search as the hinted branch. Without it this branch wrote no
-      // wipe_tower_x/y, leaving the slicer on its preset default, which for a part just centered
-      // on the plate is very likely through it. Reachable for any part with no plateHint.
+      // Without this, the slicer's preset tower is very likely through a part centered here.
       plate.towerNeeded = platePrintsTower(plate.row);
       const { clear, ...pos } = suggestTowerPos(plate.row);
       plate.wipeTower = pos;
       plate.towerBlocked = !clear;
     });
   }
-  // Fitting on the plate and being *put* on it are different claims: the size check above only
-  // rules out parts too big for any position, while a baked fixedPos lands where a reference file
-  // said, on a plate that may not be the one it was authored against. Positions are still
-  // plate-local here, the frame the plate's own 0..plateW/D bounds are in.
+  // The size check only rules out parts too big anywhere; a baked fixedPos can still land off a bed
+  // it wasn't authored for. Positions are still plate-local here.
   plates.forEach((plate, pi) => {
     plate.row.forEach((pl) => {
       if (tooBig.has(pl.part)) return;
@@ -816,11 +695,8 @@ export async function build3MFCombined(
     });
   });
 
-  // Build item transforms are world coordinates, and the slicer reads an object's logical plate
-  // from where it lands in that world. Plates tile a grid (see plateColumns) with a gap of 1/5
-  // plate size per axis (LOGICAL_PART_PLATE_GAP), filling left-to-right then downward: +X across,
-  // -Y down. A row-only layout is right up to two plates, then silently puts plate 3 on empty
-  // space beyond the grid's last column.
+  // The slicer reads an object's plate from its world position. Plates tile a grid (plateColumns)
+  // with a 1/5-plate gap per axis (LOGICAL_PART_PLATE_GAP): +X across, then -Y down.
   const cols = plateColumns(plates.length);
   plates.forEach((plate, pi) => {
     const offsetX = (pi % cols) * plateW * 1.2;
@@ -909,15 +785,13 @@ ${items.join('\n')}
 </model>`;
   files.push({ name: '3D/3dmodel.model', data: enc.encode(model) });
 
-  // model_settings.config: where Bambu Studio reads object/part names, per-part extruder
-  // assignment, and plate membership from.
+  // model_settings.config: where Bambu reads part names, per-part extruder and plate membership.
   const cfg = ['<?xml version="1.0" encoding="UTF-8"?>', '<config>'];
   for (const pl of placed) {
     cfg.push(`  <object id="${pl.cid}">`);
     cfg.push(`    <metadata key="name" value="${xmlEscape(pl.part.name)}"/>`);
     cfg.push(`    <metadata key="extruder" value="1"/>`);
-    // Per-part print overrides (support off on the footrest, a brim on the chair's handles):
-    // object-level metadata Bambu applies on top of the global project settings.
+    // Object-level overrides on top of the global project settings (footrest support, handle brim).
     for (const [key, value] of Object.entries(pl.part.objectSettings ?? {}))
       cfg.push(`    <metadata key="${xmlEscape(key)}" value="${xmlEscape(value)}"/>`);
     for (const s of pl.subs!) {
@@ -931,8 +805,7 @@ ${items.join('\n')}
   }
   let identifyId = 100;
   plates.forEach((plate, pi) => {
-    // Plate name: the distinct part names on it ("Top + Cap"), not a blank. Bambu Studio and
-    // OrcaSlicer show this in the plate list/preview UI.
+    // Shown in Bambu/Orca's plate list, so the distinct part names ("Top + Cap"), not a blank.
     const plateName = [...new Set(plate.row.map((pl) => pl.part.name))].join(' + ');
     cfg.push('  <plate>');
     cfg.push(`    <metadata key="plater_id" value="${pi + 1}"/>`);
@@ -956,32 +829,22 @@ ${items.join('\n')}
   cfg.push('</config>');
   files.push({ name: 'Metadata/model_settings.config', data: enc.encode(cfg.join('\n')) });
 
-  // Whether the export carries tower positions at all, decided once here for the whole file.
-  //
-  // Write nothing when NO plate has a position worth asserting: a blocked plate's best corner is
-  // still overlapped, and pinning it would state a placement the exporter has just measured as
-  // colliding. Omitting the key lets the slicer apply its own printer-aware default. Only when
-  // *every* plate is blocked, since these keys are per-plate arrays with no way to say "no
-  // opinion" for one entry.
-  // Counted over the plates that actually print a tower. A single-filament plate has no opinion,
-  // and letting it vote turned the gate off: a 240mm two-material disc beside a plate of
-  // single-filament clips wrote wipe_tower_x for BOTH, pinning the disc plate's tower at a corner
-  // the exporter had just measured as overlapping it — the exact thing this gate exists to refuse.
+  // Tower positions, decided once for the file. Omitted only when EVERY tower-printing plate is
+  // blocked: pinning an overlapped corner asserts a measured collision, so the slicer's default
+  // wins, but the keys are per-plate arrays with no "no opinion" entry. Single-filament plates
+  // don't vote: letting them pinned a 240mm two-material disc's tower onto the disc.
   const towerPlates = plates.filter((p) => p.towerNeeded);
   const allBlocked = towerPlates.length > 0 && towerPlates.every((p) => p.towerBlocked);
   const towerPositions = allBlocked ? undefined : plates.map((p) => p.wipeTower);
-  // Said here rather than where the overlap is measured, because the right thing to say depends on
-  // the decision above. A lone blocked plate still gets its corner written, so the user can move
-  // it; when nothing was written there is no position to move and the slicer decides.
+  // Said here because the wording depends on the decision above: a written corner can be moved,
+  // an unwritten one is the slicer's call.
   blockedTowers.forEach(({ names, plate, at }) =>
     warnings.push(
       `The prime tower on the plate holding ${names} has no verified position. ` +
         `Every corner of the ${plate} plate overlaps a part. ` +
         (allBlocked
           ? 'No tower position was saved, so your slicer will place it. Check it before printing.'
-          : // Named, because this arm fires precisely when a position WAS written. Telling someone
-            // to move a tower without saying where it is leaves them hunting for it under a part,
-            // which is what dropping the coordinates from both arms did.
+          : // Named: this arm means a position WAS written, and without it they hunt under a part.
             `It was put at (${at.x.toFixed(0)}, ${at.y.toFixed(0)}), so move the tower in your slicer.`),
     ),
   );
@@ -989,17 +852,13 @@ ${items.join('\n')}
   files.push({
     name: 'Metadata/project_settings.config',
     data: enc.encode(
-      // Both branches work out a tower position now, so this is no longer gated on useHints.
-      // While it was, an unhinted plate wrote no wipe_tower_x/y and the slicer fell back to its
-      // preset default, which is not this file's plate-centre fallback and is nowhere near a part
-      // just centered on the plate.
+      // Not gated on useHints: when it was, an unhinted plate fell back to the slicer's preset,
+      // not this file's plate-centre fallback, and nowhere near a part just centered on the plate.
       bambuProjectSettings(
         materials,
         printer,
         towerPositions,
-        // Project settings are global to the file, so baked overrides merge rather than stay per
-        // plate. Nothing ships two parts setting the same key differently, and one that did would
-        // be a plate-level claim that can't be honored anyway.
+        // File-global, so baked overrides merge; nothing ships two parts disagreeing on a key.
         parts.reduce<Record<string, string>>((acc, p) => Object.assign(acc, p.projectSettings), {}),
       ),
     ),

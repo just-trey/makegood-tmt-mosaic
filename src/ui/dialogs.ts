@@ -1,11 +1,9 @@
 import { $ } from './dom';
 
 /**
- * Themed replacements for window.confirm()/alert() — same pattern helpPanel.ts already
- * establishes for #help-dialog: a native <dialog> styled to match the app instead of the
- * browser's own jarring, unstyled prompt. One shared <dialog> element covers both cases (the
- * Cancel button just hides itself for an alert) since these are always sequential, never
- * concurrent, user-triggered actions.
+ * Themed replacements for window.confirm()/alert(), the pattern helpPanel.ts sets for #help-dialog:
+ * a native <dialog> styled to the app. One shared element covers both (Cancel hides itself for an
+ * alert) since these are always sequential, never concurrent.
  */
 
 let resolveFn: ((confirmed: boolean) => void) | null = null;
@@ -51,8 +49,7 @@ export function initConfirmDialog(): void {
   };
   $('#confirm-ok').addEventListener('click', () => settle(true));
   $('#confirm-cancel').addEventListener('click', () => settle(false));
-  // Escape fires the dialog's native 'cancel' event and closes it on its own — just resolve the
-  // promise to match, same as window.confirm()'s Escape-means-Cancel behavior.
+  // Escape fires the dialog's native 'cancel' and closes it; resolve the promise to match (window.confirm()'s Escape-means-Cancel).
   dialog.addEventListener('cancel', () => {
     resolveFn?.(false);
     resolveFn = null;

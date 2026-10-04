@@ -30,17 +30,11 @@ export type PartPlacement = Pick<
 >;
 
 /**
- * Verified plate placement per part, keyed by library part id. Every entry traces back to a
- * project file whose print pose a human checked in the slicer — never computed here. See the
- * constants' own provenance comments in src/export/threemf.ts, and chairPlacement.ts (generated)
- * for the chair's 15.
- *
- * Keyed by library part rather than role because the chair's two caster roles resolve to a
- * different mesh per hardware variant, and Standard and Kit sit on different plates. Roles whose
- * id and library part id coincide (the wheel's and the footrest's) also resolve for a mesh the user
- * dropped in themselves, via the roleId fallback in resolvePlacement — but every entry here, by
- * either key, only applies to a mesh matching the fingerprint it was verified against
- * (PART_FINGERPRINTS).
+ * Slicer-verified plate placement, never computed here; provenance sits on the constants in
+ * threemf.ts and in chairPlacement.ts (generated) for the chair's 15. Keyed by library part, not
+ * role: the chair's caster roles resolve to a different mesh, on a different plate, per variant.
+ * Roles whose id is their library part id (wheel, footrest) also resolve a user-dropped mesh via
+ * the roleId fallback. Either key applies only to a mesh matching its PART_FINGERPRINTS seal.
  */
 export const PLACEMENT: Record<string, PartPlacement> = {
   'wheel-half': {
@@ -50,10 +44,8 @@ export const PLACEMENT: Record<string, PartPlacement> = {
     primeTowerDelta: WHEEL_PRIME_TOWER_DELTA,
   },
   'wheel-hub-cap': { plateHint: 1, rotZdeg: WHEEL_CAP_ROT_DEG, fixedPos: WHEEL_CAP_POS },
-  // Support off per the user's verified reference (brim is off globally — see brim_type in
-  // bambuProjectSettings). No fixedPos: the reference's own translation is just the Snapmaker U1's
-  // bed center and isn't portable, so plateHint routes it through placeHintedGroup's centering
-  // branch with the tower held relative.
+  // No fixedPos: the reference translation is just the U1's bed center, so it centers via
+  // placeHintedGroup with the tower held relative (see FOOTREST_PLATE_R).
   footrest: {
     plateHint: 1,
     plateR: FOOTREST_PLATE_R,
@@ -64,27 +56,16 @@ export const PLACEMENT: Record<string, PartPlacement> = {
 };
 
 /**
- * Why a part didn't get baked placement.
- *
- *   - 'unknown-part' / 'mesh-mismatch' — a library part (our asset) whose id has no PLACEMENT entry,
- *     or whose mesh no longer matches its seal. Both mean the repo's own ids/assets drifted out of
- *     sync with constants a human verified, which tests/placement.test.ts refuses to let ship —
- *     loud warning if one ever escapes anyway.
+ * 'unknown-part' / 'mesh-mismatch': our own ids/assets drifted from verified constants. A defect
+ * tests/placement.test.ts refuses to ship, so a loud warning if one escapes.
  */
-// Before the custom-mesh upload path was removed (no way left to check an arbitrary mesh is the
-// part it claims to be), 'unverified-upload' and 'no-baked-placement' split "the user brought
-// their own mesh" (a supported case, quiet info) from "our own asset drifted" (a defect, warned).
-// Reopening uploads without restoring that split would report every user mesh as a repo defect —
-// 'mesh-mismatch' below is not a safe stand-in for it.
+// Trap: reopening custom-mesh uploads needs back the removed 'unverified-upload' reason ("user
+// brought their own mesh", quiet info); 'mesh-mismatch' would report every user mesh as a defect.
 export type PlacementReason =
   | 'unknown-part'
   | 'mesh-mismatch'
-  /**
-   * The part's mesh was *generated* (AssemblyRole.buildMesh), so no baked pose can exist for it:
-   * a seal pins one exact mesh, and this one is built to vary. Its own category because the
-   * fingerprint failing here means nothing has gone wrong — without it a generated part reports
-   * 'mesh-mismatch', whose documented meaning is that our own assets have drifted.
-   */
+  /** Generated mesh (AssemblyRole.buildMesh), built to vary, so no seal can match. Its own reason
+   * so it doesn't report 'mesh-mismatch', which means our assets drifted. */
   | 'generated-part';
 
 export type PlacementResolution =
@@ -93,23 +74,15 @@ export type PlacementResolution =
   | { placement: undefined; verified: false; reason: PlacementReason; key: string };
 
 /**
- * Resolves a loaded part's baked export placement, refusing to hand back constants that were
- * verified against a *different* mesh than the one actually loaded — the same guard
- * fingerprintMatches (src/geometry/zoneCharts.ts) applies to zone charts, reused here for placement.
- *
- * Pure and DOM-free: emits no warnings, just says why. The caller (exportPanel.ts) turns the reason
- * into the right kind of user-facing message, or none.
+ * Baked placement for a loaded part, refused when verified against a *different* mesh (the guard
+ * fingerprintMatches in src/geometry/zoneCharts.ts applies to charts). Pure: returns a reason, and
+ * exportPanel.ts decides the message.
  */
 export function resolvePlacement(part: AssemblyPart): PlacementResolution {
   const key = part.libraryPartId ?? part.roleId;
-  // Checked before anything else: a generated part's mesh is built to vary, so it can never match
-  // a seal, and every reason below would be reporting a failure that hasn't happened. The signal
-  // is `assetPositions` — set only when the loader handed the fetched asset to a role's buildMesh.
-  //
-  // Such a part can still have a *verified* plate, just not one a fingerprint can vouch for: a
-  // human checks one arrangement at one size, and the role's buildPlacement says whether the
-  // current build parameters are inside what was checked. When they aren't it returns undefined
-  // and this reports 'generated-part', exactly as before.
+  // First: a generated part (`assetPositions` is set only for a role's buildMesh) can never match
+  // a seal. It can still have a verified plate: buildPlacement says whether the current build
+  // parameters are inside the one arrangement a human checked, else returns undefined.
   if (part.assetPositions) {
     const role = currentAssemblyKind()?.roles.find((r) => r.id === part.roleId);
     const built = role?.buildPlacement?.() as PartPlacement | undefined;
@@ -117,9 +90,8 @@ export function resolvePlacement(part: AssemblyPart): PlacementResolution {
     return { placement: undefined, verified: false, reason: 'generated-part', key };
   }
   const placement = PLACEMENT[key];
-  // A missing seal for a real PLACEMENT key can't ship (tests/placement.test.ts pins the two
-  // tables together), and an unsealed constant is exactly what this guard exists to distrust — so
-  // it fails closed here rather than being treated as "nothing to check".
+  // Fails closed on a missing seal: an unsealed constant is what this guards against
+  // (tests/placement.test.ts pins the two tables together).
   const seal = PART_FINGERPRINTS[key];
   if (placement && seal && part.positions) {
     const got = meshFingerprint(part.positions, part.positions.length / 9);
@@ -136,14 +108,9 @@ export function resolvePlacement(part: AssemblyPart): PlacementResolution {
 }
 
 /**
- * The user-facing message for a resolution, or null when there's nothing to say. Lives here rather
- * than in exportPanel.ts so it's testable without a DOM, and so the reason -> severity mapping sits
- * next to the reasons themselves.
- *
- * Each reason gets its own wording deliberately: telling "this id has no baked placement" apart
- * from "this id's mesh changed" is the difference between hunting a rename and hunting a re-pack,
- * and the id is named for exactly that reason. Every message ends with the same sentence so
- * exportPanel's PLACEMENT_WARNING_SUFFIXES can clear a stale one on the next attempt.
+ * Message for a resolution, or null. Distinct wording per reason (and the id named) separates
+ * hunting a rename from hunting a re-pack. Every message ends with the same sentence so
+ * exportPanel's PLACEMENT_WARNING_SUFFIXES can clear a stale one.
  */
 export function placementNotice(
   partName: string,
@@ -162,9 +129,7 @@ export function placementNotice(
         message: `Part "${partName}" doesn't match the mesh its verified print placement was baked against, ${tail}`,
         level: 'warn',
       };
-    // Nothing was withheld and nothing drifted — this part has no fixed mesh to verify a pose
-    // against, by design. An info rather than a warning: it reports a supported situation, and
-    // warning about it would erode the two reasons above, which are defects.
+    // Info, not a warning: a supported situation, and warning would erode the two defects above.
     case 'generated-part':
       return {
         message: `Part "${partName}" is generated to the size you chose. No pre-verified print placement applies, ${tail}`,

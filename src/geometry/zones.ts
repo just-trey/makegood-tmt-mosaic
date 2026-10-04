@@ -1,4 +1,4 @@
-import { CUT_FLOOR_MM, MIN_CUT_DEPTH_MM } from './depth';
+import { CUT_FLOOR_MM, MIN_CUT_DEPTH_MM, depthDiffers } from './depth';
 import * as THREE from 'three';
 import * as turf from '@turf/turf';
 import type { AssemblyPart, PolyFeature } from '../types';
@@ -6,9 +6,13 @@ import type { ArtworkBuildInput } from './assembly';
 import { extrudeRegionToSoup, type ManifoldAPI } from './manifold';
 import { EDGE_TOUCH_TOL_MM, erodeBoundary, splitAtBoundary } from './edgeRegions';
 import { shapeToFeature } from './regions';
+import { buildWallField, minWallUnder, type WallField } from './wall';
 
 /** How far each cutter pokes above the face so the pocket opens cleanly at the surface. */
 export const OVERSHOOT_MM = 0.5;
+
+/** The flat cut's axis. Read-only: clone it before writing. */
+const UP = new THREE.Vector3(0, 1, 0);
 
 export function rotatePointY(
   x: number,
@@ -35,10 +39,8 @@ export function asmPartFaceNormal(part: AssemblyPart, parts: AssemblyPart[]): nu
 }
 
 /**
- * X/Z bounding box (mm) of a part's design face: its outline loop, which `boundaryLoops` puts
- * first. Deliberately just that one. Holes lie inside it and would not move it, and a second,
- * smaller island would stretch it across the gap between the two, which is not a face extent
- * anything wants to centre or scale a design on. Null when there is no loop to measure.
+ * X/Z bbox (mm) of a part's design face: the outline loop (`boundaryLoops[0]`) only. Holes would
+ * not move it, and a second island would stretch it across the gap. Null with no loop.
  */
 export function faceXZBBox(
   loops: number[][][] | null | undefined,
@@ -67,11 +69,9 @@ export interface NetExclusion {
   /** the owning zone's display name, for the notice that says where the ink went instead */
   toName: string;
   /**
-   * Null when the baked loops would not build a polygon. The patch is then unclippable rather than
-   * absent: a design reaching it is cut here as well as on `toName`, which is the doubled cut the
-   * partition exists to remove, so it has to be reported instead of dropped. `bbox` is read off the
-   * same loops and stays usable, so a design nowhere near the patch still costs nothing and says
-   * nothing.
+   * Null when the baked loops would not build a polygon: unclippable, not absent, so a design
+   * reaching it is cut here and on `toName` and must be reported. `bbox` stays usable, so a design
+   * nowhere near the patch still costs and says nothing.
    */
   region: PolyFeature | null;
   bbox: number[];
@@ -238,10 +238,8 @@ export function netGizmoMapper(
 }
 
 /**
- * The design-placement parameters shared across every zone in one build — how an SVG point maps
- * into the zone's 2D design space (mm). Distinct from the zone's own geometry (which face, which
- * way it points): a mapper owns the geometry, `placer(placement)` folds these in to produce the
- * actual SVG→2D function.
+ * Design placement shared across every zone in one build; a mapper owns the zone geometry, and
+ * `placer(placement)` folds these in to give the SVG→2D (mm) function.
  */
 export interface DesignPlacement {
   /** the design's anchor circle (real <circle> or the artwork-bbox pseudo-circle) */
@@ -271,11 +269,9 @@ export interface FillExtent {
 }
 
 /**
- * Per-cut knobs a fill needs and a sticker doesn't (both conformal-only; the flat mapper's cutter
- * is a straight extrusion with nothing to tune). A fill spans the whole zone rather than a
- * sticker-sized patch, so it refines more coarsely to keep the triangle count workable — see
- * FILL_REFINE_MM in conformal.ts. The snap tolerance is deliberately not a knob here: it covers a
- * bake artifact neither mode escapes, so both take CHART_SNAP_MM (see its comment).
+ * Per-cut knobs a fill needs and a sticker doesn't (conformal only). A fill spans the whole zone,
+ * so it refines more coarsely (FILL_REFINE_MM, conformal.ts). Snap tolerance is deliberately no
+ * knob: it covers a bake artifact neither mode escapes, so both take CHART_SNAP_MM.
  */
 export interface CutterOptions {
   refineMM?: number;
@@ -283,13 +279,15 @@ export interface CutterOptions {
 
 /**
  * One slice of a color's region and the depth it is cut at. `edge` marks a slice that took a
- * part's edge-cut-through depth instead of the setting, so the caller can say which colors that
- * happened to without re-deriving the rule.
+ * part's edge-cut-through depth instead of the setting, and `wall` (the thinnest wall under it, mm)
+ * one cut shallower than the setting because of that wall, so the caller can say which colors
+ * either happened to without re-deriving the rule.
  */
 export interface CutRegion {
   feat: PolyFeature;
   depth: number;
   edge?: boolean;
+  wall?: number;
 }
 
 /** What `resolveCutRegions` needs to know about the region it is being handed. */
@@ -297,10 +295,9 @@ export interface CutRegionOptions {
   /** names the color in any warning the split raises */
   label?: string;
   /**
-   * Whether `feat` really was clipped to this zone's boundary. False when the clipper failed and
-   * the caller is passing the region through unclipped — in which case "reaches past the boundary"
-   * stops meaning "stands on the part's outer wall" and the edge rule must not fire. Defaults to
-   * true, which is what every non-clipping caller (and every test) is entitled to assume.
+   * Whether `feat` really was clipped to this zone's boundary. False on a clipper failure, where
+   * "reaches past the boundary" stops meaning "stands on the outer wall" and the edge rule must not
+   * fire. Defaults to true.
    */
   clipped?: boolean;
 }
@@ -309,18 +306,20 @@ export interface CutRegionOptions {
 export interface ZoneFrame {
   /** design-center position in the part's native model space (before the model-group grid lift) */
   origin: THREE.Vector3;
-  /** unit vector the +u (offsetX) axis moves along */
+  /**
+   * In-plane vector a drag is read against: (p - origin)·uAxis is the offsetX change that brings
+   * the design center to p. Unit wherever the design space is the surface's own; a flat face
+   * tilted off horizontal places by projection, and has it shorter.
+   */
   uAxis: THREE.Vector3;
-  /** unit vector the +v (offsetY) axis moves along */
+  /** the same for offsetY */
   vAxis: THREE.Vector3;
   /** unit plane normal */
   normal: THREE.Vector3;
   /**
-   * How far the queried (u, v) fell outside the surface this mapper covers, in mm — 0 when it
-   * landed on it. A flat face is unbounded in its own plane, so it is always 0; a conformal chart
-   * covers only part of its UV rectangle and answers an outside query with the nearest triangle it
-   * has, which can be a long way off on unrelated geometry. Reported so the gizmo can say so
-   * instead of drawing a frame there as if it were on the design surface.
+   * How far the queried (u, v) fell outside this mapper's surface, mm (0 on it). A flat face: 0, or
+   * Infinity for a face along the cut axis. A conformal chart answers outside queries with its
+   * nearest triangle, possibly far off on unrelated geometry, so the gizmo can say so.
    */
   offChartMM: number;
 }
@@ -372,26 +371,17 @@ export interface ZoneMapper {
   /** area a fill-mode artwork tiles across, in the zone's 2D design space; null when unknown */
   fillExtent(): FillExtent | null;
   /**
-   * How a color's placed, already-clipped region actually gets cut: one entry per depth the zone
-   * wants used, each carrying the slice of the region cut at it. Usually a single pass-through
-   * entry; a cut-through zone replaces the depth, and a zone with an edge rule splits the region
-   * into the polygons standing on its outer wall and the rest.
-   *
-   * The mapper answers with regions rather than a bare depth so nothing upstream has to know which
-   * kind of zone it is holding — the caller extrudes whatever it is handed. Returning an empty
-   * array is not a thing any mapper does: a region always gets cut somehow.
+   * How a placed, clipped region gets cut: one entry per depth, each with its slice. Usually one
+   * pass-through; a cut-through zone replaces the depth, an edge rule splits off polygons on the
+   * outer wall, and a flat zone cuts shallower where the wall is thinner. Regions, not a bare
+   * depth, so nothing upstream knows the zone kind. Never empty: a region always gets cut somehow.
    */
   resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[];
   /**
-   * The deepest setting worth handing this zone, or Infinity where the zone cannot say.
-   *
-   * Asked of the mapper rather than measured off the part upstream, for the same reason
-   * resolveCutRegions is: only the zone knows which direction its cuts go. A flat zone cuts along
-   * one face normal and can measure the part behind it; a conformal zone cuts along a whole normal
-   * field and has no single axis to measure, so it declines.
-   *
-   * **A bound on the part, never on its wall.** A recess shallower than this can still break
-   * through a thin one, and nothing here measures that (docs/tech-debt.md).
+   * The deepest setting worth handing this zone, or Infinity where it cannot say. Only the zone
+   * knows its cut direction: a flat one measures behind its normal; a conformal one cuts along a
+   * normal field and declines. **A bound on the part, not its wall** (resolveCutRegions' business,
+   * bounding only where this does).
    */
   maxCutDepth(): number;
   /** build the cutter geometry from a placed+clipped 2D feature */
@@ -411,10 +401,8 @@ export interface ZoneMapper {
 }
 
 /**
- * The implicit single-zone mapper every part gets today: the chosen flat patch, projected
- * straight down its (near-vertical) Y normal. Encapsulates exactly the per-part surface geometry
- * `buildAssemblyGeometry` used to compute inline — face direction, face-plane Y, boundary clip,
- * cut-through depth, placement, and the gizmo frame — so behavior is unchanged.
+ * The implicit single-zone mapper: the chosen flat patch, projected straight down its
+ * (near-vertical) Y normal.
  */
 export class FlatZoneMapper implements ZoneMapper {
   readonly zoneId = null;
@@ -422,6 +410,8 @@ export class FlatZoneMapper implements ZoneMapper {
   readonly nsign: number;
   private readonly faceY: number;
   private readonly faceYKnown: boolean;
+  private readonly frameNormal: THREE.Vector3;
+  private readonly faceMidY: number;
   private readonly faceCx: number;
   private readonly faceCz: number;
   private boundaryComputed = false;
@@ -430,6 +420,7 @@ export class FlatZoneMapper implements ZoneMapper {
   // Cached like every other per-part measurement here: it is asked once per colour per artwork
   // (16 scans of 53,904 vertices on a two-half wheel with an 8-colour palette) and cannot change.
   private maxCutDepthCache: number | null = null;
+  private wallFieldCache: WallField | null = null;
   private fillExtentCache: FillExtent | null | undefined;
 
   constructor(
@@ -446,13 +437,22 @@ export class FlatZoneMapper implements ZoneMapper {
     // offset (= nrm.y * faceY), so a face pointing -Y (e.g. the BACK of the wheel) needs the
     // pocket cut in the opposite direction — otherwise the inlay lands on the wrong side.
     this.nsign = nrm && nrm[1] < 0 ? -1 : 1;
-    // Whether `faceY` below is a real Y at all. The fallback assigns the raw plane offset, which
-    // for a face pointing along X or Z is an X or Z distance wearing a Y's name. Recorded once
-    // here so every reader tests the same condition: maxCutDepth() checking the *sign* of its own
-    // result instead measured the footrest's side patches at 141.95mm and 169.95mm on a part 64mm
-    // tall, and caught the tilted case only when topZ happened to come out negative.
+    // Whether `faceY` is a real Y: the fallback is the raw plane offset, an X or Z distance on a
+    // sideways face. Tested once here: maxCutDepth() checking its own result's *sign* measured the
+    // footrest's side patches at 141.95mm and 169.95mm on a part 64mm tall.
     this.faceYKnown = !!nrm && Math.abs(nrm[1]) > 0.1;
     this.faceY = this.faceYKnown ? part.topZ / nrm![1] : part.topZ;
+    this.frameNormal = nrm ? new THREE.Vector3(nrm[0], nrm[1], nrm[2]).normalize() : UP.clone();
+    // Where on a sideways face to draw the frame, since faceY is no height there.
+    const outline = part.boundaryLoops?.[0];
+    let yLo = Infinity,
+      yHi = -Infinity;
+    if (!this.faceYKnown && outline)
+      for (const pt of outline) {
+        if (pt[1] < yLo) yLo = pt[1];
+        if (pt[1] > yHi) yHi = pt[1];
+      }
+    this.faceMidY = yHi >= yLo ? (yLo + yHi) / 2 : 0;
 
     // Rect parts center the design on the detected face (its native X/Z bbox center); wheel parts
     // anchor on the hub at the origin.
@@ -473,16 +473,12 @@ export class FlatZoneMapper implements ZoneMapper {
     // not just the small flat patch used to place it, so skip the clip — the boolean subtract
     // against the real mesh is what actually bounds the cut.
     if (!part.cutThrough && part.boundaryLoops) {
-      // Every loop, nested by `shapeToFeature`'s containment-depth rule rather than clipped to the
-      // outline alone: the face of a holed silhouette is a polygon with holes, and eroding that is
-      // what makes each hole's rim an edge for the cut-through rule. Reused rather than
-      // re-derived, the same round-trip `erodeBoundary` already makes.
+      // Every loop, nested by `shapeToFeature`'s containment rule: a holed silhouette's face has
+      // holes, and eroding that makes each hole's rim an edge for the cut-through rule.
       const rings = part.boundaryLoops.map((l) => l.map((p) => ({ x: p[0], y: p[2] })));
       this.boundaryPoly = shapeToFeature({ fill: '', order: 0, loops: rings });
-      // `null` from shapeToFeature means the loops enclose no X/Z area, which happens when the
-      // chosen patch faces sideways (a model exported Z-up, dropped on a part). Returning it would
-      // mean "no clip" and let the cut run unbounded at an arbitrary plane. A zero-area polygon
-      // clips every region away instead, which is what this path has always done.
+      // `null` means no X/Z area (a sideways patch, e.g. a Z-up export), which would mean "no clip"
+      // and an unbounded cut; a zero-area polygon clips every region away instead.
       if (!this.boundaryPoly && rings[0] && rings[0].length >= 3) {
         const ring = rings[0].map((p) => [p.x, p.y]);
         ring.push(ring[0]);
@@ -511,11 +507,9 @@ export class FlatZoneMapper implements ZoneMapper {
   }
 
   /**
-   * The region a fill tiles over, in native X/Z. Deliberately not derived from `boundary()`, for
-   * both of the reasons that method is unusual: a cut-through part has no clip boundary at all,
-   * and its design is meant to span the whole curved surface rather than the small flat patch used
-   * to place it — so it measures the part's whole X/Z footprint, while an ordinary part measures
-   * the design face it actually cuts into.
+   * The region a fill tiles over, native X/Z. Not from `boundary()`: a cut-through part has no clip
+   * and its design spans the whole curved surface, so it takes the part's X/Z footprint; an
+   * ordinary part takes its design face.
    */
   fillExtent(): FillExtent | null {
     if (this.fillExtentCache !== undefined) return this.fillExtentCache;
@@ -587,25 +581,14 @@ export class FlatZoneMapper implements ZoneMapper {
   }
 
   /**
-   * The deepest recess this part can hold: its extent from the design face to the far side along
-   * the cut axis, less the floor that keeps a clamped cut from becoming a hole.
-   *
-   * **Measured along Y, like `throughDepth()` above, because that is where the cutter goes** —
-   * `buildCutter` extrudes from `faceY` down the Y axis. Projecting onto `patchNormal` instead
-   * measured a distance the cut never travels: on wheel-half's -Z patch that read 139.88mm against
-   * 24.13mm of real material, so the mistyped depth this exists to catch sailed through and the
-   * warning would have quoted a distance the part does not have.
-   *
-   * Uses `nsign`/`faceY` from the constructor, so a duplicate part with a borrowed normal
-   * (`asmPartFaceNormal`) is bounded like its source rather than going unbounded.
-   *
-   * Measured off the loaded mesh rather than taken from a setting. `AssemblyPart.baseDepth` states
-   * "mm of material behind the face this replaces" and looks like the answer, but nothing in the
-   * build has ever read it, so adopting it here would give a dormant, user-editable field control
-   * of cut depth as a side effect of a bug fix.
-   *
-   * **A bound on the part, never on its wall.** A recess shallower than this can still break
-   * through a thin one, and nothing here measures that (docs/tech-debt.md).
+   * Deepest recess this part holds: design face to far side along the cut axis, less CUT_FLOOR_MM.
+   * **Along Y, because `buildCutter` extrudes down Y**: projecting onto `patchNormal` read 139.88mm
+   * on wheel-half's -Z patch against 24.13mm of real material. The constructor's `nsign`/`faceY`
+   * bound a duplicate with a borrowed normal like its source. Measured off the mesh, not
+   * `AssemblyPart.baseDepth`: nothing has ever read that field, and adopting it would hand a
+   * dormant user-editable field control of cut depth.
+   * **A bound on the part, not its wall**: 8.12mm over the hubcap's 3mm shell
+   * (scripts/measure-wall.ts), so resolveCutRegions bounds each region by its wall too.
    */
   maxCutDepth(): number {
     if (this.maxCutDepthCache != null) return this.maxCutDepthCache;
@@ -620,43 +603,63 @@ export class FlatZoneMapper implements ZoneMapper {
       if (y < yMin) yMin = y;
       if (y > yMax) yMax = y;
     }
-    // Checked against the mesh, not inferred from the sign of the result. `faceYKnown` only says
-    // the normal has enough Y to divide by; `topZ / nrm.y` can still land far outside the part on
-    // a tilted face, and reading that as a depth gave 299.95mm on a box 10mm tall. Two earlier
-    // versions guessed at this from the sign of `extent` and each was caught by a fixture that
-    // happened to use the other sign. The part's own Y range is the thing being asked about, so
-    // ask it.
+    // Checked against the mesh, not the result's sign: `topZ / nrm.y` can land far outside a tilted
+    // part (299.95mm on a box 10mm tall), and two sign-based guesses each fell to a fixture of the
+    // other sign.
     if (this.faceY < yMin || this.faceY > yMax) return (this.maxCutDepthCache = Infinity);
     const extent = this.nsign > 0 ? this.faceY - yMin : yMax - this.faceY;
     const usable = extent - CUT_FLOOR_MM;
-    // Declines rather than clamping whenever the answer would not be a printable recess. Two ways
-    // to get there, and both mean "this measurement does not apply here" rather than "the part is
-    // 0.2mm deep":
-    //
-    //   - A face that is not vertical makes `faceY` (topZ / nrm.y) a Y-intercept outside the mesh,
-    //     so the extent comes out negative. The face picker offers any of the top six patches with
-    //     no normal filter, so a tilted one is selectable. Clamping there cut every colour on the
-    //     part at the minimum depth and told the user it was "deeper than the part goes".
-    //   - A part too thin to hold the minimum. Warning about the user's number would be reporting
-    //     the geometry, which is not what this message says.
+    // Declines rather than clamping when the answer isn't a printable recess ("doesn't apply", not
+    // "0.2mm deep"):
+    //   - A non-vertical face (the picker offers the top six patches unfiltered) gives a negative
+    //     extent; clamping cut every colour at the minimum, called "deeper than the part goes".
+    //   - A part too thin for the minimum: that is the geometry, not the user's number.
     if (!Number.isFinite(usable) || usable < MIN_CUT_DEPTH_MM)
       return (this.maxCutDepthCache = Infinity);
     return (this.maxCutDepthCache = usable);
   }
 
   resolveCutRegions(feat: PolyFeature, depthSetting: number, opts?: CutRegionOptions): CutRegion[] {
-    // A cut-through part takes its hole the whole way through for every color, so there is no
-    // edge to distinguish — and it has no clip boundary to measure one against either. Not
-    // flagged `edge`: that flag drives a notice about the *edge rule*, and saying it here would
-    // announce a new behavior on the wheel cap, which has cut this way since it shipped.
+    // A cut-through part holes every color the whole way and has no clip: no edge to tell apart.
+    // Not `edge`: that drives the edge-rule notice, announcing new behavior on the wheel cap.
     if (this.part.cutThrough) return [{ feat, depth: this.throughDepth() }];
+    // Asked by flag, never by comparing depths: an edge slice deliberately cuts the full shell,
+    // and on a 3mm shell a 3mm setting would read as equal to it.
+    return this.splitAtEdge(feat, depthSetting, opts).map((r) =>
+      r.edge ? r : this.boundByWall(r, opts),
+    );
+  }
+
+  /**
+   * Bounds a slice by the thinnest wall anywhere under it, less CUT_FLOOR_MM: a cutter is one
+   * prism, so anything deeper cuts through at that spot. Only where maxCutDepth() measured
+   * something, along the same axis, and only on a clipped region: an unclipped one reaches past the
+   * face and would be measured against whatever lies beside it.
+   *
+   * A wall too thin for the minimum recess still clamps, to the minimum. Declining there let a
+   * region touching one undercut edge cut the full setting through the 3mm plate beside it.
+   */
+  private boundByWall(r: CutRegion, opts?: CutRegionOptions): CutRegion {
+    if (!Number.isFinite(this.maxCutDepth()) || opts?.clipped === false) return r;
+    const pos = this.part.positions!;
+    const field = (this.wallFieldCache ??= buildWallField(pos, this.faceY, this.nsign));
+    const wall = minWallUnder(field, r.feat);
+    if (!Number.isFinite(wall)) return r;
+    const bound = Math.max(wall - CUT_FLOOR_MM, MIN_CUT_DEPTH_MM);
+    if (r.depth <= bound || !depthDiffers(bound, r.depth)) return r;
+    return { feat: r.feat, depth: bound, wall: Math.max(wall, 0) };
+  }
+
+  private splitAtEdge(
+    feat: PolyFeature,
+    depthSetting: number,
+    opts?: CutRegionOptions,
+  ): CutRegion[] {
     const edgeDepth = this.part.edgeCutThroughDepth;
     const boundary = this.boundary();
     if (edgeDepth == null || !boundary) return [{ feat, depth: depthSetting }];
-    // An unclipped region (the caller's clip failed) reaches past the boundary everywhere, which
-    // this rule would read as "all of it stands on the outer wall" and cut the whole color through
-    // — a hole where the old behavior was merely an oversized recess. Recess is the safe
-    // direction, and it is what the part did before this rule existed.
+    // An unclipped region (failed clip) reads as all-edge and would cut the color through; recess
+    // is the safe direction.
     if (opts?.clipped === false) return [{ feat, depth: depthSetting }];
     // No wasm means no erosion, and erodeBoundary's own null means the face vanished under the
     // tolerance. The first should treat everything as interior (the gizmo path, which never cuts);
@@ -709,13 +712,45 @@ export class FlatZoneMapper implements ZoneMapper {
     };
   }
 
+  /**
+   * The design is placed in native X/Z and cut straight down Y, so the frame is that X/Z point
+   * lifted along Y onto the face. A horizontal face gets exactly (x, faceY, z) and the X/Z axes. A
+   * face running along Y has no such lift, and gets a frame of its own, flagged off-surface.
+   */
   frameAt(u: number, v: number): ZoneFrame {
+    const x = u + this.faceCx,
+      z = v + this.faceCz;
+    const n = this.frameNormal;
+    if (this.faceYKnown || !this.faceNormal) {
+      // X and Z projected onto the face, not lifted: for any point p on it, (p - origin)·uAxis is
+      // then exactly the X change that lifts onto p, so a drag keeps the design under the cursor.
+      // Shorter than unit, and not square, on a tilted face.
+      return {
+        origin: new THREE.Vector3(x, this.faceY - (n.x * x + n.z * z) / n.y, z),
+        uAxis: new THREE.Vector3(1, 0, 0).addScaledVector(n, -n.x),
+        vAxis: new THREE.Vector3(0, 0, 1).addScaledVector(n, -n.z),
+        normal: n.clone(),
+        offChartMM: 0,
+      };
+    }
+    // A face running along Y: no X/Z point lifts onto it, and the cut runs at `topZ` standing in for
+    // a height, so the design does not land on this face. Drawn on it anyway, where the user picked,
+    // and flagged as off it. The frame is the face's own 2D frame so a drag still follows the
+    // cursor; the offset that moves a point along the face keeps its axis, the other gets up.
+    const up = UP.clone().addScaledVector(n, -n.y).normalize();
+    const across = new THREE.Vector3().crossVectors(up, n);
+    const facesZ = Math.abs(n.z) >= Math.abs(n.x);
+    if ((facesZ ? across.x : across.z) < 0) across.negate();
+    const uAxis = facesZ ? across : up;
+    const vAxis = facesZ ? up : across;
+    const anchor = new THREE.Vector3(this.faceCx, this.faceMidY, this.faceCz);
+    anchor.addScaledVector(n, this.part.topZ - n.dot(anchor));
     return {
-      origin: new THREE.Vector3(u + this.faceCx, this.faceY, v + this.faceCz),
-      uAxis: new THREE.Vector3(1, 0, 0),
-      vAxis: new THREE.Vector3(0, 0, 1),
-      normal: new THREE.Vector3(0, this.nsign, 0),
-      offChartMM: 0,
+      origin: anchor.addScaledVector(uAxis, u).addScaledVector(vAxis, v),
+      uAxis,
+      vAxis,
+      normal: n.clone(),
+      offChartMM: Infinity,
     };
   }
 }

@@ -52,31 +52,18 @@ export function loopToRing(loop: Loop, forceCCW?: boolean): Ring | null {
 }
 
 /**
- * Build a turf (Multi)Polygon feature for one SVG shape (one <path> etc., possibly multiple
- * subpaths).
+ * Turf (Multi)Polygon for one SVG shape. Holes by containment depth (odd = hole), not winding:
+ * correct under both "nonzero" and "evenodd", where a hole can share its exterior's winding
+ * (common from Affinity Designer/Illustrator).
  *
- * Hole-vs-solid is resolved by geometric nesting depth, not winding sign. SVG has two fill rules:
- * "nonzero", where tools conventionally wind holes opposite their exterior, and "evenodd", where a
- * hole can legally share its exterior's winding (common from Affinity Designer/Illustrator).
- * Containment depth (odd = hole, even = solid island) is correct for both on any well-formed path.
+ * Depth resolution is O(rings²·len) and runs over every shape *before* the first yield, so the
+ * failure mode is a frozen tab. Worst real file: public/patterns/zebra.svg, one 69-subpath path,
+ * 5.88ms against the 30ms yield budget (scripts/bench-shape-to-feature.ts). Unmeasured: a dense
+ * Illustrator export, hundreds of subpaths in one <path> (fur, stipple). Raster tracing is held off
+ * by the despeckle floor and MAX_COMPONENTS (src/raster/trace.ts); re-bench if either loosens.
  *
- * That depth resolution is O(rings²·len): every subpath ring is point-in-polygon tested against
- * every other. Not a live issue on anything in use, and benchmarked rather than assumed
- * (scripts/bench-shape-to-feature.ts): the worst real file measured 5.88ms, public/patterns/
- * zebra.svg, a single 69-subpath path, an order of magnitude under the 30ms yield budget. It
- * matters more than that number suggests because the caller maps this over every shape *before*
- * the first yield, so the failure mode is a frozen tab rather than a slow one. The untested risk
- * is a dense Illustrator export, hundreds of subpaths in one <path> (fur, stipple line art), which
- * no current sample exercises; measure such a file rather than guessing a threshold now.
- *
- * Raster tracing is the first producer that could plausibly reach it, and is held off by the
- * despeckle floor rather than by luck. MAX_COMPONENTS (src/raster/trace.ts) is what holds it down,
- * and it is a target rather than a bound (see its own note): re-run the bench if that cap is
- * raised or the floor lowered.
- *
- * Separately, thousands of nested rings or <g> elements deep enough to overflow the JS call stack
- * fail with a named "unusually deeply nested" error instead of a raw stack-overflow message, but
- * neither this nor `walk` in src/svg/parse.ts is actually depth-limited.
+ * Deep nesting fails with a named "unusually deeply nested" error, but neither this nor `walk` in
+ * src/svg/parse.ts is actually depth-limited.
  */
 export function shapeToFeature(shape: SVGShape): PolyFeature | null {
   const rings = shape.loops
@@ -99,22 +86,12 @@ export function shapeToFeature(shape: SVGShape): PolyFeature | null {
   }
 
   /**
-   * The point used to ask "is this ring inside that one".
-   *
-   * Rings of one shape never cross, so in exact arithmetic any point of a ring answers for all of
-   * it. The exception is a probe sitting exactly *on* the other ring, where an even-odd ray cast
-   * is undefined, and a shape's rings do meet at isolated points all the time.
-   *
-   * The first vertex is the worst choice, systematically so for traced artwork: `spliceChains`
-   * (raster/trace.ts) rotates every ring to start on a chain boundary, which is a junction, so
-   * precisely where another ring passes through. Measured on a 28x28 three-way fixture, a 13-unit
-   * hole read as "outside" its own component on `raw[0]` alone, while 25 of its other 26 vertices
-   * and all 26 edge midpoints read inside. It was emitted as a solid island, painting over its own
-   * cavity and swallowing the differently-coloured region in it.
-   *
-   * An edge midpoint fixes it: coincidence there needs the rings to share a whole segment, which
-   * the crack graph cannot produce (a component's outer and hole rings are always different
-   * chains). Computed once per ring, so it costs nothing in the quadratic loop below.
+   * The probe for "is this ring inside that one": an edge midpoint, never a vertex. A ray cast is
+   * undefined for a probe *on* the other ring, and `spliceChains` (raster/trace.ts) starts every
+   * ring on a junction, where other rings pass. On a 28x28 three-way fixture `raw[0]` read a
+   * 13-unit hole as outside its component (25 of its 26 other vertices and all 26 midpoints read
+   * inside), emitting a solid island over its own cavity. Coincidence at a midpoint needs a shared
+   * segment, which the crack graph cannot produce.
    */
   const probeOf = (raw: Loop) => ({ x: (raw[0].x + raw[1].x) / 2, y: (raw[0].y + raw[1].y) / 2 });
 
@@ -263,21 +240,251 @@ export function boolOpWithRetry(
   fn: (a: PolyFeature, b: PolyFeature) => PolyFeature | null,
   a: PolyFeature,
   b: PolyFeature,
-): { ok: boolean; val?: PolyFeature | null } {
+): CappedResult {
   try {
     return { ok: true, val: cleanFeature(fn(a, b)) };
-  } catch {
+  } catch (e) {
+    if (isSizeLimit(e)) return { ok: false, tooBig: true };
     for (const p of [10, 8, 6]) {
       try {
         const ta = turf.truncate(a, { precision: p, mutate: false });
         const tb = turf.truncate(b, { precision: p, mutate: false });
         return { ok: true, val: cleanFeature(fn(ta, tb)) };
-      } catch {
-        /* next precision */
+      } catch (e2) {
+        if (isSizeLimit(e2)) return { ok: false, tooBig: true };
       }
     }
     return { ok: false };
   }
+}
+
+/**
+ * The engine's two size limits, told apart from its precision failures by their messages (pinned
+ * in tests/regions-sweep-cap.test.ts). Truncating coordinates cannot bring either under, so a
+ * retry is four doomed sweeps of the same size.
+ */
+function isSizeLimit(e: unknown): boolean {
+  return e instanceof Error && /queue size too big|too many sweep line segments/.test(e.message);
+}
+
+/**
+ * Most segments one engine call can hold: polygon-clipping 0.15.7 queues two sweep events per
+ * segment and throws past 1,000,000 (tests/regions-sweep-cap.test.ts takes it exactly and one
+ * square past). Its other limit, 1,000,000 sweep-line pieces, multiplies with crossings (500 strips
+ * each way reach it from 4,000 segments); uncountable ahead, so caught as `tooBig`.
+ */
+export const SWEEP_SEGMENT_CAP = 500_000;
+
+/** Segments the engine queues for a feature: one per ring edge, closing edge included. */
+export function segmentCount(f: PolyFeature | null): number {
+  return f ? toGeom(f).reduce((n, p) => n + polySegments(p), 0) : 0;
+}
+
+/** Segments left for the subject once every clip is in the call. */
+export function roomBesideClips(clips: (PolyFeature | null)[], cap = SWEEP_SEGMENT_CAP): number {
+  return clips.reduce((n, c) => n - segmentCount(c), cap);
+}
+
+/**
+ * Whether `subject` can be clipped by `clips`, all in one call, however it is split: its biggest
+ * polygon is the one piece no split divides. The same test the split itself refuses on.
+ */
+export function fitsBesideClips(
+  subject: PolyFeature | null,
+  clips: (PolyFeature | null)[],
+  cap = SWEEP_SEGMENT_CAP,
+): boolean {
+  const room = roomBesideClips(clips, cap);
+  return !!subject && toGeom(subject).every((p) => polySegments(p) <= room);
+}
+
+/**
+ * Thrown by a union told to refuse rather than degrade when it is too big to run. Fill mode asks
+ * for it: its fallback is one tile placed instead of a part that is quietly half blank.
+ */
+export class UnionTooBig extends Error {
+  constructor() {
+    super('A union is too big for the clipping engine, even split.');
+  }
+}
+
+function polySegments(rings: Ring[]): number {
+  return rings.reduce((n, r) => n + r.length - 1, 0);
+}
+
+type Box = [number, number, number, number];
+
+/** Of the exterior ring alone: a hole lies inside it. */
+function polyBox(rings: Ring[]): Box {
+  const b: Box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const p of rings[0]) {
+    if (p[0] < b[0]) b[0] = p[0];
+    if (p[1] < b[1]) b[1] = p[1];
+    if (p[0] > b[2]) b[2] = p[0];
+    if (p[1] > b[3]) b[3] = p[1];
+  }
+  return b;
+}
+
+function boxOf(polys: Geom): Box {
+  const b: Box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const p of polys) {
+    const q = polyBox(p);
+    b[0] = Math.min(b[0], q[0]);
+    b[1] = Math.min(b[1], q[1]);
+    b[2] = Math.max(b[2], q[2]);
+    b[3] = Math.max(b[3], q[3]);
+  }
+  return b;
+}
+
+/** Closed, so two boxes that only touch count: touching polygons still have to weld. */
+function boxesMeet(a: Box, b: Box): boolean {
+  return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+}
+
+const UNION = (x: PolyFeature, y: PolyFeature): PolyFeature | null =>
+  turf.union(x, y) as PolyFeature | null;
+
+const BOOL_OPS = {
+  union: UNION,
+  intersect: (x: PolyFeature, y: PolyFeature) => INTERSECT(x, y),
+  difference: (x: PolyFeature, y: PolyFeature) => DIFFERENCE(x, y),
+};
+
+/** What `boolOpUnderCap` did. `tooBig` is set on a failure no split could bring under the cap. */
+export interface CappedResult {
+  ok: boolean;
+  val?: PolyFeature | null;
+  tooBig?: boolean;
+}
+
+/**
+ * `boolOpWithRetry` split into calls each under SWEEP_SEGMENT_CAP; only an op over the cap splits.
+ * Exact, because both sides are merged sets (as every boolean result is): a polygon whose box
+ * misses the other side skips the engine, and each polygon's clip depends on nothing else. One
+ * call failing fails the op, so the caller's warning covers it all. One polygon over the cap (a
+ * fill whose background welds across every seam) is `tooBig`, never run.
+ */
+export function boolOpUnderCap(
+  kind: keyof typeof BOOL_OPS,
+  a: PolyFeature,
+  b: PolyFeature,
+  cap = SWEEP_SEGMENT_CAP,
+): CappedResult {
+  const fn = BOOL_OPS[kind];
+  if (segmentCount(a) + segmentCount(b) <= cap) return boolOpWithRetry(fn, a, b);
+  if (kind === 'union') {
+    const r = unionUnderCap(toGeom(a), toGeom(b), cap, { calls: 0 });
+    return r.ok ? { ok: true, val: fromGeom(r.val) } : r;
+  }
+  return splitSubject(a, [b], kind === 'difference', (g) => boolOpWithRetry(fn, g, b), cap);
+}
+
+/**
+ * `run` over `subject` a group of polygons at a time, each group sized to share one call with
+ * every clip. A polygon whose box misses the clips skips the engine: nothing of it survives an
+ * intersect (`keepFar` false), and a subtraction leaves it whole (`keepFar` true).
+ */
+function splitSubject(
+  subject: PolyFeature,
+  clips: PolyFeature[],
+  keepFar: boolean,
+  run: (group: PolyFeature) => CappedResult,
+  cap: number,
+): CappedResult {
+  const room = roomBesideClips(clips, cap);
+  const clipBox = boxOf(clips.flatMap(toGeom));
+  const out: Geom = [];
+  let group: Geom = [];
+  let groupSegs = 0;
+  let failed: CappedResult | null = null;
+  const flush = (): boolean => {
+    if (!group.length) return true;
+    const r = run(fromGeom(group)!);
+    group = [];
+    groupSegs = 0;
+    if (!r.ok) failed = r;
+    else if (r.val) for (const p of toGeom(r.val)) out.push(p);
+    return r.ok;
+  };
+  for (const p of toGeom(subject)) {
+    if (!boxesMeet(polyBox(p), clipBox)) {
+      if (keepFar) out.push(p);
+      continue;
+    }
+    const s = polySegments(p);
+    if (s > room) return { ok: false, tooBig: true };
+    if (group.length && groupSegs + s > room && !flush()) return failed!;
+    group.push(p);
+    groupSegs += s;
+  }
+  if (!flush()) return failed!;
+  return { ok: true, val: fromGeom(out) };
+}
+
+/**
+ * Engine calls one split union may make before it gives up as `tooBig`. The halving below always
+ * shrinks the first half's problem but not the second's, so nothing else bounds it.
+ */
+const SPLIT_CALL_LIMIT = 256;
+
+/**
+ * The union half of `boolOpUnderCap`. Polygons out of reach of the other side pass through; the
+ * rest go to the engine, and if even they pass the cap, the side with more of them is halved along
+ * its longer axis and merged in one half at a time. Halving is what rescues a long, thin fill,
+ * where every polygon of a row can sit within reach of the seam below it.
+ */
+function unionUnderCap(
+  pa: Geom,
+  pb: Geom,
+  cap: number,
+  budget: { calls: number },
+): { ok: true; val: Geom } | { ok: false; tooBig?: boolean } {
+  const engine = (x: Geom, y: Geom): { ok: true; val: Geom } | { ok: false; tooBig?: boolean } => {
+    budget.calls++;
+    const r = boolOpWithRetry(UNION, fromGeom(x)!, fromGeom(y)!);
+    return r.ok ? { ok: true, val: r.val ? toGeom(r.val) : [] } : { ok: false, tooBig: r.tooBig };
+  };
+  if (!pa.length || !pb.length) return { ok: true, val: [...pa, ...pb] };
+  const segsOf = (g: Geom): number => g.reduce((n, p) => n + polySegments(p), 0);
+  if (segsOf(pa) + segsOf(pb) <= cap) return engine(pa, pb);
+  // Narrowed twice: b's polygons within reach of a, then a's within reach of those. The second
+  // pass is what keeps a tile union's merge to the rows either side of one seam.
+  const aBox = boxOf(pa);
+  const bNear = pb.filter((p) => boxesMeet(polyBox(p), aBox));
+  const nearBox = boxOf(bNear);
+  const aNear = bNear.length ? pa.filter((p) => boxesMeet(polyBox(p), nearBox)) : [];
+  const nearA = new Set(aNear);
+  const nearB = new Set(bNear);
+  const out: Geom = [];
+  for (const p of pa) if (!nearA.has(p)) out.push(p);
+  for (const p of pb) if (!nearB.has(p)) out.push(p);
+  let merged: { ok: true; val: Geom } | { ok: false; tooBig?: boolean };
+  if (!aNear.length) merged = { ok: true, val: bNear };
+  else if (segsOf(aNear) + segsOf(bNear) <= cap) merged = engine(aNear, bNear);
+  else {
+    const [x, y] = aNear.length >= bNear.length ? [aNear, bNear] : [bNear, aNear];
+    if (x.length < 2 || budget.calls >= SPLIT_CALL_LIMIT) return { ok: false, tooBig: true };
+    const [x1, x2] = halves(x);
+    const first = unionUnderCap(x1, y, cap, budget);
+    merged = first.ok ? unionUnderCap(first.val, x2, cap, budget) : first;
+  }
+  if (!merged.ok) return merged;
+  for (const p of merged.val) out.push(p);
+  return { ok: true, val: out };
+}
+
+function halves(polys: Geom): [Geom, Geom] {
+  const b = boxOf(polys);
+  const axis = b[2] - b[0] >= b[3] - b[1] ? 0 : 1;
+  const centre = (p: Ring[]): number => {
+    const q = polyBox(p);
+    return (q[axis] + q[axis + 2]) / 2;
+  };
+  const sorted = [...polys].sort((p, q) => centre(p) - centre(q));
+  const mid = sorted.length >> 1;
+  return [sorted.slice(0, mid), sorted.slice(mid)];
 }
 
 /** MultiPolygon coordinates, the form the clipping engine takes and returns. */
@@ -298,43 +505,33 @@ function fromGeom(polys: Geom): PolyFeature | null {
 }
 
 /**
- * Drop the pieces of a clipped region too small to print, and say how many went.
+ * Drop pieces of a clipped region too small to print, and say how many went. A clip boundary
+ * running ALONG an edge (a dead region sharing its chart's outline, two claims meeting at a seam)
+ * hands back a hairline, which still extrudes: the chair shipped a 0.0253mm² one, 0.020mm wide and
+ * 8.08mm long on `chair-seat-back-top`'s Front chart, cutting a 0.4mm mark under the cushion.
  *
- * Where a clip boundary runs ALONG an edge of what it is clipping — a baked dead region sharing
- * its chart's own outline, a part's claim meeting its neighbour's at a seam — the intersect hands
- * back a hairline instead of dropping it, and a hairline still extrudes into a real inlay. The
- * chair shipped one: 0.0253mm², 0.020mm wide and 8.08mm long on `chair-seat-back-top`'s Front
- * chart, which cut a 0.4mm mark into surface the cushion covers.
+ * **Per piece**: on that chart the clip returns the 2,634mm² band AND the hairline, and a floor on
+ * the total keeps both.
  *
- * **Per piece, because a hairline usually arrives beside a real region rather than alone.** On that
- * chart the clip returns the 2,634mm² band AND the hairline; a floor on the feature's total keeps
- * both.
+ * **Never asks whether the clip made a piece small** — not answerable from a boolean's output. The
+ * clipper fuses touching inputs (two abutting 0.3 x 0.2mm dots inside the boundary came back as
+ * nothing), and `boolOpWithRetry`'s catch truncates at 1e-10, 1e-8, 1e-6. Applied flat; the caller
+ * reports what went.
  *
- * **Nothing here asks whether the clip is what made a piece small**, and two rounds of trying said
- * that is not answerable from a boolean's output. The clipper fuses touching input polygons, so a
- * fused output piece matches no single source and reads as shrunk: verified end to end, two
- * abutting 0.3 x 0.2mm dots wholly inside the boundary came back as nothing. Coordinates move too
- * whenever `boolOpWithRetry` takes its catch, which truncates at 1e-10 and then 1e-8 and 1e-6.
- * The floor is applied flat instead, and the caller reports what went — the honest trade, since a
- * piece this size was never going to print whoever made it small, and the user is told rather than
- * left to find out.
+ * An area admits a long enough hairline and refuses a dot one nozzle across. **An area on
+ * purpose**: this sees design INK, so a width test would delete a deliberate 0.3mm stroke
+ * (docs/audience.md). At the bake no width separates dust from surface either:
+ * docs/findings/2026-09-08-cut-region-width.md, `npx vite-node scripts/measure-cut-width.mjs`.
+ * Ink sweep: docs/findings/2026-09-27-clip-ink-sweep.md, `RUN_CLIP_INK_SWEEP=1 npx vitest run
+ * scripts/measure-clip-ink.test.ts` — 9.4% of pieces sit below this floor, mostly one pattern's
+ * fine detail. Open in docs/tech-debt.md: "Whether a near-floor clipped-ink piece is dust or a
+ * drawn detail is unmeasured", and beside it "A cut region claims surface the part does not have,
+ * and it prints" — 14 of 87 bake pieces lie off their chart's triangles, so no floor here reaches
+ * them (`npx vite-node scripts/measure-cut-offsurface.mjs`).
  *
- * The floor is an area, so it admits a long enough hairline and refuses a round dot one nozzle
- * across. **It stays an area here on purpose, and the reason is not the one measured at the bake.**
- * This floor sees clipped design INK, so a width test would delete a deliberate 0.3mm stroke in
- * someone's artwork — a real choice, honoured the way a sub-layer depth is (docs/audience.md).
- * Swept at the bake, where the population is part geometry, no width separates dust from surface
- * at all: docs/findings/2026-09-08-cut-region-width.md, `npx vite-node
- * scripts/measure-cut-width.mjs`. That sweep says nothing about the ink this floor guards, which
- * nobody has measured — open in docs/tech-debt.md, "Nobody has swept the design ink
- * CLIP_REMNANT_FLOOR_MM2 actually guards". The bake's own thread is the section beside it,
- * "A cut region claims surface the part does not have, and it prints" — those pieces turned out
- * not to be thin surface but surface-less, off the chart's triangles, where no floor reaches them.
- *
- * What measurement HAS retired is the seam overlap — every one of the chair's 41 overlap pieces
- * builds a cutter on both its parts, and `buildCutter` extrudes a ribbon one micron wide and 120mm
- * long without complaint. Re-derive with `npx vite-node scripts/measure-seam-overlap.mjs`; the run
- * is in docs/findings/2026-09-07-seam-ribbon-closed.md.
+ * Retired: the seam overlap. All 41 chair overlap pieces build a cutter on both parts, and
+ * `buildCutter` extrudes a ribbon one micron wide and 120mm long fine (`npx vite-node
+ * scripts/measure-seam-overlap.mjs`, docs/findings/2026-09-07-seam-ribbon-closed.md).
  */
 export function dropUnprintableRemnants(
   feat: PolyFeature | null,
@@ -355,30 +552,21 @@ function truncGeom(polys: Geom, precision: number): Geom {
 }
 
 /**
- * `boolOpWithRetry` for an n-ary op, called on the clipping engine directly rather than through
- * Turf.
- *
- * Turf's union/difference are one-line wrappers that take exactly two features and hand their
- * coordinates to this same engine, so a pairwise fold pays a full sweep per pair. The engine
- * itself is n-ary: one sweep over every input. Measured (scripts/bench-regions.ts) that is where
- * essentially all of the pass's time was, and n-ary sweeps take ~45% of it off.
- *
- * The retry ladder is the same one and matters as much: without it the direct calls fall back on
- * inputs Turf's truncate would have rescued, and a degraded region is a wrong region, not a slow
- * one.
+ * `boolOpWithRetry` for an n-ary op on the engine directly: Turf's union/difference take exactly
+ * two features, so a pairwise fold pays a sweep per pair, and n-ary sweeps take ~45% off the pass
+ * (scripts/bench-regions.ts). Same retry ladder, or inputs truncate rescues degrade (wrong, not
+ * slow).
  */
-function naryOpWithRetry(
-  fn: (args: Geom[]) => Geom,
-  args: Geom[],
-): { ok: boolean; val?: PolyFeature | null } {
+function naryOpWithRetry(fn: (args: Geom[]) => Geom, args: Geom[]): CappedResult {
   try {
     return { ok: true, val: cleanFeature(fromGeom(fn(args))) };
-  } catch {
+  } catch (e) {
+    if (isSizeLimit(e)) return { ok: false, tooBig: true };
     for (const p of [10, 8, 6]) {
       try {
         return { ok: true, val: cleanFeature(fromGeom(fn(args.map((a) => truncGeom(a, p))))) };
-      } catch {
-        /* next precision */
+      } catch (e2) {
+        if (isSizeLimit(e2)) return { ok: false, tooBig: true };
       }
     }
     return { ok: false };
@@ -386,13 +574,9 @@ function naryOpWithRetry(
 }
 
 /**
- * Union every feature in one engine sweep.
- *
- * **A failed sweep falls back to the pairwise fold, it does not give up on the batch.** One sweep
- * covering n features has one outcome for all of them, so returning "the first one" on failure
- * would discard the other n-1 -- where the fold this replaced lost exactly the one shape that
- * failed. Re-folding gives every pair its own retry ladder and restores that: a bad shape costs a
- * shape. It runs only after a total failure, so the fast path never pays for it.
+ * Union every feature in one engine sweep. **A failed sweep falls back to the pairwise fold**, or
+ * one failure would discard n-1 features; re-folding gives every pair its own retry ladder, so a
+ * bad shape costs one shape. The fast path never pays for it.
  */
 export function safeUnionAll(features: (PolyFeature | null)[], label?: string): PolyFeature | null {
   const live = features.map(cleanFeature).filter((f): f is PolyFeature => !!f);
@@ -405,13 +589,10 @@ export function safeUnionAll(features: (PolyFeature | null)[], label?: string): 
 }
 
 /**
- * `safeUnionAll` for a list whose length the artwork decides, not a constant.
- *
- * Same sweep, but the fallback is `unionAllCooperative` rather than a straight-line fold: it
- * yields on the same budget and merges as a balanced tree. The sync fold above is fine where the
- * caller bounds the batch (COVERED_BATCH caps it at 8 pairwise ops), and is a frozen tab where it
- * does not -- a colour can carry hundreds of pieces, and the fallback runs precisely when the
- * engine is already struggling with them.
+ * `safeUnionAll` for an artwork-sized list: the fallback is `unionAllCooperative` (yielding,
+ * balanced tree). The sync fold is fine where the caller bounds the batch (COVERED_BATCH: 8), and
+ * a frozen tab where not — a colour can carry hundreds of pieces, and the fallback runs exactly
+ * when the engine is already struggling.
  */
 export async function safeUnionAllCooperative(
   features: (PolyFeature | null)[],
@@ -434,18 +615,35 @@ export function safeDiffAll(
   clippings: (PolyFeature | null)[],
   label?: string,
 ): PolyFeature | null {
-  const s = cleanFeature(subject);
-  if (!s) return null;
-  const live = clippings.map(cleanFeature).filter((f): f is PolyFeature => !!f);
-  if (!live.length) return s;
-  const r = naryOpWithRetry(
-    (a) => polygonClipping.difference(a[0], ...a.slice(1)),
-    [toGeom(s), ...live.map(toGeom)],
-  );
-  if (r.ok) return r.val ?? null;
-  let acc: PolyFeature | null = s;
-  for (const c of live) acc = safeDiff(acc, c, label);
+  const r = differenceAllChecked(subject, clippings);
+  if (r.trimmed) return r.feat;
+  let acc: PolyFeature | null = r.feat;
+  for (const c of clippings) acc = safeDiff(acc, c, label);
   return acc;
+}
+
+/**
+ * The one sweep of `safeDiffAll`, with no fallback and no warning: the subject back whole and
+ * `trimmed: false` when the sweep fails, for a caller that names the failure itself.
+ */
+export function differenceAllChecked(
+  subject: PolyFeature | null,
+  clippings: (PolyFeature | null)[],
+): { feat: PolyFeature | null; trimmed: boolean } {
+  const s = cleanFeature(subject);
+  if (!s) return { feat: null, trimmed: true };
+  const live = clippings.map(cleanFeature).filter((f): f is PolyFeature => !!f);
+  if (!live.length) return { feat: s, trimmed: true };
+  const sweep = (g: PolyFeature): CappedResult =>
+    naryOpWithRetry(
+      (a) => polygonClipping.difference(a[0], ...a.slice(1)),
+      [toGeom(g), ...live.map(toGeom)],
+    );
+  const r =
+    segmentCount(s) <= roomBesideClips(live, SWEEP_SEGMENT_CAP)
+      ? sweep(s)
+      : splitSubject(s, live, true, sweep, SWEEP_SEGMENT_CAP);
+  return r.ok ? { feat: r.val ?? null, trimmed: true } : { feat: s, trimmed: false };
 }
 
 /**
@@ -460,17 +658,20 @@ function warnBool(message: string): void {
   warnBuild(message);
 }
 
+/** `refuseTooBig` throws UnionTooBig where the fallback below would otherwise drop `b`. */
 export function safeUnion(
   a: PolyFeature | null,
   b: PolyFeature | null,
   label?: string,
+  refuseTooBig = false,
 ): PolyFeature | null {
   a = cleanFeature(a);
   b = cleanFeature(b);
   if (!a) return b;
   if (!b) return a;
-  const r = boolOpWithRetry((x, y) => turf.union(x, y) as PolyFeature | null, a, b);
+  const r = boolOpUnderCap('union', a, b);
   if (r.ok) return r.val ?? null;
+  if (r.tooBig && refuseTooBig) throw new UnionTooBig();
   warnBool(
     `Couldn't merge the shapes${label ? ` for ${label}` : ''}. They are used unmerged, so this region may be missing part of its area.`,
   );
@@ -491,13 +692,9 @@ export function safeDiff(
 }
 
 /**
- * `safeDiff` without its warning, saying whether the subtraction actually happened.
- *
- * The fallback hands the subject back WHOLE, which a caller reading only the feature cannot tell
- * from "the clipping took nothing off it". That matters wherever the caller then reports where the
- * removed area went: `clipToNetShare` names the zone a whole-part mark moved to, and on a failed
- * difference the mark has not moved at all — it is still cut here, and cut again there.
- * Nothing to subtract is a clean success, not a failure.
+ * `safeDiff` without its warning, saying whether the subtraction happened: the fallback returns the
+ * subject WHOLE, which reads like "took nothing off", so `clipToNetShare` would name a zone a mark
+ * moved to while it is still cut here too. Nothing to subtract is a success.
  */
 export function differenceChecked(
   a: PolyFeature | null,
@@ -507,7 +704,7 @@ export function differenceChecked(
   b = cleanFeature(b);
   if (!a) return { feat: null, trimmed: true };
   if (!b) return { feat: a, trimmed: true };
-  const r = boolOpWithRetry(DIFFERENCE, a, b);
+  const r = boolOpUnderCap('difference', a, b);
   return r.ok ? { feat: r.val ?? null, trimmed: true } : { feat: a, trimmed: false };
 }
 
@@ -523,13 +720,9 @@ export function safeIntersect(
 }
 
 /**
- * `safeIntersect`, but saying whether the clip actually happened.
- *
- * The fallback returns the region **unclipped**, indistinguishable from a successful clip to a
- * caller that only reads `feat`. That matters to the edge-cut-through rule, which reads "reaches
- * past the face boundary" as "stands on the part's outer wall": an unclipped region reaches past
- * everywhere, so a clipper failure turned an oversized recess into a hole clean through the part.
- * Callers depending on the input really being bounded by the face ask for the flag.
+ * `safeIntersect`, saying whether the clip happened: the fallback returns the region **unclipped**,
+ * which the edge-cut-through rule reads as standing on the outer wall everywhere — a clipper
+ * failure turned a recess into a hole clean through. Callers relying on the face bound ask.
  */
 export function safeIntersectChecked(
   a: PolyFeature | null,
@@ -556,7 +749,7 @@ export function intersectChecked(
   a = cleanFeature(a);
   b = cleanFeature(b);
   if (!a || !b) return { feat: null, clipped: true };
-  const r = boolOpWithRetry(INTERSECT, a, b);
+  const r = boolOpUnderCap('intersect', a, b);
   return r.ok ? { feat: r.val ?? null, clipped: true } : { feat: a, clipped: false };
 }
 
@@ -564,22 +757,16 @@ const INTERSECT = (x: PolyFeature, y: PolyFeature): PolyFeature | null =>
   turf.intersect(x, y) as PolyFeature | null;
 
 /**
- * The overlap of two features, or null for "they don't overlap" AND for "the boolean flaked".
- *
- * For a DIAGNOSTIC intersect, whose answer only picks which message a build already owes. Neither
- * of the other two helpers fits one: `safeIntersect` hands the subject back UNCLIPPED on failure,
- * which a probe reads as "they overlap" for every input, and `safeIntersectChecked` says
- * "Region left unclipped, may extend past the face edge" — a promise about exported geometry, and
- * a lie when the intersect it failed shaped none.
- *
- * So a flake is silent and indistinguishable from no overlap here. That is the safe direction:
- * the caller falls back to the message it would have given before it could tell them apart.
+ * The overlap of two features, or null for "no overlap" AND "the boolean flaked". For a DIAGNOSTIC
+ * intersect that only picks which message a build owes: `safeIntersect` returns UNCLIPPED (an
+ * overlap for every input), and `safeIntersectChecked` warns about exported geometry it never
+ * shaped. A silent flake is the safe direction: the caller keeps its older message.
  */
 export function intersectQuiet(a: PolyFeature | null, b: PolyFeature | null): PolyFeature | null {
   a = cleanFeature(a);
   b = cleanFeature(b);
   if (!a || !b) return null;
-  const r = boolOpWithRetry(INTERSECT, a, b);
+  const r = boolOpUnderCap('intersect', a, b);
   return r.ok ? (r.val ?? null) : null;
 }
 
@@ -596,12 +783,13 @@ export function yieldToBrowser(): Promise<void> {
  * Union a list of features by balanced pairwise merging (pairs, then pairs of pairs), yielding on
  * a time budget and reporting progress. A left fold re-processes the ever-growing accumulator
  * every step; the tree does the same math in O(log n) levels and benchmarks 2-4x faster on dense
- * designs. safeUnion's fallback semantics are preserved per merge.
+ * designs. safeUnion's fallback semantics are preserved per merge, `refuseTooBig` included.
  */
 export async function unionAllCooperative(
   features: (PolyFeature | null)[],
   onProgress?: (fraction: number) => void,
   label?: string,
+  refuseTooBig = false,
 ): Promise<PolyFeature | null> {
   let level = features.filter((f): f is PolyFeature => !!f);
   if (!level.length) return null;
@@ -615,7 +803,7 @@ export async function unionAllCooperative(
         next.push(level[i]);
         continue;
       }
-      const u = safeUnion(level[i], level[i + 1], label);
+      const u = safeUnion(level[i], level[i + 1], label, refuseTooBig);
       if (u) next.push(u);
       done++;
       onProgress?.(done / totalOps);
@@ -630,21 +818,14 @@ export async function unionAllCooperative(
 }
 
 /**
- * How many shapes are subtracted individually before the accumulator is folded.
- *
- * Not a tuning knob to taste: the two ends both lose. Folding every shape (batch 1) is the old
- * pairwise cadence and gains almost nothing. Never folding wins on a small design and collapses on
- * a dense one, because every difference then carries every shape above it: at 400 shapes it
- * measured 13552ms against 1257ms for the old pairwise loop and 704ms for batch 8, so **11x the
- * loop it replaced and 19x this**.
- *
- * 8 is chosen for the whole curve rather than for the best reading at any one size. Over
- * 50/100/200/400 synthetic overlapping shapes it runs 1.9x, 1.8x, 1.9x, 1.8x against the pairwise
- * loop, and a finer sweep puts 4 through 12 on a flat plateau with 8 on it. Bigger batches beat it
- * at 50 shapes (3.0x) and are the numbers above at 400.
- *
- * It also bounds one engine call, which is what keeps the yield below honest. A batch of every
- * shape is one atomic multi-second sweep with no frame to give back.
+ * Shapes subtracted individually before the accumulator folds. Both ends lose: batch 1 is the old
+ * pairwise cadence; never folding collapses on dense designs, every difference carrying every shape
+ * above it (400 shapes: 13552ms vs 1257ms pairwise and 704ms at 8 — **11x the loop it replaced and
+ * 19x this**). 8 suits the whole curve: over 50/100/200/400 synthetic overlapping shapes it runs
+ * 1.9x, 1.8x, 1.9x, 1.8x the pairwise loop, on a flat plateau from 4 through 12; bigger batches win
+ * at 50 shapes (3.0x) and lose as above at 400.
+ * Bounds shapes per call, not vertices: 800 disjoint blobs never collapse and one fold took 281ms
+ * ("Many disjoint shapes", docs/tech-debt.md).
  */
 const COVERED_BATCH = 8;
 
@@ -654,29 +835,17 @@ let regionsCacheVal: { byColor: Record<string, PolyFeature> } | null = null;
 let regionsCacheDiagnostics: string[] = [];
 
 /**
- * Compute, per color, the net *visible* region accounting for paint order
- * (later elements occlude earlier ones).
+ * Per color, the net *visible* region under paint order: f minus the union of everything above it.
+ * A per-shape diff with a bbox pre-filter is identical but ~2x SLOWER on real artwork (backgrounds
+ * and lineart overlap everything), so the accumulator stays. It folds in batches, deliberately
+ * stale: each difference subtracts it *and* the unfolded shapes above in one call, the same set.
+ * With one union per color at the end: 1.5-2.9x the pairwise fold, areas identical
+ * (scripts/bench-regions.ts). The dominant rebuild cost, so it yields every ~YIELD_BUDGET_MS.
  *
- * Visibility is f minus the accumulated union of everything painted above it. Subtracting each
- * later element individually with a bbox pre-filter is algebraically identical but benchmarked ~2x
- * SLOWER on real artwork: full-canvas backgrounds and lineart overlap everything, so the filter
- * rarely prunes and the pairwise diffs multiply. The accumulator stays.
- *
- * The accumulator is folded in batches rather than one shape at a time, and the per-color pieces
- * are unioned once at the end, so both n-ary ops reach the engine as a single sweep. Within a
- * batch the accumulator is deliberately stale: the visibility difference subtracts it *and* the
- * not-yet-folded shapes above this one in the same call, which is the same set the up-to-date
- * accumulator would have held. Measured 1.5-2.9x on real artwork against the pairwise fold, with
- * per-color areas identical (scripts/bench-regions.ts).
- *
- * The dominant cost of a rebuild, so it runs cooperatively: every ~YIELD_BUDGET_MS it yields a
- * frame and reports progress, keeping the tab responsive on a dense SVG. See src/progress.ts.
- *
- * Unbuilt on purpose: a `disjoint` fast path. Raster-traced regions are disjoint by construction,
- * so every safeDiff here is provably a no-op and the whole pass collapses to array concatenation.
- * It would make per-component raster granularity viable and cut the per-color path's 136ms too,
- * but at the 8 shades that path actually produces the pass is not where the time goes. Build it
- * only if MAX_COMPONENTS (src/raster/trace.ts) is ever raised enough to change that.
+ * Unbuilt on purpose: a `disjoint` fast path. Raster regions are disjoint by construction, so every
+ * safeDiff here is a no-op; it would enable per-component raster granularity and cut the per-color
+ * path's 136ms, but at its 8 shades the time is elsewhere. It pays on SVGs of many disjoint shapes:
+ * "Many disjoint shapes" in docs/tech-debt.md.
  */
 export async function computeNetRegionsByColor(
   shapes: SVGShape[],
@@ -687,9 +856,8 @@ export async function computeNetRegionsByColor(
   // `shapes` (ParsedSVG.shapes) is always assigned fresh from a parse and never mutated in place,
   // so identity is a safe cache key. Depth/fit/margin/color tweaks don't touch it at all.
   if (shapes === regionsCacheKey && regionsCacheVal) {
-    // Cached regions may be degraded ones a failed boolean fell back to. No op re-runs on a hit,
-    // so replay what the computing pass reported: warnings are build-scoped, the rebuild now using
-    // these regions cleared them, and the degradation is still on screen.
+    // Cached regions may be degraded and nothing re-runs on a hit, so replay the pass's warnings:
+    // they are build-scoped and this rebuild cleared them.
     for (const m of regionsCacheDiagnostics) warnBuild(m);
     onProgress(1);
     return regionsCacheVal;
@@ -714,34 +882,28 @@ export async function computeNetRegionsByColor(
         if (visible) (pieces[color] ||= []).push(visible);
         pending.push(f);
         if (pending.length >= COVERED_BATCH) {
-          // No label: a batch spans whatever colors fell in it, so naming this shape's color would
-          // point the user at one arbitrary member of it. The old pairwise fold could name a color
-          // honestly because it folded exactly one shape.
+          // No label: a batch spans several colors, so naming one points at an arbitrary member.
           covered = safeUnionAll(covered ? [covered, ...pending] : pending);
           pending = [];
         }
       }
-      // The per-color merge below is real work, so the visibility loop stops short of 1: it owns
-      // the first 90% and the merge owns the rest. Reporting 1 here and then merging is how a
-      // progress bar sits full while the tab is still busy.
+      // This loop owns the first 90% and the merge the rest, or the bar sits full while still busy.
       onProgress(0.9 * ((total - i) / total));
       if (performance.now() - lastYield > YIELD_BUDGET_MS) {
-        // Safe here, unlike anywhere inside the per-part cut: this pass is pure 2D polygon work
-        // and holds no Manifold solids, so a throw leaks nothing (see src/cancel.ts). It is also
-        // where a heavy design actually spends its time — a 6000-region wheel sat at 11% for the
-        // whole 140.4s the 2026-08-24 cycle measured, which is this loop, not the CSG below it.
+        // Safe here: pure 2D work holding no Manifold solids (src/cancel.ts). And it is where heavy
+        // designs spend their time: a 6000-region wheel sat at 11% for the whole 140.4s the
+        // 2026-08-24 cycle measured.
         throwIfCancelled();
         await yieldToBrowser();
         lastYield = performance.now();
       }
     }
-    // One sweep per color, and unlike the accumulator fold it is bounded by nothing: the piece
-    // count comes from the artwork. The yield below runs *between* colors, so a single color with
-    // very many pieces is still one atomic call. Measured small on everything real (30ms over the
-    // corpus, 18ms worst), and worth keeping n-ary: folding it cooperatively instead costs dino
-    // ring 123ms -> 158ms. The unbounded case is a raster trace near MAX_COMPONENTS with one
-    // dominant shade, and it is written up in docs/tech-debt.md rather than closed with a chunk
-    // size nobody measured.
+    // One sweep per color, unchunked: pieces are interior-disjoint, so chunking only dissolves
+    // shared edges and the last sweep still carries nearly every vertex. On 800 pieces, chunks of
+    // 25-400 took the longest call from 345ms to 248-322ms at 1.3-1.9x the total; at 400, 186ms to
+    // 146-194ms at 1.05-1.7x (`bench-regions.ts chunks dots:800 dots:400`), with no plateau.
+    // Pairwise (unionAllCooperative) cost dino ring 123ms -> 158ms in #218. A raster trace arrives
+    // with one piece per color (parseRasterImage).
     const byColor: Record<string, PolyFeature> = {};
     const colors = Object.entries(pieces);
     for (let c = 0; c < colors.length; c++) {
@@ -751,9 +913,8 @@ export async function computeNetRegionsByColor(
       if (merged) byColor[color] = merged;
       onProgress(0.9 + (0.1 * (c + 1)) / colors.length);
       if (performance.now() - lastYield > YIELD_BUDGET_MS) {
-        // Same safety as the visibility loop above, and the same reason to want it: this merge is
-        // the unbounded case the comment on COVERED_BATCH names, so a cancel landing here waited
-        // it out with no check of its own.
+        // Same safety as the visibility loop above. Without it a cancel landing here waited out
+        // every remaining color's sweep.
         throwIfCancelled();
         await yieldToBrowser();
         lastYield = performance.now();
@@ -771,18 +932,15 @@ export async function computeNetRegionsByColor(
 }
 
 /**
- * Auto-merge slider stops. Index = slider value, 0 is "off". CIE76 ΔE cutoffs measured against the
- * stubs/ sample artwork. Slight dedupes near-identical export/anti-aliasing artifacts (pappa.svg's
- * near-duplicate reds sit at ΔE 0.4) without touching real differences (snoopy.svg's closest pair
- * is ΔE 91.7). Medium starts banding intentional shading ramps; Strong collapses toward hue
- * families.
+ * Auto-merge slider stops (index = slider value, 0 off): CIE76 ΔE cutoffs measured on stubs/.
+ * Slight dedupes export/anti-aliasing near-duplicates (pappa.svg's reds at ΔE 0.4) without touching
+ * real differences (snoopy.svg's closest pair, ΔE 91.7). Medium starts banding shading ramps;
+ * Strong collapses toward hue families.
  *
- * This is a similarity control; the audience's actual question (docs/audience.md) is a slot-count
- * one -- "I have a 4-slot AMS Lite, make this fit." Measured on two real volunteer SVGs: a 7-color
- * chair design went None/Slight/Medium/Strong -> 7/7/7/6 slots, a 7-color wheel design -> 8/7/7/7.
- * Closing that properly means re-deriving these thresholds against a wider sample and either
- * replacing this slider with a "fit N slots" input that binary-searches a threshold, or adding one
- * alongside it -- needs real artwork to tune against, not the two samples above.
+ * Known gap: the audience asks a slot-count question ("make this fit my 4-slot AMS Lite",
+ * docs/audience.md). On two volunteer SVGs None/Slight/Medium/Strong gave 7/7/7/6 slots (7-color
+ * chair) and 8/7/7/7 (7-color wheel). A "fit N slots" input binary-searching a threshold needs a
+ * wider artwork sample to tune against.
  */
 export const AUTO_MERGE_LEVELS = [
   { label: 'None', threshold: 0 },

@@ -4,7 +4,6 @@ import { hideOverlay, showOverlay, updateOverlay } from '../ui/overlay';
 import { setProgressSink } from '../progress';
 import { beginWork, endWork, noteRebuildDone } from './idle';
 import { armCancel, cancelHonoured } from '../cancel';
-import { state } from '../state/store';
 
 let handler: () => void | Promise<void> = () => {};
 let costHint: () => boolean = () => false;
@@ -25,6 +24,18 @@ let running = false;
 let dirty = false;
 let lastRebuildMs = 0;
 let debouncePending = false;
+/** Set by whichever debounce timer fired last; read once by the pass it starts. */
+let nextPassSettled = false;
+let passSettled = false;
+
+/**
+ * Whether the running pass was started by the typed debounce, i.e. nothing scheduled a rebuild in
+ * the TYPED_DEBOUNCE_MS before it. Work too heavy per slider step (a re-trace) runs only on such a
+ * pass; a live pass that finds it owed calls `scheduleRebuild('typed')`.
+ */
+export function rebuildSettled(): boolean {
+  return passSettled;
+}
 
 /** main.ts registers the actual rebuild entry point here (breaks the ui <-> rebuild cycle). */
 export function setRebuildHandler(h: () => void | Promise<void>): void {
@@ -32,21 +43,15 @@ export function setRebuildHandler(h: () => void | Promise<void>): void {
 }
 
 /**
- * Register an up-front estimate of whether the *next* rebuild will be slow, based on the
- * current design/mode. The rebuild blocks the main thread synchronously, so we can't
- * measure or react to its cost mid-flight — the curtain has to be decided (and painted)
- * before it starts. The measured duration of the last rebuild covers the repeated case;
- * this hint covers the very first heavy rebuild, before any measurement exists.
+ * Register an up-front estimate of whether the *next* rebuild will be slow. The rebuild blocks the
+ * main thread, so its cost can't be reacted to mid-flight: the curtain must be decided and painted
+ * first. The last rebuild's measured duration covers repeats; this covers the first heavy one.
  */
 export function setRebuildCostHint(fn: () => boolean): void {
   costHint = fn;
 }
 
-/**
- * Whether the next rebuild is expected to be slow — true if the last one was slow, or the
- * up-front estimate says this design/mode is heavy. Used both to show the curtain and to
- * make sliders defer live updates to drag-release.
- */
+/** Whether the next rebuild is expected slow: the last one was, or the up-front estimate says so. Shows the curtain and makes sliders defer live updates to drag-release. */
 export function isRebuildLikelySlow(): boolean {
   return lastRebuildMs > SLOW_REBUILD_MS || costHint();
 }
@@ -61,34 +66,22 @@ function nextPaint(): Promise<void> {
 
 async function runNow(): Promise<void> {
   if (running) {
-    // A rebuild is already in flight: don't stack a second one, just mark that
-    // another pass is needed once this one finishes (it'll pick up latest state).
+    // A rebuild is already in flight: don't stack a second, mark that another pass is needed (it picks up latest state).
     dirty = true;
     return;
   }
   running = true;
+  passSettled = nextPassSettled;
+  nextPassSettled = false;
   beginWork();
   armCancel();
-  // Fresh diagnostics for this attempt — a warning from whatever the last rebuild's inputs were
-  // (a different zone binding, an artwork that's since been swapped) can't outlive it and still
-  // show once this one lands. Standing facts (WARNINGS proper) aren't touched.
+  // Fresh diagnostics for this attempt: a warning from the last rebuild's inputs (another zone binding, a swapped artwork) mustn't outlive it. Standing facts (WARNINGS proper) are untouched.
   clearBuildWarnings();
   const showsOverlay = isRebuildLikelySlow();
   const t0 = performance.now();
   if (showsOverlay) {
-    // Assembly only, which is every part the app offers — the flat modes ship compiled and
-    // unrendered (docs/tech-debt.md), so this condition selects everything reachable.
-    //
-    // The reason recorded here used to be that flat had no safe abort point, and that is no longer
-    // true twice over: the check went into computeNetRegionsByColor, which both paths run and
-    // which holds no Manifold solids, and Fill's tiling — the case that made
-    // `unionAllCooperative` unsafe — now runs inside the per-part body's finally over its
-    // solids. flat.ts imports no Manifold at all. So offering flat a Cancel is untested
-    // rather than unsafe, and there is no reachable flat mode to test it on
-    // (docs/tech-debt.md).
-    showOverlay('Rebuilding geometry…', { cancellable: state.shapeKind === 'assembly' });
-    // The rebuild reports progress as it chunks through the boolean pass; show it as a live
-    // percentage, and once it's dragged on a while add a "hang tight" so it reads as working.
+    showOverlay('Rebuilding geometry…', { cancellable: true });
+    // Progress shows as a live percentage, with a "hang tight" once it drags on.
     setProgressSink((fraction) => {
       const pct = Math.round(fraction * 100);
       const suffix =
@@ -106,36 +99,27 @@ async function runNow(): Promise<void> {
     renderWarnings();
   } finally {
     lastRebuildMs = performance.now() - t0;
-    // In the finally, so a rebuild that threw still counts: a drive script asking "did a rebuild
-    // happen" must get yes for a failed one, or it waits out a timeout and reports the failure as
-    // "nothing was scheduled".
+    // In the finally, so a throwing rebuild still counts: a drive script asking "did a rebuild happen" must get yes, not wait out a timeout and report "nothing was scheduled".
     noteRebuildDone();
     if (showsOverlay) {
       setProgressSink(null);
       hideOverlay();
     }
     running = false;
-    // A cancel that actually landed drops the queued pass too. Without this, touching a panel
-    // mid-rebuild leaves `dirty` set and the follow-up starts the moment the cancel does, so the
-    // button looks broken: the curtain returns immediately with the work the user just stopped.
-    //
-    // `cancelHonoured`, not `cancelRequested`: a press that arrives after the last safe point
-    // aborts nothing, so the build has completed and rendered, and dropping its follow-up would
-    // leave the panels and the saved session ahead of the geometry that exports.
+    // A cancel that landed drops the queued pass too: otherwise touching a panel mid-rebuild leaves
+    // `dirty` set and the follow-up starts as the cancel does, so the button looks broken.
+    // `cancelHonoured`, not `cancelRequested`: a press after the last safe point aborts nothing, the
+    // build completed and rendered, and dropping its follow-up would leave panels and the saved
+    // session ahead of the geometry that exports.
     if (cancelHonoured()) {
       dirty = false;
-      // And the armed debounce: an edit typed inside its window never set `dirty`, so clearing
-      // that alone leaves the timer to fire and restart the rebuild that was just stopped.
-      //
-      // Keyed on `debouncePending`, not on `timer`. The timer callback never nulls its own handle,
-      // so `timer !== undefined` is true for one that has already fired and tests nothing.
-      //
-      // And the reservation has to be released here, because the callback that owns it is the
-      // thing being cancelled: scheduleRebuild's beginWork() is matched by an endWork() inside the
-      // timer, so dropping the timer without this leaks +1 outstanding and whenIdle() never
-      // resolves until the user's next edit. Unreachable while a cancel took 140s — any armed
-      // timer had long since fired — and routine at 0.3s, where a typed edit's 550ms window is
-      // wide open when the button is pressed.
+      // And the armed debounce: a typed edit inside its window never set `dirty`, so the timer would
+      // restart the rebuild just stopped. Keyed on `debouncePending`, not `timer` — the callback never
+      // nulls its handle, so `timer !== undefined` stays true after firing.
+      // The reservation is released here too: scheduleRebuild's beginWork() is matched by an
+      // endWork() inside the timer, so dropping the timer leaks +1 outstanding and whenIdle() never
+      // resolves until the next edit. Unreachable when a cancel took 140s, routine at 0.3s where a
+      // typed edit's 550ms window is open at the press.
       if (debouncePending) {
         clearTimeout(timer);
         timer = undefined;
@@ -143,9 +127,7 @@ async function runNow(): Promise<void> {
         endWork();
       }
     }
-    // Start the follow-up pass (which does its own beginWork()) before releasing this pass's
-    // reservation, so a dirty rebuild never lets the outstanding count touch zero in between —
-    // a whenIdle() waiter must not see a zero-width gap that isn't really idle.
+    // Start the follow-up (its own beginWork()) before releasing this pass's reservation, so the outstanding count never touches zero and a whenIdle() waiter sees no false-idle gap.
     if (dirty) {
       dirty = false;
       void runNow();
@@ -154,15 +136,10 @@ async function runNow(): Promise<void> {
   }
 }
 
-/**
- * Debounced rebuild — rapid slider input coalesces into one geometry pass.
- * Pass 'typed' for keystroke-driven number fields, which need a longer settle
- * time than a slider drag so a multi-digit value doesn't rebuild mid-type.
- */
+/** Debounced rebuild — rapid slider input coalesces into one pass. 'typed' (keystroke-driven number fields) settles longer so a multi-digit value doesn't rebuild mid-type. */
 export function scheduleRebuild(mode: RebuildMode = 'live'): void {
   clearTimeout(timer);
-  // Reserve one unit of outstanding work for the whole debounce window, not one per call — a
-  // slider drag calls this every few ms, and only the last call's timer ever fires.
+  // One unit of outstanding work for the whole debounce window, not per call — a slider drag calls every few ms and only the last timer fires.
   if (!debouncePending) {
     debouncePending = true;
     beginWork();
@@ -170,8 +147,8 @@ export function scheduleRebuild(mode: RebuildMode = 'live'): void {
   timer = setTimeout(
     () => {
       debouncePending = false;
-      // runNow() does its own beginWork() before this reservation is released, so the
-      // outstanding count never touches zero on the handoff.
+      nextPassSettled = mode === 'typed';
+      // runNow() does its own beginWork() before this reservation is released, so the outstanding count never touches zero on the handoff.
       void runNow();
       endWork();
     },

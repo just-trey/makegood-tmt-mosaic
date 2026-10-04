@@ -1,50 +1,79 @@
-import type { RasterImage } from './types';
+import type { ImageStats, RasterImage } from './types';
+import { ALPHA_THRESHOLD } from './types';
 import { measureImage, isPhotographic } from './stats';
 
 /**
  * Longest edge, in pixels, that flat art is worked at — line drawings, logos, cartoons, anything
  * whose fidelity lives in its outlines.
  *
- * This used to be 512 for everything, on two arguments. The measured one (scripts/bench-raster.ts)
- * was that tracing cost climbs far faster than pixel count. The physical one was that 512px across
- * the wheel's 276mm is 0.54mm per pixel, already coarser than a 0.4mm nozzle, so more resolution
- * would resolve detail that cannot be printed.
- *
- * The physical argument was about *detail* and it still holds. What it never covered is that the
- * lattice was also the output vertex set, so 512 was simultaneously deciding how much of the image
- * survived and how jagged its edges were. Curve fitting (curve.ts) separated those, and re-measured
- * the first: a 1588px cartoon traced at 512 loses the pupils and highlights out of its eyes, and at
- * 1024 keeps them. The cost is affordable precisely because fitting cut point counts — flat art at
- * 1024 carries fewer points (2050) than the old lattice tracer produced at 512 (4676).
+ * It was 512 for everything: tracing cost climbs far faster than pixel count (scripts/bench-raster.ts),
+ * and 512px across the wheel's 276mm is 0.54mm per pixel, already coarser than a 0.4mm nozzle, so more
+ * resolution would resolve detail that can't print. That argument is about *detail* and still holds.
+ * What it missed is that the lattice was also the output vertex set, so 512 decided both how much
+ * survived and how jagged the edges were. Curve fitting (curve.ts) separated them and re-measured the
+ * first: a 1588px cartoon traced at 512 loses the pupils and eye highlights, at 1024 keeps them.
+ * Affordable because fitting cut point counts — flat art at 1024 carries fewer points (2050) than
+ * the old lattice tracer at 512 (4676).
  */
 export const MAX_WORKING_EDGE = 1024;
 
 /**
  * Working size for photographic sources, and the fixed size every image is measured at.
- *
- * Photographs are the case the old cost argument was really about: at 1024 they carry 11.5k points
- * against 4.7k at 512, for detail that is mostly sensor noise rather than anything a nozzle will
- * lay down. They stay here.
- *
- * It doubles as the measurement size because edge density is resolution-dependent — the same image
- * reads flatter the larger it is decoded — and the flat-vs-photo thresholds in stats.ts, plus every
- * blur and despeckle strength derived from them, were calibrated at this size.
+ * Photographs are what the old cost argument was about: at 1024 they carry 11.5k points against
+ * 4.7k at 512, for detail that is mostly sensor noise. They stay here. It doubles as the
+ * measurement size because edge density is resolution-dependent (the same image reads flatter the
+ * larger it is decoded) and the stats.ts thresholds, with every blur and despeckle strength
+ * derived from them, were calibrated at this size.
  */
 export const MEASURE_EDGE = 512;
 
 /**
- * Is this buffer a raster image rather than an SVG?
+ * `measureImage` with the opaque artwork enlarged to MEASURE_EDGE by repeating pixels: zebra.svg
+ * exported at 128px reads 0.63 at its own size, photographic, and 0.18-0.21 from 512 up
+ * (`bench-raster.ts render`). Not smoothed: that turns each boundary into a ramp that still counts
+ * as edge. The cost: at 384px and under, some photographs read flat (`bench-raster.ts sizes`).
+ */
+export function measureAtReferenceSize(reference: RasterImage): ImageStats {
+  const { data, w, h } = reference;
+  // Sized by what measureImage counts, the opaque pixels: a small logo on a big transparent sheet is small artwork and would otherwise read as inflated as any small export.
+  let x0 = w,
+    y0 = h,
+    x1 = -1,
+    y1 = -1;
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      if (data[(y * w + x) * 4 + 3] >= ALPHA_THRESHOLD) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+  const bw = x1 - x0 + 1;
+  const bh = y1 - y0 + 1;
+  const scale = MEASURE_EDGE / Math.max(bw, bh);
+  if (x1 < 0 || scale <= 1) return measureImage(reference);
+  const W = Math.max(1, Math.round(bw * scale));
+  const H = Math.max(1, Math.round(bh * scale));
+  const out = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    const row = (y0 + Math.floor((y * bh) / H)) * w + x0;
+    for (let x = 0; x < W; x++) {
+      const from = (row + Math.floor((x * bw) / W)) * 4;
+      out.set(data.subarray(from, from + 4), (y * W + x) * 4);
+    }
+  }
+  return measureImage({ data: out, w: W, h: H });
+}
+
+/**
+ * Is this buffer a raster image rather than an SVG? Sniffed from leading bytes, not `File.type` or
+ * the extension: drag-and-drop often arrives with an empty type and users rename files.
  *
- * Sniffed from the leading bytes rather than from `File.type` or the extension: a drag-and-drop
- * often arrives with an empty type, and users rename files. The magic numbers cannot be fooled and
- * cost a dozen lines.
- *
- * Deliberately "is it raster", not "can we decode it". GIF, BMP and TIFF are here even though the
- * pipeline has never been aimed at them, because the alternative is worse: anything this returns
- * false for goes to the SVG parser and comes back "SVG could not be parsed. Check the file is
- * valid XML", which is true but useless, since the file isn't malformed XML, it's not XML at all.
- * Routed here, GIF and BMP simply work (the browser decodes both), and a TIFF gets decodeImageFile's
- * honest "this format could not be decoded" instead.
+ * Deliberately "is it raster", not "can we decode it": GIF, BMP and TIFF are here though the
+ * pipeline was never aimed at them, because anything returning false goes to the SVG parser and
+ * comes back "SVG could not be parsed. Check the file is valid XML" — true but useless, the file
+ * isn't malformed XML, it isn't XML. Routed here, GIF and BMP just work (the browser decodes both)
+ * and a TIFF gets decodeImageFile's honest "this format could not be decoded".
  */
 export function isRasterBuffer(buf: Uint8Array): boolean {
   const magic = (offset: number, ...bytes: number[]) =>
@@ -78,16 +107,13 @@ function drawAt(bitmap: ImageBitmap, maxEdge: number): RasterImage {
 }
 
 /**
- * Decode an image file to RGBA pixels at the working size its own content earns.
+ * Decode an image file to RGBA pixels at the working size its own content earns. Two passes, the
+ * first not wasted: the image is always measured at MEASURE_EDGE (where stats.ts's thresholds were
+ * calibrated), and the answer decides the second — flat art is redrawn larger where its outlines
+ * have detail worth keeping, a photograph keeps the first draw.
  *
- * Two passes, and the first one is not wasted: the image is always drawn at MEASURE_EDGE and
- * measured there, both because that is the size stats.ts's thresholds were calibrated against and
- * because the answer decides the second pass. Flat art is redrawn larger, where its outlines have
- * detail worth keeping; a photograph keeps the first draw, where the extra pixels would buy noise.
- *
- * `imageOrientation: 'from-image'` matters more than it looks: a photo straight off a phone
- * carries its rotation in EXIF, and without this the artwork would arrive sideways with no
- * control in the app able to explain why.
+ * `imageOrientation: 'from-image'` matters: a phone photo carries its rotation in EXIF, and without
+ * it the artwork arrives sideways with no control in the app to explain why.
  */
 export async function decodeImageFile(file: Blob): Promise<RasterImage> {
   let bitmap: ImageBitmap;
@@ -101,7 +127,7 @@ export async function decodeImageFile(file: Blob): Promise<RasterImage> {
   }
   try {
     const reference = drawAt(bitmap, MEASURE_EDGE);
-    const { edgeDensity } = measureImage(reference);
+    const { edgeDensity } = measureAtReferenceSize(reference);
     if (isPhotographic(edgeDensity)) return { ...reference, edgeDensity };
 
     const detailed = drawAt(bitmap, MAX_WORKING_EDGE);

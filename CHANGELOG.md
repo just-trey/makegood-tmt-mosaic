@@ -7,7 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **The three-wave tech-debt fix campaign's round-trip measurement report**
+  (`docs/findings/2026-09-24-round-trip-measurement.md`), measured against
+  the 2026-08 process review baseline across all 18 merged PRs (#303-#320).
+  Filed the `areaPct` display bug it named as its own tech-debt section: the
+  assembly color list's area% is a triangle count, not an area, so equal
+  sticker bands can read 1.0% / 0.2% / 0.0% instead of a third each.
+- **`scripts/measure-clip-ink.test.ts` sweeps how narrow clipped design ink
+  actually gets against `CLIP_REMNANT_FLOOR_MM2`.** The floor is not
+  comfortably clear of shipped Fill content: 9.4% of recorded ink pieces
+  (760 of 8,056) across the four built-in patterns fall under it, and the
+  narrowest survivor sits at 1.00003x the floor. 86% of the sub-floor pieces
+  are the zebra pattern. `docs/findings/2026-09-27-clip-ink-sweep.md`;
+  re-derive with `RUN_CLIP_INK_SWEEP=1 npx vitest run
+scripts/measure-clip-ink.test.ts`.
+
 ### Fixed
+
+- **A small logo is no longer traced like a photo.** An image under 512px, or a
+  small logo on a big transparent sheet, was judged at its own size. Outlines
+  took up more of the picture there, so it got a photo's blur and speck removal
+  and lost fine detail. Every image is now judged at 512px. A photo of 384px or
+  less can now trace busier; move Detail left to calm it. A design in a saved
+  session keeps its old look until you load the image again.
+- **Fill no longer cuts part of a big design and drops the rest.** The polygon
+  maths takes at most 500,000 edges at a time, and past that a fill used to lose
+  tiles behind a "Couldn't merge the shapes" warning. The work is now split into
+  pieces that fit. A fill can carry 600,000 points instead of 500,000, a margin
+  under the 720,000 where the cut itself ran out of memory. A colour that joins
+  into one shape too big to split is placed once, with the "too detailed"
+  warning.
+- **A Fill under a Sticker now gives way to it.** Wherever the sticker's
+  colors differed from the pattern's, the export used to carry two inlays in
+  the same space and the slicer picked one. The fill is now cut back from under
+  the sticker. On the wheel that adds about half a second to a rebuild
+  (`scripts/bench-fill-yield.ts`).
+- **A traced image is traced again when you resize it.** Loaded onto a 32mm
+  hubcap and raised to 220mm, it used to keep the detail it lost at 32mm until
+  you nudged Colors or Detail. Scale, the hubcap diameter, the Design radius,
+  a part or Sticker/Fill switch and "+zone" all count. It runs once, about half
+  a second after you stop, and only when the new size changes what gets
+  removed.
+- **A color dropped because the design is placed too small now says so.** It
+  used to be dropped silently, since raising Detail can't bring it back there.
+  The notice says to make the design or the part bigger.
+- **A chair zone now repairs a shape that touches itself before cutting it,
+  as flat parts already did.** It used to skip the repair and drop that color
+  with `Couldn't cut color … into …`.
+- **A pocket deeper than the wall under it is now cut at that wall, with a
+  warning.** Depth was only checked against how far the whole part reaches
+  behind its face. On the hubcap that is 8.12mm over a 3mm shell, so any depth
+  from 3mm up cut clean through and exported without a word. The warning names
+  the color, the part and the wall. The chair body is still unchecked.
+- **The placement frame now sits on the design face you pick, and turns amber
+  on a side face, where the design can't land.** Picking a side face under
+  "Advanced: per-part face & alignment" used to draw the frame flat and
+  floating beside the part, in the normal color, on 8 of the 18 faces offered.
+
+- **A design face whose edge touches itself at a point now clips artwork to
+  its real shape.** Where a hole met the outline, or two islands shared a
+  corner, the edge trace used to run off the end and hand back a broken chain
+  as if it were a ring, which could read a solid area as a hole. Every face the
+  Advanced dropdown offers on every shipped part now traces as closed rings
+  (it was 19 of 114 that did not). The shipped wheel and chair exports are
+  unchanged. A face whose edge still can't be traced in full says so instead
+  of clipping silently.
+
+- **A Diameter, Width or Height field with a non-numeric authored minimum no
+  longer rejects every value you type.** Custom-part markup that set a
+  malformed `min=` used to make the guard compare against `NaN`, which is
+  never `>=` anything.
+
+- **A restore whose part doesn't load now leaves the app as it was.** If the
+  parts library can't be reached, the app goes back to the part and settings you
+  had before clicking Restore, says which part didn't load, and keeps the saved
+  session to offer again on reload. It used to switch to the saved part anyway,
+  without its pieces.
+
+- **A part whose file doesn't load no longer gets empty rotated copies.** On
+  the wheel, a failed Top used to leave an empty Bottom in the part list too.
+
+- **An image's notice pill no longer jumps to the bottom of the list when
+  Detail or Colors changes it.** Flipping between the traced and the capped
+  notice now rewrites the pill where it stands.
+
+- **`check:zone-occlusion` no longer reports a pass over a dead zone as a
+  through-pick.** The driven check classified a pixel by whether the design's
+  ink showed there; a zone hidden by a cover once assembled (a `deadRegions`
+  cutout) is correctly pickable but never inked, and the check read that as a
+  click landing on something invisible. It now asks the same question the app
+  itself answers: whether the pick's point on the chart falls in that zone's
+  own hidden-surface region. `npm run build && MOSAIC_GPU=1 npm run
+check:zone-occlusion` on the chair went from 13 failures (48/42/1/42
+  through-picks across four camera angles, plus five bad-identity failures on
+  the whole-chair sheet) to 4, all pre-existing and unrelated (see
+  tech-debt.md).
+- **The same check's whole-chair-sheet identity test could never pass.** It
+  compared each pick against the zone dropdown's value, but the whole-chair
+  binding (`*whole`) has no chart of its own — a click there always resolves
+  to whichever physical zone is under it, by design. The check now accepts
+  any non-null pick for that entry instead of demanding an id nothing can
+  ever produce.
 
 - **A design on the chair's Front no longer cuts a phantom mark into the top of
   the seat back.** A 0.4mm inlay, in surface the cushion covers, on one side of
@@ -30,7 +132,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   says so, naming the color and the part, instead of going quiet. A recess needs
   to be about 0.4 mm across to hold a bead.
 
+- **A traced image that says its detail was merged now really comes in under the
+  800-region limit.** The trace raised the speckle floor once and never checked
+  again. Merging specks can build new ones big enough to survive, so a noisy
+  image could still come back with thousands of regions. It now raises the floor
+  until the count is under. On generated noise none of 24 fields come back over
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). Run against the
+  previous `src/raster/trace.ts`, the same command gives 16 of 24 over, up to
+  9237 regions.
+- **A shape hidden with a negative or `!important` opacity in an SVG no longer
+  imports as a color.** `fill-opacity="-1"` or `-50%` is hidden in a browser
+  and now here too. A `<style>` rule or inline style marked `!important` is
+  read: `fill: #00ff00 !important` used to import black, and
+  `display: none !important` used to import anyway. An `!important` rule also
+  beats a plain inline style, as in a browser. `fill-opacity` percentages now
+  read as fractions (`npx vitest run tests/parse.test.ts`).
+- **A shape with a malformed `fill-opacity` now imports, as a browser draws
+  it.** `fill-opacity="0px"`, `"0,5"` or an attribute `"0 !important"` used to
+  hide the shape by accident: the leading `0` was read and the rest ignored.
+  A browser rejects the whole value and draws the shape opaque
+  (`npx vitest run tests/parse.test.ts`).
+- **An inline style that repeats a property now uses the last one**, as
+  Inkscape and Illustrator show it: `style="fill:#ff0000;fill:#00ff00"` imports
+  green, not red. Property names are read in any case, so `FILL:` counts
+  (`npx vitest run tests/parse.test.ts`).
+- **A hidden layer in an SVG no longer prints.** A group hidden with
+  `display="none"` (attribute, style or class rule), `opacity="0"` or
+  `fill-opacity="0"` used to import every shape inside it, and cost a filament
+  slot. Hidden Inkscape and Illustrator layers are exactly this. Each hidden
+  group now raises one warning naming it by its layer name or `id`, and saying
+  how many shapes it left out. A shape that sets its own `fill-opacity` inside a
+  `fill-opacity="0"` group still imports, as it draws in a browser
+  (`npx vitest run tests/parse.test.ts`).
+- **The `opacity` property is now read at all.** `opacity="0"` on a shape hides
+  it; before, only `fill-opacity` could (`npx vitest run tests/parse.test.ts`).
+
 ### Added
+
+- **`scripts/bench-regions.ts` times the region pass's per-colour merge.**
+  `merge` times it inside the real pass; `chunks` sweeps a chunk size over it.
+  The sweep closed the plan to chunk that merge: a colour's pieces never
+  overlap, so the last call still carries nearly every point. On 800 disjoint
+  pieces, chunks of 25-400 cut the longest call only from 345ms to 248-322ms,
+  at 1.3-1.9x the total time
+  (`node_modules/.bin/vite-node scripts/bench-regions.ts chunks`).
 
 - **The chair body is back in the Part dropdown.** It has been reachable only by
   URL since the beta narrowed to three parts, while the work behind it kept
@@ -430,6 +575,14 @@ tests/restoreBanner.test.ts`).
   the sweep position still parses, as `1` then the coordinate `.0`, which is
   what the grammar says it is. `npx vitest run tests/path.test.ts` covers both;
   8 of the 9 new arc cases fail on the previous code.
+
+### Removed
+
+- **The disc, rectangle, rounded-rectangle and STL-reference plates are gone
+  from the code.** None had been in the Part dropdown since the beta, so nothing
+  you can pick changes. Their panels, the Margin slider, "Recess bg too" and the
+  per-color STL set went with them. A session saved on one of them still opens,
+  on the first part in the dropdown, with its artwork.
 
 ## [0.7.0] - 2026-08-28
 

@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   MIN_CUT_DEPTH_MM,
   addPartTooDeepClamp,
-  addTooDeepClamp,
   depthDiffers,
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
-  tooDeepPlateWarning,
+  thinWallWarning,
   tooDeepWarning,
-  type DepthClamp,
   type PartDepthClamp,
 } from '../src/geometry/depth';
 
@@ -114,42 +112,42 @@ describe('tooDeepWarning', () => {
   });
 });
 
-describe('tooDeepPlateWarning', () => {
-  it('names the color and both numbers, with the plate thickness instead of a part', () => {
-    const msg = tooDeepPlateWarning(['#ff0000'], 100, 3.95, 4);
-    expect(msg).toBe(
-      'Depth for "#ff0000" was set to 100.00 mm, but a 4.00 mm plate can only cut 3.95 mm deep. ' +
-        'It was cut at 3.95 mm instead.',
+describe('thinWallWarning', () => {
+  // The wall is quoted as well as the cut: the cut stops a floor short of it, so saying the part is
+  // "only 2.95 mm thick" would be wrong about the part by that floor.
+  it('quotes the wall and the cut as two numbers', () => {
+    expect(thinWallWarning(['#ff0000'], 'Hubcap', 5, 2.95, 3)).toBe(
+      'Depth for "#ff0000" was set to 5.00 mm, but "Hubcap" is only 3.00 mm thick under it. ' +
+        'It was cut at 2.95 mm instead.',
     );
   });
 
-  it('groups every color clamped to the same depth into one message', () => {
-    const msg = tooDeepPlateWarning(['#ff0000', '#0000ff'], 100, 3.95, 4);
-    expect(msg).toBe(
-      'Depths for "#ff0000", "#0000ff" were set to 100.00 mm, but a 4.00 mm plate can only cut ' +
-        '3.95 mm deep. They were cut at 3.95 mm instead.',
+  it('names every color clamped to the same depth on the same part at once', () => {
+    expect(thinWallWarning(['#ff0000', 'Merged (2)'], 'Hubcap', 5, 2.95, 3)).toBe(
+      'Depths for "#ff0000", "Merged (2)" were set to 5.00 mm, but "Hubcap" is only 3.00 mm ' +
+        'thick under them. They were cut at 2.95 mm instead.',
     );
   });
 });
 
-describe('addTooDeepClamp / addPartTooDeepClamp', () => {
+describe('addPartTooDeepClamp', () => {
   it('groups by (requested, cutAt), keeping two different requested depths separate', () => {
-    const into = new Map<string, DepthClamp>();
-    addTooDeepClamp(into, '#ff0000', 100, 3.95);
-    addTooDeepClamp(into, '#0000ff', 100, 3.95);
-    addTooDeepClamp(into, '#00ff00', 50, 3.95);
+    const into = new Map<string, PartDepthClamp>();
+    addPartTooDeepClamp(into, '#ff0000', 'Wheel top', 100, 24.25);
+    addPartTooDeepClamp(into, '#0000ff', 'Wheel top', 100, 24.25);
+    addPartTooDeepClamp(into, '#00ff00', 'Wheel top', 50, 24.25);
     expect(Array.from(into.values())).toEqual([
-      { requested: 100, cutAt: 3.95, labels: ['#ff0000', '#0000ff'] },
-      { requested: 50, cutAt: 3.95, labels: ['#00ff00'] },
+      { requested: 100, cutAt: 24.25, partName: 'Wheel top', labels: ['#ff0000', '#0000ff'] },
+      { requested: 50, cutAt: 24.25, partName: 'Wheel top', labels: ['#00ff00'] },
     ]);
   });
 
   it('does not repeat a label already staged for the same pair', () => {
-    const into = new Map<string, DepthClamp>();
-    addTooDeepClamp(into, '#ff0000', 100, 3.95);
-    addTooDeepClamp(into, '#ff0000', 100, 3.95);
+    const into = new Map<string, PartDepthClamp>();
+    addPartTooDeepClamp(into, '#ff0000', 'Wheel top', 100, 24.25);
+    addPartTooDeepClamp(into, '#ff0000', 'Wheel top', 100, 24.25);
     expect(Array.from(into.values())).toEqual([
-      { requested: 100, cutAt: 3.95, labels: ['#ff0000'] },
+      { requested: 100, cutAt: 24.25, partName: 'Wheel top', labels: ['#ff0000'] },
     ]);
   });
 

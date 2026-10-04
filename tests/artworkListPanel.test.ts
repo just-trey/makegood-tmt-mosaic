@@ -16,6 +16,9 @@ vi.mock('../src/assembly/kinds', () => ({
   // with just what that lookup needs.
   currentAssemblyKind: () =>
     state.assembly.kindId === 'chair-body' ? { name: 'Chair body' } : null,
+  // A rect fit with no design face yet: no placement to size a printable floor from, so a trace
+  // keeps the fraction-of-the-image floor these cases were written against.
+  currentDesignScaleContext: () => ({ isRect: true, radius: 138, designFace: () => null }),
 }));
 
 import { renderArtworkList } from '../src/ui/artworkListPanel';
@@ -175,7 +178,6 @@ beforeEach(() => {
   state.assembly.parts = [];
   state.assembly.net = null;
   state.assembly.kindId = null;
-  state.shapeKind = 'disc';
   clearWarnings();
 });
 
@@ -551,5 +553,53 @@ describe('Whole chair (net binding)', () => {
       .dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(state.artworks[1].zone?.zoneId).toBe('back');
+  });
+});
+
+describe('rasterControls Detail slider — capped and traced', () => {
+  /** 1024 six-pixel red blocks over two bands — see raster-parse.test.ts: capped at Detail 100. */
+  function loadBlocksSource(name: string) {
+    const img = bands(320, 320, ['#0000ff', '#00c000']);
+    for (let y = 1; y + 6 < 320; y += 10)
+      for (let x = 1; x + 6 < 320; x += 10)
+        for (let dy = 0; dy < 6; dy++)
+          for (let dx = 0; dx < 6; dx++) {
+            const i = ((y + dy) * 320 + (x + dx)) * 4;
+            img.data[i] = 255;
+            img.data[i + 1] = 0;
+            img.data[i + 2] = 0;
+          }
+    return loadRasterSource(img, { colors: 5, detail: 100, name });
+  }
+
+  it("flips the source's one entry between capped and traced, in place", () => {
+    const source = loadBlocksSource('blocks.png');
+    notice('keep me');
+    expect(WARNINGS[0]).toEqual({
+      message: rasterCappedMessage('blocks.png'),
+      level: 'info',
+      key: source.id,
+    });
+    render();
+
+    detailInput(source.id).value = '0';
+    detailInput(source.id).dispatchEvent(new Event('change'));
+    // Detail 0 lifts the cap and floors the red blocks out, so the dropped-color notice joins it.
+    expect(WARNINGS).toEqual([
+      { message: rasterTracedMessage('blocks.png'), level: 'info', key: source.id },
+      { message: 'keep me', level: 'info' },
+      {
+        message: rasterColorLossMessage('blocks.png', 1),
+        level: 'info',
+        key: rasterColorLossKey(source.id),
+      },
+    ]);
+
+    detailInput(source.id).value = '100';
+    detailInput(source.id).dispatchEvent(new Event('change'));
+    expect(WARNINGS).toEqual([
+      { message: rasterCappedMessage('blocks.png'), level: 'info', key: source.id },
+      { message: 'keep me', level: 'info' },
+    ]);
   });
 });

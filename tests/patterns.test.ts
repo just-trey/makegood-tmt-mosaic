@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   featureVertexCount,
   MAX_FILL_TILES,
-  TILE_UNION_VERTEX_BUDGET,
+  FILL_POINT_BUDGET,
   tileCoverage,
   tileFeature,
   type TileGrid,
@@ -149,7 +149,7 @@ describe('tileCoverage', () => {
       }),
     ).toBe('not-affine');
     expect(reasonFor((pt) => pt, { x: 0, y: 0, w: 0.5, h: 0.5 }, WIDE)).toBe('too-many-tiles');
-    expect(reasonFor((pt) => pt, CELL, WIDE, TILE_UNION_VERTEX_BUDGET)).toBe('too-detailed');
+    expect(reasonFor((pt) => pt, CELL, WIDE, FILL_POINT_BUDGET)).toBe('too-detailed');
   });
 
   it('leaves the reason untouched when the fill tiles fine', () => {
@@ -161,18 +161,41 @@ describe('tileCoverage', () => {
     expect(out.detail).toBeUndefined();
   });
 
-  // turf 6.5 drops tiles rather than throwing once one union carries enough points, so the count
-  // has to be refused before the union runs. See TILE_UNION_VERTEX_BUDGET.
+  // Both merged clean in docs/findings/2026-08-30-tile-union-ceiling.md, and the 500k budget
+  // that stood in for the clipping engine's limit gave them up anyway.
+  it.each([
+    ['zebra', 20, 1361],
+    ['dalmatian', 30, 559],
+  ])(
+    'tiles %s at %i tiles a side and %i points a tile instead of refusing it',
+    (_, span, points) => {
+      // A padded grid of exactly span x span tiles: the extent is span - 2 cells and the padding
+      // adds one a side.
+      const extent = {
+        minX: 0.5,
+        minY: 0.5,
+        maxX: 10 * (span - 2) - 0.5,
+        maxY: 10 * (span - 2) - 0.5,
+      };
+      const out: TileRefusalReport = {};
+      const grid = tileCoverage((pt) => pt, CELL, extent, points, out);
+      expect(out.reason).toBeUndefined();
+      expect(grid!.count * points).toBeGreaterThan(500_000);
+    },
+  );
+
+  // Past this the cut runs out of memory, so the count has to be refused before anything runs.
+  // See FILL_POINT_BUDGET.
   describe('the tiled-union vertex budget', () => {
     // An extent whose padded grid divides the budget exactly, so the boundary is tested on the
     // point and not near it. The count is read off the grid, never written down, so it cannot
     // drift from the padding rule that produced it.
     const EXTENT = { minX: 0, minY: 0, maxX: 75, maxY: 75 };
     const tiles = tileCoverage((pt) => pt, CELL, EXTENT, SPARSE)!.count;
-    const atBudget = TILE_UNION_VERTEX_BUDGET / tiles;
+    const atBudget = FILL_POINT_BUDGET / tiles;
 
     it('allows a design that lands exactly on the budget', () => {
-      expect(TILE_UNION_VERTEX_BUDGET % tiles).toBe(0);
+      expect(FILL_POINT_BUDGET % tiles).toBe(0);
       expect(tileCoverage((pt) => pt, CELL, EXTENT, atBudget, {})).not.toBeNull();
     });
 
@@ -186,9 +209,7 @@ describe('tileCoverage', () => {
     // Both are true past MAX_FILL_TILES, and the tile count is the older, more specific complaint.
     it('reports the tile count first when a fill breaks both limits', () => {
       const tiny = { x: 0, y: 0, w: 0.5, h: 0.5 };
-      expect(reportFor((pt) => pt, tiny, WIDE, TILE_UNION_VERTEX_BUDGET).reason).toBe(
-        'too-many-tiles',
-      );
+      expect(reportFor((pt) => pt, tiny, WIDE, FILL_POINT_BUDGET).reason).toBe('too-many-tiles');
     });
 
     // A caller that reuses one report across two calls must not read the first call's numbers under

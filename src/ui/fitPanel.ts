@@ -1,18 +1,18 @@
-import { currentBaseParams, state } from '../state/store';
+import { state } from '../state/store';
 import { isRebuildLikelySlow, scheduleRebuild } from '../app/scheduler';
 import { currentAssemblyKind } from '../assembly/kinds';
 import { refreshGizmo } from '../scene/designGizmo';
 import { track } from '../analytics/track';
 import { input } from './dom';
+import { toFiniteNumber } from '../util/number';
 
 type FitField = 'move' | 'scale' | 'rotate';
 
 /**
- * Keep a slider/number pair in sync and push the canonical value into state.
- * For clamped pairs (margin/scale) the slider is the source of truth, so a typed number snaps
- * back into the slider's range on blur; for offsets the number is the source of truth and may
- * exceed the slider range (the slider just pegs at its end).
- * `field` is omitted for pairs that aren't part of the move/scale/rotate gizmo model (margin).
+ * Keep a slider/number pair in sync and push the canonical value into state. For clamped pairs
+ * (margin/scale) the slider is the source of truth, so a typed number snaps back into range on
+ * blur; for offsets the number is, and may exceed the slider range (the slider pegs).
+ * `field` is omitted for pairs outside the move/scale/rotate gizmo model (margin).
  */
 function syncPair(
   sliderSel: string,
@@ -25,9 +25,8 @@ function syncPair(
     num = input(numSel);
   slider.addEventListener('input', () => {
     num.value = slider.value;
-    apply(parseFloat(slider.value) || 0);
-    // On a heavy model rebuilds are slow — stay smooth during the drag and rebuild once
-    // on release (below) instead of flooding slow redraws.
+    apply(toFiniteNumber(slider.value) ?? 0);
+    // On a heavy model rebuilds are slow: stay smooth during the drag and rebuild once on release (below).
     if (!isRebuildLikelySlow()) scheduleRebuild();
   });
   slider.addEventListener('change', () => {
@@ -36,7 +35,7 @@ function syncPair(
   });
   num.addEventListener('input', () => {
     slider.value = num.value;
-    apply(parseFloat(clampNum ? slider.value : num.value) || 0);
+    apply(toFiniteNumber(clampNum ? slider.value : num.value) ?? 0);
     scheduleRebuild('typed');
   });
   if (clampNum)
@@ -46,36 +45,14 @@ function syncPair(
 }
 
 /**
- * Offset slider travel is ±half the base footprint: full deflection puts the artwork's center
- * on the base edge. Recomputed whenever the base dimensions or shape change.
+ * Offset slider travel is ±half the design face: full deflection puts the artwork's center on its
+ * edge. Recomputed whenever the part or its design radius changes.
  */
 export function updateOffsetSliderRanges(): void {
-  // Margin only feeds flat.ts's auto-fit sizing; assembly mode (wheel and rect alike) maps the
-  // design straight onto the part face and never reads marginPct, so the control is a no-op there.
-  const isAssembly = state.shapeKind === 'assembly';
-  const marginRow = document.getElementById('p-margin-row');
-  if (marginRow) marginRow.style.display = isAssembly ? 'none' : '';
-  const fitHint = document.getElementById('p-fit-hint');
-  if (fitHint)
-    fitHint.textContent = isAssembly
-      ? 'Scale multiplies the artwork; over 100% bleeds past the part face. Flip H mirrors it left to right, which fixes text that reads backwards. Flip V mirrors it top to bottom.'
-      : 'Margin sets the auto-fit border. Scale multiplies on top; over 100% bleeds past the edge. Flip H mirrors the artwork left to right, which fixes text that reads backwards. Flip V mirrors it top to bottom.';
-
-  let w: number, h: number;
-  if (state.shapeKind === 'assembly') {
-    if (currentAssemblyKind()?.designFit === 'rect') {
-      // rect parts have no radius; give the offset sliders a fixed nudge range around the face
-      w = h = 300;
-    } else {
-      // assembly artwork maps onto the wheel face: ±radius puts the design center at the rim
-      w = h = 2 * (state.asmRadius || 138);
-    }
-  } else {
-    const bp = currentBaseParams();
-    if (!bp) return;
-    w = state.shapeKind === 'disc' ? bp.diameter || 0 : bp.width || 0;
-    h = state.shapeKind === 'disc' ? bp.diameter || 0 : bp.height || 0;
-  }
+  // rect parts have no radius; give the offset sliders a fixed nudge range around the face.
+  // Wheel-fit artwork maps onto the wheel face: ±radius puts the design center at the rim.
+  const w = currentAssemblyKind()?.designFit === 'rect' ? 300 : 2 * (state.asmRadius || 138);
+  const h = w;
   const setRange = (sel: string, half: number) => {
     if (!(half > 0)) return;
     const el = input(sel);
@@ -93,14 +70,8 @@ export function updateOffsetSliderRanges(): void {
   refreshGizmo();
 }
 
-/**
- * Push the current global fit fields into the slider/number/checkbox DOM — the counterpart to the
- * gizmo's internal syncFitInputs, needed here too because switching the active artwork instance (or
- * removing one) reseeds those globals from a different instance without any slider handler firing.
- */
+/** Push the global fit fields into the slider/number/checkbox DOM — counterpart to the gizmo's syncFitInputs, needed because switching or removing the active instance reseeds those globals with no slider handler firing. */
 export function refreshFitInputsFromState(): void {
-  input('#p-margin').value = String(state.marginPct);
-  input('#p-margin-num').value = String(state.marginPct);
   input('#p-scale').value = String(state.scalePct);
   input('#p-scale-num').value = String(state.scalePct);
   input('#p-offset-x').value = String(state.offsetX);
@@ -114,9 +85,6 @@ export function refreshFitInputsFromState(): void {
 }
 
 export function initFitPanel(): void {
-  syncPair('#p-margin', '#p-margin-num', true, (v) => {
-    state.marginPct = v;
-  });
   syncPair(
     '#p-scale',
     '#p-scale-num',
