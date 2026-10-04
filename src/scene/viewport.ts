@@ -9,25 +9,15 @@ let controls: OrbitControls;
 let modelGroup = new THREE.Group();
 let basePixelRatio = 1;
 
-// Re-frame the camera to fit the current model only when content actually changes (new SVG,
-// parts added, shape switched) — so tweaking a depth slider doesn't yank the user's orbit/zoom
-// around on every rebuild. `preferredViewDir`, when set, forces the starting view direction
-// (assembly mode points it at the design face so the wheel doesn't open showing its blank
-// back); otherwise the user's current view direction is kept.
+// Re-frame only when content changes, so a depth slider doesn't yank the orbit. `preferredViewDir`
+// forces the start direction (the design face, not the wheel's blank back); else the view is kept.
 let pendingFrame = true;
 let preferredViewDir: THREE.Vector3 | null = null;
 
 /**
- * Whether the next animation frame has anything new to draw. The render loop is on-demand: an
- * always-on `renderer.render()` costs a full frame of work forever, which on a software renderer
- * (headless CI, or any machine without working GPU acceleration) is expensive enough to starve the
- * main thread the boolean rebuilds run on.
- *
- * Every mutation that changes what is on screen must set this. The ones that come through this
- * module set it *inside* the mutator below rather than at each call site, so a new caller in
- * rebuild.ts can't forget to — the failure mode is a viewport that silently keeps showing the
- * previous frame, which no unit test catches. Camera motion is handled separately, by
- * `cameraMovedThisFrame()` in the loop.
+ * On-demand rendering: always-on render starves the boolean rebuilds on a software renderer
+ * (headless CI, no GPU). Every on-screen mutation must set this; this module's mutators do it
+ * inside, since a missed one silently shows the previous frame. Camera: cameraMovedThisFrame().
  */
 let needsRender = true;
 
@@ -37,21 +27,10 @@ export function invalidate(): void {
 }
 
 /**
- * Camera pose as of the previous animation frame, for deciding whether the camera is still moving.
- *
- * Deliberately not `OrbitControls.update()`'s return value: its position and quaternion tests are
- * epsilon-gated, but the target test is an exact `distanceToSquared(...) > 0`, and with damping on
- * `panOffset` decays geometrically (×0.95 per update) without reaching zero. So after a *pan* it
- * keeps reporting movement long after the motion stops being visible. Comparing the pose here
- * against one epsilon covers rotate and pan alike, and keeps this independent of three's internals
- * across upgrades.
- *
- * Note this does not cut OrbitControls' damping tail short — while damping is still easing the
- * camera by a visible amount, those frames genuinely need drawing. The tail is per-update, not
- * per-second, so where a frame is slow (software rendering: ~300ms/frame here, which caps rAF at
- * ~3fps) it stretches out in wall-clock accordingly. That is pre-existing OrbitControls behaviour
- * and not something this loop introduced — the previous always-on loop simply paid it forever,
- * everywhere, whether or not the camera was moving.
+ * Last frame's camera pose. Not `OrbitControls.update()`'s return: its target test is an exact
+ * `> 0` while damped `panOffset` decays ×0.95 per update without reaching zero, so after a *pan*
+ * it reports movement forever. One epsilon here covers rotate and pan, independent of three.
+ * Visible damping frames still draw (~300ms/frame software rendering, rAF ~3fps).
  */
 const prevCamPos = new THREE.Vector3();
 const prevCamQuat = new THREE.Quaternion();
@@ -74,14 +53,9 @@ function recordCameraPose(): void {
 }
 
 /**
- * OrbitControls decays its damping by `dampingFactor` once per `update()` call, i.e. per frame —
- * so the glide after releasing the pointer lasts a fixed number of FRAMES, not a fixed time. At
- * 60fps that is three's intended ~1s. Where frames are slow it stretches out in proportion: on a
- * software renderer here (~300ms/frame, which itself caps rAF near 2.5fps) the same glide was
- * measured still running 221 seconds after release, holding the main thread at ~90% throughout.
- *
- * So rescale the factor to the real frame time, giving the same per-SECOND decay at any rate.
- * At 60fps this returns 0.05 exactly, leaving the feel on fast hardware untouched.
+ * Damping decays per FRAME, so the glide is ~1s at 60fps but on a software renderer (~300ms/frame,
+ * rAF near 2.5fps) was measured still running 221 seconds after release, main thread ~90%.
+ * Rescaled to the real frame time for per-SECOND decay; at 60fps this returns 0.05 exactly.
  */
 const BASE_DAMPING = 0.05; // three's default, tuned for 60fps
 const BASE_HZ = 60;
@@ -92,11 +66,9 @@ function dampingForFrame(dt: number): number {
 }
 
 /**
- * Ground plane span. The grid doubles as a ruler, so the cell stays a round 20mm and the span is
- * sized to the largest assembly the (fixed, closed) part library contains: the chair's footprint is
- * 380 × 658mm, which the old 600mm stage — sized for the 280mm wheel — overhung at both ends.
- * `tests/display-frame.test.ts` measures every kind in `ASSEMBLY_KINDS` against this constant, so a
- * new part outsizing the stage fails there rather than silently overhanging in the viewport.
+ * Grid span; the grid is a ruler, so cells stay 20mm. Sized for the chair's 380 × 658mm footprint,
+ * which overhung the old 600mm stage (sized for the 280mm wheel). tests/display-frame.test.ts
+ * fails any kind that outsizes it.
  */
 export const GRID_SPAN_MM = 800;
 const GRID_CELL_MM = 20;
@@ -172,9 +144,7 @@ export function initViewport(host: HTMLElement): void {
     const dt = Math.min((now - lastFrameMs) / 1000, MAX_FRAME_DT);
     lastFrameMs = now;
     controls.dampingFactor = dampingForFrame(dt);
-    // update() has to run every tick regardless of whether we draw: with damping on it is what
-    // keeps easing the camera after the pointer is released. Whether that easing is still worth
-    // drawing is decided by cameraMovedThisFrame(), not update()'s return value — see note there.
+    // Every tick, drawn or not: it drives damping. Whether to draw is cameraMovedThisFrame()'s.
     controls.update();
     const moved = cameraMovedThisFrame();
     recordCameraPose();
@@ -185,11 +155,7 @@ export function initViewport(host: HTMLElement): void {
   animate();
 }
 
-/**
- * Set shadow flags on every mesh currently in the model group. modelGroup is rebuilt from
- * several code paths — call this once after each one populates it, rather than every frame.
- * Transparent ghosts don't cast shadows.
- */
+/** Shadow flags for the model group; call once after each path populates it. Ghosts cast none. */
 export function refreshModelShadows(): void {
   modelGroup.traverse((o) => {
     const mesh = o as THREE.Mesh;
@@ -201,11 +167,7 @@ export function refreshModelShadows(): void {
   invalidate();
 }
 
-/**
- * Discard the current model group and return a fresh one already in the scene, disposing the
- * GPU geometry/material buffers of everything it held — rebuilds fire on every debounced slider
- * tick, so without this VRAM grows for the whole session.
- */
+/** Replace the model group, disposing its GPU buffers: rebuilds run per slider tick, so VRAM grows. */
 export function newModelGroup(): THREE.Group {
   scene.remove(modelGroup);
   const materials = new Set<THREE.Material>();
@@ -219,9 +181,7 @@ export function newModelGroup(): THREE.Group {
   materials.forEach((m) => m.dispose());
   modelGroup = new THREE.Group();
   scene.add(modelGroup);
-  // Not just belt-and-braces with refreshModelShadows(): a rebuild can bail out between the two
-  // when there is nothing to build, leaving the scene cleared —
-  // that emptying still has to reach the screen.
+  // A rebuild with nothing to build bails before refreshModelShadows(); the clear must still draw.
   invalidate();
   return modelGroup;
 }
@@ -231,28 +191,17 @@ export function getModelGroup(): THREE.Group {
 }
 
 /**
- * Map a point from model space — part-native coordinates, before the grid lift and before any
- * display-frame rotation — into world space.
- *
- * The model group carries a full transform, not just a translation: assembly kinds that author a
- * `displayFrame` are rotated for display as well as lifted onto the grid. Anything living OUTSIDE
- * modelGroup that must stay attached to what the user sees — the on-face design gizmo and the
- * zone-pick meshes, both scene-level siblings so they survive newModelGroup() — has to apply that
- * same transform by hand. Reading only `.position` silently detaches them the moment a kind poses
- * itself, with nothing to catch it but the gizmo landing somewhere wrong.
- *
- * Mutates and returns `v`, per three's vector convention.
+ * Part-native point to world (mutates `v`). The model group also rotates for a `displayFrame`, so
+ * siblings outside it (gizmo, zone-pick meshes) need the full transform: `.position` alone
+ * silently detaches them once a kind poses itself.
  */
 export function modelToWorldPoint(v: THREE.Vector3): THREE.Vector3 {
   return v.applyMatrix4(modelWorldMatrix());
 }
 
 /**
- * The model group's world matrix, brought up to date — for a caller transforming *many* points at
- * once. `updateMatrixWorld()` walks the group's whole subtree, which is every loaded part mesh, so
- * paying it per point (as calling `modelToWorldPoint` in a loop does) costs far more than the
- * transform itself. Take it once, then apply it. Valid only until something moves the group, which
- * for the gizmo means the next rebuild — where its frame is recomputed anyway.
+ * The updated world matrix, for transforming *many* points: `updateMatrixWorld()` walks every part
+ * mesh, so per point it dwarfs the transform. Valid until the group moves (the next rebuild).
  */
 export function modelWorldMatrix(): THREE.Matrix4 {
   modelGroup.updateMatrixWorld();
@@ -283,8 +232,7 @@ export function getDomElement(): HTMLCanvasElement {
   return renderer.domElement;
 }
 
-/** Pointer position in normalized device coords (−1..1), for raycasting — shared by the design
- * gizmo and zone picking, the two viewport features that hit-test against the pointer. */
+/** Pointer in normalized device coords (−1..1), for raycasting. */
 export function pointerToNDC(e: PointerEvent): THREE.Vector2 {
   const rect = renderer.domElement.getBoundingClientRect();
   return new THREE.Vector2(
@@ -293,21 +241,13 @@ export function pointerToNDC(e: PointerEvent): THREE.Vector2 {
   );
 }
 
-/**
- * Add an object that lives directly in the scene, outside modelGroup — so it survives
- * newModelGroup()'s dispose-and-replace on every rebuild. Used by the on-face design gizmo,
- * whose overlay is a persistent singleton that must outlive each recut of the geometry underneath.
- */
+/** Add to the scene outside modelGroup, so it survives newModelGroup() on every rebuild. */
 export function addSceneOverlay(obj: THREE.Object3D): void {
   scene.add(obj);
   invalidate();
 }
 
-/**
- * Drop render quality for the duration of a viewport drag (gizmo manipulation), then restore it.
- * Cuts pixel ratio to 1 and disables shadow rendering. The user accepted degraded quality while
- * dragging; the restore on release has to be drawn, hence the invalidate.
- */
+/** Lower render quality during a gizmo drag (accepted by the user); the restore must be drawn. */
 export function setInteracting(on: boolean): void {
   if (!renderer) return;
   renderer.setPixelRatio(on ? 1 : basePixelRatio);
@@ -324,11 +264,8 @@ export function setPreferredViewDir(v: THREE.Vector3 | null): void {
 }
 
 /**
- * The current model's extent in normalized device coordinates — |x| and |y| at or under 1 mean it
- * is inside the canvas. Exposed for driven checks (window.__mosaic.modelNdcExtent) because the
- * alternative is reading pixels, and the scene's 800mm grid reaches every edge of the frame no
- * matter how the model is fitted: a border-pixel test would report "something is drawn there"
- * whether or not the part overflows. This asserts the framing itself.
+ * The model's NDC extent (≤ 1 is inside the canvas), for driven checks (window.__mosaic): the
+ * 800mm grid reaches every frame edge, so a border-pixel test can't detect an overflowing part.
  */
 export function modelNdcExtent(): { x: number; y: number } | null {
   const box = new THREE.Box3().setFromObject(modelGroup);
@@ -349,32 +286,16 @@ export function modelNdcExtent(): { x: number; y: number } | null {
   return { x, y };
 }
 
-/**
- * How much of the frame the fitted model fills, as a fraction of the tighter half-axis. 0.9 leaves
- * a tenth of the frame as breathing room on the binding axis.
- */
+/** Fraction of the tighter half-axis the fitted model fills. */
 export const FIT_FILL = 0.9;
 /** Smallest model half-size the fit will honor, so a tiny part isn't framed from inside itself. */
 const FIT_MIN_MM = 10;
 
 /**
- * Camera distance along `dir` (target → camera) that puts every corner of `box` inside the
- * frustum, solved rather than approximated.
- *
- * The obvious cheap version — half the largest extent, or the bounding sphere's radius, over
- * sin(fov/2) — is wrong in opposite directions, and the app shipped one and then the other:
- *
- *   - Half the largest extent UNDER-shoots: it is the right radius only for a shape whose widest
- *     span is also its diagonal. On the chair (≈600 × 700 × 700 mm) it read 350 against a true
- *     578, putting the camera 1.65x too close — past the margin — so the wings and caster mounts
- *     rendered off the bottom of the canvas. The wheel and footrest hid it, their largest extent
- *     being their diameter.
- *   - The bounding sphere OVER-shoots by however much the model isn't a ball. Measured on the
- *     wheel, a flat disc whose sphere is far bigger than its silhouette: it filled 0.61 of the
- *     frame where the old formula gave 0.88 — trading a cropped chair for three parts too small.
- *
- * So project each corner onto the view basis instead and take the distance the worst one needs.
- * Exact for any shape and any aspect, in one pass, with no iteration to converge or tune.
+ * Camera distance along `dir` fitting every corner of `box`, solved per corner. Both shortcuts
+ * shipped and failed: half the largest extent under-shoots (chair ≈600 × 700 × 700 mm: 350 vs a
+ * true 578, 1.65x too close, wings off-canvas); the bounding sphere over-shoots (the flat wheel
+ * filled 0.61 of the frame vs 0.88).
  */
 export function fitDistance(
   box: THREE.Box3,
@@ -386,22 +307,13 @@ export function fitDistance(
 ): number {
   const vFov = (fovDeg * Math.PI) / 180;
   const tanV = Math.tan(vFov / 2);
-  // camera.fov is the *vertical* one; the horizontal half-angle is narrower whenever the canvas is
-  // taller than it is wide, so fitting to fov alone crops a portrait window. Measured at the 900px
-  // minimum width the app renders at (styles.css hides #app below it): every kind overflowed
-  // sideways, 1.18-1.30 in NDC, until this term was included.
+  // camera.fov is *vertical*: without this, at the 900px minimum width (styles.css) every kind
+  // overflowed sideways, 1.18-1.30 in NDC.
   const tanH = tanV * aspect;
-  // The view basis, in three's own convention (Matrix4.lookAt: x = up × z, y = z × x, z = dir) —
-  // it has to be the basis the camera will actually adopt, or the fit is solved for a frame the
-  // render doesn't use. Where dir is parallel to up the cross product vanishes and lookAt breaks
-  // the tie by nudging the view axis; do the same, rather than picking an arbitrary fallback that
-  // disagrees with it. Measured: an arbitrary +X fallback cropped a 300x4x4 box to 2.1 in NDC.
-  //
-  // The test is lookAt's own exact zero, deliberately not an epsilon: a merely NEAR-parallel dir
-  // gives a tiny cross product that still normalizes to the exact right direction, and it is the
-  // direction lookAt will use. Taking the nudge there instead lands on a basis rotated 90° from
-  // the camera's, which is worse than no fallback — measured at 1.31 in NDC on a 4x300x4 box
-  // viewed from (0, 1e-7, 1), a direction OrbitControls' own polar clamp (EPS = 1e-6) can produce.
+  // The basis the camera will adopt (Matrix4.lookAt: x = up × z, y = z × x, z = dir). Parallel to
+  // up, nudge like lookAt does: an arbitrary +X fallback cropped a 300x4x4 box to 2.1 in NDC.
+  // Exact zero, not an epsilon, matching lookAt: nudging a NEAR-parallel dir rotates the basis 90°
+  // (1.31 in NDC, 4x300x4 box from (0, 1e-7, 1), reachable under OrbitControls' EPS = 1e-6).
   const right = new THREE.Vector3().crossVectors(worldUp, dir);
   if (right.lengthSq() === 0) {
     const nudged = dir.clone();
@@ -420,8 +332,7 @@ export function fitDistance(
       i & 2 ? box.max.y : box.min.y,
       i & 4 ? box.max.z : box.min.z,
     ).sub(center);
-    // Depth along the view axis is (dist - v·dir), so a corner is inside when
-    // |v·right| <= tanH * (dist - v·dir) and likewise vertically — solve each for dist.
+    // Inside when |v·right| <= tanH * (dist - v·dir), likewise vertically; solved for dist.
     const need = Math.max(Math.abs(v.dot(right)) / tanH, Math.abs(v.dot(up)) / tanV);
     dist = Math.max(dist, v.dot(dir) + need / FIT_FILL);
   }
@@ -445,8 +356,7 @@ export function frameModelIfPending(): void {
   camera.near = Math.max(0.1, dist / 500);
   camera.far = dist * 50;
   camera.updateProjectionMatrix();
-  // This update() runs outside the render loop, so its "camera moved" return value goes nowhere —
-  // say so explicitly rather than relying on the next loop tick still reporting the move.
+  // Outside the loop, so invalidate rather than trust the next tick to notice the move.
   controls.update();
   invalidate();
 }

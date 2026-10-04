@@ -37,17 +37,12 @@ const cornerHandles: THREE.Mesh[] = [];
 let rotateHandle: THREE.Mesh;
 const raycaster = new THREE.Raycaster();
 let drag: DragState | null = null;
-// Last computed face frame, kept so the camera-facing visibility check can run on orbit (which
-// fires no rebuild) without recomputing the whole frame every mouse-move.
+// Cached so the facing check can run on orbit (no rebuild) without recomputing every mouse-move.
 let currentFrame: FaceFrame | null = null;
 
 /**
- * Read a design token as a three.js colour.
- *
- * The gizmo is chrome drawn into the viewport, so its colours are the app's, not the scene's —
- * taking them from the same custom properties the panels use means there is one value, not a hex
- * copied into TypeScript that drifts when the palette moves. Falls back when there is no
- * stylesheet (jsdom), where nothing is rendered anyway.
+ * A design token as a three.js colour: the gizmo is app chrome, so one value, not a drifting hex
+ * copy. Falls back with no stylesheet (jsdom), where nothing renders.
  */
 export function tokenColor(name: string, fallback: number): number {
   const raw =
@@ -58,57 +53,30 @@ export function tokenColor(name: string, fallback: number): number {
 }
 
 /**
- * Selection is a light outline, in no accent hue at all — convention 19 of
- * docs/ui-conventions.md. The frame used to be accent blue, over artwork that is frequently also
- * blue, so "this is selected" and "this region prints blue" were the same signal in an app whose
- * entire subject is which colour goes where.
+ * Selection is a light outline in no accent hue (docs/ui-conventions.md convention 19): accent
+ * blue over blue artwork read as "prints blue". A `--text` line / `--bg` handles pair measured
+ * worse: handles sit just off the part, at **1.06:1** against the `#05070d` stage.
  *
- * **A dark/light pair was tried first and measured worse.** The idea was `--text` line against
- * `--bg` corner handles, on the reasoning that no filament is both at once so one half would
- * always have contrast. It does not hold, because the two are not over the same thing: the line
- * crosses the artwork, while the handles sit at the design's corners, which for a fitted design
- * are usually just *off* the part and over the viewport. Sampled from the rendered frames, `--bg`
- * handles against the `#05070d` stage measured **1.06:1** — less visible than the system's own
- * disabled state, on a live drag target. Light throughout is worse nowhere and much better there.
- *
- * What that leaves open, and it is real: `--text` over the default body `#b9c0c6` is **1.50:1**,
- * so the frame is faint where it crosses a light part or a light design. Convention 19 offers
- * three mechanisms and this uses one of them; the one that would fix this case is "contrast
- * against dimmed surroundings", which is a change to the model's materials rather than the
- * gizmo's. Not attempted: the body already renders that same `#b9c0c6`, a grey somebody prints in
- * (convention 20's "excluded geometry must not look like geometry printing in grey" is untested
- * either way), so dimming the surroundings risks the exact collision that convention warns
- * against. How much dim, and only while something is selected, is a decision, not a tweak.
- *
- * Convention 21 is also unmet on OFF_SURFACE_COLOR below: it distinguishes itself by hue alone,
- * which is deliberate (see its own comment) but a conventions review of the shipped screenshots
- * still flagged it as two different frame treatments in one widget, one on-token and one not.
- *
- * The rotate handle keeps a hue of its own. That is not selection — it is one control among
- * several, and convention 14 wants the manipulation affordances telling themselves apart. It was
- * `0x54d98c`, a green matching no token; `--accent-2` is the real one nearest it.
+ * Known gap: `--text` over the default body `#b9c0c6` is **1.50:1**, faint on light parts. The fix
+ * (dimming surroundings) changes model materials and risks convention 20's grey collision — a
+ * decision, not a tweak. Convention 21 is also unmet: OFF_SURFACE_COLOR differs by hue alone.
+ * The rotate handle is a control, not selection, so it keeps a hue (convention 14): `--accent-2`,
+ * nearest the old untokened `0x54d98c`.
  */
 let FRAME_COLOR = 0xf5f7fb;
 let HANDLE_COLOR = 0xf5f7fb;
 let ROTATE_COLOR = 0x5eead4;
-/**
- * Frame colour once the design center has left the surface — see FaceFrame.offSurfaceMM. Amber
- * rather than a muted grey: the parts render grey, so a desaturated "inactive" frame is the one
- * thing that cannot be seen against them, and this state is a warning, not a de-emphasis.
- */
+/** Off-surface frame (FaceFrame.offSurfaceMM): amber, a warning; a muted grey vanishes on grey parts. */
 const OFF_SURFACE_COLOR = 0xe0a33a;
 /**
- * How far off the surface the design center may sit before the frame is drawn as off-surface. The
- * in-chart value is 0 to within float noise, and a legitimate design center can sit a couple of mm
- * outside inside a small hole, so this only has to clear rounding.
+ * Off-surface threshold: in-chart is 0 to float noise, and a legitimate center can sit a couple of
+ * mm out inside a small hole, so this only has to clear rounding.
  */
 const OFF_SURFACE_TOL_MM = 5;
 
 /**
- * Samples per frame edge. The outline is traced along the surface rather than drawn as a flat
- * rectangle, so each edge needs enough points to show the curvature: 16 keeps the chair's flank
- * smooth at 64 surface queries per redraw, against a lookup that already runs per cutter vertex
- * during a build.
+ * Samples per surface-traced edge: 16 keeps the chair's flank smooth at 64 queries per redraw, a
+ * lookup that already runs per cutter vertex in a build.
  */
 const EDGE_SAMPLES = 16;
 const OUTLINE_POINTS = EDGE_SAMPLES * 4;
@@ -146,8 +114,7 @@ function overlayGeometry(pointCount: number): THREE.BufferGeometry {
 }
 
 export function initDesignGizmo(): void {
-  // Resolved here rather than at module scope so the stylesheet is certainly applied by the time
-  // the custom properties are read.
+  // Not at module scope: the stylesheet must be applied first.
   FRAME_COLOR = tokenColor('--text', FRAME_COLOR);
   HANDLE_COLOR = tokenColor('--text', HANDLE_COLOR);
   ROTATE_COLOR = tokenColor('--accent-2', ROTATE_COLOR);
@@ -177,8 +144,7 @@ export function initDesignGizmo(): void {
   rotateHandle.userData.kind = 'rotate';
   overlay.add(rotateHandle);
 
-  // The overlay moves every redraw and we update position buffers in place; skip frustum culling
-  // so a stale bounding volume can never wrongly cull it.
+  // Buffers are rewritten in place, so a stale bounding volume could wrongly cull it.
   overlay.traverse((o) => {
     o.frustumCulled = false;
   });
@@ -190,27 +156,21 @@ export function initDesignGizmo(): void {
   dom.addEventListener('pointermove', onPointerMove);
   dom.addEventListener('pointerup', onPointerUp);
   dom.addEventListener('pointercancel', onPointerUp);
-  // Orbiting fires no rebuild, so re-evaluate which way the face points on every camera change to
-  // hide the gizmo when the design face turns away from the viewer.
+  // Orbiting fires no rebuild, so re-check facing on every camera change.
   getControls().addEventListener('change', updateFacing);
 
   refreshGizmo();
 }
 
 /**
- * Whether a gizmo drag is currently in progress — checked by zonePick.ts so a drag that starts on
- * the gizmo (move/scale/rotate the active artwork) never also gets read as a zone-pick click. Only
- * meaningful when checked synchronously within the same pointerdown tick this module's own
- * handler ran in (registration order in main.ts puts this module's listener first).
+ * Read by zonePick.ts so a gizmo drag isn't also a zone pick. Valid only synchronously in the same
+ * pointerdown tick (main.ts registers this module's listener first).
  */
 export function isGizmoDragging(): boolean {
   return !!drag;
 }
 
-/**
- * Rebuild the gizmo overlay from current state. Called after every rebuild and whenever the fit
- * controls change; a no-op mid-drag so it doesn't fight the pointer.
- */
+/** Redraw from state after a rebuild or fit change; a no-op mid-drag so it doesn't fight the pointer. */
 export function refreshGizmo(): void {
   if (!overlay || drag) return;
   currentFrame = computeFaceFrame();
@@ -224,19 +184,15 @@ export function refreshGizmo(): void {
 }
 
 /**
- * Show the gizmo only when the design face points toward the camera. The overlay draws with
- * depthTest off (so it's never occluded by the part on the near side), which without this check
- * would also let it draw — and be grabbed — through the part when the face is turned away. The
- * shared pointerdown guard (`!overlay.visible`) then hands those clicks back to OrbitControls.
+ * Show only when the face points at the camera: with depthTest off it would otherwise draw, and be
+ * grabbed, through the part. Hidden, pointerdown's `!overlay.visible` guard hands clicks to orbit.
  */
 function updateFacing(): void {
   if (!overlay || drag || !currentFrame) return;
   const toCam = getCamera().position.clone().sub(currentFrame.origin);
   const facing = toCam.dot(currentFrame.normal) > 0;
-  // Only the flip is a visible change. This runs on every OrbitControls 'change' event, and
-  // those keep firing after a pan (see the note on prevCamPos in viewport.ts) — invalidating
-  // unconditionally would pin the render loop on forever, which is the thing that loop exists
-  // to avoid. refreshGizmo()'s own drawOverlay() invalidates for the redraw case.
+  // Invalidate only on a flip: 'change' keeps firing after a pan (prevCamPos in viewport.ts), so
+  // always invalidating would pin the render loop on.
   if (facing === overlay.visible) return;
   overlay.visible = facing;
   invalidate();
@@ -269,10 +225,8 @@ function poseSampler(
 }
 
 /**
- * The frame outline in world space, in draw order: each edge walked from its own corner toward the
- * next in EDGE_SAMPLES steps, so index `i * EDGE_SAMPLES` is corner `i` and consecutive edges share
- * their endpoints. Every point is its own surface query — this is the frame's real shape, which is
- * why both the renderer and the move hit-test go through it.
+ * The world-space outline: index `i * EDGE_SAMPLES` is corner `i`. Each point is a surface query —
+ * the frame's real shape — so the renderer and the move hit-test both use it.
  */
 function outlinePoints(frame: FaceFrame, pose: OverlayPose): THREE.Vector3[] {
   const at = poseSampler(frame, pose);
@@ -289,14 +243,9 @@ function outlinePoints(frame: FaceFrame, pose: OverlayPose): THREE.Vector3[] {
 }
 
 /**
- * Draw the frame, its corner handles and the rotate arm.
- *
- * The outline is traced ON the surface — every point is its own `pointAt` query in the same (u, v)
- * space the cut is placed in — rather than being drawn as a flat rectangle spanned by the tangent
- * axes. On a curved zone those two are not close: on the chair's flank a tangent rectangle's
- * corners leave the part by 110mm at 300mm across, which is why the frame used to read as hanging
- * in space beside the chair rather than lying on it. The rotate handle is the one thing still
- * placed off the surface, since it is deliberately a grab target out beyond the edge.
+ * Draw the frame traced ON the surface in the cut's (u, v) space, not a tangent rectangle: on the
+ * chair's flank its corners leave the part by 110mm at 300mm across. Only the rotate handle sits
+ * off the surface, deliberately, as a grab target beyond the edge.
  */
 function drawOverlay(frame: FaceFrame, pose: OverlayPose): void {
   const { dU, dV, halfW, halfH, rotDeg } = pose;
@@ -314,9 +263,8 @@ function drawOverlay(frame: FaceFrame, pose: OverlayPose): void {
     cornerHandles[i].scale.setScalar(handleSize);
   }
 
-  // Rotate handle sits off the top edge (mid of the +v side): from the surface point at that edge,
-  // straight out along the rotated +v direction. Extending it through `at` instead would wrap it
-  // around whatever the surface does past the frame, which is not a stable place to grab.
+  // Straight out along rotated +v from the top edge: via `at` it would wrap with the surface past
+  // the frame, not a stable grab target.
   const topMid = at(0, halfH);
   const r = (rotDeg * Math.PI) / 180;
   const outward = frame.uAxis
@@ -332,19 +280,13 @@ function drawOverlay(frame: FaceFrame, pose: OverlayPose): void {
   armPos.setXYZ(1, rotPos.x, rotPos.y, rotPos.z);
   armPos.needsUpdate = true;
 
-  // Off the surface the frame is drawn around a snapped-to-nearest point that isn't where the
-  // artwork will be cut, so say so rather than showing it in the confident colour. Asked of the
-  // design's LIVE center: `frame` is captured at pointerdown and keeps reporting where the design
-  // started, so reading its own value would stay silent through the one gesture — dragging the
-  // design off the part — that this warning exists for. Budgeted at the tolerance, since past that
-  // the exact distance changes nothing.
+  // Off the surface the frame snaps to a point the cut won't use, so warn. Ask the LIVE center:
+  // `frame` is from pointerdown, so its own value stays silent while dragging off the part.
+  // Budgeted at the tolerance, past which the distance changes nothing.
   const offMM =
     dU === 0 && dV === 0 ? frame.offSurfaceMM : frame.offSurfaceAt(dU, dV, OFF_SURFACE_TOL_MM);
   const off = offMM > OFF_SURFACE_TOL_MM;
-  // Line and handles move together, in both states: at rest they are both `--text` (see
-  // FRAME_COLOR), and off-surface they both take amber — that is a warning rather than a
-  // selection, and it wants to read as one thing gone wrong, not as a frame with a second colour
-  // in it.
+  // Line and handles change together, so amber reads as one thing gone wrong.
   (frameLine.material as THREE.LineBasicMaterial).color.setHex(
     off ? OFF_SURFACE_COLOR : FRAME_COLOR,
   );
@@ -352,23 +294,15 @@ function drawOverlay(frame: FaceFrame, pose: OverlayPose): void {
     (h.material as THREE.MeshBasicMaterial).color.setHex(off ? OFF_SURFACE_COLOR : HANDLE_COLOR);
   }
 
-  // The overlay is written straight into its buffers here, bypassing everything in viewport.ts that
-  // would otherwise mark the frame dirty. On a heavy model a drag deliberately does NOT rebuild
-  // until release (see onPointerMove), so this is the only thing redrawing the gizmo for the whole
-  // gesture — without it the frame freezes under the pointer.
+  // Direct buffer writes bypass viewport.ts's dirty marking, and a heavy-model drag doesn't rebuild
+  // until release, so without this the frame freezes under the pointer.
   invalidate();
 }
 
 /**
- * Whether the pointer landed inside the frame as *drawn*, rather than inside the flat rectangle
- * spanned by the tangent axes. Since the outline is traced on the surface those two are not the
- * same region on a curved zone — on the chair's flank they diverge by up to 110mm at 300mm across,
- * which let clicks well outside the visible frame start a move, and made clicks inside it near a
- * receding edge orbit the camera instead.
- *
- * Tested in screen space against the projected outline: the overlay draws with depthTest off and
- * only while the face points at the camera, so the polygon the user sees is exactly this one, and
- * point-in-polygon needs no assumption about the surface being convex or single-valued in depth.
+ * Inside the frame as *drawn*, not the tangent rectangle (up to 110mm apart at 300mm across on the
+ * chair's flank). Screen-space point-in-polygon: with depthTest off and only while facing, this is
+ * exactly what the user sees, with no convexity or depth assumption.
  */
 function insideFrame(frame: FaceFrame, ndc: THREE.Vector2): boolean {
   const cam = getCamera();
@@ -376,8 +310,7 @@ function insideFrame(frame: FaceFrame, ndc: THREE.Vector2): boolean {
   const poly: THREE.Vector2[] = [];
   const scratch = new THREE.Vector3();
   for (const p of pts) {
-    // A point behind the eye projects mirrored, which would corrupt the winding. No view that has
-    // the frame facing the camera puts one there, so treat it as a miss rather than guess.
+    // Behind the eye projects mirrored; no facing view puts one there, so call it a miss.
     if (scratch.copy(p).applyMatrix4(cam.matrixWorldInverse).z > -cam.near) return false;
     const q = scratch.copy(p).project(cam);
     poly.push(new THREE.Vector2(q.x, q.y));
@@ -447,8 +380,7 @@ function onPointerMove(e: PointerEvent): void {
   if (drag.mode === 'move') {
     state.offsetX = drag.startOffsetX + (du - drag.grabU);
     state.offsetY = drag.startOffsetY + (dv - drag.grabV);
-    // Shift the whole frame by the drag delta; `at` re-queries the surface, so the outline keeps
-    // following the part as it travels rather than sliding along the plane it started on.
+    // `at` re-queries the surface, so the outline follows the part, not the starting plane.
     pose.dU = state.offsetX - f.offsetX;
     pose.dV = state.offsetY - f.offsetY;
   } else if (drag.mode === 'scale') {
@@ -487,10 +419,8 @@ function onPointerUp(e: PointerEvent): void {
 }
 
 /**
- * Push the live drag values into the fit-panel inputs so the sliders track the gizmo. Each value
- * is snapped to that control's step (scale/rotation 1, offset 0.5) and the same snapped value goes
- * to both the range thumb and the number field, so the range's own step-coercion can't leave the
- * pair disagreeing. Guarded by id lookups so a missing control is a no-op rather than a throw.
+ * Mirror drag values into the fit inputs, snapped to each step (scale/rotation 1, offset 0.5) so
+ * range and number field can't disagree. A missing control is a no-op.
  */
 function syncFitInputs(): void {
   const scale = Math.round(state.scalePct);
