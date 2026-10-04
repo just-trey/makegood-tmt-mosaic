@@ -126,10 +126,14 @@ const HAIRLINE_WALK_PX = 16;
  * default. Chosen so the flanks, which are edge-on from front and back alike, come face-on
  * somewhere in the sweep.
  *
- * It does NOT reach every zone: docs/tech-debt.md records wing-left and wing-right never producing
- * an ink sample from any of these five, which predates the fender zones' own arrival, and line 751
- * hard-errors on exactly that. Widening the sweep is part of repairing this script, not something
- * these drags already do.
+ * It does NOT reach every zone: docs/tech-debt.md records wing-left, wing-right, seat-left and
+ * seat-right never producing an ink sample from any of these five, and the "produced no interior
+ * ink sample" check below hard-errors on exactly that. Widening the sweep is part of repairing
+ * this script, not something these drags already do.
+ *
+ * One entry, `WHOLE_CHAIR_ZONE` (geometry/zones.ts's `*whole`), is a virtual binding that spans
+ * every physical zone rather than a chart of its own — `zonePickAtNdc` can never return it, since
+ * `refreshZonePickMeshes` only builds pick targets from `part.zones`.
  */
 const IDENTITY_SWEEP = [
   { id: 'v0', drag: null },
@@ -263,9 +267,15 @@ function samplePageFactory() {
   };
 }
 
-/** Zone each grid point picks, by the same path a click takes (window.__mosaic.zoneIdAtNdc). */
+/**
+ * Zone each grid point picks, by the same path a click takes, plus whether that hit is the
+ * zone's own hidden-surface region — "pickable, no ink" there, not a through-pick. One raycast
+ * per point (window.__mosaic.zonePickAtNdc), so the dead flag can't disagree with the pick it's
+ * about: a second, independent raycast at the same point could in principle land on a different
+ * target than the first (a moved camera, a rebuilt scene) and excuse the wrong zone's absence.
+ */
 function pickPageFactory() {
-  return (pts) => pts.map((p) => window.__mosaic.zoneIdAtNdc(p.ndcX, p.ndcY));
+  return (pts) => pts.map((p) => window.__mosaic.zonePickAtNdc(p.ndcX, p.ndcY));
 }
 
 /** A cheap fingerprint of the drawing buffer, for proving a camera drag actually moved something. */
@@ -465,11 +475,12 @@ async function splitHairlines(page, w, h, nulls) {
     })),
   );
   const picks = await page.evaluate(pickPageFactory(), probes);
+  const zoneIds = picks.map((p) => p.zoneId);
   const hairline = [];
   const unreachable = [];
   let widest = 0;
   nulls.forEach((s, i) => {
-    const mine = picks.slice(i * offsets.length, (i + 1) * offsets.length);
+    const mine = zoneIds.slice(i * offsets.length, (i + 1) * offsets.length);
     // Distance to the first pixel that picks, per direction; Infinity if the walk never found one.
     const reach = [0, 1, 2, 3].map((dir) => {
       for (let d = 1; d <= HAIRLINE_WALK_PX; d++) if (mine[(d - 1) * 4 + dir]) return d;
@@ -490,7 +501,11 @@ async function splitHairlines(page, w, h, nulls) {
 async function sampleAndPick(page) {
   const { w, h, samples } = await page.evaluate(samplePageFactory(), CLASSIFY);
   const picks = await page.evaluate(pickPageFactory(), samples);
-  return { w, h, samples: samples.map((s, i) => ({ ...s, pick: picks[i] })) };
+  return {
+    w,
+    h,
+    samples: samples.map((s, i) => ({ ...s, pick: picks[i].zoneId, dead: picks[i].dead })),
+  };
 }
 
 /* ------------------------------------------------------------------ main */
@@ -530,6 +545,9 @@ try {
   );
   const realZones = zones.filter((z) => z.value !== '');
   console.log(`zones: ${realZones.map((z) => z.value).join(', ')}  (+ all-zones)`);
+  // Read off the app rather than hardcoded, so this can't drift from geometry/zones.ts's id —
+  // see the WHOLE_CHAIR_ZONE comment on IDENTITY_SWEEP for why it needs special handling at all.
+  const wholeChairZone = await page.evaluate(() => window.__mosaic.WHOLE_CHAIR_ZONE);
 
   const box = await page.locator('#canvas-host canvas').boundingBox();
 
@@ -606,11 +624,16 @@ try {
     await page.screenshot({ path: path.join(OUT, `allzones-${angle.id}.png`), clip: box });
 
     const counts = { ink: 0, body: 0, other: 0, mixed: 0 };
-    const wrong = [];
+    const bodyPicked = [];
     for (const s of samples) {
       counts[s.cls]++;
-      if (s.cls === 'body' && s.pick !== null) wrong.push(s);
+      if (s.cls === 'body' && s.pick !== null) bodyPicked.push(s);
     }
+    // A pick landing on this zone's own hidden-surface exclusion is correct: the surface takes no
+    // ink there, and "pickable, no ink" (`s.dead`, from the same raycast as `s.pick`) is a pass,
+    // not the through-pick this loop is hunting for.
+    const wrong = bodyPicked.filter((s) => !s.dead);
+    counts.deadPickable = bodyPicked.length - wrong.length;
     const inner = interiorInk(samples);
     const { hairline, unreachable, widest } = await splitHairlines(
       page,
@@ -646,6 +669,7 @@ try {
       `  [${angle.id}] ${samples.length} samples: ink ${counts.ink} (${inner.length} interior), ` +
         `body ${counts.body}, other ${counts.other}, mixed ${counts.mixed} | ` +
         `through-picks ${wrong.length}, missed-picks ${nulled.length}` +
+        (counts.deadPickable ? `, dead-pickable ${counts.deadPickable}` : '') +
         (hairline.length ? `, seam hairlines ${hairline.length} (widest ${widest}px)` : ''),
     );
     // A hairline is excused, not ignored: past a few per thousand it has stopped being the seam
@@ -693,8 +717,8 @@ try {
         .map(
           (a) =>
             `${a.angle} ink=${a.counts.ink} body=${a.counts.body} through=${a.wrong.length} ` +
-            `missed=${a.nulled.length} hairline=${a.counts.hairline}` +
-            `@${a.counts.hairlineWidest}px`,
+            `dead=${a.counts.deadPickable} missed=${a.nulled.length} ` +
+            `hairline=${a.counts.hairline}@${a.counts.hairlineWidest}px`,
         )
         .join(', '),
   );
@@ -734,7 +758,12 @@ try {
         clip: box,
       });
       const inked = interiorInk(samples);
-      const bad = inked.filter((s) => s.pick !== z.value);
+      // For *whole, "bad" can only mean the pick is null: it can't tell which physical zone the
+      // whole-chair sheet resolved to underneath, only that one did.
+      const bad =
+        z.value === wholeChairZone
+          ? inked.filter((s) => s.pick === null)
+          : inked.filter((s) => s.pick !== z.value);
       inkedPerZone[z.value] += inked.length;
       console.log(
         `  [${stage.id}/zone ${z.value}] ${inked.length} interior sample(s), ${bad.length} picked ` +

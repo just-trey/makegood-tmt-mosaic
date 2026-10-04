@@ -90,7 +90,6 @@ beforeEach(() => {
   state.rotationDeg = 0;
   state.flipX = false;
   state.flipY = false;
-  state.shapeKind = 'assembly';
   state.assembly.parts = [];
   state.assembly.net = null;
 });
@@ -112,8 +111,7 @@ describe('artworkBuildInputs — a whole-part binding with no net', () => {
   });
 
   it('still falls back to the globals when there is no instance at all', () => {
-    // Flat mode's own source of truth: state.parsed with an empty pool is the one case the fallback
-    // is for, and it is unchanged.
+    // state.parsed with an empty pool is the one case the fallback is for.
     state.parsed = parsed();
     state.offsetX = 12;
 

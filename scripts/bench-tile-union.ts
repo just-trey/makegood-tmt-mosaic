@@ -1,16 +1,16 @@
-// Finds where Fill mode's tile union starts dropping tiles, against the real turf 6.5.
+// Times Fill mode's tile union, and says whether it kept every tile, against the real turf 6.5.
 //
-// Run with: node_modules/.bin/vite-node scripts/bench-tile-union.ts [pattern] [n,n,n]
+// Run with: node_modules/.bin/vite-node scripts/bench-tile-union.ts [pattern] [n,n,n] [colour]
 //   pattern  a name under public/patterns (default zebra)
-//   n        tile grid spans to sweep, so n=20 means a 20x20 grid (default 13,17,21,25)
+//   n        tile grid spans to sweep: 20 is a 20x20 grid, 3x300 is 3 rows of 300 (default
+//            13,17,21,25)
+//   colour   the hex of the colour to tile (default the one with the most points per tile)
 //
-// turf 6.5's clipper does not throw when it gives up on a big union: it returns a partial result,
-// which reaches the user as a `Couldn't merge the shapes` warning naming no cause and a part that
-// is missing geometry. So the signal is the points in the result: a run that fails produces FEWER
-// points out than one an eighth its size.
-//
-// `mergeFailures` is a yes/no beside it, not a count. warnBuild dedupes on the exact message and
-// every failure here shares one label, so the column can only ever read 0 or 1.
+// A union that loses tiles shows as areaKept under 1: every bundled pattern is drawn inside its
+// own cell, so n tiles should cover exactly n times one tile's area. `mergeFailures` is a yes/no
+// beside it, not a count: warnBuild dedupes on the exact message and every failure here shares one
+// label. `refused` is a union too big for the engine even split (UnionTooBig), which fill mode
+// turns into one tile and a warning.
 //
 // This is the shipping path, not a replica: tileFeature -> unionAllCooperative -> safeUnion, over
 // the feature computeNetRegionsByColor builds for one colour of a real bundled pattern. The only
@@ -44,12 +44,17 @@ dom.window.HTMLCanvasElement.prototype.getContext = function () {
 } as unknown as typeof dom.window.HTMLCanvasElement.prototype.getContext;
 
 const { parseSVGDocument } = await import('../src/svg/parse');
-const { computeNetRegionsByColor } = await import('../src/geometry/regions');
+const { computeNetRegionsByColor, planarArea, UnionTooBig } =
+  await import('../src/geometry/regions');
 const { featureVertexCount, tileFeature } = await import('../src/geometry/patterns');
 const { WARNINGS, clearWarnings } = await import('../src/warnings');
 
 const pattern = process.argv[2] ?? 'zebra';
-const spans = (process.argv[3] ?? '13,17,21,25').split(',').map(Number);
+const spans = (process.argv[3] ?? '13,17,21,25').split(',').map((span) => {
+  const [r, c] = span.split('x').map(Number);
+  return { rows: r, cols: c ?? r };
+});
+const only = process.argv[4]?.toLowerCase();
 
 const parsed = parseSVGDocument(
   readFileSync(path.join(REPO, 'public/patterns', `${pattern}.svg`), 'utf-8'),
@@ -58,31 +63,39 @@ const { byColor } = await computeNetRegionsByColor(parsed.shapes);
 const vb = parsed.viewBox;
 if (!vb) throw new Error(`${pattern}.svg declares no viewBox, so it has no tile period`);
 
-// The heaviest colour, because the tile union runs once per colour: that is the operation the
-// ceiling applies to, not the design's total.
-const [hex, feature] = Object.entries(byColor).sort(
-  (a, b) => featureVertexCount(b[1]) - featureVertexCount(a[1]),
-)[0];
+// The heaviest colour by default, because the refusal budget is set against it.
+const [hex, feature] = only
+  ? [only, byColor[only]]
+  : Object.entries(byColor).sort((a, b) => featureVertexCount(b[1]) - featureVertexCount(a[1]))[0];
+if (!feature) throw new Error(`${pattern}.svg has no colour ${only}`);
 const perTile = featureVertexCount(feature);
+const tileArea = planarArea(feature);
 console.log(`${pattern}.svg colour ${hex}: ${perTile} points per tile, ${vb.w}x${vb.h} tile\n`);
-console.log('tiles\tpointsIn\tpointsOut\tmergeFailures\tms');
+console.log('tiles\tpointsIn\tpointsOut\tareaKept\tmergeFailures\tms');
 
-for (const n of spans) {
+for (const { rows, cols } of spans) {
   clearWarnings();
+  const n = rows * cols;
   const t0 = performance.now();
-  const out = await tileFeature(feature, {
-    i0: 0,
-    i1: n - 1,
-    j0: 0,
-    j1: n - 1,
-    pitchX: vb.w,
-    pitchY: vb.h,
-    count: n * n,
-  });
+  let out = null;
+  try {
+    out = await tileFeature(feature, {
+      i0: 0,
+      i1: cols - 1,
+      j0: 0,
+      j1: rows - 1,
+      pitchX: vb.w,
+      pitchY: vb.h,
+      count: n,
+    });
+  } catch (e) {
+    if (!(e instanceof UnionTooBig)) throw e;
+  }
   const ms = Math.round(performance.now() - t0);
   const fails = WARNINGS.filter((w) => /Couldn't merge the shapes/.test(w.message)).length;
+  const kept = out ? (planarArea(out) / (n * tileArea)).toFixed(6) : 'refused';
   console.log(
-    `${n * n}\t${n * n * perTile}\t${featureVertexCount(out)}\t${fails}\t${ms}`.replace(
+    `${n}\t${n * perTile}\t${featureVertexCount(out)}\t${kept}\t${fails}\t${ms}`.replace(
       /\t/g,
       '\t\t',
     ),

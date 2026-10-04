@@ -6,15 +6,10 @@ import { fracFloorPx } from './stats';
 
 /**
  * Ceiling on traced components. Exceeding it raises the despeckle floor and re-runs rather than
- * handing the region pipeline a shape count it will choke on — see the complexity note on
- * `shapeToFeature` in src/geometry/regions.ts, which this cap is what keeps small. Deliberately a
- * component cap rather than a point cap: components are what drive ring count, and ring count is
- * what `shapeToFeature` is quadratic in. Raising it means re-running
- * scripts/bench-raster.ts and scripts/bench-shape-to-feature.ts.
- *
- * A target, not a bound: the raise is never rechecked, and absorbing specks merges them into each
- * other, which can mint components above the new floor. `capped` means "a raise happened", never
- * "the count is under" (docs/tech-debt.md).
+ * hand the region pipeline a shape count it will choke on (see `shapeToFeature` in
+ * src/geometry/regions.ts). A component cap, not a point cap: components drive ring count, which
+ * `shapeToFeature` is quadratic in. Raising it means re-running scripts/bench-raster.ts and
+ * scripts/bench-shape-to-feature.ts.
  */
 export const MAX_COMPONENTS = 800;
 
@@ -27,9 +22,9 @@ export interface TracedComponent {
 
 export interface TraceResult {
   components: TracedComponent[];
-  /** True when MAX_COMPONENTS forced the despeckle floor up — the caller turns this into a notice. */
-  capped: boolean;
-  /** The floor in pixels this trace actually applied, which is the raised one when `capped`. */
+  /** Times MAX_COMPONENTS forced the despeckle floor up. Any at all is the caller's capped notice. */
+  raises: number;
+  /** The floor in pixels this trace actually applied — the raised one after any raise. */
   floorPx: number;
 }
 
@@ -43,10 +38,9 @@ const right = (d: number) => (d + 1) & 3;
 const left = (d: number) => (d + 3) & 3;
 
 /**
- * Crack id for the lattice edge between two adjacent nodes, in the same indexing the crack arrays
- * use (vertical cracks first, then horizontal). Both the chain builder and the ring walk need to
- * name the edge they just crossed, and they have to agree exactly — that shared id is how a ring
- * finds the chain whose fitted points it should splice in.
+ * Crack id for the lattice edge between two adjacent nodes, in the crack arrays' indexing (vertical
+ * first, then horizontal). The chain builder and ring walk must agree exactly: the shared id is how
+ * a ring finds the chain whose fitted points it splices in.
  */
 function crackIndexer(stride: number, w: number, vCount: number) {
   return (a: number, b: number): number => {
@@ -58,10 +52,7 @@ function crackIndexer(stride: number, w: number, vCount: number) {
   };
 }
 
-/**
- * 4-connected components of equal label, background included (a transparent speck is no more
- * printable than a colored one). Returns a component id per pixel and each component's area.
- */
+/** 4-connected components of equal label, background included (a transparent speck is no more printable than a colored one). Returns a component id per pixel and each component's area. */
 function labelComponents(
   labels: Int16Array,
   w: number,
@@ -108,27 +99,22 @@ function labelComponents(
 /**
  * Absorb every component below `minArea` into the label that surrounds it most, smallest first.
  *
- * Dominant *neighbour*, not background: dropping a speck in the middle of a face to background
- * would punch a hole through the artwork instead of removing a speck.
+ * Dominant *neighbour*, not background: dropping a mid-face speck to background would punch a hole.
+ * Unions over one component labelling, never simultaneous relabelling, which let two adjacent specks
+ * trade labels instead of merging and left most of an image under the floor it had just applied
+ * (docs/findings/2026-08-20-despeckle-floor.md).
  *
- * Unions over one component labelling, never simultaneous relabelling, which let two adjacent
- * specks trade labels rather than merge and left most of an image under the floor it had just
- * applied (docs/findings/2026-08-20-despeckle-floor.md).
- *
- * Nothing is left under the floor: a speck always has a neighbour to join unless it is the whole
- * image, and joining removes a component. `deChecker` afterwards can put one back, by shaving a
- * pinch point and splitting a component in two.
+ * Nothing is left under the floor: a speck always has a neighbour unless it is the whole image.
+ * `deChecker` afterwards can put one back by shaving a pinch point and splitting a component.
  */
 function despeckle(labels: Int16Array, w: number, h: number, minArea: number): void {
   if (minArea <= 1) return;
   const { compId, areas, labelOf } = labelComponents(labels, w, h);
   const under = (i: number) => areas[i] < minArea;
-  // Before allocating anything: on artwork with no speck at all this is the whole call, and the
-  // adjacency scan below costs 20ms on a 1024px image to discover it has nothing to do.
+  // Before allocating anything: with no speck this is the whole call, and the adjacency scan below costs 20ms on a 1024px image to find that out.
   if (areas.length < 2 || !areas.some((_, i) => under(i))) return;
 
-  // Shared boundary length per pair, and only for pairs with a speck on one side: the rest is
-  // never read, and tallying it on a 1024px image is a million map writes for nothing.
+  // Shared boundary length per pair, only for pairs with a speck on one side — tallying the rest on a 1024px image is a million map writes for nothing.
   const adj: Map<number, number>[] = areas.map(() => new Map<number, number>());
   const touch = (p: number, q: number) => {
     const a = compId[p],
@@ -153,8 +139,7 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
     a = find(a);
     b = find(b);
     if (a === b) return a;
-    // The larger neighbour set absorbs the smaller, which is what keeps the splicing near-linear
-    // rather than quadratic on a long chain of merges.
+    // The larger neighbour set absorbs the smaller, keeping splicing near-linear rather than quadratic on a long merge chain.
     if (adj[a].size < adj[b].size) [a, b] = [b, a];
     parent[b] = a;
     areas[a] += areas[b];
@@ -164,8 +149,7 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
     return a;
   };
 
-  // Smallest first, so a speck is asked which label dominates it only once its own smaller
-  // neighbours have already joined something. Re-queued when a merge leaves it still too small.
+  // Smallest first, so a speck asks which label dominates only after its smaller neighbours joined something. Re-queued if a merge leaves it too small.
   const queue = areas
     .map((_, i) => i)
     .filter(under)
@@ -188,8 +172,7 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
       }
     if (bestN <= 0) continue;
     let root = comp;
-    // Every neighbour of the winning label, not just one: once the speck takes that label it
-    // connects them all into a single component anyway.
+    // Every neighbour of the winning label, not one: taking that label connects them all into one component.
     for (const nb of [...adj[comp].keys()]) if (labelOf[find(nb)] === best) root = merge(root, nb);
     labelOf[root] = best;
     if (under(root)) queue.push(root);
@@ -199,13 +182,11 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
 }
 
 /**
- * Break every 2x2 that reads A,B / B,A.
- *
- * Such a block puts four cracks on one lattice point with only two labels, and there is no
- * non-arbitrary way to pair them up — either choice makes a self-touching ring or a zero-area
- * overlap. Removing the configuration outright is cheaper than encoding a tie-break and leaves the
- * crack graph with no node above degree 3 that isn't a genuine meeting of distinct regions. One
- * scan pass suffices: it only ever writes the bottom-right cell, which every later block reads.
+ * Break every 2x2 that reads A,B / B,A. Such a block puts four cracks on one lattice point with two
+ * labels, and no non-arbitrary pairing exists — either choice is a self-touching ring or a
+ * zero-area overlap. Removing it is cheaper than a tie-break and leaves no node above degree 3 that
+ * isn't a genuine meeting of distinct regions. One scan suffices: it only writes the bottom-right
+ * cell, which every later block reads.
  */
 function deChecker(labels: Int16Array, w: number, h: number): void {
   for (let y = 0; y + 1 < h; y++) {
@@ -226,8 +207,7 @@ interface Chain {
   /** The sub-pixel polyline `curve.ts` fitted to `nodes`, in the same direction. */
   fitted: Pt[];
   closed: boolean;
-  /** Position of each node within `nodes` — only built for closed chains, which need it to tell
-   * which way a ring is traversing them. Open chains answer that by comparing against nodes[0]. */
+  /** Position of each node within `nodes` — closed chains only, to tell which way a ring traverses them. Open chains compare against nodes[0]. */
   index: Map<number, number> | null;
 }
 
@@ -245,8 +225,7 @@ interface RingSet {
 
 /**
  * Share of its pixel area a component must still enclose after fitting, or its chains are unfitted.
- *
- * Matches curve.ts's own guard for closed chains. Rounding a corner costs a few percent; the failure
+ * Matches curve.ts's guard for closed chains: rounding a corner costs a few percent, the failure
  * this catches costs everything.
  */
 const MIN_COMPONENT_AREA_RATIO = 0.85;
@@ -265,16 +244,15 @@ function loopArea(loop: Loop): number {
  * Drop back to lattice points on any chain that helped a component lose its area, and report
  * whether anything changed so the caller can reassemble.
  *
- * curve.ts guards a *closed* chain by its own enclosed area, which is the only area a single chain
- * has. An open chain has none, so the same failure goes uncaught there — and it is not hypothetical:
- * a one-pixel stroke between two other colours is bounded by open chains that each turn a corner
- * around it, the straightness cone's half-pixel slack swallows the excursion, both chains fit to
- * chords, and the region vanishes from the output with no warning. Measured at every length tried.
+ * curve.ts guards a *closed* chain by its own enclosed area; an open chain has none, so the same
+ * failure goes uncaught there and is not hypothetical: a one-pixel stroke between two other colours
+ * is bounded by open chains that each turn a corner around it, the cone's half-pixel slack
+ * swallows the excursion, both fit to chords, and the region vanishes with no warning (measured at
+ * every length tried).
  *
- * The check has to be per component, because that is the smallest thing with an area to compare;
- * the *fix* has to be per chain, because a chain is shared. Unfitting one is what keeps both sides
- * of that boundary identical — if only the starved component fell back, it would disagree with its
- * neighbour along their shared edge and open exactly the sliver the whole design prevents.
+ * The check is per component (the smallest thing with an area); the *fix* is per chain, because a
+ * chain is shared. Unfitting one keeps both sides of that boundary identical — if only the starved
+ * component fell back it would disagree with its neighbour and open the sliver this design prevents.
  */
 function unfitCollapsedChains(
   rings: Map<number, RingSet>,
@@ -307,31 +285,27 @@ function unfitCollapsedChains(
 /**
  * Cut the crack graph into chains and fit a sub-pixel curve to each, once and globally.
  *
- * This is the whole reason the crack graph is built. Every boundary between two regions is one
- * chain of cracks shared by both of them; fitting each region's rings independently would pull
- * that shared chain two different ways and leave a sliver of bare part surface along every colour
- * boundary in the image. Fitting the shared chain once and splicing the identical points into both
- * regions keeps the two sides bit-identical — which is what makes the fit safe to do at all.
+ * The reason the crack graph exists: every boundary between two regions is one chain shared by both,
+ * and fitting each region's rings independently would pull it two ways, leaving a sliver of bare
+ * part surface along every colour boundary. Fitting once and splicing identical points into both
+ * keeps the sides bit-identical.
  *
- * What it does *not* buy is that a region never crosses one it shares no chain with. Nothing bounds
- * how far a fitted chain strays from the lattice path it replaces, so it can sweep over a third
- * region a pixel away; measured, that is worth up to one working pixel of overlap. The bound,
- * why it can't be tightened, and what absorbs it downstream are on the "keeps any overlap between
- * components down to a sliver" test in tests/raster-trace.test.ts, which pins it.
+ * What it does *not* buy: a region never crossing one it shares no chain with. Nothing bounds how
+ * far a fitted chain strays from its lattice path, so it can sweep over a third region a pixel away
+ * — measured up to one working pixel of overlap. The bound, why it can't be tightened and what
+ * absorbs it downstream are on the "keeps any overlap between components down to a sliver" test in
+ * tests/raster-trace.test.ts.
  */
 function buildChains(labels: Int16Array, w: number, h: number, params: TraceParams): ChainSet {
   const stride = w + 1;
   const nodeCount = stride * (h + 1);
   const labelAt = (x: number, y: number) =>
     x < 0 || y < 0 || x >= w || y >= h ? BACKGROUND : labels[y * w + x];
-  // A crack is a unit edge between two differently-labelled pixels. Vertical cracks are indexed
-  // first, then horizontal ones.
+  // A crack is a unit edge between two differently-labelled pixels. Vertical cracks are indexed first, then horizontal.
   const vCount = stride * h;
   const crackBetween = crackIndexer(stride, w, vCount);
 
-  // Crack existence and node degree are precomputed rather than derived per query: the walks below
-  // hit them once per step over the whole lattice, and recomputing from `labels` each time made
-  // tracing the dominant cost of loading an image (measured with scripts/bench-raster.ts).
+  // Crack existence and node degree are precomputed: the walks hit them once per step over the whole lattice, and recomputing from `labels` made tracing the dominant cost of loading an image (scripts/bench-raster.ts).
   const vCrack = new Uint8Array(vCount);
   for (let y = 0; y < h; y++)
     for (let x = 0; x <= w; x++)
@@ -340,8 +314,7 @@ function buildChains(labels: Int16Array, w: number, h: number, params: TracePara
   for (let y = 0; y <= h; y++)
     for (let x = 0; x < w; x++) hCrack[y * w + x] = labelAt(x, y - 1) !== labelAt(x, y) ? 1 : 0;
 
-  // Neighbours of a lattice node along the four lattice directions, written into a scratch buffer
-  // as [nodeId, crackId] pairs to keep this allocation-free in the inner loops.
+  // Neighbours of a lattice node along the four directions, written as [nodeId, crackId] pairs into a scratch buffer to stay allocation-free in inner loops.
   const nbBuf = new Int32Array(8);
   const neighbours = (n: number): number => {
     const x = n % stride,
@@ -405,8 +378,7 @@ function buildChains(labels: Int16Array, w: number, h: number, params: TracePara
     const id = chains.length;
     for (let i = 1; i < nodes.length; i++) chainOf[crackBetween(nodes[i - 1], nodes[i])] = id;
     const pts: Pt[] = nodes.map((n) => ({ x: n % stride, y: (n / stride) | 0 }));
-    // A closed walk returns to its start, so the node list carries the first node twice; the fit
-    // wants the cycle without that repeat.
+    // A closed walk returns to its start, so the node list has the first node twice; the fit wants the cycle without the repeat.
     const body = closed ? pts.slice(0, -1) : pts;
     chains.push({
       nodes,
@@ -425,11 +397,10 @@ function buildChains(labels: Int16Array, w: number, h: number, params: TracePara
     }
   }
 
-  // Whatever is left is a closed chain with no junction on it — an island's boundary sitting inside
-  // one uniform field. Every node still unvisited here has degree 2 (degree 1 and 3+ are junctions,
-  // already walked above), so each remaining run is a cycle and gets fitted cyclically. The old RDP
-  // path had to pin two arbitrary points on such a ring to have something to simplify between;
-  // a cyclic fit needs no pins, and pinning would have planted two corners on a smooth island.
+  // What's left is a closed chain with no junction — an island's boundary in a uniform field. Every
+  // unvisited node has degree 2 (junctions were walked above), so each run is a cycle, fitted
+  // cyclically. The old RDP path pinned two arbitrary points on such a ring; a cyclic fit needs
+  // none, and pinning would plant two corners on a smooth island.
   for (let n = 0; n < nodeCount; n++) {
     if (!degrees[n]) continue;
     const count = neighbours(n);
@@ -445,11 +416,8 @@ function buildChains(labels: Int16Array, w: number, h: number, params: TracePara
 
 /**
  * Walk every region boundary as a closed ring of lattice points, keeping only the points
- * `buildChains` fitted.
- *
- * Rings are traversed with the region on the right; where one component touches itself diagonally
- * the sharpest-right-turn preference resolves it as two rings meeting at a point rather than one
- * self-crossing ring.
+ * `buildChains` fitted. Rings are traversed with the region on the right; where a component touches
+ * itself diagonally, sharpest-right-turn preference gives two rings meeting at a point, not one self-crossing ring.
  */
 function walkRings(
   labels: Int16Array,
@@ -466,9 +434,7 @@ function walkRings(
   const labelAt = (x: number, y: number) =>
     x < 0 || y < 0 || x >= w || y >= h ? BACKGROUND : labels[y * w + x];
 
-  // outEdge[node * 4 + dir] is the component that traverses that lattice direction, or -1. Each
-  // direction is claimed by at most one component: a crack is walked once per side, and the
-  // background side emits nothing.
+  // outEdge[node * 4 + dir] is the component traversing that direction, or -1. Each direction is claimed by at most one component: a crack is walked once per side and the background side emits nothing.
   const outEdge = new Int32Array(nodeCount * 4).fill(-1);
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
@@ -510,9 +476,7 @@ function walkRings(
       const used: number[] = [];
       const loop = spliceChains(ringNodes, chains, chainOf, crackBetween, used);
       const entry = rings.get(comp) ?? { loops: [], chains: [] };
-      // A ring that collapsed below three points contributes no geometry, but the chains it was
-      // built from are exactly the ones to suspect — record them before dropping it, or the guard
-      // below has nothing to work with for the case that loses a region outright.
+      // A ring collapsed below three points contributes no geometry, but its chains are the ones to suspect — recorded before dropping it, or the guard below can't see a region lost outright.
       if (loop.length >= 3) entry.loops.push(loop);
       for (const id of used) if (!entry.chains.includes(id)) entry.chains.push(id);
       rings.set(comp, entry);
@@ -521,12 +485,10 @@ function walkRings(
 }
 
 /**
- * Turn a ring's lattice-node cycle into the fitted polyline, by concatenating the chains it crosses.
- *
- * A ring is always a whole number of chains: a chain's interior nodes have exactly two cracks, so
- * once a traversal enters a chain there is no way out of it except at the far end. That is what
- * makes splicing whole chains — rather than per-node points — correct, and it is what guarantees
- * both regions along a boundary get byte-identical geometry.
+ * Turn a ring's lattice-node cycle into the fitted polyline by concatenating the chains it crosses.
+ * A ring is a whole number of chains (an interior node has exactly two cracks, so a traversal can
+ * only leave a chain at its far end), which is what makes splicing whole chains correct and gives
+ * both regions along a boundary byte-identical geometry.
  */
 function spliceChains(
   ringNodes: number[],
@@ -542,11 +504,10 @@ function spliceChains(
   const chainAtIn = (nodes: number[], i: number) =>
     chainOf[crackBetween(nodes[i], nodes[(i + 1) % k])];
 
-  // The walk starts at the ring's lowest node id, which is a lattice corner and not necessarily a
-  // chain boundary — a chain turns corners freely, only junctions end one. Starting mid-chain would
-  // split that chain across the first and last group and emit its two halves out of order, so
-  // rotate the cycle onto a boundary first. A ring that is one whole closed chain has no boundary
-  // to find and needs no rotation.
+  // The walk starts at the ring's lowest node id, a lattice corner that needn't be a chain boundary
+  // (only junctions end a chain). Starting mid-chain would split it across the first and last group
+  // and emit its halves out of order, so rotate onto a boundary first. A ring that is one whole
+  // closed chain has none and needs no rotation.
   let startIdx = 0;
   for (let i = 0; i < k; i++)
     if (chainAtIn(ringNodes, i) !== chainAtIn(ringNodes, (i - 1 + k) % k)) {
@@ -563,18 +524,14 @@ function spliceChains(
     let j = i + 1;
     while (j < k && chainAt(j) === id) j++;
     const chain = chains[id];
-    // Unreachable by construction — every crack the ring can cross was registered by one of the
-    // two walks in buildChains. Loud rather than silent: skipping the run would ship a region
-    // missing part of its outline, which looks plausible in the preview and prints wrong.
+    // Unreachable by construction — every crossable crack was registered in buildChains. Loud, not silent: skipping would ship a region missing part of its outline, plausible in preview and wrong in print.
     if (!chain) throw new Error(`Traced ring crossed an unregistered boundary (crack chain ${id})`);
     used.push(id);
     appendFitted(loop, chain, nodes[i], nodes[(i + 1) % k]);
     i = j;
   }
 
-  // The seam dedup in appendFitted only looks one point back, so the ring's own closing point —
-  // shared by the last chain's end and the first chain's start — survives. Drop it: a Loop is
-  // implicitly closed, and `loopToRing` would otherwise see a zero-length final edge.
+  // The seam dedup in appendFitted looks one point back, so the ring's closing point (shared by the last chain's end and the first's start) survives. Dropped: a Loop is implicitly closed and `loopToRing` would see a zero-length final edge.
   const first = loop[0];
   const last = loop[loop.length - 1];
   if (loop.length > 1 && first.x === last.x && first.y === last.y) loop.pop();
@@ -583,9 +540,9 @@ function spliceChains(
 
 /**
  * Which way is this ring traversing the chain? An open chain answers by its pinned first node; a
- * closed one has no distinguished end, so it compares the step actually taken against the step the
- * chain stores. The second node matters in both cases: a chain that leaves a junction and returns
- * to the same one has identical endpoints, and the entry node alone can't tell the two ways apart.
+ * closed one compares the step taken against the step the chain stores. The second node matters in
+ * both cases: a chain that leaves a junction and returns to it has identical endpoints, and the
+ * entry node alone can't tell the two ways apart.
  */
 function traversedForward(chain: Chain, entry: number, second: number): boolean {
   if (!chain.index) return entry === chain.nodes[0] && second === chain.nodes[1];
@@ -597,45 +554,45 @@ function traversedForward(chain: Chain, entry: number, second: number): boolean 
 function appendFitted(loop: Loop, chain: Chain, entry: number, second: number): void {
   const pts = traversedForward(chain, entry, second) ? chain.fitted : [...chain.fitted].reverse();
   if (!pts.length) return;
-  // Consecutive chains meet at a junction that both fits pin exactly, so the shared point arrives
-  // twice. Exact equality is the right test: pinned endpoints are copied through the fit unchanged.
+  // Consecutive chains meet at a junction both fits pin, so the shared point arrives twice. Exact equality is right: pinned endpoints pass through the fit unchanged.
   const prev = loop[loop.length - 1];
   const skipFirst = prev !== undefined && pts[0].x === prev.x && pts[0].y === prev.y;
   for (let i = skipFirst ? 1 : 0; i < pts.length; i++) loop.push(pts[i]);
 }
 
 /**
- * Quantized label grid -> closed polygons, one component at a time.
- *
- * Hole-vs-solid is deliberately *not* decided here: `shapeToFeature` (src/geometry/regions.ts)
- * already resolves it by containment depth, correctly for both SVG fill rules and under test. The
- * same goes for winding, which `loopToRing` normalizes. Emitting every closed ring and letting that
- * code classify them reuses tested logic and removes a whole class of tracer bug.
+ * Quantized label grid -> closed polygons, one component at a time. Hole-vs-solid is deliberately
+ * *not* decided here: `shapeToFeature` (src/geometry/regions.ts) resolves it by containment depth,
+ * tested for both SVG fill rules, and `loopToRing` normalizes winding. Emitting every closed ring
+ * and letting that classify reuses tested logic and removes a class of tracer bug.
  */
 export function traceLabelMap(map: LabelMap, params: TraceParams, placedFloor = 0): TraceResult {
   const { w, h } = map;
   const labels = map.labels.slice(); // the caller's grid is reused across re-quantizes
-  // `placedFloor` is the already-resolved floor for this trace's placement (stats.ts
-  // despeckleFloorPx). It replaces the fractional floor rather than raising it, because at a large
-  // placement the right floor is *below* the fraction; 0 means the placement is unknown and the
-  // fraction is the only floor there is.
+  // `placedFloor` is the resolved floor for this placement (stats.ts despeckleFloorPx). It replaces
+  // the fractional floor, not raises it: at a large placement the right floor is *below* the
+  // fraction; 0 means placement unknown, so the fraction is all there is.
   let minArea = Math.max(1, placedFloor || fracFloorPx(params, w, h));
 
   despeckle(labels, w, h, minArea);
   deChecker(labels, w, h);
 
   let { compId, areas, labelOf } = labelComponents(labels, w, h);
-  let capped = false;
-  const realCount = () => areas.filter((_, i) => labelOf[i] !== BACKGROUND).length;
-  if (realCount() > MAX_COMPONENTS) {
-    // Raise the floor to exactly the size that fits under the cap, rather than guessing a
-    // multiplier and re-running blind.
-    const sorted = areas.filter((_, i) => labelOf[i] !== BACKGROUND).sort((a, b) => b - a);
-    minArea = Math.max(minArea + 1, sorted[MAX_COMPONENTS - 1] + 1);
+  let raises = 0;
+  for (;;) {
+    const real = areas.filter((_, i) => labelOf[i] !== BACKGROUND);
+    if (real.length <= MAX_COMPONENTS) break;
+    raises++;
+    // Raise the floor to exactly the size that fits under the cap, not a guessed multiplier. It must
+    // be rechecked: absorbing specks merges them and the merged ones can clear the floor meant to
+    // remove them. When only a `deChecker` split put the count back over, the 800th largest is a
+    // split piece under the floor, so this lands on floor + 1 — the smallest raise that absorbs
+    // them, and what ends the loop: the floor rises every pass and at w*h the image is one component.
+    real.sort((a, b) => b - a);
+    minArea = Math.max(minArea + 1, real[MAX_COMPONENTS - 1] + 1);
     despeckle(labels, w, h, minArea);
     deChecker(labels, w, h);
     ({ compId, areas, labelOf } = labelComponents(labels, w, h));
-    capped = true;
   }
 
   const chainSet = buildChains(labels, w, h, params);
@@ -649,5 +606,5 @@ export function traceLabelMap(map: LabelMap, params: TraceParams, placedFloor = 
     components.push({ label: labelOf[comp], loops: entry.loops, area: areas[comp] });
   }
   components.sort((a, b) => b.area - a.area);
-  return { components, capped, floorPx: minArea };
+  return { components, raises, floorPx: minArea };
 }

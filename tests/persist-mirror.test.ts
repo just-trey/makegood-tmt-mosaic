@@ -8,7 +8,7 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
 vi.mock('../src/assembly/parts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/assembly/parts')>();
-  return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
+  return { ...actual, asmLoadFullAssembly: vi.fn(async () => 'loaded' as const) };
 });
 
 import {
@@ -86,12 +86,7 @@ function session(artworks: PersistedSession['artworks']): PersistedSession {
   return {
     version: 1,
     savedAt: Date.now(),
-    shapeKind: 'disc',
-    disc: { diameter: 90, thickness: 5 },
-    rect: { width: 100, height: 70, thickness: 3 },
-    round: { width: 100, height: 70, corner: 12, thickness: 3 },
-    stlPlate: { width: 120, height: 80, thickness: 6, faceZ: 2 },
-    marginPct: 7,
+    shapeKind: 'assembly',
     scalePct: 100,
     offsetX: 0,
     offsetY: 0,
@@ -99,7 +94,6 @@ function session(artworks: PersistedSession['artworks']): PersistedSession {
     flipY: false,
     rotationDeg: 0,
     globalDepth: 1.5,
-    recessBg: true,
     printerId: 'snapmaker-u1',
     asmRadius: 140,
     assembly: { kindId: null, variantId: null },
@@ -119,7 +113,6 @@ function session(artworks: PersistedSession['artworks']): PersistedSession {
 
 beforeEach(() => {
   localStorage.clear();
-  state.shapeKind = 'disc';
   state.assembly.kindId = null;
   state.assembly.parts = [];
   state.sources = [];
@@ -147,7 +140,7 @@ describe('the Mirror flag across a reload', () => {
   });
 
   it('drops on restore once the rebound target is no zone at all', async () => {
-    // shapeKind 'disc' in session() takes the non-assembly restore branch, which unbinds every
+    // kindId null in session() takes the fallback restore branch, which unbinds every
     // zone (see applyRestoredSession's `keepSavedZones = false`) — so even a saved mirror:true
     // has nothing left to mirror onto and setArtworkZone's own clearing rule drops it.
     await applyRestoredSession(session([{ ...instance({ mirror: true }), zoneId: 'right' }]));
@@ -160,7 +153,6 @@ describe('the Mirror flag across a reload', () => {
     // not evidence of anything); the flag has to be kept on the same reading, or a saved mirrored
     // design comes back cutting one side with nothing said.
     const saved = session([{ ...instance({ mirror: true }), zoneId: 'right' }]);
-    saved.shapeKind = 'assembly';
     saved.assembly = { kindId: 'chair-body', variantId: null };
 
     await applyRestoredSession(saved);
@@ -175,9 +167,10 @@ describe('the Mirror flag across a reload', () => {
     // is the case that flag has to survive — the saved zone is still offered and still mirrors.
     vi.mocked(asmLoadFullAssembly).mockImplementationOnce(async () => {
       state.assembly.parts = [zonedPart(1, 'right', { twin: 'left' })];
+
+      return 'loaded' as const;
     });
     const saved = session([{ ...instance({ mirror: true }), zoneId: 'right' }]);
-    saved.shapeKind = 'assembly';
     saved.assembly = { kindId: 'wheel', variantId: null };
 
     await applyRestoredSession(saved);

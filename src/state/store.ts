@@ -1,13 +1,10 @@
-import type * as THREE from 'three';
 import type {
   ArtworkInstance,
   AssemblyPart,
-  BaseParams,
   ColorSettings,
   DesignSource,
   LibraryEntry,
   ParsedSVG,
-  ShapeKind,
 } from '../types';
 import type { ZoneNet } from '../geometry/zoneCharts';
 import { getFilament } from './filaments';
@@ -20,32 +17,20 @@ import { HUBCAP_DEFAULT_DIAMETER_MM } from '../geometry/hubcap';
  */
 export interface AppState {
   parsed: ParsedSVG | null;
-  shapeKind: ShapeKind;
-  /** key (hex, "merge:a,b,c", or "__background__") -> per-recess settings */
+  /** key (hex or "merge:a,b,c") -> per-recess settings */
   colorSettings: ColorSettings;
-  stlRefMesh: THREE.Mesh | null;
   /** each inner array of raw hex codes = one merged AMS slot */
   mergeGroups: string[][];
   /** auto-merge slider stop — index into AUTO_MERGE_LEVELS (0 = off, default 1 = Slight/dedupe) */
   autoMergeLevel: number;
-  /** dominant (largest-area) member of baseColorMembers — the color the body actually prints,
-   * kept in sync by the build (see rebuild.ts). Seeded provisionally by addToBase(). */
+  /** dominant (largest-area) member of baseColorMembers — the body's printed color, kept in sync by the build (rebuild.ts); seeded provisionally by addToBase(). */
   baseColorKey: string | null;
-  /** every raw hex excluded from cutting because they're grouped into the base — accumulated via
-   * addToBase(), shrunk via removeFromBase() */
+  /** every raw hex excluded from cutting because grouped into the base — grown by addToBase(), shrunk by removeFromBase() */
   baseColorMembers: string[];
-  /** raw hex codes explicitly pulled out of a group — pinned so the auto-merge slider won't
-   * re-swallow them; in-memory only (not persisted), reset on new artwork */
+  /** raw hexes explicitly pulled out of a group, pinned so auto-merge won't re-swallow them; in-memory only, reset on new artwork */
   keptApart: string[];
 
-  // base-shape parameters (mirrors the left-panel inputs)
-  disc: { diameter: number; thickness: number };
-  rect: { width: number; height: number; thickness: number };
-  round: { width: number; height: number; corner: number; thickness: number };
-  stlPlate: { width: number; height: number; thickness: number; faceZ: number };
-
   // artwork fit
-  marginPct: number;
   /** Bounded by SCALE_MIN_PCT/SCALE_MAX_PCT below. */
   scalePct: number;
   offsetX: number;
@@ -57,25 +42,18 @@ export interface AppState {
 
   // depth
   globalDepth: number;
-  recessBg: boolean;
 
   // export
   printerId: string;
 
   // assembly
   asmRadius: number;
-  /**
-   * Outer diameter (mm) of the generated hubcap disc. A build parameter rather than a display
-   * one: changing it re-runs the part's generator (asmRebuildGeneratedParts), so it belongs in
-   * state alongside the other things a rebuild reads, not in the panel that edits it.
-   */
+  /** Outer diameter (mm) of the generated hubcap disc. A build parameter: changing it re-runs the generator (asmRebuildGeneratedParts), so it lives in state beside the other rebuild inputs, not the editing panel. */
   hubcapDiameterMm: number;
   /**
-   * Cut the hubcap to the silhouette of the artwork on it, instead of leaving it a circle.
-   *
-   * The shape and the artwork are the same object, so this is a toggle rather than a second
-   * upload — see silhouetteFromShapes. Off, `hubcapDiameterMm` is the circle's diameter; on, it
-   * is the silhouette's longest side. Either way it is how big the part is.
+   * Cut the hubcap to the silhouette of its artwork instead of leaving it a circle. Shape and artwork
+   * are one object, so this is a toggle, not a second upload (silhouetteFromShapes). Off,
+   * `hubcapDiameterMm` is the circle's diameter; on, the silhouette's longest side.
    */
   hubcapSilhouette: boolean;
   assembly: {
@@ -85,12 +63,7 @@ export interface AppState {
     parts: AssemblyPart[];
     nextPartId: number;
     library: LibraryEntry[];
-    /**
-     * The loaded kind's baked net: where each zone's sheet sits when the whole part is unfolded,
-     * for a design bound to the whole part rather than one zone. Null on a kind whose bake baked
-     * none. Read only through `netZones()` (state/artwork.ts), which also checks the zones it
-     * names are actually loaded.
-     */
+    /** The loaded kind's baked net: where each zone's sheet sits unfolded, for a design bound to the whole part. Null if the bake baked none. Read only through `netZones()` (state/artwork.ts), which also checks the zones are loaded. */
     net: ZoneNet | null;
   };
 
@@ -98,34 +71,25 @@ export interface AppState {
   baseFilamentId: string | null;
 
   /**
-   * Multi-zone artwork model (assembly mode). `parsed` above stays the single source of parsed
-   * SVG geometry both modes build from — `sources`/`artworks` are a parallel bookkeeping layer
-   * that mirrors it into named instances so a future multi-instance panel (Phase 2b) can list and
-   * target them individually. Today there is always at most one of each; see state/artwork.ts.
+   * Multi-zone artwork model. `parsed` stays the single source of parsed geometry the build reads;
+   * `sources`/`artworks` are a parallel layer mirroring it into named instances for a future
+   * multi-instance panel (Phase 2b). Today at most one of each (state/artwork.ts).
    */
   sources: DesignSource[];
   artworks: ArtworkInstance[];
-  /** the instance the gizmo, fit sliders, and (in assembly mode) the build currently target */
+  /** the instance the gizmo, fit sliders, and the build currently target */
   activeArtworkId: string | null;
 }
 
 export const state: AppState = {
   parsed: null,
-  shapeKind: 'disc',
   colorSettings: {},
-  stlRefMesh: null,
   mergeGroups: [],
   autoMergeLevel: 1,
   baseColorKey: null,
   baseColorMembers: [],
   keptApart: [],
 
-  disc: { diameter: 80, thickness: 4 },
-  rect: { width: 80, height: 60, thickness: 4 },
-  round: { width: 80, height: 60, corner: 8, thickness: 4 },
-  stlPlate: { width: 80, height: 60, thickness: 4, faceZ: 0 },
-
-  marginPct: 5,
   scalePct: 100,
   offsetX: 0,
   offsetY: 0,
@@ -134,7 +98,6 @@ export const state: AppState = {
   rotationDeg: 0,
 
   globalDepth: 1.0,
-  recessBg: false,
 
   printerId: DEFAULT_PRINTER_ID,
 
@@ -152,27 +115,23 @@ export const state: AppState = {
 
 /** Neutral PLA-grey used when no base filament is chosen. */
 /**
- * Smallest Design radius the app accepts, in mm.
+ * Smallest Design radius the app accepts, in mm. Not a print constraint: 0 makes every cut fail
+ * while Export stays green and a negative builds as positive, so it only has to be above zero. It
+ * matches the field's `step`, keeping the spinner on its grid (`min` is the step base).
  *
- * Not a print constraint: 0 makes every cut fail while Export stays green, and a negative builds
- * as if positive, so this only has to be above zero. It matches the field's `step`, which keeps the
- * spinner on its own grid (`min` is the step base).
- *
- * Shared with the restore path deliberately. A guard of "> 0" there was looser than the field's
- * own floor, so a session carrying 0.2 restored, showed 0.2 unmarked, and the first blur snapped
- * the field to its default while state kept 0.2 — the panel and the export disagreeing, which is
- * what these guards exist to stop.
+ * Shared with the restore path: a "> 0" guard there was looser than the field's floor, so a session
+ * carrying 0.2 showed 0.2 unmarked, then the first blur snapped the field to its default while state
+ * kept 0.2 — panel and export disagreeing.
  */
 export const MIN_DESIGN_RADIUS_MM = 0.5;
 
 /**
- * What Scale can be set to, in percent. Duplicated in index.html's `#p-scale` min/max attributes,
- * which are what actually clamp the slider pair; nothing pins the two together.
+ * What Scale can be set to, in percent. Duplicated in index.html's `#p-scale` min/max, which
+ * actually clamp the slider pair; nothing pins the two together.
  *
- * Not only a slider range. The gizmo clamps drags to it, and the assembly build is handed the max
- * as `maxScaleMult` to decide whether a fill refused for detail says "Raise Scale" or "at any
- * Scale". Raise the markup and not this and the app tells users a fill is impossible at a Scale
- * the slider now reaches. Change both in one commit.
+ * Not only a slider range: the gizmo clamps drags to it, and the assembly build gets the max as
+ * `maxScaleMult` to decide whether a refused fill says "Raise Scale" or "at any Scale". Raise the
+ * markup alone and the app calls a fill impossible at a Scale the slider reaches. Change both in one commit.
  */
 export const SCALE_MIN_PCT = 25;
 export const SCALE_MAX_PCT = 400;
@@ -180,22 +139,16 @@ export const SCALE_MAX_PCT = 400;
 export const DEFAULT_BASE_COLOR = '#b9c0c6';
 
 /**
- * The base is one of: a detected artwork color (wins when set — it recolors the body to that
- * exact color AND excludes it from being cut, see applyColorMerges), a chosen filament, or the
- * neutral default. Only one is active at a time — assigning an artwork color and picking a
- * filament/default are mutually exclusive (see renderBaseColorSwatches).
+ * The base is one of: a detected artwork color (wins when set — recolors the body to it AND excludes
+ * it from cutting, see applyColorMerges), a chosen filament, or the neutral default. Artwork color
+ * and filament/default are mutually exclusive (see renderBaseColorSwatches).
  */
 export function baseColorHex(): string {
   if (state.baseColorKey) return state.baseColorKey;
   return getFilament(state.baseFilamentId)?.hex ?? DEFAULT_BASE_COLOR;
 }
 
-/** Group more raw hexes into the base: accumulates, so both the "→ base" button and dropping a
- * color/merged group onto the Base row grow the base slot. One semantic on purpose: the button
- * used to replace instead, so a second click silently evicted the first color with only a tooltip
- * saying so, while the identical drop gesture added. Removing a member is what the "×" on the Base
- * row is for. The build re-derives baseColorKey as the true dominant member on next rebuild; seed
- * it here so the swatch/body have *something* to show before that happens. */
+/** Group more raw hexes into the base: accumulates, so "→ base" and dropping onto the Base row both grow it. One semantic on purpose: the button used to replace, so a second click silently evicted the first color while the same drop added. Removal is the Base row's "×". The build re-derives baseColorKey as the dominant member; seeded here so something shows before then. */
 export function addToBase(hexes: string[]): void {
   const add = hexes.filter(Boolean);
   if (!add.length) return;
@@ -226,42 +179,4 @@ export function removeFromBase(hex: string): void {
 export function clearBaseColor(): void {
   state.baseColorKey = null;
   state.baseColorMembers = [];
-}
-
-/** Derive the flat-mode base parameters for the current shape from state. */
-export function currentBaseParams(): BaseParams | null {
-  const fit = {
-    marginPct: state.marginPct,
-    scaleMult: state.scalePct / 100,
-    offsetX: state.offsetX,
-    offsetY: state.offsetY,
-    flipX: state.flipX,
-    flipY: state.flipY,
-    rotationDeg: state.rotationDeg,
-  };
-  if (state.shapeKind === 'disc')
-    return { diameter: state.disc.diameter, thickness: state.disc.thickness, ...fit };
-  if (state.shapeKind === 'rect')
-    return {
-      width: state.rect.width,
-      height: state.rect.height,
-      thickness: state.rect.thickness,
-      ...fit,
-    };
-  if (state.shapeKind === 'round')
-    return {
-      width: state.round.width,
-      height: state.round.height,
-      corner: state.round.corner,
-      thickness: state.round.thickness,
-      ...fit,
-    };
-  if (state.shapeKind === 'stl')
-    return {
-      width: state.stlPlate.width,
-      height: state.stlPlate.height,
-      thickness: state.stlPlate.thickness,
-      ...fit,
-    };
-  return null;
 }

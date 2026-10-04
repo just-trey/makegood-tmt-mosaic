@@ -405,17 +405,20 @@ async function orbit(page, box, dx, dy) {
 
 /**
  * How much of the middle of the viewport each zone occupies, by the path a click takes
- * (window.__mosaic.zoneIdAtNdc). A 9x9 grid rather than the single centre pixel: one pixel lands
- * on a seam or a hole often enough that "this view faces the left flank" would come back false
- * from a view that plainly does.
+ * (window.__mosaic.zonePickAtNdc). A 9x9 grid rather than the single centre pixel: one pixel
+ * lands on a seam or a hole often enough that "this view faces the left flank" would come back
+ * false from a view that plainly does.
  */
 const zoneCounts = (page) =>
   page.evaluate(() => {
     const counts = {};
     for (let i = 0; i < 9; i++)
       for (let j = 0; j < 9; j++) {
-        const id = window.__mosaic.zoneIdAtNdc(-0.6 + (1.2 * i) / 8, -0.6 + (1.2 * j) / 8);
-        if (id) counts[id] = (counts[id] ?? 0) + 1;
+        const { zoneId } = window.__mosaic.zonePickAtNdc(
+          -0.6 + (1.2 * i) / 8,
+          -0.6 + (1.2 * j) / 8,
+        );
+        if (zoneId) counts[zoneId] = (counts[zoneId] ?? 0) + 1;
       }
     return counts;
   });

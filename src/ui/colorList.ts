@@ -13,14 +13,12 @@ export interface ColorListEntry {
   members: string[];
   isMergeGroup: boolean;
   areaPct: number;
-  isBackground: boolean;
   /** printed in the body instead of cut — a distinct status row, no depth/merge controls */
   isBase?: boolean;
   /**
-   * The depth the build actually cut this row at, display-only (docs/tech-debt.md). Never fed
-   * back into colorSettings or compared against the requested depth to decide anything: doing
-   * that is what pinned every row to its clamped depth and silenced the global Depth field (see
-   * `shownDepth` below). Absent on the Base row, which isn't cut at all.
+   * The depth the build actually cut this row at, display-only (docs/tech-debt.md). Never fed back
+   * into colorSettings or compared with the requested depth: that pinned every row to its clamped
+   * depth and silenced the global Depth field (see `shownDepth`). Absent on the Base row.
    */
   appliedDepth?: number;
 }
@@ -30,7 +28,7 @@ export function groupContaining(hex: string): string[] | null {
 }
 
 /** Merge an explicit set of raw hexes into one group, folding in any existing groups they touch.
- * An explicit (re-)merge is a stronger signal than a earlier pull-out pin, so it clears one. */
+ * An explicit merge outranks an earlier pull-out pin, so it clears one. */
 export function mergeHexes(hexes: string[]): void {
   const merged = new Set(hexes.filter(Boolean));
   if (merged.size < 2) return;
@@ -49,9 +47,7 @@ export function mergeHexes(hexes: string[]): void {
   scheduleRebuild();
 }
 
-/** Pull one color out of whatever group it's in, leaving the rest merged, and pin it so the
- * auto-merge slider won't re-swallow it. Dragging it back onto a group (or clearKeptApart)
- * clears the pin. */
+/** Pull one color out of its group, leaving the rest merged, and pin it so the auto-merge slider won't re-swallow it. Dragging it back onto a group (or clearKeptApart) clears the pin. */
 export function pullFromGroup(hex: string): void {
   state.mergeGroups = state.mergeGroups
     .map((g) => g.filter((h) => h !== hex))
@@ -69,8 +65,7 @@ export function clearKeptApart(hex: string): void {
   }
 }
 
-/** Makes a row a valid drop target for growing the base — dragging a color or merged group onto
- * it calls addToBase instead of mergeHexes, whether the base already has members or is empty. */
+/** Makes a row a valid drop target for growing the base: a drop calls addToBase instead of mergeHexes, whether or not the base has members. */
 function wireBaseDropTarget(row: HTMLElement): void {
   row.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -89,9 +84,7 @@ function wireBaseDropTarget(row: HTMLElement): void {
   });
 }
 
-/** The Base row: pinned at the top of the list so it never reorders, shows every color grouped
- * into it (dominant = body color) with a "×" to send one back to being cut, and doubles as a
- * drop target. Its swatch is the body colour, which is why the empty row below shows one too. */
+/** The Base row: pinned at the top, shows every color grouped into it (dominant = body color) with a "×" to send one back to being cut, and is a drop target. Its swatch is the body colour, which is why the empty row below shows one too. */
 function renderBaseRow(list: HTMLElement, c: ColorListEntry): void {
   const row = document.createElement('div');
   row.className = 'color-row is-base';
@@ -120,14 +113,12 @@ function renderBaseRow(list: HTMLElement, c: ColorListEntry): void {
 }
 
 /**
- * Shown instead of the Base row when nothing's grouped into it yet, so the empty state reads as a
- * normal, common choice rather than a gap. Still a drop target: dragging a color onto it starts
- * the base the same way "→ base" would.
+ * Shown instead of the Base row when nothing's grouped into it, so the empty state reads as a common
+ * choice, not a gap. Still a drop target (same as "→ base").
  *
- * It carries the body colour as a swatch rather than naming the panel that sets it. Convention 4
- * bars a control's explanation from pointing at another panel, and this row was the live instance:
- * "body uses the blank color set in Part". Showing the colour answers the same question without
- * sending anyone anywhere, and it is the same state value the Part picker writes.
+ * Carries the body colour as a swatch rather than naming the panel that sets it: convention 4 bars
+ * a control's explanation from pointing at another panel, and this row was the live instance ("body
+ * uses the blank color set in Part"). Same state value the Part picker writes.
  */
 function renderEmptyBaseRow(list: HTMLElement): void {
   const row = document.createElement('div');
@@ -143,71 +134,58 @@ function renderEmptyBaseRow(list: HTMLElement): void {
 }
 
 /**
- * The depth-reset "↺" is wired on the list container, once, rather than per button — the buttons
- * themselves are too short-lived to hold a handler.
+ * The depth-reset "↺" is wired once on the list container, not per button: editing the depth field
+ * schedules a rebuild that replaces the list's innerHTML, so a listener on the previous render's
+ * button sits on a node detached mid-gesture and the reset silently does nothing.
  *
- * Editing the depth field schedules a rebuild, and that rebuild replaces the list's innerHTML. A
- * button listener attached during the previous render is on a node that gets detached mid-gesture,
- * so the reset lands on nothing and silently does not happen. The container outlives every render,
- * so delegation catches the event whichever generation of button received it.
+ * The press is split across three events, each covering a case the others get wrong:
  *
- * The press is split across three events because each one covers a case the others get wrong:
- *
- * - `mousedown` only holds the gesture open. It cannot clear anything: a press dragged off the
- *   button and released is a cancel, raises no click, and has to leave the row exactly as it was.
- * - `mouseup` is what clears, and only when it lands on the same button the press started on. It
- *   is used in preference to `click` because click is fired at the nearest common ancestor of the
- *   two targets — so a rebuild that swaps the button out mid-press sends it to a container instead,
- *   which is the failure this delegation exists to survive. mouseup goes to whatever button is
- *   under the pointer, and the replacement carries the same reset key.
+ * - `mousedown` only holds the gesture open. It can't clear anything: a press dragged off the button
+ *   and released is a cancel, raises no click, and must leave the row as it was.
+ * - `mouseup` clears, only when it lands on the button the press started on. Preferred over `click`
+ *   because click goes to the nearest common ancestor of the two targets, so a rebuild swapping the
+ *   button mid-press sends it to a container. mouseup goes to whatever button is under the pointer,
+ *   and the replacement carries the same reset key.
  * - `click` covers keyboard activation, which raises neither of the above.
  *
- * All three are idempotent: whichever runs first removes the override, and the rest read its
- * absence as "already handled" — except `click` after a real mouse gesture, which needs its own
- * guard against the same button-swap race (`mouseHandled`, see below).
+ * All three are idempotent: the first removes the override and the rest read its absence as
+ * "already handled" — except `click` after a real mouse gesture, which needs its own guard against
+ * the same swap race (`mouseHandled`).
  *
- * Its position in the row was challenged (UX review, 2026-08-03), moved to the row's right edge,
- * looked at in the running app, and moved back — why it sits where it does, and why it carries
- * `.btn`, is on `.color-row .depth-reset` in styles.css, next to the rules that decide it. Three
- * measurements from that pass that the CSS doesn't carry:
+ * Why it sits where it does is on `.color-row .depth-reset` in styles.css. Measurements from the
+ * 2026-08-03 placement review that the CSS doesn't carry:
  *
- * - The "consistent slot" the move was reaching for already existed: the ↺'s left edge measured
- *   168px on all four rows of a four-color list, since everything left of it is fixed width. **A
- *   fix depends on that** — putting anything variable-width left of it (a longer label, a per-row
- *   badge) breaks the column and reopens the question.
- * - Rejected alternatives, so they aren't re-attempted: the unit inside the field (`[2.40 mm]`)
- *   collides with Chrome's number-input spinners, which this app doesn't suppress; the unit before
- *   the value (`depth mm [2.40]`) reads wrongly, since a unit follows its number.
- * - Never checked on touch, or at the 900px minimum width the app renders at.
+ * - The ↺'s left edge measured 168px on all four rows of a four-color list, since everything left of
+ *   it is fixed width. **This depends on that**: anything variable-width left of it (a longer label,
+ *   a per-row badge) breaks the column.
+ * - Rejected: the unit inside the field (`[2.40 mm]`) collides with Chrome's number-input spinners,
+ *   which this app doesn't suppress; the unit before the value (`depth mm [2.40]`) reads wrongly.
+ * - Never checked on touch, or at the 900px minimum width.
  */
 function wireDepthReset(list: HTMLElement): void {
   if (list.dataset.depthResetWired) return;
   list.dataset.depthResetWired = '1';
-  // Which row's "↺" the current press started on, so releasing on a different one — or on nothing
-  // — cancels rather than resetting whatever happens to be under the pointer.
+  // Which row's "↺" the press started on, so releasing on another one, or on nothing, cancels instead of resetting whatever is under the pointer.
   let pressedKey: string | null = null;
   let mouseHandled = false;
 
   const buttonFor = (e: Event): HTMLElement | null => {
     const btn = (e.target as HTMLElement | null)?.closest?.('.depth-reset') as HTMLElement | null;
-    // Primary button only, or the press that opens a context menu counts as a reset — and no click
-    // follows a right- or middle-press to undo it.
+    // Primary button only: a context-menu press would count as a reset, and no click follows a right- or middle-press to undo it.
     return !btn || (e as MouseEvent).button > 0 ? null : btn;
   };
 
   const clearOverride = (btn: HTMLElement, key: string): void => {
     if (!(key in state.colorSettings)) return;
-    // Abandon whatever is half-typed in this row's field. The blur below fires its pending change,
-    // which would otherwise re-store the very override this is clearing.
+    // Abandon whatever is half-typed in this row: the blur below would fire its pending change and re-store the override being cleared.
     btn
       .closest('.color-row')
       ?.querySelector<HTMLInputElement>('.depth-input')
       ?.setAttribute('data-abandoned', '1');
-    // Settle a half-typed edit in *another* row now, while it still costs nothing. The mousedown
-    // suppressed the blur that would normally commit it, so it would otherwise sit pending until
-    // the rebuild below tore the field out — and Chrome's change-on-removal lands mid-render, after
-    // this pass has already read colorSettings, buying a second full rebuild to show it. Blurring
-    // here puts that change in this same tick, where the debounce folds it into one.
+    // Settle a half-typed edit in *another* row now: mousedown suppressed the blur that would commit
+    // it, so it would sit pending until the rebuild removes the field, and Chrome's change-on-removal
+    // lands mid-render after this pass read colorSettings, costing a second full rebuild. Blurring
+    // here puts it in this tick, where the debounce folds it into one.
     const focused = document.activeElement;
     if (focused instanceof HTMLInputElement && focused.classList.contains('depth-input'))
       focused.blur();
@@ -219,8 +197,7 @@ function wireDepthReset(list: HTMLElement): void {
     const btn = buttonFor(e);
     pressedKey = btn?.dataset.resetKey ?? null;
     if (!btn) return;
-    // Hold the depth field's blur-`change` off until the press completes. Left to run, it re-stores
-    // the override and schedules the rebuild that replaces this button mid-gesture.
+    // Hold the depth field's blur-`change` off until the press completes: it would re-store the override and schedule the rebuild that replaces this button mid-gesture.
     e.preventDefault();
     e.stopPropagation();
   });
@@ -236,23 +213,20 @@ function wireDepthReset(list: HTMLElement): void {
     clearOverride(btn, key);
   });
 
-  // A release outside the list entirely never reaches the mouseup listener above, so pressedKey
-  // would otherwise still name that abandoned press the next time some *later, unrelated* gesture
-  // happens to end on the same button — and the origin check there would wrongly call it a match.
-  // Catching mouseup on the document as well, after the list's own listener has already read it,
-  // closes that regardless of where the release actually lands.
+  // A release outside the list never reaches the mouseup listener above, so pressedKey would still
+  // name that abandoned press when a later, unrelated gesture ends on the same button and the origin
+  // check wrongly matches. Catching mouseup on the document too, after the list's listener has read
+  // it, closes that wherever the release lands.
   document.addEventListener('mouseup', () => {
     pressedKey = null;
   });
 
   list.addEventListener('click', (e) => {
-    // A real mouseup already made this gesture's call, one line above. The click that immediately
-    // follows it is the browser's own synthetic event, not a second independent one — normally
-    // aimed at the common ancestor of the mousedown/mouseup targets and so off any button, but not
-    // when the mousedown target was detached mid-press (this delegation's whole reason to exist):
-    // then click lands directly on the mouseup target instead, with no origin check of its own.
-    // Without this it would re-decide "what's under the pointer now" and could clear a row whose
-    // press actually started elsewhere and was already correctly left alone above.
+    // A real mouseup already made this gesture's call. The click right after is the browser's
+    // synthetic one, normally aimed at the common ancestor and so off any button — but when the
+    // mousedown target was detached mid-press (this delegation's reason to exist) it lands directly
+    // on the mouseup target with no origin check, and could clear a row whose press started elsewhere
+    // and was correctly left alone above.
     if (mouseHandled) {
       mouseHandled = false;
       return;
@@ -284,74 +258,54 @@ export function renderColorList(
   wireDepthReset(list);
   const baseEntry = colorMeshes.find((c) => c.isBase) || null;
   const rows = colorMeshes.filter((c) => !c.isBase);
-  // Biggest colour first, which is how someone finds the row they want to edit.
-  //
-  // Not the filament-slot order, and not labelled with slot numbers. This is the measurement
-  // behind convention 16's exception: the export assigns materials in palette order while this
-  // list sorts by area, and they genuinely disagree. A four-colour file whose rows read blue, red,
-  // green, yellow exported them as slots 3, 4, 2, 5. Numbering rows by position would print a
-  // number the file does not use, and a maker loading their AMS from it would load the wrong
-  // spools; sorting by slot instead would fix the numbers by removing the ordering people navigate
-  // with. Maintainer's call, 2026-08-17: ship neither. The slot *count* is on the line below,
-  // which is the number a decision turns on.
+  // Biggest colour first, how someone finds the row to edit. Not filament-slot order and not
+  // labelled with slot numbers — the measurement behind convention 16's exception: export assigns
+  // materials in palette order while this list sorts by area, and they disagree (rows blue, red,
+  // green, yellow exported as slots 3, 4, 2, 5). Numbering by position would print a number the file
+  // doesn't use and load the wrong spools; sorting by slot would remove the ordering people navigate
+  // by. Maintainer's call, 2026-08-17: ship neither. The slot *count* on the line below is what a
+  // decision turns on.
   rows.sort((a, b) => b.areaPct - a.areaPct);
   if (baseEntry) renderBaseRow(list, baseEntry);
   else renderEmptyBaseRow(list);
-  // Labels for the "merge with…" dropdown below, keyed by the same joined-hex string each row
-  // uses as its own drag payload (row.dataset.hexes) — so a row's own entry can be excluded and
-  // picking another produces exactly what dragging one onto the other would.
-  const mergeTargets = rows
-    .filter((c) => !c.isBackground)
-    .map((c) => ({
-      key: c.members.join(','),
-      label: c.isMergeGroup ? `Merged (${c.members.length})` : c.color,
-    }));
+  // Labels for the "merge with…" dropdown, keyed by the joined-hex string each row uses as its drag payload (row.dataset.hexes), so a row's own entry can be excluded and picking another equals dragging one onto the other.
+  const mergeTargets = rows.map((c) => ({
+    key: c.members.join(','),
+    label: c.isMergeGroup ? `Merged (${c.members.length})` : c.color,
+  }));
   rows.forEach((c) => {
     const row = document.createElement('div');
     row.className = 'color-row';
 
-    // Show what was asked for, and don't write it back. Seeding colorSettings from the build's
-    // depth pinned every row to the *clamped* value on the first render: the second build then
-    // compared 3.95 against 3.95, went quiet, and kept cutting the wrong depth — and lowering the
-    // global Depth field, the fix the warning tells you to apply, no longer reached rows that now
-    // carried an explicit override. colorSettings holds deliberate per-row overrides only.
+    // Show what was asked for, don't write it back. Seeding colorSettings from the build's depth
+    // pinned every row to the *clamped* value: the second build compared 3.95 against 3.95, went
+    // quiet and kept cutting the wrong depth, and lowering the global Depth field (the warning's own
+    // fix) no longer reached rows carrying an explicit override. colorSettings holds deliberate overrides only.
     const shownDepth = requestedDepth(state.colorSettings, state.globalDepth, c.key);
-    // A depth of zero or less cuts nothing, so the build raises it — and the field went on reading
-    // 0.00 while the setting in use was 0.20, with the warning the only place that number
-    // appeared.
+    // A depth of zero or less cuts nothing, so the build raises it; the field kept reading 0.00
+    // while 0.20 was in use, the warning the only place that number appeared. Said beside the field,
+    // not written into it (see above).
     //
-    // Says "raised to", never "cut at". What a part does with a setting is the mapper's business:
-    // the wheel's cap cuts through at a fixed 3mm and an edge region cuts full thickness, so
-    // naming a cut depth here would be false on both. zeroDepthWarning describes the setting for
-    // exactly this reason, and this matches it.
-    // Said beside the field instead of written into it: writing it back is what the comment above
-    // records as pinning every row to the clamped value and silencing the warning.
-    //
+    // "raised to", never "cut at": what a part does with a setting is the mapper's business (the
+    // wheel's cap cuts through at a fixed 3mm, an edge region at full thickness), so a cut depth
+    // would be false on both. zeroDepthWarning describes the setting for the same reason.
     const raisedFromZero = shownDepth <= 0;
-    // The other clamp: a depth deeper than the part goes is cut short, and the build now reports
-    // what it actually cut on `appliedDepth`. Compared at the printed precision, like the
-    // warning's own depthDiffers, so a clamp that only moves the number below 2dp (3.951 -> 3.95)
-    // stays quiet instead of reading as a bug in this field. Says "cut at", not "raised to": this
-    // one really did land on a printed depth, unlike the zero case which discusses the setting.
+    // The other clamp: a depth deeper than the part goes is cut short, and the build reports what it
+    // cut on `appliedDepth`. Compared at printed precision like the warning's depthDiffers, so a
+    // sub-2dp move (3.951 -> 3.95) stays quiet. "cut at", not "raised to": this one did land on a printed depth.
     const tooDeepClamped =
       !raisedFromZero &&
       c.appliedDepth != null &&
       c.appliedDepth < shownDepth &&
       depthDiffers(c.appliedDepth, shownDepth);
-    // A row carrying its own depth looked identical to one following the global, so the global
-    // Depth field appearing not to work had no visible cause and no visible undo — clearing the
-    // field was the only way back, and it was documented only in the help panel.
+    // A row with its own depth looked identical to one following the global, so the global Depth field appearing not to work had no visible cause or undo (clearing the field was the way back, documented only in help).
     const isOverridden = Number.isFinite(state.colorSettings[c.key]?.depth);
 
     let swatchHtml: string,
       labelHtml: string,
       rightControlHtml: string,
       membersRowHtml = '';
-    if (c.isBackground) {
-      swatchHtml = `<div class="swatch" style="background:${c.color}"></div>`;
-      labelHtml = `Background`;
-      rightControlHtml = '';
-    } else if (c.isMergeGroup) {
+    if (c.isMergeGroup) {
       swatchHtml = `<div class="swatch" style="background:${c.color}" title="Prints as this color (the group's dominant member)"></div>`;
       membersRowHtml = `<div class="merge-members">${c.members
         .map(
@@ -368,11 +322,9 @@ export function renderColorList(
       rightControlHtml = `<button class="btn small" data-add-base="${c.color}" title="Print this color in the body instead of cutting it">→ base</button>`;
     }
 
-    // Keyboard/non-drag alternative to the drag-to-merge gesture below — same effect, listed by
-    // the same label a target row shows itself. Only offered when there's something else to
-    // merge with, and never on Background (it isn't a mergeable color).
+    // Keyboard/non-drag alternative to drag-to-merge, same effect, labelled as a target row labels itself. Only offered when there's something to merge with.
     const ownKey = c.members.join(',');
-    const otherTargets = c.isBackground ? [] : mergeTargets.filter((t) => t.key !== ownKey);
+    const otherTargets = mergeTargets.filter((t) => t.key !== ownKey);
     const mergeSelectHtml = otherTargets.length
       ? `<select class="merge-with" title="Merge this color with another, same as dragging one onto the other" aria-label="Merge ${c.isMergeGroup ? `Merged (${c.members.length})` : c.color} with another color">
           <option value="">Merge with…</option>
@@ -380,11 +332,10 @@ export function renderColorList(
         </select>`
       : '';
 
-    // Nothing variable-width goes into `.depth-row` left of the ↺: its fixed left edge is the
-    // reason it reads as a column and doesn't need moving (see wireDepthReset).
+    // Nothing variable-width goes into `.depth-row` left of the ↺: its fixed left edge keeps it a column (see wireDepthReset).
     row.innerHTML = `
       <div class="top">
-        ${c.isBackground ? '' : '<span class="drag-grip" aria-hidden="true" title="Drag to merge with another color">⠿</span>'}
+        <span class="drag-grip" aria-hidden="true" title="Drag to merge with another color">⠿</span>
         ${swatchHtml}
         <div class="hex">${labelHtml}</div>
         <div class="area">${c.areaPct.toFixed(1)}%</div>
@@ -393,7 +344,7 @@ export function renderColorList(
       ${membersRowHtml}
       <div class="depth-row">
         <label>depth</label>
-        <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${c.isBackground ? 'Background' : labelHtml}" title="${
+        <input type="number" class="depth-input${isOverridden ? ' overridden' : ''}" step="0.05" value="${shownDepth.toFixed(2)}" aria-label="Depth for ${labelHtml}" title="${
           isOverridden
             ? `Using its own depth (${shownDepth.toFixed(2)} mm) instead of the ${state.globalDepth.toFixed(2)} mm default`
             : 'Following the default depth set in Depth. Type here to give this row its own'
@@ -401,12 +352,12 @@ export function renderColorList(
         <span class="hint">mm</span>
         ${
           isOverridden
-            ? `<button type="button" class="btn small depth-reset" data-reset-key="${c.key}" title="Reset to the default depth (${state.globalDepth.toFixed(2)} mm)" aria-label="Reset depth for ${c.isBackground ? 'Background' : labelHtml} to the default">↺</button>`
+            ? `<button type="button" class="btn small depth-reset" data-reset-key="${c.key}" title="Reset to the default depth (${state.globalDepth.toFixed(2)} mm)" aria-label="Reset depth for ${labelHtml} to the default">↺</button>`
             : ''
         }
         ${raisedFromZero ? `<span class="hint">raised to ${MIN_CUT_DEPTH_MM.toFixed(2)}</span>` : ''}
         ${tooDeepClamped ? `<span class="hint">cut at ${c.appliedDepth!.toFixed(2)}</span>` : ''}
-        <span class="preset">${c.isBackground ? '—' : '≈ ' + nearestFilamentName(c.color)}</span>
+        <span class="preset">≈ ${nearestFilamentName(c.color)}</span>
       </div>
       ${mergeSelectHtml ? `<div class="merge-row">${mergeSelectHtml}</div>` : ''}`;
 
@@ -420,21 +371,17 @@ export function renderColorList(
       });
     }
     const depthField = row.querySelector<HTMLInputElement>('.depth-input')!;
-    // Typing is a fresh, deliberate edit, so it re-arms a field the reset had marked. Covers the
-    // reset that never produced a change to consume the marker — clicking ↺ with nothing typed —
-    // which would otherwise leave it for the user's next edit to be swallowed by.
+    // Typing is a fresh deliberate edit, so it re-arms a field the reset marked — covering a reset that produced no change to consume the marker (↺ clicked with nothing typed), which would swallow the next edit.
     depthField.addEventListener('input', () => depthField.removeAttribute('data-abandoned'));
     depthField.addEventListener('change', (e) => {
-      // A typed 0 or a negative used to land here as 0.1, so the build never saw the number that
-      // was actually asked for and couldn't say it had been overridden. Pass anything numeric
-      // through and let the geometry clamp be the one place that reports the override. Clearing
-      // the field drops the override entirely, so the row goes back to following the global Depth
-      // rather than sticking at a magic 0.1 nobody asked for.
-      // The reset button marks this field before the rebuild tears it out from under a pending
-      // edit; without the guard that edit lands after the reset and undoes it. See wireDepthReset.
-      // Strictly one event: the field usually goes away with the rebuild, but when that rebuild is
-      // slow or fails the row stays mounted, and a marker left set would swallow every later edit
-      // to it — silently, since nothing rebuilds either.
+      // Pass any numeric through and let the geometry clamp be the one place that reports an
+      // override: a typed 0 or negative used to land as 0.1, so the build never saw what was asked
+      // for. Clearing the field drops the override, so the row follows the global Depth rather than
+      // sticking at a magic 0.1.
+      // The reset button marks this field before the rebuild tears it out from under a pending edit;
+      // without the guard that edit lands after the reset and undoes it (see wireDepthReset).
+      // Strictly one event: when the rebuild is slow or fails the row stays mounted, and a marker
+      // left set would swallow every later edit, silently, since nothing rebuilds either.
       const field = e.target as HTMLInputElement;
       if (field.hasAttribute('data-abandoned')) {
         field.removeAttribute('data-abandoned');
@@ -460,56 +407,48 @@ export function renderColorList(
     const pinnedSwatch = row.querySelector<HTMLElement>('.swatch.pinned');
     if (pinnedSwatch) pinnedSwatch.addEventListener('click', () => clearKeptApart(c.color));
 
-    // Drag-and-drop merge: drag one color onto another (or onto a merged group) to fuse them.
-    // The draggable handle is the row's top strip so the depth field stays freely editable.
-    if (!c.isBackground) {
-      row.dataset.hexes = c.members.join(',');
-      const handle = row.querySelector<HTMLElement>('.top')!;
-      handle.setAttribute('draggable', 'true');
-      handle.style.cursor = 'grab';
-      handle.addEventListener('dragstart', (e) => {
-        e.dataTransfer!.setData('text/plain', row.dataset.hexes!);
-        e.dataTransfer!.effectAllowed = 'move';
-        row.classList.add('dragging');
-      });
-      handle.addEventListener('dragend', () => {
-        row.classList.remove('dragging');
-        $all('.color-row.drop-target').forEach((r) => r.classList.remove('drop-target'));
-      });
-      row.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer!.dropEffect = 'move';
-        row.classList.add('drop-target');
-      });
-      row.addEventListener('dragleave', (e) => {
-        if (!row.contains(e.relatedTarget as Node)) row.classList.remove('drop-target');
-      });
-      row.addEventListener('drop', (e) => {
-        e.preventDefault();
-        row.classList.remove('drop-target');
-        const src = (e.dataTransfer!.getData('text/plain') || '').split(',').filter(Boolean);
-        const tgt = row.dataset.hexes!.split(',').filter(Boolean);
-        if (src.join(',') === tgt.join(',')) return; // dropped onto itself
-        mergeHexes([...src, ...tgt]);
-      });
-    }
+    // Drag-and-drop merge: drag one color onto another (or a merged group) to fuse them. The handle is the row's top strip so the depth field stays editable.
+    row.dataset.hexes = c.members.join(',');
+    const handle = row.querySelector<HTMLElement>('.top')!;
+    handle.setAttribute('draggable', 'true');
+    handle.style.cursor = 'grab';
+    handle.addEventListener('dragstart', (e) => {
+      e.dataTransfer!.setData('text/plain', row.dataset.hexes!);
+      e.dataTransfer!.effectAllowed = 'move';
+      row.classList.add('dragging');
+    });
+    handle.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      $all('.color-row.drop-target').forEach((r) => r.classList.remove('drop-target'));
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'move';
+      row.classList.add('drop-target');
+    });
+    row.addEventListener('dragleave', (e) => {
+      if (!row.contains(e.relatedTarget as Node)) row.classList.remove('drop-target');
+    });
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.classList.remove('drop-target');
+      const src = (e.dataTransfer!.getData('text/plain') || '').split(',').filter(Boolean);
+      const tgt = row.dataset.hexes!.split(',').filter(Boolean);
+      if (src.join(',') === tgt.join(',')) return; // dropped onto itself
+      mergeHexes([...src, ...tgt]);
+    });
 
     list.appendChild(row);
   });
-  // +1 for AMS slots: the body itself always occupies one physical filament slot (materials[0] in
-  // both export paths — see exportPanel.ts), on top of every cut color/group listed below the Base
-  // row. The colors stat stays rows.length — it counts cut regions, not filament slots.
-  //
-  // rows.length + 1 matches the export's material count in both modes: flat mode never emits a
-  // color mesh without geometry, and assembly mode derives rows and materials from one predicate
-  // (shippedColorIndices in geometry/assembly.ts). Export still re-checks the pill against its
-  // own material count as the authoritative last word.
+  // +1 for AMS slots: the body always occupies one filament slot (materials[0] in exportPanel.ts)
+  // on top of every cut color/group. The colors stat stays rows.length (cut regions, not slots).
+  // rows.length + 1 matches the export's material count: both come from one predicate
+  // (shippedColorIndices in geometry/assembly.ts), and export still re-checks the pill as the authoritative last word.
   const cutColors = rows.length;
   lastSlotsNeeded = cutColors + 1;
   lastRawColorCount = opts.rawColorCount ?? cutColors;
   renderSlotCount();
-  // Reported from the rows actually on screen, so the Depth panel can only ever name overrides the
-  // user can see and clear.
+  // Reported from the rows on screen, so the Depth panel can only name overrides the user can see and clear.
   refreshDepthOverrides(
     rows.filter((c) => Number.isFinite(state.colorSettings[c.key]?.depth)).map((c) => c.key),
   );
@@ -517,8 +456,7 @@ export function renderColorList(
   $('#stat-colors').style.display = '';
 }
 
-// Cached across renders so refreshSlotCountCapacity() (called when the printer picker changes,
-// which doesn't itself trigger a rebuild) can redraw the slot line without rebuilding the list.
+// Cached across renders so refreshSlotCountCapacity() (printer picker change, no rebuild) can redraw the slot line.
 let lastSlotsNeeded = 0;
 let lastRawColorCount = 0;
 
@@ -531,13 +469,11 @@ function renderSlotCount(): void {
     el.removeAttribute('title');
     return;
   }
-  // Always shown together, even when raw === cut colors (the common unmerged case) — seeing the
-  // slot count alone reads as a bug the first time the +1-for-body offset shows up; the arrow
-  // makes the relationship self-explanatory every time, not just after a merge changes the count.
+  // Always shown together, even when raw === cut colors: the slot count alone reads as a bug the first time the +1-for-body offset appears.
   el.textContent =
     `${lastRawColorCount} color${lastRawColorCount === 1 ? '' : 's'} → ` +
     `${lastSlotsNeeded} slot${lastSlotsNeeded === 1 ? '' : 's'} needed`;
-  // Same slotTier() the pill above is posted from, so the line's color and the pill can't disagree
+  // Same slotTier() the pill is posted from, so line color and pill can't disagree
   const printer = getPrinter(state.printerId);
   const tier = slotTier(lastSlotsNeeded, printer);
   el.classList.toggle('over-capacity', tier === 'over-max');
@@ -552,9 +488,7 @@ function renderSlotCount(): void {
         : `Fits a single ${printer.slotsPerUnit}-slot ${printer.unitLabel}.`;
 }
 
-/** Redraw the slot-count line against the selected printer's slot capacity — the counterpart to
- * refreshAutoMergeControl() etc. for this control. Needed because changing the printer picker
- * doesn't schedule a rebuild (it doesn't affect geometry), so nothing else would refresh this. */
+/** Redraw the slot-count line against the printer's slot capacity. The printer picker doesn't schedule a rebuild (no geometry effect), so nothing else would refresh it. */
 export function refreshSlotCountCapacity(): void {
   renderSlotCount();
 }
@@ -563,9 +497,7 @@ function updateAutoMergeLabels(level: number): void {
   $all('#automerge-labels span').forEach((el, i) => el.classList.toggle('active', i === level));
 }
 
-/** Push state.autoMergeLevel into the slider + label DOM — the counterpart to
- * refreshFitInputsFromState() for this control, needed by session restore (state/persist.ts),
- * which sets autoMergeLevel directly rather than through the slider's own input handler. */
+/** Push state.autoMergeLevel into the slider + label DOM — needed by session restore (state/persist.ts), which sets it directly, not via the slider's input handler. */
 export function refreshAutoMergeControl(): void {
   $<HTMLInputElement>('#p-automerge').value = String(state.autoMergeLevel);
   updateAutoMergeLabels(state.autoMergeLevel);

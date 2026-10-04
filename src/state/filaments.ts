@@ -21,9 +21,7 @@ const FALLBACK: Filament[] = [
 ];
 
 let filaments: Filament[] = FALLBACK;
-// Parallel to `filaments`, one Lab conversion per entry. The palette is static between loads, and
-// nearestFilamentName runs once per detected color on every rebuild, so this is computed on
-// palette change rather than redone on every lookup.
+// Parallel to `filaments`, one Lab conversion per entry: the palette is static between loads and nearestFilamentName runs per detected color every rebuild, so it's computed on palette change, not per lookup.
 let filamentLabs: Lab[] = FALLBACK.map((f) => hexToLab(f.hex));
 
 function setFilaments(list: Filament[]): void {
@@ -74,10 +72,10 @@ export function getFilament(id: string | null): Filament | undefined {
 }
 
 /**
- * Name of the owned filament closest to a color, by Lab deltaE rather than RGB distance (RGB
- * conflates hue with brightness, e.g. ranking Grey over Blue for a saturated cyan). Always
- * returns something: there's no distance cutoff, since no threshold has a measurement behind
- * it. A wrong-looking match gets fixed by adding that hue as its own swatch (see Cyan, Magenta).
+ * Name of the owned filament closest to a color, by Lab deltaE, not RGB (which conflates hue with
+ * brightness: Grey over Blue for a saturated cyan). Always returns something — no distance cutoff,
+ * since no threshold has a measurement behind it. A wrong-looking match is fixed by adding that hue
+ * as its own swatch (see Cyan, Magenta).
  */
 export function nearestFilamentName(hex: string): string {
   const c = hexToLab(hex);

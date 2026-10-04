@@ -8,11 +8,12 @@ import { hideOverlay, showOverlay } from '../ui/overlay';
 import {
   detectFlatPatches,
   extractPatchBoundary,
+  loopXZArea,
   excludeTriangles,
   load3MF,
 } from '../geometry/meshparts';
 import { fingerprintMatches, loadZonesSidecar, reconstructChart } from '../geometry/zoneCharts';
-import { dismissNotice, warn } from '../warnings';
+import { WARNINGS, dismissNotice, warn } from '../warnings';
 import { track } from '../analytics/track';
 import { alertDialog, confirmDialog } from '../ui/dialogs';
 import {
@@ -22,12 +23,24 @@ import {
   roleLibraryPartId,
 } from './kinds';
 
-// The assembly panel registers its render functions here, so part management can refresh the
-// UI without importing it (keeps the module graph acyclic).
-let notifyPartsChanged: () => void = () => {};
+// The assembly panel registers its renderer here, keeping the module graph acyclic.
+let onPartsChanged: () => void = () => {};
 export function onAssemblyPartsChanged(fn: () => void): void {
-  notifyPartsChanged = fn;
+  onPartsChanged = fn;
 }
+// Every path that drops a part ends here, so stale face-edge notices are retracted here; doing it
+// at the six removal sites left notices naming parts that were gone.
+function notifyPartsChanged(): void {
+  const live = new Set(state.assembly.parts.map((p) => faceEdgeKey(p)));
+  const stale: string[] = [];
+  for (const w of WARNINGS)
+    if (w.key && w.key.startsWith(FACE_EDGE_PREFIX) && !live.has(w.key)) stale.push(w.key);
+  for (const k of stale) dismissNotice('', k);
+  onPartsChanged();
+}
+
+const FACE_EDGE_PREFIX = 'face-edge:';
+const faceEdgeKey = (part: AssemblyPart): string => FACE_EDGE_PREFIX + part.id;
 
 export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
   const id = state.assembly.nextPartId++;
@@ -53,22 +66,28 @@ export function asmCreateRolePart(role: AssemblyRole): AssemblyPart {
   return part;
 }
 
+export type AssemblyLoadOutcome = 'loaded' | 'skipped' | 'superseded' | 'failed';
+
+/** Part lists whose load stopped part-way because another load replaced them. */
+const abandonedLists = new WeakSet<AssemblyPart[]>();
+export function asmLoadWasAbandoned(list: AssemblyPart[]): boolean {
+  return abandonedLists.has(list);
+}
+
 /**
- * One-click "load the whole assembly": fetch + face-detect every role's primary, then add its
- * default rotated copies. Awaits each primary's load before duplicating it, since a rotated
- * copy clones the source's (by-then loaded) geometry.
+ * Load every role's primary, then its rotated copies (awaited: a copy clones loaded geometry).
+ * Failures are already alerted; the result is for asmSwitchKindAndLoad. `skipped`: manifest in
+ * flight or confirm cancelled; `superseded`: a newer load took the list mid-way.
  */
-export async function asmLoadFullAssembly(): Promise<void> {
+export async function asmLoadFullAssembly({ quiet = false } = {}): Promise<AssemblyLoadOutcome> {
   const kind = currentAssemblyKind();
-  if (!kind) return;
+  if (!kind) return 'skipped';
   if (!asmKindCanAutoLoad(kind)) {
-    // Only once the fetch has come back. While it is still in flight this returns quietly and
-    // loadPartsLibrary calls back through maybeAutoLoadAssembly when it lands, so a restore
-    // accepted mid-flight loads a moment later instead of opening a "reload the page" dialog over
-    // a session that was about to work.
-    if (partsLibrarySettled())
-      await alertDialog("Couldn't load this part. Reload the page to try again.");
-    return;
+    // In flight, return quietly: loadPartsLibrary calls back via maybeAutoLoadAssembly, so a
+    // restore accepted mid-flight loads instead of showing a "reload the page" dialog.
+    if (!partsLibrarySettled()) return 'skipped';
+    if (!quiet) await alertDialog("Couldn't load this part. Reload the page to try again.");
+    return 'failed';
   }
   if (
     state.assembly.parts.length &&
@@ -76,22 +95,28 @@ export async function asmLoadFullAssembly(): Promise<void> {
       `Load the full ${kind.name}? This clears any parts you've already added.`,
     ))
   )
-    return;
+    return 'skipped';
   state.assembly.parts = [];
   const myParts = state.assembly.parts;
   showOverlay(`Loading ${kind.name}…`);
+  let outcome: 'loaded' | 'failed' = 'loaded';
   try {
     const variantId = currentVariantId();
     for (const role of kind.roles) {
       const partId = roleLibraryPartId(role, variantId);
       const entry = partId ? state.assembly.library.find((e) => e.id === partId) : undefined;
       const primary = asmCreateRolePart(role);
-      if (entry) await asmLoadLibraryEntryIntoPart(primary, entry);
-      // A part-kind switch mid-load replaces state.assembly.parts with a fresh array and kicks off
-      // its own load; if that happened while we awaited the fetch, stop here so we don't push this
-      // kind's parts into the new kind's list. The newer load owns the overlay and final refresh.
-      if (state.assembly.parts !== myParts) return;
-      if (role.allowRotatedCopies) {
+      const primaryFailed =
+        !!entry && !(await asmLoadLibraryEntryIntoPart(primary, entry, { quiet }));
+      if (primaryFailed) outcome = 'failed';
+      // A kind switch mid-await replaced the list; stop before pushing into it. The newer load
+      // owns the overlay and final refresh.
+      if (state.assembly.parts !== myParts) {
+        abandonedLists.add(myParts);
+        return 'superseded';
+      }
+      // A copy clones its primary's mesh, so a failed primary's copies would have none.
+      if (role.allowRotatedCopies && !primaryFailed) {
         for (let i = 0; i < (role.copies || 0); i++) {
           const dup = asmAddDuplicate(primary.id, role.copyName);
           if (dup && role.copyDefaults) Object.assign(dup, role.copyDefaults);
@@ -100,19 +125,18 @@ export async function asmLoadFullAssembly(): Promise<void> {
     }
   } catch (e) {
     console.error(e);
-    await alertDialog('Failed to load the assembly: ' + (e as Error).message);
+    outcome = 'failed';
+    if (!quiet) await alertDialog('Failed to load the assembly: ' + (e as Error).message);
   }
   notifyPartsChanged();
   hideOverlay();
   scheduleRebuild();
+  return outcome;
 }
 
 /**
- * Switch the chair's hardware variant (Standard/Kit): reloads only the roles that actually differ
- * per variant (today, the two caster mounts — see `AssemblyRole.libraryPartIdByVariant`), leaving
- * every other loaded part untouched. Confirms first if any of those roles already has a part
- * loaded, since a re-fetch discards whatever per-part edits (face pick, base thickness) the user
- * made on it. A no-op if `variantId` is already current, or the kind has no variants at all.
+ * Switch Standard/Kit, reloading only the variant roles (the caster mounts). Confirms first if one
+ * is loaded, since a re-fetch discards per-part edits (face pick, base thickness).
  */
 export async function switchChairVariant(variantId: string): Promise<void> {
   const kind = currentAssemblyKind();
@@ -153,7 +177,8 @@ export async function switchChairVariant(variantId: string): Promise<void> {
 export async function asmLoadLibraryEntryIntoPart(
   part: AssemblyPart,
   entry: LibraryEntry,
-): Promise<void> {
+  { quiet = false } = {},
+): Promise<boolean> {
   if (entry.baseDepth) part.baseDepth = entry.baseDepth;
   part.libraryPartId = entry.id;
   beginWork();
@@ -162,10 +187,12 @@ export async function asmLoadLibraryEntryIntoPart(
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const buf = await res.arrayBuffer();
     await asmLoadPartBuffer(part, buf, entry.file);
+    return true;
   } catch (e) {
-    await alertDialog(
-      `Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`,
-    );
+    const msg = `Could not load library part "${entry.name}" from ${entry.file}: ${(e as Error).message}`;
+    if (quiet) console.error(msg);
+    else await alertDialog(msg);
+    return false;
   } finally {
     endWork();
   }
@@ -181,20 +208,17 @@ export function asmAddDuplicate(sourceId: number, copyName?: string): AssemblyPa
     roleId: src.roleId,
     positions: src.positions,
     vertices: src.vertices,
-    // Shared with the source, like `positions` right above it: a duplicate is the same mesh at a
-    // different pose, so it must carry the same index or it silently loses the fast shading path.
+    // Same mesh, different pose: without the index it silently loses the fast shading path.
     indexed: src.indexed,
     libraryPartId: src.libraryPartId,
     patches: src.patches,
-    // These three, plus `topZ` and `patchNormal` further down, are the source's face: seeded here
-    // and re-pushed by `syncDuplicateFaces` on every later face change. Change one list, change
-    // both.
+    // These three, `topZ` and `patchNormal` are the source's face, re-pushed by
+    // `syncDuplicateFaces`. Change one list, change both.
     patchIdx: src.patchIdx,
     boundaryLoops: src.boundaryLoops,
     restPositions: src.restPositions,
-    // Conformal charts are baked in the source's native frame and (unlike the flat placer) carry
-    // no inverse-rotation remap, so a *rotated* copy of a charted part would cut in the wrong
-    // place. Unreachable today — every role on the only zoned kind sets allowRotatedCopies:false.
+    // Charts carry no inverse-rotation remap, so a *rotated* charted copy would cut in the wrong
+    // place. Unreachable: every role on the only zoned kind sets allowRotatedCopies:false.
     zones: src.zones,
     topZ: src.topZ,
     baseDepth: src.baseDepth,
@@ -220,11 +244,7 @@ export function asmRemovePart(id: number): void {
   scheduleRebuild();
 }
 
-/**
- * Default design-face patch for a freshly loaded part: the role's preferred-normal face if it
- * declares one (patches are area-ranked, so the first match is the largest such face), otherwise
- * the overall largest patch. Falls back to 0 when nothing points the preferred way.
- */
+/** The role's preferred-normal face (patches are area-ranked, so the first match), else the largest. */
 function defaultPatchIdx(part: AssemblyPart): number {
   const patches = part.patches;
   if (!patches || !patches.length) return 0;
@@ -250,31 +270,22 @@ export async function asmLoadPartBuffer(
     const r = await load3MF(buf);
     positions = r.positions;
     part.vertices = r.vertices;
-    // The index is a *claim* about which corners are one vertex, and display shading honours it
-    // exactly where the fallback buckets positions to 0.01mm and welds a file that never said to.
-    // Our packed parts are welded (checked: all 19 sit at a 0.500 vertex-to-triangle ratio), so
-    // honouring their claim is strictly better. Measured on a 10 degree fold: cross-seam dot
-    // 0.9848 from an unwelded index against 1.0000 from toCreasedNormals.
-    //
-    // Handed to asmAdoptMesh rather than written here, so it lands with `part.positions` and not
-    // before it: a generated role can still reject this asset, and a throw part-way would
-    // otherwise leave the *previous* mesh paired with *this* file's index.
+    // The index is a *claim* of shared corners; shading honours it, where the fallback welds at
+    // 0.01mm regardless. Our parts are welded (all 19 at a 0.500 vertex-to-triangle ratio). On a 10
+    // degree fold: cross-seam dot 0.9848 from an unwelded index vs 1.0000 from toCreasedNormals.
+    // Passed to asmAdoptMesh to land with `part.positions`: a throw between would pair the
+    // *previous* mesh with *this* index.
     indexed = { positions: r.vertices, indices: r.indices };
   } else if (lower.endsWith('.stl')) {
     const geo = new STLLoader().parse(buf);
     positions = geo.attributes.position.array as Float32Array;
-    // An STL is soup with no vertex sharing recorded at all, so no index is offered below. Every
-    // shipped manifest entry is a 3MF; this branch is here for one that isn't. Adding one would put
-    // it on three's toCreasedNormals fallback (1x, not the 8.7x indexed parts get -- see
-    // CREASE_ANGLE_RAD). Welding first would recover most of that, but welding is the expensive
-    // half: keying a soup's corners costs about what toCreasedNormals's own hashing costs (358ms
-    // bench on the chair), so a welded fallback would land near 1.5x, not 8.7x.
+    // STL is soup, so no index: three's toCreasedNormals fallback (1x, vs 8.7x indexed, see
+    // CREASE_ANGLE_RAD). Every shipped entry is a 3MF. Welding first costs about what that hashing
+    // does (358ms bench on the chair), so it would land near 1.5x, not 8.7x.
     //
-    // **`part.vertices` deliberately stays.** Clearing it looks like the same tidy-up and is not:
-    // `attachBakedZones` returns at its `!part.vertices` guard *before* it clears `part.zones`, so
-    // a part loading an STL over an earlier 3MF would keep the replaced mesh's baked charts and cut
-    // artwork against UVs for geometry that is gone. Leaving it lets the fingerprint check see a
-    // mismatch, drop the zones, and say so.
+    // **`part.vertices` deliberately stays.** `attachBakedZones` returns at `!part.vertices`
+    // *before* clearing `part.zones`, so an STL over a 3MF would keep stale charts; left, the
+    // fingerprint check sees the mismatch, drops the zones, and says so.
   } else {
     throw new Error('Unsupported file type: use .stl or .3mf');
   }
@@ -282,13 +293,9 @@ export async function asmLoadPartBuffer(
 }
 
 /**
- * Take a mesh as the part's geometry: detect its faces, pick a design face, attach baked zones,
- * and get the scene moving. Shared by the file loader above and by generated parts, so the two
- * can't drift — the ordering at the end of this function is load-bearing and was got wrong once
- * already (see the requestFrame comment).
- *
- * For a role that builds its own mesh (AssemblyRole.buildMesh), `positions` is the *asset*, and
- * the built result is what the part actually keeps.
+ * Adopt a mesh as the part's geometry. Shared by the loader and generated parts because the
+ * ordering at the end is load-bearing (see requestFrame). With AssemblyRole.buildMesh, `positions`
+ * is the *asset* and the part keeps the built result.
  */
 async function asmAdoptMesh(
   part: AssemblyPart,
@@ -302,20 +309,15 @@ async function asmAdoptMesh(
     const built = await role.buildMesh(positions);
     positions = built.positions;
     part.vertices = built.vertices;
-    // The generated mesh is a different mesh, so the asset's index goes either way. A generator
-    // that built through Manifold gets one back for free and can hand it over; one that cannot
-    // returns undefined here, and shading falls back to hashing for that part.
+    // A different mesh, so the asset's index goes; undefined falls back to hashing.
     indexed = built.indexed;
-    // Assigned unconditionally, including when the generator returns undefined: the rule belongs
-    // to the mesh currently on the part, so a rebuild that falls back to a plain circle has to
-    // clear the rule the previous silhouette set rather than leave it standing.
+    // Unconditional: a rebuild falling back to a circle must clear the previous silhouette's rule.
     part.edgeCutThroughDepth = built.edgeCutThroughDepth;
     if (part.buildWarning) dismissNotice(part.buildWarning);
     part.buildWarning = built.warning;
     if (built.warning) warn(built.warning);
   }
-  // Committed together, and only once nothing above can still throw: `indexed` describes exactly
-  // this soup, and any window where it describes a different one is a mis-shaded part.
+  // Committed together once nothing can throw: `indexed` must describe exactly this soup.
   part.positions = positions;
   part.indexed = indexed;
   part.patches = detectFlatPatches(positions);
@@ -323,25 +325,17 @@ async function asmAdoptMesh(
   applyAsmPatchChoice(part);
   await attachBakedZones(part, positions.length / 9);
   part.loaded = true;
-  // After `loaded`, not before: rebuild.ts renders only loaded parts, so a frame requested
-  // earlier can be consumed by a rebuild this part isn't in yet — and nothing requests another.
-  // The chair's thirteen parts load concurrently, which is what made that window reachable: the
-  // view ended up fitted to whichever subset had finished.
+  // After `loaded`: rebuild.ts renders only loaded parts, and an earlier frame could be consumed
+  // without this one. The chair's thirteen concurrent loads fitted the view to a subset.
   requestFrame();
   notifyPartsChanged();
-  // Skipped when a rebuild is already the caller — otherwise regenerating a part *during* a
-  // rebuild queues another one, and a part whose shape follows the artwork would do that on
-  // every single pass.
+  // Skipped when a rebuild is the caller, or a part following the artwork re-queues every pass.
   if (opts.schedule !== false) scheduleRebuild();
 }
 
 /**
- * A stable per-object id for a parsed artwork, so the signature below can say "this is a different
- * parse" without comparing contents.
- *
- * `parsed` is treated as immutable once parsed (regions.ts memoises on it), so a re-trace produces
- * a new object and a mere re-render does not — which makes identity exactly the right test. A
- * WeakMap because the ids must not keep a discarded parse alive.
+ * Per-object id for a parse. `parsed` is immutable (regions.ts memoises on it), so a re-trace is a
+ * new object and identity is the right test. A WeakMap so ids don't keep a discarded parse alive.
  */
 const parsedIds = new WeakMap<object, number>();
 let nextParsedId = 1;
@@ -353,21 +347,9 @@ function parsedId(parsed: object | null | undefined): number {
 }
 
 /**
- * What a generated part's shape currently depends on, as a string.
- *
- * The hubcap's silhouette follows the artwork, so its mesh has to be rebuilt whenever the artwork
- * changes — and "the artwork changed" happens through a load, a re-trace, a removal, a restored
- * session and a zone rebinding, which is too many places to hook one at a time. The rebuild runs
- * for all of them, so it asks this instead, and rebuilds only when the answer moved.
- *
- * Identity rather than shape COUNT, which is what this compared first and is not the same test:
- * re-quantizing an image at a new Detail setting usually lands on the same number of colours, so
- * the count held still while the outline underneath it changed, and the part stayed cut to the
- * previous trace while the picture on it updated.
- *
- * The placement terms are here for the same reason: the silhouette is placed by the artwork's own
- * scale, rotation, flips and offset (see hubcapShapeFromState), so each of them changes the SHAPE
- * of the part and not just where the cut lands on it.
+ * What a generated part's shape depends on: the artwork changes in too many places to hook, so the
+ * rebuild compares this. Parse identity, not shape COUNT: a new Detail setting often keeps the
+ * colour count while the outline changes. Placement terms too, as they move the silhouette.
  */
 function generatedShapeSignature(): string {
   const kind = currentAssemblyKind();
@@ -398,13 +380,8 @@ export function generatedPartsNeedRebuild(): boolean {
 }
 
 /**
- * Re-run every generated part's builder — for when a build parameter (the hubcap's diameter) or
- * the artwork its shape follows changes. Rebuilds from the cached asset, so no part is re-fetched.
- *
- * Reports a failure the same way the load path does rather than letting it reject. The caller
- * fires this off with `void`, so an unhandled rejection would be invisible — and the state and the
- * control would already be showing the new size while the part in the scene, and in any export,
- * was still the old mesh. Saying nothing there is worse than the failure.
+ * Re-run generated parts' builders from the cached asset. Reports failure rather than rejecting:
+ * the caller uses `void`, and the control would show the new size over the old mesh silently.
  */
 export async function asmRebuildGeneratedParts(
   opts: { schedule?: boolean } = {},
@@ -414,10 +391,8 @@ export async function asmRebuildGeneratedParts(
     const role = kind?.roles.find((r) => r.id === p.roleId);
     return role?.buildMesh && p.assetPositions;
   });
-  // Read before the build, stored only after one that worked: the inputs can't move mid-await
-  // (this is all one task), and recording them up front marked a FAILED rebuild as done. The
-  // rebuild caller has nothing to put back, so the part kept its stale mesh and was never retried
-  // — the signature said it was already current.
+  // Read before, stored only after success: storing up front marked a FAILED rebuild current, so
+  // the stale mesh was never retried.
   const signature = generatedShapeSignature();
   if (!parts.length) {
     lastGeneratedSignature = signature;
@@ -434,10 +409,8 @@ export async function asmRebuildGeneratedParts(
       `Could not rebuild "${kind?.name ?? 'the part'}" at the size you asked for: ` +
         `${(e as Error).message}. The part on screen is still the previous size.`,
     );
-    // Reported rather than swallowed: the caller has already stored the new parameter, and the
-    // mesh in the scene is still built from the old one. Anything reading the parameter to
-    // describe the mesh -- the verified-plate lookup, the 1:1 template -- would be describing a
-    // part that does not exist, so the caller has to be able to put the value back.
+    // The caller stored the new parameter over an old mesh; readers (the verified-plate lookup,
+    // the 1:1 template) would describe a part that doesn't exist, so it must put the value back.
     return false;
   } finally {
     endWork();
@@ -445,18 +418,13 @@ export async function asmRebuildGeneratedParts(
 }
 
 /**
- * Attach the kind's baked design zones to a freshly loaded part, when it has any. Sets
- * `part.zones` for every part of a sidecar-backed kind — including to `[]` for a piece the bake
- * gave no zone, which is what tells the build to leave that piece plain (see AssemblyPart.zones).
- * Parts of a kind with no sidecar are left untouched and keep the implicit flat zone.
- *
- * A failure here (unreachable sidecar, or a part re-packed since the bake so its fingerprint no
- * longer matches) warns and leaves the part zoneless rather than cutting against stale UV data.
+ * Attach baked zones. Every part of a sidecar kind gets `part.zones`, `[]` meaning plain; others
+ * keep the implicit flat zone. A failure (no sidecar, fingerprint mismatch) warns and leaves it
+ * zoneless rather than cutting against stale UVs.
  */
 async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<void> {
   const zonesFile = currentAssemblyKind()?.zonesFile;
-  // A kind with no sidecar has no net either, and this is the one place that runs on every part of
-  // every kind — leaving the previous kind's net standing would offer its whole-part zone here.
+  // The one place that runs on every part of every kind, so clear the previous kind's net here.
   if (!zonesFile) state.assembly.net = null;
   if (!zonesFile || !part.libraryPartId || !part.vertices) return;
   const partId = part.libraryPartId;
@@ -468,14 +436,12 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
     warn(
       `Couldn't load the design zones for "${part.name}" (${zonesFile}: ${(e as Error).message}). It will load without design zones.`,
     );
-    // Zoneless, not sidecar-less: leaving this undefined would fall back to the implicit flat zone
-    // and stamp the artwork orthographically onto the part's largest flat patch.
+    // Zoneless, not sidecar-less: undefined would stamp artwork onto the largest flat patch.
     part.zones = [];
     return;
   }
   state.assembly.net = sidecar.net ?? null;
-  // Every zone/chart pair baked onto this part. Set even when empty: a piece the bake gave no zone
-  // takes no artwork at all, which is not the same as having no sidecar (see AssemblyPart.zones).
+  // Set even when empty: no zone means no artwork, unlike no sidecar (see AssemblyPart.zones).
   const baked = sidecar.zones.flatMap((zone) =>
     zone.charts.filter((c) => c.libraryPartId === partId).map((chart) => ({ zone, chart })),
   );
@@ -496,8 +462,7 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
         id: zone.id,
         name: zone.name,
         templateFile: zone.templateFile,
-        // The relation only; the bake's residual is a figure for its log and tests, not a runtime
-        // input, and carrying it here would invite something to read it as a tolerance.
+        // The relation only: the bake's residual isn't a runtime input; it'd read as a tolerance.
         ...(zone.mirror
           ? { mirror: 'twin' in zone.mirror ? { twin: zone.mirror.twin } : { self: true } }
           : {}),
@@ -512,18 +477,9 @@ async function attachBakedZones(part: AssemblyPart, triCount: number): Promise<v
   part.zones = zones;
 }
 
-/** Unsigned shoelace area of a loop projected to X/Z, the plane a design face is measured in. */
-function loopXZArea(loop: number[][]): number {
-  let a = 0;
-  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++)
-    a += loop[j][0] * loop[i][2] - loop[i][0] * loop[j][2];
-  return Math.abs(a) / 2;
-}
-
 /**
- * Push a source's face onto its rotated copies. A copy shares the source's mesh and has no face
- * control of its own, so these five fields are a cache of the source's choice rather than state a
- * copy owns: without this, re-picking the face cut the two halves on different faces.
+ * A copy's face fields cache its source's choice (it has no face control); without this,
+ * re-picking the face cut the two halves on different faces.
  */
 function syncDuplicateFaces(src: AssemblyPart): void {
   for (const dup of state.assembly.parts) {
@@ -541,27 +497,33 @@ export function applyAsmPatchChoice(part: AssemblyPart): void {
   const patch = part.patches[part.patchIdx];
   part.topZ = patch.offset;
   part.patchNormal = patch.normal;
-  const loops = extractPatchBoundary(part.positions, patch.triIndices);
-  // Area, not vertex count: readers that want the face outline take loops[0], and an intricate
-  // cut-out can carry more vertices than the ring enclosing it. Sorting by size instead puts a
-  // hole after its parent always, because a hole is smaller than what contains it.
-  // scripts/gen-templates.mjs picks a part's outline by the same rule and must stay in step.
+  const { loops, openEdges } = extractPatchBoundary(part.positions, patch.triIndices);
+  // Area, not vertex count: readers take loops[0] as the outline, and a hole always ranks after its
+  // parent. scripts/gen-templates.mjs uses the same rule and must stay in step.
   loops.sort((a, b) => loopXZArea(b) - loopXZArea(a));
   part.boundaryLoops = loops.length ? loops : null;
+  // Keyed per part so a re-pick replaces it. With no ring the build skips the part (assembly.ts
+  // checks `boundaryLoops`), so that case says so.
+  const key = faceEdgeKey(part);
+  if (!loops.length)
+    warn(
+      `Couldn't trace the edge of the design face on "${part.name}", so no artwork will be cut on it. Try another design face.`,
+      key,
+    );
+  else if (openEdges)
+    warn(
+      `Couldn't trace the whole edge of the design face on "${part.name}". Artwork may be cut to the wrong shape there. Try another design face.`,
+      key,
+    );
+  else dismissNotice('', key);
   part.restPositions = excludeTriangles(part.positions, patch.triIndices);
   syncDuplicateFaces(part);
 }
 
 /**
- * Whether the stl/parts.json fetch has come back, either way. An empty `state.assembly.library`
- * cannot answer this on its own: it is equally "the fetch hasn't returned yet" and "there is no
- * manifest", and the two need opposite things said about them. Reporting the first as the second
- * told every healthy boot it had failed, for the second or so before the manifest landed.
- *
- * Deliberately "settled", not "failed". The caller's real question is "can parts still be
- * expected", and a manifest that loads fine but is missing one of the kind's roles leaves
- * `asmKindCanAutoLoad` false with nothing further coming — a broken deployment either way, and one
- * that would otherwise sit on "Loading assembly…" forever.
+ * Whether the stl/parts.json fetch has returned. An empty library alone can't tell "not yet" from
+ * "none", and conflating them told every healthy boot it had failed. "Settled", not "failed": a
+ * manifest missing a role would otherwise sit on "Loading assembly…" forever.
  */
 let librarySettled = false;
 
@@ -571,60 +533,40 @@ export function partsLibrarySettled(): boolean {
 }
 
 /**
- * Parts library: project-specific STL/3MF files listed in stl/parts.json, so a role with a
- * matching libraryPartId auto-loads. Every role of every shipped kind declares one, so an
- * unreachable manifest means no part can load at all — see `partsLibrarySettled`. Adding a new
- * part is "drop the file in public/stl/ + add one manifest entry".
- *
+ * Load stl/parts.json so roles auto-load by libraryPartId. Every shipped role has one, so no
+ * manifest means no parts (see `partsLibrarySettled`).
  */
 export async function loadPartsLibrary(): Promise<void> {
-  // Cleared at the *start*, not just set at the end: while a fetch is in flight there is nothing
-  // settled to report, so a retry shows "Loading assembly…" again rather than the previous
-  // attempt's error.
+  // Cleared at the start, so a retry shows "Loading assembly…" rather than the last error.
   librarySettled = false;
   beginWork();
   try {
     try {
-      // stl/parts.json is a stable (non-content-hashed) URL, unlike the JS bundle — tag it with
-      // the app version so a returning visitor's cached pre-release manifest can't silently lag
-      // behind a bundle that already knows about a newer part (e.g. the footrest launch).
+      // A stable URL, unlike the hashed bundle: versioned so a cached manifest can't lag a newer
+      // bundle's parts (the footrest launch).
       const v = typeof __APP_VERSION__ === 'undefined' ? 'dev' : __APP_VERSION__;
       const res = await fetch(`stl/parts.json?v=${v}`);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const manifest: unknown = await res.json();
-      // Shape-checked, not trusted. A manifest that parses to an object rather than an array threw
-      // from `asmKindCanAutoLoad`'s `.find` *inside the render*, which left the panel on whatever
-      // it had last drawn ("Loading assembly…") with no message and no way forward.
+      // Shape-checked: a non-array threw in the render, freezing the panel on "Loading assembly…".
       if (!Array.isArray(manifest)) throw new Error('parts.json is not a list of parts');
       state.assembly.library = manifest as LibraryEntry[];
     } catch {
       /* no manifest reachable — `librarySettled` is what says so */
     }
     librarySettled = true;
-    // The manifest may land after the user already opened Assembly mode — re-render either way, so
-    // the panel swaps "Loading assembly…" for the parts or for the error. This is also what loads a
-    // restore that was accepted while the fetch was still in flight.
-    //
-    // Inside the work window on purpose: the part fetches this kicks off take their own
-    // beginWork(), and idle.ts forbids the outstanding count touching zero across a handoff that
-    // is really one continuous busy stretch. Released after, a settle() waiting on the manifest
-    // resolves in the gap and measures an empty scene.
-    if (state.shapeKind === 'assembly') {
-      notifyPartsChanged();
-      maybeAutoLoadAssembly();
-    }
+    // Re-render either way; this also loads a restore accepted mid-fetch. Inside the work window on
+    // purpose: idle.ts forbids the count touching zero across this handoff to the part fetches,
+    // or a settle() resolves in the gap and measures an empty scene.
+    notifyPartsChanged();
+    maybeAutoLoadAssembly();
   } finally {
     endWork();
   }
 }
 
-/**
- * Auto-load the whole assembly the moment Assembly mode is active and the library is reachable,
- * so the user never has to click "Load full …". No-op if parts are already present or the
- * library isn't available, where manual add buttons are shown instead.
- */
+/** Auto-load once a kind is chosen and the library is reachable; no-op if parts are present. */
 export function maybeAutoLoadAssembly(): void {
-  if (state.shapeKind !== 'assembly') return;
   const kind = currentAssemblyKind();
   if (kind && asmKindCanAutoLoad(kind) && state.assembly.parts.length === 0) {
     void asmLoadFullAssembly();

@@ -62,4 +62,34 @@ describe('renderWarnings', () => {
     expect(WARNINGS).toHaveLength(0);
     expect(document.querySelectorAll('.warn-pill')).toHaveLength(0);
   });
+
+  // A pill's × finds its entry by reference (WARNINGS.indexOf). A keyed replace that swapped in a
+  // new object left the pill on screen pointing at nothing, and its × silently did nothing.
+  it('after a keyed replace, the × on the pill already showing still dismisses it', () => {
+    notice('"img.png" is capped', 'source-1');
+    renderWarnings();
+    const staleDismiss = document.querySelector<HTMLButtonElement>('.warn-dismiss')!;
+
+    notice('"img.png" traced', 'source-1');
+    staleDismiss.click();
+
+    expect(WARNINGS).toHaveLength(0);
+    expect(document.querySelectorAll('.warn-pill')).toHaveLength(0);
+  });
+
+  it('after a keyed replace and a re-render, the pill shows the new text and its × dismisses it', () => {
+    notice('keep me');
+    notice('"img.png" is capped', 'source-1');
+    renderWarnings();
+
+    warn('No color regions survived tracing "img.png"', 'source-1');
+    renderWarnings();
+    const pills = document.querySelectorAll('.warn-pill');
+    expect(pills).toHaveLength(2);
+    expect(pills[1].textContent).toContain('No color regions survived');
+    expect(pills[1].classList.contains('info')).toBe(false);
+
+    document.querySelectorAll<HTMLButtonElement>('.warn-dismiss')[1].click();
+    expect(WARNINGS.map((w) => w.message)).toEqual(['keep me']);
+  });
 });

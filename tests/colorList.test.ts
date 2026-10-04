@@ -31,7 +31,6 @@ function entry(color: string, overrides: Partial<ColorListEntry> = {}): ColorLis
     members: [color],
     isMergeGroup: false,
     areaPct: 10,
-    isBackground: false,
     ...overrides,
   };
 }
@@ -591,7 +590,6 @@ describe('a depth the build will raise', () => {
         members: ['#ff0000'],
         isMergeGroup: false,
         areaPct: 50,
-        isBackground: false,
       },
     ]);
 
@@ -615,7 +613,6 @@ describe('a depth the build will raise', () => {
         members: ['#ff0000'],
         isMergeGroup: false,
         areaPct: 50,
-        isBackground: false,
       },
     ]);
 
@@ -641,7 +638,6 @@ describe('a depth the build clamped to the part', () => {
         members: ['#ff0000'],
         isMergeGroup: false,
         areaPct: 50,
-        isBackground: false,
         appliedDepth: 9.95,
       },
     ]);
@@ -665,7 +661,6 @@ describe('a depth the build clamped to the part', () => {
         members: ['#ff0000'],
         isMergeGroup: false,
         areaPct: 50,
-        isBackground: false,
         appliedDepth: 2,
       },
     ]);
@@ -685,7 +680,6 @@ describe('a depth the build clamped to the part', () => {
         members: ['#ff0000'],
         isMergeGroup: false,
         areaPct: 50,
-        isBackground: false,
       },
     ]);
 
@@ -706,7 +700,6 @@ describe('a depth the build clamped to the part', () => {
         members: ['#ff0000'],
         isMergeGroup: false,
         areaPct: 50,
-        isBackground: false,
         appliedDepth: 0.2,
       },
     ]);

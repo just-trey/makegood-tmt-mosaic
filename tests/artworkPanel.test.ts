@@ -171,13 +171,11 @@ describe('raster notices from two sources sharing a filename', () => {
     expect(WARNINGS.map((w) => w.message)).toEqual([rasterTracedMessage('img.png')]);
   });
 
-  // Mirrors src/ui/artworkListPanel.ts's rasterControls().apply(): both messages share one key,
-  // so the old one has to be dismissed before the new one is added. Reversed, the new notice's
-  // push is a no-op (the key is already taken) and the dismiss then wipes it, leaving nothing.
+  // Mirrors src/ui/artworkListPanel.ts's rasterControls().apply(): both messages share one key, so
+  // the new one replaces the old with no dismiss first.
   it('re-quantizing a source from traced to capped replaces its notice, not clears it', () => {
     notice(rasterTracedMessage('img.png'), 'source-1');
 
-    dismissNotice(rasterTracedMessage('img.png'), 'source-1');
     notice(rasterCappedMessage('img.png'), 'source-1');
 
     expect(WARNINGS.map((w) => w.message)).toEqual([rasterCappedMessage('img.png')]);
@@ -192,18 +190,11 @@ describe('applyPattern', () => {
     }) as unknown as typeof fetch;
   });
 
-  it('loads as a pattern source, defaulting to Fill mode in assembly mode', async () => {
-    state.shapeKind = 'assembly';
+  it('loads as a pattern source, defaulting to Fill mode', async () => {
     await applyPattern('cow');
     expect(state.sources).toHaveLength(1);
     expect(state.sources[0].kind).toBe('pattern');
     expect(state.artworks[0].mode).toBe('fill');
-  });
-
-  it('stays Sticker outside assembly mode, which has no fill pipeline', async () => {
-    state.shapeKind = 'disc';
-    await applyPattern('cow');
-    expect(state.artworks[0].mode).toBe('sticker');
   });
 
   it('a pattern id not in the manifest is a no-op', async () => {

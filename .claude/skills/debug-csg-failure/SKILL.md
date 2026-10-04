@@ -24,8 +24,10 @@ Two strings look alike and aren't:
 
 - **"Couldn't cut color … into …"** is the 2D-to-3D step, not a
   boolean between solids. It fires when the clipped region won't extrude into a
-  sealed prism. The app already retries once with the region repaired, so a
-  warning that survives is usually a genuinely bad path in the SVG.
+  sealed prism. The app already retries with the region repaired
+  (`REPAIR_ERODE_MM`, flat and conformal zones alike), so a warning that
+  survives is usually a genuinely bad path in the SVG. No `?csgfault` point
+  forces this branch; drive it with a self-touching region instead.
   Path-cleaning at the source (Illustrator or Inkscape **Path → Union**) is the
   real fix.
 - **"Couldn't measure the fill area on …"** is not a boolean failure at all,
@@ -39,11 +41,12 @@ a watertight/manifold mesh"), so counting those sites in
 are Manifold.** Only **four** are boolean branches: the per-colour merge
 ("Couldn't merge color …"), the part-wide merge ("Couldn't merge the recesses
 on …"), the body difference ("Couldn't cut the recesses into …") and the inlay
-intersection ("Couldn't fit the inlay …"). The rest are the two extrude attempts
-("Couldn't cut color … into …"), the fill measure, the part mesh being
-unreadable ("Couldn't read …") and the part not being watertight. The wording
-distinguishes cut-one-colour from merge-many; it does not distinguish 2D from
-3D, so map the string to a branch here rather than guessing from the verb.
+intersection ("Couldn't fit the inlay …"). The rest are the extrude, once the
+repair ladder runs out ("Couldn't cut color … into …"), the fill measure, the
+part mesh being unreadable ("Couldn't read …") and the part not being
+watertight. The wording distinguishes cut-one-colour from merge-many; it does
+not distinguish 2D from 3D, so map the string to a branch here rather than
+guessing from the verb.
 
 ## Force a branch against the real engine
 

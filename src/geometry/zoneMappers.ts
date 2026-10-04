@@ -4,18 +4,12 @@ import { ConformalZoneMapper } from './conformal';
 import { implicitZoneFor, type ZoneMapper } from './zones';
 
 /**
- * Which surfaces of one part take artwork, as the mappers that cut them. This is the single
- * dispatch point between the two zone models, and it lives in its own module because
- * `conformal.ts` already imports `zones.ts` — putting the dispatch in either would close a
- * runtime import cycle around a class declaration.
- *
- * A part of a kind with no zone sidecar keeps the original behavior exactly: one implicit flat
- * zone from its chosen design patch. A part of a sidecar-backed kind is driven entirely by what
- * was baked for it — including "nothing", which is why an empty `zones` array must NOT fall back
- * to the flat patch (see AssemblyPart.zones): a chair caster mount has no design surface, and
- * stamping the artwork on its largest flat face would be worse than leaving it plain.
- *
- * `wasm` may be null only for read-only use (the gizmo's frameAt); cutting needs the engine.
+ * Which surfaces of one part take artwork, as the mappers that cut them: the single dispatch point
+ * between the zone models, in its own module because `conformal.ts` imports `zones.ts` and either
+ * would close a runtime import cycle. No sidecar: one implicit flat zone from the chosen patch. A
+ * sidecar-backed part follows its bake entirely, including "nothing": an empty `zones` array must
+ * NOT fall back to the flat patch (a chair caster mount has no design surface). `wasm` may be null
+ * only for read-only use (the gizmo's frameAt).
  */
 export function zoneMappersFor(
   part: AssemblyPart,

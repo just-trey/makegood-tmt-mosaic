@@ -33,9 +33,9 @@ declare module '@turf/turf' {
     properties?: object,
     options?: object,
   ): Feature<MultiPolygon>;
-  // Tests only: the chair suites pick an interior point of a baked region to place a design on,
-  // and turf already owns the holes-aware containment rule that a hand-rolled ray cast keeps
-  // getting subtly wrong. Nothing in src/ calls it, so the "surface we call" note above still
-  // reads true of the app.
+  // Also used outside tests by src/scene/zonePick.ts's zonePickAtNdc, to test a pick's chart UV
+  // against deadArea() — the chair test suites use it the same way, picking an interior point of
+  // a baked region to place a design on, because turf already owns the holes-aware containment
+  // rule that a hand-rolled ray cast keeps getting subtly wrong.
   export function booleanPointInPolygon(point: number[] | Feature, polygon: Poly): boolean;
 }

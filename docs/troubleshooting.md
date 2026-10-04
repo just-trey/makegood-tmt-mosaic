@@ -5,7 +5,7 @@ One section per user-visible warning string.
 ## Troubleshooting: "Couldn't merge the shapes" / "Couldn't trim the overlap" warnings
 
 The polygon maths failed on one colour's shape. The warning usually names the
-colour. One form of it does not: the flat build merges the shapes painted over
+colour. One form of it does not: the build merges the shapes painted over
 each region in batches, and a batch holds whatever colours fell in it, so a
 failure there names none. Treat it as "somewhere in this design" and read on.
 There are two causes and the warning does not guess between them: a
@@ -24,19 +24,24 @@ lower precision. If the warning still appears:
 - Common causes: strokes converted to outlines (sharp mitre joins), leftover
   boolean results from the design tool, hand-edited paths with crossed segments.
 
-**In Fill mode, size is usually caught before the merge.** Fill repeats one
-design per tile, and the polygon library fails on sheer size as well as on bad
-paths, in a band swept at 503k-600k points in one operation. A fill whose copies
-would come near that is turned away up front with "… is too detailed to fill …"
-(below), so most size failures no longer arrive here.
+**Size is rarely the cause.** The polygon library takes at most 500,000 edges
+in one operation. Past that the app splits the work into pieces that each fit,
+and in Fill mode a design too big even for that is turned away with "… is too
+detailed to fill …" (below) instead of reaching here.
 
-Two cases still do. The budget is a margin under a band rather than a line, so a
-fill just under it can still fail. And each colour's own shapes are merged before
-any tiling, which the budget does not cover at all. The tell is the same either
-way: failures arrive per-part in a batch rather than on one colour, and the model
-carries visibly _less_ geometry than it should, so parts of the design come out
-blank. Fix by simplifying the design (fewer, larger shapes). Numbers in
-[tech-debt.md](tech-debt.md), "Turf's tile union has a vertex ceiling".
+Two cases can still reach here on size:
+
+- **One shape of more than 500,000 edges**, which no split can divide.
+- **Very many crossing edges.** The library also stops once the pieces it is
+  tracking pass a million, which crossings multiply. 500 strips each way reach
+  it from 4,000 edges.
+
+Each colour's own shapes are merged before any tiling, so a size failure there
+names no fill. The tell is the same either way: failures arrive per-part in a
+batch rather than on one colour, and the model carries visibly _less_ geometry
+than it should, so parts of the design come out blank. Fix by simplifying the
+design (fewer, larger shapes). The limits and how they were found:
+[2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md).
 
 **One "Couldn't trim the overlap" is not about a colour at all.** It names `the
 hidden surface on "<zone id>"` (`left`, `seat-left`, …). That is the chair's artwork
@@ -75,10 +80,11 @@ it via **Feedback** or **Report a bug on GitHub**.
 Assembly mode clips each colour's region to the part's face, then extrudes it
 into a 3D pocket. Dense line-work can come out of that clip touching itself at a
 point: valid to the 2D maths, but not a sealed solid to the 3D engine. The app
-repairs it automatically via Manifold's own 2D boolean engine, offsetting the
-region by a hair and back to break the exact-touching topology, and retries
-once. If the warning survives, that pocket was skipped, and the same source fix
-as above usually resolves it.
+repairs it automatically via Manifold's own 2D boolean engine, shrinking the
+region by a hair to break the exact-touching topology, and retries: 0.01mm,
+then 0.05mm away from the part's edge. The chair's curved zones get the same
+repair as a flat part. If the warning survives, that pocket was skipped, and
+the same source fix as above usually resolves it.
 
 **How much of the colour you lose depends on the colour.** The warning is raised
 per region, not per colour, and the build carries on with the rest. A colour
@@ -146,10 +152,11 @@ in the 3D preview and in your slicer before printing: the cut is attempted,
 not guaranteed correct.
 
 **Why it's rare in practice.** Every shipped part's default face is
-horizontal, so ordinary use never reaches this. See
-[tech-debt.md](tech-debt.md), "The placement frame's angle is unrelated to
-the face it acts on…", for which of the library's other face choices land
-here and what they cut when they do.
+horizontal, so ordinary use never reaches this. On a face pointing sideways
+the placement frame is drawn on that face in amber: the design doesn't land
+on it. The
+[findings report](findings/2026-08-24-placement-frame-angle.md) lists which
+of the library's other face choices land here.
 
 ## Troubleshooting: "isn't a watertight/manifold mesh" warnings (assembly mode)
 
@@ -396,9 +403,35 @@ everywhere. Moving or rescaling cannot clear it. Switch one to Sticker, move it
 elsewhere, or remove it.
 
 A fill _under_ a sticker is not flagged, because a pattern background with a
-design on top is a real workflow. It has the same overlapping-inlay problem
-where the sticker's colours differ from the pattern's. Known gap, also in
-[tech-debt.md](tech-debt.md).
+design on top is a real workflow. The fill is cut back from under the sticker's
+colours, so the two never share space in the export.
+
+## Troubleshooting: "Couldn't fit … of … around the design on top of it on …"
+
+Full text: _"Couldn't fit "…" of "…" around the design on top of it on "…".
+Where they meet, both print in the same space. Move the design on top
+slightly."_
+
+**What it means.** A Fill is cut back from under every Sticker on the same
+part, so the sticker shows through cleanly. For this one fill colour on this
+part, that trim failed. The colour is kept whole instead, so where it lies under
+the sticker the export carries two inlays in the same space, and the slicer
+picks between them. Every other colour and part is unaffected.
+
+**What to do.** Move the design on top a millimetre and let it rebuild: the
+trim fails on exact coordinates, and a new position usually clears it. If it
+keeps failing, please report it via **Feedback** or **Report a bug on
+GitHub**.
+
+## Troubleshooting: "… is hidden everywhere by the designs on top of it, so it isn't cut" notice
+
+Full text: _""…" is hidden everywhere by the designs on top of it, so it isn't
+cut."_
+
+**This is not a warning.** A Fill is cut back from under every Sticker on its
+part. This colour of the fill only appears where stickers cover it, on every
+part, so none of it is left to cut. It takes no filament slot. Move or shrink
+the sticker if you want the colour to show.
 
 ## Troubleshooting: "… crosses the centre line of …" notice (assembly mode)
 
@@ -457,11 +490,17 @@ wanted anyway: a pattern at 5% reads as texture, not as a pattern.
 ### "… is too detailed to fill …"
 
 **"Repeating its busiest color means merging 529 tiles of 1201 points each."**
-The tile count is fine; the points inside it are not. The polygon maths behind
-Fill was swept as failing from 503k-600k points in one operation, and it fails by
-dropping tiles rather than by stopping, so the app refuses past 500k rather than
-ship a part that is quietly half blank. The points figure is per tile and for
-one colour, the busiest one, because the merge runs once per colour.
+The tile count is fine; the points inside it are not. Two limits say this:
+
+- **Past 600,000 points** (tiles times points) the app refuses. On the one
+  part measured the cut ran out of memory at 720,000, and the part exported
+  with no artwork at all.
+- **A colour whose tiles join into one shape of more than 500,000 edges**, such
+  as a background that runs through every tile. The polygon maths can't take it
+  in one piece. This one is found while tiling, so the product can be under
+  600,000 and it still appears.
+
+The points figure is per tile and for one colour, the busiest one.
 
 **Raise Scale.** Fewer, larger tiles multiply out to fewer points, and the
 message says so whenever that can work.
@@ -472,12 +511,10 @@ message drops the Scale advice and asks you to simplify the design instead: fewe
 nodes and fewer shapes in Illustrator or Inkscape. Placing it as a Sticker also
 works, at the cost of the repeat.
 
-This is the same limit as the size half of "Couldn't merge the shapes" at the
-top of this file, caught before the merge rather than after, so nothing is
-dropped. Bundled patterns get a separate build-time check in
-`tests/patterns-assets.test.ts`, against a stricter budget and a fixed tile
-count. Numbers and the sweep behind them:
-[tech-debt.md](tech-debt.md), "Turf's tile union has a vertex ceiling".
+Either way nothing is dropped: the whole design is placed once. Bundled patterns
+get a separate build-time check in `tests/patterns-assets.test.ts`, against half
+the budget and a fixed tile count. Numbers and the sweeps behind them:
+[2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md).
 
 ### "… measures zero in one direction, so there is no tile to repeat across …"
 
@@ -513,33 +550,9 @@ it**, naming the part.
 A refusal reached you without naming itself. A bug in the app, not your design.
 Please report it.
 
-## Troubleshooting: "Depth for … was set to … mm" warnings (flat mode)
-
-The flat shape modes cut every recess into a plate of one fixed thickness. A
-recess reaching the back would cut clean through, so no depth is allowed past
-the thickness less a 0.05 mm floor (3.95 mm on a 4 mm plate). One of your depths
-was past that, and the recess was cut at the deepest the plate allows.
-
-- **The file is still valid and printable.** The depth actually cut is the last
-  number in the message. Nothing is dropped; only the depth differs.
-- Fix from either end: lower that region's depth, or raise **Thickness** in the
-  Part section.
-- The name in the message is the colour list row, worded as that row labels
-  itself: a hex, "Merged (N)", or "Background".
-- A region with no depth of its own uses the global **Depth**, so a global depth
-  larger than the plate warns for every region at once. Raise the thickness or
-  lower the global rather than editing rows one by one.
-- A row carrying its own depth is highlighted and has a "↺" beside it. That
-  button, or clearing the field, returns it to the global. **If the global Depth
-  field seems to do nothing, those are the rows to look at.**
-
-Assembly mode has the same hazard but catches it later and words it differently,
-because wall thickness varies across the part: see "Part … has no geometry to
-export" above.
-
 ## Troubleshooting: "Depth for … is … thinner than the usual 0.20 mm print layer"
 
-A quiet note, not an error, in both modes. The recess is cut exactly as deep as
+A quiet note, not an error. The recess is cut exactly as deep as
 you asked, nothing clamped and nothing dropped, but it is shallower than one
 layer at the default 0.2 mm layer height. On a standard profile the slicer has
 no layer to put it in, so it prints as bare body.
@@ -576,10 +589,9 @@ recess, no inlay, no message.
   `Depth for` with one colour and `Depths for` with several.
 - Two warnings only when two different depths were asked for: 0 on one row and
   -1 on another are separate facts, and each names its own colours.
-- **Nothing checks the depth against the wall**, which varies across a part, so
-  a depth deeper than the wall in one spot cuts a hole and exports silently.
-  "Part … has no geometry to export" only fires when the cut consumed the
-  _whole_ part, so its absence is not a report that the depth was safe.
+- **The deep end is checked separately**, against the part and the wall under
+  each colour. See "… deeper than "Wheel top" goes" and "… mm thick under it"
+  below. On the chair body nothing checks it.
 
 ## Troubleshooting: "TMT Mosaic couldn't save this session. Leaving now loses it" warnings
 
@@ -607,15 +619,18 @@ into its surroundings. Lower Colors, or lower Detail, for a cleaner result."_
 **An informational notice, not a failure.** The image loaded and cut normally.
 
 Tracing produced more separate regions than `MAX_COMPONENTS`
-([trace.ts](../src/raster/trace.ts)) allows, so the speckle floor was raised to
-exactly the size that fits and the image re-traced. Without that cap a busy
-photograph hands thousands of speckle islands downstream and freezes the tab for
-tens of seconds (cost measured in [tech-debt.md](tech-debt.md)).
+([trace.ts](../src/raster/trace.ts)) allows, so the speckle floor was raised and
+the image re-traced, as many times as it took to come in under the cap. Without
+that cap a busy photograph hands thousands of speckle islands downstream and
+freezes the tab for tens of seconds (cost measured in
+[tech-debt.md](tech-debt.md)).
 
 In practice: features below the new floor were absorbed into whichever colour
-surrounds them. Nothing was dropped or left as a hole, and the regions still
-tile the image exactly, but fine texture is gone. That is usually right anyway,
-since detail near that size is below what a 0.4mm nozzle can express.
+surrounds them. Nothing was left as a hole, and the regions still tile the
+image exactly, but fine texture is gone. That is usually right anyway, since
+detail near that size is below what a 0.4mm nozzle can express. A colour whose
+every piece was under the floor is gone from the colour list too, and this
+notice does not say so.
 
 The notice names the image, so each loaded image gets its own, and re-tracing
 one at a setting that no longer needs capping retracts only that one.
@@ -630,7 +645,7 @@ To get a result you are happier with:
   fine stuff deliberately. Raising Detail quarters the floor and makes this
   notice more likely, up to the point where a nozzle width takes over: on a part,
   the floor never goes below what the design's placed size can print, and Detail
-  does not move that half. The flat disc and plate shapes have no such bound.
+  does not move that half.
 - **Crop or simplify the source.** A busy background the design doesn't need is
   what usually blows the budget.
 
@@ -661,21 +676,34 @@ nothing saying it differed from what was asked for.
   flat art keeps: a 1.6mm square, four nozzle widths (`DESPECKLE_FEATURE_MM`).
   At 512px across 185mm that is 20px², under the fractional floor's 39. With no
   placement it is that fraction instead. Neither is a nozzle width, and where
-  the nozzle floor does bind this notice is withheld.
+  the nozzle floor does bind the notice below replaces this one.
 - **The count is against the colors that labelled pixels, not the slider.** An
   image that simply has fewer colors than Colors asks for (a three-color logo at
   Colors 8) has lost nothing, and never raises this. Neither does a color that
   won a cluster and then labelled no pixel at all, which the blur before
   clustering can produce: nothing of it was ever traced, so there is nothing to
   bring back.
-- **Where Detail cannot lower the floor, nothing is said at all.** Two cases:
-  the design is placed small enough that the nozzle-width floor pins the floor
-  (128px across 12.8mm has a printable floor of 16px² against a fractional 2,
-  and drops a color silently at every Detail), or Detail is already at 100. The
-  same image at 512px across 185mm has a printable floor of 1px², the no-op,
-  against a fractional 39, and does raise the notice. Measured by
-  `npx vitest run tests/raster-parse.test.ts -t "stays silent"` and
-  `-t "part scale"`. `docs/tech-debt.md` carries it, with the capped case.
+- **Detail already at 100 says nothing.** There is no raising left. Measured by
+  `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`.
+  `docs/tech-debt.md` carries it, with the capped case.
+
+## Troubleshooting: "… too small to print at this size…"
+
+Full text: _"1 color in "yourfile.png" was too small to print at this size.
+Make the design or the part bigger to keep more."_
+
+**An informational notice, not a failure.** The image loaded and cut normally.
+
+- **The design is placed small enough that the nozzle width sets the floor.**
+  Nothing under one nozzle square (0.4mm across) can hold a bead, and Detail
+  never scales that floor. At 128px across 12.8mm it is 16px², against a
+  fractional 2, and the color goes at every Detail. Measured by
+  `npx vitest run tests/raster-parse.test.ts -t "placement pins"`.
+- **Make the design or the part bigger.** Scale, the hubcap diameter or the
+  Design radius all work. The image is traced again about half a second after
+  you stop, so the color can come back without touching Colors or Detail.
+- **It says "keep more", not "get it back".** A bigger size lowers the floor,
+  but a color's pieces can still be under the new one.
 
 ## Troubleshooting: "No opaque pixels were found in this image…"
 
@@ -827,6 +855,36 @@ flat fill (a "rasterize" or "expand" style operation, or a manual re-fill),
 or accept the shape is left out — a gradient rarely reads as intended on a
 3-4 color print anyway.
 
+## Troubleshooting: "The hidden group … was skipped, with its … shapes" warnings
+
+Full text: _"The hidden group "…" starting at shape N was skipped, with its N
+shapes. Show it in your editor to print it."_ A group with no name has no
+quoted name.
+
+**What it means.** A group in the SVG is hidden, and nothing inside it was
+imported. A hidden Inkscape or Illustrator layer is the usual case. Hidden means
+any of:
+
+- `display="none"`, as an attribute, an inline style or a class rule.
+- `opacity="0"`.
+- `fill-opacity="0"`. A shape inside that sets its own `fill-opacity` still
+  imports, as it would draw in a browser.
+
+**What you get.** The file loads as your editor shows it. The name is the
+layer's name (`inkscape:label`, or Illustrator's `data-name`), else its `id`.
+
+- The first number is the group's first shape element, counted from the top of
+  the file as the gradient warning's is.
+- The second counts only shapes that would otherwise have printed. Stroke-only,
+  gradient-filled and self-hidden shapes are left out of it.
+- A group hidden inside another hidden group raises no warning of its own. The
+  exception is an outer group hidden only by `fill-opacity`: an inner group
+  hidden by `display` or `opacity` then warns instead.
+
+**What to do.** Nothing, if you hid the layer on purpose. If you meant it to
+print, show the layer (or set its opacity back to 100%) in your editor, save,
+and load the SVG again.
+
 ## Troubleshooting: "No flat-filled shapes were found in this SVG."
 
 Full text: _"No flat-filled shapes were found in this SVG."_
@@ -845,6 +903,8 @@ exactly as it was.
 - Every shape uses a gradient or pattern fill, and all of them were skipped.
 - Everything meaningful sits inside a `<defs>` or `<clipPath>` and nothing is
   actually drawn from it.
+- Every layer is hidden (see the hidden-group warning above). Show the ones
+  you want printed.
 
 **What to do.** Open the file in your editor and confirm it has filled
 shapes, not just outlines: select all and check the Fill/Stroke panel. Give
@@ -1239,9 +1299,7 @@ be offered again.
 
 **What to do.** Reload the page before carrying on. Most failures stop before
 touching your printer, shape or colour settings, so those are usually still what
-they were. The one case that can still change something is a failure while
-switching to the saved session's part: the part can already be the saved one
-while its designs never came back. A reload starts clean.
+they were. A reload starts clean.
 
 **Why it happens.** The stored session is JSON in the browser's local storage for
 this site. It reads as valid JSON but describes something this build cannot use:
@@ -1256,10 +1314,33 @@ ever being offered.
 
 **What it does affect.** The printer, shape and colour settings only change once
 every design in the session has come back, so a failed one usually leaves them
-exactly as they were. Switching to the saved session's part happens separately,
-and can still leave that part set while its designs do not come back. The app
-stops saving until you reload, so nothing gets written over what you had, but it
-also means anything you do before reloading will not be saved. Reload first.
+exactly as they were. A saved part that does not load has its own message
+(below). The app stops saving until you reload, so nothing gets written over
+what you had, but it also means anything you do before reloading will not be
+saved. Reload first.
+
+## Troubleshooting: "Couldn't restore your session: the … didn't load"
+
+Full text: _Couldn't restore your session: the Footrest didn't load. Reload the
+page to try again._ The part named is the one the session was saved on.
+
+A second form: _Your session wasn't restored: the part changed before the
+Footrest loaded. Reload the page to try again._ That one means a different part
+was picked while the saved one was still loading.
+
+**What it means.** You asked for a saved session back, and the part it was saved
+on did not load. Usually the parts library could not be reached: a dropped
+connection, or a site update landing mid-visit.
+
+**What it does affect.** Nothing from the session is applied. Your settings and
+designs stay as they were before you clicked Restore, on the part you had, or on
+the one you picked. The saved session is kept, and the next visit offers it
+again.
+
+The app stops saving until you reload, so the saved session is not replaced.
+Anything you do before reloading will not be saved.
+
+**What to do.** Reload once the connection is back, and click Restore again.
 
 ## Troubleshooting: "… could not be restored from the saved session…"
 
@@ -1288,9 +1369,9 @@ colour's row in the colour list shows the same number beside its Depth field
 **What to do.** Nothing, if the number was a slip. If you meant a deep pocket,
 the part is the limit, so there is nothing to raise it to.
 
-**This is not a wall check.** A part's wall varies across it, and a recess well
-under this limit can still break through a thin spot without any warning. Look
-at the cut in the 3D view, and in your slicer's preview, before printing.
+**This is not the wall check.** A part's wall varies across it, and a recess under
+this limit can still reach the back of a thin spot. That case has its own warning,
+"… mm thick under it" below, and this one stays quiet for it.
 
 **Some parts raise no limit at all, and cut silently to whatever you asked —
 this is not a bug, and both cases below are read straight from the code, not
@@ -1323,6 +1404,40 @@ guessed at from outside it:**
 and a colour on both is named in a pill for each. Colours clamped from the same
 depth setting share one pill per half; a colour given its own depth in the
 colour list gets its own.
+
+## Troubleshooting: "… is only … mm thick under it"
+
+Full form: `Depth for "#ff0000" was set to 5.00 mm, but "Hubcap" is only 3.00 mm
+thick under it. It was cut at 2.95 mm instead.`
+
+**What it means.** The part as a whole had room for the depth, but the wall
+under that colour doesn't. Cut as asked, the pocket would break out the back.
+It was cut 0.05 mm short of the thinnest wall anywhere under the colour instead.
+Over a wall thinner than 0.25 mm it is cut at the 0.20 mm minimum, which still
+reaches the back there. The colour's row in the colour list shows the same
+number ("cut at … ").
+
+- One depth per colour per part. A colour spread over thick and thin spots is
+  cut to the thinnest.
+- The shipped hubcap is the usual case: 8.12 mm deep at its clips, but a 3 mm
+  shell everywhere else.
+
+**What to do.** Nothing, if a recess this deep is fine. For a deeper pocket where
+the part is thicker, give that area its own colour. A colour that never reaches
+the thin spot keeps its full depth.
+
+**When it stays quiet**, and a pocket can still break through:
+
+- **The chair body.** Its curved zones aren't measured.
+- **The part-wide checks declined.** The same cases as "… deeper than "Wheel
+  top" goes" above: a sideways or tilted face, a face plane off the part.
+- **Cut-through parts and edge regions.** They go the whole way through on
+  purpose.
+- **A colour that couldn't be trimmed to the face.** That has its own warning,
+  "Clipping color region to the design face failed…".
+
+Grouped like the part-wide warning: one pill per part per pair of numbers,
+naming every colour that shares it.
 
 ## Troubleshooting: "… zones still blank" notices (assembly mode)
 
@@ -1598,6 +1713,29 @@ happen on ordinary artwork.
 setting) and report it via **Feedback** or **Report a bug on GitHub** with that
 detail — the message itself does not say which vertex or part is at fault, so
 reproducing it is what makes the report useful.
+
+## Troubleshooting: "Couldn't trace the whole edge of the design face on …" (assembly mode)
+
+The chosen design face has edges that no closed outline can take. That happens
+only on a face whose triangles overlap or fold over each other, so that a vertex
+has more edges leaving it than arriving. No packed part in `public/stl/` has such
+a face: `tests/patch-boundary.test.ts` traces every face the Advanced dropdown
+offers on each of them. The Hubcap's disc is generated at run time and is not in
+that corpus; it comes out of the boolean engine as a closed solid, which cannot
+produce an open edge.
+
+- **The rings that did close are kept and clip the artwork.** The edges that
+  did not are what the warning is about. Artwork near them may be cut past a
+  gap or stop short of one.
+- **"… so no artwork will be cut on it"** is the same fault with no ring
+  closing at all. The part then has no design face, the build skips it, and it
+  exports in body colour only.
+- **Pick another design face** from the Advanced disclosure. The warning
+  clears when the new face traces in full, and goes with the part when the part
+  is removed.
+- A face whose edge touches itself at a single point (a hole meeting the
+  outline, two islands sharing a corner) does not raise this. That case traces
+  correctly.
 
 ## Troubleshooting: "Couldn't send that" in the feedback panel
 

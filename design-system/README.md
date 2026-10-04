@@ -186,24 +186,18 @@ type, spacing/radius, brand mark) and open directly in a browser.
   draws them as bordered two-tone badges instead; that is mockup-only, and the `Badge` spec it
   implies was deleted (see Fidelity).
 - **Panel: Part** — a native `<select>` (`#shape-kind`) holding one option per visible
-  assembly kind, by name, plus "Disc (reference)" last. Disc shows Diameter/Thickness number
-  inputs (mm). Assembly shows a "↻ Reload assembly" button, a "+ Add {role}" button per role,
-  and a row per part with a drop target and a `<select>` for face index. Rect, round rect and
-  STL-reference modes exist in the code but are deliberately unreachable — they are never
-  written into the dropdown, so do not spec UI for them.
+  assembly kind, by name. Below it, a "↻ Reload assembly" button, a "+ Add {role}" button per
+  role, and a row per part with a drop target and a `<select>` for face index.
 - **Panel: Artwork** — Dropzone + "Load sample artwork" button (small, full width) + hint text
   about flat-color-only support.
-- **Panel: Artwork fit** — Margin and Scale sliders with live `%` value labels + Flip H / Flip V
-  checkboxes + "Reset to auto-fit" button. Margin is hidden on an assembly part, which is every
-  part the dropdown offers.
-- **Panel: Depth** — Default depth number input (mm). The "Recess bg too" checkbox is hidden on an
-  assembly part: it only ever cut a background on the flat plate modes.
+- **Panel: Artwork fit** — Scale slider with a live `%` value label + Flip H / Flip V
+  checkboxes + "Reset to auto-fit" button.
+- **Panel: Depth** — Default depth number input (mm).
 - **Panel: Colors detected** — a stacked ColorRow list (drag grip, swatch, hex, area %,
   "Merge with…" select, per-row depth input) + hint text. There is no bulk-select checkbox and
   no "Merge selected" button; merging is per-row. See `ColorRow.prompt.md`.
 - **Panel: Export** — primary full-width "Export print-ready 3MF" button (`#btn-export`, triggers
-  the loading overlay for ~900ms in the mockup) + a small full-width "Export STL set (.zip)"
-  button below it (`#btn-export-stl`, the fallback for other slicers) + hint text.
+  the loading overlay for ~900ms in the mockup) + hint text.
 
 ## Interactions
 

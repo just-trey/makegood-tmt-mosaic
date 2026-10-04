@@ -12,8 +12,10 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts blur        compensating blur against downscale
 //   node_modules/.bin/vite-node scripts/bench-raster.ts knee        does a knee survive a cheaper image?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts despeckle   does the despeckle floor hold?
+//   node_modules/.bin/vite-node scripts/bench-raster.ts cap         does MAX_COMPONENTS bound the count?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts floor       despeckle floor in mm, per placement
 //   node_modules/.bin/vite-node scripts/bench-raster.ts look        write traced SVGs to look at
+//   node_modules/.bin/vite-node scripts/bench-raster.ts steps       resize that moves the floors
 //
 // corpus, colors, curve and despeckle read the cached corpus. scale, render and alpha bring their
 // own source.
@@ -40,7 +42,7 @@
 // and no lossy history, which is the entire subject. They run against real files decoded through
 // the browser (scripts/lib/rastercorpus.ts) and drive quantize/traceLabelMap directly, because a
 // sweep has to set the parameters autoParams would otherwise derive.
-import { parseRasterImage } from '../src/raster/parse';
+import { parseRasterImage, placedFloors } from '../src/raster/parse';
 import type { ShapeGranularity } from '../src/raster/parse';
 import { computeNetRegionsByColor, shapeToFeature } from '../src/geometry/regions';
 import { MAX_COLORS, MIN_COLORS, quantize } from '../src/raster/quantize';
@@ -57,7 +59,12 @@ import {
 } from '../src/raster/stats';
 import { designMmPerUnit } from '../src/geometry/assembly';
 import { HUBCAP_CHAMFER_MM, HUBCAP_MIN_DIAMETER_MM } from '../src/geometry/hubcap';
-import { MAX_WORKING_EDGE, MEASURE_EDGE, workingSize } from '../src/raster/decode';
+import {
+  MAX_WORKING_EDGE,
+  MEASURE_EDGE,
+  measureAtReferenceSize,
+  workingSize,
+} from '../src/raster/decode';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -244,7 +251,7 @@ function sharpTurns(shapes: SVGShape[]): number {
 function traceWith(img: RasterImage, colors: number, params: TraceParams, placedFloor = 0) {
   const t0 = performance.now();
   const map = quantize(img, colors, params.blurRadius);
-  const { components, capped, floorPx } = traceLabelMap(map, params, placedFloor);
+  const { components, raises, floorPx } = traceLabelMap(map, params, placedFloor);
   const ms = performance.now() - t0;
   const painted = new Set(components.map((c) => map.palette[c.label]));
   const shapes: SVGShape[] = components.map((c, i) => ({
@@ -265,7 +272,7 @@ function traceWith(img: RasterImage, colors: number, params: TraceParams, placed
     rings,
     points,
     sharp: sharpTurns(shapes),
-    capped,
+    capped: raises > 0,
     ms: +ms.toFixed(1),
     shapes,
   };
@@ -524,7 +531,7 @@ async function modeScale(args: string[]) {
   );
   const { srcW, srcH, images } = await decodeAtEdges(file, edges, entry?.renderEdge);
   const reference = images.get(MEASURE_EDGE)!;
-  const { edgeDensity } = measureImage(reference);
+  const { edgeDensity } = measureAtReferenceSize(reference);
   // decodeImageFile only ever produces one working size for a given file: MEASURE_EDGE for a
   // photograph, MAX_WORKING_EDGE for anything else, and neither upscales. Every other rung is a
   // hypothetical, and marking them all as shipping is what forced the first report to hand-annotate
@@ -572,10 +579,10 @@ async function modeScale(args: string[]) {
   console.table(rows);
   console.log(
     `\n${file} is ${srcW}x${srcH}, edgeDensity ${edgeDensity.toFixed(4)} measured at ` +
-      `${Math.max(reference.w, reference.h)}` +
+      `${MEASURE_EDGE}` +
       (Math.max(reference.w, reference.h) === MEASURE_EDGE
         ? ''
-        : ` (MEASURE_EDGE is ${MEASURE_EDGE}, but nothing is upscaled)`) +
+        : ` (enlarged from ${Math.max(reference.w, reference.h)} for the measurement only)`) +
       `, traced at ${colors} colors.` +
       '\nDETAIL_PASS_BLUR is 1, added on top of the interpolated blur whenever the working long' +
       '\nedge exceeds MEASURE_EDGE. The `ships` column marks the row the app would actually take.' +
@@ -587,10 +594,10 @@ async function modeScale(args: string[]) {
 /**
  * The same vector artwork rasterized at several sizes, measured at each.
  *
- * Isolates the half of edge density that has nothing to do with what the picture is of. A pattern
- * exported small is measured at its own size, where its stripes take up a large share of the
- * pixels, and reads photographic; exported large it is measured after a downscale to MEASURE_EDGE
- * and reads flat. Nothing about the artwork changed.
+ * Isolates the half of edge density that has nothing to do with what the picture is of. Measured
+ * at its own size (`ownSize`), a pattern exported small reads photographic, because its stripes
+ * take up a large share of the pixels. `edgeDensity` is what the app reads, at MEASURE_EDGE
+ * whatever the export size. Nothing about the artwork changed between rows.
  */
 async function modeRender(args: string[]) {
   const file = args[0] || 'public/patterns/zebra.svg';
@@ -607,10 +614,11 @@ async function modeRender(args: string[]) {
   const rows = [];
   for (const edge of edges) {
     const { image } = rendered.get(edge)!;
-    const { edgeDensity } = measureImage(image);
+    const { edgeDensity } = measureAtReferenceSize(image);
     rows.push({
       renderEdge: edge,
-      measuredAt: `${image.w}x${image.h}`,
+      drawn: `${image.w}x${image.h}`,
+      ownSize: +measureImage(image).edgeDensity.toFixed(4),
       edgeDensity: +edgeDensity.toFixed(4),
       reads: isPhotographic(edgeDensity) ? 'photo' : 'flat',
     });
@@ -681,15 +689,17 @@ async function modeAlpha() {
  * artefact of downscale ratio rather than content. It is not, and the confound runs the reassuring
  * way: heavier downscale *lowers* density, and the largest files still score the highest.
  *
- * It also shows the separation is only stable because the app pins the measurement at MEASURE_EDGE.
- * Measured elsewhere the ordering breaks: flat art reads photographic at 256.
+ * A rung under MEASURE_EDGE stands for the file exported that small, and its cell reads
+ * `own size -> what the app reads`: measured at its own size flat art reads photographic at 256,
+ * and enlarged to MEASURE_EDGE a photograph that small can read flat. A rung above MEASURE_EDGE is
+ * a size the app never measures at, shown raw.
  */
 async function modeSizes(args: string[]) {
   // Both decode constants forced in, for the same reason `scale` does it: the footer says
   // MEASURE_EDGE is the deciding column, and a retune must not remove that column from the table.
-  const edges = [...new Set([256, 512, 1024, 1600, MEASURE_EDGE, MAX_WORKING_EDGE])].sort(
-    (a, b) => a - b,
-  );
+  const edges = [
+    ...new Set([128, 192, 256, 384, 512, 1024, 1600, MEASURE_EDGE, MAX_WORKING_EDGE]),
+  ].sort((a, b) => a - b);
   // Regenerated before the existence check below, so an edit to GRADIENT_SVG cannot leave this
   // mode measuring the previous render while `corpus` measures the current one. A no-op unless
   // an authored source is named, since none is in the default list.
@@ -742,12 +752,13 @@ async function modeSizes(args: string[]) {
     };
     for (const e of edges) {
       const img = images.get(e)!;
-      const d = measureImage(img).edgeDensity;
-      // The size measured, not the size asked for. `drawInPage` scales by min(1, edge / longEdge),
+      // The size drawn, not the size asked for. `drawInPage` scales by min(1, edge / longEdge),
       // so a small source silently repeats itself across the wider columns and the table would
       // invite reading down a column that holds two different measurements.
       const at = Math.max(img.w, img.h);
+      const d = measureAtReferenceSize(img).edgeDensity;
       row[`@${e}`] =
+        (at < MEASURE_EDGE ? `${measureImage(img).edgeDensity.toFixed(3)} -> ` : '') +
         `${d.toFixed(3)} ${isPhotographic(d) ? 'photo' : 'flat'}${at === e ? '' : ` (@${at})`}`;
     }
     rows.push(row);
@@ -761,13 +772,15 @@ async function modeSizes(args: string[]) {
   const order = (e: number) => rows.map((r) => `${r.name}:${readAt(r, e) ? 'P' : 'f'}`).join(' ');
   const disagree = order(256) !== order(MEASURE_EDGE);
   console.log(
-    `\nThe app always measures at ${MEASURE_EDGE}, which is the only column that decides anything.` +
-      '\nA column heading is the size asked for; the size actually measured is in the cell, since' +
-      '\nnothing is ever upscaled.' +
+    `\nThe app always measures at ${MEASURE_EDGE}. A column under it is the file exported that` +
+      '\nsmall: its own-size reading, then what the app reads once it is enlarged to' +
+      `\n${MEASURE_EDGE}. A column over it is a size the app never measures at, shown raw.` +
+      '\nA column heading is the size asked for; the size actually drawn is in the cell, since' +
+      '\nthe draw never enlarges.' +
       `\n\nRegime at 256:   ${order(256)}` +
       `\nRegime at ${MEASURE_EDGE}:   ${order(MEASURE_EDGE)}` +
       (disagree
-        ? '\nThese disagree, which is the point: a reading is meaningless without its size.'
+        ? `\nThese disagree: under ${MEASURE_EDGE} the reading still moves with export size.`
         : '\nThese agree on this selection, which does not mean they always do.'),
   );
 }
@@ -832,7 +845,7 @@ async function modeBlur(args: string[]) {
     );
     entries.forEach((entry, i) => {
       const { srcW, srcH, images } = decoded[i];
-      const { edgeDensity } = measureImage(images.get(MEASURE_EDGE)!);
+      const { edgeDensity } = measureAtReferenceSize(images.get(MEASURE_EDGE)!);
       const working = images.get(workingEdge)!;
       const downscale = +(Math.max(srcW, srcH) / Math.max(working.w, working.h)).toFixed(2);
       const run = (compensated: boolean) => {
@@ -961,6 +974,65 @@ async function modeDespeckle(names: string[]) {
       ? `${over.length} row(s) came back over MAX_COMPONENTS (${MAX_COMPONENTS}) despite the cap.`
       : `No row exceeds MAX_COMPONENTS (${MAX_COMPONENTS}).`,
   );
+}
+
+/**
+ * Does MAX_COMPONENTS bound what the trace returns, and how many raises does it take to get there?
+ *
+ * Synthetic on purpose, where `despeckle` above is corpus-only: no corpus source reaches the cap, so
+ * that mode's cap line has never had anything to catch. Uniform label noise is the worst case for
+ * the cap, since every speck it absorbs has other specks to merge with.
+ */
+function modeCap() {
+  const rows: {
+    size: number;
+    labels: number;
+    placedFloor: number;
+    components: number;
+    floorPx: number;
+    under: number;
+    raises: number;
+    ms: number;
+  }[] = [];
+  for (const size of [160, 256, 400, 512])
+    for (const labels of [3, 8, 16])
+      for (const placedFloor of [1, 2]) {
+        const rng = mulberry32(size * 1000 + labels);
+        const grid = new Int16Array(size * size);
+        for (let i = 0; i < grid.length; i++) grid[i] = Math.floor(rng() * labels);
+        const palette = Array.from({ length: labels }, (_, i) => '#' + i.toString(16).repeat(6));
+        const params: TraceParams = {
+          blurRadius: 0,
+          despeckleFrac: 0,
+          alphaMax: 1,
+          flatness: 0.25,
+        };
+        const t0 = performance.now();
+        const r = traceLabelMap({ labels: grid, w: size, h: size, palette }, params, placedFloor);
+        const ms = performance.now() - t0;
+        rows.push({
+          size,
+          labels,
+          placedFloor,
+          components: r.components.length,
+          floorPx: r.floorPx,
+          // A `deChecker` split can leave a piece under the floor; the cap loop only answers for
+          // the count, so this stays visible here rather than folded into the pass/fail line.
+          under: r.components.filter((c) => c.area < r.floorPx).length,
+          raises: r.raises,
+          ms: +ms.toFixed(1),
+        });
+      }
+  console.table(rows);
+  const over = rows.filter((r) => r.components > MAX_COMPONENTS);
+  console.log(
+    over.length
+      ? `\n${over.length} row(s) came back over MAX_COMPONENTS (${MAX_COMPONENTS}).`
+      : `\nNo row exceeds MAX_COMPONENTS (${MAX_COMPONENTS}).`,
+  );
+  console.log(`Most raises on one row: ${Math.max(...rows.map((r) => r.raises))}.`);
+  console.log(`Rows with a component under their floor: ${rows.filter((r) => r.under).length}.`);
+  console.log(`Total trace time: ${rows.reduce((t, r) => t + r.ms, 0).toFixed(0)}ms.`);
 }
 
 /**
@@ -1103,6 +1175,61 @@ async function modeFloor(names: string[]) {
     });
   }
   console.table(effect);
+}
+
+/**
+ * How far a placed design has to be resized before its despeckle floors move, which is when the
+ * rebuild re-traces it (`retraceMovedSources`). Reads `placedFloors`, the function the app compares,
+ * so the answer is the app's own. Needs no corpus: the floors read only the working size and the
+ * edge density, so one flat and one photographic working image at their shipping sizes cover both
+ * branches.
+ */
+function modeSteps() {
+  const images = [
+    { name: `flat ${MAX_WORKING_EDGE}px`, w: MAX_WORKING_EDGE, edgeDensity: 0.05 },
+    { name: `photo ${MEASURE_EDGE}px`, w: MEASURE_EDGE, edgeDensity: 0.6 },
+  ];
+  const faces = [32, 50, 80, 120, 170, 220, 270];
+  const pct = (r: number | null) => (r === null ? 'never' : +(r * 100).toFixed(2));
+  const rows = [];
+  for (const im of images) {
+    const img: RasterImage = {
+      data: new Uint8ClampedArray(0),
+      w: im.w,
+      h: im.w,
+      edgeDensity: im.edgeDensity,
+    };
+    for (const detail of [0, DETAIL_DEFAULT, 100]) {
+      const key = (mm: number) => {
+        const f = placedFloors(img, detail, mm);
+        return `${f.floor}/${f.floorAtMax}`;
+      };
+      // Smallest resize, in 0.01% steps up to 20x, that changes the pair. Null when none does.
+      const firstChange = (mm: number, dir: 1 | -1): number | null => {
+        const at = key(mm);
+        for (let r = 1.0001; r < 20; r *= 1.0001)
+          if (key(dir > 0 ? mm * r : mm / r) !== at) return dir > 0 ? r - 1 : 1 - 1 / r;
+        return null;
+      };
+      for (const face of faces) {
+        const mm = rectMmPerPixel(img, face, face, 1);
+        rows.push({
+          image: im.name,
+          detail,
+          face,
+          floors: key(mm),
+          'grow %': pct(firstChange(mm, 1)),
+          'shrink %': pct(firstChange(mm, -1)),
+        });
+      }
+    }
+  }
+  console.table(rows);
+  console.log(
+    '\n`floors` is the floor at this Detail / the floor at DETAIL_MAX, in working px. `grow %` and\n' +
+      '`shrink %` are the smallest resize that changes either one. There is no single ratio: where\n' +
+      'a placed floor binds, almost any resize moves it; where the fractional floor binds, none may.',
+  );
 }
 
 /** Traced shapes as a standalone SVG, in paint order, so a trace can be looked at rather than counted. */
@@ -1318,11 +1445,17 @@ switch (mode) {
   case 'despeckle':
     await modeDespeckle(rest);
     break;
+  case 'cap':
+    modeCap();
+    break;
   case 'floor':
     await modeFloor(rest);
     break;
   case 'look':
     await modeLook(rest);
+    break;
+  case 'steps':
+    modeSteps();
     break;
   default: {
     // Numeric arguments keep the original invocation working, which the header and two tech-debt
@@ -1332,7 +1465,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, blur, knee, despeckle, floor, look, ` +
+          `sizes, blur, knee, despeckle, cap, floor, look, steps, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));

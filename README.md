@@ -149,19 +149,17 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
 - "Largest flat patch" auto-face-detection is a heuristic; use the Advanced
   per-part controls to pick a different face.
 - Input parts must be watertight/manifold for assembly cutting.
-- Assembly mode has no wall-thickness check. A part's wall varies across it,
-  and nothing measures it, so a pocket deeper than the wall in one spot cuts a
-  hole clean through and exports without comment. A depth is bounded only by
-  how far the part extends behind its design face: past that it is cut at the
-  part's own depth, with a warning naming the color and the part. On the wheel
-  that bound is 48.45mm, so it catches a mistyped number and not a 20mm pocket
-  in a 3mm wall. The shallow end (zero or negative) is caught up front and
-  raised to a safe minimum.
-- Fill can't repeat a very detailed design. The polygon clipper was swept as
-  failing from 503k-600k points in one operation, so a design whose copies would
-  pass a 500k budget is placed once instead, with a warning saying so. Raising
-  Scale fixes it where a bigger tile gets under the budget; the warning says when
-  it can't.
+- On the chair body, and on a sideways face picked by hand, nothing bounds a
+  depth. A pocket deeper than the wall there cuts a hole clean through. The
+  default faces of the wheel, footrest and hubcap cut a too-deep pocket at the
+  wall under it instead, with a warning naming the color and the part. See
+  [docs/tech-debt.md](docs/tech-debt.md).
+  The shallow end (zero or negative) is caught up front and raised to a safe
+  minimum.
+- Fill can't repeat a very detailed design. Past 600k points across the copies
+  the design is placed once instead, with a warning saying so: the cut ran out
+  of memory at 720k on the one part measured. Raising Scale fixes it where a
+  bigger tile gets under the budget; the warning says when it can't.
 - Gradients/patterns in an SVG are detected and skipped with a warning.
 - A raster image is processed at 1024px on its long edge for flat art (logos,
   drawings, cartoons) and 512px for photographs, chosen from the image itself —
@@ -175,7 +173,7 @@ Full walkthrough, code layout, and how to add a new assembly/library part:
   cut, and a very busy image says so instead of tracing thousands of specks.
 - Two designs placed over each other are warned about by name,
   not resolved for you — their recesses still both get cut. A Fill underneath
-  a sticker isn't checked at all; see [docs/tech-debt.md](docs/tech-debt.md).
+  a sticker is the exception: the fill is cut back from under it.
 - The hubcap's plate is verified up to 220mm on 256mm and 270mm beds only.
   Within that it exports at a hand-checked position with the prime tower placed
   clear of it (7mm of clearance on a 256mm bed, 19mm on a 270mm one). Larger

@@ -11,6 +11,7 @@ import {
   requestedDepth,
   subLayerDepth,
   thinDepthNotice,
+  thinWallWarning,
   tooDeepWarning,
   zeroDepthWarning,
   type PartDepthClamp,
@@ -34,10 +35,14 @@ import {
   dropUnprintableRemnants,
   planarArea,
   cleanFeature,
+  differenceAllChecked,
   differenceChecked,
   intersectChecked,
   safeIntersectChecked,
+  fitsBesideClips,
+  roomBesideClips,
   safeUnion,
+  UnionTooBig,
   YIELD_BUDGET_MS,
   yieldToBrowser,
 } from './regions';
@@ -81,7 +86,13 @@ import {
   type PlacedDesign,
 } from './designOverlap';
 import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
-import { dismissNotice, noticeBuild, warnBuild } from '../warnings';
+import {
+  dismissNotice,
+  dropBuildWarningsSince,
+  noticeBuild,
+  warnBuild,
+  warningMark,
+} from '../warnings';
 import { csgFault, resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
 import { throwIfCancelled } from '../cancel';
@@ -129,10 +140,9 @@ function polysOf(f: PolyFeature): Position[][][] {
 }
 
 /**
- * Collect two designs' regions for one color into one feature, WITHOUT a boolean union. Feeds
- * color detection and merge grouping only, where total area is the quantity that matters.
- * Artworks each sit near their own SVG origin (placement comes much later), so a real union would
- * fold unrelated coordinates together and undercount every shared color.
+ * Two designs' regions for one color in one feature, WITHOUT a union: feeds color detection and
+ * merge grouping, where only total area matters. Each artwork sits near its own SVG origin until
+ * placement, so a real union would fold unrelated coordinates and undercount every shared color.
  */
 function concatFeatures(a: PolyFeature, b: PolyFeature): PolyFeature {
   return {
@@ -151,9 +161,8 @@ export interface ArtworkBuildInput {
   zoneId?: string | null;
   scaleMult: number;
   /**
-   * The largest `scaleMult` the Scale control allows. Supplied rather than assumed because the
-   * bound is the panel's, and a fill refused for detail needs it to tell "raise Scale" from
-   * "raising Scale will not reach". Defaults to `scaleMult`, which reads as "no headroom".
+   * The largest `scaleMult` the Scale control allows, so a fill refused for detail can tell "raise
+   * Scale" from "raising Scale will not reach". Defaults to `scaleMult` (no headroom).
    */
   maxScaleMult?: number;
   offX: number;
@@ -170,11 +179,9 @@ export interface ArtworkBuildInput {
    */
   mode?: 'sticker' | 'fill';
   /**
-   * Set when this design keeps one half of a self-mirrored zone, its reflection keeping the
-   * other. The half kept is the one the design's placed centre lies on, so a design drawn on
-   * either side of the template's centre line prints there and mirrors across; this value settles
-   * only a design centred exactly on the line, which is where a mirrored pair (whose centres
-   * reflect onto each other, and onto the line together) would otherwise both keep the same half.
+   * Set when this design keeps one half of a self-mirrored zone, its reflection the other. The half
+   * kept is the one the placed centre lies on; this value settles only a design centred exactly on
+   * the line, where a mirrored pair would otherwise both keep the same half.
    */
   keepSide?: KeepSide;
   /** Set on the reflection mirroredBuildInput makes, so a notice about the pair is said once. */
@@ -211,12 +218,10 @@ export interface AssemblyBuildInput {
 }
 
 /**
- * Anchor for a `designFit: 'rect'` design: the center of the document canvas (viewBox or declared
- * mm box), never of the drawn content. Templates span the surface 1:1 (`zoneTemplateSVG`,
- * `gen-templates.mjs`), so a shape in one corner of the sheet wants that corner of the surface.
- * Anchoring on the content bbox re-centers every design instead.
- *
- * Null when the file declares no canvas at all; the caller then falls back to the content bbox.
+ * Anchor for a `designFit: 'rect'` design: the document canvas centre (viewBox or declared mm box),
+ * never the drawn content's. Templates span the surface 1:1 (`zoneTemplateSVG`,
+ * `gen-templates.mjs`), so a shape in a sheet corner wants that corner of the surface. Null when no
+ * canvas is declared.
  */
 export function canvasAnchor(
   parsed: Pick<ParsedSVG, 'canvas'>,
@@ -227,31 +232,20 @@ export function canvasAnchor(
 }
 
 /**
- * Whether a `<circle>` is the boundary marker a design template draws, or just part of the
- * drawing.
+ * Whether a `<circle>` is a template's boundary marker (the circle the drawing sits inside) or part
+ * of the drawing. Taking the largest circle blindly scaled one of four r=18 corner dots to the full
+ * 276mm face and threw the rest clear, silently (docs/findings/2026-08-16-maker-ease-review.md).
  *
- * Taking the largest circle unconditionally made any decorative one the boundary, and
- * kid-oriented clipart is full of them: a 7-colour file with four r=18 corner dots had the first
- * dot scaled to the full 276mm face and the other three thrown clear of the part, silently
- * (docs/findings/2026-08-16-maker-ease-review.md). A template's marker is the circle the rest of
- * the drawing sits inside, so that is what is tested.
- *
- * **Compared as bounding boxes, not "are the artwork's corners inside the circle".** No circle
- * contains the corners of its own bounding square, so the strict form rejects the very templates
- * this exists to serve: public/templates/wheel-cover-circle.svg is an r=140 disc whose own bbox
- * corners sit 198 units from its centre.
- *
- * Not by fill, the other obvious discriminator, which is backwards here. Markers are often
- * `fill="none"`, but that template's boundary is a *filled* disc and its only unfilled circle is
- * the small centre-cap reference ring, so filtering on fill picks the ring and blows every
- * template-drawn design up by 7.6x.
+ * Compared as bounding boxes: no circle contains its own bbox corners, so a strict test rejects
+ * public/templates/wheel-cover-circle.svg (r=140, bbox corners 198 units out). Not by fill: that
+ * template's boundary is a filled disc and its only unfilled circle is the centre-cap ring, which a
+ * fill filter picks, blowing every template-drawn design up 7.6x.
  */
 function enclosesArtwork(
   circle: { cx: number; cy: number; r: number },
   bbox: { minX: number; minY: number; maxX: number; maxY: number },
 ): boolean {
-  // Slack for a template whose artwork is drawn right up to, or a hair over, the rim. Relative to
-  // the radius so it means the same at any document scale.
+  // Slack for artwork drawn up to or a hair over the rim; relative to r so it is scale-free.
   const slack = circle.r * 0.02;
   return (
     circle.cx - circle.r - slack <= bbox.minX &&
@@ -262,26 +256,17 @@ function enclosesArtwork(
 }
 
 /**
- * A circle rejected as the boundary that still looks like it was meant to be one: it holds some
- * of the drawing, and what escaped is small enough to be a stray rather than half the design.
- *
- * Without this, one stray mark outside a template's circle silently drops the design to the bbox
- * fit, which on a real template is a fraction of the intended size and off-centre with it.
- *
- * **Size of the escapers, not a share of the shape count.** Counting was the first attempt and
- * cannot work: the canonical case is a template plus one stray, which once the marker itself is
- * excluded is exactly one shape in and one out, and no majority rule calls that a boundary. What
- * actually separates the two is what got out. A stray is a dot or a leftover speck; a circle
- * sitting beside a real drawing has something big outside it, and there the plain bbox fit is the
- * right answer and worth no comment.
+ * A rejected circle that still looks meant as the boundary: it holds some of the drawing, and what
+ * escaped is small enough to be a stray. Without this, one stray mark silently drops a template to
+ * the bbox fit, a fraction of the intended size and off-centre. Judged by the escapers' size, not a
+ * shape-count share: template plus one stray is one in, one out, which no majority rule catches.
  */
 function looksLikeAnEscapedBoundary(
   circle: { cx: number; cy: number; r: number },
   parsed: ParsedSVG,
 ): boolean {
   const dist = (p: { x: number; y: number }) => Math.hypot(p.x - circle.cx, p.y - circle.cy);
-  // The marker is not part of what it holds. Counting its own body lets a decorative filled circle
-  // qualify on itself alone.
+  // Excluded, or a decorative filled circle qualifies on its own body.
   const isTheCircle = (sh: (typeof parsed.shapes)[number]) =>
     sh.loops.every((l) => l.every((p) => Math.abs(dist(p) - circle.r) <= circle.r * 0.02));
   const others = parsed.shapes.filter((sh) => !isTheCircle(sh));
@@ -290,8 +275,7 @@ function looksLikeAnEscapedBoundary(
   );
   if (!held.length || held.length === others.length) return false;
   const escaped = others.filter((sh) => !held.includes(sh));
-  // A fifth of the circle's diameter: comfortably bigger than any stray speck, comfortably
-  // smaller than a drawing someone meant to place outside.
+  // A fifth of the diameter: bigger than any speck, smaller than a drawing placed outside.
   const strayLimit = circle.r * 0.4;
   return escaped.every((sh) => {
     const pts = sh.loops.flat();
@@ -304,18 +288,10 @@ function looksLikeAnEscapedBoundary(
 }
 
 /**
- * Design anchor, per artwork: the SVG's <circle> when it encloses the drawing (a template's
- * intended outer boundary), else a pseudo-circle on the artwork bbox so circle-less SVGs
- * auto-center rather than refuse to build. Rect parts anchor on the document canvas (see
- * canvasAnchor).
- *
- * **Silent on both of those**, because both behave. The notice fires only where the result would
- * otherwise be inexplicable: a circle that held most of the drawing and lost some of it. The old
- * message had this exactly backwards, announcing the plain bbox fit on every circle-less load
- * while the hijack said nothing.
- *
- * Shared with the gizmo (src/scene/faceFrame.ts): a frame drawn around an anchor the build didn't
- * use encloses empty face. The gizmo passes no `notice`, since it re-resolves this on every
+ * Design anchor per artwork: the SVG's <circle> when it encloses the drawing, else a pseudo-circle
+ * on the artwork bbox; rect parts anchor on the canvas (canvasAnchor). Only a circle that held most
+ * of the drawing and lost some gets a notice; the other branches behave and stay silent.
+ * Shared with the gizmo (src/scene/faceFrame.ts), which passes no `notice`: it re-resolves on every
  * refresh and would refill the warnings panel from a mouse-move.
  */
 export function designAnchor(
@@ -325,9 +301,8 @@ export function designAnchor(
 ): { cx: number; cy: number; r: number } {
   const circle = isRect ? null : parsed.rawSVGCircle;
   if (circle && enclosesArtwork(circle, parsed.bbox)) return circle;
-  // `notice &&` first, deliberately: the scan below walks every vertex of the artwork, and the
-  // gizmo (src/scene/faceFrame.ts) re-resolves this on every refresh and every pointerdown with
-  // no notice sink, so a slider drag would pay for a result that is thrown away.
+  // `notice &&` first: the scan walks every vertex, and the sinkless gizmo calls this on every
+  // refresh and pointerdown.
   if (notice && circle && looksLikeAnEscapedBoundary(circle, parsed))
     notice(
       'This SVG has a circle around most of the artwork, but some of it falls outside. The ' +
@@ -341,10 +316,7 @@ export function designAnchor(
     const canvas = canvasAnchor(parsed);
     if (canvas) return canvas;
   }
-  // No notice on this branch. It is the well-behaved one: the artwork is centred on its own
-  // bounding box, which is what a file not drawn over a template wants. Saying so on every such
-  // load was the warning pointing the wrong way, since the case that could surprise, and did, was
-  // the other one.
+  // No notice: centring on the bbox is what a file not drawn over a template wants.
   const bbox = parsed.bbox;
   return {
     cx: (bbox.minX + bbox.maxX) / 2,
@@ -354,22 +326,13 @@ export function designAnchor(
 }
 
 /**
- * Largest flat design face across the loaded parts, memoized: the fallback size reference for a
- * rect SVG declaring no absolute mm size.
+ * Largest flat design face across *loaded* parts, lazily memoized: the size reference for a rect
+ * SVG with no mm size. A part still fetching would drop callers to the 1:1 branch.
  *
- * Only a *loaded* part has a face to measure. Counting one still fetching would drop callers to
- * the 1:1 branch and report a size its own load immediately contradicts. Lazy because only the
- * no-mm-size case needs it; the wheel path never pays for the scan.
- *
- * Known limit, harmless today: this is one scale for the whole assembly, taken from the largest
- * face, while `placeOnPart` honors each part's *own* face center. The only rect kind (the
- * footrest) has a single face, so the two never disagree. A future rect assembly mixing face sizes
- * would scale artwork for the biggest face and then center that same oversized artwork on the
- * smaller ones, where the face clip would crop it. Fix when such a part ships, either by scaling
- * per part or by making the reference face an explicit choice on the AssemblyKind rather than
- * "whichever is largest". Whatever it becomes has to keep `designMmPerUnit`'s two callers (the
- * build and the on-face gizmo) agreeing, since that sharing is what makes the selection frame
- * match the cut.
+ * Known limit, harmless today: one scale for the whole assembly, while `placeOnPart` centres on
+ * each part's own face. The footrest has one face; a rect kind mixing face sizes would crop
+ * oversized artwork on the smaller faces. A fix must keep `designMmPerUnit`'s two callers (build
+ * and gizmo) agreeing, since that is what makes the selection frame match the cut.
  */
 export function memoLargestDesignFace(
   parts: AssemblyPart[],
@@ -396,47 +359,31 @@ export interface DesignScaleContext {
   /** lazy `memoLargestDesignFace(parts)`, read only on the no-declared-size rect branch */
   designFace: () => { w: number; h: number } | null;
   /**
-   * Extra shrink a *generated* part applied to its own shape, which the artwork must follow.
-   * 1 (or absent) for every ordinary part.
-   *
-   * Kept separate from `designFace` because it must survive every branch below and `designFace`
-   * does not: an SVG declaring an absolute mm size returns before the face is consulted. Folded
-   * into the face, the hubcap's wheel cap was a silent no-op for exactly those files, which
-   * includes this app's own design templates.
+   * Extra shrink a *generated* part applied to its own shape, which the artwork must follow (1 or
+   * absent otherwise). Separate from `designFace` because an SVG with an absolute mm size returns
+   * before the face is consulted: folded in there, the hubcap's wheel cap was a silent no-op for
+   * this app's own templates.
    */
   generatedFit?: () => number;
 }
 
 /**
- * SVG user units to mm for one placed artwork.
+ * SVG user units to mm for one placed artwork. Wheel: circle radius maps to the mm Design radius.
+ * Rect: via the declared physical size (userUnitMM), so a template lands life-size whatever
+ * resolution an editor re-exported it at.
  *
- * Wheel: circle radius maps to the mm Design radius. Rect: convert via the file's declared
- * physical size (userUnitMM), so a template lands life-size whatever internal resolution an
- * editor re-exported it at.
+ * With no mm size, the document canvas is meet-fit to the design face (the template's sheet *is*
+ * the face); 1:1 only with no canvas either. Canvas, not viewBox: an Affinity export can drop the
+ * viewBox and state the sheet in px alone. viewBox stays the fill tile period. `forceRect` is the
+ * fill path, where a tile is a real-world period, not a radius-driven scale. Every shipped artwork
+ * declares `width="100%"`, so auto-fit is the normal path, shared with the gizmo like
+ * `designAnchor`. Reads only the document (content arrives as `anchorR`), so the raster stage can
+ * ask a trace's scale before tracing (state/artwork.ts).
  *
- * With no declared mm size, fit the document canvas to the design face rather than assuming
- * 1 unit = 1 mm: the template's sheet *is* the face. Meet-fit (smaller axis ratio) matches SVG's
- * own default. Genuine 1:1 only when the file declares no canvas either. `forceRect` is the fill
- * path, where a tile is a real-world period: radius-driven scaling would stretch one period across
- * the whole design.
- *
- * Canvas and not viewBox, though they are the same box whenever a viewBox exists: an Affinity
- * export can drop the viewBox and state the sheet in px alone, and that sheet still fits the face.
- * viewBox stays the fill tile period, where the bbox fallback for a viewBox-less file is wanted.
- *
- * Shared with the gizmo like `designAnchor`, and it matters more here: every artwork the app ships
- * declares `width="100%"`, so this auto-fit branch is the normal path, not an edge case.
- *
- * Reads the document and not its content: everything about the artwork itself arrives as `anchorR`.
- * That is what lets the raster stage ask what scale a trace will be placed at before it has traced
- * anything (state/artwork.ts).
- *
- * **A Fill tile with no declared mm size still hits the auto-fit branch above**, contradicting the
- * `forceRect` paragraph: measured on a 60-unit tile against the footrest's 266x185mm face,
- * `width="100%"` + viewBox and unitless `width="60px"` both read 3.0833 mm/unit — a 185mm period,
- * one repeat across the whole face. `width="60mm"` reads correctly (1.0000, 60mm). None of the four
- * shipped patterns hit this (all declare `width="60mm"`); a user's own tile can. What a periodless
- * tile should repeat at is a product decision — see docs/roadmap.md.
+ * **Known gap: a Fill tile with no mm size still auto-fits.** A 60-unit tile on the footrest's
+ * 266x185mm face reads 3.0833 mm/unit under `width="100%"` + viewBox or `width="60px"` — a 185mm
+ * period, one repeat per face; `width="60mm"` reads 1.0000. The four shipped patterns all declare
+ * 60mm; a user's tile can hit it. What it should repeat at is a product call: docs/roadmap.md.
  */
 export function designMmPerUnit(
   parsed: Pick<ParsedSVG, 'userUnitMM' | 'canvas' | 'origin'>,
@@ -470,15 +417,10 @@ export function designMmPerUnit(
 }
 
 /**
- * The axis-aligned extent, in mm on the zone, of a design's content once placed.
- *
- * The placers add translation and mirroring on top of the scale, neither of which changes an
- * extent, so this needs no mapper: `designMmPerUnit` and the user's rotation are the whole story.
- * Rotation is folded in because a design turned 45° covers a bigger box than it does square on.
- *
- * Zero on either axis when the artwork has no extent there, or when the scale comes out
- * non-finite (a degenerate anchor radius); callers decide what to do with that rather than being
- * handed a NaN.
+ * Axis-aligned extent in zone mm of a design's placed content. Translation and mirroring don't
+ * change an extent, so no mapper: `designMmPerUnit` and rotation (45° covers a bigger box than
+ * square-on) are the whole story. Zero on an axis with no extent or under a non-finite scale
+ * (degenerate anchor radius), never NaN.
  */
 export function placedFootprintMM(
   parsed: ParsedSVG,
@@ -530,11 +472,10 @@ function keptHalfFor(
 }
 
 /**
- * `feat` cut to the half a design keeps; the cutter and the overlap check's ink both take it.
- * Crossing is read off the vertices rather than an area before and after, which a no-op boolean
- * still moves in its last bits; nothing past the line means no boolean. `failed` hands the
- * region back unclipped and says nothing: the cutter names that, the ink reader ignores it. A
- * region with nothing in it once cleaned is empty, not removed and not failed.
+ * `feat` cut to the half a design keeps, for both the cutter and the overlap ink. Crossing is read
+ * off vertices, not area before/after (a no-op boolean still moves the last bits). `failed` returns
+ * the region unclipped silently: the cutter names it, the ink reader ignores it. Empty once cleaned
+ * is empty, not removed or failed.
  */
 export function clipToKeptSide(
   feat: PolyFeature,
@@ -562,21 +503,12 @@ interface NetShareClip {
 }
 
 /**
- * `feat` cut to the canvas this zone owns on the whole-part sheet: the patches another sheet took
- * are removed, one entry at a time so the notice can name where each went.
- *
- * The bbox gate is what keeps this free in the common case — most zones yield nothing, and a design
- * nowhere near what one did yields costs no boolean. Past it, the intersect probe separates "this
- * design never reaches the patch" (no clip, nothing to say) from "it does" (clip, and say so), so a
- * notice is only raised when the cut really moved.
- *
- * On a failed boolean the region is handed back whole, exactly as the boundary clip does: that is
- * the pre-partition behaviour, a doubled cut rather than a missing one, and it is named.
- *
- * `torn` is the same event judged against the surface rather than the canvas: the patches ink moved
- * into that lie along a stretch where the two sheets do not actually join. One zone can yield
- * several such pieces to the same neighbour, so they are pooled per zone at the worst tear — a
- * design reaching two of them is one design, torn once as far as the user is concerned.
+ * `feat` cut to the canvas this zone owns on the whole-part sheet, one exclusion at a time so the
+ * notice can name where each patch went. The bbox gate keeps the common case boolean-free; the
+ * intersect probe then raises a notice only when the cut really moved. A failed boolean hands the
+ * region back whole (a doubled cut, not a missing one) and is named.
+ * `torn`: patches the ink moved into where the two sheets don't actually join, pooled per neighbour
+ * at the worst tear — one design is torn once as far as the user is concerned.
  */
 export function clipToNetShare(feat: PolyFeature, exclusions: NetExclusion[]): NetShareClip {
   const movedTo: string[] = [];
@@ -586,8 +518,7 @@ export function clipToNetShare(feat: PolyFeature, exclusions: NetExclusion[]): N
   const done = (): NetShareClip => ({
     feat: cur,
     movedTo,
-    // Only where ink is still cut on this zone. A design that fell wholly inside what this zone
-    // yielded is cut once, on the neighbour, and has no second half to be torn from.
+    // Only while ink is still cut here: a design wholly in the yield is cut once, on the neighbour.
     torn: cur ? [...worstTear].map(([toName, tearMm]) => ({ toName, tearMm })) : [],
     failed,
   });
@@ -614,13 +545,9 @@ export function clipToNetShare(feat: PolyFeature, exclusions: NetExclusion[]): N
       continue;
     }
     cur = cut.feat;
-    // The bake cuts a patch at the joining stretch's limits, so one entry is wholly one or the
-    // other. `undefined` is "not surveyed", which is not the same as "they join" and says nothing.
-    //
-    // The tear is required, not optional, because the warning quotes it: the bake writes the two
-    // together (a boundary with a torn piece has torn rows to measure), and an entry carrying the
-    // flag without the number is a truncated one. Guessing a distance there would be worse than
-    // the silence, which is what shipped before either field existed.
+    // The bake cuts a patch at the joining stretch's limits, so an entry is wholly one or the
+    // other. `undefined` means "not surveyed", not "they join". The tear is required because the
+    // warning quotes it and the bake writes both: a flag without the number is a truncated entry.
     if (e.joins === false && e.tearMm !== undefined)
       worstTear.set(e.toName, Math.max(e.tearMm, worstTear.get(e.toName) ?? 0));
     // A patch cut in two pieces is two entries naming one zone; the notice must not say it twice.
@@ -644,17 +571,10 @@ function featureBBox(f: PolyFeature): number[] {
 }
 
 /**
- * Names detail too fine to print, so it is never dropped in silence. Per colour and part, which is
- * the pair the user can act on.
- *
- * **Says nothing about what made it small, how much went, or what survived.** Three clips can each
- * drop something and a design can arrive that size already, so a message about the cause would be
- * wrong for at least one of them. And the key below dedupes across all three, first push winning,
- * so any claim about the remainder could be left standing by a later clip that removes the rest —
- * which is what an earlier two-form version of this did.
- *
- * A notice rather than a warning: nothing printable went. One nozzle square is the floor, and a
- * region under it cannot hold a single bead of any shape.
+ * Names detail too fine to print, per colour and part (the pair the user can act on). Says nothing
+ * of cause, amount or remainder: three clips can each drop something, and the key dedupes across
+ * them first-push-wins, so a remainder claim could outlive a later clip removing the rest. A
+ * notice, not a warning: one nozzle square is the floor, so nothing printable went.
  */
 export function unprintableSpeckNotice(label: string, partName: string): string {
   return (
@@ -677,24 +597,13 @@ export function netShareNotice(design: string, zone: string, toNames: string[]):
 }
 
 /**
- * Rule 1's other half for the net clip: the ink moved, and the two sheets do not meet where it
- * crossed, so the halves are cut tens of millimetres apart on the real part.
- *
- * A warning rather than a notice: the cut is correct, the result is not what anyone drew. The
- * distance is the bake's measurement of that stretch of boundary (`NetZoneExclusion.tearMm`),
- * rounded to whole millimetres because it is a median over the stretch and not a spot reading.
- *
- * Hung off the net clip rather than tested in rebuild.ts against the whole boundary, which was the
- * obvious place and is wrong: 31% and 8% of the chair's two boundaries join, so a placed-bbox test
- * over either would fire for nearly every whole-part design ever drawn. The clip already knows the
- * one thing that matters, which is whether ink really reached the patch.
- *
- * **The two zones are named in a fixed order, not in the order the build reached them.** One
- * crossing raises this from both sides: the divider between two sheets is ragged, so each zone
- * yields slivers to the other and a design over the join reaches a torn patch on each. Naming them
- * "from" and "to" made the text depend on which zone's build ran first, which is two pills for one
- * boundary. Sorted, the pair reads the same either way, and `raiseTornWarning` keeps one pill
- * quoting the worse of the two tears.
+ * Rule 1's other half for the net clip: the ink moved and the sheets don't meet where it crossed,
+ * so the halves cut tens of mm apart. A warning: the cut is correct, the result isn't what anyone
+ * drew. `NetZoneExclusion.tearMm` is a median over the stretch, hence whole mm.
+ * Raised from the clip, not a rebuild.ts boundary test: 31% and 8% of the chair's two boundaries
+ * join, so a placed-bbox test would fire for nearly every whole-part design.
+ * Zones are sorted: the divider is ragged, so one crossing raises this from both sides, and a
+ * from/to order made two pills for one boundary. `raiseTornWarning` keeps the worse tear.
  */
 export function netTornWarning(design: string, zones: string[], tearMm: number): string {
   const [a, b] = [...zones].sort();
@@ -705,16 +614,10 @@ export function netTornWarning(design: string, zones: string[], tearMm: number):
 }
 
 /**
- * One pill per design and boundary, quoting the worst tear measured for it.
- *
- * Worst rather than first, and this is why it cannot just ride on the notice list's own dedupe:
- * `tearMm` is measured over the rows each yielded piece spans, so the two sides of one boundary
- * report different numbers (33.8mm and 2.6mm across the chair's flank/back join). First-wins would
- * quote whichever zone the build reached first, and on the chair that can be the 2.6mm sliver for
- * a design that is really torn by 34mm. The standing pill is retracted and re-raised instead.
- *
- * `seen` is per build. Colours share it too, which is the other way one fact arrives twice: the
- * clip runs per colour and two colours can cross different torn stretches of the same boundary.
+ * One pill per design and boundary, quoting the worst tear, so not the notice list's first-wins
+ * dedupe: each side of a boundary measures its own rows (33.8mm and 2.6mm across the chair's
+ * flank/back join), and first-wins could quote 2.6mm for a design torn by 34mm.
+ * `seen` is per build and shared by colours, which can cross different torn stretches.
  */
 function raiseTornWarning(
   seen: Map<string, { message: string; tearMm: number }>,
@@ -763,19 +666,26 @@ export function mirrorClipFailedWarning(design: string, zone: string): string {
 }
 
 /**
- * The regions one design actually cuts, pushed through the zone's placer: what the overlap check
- * consults when two placed bounding boxes alone would warn about artwork that never touches.
- *
- * Post-merge, post-base: these are the palette slots' features, so a color sent to the body is
- * correctly not ink. Slots never overlap each other within one design (net regions are cut apart
- * before they are pooled), so their areas add without double counting.
- *
- * Clipped to the design's kept half and its net share exactly as the cutter is, and put through
- * the same speck floor, so two designs are compared on the ink that actually cuts. Without the
- * floor the check could name an overlap on a sliver the build then drops.
- *
- * Not the per-part boundary clip, which is the one difference: this runs once per design rather
- * than once per part, and there is no part here to take a boundary from.
+ * Rules 1 and 3 for a fill yielding to a sticker: that one color keeps the overlap, and says so.
+ * The remedy is a nudge because the failure is the clipper's, on these exact coordinates.
+ */
+export function fillYieldFailedWarning(label: string, fill: string, partName: string): string {
+  return (
+    `Couldn't fit "${label}" of "${fill}" around the design on top of it on "${partName}". ` +
+    `Where they meet, both print in the same space. Move the design on top slightly.`
+  );
+}
+
+/** Said once per color, and only when no part cuts it: covered on one part, it prints on another. */
+export function fillCoveredNotice(label: string): string {
+  return `"${label}" is hidden everywhere by the designs on top of it, so it isn't cut.`;
+}
+
+/**
+ * The regions one design actually cuts, placed: what the overlap check consults when bounding boxes
+ * alone would warn on artwork that never touches. Post-merge, post-base slot features, which never
+ * overlap within a design, so areas add. Clipped to kept half and net share, and put through the
+ * speck floor, exactly as the cutter; not the per-part boundary clip (no part here).
  */
 function placedInk(
   featuresByColor: (PolyFeature | null)[][],
@@ -785,14 +695,7 @@ function placedInk(
   netExcl: NetExclusion[] = [],
 ): InkPolygon[] {
   const out: InkPolygon[] = [];
-  for (const perArtwork of featuresByColor) {
-    const f = perArtwork[ai];
-    if (!f) continue;
-    const placed = mapFeatureCoords(f, place);
-    const half0 = half ? clipToKeptSide(placed, half).feat : placed;
-    const share = half0 && netExcl.length ? clipToNetShare(half0, netExcl).feat : half0;
-    const kept = dropUnprintableRemnants(share, CLIP_REMNANT_FLOOR_MM2).feat;
-    if (!kept) continue;
+  for (const kept of placedInkFeatures(featuresByColor, ai, place, half, netExcl)) {
     for (const rings of polysOf(kept))
       out.push(
         rings.map((r) => {
@@ -803,6 +706,27 @@ function placedInk(
           return (closed ? r.slice(0, -1) : r) as number[][];
         }),
       );
+  }
+  return out;
+}
+
+/** `placedInk` as features, one per palette slot: what a fill yields to beneath a sticker. */
+function placedInkFeatures(
+  featuresByColor: (PolyFeature | null)[][],
+  ai: number,
+  place: (pt: number[]) => number[],
+  half: KeptHalf | null,
+  netExcl: NetExclusion[],
+): PolyFeature[] {
+  const out: PolyFeature[] = [];
+  for (const perArtwork of featuresByColor) {
+    const f = perArtwork[ai];
+    if (!f) continue;
+    const placed = mapFeatureCoords(f, place);
+    const half0 = half ? clipToKeptSide(placed, half).feat : placed;
+    const share = half0 && netExcl.length ? clipToNetShare(half0, netExcl).feat : half0;
+    const kept = dropUnprintableRemnants(share, CLIP_REMNANT_FLOOR_MM2).feat;
+    if (kept) out.push(kept);
   }
   return out;
 }
@@ -830,20 +754,14 @@ function placedBBoxQuad(
 }
 
 /**
- * One word for the repeated thing throughout: "tile". Saying "copy" alongside it is two terms for
- * one concept in a single message (convention 1). Second person, per the README's voice rules.
- *
- * Shared because every fill fallback ends this way, including the extent-missing one that skips
- * the refusal switch below.
+ * One word for the repeated thing: "tile", never also "copy" (convention 1). Second person, per the
+ * README's voice. Shared by every fill fallback, including the extent-missing one past the switch.
  */
 const FILL_FELL_BACK_TO_ONE_TILE = 'You have one tile instead.';
 
 /**
- * What to tell the user when a Fill couldn't be repeated across a part, per cause.
- *
- * `tileCoverage` refuses five ways, and one shared message told everybody to raise Scale. That is
- * the remedy for two of them only. Conventions 2 and 3 of docs/ui-conventions.md: name something
- * the user can act on, one problem with one primary remedy.
+ * Per-cause message for a Fill that couldn't repeat. `tileCoverage` refuses five ways and raising
+ * Scale fixes two (docs/ui-conventions.md 2 and 3: one problem, one actionable remedy).
  */
 export function fillRefusalMessage(
   designName: string,
@@ -859,15 +777,10 @@ export function fillRefusalMessage(
         `${design} is too small to fill "${partName}": it would take more than ` +
         `${MAX_FILL_TILES} tiles. ${placed} Raise Scale to fill it with fewer, larger tiles.`
       );
-    // Two arms, because a design can be over budget at every Scale the panel offers. Telling that
-    // user to raise Scale sends them up the slider to the same warning (convention 2: name
-    // something that can be acted on). `scalable` is the caller's answer, since only it has the
-    // placer at maximum Scale.
-    //
-    // The point count is the busiest color's, not the tile's, and the wording has to say so: the
-    // tile of a four-color design holds several times what this number reports.
-    //
-    // Falls through to the default without its numbers: a limit named without them is unactionable.
+    // Two arms: a design can be over budget at every Scale the panel offers, and raising Scale
+    // would repeat the warning (convention 2). Only the caller has the placer at maximum Scale,
+    // hence `scalable`. The count is the busiest color's, not the tile's, and the wording says so.
+    // Without its numbers it falls through to the default: a limit without them is unactionable.
     case 'too-detailed':
       if (detail)
         return detail.scalable
@@ -877,6 +790,18 @@ export function fillRefusalMessage(
           : `${design} is too detailed to fill "${partName}" at any Scale. Its busiest color ` +
               `carries ${detail.points} points per tile. ${placed} Simplify the design in ` +
               'Illustrator or Inkscape.';
+      break;
+    // Not necessarily the busiest color, so it names none: a background that runs through every
+    // tile joins into one shape however few points it has.
+    case 'joins-too-big':
+      if (detail)
+        return detail.scalable
+          ? `${design} is too detailed to fill "${partName}". One of its colors joins across ` +
+              `all ${detail.tiles} tiles into one shape too big to cut. ${placed} Raise Scale ` +
+              'to fill it with fewer, larger tiles.'
+          : `${design} is too detailed to fill "${partName}" at any Scale. One of its colors ` +
+              `joins across the tiles into one shape too big to cut. ${placed} Simplify the ` +
+              'design in Illustrator or Inkscape.';
       break;
     // Not a missing viewBox: tileCellOf already falls back to the artwork bbox when the viewBox
     // isn't positive in both axes. Reaching here means the DRAWING has no extent in one direction.
@@ -896,9 +821,7 @@ export function fillRefusalMessage(
         'separate designs on it instead of filling it.'
       );
   }
-  // Reached when a refusal path forgets to name itself, or names itself without what its message
-  // needs. Says so rather than guessing a cause, since guessing wrong is what this function exists
-  // to stop.
+  // A refusal path that forgot to name itself, or its numbers: say so rather than guess a cause.
   return (
     `${design} couldn't be tiled across "${partName}", for a reason the app didn't record. ` +
     `${placed} Please report this.`
@@ -906,14 +829,9 @@ export function fillRefusalMessage(
 }
 
 /**
- * Name both designs when two of them land on top of each other.
- *
- * Nothing downstream notices: cutters are built per design, the body's union looks perfect, and
- * the two inlay solids only meet in the exported file, where a slicer picks between them
- * arbitrarily. This is the one place that sees both placements against the same zone.
- *
- * Per zone, not per part: a zone spanning several printed parts is one design area, and warnings
- * dedupe by message, so a pair overlapping on every part of it says so once.
+ * Name both designs when two land on top of each other. Nothing downstream notices: cutters are per
+ * design, the body union looks perfect, and the inlays only meet in the export, where the slicer
+ * picks arbitrarily. Per zone, not per part; warnings dedupe by message, so a pair is said once.
  */
 function warnOverlappingDesigns(placed: PlacedDesign[]): void {
   for (const [a, b] of overlappingDesignPairs(placed)) {
@@ -922,16 +840,13 @@ function warnOverlappingDesigns(placed: PlacedDesign[]): void {
       a.name === b.name ? `Two placements of "${a.name}"` : `Designs "${a.name}" and "${b.name}"`;
     warnBuild(
       both
-        ? // No move or rescale remedy, deliberately: a fill repeats across the whole face by
-          // definition, and Fill is only offered on kinds with no zones (chair-body is the only
-          // zoned kind and it sets withholdFill), so there is nowhere to move one to either.
-          // This names only what actually clears it.
+        ? // No move or rescale remedy: a fill covers the whole face, and Fill is only offered on
+          // zoneless kinds (chair-body sets withholdFill), so there is nowhere to move one.
           `${subject} are both set to Fill, so they cover each other completely. Where their` +
             ' colors differ the export will carry two inlays claiming the same space. Switch one' +
             ' to Sticker, or remove it.'
-        : // "may", not "will": the check bounds how much ink reaches the shared box rather than
-          // intersecting the two designs, so artwork that shares a box without touching still
-          // trips it (see designOverlap.ts).
+        : // "may": the check bounds ink reaching the shared box rather than intersecting, so
+          // artwork sharing a box without touching trips it (designOverlap.ts).
           `${subject} overlap. Where they cross, their recesses cut into each other and the` +
             ' export may carry two inlays claiming the same space. Move, rescale, or rotate one' +
             ' of them.',
@@ -970,7 +885,7 @@ export async function buildAssemblyGeometry(
 
   const anchorOf = (parsed: ParsedSVG) => designAnchor(parsed, isRect, noticeBuild);
 
-  // Progress split like flat.ts: net regions ~0-40%, the per-part Manifold CSG loop ~40-100%.
+  // Progress split: net regions ~0-40%, the per-part Manifold CSG loop ~40-100%.
   // `byColor` pools each artwork's regions by hex, so color detection, merging, base assignment
   // and depth all see one palette across every design in the scene.
   const perArtworkColors: Record<string, PolyFeature>[] = [];
@@ -1071,13 +986,10 @@ export async function buildAssemblyGeometry(
   }
   const { Manifold } = wasm;
 
-  // User mirrors layer on top of the zone mapper's automatic per-face correction. zMul base is -1
-  // because SVG Y runs top-down while the viewport is Z-up (keeps artwork right-side up on the
-  // face); the user's vertical flip toggles it. The mapper's placer folds these into the per-part
-  // SVG-to-face-frame map.
-  //
-  // A fill's tile is one period of the pattern: the viewBox (parsing bakes its origin out, so the
-  // cell starts at 0,0), or the artwork's bbox when the file declares no viewBox.
+  // User mirrors layer on the mapper's per-face correction. zMul base is -1 because SVG Y runs down
+  // while the viewport is Z-up; the user's vertical flip toggles it.
+  // A fill's tile is one period: the viewBox (parsing bakes its origin out, so it starts at 0,0),
+  // or the artwork bbox when no viewBox is declared.
   const tileCellOf = (parsed: ParsedSVG): TileCell => {
     const vb = parsed.viewBox;
     if (vb && vb.w > 0 && vb.h > 0) return { x: 0, y: 0, w: vb.w, h: vb.h };
@@ -1086,9 +998,8 @@ export async function buildAssemblyGeometry(
   };
   const tileCells = artworks.map((a) => tileCellOf(a.parsed));
 
-  // Points one tile of each artwork costs the union, taken over its biggest single color: the tile
-  // union runs per color, so that is what tileCoverage's ceiling applies to. Hoisted out of the
-  // part/zone loops below, which would otherwise re-walk every ring once per part per zone.
+  // Points one tile costs the union, over its biggest color: the union runs per color, which is
+  // what tileCoverage's ceiling caps. Hoisted so the part/zone loops don't re-walk every ring.
   const tileVerts = artworks.map((_a, ai) =>
     featuresByColor.reduce((n, perArtwork) => Math.max(n, featureVertexCount(perArtwork[ai])), 0),
   );
@@ -1112,15 +1023,10 @@ export async function buildAssemblyGeometry(
     };
   });
 
-  // The same placement with Scale wound to its maximum. A fill refused for detail is asked again
-  // against this one, so "raise Scale" is only offered where the panel can actually reach a grid
-  // small enough. Predicting it from the smallest grid the padding rule allows (3x3) was wrong for
-  // the band in between: a design can be over budget at every Scale the slider offers and still be
-  // under it at a hypothetical 3x3.
-  //
-  // Built on demand, and with designMmPerUnit's default no-op notice sink rather than noticeBuild:
-  // this placement is a question about a Scale the user never set, so its auto-fit notices are not
-  // theirs to see.
+  // The same placement at maximum Scale: a fill refused for detail is re-asked against it, so
+  // "raise Scale" is offered only where the slider reaches a small enough grid (predicting from the
+  // padding rule's 3x3 minimum was wrong in between). Built on demand with the no-op notice sink:
+  // auto-fit notices for a Scale the user never set are not theirs to see.
   const maxScalePlacement = (ai: number): DesignPlacement => ({
     ...placements[ai],
     mmPerUnit: designMmPerUnit(
@@ -1132,15 +1038,13 @@ export async function buildAssemblyGeometry(
     ),
   });
 
-  // Overlap is a property of a zone, not of a part, and the loop below walks zones once per part.
-  // Two designs sit the same way in every part of a zone: both placers add only a translation, a
-  // mirror and a rigid rotation, and add them to BOTH designs, so the fraction one covers of the
-  // other is part-invariant. The repeat therefore says nothing new (warnings dedupe by message),
-  // and skipping it is what keeps the ink transform off the per-part path.
+  // Overlap is per zone, and the loop walks zones once per part. Both placers add the same
+  // translation, mirror and rigid rotation to BOTH designs, so overlap is part-invariant; skipping
+  // the repeat keeps the ink transform off the per-part path.
   const overlapCheckedZones = new Set<string>();
 
-  // Per-part Manifold CSG is the heavy work (turf's is done above). Yield on the same time budget
-  // flat.ts's boolean passes use, and report per-part progress so the curtain climbs.
+  // Per-part Manifold CSG is the heavy work (turf's is done above). Yield on a time budget and
+  // report per-part progress so the curtain climbs.
   const totalParts = parts.filter((p) => p.loaded && p.boundaryLoops && p.positions).length || 1;
   let partsDone = 0;
   let lastYield = performance.now();
@@ -1159,46 +1063,35 @@ export async function buildAssemblyGeometry(
   };
 
   const partOutputs: AssemblyPartOutput[] = [];
-  // Colors an edge rule took the full thickness, and the depth taken. Said once at the end, not
-  // per part: it is one fact about the design, and a color can sit on several parts. Map, not Set,
-  // so the notice can state the actual depth.
+  // Colors an edge rule took the full thickness, with the depth. Said once at the end: one fact
+  // about the design, and a color can sit on several parts.
   const edgeCutColors = new Map<string, number>();
-  // Zero-depth raises, collected across every part for the same reason: build-wide, because the
-  // message carries no part name, and said once however many colors were raised.
+  // Zero-depth raises, build-wide: the message names no part, and is said once.
   const zeroDepthRaises = new Map<string, ZeroDepthRaise>();
-  // Same staging, for a depth clamped by a part's maxCutDepth() instead of raised from zero — see
-  // addPartTooDeepClamp. Keyed with the part name, unlike zeroDepthRaises: the bound is per-part.
+  // A part's maxCutDepth() clamp (addPartTooDeepClamp), keyed per part since the bound is.
   const tooDeepClamps = new Map<string, PartDepthClamp>();
-  // The depth actually cut per palette index, for the colour list's Depth field (display-only,
-  // docs/tech-debt.md). Keyed by palette index rather than key/label, matching every other
-  // build-wide colour map here.
+  // A thinner wall under the region: "deeper than the part goes" is false of that pocket.
+  const thinWallClamps = new Map<string, PartDepthClamp>();
+  // Depth actually cut per palette index, for the colour list's display-only Depth field
+  // (docs/tech-debt.md).
   const colorAppliedDepth = new Map<number, number>();
-  // Palette indices known to have reached some design surface: a survived boundary clip, a
-  // produced inlay (a cut-through zone has no clip boundary, its boolean bounds the cut), or any
-  // CSG failure involving the color, so a color lost to a broken boolean is never also told to
-  // move. Only colors that provably reached nothing get the off-part warning at the end.
+  // Palette indices that reached a design surface: a survived clip, an inlay (a cut-through zone's
+  // boolean is its bound), or any CSG failure on the color, so a broken boolean never also says
+  // "move it". Only colors that provably reached nothing get the off-part warning.
   const landedColors = new Set<number>();
-  // Of those, the ones that reached a design surface and were kept out only by hidden surface. Why
-  // a color cut nothing decides which warning it gets at the end, and the two causes have opposite
-  // remedies: bring the design back onto the part, or move it off surface the assembly covers.
+  // Of those, kept out only by hidden surface: the opposite remedy (move it off covered surface,
+  // not back onto the part).
   const hiddenColors = new Set<number>();
+  // A fill color left with nothing once it yielded to the stickers on top, and every color that
+  // reached a cutter. The first minus the second is a color the stickers hide everywhere.
+  const coveredColors = new Set<number>();
+  const exposedColors = new Set<number>();
   /**
-   * Record a color whose placed region reached this zone's hidden surface, and nothing else.
-   *
-   * Dead surface is baked inside the chart's own claim, so an overlap proves the region landed on
-   * surface this part really carries and only the dead subtraction kept it out — which is exactly
-   * "the pre-clip boundary would have admitted it", without asking the mapper for a second
-   * boundary. A design thrown off the part overlaps nothing and never reaches here.
-   *
-   * The one place a color is attributed to hidden surface. Reached from the single exit below
-   * where the clip leaves nothing, so what it probes is always the region the build really placed,
-   * tiles and all.
-   *
-   * intersectQuiet, not either safeIntersect: this is a probe, and both of those are wrong for one
-   * in opposite ways — the fallback hands the region back UNCLIPPED, which reads as an overlap for
-   * every color, and the checked variant warns the user that a region was left unclipped, about an
-   * intersect that shaped no geometry. A flaked boolean therefore leaves the color unattributed
-   * and it takes the off-the-part message, which is the one that shipped before either existed.
+   * The one place a color is attributed to hidden surface: its placed region (tiles and all)
+   * reached only this zone's dead surface. Dead surface is baked inside the chart's claim, so an
+   * overlap proves the pre-clip boundary would have admitted it. intersectQuiet, not safeIntersect
+   * (returns UNCLIPPED, an overlap for every color) nor the checked variant (warns about an
+   * intersect that shaped nothing). A flake takes the off-part message.
    */
   const noteHiddenSurface = (mapper: ZoneMapper, placed: PolyFeature | null, ci: number): void => {
     const dead = mapper.deadArea();
@@ -1207,12 +1100,9 @@ export async function buildAssemblyGeometry(
   };
 
   /**
-   * Drop the pieces of a clipped region too small to print, say so once per colour and part
-   * however many of the three clips leave one, and record that the colour did reach this face.
-   *
-   * All three together on purpose: an earlier version did the drop at three sites and the landed
-   * mark at one, which left a colour collecting both the speck notice and "lands entirely off the
-   * part" — whose remedy is to lower Scale, backwards for a design already too small.
+   * Drop specks too small to print, notice once per colour and part across all three clips, and
+   * mark the colour landed — together, so no colour gets both the speck notice and "lands entirely
+   * off the part" (whose lower-Scale remedy is backwards for a design already too small).
    */
   const dropSpecks = (
     feat: PolyFeature | null,
@@ -1226,10 +1116,7 @@ export async function buildAssemblyGeometry(
       unprintableSpeckNotice(regionLabel(c.hex, c.isMerge, c.members.length), part.name),
       speckKey(ci, part.id),
     );
-    // The color DID reach this face; what it left could not print. Recording that here, in the one
-    // place the drop happens, is what keeps it out of the "lands entirely off the part" bucket at
-    // every clip rather than only the first — whose remedy is to lower Scale, backwards for a
-    // design already too small. An earlier version set it at one of the three sites.
+    // The color DID reach this face; what it left could not print.
     landedColors.add(ci);
     return r.feat;
   };
@@ -1240,14 +1127,10 @@ export async function buildAssemblyGeometry(
     if (!part.loaded || !part.boundaryLoops || !part.positions) continue;
     throwIfCancelled();
 
-    // Every design surface this part takes artwork on: one implicit flat zone for an ordinary
-    // part, or a sidecar kind's baked conformal charts (possibly none, for a structural piece).
-    // The mapper owns all surface geometry: face direction, face-plane Y or UV chart, boundary
-    // clip, cut-through depth, placement. Cutters from every zone union into the single CSG pass
-    // below, so a multi-zone part is still cut exactly once.
-    //
-    // Placement is still global, so a multi-zone part receives the SAME artwork on each zone.
-    // Per-zone artwork is the artwork-instance work (state.artworks already models it).
+    // One implicit flat zone, or a sidecar kind's baked conformal charts (possibly none). The
+    // mapper owns all surface geometry; every zone's cutters union into one CSG pass, so a part is
+    // cut once. Placement is still global, so a multi-zone part receives the SAME artwork on each
+    // zone. Per-zone artwork is the artwork-instance work (state.artworks already models it).
     const mappers = zoneMappersFor(part, parts, isRect, wasm);
 
     if (!part.zones) {
@@ -1265,11 +1148,9 @@ export async function buildAssemblyGeometry(
       viewSignSet = true;
     }
 
-    // Every Manifold solid this part allocates, freed by the one finally at the end of the body.
-    // A Set because a solid is registered where it is created and the union/cut steps hand the
-    // same handle on, and because it is what lets throwIfCancelled be called anywhere below: with
-    // solids freed per branch instead, a cancel mid-cut leaked WASM that repeated cancelling
-    // accumulated, so the check could only sit where nothing was allocated.
+    // Every Manifold solid this part allocates, freed by the finally below. A Set because steps
+    // hand the same handle on; freeing per branch leaked WASM on each mid-cut cancel, so this is
+    // what lets throwIfCancelled sit anywhere.
     const held = new Set<ManifoldSolid>();
     try {
       // A color can be cut on several zones of one part, so each collects a list of solids that is
@@ -1286,42 +1167,29 @@ export async function buildAssemblyGeometry(
         half: KeptHalf | null,
         netExcl: NetExclusion[],
         zoneName: string,
-        grid: TileGrid | null,
+        fills: (PolyFeature | null)[] | null,
+        under: PolyFeature[],
         c: AssemblyPaletteEntry,
         ci: number,
         ai: number,
-        onProgress: (fraction: number) => void,
       ): Promise<void> => {
-        const source = featuresByColor[ci][ai];
-        if (!source) return;
-        // Fill: repeat the regions across the grid *in SVG space*, before placement, so tiles
-        // inherit the placement's rotation/scale/offset and seam-straddling copies overlap where the
-        // union can weld them.
-        const tiled = grid
-          ? await tileFeature(source, grid, onProgress, `color ${c.hex} on ${part.name}`)
-          : source;
+        const tiled = fills ? fills[ci] : featuresByColor[ci][ai];
         if (!tiled) return;
         let feat: PolyFeature | null = mapFeatureCoords(tiled, place);
-        // Whether the region really is bounded by the face. On a clipper failure safeIntersect hands
-        // the region back *unclipped*, and the edge rule reads "reaches past the face boundary" as
-        // "stands on the part's outer wall": an unclipped region would read as all-edge and cut
-        // clean through instead of recessed. Tracked rather than assumed; see the mapper.
+        // On a clipper failure safeIntersect returns the region *unclipped*, which the edge rule
+        // reads as all-edge and cuts clean through instead of recessed. Tracked, not assumed.
         let clipped = true;
         if (boundaryPoly) {
           const placed = feat;
-          // A boundary that admits nothing (the empty MultiPolygon: every bit of surface this
-          // chart owns is hidden once assembled) takes this same clip and comes back empty, so it
-          // needs no branch of its own. It had one, taken before tiling to save a fill's union pass
-          // over a chart that would discard every tile. That branch attributed off the UNTILED
-          // source, which is not the region the build places, and no bake reaches it: tests/
-          // chair-zones.test.ts ("no shipped chart is hidden outright") pins that every chart's
-          // boundary still admits area. Worth restoring against a bake that fails it, not before.
+          // An all-hidden chart (empty MultiPolygon boundary) comes back empty here, no branch
+          // needed. A pre-tiling skip would save a fill's union pass but attributed off the UNTILED
+          // source; restore it only for a bake that fails tests/chair-zones.test.ts ("no shipped
+          // chart is hidden outright").
           const r = safeIntersectChecked(feat, boundaryPoly, `color ${c.hex} on ${part.name}`);
           feat = r.feat;
           clipped = r.clipped;
-          // Before the speck floor, not after: a clip that returns nothing at all is the colour
-          // landing on hidden surface, and that has its own message with its own remedy. Dropping
-          // specks first would report it as ink too small to print, which is a different thing.
+          // Before the speck floor: a clip returning nothing is hidden surface, with its own
+          // remedy, not ink too small to print.
           if (!feat) {
             noteHiddenSurface(mapper, placed, ci);
             return;
@@ -1330,9 +1198,8 @@ export async function buildAssemblyGeometry(
           // this clip leaves a hairline rather than nothing. See dropUnprintableRemnants.
           feat = dropSpecks(feat, ci, part, c);
           if (!feat) return;
-          // Only a real clip proves the color reached this face. A cut-through zone has no clip
-          // boundary (its boolean against the mesh is what bounds the cut), so there a color counts
-          // as landed only when that boolean yields an inlay, in the intersection loop below.
+          // Only a real clip proves the color reached this face; a cut-through zone counts it when
+          // its boolean yields an inlay, below.
           landedColors.add(ci);
         }
         // After the boundary clip, so what the notice reports lost is surface this part cuts.
@@ -1348,27 +1215,19 @@ export async function buildAssemblyGeometry(
           feat = dropSpecks(r.feat, ci, part, c);
           if (!feat) return;
         }
-        // A whole-part design is cut where the net says this zone owns the canvas, and nowhere
-        // else: two sheets can lie over each other, and without this the same mark would be cut on
-        // both. Nothing is lost — the zone that owns the patch cuts it, and this zone's own
-        // per-zone binding still reaches it — so this says where the ink went rather than warning.
-        //
-        // The decision behind it (2026-09-05): the alternative was to leave the sheets overlapping,
-        // measured and hatched, and let a mark near the flank/back join print in two places. It
-        // measured 8,730 and 8,226mm² of doubled canvas on the chair, right where a design's centre
-        // lands, so the canvas is partitioned instead. (What the flanks end up yielding is smaller,
-        // 8,668 and 8,158mm²: a sheet only yields canvas the sheet taking it can actually chart.)
+        // A whole-part design is cut only where the net says this zone owns the canvas, or a mark
+        // where sheets overlap cuts on both. Nothing is lost (the owner cuts it; a per-zone binding
+        // still reaches it), so this is a notice. Decided 2026-09-05: overlap left in measured
+        // 8,730 and 8,226mm² of doubled canvas on the chair, where designs centre. The flanks yield
+        // 8,668 and 8,158mm²: a sheet only yields canvas the sheet taking it can chart.
         if (netExcl.length) {
           const r = clipToNetShare(feat, netExcl);
           const design = artworks[ai].name || 'design';
-          // Both, not one or the other: a zone can yield canvas to two neighbours (the chair's back
-          // yields to each flank), so one call can fail on one patch and move ink on another, and
-          // each half of that is a thing the user has to be told on its own.
+          // Both: a zone can yield to two neighbours (the chair's back to each flank), failing on
+          // one patch and moving ink on another.
           if (r.failed) warnBuild(netShareFailedWarning(design, zoneName));
           if (r.movedTo.length) noticeBuild(netShareNotice(design, zoneName, r.movedTo));
-          // The notice above says where the ink went; this says the two halves will not line up.
-          // Both, because they are different facts: the move is right and the result still isn't.
-          // One pill per boundary however many zones, colors and directions reach it.
+          // A separate fact: the move is right, the halves won't line up. One pill per boundary.
           for (const t of r.torn)
             raiseTornWarning(tornPills, design, [zoneName, t.toName], t.tearMm);
           // The net partition is cut from the same charts, so its patch boundaries coincide with
@@ -1376,157 +1235,137 @@ export async function buildAssemblyGeometry(
           feat = dropSpecks(r.feat, ci, part, c);
           if (!feat) return;
         }
+        // A fill is background, so it yields to every sticker on the zone, or differing colors
+        // export two inlays in one volume. One sweep per color and part: 0.3-0.6s of a wheel build
+        // (`yield ms`, scripts/bench-fill-yield.ts). Chair unmeasured.
+        if (under.length) {
+          const r = differenceAllChecked(feat, under);
+          if (!r.trimmed)
+            warnBuild(
+              fillYieldFailedWarning(
+                regionLabel(c.hex, c.isMerge, c.members.length),
+                artworks[ai].name || 'design',
+                part.name,
+              ),
+            );
+          if (!r.feat) {
+            // Landed for a cut-through part too, which has no clip to have said so: the color is
+            // under a sticker, not off the part, and the off-part warning's remedy would be wrong.
+            landedColors.add(ci);
+            coveredColors.add(ci);
+            return;
+          }
+          // A sticker edge crossing a stripe leaves a tip often under the speck floor (0.12mm² in
+          // tests/fill-yield.test.ts). Unfloored with no boundary: that region still reaches off
+          // the part. Exposed before the floor: a color left only a speck still reached this face.
+          exposedColors.add(ci);
+          feat = boundaryPoly ? dropSpecks(r.feat, ci, part, c) : r.feat;
+          if (!feat) return;
+        }
+        exposedColors.add(ci);
         const requested = requestedDepth(colorSettings, globalDepth, c.key);
-        // A depth at or below zero cuts nothing and used to drop the color silently, deleting its
-        // color-list row and with it the depth field needed to fix it. Raise to a printable depth so
-        // the color stays on screen and stays fixable.
-        //
-        // The message reports the *setting* it raised, not the cut produced: what a part does with a
-        // depth is the mapper's business. Naming a cut depth here claimed 0.02 mm on a 3 mm
-        // through-cut. No part name either, so a color on both halves of a wheel is named once.
+        // A depth at or below zero cuts nothing and used to drop the color and its depth field
+        // silently; raised so it stays fixable. The message names the *setting*, not the cut (a cut
+        // depth claimed 0.02 mm on a 3 mm through-cut), and no part, so a wheel says it once.
         const raised = requested <= 0 ? MIN_CUT_DEPTH_MM : requested;
-        // And bounded above by how far this part actually extends behind its design face. Without
-        // this, assembly mode had no upper bound at all: 20 mm and 9999 mm on the wheel both built
-        // and exported with no warning, while flat mode clamped and warned for the same input, and
-        // depth.ts's own comment claimed both did. The flat modes then left the UI, making the
-        // unbounded path the only one a user can reach.
-        //
-        // **Not a wall-thickness check.** A recess shallower than this can still break through a
-        // thin wall; measuring that is still owed (docs/tech-debt.md). This bounds the absurd.
+        // Bounded by how far the part extends behind its face (unbounded, 20 mm and 9999 mm both
+        // exported unwarned on the wheel); resolveCutRegions also bounds each region by its wall.
         const depthSetting = Math.min(raised, mapper.maxCutDepth());
         const label = regionLabel(c.hex, c.isMerge, c.members.length);
-        // One entry per depth this zone wants, each carrying the slice cut at it, usually just one.
-        // An edge rule (a hubcap cut to its artwork's shape) splits the region into polygons
-        // standing on the outer wall, cut full thickness, and the rest, cut at the setting. The
-        // mapper owns that decision; this loop just extrudes what it is handed.
+        // One entry per depth, usually one. An edge rule (a hubcap cut to its artwork's shape)
+        // splits off full-thickness polygons on the outer wall; the mapper decides, this extrudes.
         const regions = mapper.resolveCutRegions(feat, depthSetting, {
           label: `color ${label}`,
           clipped,
         });
-        // Whether any region actually landed at depthSetting, rather than at a depth the mapper
-        // substituted for it (a cut-through part's fixed hole, an edge-rule full-thickness slice).
-        // Computed once and shared by the three readers below — the colour-list depth, the
-        // too-deep pill, and the thin-depth note — so they cannot silently disagree about what was
-        // cut, the failure CLAUDE.md's shared-value rule exists to catch (`some`, not `every`,
-        // because a split color is cut at two depths at once and only the matching slice counts).
+        // Whether any slice landed at depthSetting, not a substituted depth (cut-through hole, edge
+        // slice). Shared by the colour-list depth, too-deep pill and thin-depth note so they cannot
+        // disagree; `some`, because a split color cuts at two depths at once.
         const landedAtSetting = regions.some((r) => !depthDiffers(r.depth, depthSetting));
-        // The depth the colour list's Depth field shows, display-only (docs/tech-debt.md): gated
-        // the same way, so a cutThrough or all-edge part (which discards depthSetting entirely)
-        // never reports a recess it did not cut. The minimum across parts/zones, so a colour
-        // landing on two parts at two depths shows the more-clamped one rather than whichever ran
-        // last.
-        if (landedAtSetting) {
+        // A slice the wall under it cut shallower is still the setting, bounded, so the colour list
+        // shows it the same way it shows the part bound.
+        const wallCuts = regions.filter((r) => r.wall != null);
+        const wallDepths = wallCuts.map((r) => r.depth);
+        // The colour list's display-only Depth (docs/tech-debt.md), gated the same way so a
+        // cutThrough or all-edge part never reports a recess it did not cut. Minimum across
+        // parts/zones, so two depths show the more-clamped one, not whichever ran last.
+        if (landedAtSetting || wallDepths.length) {
+          const cut = Math.min(landedAtSetting ? depthSetting : Infinity, ...wallDepths);
           const prev = colorAppliedDepth.get(ci);
-          colorAppliedDepth.set(ci, prev == null ? depthSetting : Math.min(prev, depthSetting));
+          colorAppliedDepth.set(ci, prev == null ? cut : Math.min(prev, cut));
         }
+        for (const r of wallCuts)
+          addPartTooDeepClamp(thinWallClamps, label, part.name, raised, r.depth, r.wall);
         if (requested <= 0) addZeroDepthRaise(zeroDepthRaises, label, requested, depthSetting);
-        // Gated on what the mapper did with the number, exactly like the sub-layer note below, and
-        // for the same reason: a cutThrough part discards the setting and holes the whole way
-        // through, so "it was cut at 24.25 mm instead" would be false there. Never test
-        // `part.cutThrough` here.
-        // A rotated copy reports like any other part. It shares its source's bound by construction
-        // (asmAddDuplicate hands it the same mesh, face and topZ), but its placer maps a different
-        // slice of the artwork onto that face, so *which* colors reach the bound differs — and
-        // skipping copies left a color landing only on the copy with a "cut at" depth in its
-        // color-list row that no warning named. Copies were skipped to stop one pill per color per
-        // half; addPartTooDeepClamp's grouping is what holds that down now, though only per
-        // requested depth — colors sharing a depth setting collapse to one pill per half, and
-        // per-color overrides in the color list still split.
+        // Gated on what the mapper did, like the sub-layer note: a cutThrough part holes the whole
+        // way, so "cut at 24.25 mm instead" would be false. Never test `part.cutThrough` here.
+        // Rotated copies report too: same bound (asmAddDuplicate shares mesh, face, topZ) but a
+        // different slice, so skipping them left a copy-only color's "cut at" depth unnamed.
+        // addPartTooDeepClamp groups colors sharing a setting to one pill per half; per-color
+        // overrides still split.
         else if (depthDiffers(depthSetting, raised) && landedAtSetting)
           addPartTooDeepClamp(tooDeepClamps, label, part.name, raised, depthSetting);
-        // The warning above describes the setting and holds wherever the color lands. This one
-        // predicts the printed recess, so it must not be said about a part that discards the setting
-        // and cuts the whole way through: "too thin to show up" is wrong about a 3 mm hole. Ask the
-        // mapper what it did with the number; never test `part.cutThrough` here.
-        //
-        // Warnings dedupe by message, so gating per-part is right when a color sits on several: the
-        // note appears if any part cuts at the setting, and stays silent if none do.
-        //
-        // noticeBuild, not warnBuild: the depth is honored, not overridden. Promoting it was
-        // proposed and rejected, see thinDepthNotice in depth.ts.
+        // This one predicts the printed recess, so not on a part that cuts through ("too thin to
+        // show up" is wrong about a 3 mm hole); ask the mapper, never `part.cutThrough`. Per-part
+        // gating is right since warnings dedupe: said if any part cuts at the setting. A notice:
+        // the depth is honored (see thinDepthNotice in depth.ts).
         else if (subLayerDepth(depthSetting) && landedAtSetting)
           noticeBuild(thinDepthNotice(label, depthSetting));
         // Only the refinement differs for a fill (a zone-wide cutter would explode at the sticker
         // step); the snap tolerance is a property of the bake, so both modes take the same one.
-        const cutterOpts = grid ? { refineMM: FILL_REFINE_MM } : undefined;
-        // Each slice becomes its own prism, landing in the colorPrisms[ci] list the multi-zone case
-        // already fills, so the union below welds them into one solid per color.
-        //
-        // The edge notice promises the rim prints in this color, so it is staged per *part* and
-        // merged build-wide only once this part emits inlays. Every later failure (the per-color
-        // union, the body difference) returns early without merging, so the promise can't outlive
-        // the geometry. Recording build-wide put "the rim prints in that color" next to "exporting
-        // it uncut".
+        const cutterOpts = fills ? { refineMM: FILL_REFINE_MM } : undefined;
+        // Each slice is its own prism in colorPrisms[ci]; the union below welds them per color.
+        // Edge colors stage per *part* and merge only once it emits inlays, so "the rim prints in
+        // that color" can't outlive a later failure that exports it uncut.
         const keep = (man: ManifoldSolid, region: CutRegion): void => {
           held.add(man);
           (colorPrisms[ci] ||= []).push(man);
           if (region.edge) partEdgeColors.set(label, region.depth);
         };
+        // Null for "no solid", whichever step failed: a flat mapper hands back a prism that will
+        // not seal, while a conformal one tests its own prism before warping and returns null
+        // instead. Both mean the same thing to the repair below, so both reach it.
+        const solidFor = (feat: PolyFeature | null, depth: number): ManifoldSolid | null => {
+          const soup = feat && mapper.buildCutter(feat, depth, OVERSHOOT_MM, cutterOpts);
+          if (!soup || !soup.length) return null;
+          const man = soupToManifold(wasm, soup);
+          if (manifoldIsValid(man)) return man;
+          // Freed: an un-watertight soup comes back as an *empty* solid, not a throw, so this is
+          // the common path, and it never reaches `held`. The ladder can discard one per rung.
+          manifoldDelete(man);
+          return null;
+        };
         for (const region of regions) {
-          const soup = mapper.buildCutter(region.feat, region.depth, OVERSHOOT_MM, cutterOpts);
-          if (soup && soup.length) {
-            try {
-              const man = soupToManifold(wasm, soup);
-              // Freed rather than dropped: an un-watertight soup comes back as an *empty* solid
-              // rather than a throw, so this is the common path here, and a discarded solid is WASM
-              // memory that never reaches `held`. The ladder below can discard one per rung.
-              if (!manifoldIsValid(man)) {
-                manifoldDelete(man);
-                throw new Error('empty manifold');
-              }
-              keep(man, region);
-              continue;
-            } catch {
-              /* retry below with self-intersections repaired */
-            }
-            // Clipping dense line-work to the part boundary can leave the region self-touching:
-            // valid to turf, non-watertight to Manifold. Repair with Manifold's own 2D boolean
-            // engine and retry, widening the erode when the narrow one does not clear it.
-            //
-            // The ladder is the fix for a real failure rather than defensive retrying: a gravel
-            // photograph on the wheel put eleven regions through here, and one of them needed the
-            // wider distance. Ordered smallest first so a region that repairs at 0.01mm never pays
-            // the extra geometry loss, and it stops well inside what a nozzle can resolve.
-            //
-            // An edge slice stands on the part's outer wall and `keep` records it in
-            // `partEdgeColors` as "the rim prints in this color". Eroding it pulls it off that rim
-            // and leaves a rind of body material, so the wider rungs are withheld there: an edge
-            // slice gets the original single attempt and warns exactly as it did before.
-            let repairedOk = false;
-            const rungs = region.edge ? REPAIR_ERODE_MM.slice(0, 1) : REPAIR_ERODE_MM;
-            // No notice when a wider rung is used. An inward offset of `e` removes only what is
-            // thinner than `2e`, so the 0.05mm rung cannot touch anything wider than a quarter of a
-            // 0.4mm nozzle: nothing printable is at stake. An earlier version raised one, and its
-            // test could never be false because an erode is monotone, so it fired on every
-            // escalation. See docs/findings/2026-08-20-extrude-repair-erode.md.
-            for (const erodeMm of rungs) {
-              try {
-                const repaired = repairSelfIntersections(wasm, region.feat, erodeMm);
-                const soup2 =
-                  repaired && mapper.buildCutter(repaired, region.depth, OVERSHOOT_MM, cutterOpts);
-                if (soup2 && soup2.length) {
-                  const man2 = soupToManifold(wasm, soup2);
-                  if (manifoldIsValid(man2)) {
-                    keep(man2, region);
-                    repairedOk = true;
-                    break;
-                  }
-                  manifoldDelete(man2);
-                }
-              } catch {
-                /* try the next distance, then warn */
-              }
-            }
-            if (repairedOk) continue;
+          let man: ManifoldSolid | null = null;
+          try {
+            man = solidFor(region.feat, region.depth);
+          } catch {
+            /* retry below with self-intersections repaired */
           }
-          // The artwork survived the boundary clip but no cutter came out. On a conformal zone the
-          // warp found no surface under part of the region (usually a baked boundary claiming more
-          // area than the chart covers); on a flat one, a region too degenerate to extrude. Same
-          // user-facing outcome as a cutter that fails to become a solid, so they share this message
-          // (warnings dedupe by text). Silence would drop the color with no explanation.
-          //
-          // `continue`, not `return`: a color split across two depths must not lose its interior
-          // recess because the edge slice failed to extrude, or the other way round.
+          // Clipped dense line-work can self-touch: valid to turf, not watertight to Manifold.
+          // Repair with Manifold's 2D booleans and retry, widening the erode: a gravel photo on the
+          // wheel put eleven regions here and one needed the wider rung. Smallest first, so a
+          // region repairing at 0.01mm pays no extra loss. An edge slice gets only the narrowest:
+          // eroding pulls it off the rim `keep` promises it prints on, leaving a rind of body.
+          const rungs = region.edge ? REPAIR_ERODE_MM.slice(0, 1) : REPAIR_ERODE_MM;
+          // No notice on a wider rung: an inward offset of `e` removes only what is thinner than
+          // `2e`, so 0.05mm touches nothing over a quarter of a 0.4mm nozzle. (A notice's test was
+          // always true, erode being monotone.) docs/findings/2026-08-20-extrude-repair-erode.md.
+          for (const erodeMm of rungs) {
+            if (man) break;
+            try {
+              man = solidFor(repairSelfIntersections(wasm, region.feat, erodeMm), region.depth);
+            } catch {
+              /* try the next distance, then warn */
+            }
+          }
+          if (man) {
+            keep(man, region);
+            continue;
+          }
+          // Survived the clip, but no cutter came out, repaired or not: too degenerate to extrude,
+          // or a conformal warp with no surface under it (usually a baked boundary over-claiming).
+          // `continue`, so a color split across two depths keeps the slice that did extrude.
           landedColors.add(ci);
           warnBuild(`Couldn't cut color ${c.hex} into "${part.name}".`);
         }
@@ -1539,7 +1378,14 @@ export async function buildAssemblyGeometry(
       // +1 reserved for the body/inlay CSG stage below, so progress reaches 1 only once every color
       // on every zone plus the final cuts are done.
       const zoneWork = mappers.map(artworksOn);
-      const partUnits = palette.length * zoneWork.reduce((s, l) => s + l.length, 0) + 1;
+      // A fill's colors take two units each, one to tile and one to cut.
+      const partUnits =
+        palette.length *
+          zoneWork.reduce(
+            (s, l) => s + l.reduce((n, ai) => n + (artworks[ai].mode === 'fill' ? 2 : 1), 0),
+            0,
+          ) +
+        1;
       let unitsDone = 0;
       for (let zi = 0; zi < mappers.length; zi++) {
         const mapper = mappers[zi];
@@ -1566,6 +1412,24 @@ export async function buildAssemblyGeometry(
           overlapCheckedZones.add(mapper.zoneId ?? '');
         }
         const boundaryPoly = mapper.boundary();
+        // What every fill on this zone yields to: each sticker's ink, placed as it is cut. Only
+        // built when a fill shares the zone with one. A fill never yields to another fill; that
+        // pairing is warned instead (warnOverlappingDesigns).
+        const stickersHere = zoneWork[zi].filter((ai) => artworks[ai].mode !== 'fill');
+        const fillHere = zoneWork[zi].some((ai) => artworks[ai].mode === 'fill');
+        const under =
+          stickersHere.length && fillHere
+            ? stickersHere.flatMap((ai) => {
+                const place = mapper.placer(placements[ai]);
+                return placedInkFeatures(
+                  featuresByColor,
+                  ai,
+                  place,
+                  keptHalfFor(mapper, artworks[ai], place, zoneName),
+                  artworks[ai].netBound ? mapper.netExcluded() : [],
+                );
+              })
+            : [];
         for (const ai of zoneWork[zi]) {
           anyPlacements = true;
           const place = mapper.placer(placements[ai]);
@@ -1575,54 +1439,109 @@ export async function buildAssemblyGeometry(
           // (a chart with no extent), and still a doubled cut nobody asked for, so it is named.
           if (artworks[ai].keepSide && !half)
             warnBuild(mirrorClipFailedWarning(artworks[ai].name || 'design', zoneName));
-          // One grid per (zone, artwork): every color of a fill repeats identically, so the
-          // inverted-placement coverage math runs once, not per palette slot. A fill that can't be
-          // tiled degrades to a single copy plus a warning rather than an empty part.
-          let grid: TileGrid | null = null;
-          if (artworks[ai].mode === 'fill') {
-            const extent = mapper.fillExtent();
-            if (!extent) {
-              warnBuild(
-                `Couldn't measure the area to fill on "${part.name}", so "${artworks[ai].name || 'design'}" ` +
-                  `can't be tiled across it. ${FILL_FELL_BACK_TO_ONE_TILE} Please report this.`,
+          // One grid per (zone, artwork): every color repeats identically. An untileable fill
+          // degrades to one copy plus a warning, not an empty part.
+          const fill = artworks[ai].mode === 'fill';
+          const extent = fill ? mapper.fillExtent() : null;
+          // Named per design: both remedies reach only the ACTIVE design and warnings dedupe on the
+          // string, so two designs failing alike would be one pill naming neither. Two placements
+          // of the SAME design still collapse (that needs warnOverlappingDesigns's counted
+          // phrasing). `fits`: would the max-Scale grid clear the limit that refused? Asked of the
+          // same refusal path, so the remedy can't drift from how a grid is laid.
+          const refuseFill = (
+            refusal: TileRefusalReport,
+            fits: (maxGrid: TileGrid) => boolean = () => true,
+          ): void => {
+            const maxGrid =
+              extent &&
+              tileCoverage(
+                mapper.placer(maxScalePlacement(ai)),
+                tileCells[ai],
+                extent,
+                tileVerts[ai],
               );
-            } else {
-              const refusal: TileRefusalReport = {};
-              grid = tileCoverage(place, tileCells[ai], extent, tileVerts[ai], refusal);
-              // Named per design, not just per part: a part can carry several, both remedies write
-              // fit state reaching only the ACTIVE one, and warnings dedupe on the exact string. Two
-              // designs failing the same way would otherwise become one pill pointing at neither.
-              // Two placements of the SAME design still collapse, since they share a name; splitting
-              // those needs warnOverlappingDesigns's counted phrasing, which nothing asks for yet.
-              if (!grid)
-                warnBuild(
-                  fillRefusalMessage(
-                    artworks[ai].name || 'design',
-                    part.name,
-                    refusal.reason,
-                    refusal.detail && {
-                      ...refusal.detail,
-                      // Asked, not derived: the same refusal path answers it, so a future change to
-                      // how a grid is laid can't leave the remedy behind.
-                      scalable: !!tileCoverage(
-                        mapper.placer(maxScalePlacement(ai)),
-                        tileCells[ai],
-                        extent,
-                        tileVerts[ai],
-                      ),
-                    },
-                  ),
-                );
+            warnBuild(
+              fillRefusalMessage(
+                artworks[ai].name || 'design',
+                part.name,
+                refusal.reason,
+                refusal.detail && { ...refusal.detail, scalable: !!maxGrid && fits(maxGrid) },
+              ),
+            );
+          };
+          let grid: TileGrid | null = null;
+          if (fill && !extent) {
+            warnBuild(
+              `Couldn't measure the area to fill on "${part.name}", so "${artworks[ai].name || 'design'}" ` +
+                `can't be tiled across it. ${FILL_FELL_BACK_TO_ONE_TILE} Please report this.`,
+            );
+          } else if (extent) {
+            const refusal: TileRefusalReport = {};
+            grid = tileCoverage(place, tileCells[ai], extent, tileVerts[ai], refusal);
+            if (!grid) refuseFill(refusal);
+          }
+          // Every color tiles before any is cut: one untileable color sends the whole design back
+          // to one copy, and partial tiling lands colors out of register. Tiled *in SVG space*, so
+          // tiles inherit placement and seam-straddling copies overlap where the union welds them.
+          const unitsBefore = unitsDone;
+          // Every call ahead takes the whole of one color's fill beside one of these: the face, the
+          // kept half, each patch another zone owns, and every sticker it gives way to at once.
+          const clipSets: PolyFeature[][] = [
+            boundaryPoly ? [boundaryPoly] : [],
+            half ? [half.clip] : [],
+            ...netExcl.flatMap((e) => (e.region ? [[e.region]] : [])),
+            under,
+          ];
+          const warnedBefore = warningMark();
+          let fills: (PolyFeature | null)[] | null = null;
+          let tiling = -1;
+          if (grid) {
+            try {
+              fills = [];
+              for (let ci = 0; ci < palette.length; ci++) {
+                tiling = ci;
+                throwIfCancelled();
+                const source = featuresByColor[ci][ai];
+                const base = unitsDone;
+                const tiled = source
+                  ? await tileFeature(
+                      source,
+                      grid,
+                      (f) => reportPartProgress((base + f) / partUnits),
+                      `color ${palette[ci].hex} on ${part.name}`,
+                    )
+                  : null;
+                // Those calls can split a fill between its polygons but never inside one.
+                if (tiled && !clipSets.every((clips) => fitsBesideClips(tiled, clips)))
+                  throw new UnionTooBig();
+                fills.push(tiled);
+                reportPartProgress(++unitsDone / partUnits);
+                await maybeYield();
+              }
+            } catch (e) {
+              if (!(e instanceof UnionTooBig)) throw e;
+              fills = null;
+              // What tiling said about colors already tiled is about tiles now thrown away.
+              dropBuildWarningsSince(warnedBefore);
+              // The shape that joined can't be bigger than every tile's copy of its color, so a
+              // grid whose copies fit is one where Scale is a real remedy. It has to be a smaller
+              // grid as well: the engine's crossing limit can refuse copies that fit.
+              const points = featureVertexCount(featuresByColor[tiling][ai]);
+              const tiles = grid.count;
+              refuseFill(
+                { reason: 'joins-too-big', detail: { tiles, points } },
+                (maxGrid) =>
+                  maxGrid.count < tiles &&
+                  clipSets.every((clips) => maxGrid.count * points <= roomBesideClips(clips)),
+              );
             }
           }
+          // A fill that never tiled still owes the progress its tiling units would have reported.
+          if (fill && !fills) unitsDone = unitsBefore + palette.length;
           for (let ci = 0; ci < palette.length; ci++) {
-            // Per colour, not per part. The part-loop check above leaves cancel latency at one
-            // whole part, which on a 6000-region wheel was measured at 140.4s with the button
-            // reading "Cancelling…" the entire time (2026-08-24 cycle, T0-7). A colour is the
-            // finest boundary where nothing is half-built: buildColorPrism either pushed a cutter
-            // into colorPrisms or it did not.
+            // Per colour: per-part checks left cancel latency at 140.4s on a 6000-region wheel
+            // (2026-08-24 cycle, T0-7). A colour is the finest unit where nothing is half-built.
             throwIfCancelled();
-            const base = unitsDone;
             await buildColorPrism(
               mapper,
               boundaryPoly,
@@ -1630,11 +1549,11 @@ export async function buildAssemblyGeometry(
               half,
               netExcl,
               zoneName,
-              grid,
+              fills,
+              artworks[ai].mode === 'fill' ? under : [],
               palette[ci],
               ci,
               ai,
-              (f) => reportPartProgress((base + f) / partUnits),
             );
             reportPartProgress(++unitsDone / partUnits);
             await maybeYield();
@@ -1645,9 +1564,8 @@ export async function buildAssemblyGeometry(
       // Per color: the union of its cutters across every zone.
       const prismEntries: [number, ManifoldSolid][] = [];
       for (const [ci, list] of Object.entries(colorPrisms)) {
-        // Past the cutter loop a part is one atomic Manifold call after another, so this check,
-        // the one before the difference and the one in the inlay loop are the finest boundaries
-        // left in it. They are safe only because of the finally above.
+        // Past the cutter loop each step is one atomic Manifold call; this check and the next two
+        // are the finest boundaries left, safe only because of the finally above.
         throwIfCancelled();
         let merged: ManifoldSolid;
         try {
@@ -1795,16 +1713,15 @@ export async function buildAssemblyGeometry(
       held.forEach(manifoldDelete);
     }
   }
-  // Collected build-wide rather than staged per part like the edge notice below: that one promises
-  // something about the exported geometry, this one only describes the setting the user typed, so a
-  // part that fails its booleans does not make it untrue.
+  // Build-wide, unlike the edge notice: these describe the typed setting, which a part failing its
+  // booleans doesn't make untrue.
   for (const r of zeroDepthRaises.values())
     warnBuild(zeroDepthWarning(r.labels, r.requested, r.raisedTo));
   for (const c of tooDeepClamps.values())
     warnBuild(tooDeepWarning(c.labels, c.partName, c.requested, c.cutAt));
-  // Once, after every part: one notice naming every color the edge rule took the full way through.
-  // Grouped by cut depth, a single value in practice (one part has the rule) but per-part in the
-  // model, so grouping keeps the message honest if a second such part lands.
+  for (const c of thinWallClamps.values())
+    warnBuild(thinWallWarning(c.labels, c.partName, c.requested, c.cutAt, c.wall!));
+  // Once: each color the edge rule cut through, by depth (one today, per-part in the model).
   const byEdgeDepth = new Map<number, string[]>();
   for (const [label, depth] of edgeCutColors) {
     const at = byEdgeDepth.get(depth);
@@ -1828,15 +1745,9 @@ export async function buildAssemblyGeometry(
     const hidden = labelsOf((ci) => hiddenColors.has(ci));
     const off = labelsOf((ci) => !hiddenColors.has(ci));
     /**
-     * Picks the singular or plural form of a dropped-colors message, and owns every quote in it:
-     * the name in the singular and each name in the plural's list. Both causes had that written out
-     * twice apiece, and the four copies are how one of them came to put its full stop somewhere the
-     * other did not.
-     *
-     * The two sentences themselves stay whole inside their callers rather than being assembled from
-     * a shared clause and pronoun. scripts/check-troubleshooting.mjs pins a doc section by finding
-     * its quote inside a string src/ ships, and a message stitched together across arrow functions
-     * is no such string: deduplicating the wording leaves both sections unsearchable.
+     * Singular or plural form of a dropped-colors message, owning every quote (four hand copies
+     * drifted on a full stop). The sentences stay whole in the callers: check-troubleshooting.mjs
+     * finds each doc quote inside a shipped string, which a stitched message is not.
      */
     const missedWarning = (
       labels: string[],
@@ -1858,10 +1769,8 @@ export async function buildAssemblyGeometry(
             `${list}. Lower Scale or move the design to bring them back.`,
         ),
       );
-    // "only reaches surface that is hidden", not "lands only where the part is hidden": a design
-    // mostly thrown off the part while grazing one dead patch reaches this too, and of that one the
-    // second reading is false. What the build really knows is that no visible surface anywhere took
-    // the color and some hidden surface did, which is what the first reading says.
+    // "only reaches surface that is hidden", not "lands only where hidden": a design mostly off the
+    // part grazing one dead patch lands here too. No visible surface took it; some hidden did.
     if (hidden.length)
       warnBuild(
         missedWarning(
@@ -1875,6 +1784,15 @@ export async function buildAssemblyGeometry(
         ),
       );
   }
+  // Not gated on landedColors: the boundary clip already counted these as landed, which is true,
+  // and is why nothing else would say where they went.
+  for (const ci of coveredColors)
+    if (!exposedColors.has(ci))
+      noticeBuild(
+        fillCoveredNotice(
+          regionLabel(palette[ci].hex, palette[ci].isMerge, palette[ci].members.length),
+        ),
+      );
   palette.forEach((c, ci) => {
     const d = colorAppliedDepth.get(ci);
     if (d != null) c.appliedDepth = d;

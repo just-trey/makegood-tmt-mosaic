@@ -125,7 +125,6 @@ function mountPanel(): void {
 
 beforeEach(() => {
   mountPanel();
-  state.shapeKind = 'assembly';
   state.assembly.kindId = 'hubcap';
   state.assembly.parts = [];
   state.assembly.nextPartId = 1;
@@ -140,7 +139,6 @@ afterEach(() => {
   hubcapRole.buildMesh = realBuildMesh;
   state.assembly.kindId = null;
   state.assembly.parts = [];
-  state.shapeKind = 'disc';
   state.printerId = 'bambu-x1c';
 });
 

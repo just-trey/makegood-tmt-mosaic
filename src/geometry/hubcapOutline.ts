@@ -2,18 +2,11 @@ import type { SVGShape } from '../types';
 import type { ManifoldAPI } from './manifold';
 
 /**
- * A closed 2D outline for the hubcap's disc: what lets the part be the shape of a logo or
- * character instead of a circle.
- *
- * Points are (x, z). The part's native frame is Y-up, so an outline lives in the ground plane and
- * Y is thickness.
- *
- * Deliberately no geometry builder here. A silhouette disc is cut FLAT, square edges and no
- * chamfer, making it a plain 3mm prism on the outline, which `extrudeRegionToSoup`
- * (src/geometry/manifold.ts) already builds from a turf feature in this frame. An earlier version
- * lofted a chamfer between the outline and a 1mm erosion of it; it worked but needed the boolean's
- * band, nested-ring resolution and per-vertex height tagging. All of it went when the edge became
- * square. What is left is the measurement the *checks* need, which no existing module answers.
+ * A closed 2D outline for the hubcap's disc, so the part can take a logo's shape. Points are (x,
+ * z): the native frame is Y-up, Y is thickness. No geometry builder: a silhouette is cut FLAT, a
+ * plain 3mm prism (`extrudeRegionToSoup`, src/geometry/manifold.ts); lofting a 1mm chamfer needed
+ * band booleans, nested-ring resolution and height tagging, all dropped with the square edge. What
+ * is left is what the *checks* measure.
  */
 export interface OutlinePt {
   x: number;
@@ -25,17 +18,12 @@ export type OutlineRing = OutlinePt[];
 export type Outline = OutlineRing[];
 
 /**
- * Where the artwork lands on the part, in the terms the cut already uses.
- *
- * Deliberately the *same* numbers `DesignPlacement` (src/geometry/zones.ts) carries, and
- * `placeArtworkPoint` below is deliberately the same arithmetic as that module's `placer`. The
- * feature rests on the part and the picture being one object, which only one shared transform can
- * guarantee, never two that are meant to agree.
- *
- * They did not agree before. The outline was fitted by its own traced *content* bbox while the
- * artwork was scaled off the document *canvas*, so a padded PNG (a 300x450 subject on a 512x512
- * sheet) printed the picture about 12% smaller than the shape cut for it, and offset. An SVG
- * declaring a physical size skipped the fit entirely and disagreed by whatever that size was.
+ * Where the artwork lands, in the cut's own terms: the *same* numbers as `DesignPlacement`
+ * (src/geometry/zones.ts), with `placeArtworkPoint` the same arithmetic as its `placer`, because
+ * part and picture are one object only under one shared transform. Two meant to agree didn't: the
+ * outline fit its traced *content* bbox while the artwork scaled off the *canvas*, so a padded PNG
+ * (a 300x450 subject on a 512x512 sheet) printed about 12% smaller than its shape, and offset; an
+ * SVG with a physical size disagreed by that size.
  */
 export interface OutlinePlacement {
   /** SVG-space anchor the design centres on: `designAnchor`'s cx/cy. */
@@ -80,17 +68,11 @@ export function outlineReach(rings: Outline): number {
 }
 
 /**
- * Scale an outline by `k` about a fixed point.
- *
- * The caller shrinks about the mounting axis, where the outline is already centred, which keeps
- * this equivalent to having built it with `mmPerUnit * k`: placement scales before the translation
- * that centred it, so the centre is the one point that doesn't move when mmPerUnit changes. That
- * equivalence is why the same `k` can go to the artwork and still match the shape.
- *
- * A bisecting `fitFactorForRadius` used to live here, needed because a user-set offset made the
- * reach `|off + k(p - off)|`, convex in k rather than a division. It went when the offset became
- * derived rather than chosen (see hubcapShapeFromState): about the axis every point's distance
- * scales by exactly k, so the caller's cap is one ratio.
+ * Scale an outline by `k` about a fixed point. The caller shrinks about the mounting axis, where
+ * the outline is centred, which equals building it with `mmPerUnit * k` (the centre is the one
+ * point scale doesn't move), so the same `k` can go to the artwork. With the offset derived (see
+ * hubcapShapeFromState), every point's reach scales by exactly k, so the cap is one ratio and the
+ * old bisecting `fitFactorForRadius` is gone.
  */
 export function scaleOutlineAbout(rings: Outline, ox: number, oz: number, k: number): Outline {
   return rings.map((r) => r.map((p) => ({ x: ox + (p.x - ox) * k, z: oz + (p.z - oz) * k })));
@@ -104,13 +86,9 @@ export function ringArea(r: OutlineRing): number {
 }
 
 /**
- * Enclosed area of an outline, holes subtracted.
- *
- * Nesting is decided by containment, not winding: a ring inside an odd number of others is a hole
- * and comes off, whatever direction it runs. The rings come from the tracer and Manifold's 2D
- * engine, neither of which promises a hole runs opposite its boundary, the same reason
- * `shapeToFeature` resolves SVG fill rules by depth. Summing signed areas instead reads a donut as
- * its outer disc PLUS its hole.
+ * Enclosed area, holes subtracted. Nesting by containment (odd depth = hole), not winding: neither
+ * the tracer nor Manifold's 2D engine promises a hole runs opposite its boundary (as in
+ * `shapeToFeature`), and summing signed areas reads a donut as disc PLUS hole.
  */
 export function outlineArea(rings: Outline): number {
   const usable = rings.filter((r) => r.length >= 3);
@@ -159,17 +137,10 @@ export function outlineContains(rings: Outline, x: number, z: number): boolean {
 }
 
 /**
- * How much of the clips' bonding face lands on material, as a fraction of its area.
- *
- * The clips present an annulus (their top faces, see HUBCAP_CLIP_FACE_*_R_MM), and what decides
- * whether they hold is how much of it is backed by disc. Sampled on a polar grid rather than
- * tested analytically: the outline is a traced polygon with holes, and the question is "how much",
- * not "does any edge cross".
- *
- * Measures area rather than probing the outer rim, which this did first and got wrong in the
- * direction that matters: a single 1-in-64 nick at the extreme radius refused a real silhouette
- * whose clips were otherwise fully supported. What must be caught is a clip over a HOLE or off the
- * shape, a large loss, not a shape grazing the rim.
+ * Fraction of the clips' bonding annulus (HUBCAP_CLIP_FACE_*_R_MM) backed by disc, sampled on a
+ * polar grid: the outline is a traced polygon with holes, and the question is "how much". Area, not
+ * a rim probe: one 1-in-64 nick at the extreme radius refused a real silhouette. What must be
+ * caught is a clip over a HOLE or off the shape.
  */
 export function clipCoverage(rings: Outline, innerR: number, outerR: number): number {
   const RINGS = 12;
@@ -189,19 +160,11 @@ export function clipCoverage(rings: Outline, innerR: number, outerR: number): nu
 }
 
 /**
- * How much of the outline sits in features narrower than `widthMm`, in mm².
- *
- * A morphological *opening*: erode by half the width, dilate back by the same. Anything wider is
- * restored exactly; anything narrower has no material left at its centreline to grow back from and
- * stays gone. The area that fails to return is the area in too-narrow features.
- *
- * Erosion alone is not enough, and the mistake is easy: it only catches a feature that pinches the
- * shape into more pieces. A tapered limb just gets shorter with the ring count unchanged, and a
- * silhouette scaled to 60mm reported nothing under 3mm while being 33mm wide overall. The
- * dilate-back turns "did the topology change" into "how much of this is too thin".
- *
- * About PRINTABILITY, not wrong geometry: a 0.5mm spike still extrudes into a valid solid, it is
- * just one nozzle-width of plastic standing 3mm tall. Hence a notice, not a refusal.
+ * Area (mm²) of the outline in features narrower than `widthMm`: a morphological *opening* (erode
+ * by half, dilate back); what fails to return was too narrow. Erosion alone only catches a pinch
+ * into more pieces: a tapered limb just shortens, and a silhouette scaled to 60mm reported nothing
+ * under 3mm while 33mm wide overall. PRINTABILITY, not bad geometry: a 0.5mm spike is a valid
+ * solid, one nozzle wide and 3mm tall, hence a notice, not a refusal.
  */
 export function narrowFeatureArea(wasm: ManifoldAPI, rings: Outline, widthMm: number): number {
   const cs = new wasm.CrossSection(
@@ -228,24 +191,15 @@ export function narrowFeatureArea(wasm: ManifoldAPI, rings: Outline, widthMm: nu
 }
 
 /**
- * The silhouette of loaded artwork: every shape merged into one outline.
+ * The silhouette of loaded artwork, every shape merged into one outline, read off the loaded
+ * artwork rather than a second upload. Each shape's loops go even-odd, then shapes union: one
+ * even-odd pass over everything punches a hole wherever two colours overlap, which in layered
+ * artwork is most of it.
  *
- * What makes the hubcap the shape of the picture on it. Artwork and part are the same object, so
- * the outline is read off the artwork already loaded rather than uploaded a second time and kept
- * in sync with it.
- *
- * Shape by shape then unioned, never every loop at once: a shape's own loops are outer-and-holes
- * and only read correctly under even-odd, while two *different* overlapping shapes must merge
- * rather than cancel. One even-odd pass over the lot punches a hole wherever two colours overlap,
- * which in artwork drawn as stacked layers is most of it.
- *
- * Points arrive in the part's frame via `placeArtworkPoint`, with scale, mirrors, rotation and
- * offset applied from the same numbers the cut uses. Both axes normally negate. Y flips because
- * artwork space is y-down (SVG's convention and the raster decoder's) and the ground plane is not.
- * X flips because the design face points +Y and is *seen from above*, and a surface's own frame
- * reads mirrored from the side you look at it. Either one wrong produces a shape that looks
- * plausible alone and is only wrong beside the picture printed on it; both were caught one at a
- * time from screenshots, as "upside down" and then "mirrored".
+ * Points arrive via `placeArtworkPoint`, the cut's own numbers. Both axes normally negate: Y as
+ * artwork space is y-down (SVG and the raster decoder), X as the +Y design face is *seen from
+ * above*. Either wrong looks plausible alone and wrong only beside the printed picture; both were
+ * caught from screenshots, "upside down" then "mirrored".
  */
 export function silhouetteFromShapes(
   wasm: ManifoldAPI,

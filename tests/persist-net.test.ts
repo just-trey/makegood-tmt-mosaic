@@ -8,7 +8,7 @@ vi.mock('../src/analytics/track', () => ({ track: vi.fn() }));
 vi.mock('../src/ui/dialogs', () => ({ confirmDialog: vi.fn(), alertDialog: vi.fn() }));
 vi.mock('../src/assembly/parts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/assembly/parts')>();
-  return { ...actual, asmLoadFullAssembly: vi.fn(async () => {}) };
+  return { ...actual, asmLoadFullAssembly: vi.fn(async () => 'loaded' as const) };
 });
 
 import {
@@ -108,11 +108,6 @@ function session(artworks: PersistedSession['artworks']): PersistedSession {
     version: 1,
     savedAt: Date.now(),
     shapeKind: 'assembly',
-    disc: { diameter: 90, thickness: 5 },
-    rect: { width: 100, height: 70, thickness: 3 },
-    round: { width: 100, height: 70, corner: 12, thickness: 3 },
-    stlPlate: { width: 120, height: 80, thickness: 6, faceZ: 2 },
-    marginPct: 7,
     scalePct: 100,
     offsetX: 0,
     offsetY: 0,
@@ -120,7 +115,6 @@ function session(artworks: PersistedSession['artworks']): PersistedSession {
     flipY: false,
     rotationDeg: 0,
     globalDepth: 1.5,
-    recessBg: true,
     printerId: 'snapmaker-u1',
     asmRadius: 140,
     assembly: { kindId: 'chair-body', variantId: null },
@@ -140,7 +134,6 @@ function session(artworks: PersistedSession['artworks']): PersistedSession {
 
 beforeEach(() => {
   localStorage.clear();
-  state.shapeKind = 'disc';
   state.assembly.kindId = null;
   state.assembly.parts = [];
   state.assembly.net = null;
@@ -148,7 +141,9 @@ beforeEach(() => {
   state.artworks = [];
   state.activeArtworkId = null;
   vi.mocked(asmLoadFullAssembly).mockReset();
-  vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {});
+  vi.mocked(asmLoadFullAssembly).mockImplementation(async () => {
+    return 'loaded' as const;
+  });
 });
 
 describe('the reserved Whole-chair zone id across a reload', () => {
@@ -167,6 +162,8 @@ describe('the reserved Whole-chair zone id across a reload', () => {
     vi.mocked(asmLoadFullAssembly).mockImplementationOnce(async () => {
       state.assembly.parts = [netZonedPart(1, 'left'), netZonedPart(2, 'back')];
       state.assembly.net = NET;
+
+      return 'loaded' as const;
     });
 
     await applyRestoredSession(session([{ ...instance(), zoneId: WHOLE_CHAIR_ZONE }]));
@@ -181,6 +178,8 @@ describe('the reserved Whole-chair zone id across a reload', () => {
     vi.mocked(asmLoadFullAssembly).mockImplementationOnce(async () => {
       state.assembly.parts = [netZonedPart(1, 'left')];
       state.assembly.net = null;
+
+      return 'loaded' as const;
     });
 
     await applyRestoredSession(session([{ ...instance(), zoneId: WHOLE_CHAIR_ZONE }]));

@@ -4,11 +4,10 @@ export interface RasterImage {
   w: number;
   h: number;
   /**
-   * Edge density as measured at the fixed reference size, carried alongside the pixels because it
-   * cannot be re-derived from them once the working size varies: the same image measures flatter
-   * the larger it is decoded, since edges take up a smaller share of the pixels. Re-measuring the
-   * working image would quietly move the flat-vs-photo thresholds — and the blur and despeckle
-   * strengths that hang off them — every time the working size changed.
+   * Edge density as measured at the fixed reference size, carried with the pixels because it can't be
+   * re-derived once the working size varies: the same image measures flatter the larger it's
+   * decoded. Re-measuring would move the flat-vs-photo thresholds, and the blur and despeckle
+   * strengths hanging off them, whenever the working size changed.
    */
   edgeDensity?: number;
 }
@@ -27,21 +26,12 @@ export interface LabelMap {
 /** Label for a pixel that belongs to no region — transparent, and left as bare part surface. */
 export const BACKGROUND = -1;
 
-/**
- * Below this alpha a pixel is background — no region, bare part surface (see BACKGROUND).
- *
- * Lives here rather than next to the decoder so that the decoder can ask `measureImage` how
- * photographic an image is without the two modules importing each other in a circle.
- */
+/** Below this alpha a pixel is background (see BACKGROUND). Lives here, not by the decoder, so the decoder can ask `measureImage` without the two modules importing each other in a circle. */
 export const ALPHA_THRESHOLD = 128;
 
 /** What `measureImage` reports about an image, and `autoParams` turns into trace settings. */
 export interface ImageStats {
-  /**
-   * Fraction of pixels whose 3x3 neighborhood isn't uniform under a coarse quantization.
-   * Flat art scores low (edges are thin lines between large constant fields); a photograph
-   * scores high (almost every pixel differs from its neighbors).
-   */
+  /** Fraction of pixels whose 3x3 neighborhood isn't uniform under a coarse quantization. Flat art scores low (thin edges between constant fields), a photograph high. */
   edgeDensity: number;
 }
 
@@ -50,12 +40,7 @@ export interface TraceParams {
   blurRadius: number;
   /** Components smaller than this fraction of the image area are absorbed into their neighbor. */
   despeckleFrac: number;
-  /**
-   * Corner threshold: a fitted vertex below this stays a hard corner, above it becomes curved.
-   * Unlike the other two this is a shape classifier rather than a coarseness control, and its
-   * meaningful range is bounded (see ALPHA_MAX_LIMIT), which is why the Detail slider doesn't
-   * scale it.
-   */
+  /** Corner threshold: a fitted vertex below this stays a hard corner, above it curves. A shape classifier, not a coarseness control — its meaningful range is bounded (ALPHA_MAX_LIMIT), so Detail doesn't scale it. */
   alphaMax: number;
   /** Max deviation in pixels when flattening a fitted curve to line segments. */
   flatness: number;
@@ -66,17 +51,8 @@ export interface RasterOptions {
   colors: number;
   /** User multiplier on the auto-derived despeckle/simplify strength — the "Detail" slider. */
   detail: number;
-  /**
-   * mm per working pixel at the placement this trace is for. It resolves the whole despeckle
-   * floor (`despeckleFloorPx`): sized in mm for flat art, which can lower it below the image
-   * fraction as well as raise it. Absent where the placement is not knowable: a bench sweep, or a
-   * session restored from before it was saved, and those keep the fractional floor.
-   */
+  /** mm per working pixel at the placement traced for; resolves the whole despeckle floor (`despeckleFloorPx`), sized in mm for flat art, which can lower it below the image fraction as well as raise it. Absent where unknowable (a bench sweep, or a session saved before it existed), which keeps the fractional floor. */
   mmPerPixel?: number;
-  /**
-   * The image's name, used only to name it in the empty-trace error message if this trace comes
-   * back with nothing. Optional so a bench sweep or a unit fixture that never surfaces that error
-   * doesn't have to invent one.
-   */
+  /** The image's name, used only in the empty-trace error message. Optional so bench sweeps and fixtures that never surface that error needn't invent one. */
   name?: string;
 }

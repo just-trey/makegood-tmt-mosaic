@@ -3,48 +3,34 @@ import type { RasterImage } from './types';
 /**
  * Round-tripping a raster design through the saved session.
  *
- * **The working image, re-encoded, not the file the user dropped and not the raw pixels.**
+ * **The working image, re-encoded — not the dropped file, not raw pixels.**
  *
- * Raw pixels were measured and rejected when this was first written: 1024x1024 RGBA is 4.0 MB
- * before JSON encoding, against a MAX_BYTES of 4 MB for the whole session, so a single flat-art
- * image filled the budget on its own.
+ * Raw pixels were measured and rejected: 1024x1024 RGBA is 4.0 MB before JSON, against a MAX_BYTES
+ * of 4 MB for the whole session. Re-encoded (2026-08-17, Chromium): flat art at 1024px is **24 KB**
+ * as PNG, a photograph at 512px **703 KB**.
  *
- * Re-encoded, the same pixels measure (2026-08-17, this app in Chromium): flat art at 1024px is
- * **24 KB** as PNG, a photograph at 512px is **703 KB**. Both fit several times over.
+ * PNG, not WebP (4 KB and 108 KB on the same two): lossless means a restored design quantizes to the
+ * palette it had when saved; lossy would shift colours before the quantizer and could return a
+ * filament list the user didn't choose. Caveat: the canvas round trip premultiplies alpha, so alpha
+ * 1-254 can come back a step off; fully opaque and transparent pixels (flat art, cut-out photos) are exact.
  *
- * PNG rather than WebP, which measured 4 KB and 108 KB on the same two: lossless means a restored
- * design quantizes to the palette it had when saved. Lossy would shift colours before the
- * quantizer sees them and could come back with a different palette, which is a filament list the
- * user did not choose.
- *
- * One caveat on "lossless": the canvas round trip premultiplies alpha, so a pixel with alpha
- * between 1 and 254 can come back a step off. Fully opaque and fully transparent pixels, which is
- * what flat art and a cut-out photograph are made of, are exact.
- *
- * The working image, not the original file, because the working image is what the pipeline
- * actually traced. `decodeImageFile` has already resolved the working size from the image's own
- * statistics; re-reading the original would redo that decision, and a source whose stats put it
- * near a threshold could restore at a different resolution than it was saved at.
+ * The working image, not the original, because it is what the pipeline traced: `decodeImageFile`
+ * resolved the working size from the image's statistics, and re-reading the original would redo that
+ * and could restore a near-threshold source at a different resolution.
  */
 export function encodeWorkingImage(image: RasterImage): string | null {
-  // Null rather than a throw, and the whole body inside the try: this runs inside snapshotSession,
-  // which is outside saveSession's own try, so anything escaping here takes a whole session down
-  // over one image. The caller falls back to leaving that source out, which is what the app did
-  // for every image before this existed.
+  // Null rather than a throw, whole body in the try: this runs inside snapshotSession, outside saveSession's try, so an escape takes down the whole session over one image. The caller leaves that source out, as the app did for every image before this existed.
   try {
     const canvas = document.createElement('canvas');
     canvas.width = image.w;
     canvas.height = image.h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    // Copied into a fresh ImageData rather than wrapping `image.data`: the source may be backed by
-    // a SharedArrayBuffer, which the ImageData constructor's types (rightly) refuse.
+    // A fresh ImageData, not wrapping `image.data`: the source may be SharedArrayBuffer-backed, which the ImageData constructor's types refuse.
     const out = ctx.createImageData(image.w, image.h);
     out.data.set(image.data);
     ctx.putImageData(out, 0, 0);
-    // toDataURL, not toBlob: snapshotSession is synchronous, and making it async would put an
-    // await between reading the state and writing it, where a save fired from beforeunload can
-    // lose the race.
+    // toDataURL, not toBlob: snapshotSession is synchronous, and an await between reading state and writing it lets a beforeunload save lose the race.
     return canvas.toDataURL('image/png');
   } catch {
     return null;
@@ -55,10 +41,7 @@ export function encodeWorkingImage(image: RasterImage): string | null {
 export async function decodeWorkingImage(dataUrl: string): Promise<RasterImage> {
   const img = new Image();
   await new Promise<void>((resolve, reject) => {
-    // Bounded, because `onload`/`onerror` is a promise that some environments never settle: a
-    // decoder that neither succeeds nor reports failure would hang the whole restore with the
-    // banner already dismissed and nothing on screen to explain it. A local data URL that has not
-    // decoded in this long is not going to.
+    // Bounded: `onload`/`onerror` may never settle in some environments, and a hung decode would stall the restore with the banner dismissed and nothing on screen. A local data URL not decoded by now isn't going to.
     const timer = setTimeout(
       () => reject(new Error('saved image took too long to decode')),
       15_000,

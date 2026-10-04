@@ -2,6 +2,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   SVG_LENGTH_UNIT_MM,
+  createStyleResolver,
   normalizeColor,
   parseFillOpacity,
   parseSVGDocument,
@@ -462,11 +463,284 @@ describe('parseFillOpacity', () => {
   it('falls back to fully opaque on a non-numeric value, instead of NaN', () => {
     expect(parseFillOpacity('abc')).toBe(1);
     expect(parseFillOpacity(null)).toBe(1);
+    expect(parseFillOpacity('0px')).toBe(1);
+    expect(parseFillOpacity('0,5')).toBe(1);
   });
 
   it('still reads a valid value through', () => {
     expect(parseFillOpacity('0.5')).toBeCloseTo(0.5, 9);
     expect(parseFillOpacity('0')).toBe(0);
+  });
+
+  it.each([
+    ['50%', 0.5],
+    ['0%', 0],
+    ['-1', 0],
+    ['-50%', 0],
+    ['150%', 1],
+  ])('reads %s as %s: a percentage is a fraction, and the result clamps to 0..1', (raw, want) => {
+    expect(parseFillOpacity(raw)).toBeCloseTo(want, 9);
+  });
+});
+
+describe('fill-opacity through the style cascade', () => {
+  const hidden = (shape: string): number =>
+    parseSVGDocument(
+      svg(
+        '<style>.h { fill-opacity: 0 !important; }</style>' +
+          shape +
+          '<rect width="4" height="4" fill="#00ff00"/>',
+      ),
+    ).shapes.length;
+
+  it('hides a shape at fill-opacity -1 or -50%, which the spec clamps to 0', () => {
+    expect(hidden('<rect width="4" height="4" fill="#ff0000" fill-opacity="-1"/>')).toBe(1);
+    expect(hidden('<rect width="4" height="4" fill="#ff0000" fill-opacity="-50%"/>')).toBe(1);
+  });
+
+  it('keeps a shape hidden by 0 !important, from a class rule or an inline style', () => {
+    expect(hidden('<rect class="h" width="4" height="4" fill="#ff0000"/>')).toBe(1);
+    expect(
+      hidden('<rect style="fill-opacity: 0 !important" width="4" height="4" fill="#ff0000"/>'),
+    ).toBe(1);
+  });
+
+  it('keeps a shape hidden by fill-opacity 0 with a comment after it', () => {
+    expect(
+      hidden('<rect style="fill-opacity:0 /* hidden */" width="4" height="4" fill="#ff0000"/>'),
+    ).toBe(1);
+  });
+
+  it('hides a shape at opacity 0, from an attribute or an inline style', () => {
+    expect(hidden('<rect width="4" height="4" fill="#ff0000" opacity="0"/>')).toBe(1);
+    expect(hidden('<rect style="opacity:0" width="4" height="4" fill="#ff0000"/>')).toBe(1);
+  });
+
+  it('imports a shape whose attribute holds !important, which a browser ignores and draws', () => {
+    expect(hidden('<rect width="4" height="4" fill="#ff0000" fill-opacity="0 !important"/>')).toBe(
+      2,
+    );
+    expect(hidden('<rect width="4" height="4" fill="none !important"/>')).toBe(2);
+  });
+
+  it('reads 50% !important as 0.5, not a 50 clamped to 1', () => {
+    const doc = new DOMParser().parseFromString(
+      svg(
+        '<style>.a { fill-opacity: 50% !important; }</style>' +
+          '<rect class="a" width="4" height="4"/>' +
+          '<rect style="fill-opacity:50% !important" width="4" height="4"/>',
+      ),
+      'image/svg+xml',
+    );
+    const resolve = createStyleResolver(doc);
+    for (const el of doc.querySelectorAll('rect')) {
+      expect(parseFillOpacity(resolve(el, 'fill-opacity'))).toBeCloseTo(0.5, 9);
+    }
+  });
+});
+
+describe('!important in a style declaration', () => {
+  it('reads the fill color, not black, when a class rule marks it !important', () => {
+    const out = parseSVGDocument(
+      svg('<style>.a { fill: #00ff00 !important; }</style><rect class="a" width="4" height="4"/>'),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('skips a shape whose fill is none !important', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<rect style="fill: none !important" width="4" height="4"/>' +
+          '<rect width="4" height="4" fill="#00ff00"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('hides a shape marked display: none !important', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.x { display: none !important; }</style>' +
+          '<rect class="x" width="4" height="4" fill="#ff0000"/>' +
+          '<rect width="4" height="4" fill="#00ff00"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('lets an !important class rule beat a plain inline style, and lose to an !important one', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.a { fill: #00ff00 !important; }</style>' +
+          '<rect class="a" style="fill:#0000ff" width="4" height="4"/>' +
+          '<rect class="a" style="fill:#ff0000 !important" width="4" height="4"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00', '#ff0000']);
+  });
+
+  it('reads the last of two inline declarations of the same property, as a design tool shows it', () => {
+    const out = parseSVGDocument(
+      svg('<rect style="fill:#ff0000;fill:#00ff00" width="4" height="4"/>'),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('reads a property name written in capitals, from a class rule or an inline style', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.a { FILL: #00ff00; }</style>' +
+          '<rect class="a" width="4" height="4"/>' +
+          '<rect style="Fill:#0000ff" width="4" height="4"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00', '#0000ff']);
+  });
+
+  it('lets an !important rule win over a plain one from another class on the same shape', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.a { fill: #00ff00 !important; } .b { fill: #0000ff; }</style>' +
+          '<rect class="a b" width="4" height="4"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+
+  it('keeps an earlier !important declaration over a later plain one for the same class', () => {
+    const out = parseSVGDocument(
+      svg(
+        '<style>.a { fill: #00ff00 !important; } .a { fill: #0000ff; }</style>' +
+          '<rect class="a" width="4" height="4"/>',
+      ),
+    );
+    expect(out.shapes.map((s) => s.fill)).toEqual(['#00ff00']);
+  });
+});
+
+describe('a hidden group', () => {
+  const RED = '<rect width="4" height="4" fill="#ff0000"/>';
+  const GREEN = '<rect width="4" height="4" fill="#00ff00"/>';
+  const fills = (inner: string): string[] => parseSVGDocument(svg(inner)).shapes.map((s) => s.fill);
+  const messages = (): string[] => WARNINGS.map((w) => w.message);
+
+  it.each([
+    ['display="none"'],
+    ['style="display:none"'],
+    ['opacity="0"'],
+    ['style="opacity:0"'],
+    ['fill-opacity="0"'],
+    ['style="fill-opacity:0"'],
+  ])('imports nothing inside <g %s>', (attr) => {
+    expect(fills(`<g ${attr}>${RED}<g>${RED}</g></g>${GREEN}`)).toEqual(['#00ff00']);
+  });
+
+  it('hides a group hidden by a class rule', () => {
+    expect(fills(`<style>.h { display: none; }</style><g class="h">${RED}</g>${GREEN}`)).toEqual([
+      '#00ff00',
+    ]);
+  });
+
+  it('keeps a child hidden by display none on its group, whatever the child says', () => {
+    expect(
+      fills(`<g display="none"><rect display="inline" width="4" height="4"/></g>${GREEN}`),
+    ).toEqual(['#00ff00']);
+  });
+
+  it('keeps a child hidden by opacity 0 on its group, since opacity multiplies', () => {
+    expect(fills(`<g opacity="0"><rect opacity="1" width="4" height="4"/></g>${GREEN}`)).toEqual([
+      '#00ff00',
+    ]);
+  });
+
+  it('imports a shape under two half-opacity groups, since only a zero hides', () => {
+    expect(fills(`<g opacity="0.5"><g opacity="0.5">${RED}</g></g>`)).toEqual(['#ff0000']);
+  });
+
+  it('imports a child whose own fill-opacity overrides the group it inherits 0 from', () => {
+    expect(
+      fills(
+        '<g fill-opacity="0">' +
+          '<rect fill-opacity="1" width="4" height="4" fill="#0000ff"/>' +
+          `<g fill-opacity="0.5">${RED}</g>` +
+          '</g>',
+      ),
+    ).toEqual(['#0000ff', '#ff0000']);
+  });
+
+  it('hides a child whose own fill-opacity is invalid, since an invalid value inherits', () => {
+    expect(
+      fills(`<g fill-opacity="0"><rect fill-opacity="abc" width="4" height="4"/></g>${GREEN}`),
+    ).toEqual(['#00ff00']);
+  });
+
+  it('hides a nested hidden group inside a visible one, and keeps its visible sibling', () => {
+    expect(fills(`<g><g display="none">${RED}</g>${GREEN}</g>`)).toEqual(['#00ff00']);
+  });
+
+  it('still leaves out <defs> and <clipPath> content inside a visible group', () => {
+    expect(fills(`<g><defs>${RED}</defs><clipPath id="c">${RED}</clipPath>${GREEN}</g>`)).toEqual([
+      '#00ff00',
+    ]);
+  });
+
+  it('names a hidden group by its layer name and says how many shapes it dropped', () => {
+    clearWarnings();
+    fills(
+      '<g inkscape:label="Background" id="layer1" display="none" ' +
+        'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">' +
+        `${RED}${RED}<rect fill="none" width="4" height="4"/></g>${GREEN}`,
+    );
+    expect(messages()).toEqual([
+      'The hidden group "Background" starting at shape 1 was skipped, with its 2 shapes. Show it in your editor to print it.',
+    ]);
+  });
+
+  it('names a hidden group by its id, or by its first shape when it has neither', () => {
+    clearWarnings();
+    fills(`${GREEN}<g id="Layer_2" opacity="0">${RED}</g><g fill-opacity="0">${GREEN}${RED}</g>`);
+    expect(messages()).toEqual([
+      'The hidden group "Layer_2" starting at shape 2 was skipped, with its 1 shape. Show it in your editor to print it.',
+      'The hidden group starting at shape 3 was skipped, with its 2 shapes. Show it in your editor to print it.',
+    ]);
+  });
+
+  it('warns once for the outermost hidden group, not again for one hidden inside it', () => {
+    clearWarnings();
+    fills(`<g id="outer" display="none">${RED}<g id="inner" opacity="0">${RED}</g></g>${GREEN}`);
+    expect(messages()).toEqual([
+      'The hidden group "outer" starting at shape 1 was skipped, with its 2 shapes. Show it in your editor to print it.',
+    ]);
+  });
+
+  it('warns for each of two hidden groups sharing a name, so neither hides the other', () => {
+    clearWarnings();
+    fills(`<g id="L" display="none">${RED}</g>${GREEN}<g id="L" display="none">${RED}</g>`);
+    expect(messages()).toHaveLength(2);
+  });
+
+  it('leaves a gradient shape out of the count, but starts the group at it', () => {
+    clearWarnings();
+    fills(`<g id="g" display="none"><rect fill="url(#a)" width="4" height="4"/>${RED}</g>${GREEN}`);
+    expect(messages()).toEqual([
+      'The hidden group "g" starting at shape 1 was skipped, with its 1 shape. Show it in your editor to print it.',
+    ]);
+  });
+
+  it('says nothing for a hidden group with nothing to print, or whose children override it', () => {
+    clearWarnings();
+    fills(
+      '<g display="none"><rect fill="none" width="4" height="4"/></g>' +
+        `<g fill-opacity="0"><g fill-opacity="1">${RED}</g></g>` +
+        '<g display="none"><rect display="none" width="4" height="4"/></g>',
+    );
+    expect(messages()).toEqual([]);
+  });
+
+  it('stays silent on a single shape hidden by its own fill-opacity 0', () => {
+    clearWarnings();
+    fills(`<rect fill-opacity="0" width="4" height="4"/>${GREEN}`);
+    expect(messages()).toEqual([]);
   });
 });
 

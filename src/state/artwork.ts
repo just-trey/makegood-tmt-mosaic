@@ -1,33 +1,37 @@
 import type { ArtworkInstance, DesignSource, ParsedSVG, RasterState, ZoneMirror } from '../types';
 import { clearBaseColor, state } from './store';
 import { deltaE, hexToLab } from '../color';
-import { parseRasterImage } from '../raster/parse';
+import {
+  parseRasterImage,
+  placedFloors,
+  rasterCappedMessage,
+  rasterColorLossKey,
+  rasterColorLossNotice,
+  rasterTracedMessage,
+} from '../raster/parse';
+import type { RasterParseResult } from '../raster/parse';
 import type { RasterImage } from '../raster/types';
 import type { NetZonePlacement } from '../geometry/zoneCharts';
 import { boundsCentre, netOffsetToZone, WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { currentAssemblyKind, currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
 import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
-import { dismissNotice, notice } from '../warnings';
+import { dismissNotice, notice, warn } from '../warnings';
 
 let nextSourceId = 1;
 let nextArtworkId = 1;
 
 /**
- * How far each additional design is stepped off the one already sitting at that spot, in mm on the
- * face, per step.
+ * How far each additional design is stepped off one already at that spot, in mm on the face.
  *
- * A new instance seeds its placement from the current fit settings, so on a part with one design
- * zone — the wheel, the footrest, and every flat kind — a second design used to land exactly
- * coplanar with the first: same offset, same scale, same depth, no separation and nothing on screen
- * saying there were two of them. Stepping it makes the second design visible as its own object and
- * draggable without first having to move the one on top of it.
+ * A new instance seeds from the fit settings, so on a one-zone part (wheel, footrest) a second
+ * design landed exactly coplanar with the first, with nothing showing there were two. Stepping it
+ * makes it visible and draggable.
  *
- * Deliberately small rather than "clear of the first design": the app has no say in how big a
- * design is placed (the wheel's default is a 276mm circle) and a step sized to separate that would
- * throw a small design off the face, where the boundary clip would silently eat it. Clearing the
- * rest of the overlap is the user's call — buildAssemblyGeometry warns and names both designs while
- * they still cross (see geometry/designOverlap.ts).
+ * Deliberately small rather than "clear of the first": the app doesn't control design size (the
+ * wheel's default is a 276mm circle), and a step that separated that would throw a small design off
+ * the face, where the boundary clip silently eats it. Clearing the rest is the user's call —
+ * buildAssemblyGeometry warns and names both designs while they cross (geometry/designOverlap.ts).
  */
 export const INSTANCE_CASCADE_MM = 8;
 
@@ -35,11 +39,10 @@ export const INSTANCE_CASCADE_MM = 8;
 const SAME_SPOT_MM = 1e-6;
 
 /**
- * Do two zone bindings put their designs on the same surface? Two of them cover every zone at once
- * rather than naming one: `null` is "All zones", and the whole-part id is every sheet of the net.
- * Either shares a surface with any binding, including another of itself. Comparing the ids directly
- * treats them as zones of their own and lets a bound design seed on top of one already stamped
- * everywhere.
+ * Do two zone bindings put their designs on the same surface? `null` ("All zones") and the
+ * whole-part id each cover every zone, so each shares a surface with any binding, itself included.
+ * Comparing ids directly treats them as zones of their own and lets a bound design seed on top of
+ * one already stamped everywhere.
  */
 function sharesSurface(a: string | null, b: string | null): boolean {
   const everywhere = (z: string | null): boolean => z === null || z === WHOLE_CHAIR_ZONE;
@@ -57,14 +60,10 @@ interface PlacedMark {
 /**
  * Where a placement actually lands, one entry per surface it cuts on.
  *
- * A whole-part binding is the one case that is not itself a surface: it is placed in **net** mm and
- * cut as one ordinary placement per sheet, so its offsets are moved onto each zone before they mean
- * anything beside a placement bound to that zone by name. `netOffsetToZone` is the same algebra the
- * build's own expansion uses (see rebuild.ts), so the spot compared here is the spot that gets cut.
- * Comparing the two raw compares net mm against zone mm, which is neither the same spot nor a
- * different one.
- *
- * Empty for a whole-part binding on a kind with no net — nothing is cut, and the build says so.
+ * A whole-part binding is placed in **net** mm and cut as one placement per sheet, so its offsets
+ * move onto each zone (`netOffsetToZone`, the same algebra as the build's expansion in rebuild.ts)
+ * before they compare against a zone-bound placement; raw, net mm vs zone mm is neither same nor
+ * different. Empty for a whole-part binding on a kind with no net — nothing is cut, and the build says so.
  */
 function placedMarks(zoneId: string | null, offsetU: number, offsetV: number): PlacedMark[] {
   if (zoneId !== WHOLE_CHAIR_ZONE) return [{ zoneId, offsetU, offsetV }];
@@ -84,28 +83,20 @@ const sameSpot = (x: PlacedMark, y: PlacedMark): boolean =>
 /**
  * The largest placed design the cascade will step the full width of.
  *
- * A diagonal step of `c` separates two designs needing `c` of clearance completely, while the
- * constant step `d` leaves them covering ((c−d)/c)² of each other, which only reaches
- * `OVERLAP_WARN_FRACTION` for c ≥ d/(1−√fraction). Below that the constant seeded a real overlap
- * the build then said nothing about, because it fell under the warn threshold: two 10mm designs
- * stepped 8mm apart cut 4% into each other in silence. So step the full clearance up to here, and
- * keep the constant above it, where it is both the smaller move and a loud one.
+ * A diagonal step of `c` fully separates designs needing `c` clearance, while the constant step `d`
+ * leaves them covering ((c−d)/c)² of each other, which only reaches `OVERLAP_WARN_FRACTION` for
+ * c ≥ d/(1−√fraction). Below that the constant seeded a real overlap the build never mentioned:
+ * two 10mm designs stepped 8mm apart cut 4% into each other in silence. So step the full clearance
+ * up to here and keep the constant above it, where it is both smaller and loud.
+ * Scaling the step all the way up is what INSTANCE_CASCADE_MM already rejects (276mm wheel default).
  *
- * Scaling the step all the way up instead is what INSTANCE_CASCADE_MM already rejects: the wheel's
- * default design is a 276mm circle, and a step sized to clear that throws the design off the face.
- *
- * What this buys is bounded. Any single step has a silent band from itself up to 1.4625× itself,
- * and one step per surface is forced (a step chosen per design puts a later small one between an
- * earlier big one's spots — pinned by "does not park a small design inside one already cascaded
- * past it" in tests/artwork.test.ts). So a surface carrying anything over this size is back on the
- * constant, and designs of opposite proportions (an 8x11.5mm design against an 11.5x8mm one, both
- * reading 8mm on their narrow axis) defeat the clearance measure whatever it is set to — reading
- * the wider axis instead would part that pair at the cost of moving every shaped-alike pair
- * further than it needs to go, a defensible swap rather than a fix.
- *
- * Closing the band for real means dropping the lattice: search for the nearest free placement
- * given the two designs' actual footprints, instead of stepping a fixed distance and testing for
- * an exact-spot collision. That is a real placement search and wants its own change.
+ * Known limits: any single step has a silent band from itself up to 1.4625× itself, and one step per
+ * surface is forced (per-design steps put a later small one between an earlier big one's spots —
+ * pinned by "does not park a small design inside one already cascaded past it" in
+ * tests/artwork.test.ts). So a surface with anything over this size is back on the constant, and
+ * opposite-proportion designs (8x11.5mm vs 11.5x8mm) defeat the clearance measure whatever it is;
+ * reading the wider axis would part that pair but move every alike pair further than needed.
+ * Closing the band for real means a nearest-free-placement search on actual footprints, not a lattice.
  */
 export const CASCADE_CLEAR_MAX_MM = INSTANCE_CASCADE_MM / (1 - Math.sqrt(OVERLAP_WARN_FRACTION));
 
@@ -115,7 +106,7 @@ function cascadeStepMM(clearance: number): number {
     : Math.max(INSTANCE_CASCADE_MM, clearance);
 }
 
-/** What the cascade needs to know about a design to size its step: enough to place it. */
+/** What the cascade needs to know about a design to size its step. */
 interface CascadeSubject {
   parsed: ParsedSVG | null | undefined;
   scalePct: number;
@@ -143,19 +134,15 @@ function subjectOf(a: ArtworkInstance): CascadeSubject {
 
 /**
  * How far the step has to reach on this surface: the largest design already on it or arriving,
- * measured across that design's narrower axis, which is what two copies of it need to come apart.
+ * across its narrower axis (what two copies need to come apart).
  *
- * Read off the surface rather than off the one pair being separated, deliberately. Every design on
- * a surface steps along the same diagonal lattice, so a step sized per pair lets a later, smaller
- * design land between two of an earlier one's lattice points and sit inside it: a 5mm design
- * stepping 8mm past a 10mm one at 10mm ends up wholly within it. Taking the largest keeps one
- * lattice.
+ * Read off the surface, not the pair: every design steps along one diagonal lattice, and a per-pair
+ * step lets a smaller later design land between an earlier one's lattice points and sit inside it
+ * (a 5mm design stepping 8mm past a 10mm one at 10mm ends up wholly within it).
  *
- * The narrower axis is the cheapest one to separate along, and it answers for the pair whenever
- * the two designs are shaped alike. It does not otherwise: a 5x200 bar and a 200x5 bar both report
- * 5, and no step derived from that will part them. See docs/tech-debt.md.
- *
- * Zero when no footprint is known, which falls the step back to the constant.
+ * The narrower axis answers for the pair only when the designs are shaped alike: a 5x200 bar and a
+ * 200x5 bar both report 5 and no such step parts them. See docs/tech-debt.md.
+ * Zero when no footprint is known, which falls back to the constant.
  */
 function surfaceClearanceMM(zoneId: string | null, incoming: CascadeSubject): number {
   const narrower = (f: { w: number; h: number } | null): number => (f ? Math.min(f.w, f.h) : 0);
@@ -167,15 +154,9 @@ function surfaceClearanceMM(zoneId: string | null, incoming: CascadeSubject): nu
 }
 
 /**
- * The seed offset moved off any instance already placed at that exact spot on the same surface,
- * stepping diagonally until the spot is free (or `steps` runs out, so a pathological pile of
- * designs can't spin here). Returns the seed untouched when nothing is there — which is the
- * first/only design on a part, the common case, so its placement is bit-for-bit what it was.
- *
- * Assembly mode only. Flat plate mode renders `state.parsed` alone, so a second design isn't drawn
- * at all and there is nothing for a new one to sit on top of — stepping there would just walk each
- * freshly loaded SVG further off the plate with no second design on screen to explain why, and no
- * overlap warning either, since that check runs in the assembly build.
+ * The seed offset moved off any instance already at that exact spot on the same surface, stepping
+ * diagonally until free (or `steps` runs out). Returns the seed untouched when nothing is there —
+ * the common first/only-design case — so its placement is bit-for-bit unchanged.
  */
 function cascadedOffset(
   zoneId: string | null,
@@ -183,7 +164,6 @@ function cascadedOffset(
   offsetV: number,
   incoming: CascadeSubject,
 ): { offsetU: number; offsetV: number } {
-  if (state.shapeKind !== 'assembly') return { offsetU, offsetV };
   const taken = state.artworks.flatMap((a) =>
     placedMarks(a.zone?.zoneId ?? null, a.offsetU, a.offsetV),
   );
@@ -201,30 +181,21 @@ function cascadedOffset(
 
 /**
  * How large one working pixel of an image will print, in mm, at the placement it is about to be
- * traced for. Undefined when there is nothing to answer with, and the trace then falls back to its
+ * traced for. Undefined when there is nothing to answer with; the trace then uses its
  * fraction-of-the-image floor alone.
  *
- * **Assembly kinds only.** A flat plate fits the design's *drawn content*, which does not exist
- * until the trace has run, and the closest pre-trace stand-in (the opaque pixels) is wrong in the
- * damaging direction: one stray opaque speck in a corner inflates the extent, shrinks mm per pixel
- * and raises the floor over printable detail. An assembly places an image on its own frame
- * (`designAnchor`), so nothing there needs the traced bbox. docs/tech-debt.md carries the rest.
+ * Needs no traced bbox, because an assembly places an image on its own frame (`designAnchor`); a fit
+ * to drawn content would use the opaque pixels, wrong in the damaging direction (one stray corner
+ * speck inflates the extent, shrinks mm per pixel and raises the floor over printable detail).
  *
- * This is the half the raster stage never had. It runs strictly before placement is known, so
- * without this value its despeckle floor could only be a share of the image, which for one
- * photograph means removing 8.7mm features on the footrest and 1.4mm ones on the smallest hubcap.
- * With it, `despeckleFloorPx` sizes the floor in mm, lowering it below the fraction on flat art
- * placed large as well as raising it to a nozzle width on small faces.
- * Asking the two scale rules the build already uses, rather than restating a third one here, is
- * what keeps the floor and the cut talking about the same design.
- *
- * Fixed at the moment of the trace: the Scale slider does not re-trace, because a trace measured
- * ~830ms and a drag would fire it per step. Shrinking afterwards therefore keeps the older, more
- * permissive floor, and enlarging keeps detail removed that the new size could print, until
- * Colors or Detail re-runs it (docs/tech-debt.md).
+ * This runs before placement is known, so the despeckle floor was only a share of the image: for one
+ * photograph, removing 8.7mm features on the footrest and 1.4mm ones on the smallest hubcap. With it,
+ * `despeckleFloorPx` sizes the floor in mm, lowering it below the fraction on large flat art and
+ * raising it to a nozzle width on small faces. Uses the build's own two scale rules, so floor and
+ * cut describe the same design. Read on every rebuild, which re-traces once the floors stop matching
+ * (`retraceMovedSources`).
  */
 export function rasterMmPerPixel(img: RasterImage, sourceId?: string): number | undefined {
-  if (state.shapeKind !== 'assembly') return undefined;
   const mm = assemblyMmPerUnit(img, sourceId);
   return mm !== undefined && Number.isFinite(mm) && mm > 0 ? mm : undefined;
 }
@@ -232,21 +203,15 @@ export function rasterMmPerPixel(img: RasterImage, sourceId?: string): number | 
 /**
  * The largest millimetre-per-pixel any instance of this source is placed at.
  *
- * The largest, because one trace serves every instance: a floor sized for the smallest copy would
- * throw away detail the biggest one prints perfectly well. Each instance is asked separately
- * rather than taking the largest scale, because Fill and Sticker do not share a scale rule (see
- * `designMmPerUnit`'s forceRect) and on the wheel they are different formulas entirely.
+ * Largest, because one trace serves every instance and a floor sized for the smallest would discard
+ * detail the biggest prints fine. Each instance is asked separately: Fill and Sticker use different
+ * scale rules (`designMmPerUnit`'s forceRect), entirely different formulas on the wheel. A source
+ * with no instance yet is a first load — a Sticker at the global fit, which `loadArtworkSource` is
+ * about to create.
  *
- * A source with no instance yet is a first load, and every raster load is a Sticker at the global
- * fit, which is exactly what `loadArtworkSource` is about to create.
- *
- * An image anchors on its own frame on every assembly kind, wheel included (`designAnchor`), so
- * none of this needs the traced bbox that does not exist yet.
- *
- * Undefined while a rect kind's parts are still loading. `designMmPerUnit` answers 1mm per unit
- * there, which is a real branch for an SVG with no viewBox and a fiction for an image: it would be
- * stored on the source and saved to the session as if it had been measured, and a floor derived
- * from it is inert.
+ * Undefined while a rect kind's parts load: `designMmPerUnit` answers 1mm per unit there, real for
+ * an SVG with no viewBox but a fiction for an image, which would be saved to the session as measured
+ * and give an inert floor.
  */
 function assemblyMmPerUnit(img: RasterImage, sourceId?: string): number | undefined {
   const canvas = { w: img.w, h: img.h };
@@ -269,32 +234,24 @@ function assemblyMmPerUnit(img: RasterImage, sourceId?: string): number | undefi
 }
 
 /**
- * Register a freshly-parsed SVG as a new design source, alongside whatever is already loaded, and
- * auto-create its instance. Placement seeds from the current global offset/scale/rotation/flip so a
- * first-time load (still the common case) behaves exactly as before; a source added later starts
- * from that same snapshot rather than the *previous* active instance's placement, since the two
- * designs aren't related — stepped off it when that snapshot would drop it exactly on a design
- * already there (see INSTANCE_CASCADE_MM). The new instance becomes active, and `state.parsed` —
- * the field flat mode and legacy single-instance code still read — mirrors it.
+ * Register a freshly-parsed SVG as a new design source and auto-create its instance. Placement seeds
+ * from the global offset/scale/rotation/flip — not the previous active instance, since the designs
+ * aren't related — stepped off when that would land exactly on an existing design
+ * (INSTANCE_CASCADE_MM). The instance becomes active and `state.parsed` (still read by legacy
+ * single-instance code) mirrors it.
  *
- * The instance binds to the first offered zone when the assembly has more than one. `zone: null`
- * ("All zones" in the picker) stays available and unchanged, but it is the wrong *default* on a
- * multi-zone kind: it stamps the same design onto every surface at once, which on the chair means
- * 25 conformal charts recut on every slider nudge to produce a result nobody asked for. Kinds with
- * one zone or none (wheel, footrest, flat mode) still start unbound, so their behavior is
- * bit-for-bit what it was.
+ * Binds to the first offered zone on a multi-zone kind: `zone: null` ("All zones") stays available
+ * but is the wrong default there — on the chair it recuts 25 conformal charts on every slider nudge
+ * for a result nobody asked for. One-zone or zoneless kinds (wheel, footrest) start unbound.
  */
 export function loadArtworkSource(
   parsed: ParsedSVG,
   name: string,
   kind: DesignSource['kind'] = 'upload',
   mode: ArtworkInstance['mode'] = 'sticker',
-  // Defaults to '' for the many tests that construct a ParsedSVG directly and don't care about
-  // round-tripping it — session persistence (state/persist.ts) is the only real caller that needs
-  // this, and it always has real SVG text in hand. A raster source has none by nature.
+  // '' for the many tests that build a ParsedSVG directly; only session persistence (state/persist.ts) needs real text. A raster source has none.
   svgText: string = '',
-  // Rides along rather than being attached afterwards, so a source is never briefly in a
-  // half-built state the list panel could render.
+  // Attached up front so a source is never briefly half-built for the list panel to render.
   raster?: RasterState,
 ): ArtworkInstance {
   const source: DesignSource = {
@@ -307,9 +264,7 @@ export function loadArtworkSource(
   };
   state.sources.push(source);
 
-  // Whole chair is excluded from the default pick for the same reason `zone: null` is called out
-  // above: it stamps the design onto every net zone at once, which is the "result nobody asked
-  // for" this default exists to avoid, not a fresh alternative to it.
+  // Whole chair is excluded from the default pick like `zone: null` above: it stamps the design onto every net zone at once.
   const zones = availableZones().filter((z) => z.zoneId !== WHOLE_CHAIR_ZONE);
   const zoneId = zones.length > 1 ? zones[0].zoneId : null;
   const instance: ArtworkInstance = {
@@ -334,12 +289,10 @@ export function loadArtworkSource(
 }
 
 /**
- * Repopulate the source/artwork pool from a restored session (see state/persist.ts), preserving
- * the saved string ids rather than minting fresh ones — `artworks[].sourceId` already points at
- * them. Zone bindings come in as `zone: null`; the restore caller re-applies each one via
- * setArtworkZone() once the assembly's parts (and their fresh, session-local numeric partIds) have
- * reloaded, since a saved `partId` can't outlive the session that assigned it. Advances the id
- * counters past the restored ones so a design loaded afterward can't collide with a restored id.
+ * Repopulate the pool from a restored session (state/persist.ts), preserving saved string ids
+ * since `artworks[].sourceId` points at them. Zones come in as `zone: null`; the restore caller
+ * re-applies them via setArtworkZone() once parts reload, since a saved `partId` can't outlive its
+ * session. Advances the id counters so later loads can't collide.
  */
 export function restoreArtworkPool(sources: DesignSource[], artworks: ArtworkInstance[]): void {
   state.sources = sources;
@@ -375,21 +328,16 @@ function livePalette(): Set<string> {
 /**
  * Drop every color-derived setting whose hex no longer exists in any loaded design.
  *
- * Loading a design used to reset these wholesale, which is wrong now that designs pool: a base
- * assignment or merge group made on one artwork should survive loading a second one. But keeping
- * them *all* is wrong the other way — when a design is removed, or replaced by one with a
- * different palette, a hex left in `baseColorMembers` silently excludes it from being cut the
- * moment some later design happens to use that same hex. Pruning to what's actually on screen is
- * the only rule that behaves correctly in both directions.
+ * Designs pool, so a base assignment or merge group made on one artwork must survive loading a
+ * second. But keeping all of them is wrong too: a stale hex in `baseColorMembers` silently excludes
+ * a later design that happens to reuse it. Pruning to what's on screen is right both ways.
  */
 export function pruneSettingsToPalette(): void {
   const live = livePalette();
   const isLiveKey = (rawKey: string) => {
-    // Assembly-mode depth keys are the flat key with an "asm:" prefix (geometry/assembly.ts).
-    // Read past it: unprefixed, every one of them fell through to the "not a hex, must be
-    // something like __background__" arm and was kept forever, so a per-color depth set in
-    // assembly mode outlived the design it was set on and silently re-applied to the next one
-    // that happened to use the same hex.
+    // Assembly-mode depth keys are the flat key with an "asm:" prefix (geometry/assembly.ts). Read
+    // past it: unprefixed, they fell through to the "not a hex" arm and were kept forever, so a
+    // per-color depth outlived its design and re-applied to the next one using that hex.
     const key = rawKey.startsWith('asm:') ? rawKey.slice(4) : rawKey;
     return key.startsWith('merge:')
       ? key
@@ -418,32 +366,26 @@ export function isRasterSource(s: DesignSource): s is DesignSource & { raster: R
 }
 
 /**
- * How far a color may move across a re-quantize and still be recognised as "the same" color.
+ * How far a color may move across a re-quantize and still count as "the same" color.
  *
- * Re-quantizing moves every cluster centroid, so the palette hexes genuinely change on each nudge
- * of the Colors slider. Without this the prune below would delete the user's per-color depths and
- * base assignment every time they touched it, and the slider would feel destructive. 6 is a
- * deliberately generous CIE76 distance — comfortably past the "Slight" auto-merge cutoff of 3, so a
- * centroid drifting under a slider nudge is carried, while a genuinely different color is not.
+ * Re-quantizing moves every centroid, so palette hexes change on each Colors nudge; without this the
+ * prune would delete per-color depths and base assignment every time. 6 is a deliberately generous
+ * CIE76 distance — past the "Slight" auto-merge cutoff of 3, so slider drift is carried while a
+ * genuinely different color is not.
  */
 const SETTING_REMAP_DE = 6;
 
 /**
- * The two forms a per-color depth key takes: the bare hex in flat-plate mode, and the same hex
- * behind the "asm:" prefix geometry/assembly.ts builds its per-region keys with.
- *
- * Both have to be carried. Assembly mode is the app's primary mode, so remapping only the bare form
- * meant that in the mode nearly every user is in, a nudge of the Colors slider moved no setting and
- * pruneSettingsToPalette — which does read past the prefix — then deleted every custom recess depth:
- * exactly the destructive slider this function exists to prevent.
+ * The prefix geometry/assembly.ts builds its per-region depth keys with. Remapping the bare hex
+ * moved no setting on a Colors nudge, and pruneSettingsToPalette (which reads past the prefix)
+ * then deleted every custom recess depth.
  */
-const DEPTH_KEY_PREFIXES = ['', 'asm:'];
+const DEPTH_KEY_PREFIX = 'asm:';
 
 /**
  * Carry per-color settings across a palette change, for colors no longer painted by anything.
- *
- * Depth on a *merged* group is not carried: its settings key is built from the member hexes, so
- * the key itself changes and there is nothing stable to match on. The prune that follows drops it.
+ * Depth on a *merged* group isn't carried: its key is built from member hexes, so it changes and
+ * there is nothing stable to match; the prune that follows drops it.
  */
 function remapSettingsToPalette(oldPalette: string[], newPalette: string[]): void {
   const live = livePalette();
@@ -462,12 +404,10 @@ function remapSettingsToPalette(oldPalette: string[], newPalette: string[]): voi
     }
     if (!best) continue;
     const target = best;
-    for (const prefix of DEPTH_KEY_PREFIXES) {
-      const from = prefix + oldHex;
-      const to = prefix + target;
-      if (state.colorSettings[from] && !state.colorSettings[to])
-        state.colorSettings[to] = state.colorSettings[from];
-    }
+    const from = DEPTH_KEY_PREFIX + oldHex;
+    const to = DEPTH_KEY_PREFIX + target;
+    if (state.colorSettings[from] && !state.colorSettings[to])
+      state.colorSettings[to] = state.colorSettings[from];
     const swap = (list: string[]) => list.map((h) => (h === oldHex ? target : h));
     state.keptApart = swap(state.keptApart);
     state.baseColorMembers = swap(state.baseColorMembers);
@@ -476,40 +416,29 @@ function remapSettingsToPalette(oldPalette: string[], newPalette: string[]): voi
   }
 }
 
-/**
- * Re-run the quantize/trace stages of a loaded image at new Colors/Detail settings.
- *
- * The decoded pixels are reused, so this never re-reads the file. Synchronous — the caller owns the
- * rebuild it schedules afterwards.
- */
+/** Re-run quantize/trace on a loaded image at new Colors/Detail. Reuses the decoded pixels; synchronous — the caller owns the rebuild it schedules. */
 export function requantizeSource(
   sourceId: string,
   patch: { colors?: number; detail?: number },
-): { capped: boolean; droppedColors: number; detailLowersFloor: boolean } | null {
+): TraceOutcome | null {
   const source = state.sources.find((s) => s.id === sourceId);
   if (!source || !isRasterSource(source)) return null;
   const colors = patch.colors ?? source.raster.colors;
   const detail = patch.detail ?? source.raster.detail;
 
-  // Re-derived rather than reused: this is a fresh trace, so it gets the size the design is placed
-  // at now, not the one it happened to be loaded at. The stored value stands in when the placement
-  // cannot be read (a rect kind mid-reload), which keeps the last real measurement rather than
-  // dropping the floor and saving that loss into the session — but only inside assembly mode, or
-  // switching to a plate would apply a part's floor to a shape that has none.
-  const mmPerPixel =
-    state.shapeKind === 'assembly'
-      ? (rasterMmPerPixel(source.raster.image, source.id) ?? source.raster.mmPerPixel)
-      : undefined;
+  // Re-derived: a fresh trace gets the size the design is placed at now. The stored value stands in
+  // when placement can't be read (a rect kind mid-reload), rather than dropping the floor into the session.
+  const mmPerPixel = rasterMmPerPixel(source.raster.image, source.id) ?? source.raster.mmPerPixel;
   const result = parseRasterImage(source.raster.image, {
     colors,
     detail,
     mmPerPixel,
     name: source.name,
   });
+  failedRetraces.delete(source.id);
+  dismissNotice('', retraceFailedKey(source.id));
   const oldPalette = source.raster.palette;
-  // A brand-new ParsedSVG with a brand-new `shapes` array, never a mutation of the old one:
-  // computeNetRegionsByColor memoizes on that array's identity, so an in-place edit would serve
-  // the old regions forever.
+  // A new ParsedSVG with a new `shapes` array, never a mutation: computeNetRegionsByColor memoizes on that array's identity.
   source.parsed = result.parsed;
   source.raster = {
     ...source.raster,
@@ -528,16 +457,86 @@ export function requantizeSource(
     capped: result.capped,
     droppedColors: result.droppedColors,
     detailLowersFloor: result.detailLowersFloor,
+    floorReason: result.floorReason,
   };
 }
 
+/** What a finished trace says about itself, for `announceTrace`. */
+export type TraceOutcome = Pick<
+  RasterParseResult,
+  'capped' | 'droppedColors' | 'detailLowersFloor' | 'floorReason'
+>;
+
+/** Raise the notices a finished trace owes — same at load, restore, slider and resize. Both keys replace in place (warnings.ts push). */
+export function announceTrace(sourceId: string, name: string, result: TraceOutcome): void {
+  notice(result.capped ? rasterCappedMessage(name) : rasterTracedMessage(name), sourceId);
+  const loss = rasterColorLossNotice(name, result);
+  if (loss) notice(loss, rasterColorLossKey(sourceId));
+  // Empty text: the key decides which entry goes (warnings.ts).
+  else dismissNotice('', rasterColorLossKey(sourceId));
+}
+
+/** The floors a re-trace already came back empty at, per source. The same floors fail the same way, so later rebuilds skip the retrace. */
+const failedRetraces = new Map<string, string>();
+
+function floorsKey(source: DesignSource & { raster: RasterState }, mmPerPixel?: number): string {
+  const f = placedFloors(source.raster.image, source.raster.detail, mmPerPixel);
+  return `${f.floor}/${f.floorAtMax}`;
+}
+
+/** The key of the warning a failed re-trace raises, beside the notices the kept trace still owns. */
+function retraceFailedKey(sourceId: string): string {
+  return `${sourceId}:retrace`;
+}
+
 /**
- * A second placement of an already-loaded source — the artwork list's "+ add to another zone"
- * action. Starts from neutral placement (not the current globals): it's going on a different zone
- * than wherever the source's other instance(s) sit, so copying that unrelated placement would just
- * be confusing — unless it isn't going elsewhere after all (the same zone, or a part with only one),
- * where neutral means straight on top of what's there and it steps off instead (INSTANCE_CASCADE_MM).
- * Becomes the active instance so the fit sliders/gizmo land on it immediately.
+ * Re-trace every raster source whose placement has moved its despeckle floor, when `settled`;
+ * otherwise only report whether one is owed.
+ *
+ * Compared as floors, not a resize ratio, because no ratio exists (`bench-raster.ts steps`): on a
+ * 32-270mm hubcap flat art moves its floors at a 0.01-4% resize where a placed floor binds and
+ * holds them through 8.9-65% where the fraction does; a 512px photo holds them through any
+ * enlargement. Equal floors trace identically. An unreadable placement (rect kind mid-reload) is
+ * never stale.
+ *
+ * Per source: one that comes back empty keeps its old trace and says why while the rest re-trace;
+ * that warning goes once the placement leaves the floors it failed at.
+ */
+export function retraceMovedSources(settled: boolean): { retraced: boolean; owed: boolean } {
+  let retraced = false,
+    owed = false;
+  for (const source of state.sources) {
+    if (!isRasterSource(source)) continue;
+    const mmPerPixel = rasterMmPerPixel(source.raster.image, source.id);
+    if (mmPerPixel === undefined) continue;
+    const key = floorsKey(source, mmPerPixel);
+    const failed = failedRetraces.get(source.id);
+    if (failed !== undefined && failed !== key) {
+      failedRetraces.delete(source.id);
+      dismissNotice('', retraceFailedKey(source.id));
+    }
+    if (key === floorsKey(source, source.raster.mmPerPixel) || key === failed) continue;
+    if (!settled) {
+      owed = true;
+      continue;
+    }
+    try {
+      const result = requantizeSource(source.id, {});
+      if (result) announceTrace(source.id, source.name, result);
+      retraced = true;
+    } catch (e) {
+      failedRetraces.set(source.id, key);
+      warn((e as Error).message, retraceFailedKey(source.id));
+    }
+  }
+  return { retraced, owed };
+}
+
+/**
+ * A second placement of an already-loaded source — the list's "+ add to another zone". Starts from
+ * neutral placement, not the globals: it's going to a different zone, so copying the other
+ * instance's placement would confuse. If it's the same zone (or the part has one), neutral means
+ * straight on top, so it steps off (INSTANCE_CASCADE_MM). Becomes active.
  */
 export function addInstanceForSource(sourceId: string, zoneId: string | null): ArtworkInstance {
   const partId = zoneId ? partIdForZone(zoneId) : 0;
@@ -554,8 +553,7 @@ export function addInstanceForSource(sourceId: string, zoneId: string | null): A
     rotationDeg: 0,
     flipX: false,
     flipY: false,
-    // Sticker/fill is a property of the design, not of where it sits: a pattern placed on a second
-    // zone is still a pattern, so inherit rather than reset (unlike the placement above).
+    // Sticker/fill belongs to the design, not its position: a pattern on a second zone is still a pattern.
     mode: allowedArtworkMode(
       state.artworks.find((x) => x.sourceId === sourceId)?.mode ?? 'sticker',
     ),
@@ -572,10 +570,8 @@ export function activeArtworkInstance(): ArtworkInstance | null {
 
 /**
  * Make an instance active and pull its placement into the legacy global fields the fit sliders and
- * gizmo still read/write — the sliders don't know about instances directly, so "switch which design
- * you're editing" has to happen by re-seeding those globals (the reverse of syncActiveArtworkPlacement,
- * which pushes edits back out before a build). Also mirrors `state.parsed` to the newly active
- * instance's source so flat-mode/bbox code keeps reading the right design.
+ * gizmo read/write (the reverse of syncActiveArtworkPlacement). Also mirrors `state.parsed` to its
+ * source so bbox code reads the right design.
  */
 export function setActiveArtwork(id: string | null): void {
   if (id === null) {
@@ -607,44 +603,31 @@ export function setArtworkZone(instanceId: string, zoneId: string | null): void 
   const a = state.artworks.find((x) => x.id === instanceId);
   if (!a) return;
   a.zone = zoneId ? { partId: partIdForZone(zoneId), zoneId } : null;
-  // A saved (or already-ticked) Mirror survives rebinding to another zone that also offers it —
-  // restoreSession rebinds every instance's zone here after the pool restores mirror:true — and
-  // drops the moment the new zone (or "All zones") offers none, so a stale flag never reaches a
-  // mapper with no mirror to apply it against. Judged only while some zone is offered at all: the
-  // restore runs while the parts manifest may still be in flight, and restoreSession keeps the
-  // saved binding on that reading for the same reason (an empty zone list is not evidence).
+  // A saved or ticked Mirror survives rebinding to a zone that also offers it (restoreSession rebinds
+  // after the pool restores mirror:true) and drops when the new zone offers none, so a stale flag
+  // never reaches a mapper with nothing to mirror against. Judged only while some zone is offered:
+  // restore may run while the parts manifest is in flight (an empty zone list is not evidence).
   if (a.mirror && (!zoneId || (availableZones().length > 0 && !zoneMirrorOf(zoneId))))
     a.mirror = false;
 }
 
-/**
- * Toggle whether an instance also cuts on its bound zone's mirror. Only takes effect on a zone
- * that actually offers one (`ZoneMirror`, baked per zone); asking for it on any other zone leaves
- * it off, same as a session restored before Mirror existed.
- */
+/** Toggle an instance's cut on its zone's mirror. Only takes effect on a zone that offers one (`ZoneMirror`); elsewhere it stays off, as in a pre-Mirror session. */
 export function setArtworkMirror(instanceId: string, on: boolean): void {
   const a = state.artworks.find((x) => x.id === instanceId);
   if (!a) return;
   a.mirror = on && !!(a.zone && zoneMirrorOf(a.zone.zoneId));
 }
 
-/**
- * Switch one instance between placing a single copy of its design and repeating it across the whole
- * zone. Set per instance, not per source: the same design can legitimately be a sticker on one zone
- * and a background fill on another.
- */
+/** Switch one instance between a single copy and a zone-wide repeat. Per instance, not per source: one design can be a sticker on one zone and a fill on another. */
 export function setArtworkMode(instanceId: string, mode: ArtworkInstance['mode']): void {
   const a = state.artworks.find((x) => x.id === instanceId);
   if (a) a.mode = allowedArtworkMode(mode);
 }
 
 /**
- * Fill coerced to Sticker on a kind that withholds it. State never holds Fill for a part where Fill
- * misbehaves, so the build pipeline needs no matching check — the alternative, letting `mode` stay
- * 'fill' and reinterpreting it downstream, is the one shared value meaning two things at once that
- * CLAUDE.md warns about. Deliberately keyed on fillWithheld() and not on whether the control is
- * currently shown: a flat part hides Fill but merely ignores it, and clamping there would discard a
- * setting the user picked in assembly mode the moment they glanced at a disc.
+ * Fill coerced to Sticker on a kind that withholds it. State never holds Fill where it misbehaves,
+ * so the build needs no matching check — letting `mode` stay 'fill' and reinterpreting downstream
+ * is the one-value-two-meanings CLAUDE.md warns about.
  */
 export function allowedArtworkMode(mode: ArtworkInstance['mode']): ArtworkInstance['mode'] {
   return mode === 'fill' && fillWithheld() ? 'sticker' : mode;
@@ -652,10 +635,8 @@ export function allowedArtworkMode(mode: ArtworkInstance['mode']): ArtworkInstan
 
 /**
  * Names one design a switch took out of Fill, so the rewrite is never silent.
- *
- * Two reasons reach here and they are not interchangeable: a kind carrying `withholdFill`, where
- * the part is what can't do it, and Cut to artwork shape on the hubcap, where the setting is. The
- * message has to name whichever is actually true, or it tells the user to blame the wrong thing.
+ * Two reasons reach here: a kind with `withholdFill` (the part can't), and Cut to artwork shape on
+ * the hubcap (the setting can't). The message must name the true one.
  */
 export function fillClampedNotice(name: string, partName: string, bySetting: boolean): string {
   return bySetting
@@ -665,24 +646,18 @@ export function fillClampedNotice(name: string, partName: string, bySetting: boo
 
 /**
  * One key per design, so a second clamped design is reported instead of colliding with the first.
- *
- * Exported because the notice outlives the design otherwise: the retraction in clampArtworkModes
- * walks the live sources, so once a removed design's source is gone there is nothing left to match
- * and the pill stands for the session naming a file that is not loaded. artworkListPanel's remove
- * handler retracts it there, beside the two other per-source notices that already need it.
+ * Exported because the notice outlives the design: clampArtworkModes' retraction walks live sources,
+ * so after removal nothing matches. artworkListPanel's remove handler retracts it.
  */
 export const fillClampKey = (sourceId: string): string => `fill-clamped:${sourceId}`;
 
 /**
- * Re-clamp every loaded design's mode against the current part. Artwork outlives a part switch
- * (only its zone bindings are cleared), so a design set to Fill on the wheel would otherwise arrive
- * on the chair still set to Fill and rebuild through the path the flag exists to keep it out of.
- * Returns whether anything changed, so callers can skip a needless rebuild.
+ * Re-clamp every loaded design's mode against the current part. Artwork outlives a part switch, so a
+ * design set to Fill on the wheel would arrive on the chair still Fill and rebuild through the path
+ * the flag keeps it out of. Returns whether anything changed, so callers can skip a rebuild.
  *
- * Says so when it does. Before the chair was offered in the Part dropdown this could only be
- * reached by loading a URL, which starts with no artwork, so the rewrite had nothing to take. Now
- * a design carried over from the wheel loses a mode the user chose, and the control it was chosen
- * with is not on screen to show it.
+ * Says so when it does: a design carried over from the wheel loses a mode the user chose, and the
+ * control it was chosen with is not on screen.
  */
 export function clampArtworkModes(): boolean {
   let changed = false;
@@ -692,25 +667,20 @@ export function clampArtworkModes(): boolean {
     if (next === a.mode) return;
     a.mode = next;
     changed = true;
-    // Two placements of one design clamp together and are one row on screen, so it is named once.
-    // An artwork whose source has gone still gets an entry, under its own id: not being nameable
-    // is not a reason to say nothing.
+    // Two placements of one design clamp together and are one row on screen, so named once. A gone
+    // source still gets an entry under its own id — not being nameable is no reason for silence.
     const src = state.sources.find((s) => s.id === a.sourceId);
     clamped.set(src?.id ?? a.id, src?.name ?? 'A design');
   });
-  // These are session-scoped rather than build-scoped, so nothing else takes them down, and they
-  // state a standing fact rather than an event: this design is a sticker here. Once clamped, a
-  // design's mode is plain `sticker` and indistinguishable from one the user chose, so the fact
-  // cannot be re-derived on a later call — which is why a still-true notice is left alone instead
-  // of being retracted and re-raised. What ends it is Fill working again, and that is the one
-  // condition checked here.
+  // Session-scoped, so nothing else takes them down, and they state a standing fact (this design is
+  // a sticker here). A clamped mode is plain `sticker` and indistinguishable from a chosen one, so
+  // the fact can't be re-derived later — hence a still-true notice is left alone, not retracted and
+  // re-raised. Only Fill working again ends it, the one condition checked here.
   //
-  // Leaves one narrow staleness, in both directions: moving between the chair and a hubcap that
-  // already has Cut to artwork shape on keeps Fill withheld throughout, so nothing is dismissed and
-  // the mode is already `sticker` so nothing re-raises, and the pill keeps the wording it was
-  // raised with. Going that way it names a toggle the chair does not render. Closing it means
-  // keying the notice on the part as well as the design; it needs the toggle set before the switch
-  // to reach, and the pill is dismissable, so it is written down rather than patched.
+  // Known staleness: moving between the chair and a hubcap already on Cut to artwork shape keeps
+  // Fill withheld throughout, so nothing dismisses or re-raises and the pill keeps its original
+  // wording, which on that path names a toggle the chair doesn't render. Fixing it means keying the
+  // notice on the part as well as the design; written down rather than patched.
   if (!fillWithheld()) {
     for (const id of [...state.sources.map((s) => s.id), ...state.artworks.map((a) => a.id)])
       dismissNotice('', fillClampKey(id));
@@ -728,10 +698,9 @@ function partIdForZone(zoneId: string): number {
 }
 
 /**
- * Every zone id currently offered by the loaded assembly parts, deduped and named — what the
- * per-instance zone dropdown (and the Part panel's per-zone template links) offer. Empty outside
- * assembly mode, or for a kind with no zone sidecar (a part with `zones: undefined` has one
- * implicit flat zone, not a pickable one).
+ * Every zone id offered by the loaded assembly parts, deduped and named — what the per-instance zone
+ * dropdown and the Part panel's template links offer. Empty outside assembly mode or for a kind with
+ * no zone sidecar (`zones: undefined` is one implicit flat zone, not a pickable one).
  */
 export function availableZones(): {
   zoneId: string;
@@ -746,11 +715,9 @@ export function availableZones(): {
         seen.set(z.id, { name: z.name, templateFile: z.templateFile, mirror: z.mirror });
   const out = Array.from(seen, ([zoneId, v]) => ({ zoneId, ...v }));
   const net = netZones();
-  // First, because it is the whole part and every other entry is one piece of it. Named for the
-  // thing rather than for the layout: "net" is our word, not the user's. The label reads "Whole
-  // <kind>" off the kind's own display name rather than a hardcoded "chair" — the chair's is
-  // "Chair body", and only its first word belongs in a sentence a volunteer reads ("Whole chair
-  // body" names a part twice), so a future multi-zone kind gets its own word the same way.
+  // First, as the whole part with every other entry a piece of it. Named for the thing, not the layout
+  // ("net" is our word). Reads "Whole <kind>" off the kind's display name, first word only: the
+  // chair's "Chair body" would name the part twice in "Whole chair body".
   if (net)
     out.unshift({
       zoneId: WHOLE_CHAIR_ZONE,
@@ -760,7 +727,7 @@ export function availableZones(): {
   return out;
 }
 
-/** One zone of the net, with everything needed to move a whole-part placement onto it. */
+/** One zone of the net, with what's needed to move a whole-part placement onto it. */
 export interface NetZoneBinding {
   zoneId: string;
   place: NetZonePlacement;
@@ -769,13 +736,12 @@ export interface NetZoneBinding {
 }
 
 /**
- * The loaded kind's net, resolved against the parts actually in the scene: the canvas anchor, one
- * entry per net zone a loaded part carries, and the zones on either side that did not pair up.
+ * The loaded kind's net resolved against the parts in the scene: the canvas anchor, one entry per
+ * net zone a loaded part carries, and the zones on either side that didn't pair up.
  *
- * Null where a whole-part binding cannot mean anything — no net baked, or none of its zones
- * loaded. The two mismatch lists are not filtered away: a zone the net names but nothing carries
- * takes no artwork, and a loaded zone the net never placed takes none either, and both are things
- * the build has to say out loud rather than quietly cut around.
+ * Null where a whole-part binding can't mean anything (no net baked, or none of its zones loaded).
+ * The mismatch lists are kept, not filtered: a zone nothing carries, or a loaded zone the net never
+ * placed, takes no artwork, and the build must say so.
  */
 export function netZones(): {
   netCentre: [number, number];
@@ -809,15 +775,12 @@ export function netZones(): {
 }
 
 /**
- * How many of the assembly's design zones currently carry at least one artwork instance, out of
- * how many the part offers — the number behind the chair's "N of M zones have artwork" notice
- * and the pre-export coverage check. An instance with `zone: null` ("All zones") counts every zone
- * covered, since that's what it actually cuts onto. `{ total: 0, ... }` outside assembly mode or on
- * a single/no-zone kind, where there's nothing to reconcile.
+ * How many design zones carry at least one artwork instance, out of how many the part offers — behind
+ * the chair's "N of M zones have artwork" notice and the pre-export coverage check. `zone: null`
+ * counts every zone covered. `{ total: 0, ... }` on a one/no-zone kind.
  */
 export function zoneCoverage(): { total: number; covered: number } {
-  // The whole-part entry is every other entry at once, not a surface of its own, so it is not a
-  // zone this counts towards — only one it can fill.
+  // The whole-part entry is every other entry at once, not a surface of its own: not counted, only fillable.
   const zones = availableZones().filter((z) => z.zoneId !== WHOLE_CHAIR_ZONE);
   if (!zones.length) return { total: 0, covered: 0 };
   if (state.artworks.some((a) => a.zone === null))
@@ -827,8 +790,7 @@ export function zoneCoverage(): { total: number; covered: number } {
   for (const a of state.artworks) {
     const zoneId = a.zone?.zoneId;
     if (!zoneId) continue;
-    // A whole-part design is cut onto every zone the net places, detached sheets included: the
-    // build expands it into one ordinary placement per zone, and each of those really does cut.
+    // A whole-part design cuts onto every zone the net places, detached sheets included (the build expands it per zone).
     if (zoneId === WHOLE_CHAIR_ZONE) {
       for (const z of net?.zones ?? []) bound.add(z.zoneId);
       continue;
@@ -844,10 +806,9 @@ export function zoneCoverage(): { total: number; covered: number } {
 }
 
 /**
- * Remove one artwork instance (the list panel's × on a row). If that was the last instance using
- * its source, the source goes with it — an orphaned source can't be targeted by anything and would
- * just be dead weight in the list. Falls back to the full clearArtwork() when nothing is left, so
- * `state.parsed` and the color/merge/base settings reset exactly as before.
+ * Remove one artwork instance (the list's ×). Removing the last instance of a source removes the
+ * source (an orphan can't be targeted). Falls back to clearArtwork() when nothing's left so
+ * `state.parsed` and the color/merge/base settings reset as before.
  */
 export function removeArtworkInstance(instanceId: string): void {
   const a = state.artworks.find((x) => x.id === instanceId);
@@ -865,10 +826,9 @@ export function removeArtworkInstance(instanceId: string): void {
 }
 
 /**
- * Drop every loaded artwork — the counterpart to loadArtworkSource, used when the last instance is
- * removed. Leaves offset/scale/rotation/flip alone: those are a placement preference, not
- * artwork-specific, and (like autoMergeLevel) intentionally survive a reload/removal. Pure state
- * only — callers own any DOM/rebuild side effects.
+ * Drop every loaded artwork — the counterpart to loadArtworkSource. Leaves offset/scale/rotation/
+ * flip alone: a placement preference that (like autoMergeLevel) survives removal. State only —
+ * callers own DOM/rebuild side effects.
  */
 export function clearArtwork(): void {
   state.parsed = null;
@@ -882,12 +842,10 @@ export function clearArtwork(): void {
 }
 
 /**
- * Clear every instance's zone binding — called on an assembly kind switch. The new kind's parts are
- * an entirely different mesh, so a stale `{ partId, zoneId }` would either point at nothing or
- * (worse) silently match a same-named zone on an unrelated part; clearing back to "every zone the
- * part offers" is the same safe default a freshly-loaded source gets, and the user can re-target
- * from the list. Without this, an instance bound to a chair zone would take no cut at all after
- * switching to the wheel, with nothing in the UI explaining why.
+ * Clear every instance's zone binding on an assembly kind switch. The new kind is a different mesh,
+ * so a stale `{ partId, zoneId }` would point at nothing or silently match a same-named zone on an
+ * unrelated part; "every zone the part offers" is the safe default. Otherwise a chair-zone instance
+ * would take no cut on the wheel with nothing in the UI saying why.
  */
 export function clearArtworkZoneBindings(): void {
   state.artworks.forEach((a) => {
@@ -897,9 +855,8 @@ export function clearArtworkZoneBindings(): void {
 }
 
 /**
- * Mirror the legacy global placement fields onto the active instance. Those globals are still the
- * fit sliders' and gizmo's write target, so this keeps the instance's placement fresh (called before
- * assembly-mode code reads from it) without requiring every slider handler to know about instances.
+ * Mirror the legacy global placement fields onto the active instance. They're still the fit
+ * sliders' and gizmo's write target, so this keeps the instance fresh before assembly code reads it.
  */
 export function syncActiveArtworkPlacement(): void {
   const a = activeArtworkInstance();

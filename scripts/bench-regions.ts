@@ -4,6 +4,10 @@
 //   node_modules/.bin/vite-node scripts/bench-regions.ts attribute [file...]  shipping vs the old fold
 //   node_modules/.bin/vite-node scripts/bench-regions.ts variants  [file...]  every candidate, side by side
 //   node_modules/.bin/vite-node scripts/bench-regions.ts scaling   [n...]     batch size against shape count
+//   node_modules/.bin/vite-node scripts/bench-regions.ts merge     [spec...]  the real pass's per-color merge
+//   node_modules/.bin/vite-node scripts/bench-regions.ts chunks    [spec...]  that merge against chunk size
+//
+// A spec is a file, or a synthetic single-color fixture: dots:N, scatter:N or overlap:N.
 //
 // `replicaPairwise` is the loop as it stood before COVERED_BATCH: one safeDiff and two safeUnions
 // per shape, against an accumulator folded one shape at a time. It is kept, and kept exact, for
@@ -75,8 +79,16 @@ dom.window.HTMLCanvasElement.prototype.getContext = function () {
 
 const pc = (await import('polygon-clipping')).default;
 const { parseSVGDocument } = await import('../src/svg/parse');
-const { computeNetRegionsByColor, cleanFeature, planarArea, shapeToFeature } =
-  await import('../src/geometry/regions');
+const { toFiniteInt } = await import('../src/util/number');
+const {
+  computeNetRegionsByColor,
+  cleanFeature,
+  planarArea,
+  safeUnionAllCooperative,
+  shapeToFeature,
+  yieldToBrowser,
+  YIELD_BUDGET_MS,
+} = await import('../src/geometry/regions');
 type PolyFeature = import('../src/types').PolyFeature;
 type SVGShape = import('../src/types').SVGShape;
 type Ring = number[][];
@@ -554,49 +566,71 @@ async function variants(files: string[]): Promise<void> {
  *
  * Deliberately the hard case the accumulator comment describes: a full-canvas background at the
  * bottom of the paint order that every later shape overlaps, then blobs scattered dense enough to
- * overlap each other. A disjoint set would make every difference a no-op and measure nothing.
+ * overlap each other. It is not the worst case: disjoint blobs never collapse the accumulator, and
+ * 400 of them took 15.9s through the real pass (`merge dots:400`) where this set's 400 take ~0.7s
+ * at batch 8 (`scaling 400`).
  */
 function syntheticShapes(n: number, seed = 1): SVGShape[] {
-  let a = seed;
-  const rnd = (): number => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-  const CANVAS = 1000;
-  const VERTS = 64;
-  const shapes: SVGShape[] = [
-    {
-      fill: '#ffffff',
-      order: 0,
-      loops: [
-        [
-          { x: 0, y: 0 },
-          { x: CANVAS, y: 0 },
-          { x: CANVAS, y: CANVAS },
-          { x: 0, y: CANVAS },
-          { x: 0, y: 0 },
-        ],
-      ],
-    },
-  ];
+  const rnd = seeded(seed);
   const palette = ['#e01b24', '#3584e4', '#33d17a', '#f6d32d', '#9141ac', '#1e1c18'];
+  const shapes = [background()];
   for (let i = 1; i < n; i++) {
     const cx = rnd() * CANVAS;
     const cy = rnd() * CANVAS;
     const r = 40 + rnd() * 120;
     const wob = 0.15 + rnd() * 0.35;
     const phase = rnd() * Math.PI * 2;
-    const loop = Array.from({ length: VERTS }, (_, k) => {
-      const th = (2 * Math.PI * k) / VERTS;
-      const rr = r * (1 + wob * Math.sin(3 * th + phase));
-      return { x: cx + rr * Math.cos(th), y: cy + rr * Math.sin(th) };
-    });
-    loop.push({ ...loop[0] });
-    shapes.push({ fill: palette[i % palette.length], order: i, loops: [loop] });
+    shapes.push(blob(palette[i % palette.length], i, cx, cy, r, wob, phase));
   }
   return shapes;
+}
+
+const CANVAS = 1000;
+
+function seeded(seed: number): () => number {
+  let a = seed;
+  return (): number => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function background(): SVGShape {
+  return {
+    fill: '#ffffff',
+    order: 0,
+    loops: [
+      [
+        { x: 0, y: 0 },
+        { x: CANVAS, y: 0 },
+        { x: CANVAS, y: CANVAS },
+        { x: 0, y: CANVAS },
+        { x: 0, y: 0 },
+      ],
+    ],
+  };
+}
+
+/** A 64-vertex three-lobed blob, the one shape every synthetic fixture here is built from. */
+function blob(
+  fill: string,
+  order: number,
+  cx: number,
+  cy: number,
+  r: number,
+  wob: number,
+  phase: number,
+): SVGShape {
+  const VERTS = 64;
+  const loop = Array.from({ length: VERTS }, (_, k) => {
+    const th = (2 * Math.PI * k) / VERTS;
+    const rr = r * (1 + wob * Math.sin(3 * th + phase));
+    return { x: cx + rr * Math.cos(th), y: cy + rr * Math.sin(th) };
+  });
+  loop.push({ ...loop[0] });
+  return { fill, order, loops: [loop] };
 }
 
 /** Batch sizes swept by `scaling`. Override with MOSAIC_BENCH_BATCHES=2,4,8. */
@@ -629,11 +663,257 @@ async function scaling(counts: number[]): Promise<void> {
   }
 }
 
+type UnionFn = (g: Poly[], ...gs: Poly[][]) => Poly[];
+const pcMut = pc as unknown as { union: UnionFn; difference: UnionFn };
+const realUnion = pcMut.union;
+const realDifference = pcMut.difference;
+
+/** Every n-ary engine union the real pass makes after its visibility loop, with its arguments and
+ * how long the one call took. The pass reports exactly 0.9 when that loop ends, and only the
+ * per-color merge runs after it, so the progress callback is the phase marker. A merge that falls
+ * back to the pairwise fold goes through Turf's own copy of the engine, which this does not see. */
+async function capturedMerge(shapes: SVGShape[]): Promise<{
+  mergeMs: number;
+  lists: Poly[][][];
+  longest: number;
+  engineMs: number;
+  foldLongest: number;
+  diffLongest: number;
+  passMs: number;
+}> {
+  const lists: Poly[][][] = [];
+  let longest = 0;
+  let engineMs = 0;
+  let foldLongest = 0;
+  let diffLongest = 0;
+  let mergeStart = -1;
+  // A call that throws is timed too: the retry ladder re-runs it, and every attempt is main thread.
+  pcMut.union = (...args: Poly[][]) => {
+    const t = now();
+    try {
+      return realUnion(args[0], ...args.slice(1));
+    } finally {
+      const spent = now() - t;
+      if (mergeStart >= 0) {
+        engineMs += spent;
+        longest = Math.max(longest, spent);
+        lists.push(args);
+      } else foldLongest = Math.max(foldLongest, spent);
+    }
+  };
+  pcMut.difference = (...args: Poly[][]) => {
+    const t = now();
+    try {
+      return realDifference(args[0], ...args.slice(1));
+    } finally {
+      diffLongest = Math.max(diffLongest, now() - t);
+    }
+  };
+  const t0 = now();
+  try {
+    await computeNetRegionsByColor(shapes, (f) => {
+      if (f >= 0.9 && mergeStart < 0) mergeStart = now();
+    });
+  } finally {
+    pcMut.union = realUnion;
+    pcMut.difference = realDifference;
+  }
+  const passMs = now() - t0;
+  return {
+    mergeMs: mergeStart < 0 ? 0 : now() - mergeStart,
+    lists,
+    longest,
+    engineMs,
+    foldLongest,
+    diffLongest,
+    passMs,
+  };
+}
+
+const median = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+
+/** Synthetic single-shade artwork for the per-color merge: `n` pieces of one fill over a
+ * background, laid out so they reach the merge as `n` separate pieces.
+ *
+ * - `dots`: a grid of disjoint blobs, so the union collapses nothing (a spotted pattern).
+ * - `scatter`: small blobs at random, overlapping in clusters.
+ * - `overlap`: large blobs at random, overlapping almost everywhere. */
+function singleShade(kind: 'dots' | 'scatter' | 'overlap', n: number, seed = 1): SVGShape[] {
+  const rnd = seeded(seed);
+  const side = Math.ceil(Math.sqrt(n));
+  const cell = CANVAS / side;
+  const shapes = [background()];
+  for (let i = 0; i < n; i++) {
+    if (kind === 'dots') {
+      const cx = ((i % side) + 0.5) * cell;
+      const cy = (Math.floor(i / side) + 0.5) * cell;
+      shapes.push(blob('#1e1c18', i + 1, cx, cy, cell * 0.3, 0.2, i));
+      continue;
+    }
+    const cx = rnd() * CANVAS;
+    const cy = rnd() * CANVAS;
+    const r = kind === 'scatter' ? 8 + rnd() * 16 : 40 + rnd() * 120;
+    const wob = 0.15 + rnd() * 0.35;
+    const phase = rnd() * Math.PI * 2;
+    shapes.push(blob('#1e1c18', i + 1, cx, cy, r, wob, phase));
+  }
+  return shapes;
+}
+
+/** Timed runs per measurement in `merge` and `chunks`, after one warm-up. MOSAIC_BENCH_REPEATS=1 for
+ * the 800-piece fixtures, whose whole pass runs for minutes. */
+const REPEATS = positiveInt('MOSAIC_BENCH_REPEATS', process.env.MOSAIC_BENCH_REPEATS || '5');
+
+function positiveInt(name: string, raw: string): number {
+  const n = toFiniteInt(raw);
+  if (n === null || n < 1 || String(n) !== raw.trim()) throw new Error(`${name}: bad value ${raw}`);
+  return n;
+}
+
+const SYNTHETIC = /^(dots|scatter|overlap):(\d+)$/;
+function loadAny(spec: string): { name: string; shapes: SVGShape[] } {
+  const m = SYNTHETIC.exec(spec);
+  if (!m) return load(spec);
+  return { name: spec, shapes: singleShade(m[1] as 'dots' | 'scatter' | 'overlap', Number(m[2])) };
+}
+
+async function merge(specs: string[]): Promise<void> {
+  console.log(
+    `\nThe real pass's per-color merge phase (median of ${REPEATS}, each on a fresh parse)\n`,
+  );
+  let total = 0;
+  for (const spec of specs) {
+    await capturedMerge(loadAny(spec).shapes); // warm
+    const runs = [];
+    for (let r = 0; r < REPEATS; r++) runs.push(await capturedMerge(loadAny(spec).shapes));
+    const ms = median(runs.map((r) => r.mergeMs));
+    const longest = median(runs.map((r) => r.longest));
+    const engine = median(runs.map((r) => r.engineMs));
+    const fold = median(runs.map((r) => r.foldLongest));
+    const diff = median(runs.map((r) => r.diffLongest));
+    const pass = median(runs.map((r) => r.passMs));
+    const pieces = runs[0].lists.map((l) => l.length);
+    total += ms;
+    console.log(
+      `  ${spec.padEnd(28)} merge ${ms.toFixed(1).padStart(7)}ms   longest engine call ` +
+        `${longest.toFixed(1).padStart(7)}ms   in engine ${engine.toFixed(1).padStart(7)}ms   engine unions ${pieces.length}   ` +
+        `largest list ${pieces.length ? Math.max(...pieces) : 0} pieces   ` +
+        `| whole pass ${pass.toFixed(0)}ms, longest fold ${fold.toFixed(1)}ms, ` +
+        `longest difference ${diff.toFixed(1)}ms`,
+    );
+  }
+  console.log(`  ${'total'.padEnd(28)} merge ${total.toFixed(1).padStart(7)}ms`);
+}
+
+/** Chunk sizes swept by `chunks`. Override with MOSAIC_BENCH_CHUNKS=50,100,all. */
+const CHUNKS = (process.env.MOSAIC_BENCH_CHUNKS || '25,50,100,200,400,all')
+  .split(',')
+  .map((s) =>
+    s.trim() === 'all' ? Number.MAX_SAFE_INTEGER : positiveInt('MOSAIC_BENCH_CHUNKS', s),
+  );
+
+/**
+ * Candidate, not shipping: the per-color merge handed to the engine `chunk` pieces at a time, then
+ * the chunk results the same way, yielding between chunks. `chunk` >= the list length is exactly
+ * the shipping call, so `all` is the baseline.
+ */
+async function unionPiecesChunked(
+  pieces: PolyFeature[],
+  chunk: number,
+): Promise<PolyFeature | null> {
+  const size = Math.max(2, chunk);
+  let level = pieces;
+  let lastYield = now();
+  while (level.length > size) {
+    const next: PolyFeature[] = [];
+    for (let i = 0; i < level.length; i += size) {
+      const u = await safeUnionAllCooperative(level.slice(i, i + size));
+      if (u) next.push(u);
+      if (now() - lastYield > YIELD_BUDGET_MS) {
+        await yieldToBrowser();
+        lastYield = now();
+      }
+    }
+    level = next;
+  }
+  return safeUnionAllCooperative(level);
+}
+
+/**
+ * The per-color merge at each chunk size, on the exact piece lists the real pass handed its merge.
+ * `all` is the unchunked single sweep. Areas are checked against it: a chunking that is fast
+ * because a union failed and fell back is not faster.
+ */
+async function chunks(specs: string[]): Promise<void> {
+  console.log(
+    `\nPer-color merge against chunk size (median of ${REPEATS}, area-checked against all)\n`,
+  );
+  for (const spec of specs) {
+    const { name, shapes } = loadAny(spec);
+    const { lists } = await capturedMerge(shapes);
+    const inputs = lists.map((l) => l.map((g) => fromPC(g) as PolyFeature));
+    const pieces = inputs.map((l) => l.length);
+    const verts = inputs.reduce((s, l) => s + l.reduce((t, f) => t + vertexCount(f), 0), 0);
+    console.log(
+      `${name}  ${inputs.length} merged colors, largest ${Math.max(0, ...pieces)} pieces, ` +
+        `${verts} input vertices`,
+    );
+    let base: Record<string, number> | null = null;
+    const ALL = Number.MAX_SAFE_INTEGER;
+    for (const chunk of [ALL, ...CHUNKS.filter((c) => c !== ALL)]) {
+      const label = chunk === ALL ? 'all' : String(chunk);
+      const once = async () => {
+        let longest = 0;
+        let calls = 0;
+        pcMut.union = (...args: Poly[][]) => {
+          const t = now();
+          const out = realUnion(args[0], ...args.slice(1));
+          longest = Math.max(longest, now() - t);
+          calls++;
+          return out;
+        };
+        const t0 = now();
+        const out: Record<string, number> = {};
+        try {
+          for (let c = 0; c < inputs.length; c++) {
+            const merged = await unionPiecesChunked(inputs[c], chunk);
+            out[String(c)] = merged ? planarArea(merged) : 0;
+          }
+        } finally {
+          pcMut.union = realUnion;
+        }
+        return { ms: now() - t0, longest, calls, areas: out };
+      };
+      await once(); // warm
+      const runs = [];
+      for (let r = 0; r < REPEATS; r++) runs.push(await once());
+      base ??= runs[0].areas;
+      const c = compare(base, runs[0].areas);
+      console.log(
+        `  chunk=${label.padEnd(5)} ${median(runs.map((r) => r.ms))
+          .toFixed(1)
+          .padStart(8)}ms   ` +
+          `longest call ${median(runs.map((r) => r.longest))
+            .toFixed(1)
+            .padStart(7)}ms   ` +
+          `calls ${String(runs[0].calls).padStart(4)}   ` +
+          `worst area drift ${(100 * c.worstRel).toFixed(4)}%`,
+      );
+    }
+    console.log('');
+  }
+}
+
 const [mode, ...rest] = process.argv.slice(2);
 if (mode === 'attribute') await attribute(rest.length ? rest : CORPUS);
 else if (mode === 'variants') await variants(rest.length ? rest : CORPUS);
+else if (mode === 'chunks')
+  await chunks(rest.length ? rest : ['dots:800', 'scatter:800', 'overlap:800']);
+else if (mode === 'merge') await merge(rest.length ? rest : CORPUS);
 else if (mode === 'scaling') await scaling(rest.length ? rest.map(Number) : [50, 100, 200, 400]);
 else {
-  console.error('usage: bench-regions.ts attribute|variants [file...] | scaling [n...]');
+  console.error(
+    'usage: bench-regions.ts attribute|variants [file...] | scaling [n...] | merge|chunks [spec...]',
+  );
   process.exit(1);
 }

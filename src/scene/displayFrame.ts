@@ -3,22 +3,13 @@ import type { AssemblyKind, DisplayFrame } from '../types';
 
 /** World up in the Z-up viewport scene (see `camera.up` in viewport.ts). */
 const WORLD_UP = new THREE.Vector3(0, 0, 1);
-/**
- * The world direction an authored `front` is turned to face: −Y, the side the default camera sits
- * on (viewport.ts parks it at negative Y looking back along +Y), so a kind opens showing its front
- * rather than its back.
- */
+/** Where an authored `front` turns: −Y, the default camera's side, so a kind opens front-first. */
 const WORLD_FRONT = new THREE.Vector3(0, -1, 0);
 
 /**
- * Rotation carrying a kind's native coordinates into display coordinates — its `up` onto world up
- * and its `front` toward the camera.
- *
- * Derived from the two authored directions rather than stored as angles: the data then reads as a
- * statement about the part ("+Y is up, +Z is the front") that can be checked against the mesh,
- * and a re-pack that changed the native frame shows up as a wrong-looking vector here instead of a
- * silently-wrong Euler triple. `front` is re-orthogonalized against `up` so hand-authored vectors
- * need not be exactly perpendicular.
+ * Native to display rotation (`up` to world up, `front` to the camera). Directions, not angles:
+ * "+Y is up" can be checked against the mesh, where a re-pack would silently break an Euler
+ * triple. `front` is re-orthogonalized, so authored vectors needn't be exactly perpendicular.
  */
 export function displayQuaternion(df: DisplayFrame): THREE.Quaternion {
   const up = new THREE.Vector3(...df.up);
@@ -48,10 +39,8 @@ export function displayQuaternionFor(kind: AssemblyKind | null | undefined): THR
 }
 
 /**
- * The view direction (target → camera) a kind should open at. A kind with a display frame has
- * already been turned so its front faces −Y, so the camera goes there; the ±Y face-normal guess
- * only makes sense for the plate-like kinds posed by the "design face is a Y-plane" convention.
- * Both keep the same slight side-and-above offset so the opening framing reads the same.
+ * Opening view direction (target → camera): −Y for a display-framed kind (already turned front to
+ * −Y), else the ±Y face normal of the plate-like kinds. Same side-and-above offset for both.
  */
 export function assemblyViewDir(
   kind: AssemblyKind | null | undefined,

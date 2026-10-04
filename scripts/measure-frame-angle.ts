@@ -2,23 +2,22 @@
 //
 //   node_modules/.bin/vite-node scripts/measure-frame-angle.ts
 //
-// Backs "The placement frame's angle is unrelated to the face it acts on" in docs/tech-debt.md.
-// That section has never been measured, and it says why that matters: the two answers close very
-// differently. A frame drawn on a plane that is not the face's plane is a defect in placement. A
-// frame that faithfully shows an odd-looking parameterisation is a bake or rendering question.
+// Whether the placement gizmo lies in the face it acts on (convention 13), for every patch the part
+// panel offers. docs/findings/2026-08-24-placement-frame-angle.md has the run that found it did
+// not. A frame drawn on a plane that is not the face's plane is a defect in placement; a frame
+// that faithfully shows an odd-looking parameterisation is a bake or rendering question.
 //
 // ---------------------------------------------------------------------------
 // What is actually compared, and why it is not the code under test twice
 // ---------------------------------------------------------------------------
 //
 // The gizmo draws its outline along `FlatZoneMapper.frameAt()`'s uAxis/vAxis, in the plane those
-// two span. `frameAt` returns those as literal constants: uAxis (1,0,0), vAxis (0,0,1), normal
-// (0, ±1, 0) — a horizontal plane, whatever the part is shaped like.
+// two span, so that plane is read as uAxis × vAxis. Not off the `normal` frameAt reports: that is
+// the patch normal passed through, and comparing it with itself reads 0 whatever the axes do.
 //
 // The face it is supposed to lie on is `patch.normal`, produced by `detectFlatPatches` from the
-// mesh itself. Nothing in that path goes near frameAt. So the angle between the patch normal and
-// the frame's plane normal is a comparison of two independent things, and it is exactly the
-// quantity convention 13 is about: a gizmo aligned to the frame of the thing it acts on reads 0.
+// mesh itself. The angle between the two is exactly the quantity convention 13 is about: a gizmo
+// aligned to the frame of the thing it acts on reads 0.
 //
 // The parts are the real shipped ones and the patch list is the real one the part panel offers,
 // so a non-zero angle here is reachable by a user picking that patch, not a synthetic worry.
@@ -134,6 +133,8 @@ interface Row {
   faceYFallback: boolean;
   /** X/Z area of the region the cut is clipped to, mm². 0 means nothing can be cut there. */
   clipArea: number;
+  /** what frameAt reports as off the surface: the gizmo draws amber above 5mm */
+  offChart: number;
 }
 
 const rows: Row[] = [];
@@ -159,7 +160,8 @@ for (const id of PARTS) {
     // so the tilt is read once. Both values are covered by the shipped kinds regardless.
     const mapper = new FlatZoneMapper(part, [part], true, null);
     const frame = mapper.frameAt(0, 0);
-    const frameNormal = [frame.normal.x, frame.normal.y, frame.normal.z];
+    const drawn = frame.uAxis.clone().cross(frame.vAxis);
+    const frameNormal = [drawn.x, drawn.y, drawn.z];
     // Sign-free: a face pointing -Y is handled by nsign and is not a misalignment.
     const tilt = Math.min(
       angleBetween(patch.normal, frameNormal),
@@ -180,6 +182,7 @@ for (const id of PARTS) {
       frameTilt: tilt,
       faceYFallback: !(Math.abs(patch.normal[1]) > 0.1),
       clipArea: clip ? turfArea(clip) : -1,
+      offChart: frame.offChartMM,
     });
   }
 }
@@ -193,16 +196,16 @@ console.log('\nFrame plane vs face plane, per selectable patch');
 // The driven run reads the app's own selection instead.
 console.log('ranked by area, which is the order the part panel offers them.\n');
 console.log(
-  'part            rank      area mm²  face normal          frame tilt   faceY      cut clip mm²',
+  'part            rank      area mm²  face normal          frame tilt   faceY      cut clip mm²  off mm',
 );
-console.log('-'.repeat(96));
+console.log('-'.repeat(103));
 for (const r of rows) {
   const flag = r.frameTilt > 1 ? '  <-- frame off the face' : '';
   const clip = r.clipArea < 0 ? 'unbounded' : r.clipArea.toFixed(0);
   console.log(
     `${r.part.padEnd(15)} ${String(r.rank).padEnd(4)} ${r.area.toFixed(0).padStart(9)}  ` +
       `${v3(r.normal).padEnd(20)} ${r.frameTilt.toFixed(1).padStart(7)}°   ` +
-      `${r.faceYFallback ? 'fallback' : 'real    '} ${clip.padStart(11)}${flag}`,
+      `${r.faceYFallback ? 'fallback' : 'real    '} ${clip.padStart(11)} ${(Number.isFinite(r.offChart) ? r.offChart.toFixed(0) : '∞').padStart(7)}${flag}`,
   );
 }
 

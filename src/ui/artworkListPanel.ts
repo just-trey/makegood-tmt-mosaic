@@ -2,6 +2,7 @@ import type { DesignSource, RasterState } from '../types';
 import { state } from '../state/store';
 import {
   addInstanceForSource,
+  announceTrace,
   availableZones,
   isRasterSource,
   netZones,
@@ -17,14 +18,8 @@ import { WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { fillModeOffered } from '../assembly/kinds';
 import { MAX_COLORS, MIN_COLORS } from '../raster/quantize';
 import { DETAIL_MAX, DETAIL_MIN } from '../raster/stats';
-import {
-  rasterCappedMessage,
-  rasterColorLossKey,
-  rasterColorLossMessage,
-  rasterLostColors,
-  rasterTracedMessage,
-} from '../raster/parse';
-import { dismissNotice, notice, warn } from '../warnings';
+import { rasterCappedMessage, rasterColorLossKey } from '../raster/parse';
+import { dismissNotice, warn } from '../warnings';
 import { renderWarnings } from './warningsView';
 import { scheduleRebuild } from '../app/scheduler';
 import { refreshNetYieldOverlays } from '../app/rebuild';
@@ -33,20 +28,16 @@ import { refreshGizmo } from '../scene/designGizmo';
 import { track } from '../analytics/track';
 import { $ } from './dom';
 
-/**
- * Retract a source's dropped-color notice. The text is passed empty because the key decides which
- * entry goes (warnings.ts), and the count that notice named is not known at either call site.
- */
+/** Retract a source's dropped-color notice. Text is passed empty because the key decides which entry goes (warnings.ts); the count it named isn't known at either call site. */
 function dismissColorLoss(sourceId: string): void {
   dismissNotice('', rasterColorLossKey(sourceId));
 }
 
 /**
- * The loaded-artwork list under the dropzone: one row per ArtworkInstance (not per source — a
- * source can back more than one instance once it's placed on a second zone). Clicking a row makes
- * it active, which repoints the fit sliders/gizmo at it (see setActiveArtwork). The zone dropdown
- * only appears once the current part actually offers pickable zones (availableZones() is empty for
- * a single-face part like the wheel or footrest, where there's nothing to choose between).
+ * The loaded-artwork list under the dropzone: one row per ArtworkInstance (not per source — a source
+ * can back several once placed on a second zone). Clicking a row makes it active, repointing the fit
+ * sliders/gizmo (setActiveArtwork). The zone dropdown appears only when the part offers pickable
+ * zones (availableZones() is empty for a single-face wheel or footrest).
  */
 export function renderArtworkList(): void {
   const list = $('#artwork-list');
@@ -58,9 +49,7 @@ export function renderArtworkList(): void {
   list.style.display = '';
   const zones = availableZones();
   const rasterBlocksDrawn = new Set<string>();
-  // Fill repeats the design across a zone, which only the assembly-mode cut pipeline implements —
-  // a flat plate would show the control and then ignore it. A kind carrying `withholdFill` opts out
-  // too; fillModeOffered() covers both.
+  // A kind carrying `withholdFill` doesn't offer Fill; fillModeOffered() says which.
   const canFill = fillModeOffered();
 
   state.artworks.forEach((a) => {
@@ -94,8 +83,7 @@ export function renderArtworkList(): void {
       renderArtworkList();
       refreshFitInputsFromState();
       refreshGizmo();
-      // The yielded-canvas hatch is true only while a whole-part row is the one being edited, and
-      // this is the only handler that changes which row that is without scheduling a rebuild.
+      // The yielded-canvas hatch is true only while a whole-part row is edited, and this is the only handler that changes which row that is without scheduling a rebuild.
       refreshNetYieldOverlays();
     });
 
@@ -149,8 +137,7 @@ export function renderArtworkList(): void {
       mirrorWrap.innerHTML =
         '<label class="artwork-mirror-label"><input type="checkbox" class="artwork-mirror-check" /> Mirror</label>';
       const check = mirrorWrap.querySelector<HTMLInputElement>('.artwork-mirror-check')!;
-      // Properties, not interpolation: the title carries a zone name, the same reason
-      // `.artwork-name` is set through textContent above.
+      // Properties, not interpolation: the title carries a zone name (same reason `.artwork-name` uses textContent above).
       check.title = title;
       check.setAttribute('aria-label', title);
       check.checked = !!a.mirror;
@@ -176,8 +163,7 @@ export function renderArtworkList(): void {
         updateZoneBadge();
         updateMirrorControl();
         scheduleRebuild();
-        // The reserved id is a plumbing detail, not something to leak into analytics —
-        // it's the same reason it's named "Whole chair" everywhere a user reads it.
+        // The reserved id is plumbing, not for analytics — same reason it's "Whole chair" wherever a user reads it.
         track('artwork_instance_zone_changed', {
           zone: zoneSel.value === WHOLE_CHAIR_ZONE ? 'whole' : zoneSel.value || 'all',
         });
@@ -188,12 +174,10 @@ export function renderArtworkList(): void {
     if (addZoneBtn)
       addZoneBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        // Land the new placement on the first zone nothing from this source is already bound to,
-        // falling back to "all zones" if every zone already has one — a reasonable starting guess
-        // the user can immediately retarget from the new row's own dropdown. A mirrored instance
-        // already cuts on its twin, so that counts as used too, or +zone would offer a zone the
-        // source is already on. A whole-part instance cuts on every zone the net places (see
-        // zoneCoverage), so it uses up all of those, not just the reserved id itself.
+        // Land the new placement on the first zone nothing from this source is bound to, else "all
+        // zones" — a starting guess retargetable from the new row. A mirrored instance already cuts on
+        // its twin, so that counts as used, or +zone would offer a zone the source is on. A whole-part
+        // instance cuts on every zone the net places (zoneCoverage), using up all of them.
         const used = new Set<string | undefined>();
         const netZoneList = netZones()?.zones ?? [];
         state.artworks
@@ -207,9 +191,7 @@ export function renderArtworkList(): void {
               if (mirror && 'twin' in mirror) used.add(mirror.twin);
             }
           });
-        // Never auto-picked: like the initial load (setArtworkZone's own default), landing a new
-        // placement on Whole chair by default would stamp it across every net zone at once, the
-        // opposite of "another zone". It stays reachable — just from the new row's own dropdown.
+        // Never auto-picked, like the initial load (setArtworkZone's default): Whole chair would stamp every net zone at once, the opposite of "another zone". Still reachable from the new row's dropdown.
         const next = zones.find((z) => z.zoneId !== WHOLE_CHAIR_ZONE && !used.has(z.zoneId));
         addInstanceForSource(a.sourceId, next?.zoneId ?? null);
         renderArtworkList();
@@ -222,10 +204,7 @@ export function renderArtworkList(): void {
     row.querySelector<HTMLButtonElement>('.artwork-remove')!.addEventListener('click', (e) => {
       e.stopPropagation();
       removeArtworkInstance(a.id);
-      // A capped/traced notice names its image, so it has to go with the last instance of it —
-      // otherwise it stands there pointing at a file that is no longer loaded. One dismiss keyed
-      // on the source id removes whichever of the two it currently holds; the message text passed
-      // doesn't matter once a key is given.
+      // A capped/traced notice names its image, so it goes with the last instance, or it points at an unloaded file. One dismiss keyed on the source id removes whichever it holds; the passed text is irrelevant once keyed.
       if (source && !state.sources.some((s) => s.id === source.id)) {
         dismissNotice(rasterCappedMessage(source.name), source.id);
         dismissColorLoss(source.id);
@@ -241,8 +220,7 @@ export function renderArtworkList(): void {
     });
     list.appendChild(row);
 
-    // Colors/Detail belong to the image, not to this placement of it, so the block is emitted once
-    // per source however many rows that source backs.
+    // Colors/Detail belong to the image, not a placement of it, so the block is emitted once per source however many rows it backs.
     if (source && isRasterSource(source) && !rasterBlocksDrawn.has(source.id)) {
       rasterBlocksDrawn.add(source.id);
       list.appendChild(rasterControls(source));
@@ -251,11 +229,9 @@ export function renderArtworkList(): void {
 }
 
 /**
- * The two per-image controls.
- *
- * Both re-quantize on `change` (drag release), never on `input`: re-tracing an image is far heavier
- * than the fit sliders' arithmetic, and running it per pointer-move would stall the drag. The
- * readout updates live so the slider still feels connected while it's moving.
+ * The two per-image controls. Both re-quantize on `change` (drag release), never `input`:
+ * re-tracing is far heavier than the fit sliders' arithmetic and would stall the drag. The readout
+ * updates live so the slider still feels connected.
  */
 function rasterControls(source: DesignSource & { raster: RasterState }): HTMLElement {
   const block = document.createElement('div');
@@ -281,8 +257,7 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
   colors.value = String(source.raster.colors);
   detail.value = String(source.raster.detail);
 
-  // What the image actually resolved to, which is not always what was asked for: a three-color logo
-  // stays three colors however high Colors goes, and saying so beats looking broken.
+  // What the image resolved to, not always what was asked: a three-color logo stays three however high Colors goes, and saying so beats looking broken.
   const describe = () =>
     `${source.raster.palette.length} colors · ${source.raster.regions} regions`;
   readout.textContent = describe();
@@ -293,40 +268,20 @@ function rasterControls(source: DesignSource & { raster: RasterState }): HTMLEle
     try {
       result = requantizeSource(source.id, patch);
     } catch (e) {
-      // A trace can legitimately come back with nothing (see parseRasterImage), and these sliders
-      // are the one place that walks into it on purpose. Uncaught, the listener died with the
-      // readout stuck on "recomputing on release" and no rebuild, which reads as a frozen app.
+      // A trace can legitimately come back empty (parseRasterImage) and these sliders walk into it on
+      // purpose. Uncaught, the listener died with the readout stuck on "recomputing on release" and
+      // no rebuild — a frozen-looking app.
       colors.value = String(source.raster.colors);
       detail.value = String(source.raster.detail);
       readout.textContent = describe();
-      // Same key as the capped/traced notices this source's row carries: clear whichever of them
-      // currently stands, or push() would skip the new warn as a duplicate key and leave the old,
-      // now-false notice standing instead. The message passed doesn't matter once a key is given.
-      dismissNotice(rasterCappedMessage(source.name), source.id);
+      // Same key as the capped/traced notices, so the warn takes over whichever of them stands.
       dismissColorLoss(source.id);
       warn((e as Error).message, source.id);
       renderWarnings();
       return false;
     }
     if (!result) return false;
-    // dismissNotice() before notice(), not after: push() skips a new entry whose key is already
-    // taken, so notice()-then-dismissNotice() on the same key would drop the replacement and then
-    // remove it, leaving nothing standing for this source at all.
-    if (result.capped) {
-      dismissNotice(rasterTracedMessage(source.name), source.id);
-      notice(rasterCappedMessage(source.name), source.id);
-    } else {
-      dismissNotice(rasterCappedMessage(source.name), source.id);
-      notice(rasterTracedMessage(source.name), source.id);
-    }
-    // Its own key, so it stands beside whichever of those two this source holds — and so the same
-    // dismiss-then-notice order applies to it separately.
-    dismissColorLoss(source.id);
-    if (rasterLostColors(result))
-      notice(
-        rasterColorLossMessage(source.name, result.droppedColors),
-        rasterColorLossKey(source.id),
-      );
+    announceTrace(source.id, source.name, result);
     renderWarnings();
     readout.textContent = describe();
     scheduleRebuild();

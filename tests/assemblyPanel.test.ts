@@ -65,7 +65,6 @@ const libraryReachable = (yes: boolean) => {
 beforeEach(() => {
   document.body.innerHTML =
     '<div id="assembly-role-controls"></div><div id="assembly-part-list"></div>';
-  state.shapeKind = 'assembly';
   state.assembly.kindId = kind.id;
   state.assembly.parts = [part()];
   libraryReachable(true);
@@ -104,7 +103,7 @@ describe('the per-part rows in the Part panel', () => {
     expect(document.querySelector('#assembly-part-list')?.children).toHaveLength(0);
   });
 
-  // main.ts calls setShapeKind('assembly') a line before loadPartsLibrary(), so an empty library
+  // main.ts calls applyPartKind() a line before loadPartsLibrary(), so an empty library
   // is the state every healthy boot passes through. Reading it as a failure told every user the
   // app was broken for as long as the fetch took, and told them to reload, which reproduces it.
   it('says nothing about failure while the manifest is still in flight', () => {

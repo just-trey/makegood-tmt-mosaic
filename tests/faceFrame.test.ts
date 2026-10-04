@@ -114,7 +114,6 @@ const CHART_A = planeChart([170, 0, -600], [0, 0, 1], [0, 1, 0]);
 const CHART_B = planeChart([-50, 233, -450], [1, 0, 0], [0, 0, 1]);
 
 beforeEach(() => {
-  state.shapeKind = 'assembly';
   state.assembly.kindId = 'chair-body';
   state.sources = [];
   state.artworks = [];
@@ -334,28 +333,7 @@ describe('assembly gizmo frame picks the part the design center lands on', () =>
  * double the cursor.
  */
 describe('gizmo frame reports positions relative to its own center', () => {
-  const flatFrame = () => {
-    state.shapeKind = 'disc';
-    state.marginPct = 0;
-    state.disc = { ...state.disc, diameter: 200, thickness: 3 };
-    state.parsed = parsed();
-    state.offsetX = 0;
-    state.offsetY = 0;
-    return computeFaceFrame()!;
-  };
-
-  it('does not move a flat frame’s pointAt when the drag writes a new offset', () => {
-    const f = flatFrame();
-    const before = f.pointAt(10, 0);
-
-    state.offsetX = 10; // what a 10mm move drag has already written by redraw time
-
-    expect(f.pointAt(10, 0).distanceTo(before)).toBeLessThan(1e-9);
-    // one delta from the frame's origin, not two
-    expect(f.pointAt(10, 0).distanceTo(f.origin)).toBeCloseTo(10, 6);
-  });
-
-  it('does the same on an assembly frame', () => {
+  it('does not move an assembly frame’s pointAt when the drag writes a new offset', () => {
     const a = loadArtworkSource(parsed(), 'a.svg');
     setArtworkZone(a.id, 'left');
     const f = computeFaceFrame()!;
@@ -385,13 +363,6 @@ describe('gizmo frame answers off-surface for a displaced center', () => {
     // 10mm past the chart edge — beyond the budget, so only "further than the tolerance" is promised
     expect(f.offSurfaceAt(60, 0, 5)).toBeGreaterThan(5);
     expect(f.offSurfaceAt(0, -60, 5)).toBeGreaterThan(5);
-  });
-
-  it('is always on-surface for a flat plate, which has no chart to leave', () => {
-    state.shapeKind = 'disc';
-    state.parsed = parsed();
-
-    expect(computeFaceFrame()!.offSurfaceAt(1e4, 1e4, 5)).toBe(0);
   });
 });
 
@@ -443,5 +414,63 @@ describe('assembly gizmo frame traces the surface', () => {
     const du = 40;
     const onPlane = f.origin.clone().addScaledVector(f.uAxis, du);
     expect(f.pointAt(du, 0).distanceTo(onPlane)).toBeGreaterThan(5);
+  });
+});
+
+/**
+ * The amber state is the gizmo's only way to say the design is not landing where the frame is, so
+ * a flat part has to be able to reach it: on a face the cut cannot reach at all, it must.
+ */
+describe('assembly gizmo frame on a flat part', () => {
+  /** A footrest-kind part whose chosen design face points -Z, as the dropdown's side faces do. */
+  function sidewaysPart(): AssemblyPart {
+    return {
+      id: 1,
+      name: 'side',
+      roleId: 'footrest',
+      positions: new Float32Array(9),
+      patches: null,
+      patchIdx: 0,
+      boundaryLoops: [
+        [
+          [-50, 0, -20],
+          [50, 0, -20],
+          [50, 40, -20],
+          [-50, 40, -20],
+        ],
+      ],
+      patchNormal: [0, 0, -1],
+      topZ: 20,
+      baseDepth: 1,
+      isDuplicateOf: null,
+      pivotX: 0,
+      pivotZ: 0,
+      angleDeg: 0,
+      loaded: true,
+      cutThrough: false,
+    } as unknown as AssemblyPart;
+  }
+
+  beforeEach(() => {
+    state.assembly.kindId = 'footrest';
+    state.assembly.parts = [sidewaysPart()];
+    loadArtworkSource(parsed(), 'a.svg');
+  });
+
+  it('turns amber on a face the cut cannot reach', () => {
+    const f = computeFaceFrame()!;
+    expect(f.offSurfaceMM).toBeGreaterThan(5);
+    expect(f.offSurfaceAt(10, 0, 5)).toBeGreaterThan(5);
+  });
+
+  it('is drawn in that face, not in a horizontal plane beside it', () => {
+    const f = computeFaceFrame()!;
+    expect(Math.abs(f.normal.z)).toBeCloseTo(1, 9);
+    for (const [du, dv] of [
+      [0, 0],
+      [8, -6],
+      [-10, 10],
+    ])
+      expect(f.pointAt(du, dv).z).toBeCloseTo(-20, 9);
   });
 });

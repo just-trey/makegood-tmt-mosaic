@@ -29,7 +29,6 @@ function withLoadedWork(sourceId: string, artworkId: string): void {
  * hand-rolling the persisted schema — a hand-written fixture that misses a field silently fails
  * isPersistedSession, and the guard under test then reads as absent when it is only unreached. */
 function storeSessionOn(kindId: string): void {
-  state.shapeKind = 'assembly';
   state.assembly.kindId = kindId;
   withLoadedWork('s1', 'a1');
   saveSession();
@@ -42,7 +41,6 @@ beforeEach(() => {
   localStorage.clear();
   state.sources = [];
   state.artworks = [];
-  state.shapeKind = 'assembly';
   state.assembly.kindId = offered.id;
 });
 
