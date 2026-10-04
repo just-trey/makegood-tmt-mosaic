@@ -2438,6 +2438,16 @@ export function subtractRegions(wasm, regions, holes, minPieceArea) {
 }
 
 /**
+ * Opening radius for the clipped cut region. Its outline follows triangle edges and pinches at
+ * shared vertices, which the app's turf intersect splits into specks under CLIP_REMNANT_FLOOR_MM2:
+ * a "too fine to print" notice on a plain full-bleed design. Re-baked at 0 instead, specks went 0
+ * to 2 on `left`/`chair-wheel-mount-left` and 1 to 14 on `front`/`chair-handle-left`; at 0.005, 0
+ * on every chart (`npx vite-node scripts/measure-cut-specks.ts`). Wider than roundLoop's 3dp snap,
+ * which can close a thinner neck into a new pinch.
+ */
+const CLIP_OPEN_MM = 0.005;
+
+/**
  * `regions` clipped to the chart's own triangles, with anything left under `minPieceArea` gone.
  *
  * Runs after `subtractRegions` because the subtraction is what makes this necessary. `subRegions`
@@ -2459,9 +2469,10 @@ export function clipRegionsToChart(wasm, regions, chartCS, minPieceArea) {
     'EvenOdd',
   );
   const kept = a.intersect(chartCS);
-  const out = classifyRegions(kept.toPolygons().map((p) => p.map(([x, y]) => [x, y])));
-  a.delete();
-  kept.delete();
+  const shrunk = kept.offset(-CLIP_OPEN_MM, 'Miter', 2);
+  const opened = shrunk.offset(CLIP_OPEN_MM, 'Miter', 2);
+  const out = classifyRegions(opened.toPolygons().map((p) => p.map(([x, y]) => [x, y])));
+  for (const cs of [a, kept, shrunk, opened]) cs.delete();
   return out.filter((r) => regionNetArea(r) >= minPieceArea);
 }
 
@@ -4426,14 +4437,9 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         chart.deadRegions ?? [],
         minCutPieceArea,
       );
-      // And then back onto the surface the part actually has. See clipRegionsToChart: the
-      // subtraction is between two independent simplifications of one boundary, and what it leaves
-      // outside the triangles still cuts.
-      // Clipped with NO floor, then floored separately, because the two remove different things
-      // and only one of them is surface. What the clip takes is off the part: nothing was ever
-      // printable there and nobody needs telling. What the FLOOR then takes is on-chart surface a
-      // design could have used, so it gets a warning of its own, the way the island and fold drops
-      // above do.
+      // Back onto the surface the part has (clipRegionsToChart). Clipped with no floor, then
+      // floored separately: the clip takes off-part area nobody needs telling about, the floor takes
+      // on-chart surface, so only the floor warns — like the island and fold drops above.
       let onChart = cutPieces;
       if (chartCS && chart.deadRegions?.length) {
         const clipped = clipRegionsToChart(opts.wasm, cutPieces, chartCS, 0);
@@ -4443,14 +4449,15 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         if (offChart > 1e-6)
           log(
             `  zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": clipped ` +
-              `${offChart.toFixed(3)}mm² of cut region off the chart's own triangles`,
+              `${offChart.toFixed(3)}mm² of cut region off the chart's own triangles and its ` +
+              `sub-${2 * CLIP_OPEN_MM}mm necks`,
           );
         onChart = clipped.filter((r) => regionNetArea(r) >= minCutPieceArea);
         const shed = clipped.filter((r) => regionNetArea(r) < minCutPieceArea);
         if (shed.length)
           warnings.push(
             `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": dropped ${shed.length} ` +
-              `cut piece(s) under ${minCutPieceArea}mm² (largest ` +
+              `cut piece(s) under ${+minCutPieceArea.toFixed(3)}mm² (largest ` +
               `${Math.max(...shed.map(regionNetArea)).toFixed(3)}mm²) after clipping to the ` +
               `chart — artwork placed there will not cut`,
           );

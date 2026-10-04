@@ -819,9 +819,9 @@ describe('chart reconstruction', () => {
         // set stopped being the whole story when the bake started clipping the cut region to the
         // chart's own triangles, so `want` overstates by whatever of it falls off the part. That
         // amount is measured here rather than assumed, which keeps the bound tight in both
-        // directions and valid before and after the re-bake. Preview across the shipped sidecar:
-        // up to 94.46mm² on `right`/`chair-wing-right`, over 2mm² on 9 of the 12 charts with a
-        // dead region — `npx vite-node scripts/measure-cut-offsurface.mjs`.
+        // directions. The bake logs what it clipped: up to 94.496mm² on `right`/`chair-wing-right`,
+        // over 2mm² on 9 of the 12 charts with a dead region — `npx vite-node
+        // scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`.
         const offChart = refOffChartArea(ref, chartCS);
         expect(got - want, `${where}: cut region claims more than claim-less-dead`).toBeLessThan(2);
         expect(
@@ -838,8 +838,8 @@ describe('chart reconstruction', () => {
   // there is none.
   //
   // Per PIECE, not per pair — a pair's intersect can be several polygons and the narrowest of them
-  // is what a design clipped down to one would face. 41 pieces across 17 pairs, 25 of them over
-  // CLIP_REMNANT_FLOOR_MM2, thinnest of those 0.0631mm by 2·area/perimeter. None fails.
+  // is what a design clipped down to one would face. 46 pieces across 17 pairs, 23 of them over
+  // CLIP_REMNANT_FLOOR_MM2, thinnest of those 0.0734mm by 2·area/perimeter. None fails.
   //
   // Re-derive with `npx vite-node scripts/measure-seam-overlap.mjs`, which also prints how far
   // apart the same UV point lands on the two parts. Full run in
@@ -886,7 +886,7 @@ describe('chart reconstruction', () => {
     }
     // Not just "nothing failed": a re-bake that drops `cutRegions`, or one that partitions the
     // claims cleanly, would leave this measuring nothing and passing.
-    expect(examined, 'no overlap pieces were examined').toBe(41);
+    expect(examined, 'no overlap pieces were examined').toBe(46);
     expect(failed).toEqual([]);
   }, 120000);
 

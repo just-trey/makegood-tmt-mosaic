@@ -1,22 +1,24 @@
-// Does an off-surface `cutRegions` ribbon actually cut a mark on the printed part?
+// Does the sidecar under test cut a mark on surface the design never covered?
 //
-// scripts/measure-cut-offsurface.mjs says 14 of the chair's 87 cut pieces lie at least half
-// outside their chart's own triangles. That is a fact about the sidecar. Whether it reaches the
-// print is a fact about the app, because `lookup` answers the nearest triangle AT ANY DISTANCE:
-// UV with no surface under it does not fall out of the cut, it snaps to the patch edge — the
-// mechanism behind the #296 phantom mark.
+// `lookup` answers the nearest triangle AT ANY DISTANCE, so a `cutRegions` piece with no triangle
+// under it does not fall out of the cut: it snaps to the patch edge and extrudes there (#296's
+// phantom mark). Before the bake clipped cut regions to their chart, 14 of the chair's 87 pieces
+// lay at least half off-surface, and one printed a 1.000 x 0.211 x 32.543mm mark on
+// `Wheel mount (left)`.
 //
-// The oracle is the exported 3MF, not the viewport, because the inlay solids are what ships.
-//
-// A/B rather than a placed dot. The ribbon is 0.19mm wide, so a mark aimed at it by hand would be
-// measuring the placement rather than the ribbon. Instead the same full-bleed design is exported
-// twice against the same build, once from the shipped sidecar and once from one with the
-// off-surface pieces deleted from `cutRegions`. Everything else is held fixed, so any inlay
-// geometry present in A and absent in B came from those pieces and nothing else.
+// The oracle is the exported 3MF, not the viewport. The same full-bleed design is exported three
+// times against one build:
+//   A  the REFERENCE sidecar (the last one before the clip, read from git), which has the mark;
+//   B  the reference with its off-surface pieces deleted, the clean control;
+//   C  the sidecar under test.
+// A has to show the mark and B has to lack it, or the run proves nothing and says so. The verdict
+// is C: no more inlay than B where the mark lands, no off-surface piece of its own, and no export
+// warning A did not raise.
 //
 // Usage:
-//   npm run build && npx vite-node scripts/check-cut-ribbon-ink.mjs [outDir]
-//   npm run build && MOSAIC_GPU=1 npx vite-node scripts/check-cut-ribbon-ink.mjs stubs/ribbon-ink
+//   npm run build && MOSAIC_GPU=1 npx vite-node scripts/check-cut-ribbon-ink.mjs [outDir] [--sidecar=path]
+//   (--sidecar defaults to public/stl/chair-body-zones.json; outDir to stubs/ribbon-ink)
+import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +29,12 @@ import { getManifold } from '../src/geometry/manifold';
 import { regionNetArea } from './lib/zonebake.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = process.argv[2] || 'stubs/ribbon-ink';
+const args = process.argv.slice(2);
+const OUT = args.find((a) => !a.startsWith('--')) || 'stubs/ribbon-ink';
+const UNDER_TEST = path.resolve(
+  args.find((a) => a.startsWith('--sidecar='))?.slice('--sidecar='.length) ??
+    path.join(REPO, 'public/stl/chair-body-zones.json'),
+);
 mkdirSync(path.join(REPO, OUT), { recursive: true });
 const PORT = 4178;
 
@@ -40,9 +47,14 @@ const ISOLATION_MM = 6;
 /** How far from the snap point an A-only vertex still counts as part of THIS mark, in 3D. */
 const CLUSTER_MM = 25;
 
+const shownUnderTest = UNDER_TEST.startsWith(REPO + path.sep)
+  ? path.relative(REPO, UNDER_TEST)
+  : UNDER_TEST;
 const SIDECAR_REL = 'stl/chair-body-zones.json';
 const DIST = path.join(REPO, 'dist', SIDECAR_REL);
 const SHIPPED = path.join(REPO, 'public', SIDECAR_REL);
+/** The last commit whose sidecar predates the clip. Its mark is what proves this harness can see one. */
+const REFERENCE_REV = 'a91ef30';
 
 const failures = [];
 // `cuts` are the pieces shown to reach the print; the rest are the run failing to be able to say.
@@ -57,19 +69,25 @@ const pass = (m) => console.log(`  ok   ${m}`);
 
 /* --------------------------------------------------- which pieces, and where they would land */
 
-const sidecar = JSON.parse(readFileSync(SHIPPED, 'utf8'));
+const referenceText = execFileSync('git', ['show', `${REFERENCE_REV}:public/${SIDECAR_REL}`], {
+  cwd: REPO,
+  maxBuffer: 1 << 30,
+  encoding: 'utf8',
+});
+const sidecar = JSON.parse(referenceText);
+const underTest = JSON.parse(readFileSync(UNDER_TEST, 'utf8'));
 const wasm = await getManifold();
 const ringsOf = (r) => [r.outer, ...(r.holes ?? [])];
 const triRingsOf = (c) => c.chartTris.map((t) => t.map((i) => [c.uv[2 * i], c.uv[2 * i + 1]]));
 
 /** Every cut piece at least half outside its chart's triangles, as measure-cut-offsurface counts. */
-function offSurfacePieces() {
+function offSurfacePieces(sc) {
   const out = [];
   // zi/ci are how the B variant finds these again in its own parse of the file. (zone.id,
   // libraryPartId) is unique in today's sidecar and nothing promises it stays so — a zone carrying
   // two charts of one part would delete the wrong pieces, silently, in the variant that is meant
   // to be the control.
-  sidecar.zones.forEach((zone, zi) =>
+  sc.zones.forEach((zone, zi) =>
     zone.charts.forEach((chart, ci) => {
       const cs = new wasm.CrossSection(triRingsOf(chart), 'NonZero');
       (chart.cutRegions ?? []).forEach((piece, i) => {
@@ -334,13 +352,23 @@ async function runVariant(browser, label) {
   for (const w of warn) console.log(`     warn: ${w}`);
   for (const e of errors) console.log(`     console: ${e}`);
   await page.close();
-  return pts;
+  return { pts, warn };
 }
 
 /* ------------------------------------------------------------------- the run */
 
-const ribbons = offSurfacePieces();
-console.log(`${ribbons.length} cut pieces at least half off-surface.`);
+const ribbons = offSurfacePieces(sidecar);
+console.log(
+  `Reference (${REFERENCE_REV}): ${ribbons.length} cut pieces at least half off-surface.`,
+);
+const ownRibbons = offSurfacePieces(underTest);
+console.log(`Under test (${shownUnderTest}): ${ownRibbons.length}.`);
+for (const r of ownRibbons)
+  fail(
+    `${r.zone}/${r.part}#${r.i} in the sidecar under test is ${(r.offFrac * 100).toFixed(1)}% ` +
+      `off its chart (${r.net.toFixed(3)}mm²) — npx vite-node scripts/measure-cut-offsurface.mjs`,
+    true,
+  );
 const inZone = ribbons.filter((r) => r.zone === ZONE);
 const targets = [];
 for (const r of inZone) {
@@ -388,27 +416,28 @@ for (const t of readable) {
         `the ${CLUSTER_MM}mm cluster radius — B deletes both, so a cluster here names neither alone`,
     );
 }
-if (!readable.length) throw new Error(`no isolated off-surface ribbon in zone "${ZONE}"`);
+if (!readable.length)
+  throw new Error(`the reference has no isolated off-surface ribbon in zone "${ZONE}"`);
 
-// One preview for both variants. The page fetches the sidecar on load, so patching what `dist/`
-// serves between page loads is enough — and it keeps the build, the port and the browser fixed
-// across A and B, which is the whole point of running them as a pair.
+// One preview for all three variants. The page fetches the sidecar on load, so patching what
+// `dist/` serves between page loads is enough — and it keeps the build, the port and the browser
+// fixed across them, which is the whole point of running them together.
 // No allowStaleDist. The freshness check runs here, before the first variant patches `dist/`, so
-// the opt-out would buy nothing and cost the exact failure harness.mjs exists to stop: an A/B whose
-// numbers describe the previous build.
+// the opt-out would buy nothing and cost the exact failure harness.mjs exists to stop: a comparison
+// whose numbers describe the previous build.
 const preview = await startPreview({ port: PORT });
-let A, B;
+let A, B, C;
 let browser;
 try {
   // Inside the try: a launchBrowser that throws used to leave the preview serving, and the next run
   // then died on startPreview's own port guard rather than on the real cause.
   browser = await launchBrowser();
-  console.log(`\nA: the shipped sidecar.`);
-  copyFileSync(SHIPPED, DIST);
-  A = await runVariant(browser, 'A-shipped');
+  console.log(`\nA: the reference sidecar (${REFERENCE_REV}).`);
+  writeFileSync(DIST, referenceText);
+  A = await runVariant(browser, 'A-reference');
 
-  console.log(`\nB: the same build with ${ribbons.length} off-surface pieces deleted.`);
-  const patched = JSON.parse(readFileSync(SHIPPED, 'utf8'));
+  console.log(`\nB: the reference with its ${ribbons.length} off-surface pieces deleted.`);
+  const patched = JSON.parse(referenceText);
   let removed = 0;
   patched.zones.forEach((zone, zi) =>
     zone.charts.forEach((chart, ci) => {
@@ -419,22 +448,24 @@ try {
       removed += before - chart.cutRegions.length;
     }),
   );
-  // A patch that removed nothing would make B a copy of A, and every verdict below would then read
-  // "cuts nothing" — this script's own no-defect answer, produced by the control being broken
-  // rather than by the pieces being harmless. That is the one failure it must not report quietly.
+  // A patch that removed nothing would make B a copy of A, and the control would then read as
+  // "no mark anywhere" for that reason rather than because the pieces were gone.
   if (removed !== ribbons.length)
     throw new Error(
       `the B sidecar should have lost ${ribbons.length} cut pieces and lost ${removed}`,
     );
   writeFileSync(DIST, JSON.stringify(patched));
   B = await runVariant(browser, 'B-cleaned');
-  if (A.length === B.length)
+  if (A.pts.length === B.pts.length)
     throw new Error(
-      `B has the same inlay vertex count as A (${A.length}) after ${removed} cut pieces were ` +
-        `removed from its sidecar. Either the variant did not reach the browser or it read the ` +
-        `unpatched file — and every verdict below would then read "cuts nothing" for that reason ` +
-        `rather than because the pieces are harmless.`,
+      `B has the same inlay vertex count as A (${A.pts.length}) after ${removed} cut pieces were ` +
+        `removed from its sidecar: the variant did not reach the browser, or it read the ` +
+        `unpatched file.`,
     );
+
+  console.log(`\nC: the sidecar under test (${shownUnderTest}).`);
+  copyFileSync(UNDER_TEST, DIST);
+  C = await runVariant(browser, 'C-under-test');
 } finally {
   copyFileSync(SHIPPED, DIST);
   await browser?.close();
@@ -443,108 +474,91 @@ try {
 
 /* ------------------------------------------------------------------- the answer */
 
-console.log(`\nInlay vertices: A ${A.length}, B ${B.length}, difference ${A.length - B.length}.`);
+console.log(`\nInlay vertices: A ${A.pts.length}, B ${B.pts.length}, C ${C.pts.length}.`);
 
-// Exact vertex identity, not a radius. A radius answers "is there ink near here", which a mark
-// that MOVED would also satisfy; matching coordinates says which vertices A has that B does not,
-// and the nearest-surviving-vertex distance below then says whether anything legitimate is near
-// enough to have been the thing that moved.
-const key = (q) => q.v.map((x) => x.toFixed(4)).join(',');
-const perPart = new Map();
-for (const partName of new Set(A.map((q) => q.partName))) {
-  const a = A.filter((q) => q.partName === partName);
-  const b = B.filter((q) => q.partName === partName);
-  const bset = new Set(b.map(key));
-  perPart.set(partName, { a, b, only: a.filter((q) => !bset.has(key(q))) });
-}
-console.log('\nPer part, inlay vertices in A with no exact match in B:');
-for (const [partName, { a, b, only }] of perPart)
-  if (only.length) console.log(`  ${partName}: ${only.length} (A ${a.length}, B ${b.length})`);
-
+const byPart = (pts, partName) => pts.filter((q) => q.partName === partName);
 const near = (pts, p, r) =>
   pts.filter((q) => Math.hypot(q.v[0] - p[0], q.v[1] - p[1], q.v[2] - p[2]) <= r);
+const extent = (pts) =>
+  [0, 1, 2]
+    .map((k) => Math.max(...pts.map((q) => q.v[k])) - Math.min(...pts.map((q) => q.v[k])))
+    .map((d) => d.toFixed(3))
+    .join(' x ');
+// Exact vertex identity between A and B, which share every cut piece but the deleted ones, so the
+// mark's own vertices are the A-only ones. Never between C and either: a re-bake re-triangulates the
+// whole inlay, and C has to be read by how much ink lands near the mark, not by which vertices.
+const key = (q) => q.v.map((x) => x.toFixed(4)).join(',');
+const parts = [...new Set(A.pts.map((q) => q.partName))];
+let controlSeen = 0;
 for (const t of readable) {
   const where = `${t.zone}/${t.part}#${t.i} (${t.net.toFixed(3)}mm², ${(t.offFrac * 100).toFixed(1)}% off)`;
-  // Counted PER PART and ranked by what each part GAINED, not pooled across the export and then
-  // attributed to whichever part happens to have ink nearby. Parts abut: at a snap point on a seam
-  // two of them can both carry vertices inside NEAR_MM, and a pooled count lets one part's ink
-  // stand in for another's — which reads as a mark on the wrong part, or as no mark at all when the
-  // neighbour's unchanged vertices cancel the gain.
-  const ranked = [...perPart.keys()]
-    .map((n) => {
-      const p = perPart.get(n);
-      return {
-        n,
-        aN: near(p.a, t.snap.p, NEAR_MM).length,
-        bN: near(p.b, t.snap.p, NEAR_MM).length,
-      };
-    })
-    .map((r) => ({ ...r, gain: r.aN - r.bN }))
-    .sort((x, y) => y.gain - x.gain);
+  // Per PART and ranked by what each part gained in A over B: parts abut, and at a snap point on a
+  // seam a pooled count lets one part's ink stand in for another's.
+  const ranked = parts
+    .map((n) => ({
+      n,
+      aN: near(byPart(A.pts, n), t.snap.p, NEAR_MM).length,
+      bN: near(byPart(B.pts, n), t.snap.p, NEAR_MM).length,
+      cN: near(byPart(C.pts, n), t.snap.p, NEAR_MM).length,
+    }))
+    .sort((x, y) => y.aN - y.bN - (x.aN - x.bN));
   const best = ranked[0];
-  if (!best || best.gain <= 0) {
-    const tot = ranked.reduce((s2, r) => s2 + r.aN, 0);
-    pass(
-      `${where} cuts nothing the pair can tell apart: no part gains an inlay vertex within ` +
-        `${NEAR_MM}mm of the snap point (${tot} there in A across all parts)`,
-    );
-    continue;
-  }
-  const partName = best.n;
-  const a = best.aN;
-  const b = best.bN;
-  const { only, b: bp } = perPart.get(partName);
-  // A > B near the point with no A-only vertex on that part means the mark moved rather than
-  // appeared, and the bbox below would come out Infinity. Say that instead of printing NaN.
-  if (!only.length) {
+  if (!best || best.aN <= best.bN) {
     fail(
-      `${where}: ${a} inlay vertices within ${NEAR_MM}mm in A against ${b} in B on "${partName}", ` +
-        `but every A vertex there matches one of B's — the difference is a count, not new geometry.`,
+      `${where}: the reference no longer cuts its mark (no part gains inlay within ${NEAR_MM}mm in ` +
+        `A over B), so this run cannot tell a clean sidecar from a blind check`,
     );
     continue;
   }
-  // Bounded to the mark's own neighbourhood. Taken over every A-only vertex on the part, the bbox
-  // would absorb a second deleted piece — the rival guard reaches exactly CLUSTER_MM — and the
-  // dimensions quoted in the report would describe two marks as one. Anything outside is counted
-  // and named rather than dropped.
-  const cluster = near(only, t.snap.p, CLUSTER_MM);
-  const strays = only.length - cluster.length;
-  const ax = [0, 1, 2].map((k) => [
-    Math.min(...cluster.map((q) => q.v[k])),
-    Math.max(...cluster.map((q) => q.v[k])),
-  ]);
-  const c = [0, 1, 2].map((k) => (ax[k][0] + ax[k][1]) / 2);
-  if (!cluster.length) {
-    fail(`${where}: ${only.length} A-only vertices on "${partName}", none within ${CLUSTER_MM}mm`);
-    continue;
-  }
-  // B having no inlay left on the part at all is a real outcome, not an error: it means the piece
-  // was the only thing inking it. `Math.min()` of nothing is Infinity, which would print as a
-  // distance.
-  const survivorMm = bp.length
-    ? Math.min(...bp.map((q) => Math.hypot(q.v[0] - c[0], q.v[1] - c[1], q.v[2] - c[2])))
-    : null;
-  fail(
-    `${where} cuts a mark on "${partName}": ${a} inlay vertices within ${NEAR_MM}mm of the snap ` +
-      `point in A, ${b} in B. The A-only cluster within ${CLUSTER_MM}mm is ${cluster.length} ` +
-      `vertices (${strays} more A-only on that part lie outside it), ` +
-      `${ax.map(([lo, hi]) => (hi - lo).toFixed(3)).join(' x ')}mm, and the nearest inlay vertex ` +
-      `B still has on that part is ${survivorMm === null ? 'nowhere — B leaves that part uninked' : `${survivorMm.toFixed(2)}mm away`} — so it vanished rather than moved.`,
-    true,
+  const bset = new Set(byPart(B.pts, best.n).map(key));
+  const mark = near(
+    byPart(A.pts, best.n).filter((q) => !bset.has(key(q))),
+    t.snap.p,
+    CLUSTER_MM,
   );
+  controlSeen++;
+  pass(
+    `control: the reference cuts ${where} on "${best.n}" — ${best.aN} inlay vertices within ` +
+      `${NEAR_MM}mm in A, ${best.bN} in B; the A-only cluster is ${mark.length} vertices, ` +
+      `${mark.length ? extent(mark) : 'n/a'}mm`,
+  );
+  if (best.cN > best.bN) {
+    const cNear = near(byPart(C.pts, best.n), t.snap.p, CLUSTER_MM);
+    fail(
+      `the sidecar under test cuts where ${where} did, on "${best.n}": ${best.cN} inlay vertices ` +
+        `within ${NEAR_MM}mm against the clean control's ${best.bN}; C's ink within ` +
+        `${CLUSTER_MM}mm spans ${extent(cNear)}mm`,
+      true,
+    );
+  } else
+    pass(
+      `the sidecar under test leaves that spot clean on "${best.n}": ${best.cN} inlay vertices ` +
+        `within ${NEAR_MM}mm, clean control ${best.bN}`,
+    );
 }
+if (!controlSeen)
+  throw new Error(
+    'no reference mark was reproduced, so nothing about the sidecar under test is shown',
+  );
+
+// A clip that fixes the mark by leaving pinched outlines makes the app split them into specks and
+// raise "too fine to print" on this plain design, which the vertex counts above cannot see.
+const aWarn = new Set(A.warn);
+const newWarn = C.warn.filter((w) => !aWarn.has(w));
+for (const w of newWarn)
+  fail(`the sidecar under test raises a warning the reference did not: ${w}`);
+if (!newWarn.length) pass(`the sidecar under test raises no warning the reference did not`);
 
 console.log(
   cuts.length
-    ? `\n${cuts.length} off-surface piece(s) reach the print. UV with no triangle under it ` +
-        `does not fall out of the cut: it snaps to the patch edge and extrudes there.`
+    ? `\n${cuts.length} problem(s) with the sidecar under test reach the print or its sidecar.`
     : `\nNo off-surface piece was shown to reach the print in this run.`,
 );
 if (failures.length > cuts.length)
   console.log(
     `${failures.length - cuts.length} other failure(s) above are the run being unable to attribute ` +
-      `a piece, not a piece reaching the print.`,
+      `a piece or raising a new warning, not a piece reaching the print.`,
   );
-// 2. Every other check-*.mjs sets this. Without it a run where a ribbon DOES cut exits 0, so CI or
-// an `&&` chain reads the defect as a pass.
+// Every other check-*.mjs sets this. Without it a run where a ribbon DOES cut exits 0, so CI or an
+// `&&` chain reads the defect as a pass.
 process.exitCode = failures.length ? 1 : 0;

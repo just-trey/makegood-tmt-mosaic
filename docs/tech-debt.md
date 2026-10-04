@@ -886,85 +886,25 @@ too, or rebuilding a source's copies when it re-adopts. It stays open because
 the first role to pair `buildMesh` with `allowRotatedCopies` makes it real, and
 nothing today can produce a case to test against.
 
-## A cut region claims surface the part does not have, and it prints
+## Charts with no dead region keep up to 0.2mm of cut region past their triangles
 
-14 of the chair's 87 `cutRegions` pieces lie at least half outside their own
-chart's triangles. Not hidden surface — no surface. A design over one of them
-cuts a mark on the part anyway, because `lookup` answers the nearest triangle at
-any distance, so UV with nothing under it snaps to the patch edge and extrudes
-there.
+**Whether that band prints is unmeasured.** The bake clips the cut region back
+onto the chart's own triangles only where a dead region was subtracted. The 14
+charts without one keep their claim as `subRegions` drew it.
 
-Driven on the shipped sidecar, one full-bleed design on `Left side`, exported
-twice against the same build:
+- **649.41mm²** off-surface across those 14 pieces, against 0.48mm² on the 12
+  clipped charts (`npx vite-node scripts/measure-cut-offsurface.mjs`).
+- The slack is attached to its one piece per chart, not cut free. It has never
+  made a standalone piece.
+- `lookup` answers the nearest triangle at any distance, so this band may still
+  extrude along the chart edge.
+- Clipping these charts too would break the stale-bake guard in
+  `tests/chair-zones.test.ts`: it relies on `cutRegions` matching `subRegions`
+  byte for byte where nothing is subtracted.
 
-|                                               | shipped | the 14 pieces deleted |
-| --------------------------------------------- | ------- | --------------------- |
-| inlay vertices                                | 88,053  | 87,856                |
-| within 6mm of `left/chair-wheel-mount-left#4` | 40      | 0                     |
-
-The mark measures **1.000 x 0.211 x 32.543mm** on `Wheel mount (left)`, and the
-nearest inlay vertex that survives on that part is 30.80mm away — it vanished
-rather than moved. Bounding box against bounding box, the piece is 0.256 x
-32.5mm against the #296 hairline's 0.020 x 8.08mm: 12.8x wider and 4.02x longer.
-Its opening width, 0.1950mm, is a different measure of the same piece and does
-not divide into a bounding box; the exported mark is a third.
-
-| piece                                | net mm² | width  | off-surface | depth  |
-| ------------------------------------ | ------- | ------ | ----------- | ------ |
-| `right/chair-wheel-mount-right#5`    | 3.159   | 0.1943 | 99.91%      | 0.1942 |
-| `left/chair-wheel-mount-left#4`      | 3.172   | 0.1950 | 99.70%      | 0.1945 |
-| `seat-left/chair-wheel-mount-left#2` | 2.860   | 0.1881 | 98.41%      | 0.1872 |
-
-**The cause is two descriptions of one boundary.** Both go through
-`simplifyLoop` at the same tolerance, over different source polylines:
-`subRegions` from the chart's own boundary loop, `deadRegions` from the boundary
-of the dead set intersected with the chart's RAW triangle rings. Two independent
-Douglas-Peucker passes over one physical boundary can disagree by up to twice
-the tolerance — 0.4mm — and subtracting one from the other cuts the part of that
-disagreement lying outside the triangles free as its own polygon.
-
-Every one of the 14 is on a chart that carries a dead region, and none reaches
-more than 0.1945mm past the triangles. That sits inside the 0.4mm bound and
-under a single tolerance, which is consistent with the slack being the tolerance
-without proving it. What carries the claim is the control below.
-
-The slack itself is not the bug and predates this: charts with no dead region
-carry more of it (649.41mm² against 211.13mm²) and produce no ribbons, because
-nothing cuts it loose.
-
-**Closing it** is an intersect against the chart's own triangles after
-`subtractRegions`. Not one line: `bakeZones` does build a `chartCS`, but for the
-dead intersection only — constructed at `zonebake.mjs:4353` and deleted at 4360,
-inside `if (coverIdx)`/`if (deadCS)`, about 30 lines before the
-`subtractRegions` call at 4391, and not built at all for a chart with no dead
-set. So it needs that section hoisted and kept.
-
-It also needs a decision on the charts with no dead region. They carry the same
-slack — more of it, 649.41mm² — but attached to their one piece rather than cut
-free, and it has never made a standalone piece. Clipping them too would trim
-that band; clipping only the charts with a dead set would fix every piece this
-run found.
-
-Then **re-bake** — and that needs `stubs/dead-zones.3mf`, which lives outside
-the repo. Fixing the code without re-baking would repeat #296's eighth-round
-finding, where a corrected `subtractRegions` shipped a stale sidecar.
-
-Full method, the two independent derivations, the control, and the four wing
-excursions the split cannot explain are in
-[docs/findings/2026-09-09-cut-ribbon-offsurface.md](findings/2026-09-09-cut-ribbon-offsurface.md).
-Re-derive with `npx vite-node scripts/measure-cut-offsurface.mjs` and
-`npm run build && npx vite-node scripts/check-cut-ribbon-ink.mjs`.
-
-**Retired by this run**: the question this section used to ask, whether the
-strips are surface a cover hides. A cover has nothing to do with them. The
-min-width guard this section asked for before that also stays retired — no width
-separates the population
-([docs/findings/2026-09-08-cut-region-width.md](findings/2026-09-08-cut-region-width.md),
-`npx vite-node scripts/measure-cut-width.mjs`) — and clipping to the chart makes
-it moot anyway: it removes these pieces by where they are, not by how thin.
-
-**Not measured**: the other 13. One piece was driven end to end; the rest are
-the same shape by the same mechanism, which is an argument, not a run.
+**Closing it** takes a driven export over a coverless chart's edge, like the
+reference variant in `scripts/check-cut-ribbon-ink.mjs`. Either it shows no ink
+past the triangles, or the clip extends to every chart and the guard is rebuilt.
 
 ## `measure-cut-width.mjs` breaks on the sidecar its own conclusion asks for
 
@@ -979,8 +919,8 @@ left there.
 | 541  | `Math.min(...[])` prints `Infinity` as a thinnest-overlap width       | no seam overlap clears the area floor                        |
 | 230  | `part-eaten>50%` divides a `CrossSection.area()` by a `regionNetArea` | every run — the basis mix its own comment at 197-199 forbids |
 
-The first two are the state a re-bake after the fix in the section above is
-meant to produce, so the script would die on the run that confirms the fix.
+The first two are states a future re-bake can reach, so the script would die
+on the run meant to measure it.
 
 **Why it is still open**: the report is pinned to its run, and the third changes
 a published column. Script and report should move together, by their author. The
