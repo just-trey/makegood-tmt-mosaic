@@ -24,6 +24,8 @@ jobs:
       # message otherwise leaves its section unreachable by the one thing a user searches: the text
       # they saw on screen. #240 re-synced 17 such quotes by hand, across three rounds.
       - run: npm run check:troubleshooting
+      # Comment blocks over 15 lines are allowlisted by scripts/comment-allowlist.json; none may grow.
+      - run: npm run check:comments
       - run: npm run typecheck
       # Coverage rather than plain `npm test`: same suite, one run, plus the per-directory
       # coverage floors in vite.config.ts. A breach fails this step with an
