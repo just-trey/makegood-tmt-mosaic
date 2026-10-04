@@ -1,13 +1,9 @@
 // How much of every baked `cutRegions` piece lies OFF the chart's own triangles.
 //
-// Written for docs/findings/2026-09-09-cut-ribbon-offsurface.md, which asks the question
-// docs/tech-debt.md left open: are the thin cut-region strips surface a cover hides? They are not
-// surface at all. `subRegions` and `deadRegions` both go through `simplifyLoop` at the same
-// tolerance, but over different source polylines — the chart's boundary loop, and the boundary of
-// the dead set intersected with the chart's RAW triangle rings. Where both describe one physical
-// boundary they are two independent approximations of it, each free to wander SIMPLIFY_TOL_MM from
-// its own source, so they can disagree by twice that. Subtracting one from the other cuts the part
-// of the disagreement lying outside the triangles free as its own polygon.
+// Written for docs/findings/2026-09-09-cut-ribbon-offsurface.md. `subRegions` overhangs its
+// triangles by up to SIMPLIFY_TOL_MM, and the dead set stops at them, so subtracting one from the
+// other can strand overhang as a piece of its own. The bake now clips those charts back onto their
+// triangles (`clipRegionsToChart`); this run is how that is checked.
 //
 // The oracle is the chart's own triangulation out of the shipped sidecar — `chartTris` over `uv`,
 // the same arrays the runtime mapper builds `lookup` from. Nothing in the bake ever compared

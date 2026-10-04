@@ -755,7 +755,8 @@ describe('chart reconstruction', () => {
   // arithmetic subtract the same surface twice — 24.7% out on `seat-left`/`chair-storage-left`.
   // turf is also a different engine from the Manifold CrossSection the bake subtracts with, so
   // agreement between them is a real cross-check rather than the bake grading itself.
-  it("bakes the cut region as the claim less what's hidden", () => {
+  it("bakes the cut region as the claim less what's hidden", async () => {
+    const wasm = await getManifold();
     const area = (rs: { outer: number[][]; holes: number[][][] }[]): number =>
       rs.reduce((s, r) => s + Math.abs(planarArea(regionPolygon(r))), 0);
     const close = (r: number[][]): number[][] =>
@@ -763,10 +764,39 @@ describe('chart reconstruction', () => {
     const multi = (rs: { outer: number[][]; holes: number[][][] }[]): PolyFeature =>
       turf.multiPolygon(rs.map((r) => [close(r.outer), ...r.holes.map(close)])) as PolyFeature;
 
+    /**
+     * How much of a turf reference lies off the chart's triangles: an upper bound on what the
+     * bake's clip may remove (it keeps closed holes). Manifold, since a turf union of thousands of
+     * triangles is slow and fragile; the reference stays turf's.
+     */
+    const refOffChartArea = (
+      ref: PolyFeature | null,
+      chartCS: InstanceType<ManifoldAPI['CrossSection']>,
+    ): number => {
+      if (!ref) return 0;
+      const g = ref.geometry;
+      const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+      const refCS = new wasm.CrossSection(
+        polys.flat().map((ring) => ring.map(([x, y]: number[]) => [x, y])) as [number, number][][],
+        'EvenOdd',
+      );
+      const off = refCS.subtract(chartCS);
+      const a = off.area();
+      off.delete();
+      refCS.delete();
+      return a;
+    };
+
     for (const z of sidecar.zones)
       for (const c of z.charts) {
         const where = `${z.id}/${c.libraryPartId}`;
         const dead = c.deadRegions ?? [];
+        const chartCS = new wasm.CrossSection(
+          c.chartTris.map((tri: number[]) =>
+            tri.map((i: number) => [c.uv[2 * i], c.uv[2 * i + 1]]),
+          ) as [number, number][][],
+          'NonZero',
+        );
         const ref = dead.length
           ? (turf.difference(multi(c.subRegions), multi(dead)) as PolyFeature | null)
           : multi(c.subRegions);
@@ -783,7 +813,17 @@ describe('chart reconstruction', () => {
         // loss. It was also calibrated against a stale bake — the sidecar had not been re-baked
         // since `subtractRegions` gained its no-covers path, and the 3.8mm² it was sized for was
         // that drift, not the filter.
-        expect(Math.abs(got - want), `${where}: cut region disagrees with turf`).toBeLessThan(2);
+        //
+        // The lower bound allows for what the clip removes from dead-region charts: at most what
+        // lies off the triangles, measured here. The bake logs each chart's clip (`npx vite-node
+        // scripts/bake-zones.mjs scripts/zone-configs/chair-body.json`).
+        const offChart = refOffChartArea(ref, chartCS);
+        expect(got - want, `${where}: cut region claims more than claim-less-dead`).toBeLessThan(2);
+        expect(
+          want - got,
+          `${where}: cut region claims less than the part of claim-less-dead that is ON the part`,
+        ).toBeLessThan(offChart + 2);
+        chartCS.delete();
       }
   });
 
@@ -793,8 +833,8 @@ describe('chart reconstruction', () => {
   // there is none.
   //
   // Per PIECE, not per pair — a pair's intersect can be several polygons and the narrowest of them
-  // is what a design clipped down to one would face. 41 pieces across 17 pairs, 25 of them over
-  // CLIP_REMNANT_FLOOR_MM2, thinnest of those 0.0631mm by 2·area/perimeter. None fails.
+  // is what a design clipped down to one would face. 45 pieces across 17 pairs, 23 of them over
+  // CLIP_REMNANT_FLOOR_MM2, thinnest of those 0.0734mm by 2·area/perimeter. None fails.
   //
   // Re-derive with `npx vite-node scripts/measure-seam-overlap.mjs`, which also prints how far
   // apart the same UV point lands on the two parts. Full run in
@@ -841,7 +881,7 @@ describe('chart reconstruction', () => {
     }
     // Not just "nothing failed": a re-bake that drops `cutRegions`, or one that partitions the
     // claims cleanly, would leave this measuring nothing and passing.
-    expect(examined, 'no overlap pieces were examined').toBe(41);
+    expect(examined, 'no overlap pieces were examined').toBe(45);
     expect(failed).toEqual([]);
   }, 120000);
 

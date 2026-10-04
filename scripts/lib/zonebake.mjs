@@ -2438,6 +2438,61 @@ export function subtractRegions(wasm, regions, holes, minPieceArea) {
 }
 
 /**
+ * Opening radius for the clipped cut region. Its outline follows triangle edges and pinches at
+ * shared vertices, which the app's turf intersect splits into "too fine to print" specks; wider
+ * than roundLoop's 3dp snap, which can close a thinner neck into a new pinch.
+ */
+const CLIP_OPEN_MM = 0.005;
+
+/**
+ * What a chart's cut region may cover: its own triangles plus the raw outline of every hole its
+ * claim closed (`closedHoleRings`), so clipping re-punches none of them.
+ */
+export function chartClipSection(wasm, triRings, closedHoleRings) {
+  const made = [new wasm.CrossSection(triRings, 'NonZero')];
+  try {
+    for (const ring of closedHoleRings) made.push(new wasm.CrossSection([ring], 'EvenOdd'));
+    return wasm.CrossSection.union(made);
+  } finally {
+    for (const cs of made) cs.delete();
+  }
+}
+
+/**
+ * `regions` clipped to `clipCS` and opened by CLIP_OPEN_MM, split at `minPieceArea` into `kept`
+ * and the `shed` areas. The claim overhangs its triangles by up to SIMPLIFY_TOL_MM and the dead
+ * set stops at them, so the subtraction strands overhang that still cuts: 14 of 87 pieces, one a
+ * 1.000 x 0.211 x 32.543mm mark (`npx vite-node scripts/check-cut-ribbon-ink.mjs`).
+ */
+export function clipRegionsToChart(wasm, regions, clipCS, minPieceArea) {
+  if (!regions.length) return { kept: [], shed: [], removed: 0 };
+  const made = [];
+  try {
+    const a = new wasm.CrossSection(
+      regions.flatMap((r) => [r.outer, ...(r.holes ?? [])]),
+      'EvenOdd',
+    );
+    made.push(a);
+    const clipped = a.intersect(clipCS);
+    made.push(clipped);
+    const shrunk = clipped.offset(-CLIP_OPEN_MM, 'Miter', 2);
+    made.push(shrunk);
+    const opened = shrunk.offset(CLIP_OPEN_MM, 'Miter', 2);
+    made.push(opened);
+    const pieces = classifyRegions(opened.toPolygons().map((p) => p.map(([x, y]) => [x, y]))).map(
+      (r) => ({ r, area: regionNetArea(r) }),
+    );
+    return {
+      kept: pieces.filter((p) => p.area >= minPieceArea).map((p) => p.r),
+      shed: pieces.filter((p) => p.area < minPieceArea).map((p) => p.area),
+      removed: a.area() - opened.area(),
+    };
+  } finally {
+    for (const cs of made) cs.delete();
+  }
+}
+
+/**
  * Area (mm²) of one `{ outer, holes }` region: the outer loop less its holes, unsigned.
  *
  * Exported because the same sum is what the bake log reports, what dropSmallRegions filters on, and
@@ -4290,8 +4345,14 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
       // printed seam this is what each part's cutter must be clipped to — clipping to the whole
       // zone outline instead pushes artwork past the part's own chart, where the warp reports it
       // off-chart and the color silently vanishes from both parts.
+      const rawLoopOf = new Map();
       const subLoops = boundaryVertexLoops(list.map((e) => e.zTri))
-        .map((loop) => simplifyLoop(loop.map(uvOf), simplifyTol))
+        .map((loop) => {
+          const raw = loop.map(uvOf);
+          const simplified = simplifyLoop(raw, simplifyTol);
+          rawLoopOf.set(simplified, raw);
+          return simplified;
+        })
         .filter((pts) => pts.length >= 3);
       const rawRegions = classifyRegions(subLoops);
       // Folds, not holes. Reported rather than dropped quietly, because a hole that stops being
@@ -4347,56 +4408,100 @@ export function bakeZones(config, parts, log = () => {}, opts = {}) {
         chartTris,
         subRegions,
       };
-      if (coverIdx) {
-        chart.deadRegions = [];
-        if (deadCS) {
-          const chartCS = new opts.wasm.CrossSection(
-            list.map((e) => triRing(e.zTri)),
-            'NonZero',
-          );
-          const cut = deadCS.intersect(chartCS);
-          const rings = cut.toPolygons().map((ring) => ring.map(([x, y]) => [x, y]));
-          cut.delete();
-          chartCS.delete();
-          chart.deadRegions = classifyRegions(rings)
-            .map((r) => ({
-              outer: r.outer,
-              // Area alone here, deliberately, unlike the two clip-region filters above. A hole in
-              // a dead region is a window of live surface inside hidden surface, so dropping one
-              // GROWS the dead region and takes design surface away — the opposite direction to a
-              // fold in a clip region, and the direction MIN_HOLE_WIDTH_MM must not act in.
-              holes: r.holes.filter((h) => Math.abs(loopArea(h)) >= minHoleArea),
-            }))
-            // Net area, the same measure the bake log, dropSmallRegions and the tests use. On the
-            // outer loop alone a ring of hidden surface reads as solid, so a region hiding almost
-            // nothing survives a threshold meant to drop it. Holes are filtered first, because a
-            // hole under minHoleArea is not subtracted from what ships either. Nothing in the
-            // current sidecar moves: all 12 of its dead regions have no holes at all.
-            .filter((r) => regionNetArea(r) >= MIN_DEAD_AREA_MM2)
-            .map((r) => ({
-              outer: roundLoop(simplifyLoop(r.outer, simplifyTol)),
-              holes: r.holes.map((h) => roundLoop(simplifyLoop(h, simplifyTol))),
-            }));
+      // Only a chart with something subtracted is clipped: elsewhere `cutRegions` must stay
+      // byte-identical to `subRegions`, the guard that catches a stale bake.
+      let chartCS = null;
+      let clipCS = null;
+      try {
+        if (coverIdx) {
+          chart.deadRegions = [];
+          if (deadCS) {
+            chartCS = new opts.wasm.CrossSection(
+              list.map((e) => triRing(e.zTri)),
+              'NonZero',
+            );
+            const cut = deadCS.intersect(chartCS);
+            const rings = cut.toPolygons().map((ring) => ring.map(([x, y]) => [x, y]));
+            cut.delete();
+            chart.deadRegions = classifyRegions(rings)
+              .map((r) => ({
+                outer: r.outer,
+                // Area alone here, deliberately, unlike the two clip-region filters above. A hole in
+                // a dead region is a window of live surface inside hidden surface, so dropping one
+                // GROWS the dead region and takes design surface away — the opposite direction to a
+                // fold in a clip region, and the direction MIN_HOLE_WIDTH_MM must not act in.
+                holes: r.holes.filter((h) => Math.abs(loopArea(h)) >= minHoleArea),
+              }))
+              // Net area, the same measure the bake log, dropSmallRegions and the tests use. On the
+              // outer loop alone a ring of hidden surface reads as solid, so a region hiding almost
+              // nothing survives a threshold meant to drop it. Holes are filtered first, because a
+              // hole under minHoleArea is not subtracted from what ships either. Nothing in the
+              // current sidecar moves: all 12 of its dead regions have no holes at all.
+              .filter((r) => regionNetArea(r) >= MIN_DEAD_AREA_MM2)
+              .map((r) => ({
+                outer: roundLoop(simplifyLoop(r.outer, simplifyTol)),
+                holes: r.holes.map((h) => roundLoop(simplifyLoop(h, simplifyTol))),
+              }));
+          }
         }
+        // The clip the runtime actually uses: this part's claim less the surface the covers hide,
+        // with anything left under one nozzle square thrown away.
+        //
+        // Baked rather than left to the runtime, which used to subtract `deadRegions` from
+        // `subRegions` on every load. That subtraction is between two loops traced from the SAME
+        // triangles, so they share long stretches of boundary and the difference leaves dust along
+        // them: 55 of the chair's 142 live pieces came back under a nozzle square, and one of them
+        // cut a visible 0.4mm mark into the seat back. Done once here, cleaned once here, and the
+        // sheet keeps drawing `subRegions` so the hatch still has a silhouette to sit on.
+        const cutPieces = subtractRegions(
+          opts.wasm,
+          subRegions,
+          chart.deadRegions ?? [],
+          minCutPieceArea,
+        );
+        let onChart = cutPieces;
+        if (chartCS && chart.deadRegions?.length) {
+          // Holes the claim closed stay closed. They include triangle holes pinched to the outer
+          // edge — two per wing, reaching 0.85mm past the outline (`npx vite-node
+          // scripts/measure-cut-offsurface.mjs`, "Deepest EDGE reach") — claim surface by design.
+          const closedHoleRings = rawRegions
+            .flatMap((r) => r.holes)
+            .filter((h) => !isRealHole(h, minHoleArea, minHoleWidth))
+            .map((h) => rawLoopOf.get(h));
+          clipCS = chartClipSection(
+            opts.wasm,
+            list.map((e) => triRing(e.zTri)),
+            closedHoleRings,
+          );
+          const { kept, shed, removed } = clipRegionsToChart(
+            opts.wasm,
+            cutPieces,
+            clipCS,
+            minCutPieceArea,
+          );
+          // The clip takes overhang nobody needs telling about; the floor takes surface, so it warns.
+          if (removed > 1e-6)
+            log(
+              `  zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": clipped ` +
+                `${removed.toFixed(3)}mm² of cut region back onto the chart`,
+            );
+          if (shed.length)
+            warnings.push(
+              `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": dropped ${shed.length} ` +
+                `cut piece(s) under ${+minCutPieceArea.toFixed(3)}mm² (largest ` +
+                `${Math.max(...shed).toFixed(3)}mm²) after clipping to the chart — artwork placed ` +
+                `there will not cut`,
+            );
+          onChart = kept;
+        }
+        chart.cutRegions = onChart.map((r) => ({
+          outer: roundLoop(r.outer),
+          holes: r.holes.map(roundLoop),
+        }));
+      } finally {
+        chartCS?.delete();
+        clipCS?.delete();
       }
-      // The clip the runtime actually uses: this part's claim less the surface the covers hide,
-      // with anything left under one nozzle square thrown away.
-      //
-      // Baked rather than left to the runtime, which used to subtract `deadRegions` from
-      // `subRegions` on every load. That subtraction is between two loops traced from the SAME
-      // triangles, so they share long stretches of boundary and the difference leaves dust along
-      // them: 55 of the chair's 142 live pieces came back under a nozzle square, and one of them
-      // cut a visible 0.4mm mark into the seat back. Done once here, cleaned once here, and the
-      // sheet keeps drawing `subRegions` so the hatch still has a silhouette to sit on.
-      chart.cutRegions = subtractRegions(
-        opts.wasm,
-        subRegions,
-        chart.deadRegions ?? [],
-        minCutPieceArea,
-      ).map((r) => ({
-        outer: roundLoop(r.outer),
-        holes: r.holes.map(roundLoop),
-      }));
       if (!chart.cutRegions.length)
         warnings.push(
           `zone "${zoneCfg.id}" part "${parts[pi].libraryPartId}": nothing of its claim survives ` +
