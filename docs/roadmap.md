@@ -5,148 +5,114 @@ Open questions with no obvious answer, where the measurement behind the question
 - What should a Fill tile with no declared mm size repeat at? The design face is wrong and 1:1 is a
   guess; the honest answer may be to refuse Fill and say so. Measurement:
   [designMmPerUnit](../src/geometry/assembly.ts)'s docstring.
-- Should per-part export placement ([src/export/placement.ts](../src/export/placement.ts)) move
-  onto the `AssemblyKind`/role definition instead of staying a lookup table keyed by part id?
-  Blocked on the chair's two caster roles resolving to a different mesh per hardware variant — see
-  the `PLACEMENT` provenance comment there.
-- Where should the open feedback popover live, given it covers a warning pill's dismiss button
-  while open? See the comment above `#feedback-popover` in [src/styles.css](../src/styles.css).
+- Should per-part export placement ([src/export/placement.ts](../src/export/placement.ts)) move onto the
+  `AssemblyKind`/role definition instead of staying a lookup table keyed by part id? Blocked on the
+  chair's two caster roles resolving to a different mesh per hardware variant — see the `PLACEMENT`
+  provenance comment there.
+- Where should the open feedback popover live, given it covers a warning pill's dismiss button while
+  open? See the comment above `#feedback-popover` in [src/styles.css](../src/styles.css).
 - Does the caster mounts' design-zone gap describe the chair's real "central rear brace", or is the
   brace note actually describing the casters themselves? See the `_note` in
   [scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json).
-- A "fit N slots" input beside or instead of the Auto-merge similarity slider, so the control
-  matches the audience's actual question. Measurement:
-  [AUTO_MERGE_LEVELS](../src/geometry/regions.ts).
+- A "fit N slots" input beside or instead of the Auto-merge similarity slider, so the control matches the
+  audience's actual question. Measurement: [AUTO_MERGE_LEVELS](../src/geometry/regions.ts).
 - Make the Colors-detected panel's five copy-carried mechanisms (drag targets, the grip glyph, the
-  "Merge with…" dropdown, a merged group's shared depth and print color) visible instead of
-  explained. See the comment above the Auto-merge hint in [index.html](../index.html).
-- Delta-encode the index arrays, or a binary format, for the chair's zone sidecar. Measurement:
-  the comment above the sidecar write in [scripts/bake-zones.mjs](../scripts/bake-zones.mjs).
-- Replace the instance-cascade lattice with a real nearest-free-placement search over the two
-  designs' actual footprints. Measurement:
-  [CASCADE_CLEAR_MAX_MM](../src/state/artwork.ts).
-- Record what was verified — the reference file and its hash — alongside the part fingerprint, so
-  a reseal against an unchanged reference is distinguishable from one that silently redefines the
-  verified pose. See the header comment in
-  [scripts/bake-part-fingerprints.mjs](../scripts/bake-part-fingerprints.mjs).
+  "Merge with…" dropdown, a merged group's shared depth and print color) visible instead of explained.
+  See the comment above the Auto-merge hint in [index.html](../index.html).
+- Delta-encode the index arrays, or a binary format, for the chair's zone sidecar. Measurement: the
+  comment above the sidecar write in [scripts/bake-zones.mjs](../scripts/bake-zones.mjs).
+- Replace the instance-cascade lattice with a real nearest-free-placement search over the two designs'
+  actual footprints. Measurement: [CASCADE_CLEAR_MAX_MM](../src/state/artwork.ts).
+- Record what was verified (the reference file and its hash) alongside the part fingerprint, so a reseal
+  against an unchanged reference is distinguishable from one that silently redefines the verified pose.
+  See the header comment in [scripts/bake-part-fingerprints.mjs](../scripts/bake-part-fingerprints.mjs).
 
-- Contextual help: short hints at the point people actually get stuck (a
-  control's own row), instead of relying only on the single global help
-  dialog. Not built in the 2026-08 help-dialog redesign because each hint is
-  its own placement decision governed by
-  [ui-conventions.md](ui-conventions.md) conventions 4-6 (a control's
-  explanation may not reference another panel; a concept belongs at the point
-  of use, a mechanism belongs in the help dialog) — it is a per-panel design
-  pass, not a copy change.
+- Contextual help: short hints at the point people get stuck (a control's own row), instead of relying
+  only on the single global help dialog. Not built in the 2026-08 help-dialog redesign: each hint is its
+  own placement decision under [ui-conventions.md](ui-conventions.md) conventions 4-6 (a control's
+  explanation may not reference another panel; a concept belongs at the point of use, a mechanism in the
+  help dialog). A per-panel design pass, not a copy change.
 - Snap a traced image's palette to the owned-filament list
-  ([public/filaments.json](../public/filaments.json)) instead of to colors
-  derived from the image, so an image's regions are filaments the user actually
-  has and the AMS slot count is settled before export rather than after.
-- Center auto-fit on the visible part of a zone, not its whole bbox. With the
-  chair's hidden surface now clipped, an auto-fit design on `seat-left` or
-  `seat-right` lands mostly on covered surface: 13,971mm² of `seat-left`'s
-  17,166mm² claim is covered (the bake log's per-zone `dead` figure over the
-  zone's claim; `seat-right` is 13,983), and 70% of the 20,070mm² `uvBounds` bbox
-  the anchor actually centres on. The overlay
-  explains it, but placing straight onto the visible region would be the better
-  default. The anchor becomes the chart's claim minus its `deadRegions` rather
-  than the whole zone bbox. Deferred out of the dead-zones change because it
-  moves placement for every zone on every kind, a far wider blast radius than
-  the clip itself.
-- ~~Wrap one design across the whole chair, rather than one zone at a time.~~
-  **Shipped as the whole-part sheet (CHANGELOG, "Whole chair").** The seamless
-  wrap itself is still closed no-go — the geometry below hasn't changed — but
-  the net is its practical ceiling: the chair's eight design zones laid out
-  on one unfolded sheet, each at the transform its bake measured. Two of
-  those seams (left/back, back/right) register within 2mm at the 95th
-  percentile (1.81mm / 1.58mm, `npx vite-node
-scripts/measure-zone-seams.mjs`), so a design bound to **Whole chair**
-  continues across the stretch that fit covers — 61 of the left/back
-  boundary's 197 rows, 8 of right/back's 99 — and is torn everywhere else
-  along them ([docs/pipeline.md](pipeline.md)); every other pair of sheets
-  (front, seat sides, wing panels) sits beside its neighbour with a visible
-  gap and doesn't connect.
-  Two attached sheets also overlap at their registered transform — 8,668mm²
-  and 8,158mm² of it on the chair, where the flanks reach across the back's
-  ([docs/pipeline.md](pipeline.md)). Rather than let a mark there cut twice,
-  the canvas is partitioned at the seam: each point cuts on whichever
-  sheet's own body it's on, so it lands in exactly one place
-  (`clipToNetShare`, [src/geometry/assembly.ts](../src/geometry/assembly.ts)).
-  Binding a zone by name instead of Whole chair still reaches all of its
-  surface — only the whole-part binding gives any of it up. The 3D view
-  cross-hatches that surface while a whole-part row is the active one, so the
-  refusal is visible before a mark is dragged there
-  ([docs/pipeline.md](pipeline.md)).
-  - **Follow-up: Mirror on a net binding.** Not offered in the shipping PR —
-    the checkbox hides on a row bound to Whole chair. The net is symmetric
-    about the back's own centre line, so a mirror there would reflect the
-    whole sheet about that line rather than one zone about its own; nobody
-    has built or measured that transform yet.
-  - The seamless wrap (a single unwrapped surface, no seams at all) is the
-    owner's stated end goal, and the measured ceiling on it hasn't moved:
-    a cone-singularity unwrap (BFF v1.6) of the left+back+right band cleared
-    no bar at any cone count
-    ([spike, 2026-09-04](spikes/2026-09-04-cone-wrap.md); 0–16 cones:
-    2.4–44% of the chart covered twice, 5,000–31,000 folded triangles), and
-    the merged-LSCM fold it was meant to remove is in the surface, not the
-    seams (4.84% on the vertex-glued band, 3.58% once the seams are sewn).
-  - The data-model blocker is not the blocker. A zone already spans six
-    printed parts, so a merged unwrap would be one bigger zone and
-    `ArtworkInstance` would not change. What stands in the way is that the bake
-    never builds a surface: the band it welds is held together at vertices
-    (2,075 four-way edges, 792 boundary loops), sewn edge-to-edge it has genus
-    6 (both flanks' skins overlap their neighbours' and close tubes), and a
-    Manifold union of the fattened parts is genus 0 but its triangulation
-    defeats BFF and the bake's LSCM alike. Any further attempt starts with a
-    remesh of the band, not a bake config.
-  - The prebuilt BFF is not a drop-in for the bake's LSCM either: on a single
-    storage flank it leaves 92 folded triangles and max stretch 106 where the
-    bake gives 1.11 and none.
-  - Rejected (owner, 2026-09-01): per-part design canvases instead of the
-    whole-chair zones. Zones spanning printed seams are the point — per-part
-    canvases would make volunteers hand-align a design across four oddly
-    shaped parts, the CAD-literacy work `docs/audience.md` rules out.
-- Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the
-  existing half-wheel (Top ×2 + Cap) kind.
+  ([public/filaments.json](../public/filaments.json)) instead of to colors derived from the image, so an
+  image's regions are filaments the user has and the AMS slot count is settled before export rather than
+  after.
+- Center auto-fit on the visible part of a zone, not its whole bbox. With the chair's hidden surface now
+  clipped, an auto-fit design on `seat-left` or `seat-right` lands mostly on covered surface: 13,971mm²
+  of `seat-left`'s 17,166mm² claim is covered (the bake log's per-zone `dead` figure over the zone's
+  claim; `seat-right` is 13,983), and 70% of the 20,070mm² `uvBounds` bbox the anchor centres on. The
+  overlay explains it, but placing straight onto the visible region would be the better default: the
+  anchor becomes the chart's claim minus its `deadRegions`. Deferred out of the dead-zones change because
+  it moves placement for every zone on every kind, a far wider blast radius than the clip itself.
+- ~~Wrap one design across the whole chair, rather than one zone at a time.~~ **Shipped as the whole-part
+  sheet (CHANGELOG, "Whole chair").** The seamless wrap itself is still a closed no-go; the net is its
+  practical ceiling: the chair's eight design zones on one unfolded sheet, each at the transform its bake
+  measured.
+  - Two seams (left/back, back/right) register within 2mm at the 95th percentile (1.81mm / 1.58mm,
+    `npx vite-node scripts/measure-zone-seams.mjs`). A design bound to **Whole chair** continues across
+    the stretch that fit covers (61 of the left/back boundary's 197 rows, 8 of right/back's 99) and is
+    torn everywhere else along them ([docs/pipeline.md](pipeline.md)). Every other pair of sheets
+    (front, seat sides, wing panels) sits beside its neighbour with a visible gap and doesn't connect.
+  - Two attached sheets also overlap at their registered transform: 8,668mm² and 8,158mm² on the chair,
+    where the flanks reach across the back's ([docs/pipeline.md](pipeline.md)). So a mark there doesn't
+    cut twice, the canvas is partitioned at the seam: each point cuts on whichever sheet's own body it's
+    on (`clipToNetShare`, [src/geometry/assembly.ts](../src/geometry/assembly.ts)).
+  - Binding a zone by name instead of Whole chair still reaches all of its surface; only the whole-part
+    binding gives any up. The 3D view cross-hatches that surface while a whole-part row is active, so the
+    refusal is visible before a mark is dragged there ([docs/pipeline.md](pipeline.md)).
+  - **Follow-up: Mirror on a net binding.** Not offered in the shipping PR: the checkbox hides on a row
+    bound to Whole chair. The net is symmetric about the back's own centre line, so a mirror there would
+    reflect the whole sheet about that line rather than one zone about its own. Nobody has built or
+    measured that transform.
+  - The seamless wrap (a single unwrapped surface, no seams) is the owner's stated end goal, and the
+    measured ceiling hasn't moved. A cone-singularity unwrap (BFF v1.6) of the left+back+right band
+    cleared no bar at any cone count ([spike, 2026-09-04](spikes/2026-09-04-cone-wrap.md); 0–16 cones:
+    2.4–44% of the chart covered twice, 5,000–31,000 folded triangles). The merged-LSCM fold it was meant
+    to remove is in the surface, not the seams (4.84% on the vertex-glued band, 3.58% once the seams are
+    sewn).
+  - The data-model blocker is not the blocker. A zone already spans six printed parts, so a merged unwrap
+    would be one bigger zone and `ArtworkInstance` would not change. The bake never builds a surface: the
+    band it welds is held together at vertices (2,075 four-way edges, 792 boundary loops); sewn
+    edge-to-edge it has genus 6 (both flanks' skins overlap their neighbours' and close tubes); a Manifold
+    union of the fattened parts is genus 0 but its triangulation defeats BFF and the bake's LSCM alike. Any
+    further attempt starts with a remesh of the band, not a bake config.
+  - The prebuilt BFF is not a drop-in for the bake's LSCM either: on a single storage flank it leaves 92
+    folded triangles and max stretch 106 where the bake gives 1.11 and none.
+  - Rejected (owner, 2026-09-01): per-part design canvases instead of the whole-chair zones. Zones
+    spanning printed seams are the point; per-part canvases would make volunteers hand-align a design
+    across four oddly shaped parts, the CAD-literacy work `docs/audience.md` rules out.
+- Quarter-wheel assembly kind (4 quarters + 2 mounting plates) alongside the existing half-wheel kind
+  (Top ×2 + Cap).
 - A full parent-handle assembly kind.
-- Surface-first zone picking: show the chair's eight design zones as
-  selectable surfaces on the model from the moment it loads, so "put this on
-  the back" is one click before any file is chosen, instead of today's
-  load-a-design-then-rebind-it-to-a-zone order (`vision`-lens review,
-  2026-08-02). The occlusion gap this used to depend on is closed — a click no
-  longer reaches a zone behind whatever is in front of it.
-  `npm run check:zone-occlusion` re-measures it, but nothing runs that
-  automatically (it needs a browser and ~12 min), so re-run it by hand here.
-  This is also conventions 9 and 15 of
-  [ui-conventions.md](ui-conventions.md) ("order follows the task, and the task
-  starts with _where_, not _what_"; "files are dropped onto the thing they apply
-  to"), whose conflicts table notes that today's `+zone` repeats one design onto
-  another surface _after_ loading it — a different data model, not a relabel.
-- Turn the camera to the zone a design just bound to (maker ease-of-use review,
-  2026-08-16, [findings report](findings/2026-08-16-maker-ease-review.md)): on
-  the chair a fresh design binds to "Left side", which faces away from the
-  default camera, so first sight of your artwork is an edge-on sliver, and
-  switching zones rebuilds for ~3s and shows an unchanged grey chair. The
-  coverage pill names the zone but nothing shows it; a first-timer who hasn't
-  found orbit can't tell whether anything worked. Cheapest fix is a camera turn
-  on bind. Surface-first picking (above) is the fuller answer, but this doesn't
-  need to wait for it.
-- Power-user tooling for repeat volunteers, all independently raised by the
-  maker-workflow review (2026-08-02): undo/redo over color merges, base
-  assignment, depth and placement; keyboard shortcuts (`Ctrl/Cmd+E` to
-  export, at minimum); batch export across variants and printers (Standard/Kit
-  × three printer profiles is six manual passes today); a project save/load
-  file so one volunteer can hand a design to another, distinct from the
-  session-autosave work already landing (that recovers _your_ session; this
-  is for sharing a finished setup); and a way to edit the owned-filament
-  palette (`public/filaments.json`) without a code-adjacent JSON edit.
+- Surface-first zone picking: show the chair's eight design zones as selectable surfaces on the model
+  from the moment it loads, so "put this on the back" is one click before any file is chosen, instead of
+  today's load-a-design-then-rebind-it-to-a-zone order (`vision`-lens review, 2026-08-02). The occlusion
+  gap this used to depend on is closed: a click no longer reaches a zone behind whatever is in front of
+  it. `npm run check:zone-occlusion` re-measures it, but nothing runs it automatically (it needs a
+  browser and ~12 min), so re-run it by hand here. This is also conventions 9 and 15 of
+  [ui-conventions.md](ui-conventions.md) ("order follows the task, and the task starts with _where_, not
+  _what_"; "files are dropped onto the thing they apply to"). Its conflicts table notes that today's
+  `+zone` repeats one design onto another surface _after_ loading it: a different data model, not a
+  relabel.
+- Turn the camera to the zone a design just bound to (maker ease-of-use review, 2026-08-16,
+  [findings report](findings/2026-08-16-maker-ease-review.md)). On the chair a fresh design binds to
+  "Left side", which faces away from the default camera, so first sight of your artwork is an edge-on
+  sliver, and switching zones rebuilds for ~3s and shows an unchanged grey chair. The coverage pill names
+  the zone but nothing shows it; a first-timer who hasn't found orbit can't tell whether anything worked.
+  Cheapest fix is a camera turn on bind. Surface-first picking (above) is the fuller answer, but this
+  doesn't need to wait for it.
+- Power-user tooling for repeat volunteers, all independently raised by the maker-workflow review
+  (2026-08-02): undo/redo over color merges, base assignment, depth and placement; keyboard shortcuts
+  (`Ctrl/Cmd+E` to export, at minimum); batch export across variants and printers (Standard/Kit × three
+  printer profiles is six manual passes today); a project save/load file so one volunteer can hand a
+  design to another (distinct from session autosave, which recovers _your_ session); and a way to edit
+  the owned-filament palette (`public/filaments.json`) without a code-adjacent JSON edit.
 
 ## Give small salient features a fair share of the traced palette
 
-The cartoon corpus source's three-tone eyes (white sclera, light blue iris, dark blue
-pupil) quantize to one gray at the default 6 colors: k-means weighs pixel count, so two
-slots go to yellow's shading tones while the eyes, tiny but the most looked-at region,
-share one. 8 colors separates them fully. Pre-existing, unchanged by the 2026-08-24 floor
-work ([findings](findings/2026-08-24-despeckle-floor-recalibration.md)). A fix would weight
-clusters by something other than raw pixel count (edge adjacency, distinct-region count),
-measured on the corpus with the `look` bench.
+The cartoon corpus source's three-tone eyes (white sclera, light blue iris, dark blue pupil) quantize to
+one gray at the default 6 colors: k-means weighs pixel count, so two slots go to yellow's shading tones
+while the eyes, tiny but the most looked-at region, share one. 8 colors separates them fully.
+Pre-existing, unchanged by the 2026-08-24 floor work
+([findings](findings/2026-08-24-despeckle-floor-recalibration.md)). A fix would weight clusters by
+something other than raw pixel count (edge adjacency, distinct-region count), measured on the corpus with
+the `look` bench.
