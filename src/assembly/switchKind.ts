@@ -16,13 +16,10 @@ export async function asmSwitchKindAndLoad(
   const { kindId: prevKind, variantId: prevVariant, parts: prevParts } = state.assembly;
   state.assembly.kindId = kindId;
   state.assembly.variantId = variantId;
-  // Cleared here, not left to asmLoadFullAssembly's own clear. That clear sits behind a confirm
-  // ("Load the full X? This clears any parts you've already added"), and the boot's auto-load has
-  // always filled this list, so restoring raised a second dialog on top of the one the user just
-  // accepted. Cancelling it returned without touching the scene while `kindId` and the dropdown had
-  // already moved: the export then wrote the *previous* kind's parts under the restored kind's
-  // filename. Measured 2026-08-24: a restored footrest session exported `mosaic-footrest.3mf`
-  // holding the wheel's Top/Bottom/Cap, valid and printable, no warning.
+  // Cleared here, not by asmLoadFullAssembly's confirm-gated clear: the boot's auto-load always
+  // fills the list, so a restore raised a second dialog, and cancelling it left the previous kind's
+  // parts under the restored `kindId`. Measured 2026-08-24: a restored footrest session exported
+  // `mosaic-footrest.3mf` holding the wheel's Top/Bottom/Cap, printable, no warning.
   state.assembly.parts = [];
   let outcome: AssemblyLoadOutcome;
   try {
