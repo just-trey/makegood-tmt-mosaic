@@ -32,10 +32,7 @@ function describeAge(savedAt: number): string {
 }
 
 function describeSession(session: PersistedSession): string {
-  // Name the part the restore will actually land on, not the one the session was saved on. A kind
-  // that has since been retired, and a session saved in a retired flat mode, both fall back to the
-  // first offered kind (state/persist.ts) — the banner used to promise "the Disc" for the second, a
-  // part that is not in the dropdown and not where the click leads.
+  // Name the part the restore will land on, not the one saved on: a retired kind or a session saved in a retired flat mode falls back to the first offered kind (state/persist.ts); the banner used to promise "the Disc", a part not in the dropdown.
   const saved =
     session.shapeKind === 'assembly'
       ? ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId)
@@ -47,18 +44,15 @@ function describeSession(session: PersistedSession): string {
 }
 
 /**
- * Offers to bring back a saved session, deliberately as a dismissible in-panel banner rather than
- * a dialog or an automatic restore — the app's default boot (the wheel, per main.ts) still runs
- * either way, so declining costs nothing and a corrupt/failed restore just leaves that default in
- * place. Doesn't touch the DOM beyond the banner itself and one bare `applyPartKind` call, which
- * does the same render/rebuild pass any other part switch triggers.
+ * Offers to bring back a saved session as a dismissible in-panel banner, not a dialog or automatic
+ * restore: the default boot (the wheel, main.ts) runs either way, so declining costs nothing and a
+ * failed restore leaves that default. Touches no DOM beyond the banner and one bare `applyPartKind`,
+ * which does the render/rebuild pass any part switch triggers.
  */
 export function initRestoreBanner(): void {
   const session = loadSavedSession();
   if (!session) return;
-  // A session saved on a part that's since been withdrawn from the Part dropdown isn't offered
-  // back — restoring it would drop someone into a part they can't then re-select. The session is
-  // deliberately left in storage rather than cleared, so unhiding the kind brings it back.
+  // A session on a part since withdrawn from the dropdown isn't offered: restoring would drop someone into a part they can't re-select. Left in storage, not cleared, so unhiding the kind brings it back.
   if (session.shapeKind === 'assembly') {
     const kind = ASSEMBLY_KINDS.find((k) => k.id === session.assembly.kindId);
     if (kind?.hidden) return;
@@ -70,9 +64,7 @@ export function initRestoreBanner(): void {
 
   $('#btn-restore-session').addEventListener('click', () => {
     banner.hidden = true;
-    // The offer has been answered, so the empty-snapshot clear in saveSession() may resume. Until
-    // this point the session is held: a reload while the banner sat unanswered used to destroy it
-    // about a second into the boot that was still offering it.
+    // The offer is answered, so saveSession()'s empty-snapshot clear may resume. Until here the session is held: a reload with the banner unanswered used to destroy it a second into the boot still offering it.
     markSavedSessionAnswered();
     void (async () => {
       try {
@@ -80,9 +72,7 @@ export function initRestoreBanner(): void {
       } catch (e) {
         console.error('Session restore failed:', e);
         if (e instanceof SessionPartsError) {
-          // Rolled back, so what is on screen is the part the user had before clicking. The session
-          // goes back into storage and writes stay off, so the reload the message asks for offers
-          // it again. Re-rendered because the aborted load drew the saved part's controls.
+          // Rolled back, so the screen shows the part from before the click. The session goes back into storage and writes stay off, so the reload the message asks for offers it again. Re-rendered because the aborted load drew the saved part's controls.
           clearWarnings();
           warn(e.message);
           keepSessionForRetry(session, e.message);
@@ -90,33 +80,27 @@ export function initRestoreBanner(): void {
           renderWarnings();
           return;
         }
-        // Say so, and render it. This used to delete the session and return with nothing on
-        // screen, so the user clicked Restore, saw no change, and had lost the work. warn() only
-        // pushes onto the list; this path returns before applyPartKind(), which is the only call
-        // on it that would otherwise reach renderWarnings().
+        // Say so, and render it. This used to delete the session and return with nothing on screen:
+        // the user clicked Restore, saw no change, and had lost the work. warn() only pushes; this
+        // path returns before applyPartKind(), the only call that would reach renderWarnings().
         //
-        // "Reload the page" is not boilerplate: any other throw can land after the parts loaded
-        // but before the artwork list was fully applied, so memory is not trusted.
+        // "Reload the page" isn't boilerplate: any other throw can land after the parts loaded but
+        // before the artwork list was applied, so memory isn't trusted.
         //
-        // Cleared first: applyRestoredSessionInner's own per-source loop can warn about a source
-        // (a raster that failed to decode) before hitting the one that threw, and `state` was never
-        // committed to match — so that warning is left describing a source that isn't part of
-        // anything on screen once this catch runs.
+        // Cleared first: applyRestoredSessionInner's source loop can warn about a source (a raster
+        // that failed to decode) before the one that threw, and `state` was never committed, so that
+        // warning would describe a source that's part of nothing on screen.
         clearWarnings();
         warn(SESSION_WRITES_DISABLED_MSG);
         renderWarnings();
         clearSavedSession();
-        // And keep it cleared. The next rebuild's debounced save would otherwise write the
-        // half-applied state straight back, so the visit after this one would be offered a session
-        // built from the restore that just failed.
+        // And keep it cleared: the next debounced save would write the half-applied state back, and the next visit would offer a session built from the failed restore.
         disableSessionWritesAfterFailedRestore();
         return;
       }
       $<HTMLSelectElement>('#shape-kind').value = 'asm:' + state.assembly.kindId;
       applyPartKind();
-      // Nothing else syncs this select from state — every other path only ever sets
-      // state.printerId *from* the dropdown's own change handler (exportPanel.ts), so restore is
-      // the first caller that needs the reverse direction too.
+      // Nothing else syncs this select from state: every other path sets state.printerId *from* the dropdown's change handler (exportPanel.ts), so restore is the first needing the reverse.
       $<HTMLSelectElement>('#p-printer').value = state.printerId;
       refreshShapeParamInputs();
       refreshDepthControls();

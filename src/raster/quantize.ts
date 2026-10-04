@@ -18,13 +18,11 @@ const LLOYD_MAX_ITERS = 8;
 const LLOYD_EPSILON = 0.5;
 
 /**
- * Centroids closer than this in CIE76 are agglomerated after clustering.
- *
- * It is deliberately the same value as AUTO_MERGE_LEVELS' "Slight" stop (regions.ts): that slider
- * is the default, so a palette emitted with pairs below this cutoff would be silently re-merged the
- * instant it reached the color list, and the Colors slider would not mean what it says. Separating
- * here instead makes the two controls compose — Colors decides which regions exist, auto-merge
- * decides which of them share a filament slot.
+ * Centroids closer than this in CIE76 are agglomerated after clustering. Deliberately the value of
+ * AUTO_MERGE_LEVELS' "Slight" stop (regions.ts): that slider is the default, so a palette with pairs
+ * below this would be silently re-merged on reaching the color list and Colors wouldn't mean what it
+ * says. Separating here makes the controls compose — Colors decides which regions exist,
+ * auto-merge which share a filament slot.
  */
 const PALETTE_SEPARATION_DE = 3;
 
@@ -51,11 +49,9 @@ function meanLab(bins: Bin[], from: number, to: number): Lab {
 }
 
 /**
- * Bucket the image at HIST_BITS per channel, carrying the true mean color of each bucket.
- *
- * Everything after this works on at most 32k weighted bins instead of up to 590k pixels, which is
- * both much faster and — because the weights ride along — arithmetically identical for the
- * weighted means that clustering is made of.
+ * Bucket the image at HIST_BITS per channel, carrying each bucket's true mean color. Everything
+ * after works on at most 32k weighted bins instead of up to 590k pixels: much faster and, with
+ * weights riding along, arithmetically identical for the weighted means clustering is made of.
  */
 function histogram(img: RasterImage): Bin[] {
   const counts = new Int32Array(HIST_SIZE);
@@ -85,13 +81,10 @@ function histogram(img: RasterImage): Bin[] {
 }
 
 /**
- * Median cut in Lab, used to seed Lloyd rather than as the final answer: repeatedly split the box
- * with the largest weighted spread along its widest Lab axis, at the weighted median. Splitting in
- * Lab (not RGB) means the cut planes track perceptual difference, so the seeds land where a viewer
- * would say the distinct colors are.
- *
- * Deterministic — no random seeding anywhere in this file, so the same image always yields the same
- * palette and a test can assert one.
+ * Median cut in Lab, seeding Lloyd rather than the final answer: repeatedly split the box with the
+ * largest weighted spread along its widest Lab axis, at the weighted median. Lab (not RGB) makes
+ * cut planes track perceptual difference. Deterministic — no random seeding in this file, so the
+ * same image gives the same palette and a test can assert one.
  */
 function medianCutSeeds(bins: Bin[], k: number): Lab[] {
   const boxes: { from: number; to: number }[] = [{ from: 0, to: bins.length }];
@@ -196,11 +189,7 @@ function lloyd(bins: Bin[], centroids: Lab[], assign: Int32Array): number {
   return moved;
 }
 
-/**
- * Collapse centroid pairs closer than PALETTE_SEPARATION_DE, repeatedly, until the palette is
- * separated. Weighted so the survivor sits where the pixels actually are, not halfway between a
- * huge cluster and a tiny one.
- */
+/** Collapse centroid pairs closer than PALETTE_SEPARATION_DE, repeatedly. Weighted so the survivor sits where the pixels are, not halfway between a huge cluster and a tiny one. */
 function separate(centroids: Lab[], weights: number[]): void {
   for (;;) {
     let bi = -1,
@@ -270,20 +259,17 @@ export function boxBlur(img: RasterImage, radius: number): RasterImage {
 }
 
 /**
- * Reduce an image to at most `colors` flat colors, as a per-pixel label grid.
- *
- * Clustering happens in CIELAB via median-cut seeding plus Lloyd refinement, then the palette is
- * ΔE-separated (see PALETTE_SEPARATION_DE). The returned palette can be shorter than `colors` —
- * an image with three distinct colors returns three however high the slider goes, which is the
- * honest answer and is what the panel's live readout reports.
+ * Reduce an image to at most `colors` flat colors, as a per-pixel label grid. Clustering is CIELAB
+ * median-cut seeding plus Lloyd, then ΔE-separated (PALETTE_SEPARATION_DE). The palette can be
+ * shorter than `colors` — three distinct colors return three however high the slider goes, which
+ * the panel's readout reports.
  */
 export function quantize(img: RasterImage, colors: number, blurRadius = 0): LabelMap {
   const work = boxBlur(img, blurRadius);
   const k = Math.max(MIN_COLORS, Math.min(MAX_COLORS, Math.round(colors)));
-  // Palette comes from the image's own colours, assignment from the blurred copy. Discovering it
-  // from the blur instead would let a transition tone — a shade that exists nowhere in the source,
-  // only between two of its colours — win a palette entry, which costs a filament slot and breaks
-  // the promise the readout makes that a three-colour logo stays three however high Colors goes.
+  // Palette from the image's own colours, assignment from the blurred copy: discovering it from the
+  // blur would let a transition tone (a shade only between two source colours) win an entry, costing
+  // a filament slot and breaking the readout's promise that a three-colour logo stays three.
   const bins = histogram(img);
   const labels = new Int16Array(work.w * work.h).fill(BACKGROUND);
   if (!bins.length) return { labels, w: work.w, h: work.h, palette: [] };
@@ -297,8 +283,7 @@ export function quantize(img: RasterImage, colors: number, blurRadius = 0): Labe
   const weights = centroids.map((_, c) =>
     bins.reduce((s, bin, i) => (assign[i] === c ? s + bin.count : s), 0),
   );
-  // Drop centroids that ended up owning nothing before separating — an empty cluster has no
-  // position worth merging toward, and would otherwise pull a real one off its pixels.
+  // Drop centroids that own nothing before separating: an empty cluster has no position worth merging toward and would pull a real one off its pixels.
   for (let c = centroids.length - 1; c >= 0; c--)
     if (!weights[c]) {
       centroids.splice(c, 1);
@@ -307,9 +292,7 @@ export function quantize(img: RasterImage, colors: number, blurRadius = 0): Labe
   separate(centroids, weights);
   lloyd(bins, centroids, assign);
 
-  // One lookup per populated bin, then a single pass over the pixels. The blurred copy contains
-  // tones the source never had, so its bins have to be resolved too — otherwise every fringe pixel
-  // misses the table and falls through as background, punching holes along each colour boundary.
+  // One lookup per populated bin, then one pass over pixels. The blurred copy has tones the source never had, so its bins must be resolved too, or every fringe pixel misses the table and falls through as background, punching holes along colour boundaries.
   const binToCluster = new Int32Array(HIST_SIZE).fill(BACKGROUND);
   for (const bin of blurRadius > 0 ? histogram(work) : bins)
     binToCluster[bin.key] = nearest(centroids, bin.lab);

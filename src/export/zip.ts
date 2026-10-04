@@ -20,10 +20,9 @@ function crc32(buf: Uint8Array): number {
 }
 
 /**
- * Synchronous STORE-only (uncompressed) ZIP writer. JSZip's generateAsync pumps its worker
- * through nested setTimeout(0) calls, which browsers clamp to a 4ms floor — so a multi-megabyte
- * archive drags out to a minute+ regardless of input form. A 3MF is just a STORE zip, so we
- * assemble the bytes directly in one pass instead. Names are declared UTF-8 (flag bit 11).
+ * Synchronous STORE-only ZIP writer: JSZip's generateAsync pumps through nested setTimeout(0),
+ * which browsers clamp to a 4ms floor, so a multi-megabyte 3MF took a minute+. Names are declared
+ * UTF-8 (flag bit 11).
  */
 export function zipStore(files: ZipEntry[]): Blob {
   const enc = new TextEncoder();
