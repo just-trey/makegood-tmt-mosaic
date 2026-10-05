@@ -624,7 +624,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     // parts exist, so the dropdown would name the fallback kind while scene and export held the other's.
     state.assembly.parts = [];
     // The saved zone bindings can't be re-applied either: they name zones on a different part, and
-    // an instance bound to an unmatched zone is dropped by geometry/assembly.ts uncut and unwarned.
+    // an instance bound to an unmatched zone is dropped by geometry/partBuild.ts uncut and unwarned.
     keepSavedZones = false;
   }
 
@@ -652,7 +652,7 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
     }));
   restoreArtworkPool(sources, artworks);
   // A saved zoneId the loaded parts no longer offer (a re-bake renamed or dropped it) matches no
-  // mapper, so geometry/assembly.ts cuts that design nowhere, silently, and the dropdown shows no
+  // mapper, so geometry/partBuild.ts cuts that design nowhere, silently, and the dropdown shows no
   // selection. Sent to All zones instead, and said out loud.
   //
   // **An empty zone list is not evidence**, so the check is gated on zones being offered:

@@ -25,7 +25,7 @@ vi.mock('../src/scene/viewport', async () => {
 });
 
 import { computeFaceFrame } from '../src/scene/faceFrame';
-import { designMmPerUnit, memoLargestDesignFace } from '../src/geometry/assembly';
+import { designMmPerUnit, memoLargestDesignFace } from '../src/geometry/designScale';
 import { loadArtworkSource, setArtworkZone } from '../src/state/artwork';
 import { state } from '../src/state/store';
 import type { ConformalChart } from '../src/geometry/conformal';

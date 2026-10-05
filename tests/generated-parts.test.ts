@@ -26,7 +26,7 @@ import {
   hubcapShapeFromState,
   hubcapSilhouetteOffset,
 } from '../src/assembly/kinds';
-import { designAnchor, designMmPerUnit } from '../src/geometry/assembly';
+import { designAnchor, designMmPerUnit } from '../src/geometry/designScale';
 import {
   outlineBounds,
   outlineContains,

@@ -44,7 +44,7 @@ export interface ParsedSVG {
    */
   canvas?: { w: number; h: number } | null;
   /**
-   * Which producer built this; absent means the SVG parser. Only assembly.ts's sizing advice reads
+   * Which producer built this; absent means the SVG parser. Only designScale.ts's sizing advice reads
    * it: "set your document size in millimetres" is right for an SVG and impossible for a PNG.
    */
   origin?: 'svg' | 'raster';

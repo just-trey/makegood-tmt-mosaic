@@ -14,7 +14,7 @@ committed with this report.
 as if artwork were lost" claimed a seam remnant "yields no cutter" and so raises
 `Couldn't cut color … into …`. It does not, and there is no width at which it
 would. Two earlier hunts failed to find a sighting
-([seam-sliver-sighting.md](seam-sliver-sighting.md), 2026-08-08, and the
+([2026-08-08-seam-sliver-sighting.md](2026-08-08-seam-sliver-sighting.md), 2026-08-08, and the
 instrumented run of 2026-07-31) because there is nothing to find.
 
 ## What was measured

@@ -8,12 +8,11 @@ import {
 } from '../src/geometry/zones';
 import {
   buildAssemblyGeometry,
-  clipToKeptSide,
-  mirrorClipFailedWarning,
-  mirrorHalfNotice,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
+import { mirrorClipFailedWarning, mirrorHalfNotice } from '../src/geometry/assemblyWarnings';
+import { clipToKeptSide } from '../src/geometry/designClip';
 import * as turf from '@turf/turf';
 import { getManifold, manifoldToMeshes, type ManifoldAPI } from '../src/geometry/manifold';
 import type { AssemblyPart, ParsedSVG, PolyFeature } from '../src/types';

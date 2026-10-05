@@ -265,7 +265,7 @@ here because they were caught rather than because they were avoided:
 - **The seam-sliver hunt's first pass recorded only a warning count.** A check that cannot fail if
   nothing is being built. It was rerun recording triangle counts per configuration, plus a third
   pass forcing a real warning through `?csgfault` to prove the detector was live at all — see
-  [seam-sliver-sighting.md](seam-sliver-sighting.md). Had it been reported as written, "22
+  [2026-08-08-seam-sliver-sighting.md](2026-08-08-seam-sliver-sighting.md). Had it been reported as written, "22
   configurations, no sighting" would have been a sentence with nothing behind it.
 - **The occlusion check's coverage guard compared ink at two design scales** and asserted the
   larger added nothing. "The ink stopped growing" and "nothing I did reached the app" are the same

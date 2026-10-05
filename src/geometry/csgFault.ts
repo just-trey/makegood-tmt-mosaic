@@ -1,7 +1,7 @@
 import { warn } from '../warnings';
 
 /**
- * Forced failures for assembly.ts's CSG degradation branches, armed from the URL
+ * Forced failures for partBuild.ts's CSG degradation branches, armed from the URL
  * (`?csgfault=difference`, `?csgfault=intersection:1`). Otherwise those run only under vitest with
  * spied booleans (tests/assembly.test.ts, "CSG failure handling"), which can't show what a slicer
  * opens; scripts/check-csg-failure.mjs drives these and asserts the result.

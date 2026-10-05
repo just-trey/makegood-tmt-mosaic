@@ -87,7 +87,20 @@ from the Artwork fit sliders, or drag the artwork on the part in the 3D view.
 Each colour region is extruded into a prism in the part's own coordinates and
 subtracted from the real part mesh with
 [Manifold](https://github.com/elalish/manifold), a 3D solid-boolean engine (CSG)
-loaded on demand ([assembly.ts](../src/geometry/assembly.ts)).
+loaded on demand ([partBuild.ts](../src/geometry/partBuild.ts)).
+
+**Where the cut lives:**
+
+- [assembly.ts](../src/geometry/assembly.ts) resolves the palette and placements
+  once, then calls `buildPart` once per part.
+- `buildPart` ([partBuild.ts](../src/geometry/partBuild.ts)) takes its inputs as
+  arguments (`BuildContext`, [buildContext.ts](../src/geometry/buildContext.ts)).
+  Besides its return value, it writes to the `BuildTally` it is handed and to
+  the warnings list.
+- One colour of one design on one zone is `buildColorPrism`
+  ([colorPrism.ts](../src/geometry/colorPrism.ts)).
+- Kept-half and whole-part clips: [designClip.ts](../src/geometry/designClip.ts).
+  Anchor and mm scale: [designScale.ts](../src/geometry/designScale.ts).
 
 **Which depth a region asked for** is resolved in one place
 ([depth.ts](../src/geometry/depth.ts)): an explicit per-row override if finite,

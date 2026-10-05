@@ -164,7 +164,7 @@ inside a 900s timeout.
   accumulator-or-worker fix. Sticker on the chair is unaffected, measured at 19.5s for a full five-zone
   rebuild on the same box, which is why only Fill was withheld.
 - **Don't quote that 19.5s without the design size.** It used a design covering the zones.
-  [docs/findings/zone-rebuild-cost.md](findings/zone-rebuild-cost.md) reproduces it at 400% (17.0s) and
+  [docs/findings/2026-08-08-zone-rebuild-cost.md](findings/2026-08-08-zone-rebuild-cost.md) reproduces it at 400% (17.0s) and
   measures an ordinary auto-fit sticker on all five zones at 4.0s, a 5x spread on the same path. What
   is paid for is pocket area, not surfaces touched.
 - **A Fill now cuts itself back from under every sticker on its zone**: one polygon difference per fill
@@ -835,8 +835,8 @@ both empty-input cases, and its `deepest()` helper is the shape to copy.
 ## Whether a near-floor clipped-ink piece is dust or a drawn detail is unmeasured
 
 `docs/findings/2026-09-27-clip-ink-sweep.md` swept the runtime floor's own population (a placed design's
-ink clipped to a part: `placedInk` and `dropSpecks`, `src/geometry/assembly.ts`) across the four shipped
-patterns on real parts. Re-derive with
+ink clipped to a part: `placedInk` in `src/geometry/designClip.ts`, `dropSpecks` in
+`src/geometry/colorPrism.ts`) across the four shipped patterns on real parts. Re-derive with
 `RUN_CLIP_INK_SWEEP=1 npx vitest run scripts/measure-clip-ink.test.ts`.
 
 **The floor is not comfortably clear of shipped content.** 9.4% of the recorded foreground-ink pieces
@@ -880,7 +880,7 @@ first, so it reports correctly. On the wheel that means a sticker covering all o
 Not reproduced: no test or drive has built it.
 
 **Closing it** means deciding "covered" against the mesh rather than the 2D region, in
-`buildColorPrism` ([src/geometry/assembly.ts](../src/geometry/assembly.ts)). For example, clip a
+`buildColorPrism` ([src/geometry/colorPrism.ts](../src/geometry/colorPrism.ts)). For example, clip a
 boundary-less fill to the part's footprint before the cut-back, or count a colour covered when the
 cut-back removed area and what is left produced no inlay.
 

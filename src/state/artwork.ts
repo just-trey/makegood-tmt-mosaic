@@ -14,7 +14,7 @@ import type { RasterImage } from '../raster/types';
 import type { NetZonePlacement } from '../geometry/zoneCharts';
 import { boundsCentre, netOffsetToZone, WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import { currentAssemblyKind, currentDesignScaleContext, fillWithheld } from '../assembly/kinds';
-import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/assembly';
+import { canvasAnchor, designMmPerUnit, placedFootprintMM } from '../geometry/designScale';
 import { OVERLAP_WARN_FRACTION } from '../geometry/designOverlap';
 import { dismissNotice, notice, warn } from '../warnings';
 

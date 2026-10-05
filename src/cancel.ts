@@ -43,13 +43,13 @@ export function cancelHonoured(): boolean {
  *
  * **A call site is only safe where nothing is allocated, or where something owns what is.** Today:
  *
- *   - geometry/assembly.ts, anywhere in the per-part loop body: every Manifold solid a part
+ *   - geometry/partBuild.ts, anywhere in buildPart: every Manifold solid a part
  *     allocates is registered in `held`, which one finally around that body frees however it
  *     leaves. Four sites rest on that — the per-colour step of the cutter loop, the per-colour
  *     union, before the body difference, and the inlay loop. A colour is the finest boundary
  *     available: buildColorPrism extrudes one solid per region and can retry each through the
  *     repair ladder, with no half-built state anything else can be asked about.
- *   - geometry/assembly.ts, the top of the part loop: above `held` and outside its try, safe because
+ *   - geometry/assembly.ts, the top of the part loop: before buildPart opens `held`, safe because
  *     the previous part's finally has run and this one has allocated nothing. Anything allocated
  *     above that try is owned by nobody.
  *   - geometry/regions.ts, both yield points: 2D polygon work holding no solids. This is where a

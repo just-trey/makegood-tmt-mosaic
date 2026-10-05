@@ -36,7 +36,7 @@ import {
   designMmPerUnit,
   memoLargestDesignFace,
   type DesignScaleContext,
-} from '../geometry/assembly';
+} from '../geometry/designScale';
 import { getPrinter } from '../export/printers';
 
 /**
