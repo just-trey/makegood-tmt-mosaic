@@ -96,6 +96,7 @@ function parsedSquare(): ParsedSVG {
 }
 
 /** One triangle, as a soup — 9 floats = 1 triangle. */
+const xzTri = [0, 0, 0, 10, 0, 0, 10, 0, 10]; // lies in the XZ plane, so it counts toward the footprint
 const tri = (z = 0): Float32Array => new Float32Array([0, 0, z, 10, 0, z, 10, 10, z]);
 
 /** An axis-aligned baked region, the outer/holes form the charts carry. */
@@ -658,10 +659,10 @@ describe('assembly mode with artwork', () => {
           {
             part: asmPart(),
             bodySoup: tri(),
-            // 3 triangles of colour 0, 1 of colour 1
+            // 3:1 in XZ-projected area
             inlaySoups: {
-              0: new Float32Array(27),
-              1: new Float32Array(9),
+              0: new Float32Array([...xzTri, ...xzTri, ...xzTri]),
+              1: new Float32Array(xzTri),
             },
           },
         ] as AssemblyBuild['partOutputs'],
@@ -678,6 +679,51 @@ describe('assembly mode with artwork', () => {
     expect(entries!.map((e) => e.color)).toEqual(['#ff0000', '#00ff00']);
     expect(entries![0].areaPct).toBeCloseTo(75, 6);
     expect(entries![1].areaPct).toBeCloseTo(25, 6);
+  });
+
+  it('weights each color by its footprint, not its triangle count', async () => {
+    // Inlays are prisms along Y: top and bottom faces (z-up quads here, split into many
+    // triangles for the ragged band) plus walls. Three equal 10x10 footprints.
+    const quad = (x0: number, z0: number, n: number, y: number): number[] => {
+      const out: number[] = [];
+      const w = 10 / n;
+      for (let i = 0; i < n; i++) {
+        const a = x0 + i * w;
+        out.push(a, y, z0, a + w, y, z0, a + w, y, z0 + 10);
+        out.push(a, y, z0, a + w, y, z0 + 10, a, y, z0 + 10);
+      }
+      return out;
+    };
+    const wall = (n: number): number[] => {
+      const out: number[] = [];
+      for (let i = 0; i < n; i++) out.push(0, 0, i, 0, 1, i, 0, 1, i + 1);
+      return out;
+    };
+    vi.mocked(buildAssemblyGeometry).mockResolvedValue(
+      assemblyBuild({
+        partOutputs: [
+          {
+            part: asmPart(),
+            bodySoup: tri(),
+            inlaySoups: {
+              0: new Float32Array([...quad(0, 0, 1, 0), ...quad(0, 0, 1, -1)]),
+              1: new Float32Array([...quad(20, 0, 40, 0), ...quad(20, 0, 40, -1), ...wall(50)]),
+              2: new Float32Array([...quad(40, 0, 5, 0), ...quad(40, 0, 5, -1)]),
+            },
+          },
+        ] as AssemblyBuild['partOutputs'],
+        palette: [
+          { hex: '#ff0000', key: '#ff0000', members: ['#ff0000'], isMerge: false },
+          { hex: '#00ff00', key: '#00ff00', members: ['#00ff00'], isMerge: false },
+          { hex: '#0000ff', key: '#0000ff', members: ['#0000ff'], isMerge: false },
+        ],
+      }),
+    );
+
+    await rebuildCurrent();
+
+    const [entries] = vi.mocked(renderColorList).mock.calls.at(-1)!;
+    for (const e of entries!) expect(e.areaPct).toBeCloseTo(100 / 3, 6);
   });
 
   it('drops a palette color with no inlay area anywhere, so it costs no filament slot', async () => {

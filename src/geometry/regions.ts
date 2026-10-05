@@ -231,6 +231,22 @@ export function planarArea(f: PolyFeature | null): number {
 }
 
 /**
+ * Footprint of a closed prism soup extruded along Y: the XZ-projected area of every triangle,
+ * halved because the top and bottom faces both project onto it. Walls project to zero, so a
+ * ragged boundary adds triangles but no area.
+ */
+export function soupFootprintArea(soup: Float32Array): number {
+  let s = 0;
+  for (let i = 0; i + 8 < soup.length; i += 9) {
+    s += Math.abs(
+      (soup[i + 3] - soup[i]) * (soup[i + 8] - soup[i + 2]) -
+        (soup[i + 6] - soup[i]) * (soup[i + 5] - soup[i + 2]),
+    );
+  }
+  return s / 4;
+}
+
+/**
  * Turf 6.5's bundled polygon-clipping recurses without bound when two inputs share edges differing
  * only at ~1e-14, exactly what circle arcs against star-boundary regions produce. Quantizing
  * collapses those phantom distinctions, so on failure retry at decreasing precision. 1e-10 mm is
