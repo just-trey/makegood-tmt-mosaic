@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_COMPONENTS, traceLabelMap } from '../src/raster/trace';
+import { labelComponents, MAX_COMPONENTS, traceLabelMap } from '../src/raster/trace';
 import { printableFloorPx } from '../src/raster/stats';
-import type { TracedComponent } from '../src/raster/trace';
+import type { TraceResult, TracedComponent } from '../src/raster/trace';
 import { BACKGROUND } from '../src/raster/types';
 import type { LabelMap, TraceParams } from '../src/raster/types';
 import { planarArea, safeIntersect, safeUnion, shapeToFeature } from '../src/geometry/regions';
@@ -41,6 +41,17 @@ const params = (over: Partial<TraceParams> = {}): TraceParams => ({
 function areaOf(c: TracedComponent): number {
   const shape: SVGShape = { fill: '#000000', loops: c.loops, order: 0 };
   return planarArea(shapeToFeature(shape));
+}
+
+/** What `components` cannot show: any component of the traced grid under the floor, background included, and any A,B/B,A left in it. */
+function settled({ labels, floorPx }: TraceResult, rows: string[]) {
+  const w = rows[0].length;
+  let checkers = 0;
+  for (let i = 0; i + w + 1 < labels.length; i++)
+    if ((i + 1) % w && labels[i] === labels[i + w + 1] && labels[i + 1] === labels[i + w])
+      if (labels[i] !== labels[i + 1]) checkers++;
+  const { areas } = labelComponents(labels, w, rows.length);
+  return { under: areas.filter((a) => a < floorPx).length, checkers };
 }
 
 function featureOf(loops: Loop[]) {
@@ -176,6 +187,47 @@ describe('traceLabelMap', () => {
     expect(components.reduce((s, c) => s + areaOf(c), 0)).toBeCloseTo(size * size, 9);
   });
 
+  it('leaves nothing under the floor when breaking a checkerboard splits a component', () => {
+    // The second 'a' piece (5px) clears the floor, but it meets the first diagonally. Breaking that
+    // A,B/B,A rewrites the cell joining its arm to its tail, which came back as 1px and 3px.
+    const rows = [
+      '.......',
+      '.aa....',
+      '.aa....',
+      '.aa....',
+      '...aa..',
+      '...acc.',
+      '...acc.',
+      '...acc.',
+      '.......',
+    ];
+    const floor = 4;
+    const traced = traceLabelMap(grid(rows, 'ac'), params(), floor);
+    for (const c of traced.components) expect(c.area).toBeGreaterThanOrEqual(floor);
+    expect(traced.components.reduce((s, c) => s + c.area, 0)).toBe(12);
+    expect(settled(traced, rows)).toEqual({ under: 0, checkers: 0 });
+  });
+
+  it('absorbs a split piece into a label that makes no checkerboard', () => {
+    // Breaking the A,B/B,A at the top left strands the second 'a' as one pixel. 'y' wins its vote
+    // on the tie, but taking 'y' makes 'z','y'/'y','z' below and left of it; 'z' does not.
+    const rows = ['aayy..', 'yyayzz', 'zzayy.', 'yyzz..', '......', '......'];
+    const traced = traceLabelMap(grid(rows, 'ayz'), params(), 2);
+    expect(settled(traced, rows)).toEqual({ under: 0, checkers: 0 });
+    // 'z' by choice, not by a merge that cleared the checkerboard after taking 'y'.
+    expect(traced.labels[2 * 6 + 2]).toBe('ayz'.indexOf('z'));
+  });
+
+  it('leaves a split piece under the floor when every label for it makes a checkerboard', () => {
+    // As above, but 'z' now makes 'y','z'/'z','y' above and right of the stranded pixel. A
+    // self-touching ring is the worse failure, so the pixel stays 'a' and nothing else moves.
+    const rows = ['aayy..', 'yyazz.', 'zzayy.', 'yyzz..', '......', '......'];
+    const traced = traceLabelMap(grid(rows, 'ayz'), params(), 2);
+    expect(settled(traced, rows)).toEqual({ under: 1, checkers: 0 });
+    expect(traced.labels[2 * 6 + 2]).toBe('ayz'.indexOf('a'));
+    expect(traced.components.map((c) => c.area)).toEqual([5, 2, 2, 2, 2, 2, 2, 1]);
+  });
+
   it('removes a speck the fractional floor keeps but the placed size cannot print', () => {
     const size = 16;
     const rows = Array.from({ length: size }, (_, y) =>
@@ -308,12 +360,11 @@ describe('traceLabelMap', () => {
     expect(components.length).toBeLessThanOrEqual(MAX_COMPONENTS);
   });
 
-  it('answers a deChecker split that tips it over the cap with the smallest raise', () => {
+  it('absorbs a deChecker split instead of raising the floor over it', () => {
     // 794 blocks of 6px, plus two gadgets of three components each: 800, not over. In each gadget
     // the A,B/B,A where the two 'a' pieces meet diagonally is broken by rewriting the cell that
-    // joins the second piece's arm and tail, and the 'c' block stops that rewrite cascading into
-    // the next 2x2. The arm (1px) and tail (3px) come back as two pieces under the floor of 4, so
-    // the count after deChecker is 802.
+    // joins the second piece's arm and tail. Left as pieces, the arm (1px) and tail (3px) put the
+    // count at 802 and cost a raise.
     const w = 121,
       h = 90;
     const rows = Array.from({ length: h }, () => Array<string>(w).fill('.'));
@@ -337,10 +388,9 @@ describe('traceLabelMap', () => {
       params(),
       floor,
     );
-    // Floor + 1 absorbs the split pieces and nothing that cleared the floor: every block, both
-    // first 'a' pieces and both 'c' blocks come back.
-    expect(raises).toBe(1);
-    expect(floorPx).toBe(floor + 1);
+    // Every block, both first 'a' pieces and both 'c' blocks come back.
+    expect(raises).toBe(0);
+    expect(floorPx).toBe(floor);
     expect(components).toHaveLength(794 + 4);
   });
 

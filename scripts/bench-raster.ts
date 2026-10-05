@@ -55,7 +55,8 @@ import {
 import type { ShapeGranularity } from '../src/raster/parse';
 import { computeNetRegionsByColor, shapeToFeature } from '../src/geometry/regions';
 import { MAX_COLORS, MIN_COLORS, quantize } from '../src/raster/quantize';
-import { MAX_COMPONENTS, traceLabelMap } from '../src/raster/trace';
+import { labelComponents, MAX_COMPONENTS, traceLabelMap } from '../src/raster/trace';
+import type { TraceResult } from '../src/raster/trace';
 import { fitChain } from '../src/raster/curve';
 import {
   autoParams,
@@ -251,6 +252,10 @@ function sharpTurns(shapes: SVGShape[]): number {
   return sharp;
 }
 
+/** Components of the traced grid under its floor. The grid, not `components`: those leave out background and any ring that collapsed. */
+const underFloor = ({ labels, floorPx }: TraceResult, w: number) =>
+  labelComponents(labels, w, labels.length / w).areas.filter((a) => a < floorPx).length;
+
 /**
  * One trace with the parameters supplied rather than derived.
  *
@@ -261,7 +266,8 @@ function sharpTurns(shapes: SVGShape[]): number {
 function traceWith(img: RasterImage, colors: number, params: TraceParams, placedFloor = 0) {
   const t0 = performance.now();
   const map = quantize(img, colors, params.blurRadius);
-  const { components, raises, floorPx } = traceLabelMap(map, params, placedFloor);
+  const traced = traceLabelMap(map, params, placedFloor);
+  const { components, raises, floorPx } = traced;
   const ms = performance.now() - t0;
   const painted = new Set(components.map((c) => map.palette[c.label]));
   const shapes: SVGShape[] = components.map((c, i) => ({
@@ -276,7 +282,7 @@ function traceWith(img: RasterImage, colors: number, params: TraceParams, placed
     // is written to hold, checked against real files rather than asserted in a comment. Against
     // the floor the trace applied, not the one it started with, or a capped row is graded against
     // a floor it raised and the check goes soft on exactly the rows it is for.
-    under: components.filter((c) => c.area < floorPx).length,
+    under: underFloor(traced, img.w),
     floorPx,
     painted: painted.size,
     rings,
@@ -930,11 +936,10 @@ async function modeBlur(args: string[]) {
  *
  * `despeckle` promises that nothing under the floor survives it, and until 2026-08-20 it did not
  * deliver that: the vote let two adjacent specks trade labels instead of merging, so a floor could
- * shuffle noise rather than absorb it. `under` is the count that catches a return of that, or of
- * the other way a component can end up under the floor, a `deChecker` split (see trace.ts). It
- * counts what the trace *returns*, and so does the cap line below it: background components and
- * any whose ring collapsed are already gone, so neither can see a transparent speck left under the
- * floor, and the cap line reads a smaller number than the one the cap fired on.
+ * shuffle noise rather than absorb it. `under` is the count that catches a return of that, or a
+ * `deChecker` split that no checker-free label could absorb (`clean` in trace.ts). It counts the
+ * traced grid, background included. The cap line below counts what the trace *returns*,
+ * which leaves out background and collapsed rings, so it reads a smaller number than the cap fired on.
  */
 async function modeDespeckle(names: string[]) {
   const sources = await pick(names);
@@ -1026,9 +1031,7 @@ function modeCap() {
           placedFloor,
           components: r.components.length,
           floorPx: r.floorPx,
-          // A `deChecker` split can leave a piece under the floor; the cap loop only answers for
-          // the count, so this stays visible here rather than folded into the pass/fail line.
-          under: r.components.filter((c) => c.area < r.floorPx).length,
+          under: underFloor(r, size),
           raises: r.raises,
           ms: +ms.toFixed(1),
         });

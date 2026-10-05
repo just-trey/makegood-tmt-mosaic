@@ -26,6 +26,8 @@ export interface TraceResult {
   raises: number;
   /** The floor in pixels this trace actually applied — the raised one after any raise. */
   floorPx: number;
+  /** The grid actually traced, after every despeckle and checker break. Background included, so a check on it sees what `components` leaves out. */
+  labels: Int16Array;
 }
 
 const E = 0,
@@ -53,7 +55,7 @@ function crackIndexer(stride: number, w: number, vCount: number) {
 }
 
 /** 4-connected components of equal label, background included (a transparent speck is no more printable than a colored one). Returns a component id per pixel and each component's area. */
-function labelComponents(
+export function labelComponents(
   labels: Int16Array,
   w: number,
   h: number,
@@ -105,9 +107,15 @@ function labelComponents(
  * (docs/findings/2026-08-20-despeckle-floor.md).
  *
  * Nothing is left under the floor: a speck always has a neighbour unless it is the whole image.
- * `deChecker` afterwards can put one back by shaving a pinch point and splitting a component.
+ * `checkerFree` skips a label that would make an A,B/B,A, and leaves a speck that every label would.
  */
-function despeckle(labels: Int16Array, w: number, h: number, minArea: number): void {
+function despeckle(
+  labels: Int16Array,
+  w: number,
+  h: number,
+  minArea: number,
+  checkerFree = false,
+): void {
   if (minArea <= 1) return;
   const { compId, areas, labelOf } = labelComponents(labels, w, h);
   const under = (i: number) => areas[i] < minArea;
@@ -130,6 +138,10 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
       if (y + 1 < h) touch(p, p + w);
     }
 
+  // Only a speck's pixels are ever relabelled, so only a speck's are listed; a merge with anything at or over the floor drops the list.
+  const pixels: (number[] | null)[] = areas.map((_, i) => (checkerFree && under(i) ? [] : null));
+  if (checkerFree) for (let p = 0; p < compId.length; p++) pixels[compId[p]]?.push(p);
+
   const parent = new Int32Array(areas.length).map((_, i) => i);
   const find = (i: number): number => {
     while (parent[i] !== i) i = parent[i] = parent[parent[i]];
@@ -143,10 +155,33 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
     if (adj[a].size < adj[b].size) [a, b] = [b, a];
     parent[b] = a;
     areas[a] += areas[b];
+    const into = pixels[a],
+      from = pixels[b];
+    pixels[a] = into && from ? into.concat(from) : null;
     for (const [nb, shared] of adj[b])
       if (find(nb) !== a) adj[a].set(nb, (adj[a].get(nb) ?? 0) + shared);
     adj[b].clear();
     return a;
+  };
+
+  // Whether relabelling `comp` to `label` leaves a 2x2 with the same label on one diagonal and another on the other. Only a block holding one of its pixels can change, and only by that pixel taking `label`.
+  const at = (q: number, comp: number, label: number) => {
+    const root = find(compId[q]);
+    return root === comp ? label : labelOf[root];
+  };
+  const makesChecker = (comp: number, label: number): boolean => {
+    for (const p of pixels[comp] ?? []) {
+      const x = p % w,
+        y = (p / w) | 0;
+      for (const dx of [-1, 1])
+        for (const dy of [-1, 1]) {
+          if (x + dx < 0 || x + dx >= w || y + dy < 0 || y + dy >= h) continue;
+          const across = at(p + dx, comp, label);
+          if (across !== label && across === at(p + dy * w, comp, label))
+            if (at(p + dy * w + dx, comp, label) === label) return true;
+        }
+    }
+    return false;
   };
 
   // Smallest first, so a speck asks which label dominates only after its smaller neighbours joined something. Re-queued if a merge leaves it too small.
@@ -163,6 +198,9 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
       if (root === comp) continue;
       byLabel.set(labelOf[root], (byLabel.get(labelOf[root]) ?? 0) + shared);
     }
+    // A speck every label would checker stays under the floor. Recolouring the checker's smallest component instead has no bound on how big a shape it recolours.
+    if (checkerFree)
+      for (const label of [...byLabel.keys()]) if (makesChecker(comp, label)) byLabel.delete(label);
     let best = -1,
       bestN = -1;
     for (const [label, shared] of byLabel)
@@ -188,7 +226,8 @@ function despeckle(labels: Int16Array, w: number, h: number, minArea: number): v
  * isn't a genuine meeting of distinct regions. One scan suffices: it only writes the bottom-right
  * cell, which every later block reads.
  */
-function deChecker(labels: Int16Array, w: number, h: number): void {
+function deChecker(labels: Int16Array, w: number, h: number): boolean {
+  let changed = false;
   for (let y = 0; y + 1 < h; y++) {
     for (let x = 0; x + 1 < w; x++) {
       const i = y * w + x;
@@ -196,9 +235,23 @@ function deChecker(labels: Int16Array, w: number, h: number): void {
         b = labels[i + 1],
         c = labels[i + w],
         d = labels[i + w + 1];
-      if (a === d && b === c && a !== b) labels[i + w + 1] = b;
+      if (a === d && b === c && a !== b) {
+        labels[i + w + 1] = b;
+        changed = true;
+      }
     }
   }
+  return changed;
+}
+
+/**
+ * `despeckle`, then `deChecker`, then absorb whatever the checker break split or shaved under the
+ * floor. Not the other order: `despeckle` relabels whole components and can make the very A,B/B,A
+ * `deChecker` exists to remove, which is why the last pass may only take a checker-free label.
+ */
+function clean(labels: Int16Array, w: number, h: number, minArea: number): void {
+  despeckle(labels, w, h, minArea);
+  if (deChecker(labels, w, h)) despeckle(labels, w, h, minArea, true);
 }
 
 /** One maximal run of cracks between two junctions, or a whole junction-free island boundary. */
@@ -574,8 +627,7 @@ export function traceLabelMap(map: LabelMap, params: TraceParams, placedFloor = 
   // fraction; 0 means placement unknown, so the fraction is all there is.
   let minArea = Math.max(1, placedFloor || fracFloorPx(params, w, h));
 
-  despeckle(labels, w, h, minArea);
-  deChecker(labels, w, h);
+  clean(labels, w, h, minArea);
 
   let { compId, areas, labelOf } = labelComponents(labels, w, h);
   let raises = 0;
@@ -585,13 +637,11 @@ export function traceLabelMap(map: LabelMap, params: TraceParams, placedFloor = 
     raises++;
     // Raise the floor to exactly the size that fits under the cap, not a guessed multiplier. It must
     // be rechecked: absorbing specks merges them and the merged ones can clear the floor meant to
-    // remove them. When only a `deChecker` split put the count back over, the 800th largest is a
-    // split piece under the floor, so this lands on floor + 1 — the smallest raise that absorbs
-    // them, and what ends the loop: the floor rises every pass and at w*h the image is one component.
+    // remove them. The `minArea + 1` is what ends the loop: the floor rises every pass and at w*h
+    // the image is one component.
     real.sort((a, b) => b - a);
     minArea = Math.max(minArea + 1, real[MAX_COMPONENTS - 1] + 1);
-    despeckle(labels, w, h, minArea);
-    deChecker(labels, w, h);
+    clean(labels, w, h, minArea);
     ({ compId, areas, labelOf } = labelComponents(labels, w, h));
   }
 
@@ -606,5 +656,5 @@ export function traceLabelMap(map: LabelMap, params: TraceParams, placedFloor = 
     components.push({ label: labelOf[comp], loops: entry.loops, area: areas[comp] });
   }
   components.sort((a, b) => b.area - a.area);
-  return { components, raises, floorPx: minArea };
+  return { components, raises, floorPx: minArea, labels };
 }

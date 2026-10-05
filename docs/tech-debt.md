@@ -419,25 +419,19 @@ comes from the traced outline's reach.
 - **Closing it** needs that measurement first. If it happens, the fix is a fit that does not read the
   trace's own specks, not a cap on re-traces.
 
-## `deChecker` can leave a component under the despeckle floor
+## A `deChecker` split can stay under the despeckle floor when every label makes a checkerboard
 
-`despeckle` leaves nothing under the floor, but `deChecker` runs after it
-([src/raster/trace.ts](../src/raster/trace.ts)). Breaking a 2x2 checkerboard rewrites one cell, which
-can shave a pinch point and split a surviving component in two. One half can be under the floor the
-trace reports.
+`clean` in [src/raster/trace.ts](../src/raster/trace.ts) absorbs what breaking a 2x2 checkerboard split
+or shaved under the floor, but only into a label that makes no new checkerboard. When every neighbouring
+label would make one, the piece stays under the floor.
 
-- **Off-corpus it happens**: 2 of 24 uniform-noise rows return a component under their floor. Reproduce
-  with `node_modules/.bin/vite-node scripts/bench-raster.ts cap`.
-- **No corpus source does it**, so what it costs a real image is unmeasured.
-- **Swapping the order is not the fix.** `despeckle` relabels whole components and can create the
-  checkerboard `deChecker` exists to remove, and a self-touching ring is the worse failure.
-- The cap is not affected: its loop rechecks the count after `deChecker`, so a split can cost it a
-  further raise but not the bound.
-- **The bench's `despeckle` mode can miss one.** Its `under` column reads the components the trace
-  _returns_, so background components and any whose ring collapsed are already gone. A transparent
-  speck left under the floor would be a real defect the check would not see.
-- **Closing it** needs a way to absorb the split pieces that cannot recreate a checkerboard, and a check
-  that counts background components too.
+- **Only a hand-built grid reaches it**: the "leaves a split piece under the floor when every label for
+  it makes a checkerboard" test in [tests/raster-trace.test.ts](../tests/raster-trace.test.ts).
+- **Nothing measured reaches it**: 0 of 24 `cap` rows and 0 of 22 corpus rows leave anything under the
+  floor, background included. Reproduce with `node_modules/.bin/vite-node scripts/bench-raster.ts cap`
+  and `... despeckle`. The corpus count is the 11 sources present; the 8 stock photos were not fetched.
+- **Closing it** needs a checkerboard break that recolours nothing over the floor, such as choosing which
+  of the 2x2's four cells `deChecker` rewrites so that it splits nothing.
 
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
