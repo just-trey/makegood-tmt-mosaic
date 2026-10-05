@@ -97,7 +97,7 @@ export const CORPUS: CorpusSource[] = [
     group: 'flat',
     file: 'tests/fixtures/patterns/cow.svg',
     renderEdge: 1024,
-    note: 'shipped pattern, two colors, large blobs',
+    note: 'pattern fixture, two colors, large blobs',
   },
   {
     name: 'pattern-dalmatian',
@@ -106,7 +106,7 @@ export const CORPUS: CorpusSource[] = [
     group: 'flat',
     file: 'tests/fixtures/patterns/dalmatian.svg',
     renderEdge: 1024,
-    note: 'shipped pattern, two colors, many small spots',
+    note: 'pattern fixture, two colors, many small spots',
   },
   {
     name: 'pattern-zebra',
@@ -115,7 +115,7 @@ export const CORPUS: CorpusSource[] = [
     group: 'flat',
     file: 'tests/fixtures/patterns/zebra.svg',
     renderEdge: 1024,
-    note: 'shipped pattern, two colors, thin stripes (densest of the four)',
+    note: 'pattern fixture, two colors, thin stripes (densest of the four)',
   },
   {
     name: 'pattern-tiger',
@@ -124,7 +124,7 @@ export const CORPUS: CorpusSource[] = [
     group: 'flat',
     file: 'tests/fixtures/patterns/tiger.svg',
     renderEdge: 1024,
-    note: 'shipped pattern, two colors, tapered stripes',
+    note: 'pattern fixture, two colors, tapered stripes',
   },
   {
     name: 'makegood-logo',

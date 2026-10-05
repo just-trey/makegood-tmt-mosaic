@@ -331,7 +331,7 @@ export interface AssemblyKind {
   /** Kept and fully functional but left out of the Part dropdown — not ready to offer yet. */
   hidden?: boolean;
   /**
-   * Withholds Fill mode (and the built-in pattern strip, which exists to be tiled) where tiling works
+   * Withholds Fill mode where tiling works
    * but isn't fit to show users. Sticker placement is unaffected. Set on the chair body:
    * `docs/tech-debt.md` measures one zone in Fill at 93.6s and "All zones" at over 900s with no
    * cancel. Clear once that closes.

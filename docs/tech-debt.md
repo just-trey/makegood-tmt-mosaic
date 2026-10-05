@@ -152,7 +152,7 @@ SVG**, 1.5-2.9x across the corpus, per-color areas unchanged (0.000% worst relat
   (`scripts/bench-regions.ts scaling`).
 
 **Chair-body Fill is an order of magnitude worse.** `MOSAIC_GPU=1` production build, 2026-08-02: the
-bundled `tests/fixtures/patterns/zebra.svg` in Fill on the chair's Left side alone (one of five zones) took
+`tests/fixtures/patterns/zebra.svg` in Fill on the chair's Left side alone (one of five zones) took
 **405.6s** to settle, non-linear (41% at t+15s, 43% at t+60s, 52% at t+180s). "All zones" (the
 conformal-recut cost the zone-binding-default comment in `state/artwork.ts` warns about) did not finish
 inside a 900s timeout.
@@ -169,7 +169,7 @@ inside a 900s timeout.
   decision that the wait is acceptable now it neither freezes the page nor resists Cancel. Re-measure before quoting 405.6s as the pipeline's cost. The "All zones" >900s result has not
   been re-measured.
 - **Withheld from users, 2026-08-05.** The chair-body kind carries `withholdFill` (`src/types.ts`), so
-  Fill and the pattern strip are not offered on it and no user can reach these numbers. The kind itself
+  Fill is not offered on it and no user can reach these numbers. The kind itself
   is in the Part dropdown. This is a gate, not a fix: the path is unchanged. Clearing the flag needs the
   accumulator fix, or a decision that a 93.6s wait is acceptable now it runs in the worker. Sticker on the chair is unaffected, measured at 19.5s for a full five-zone
   rebuild on the same box, which is why only Fill was withheld.
@@ -788,7 +788,7 @@ both empty-input cases, and its `deepest()` helper is the shape to copy.
 
 `docs/findings/2026-09-27-clip-ink-sweep.md` swept the runtime floor's own population (a placed design's
 ink clipped to a part: `placedInk` in `src/geometry/designClip.ts`, `dropSpecks` in
-`src/geometry/colorPrism.ts`) across the four shipped patterns on real parts. Re-derive with
+`src/geometry/colorPrism.ts`) across the four fixture patterns on real parts. Re-derive with
 `RUN_CLIP_INK_SWEEP=1 npx vitest run scripts/measure-clip-ink.test.ts`.
 
 **The floor is not comfortably clear of shipped content.** 9.4% of the recorded foreground-ink pieces

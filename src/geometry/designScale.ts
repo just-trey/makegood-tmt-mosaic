@@ -166,7 +166,7 @@ export interface DesignScaleContext {
  *
  * **Known gap: a Fill tile with no mm size still auto-fits.** A 60-unit tile on the footrest's
  * 266x185mm face reads 3.0833 mm/unit under `width="100%"` + viewBox or `width="60px"` — a 185mm
- * period, one repeat per face; `width="60mm"` reads 1.0000. The four shipped patterns all declare
+ * period, one repeat per face; `width="60mm"` reads 1.0000. The four fixture patterns all declare
  * 60mm; a user's tile can hit it. What it should repeat at is a product call: docs/roadmap.md.
  */
 export function designMmPerUnit(

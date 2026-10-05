@@ -6,14 +6,14 @@
 //            13,17,21,25)
 //   colour   the hex of the colour to tile (default the one with the most points per tile)
 //
-// A union that loses tiles shows as areaKept under 1: every bundled pattern is drawn inside its
+// A union that loses tiles shows as areaKept under 1: every fixture pattern is drawn inside its
 // own cell, so n tiles should cover exactly n times one tile's area. `mergeFailures` is a yes/no
 // beside it, not a count: warnBuild dedupes on the exact message and every failure here shares one
 // label. `refused` is a union too big for the engine even split (UnionTooBig), which fill mode
 // turns into one tile and a warning.
 //
 // This is the shipping path, not a replica: tileFeature -> unionAllCooperative -> safeUnion, over
-// the feature computeNetRegionsByColor builds for one colour of a real bundled pattern. The only
+// the feature computeNetRegionsByColor builds for one colour of a real fixture pattern. The only
 // thing invented is the grid, which stands in for the placer a live build would supply.
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';

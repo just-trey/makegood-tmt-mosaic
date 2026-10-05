@@ -4,7 +4,7 @@
 // measure-seam-overlap.mjs already swept the BAKE's population (part geometry); this sweeps the
 // runtime one, a placed design's ink clipped to a part (`placedInk` in designClip.ts, `dropSpecks` in colorPrism.ts).
 //
-// Runs the four shipped patterns (tests/fixtures/patterns/*.svg) as real Fill designs through the real
+// Runs the four fixture patterns (tests/fixtures/patterns/*.svg) as real Fill designs through the real
 // buildAssemblyGeometry pipeline, on real parts for every assembly kind that has one (wheel-half,
 // wheel-hub-cap, footrest, a generated hubcap disc, and a representative subset of chair-body
 // zones), and records the area of every piece dropUnprintableRemnants sees BEFORE the floor is

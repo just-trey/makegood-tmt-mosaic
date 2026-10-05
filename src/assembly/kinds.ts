@@ -325,7 +325,7 @@ export function currentDesignScaleContext(): DesignScaleContext {
   };
 }
 
-/** Whether to *show* Fill (mode select, pattern strip); what state may hold is fillWithheld(). */
+/** Whether to *show* Fill (the mode select); what state may hold is fillWithheld(). */
 export function fillModeOffered(): boolean {
   return !fillWithheld();
 }
