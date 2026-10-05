@@ -25,13 +25,14 @@ npm run build && node scripts/export-chair-examples.mjs [outDir]
 ```
 
 Drives the real app (see [run-app](../run-app/SKILL.md)) through both variants
-on both printer targets, each with a 4-filament test SVG filled across every
-zone. The filament count matters: it is the case that actually needs a prime
-tower.
+on both printer targets, each with a 3-color stripe design placed as a Sticker on
+All zones (the chair withholds Fill). With the body that is 4 filaments per
+plate, which is the case that actually needs a prime tower.
 
 Reports per-plate filament counts and tower position, and fails loudly if a
-plate came out body-only (artwork didn't reach it) or a tower landed off the
-_current_ bed. Files land in `outDir`, default `stubs/`.
+plate with a zoned part carries fewer than 4 filaments (the Casters and Seat
+center are in no zone and stay body-only) or a tower landed off the _current_
+bed. Files land in `outDir`, default `stubs/`, at about 150MB each.
 
 ## 2. Human step, cannot be automated
 
