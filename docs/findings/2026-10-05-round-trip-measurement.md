@@ -1,10 +1,11 @@
 # Round-trip measurement: UI fix campaign (2026-10-05)
 
-**Round counts fell again; the cause mix moved from DOC to behaviour.** Mean
+**Round counts fell again; the cause tally is too small to compare.** Mean
 rounds per PR is 2.3 (3 PRs, #344-#346, 7 rounds) against the 2026-09-24
 campaign's 2.9 and the 2026-08 baseline's ~4.6. Three corrections in total
-(2 DOC, 1 VIS), against 94 over 18 PRs last time. Only 3 PRs, all
-`sonnet-medium` UI or state items: a small sample, not a trend.
+(2 DOC, 1 VIS), against 94 over 18 PRs last time, so no cause moved in
+a way that means anything. Only 3 PRs, all `sonnet-medium` UI or state
+items: a small sample, not a trend.
 
 Covers #344, #345, #346 (merged 2026-10-05). PR round tables pulled with
 `gh pr view <n> --json body` for `n` in 344-346.
@@ -20,8 +21,9 @@ Covers #344, #345, #346 (merged 2026-10-05). PR round tables pulled with
 
 All three: `sonnet-medium`, round 1 `/code-review medium`. Same counting basis
 as 2026-09-24 (the clean final round is its own row), so the 2.3 compares
-directly with that campaign's 2.9 and flatters against the baseline's 4.6 by
-the baseline's uncounted clean rounds.
+directly with that campaign's 2.9. The baseline left clean final rounds out,
+so counting them here makes 2.3 conservative: it understates the drop against
+the baseline's 4.6.
 
 ## 2. Corrections per round
 
