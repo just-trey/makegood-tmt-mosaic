@@ -9,7 +9,7 @@ import {
   svgLengthIsPhysical,
   svgLengthToMM,
 } from '../src/svg/parse';
-import { designAnchor, placedFootprintMM } from '../src/geometry/assembly';
+import { designAnchor, placedFootprintMM } from '../src/geometry/designScale';
 import { WARNINGS, clearWarnings, warn } from '../src/warnings';
 
 // jsdom has no 2d canvas without the native `canvas` package, so normalizeColor's color

@@ -57,7 +57,7 @@ import {
   printableFloorPx,
   DETAIL_DEFAULT,
 } from '../src/raster/stats';
-import { designMmPerUnit } from '../src/geometry/assembly';
+import { designMmPerUnit } from '../src/geometry/designScale';
 import { HUBCAP_CHAMFER_MM, HUBCAP_MIN_DIAMETER_MM } from '../src/geometry/hubcap';
 import {
   MAX_WORKING_EDGE,

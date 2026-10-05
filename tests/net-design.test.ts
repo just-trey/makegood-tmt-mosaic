@@ -8,12 +8,14 @@ import {
 } from '../src/geometry/zones';
 import {
   buildAssemblyGeometry,
-  netShareFailedWarning,
-  netShareNotice,
-  netTornWarning,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
+import {
+  netShareFailedWarning,
+  netShareNotice,
+  netTornWarning,
+} from '../src/geometry/assemblyWarnings';
 import { getManifold, manifoldToMeshes, type ManifoldAPI } from '../src/geometry/manifold';
 import { clearWarnings, WARNINGS } from '../src/warnings';
 import type { AssemblyPart, ParsedSVG } from '../src/types';

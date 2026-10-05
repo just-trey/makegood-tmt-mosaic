@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { state } from '../state/store';
 import { currentAssemblyKind, currentDesignScaleContext } from '../assembly/kinds';
 import { primaryZoneMapper, zoneMappersFor } from '../geometry/zoneMappers';
-import { designAnchor, designMmPerUnit } from '../geometry/assembly';
+import { designAnchor, designMmPerUnit } from '../geometry/designScale';
 import { netGizmoMapper, WHOLE_CHAIR_ZONE } from '../geometry/zones';
 import type { GizmoMapper, ZoneFrame, ZoneMapper } from '../geometry/zones';
 import { activeArtworkInstance, netZones } from '../state/artwork';

@@ -4,7 +4,7 @@ Open questions with no obvious answer, where the measurement behind the question
 
 - What should a Fill tile with no declared mm size repeat at? The design face is wrong and 1:1 is a
   guess; the honest answer may be to refuse Fill and say so. Measurement:
-  [designMmPerUnit](../src/geometry/assembly.ts)'s docstring.
+  [designMmPerUnit](../src/geometry/designScale.ts)'s docstring.
 - Should per-part export placement ([src/export/placement.ts](../src/export/placement.ts)) move onto the
   `AssemblyKind`/role definition instead of staying a lookup table keyed by part id? Blocked on the
   chair's two caster roles resolving to a different mesh per hardware variant — see the `PLACEMENT`
@@ -55,7 +55,7 @@ Open questions with no obvious answer, where the measurement behind the question
   - Two attached sheets also overlap at their registered transform: 8,668mm² and 8,158mm² on the chair,
     where the flanks reach across the back's ([docs/pipeline.md](pipeline.md)). So a mark there doesn't
     cut twice, the canvas is partitioned at the seam: each point cuts on whichever sheet's own body it's
-    on (`clipToNetShare`, [src/geometry/assembly.ts](../src/geometry/assembly.ts)).
+    on (`clipToNetShare`, [src/geometry/designClip.ts](../src/geometry/designClip.ts)).
   - Binding a zone by name instead of Whole chair still reaches all of its surface; only the whole-part
     binding gives any up. The 3D view cross-hatches that surface while a whole-part row is active, so the
     refusal is visible before a mark is dragged there ([docs/pipeline.md](pipeline.md)).

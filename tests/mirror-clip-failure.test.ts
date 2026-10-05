@@ -23,7 +23,8 @@ vi.mock('@turf/turf', async (importOriginal) => {
   };
 });
 
-const { buildAssemblyGeometry, mirrorClipFailedWarning } = await import('../src/geometry/assembly');
+const { buildAssemblyGeometry } = await import('../src/geometry/assembly');
+const { mirrorClipFailedWarning } = await import('../src/geometry/assemblyWarnings');
 const { mirroredBuildInput } = await import('../src/geometry/zones');
 const { getManifold, manifoldToMeshes } = await import('../src/geometry/manifold');
 

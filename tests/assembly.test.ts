@@ -4,14 +4,12 @@ import {
   asmPartFaceNormal,
   asmPartTransformGroup,
   buildAssemblyGeometry,
-  designAnchor,
-  designMmPerUnit,
-  fillRefusalMessage,
-  memoLargestDesignFace,
   rotatePointY,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
+import { fillRefusalMessage } from '../src/geometry/assemblyWarnings';
+import { designAnchor, designMmPerUnit, memoLargestDesignFace } from '../src/geometry/designScale';
 import { getManifold, type ManifoldAPI, type ManifoldSolid } from '../src/geometry/manifold';
 import { FILL_POINT_BUDGET } from '../src/geometry/patterns';
 import { armCancel, RebuildCancelled, requestCancel } from '../src/cancel';

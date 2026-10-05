@@ -7,7 +7,7 @@ import {
   soupToManifold,
   type ManifoldAPI,
 } from '../src/geometry/manifold';
-import { canvasAnchor } from '../src/geometry/assembly';
+import { canvasAnchor } from '../src/geometry/designScale';
 import type { DesignPlacement } from '../src/geometry/zones';
 import type { ParsedSVG, PolyFeature } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
