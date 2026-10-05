@@ -17,6 +17,25 @@ export class BuildWorkerCrashed extends Error {
   }
 }
 
+/**
+ * A fault in the hand-off to the worker rather than in the design: the detail goes to the console,
+ * and the pill says what happened in the user's terms.
+ */
+export class BuildWorkerFault extends Error {
+  constructor() {
+    super(
+      "Couldn't cut the design because of a problem in the app, not your file. The 3D view still " +
+        'shows the last result, and export is off. Reload the page to try again.',
+    );
+    this.name = 'BuildWorkerFault';
+  }
+}
+
+function fault(detail: string): BuildWorkerFault {
+  console.error('build worker:', detail);
+  return new BuildWorkerFault();
+}
+
 /** The subset of Worker this module uses, so tests can hand in an in-process stand-in. */
 export interface BuildWorkerLike {
   postMessage(msg: ToWorker): void;
@@ -96,7 +115,7 @@ function onMessage(msg: FromWorker): void {
     const p = pending;
     pending = null;
     kill();
-    p?.reject(new Error("the build worker couldn't read the build it was sent"));
+    p?.reject(fault('a build message failed to deserialize in the worker'));
     return;
   }
   if (windingDown?.id === msg.id) {
@@ -119,7 +138,7 @@ function onMessage(msg: FromWorker): void {
     p.resolve(msg.build && unpackBuild(msg.build, p.input.parts));
   } else if (msg.type === 'failed') {
     replayWarnings(msg.warnings);
-    p.reject(new Error(msg.message));
+    p.reject(msg.wire ? fault(msg.message) : new Error(msg.message));
   } else p.reject(new RebuildCancelled());
   // An exception that escaped the build, or a trapped engine, leaves a heap nobody can vouch for.
   if (msg.type === 'failed' || msg.trapped) kill();

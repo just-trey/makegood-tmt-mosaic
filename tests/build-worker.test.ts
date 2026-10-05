@@ -13,6 +13,7 @@ import {
 } from '../src/geometry/buildWire';
 import {
   BuildWorkerCrashed,
+  BuildWorkerFault,
   runAssemblyBuild,
   setBuildWorkerFactory,
   type BuildWorkerLike,
@@ -445,13 +446,30 @@ describe('runAssemblyBuild through a worker', () => {
     expect(w.terminated).toBe(false);
   });
 
-  it('fails a build the worker could not read, rather than waiting forever', async () => {
+  it('fails a build the worker could not read in plain words, the detail on the console', async () => {
     let w!: ScriptedWorker;
     setBuildWorkerFactory(() => (w = new ScriptedWorker()));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const run = runAssemblyBuild(input());
     w.reply({ type: 'unreadable' });
-    await expect(run).rejects.toThrow(/couldn't read/);
+    await expect(run).rejects.toBeInstanceOf(BuildWorkerFault);
+    expect(errSpy).toHaveBeenCalledWith('build worker:', expect.stringMatching(/deserialize/));
     expect(w.terminated).toBe(true);
+    errSpy.mockRestore();
+  });
+
+  it('puts a fault in what crossed on the console, and plain words on screen', async () => {
+    let w!: ScriptedWorker;
+    setBuildWorkerFactory(() => (w = new ScriptedWorker()));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const run = runAssemblyBuild(input());
+    const detail = "AssemblyPart.restPositions isn't sent to the build worker (BUILD_PART_FIELDS)";
+    w.reply({ type: 'failed', id: w.received[0].id, message: detail, warnings: [], wire: true });
+    const e = await run.catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(BuildWorkerFault);
+    expect((e as Error).message).not.toMatch(/AssemblyPart|BUILD_PART_FIELDS|worker/);
+    expect(errSpy).toHaveBeenCalledWith('build worker:', detail);
+    errSpy.mockRestore();
   });
 
   it('rethrows a build that failed in the worker, after saying what it said first', async () => {
@@ -498,7 +516,13 @@ describe("the worker's message handler", () => {
     // Names only: this worker was never sent the objects.
     await onMessage({ type: 'build', id: 8, search: '', input: encodeInput(inp, held) });
     expect(sent).toEqual([
-      { type: 'failed', id: 8, message: expect.stringMatching(/never sent/), warnings: [] },
+      {
+        type: 'failed',
+        id: 8,
+        message: expect.stringMatching(/never sent/),
+        warnings: [],
+        wire: true,
+      },
     ]);
   });
 

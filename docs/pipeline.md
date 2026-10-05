@@ -132,7 +132,7 @@ the page.
 - **A worker is replaced** after a build that threw, or whose engine trapped
   (`noteEngineError` at every catch around a Manifold call): a trap stops the
   engine mid-operation, so its heap can't be trusted.
-- **Export clicked mid-rebuild waits for it**, so the file matches the panels.
+- **Export clicked mid-rebuild waits for it**, held off from the click to the end, so the file matches the panels.
   The curtain is a stack ([overlay.ts](../src/ui/overlay.ts)): a part load
   shown over a rebuild hides only its own.
 

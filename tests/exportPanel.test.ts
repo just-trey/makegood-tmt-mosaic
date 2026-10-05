@@ -6,6 +6,7 @@ import type { AssemblyPart, AssemblyPartOutput } from '../src/types';
 vi.mock('../src/app/rebuild', () => ({
   getLastAssemblyBuild: vi.fn(),
   isExportReady: vi.fn(() => true),
+  holdExport: vi.fn(),
 }));
 vi.mock('../src/geometry/assembly', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/geometry/assembly')>()),
@@ -39,7 +40,7 @@ import { exportPrintReady3MF, initExportPanel } from '../src/ui/exportPanel';
 import { beginWork, endWork } from '../src/app/idle';
 import { refreshSlotBudgetNotice, SLOT_PILL_SUFFIX } from '../src/ui/slotBudget';
 import { getPrinter } from '../src/export/printers';
-import { getLastAssemblyBuild, isExportReady } from '../src/app/rebuild';
+import { getLastAssemblyBuild, holdExport, isExportReady } from '../src/app/rebuild';
 import { build3MFCombined } from '../src/export/threemf';
 import { track } from '../src/analytics/track';
 import { state } from '../src/state/store';
@@ -280,22 +281,23 @@ describe('the Export button during a rebuild', () => {
 
   beforeEach(() => {
     vi.mocked(isExportReady).mockReturnValue(true);
-    btn.disabled = false;
+    vi.mocked(holdExport).mockClear();
     buildWithPalette(1);
   });
 
-  it('waits for the build in flight, so it exports what the panels now say', async () => {
+  it('waits for the build in flight, holding the button off from the click to the end', async () => {
     beginWork();
     btn.click();
     await flush();
     expect(build3MFCombined).not.toHaveBeenCalled();
-    expect(btn.disabled).toBe(true);
+    expect(vi.mocked(holdExport).mock.calls).toEqual([[true]]);
     endWork();
     await flush();
     expect(build3MFCombined).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(holdExport).mock.calls).toEqual([[true], [false]]);
   });
 
-  it('exports nothing if that build was cancelled, and leaves the button off', async () => {
+  it('exports nothing if that build was cancelled', async () => {
     beginWork();
     btn.click();
     await flush();
@@ -303,17 +305,6 @@ describe('the Export button during a rebuild', () => {
     endWork();
     await flush();
     expect(build3MFCombined).not.toHaveBeenCalled();
-    expect(btn.disabled).toBe(true);
-  });
-
-  it("puts back the rebuild's verdict, not the one at the click", async () => {
-    vi.mocked(build3MFCombined).mockImplementationOnce(async () => {
-      vi.mocked(isExportReady).mockReturnValue(false);
-      return { blob: new Blob(), warnings: [] };
-    });
-    btn.click();
-    await flush();
-    expect(build3MFCombined).toHaveBeenCalledTimes(1);
-    expect(btn.disabled).toBe(true);
+    expect(vi.mocked(holdExport).mock.calls).toEqual([[true], [false]]);
   });
 });

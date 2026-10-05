@@ -1663,6 +1663,21 @@ then cuts on the page instead, slower to respond but with nothing lost.)
 - If it happens on a small design, open the browser console and report the
   error with **Feedback**.
 
+## Troubleshooting: "Couldn't cut the design because of a problem in the app, not your file"
+
+Full text: _"Couldn't cut the design because of a problem in the app, not your
+file. The 3D view still shows the last result, and export is off. Reload the
+page to try again."_
+
+**A bug in the hand-off to the background worker that cuts the design**, not
+anything about the design itself. The browser console holds the detail, logged
+as `build worker: …`.
+
+- **What you get.** The 3D view keeps whatever it showed before, and Export
+  stays off until a rebuild succeeds.
+- **What to do.** Reload the page. If it comes back, report it with
+  **Feedback**, including the `build worker:` line from the console.
+
 ## Troubleshooting: "Refusing to write a non-finite coordinate into the exported 3MF."
 
 Full text: _"Refusing to write a non-finite coordinate into the exported

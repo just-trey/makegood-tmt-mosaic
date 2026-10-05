@@ -59,6 +59,7 @@ export type ToWorker =
  * `ready` is posted once the worker's code has loaded, telling a worker that never came up from one
  * that died. `trapped`: the engine trapped during that build (noteEngineError), so the page replaces
  * the worker. `unreadable` answers a message that failed to deserialize, whose id it can't know.
+ * `wire`: the failure was this boundary's own (WireError), a bug no user can act on.
  */
 export type FromWorker =
   | { type: 'ready' }
@@ -71,8 +72,11 @@ export type FromWorker =
       trapped: boolean;
     }
   | { type: 'cancelled'; id: number; trapped: boolean }
-  | { type: 'failed'; id: number; message: string; warnings: WarningCall[] }
+  | { type: 'failed'; id: number; message: string; warnings: WarningCall[]; wire?: boolean }
   | { type: 'unreadable' };
+
+/** A fault in what crosses this boundary, not in the build: for the console, not a pill. */
+export class WireError extends Error {}
 
 const ids = new WeakMap<object, number>();
 let nextId = 1;
@@ -121,7 +125,7 @@ export function decodeInput(wire: WireInput, cache: Map<number, unknown>): Assem
   const live = new Set(all.map((r) => r.ref));
   for (const id of cache.keys()) if (!live.has(id)) cache.delete(id);
   const get = (r: Ref): unknown => {
-    if (!cache.has(r.ref)) throw new Error(`build input ${r.ref} was never sent`);
+    if (!cache.has(r.ref)) throw new WireError(`build input ${r.ref} was never sent`);
     return cache.get(r.ref);
   };
   return {
@@ -135,7 +139,9 @@ export function decodeInput(wire: WireInput, cache: Map<number, unknown>): Assem
       for (const k of p.omitted)
         Object.defineProperty(part, k, {
           get() {
-            throw new Error(`AssemblyPart.${k} isn't sent to the build worker (BUILD_PART_FIELDS)`);
+            throw new WireError(
+              `AssemblyPart.${k} isn't sent to the build worker (BUILD_PART_FIELDS)`,
+            );
           },
         });
       return part as unknown as AssemblyPart;
@@ -164,7 +170,7 @@ export function packBuild(
   const transfer = new Set<ArrayBuffer>();
   const partOutputs = build.partOutputs.map(({ part, ...rest }) => {
     const partIndex = parts.indexOf(part);
-    if (partIndex < 0) throw new Error(`output for "${part.name}" names no input part`);
+    if (partIndex < 0) throw new WireError(`output for "${part.name}" names no input part`);
     for (const b of outputBuffers({ part, ...rest }))
       if (!keep.has(b) && b instanceof ArrayBuffer) transfer.add(b);
     return { ...rest, partIndex };

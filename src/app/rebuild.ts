@@ -53,7 +53,7 @@ import { schedulePersist } from '../state/persist';
 import { $ } from '../ui/dom';
 import { renderExportSummary } from '../ui/exportPanel';
 import { RebuildCancelled } from '../cancel';
-import { BuildWorkerCrashed, runAssemblyBuild } from './buildClient';
+import { BuildWorkerCrashed, BuildWorkerFault, runAssemblyBuild } from './buildClient';
 
 let lastAssemblyBuild: AssemblyBuild | null = null;
 
@@ -62,11 +62,18 @@ export function getLastAssemblyBuild(): AssemblyBuild | null {
 }
 
 let exportReady = false;
+let exportHeld = false;
 
-/** The rebuild's verdict on #btn-export, kept apart so an export can restore it rather than guess. */
+/** The rebuild's verdict on #btn-export. An export in progress holds the button off over it. */
 function setExportReady(on: boolean): void {
   exportReady = on;
-  $<HTMLButtonElement>('#btn-export').disabled = !on;
+  $<HTMLButtonElement>('#btn-export').disabled = !on || exportHeld;
+}
+
+/** Held from the click until the export ends, including its wait for a rebuild to finish. */
+export function holdExport(on: boolean): void {
+  exportHeld = on;
+  setExportReady(exportReady);
 }
 
 export function isExportReady(): boolean {
@@ -556,7 +563,8 @@ async function rebuildAssemblyScene(): Promise<void> {
     lastAssemblyBuild = null;
     setExportReady(false);
     const cancelled = e instanceof RebuildCancelled;
-    if (!cancelled && !(e instanceof BuildWorkerCrashed)) throw e;
+    if (!cancelled && !(e instanceof BuildWorkerCrashed) && !(e instanceof BuildWorkerFault))
+      throw e;
     // Caught here, not in the scheduler, so the tail of rebuildCurrent still runs: it has the only
     // schedulePersist outside export, and skipping it left a cancelled change unsaved on reload.
     //

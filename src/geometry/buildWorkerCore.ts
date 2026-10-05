@@ -1,5 +1,12 @@
 import { buildAssemblyGeometry } from './assembly';
-import { decodeInput, packBuild, partBuffers, type FromWorker, type ToWorker } from './buildWire';
+import {
+  decodeInput,
+  packBuild,
+  partBuffers,
+  WireError,
+  type FromWorker,
+  type ToWorker,
+} from './buildWire';
 import { armCsgFaults } from './csgFault';
 import { takeEngineTrapped } from './manifold';
 import { armCancel, RebuildCancelled, requestCancel } from '../cancel';
@@ -50,7 +57,10 @@ export function startBuildWorker(post: (msg: FromWorker, transfer: Transferable[
     } catch (e) {
       if (e instanceof RebuildCancelled)
         post({ type: 'cancelled', id, trapped: takeEngineTrapped() }, []);
-      else post({ type: 'failed', id, message: (e as Error)?.message ?? String(e), warnings }, []);
+      else {
+        const message = (e as Error)?.message ?? String(e);
+        post({ type: 'failed', id, message, warnings, wire: e instanceof WireError }, []);
+      }
     } finally {
       journalWarnings(null);
       setProgressSink(null);

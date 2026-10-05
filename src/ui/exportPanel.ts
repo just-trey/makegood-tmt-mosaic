@@ -1,6 +1,6 @@
 import { baseColorHex, state } from '../state/store';
 import { nearestFilamentName } from '../state/filaments';
-import { getLastAssemblyBuild, isExportReady } from '../app/rebuild';
+import { getLastAssemblyBuild, holdExport, isExportReady } from '../app/rebuild';
 import { whenIdle } from '../app/idle';
 import { asmPartFaceNormal, shippedColorIndices } from '../geometry/assembly';
 import {
@@ -269,15 +269,15 @@ export async function exportPrintReady3MF(): Promise<void> {
 /**
  * Guards the export button against re-entrancy. Confirmed live (5 rapid clicks on #btn-export): it
  * had no guard, and every click ran its own full export and download. The flag is the guard,
- * checked before the export starts; the `disabled` toggle is only a visual affordance. rebuild.ts
- * owns the button's state otherwise (isExportReady), which is what the finally puts back.
+ * checked before the export starts. The button is held off from the click to the end (holdExport),
+ * so a rebuild finishing during the wait can't re-enable a button whose clicks would be ignored.
  */
 let exporting = false;
 
-async function guardExport(btn: HTMLButtonElement, run: () => Promise<void>): Promise<void> {
+async function guardExport(run: () => Promise<void>): Promise<void> {
   if (exporting) return;
   exporting = true;
-  btn.disabled = true;
+  holdExport(true);
   try {
     // A rebuild in flight would pair the last build's meshes with settings already changed (body
     // colour, kind, part angles). After it, they agree, or the build failed and there's no export.
@@ -285,8 +285,7 @@ async function guardExport(btn: HTMLButtonElement, run: () => Promise<void>): Pr
     if (isExportReady()) await run();
   } finally {
     exporting = false;
-    // The rebuild's current verdict, not the one at the click: a build cancelled meanwhile turned it off.
-    btn.disabled = !isExportReady();
+    holdExport(false);
   }
 }
 
@@ -306,5 +305,5 @@ export function initExportPanel(): void {
     schedulePersist();
   });
   const exportBtn = $<HTMLButtonElement>('#btn-export');
-  exportBtn.addEventListener('click', () => void guardExport(exportBtn, exportPrintReady3MF));
+  exportBtn.addEventListener('click', () => void guardExport(exportPrintReady3MF));
 }
