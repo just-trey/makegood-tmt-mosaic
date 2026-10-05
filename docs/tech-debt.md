@@ -164,7 +164,7 @@ inside a 900s timeout.
   accumulator-or-worker fix. Sticker on the chair is unaffected, measured at 19.5s for a full five-zone
   rebuild on the same box, which is why only Fill was withheld.
 - **Don't quote that 19.5s without the design size.** It used a design covering the zones.
-  [docs/findings/zone-rebuild-cost.md](findings/zone-rebuild-cost.md) reproduces it at 400% (17.0s) and
+  [docs/findings/2026-08-08-zone-rebuild-cost.md](findings/2026-08-08-zone-rebuild-cost.md) reproduces it at 400% (17.0s) and
   measures an ordinary auto-fit sticker on all five zones at 4.0s, a 5x spread on the same path. What
   is paid for is pocket area, not surfaces touched.
 - **A Fill now cuts itself back from under every sticker on its zone**: one polygon difference per fill

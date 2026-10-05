@@ -171,7 +171,7 @@ with its own live verification, before any of the rest lands.
 
 ## The thing that makes it worth doing, measured
 
-[docs/findings/zone-rebuild-cost.md](../findings/zone-rebuild-cost.md), same machine, same day:
+[docs/findings/2026-08-08-zone-rebuild-cost.md](../findings/2026-08-08-zone-rebuild-cost.md), same machine, same day:
 
 - All five zones in one rebuild: **4.0 s** (17.0 s with a design large enough to cover them).
 - Five zones bound one at a time: **8.3 s** total (22.1 s), but **no single wait over 5.3 s**.

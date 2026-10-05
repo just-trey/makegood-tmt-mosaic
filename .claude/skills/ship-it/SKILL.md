@@ -171,6 +171,22 @@ This is not scoped to `src/geometry/` and `src/export/`: that scope let a
 700-line bench through unreviewed, and the review that eventually ran found
 three claims in its findings report read off rows the shipping code never uses.
 
+### Level by risk
+
+Every code diff is reviewed; risk sets the level. A mixed diff takes the
+highest row. `high` runs 8 finders, so it is kept for where a wrong number
+ships a bad print.
+
+| Diff touches                                            | Round 1  | Later code rounds |
+| ------------------------------------------------------- | -------- | ----------------- |
+| `src/geometry/`, `src/export/`, placement or scene math | `high`   | `medium`          |
+| Other `src/`, tests, scripts                            | `medium` | `medium`          |
+| Config or build files only, under ~20 lines, no logic   | `low`    | `low`             |
+| Prose only                                              | exempt   | —                 |
+
+The single prose pass at the end is `low` in every row. After a taste-only
+round, offer to skip further rounds.
+
 ### Run it twice, at least
 
 Once **before pushing**, and again **after you act on its findings**.
