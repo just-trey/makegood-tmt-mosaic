@@ -66,16 +66,6 @@ area summed out of `public/stl/chair-body-zones.json`.
   against the bodies it replaces, so a guessed number fails the bake.
 - The owner has seen the trade and chose to leave tires out for now.
 
-## Corner handles and an axis handle compete for the same drag
-
-Convention 14 of [ui-conventions.md](ui-conventions.md): only one manipulation affordance is offered at
-a time. The placement gizmo draws corner handles and an axis handle that both answer the same drag.
-
-- A UI decision, not a geometry one: which affordance a drag on the frame belongs to.
-
-**Closing it**: pick the one affordance each drag starts, in
-[src/scene/designGizmo.ts](../src/scene/designGizmo.ts), and drop or separate the other.
-
 ## The chair's prime-tower positions have only been verified on one bed size
 
 **Any third bed size inherits the 270mm numbers untested.** Both shipped sizes have had the pass (270mm
