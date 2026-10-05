@@ -8,7 +8,7 @@
  * adjacent to the property asserted, where the ambiguous case is indistinguishable from a real
  * pass at the point of use.** Not a weak check, which announces itself. These announce a pass. An
  * audit of every checker in the repo found ten instances
- * (docs/findings/indirect-success-signals.md, 2026-08-08), all since closed, and the ones that
+ * (docs/findings/2026-08-08-indirect-success-signals.md, 2026-08-08), all since closed, and the ones that
  * bit hardest are still visible as the guards below: assertFreshDist, the leftover-port refusal,
  * the dist/index.html byte comparison in waitForServer, assertGpuActive's refusal to run
  * software-rendered, the rebuild counter behind afterRebuild, and the confirm tally in newPage.

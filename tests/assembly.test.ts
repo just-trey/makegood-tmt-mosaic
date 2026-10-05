@@ -1570,7 +1570,7 @@ describe('buildAssemblyGeometry zero-depth handling', () => {
     'reports the raised setting, never a cut depth a cutThrough part did not make',
     { timeout: 30000 },
     async () => {
-      // resolveCutDepth discards the setting on a cutThrough part and takes the hole the whole
+      // resolveCutRegions discards the setting on a cutThrough part and takes the hole the whole
       // way through. A message naming a cut depth understated a 3 mm through-hole as 0.02 mm.
       const built = (await buildAssemblyGeometry(
         baseInput({
@@ -1914,7 +1914,7 @@ describe('buildAssemblyGeometry depth labels and thin cuts', () => {
     'stays quiet about a thin depth on a part that cuts through anyway',
     { timeout: 30000 },
     async () => {
-      // The note predicts a print outcome ("won't show up at 0.2 mm layers"), and resolveCutDepth
+      // The note predicts a print outcome ("won't show up at 0.2 mm layers"), and resolveCutRegions
       // discards the setting on a cutThrough part — so the pill claimed an invisible recess while
       // the cap was being cut 3 mm clean through. Same trap as the zero-depth message above, which
       // is why the gate asks the mapper what it did rather than reading part.cutThrough here.
