@@ -96,7 +96,6 @@ function parsedSquare(): ParsedSVG {
 }
 
 /** One triangle, as a soup — 9 floats = 1 triangle. */
-const xzTri = [0, 0, 0, 10, 0, 0, 10, 0, 10]; // lies in the XZ plane, so it counts toward the footprint
 const tri = (z = 0): Float32Array => new Float32Array([0, 0, z, 10, 0, z, 10, 10, z]);
 
 /** An axis-aligned baked region, the outer/holes form the charts carry. */
@@ -659,10 +658,10 @@ describe('assembly mode with artwork', () => {
           {
             part: asmPart(),
             bodySoup: tri(),
-            // 3:1 in XZ-projected area
+            // 3:1 in area
             inlaySoups: {
-              0: new Float32Array([...xzTri, ...xzTri, ...xzTri]),
-              1: new Float32Array(xzTri),
+              0: new Float32Array([...tri(), ...tri(), ...tri()]),
+              1: new Float32Array(tri()),
             },
           },
         ] as AssemblyBuild['partOutputs'],
@@ -681,35 +680,34 @@ describe('assembly mode with artwork', () => {
     expect(entries![1].areaPct).toBeCloseTo(25, 6);
   });
 
-  it('weights each color by its footprint, not its triangle count', async () => {
-    // Inlays are prisms along Y: top and bottom faces (z-up quads here, split into many
-    // triangles for the ragged band) plus walls. Three equal 10x10 footprints.
-    const quad = (x0: number, z0: number, n: number, y: number): number[] => {
+  it('weights each color by its cap area, not its triangle count or its Y footprint', async () => {
+    // Three equal 10x10 bands (cap + back face) with the same wall area but 102 / 260 / 120
+    // triangles. The last lies in the YZ plane: a zone wrapping a sideways face has no XZ footprint.
+    const quad = (n: number, y: number, axis: 'xz' | 'yz'): number[] => {
       const out: number[] = [];
       const w = 10 / n;
+      const p = (a: number, b: number): number[] => (axis === 'xz' ? [a, y, b] : [y, a, b]);
       for (let i = 0; i < n; i++) {
-        const a = x0 + i * w;
-        out.push(a, y, z0, a + w, y, z0, a + w, y, z0 + 10);
-        out.push(a, y, z0, a + w, y, z0 + 10, a, y, z0 + 10);
+        const a = i * w;
+        out.push(...p(a, 0), ...p(a + w, 0), ...p(a + w, 10));
+        out.push(...p(a, 0), ...p(a + w, 10), ...p(a, 10));
       }
       return out;
     };
-    const wall = (n: number): number[] => {
+    const wall = (): number[] => {
       const out: number[] = [];
-      for (let i = 0; i < n; i++) out.push(0, 0, i, 0, 1, i, 0, 1, i + 1);
+      for (let i = 0; i < 50; i++) out.push(0, 0, i, 0, 1, i, 0, 1, i + 1);
       return out;
     };
+    const band = (n: number, axis: 'xz' | 'yz'): Float32Array =>
+      new Float32Array([...quad(n, 0, axis), ...quad(n, -1, axis), ...wall()]);
     vi.mocked(buildAssemblyGeometry).mockResolvedValue(
       assemblyBuild({
         partOutputs: [
           {
             part: asmPart(),
             bodySoup: tri(),
-            inlaySoups: {
-              0: new Float32Array([...quad(0, 0, 1, 0), ...quad(0, 0, 1, -1)]),
-              1: new Float32Array([...quad(20, 0, 40, 0), ...quad(20, 0, 40, -1), ...wall(50)]),
-              2: new Float32Array([...quad(40, 0, 5, 0), ...quad(40, 0, 5, -1)]),
-            },
+            inlaySoups: { 0: band(1, 'xz'), 1: band(40, 'xz'), 2: band(5, 'yz') },
           },
         ] as AssemblyBuild['partOutputs'],
         palette: [

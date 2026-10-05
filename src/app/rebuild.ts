@@ -12,7 +12,7 @@ import {
   zoneMirrorOf,
 } from '../state/artwork';
 import { creasedNormalsFromIndex, indexMatchesSoup } from '../geometry/creasedNormals';
-import { soupFootprintArea } from '../geometry/regions';
+import { soupCapArea } from '../geometry/regions';
 import { clearBuildWarnings, noticeBuild, warn, warnBuild } from '../warnings';
 import {
   asmPartFaceNormal,
@@ -632,7 +632,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     if (!shipped.has(ci)) return;
     let area = 0;
     built.partOutputs.forEach(({ bodySoup, inlaySoups }) => {
-      if (bodySoup.length && inlaySoups[ci]) area += soupFootprintArea(inlaySoups[ci]);
+      if (bodySoup.length && inlaySoups[ci]) area += soupCapArea(inlaySoups[ci]);
     });
     colorListEntries.push({
       color: c.hex,
@@ -649,7 +649,7 @@ async function rebuildAssemblyScene(): Promise<void> {
   });
   if (built.baseAssigned) {
     // This areaPct is on the 2D-design scale (matches detectedColors), while the rows above are
-    // footprints of the cut inlays (pre-merge, pre-cut vs after both), so the scales differ slightly.
+    // cap areas of the cut inlays (pre-merge, pre-cut vs after both), so the scales differ slightly.
     // Assembly-mode area is already an approximation; exact parity isn't worth the extra pass.
     colorListEntries.push({
       color: built.baseAssigned.hex,
