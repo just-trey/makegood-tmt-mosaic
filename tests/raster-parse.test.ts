@@ -486,8 +486,8 @@ describe('parseRasterImage', () => {
         expect(rasterColorLossNotice('a.png', below)).toBe(rasterColorLossMessage('a.png', 1));
       }
 
-      // Raising Detail 90 → 95 on 384px swaps the notice rather than retracting it, with the color
-      // still gone: a retraction there read as fixed.
+      // Detail 95 on 384px is already at the floor's end with the color still gone, so a notice
+      // that only tracked "Detail can still move this floor" would vanish here and read as fixed.
       const spent = parseRasterImage(sprinkled(384), { colors: 4, detail: DETAIL_MAX - 5 });
       expect(spent.droppedColors).toBe(1);
       expect(spent.detailLowersFloor).toBe(false);

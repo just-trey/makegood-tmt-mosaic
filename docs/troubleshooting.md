@@ -618,8 +618,9 @@ what a 0.4mm nozzle can express.
 
 A colour whose every piece was under the floor is gone from the colour list too,
 and the notice names it: **"…merged into its surroundings, including 1 color."**
-No Detail setting brings it back while the trace is capped, since the cap sets
-the floor, not Detail. The color-dropped notice below never shows beside this one.
+Raising Detail may not bring it back: the cap raises the floor again. On the
+test image Detail 90 and 100 both end on the same floor
+(`npx vitest run tests/raster-parse.test.ts -t "leaves a capped"`). The color-dropped notice below never shows beside this one.
 
 The notice names the image, so each loaded image gets its own, and re-tracing
 one at a setting that no longer needs capping retracts only that one.
@@ -708,10 +709,10 @@ at full Detail."**
   Measured by `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`.
 - **It offers no fix.** A bigger design can still lower the floor on flat art,
   but nothing measured says when it is enough.
-- **Where it shows on the sample images**: 4 of 190 traces, pattern-cow and
+- **Where it shows on the sample images**: 4 of 190 traces, all pattern-cow and
   pattern-zebra at Detail 100
   (`node_modules/.bin/vite-node scripts/bench-raster.ts dropped`, needs the
-  gitignored `stubs/`).
+  gitignored `stubs/`). That bench samples Detail 50 and 100 only.
 
 ## Troubleshooting: "No opaque pixels were found in this image…"
 

@@ -160,7 +160,9 @@ describe('a raster source that the browser can encode', () => {
     await applyRestoredSession(session);
 
     expect(WARNINGS.some((w) => w.message === rasterTracedMessage('photo.png'))).toBe(true);
-    expect(WARNINGS.some((w) => w.message === rasterCappedMessage('photo.png'))).toBe(false);
+    // Prefix, not the whole text: the capped notice's ending varies with how many colors it lost.
+    const capped = rasterCappedMessage('photo.png').split(' surroundings')[0];
+    expect(WARNINGS.some((w) => w.message.startsWith(capped))).toBe(false);
   });
 
   it('keeps its instances, so no placement is orphaned and none is lost', () => {

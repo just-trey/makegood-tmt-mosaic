@@ -49,6 +49,7 @@ import {
   placedFloors,
   rasterColorLossMessage,
   rasterColorLossNotice,
+  rasterFullDetailColorLossMessage,
   rasterSizeColorLossMessage,
 } from '../src/raster/parse';
 import type { ShapeGranularity } from '../src/raster/parse';
@@ -1219,7 +1220,9 @@ async function modeDropped(names: string[]) {
                 ? 'raise Detail'
                 : loss === rasterSizeColorLossMessage(s.name, r.droppedColors)
                   ? 'bigger'
-                  : 'full Detail';
+                  : loss === rasterFullDetailColorLossMessage(s.name, r.droppedColors)
+                    ? 'full Detail'
+                    : 'unrecognised';
           rows.push({
             ...row,
             painted: r.palette.length,

@@ -202,7 +202,7 @@ export function parseRasterImage(
 export function rasterCappedMessage(name: string, dropped = 0): string {
   return (
     `Some detail in "${name}" was too fine to print and was merged into its surroundings` +
-    // Here, not a second notice whose "raise Detail" contradicts this one. No recovery promised: while capped, the cap sets the floor, not Detail.
+    // Here, not a second notice whose "raise Detail" contradicts this one. No recovery promised: a capped floor is one the cap raised past what Detail asked for.
     (dropped > 0 ? `, including ${dropped === 1 ? '1 color' : `${dropped} colors`}` : '') +
     '. Lower Colors, or lower Detail, for a cleaner result.'
   );
