@@ -381,49 +381,27 @@ candidate, not a rejected one. The test needs raster inputs resampled to several
 mode here produces them, and the traces need looking at rather than counting: region count cannot tell a
 cleaner trace from a coarser one.
 
-## Two traces still drop a color and say nothing about it
+## "Raise Detail" on a dropped-color notice can lead nowhere
 
-`rasterColorLossNotice` ([src/raster/parse.ts](../src/raster/parse.ts)) raises a dropped-color notice
-only where its remedy is both true and available: raise Detail, or make the design or the part bigger
-when the nozzle-width floor pins it. Two cases are left silent, both `droppedColors > 0`.
+`rasterColorLossMessage` ([src/raster/parse.ts](../src/raster/parse.ts)) fires wherever raising Detail
+lowers the floor at all. Lowering the floor is not getting the color back, and two cases show the gap.
 
-| Case                      | Suppressed by                | Reproduced by                                                    |
-| ------------------------- | ---------------------------- | ---------------------------------------------------------------- |
-| Capped, and short a color | `capped`                     | `npx vitest run tests/raster-parse.test.ts -t "leaves a capped"` |
-| Detail already at 100     | `!detailLowersFloor`, no pin | `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`      |
+| Case                | What raising Detail does                                         | Measured                     |
+| ------------------- | ---------------------------------------------------------------- | ---------------------------- |
+| Raise trips the cap | Next trace is capped and says lower Detail; color still gone     | synthetic only; corpus 0/190 |
+| Floor partly pinned | Nozzle floor just under the fractional one; floor moves a little | **unmeasured**               |
 
-- **Capped**: the trace shows `rasterCappedMessage` only, which says detail "was merged into its
-  surroundings" and never that a color left the palette. The two remedies are opposites (capped says
-  lower Colors or Detail, dropped-color says raise Detail), so both on one image contradict each other.
-  Reproduced synthetically (1024 six-pixel blocks over two flat bands plus one-pixel specks, 320x320 at
-  Colors 5 and Detail 100: `capped: true`, `droppedColors: 1`), never on the corpus.
-- **The cap now raises until the count is under, so a capped floor can go much higher.** On 512px
-  8-label noise at placed floor 1 it settles at 47px
-  (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`). The same command against the previous
-  `src/raster/trace.ts` stops at 7px with 9237 components. The higher the floor, the likelier a whole
-  color goes under it on a source that caps.
-- **Detail at 100** with no placement pinning the floor has no remedy to offer. A bigger size can still
-  lower the feature floor there, so silence is not always right, but no measured rule says when it is.
-- **A partly-pinned floor still fires, with a weak remedy.** Where the nozzle floor sits just under the
-  fractional one, raising Detail lowers the floor a little and may not bring the color back. The notice
-  stays true (it says what Detail does, never that the color returns), and no notice can promise
-  recovery. A "how much movement is enough" line would be an invented constant. **Unmeasured**: how
-  often that band is where real artwork lands.
-- **The notice can vanish mid-remedy, which reads as fixed.** It tracks "Detail can still move this
-  floor", not "a color is missing". On `sprinkled(384)` with no placement, Detail 90 gives floor 7 and
-  the notice; Detail 95 gives floor 6, `detailLowersFloor` false, and the notice is retracted, with
-  `droppedColors` still 1 and the readout still one color short.
-- **The capped split also gives a round trip.** Raising Detail on a dropped-color notice lowers the
-  floor, raises the component count, and can trip the cap. The next trace is capped, the notice is
-  retracted, and the user is told to lower the Detail they just raised, with the color still gone.
-- **The trigger has never been run against the corpus.** Every test uses a synthetic fixture, and the
-  five sources the notice exists for (dalmatian, zebra, cartoon, gravel, foliage) sit in the gitignored
-  `stubs/`. `scripts/bench-raster.ts` already reports `painted` per source and is where a
-  `droppedColors`/`detailLowersFloor` column would go, answering whether the two suppressions silence
-  any of those five at their own placements. **Unmeasured.**
-- **Closing it** takes a message carrying both facts, or a measured rule for which remedy wins. Neither
-  is a wording change: the capped case needs an answer to whether raising Detail can recover a color on
-  a capped trace at all.
+- **Cap round trip**, on a synthetic fixture at Colors 5
+  (`npx vitest run tests/raster-parse.test.ts -t "leaves a capped"`). Detail 80 is uncapped at floor 41
+  with 1 color dropped, so it says raise Detail. Detail 90 and 100 are capped at floor 33, still 1
+  dropped, and the capped notice says lower Detail. No Detail setting brings the color back.
+- **Corpus**: no source caps with a color dropped. 19 sources x 5 placements x Detail 50/100 is 190
+  rows; 2 are capped (red-sox-logo, wheel and footrest at Detail 100), both with 0 dropped
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts dropped`, needs the gitignored `stubs/`).
+- **Partly pinned**: the notice stays true, since it says what Detail does, never that the color returns.
+  A "how much movement is enough" cutoff would be an invented constant.
+- **Closing it** takes either a measured rule for when a lower floor brings a color back, or a notice that
+  knows the next step caps. The second costs a trace at the higher Detail; that cost is unmeasured.
 
 ## A hubcap cut to its artwork may re-trace on every edit — unmeasured
 

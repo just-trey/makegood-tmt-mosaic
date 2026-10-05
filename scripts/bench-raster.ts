@@ -14,10 +14,11 @@
 //   node_modules/.bin/vite-node scripts/bench-raster.ts despeckle   does the despeckle floor hold?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts cap         does MAX_COMPONENTS bound the count?
 //   node_modules/.bin/vite-node scripts/bench-raster.ts floor       despeckle floor in mm, per placement
+//   node_modules/.bin/vite-node scripts/bench-raster.ts dropped     which dropped-color notice, per placement
 //   node_modules/.bin/vite-node scripts/bench-raster.ts look        write traced SVGs to look at
 //   node_modules/.bin/vite-node scripts/bench-raster.ts steps       resize that moves the floors
 //
-// corpus, colors, curve and despeckle read the cached corpus. scale, render and alpha bring their
+// corpus, colors, curve, despeckle and dropped read the cached corpus. scale, render and alpha bring their
 // own source.
 // sizes, blur and knee take their file list from CORPUS and decode afresh, so they need the files
 // present; knee also reads the cache for each source's carried edgeDensity.
@@ -42,7 +43,14 @@
 // and no lossy history, which is the entire subject. They run against real files decoded through
 // the browser (scripts/lib/rastercorpus.ts) and drive quantize/traceLabelMap directly, because a
 // sweep has to set the parameters autoParams would otherwise derive.
-import { parseRasterImage, placedFloors } from '../src/raster/parse';
+import {
+  EmptyTraceError,
+  parseRasterImage,
+  placedFloors,
+  rasterColorLossMessage,
+  rasterColorLossNotice,
+  rasterSizeColorLossMessage,
+} from '../src/raster/parse';
 import type { ShapeGranularity } from '../src/raster/parse';
 import { computeNetRegionsByColor, shapeToFeature } from '../src/geometry/regions';
 import { MAX_COLORS, MIN_COLORS, quantize } from '../src/raster/quantize';
@@ -56,6 +64,7 @@ import {
   measureImage,
   printableFloorPx,
   DETAIL_DEFAULT,
+  DETAIL_MAX,
 } from '../src/raster/stats';
 import { designMmPerUnit } from '../src/geometry/designScale';
 import { HUBCAP_CHAMFER_MM, HUBCAP_MIN_DIAMETER_MM } from '../src/geometry/hubcap';
@@ -1178,6 +1187,57 @@ async function modeFloor(names: string[]) {
 }
 
 /**
+ * Which dropped-color notice each source gets at each placement, through the app's own
+ * `parseRasterImage` and `rasterColorLossNotice`. `none` is a trace with no placement yet (a
+ * session restore before the parts load). An empty trace throws and reads `empty`.
+ */
+async function modeDropped(names: string[]) {
+  const sources = await pick(names);
+  const places = [{ name: 'none', mmPerPixel: () => 0 }, ...PLACEMENTS];
+  const rows = [];
+  for (const s of sources) {
+    // The app carries the decode-time statistic on the image (RasterImage.edgeDensity).
+    const img = { ...s.working, edgeDensity: s.edgeDensity };
+    for (const place of places)
+      for (const detail of [DETAIL_DEFAULT, DETAIL_MAX]) {
+        const row = { name: s.name, placed: place.name, detail, colors: s.colors };
+        try {
+          const r = parseRasterImage(img, {
+            colors: s.colors,
+            detail,
+            mmPerPixel: place.mmPerPixel(img),
+            name: s.name,
+          });
+          const loss = rasterColorLossNotice(s.name, r);
+          const notice = r.capped
+            ? r.droppedColors > 0
+              ? 'capped, names the color'
+              : 'capped'
+            : loss === null
+              ? ''
+              : loss === rasterColorLossMessage(s.name, r.droppedColors)
+                ? 'raise Detail'
+                : loss === rasterSizeColorLossMessage(s.name, r.droppedColors)
+                  ? 'bigger'
+                  : 'full Detail';
+          rows.push({
+            ...row,
+            painted: r.palette.length,
+            droppedColors: r.droppedColors,
+            detailLowersFloor: r.detailLowersFloor ? 'yes' : 'no',
+            capped: r.capped ? 'yes' : '',
+            notice,
+          });
+        } catch (e) {
+          if (!(e instanceof EmptyTraceError)) throw e;
+          rows.push({ ...row, notice: 'empty' });
+        }
+      }
+  }
+  console.table(rows);
+}
+
+/**
  * How far a placed design has to be resized before its despeckle floors move, which is when the
  * rebuild re-traces it (`retraceMovedSources`). Reads `placedFloors`, the function the app compares,
  * so the answer is the app's own. Needs no corpus: the floors read only the working size and the
@@ -1451,6 +1511,9 @@ switch (mode) {
   case 'floor':
     await modeFloor(rest);
     break;
+  case 'dropped':
+    await modeDropped(rest);
+    break;
   case 'look':
     await modeLook(rest);
     break;
@@ -1465,7 +1528,7 @@ switch (mode) {
     if (bad.length)
       throw new Error(
         `unknown mode ${bad.join(', ')}. Modes: corpus, colors, curve, scale, render, alpha, ` +
-          `sizes, blur, knee, despeckle, cap, floor, look, steps, ` +
+          `sizes, blur, knee, despeckle, cap, floor, dropped, look, steps, ` +
           `or one or more pixel sizes for the synthetic bench.`,
       );
     await modeSynthetic(args.map(Number).filter(Boolean));

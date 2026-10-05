@@ -6,9 +6,12 @@ import {
   rasterColorLossMessage,
   rasterColorLossNotice,
   rasterEmptyTraceMessage,
+  rasterFullDetailColorLossMessage,
   rasterLostColors,
   rasterSizeColorLossMessage,
 } from '../src/raster/parse';
+import { announceTrace } from '../src/state/artwork';
+import { WARNINGS, clearWarnings } from '../src/warnings';
 import {
   measureImage,
   autoParams,
@@ -308,10 +311,10 @@ describe('parseRasterImage', () => {
       expect(rasterLostColors(result)).toBe(false);
     });
 
-    it('leaves a capped trace to its own notice', () => {
+    it('leaves a capped trace to its own notice, which names the color it lost', () => {
       // 1024 six-pixel blocks over two bands, plus one-pixel yellow specks: past MAX_COMPONENTS,
-      // so the floor is raised, and the raise takes the yellow with it. Both notices at once would
-      // tell one image to lower Detail and raise it in the same breath.
+      // so the floor is raised, and the yellow goes under it. Both notices at once would tell one
+      // image to lower Detail and raise it in the same breath, so the capped one carries the color.
       const img = bands(320, 320, ['#0000ff', '#00c000']);
       for (let y = 1; y + 6 < 320; y += 10)
         for (let x = 1; x + 6 < 320; x += 10)
@@ -361,6 +364,32 @@ describe('parseRasterImage', () => {
           floorReason: 'printable',
         }),
       ).toBeNull();
+
+      clearWarnings();
+      announceTrace('src-1', 'a.png', result);
+      expect(WARNINGS).toEqual([
+        { message: rasterCappedMessage('a.png', 1), level: 'info', key: 'src-1' },
+      ]);
+      expect(rasterCappedMessage('a.png', 1)).toBe(
+        'Some detail in "a.png" was too fine to print and was merged into its surroundings, ' +
+          'including 1 color. Lower Colors, or lower Detail, for a cleaner result.',
+      );
+      expect(rasterCappedMessage('a.png', 2)).toContain('including 2 colors.');
+      expect(rasterCappedMessage('a.png', 0)).toBe(
+        'Some detail in "a.png" was too fine to print and was merged into its surroundings. ' +
+          'Lower Colors, or lower Detail, for a cleaner result.',
+      );
+      expect(rasterCappedMessage('a.png')).toBe(rasterCappedMessage('a.png', 0));
+      // No Detail setting brings it back: the cap puts the floor at 33 at Detail 90 and 100 alike,
+      // and Detail 80 is uncapped at 41, still short the color, and says raise Detail — the round
+      // trip docs/tech-debt.md carries.
+      expect(result.floorPx).toBe(33);
+      expect(parseRasterImage(img, { colors: 5, detail: 90 }).floorPx).toBe(33);
+      const uncapped = parseRasterImage(img, { colors: 5, detail: 80 });
+      expect(uncapped.capped).toBe(false);
+      expect(uncapped.floorPx).toBe(41);
+      expect(uncapped.droppedColors).toBe(1);
+      expect(rasterColorLossNotice('a.png', uncapped)).toBe(rasterColorLossMessage('a.png', 1));
     });
 
     // A centroid can win a cluster from the source histogram and label no pixel at all, because
@@ -430,28 +459,48 @@ describe('parseRasterImage', () => {
       expect(rasterLostColors(result)).toBe(true);
     });
 
-    // At the slider's own maximum the message asks for something the panel cannot do, and the same
-    // comparison answers it: the floor at DETAIL_MAX is the floor already in force. 256px and 384px
-    // both still drop a color there, so it is not a hypothetical.
-    it('stays silent at DETAIL_MAX, where there is no raising left', () => {
+    // At the slider's own maximum "raise Detail" asks for something the panel cannot do, and the
+    // same comparison answers it: the floor at DETAIL_MAX is the floor already in force. 256px and
+    // 384px both still drop a color there, so it is not a hypothetical.
+    it('says the color is gone even at DETAIL_MAX, where there is no raising left', () => {
       for (const size of [256, 384]) {
         const atTop = parseRasterImage(sprinkled(size), { colors: 4, detail: DETAIL_MAX });
         // Two steps down, not one: at 384px the floor rounds to 6 at both 95 and 100, so 95 is
-        // already a no-op and the notice is withheld there too — the predicate measures the floor
+        // already a no-op and gets the full-Detail message too — the predicate measures the floor
         // rather than assuming the slider's last step moves it.
         const below = parseRasterImage(sprinkled(size), { colors: 4, detail: DETAIL_MAX - 10 });
 
         expect(atTop.droppedColors).toBe(1);
         expect(atTop.capped).toBe(false);
         expect(atTop.detailLowersFloor).toBe(false);
+        expect(atTop.floorReason).toBe('noise');
         expect(rasterLostColors(atTop)).toBe(false);
-        // No placement holds this floor up, so a bigger size is no answer either.
-        expect(rasterColorLossNotice('a.png', atTop)).toBeNull();
+        // No placement holds this floor up, so neither Detail nor a bigger size is offered.
+        expect(rasterColorLossNotice('a.png', atTop)).toBe(
+          rasterFullDetailColorLossMessage('a.png', 1),
+        );
 
         expect(below.droppedColors).toBe(1);
         expect(below.detailLowersFloor).toBe(true);
         expect(rasterLostColors(below)).toBe(true);
+        expect(rasterColorLossNotice('a.png', below)).toBe(rasterColorLossMessage('a.png', 1));
       }
+
+      // Raising Detail 90 → 95 on 384px swaps the notice rather than retracting it, with the color
+      // still gone: a retraction there read as fixed.
+      const spent = parseRasterImage(sprinkled(384), { colors: 4, detail: DETAIL_MAX - 5 });
+      expect(spent.droppedColors).toBe(1);
+      expect(spent.detailLowersFloor).toBe(false);
+      expect(rasterColorLossNotice('a.png', spent)).toBe(
+        rasterFullDetailColorLossMessage('a.png', 1),
+      );
+
+      expect(rasterFullDetailColorLossMessage('a.png', 1)).toBe(
+        '1 color in "a.png" was dropped. Its pieces are too small to trace, even at full Detail.',
+      );
+      expect(rasterFullDetailColorLossMessage('a.png', 2)).toBe(
+        '2 colors in "a.png" were dropped. Their pieces are too small to trace, even at full Detail.',
+      );
     });
 
     it('names one dropped color in the singular and more in the plural', () => {
