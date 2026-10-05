@@ -721,6 +721,31 @@ describe('buildAssemblyGeometry', () => {
   );
 
   it(
+    "takes a generated part's face and shrink from its input, not from live state",
+    { timeout: 30000 },
+    async () => {
+      // The caller reads them off state (kinds.ts) because the build may run in a worker that has
+      // none. Same canvas as above, but a 30mm stand-in face and a 0.5 shrink: 1.5mm per unit.
+      const parsed: ParsedSVG = {
+        ...redSquareParsed(),
+        viewBox: { w: 20, h: 20 },
+        canvas: { w: 20, h: 20 },
+      };
+      const built = (await buildAssemblyGeometry(
+        baseInput({
+          designFit: 'rect',
+          parsed,
+          designFaceOverride: { w: 30, h: 30 },
+          generatedFit: 0.5,
+        }),
+      ))!;
+      const r = xzRange(built.partOutputs[0].inlaySoups[0]);
+      expect(r.maxX - r.minX).toBeCloseTo(7.5, 4);
+      expect(r.maxZ - r.minZ).toBeCloseTo(7.5, 4);
+    },
+  );
+
+  it(
     'rect designFit reports no size verdict until a part has loaded',
     { timeout: 30000 },
     async () => {

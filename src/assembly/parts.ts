@@ -98,7 +98,7 @@ export async function asmLoadFullAssembly({ quiet = false } = {}): Promise<Assem
     return 'skipped';
   state.assembly.parts = [];
   const myParts = state.assembly.parts;
-  showOverlay(`Loading ${kind.name}…`);
+  const curtain = showOverlay(`Loading ${kind.name}…`);
   let outcome: 'loaded' | 'failed' = 'loaded';
   try {
     const variantId = currentVariantId();
@@ -110,9 +110,10 @@ export async function asmLoadFullAssembly({ quiet = false } = {}): Promise<Assem
         !!entry && !(await asmLoadLibraryEntryIntoPart(primary, entry, { quiet }));
       if (primaryFailed) outcome = 'failed';
       // A kind switch mid-await replaced the list; stop before pushing into it. The newer load
-      // owns the overlay and final refresh.
+      // owns the final refresh, and its own curtain.
       if (state.assembly.parts !== myParts) {
         abandonedLists.add(myParts);
+        hideOverlay(curtain);
         return 'superseded';
       }
       // A copy clones its primary's mesh, so a failed primary's copies would have none.
@@ -129,7 +130,7 @@ export async function asmLoadFullAssembly({ quiet = false } = {}): Promise<Assem
     if (!quiet) await alertDialog('Failed to load the assembly: ' + (e as Error).message);
   }
   notifyPartsChanged();
-  hideOverlay();
+  hideOverlay(curtain);
   scheduleRebuild();
   return outcome;
 }
@@ -156,7 +157,7 @@ export async function switchChairVariant(variantId: string): Promise<void> {
     (p) => !variantRoles.some((r) => r.id === p.roleId),
   );
   notifyPartsChanged();
-  showOverlay('Loading caster mounts…');
+  const curtain = showOverlay('Loading caster mounts…');
   try {
     for (const role of variantRoles) {
       const partId = roleLibraryPartId(role, variantId);
@@ -169,7 +170,7 @@ export async function switchChairVariant(variantId: string): Promise<void> {
     await alertDialog('Failed to load the caster mounts: ' + (e as Error).message);
   }
   notifyPartsChanged();
-  hideOverlay();
+  hideOverlay(curtain);
   scheduleRebuild();
   track('chair_variant_selected', { variant: variantId });
 }

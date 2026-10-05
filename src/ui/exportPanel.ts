@@ -1,6 +1,7 @@
 import { baseColorHex, state } from '../state/store';
 import { nearestFilamentName } from '../state/filaments';
-import { getLastAssemblyBuild } from '../app/rebuild';
+import { getLastAssemblyBuild, holdExport, isExportReady } from '../app/rebuild';
+import { whenIdle } from '../app/idle';
 import { asmPartFaceNormal, shippedColorIndices } from '../geometry/assembly';
 import {
   build3MFCombined,
@@ -75,7 +76,7 @@ export function renderExportSummary(): void {
   const el = document.querySelector<HTMLElement>('#export-summary');
   if (!el) return;
   // Tied to the button, not the last build: the rebuild doesn't clear `lastAssemblyBuild` when artwork is removed, which left "13 parts · 11 plates" beside an export button that rebuild had just disabled.
-  if ($<HTMLButtonElement>('#btn-export').disabled) {
+  if (!isExportReady()) {
     el.hidden = true;
     return;
   }
@@ -238,7 +239,7 @@ export async function exportPrintReady3MF(): Promise<void> {
 
   // the color list posts this live; re-run against the export's own material count, the authoritative one
   refreshSlotBudgetNotice(materials.length);
-  showOverlay('Exporting print-ready 3MF…');
+  const curtain = showOverlay('Exporting print-ready 3MF…');
   await new Promise((r) => setTimeout(r, 10));
   try {
     const printer = getPrinter(state.printerId);
@@ -262,28 +263,29 @@ export async function exportPrintReady3MF(): Promise<void> {
   }
   // outside the try: the per-part messages above were emitted before it, so a failed build still has to render them rather than leave the previous attempt's pills
   renderWarnings();
-  hideOverlay();
+  hideOverlay(curtain);
 }
 
 /**
  * Guards the export button against re-entrancy. Confirmed live (5 rapid clicks on #btn-export): it
  * had no guard, and every click ran its own full export and download. The flag is the guard,
- * checked before the export starts; the `disabled` toggle is only a visual affordance — rebuild.ts
- * owns #btn-export's disabled state otherwise, and forcing it back to enabled would fight that when
- * an export raced a rebuild.
+ * checked before the export starts. The button is held off from the click to the end (holdExport),
+ * so a rebuild finishing during the wait can't re-enable a button whose clicks would be ignored.
  */
 let exporting = false;
 
-async function guardExport(btn: HTMLButtonElement, run: () => Promise<void>): Promise<void> {
+async function guardExport(run: () => Promise<void>): Promise<void> {
   if (exporting) return;
   exporting = true;
-  const wasDisabled = btn.disabled;
-  btn.disabled = true;
+  holdExport(true);
   try {
-    await run();
+    // A rebuild in flight would pair the last build's meshes with settings already changed (body
+    // colour, kind, part angles). After it, they agree, or the build failed and there's no export.
+    await whenIdle();
+    if (isExportReady()) await run();
   } finally {
     exporting = false;
-    btn.disabled = wasDisabled;
+    holdExport(false);
   }
 }
 
@@ -303,5 +305,5 @@ export function initExportPanel(): void {
     schedulePersist();
   });
   const exportBtn = $<HTMLButtonElement>('#btn-export');
-  exportBtn.addEventListener('click', () => void guardExport(exportBtn, exportPrintReady3MF));
+  exportBtn.addEventListener('click', () => void guardExport(exportPrintReady3MF));
 }

@@ -22,6 +22,18 @@ export function armCancel(): void {
 
 export function requestCancel(): void {
   cancelled = true;
+  onRequest?.();
+}
+
+let onRequest: (() => void) | null = null;
+
+/**
+ * Called the moment a cancel is requested, for work that can't poll the flag. A build in the worker
+ * (app/buildClient.ts) is answered from here at once; the worker itself still stops at the
+ * throwIfCancelled sites, which keeps its caches. One listener; null clears.
+ */
+export function onCancelRequested(fn: (() => void) | null): void {
+  onRequest = fn;
 }
 
 export function cancelRequested(): boolean {

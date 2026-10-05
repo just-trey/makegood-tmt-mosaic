@@ -7,6 +7,7 @@ import {
   manifoldDelete,
   manifoldIsValid,
   manifoldToMeshes,
+  noteEngineError,
   soupToManifold,
   type ManifoldAPI,
   type ManifoldSolid,
@@ -688,7 +689,8 @@ export class ConformalZoneMapper implements ZoneMapper {
       if (outside) return 'outside';
       if (!manifoldIsValid(warped)) return null;
       return manifoldToMeshes(warped).soup;
-    } catch {
+    } catch (e) {
+      noteEngineError(e);
       return outside ? 'outside' : null;
     } finally {
       manifoldDelete(warped);

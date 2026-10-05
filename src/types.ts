@@ -21,7 +21,7 @@ export interface SVGShape {
 }
 
 export interface ParsedSVG {
-  /** Immutable once parsed: regions.ts memoizes computeNetRegionsByColor on its identity. */
+  /** Immutable once parsed: regions.ts memoizes computeNetRegionsByColor on its identity, which buildWire.ts carries into the worker. */
   shapes: SVGShape[];
   bbox: { minX: number; minY: number; maxX: number; maxY: number };
   /** Largest <circle> in the document, assembly mode's design-boundary anchor. */

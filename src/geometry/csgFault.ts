@@ -22,10 +22,9 @@ const POINTS: readonly CsgFaultPoint[] = [
 
 let announcement: string | null = null;
 
-function armed(): { point: CsgFaultPoint; limit: number } | null {
-  // Tests and the bake scripts run in node, where there is no location to read.
-  if (typeof location === 'undefined') return null;
-  const raw = new URLSearchParams(location.search).get('csgfault');
+function armed(search: string): { point: CsgFaultPoint; limit: number } | null {
+  announcement = null;
+  const raw = new URLSearchParams(search).get('csgfault');
   if (!raw) return null;
   const [name, count] = raw.split(':');
   const point = POINTS.find((p) => p === name);
@@ -45,8 +44,18 @@ function armed(): { point: CsgFaultPoint; limit: number } | null {
   return { point, limit };
 }
 
-const fault = armed();
+// Tests and the bake scripts run in node, where there is no location to read.
+let fault = armed(typeof location === 'undefined' ? '' : location.search);
 let fired = 0;
+
+/**
+ * Re-arm from the page's query string. The build worker's own `location` is its script URL, so the
+ * page hands its `location.search` over (app/buildClient.ts).
+ */
+export function armCsgFaults(search: string): void {
+  fault = armed(search);
+  fired = 0;
+}
 
 /**
  * (Re-)state the armed notice; warn() dedupes, so per build is free. Re-emitted, not pushed once at

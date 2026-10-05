@@ -5,6 +5,8 @@ import type { AssemblyPart, AssemblyPartOutput } from '../src/types';
 
 vi.mock('../src/app/rebuild', () => ({
   getLastAssemblyBuild: vi.fn(),
+  isExportReady: vi.fn(() => true),
+  holdExport: vi.fn(),
 }));
 vi.mock('../src/geometry/assembly', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/geometry/assembly')>()),
@@ -34,10 +36,11 @@ vi.mock('../src/analytics/track', () => ({
   track: vi.fn(),
 }));
 
-import { exportPrintReady3MF } from '../src/ui/exportPanel';
+import { exportPrintReady3MF, initExportPanel } from '../src/ui/exportPanel';
+import { beginWork, endWork } from '../src/app/idle';
 import { refreshSlotBudgetNotice, SLOT_PILL_SUFFIX } from '../src/ui/slotBudget';
 import { getPrinter } from '../src/export/printers';
-import { getLastAssemblyBuild } from '../src/app/rebuild';
+import { getLastAssemblyBuild, holdExport, isExportReady } from '../src/app/rebuild';
 import { build3MFCombined } from '../src/export/threemf';
 import { track } from '../src/analytics/track';
 import { state } from '../src/state/store';
@@ -261,5 +264,47 @@ describe('exportPrintReady3MF — palette colors with no inlay on any part', () 
     await exportPrintReady3MF();
 
     expect(WARNINGS.filter((w) => w.message.endsWith(SLOT_PILL_SUFFIX))).toEqual([]);
+  });
+});
+
+// The page stays responsive during a build (the worker), so Export can be clicked mid-rebuild.
+describe('the Export button during a rebuild', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 20));
+  let btn: HTMLButtonElement;
+
+  beforeAll(() => {
+    document.body.innerHTML =
+      '<select id="p-printer"><option value="p1">p1</option></select><button id="btn-export"></button>';
+    initExportPanel();
+    btn = document.querySelector<HTMLButtonElement>('#btn-export')!;
+  });
+
+  beforeEach(() => {
+    vi.mocked(isExportReady).mockReturnValue(true);
+    vi.mocked(holdExport).mockClear();
+    buildWithPalette(1);
+  });
+
+  it('waits for the build in flight, holding the button off from the click to the end', async () => {
+    beginWork();
+    btn.click();
+    await flush();
+    expect(build3MFCombined).not.toHaveBeenCalled();
+    expect(vi.mocked(holdExport).mock.calls).toEqual([[true]]);
+    endWork();
+    await flush();
+    expect(build3MFCombined).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(holdExport).mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('exports nothing if that build was cancelled', async () => {
+    beginWork();
+    btn.click();
+    await flush();
+    vi.mocked(isExportReady).mockReturnValue(false);
+    endWork();
+    await flush();
+    expect(build3MFCombined).not.toHaveBeenCalled();
+    expect(vi.mocked(holdExport).mock.calls).toEqual([[true], [false]]);
   });
 });

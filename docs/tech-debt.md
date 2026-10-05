@@ -133,7 +133,12 @@ SVG**, 1.5-2.9x across the corpus, per-color areas unchanged (0.000% worst relat
   calling the engine directly lands within 3% of one calling Turf on every corpus file. The win came
   from n-ary sweeps. `cleanFeature` re-scrubbing costs nothing: skipping it measured 1.02-1.06x, 5-7% of
   the pass, with 93-95% inside the engine.
-- **Still open**: the Web Worker lead (doesn't reduce compute, makes the wait invisible).
+- **Worker landed**: the build runs off the page's thread. Compute is unchanged
+  (`npm run build && MOSAIC_GPU=1 node scripts/bench-zone-rebuild.mjs`: 48.6s on 5c7f898 vs
+  48.4s, summed medians of its 20 rows). On a chair rebuild the longest
+  main-thread stall while computing went from 720-784ms to 26-41ms, and Cancel from 410-532ms to
+  16-27ms (`npm run build && MOSAIC_GPU=1 node scripts/check-rebuild-worker.mjs`, checks (a) and (b);
+  "before" is 5c7f898).
 - **Measured dead end**: bbox pre-filtered per-shape diffs, ~2x SLOWER than the accumulator on real
   artwork (full-canvas backgrounds overlap everything). See the comment on `computeNetRegionsByColor`.
 - **Do not "improve" `COVERED_BATCH` by raising it.** Never folding the accumulator is fastest on a
@@ -155,13 +160,13 @@ inside a 900s timeout.
   [2026-08-30 tile-union ceiling](findings/2026-08-30-tile-union-ceiling.md)). With the thinned asset
   the single-zone case measures **93.6s**, against **468.7s** re-measured on the old one. It does
   _more_ work, 2.07M triangles against 853k, because the old asset's tile union was failing and falling
-  back to unmerged shapes. 93.6s is still not interactive, so the path wants the accumulator or worker
-  fix. Re-measure before quoting 405.6s as the pipeline's cost. The "All zones" >900s result has not
+  back to unmerged shapes. 93.6s is still not interactive, so the path wants the accumulator fix, or a
+  decision that the wait is acceptable now it neither freezes the page nor resists Cancel. Re-measure before quoting 405.6s as the pipeline's cost. The "All zones" >900s result has not
   been re-measured.
 - **Withheld from users, 2026-08-05.** The chair-body kind carries `withholdFill` (`src/types.ts`), so
   Fill and the pattern strip are not offered on it and no user can reach these numbers. The kind itself
   is in the Part dropdown. This is a gate, not a fix: the path is unchanged. Clearing the flag needs the
-  accumulator-or-worker fix. Sticker on the chair is unaffected, measured at 19.5s for a full five-zone
+  accumulator fix, or a decision that a 93.6s wait is acceptable now it runs in the worker. Sticker on the chair is unaffected, measured at 19.5s for a full five-zone
   rebuild on the same box, which is why only Fill was withheld.
 - **Don't quote that 19.5s without the design size.** It used a design covering the zones.
   [docs/findings/2026-08-08-zone-rebuild-cost.md](findings/2026-08-08-zone-rebuild-cost.md) reproduces it at 400% (17.0s) and
@@ -254,7 +259,7 @@ carries `withholdFill: true`, so `artworkListPanel` never renders that select an
   prime tower sees real swaps. Sticker on one zone isn't that.
 - Closing it means either `withholdFill` coming off, or a different way to put several colours on every
   part.
-- Clearing `withholdFill` needs the accumulator-or-worker fix in "Rebuild performance needs ongoing
+- Clearing `withholdFill` needs the accumulator fix, or a decision on the wait, in "Rebuild performance needs ongoing
   work" (above). Nothing else in this file blocks it.
 
 ## The pattern library is still switched off, and nothing measured blocks it
@@ -880,3 +885,22 @@ cut to equal shares can read 1.0% / 0.2% / 0.0% instead of roughly a third each.
 - **Closing it** means weighting `inlaySoups[ci]`'s triangles by their own area (or projecting to the
   flat design and reusing `planarArea`) instead of counting them, in the `colorListEntries` loop around
   `src/app/rebuild.ts:606-626`.
+
+## The page still stalls around a rebuild, outside the worker
+
+The build no longer blocks the page, which makes the stalls left on the main thread stand out.
+Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-rebuild-worker.mjs`
+(chair, 1.27M triangles, its "gaps over 50ms" line) unless marked otherwise.
+
+- **Drawing the result**: a 686-759ms gap as the result is drawn (`bufferGeometryFromTris`, `Box3`, GPU
+  upload, shader compile); 792-800ms on 5c7f898, so the worker didn't change it. `newModelGroup`
+  disposes materials, which releases three's programs, so every rebuild recompiles shaders; that
+  share is **unmeasured**. Reusing materials would cut it.
+- **Autosave, probably**: a 321-477ms gap about 0.7s after the curtain drops, when `saveSession` fires (1s
+  after the rebuild's tail). Attributed by timing, not profiled.
+- **A hubcap session loads Manifold twice**: hubcap generation (`asmRebuildGeneratedParts` →
+  `getManifold`) still runs on the page, the build in the worker.
+- **The worker keeps a copy of each part's mesh and zone charts** (`BUILD_PART_FIELDS`). Memory cost
+  unmeasured.
+- **Fill tiling has no cancel check.** The page no longer waits on it; the worker is terminated after
+  `CANCEL_GRACE_MS` (1s) instead.
