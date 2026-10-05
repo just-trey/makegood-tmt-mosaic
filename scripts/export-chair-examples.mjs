@@ -10,10 +10,10 @@
 // It drives the real app rather than calling build3MFCombined directly, on purpose: the point is to
 // verify what users will actually get, geometry and all, not what the exporter does in isolation.
 //
-// The artwork is a plain 3-color tile in Fill mode across all zones. Three is the number that
-// matters: body + 3 = 4 filaments, which is an A1's AMS Lite and a U1's four toolheads, and it puts
-// every one of them on every zoned part so no plate's tower is sized for fewer swaps than it will
-// really see.
+// The artwork is 3-color diagonal stripes as a Sticker on all zones (the chair withholds Fill, so
+// there is no mode to set). Three is the number that matters: body + 3 = 4 filaments, which is an
+// A1's AMS Lite and a U1's four toolheads, and it puts every one of them on every zoned part so no
+// plate's tower is sized for fewer swaps than it will really see.
 //
 // Usage:
 //   npm run build && node scripts/export-chair-examples.mjs [outDir]
@@ -34,15 +34,47 @@ const TARGETS = [
 const VARIANTS = ['standard', 'kit'];
 
 /**
- * A 3-color tile. Deliberately blocky: broad flat regions survive the conformal warp onto every
- * zone at any scale, so each part reliably ends up carrying all three colors. A detailed motif
- * would leave the smaller parts single-color and understate their tower.
+ * Diagonal 3-color stripes, sized in mm so a zone maps it 1:1 (an SVG with no mm size is auto-fit
+ * to the whole zone instead, and each stripe then spans a quarter of a zone: the storage boxes saw
+ * one or two colors). 30mm stripes cross every zone, the 44mm-wide fenders and the storage boxes
+ * on the flanks included; a horizontal stripe can miss a narrow part entirely.
  */
-const TEST_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60">
-  <rect x="0" y="0" width="60" height="20" fill="#c1272d"/>
-  <rect x="0" y="20" width="60" height="20" fill="#f5d020"/>
-  <rect x="0" y="40" width="60" height="20" fill="#1e5fa8"/>
-</svg>`;
+const STRIPE_COLORS = ['#c1272d', '#f5d020', '#1e5fa8'];
+const SIZE_MM = 700; // bigger than the largest zone (642 x 509), which centers the SVG on its chart
+const STRIPE_MM = 30;
+
+/** The part of SIZE_MM's square where lo <= x + y <= hi, as an SVG polygon. */
+function stripe(lo, hi, fill) {
+  let poly = [
+    [0, 0],
+    [SIZE_MM, 0],
+    [SIZE_MM, SIZE_MM],
+    [0, SIZE_MM],
+  ];
+  const keep = (f) => {
+    poly = poly.flatMap((p, i) => {
+      const q = poly[(i + 1) % poly.length];
+      const [fp, fq] = [f(p), f(q)];
+      const cut =
+        fp >= 0 !== fq >= 0
+          ? [[p[0] + (fp / (fp - fq)) * (q[0] - p[0]), p[1] + (fp / (fp - fq)) * (q[1] - p[1])]]
+          : [];
+      return fp >= 0 ? [p, ...cut] : cut;
+    });
+  };
+  keep(([x, y]) => x + y - lo);
+  keep(([x, y]) => hi - (x + y));
+  return poly.length > 2
+    ? `<polygon points="${poly.map((p) => p.join(',')).join(' ')}" fill="${fill}"/>`
+    : '';
+}
+
+const TEST_SVG =
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE_MM}mm" height="${SIZE_MM}mm" viewBox="0 0 ${SIZE_MM} ${SIZE_MM}">` +
+  Array.from({ length: Math.ceil((2 * SIZE_MM) / STRIPE_MM) }, (_, k) =>
+    stripe(k * STRIPE_MM, (k + 1) * STRIPE_MM, STRIPE_COLORS[k % 3]),
+  ).join('') +
+  '</svg>';
 
 /**
  * wipe_tower_x/y is the tower's front-left corner (both reference files put one at x = 15 on a
@@ -147,7 +179,7 @@ try {
       // the caster pair swaps to the other variant's meshes; wait for them back before any artwork
       await allPartsLoaded();
 
-      console.log('  loading the 3-color test artwork (all zones, fill)…');
+      console.log('  loading the 3-color test artwork (all zones)…');
       await afterRebuild(page, async () => {
         await page.setInputFiles('#svg-input', svgPath);
         await page.waitForSelector('#artwork-list .artwork-row', { timeout: 120_000 });
@@ -158,17 +190,15 @@ try {
       // you open it and find ten single-filament plates with no tower to place.
       await afterRebuild(page, async () => {
         await page.selectOption('#artwork-list .artwork-row .artwork-zone', '');
-        await page.selectOption('#artwork-list .artwork-row .artwork-mode', 'fill');
       });
 
-      const bound = await page.$eval('#artwork-list .artwork-row', (r) => ({
-        zone: r.querySelector('.artwork-zone')?.value,
-        mode: r.querySelector('.artwork-mode')?.value,
-      }));
-      if (bound.zone !== '' || bound.mode !== 'fill')
-        throw new Error(`artwork did not bind: zone=${bound.zone} mode=${bound.mode}`);
+      const zone = await page.$eval(
+        '#artwork-list .artwork-row .artwork-zone',
+        (el) => /** @type {HTMLSelectElement} */ (el).value,
+      );
+      if (zone !== '') throw new Error(`artwork did not bind to all zones: zone=${zone}`);
       const colors = await page.textContent('#stat-colors');
-      console.log(`  zone=all mode=fill, colors detected: ${colors}`);
+      console.log(`  zone=all, colors detected: ${colors}`);
 
       console.log(`  printer: ${printerId}`);
       await page.selectOption('#p-printer', printerId);
@@ -196,13 +226,15 @@ try {
             `${p.parts.join(' + ')}${flag}`,
         );
       });
-      // The caster mounts carry no design zones, so their plate is legitimately body-only. Any
-      // other single-filament plate means the artwork didn't reach it.
-      const bare = summary.plates.filter(
-        (p) => p.filaments < 2 && !p.parts.every((n) => n.startsWith('Caster')),
-      );
-      if (bare.length) {
-        console.log(`  FAILED: ${bare.length} plate(s) came out body-only — artwork didn't reach`);
+      // The caster mounts and the seat pan are in no design zone, so their plates are legitimately
+      // body-only. Every other plate must carry body + all three colors, or its tower is sized
+      // for fewer swaps than a real print sees.
+      const zoneless = (n) => n.startsWith('Caster') || n === 'Seat center';
+      const short = summary.plates.filter((p) => p.filaments < 4 && !p.parts.every(zoneless));
+      if (short.length) {
+        console.log(
+          `  FAILED: ${short.length} plate(s) carry fewer than 4 filaments — artwork didn't reach`,
+        );
         process.exitCode = 1;
       }
       if (offBed.length) {
