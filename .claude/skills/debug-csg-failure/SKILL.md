@@ -28,7 +28,7 @@ Two strings look alike and aren't:
   in the SVG. No `?csgfault` point forces this branch; drive it with a
   self-touching region. Path-cleaning at the source (Illustrator or Inkscape
   **Path → Union**) is the real fix.
-- **"Couldn't measure the fill area on …"** is not a boolean failure, despite
+- **"Couldn't measure the area to fill on …"** is not a boolean failure, despite
   sitting in the same family. It is `fillExtent()` returning nothing, and it
   degrades to a single copy of the artwork. Don't chase it into Manifold.
 

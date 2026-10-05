@@ -77,13 +77,13 @@ const n2 = (v) => Number(v.toFixed(2));
 // ---------------------------------------------------------------------------
 // Shared by every `designFit: 'rect'` part (footrest): extract the +Y design face's
 // holes and place them in the template's coordinate frame. Derivation of the inverse mapping (see
-// src/geometry/assembly.ts placeOnPart, rect designFit, +Y-facing part, defaults):
+// src/geometry/zones.ts FlatZoneMapper.placer, rect designFit, +Y-facing part, defaults):
 //   x = -(ptx - bboxCx) + faceCx ,  z = -(pty - bboxCy) + faceCz
 // so  ptx = bboxCx - (x - faceCx) ,  pty = bboxCy - (z - faceCz)
 // The template canvas spans the face 1:1 in mm, so its bbox center (bboxCx, bboxCy) is the canvas
 // center. faceC = center of the outer boundary loop bbox in native (x, z) — exactly what the app
 // uses as the face center. Only handles a +Y-pointing design face: every rect part shipped so far
-// (footrest) auto-detects onto one, per placeOnPart's nsign>0 branch.
+// (footrest) auto-detects onto one, per placer's nsign>0 branch.
 // ---------------------------------------------------------------------------
 
 /**
@@ -142,8 +142,8 @@ async function genRectTemplate({
     idx = 0; // no preferFaceNormal: the app takes the largest-area patch
   }
   const face = patches[idx];
-  // The toTpl mapping below is derived only for a +Y-facing design face (placeOnPart's nsign>0
-  // branch). If the app's own selection just landed on a non-+Y patch, the template would be for a
+  // The toTpl mapping below is derived only for a +Y-facing design face (FlatZoneMapper.placer's
+  // nsign>0 branch). If the app's own selection just landed on a non-+Y patch, the template would be for a
   // face the app never cuts — fail loudly rather than ship that mismatch.
   if (!(face.normal[1] > 0.9))
     throw new Error(
