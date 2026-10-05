@@ -50,7 +50,8 @@ scripts/measure-clip-ink.test.ts`.
 ### Fixed
 
 - **A drag that starts on a placement corner handle always resizes.** Where
-  the rotate handle was drawn over a corner, the drag rotated instead. Each
+  the rotate handle overlapped a corner, a drag there rotated instead. The
+  rest of the rotate handle is unchanged. Each
   drag start now picks one thing: a corner, else the rotate handle, else the
   frame body.
 - **A design on the chair's Left side no longer cuts a stray mark.** It cut a

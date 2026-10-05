@@ -334,8 +334,8 @@ function onPointerDown(e: PointerEvent): void {
   raycaster.setFromCamera(pointerToNDC(e), getCamera());
 
   // One affordance per drag start (convention 14): a corner owns drags that start on it, the
-  // rotate handle only where it is drawn clear of the corners, the frame body the rest. A pick
-  // on both resolves to the corner so scale never silently becomes rotate.
+  // rotate handle only the drags that start on it and not on a corner, the frame body the rest.
+  // A pick on both resolves to the corner so scale never silently becomes rotate.
   let mode: DragMode | null = null;
   if (raycaster.intersectObjects(cornerHandles, false).length) mode = 'scale';
   else if (raycaster.intersectObject(rotateHandle, false).length) mode = 'rotate';
