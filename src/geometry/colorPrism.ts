@@ -116,7 +116,7 @@ export async function buildColorPrism(
   tally: BuildTally,
   cut: PartCut,
   zone: ZoneTarget,
-  design: DesignOnZone,
+  onZone: DesignOnZone,
   ci: number,
 ): Promise<void> {
   const { artworks, featuresByColor, colorSettings, globalDepth, wasm } = ctx;
@@ -133,7 +133,7 @@ export async function buildColorPrism(
   } = tally;
   const { part, held, colorPrisms, partEdgeColors } = cut;
   const { mapper, boundaryPoly, zoneName } = zone;
-  const { ai, place, half, netExcl, fills, under } = design;
+  const { ai, place, half, netExcl, fills, under } = onZone;
   const c = ctx.palette[ci];
   const tiled = fills ? fills[ci] : featuresByColor[ci][ai];
   if (!tiled) return;
