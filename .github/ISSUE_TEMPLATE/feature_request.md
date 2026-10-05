@@ -16,6 +16,5 @@ What you'd want to happen.
 Any alternative solutions or workarounds you've tried.
 
 **Additional context**
-Check the [Roadmap ideas](../../README.md#roadmap-ideas-not-built) section of
-the README first — your idea may already be a known direction, in which case
-say so and add anything you'd like to add to it.
+Check the [roadmap](../../docs/roadmap.md) first — your idea may already be a
+known direction, in which case say so and add anything you'd like to add to it.

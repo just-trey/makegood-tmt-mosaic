@@ -28,7 +28,9 @@ done" are different claims.
 
 ## 1. Run the gates
 
-Run these together, in the background, and wait for the notification:
+Run these together, in the background, and wait for the notification. A
+fix-campaign worker runs them in the foreground with a 600000 timeout instead:
+background waits stalled 3 of 5 and 3 of 4 workers (fix-campaign §1).
 
 ```bash
 npm run lint && npm run format:check && npm run check:copy && npm run check:troubleshooting && npm run check:comments && npm run typecheck && npm run test:coverage && npm run smoke
