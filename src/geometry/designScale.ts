@@ -115,8 +115,8 @@ export function designAnchor(
  *
  * Known limit, harmless today: one scale for the whole assembly, while `FlatZoneMapper.placer`
  * centres on each part's own face. The footrest has one face; a rect kind mixing face sizes would
- * crop oversized artwork on the smaller faces. A fix must keep `designMmPerUnit`'s two callers (build
- * and gizmo) agreeing, since that is what makes the selection frame match the cut.
+ * crop oversized artwork on the smaller faces. A fix must keep `designMmPerUnit`'s two callers
+ * (build and gizmo) agreeing, since that is what makes the selection frame match the cut.
  */
 export function memoLargestDesignFace(
   parts: AssemblyPart[],
