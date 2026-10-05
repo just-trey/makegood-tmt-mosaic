@@ -658,10 +658,10 @@ describe('assembly mode with artwork', () => {
           {
             part: asmPart(),
             bodySoup: tri(),
-            // 3 triangles of colour 0, 1 of colour 1
+            // 3:1 in area
             inlaySoups: {
-              0: new Float32Array(27),
-              1: new Float32Array(9),
+              0: new Float32Array([...tri(), ...tri(), ...tri()]),
+              1: new Float32Array(tri()),
             },
           },
         ] as AssemblyBuild['partOutputs'],
@@ -678,6 +678,50 @@ describe('assembly mode with artwork', () => {
     expect(entries!.map((e) => e.color)).toEqual(['#ff0000', '#00ff00']);
     expect(entries![0].areaPct).toBeCloseTo(75, 6);
     expect(entries![1].areaPct).toBeCloseTo(25, 6);
+  });
+
+  it('weights each color by its cap area, not its triangle count or its Y footprint', async () => {
+    // Three equal 10x10 bands (cap + back face) with the same wall area but 102 / 260 / 120
+    // triangles. The last lies in the YZ plane: a zone wrapping a sideways face has no XZ footprint.
+    const quad = (n: number, y: number, axis: 'xz' | 'yz'): number[] => {
+      const out: number[] = [];
+      const w = 10 / n;
+      const p = (a: number, b: number): number[] => (axis === 'xz' ? [a, y, b] : [y, a, b]);
+      for (let i = 0; i < n; i++) {
+        const a = i * w;
+        out.push(...p(a, 0), ...p(a + w, 0), ...p(a + w, 10));
+        out.push(...p(a, 0), ...p(a + w, 10), ...p(a, 10));
+      }
+      return out;
+    };
+    const wall = (): number[] => {
+      const out: number[] = [];
+      for (let i = 0; i < 50; i++) out.push(0, 0, i, 0, 1, i, 0, 1, i + 1);
+      return out;
+    };
+    const band = (n: number, axis: 'xz' | 'yz'): Float32Array =>
+      new Float32Array([...quad(n, 0, axis), ...quad(n, -1, axis), ...wall()]);
+    vi.mocked(buildAssemblyGeometry).mockResolvedValue(
+      assemblyBuild({
+        partOutputs: [
+          {
+            part: asmPart(),
+            bodySoup: tri(),
+            inlaySoups: { 0: band(1, 'xz'), 1: band(40, 'xz'), 2: band(5, 'yz') },
+          },
+        ] as AssemblyBuild['partOutputs'],
+        palette: [
+          { hex: '#ff0000', key: '#ff0000', members: ['#ff0000'], isMerge: false },
+          { hex: '#00ff00', key: '#00ff00', members: ['#00ff00'], isMerge: false },
+          { hex: '#0000ff', key: '#0000ff', members: ['#0000ff'], isMerge: false },
+        ],
+      }),
+    );
+
+    await rebuildCurrent();
+
+    const [entries] = vi.mocked(renderColorList).mock.calls.at(-1)!;
+    for (const e of entries!) expect(e.areaPct).toBeCloseTo(100 / 3, 6);
   });
 
   it('drops a palette color with no inlay area anywhere, so it costs no filament slot', async () => {

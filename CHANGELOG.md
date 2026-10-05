@@ -59,6 +59,9 @@ scripts/measure-clip-ink.test.ts`.
   on the new choice and rendered and exported without that mount. The switch
   is now undone, the old mounts come back, and the message names the file that
   failed.
+- **The assembly color list's percentages are now each color's surface area, not
+  its triangle count.** Three equal sticker bands used to read 1.0% / 0.2% /
+  0.0% depending on boundary complexity; they now read a third each.
 - **A design on the chair's Left side no longer cuts a stray mark.** It cut a
   thin 1 x 32mm mark on Wheel mount (left), past the edge of the part's
   surface. On the 12 chair pieces a wheel or cushion partly hides, the area a
