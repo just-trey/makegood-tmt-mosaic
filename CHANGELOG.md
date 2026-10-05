@@ -28,7 +28,7 @@ scripts/measure-clip-ink.test.ts`.
 
 - **The app stays responsive while it cuts a design.** Cutting runs in a
   background worker, so the 3D view keeps turning and the panels keep working
-  during a long rebuild. Cancel stops it at once: 16-19ms from click to
+  during a long rebuild. Cancel stops it at once: 16-27ms from click to
   curtain gone on the chair, down from 410-532ms
   (`MOSAIC_GPU=1 node scripts/check-rebuild-worker.mjs`). The last result
   stays on screen with Export off, instead of the bare parts. Export clicked
