@@ -3,6 +3,7 @@ import { journalLength, journalSince, replayWarnings, type WarningCall } from '.
 import {
   mergePartTally,
   newPartTally,
+  partFacts,
   type BuildContext,
   type BuildTally,
   type CrossPartState,
@@ -11,7 +12,6 @@ import {
 } from './buildContext';
 import { BUILD_PART_FIELDS } from './buildWire';
 import { csgFaultArmed } from './csgFault';
-import { requestedDepth } from './depth';
 import { engineTrapCount } from './manifold';
 import { artworksOnZone } from './partBuild';
 import type { ZoneMapper } from './zones';
@@ -137,6 +137,41 @@ function partFields(part: AssemblyPart): string {
 }
 
 /**
+ * How each BuildContext field reaches the key: once per build, per design the part carries, or
+ * neither, with the reason. A field added to BuildContext doesn't compile until it is named here.
+ */
+const CONTEXT_KEY: {
+  [K in keyof BuildContext]-?:
+    | { build: (ctx: BuildContext) => unknown }
+    | { design: (ctx: BuildContext, ai: number) => unknown }
+    | { neither: string };
+} = {
+  artworks: {
+    design: (ctx, ai) => {
+      const { parsed, ...fields } = ctx.artworks[ai];
+      return { parsed: ident(parsed), fields };
+    },
+  },
+  palette: { build: (ctx) => ctx.palette },
+  // A content hash, not an input list: derived from every artwork and the merge settings, so a
+  // derivation added later can't miss the key.
+  featuresByColor: {
+    design: (ctx, ai) => ctx.featuresByColor.map((perArtwork) => featureHash(perArtwork[ai])),
+  },
+  placements: { design: (ctx, ai) => ctx.placements[ai] },
+  // Read only by a fill's refusal message; computed here only where it would be read.
+  maxScalePlacement: {
+    design: (ctx, ai) => (ctx.artworks[ai].mode === 'fill' ? ctx.maxScalePlacement(ai) : null),
+  },
+  tileCells: { design: (ctx, ai) => ctx.tileCells[ai] },
+  tileVerts: { design: (ctx, ai) => ctx.tileVerts[ai] },
+  // Whole entries for the palette's colors, so a field added to one is keyed with it.
+  colorSettings: { build: (ctx) => ctx.palette.map((c) => ctx.colorSettings[c.key]) },
+  globalDepth: { build: (ctx) => ctx.globalDepth },
+  wasm: { neither: 'one engine per worker, and the cache dies with the worker' },
+};
+
+/**
  * Builds each part's key for one build: everything `buildPart` reads, from `ctx` by value and from
  * the part by identity. Per artwork it is only those landing on the part's zones, which is what
  * lets an edit to one zone's design leave the other parts' keys alone.
@@ -146,30 +181,19 @@ export function partKeyer(
   parts: AssemblyPart[],
   isRect: boolean,
 ): (part: AssemblyPart, mappers: ZoneMapper[]) => string {
-  const { artworks, palette } = ctx;
-  const shared = keyOf({
-    isRect,
-    palette,
-    // The only read of colorSettings and globalDepth below the build loop (colorPrism.ts).
-    depths: palette.map((c) => requestedDepth(ctx.colorSettings, ctx.globalDepth, c.key)),
-  });
+  const { artworks } = ctx;
+  const build: unknown[] = [isRect];
+  const perDesign: ((ai: number) => unknown)[] = [];
+  for (const k of Object.keys(CONTEXT_KEY) as (keyof BuildContext)[]) {
+    const how = CONTEXT_KEY[k];
+    if ('build' in how) build.push(how.build(ctx));
+    if ('design' in how) perDesign.push((ai) => how.design(ctx, ai));
+  }
+  const shared = keyOf(build);
   const designs = new Map<number, string>();
   const design = (ai: number): string => {
     let k = designs.get(ai);
-    if (k !== undefined) return k;
-    const { parsed, ...fields } = artworks[ai];
-    k = keyOf({
-      parsed: ident(parsed),
-      fields,
-      // A content hash, not an input list: these are derived from every artwork and the merge
-      // settings, and a derivation added later can't then miss the key.
-      features: ctx.featuresByColor.map((perArtwork) => featureHash(perArtwork[ai])),
-      placement: ctx.placements[ai],
-      maxScale: artworks[ai].mode === 'fill' ? ctx.maxScalePlacement(ai) : null,
-      tileCell: ctx.tileCells[ai],
-      tileVerts: ctx.tileVerts[ai],
-    });
-    designs.set(ai, k);
+    if (k === undefined) designs.set(ai, (k = keyOf(perDesign.map((f) => f(ai)))));
     return k;
   };
   return (part, mappers) => {
@@ -225,70 +249,78 @@ function current(cross: CrossPartState, keys: CrossTouch): CrossTouch {
 const sameTouch = (a: CrossTouch, b: CrossTouch): boolean =>
   keyOf([[...a.torn], [...a.overlap]]) === keyOf([[...b.torn], [...b.overlap]]);
 
-/**
- * One part's last result, per part, kept by the build worker between builds, so a part whose
- * inputs didn't change is replayed instead of cut. A replay reproduces everything the cut did
- * besides its output: the warning calls in order, its tally, and the cross-part state after it.
- */
-export class PartCache {
-  private entries = new Map<number, Entry>();
-  /** Indices into the latest build's `parts`, for the page's live check (main.ts buildReuse). */
-  reused: number[] = [];
-  cut: number[] = [];
-
-  begin(parts: AssemblyPart[]): void {
-    const live = new Set(parts.map((p) => p.id));
-    for (const id of this.entries.keys()) if (!live.has(id)) this.entries.delete(id);
-    this.reused = [];
-    this.cut = [];
-  }
-
-  /**
-   * Replay the part if its key and every cross-part key it touched match what it was cut against;
-   * otherwise cut it with `build` and store the result. Not stored: a part cut while the engine
-   * trapped, whose heap nobody can vouch for, or while ?csgfault is armed, where which part fails
-   * depends on every part before it. An engine exception is stored: it unwinds cleanly, and the
-   * repair ladder (colorPrism.ts) meets one on ordinary artwork, so refusing it re-cut parts forever.
-   */
-  async run(
+/** One build's use of the cache. Its lists are its own, so no later build can report them. */
+export interface CachedBuild {
+  /** Indices into this build's `parts`: replayed from the cache, and cut. */
+  readonly reused: number[];
+  readonly cut: number[];
+  /** Replay the part if its key and every cross-part key it touched match; otherwise cut it. */
+  run(
     index: number,
     part: AssemblyPart,
     key: string,
     cross: CrossPartState,
     tally: PartTally,
     build: (tally: BuildTally) => Promise<PartResult>,
-  ): Promise<PartResult> {
-    if (csgFaultArmed()) {
-      this.cut.push(index);
-      return (await cutPart(cross, tally, build)).result;
-    }
-    const hit = this.entries.get(part.id);
-    if (hit && hit.key === key && sameTouch(current(cross, hit.before), hit.before)) {
-      replayWarnings(hit.warnings);
-      mergePartTally(tally, hit.tally);
-      // A part only sets a pill and only adds a zone, so what it left is written back as such.
-      for (const [k, v] of hit.after.torn) if (v) cross.tornPills.set(k, { ...v });
-      for (const [z, on] of hit.after.overlap) if (on) cross.overlapCheckedZones.add(z);
-      this.reused.push(index);
-      return { output: hit.output && { ...structuredClone(hit.output), part }, placed: hit.placed };
-    }
-    this.entries.delete(part.id);
-    const from = journalLength();
-    const traps = engineTrapCount();
-    const before: CrossTouch = { torn: new Map(), overlap: new Map() };
-    const { result, own } = await cutPart(logged(cross, before), tally, build);
-    this.cut.push(index);
-    if (from !== null && engineTrapCount() === traps)
-      this.entries.set(part.id, {
-        key,
-        before,
-        after: current(cross, before),
-        warnings: journalSince(from),
-        tally: own,
-        output: result.output && structuredClone(withoutPart(result.output)),
-        placed: result.placed,
-      });
-    return result;
+  ): Promise<PartResult>;
+}
+
+/**
+ * Each part's last result, kept by the build worker between builds. A replay reproduces what the
+ * cut did besides its mesh: the warning calls in order, its tally, the cross-part keys it wrote.
+ */
+export class PartCache {
+  private entries = new Map<number, Entry>();
+
+  begin(parts: AssemblyPart[]): CachedBuild {
+    const live = new Set(parts.map((p) => p.id));
+    for (const id of this.entries.keys()) if (!live.has(id)) this.entries.delete(id);
+    const entries = this.entries;
+    const reused: number[] = [];
+    const cut: number[] = [];
+    return {
+      reused,
+      cut,
+      async run(index, part, key, cross, tally, build) {
+        // Which part an armed fault lands on depends on every part cut before it.
+        if (csgFaultArmed()) {
+          cut.push(index);
+          return (await cutPart(cross, tally, build)).result;
+        }
+        const hit = entries.get(part.id);
+        if (hit && hit.key === key && sameTouch(current(cross, hit.before), hit.before)) {
+          replayWarnings(hit.warnings);
+          mergePartTally(tally, hit.tally);
+          // A part only sets a pill and only adds a zone, so what it left is written back as such.
+          for (const [k, v] of hit.after.torn) if (v) cross.tornPills.set(k, { ...v });
+          for (const [z, on] of hit.after.overlap) if (on) cross.overlapCheckedZones.add(z);
+          reused.push(index);
+          return {
+            output: hit.output && { ...structuredClone(hit.output), part },
+            placed: hit.placed,
+          };
+        }
+        entries.delete(part.id);
+        const from = journalLength();
+        const traps = engineTrapCount();
+        const before: CrossTouch = { torn: new Map(), overlap: new Map() };
+        const { result, own } = await cutPart(logged(cross, before), tally, build);
+        cut.push(index);
+        // A trapped engine's heap can't be vouched for. An exception is kept: it unwinds cleanly,
+        // and the repair ladder (colorPrism.ts) meets one on ordinary artwork.
+        if (from !== null && engineTrapCount() === traps)
+          entries.set(part.id, {
+            key,
+            before,
+            after: current(cross, before),
+            warnings: journalSince(from),
+            tally: own,
+            output: result.output && structuredClone(withoutPart(result.output)),
+            placed: result.placed,
+          });
+        return result;
+      },
+    };
   }
 }
 
@@ -304,7 +336,7 @@ export async function cutPart(
   build: (tally: BuildTally) => Promise<PartResult>,
 ): Promise<{ result: PartResult; own: PartTally }> {
   const own = newPartTally();
-  const result = await build({ ...cross, ...own });
+  const result = await build({ ...cross, ...partFacts(own) });
   mergePartTally(tally, own);
   return { result, own };
 }

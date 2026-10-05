@@ -331,6 +331,9 @@ describe('runAssemblyBuild through a worker', () => {
     const moved = { ...inp, parts: [a, { ...b, positions: Float32Array.from(b.positions!) }] };
     await runAssemblyBuild(moved);
     expect(lastBuildReuse()).toEqual({ reused: ['test box'], cut: ['second box'] });
+    // A build that returns before the part loop reports its own empty lists, not the last ones.
+    await runAssemblyBuild({ ...inp, artworks: [] });
+    expect(lastBuildReuse()).toEqual({ reused: [], cut: [] });
   });
 
   it('forwards progress to the curtain', async () => {

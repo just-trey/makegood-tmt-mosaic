@@ -49,7 +49,7 @@ import {
 } from './designScale';
 import { polysOf } from './designClip';
 import { buildPart } from './partBuild';
-import { cutPart, partKeyer, type PartCache } from './partCache';
+import { cutPart, partKeyer, type CachedBuild } from './partCache';
 
 // The zone layer owns these now; re-exported so importers keep their '../geometry/assembly' paths.
 export { asmPartFaceNormal, faceXZBBox, rotatePointY, OVERSHOOT_MM } from './zones';
@@ -179,7 +179,7 @@ export interface AssemblyBuildInput {
  */
 export async function buildAssemblyGeometry(
   input: AssemblyBuildInput,
-  cache?: PartCache,
+  cache?: CachedBuild,
 ): Promise<AssemblyBuild | null> {
   resetCsgFaults();
   const {
@@ -389,7 +389,6 @@ export async function buildAssemblyGeometry(
   };
   const cross: CrossPartState = { tornPills: new Map(), overlapCheckedZones: new Set() };
   const tally = newPartTally();
-  cache?.begin(parts);
   const keyFor = cache && partKeyer(ctx, parts, isRect);
 
   const partOutputs: AssemblyPartOutput[] = [];

@@ -50,10 +50,10 @@ export function startBuildWorker(post: (msg: FromWorker, transfer: Transferable[
     });
     try {
       const input = decodeInput(msg.input, cache);
-      const built = await buildAssemblyGeometry(input, partCache);
+      const cached = partCache.begin(input.parts);
+      const built = await buildAssemblyGeometry(input, cached);
       const trapped = takeEngineTrapped();
-      // An early return (no artwork, no colors) never reached the part loop that fills these.
-      const { reused, cut } = built ? partCache : { reused: [], cut: [] };
+      const { reused, cut } = cached;
       if (!built) post({ type: 'done', id, build: null, warnings, trapped, reused, cut }, []);
       else {
         const { wire, transfer } = packBuild(built, input.parts, partBuffers(input.parts));

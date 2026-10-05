@@ -1,6 +1,11 @@
 import type { AssemblyPaletteEntry, AssemblyPart, ColorSettings, PolyFeature } from '../types';
 import type { ArtworkBuildInput } from './assembly';
-import type { PartDepthClamp, ZeroDepthRaise } from './depth';
+import {
+  addPartTooDeepClamp,
+  addZeroDepthRaise,
+  type PartDepthClamp,
+  type ZeroDepthRaise,
+} from './depth';
 import type { ManifoldAPI } from './manifold';
 import type { TileCell } from './patterns';
 import type { DesignPlacement } from './zones';
@@ -80,8 +85,57 @@ export interface PartTally {
   exposedColors: Set<number>;
 }
 
+/** One color index staged into a set; the build adds, and only the end of the build reads. */
+export interface ColorMark {
+  add(ci: number): void;
+}
+
+/** A clamp staged for its end-of-build pill (addPartTooDeepClamp's arguments past the map). */
+export interface ClampStage {
+  add(label: string, partName: string, requested: number, cutAt: number, wall?: number): void;
+}
+
+/**
+ * The build's side of a PartTally: writes only. A part's tally holds only that part's facts until
+ * mergePartTally, so a read here would see one part where the reader meant the build.
+ */
+export interface PartFacts {
+  edgeCutColors: { set(label: string, depth: number): void };
+  zeroDepthRaises: { add(label: string, requested: number, raisedTo: number): void };
+  tooDeepClamps: ClampStage;
+  thinWallClamps: ClampStage;
+  /** Keeps the shallowest depth cut per color (PartTally.colorAppliedDepth). */
+  colorAppliedDepth: { fold(ci: number, depth: number): void };
+  landedColors: ColorMark;
+  hiddenColors: ColorMark;
+  coveredColors: ColorMark;
+  exposedColors: ColorMark;
+}
+
+export function partFacts(t: PartTally): PartFacts {
+  const clamps = (into: Map<string, PartDepthClamp>): ClampStage => ({
+    add: (...args) => addPartTooDeepClamp(into, ...args),
+  });
+  return {
+    edgeCutColors: t.edgeCutColors,
+    zeroDepthRaises: { add: (...args) => addZeroDepthRaise(t.zeroDepthRaises, ...args) },
+    tooDeepClamps: clamps(t.tooDeepClamps),
+    thinWallClamps: clamps(t.thinWallClamps),
+    colorAppliedDepth: { fold: (ci, d) => foldMin(t.colorAppliedDepth, ci, d) },
+    landedColors: t.landedColors,
+    hiddenColors: t.hiddenColors,
+    coveredColors: t.coveredColors,
+    exposedColors: t.exposedColors,
+  };
+}
+
+function foldMin(into: Map<number, number>, ci: number, d: number): void {
+  const prev = into.get(ci);
+  into.set(ci, prev == null ? d : Math.min(prev, d));
+}
+
 /** Everything one part's build writes besides its output and the warnings list. */
-export type BuildTally = CrossPartState & PartTally;
+export type BuildTally = CrossPartState & PartFacts;
 
 export function newPartTally(): PartTally {
   return {
@@ -115,10 +169,7 @@ export function mergePartTally(into: PartTally, from: PartTally): void {
       if (!at) into[k].set(key, { ...e, labels: [...e.labels] });
       else for (const l of e.labels) if (!at.labels.includes(l)) at.labels.push(l);
     }
-  for (const [ci, d] of from.colorAppliedDepth) {
-    const prev = into.colorAppliedDepth.get(ci);
-    into.colorAppliedDepth.set(ci, prev == null ? d : Math.min(prev, d));
-  }
+  for (const [ci, d] of from.colorAppliedDepth) foldMin(into.colorAppliedDepth, ci, d);
   for (const k of ['landedColors', 'hiddenColors', 'coveredColors', 'exposedColors'] as const)
     for (const ci of from[k]) into[k].add(ci);
 }

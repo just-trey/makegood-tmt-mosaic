@@ -96,8 +96,9 @@ loaded on demand ([partBuild.ts](../src/geometry/partBuild.ts)).
 - `buildPart` ([partBuild.ts](../src/geometry/partBuild.ts)) takes its inputs as
   arguments (`BuildContext`, [buildContext.ts](../src/geometry/buildContext.ts)).
   Besides its return value, it writes to the warnings list, to its own
-  `PartTally` (folded into the build's by `mergePartTally`), and to the
-  `CrossPartState` it shares with the parts after it.
+  `PartTally` through a write-only view (`PartFacts`; folded into the build's
+  by `mergePartTally`), and to the `CrossPartState` it shares with the parts
+  after it.
 - One colour of one design on one zone is `buildColorPrism`
   ([colorPrism.ts](../src/geometry/colorPrism.ts)).
 - Kept-half and whole-part clips: [designClip.ts](../src/geometry/designClip.ts).

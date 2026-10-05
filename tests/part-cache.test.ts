@@ -12,7 +12,13 @@ import {
 } from '../src/geometry/buildContext';
 import { armCsgFaults } from '../src/geometry/csgFault';
 import { getManifold, takeEngineTrapped } from '../src/geometry/manifold';
-import { cutPart, PartCache, partKeyer, type PartResult } from '../src/geometry/partCache';
+import {
+  cutPart,
+  PartCache,
+  partKeyer,
+  type CachedBuild,
+  type PartResult,
+} from '../src/geometry/partCache';
 import type { DesignPlacement, ZoneMapper } from '../src/geometry/zones';
 import {
   clearWarnings,
@@ -115,6 +121,9 @@ function normalized(journal: WarningCall[]): WarningCall[] {
   });
 }
 
+/** The latest cached build's reused/cut lists. */
+let last: CachedBuild;
+
 /** What reaches the page from one build: the list it leaves, the calls behind it, every byte. */
 async function run(input: AssemblyBuildInput, cache?: PartCache) {
   clearWarnings();
@@ -122,7 +131,9 @@ async function run(input: AssemblyBuildInput, cache?: PartCache) {
   journalWarnings(journal);
   let build: AssemblyBuild | null;
   try {
-    build = await buildAssemblyGeometry(input, cache);
+    const cached = cache?.begin(input.parts);
+    if (cached) last = cached;
+    build = await buildAssemblyGeometry(input, cached);
   } finally {
     journalWarnings(null);
   }
@@ -158,14 +169,14 @@ describe('a part replayed from the cache', () => {
     const cache = new PartCache();
     const first = scene();
     await run(first, cache);
-    expect(cache.cut).toEqual([0, 1]);
+    expect(last.cut).toEqual([0, 1]);
 
     // B gets a new mesh object with the same content: B is cut, A is replayed.
     const [a, b] = first.parts;
     const second = { ...first, parts: [a, { ...b, positions: Float32Array.from(b.positions!) }] };
     const cached = await run(second, cache);
-    expect(cache.reused).toEqual([0]);
-    expect(cache.cut).toEqual([1]);
+    expect(last.reused).toEqual([0]);
+    expect(last.cut).toEqual([1]);
 
     const fresh = await run(second);
     // The scene has to exercise each thing a replay owes, or this proves nothing.
@@ -186,7 +197,7 @@ describe('a part replayed from the cache', () => {
     await run(input, cache);
     for (let i = 0; i < 2; i++) {
       const again = await run(input, cache);
-      expect(cache.reused).toEqual([0, 1]);
+      expect(last.reused).toEqual([0, 1]);
       expect(again).toEqual(fresh);
     }
   });
@@ -221,7 +232,7 @@ describe('a changed input is never replayed', () => {
     await run(before, cache);
     const after = edit(before);
     const cached = await run(after, cache);
-    expect(cache.cut).toEqual(recut);
+    expect(last.cut).toEqual(recut);
     expect(cached).toEqual(await run(after));
   });
 
@@ -238,7 +249,7 @@ describe('a changed input is never replayed', () => {
     await run(before, cache);
     const after = { ...before, parts: [{ ...src, patchNormal: [0, 1, 0] }, copy] };
     const cached = await run(after, cache);
-    expect(cache.cut).toEqual([0, 1]);
+    expect(last.cut).toEqual([0, 1]);
     expect(cached).toEqual(await run(after));
   });
 
@@ -249,7 +260,7 @@ describe('a changed input is never replayed', () => {
     await run(before, cache);
     const after = art(before, 2, { offX: 5, scaleMult: 2 });
     const cached = await run(after, cache);
-    expect(cache.reused).toEqual([0, 1]);
+    expect(last.reused).toEqual([0, 1]);
     expect(cached).toEqual(await run(after));
   });
 });
@@ -261,11 +272,11 @@ describe('what the cache refuses to keep', () => {
     armCsgFaults('?csgfault=intersection:1');
     await run(input, cache);
     const armed = await run(input, cache);
-    expect(cache.reused).toEqual([]);
+    expect(last.reused).toEqual([]);
     expect(armed.warnings.map((w) => w.message).join('\n')).toMatch(/Couldn't fit the inlay/);
     armCsgFaults('');
     await run(input, cache);
-    expect(cache.cut).toEqual([0, 1]);
+    expect(last.cut).toEqual([0, 1]);
   });
 
   it('cuts a part again after the engine trapped on it, rather than replaying the trap', async () => {
@@ -279,7 +290,7 @@ describe('what the cache refuses to keep', () => {
     expect(failed.warnings.map((w) => w.message).join('\n')).toMatch(/Couldn't cut the recesses/);
     spy.mockRestore();
     const healed = await run(input, cache);
-    expect(cache.cut).toEqual([0, 1]);
+    expect(last.cut).toEqual([0, 1]);
     expect(healed).toEqual(await run(input));
     takeEngineTrapped();
   });
@@ -293,7 +304,7 @@ describe('what the cache refuses to keep', () => {
     });
     await run(input, cache);
     const replayed = await run(input, cache);
-    expect(cache.reused).toEqual([0, 1]);
+    expect(last.reused).toEqual([0, 1]);
     expect(replayed.warnings.map((w) => w.message).join('\n')).toMatch(/Couldn't cut the recesses/);
     expect(replayed).toEqual(await run(input));
   });
@@ -334,11 +345,12 @@ describe('the cross-part state a part was cut against', () => {
       return { output: null, placed: false };
     };
     try {
-      cache?.begin(parts);
+      const cached = cache?.begin(parts);
+      if (cached) last = cached;
       const keys = [`A:${tearA}:${aChecksZone}:${tearE}`, 'B'];
       const builds = [buildA, buildB];
       for (let i = 0; i < 2; i++)
-        if (cache) await cache.run(i, parts[i], keys[i], cross, tally, builds[i]);
+        if (cached) await cached.run(i, parts[i], keys[i], cross, tally, builds[i]);
         else await cutPart(cross, tally, builds[i]);
     } finally {
       journalWarnings(null);
@@ -357,10 +369,10 @@ describe('the cross-part state a part was cut against', () => {
     expect(await pass(cache, 5)).toEqual(await pass(null, 5));
     // B's own key is unchanged, but A now leaves a worse tear, so B's dismiss would be wrong.
     const worse = await pass(cache, 12);
-    expect(cache.cut).toEqual([0, 1]);
+    expect(last.cut).toEqual([0, 1]);
     expect(worse).toEqual(await pass(null, 12));
     const unchecked = await pass(cache, 12, false);
-    expect(cache.cut).toEqual([0, 1]);
+    expect(last.cut).toEqual([0, 1]);
     expect(unchecked).toEqual(await pass(null, 12, false));
     expect(unchecked.warnings.map((w) => w.message)).toContain('B checked z');
   });
@@ -369,7 +381,7 @@ describe('the cross-part state a part was cut against', () => {
     const cache = new PartCache();
     await pass(cache, 5, true, 1);
     const other = await pass(cache, 5, true, 2);
-    expect(cache.reused).toEqual([1]);
+    expect(last.reused).toEqual([1]);
     expect(other).toEqual(await pass(null, 5, true, 2));
   });
 
@@ -377,7 +389,7 @@ describe('the cross-part state a part was cut against', () => {
     const cache = new PartCache();
     await pass(cache, 5);
     const replayed = await pass(cache, 5);
-    expect(cache.reused).toEqual([0, 1]);
+    expect(last.reused).toEqual([0, 1]);
     expect(replayed.journal.map((c) => c.op)).toEqual([
       'push',
       'push',

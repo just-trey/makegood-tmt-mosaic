@@ -114,7 +114,9 @@ try {
   // curtain would show, and timeRebuild would then sit out its 30s wait.
   const edits = [];
   {
-    const { page: p2 } = await newPage(browser, { viewport: { width: 1440, height: 1000 } });
+    const { page: p2, errors: errors2 } = await newPage(browser, {
+      viewport: { width: 1440, height: 1000 },
+    });
     await p2.goto(`http://localhost:${PORT}/?kind=chair-body`);
     await p2.waitForFunction(() => !!window.__mosaic);
     await p2.waitForFunction(
@@ -161,6 +163,7 @@ try {
       edits.push({ pass: r, zone: bound[bound.length - 1], scale, secs, tris: t });
       console.log(`  [${r}] scale ${scale}%  ${secs.toFixed(1)}s   ${t}`);
     }
+    errors2.forEach((e) => console.log('ERROR (one design per zone)', e));
     await p2.close();
   }
 

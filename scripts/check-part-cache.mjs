@@ -103,7 +103,6 @@ const setNumber = (page, id, v) =>
 
 /** Edit the active design, export, re-cut everything, export again, and compare. */
 async function editAndCompare(page, scene, { zone, scale, mustSay }) {
-  const all = (await page.$$eval('#assembly-part-list .asm-sum-row', (r) => r.length)) || 0;
   await setNumber(page, '#p-scale-num', scale);
   const r = await reuse(page);
   const want = partsOn(zone);
@@ -112,10 +111,6 @@ async function editAndCompare(page, scene, { zone, scale, mustSay }) {
   check(
     JSON.stringify([...r.cut].sort()) === JSON.stringify(want),
     `${scene}: the edit re-cut exactly the parts carrying "${zone}" (${want.join(', ')})`,
-  );
-  check(
-    r.reused.length + r.cut.length === all && r.reused.length > 0,
-    `${scene}: every other part was replayed (${r.reused.length} of ${all})`,
   );
   const cached = await exported(page);
   for (const m of mustSay)
@@ -129,6 +124,12 @@ async function editAndCompare(page, scene, { zone, scale, mustSay }) {
   await setNumber(page, '#p-depth', depth);
   const fresh = await reuse(page);
   check(fresh.reused.length === 0, `${scene}: Depth away and back re-cut every part`);
+  // Totals from the worker's full re-cut, not the panel's rows: a part the edit's lists omit fails.
+  const all = [...fresh.cut].sort();
+  check(
+    JSON.stringify([...r.reused, ...r.cut].sort()) === JSON.stringify(all) && r.reused.length > 0,
+    `${scene}: every other part was replayed (${r.reused.length} of ${all.length})`,
+  );
   const recut = await exported(page);
 
   console.log(`  3MF replayed ${sha(cached.bytes)} (${cached.bytes.length} B)`);
