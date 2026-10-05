@@ -9,8 +9,9 @@ import { replayWarnings } from '../warnings';
 export class BuildWorkerCrashed extends Error {
   constructor() {
     super(
-      "Couldn't update the 3D preview: the browser stopped the cut partway (often out of " +
-        'memory). The last result is still shown, and export is off. Change any setting to try again.',
+      'The browser stopped partway through cutting the design, often from running out of ' +
+        'memory. The 3D view still shows the last result, and export is off. Change any ' +
+        'setting to try again.',
     );
     this.name = 'BuildWorkerCrashed';
   }

@@ -43,9 +43,9 @@ export function setRebuildHandler(h: () => void | Promise<void>): void {
 }
 
 /**
- * Register an up-front estimate of whether the *next* rebuild will be slow. The rebuild blocks the
- * main thread, so its cost can't be reacted to mid-flight: the curtain must be decided and painted
- * first. The last rebuild's measured duration covers repeats; this covers the first heavy one.
+ * Register an up-front estimate of whether the *next* rebuild will be slow. The curtain is decided
+ * and painted before the rebuild starts, which on the page (no worker) blocks until it ends. The
+ * last rebuild's measured duration covers repeats; this covers the first heavy one.
  */
 export function setRebuildCostHint(fn: () => boolean): void {
   costHint = fn;

@@ -53,7 +53,9 @@ import { refreshZonePickMeshes } from '../src/scene/zonePick';
 import { schedulePersist } from '../src/state/persist';
 import { invalidate, setPreferredViewDir } from '../src/scene/viewport';
 import { asmRebuildGeneratedParts } from '../src/assembly/parts';
-import { WARNINGS, clearWarnings } from '../src/warnings';
+import { WARNINGS, clearWarnings, warnBuild } from '../src/warnings';
+import { RebuildCancelled } from '../src/cancel';
+import { BuildWorkerCrashed } from '../src/app/buildClient';
 import { state } from '../src/state/store';
 import type {
   ArtworkInstance,
@@ -745,6 +747,47 @@ describe('assembly mode with artwork', () => {
     await rebuildCurrent();
 
     expect(getLastAssemblyBuild()).toBe(built);
+  });
+
+  // The build runs in a worker, so the previous result is still on screen when it answers. Redrawing
+  // the bare part on a Cancel was most of the Cancel's latency on the chair.
+  it('leaves the last result on screen when the build is cancelled, with export off', async () => {
+    await rebuildCurrent();
+    const before = sceneMeshes();
+    expect(before).toHaveLength(2);
+    warnBuild('from the cancelled build');
+    vi.mocked(buildAssemblyGeometry).mockRejectedValue(new RebuildCancelled());
+
+    await rebuildCurrent();
+
+    expect(sceneMeshes()).toEqual(before);
+    expect(exportDisabled()).toBe(true);
+    expect(getLastAssemblyBuild()).toBeNull();
+    expect(WARNINGS.map((w) => w.message)).not.toContain('from the cancelled build');
+    // Still the tail of every rebuild: a cancelled change is saved like any other.
+    expect(schedulePersist).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the last result on screen when the worker dies, and says so', async () => {
+    await rebuildCurrent();
+    const before = sceneMeshes();
+    vi.mocked(buildAssemblyGeometry).mockRejectedValue(new BuildWorkerCrashed());
+
+    await rebuildCurrent();
+
+    expect(sceneMeshes()).toEqual(before);
+    expect(exportDisabled()).toBe(true);
+    expect(getLastAssemblyBuild()).toBeNull();
+    expect(WARNINGS.map((w) => w.message)).toContain(new BuildWorkerCrashed().message);
+  });
+
+  it('lets any other failure through to the scheduler', async () => {
+    await rebuildCurrent();
+    vi.mocked(buildAssemblyGeometry).mockRejectedValue(new Error('a bug'));
+    await expect(rebuildCurrent()).rejects.toThrow('a bug');
+    // The scene it leaves is the last build's, which no longer matches the panels.
+    expect(exportDisabled()).toBe(true);
+    expect(getLastAssemblyBuild()).toBeNull();
   });
 });
 

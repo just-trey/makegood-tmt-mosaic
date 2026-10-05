@@ -26,11 +26,10 @@ export function hideOverlay(): void {
 }
 
 /**
- * Cancel is acknowledged immediately and takes effect at the next safe point: a yield in the 2D
- * region pass, or between two of a part's Manifold calls. On a 6000-region wheel that is 0.3s in the
- * region pass (docs/findings/2026-08-25-cancel-latency.md), 0.04-0.06s in the cut, and up to 0.29s
- * for a session's first cancel (scripts/check-cancel-latency.mjs). "Cancelling…" still separates a
- * button that looks broken on a heavy part from one visibly working.
+ * A build in the worker is dropped the moment Cancel is pressed, and the curtain goes with it. Built
+ * on the page, it stops at the next safe point instead (src/cancel.ts): 0.3s in the region pass of a
+ * 6000-region wheel (docs/findings/2026-08-25-cancel-latency.md), 0.04-0.06s in the cut.
+ * "Cancelling…" separates a button that looks broken in that wait from one visibly working.
  */
 function setCancelState(pending: boolean): void {
   const btn = $<HTMLButtonElement>('#loading-cancel');

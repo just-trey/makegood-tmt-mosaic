@@ -102,6 +102,31 @@ loaded on demand ([partBuild.ts](../src/geometry/partBuild.ts)).
 - Kept-half and whole-part clips: [designClip.ts](../src/geometry/designClip.ts).
   Anchor and mm scale: [designScale.ts](../src/geometry/designScale.ts).
 
+**The build runs in a Web Worker**, so the page stays responsive and Cancel is
+immediate. The 2D region pass (step 2) runs there too. Three.js scenes stay on
+the page.
+
+- [buildClient.ts](../src/app/buildClient.ts) is the page's side: one worker,
+  one build at a time. Without `Worker` (vitest, node scripts) it calls
+  `buildAssemblyGeometry` directly, so tests and the browser run the same code.
+- [buildWire.ts](../src/geometry/buildWire.ts) is what crosses. Each artwork and
+  each object on a part is sent once, then named by id. The worker keeps one copy
+  per id, so the region pass's memo (keyed on `shapes` identity) still hits.
+  This holds only because those objects are replaced, never edited in place.
+- Meshes come back as transferred buffers, each output naming its part by index.
+  The page reattaches its own `AssemblyPart`, so export reads the same objects.
+- Warnings are journaled as calls in the worker and replayed in order on the
+  page (`replayWarnings`, [warnings.ts](../src/warnings.ts)). Dedupe and keyed
+  rewrites then see the page's standing list, as an in-thread build would.
+- Generated-part sizing (`designFaceOverride`, `generatedFit`) is read from page
+  state by `rebuild.ts` and passed in: the worker has no state.
+- `?csgfault` reaches the worker as the page's query string (`armCsgFaults`).
+- **Cancel** answers at once and keeps the last result on screen, export off.
+  The worker is told to stop at its next safe point, keeping its caches, and is
+  terminated if it hasn't within 1s.
+- **A dead worker** keeps the last result too, with a warning. The next rebuild
+  starts a fresh one.
+
 **Which depth a region asked for** is resolved in one place
 ([depth.ts](../src/geometry/depth.ts)): an explicit per-row override if finite,
 otherwise the global depth (`Infinity`/`NaN` fall back too). A stored `0` is a

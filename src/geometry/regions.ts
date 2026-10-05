@@ -773,8 +773,8 @@ export function intersectQuiet(a: PolyFeature | null, b: PolyFeature | null): Po
 /** How long a boolean pass runs before yielding a frame to the browser. */
 export const YIELD_BUDGET_MS = 30;
 
-/** A macrotask yield (setTimeout, not a microtask) so the browser can repaint the progress curtain
- * between chunks. Promise.resolve() would not unblock rendering. */
+/** A macrotask yield (setTimeout, not a microtask): on the page it lets the curtain repaint, in the
+ * build worker it lets a cancel message in. Promise.resolve() would do neither. */
 export function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve));
 }

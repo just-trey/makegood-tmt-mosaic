@@ -540,19 +540,19 @@ async function rebuildAssemblyScene(): Promise<void> {
       generatedFit: generatedFitFactor(),
     });
   } catch (e) {
+    // Whatever went wrong, the last result is still on screen and no longer matches the panels.
+    lastAssemblyBuild = null;
+    $<HTMLButtonElement>('#btn-export').disabled = true;
     const cancelled = e instanceof RebuildCancelled;
     if (!cancelled && !(e instanceof BuildWorkerCrashed)) throw e;
     // Caught here, not in the scheduler, so the tail of rebuildCurrent still runs: it has the only
     // schedulePersist outside export, and skipping it left a cancelled change unsaved on reload.
     //
-    // The last result stays on screen rather than being redrawn bare: that redraw was most of a
-    // Cancel's latency on the chair. Export is off, since the scene no longer matches the panels.
-    // A cancelled build's diagnostics describe unfinished parts, so they go.
+    // Left on screen rather than redrawn bare: that redraw was most of a Cancel's latency on the
+    // chair. A cancelled build's diagnostics describe unfinished parts, so they go.
     if (cancelled) clearBuildWarnings();
     else warnBuild((e as Error).message);
-    lastAssemblyBuild = null;
     renderWarnings();
-    $<HTMLButtonElement>('#btn-export').disabled = true;
     return;
   }
   lastAssemblyBuild = built;

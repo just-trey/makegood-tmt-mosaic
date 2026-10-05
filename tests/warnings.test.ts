@@ -2,11 +2,18 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   clearBuildWarnings,
   clearWarnings,
+  dismissNotice,
+  dropBuildWarningsSince,
+  journalWarnings,
   notice,
   noticeBuild,
+  replayWarnings,
   warn,
   warnBuild,
+  warningMark,
   WARNINGS,
+  type Notice,
+  type WarningCall,
 } from '../src/warnings';
 
 // The bug this pins: nothing cleared a rebuild's own diagnostics between rebuilds, so a
@@ -135,5 +142,69 @@ describe('push: a keyed push replaces the standing entry', () => {
     notice('"img.png" traced', 'source-2');
     notice('"img.png" is capped', 'source-2');
     expect(WARNINGS.map((w) => w.message)).toEqual(['"img.png" traced', '"img.png" is capped']);
+  });
+});
+
+// The build worker journals its calls and the page replays them (app/buildClient.ts). Replay has to
+// land the page's list where making the same calls on the page would have.
+describe('journaled warnings', () => {
+  beforeEach(() => clearWarnings());
+
+  const snapshot = (): Notice[] => WARNINGS.map((w) => ({ ...w }));
+
+  /** A build's worth of calls: keyed rewrite, a step thrown away, a retraction. */
+  function build(): void {
+    warnBuild('kept');
+    warnBuild('torn by 3mm', 'torn');
+    const mark = warningMark();
+    warnBuild('said by a step that was thrown away');
+    warnBuild('torn by 30mm', 'torn');
+    dropBuildWarningsSince(mark);
+    noticeBuild('retracted');
+    dismissNotice('retracted');
+    warnBuild('standing fact');
+  }
+
+  function standing(): void {
+    warn('standing fact');
+    notice('unrelated');
+  }
+
+  it('replays to the list the same calls made here would leave', () => {
+    standing();
+    build();
+    const direct = snapshot();
+
+    clearWarnings();
+    const calls: WarningCall[] = [];
+    journalWarnings(calls);
+    build();
+    journalWarnings(null);
+
+    clearWarnings();
+    standing();
+    replayWarnings(calls);
+    expect(snapshot()).toEqual(direct);
+    // The page's standing fact skipped the build's copy, so it survives the next clear.
+    clearBuildWarnings();
+    expect(WARNINGS.map((w) => w.message)).toEqual(['standing fact', 'unrelated']);
+  });
+
+  it('records calls, not their effect where they ran', () => {
+    const calls: WarningCall[] = [];
+    journalWarnings(calls);
+    warnBuild('twice');
+    warnBuild('twice');
+    journalWarnings(null);
+    expect(calls.filter((c) => c.op === 'push')).toHaveLength(2);
+  });
+
+  it("copies each notice, so a later keyed rewrite there can't change what was recorded", () => {
+    const calls: WarningCall[] = [];
+    journalWarnings(calls);
+    warnBuild('first', 'k');
+    warnBuild('second', 'k');
+    journalWarnings(null);
+    expect(calls.map((c) => c.op === 'push' && c.notice.message)).toEqual(['first', 'second']);
   });
 });

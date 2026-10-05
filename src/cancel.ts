@@ -28,8 +28,9 @@ export function requestCancel(): void {
 let onRequest: (() => void) | null = null;
 
 /**
- * Called the moment a cancel is requested, for work that can't poll the flag: a build in a worker
- * is stopped from here, without waiting for a safe point in this thread. One listener; null clears.
+ * Called the moment a cancel is requested, for work that can't poll the flag. A build in the worker
+ * (app/buildClient.ts) is answered from here at once; the worker itself still stops at the
+ * throwIfCancelled sites, which keeps its caches. One listener; null clears.
  */
 export function onCancelRequested(fn: (() => void) | null): void {
   onRequest = fn;

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   armCancel,
+  cancelHonoured,
   cancelRequested,
+  onCancelRequested,
   RebuildCancelled,
   requestCancel,
   throwIfCancelled,
@@ -31,5 +33,21 @@ describe('rebuild cancellation', () => {
     // A latched flag would abort every rebuild after the first cancel, at the first safe point,
     // leaving the app unable to build anything until reload.
     expect(() => throwIfCancelled()).not.toThrow();
+  });
+});
+
+describe('onCancelRequested', () => {
+  beforeEach(() => armCancel());
+
+  it('is told the moment a cancel is requested, and not after it is cleared', () => {
+    let told = 0;
+    onCancelRequested(() => told++);
+    requestCancel();
+    expect(told).toBe(1);
+    // Telling is not honouring: only whoever stops the work says it was stopped.
+    expect(cancelHonoured()).toBe(false);
+    onCancelRequested(null);
+    requestCancel();
+    expect(told).toBe(1);
   });
 });

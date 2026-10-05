@@ -141,3 +141,26 @@ describe('csgFault rejects bad input rather than silently doing nothing', () => 
     expect(() => csgFault('body-mesh')).toThrow();
   });
 });
+
+// The build worker's own `location` is its script URL, so the page hands its query string over.
+describe('armCsgFaults', () => {
+  it('re-arms from a query string, budget refilled', async () => {
+    const { csgFault, armCsgFaults, WARNINGS } = await loadArmed('');
+    armCsgFaults('?csgfault=difference:1');
+    expect(() => csgFault('difference')).toThrow(/forced CSG fault/);
+    expect(() => csgFault('difference')).not.toThrow();
+    armCsgFaults('?csgfault=difference:1');
+    expect(() => csgFault('difference')).toThrow(/forced CSG fault/);
+    expect(WARNINGS).toHaveLength(0);
+  });
+
+  it('disarms, and forgets the old announcement, when the query has none', async () => {
+    const { csgFault, armCsgFaults, resetCsgFaults, WARNINGS } =
+      await loadArmed('?csgfault=difference');
+    WARNINGS.length = 0;
+    armCsgFaults('');
+    resetCsgFaults();
+    expect(() => csgFault('difference')).not.toThrow();
+    expect(WARNINGS).toHaveLength(0);
+  });
+});
