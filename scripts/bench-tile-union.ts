@@ -1,19 +1,19 @@
 // Times Fill mode's tile union, and says whether it kept every tile, against the real turf 6.5.
 //
 // Run with: node_modules/.bin/vite-node scripts/bench-tile-union.ts [pattern] [n,n,n] [colour]
-//   pattern  a name under public/patterns (default zebra)
+//   pattern  a name under tests/fixtures/patterns (default zebra)
 //   n        tile grid spans to sweep: 20 is a 20x20 grid, 3x300 is 3 rows of 300 (default
 //            13,17,21,25)
 //   colour   the hex of the colour to tile (default the one with the most points per tile)
 //
-// A union that loses tiles shows as areaKept under 1: every bundled pattern is drawn inside its
+// A union that loses tiles shows as areaKept under 1: every fixture pattern is drawn inside its
 // own cell, so n tiles should cover exactly n times one tile's area. `mergeFailures` is a yes/no
 // beside it, not a count: warnBuild dedupes on the exact message and every failure here shares one
 // label. `refused` is a union too big for the engine even split (UnionTooBig), which fill mode
 // turns into one tile and a warning.
 //
 // This is the shipping path, not a replica: tileFeature -> unionAllCooperative -> safeUnion, over
-// the feature computeNetRegionsByColor builds for one colour of a real bundled pattern. The only
+// the feature computeNetRegionsByColor builds for one colour of a real fixture pattern. The only
 // thing invented is the grid, which stands in for the placer a live build would supply.
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
@@ -57,7 +57,7 @@ const spans = (process.argv[3] ?? '13,17,21,25').split(',').map((span) => {
 const only = process.argv[4]?.toLowerCase();
 
 const parsed = parseSVGDocument(
-  readFileSync(path.join(REPO, 'public/patterns', `${pattern}.svg`), 'utf-8'),
+  readFileSync(path.join(REPO, 'tests/fixtures/patterns', `${pattern}.svg`), 'utf-8'),
 );
 const { byColor } = await computeNetRegionsByColor(parsed.shapes);
 const vb = parsed.viewBox;

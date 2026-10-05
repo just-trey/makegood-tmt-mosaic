@@ -21,9 +21,8 @@ via [src/analytics/track.ts](../src/analytics/track.ts).
 
 Fired when artwork is loaded into the scene.
 
-- **Where:** [src/ui/artworkPanel.ts](../src/ui/artworkPanel.ts) — `loadArtworkFile` (SVG upload via click-browse or drag-drop), `applyRasterFile` (a PNG/JPG/WebP through the same dropzone), the `#btn-sample` handler, and `applyPattern` (built-in pattern picker strip).
-- **Props:** `{ source: 'upload' | 'sample' | 'pattern' | 'raster' }`, plus `pattern: string` (the pattern id, e.g. `cow`) when `source` is `'pattern'`. `'raster'` covers any decoded image; the format is not recorded.
-- **Dormant:** `source: 'pattern'` cannot fire while `PATTERN_LIBRARY_ENABLED` is `false` — the picker strip renders nothing to click.
+- **Where:** [src/ui/artworkPanel.ts](../src/ui/artworkPanel.ts) — `loadArtworkFile` (SVG upload via click-browse or drag-drop), `applyRasterFile` (a PNG/JPG/WebP through the same dropzone), and the `#btn-sample` handler.
+- **Props:** `{ source: 'upload' | 'sample' | 'raster' }`. `'raster'` covers any decoded image; the format is not recorded.
 
 ### `raster_adjust`
 

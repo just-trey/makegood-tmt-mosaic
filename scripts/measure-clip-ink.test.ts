@@ -4,7 +4,7 @@
 // measure-seam-overlap.mjs already swept the BAKE's population (part geometry); this sweeps the
 // runtime one, a placed design's ink clipped to a part (`placedInk` in designClip.ts, `dropSpecks` in colorPrism.ts).
 //
-// Runs the four shipped patterns (public/patterns/*.svg) as real Fill designs through the real
+// Runs the four fixture patterns (tests/fixtures/patterns/*.svg) as real Fill designs through the real
 // buildAssemblyGeometry pipeline, on real parts for every assembly kind that has one (wheel-half,
 // wheel-hub-cap, footrest, a generated hubcap disc, and a representative subset of chair-body
 // zones), and records the area of every piece dropUnprintableRemnants sees BEFORE the floor is
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// jsdom has no 2d canvas — same stub as tests/patterns-assets.test.ts, enough to resolve the
+// jsdom has no 2d canvas — a minimal stub, enough to resolve the
 // patterns' plain #rrggbb fills.
 beforeAll(() => {
   HTMLCanvasElement.prototype.getContext = function () {
@@ -130,7 +130,7 @@ const { read3MFIndexed } = (await import(
 const PATTERNS = ['cow', 'dalmatian', 'zebra', 'tiger'];
 const patternSVG: Record<string, string> = {};
 for (const p of PATTERNS)
-  patternSVG[p] = readFileSync(path.join(REPO, 'public/patterns', `${p}.svg`), 'utf8');
+  patternSVG[p] = readFileSync(path.join(REPO, 'tests/fixtures/patterns', `${p}.svg`), 'utf8');
 // Parsed fresh on every build, never reused across buildAssemblyGeometry calls: reusing one parsed
 // object across builds against different parts made every build after the first collapse to one
 // merged "#000000" color instead of the artwork's real two-color palette — reproduced with a
@@ -343,7 +343,7 @@ describe.skipIf(!process.env.RUN_CLIP_INK_SWEEP)('clip-remnant floor sweep', () 
     console.log(`\ntotal pieces seen: ${pieceAreas.length}`);
     console.log(`CLIP_REMNANT_FLOOR_MM2 = ${CLIP_REMNANT_FLOOR_MM2}`);
 
-    // Every pattern SVG's first path is the full 60x60 tile background rect (see public/patterns/
+    // Every pattern SVG's first path is the full 60x60 tile background rect (see tests/fixtures/patterns/
     // *.svg), so a clip artifact born from that SAME background square meeting the SAME real zone
     // edge at the SAME tile position is IDENTICAL geometry regardless of which pattern painted it —
     // the only way two different-colored artworks land the exact same area at the exact same

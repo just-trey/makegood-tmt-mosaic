@@ -498,9 +498,8 @@ message drops the Scale advice and asks you to simplify the design instead: fewe
 nodes and fewer shapes in Illustrator or Inkscape. Placing it as a Sticker also
 works, at the cost of the repeat.
 
-Either way nothing is dropped: the whole design is placed once. Bundled patterns
-get a separate build-time check in `tests/patterns-assets.test.ts`, against half
-the budget and a fixed tile count. Numbers and the sweeps behind them:
+Either way nothing is dropped: the whole design is placed once. Numbers and the
+sweeps behind them:
 [2026-09-24 tile-union cap](findings/2026-09-24-tile-union-cap.md).
 
 ### "… measures zero in one direction, so there is no tile to repeat across …"

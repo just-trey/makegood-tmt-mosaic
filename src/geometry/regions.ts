@@ -57,7 +57,7 @@ export function loopToRing(loop: Loop, forceCCW?: boolean): Ring | null {
  * (common from Affinity Designer/Illustrator).
  *
  * Depth resolution is O(rings²·len) and runs over every shape *before* the first yield, so the
- * failure mode is a frozen tab. Worst real file: public/patterns/zebra.svg, one 69-subpath path,
+ * failure mode is a frozen tab. Worst real file: tests/fixtures/patterns/zebra.svg, one 69-subpath path,
  * 5.88ms against the 30ms yield budget (scripts/bench-shape-to-feature.ts). Unmeasured: a dense
  * Illustrator export, hundreds of subpaths in one <path> (fur, stipple). Raster tracing is held off
  * by the despeckle floor and MAX_COMPONENTS (src/raster/trace.ts); re-bench if either loosens.

@@ -2,7 +2,7 @@
 // the cutters and the Manifold cut, through buildAssemblyGeometry itself.
 //
 // Run with: node_modules/.bin/vite-node scripts/bench-fill-build.ts [pattern] [faceMM] [s,s] [shift]
-//   pattern  a name under public/patterns (default zebra)
+//   pattern  a name under tests/fixtures/patterns (default zebra)
 //   faceMM   side of the square design face on a 10mm-thick box part (default 240)
 //   s        Scale values as fractions, so 0.2 is 20% (default 0.5,0.25,0.2,0.15)
 //   shift    offset on both axes, in tiles (default 0). A centred fill always needs an odd number
@@ -56,7 +56,7 @@ const scales = (process.argv[4] ?? '0.5,0.25,0.2,0.15').split(',').map(Number);
 const shift = Number(process.argv[5] ?? 0);
 
 const parsed = parseSVGDocument(
-  readFileSync(path.join(REPO, 'public/patterns', `${pattern}.svg`), 'utf-8'),
+  readFileSync(path.join(REPO, 'tests/fixtures/patterns', `${pattern}.svg`), 'utf-8'),
 );
 const vb = parsed.viewBox;
 if (!vb || parsed.userUnitMM == null)

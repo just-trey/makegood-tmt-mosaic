@@ -23,7 +23,7 @@ export const NOZZLE_MM = 0.4;
  * the `chair-seat-back-top` remnant was 0.025mm², 0.02mm wide and 8mm long, against 1,258 to
  * 3,029mm² for every other chart the design reaches.
  *
- * That margin is part geometry's. Against real design ink (four shipped patterns, Fill, real parts)
+ * That margin is part geometry's. Against real design ink (four fixture patterns, Fill, real parts)
  * 9.4% of pieces (760 of 8,056) fall under the floor, 86% of them zebra, and the narrowest survivor
  * is 0.1600478mm², 1.00003x this value: docs/findings/2026-09-27-clip-ink-sweep.md,
  * `RUN_CLIP_INK_SWEEP=1 npx vitest run scripts/measure-clip-ink.test.ts`. Dust or drawn detail is

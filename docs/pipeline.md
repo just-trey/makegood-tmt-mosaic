@@ -401,8 +401,8 @@ picker above the part list. Switching reloads only the parts that differ.
 **Sticker or Fill.** Any artwork row on an assembly part can repeat the design
 across the whole zone instead of placing one copy. Tiling happens in the
 design's own SVG coordinates, so it stays correct under whatever rotation and
-scale the zone applies ([patterns.ts](../src/geometry/patterns.ts)). Four
-tileable patterns ship (Cow, Dalmatian, Zebra, Tiger) and default to Fill.
+scale the zone applies ([patterns.ts](../src/geometry/patterns.ts)). Fill is
+offered per part kind.
 
 A fill is refused before it runs when the copies would carry more than
 `FILL_POINT_BUDGET` points (the 3D cut's memory) or need more than
@@ -454,7 +454,6 @@ has no verified position and no free corner.
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [state/store.ts](../src/state/store.ts)               | The single app-state object all geometry reads. UI panels write to it and schedule a rebuild.                                                                                        |
 | [state/filaments.ts](../src/state/filaments.ts)       | Owned-filament palette, from [public/filaments.json](../public/filaments.json). Edit that file to change the base-color picker and "nearest filament" labels; no code change needed. |
-| [state/patterns.ts](../src/state/patterns.ts)         | Built-in pattern manifest, from [public/patterns/patterns.json](../public/patterns/patterns.json). Add patterns via [gen-patterns.mjs](../scripts/gen-patterns.mjs), never by hand.  |
 | [app/rebuild.ts](../src/app/rebuild.ts)               | Orchestrates state → geometry → scene → side panels.                                                                                                                                 |
 | [scene/viewport.ts](../src/scene/viewport.ts)         | three.js renderer and camera.                                                                                                                                                        |
 | [scene/displayFrame.ts](../src/scene/displayFrame.ts) | How a kind is posed for display. Viewport only: native coordinates, the plate pose, and this are three separate frames on purpose (`add-part` skill).                                |

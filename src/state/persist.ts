@@ -549,7 +549,13 @@ async function applyRestoredSessionInner(session: PersistedSession): Promise<voi
   const lostSources = new Set<string>();
   for (const s of session.sources) {
     if (!s.raster) {
-      sources.push({ ...s, raster: undefined, parsed: parseSVGDocument(s.svgText) });
+      // Coerced: 'pattern' was a kind in sessions saved before the built-in library was removed.
+      sources.push({
+        ...s,
+        kind: 'upload',
+        raster: undefined,
+        parsed: parseSVGDocument(s.svgText),
+      });
       continue;
     }
     // Per image: a throw must cost that design, not the restore — the banner treats a rejection as

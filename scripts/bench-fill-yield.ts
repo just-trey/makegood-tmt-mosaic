@@ -4,7 +4,7 @@
 // Run with: node_modules/.bin/vite-node scripts/bench-fill-yield.ts [sticker.svg] [--pattern=zebra]
 //   [--scale=50] [--repeat=5]
 //   sticker.svg  the design laid on the fill (default: a plain three-colour sticker, inline below)
-//   --pattern    a name under public/patterns (default zebra)
+//   --pattern    a name under tests/fixtures/patterns (default zebra)
 //   --scale      the sticker's Scale, in percent (default 50)
 //
 // Runs `buildAssemblyGeometry` itself, the shipping path, on the three real wheel parts (Top, its
@@ -116,7 +116,7 @@ const parts: AssemblyPart[] = [
 ];
 
 const fillParsed = parseSVGDocument(
-  readFileSync(path.join(REPO, 'public/patterns', `${pattern}.svg`), 'utf-8'),
+  readFileSync(path.join(REPO, 'tests/fixtures/patterns', `${pattern}.svg`), 'utf-8'),
 );
 const stickerParsed = parseSVGDocument(
   stickerPath ? readFileSync(path.resolve(stickerPath), 'utf-8') : STICKER,

@@ -122,13 +122,13 @@ export interface RasterState {
 }
 
 /**
- * One user-loaded (or pattern-library) artwork source, independent of where it's placed.
+ * One user-loaded artwork source, independent of where it's placed.
  *
  * Invariant: `kind === 'raster'` exactly when `raster` is present.
  */
 export interface DesignSource {
   id: string;
-  kind: 'upload' | 'pattern' | 'raster';
+  kind: 'upload' | 'raster';
   name: string;
   parsed: ParsedSVG;
   /**
@@ -331,7 +331,7 @@ export interface AssemblyKind {
   /** Kept and fully functional but left out of the Part dropdown — not ready to offer yet. */
   hidden?: boolean;
   /**
-   * Withholds Fill mode (and the built-in pattern strip, which exists to be tiled) where tiling works
+   * Withholds Fill mode where tiling works
    * but isn't fit to show users. Sticker placement is unaffected. Set on the chair body:
    * `docs/tech-debt.md` measures one zone in Fill at 93.6s and "All zones" at over 900s with no
    * cancel. Clear once that closes.
@@ -350,13 +350,6 @@ export interface Filament {
   id: string;
   name: string;
   hex: string;
-}
-
-/** One entry in the built-in tileable pattern library (public/patterns/patterns.json). */
-export interface PatternEntry {
-  id: string;
-  name: string;
-  file: string;
 }
 
 export interface AssemblyPaletteEntry {
