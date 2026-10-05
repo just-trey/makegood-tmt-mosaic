@@ -44,6 +44,8 @@ vi.mock('../src/scene/viewport', () => ({
 const computeFaceFrame = vi.fn();
 vi.mock('../src/scene/faceFrame', () => ({ computeFaceFrame: () => computeFaceFrame() }));
 
+import { track } from '../src/analytics/track';
+import { addSceneOverlay } from '../src/scene/viewport';
 import { initDesignGizmo, isGizmoDragging, refreshGizmo } from '../src/scene/designGizmo';
 
 /**
@@ -129,5 +131,23 @@ describe('gizmo move hit-test matches the frame as drawn', () => {
     // the diagonals, so these two points swap membership versus the unrotated frame.
     expect(clickAt([130, 0])).toBe(true);
     expect(clickAt([90, 90])).toBe(false);
+  });
+});
+
+describe('one affordance per drag start', () => {
+  it('resolves a pick on both a corner handle and the rotate handle to the corner', () => {
+    // Every off-axis sample collapses onto the u=0 line shifted up by the arm length, so the
+    // top-left corner lands exactly where the rotate handle is drawn: one pick hits both meshes.
+    const f = {
+      ...frameWithShrink(1),
+      pointAt: (du: number, dv: number) => new THREE.Vector3(0, du === 0 ? dv : dv + 35, 0),
+    };
+    computeFaceFrame.mockReturnValue(f);
+    refreshGizmo();
+    vi.mocked(addSceneOverlay).mock.calls[0][0].updateMatrixWorld(true);
+    vi.mocked(track).mockClear();
+
+    expect(clickAt([0, 135])).toBe(true);
+    expect(track).toHaveBeenCalledWith('fit_adjust', { via: 'drag', field: 'scale' });
   });
 });
