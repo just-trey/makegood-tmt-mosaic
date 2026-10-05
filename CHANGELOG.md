@@ -60,6 +60,11 @@ scripts/measure-clip-ink.test.ts`.
   notice says the color's pieces are too small to trace, even at full Detail.
   Raising Detail to where it stops helping used to clear the old notice with
   the color still gone; it now swaps to the new one.
+- **A traced image no longer keeps a speck too small to print.** Tidying a
+  spot where two colours meet only at a corner could cut a shape in two and
+  leave a piece under the size the trace cleans to. That piece now joins a
+  neighbouring colour. On 24 noise test images, 2 kept such a piece; none do
+  now (`node_modules/.bin/vite-node scripts/bench-raster.ts cap`).
 - **A drag that starts on a placement corner handle always resizes.** Where
   the rotate handle overlapped a corner, a drag there rotated instead. The
   rest of the rotate handle is unchanged. Each
