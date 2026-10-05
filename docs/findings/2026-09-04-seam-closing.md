@@ -211,5 +211,5 @@ Both were found by this sweep rather than by the shipped bake, and both fail wit
 - Three counts quoted in comments were **already stale before this change** and are now the
   measured ones: the overlapping part pairs are 20, not 23 (20 on the pre-rebake sidecar too);
   `left`'s per-part regions sum to 124,728mm², not 124,797; and `conformal.ts` said 25 chair charts
-  where there are 26, before and after. `docs/findings/seam-sliver-sighting.md` still says 23 and
+  where there are 26, before and after. `docs/findings/2026-08-08-seam-sliver-sighting.md` still says 23 and
   stays that way: a finding is pinned to its run.

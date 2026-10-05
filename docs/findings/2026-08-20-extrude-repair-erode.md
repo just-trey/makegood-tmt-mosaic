@@ -78,7 +78,7 @@ Six net regions from the gravel trace, scaled to the wheel's 276mm face:
 **A review round said that table understates the risk, and it was right to ask.** An erode is a
 deletion below twice its distance, not a shrink: `repairSelfIntersections` returns null only when
 _every_ contour vanishes, so a hair on a larger blob of the same colour would disappear while its
-parent repaired. That is the shape [seam-sliver-sighting.md](seam-sliver-sighting.md) measures at
+parent repaired. That is the shape [2026-08-08-seam-sliver-sighting.md](2026-08-08-seam-sliver-sighting.md) measures at
 about 0.15mm.
 
 **The argument that settles it is geometric, not statistical.** An inward offset of `e` removes

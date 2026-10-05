@@ -1,4 +1,4 @@
-// What one zone costs against all five, on the sticker path (docs/findings/zone-rebuild-cost.md).
+// What one zone costs against all five, on the sticker path (docs/findings/2026-08-08-zone-rebuild-cost.md).
 //
 // Usage: npm run build && MOSAIC_GPU=1 node scripts/bench-zone-rebuild.mjs [outFile]
 import { writeFileSync, mkdirSync } from 'node:fs';
