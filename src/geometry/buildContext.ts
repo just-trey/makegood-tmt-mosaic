@@ -20,16 +20,31 @@ export interface BuildContext {
   wasm: ManifoldAPI;
 }
 
-/** Build-wide state each part's build adds to: dedupe sets, and facts said after the last part. */
-export interface BuildTally {
+export interface TornPill {
+  message: string;
+  tearMm: number;
+}
+
+/**
+ * Build-wide state a part reads as well as writes, so it carries from one part to the next. Only
+ * keyed reads and writes, so the part cache (partCache.ts) can log which keys a part touched.
+ */
+export interface CrossPartState {
   /** Standing straddle pills for this build, keyed by design and boundary — raiseTornWarning. */
-  tornPills: Map<string, { message: string; tearMm: number }>;
+  tornPills: { get(key: string): TornPill | undefined; set(key: string, pill: TornPill): void };
   /**
    * Overlap is per zone, and the loop walks zones once per part. Both placers add the same
    * translation, mirror and rigid rotation to BOTH designs, so overlap is part-invariant; skipping
    * the repeat keeps the ink transform off the per-part path.
    */
-  overlapCheckedZones: Set<string>;
+  overlapCheckedZones: { has(zoneId: string): boolean; add(zoneId: string): void };
+}
+
+/**
+ * What one part adds to the build's facts, which a part only writes. Each part fills its own and
+ * mergePartTally folds it into the build's, so a cached part's can be folded in the same way.
+ */
+export interface PartTally {
   /**
    * Colors an edge rule took the full thickness, with the depth. Said once at the end: one fact
    * about the design, and a color can sit on several parts.
@@ -63,6 +78,49 @@ export interface BuildTally {
    */
   coveredColors: Set<number>;
   exposedColors: Set<number>;
+}
+
+/** Everything one part's build writes besides its output and the warnings list. */
+export type BuildTally = CrossPartState & PartTally;
+
+export function newPartTally(): PartTally {
+  return {
+    edgeCutColors: new Map(),
+    zeroDepthRaises: new Map(),
+    tooDeepClamps: new Map(),
+    thinWallClamps: new Map(),
+    colorAppliedDepth: new Map(),
+    landedColors: new Set(),
+    hiddenColors: new Set(),
+    coveredColors: new Set(),
+    exposedColors: new Set(),
+  };
+}
+
+/**
+ * Fold one part's facts into the build's, leaving both what writing them one by one would have:
+ * insertion order included, which sets the order of labels and notices at the end of the build.
+ * Copies every entry, so `from` can be folded again (a cached part) without the two sharing a list.
+ */
+export function mergePartTally(into: PartTally, from: PartTally): void {
+  for (const [label, depth] of from.edgeCutColors) into.edgeCutColors.set(label, depth);
+  for (const [key, e] of from.zeroDepthRaises) {
+    const at = into.zeroDepthRaises.get(key);
+    if (!at) into.zeroDepthRaises.set(key, { ...e, labels: [...e.labels] });
+    else for (const l of e.labels) if (!at.labels.includes(l)) at.labels.push(l);
+  }
+  for (const k of ['tooDeepClamps', 'thinWallClamps'] as const)
+    for (const [key, e] of from[k]) {
+      const at = into[k].get(key);
+      if (!at) into[k].set(key, { ...e, labels: [...e.labels] });
+      else for (const l of e.labels) if (!at.labels.includes(l)) at.labels.push(l);
+    }
+  for (const [ci, d] of from.colorAppliedDepth) {
+    const prev = into.colorAppliedDepth.get(ci);
+    into.colorAppliedDepth.set(ci, prev == null ? d : Math.min(prev, d));
+  }
+  for (const k of ['landedColors', 'hiddenColors', 'coveredColors', 'exposedColors'] as const)
+    for (const ci of from[k]) into[k].add(ci);
 }
 
 /** Progress and yielding for one part, owned by the part loop (it knows how many parts are done). */

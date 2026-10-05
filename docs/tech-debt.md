@@ -139,6 +139,15 @@ SVG**, 1.5-2.9x across the corpus, per-color areas unchanged (0.000% worst relat
   main-thread stall while computing went from 720-784ms to 26-41ms, and Cancel from 410-532ms to
   16-27ms (`npm run build && MOSAIC_GPU=1 node scripts/check-rebuild-worker.mjs`, checks (a) and (b);
   "before" is 5c7f898).
+- **Part cache landed**: a part whose inputs didn't change is replayed in the worker, not cut
+  ([src/geometry/partCache.ts](../src/geometry/partCache.ts)). Nine designs on the chair, one per
+  zone plus Whole chair, then the Right-fender one rescaled: 4.0-4.1s on 230a5a7, 1.2-1.3s
+  after. The bench's 20 rebind rows are unchanged (48.5s vs 49.0s summed medians):
+  a rebind re-cuts both zones' parts. Both from
+  `npm run build && MOSAIC_GPU=1 node scripts/bench-zone-rebuild.mjs`.
+- **What the 1.2s floor of a one-zone edit is spent on is unmeasured.** Candidates: the region
+  pass, whose memo holds one design (`regionsCacheKey`), so nine designs recompute every build;
+  the ~0.7s draw stall below; the one part cut.
 - **Measured dead end**: bbox pre-filtered per-shape diffs, ~2x SLOWER than the accumulator on real
   artwork (full-canvas backgrounds overlap everything). See the comment on `computeNetRegionsByColor`.
 - **Do not "improve" `COVERED_BATCH` by raising it.** Never folding the accumulator is fastest on a
@@ -900,7 +909,7 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
   after the rebuild's tail). Attributed by timing, not profiled.
 - **A hubcap session loads Manifold twice**: hubcap generation (`asmRebuildGeneratedParts` →
   `getManifold`) still runs on the page, the build in the worker.
-- **The worker keeps a copy of each part's mesh and zone charts** (`BUILD_PART_FIELDS`). Memory cost
-  unmeasured.
+- **The worker keeps a copy of each part's mesh and zone charts** (`BUILD_PART_FIELDS`), and the
+  part cache a copy of each part's last cut meshes. Memory cost unmeasured.
 - **Fill tiling has no cancel check.** The page no longer waits on it; the worker is terminated after
   `CANCEL_GRACE_MS` (1s) instead.

@@ -68,6 +68,15 @@ let pending: {
   reject: (e: unknown) => void;
 } | null = null;
 let windingDown: { id: number; timer: ReturnType<typeof setTimeout> } | null = null;
+let lastReuse: { reused: string[]; cut: string[] } | null = null;
+
+/**
+ * Which parts the last finished build replayed from the worker's part cache and which it cut, by
+ * name; null when it ran on the page. For driven checks (window.__mosaic.buildReuse).
+ */
+export function lastBuildReuse(): { reused: string[]; cut: string[] } | null {
+  return lastReuse;
+}
 
 /** Tests swap in a stand-in; null runs every build on this thread, as under vitest. */
 export function setBuildWorkerFactory(f: (() => BuildWorkerLike) | null): void {
@@ -134,6 +143,8 @@ function onMessage(msg: FromWorker): void {
   const p = pending;
   pending = null;
   if (msg.type === 'done') {
+    const names = (ix: number[]): string[] => ix.map((i) => p.input.parts[i].name);
+    lastReuse = { reused: names(msg.reused), cut: names(msg.cut) };
     replayWarnings(msg.warnings);
     p.resolve(msg.build && unpackBuild(msg.build, p.input.parts));
   } else if (msg.type === 'failed') {
@@ -181,6 +192,7 @@ function cancelPending(): void {
  * plus `BuildWorkerCrashed`. A cancel rejects at once with RebuildCancelled.
  */
 export async function runAssemblyBuild(input: AssemblyBuildInput): Promise<AssemblyBuild | null> {
+  lastReuse = null;
   if (!factory) return buildAssemblyGeometry(input);
   throwIfCancelled();
   // A cancelled build still unwinding would make this one queue behind it.

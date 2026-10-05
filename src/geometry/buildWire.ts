@@ -70,6 +70,9 @@ export type FromWorker =
       build: WireBuild | null;
       warnings: WarningCall[];
       trapped: boolean;
+      /** Indices into the request's `parts`: replayed from the worker's part cache, and cut. */
+      reused: number[];
+      cut: number[];
     }
   | { type: 'cancelled'; id: number; trapped: boolean }
   | { type: 'failed'; id: number; message: string; warnings: WarningCall[]; wire?: boolean }

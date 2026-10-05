@@ -25,6 +25,7 @@ import { holdSavedSessionUntilAnswered, initBeforeUnloadGuard } from './state/pe
 import { $ } from './ui/dom';
 import { getAppVersion } from './version';
 import { rebuildsSoFar, whenIdle } from './app/idle';
+import { lastBuildReuse } from './app/buildClient';
 import { WARNINGS } from './warnings';
 import { WHOLE_CHAIR_ZONE } from './geometry/zones';
 
@@ -39,6 +40,7 @@ import { WHOLE_CHAIR_ZONE } from './geometry/zones';
       zonePickAtNdc: typeof zonePickAtNdc;
       // check-zone-occlusion.mjs reads this rather than hardcoding '*whole', so its identity sweep can't drift from the app's id.
       WHOLE_CHAIR_ZONE: typeof WHOLE_CHAIR_ZONE;
+      buildReuse: typeof lastBuildReuse;
     };
   }
 ).__mosaic = {
@@ -48,6 +50,7 @@ import { WHOLE_CHAIR_ZONE } from './geometry/zones';
   modelNdcExtent,
   zonePickAtNdc,
   WHOLE_CHAIR_ZONE,
+  buildReuse: lastBuildReuse,
 };
 
 $('#app-version').textContent =

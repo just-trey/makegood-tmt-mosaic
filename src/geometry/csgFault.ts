@@ -68,6 +68,11 @@ function announce(): void {
 
 announce();
 
+/** Whether a fault is armed: which part it lands on depends on every part before it being cut. */
+export function csgFaultArmed(): boolean {
+  return fault !== null;
+}
+
 /**
  * Throw if this call site is the armed one. A no-op — and free — on every normal page load.
  *

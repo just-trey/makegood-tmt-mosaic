@@ -126,6 +126,15 @@ export function journalWarnings(into: WarningCall[] | null): void {
   journal = into;
 }
 
+/** Where the journal stands, so one step's calls can be taken (journalSince); null when off. */
+export function journalLength(): number | null {
+  return journal ? journal.length : null;
+}
+
+export function journalSince(from: number): WarningCall[] {
+  return journal ? journal.slice(from) : [];
+}
+
 /** Apply calls journaled elsewhere, in order, as if they had been made here. */
 export function replayWarnings(calls: readonly WarningCall[]): void {
   const marks = new Map<number, ReadonlySet<Notice>>();

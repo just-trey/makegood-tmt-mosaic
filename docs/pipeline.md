@@ -95,8 +95,9 @@ loaded on demand ([partBuild.ts](../src/geometry/partBuild.ts)).
   once, then calls `buildPart` once per part.
 - `buildPart` ([partBuild.ts](../src/geometry/partBuild.ts)) takes its inputs as
   arguments (`BuildContext`, [buildContext.ts](../src/geometry/buildContext.ts)).
-  Besides its return value, it writes to the `BuildTally` it is handed and to
-  the warnings list.
+  Besides its return value, it writes to the warnings list, to its own
+  `PartTally` (folded into the build's by `mergePartTally`), and to the
+  `CrossPartState` it shares with the parts after it.
 - One colour of one design on one zone is `buildColorPrism`
   ([colorPrism.ts](../src/geometry/colorPrism.ts)).
 - Kept-half and whole-part clips: [designClip.ts](../src/geometry/designClip.ts).
@@ -132,6 +133,27 @@ the page.
 - **A worker is replaced** after a build that threw, or whose engine trapped
   (`noteEngineError` at every catch around a Manifold call): a trap stops the
   engine mid-operation, so its heap can't be trusted.
+- **A part whose inputs didn't change is replayed, not cut**
+  ([partCache.ts](../src/geometry/partCache.ts)). The worker keeps each part's
+  last result, so an edit to one zone's design re-cuts only the parts carrying
+  that zone.
+- The key is what `buildPart` reads. The part's sent fields go by identity. The
+  palette and each color's requested depth go by value. Per design landing on
+  the part's zones: its fields, placement, tile, and a 64-bit hash of its ink
+  per color. A design on a zone the part lacks is not in its key.
+- A replay redoes everything the cut did besides the mesh: its warning calls in
+  order (dismissals, drop-since-mark), its `PartTally`, and the cross-part
+  state after it.
+- A part is replayed only where every cross-part key it touched stands as it
+  found it: each torn pill it read or raised, each zone it overlap-checked.
+  Otherwise it is cut.
+- Never stored: a part cut while the engine trapped. An engine exception is
+  stored: it unwinds cleanly, and the repair ladder meets one on ordinary
+  artwork. Nothing is stored or replayed while `?csgfault` is armed.
+- Stored meshes are copied in the worker, in and out, so the page still
+  receives moved buffers. The cache goes with the worker.
+- `window.__mosaic.buildReuse()` names the parts the last build replayed and
+  cut. [check-part-cache.mjs](../scripts/check-part-cache.mjs) drives it.
 - **Export clicked mid-rebuild waits for it**, held off from the click to the end, so the file matches the panels.
   The curtain is a stack ([overlay.ts](../src/ui/overlay.ts)): a part load
   shown over a rebuild hides only its own.
