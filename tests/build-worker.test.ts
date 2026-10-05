@@ -14,6 +14,7 @@ import {
 import {
   BuildWorkerCrashed,
   BuildWorkerFault,
+  lastBuildReuse,
   runAssemblyBuild,
   setBuildWorkerFactory,
   type BuildWorkerLike,
@@ -306,6 +307,35 @@ describe('runAssemblyBuild through a worker', () => {
     ]);
   });
 
+  it('replays unchanged parts across builds, and every build still brings its bytes', async () => {
+    const a = boxPart();
+    const b = boxPart({ id: 2, name: 'second box' });
+    const inp = input(parsed(), [a, b]);
+    const direct = (await buildAssemblyGeometry(inp))!;
+    const directWarnings = WARNINGS.map((w) => ({ ...w }));
+    setBuildWorkerFactory(() => new InProcessWorker());
+
+    clearWarnings();
+    await runAssemblyBuild(inp);
+    expect(lastBuildReuse()).toEqual({ reused: [], cut: ['test box', 'second box'] });
+    // Three replays: a stored mesh moved to the page rather than copied would arrive empty from
+    // the second on, its buffer detached in the worker.
+    for (let i = 0; i < 3; i++) {
+      clearWarnings();
+      const again = (await runAssemblyBuild(inp))!;
+      expect(lastBuildReuse()).toEqual({ reused: ['test box', 'second box'], cut: [] });
+      expect(soupBytes(again)).toEqual(soupBytes(direct));
+      expect(WARNINGS).toEqual(directWarnings);
+    }
+    clearWarnings();
+    const moved = { ...inp, parts: [a, { ...b, positions: Float32Array.from(b.positions!) }] };
+    await runAssemblyBuild(moved);
+    expect(lastBuildReuse()).toEqual({ reused: ['test box'], cut: ['second box'] });
+    // A build that returns before the part loop reports its own empty lists, not the last ones.
+    await runAssemblyBuild({ ...inp, artworks: [] });
+    expect(lastBuildReuse()).toEqual({ reused: [], cut: [] });
+  });
+
   it('forwards progress to the curtain', async () => {
     const seen: number[] = [];
     setProgressSink((f) => seen.push(f));
@@ -390,7 +420,15 @@ describe('runAssemblyBuild through a worker', () => {
     const next = runAssemblyBuild(input());
     expect(workers).toHaveLength(2);
     const { id } = workers[1].received[0];
-    workers[1].reply({ type: 'done', id, build: null, warnings: [], trapped: false });
+    workers[1].reply({
+      type: 'done',
+      id,
+      build: null,
+      warnings: [],
+      trapped: false,
+      reused: [],
+      cut: [],
+    });
     expect(await next).toBeNull();
     errSpy.mockRestore();
   });
@@ -424,7 +462,15 @@ describe('runAssemblyBuild through a worker', () => {
     });
     const run = runAssemblyBuild(input());
     const { id } = workers[0].received[0];
-    workers[0].reply({ type: 'done', id, build: null, warnings: [], trapped: true });
+    workers[0].reply({
+      type: 'done',
+      id,
+      build: null,
+      warnings: [],
+      trapped: true,
+      reused: [],
+      cut: [],
+    });
     expect(await run).toBeNull();
     expect(workers[0].terminated).toBe(true);
     void runAssemblyBuild(input());
@@ -439,7 +485,15 @@ describe('runAssemblyBuild through a worker', () => {
       return (w = new ScriptedWorker());
     });
     const run = runAssemblyBuild(input());
-    w.reply({ type: 'done', id: w.received[0].id, build: null, warnings: [], trapped: false });
+    w.reply({
+      type: 'done',
+      id: w.received[0].id,
+      build: null,
+      warnings: [],
+      trapped: false,
+      reused: [],
+      cut: [],
+    });
     await run;
     void runAssemblyBuild(input());
     expect(spawned).toBe(1);
@@ -478,7 +532,15 @@ describe('runAssemblyBuild through a worker', () => {
     const run = runAssemblyBuild(input());
     const { id } = w.received[0];
     // A late message from an earlier build is not this one's answer.
-    w.reply({ type: 'done', id: id - 1, build: null, warnings: [], trapped: false });
+    w.reply({
+      type: 'done',
+      id: id - 1,
+      build: null,
+      warnings: [],
+      trapped: false,
+      reused: [],
+      cut: [],
+    });
     w.reply({
       type: 'failed',
       id,

@@ -51,6 +51,7 @@ export function manifoldIsValid(man: ManifoldSolid): boolean {
 }
 
 let trapped = false;
+let traps = 0;
 
 /**
  * For every catch around an engine call. A trap (out-of-bounds access, an abort for memory) stops
@@ -59,7 +60,14 @@ let trapped = false;
  * C++ exception unwinds cleanly and isn't one.
  */
 export function noteEngineError(e: unknown): void {
-  if (e instanceof WebAssembly.RuntimeError) trapped = true;
+  if (!(e instanceof WebAssembly.RuntimeError)) return;
+  trapped = true;
+  traps++;
+}
+
+/** Traps noted so far, never reset: the part cache stores no part cut while one happened. */
+export function engineTrapCount(): number {
+  return traps;
 }
 
 /** Whether a trap was noted since the last call. */

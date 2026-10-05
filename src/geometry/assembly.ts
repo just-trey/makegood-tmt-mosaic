@@ -33,7 +33,14 @@ import { resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
 import { throwIfCancelled } from '../cancel';
 import { fillCoveredNotice } from './assemblyWarnings';
-import { isCuttable, type BuildContext, type BuildTally, type PartProgress } from './buildContext';
+import {
+  isCuttable,
+  newPartTally,
+  type BuildContext,
+  type BuildTally,
+  type CrossPartState,
+  type PartProgress,
+} from './buildContext';
 import {
   designAnchor,
   designMmPerUnit,
@@ -42,6 +49,7 @@ import {
 } from './designScale';
 import { polysOf } from './designClip';
 import { buildPart } from './partBuild';
+import { cutPart, partKeyer, type CachedBuild } from './partCache';
 
 // The zone layer owns these now; re-exported so importers keep their '../geometry/assembly' paths.
 export { asmPartFaceNormal, faceXZBBox, rotatePointY, OVERSHOOT_MM } from './zones';
@@ -171,6 +179,7 @@ export interface AssemblyBuildInput {
  */
 export async function buildAssemblyGeometry(
   input: AssemblyBuildInput,
+  cache?: CachedBuild,
 ): Promise<AssemblyBuild | null> {
   resetCsgFaults();
   const {
@@ -378,19 +387,9 @@ export async function buildAssemblyGeometry(
     globalDepth,
     wasm,
   };
-  const tally: BuildTally = {
-    tornPills: new Map(),
-    overlapCheckedZones: new Set(),
-    edgeCutColors: new Map(),
-    zeroDepthRaises: new Map(),
-    tooDeepClamps: new Map(),
-    thinWallClamps: new Map(),
-    colorAppliedDepth: new Map(),
-    landedColors: new Set(),
-    hiddenColors: new Set(),
-    coveredColors: new Set(),
-    exposedColors: new Set(),
-  };
+  const cross: CrossPartState = { tornPills: new Map(), overlapCheckedZones: new Set() };
+  const tally = newPartTally();
+  const keyFor = cache && partKeyer(ctx, parts, isRect);
 
   const partOutputs: AssemblyPartOutput[] = [];
   let anyPlacements = false;
@@ -421,7 +420,11 @@ export async function buildAssemblyGeometry(
       viewSignSet = true;
     }
 
-    const { output, placed } = await buildPart(ctx, tally, part, mappers, progress);
+    const build = (t: BuildTally) => buildPart(ctx, t, part, mappers, progress);
+    const { output, placed } =
+      cache && keyFor
+        ? await cache.run(parts.indexOf(part), part, keyFor(part, mappers), cross, tally, build)
+        : (await cutPart(cross, tally, build)).result;
     if (placed) anyPlacements = true;
     if (output) partOutputs.push(output);
     finishPart();
@@ -454,7 +457,7 @@ export async function buildAssemblyGeometry(
   }
   for (const [depth, labels] of byEdgeDepth) noticeBuild(edgeCutThroughNotice(labels, depth));
   // Gated on anyPlacements so a build with no design surfaces at all doesn't call every color
-  // missing. See BuildTally.landedColors for what counts as landed.
+  // missing. See PartTally.landedColors for what counts as landed.
   if (anyPlacements) {
     const labelsOf = (want: (ci: number) => boolean): string[] =>
       palette

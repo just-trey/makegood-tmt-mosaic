@@ -3,7 +3,14 @@
 // Usage: npm run build && MOSAIC_GPU=1 node scripts/bench-zone-rebuild.mjs [outFile]
 import { writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { startPreview, launchBrowser, newPage, glRenderer, useGpu } from './lib/harness.mjs';
+import {
+  startPreview,
+  launchBrowser,
+  newPage,
+  glRenderer,
+  useGpu,
+  afterRebuild,
+} from './lib/harness.mjs';
 
 const OUT = process.argv[2] || 'stubs/zone-rebuild-cost.json';
 mkdirSync(path.dirname(OUT), { recursive: true });
@@ -102,8 +109,69 @@ try {
     }
   }
 
+  // One design per zone, then only the last one rescaled: the edit a volunteer makes most. Timed
+  // with afterRebuild, not the curtain: a rebuild that reuses most parts can finish before the
+  // curtain would show, and timeRebuild would then sit out its 30s wait.
+  const edits = [];
+  {
+    const { page: p2, errors: errors2 } = await newPage(browser, {
+      viewport: { width: 1440, height: 1000 },
+    });
+    await p2.goto(`http://localhost:${PORT}/?kind=chair-body`);
+    await p2.waitForFunction(() => !!window.__mosaic);
+    await p2.waitForFunction(
+      () => {
+        const rows = [...document.querySelectorAll('#assembly-part-list .asm-sum-row')];
+        return rows.length >= 13 && rows.every((r) => r.textContent.startsWith('✓'));
+      },
+      null,
+      { timeout: 300_000 },
+    );
+    await p2.evaluate(() => window.__mosaic.whenIdle());
+    const rows = p2.locator('#artwork-list .artwork-row');
+    for (let i = 0; i < single.length; i++) {
+      await afterRebuild(p2, async () => {
+        // A buffer, not the path: the input already holding that path fires no second change.
+        await p2.setInputFiles('#svg-input', {
+          name: `sticker-${i}.svg`,
+          mimeType: 'image/svg+xml',
+          buffer: Buffer.from(SVG),
+        });
+        await p2.waitForFunction(
+          (n) => document.querySelectorAll('#artwork-list .artwork-row').length >= n,
+          i + 1,
+          { timeout: 180_000 },
+        );
+      });
+      const sel = rows.nth(i).locator('.artwork-zone');
+      if ((await sel.inputValue()) !== single[i].value)
+        await afterRebuild(p2, () => sel.selectOption(single[i].value));
+    }
+    const bound = await p2.$$eval('#artwork-list .artwork-row .artwork-zone', (s) =>
+      s.map((x) => x.value),
+    );
+    console.log(`\n--- one design per zone (${bound.join(', ')}), last one rescaled ---`);
+    for (let r = 0; r < REPEATS; r++) {
+      const scale = 105 + 5 * r;
+      const t0 = Date.now();
+      await afterRebuild(p2, async () => {
+        await p2.fill('#p-scale-num', String(scale));
+        await p2.dispatchEvent('#p-scale-num', 'change');
+      });
+      const secs = (Date.now() - t0) / 1000;
+      const t = await p2.textContent('#stat-tris');
+      edits.push({ pass: r, zone: bound[bound.length - 1], scale, secs, tris: t });
+      console.log(`  [${r}] scale ${scale}%  ${secs.toFixed(1)}s   ${t}`);
+    }
+    errors2.forEach((e) => console.log('ERROR (one design per zone)', e));
+    await p2.close();
+  }
+
   const warnings = await page.evaluate(() => window.__mosaic.warnings());
-  writeFileSync(OUT, JSON.stringify({ renderer, repeats: REPEATS, runs, warnings }, null, 1));
+  writeFileSync(
+    OUT,
+    JSON.stringify({ renderer, repeats: REPEATS, runs, edits, warnings }, null, 1),
+  );
   console.log(`\nwrote ${OUT}`);
   errors.forEach((e) => console.log('ERROR', e));
 } finally {

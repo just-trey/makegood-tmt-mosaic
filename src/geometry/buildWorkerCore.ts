@@ -9,6 +9,7 @@ import {
 } from './buildWire';
 import { armCsgFaults } from './csgFault';
 import { takeEngineTrapped } from './manifold';
+import { PartCache } from './partCache';
 import { armCancel, RebuildCancelled, requestCancel } from '../cancel';
 import { setProgressSink } from '../progress';
 import { clearWarnings, journalWarnings, type WarningCall } from '../warnings';
@@ -22,6 +23,8 @@ export function startBuildWorker(post: (msg: FromWorker, transfer: Transferable[
   onMessageError: () => void;
 } {
   const cache = new Map<number, unknown>();
+  // Dropped with the worker, which the page replaces after a trap or a failed build.
+  const partCache = new PartCache();
   let running: number | null = null;
   const onMessage = async (msg: ToWorker): Promise<void> => {
     if (msg.type === 'cancel') {
@@ -47,12 +50,14 @@ export function startBuildWorker(post: (msg: FromWorker, transfer: Transferable[
     });
     try {
       const input = decodeInput(msg.input, cache);
-      const built = await buildAssemblyGeometry(input);
+      const cached = partCache.begin(input.parts);
+      const built = await buildAssemblyGeometry(input, cached);
       const trapped = takeEngineTrapped();
-      if (!built) post({ type: 'done', id, build: null, warnings, trapped }, []);
+      const { reused, cut } = cached;
+      if (!built) post({ type: 'done', id, build: null, warnings, trapped, reused, cut }, []);
       else {
         const { wire, transfer } = packBuild(built, input.parts, partBuffers(input.parts));
-        post({ type: 'done', id, build: wire, warnings, trapped }, transfer);
+        post({ type: 'done', id, build: wire, warnings, trapped, reused, cut }, transfer);
       }
     } catch (e) {
       if (e instanceof RebuildCancelled)

@@ -26,8 +26,17 @@ import {
 } from './patterns';
 import { fitsBesideClips, roomBesideClips, UnionTooBig } from './regions';
 import type { ZoneMapper } from './zones';
+import type { ArtworkBuildInput } from './assembly';
 import { dropBuildWarningsSince, warnBuild, warningMark } from '../warnings';
 import { throwIfCancelled } from '../cancel';
+
+/**
+ * Indices of the artworks landing on a zone: those bound to it by id, plus any unbound one. Unbound
+ * is the single-zone case (wheel, footrest), which goes wherever the part offers.
+ */
+export function artworksOnZone(artworks: ArtworkBuildInput[], zoneId: string | null): number[] {
+  return artworks.flatMap((a, ai) => (a.zoneId == null || a.zoneId === zoneId ? [ai] : []));
+}
 
 /**
  * One part's cut: every design on every zone it offers extruded into per-color cutters, then the
@@ -65,14 +74,9 @@ export async function buildPart(
     // Staged edge-rule colors, merged into edgeCutColors only where the part succeeds (see `keep`).
     const partEdgeColors = new Map<string, number>();
     const cut: PartCut = { part, held, colorPrisms, partEdgeColors };
-    // Artworks landing on a zone: those bound to it by id, plus any unbound one. Unbound is the
-    // single-zone case (wheel, footrest), which goes wherever the part offers.
-    const artworksOn = (mapper: ZoneMapper): number[] =>
-      artworks.flatMap((a, ai) => (a.zoneId == null || a.zoneId === mapper.zoneId ? [ai] : []));
-
     // +1 reserved for the body/inlay CSG stage below, so progress reaches 1 only once every color
     // on every zone plus the final cuts are done.
-    const zoneWork = mappers.map(artworksOn);
+    const zoneWork = mappers.map((m) => artworksOnZone(artworks, m.zoneId));
     // A fill's colors take two units each, one to tile and one to cut.
     const partUnits =
       palette.length *

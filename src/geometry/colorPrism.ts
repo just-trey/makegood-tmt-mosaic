@@ -9,11 +9,9 @@ import {
   speckKey,
   unprintableSpeckNotice,
 } from './assemblyWarnings';
-import type { BuildContext, BuildTally } from './buildContext';
+import type { BuildContext, BuildTally, ColorMark } from './buildContext';
 import { FILL_REFINE_MM } from './conformal';
 import {
-  addPartTooDeepClamp,
-  addZeroDepthRaise,
   CLIP_REMNANT_FLOOR_MM2,
   depthDiffers,
   MIN_CUT_DEPTH_MM,
@@ -75,7 +73,7 @@ export interface DesignOnZone {
  * intersect that shaped nothing). A flake takes the off-part message.
  */
 function noteHiddenSurface(
-  hiddenColors: Set<number>,
+  hiddenColors: ColorMark,
   mapper: ZoneMapper,
   placed: PolyFeature | null,
   ci: number,
@@ -91,7 +89,7 @@ function noteHiddenSurface(
  * off the part" (whose lower-Scale remedy is backwards for a design already too small).
  */
 function dropSpecks(
-  landedColors: Set<number>,
+  landedColors: ColorMark,
   feat: PolyFeature | null,
   ci: number,
   part: AssemblyPart,
@@ -253,12 +251,10 @@ export async function buildColorPrism(
   // parts/zones, so two depths show the more-clamped one, not whichever ran last.
   if (landedAtSetting || wallDepths.length) {
     const cut = Math.min(landedAtSetting ? depthSetting : Infinity, ...wallDepths);
-    const prev = colorAppliedDepth.get(ci);
-    colorAppliedDepth.set(ci, prev == null ? cut : Math.min(prev, cut));
+    colorAppliedDepth.fold(ci, cut);
   }
-  for (const r of wallCuts)
-    addPartTooDeepClamp(thinWallClamps, label, part.name, raised, r.depth, r.wall);
-  if (requested <= 0) addZeroDepthRaise(zeroDepthRaises, label, requested, depthSetting);
+  for (const r of wallCuts) thinWallClamps.add(label, part.name, raised, r.depth, r.wall);
+  if (requested <= 0) zeroDepthRaises.add(label, requested, depthSetting);
   // Gated on what the mapper did, like the sub-layer note: a cutThrough part holes the whole
   // way, so "cut at 24.25 mm instead" would be false. Never test `part.cutThrough` here.
   // Rotated copies report too: same bound (asmAddDuplicate shares mesh, face, topZ) but a
@@ -266,7 +262,7 @@ export async function buildColorPrism(
   // addPartTooDeepClamp groups colors sharing a setting to one pill per half; per-color
   // overrides still split.
   else if (depthDiffers(depthSetting, raised) && landedAtSetting)
-    addPartTooDeepClamp(tooDeepClamps, label, part.name, raised, depthSetting);
+    tooDeepClamps.add(label, part.name, raised, depthSetting);
   // This one predicts the printed recess, so not on a part that cuts through ("too thin to
   // show up" is wrong about a 3 mm hole); ask the mapper, never `part.cutThrough`. Per-part
   // gating is right since warnings dedupe: said if any part cuts at the setting. A notice:

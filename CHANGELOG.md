@@ -26,6 +26,13 @@ scripts/measure-clip-ink.test.ts`.
 
 ### Changed
 
+- **Editing one design on the chair re-cuts only the parts it lands on.** The
+  other parts come back as they were, with the same warnings. With nine
+  designs on the chair, rescaling the one on the right fender took 1.2-1.3s,
+  down from 4.0-4.1s
+  (`npm run build && MOSAIC_GPU=1 node scripts/bench-zone-rebuild.mjs`).
+  Exported 3MFs are unchanged.
+
 - **The app stays responsive while it cuts a design.** Cutting runs in a
   background worker, so the 3D view keeps turning and the panels keep working
   during a long rebuild. Cancel stops it at once: 16-27ms from click to

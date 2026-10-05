@@ -1,3 +1,4 @@
+import type { CrossPartState } from './buildContext';
 import { overlappingDesignPairs, type PlacedDesign } from './designOverlap';
 import { MAX_FILL_TILES, type TileRefusal, type TileRefusalReport } from './patterns';
 import { oppositeSide, type KeepSide } from './zones';
@@ -53,7 +54,7 @@ export function netTornWarning(design: string, zones: string[], tearMm: number):
  * `seen` is per build and shared by colours, which can cross different torn stretches.
  */
 export function raiseTornWarning(
-  seen: Map<string, { message: string; tearMm: number }>,
+  seen: CrossPartState['tornPills'],
   design: string,
   zones: string[],
   tearMm: number,
