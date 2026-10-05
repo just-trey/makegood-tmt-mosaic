@@ -9,7 +9,7 @@
 //   libraryPartId  build only this part of the zone, which is faster (default: every part)
 //
 // A first-attempt null from ConformalZoneMapper.buildCutter is where the extrude repair in
-// assembly.ts starts, and a null on every rung is the chair's `Couldn't cut color … into …`. The
+// colorPrism.ts starts, and a null on every rung is the chair's `Couldn't cut color … into …`. The
 // count includes the repair's own retries, so `nulls 0` is the clean result and anything else
 // needs the per-region detail. The build is the shipping buildAssemblyGeometry over the packed
 // meshes and baked charts, with the parts built as tests/chair-build.test.ts builds them and the

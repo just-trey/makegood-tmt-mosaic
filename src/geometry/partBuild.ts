@@ -40,8 +40,16 @@ export async function buildPart(
   mappers: ZoneMapper[],
   progress: PartProgress,
 ): Promise<{ output: AssemblyPartOutput | null; placed: boolean }> {
-  const { artworks, palette, featuresByColor, placements, tileCells, tileVerts, wasm } = ctx;
-  const { maxScalePlacement } = ctx;
+  const {
+    artworks,
+    palette,
+    featuresByColor,
+    placements,
+    maxScalePlacement,
+    tileCells,
+    tileVerts,
+    wasm,
+  } = ctx;
   const { Manifold } = wasm;
   const { overlapCheckedZones, landedColors, edgeCutColors } = tally;
   const { reportPartProgress, maybeYield } = progress;

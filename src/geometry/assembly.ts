@@ -446,7 +446,7 @@ export async function buildAssemblyGeometry(
   }
   for (const [depth, labels] of byEdgeDepth) noticeBuild(edgeCutThroughNotice(labels, depth));
   // Gated on anyPlacements so a build with no design surfaces at all doesn't call every color
-  // missing. See landedColors above for what counts as landed.
+  // missing. See BuildTally.landedColors for what counts as landed.
   if (anyPlacements) {
     const labelsOf = (want: (ci: number) => boolean): string[] =>
       palette

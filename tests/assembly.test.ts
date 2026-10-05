@@ -499,7 +499,7 @@ describe('buildAssemblyGeometry', () => {
         const unionSpy = vi.spyOn(wasm.Manifold, 'union').mockImplementation(() => {
           throw new Error('mock union failure');
         });
-        // `held` (assembly.ts) tracks every solid created for this part and its finally frees
+        // `held` (partBuild.ts) tracks every solid created for this part and its finally frees
         // them all via manifoldDelete — including the two red prisms whose union failed, which
         // are registered as they are built. Spying on the underlying .delete()
         // that manifoldDelete calls is the only way to observe that from outside the module.
