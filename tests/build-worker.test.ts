@@ -391,3 +391,20 @@ describe('runAssemblyBuild through a worker', () => {
     warnSpy.mockRestore();
   });
 });
+
+describe("the worker's message handler", () => {
+  it('answers a build it cannot read with failed, and ignores a cancel for another build', async () => {
+    const { startBuildWorker } = await import('../src/geometry/buildWorkerCore');
+    const sent: FromWorker[] = [];
+    const handle = startBuildWorker((msg) => sent.push(msg));
+    await handle({ type: 'cancel', id: 7 });
+    const held = new Set<number>();
+    const inp = input();
+    encodeInput(inp, held);
+    // Names only: this worker was never sent the objects.
+    await handle({ type: 'build', id: 8, search: '', input: encodeInput(inp, held) });
+    expect(sent).toEqual([
+      { type: 'failed', id: 8, message: expect.stringMatching(/never sent/), warnings: [] },
+    ]);
+  });
+});
