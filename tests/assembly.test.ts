@@ -4,14 +4,12 @@ import {
   asmPartFaceNormal,
   asmPartTransformGroup,
   buildAssemblyGeometry,
-  designAnchor,
-  designMmPerUnit,
-  fillRefusalMessage,
-  memoLargestDesignFace,
   rotatePointY,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
+import { fillRefusalMessage } from '../src/geometry/assemblyWarnings';
+import { designAnchor, designMmPerUnit, memoLargestDesignFace } from '../src/geometry/designScale';
 import { getManifold, type ManifoldAPI, type ManifoldSolid } from '../src/geometry/manifold';
 import { FILL_POINT_BUDGET } from '../src/geometry/patterns';
 import { armCancel, RebuildCancelled, requestCancel } from '../src/cancel';
@@ -501,7 +499,7 @@ describe('buildAssemblyGeometry', () => {
         const unionSpy = vi.spyOn(wasm.Manifold, 'union').mockImplementation(() => {
           throw new Error('mock union failure');
         });
-        // `held` (assembly.ts) tracks every solid created for this part and its finally frees
+        // `held` (partBuild.ts) tracks every solid created for this part and its finally frees
         // them all via manifoldDelete — including the two red prisms whose union failed, which
         // are registered as they are built. Spying on the underlying .delete()
         // that manifoldDelete calls is the only way to observe that from outside the module.

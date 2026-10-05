@@ -377,7 +377,7 @@ describe('applyRestoredSession: assembly mode', () => {
   // held the other one's. Reachable by switching part, then accepting the still-open banner.
   // setArtworkZone re-applies the saved zoneId against the part actually loaded. On the fallback
   // that part is a different kind, so an instance keeps a binding no mapper matches — and
-  // geometry/assembly.ts drops such an instance from the cut entirely, with nothing said and (on a
+  // geometry/partBuild.ts drops such an instance from the cut entirely, with nothing said and (on a
   // part with a single design face) no dropdown to re-target it.
   it('does not re-apply zone bindings that named the kind it did not restore onto', async () => {
     await applyRestoredSession(
@@ -393,7 +393,7 @@ describe('applyRestoredSession: assembly mode', () => {
   });
 
   // The same silent loss as the test above, reached from the other direction: the right kind loads,
-  // but a re-bake has since renamed or dropped one of its zones. geometry/assembly.ts matches
+  // but a re-bake has since renamed or dropped one of its zones. geometry/partBuild.ts matches
   // instances to mappers by zoneId, so a binding naming a zone nobody offers is cut nowhere and
   // says nothing — and the dropdown shows no selection rather than a wrong one, so there is not
   // even a visible symptom to chase. Sending it to All zones cuts something the user can see.

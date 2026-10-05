@@ -19,12 +19,14 @@ vi.mock('../src/geometry/regions', async (importOriginal) => {
 
 import {
   buildAssemblyGeometry,
-  fillCoveredNotice,
-  fillYieldFailedWarning,
-  unprintableSpeckNotice,
   type ArtworkBuildInput,
   type AssemblyBuildInput,
 } from '../src/geometry/assembly';
+import {
+  fillCoveredNotice,
+  fillYieldFailedWarning,
+  unprintableSpeckNotice,
+} from '../src/geometry/assemblyWarnings';
 import {
   getManifold,
   manifoldDelete,

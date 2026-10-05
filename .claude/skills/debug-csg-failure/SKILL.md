@@ -33,10 +33,11 @@ Two strings look alike and aren't:
   degrades to a single copy of the artwork. Don't chase it into Manifold.
 
 **Almost every branch opens with `Couldn't` (the watertight check at
-[assembly.ts](../../../src/geometry/assembly.ts) is the exception: "Part … isn't
+[partBuild.ts](../../../src/geometry/partBuild.ts) is the exception: "Part … isn't
 a watertight/manifold mesh"), so counting those sites in
-[assembly.ts](../../../src/geometry/assembly.ts) tells you nothing about which
-are Manifold.** Only **four** are boolean branches: the per-colour merge
+[partBuild.ts](../../../src/geometry/partBuild.ts) and
+[colorPrism.ts](../../../src/geometry/colorPrism.ts) tells you nothing about
+which are Manifold.** Only **four** are boolean branches: the per-colour merge
 ("Couldn't merge color …"), the part-wide merge ("Couldn't merge the recesses
 on …"), the body difference ("Couldn't cut the recesses into …") and the inlay
 intersection ("Couldn't fit the inlay …"). The rest are the extrude, once the

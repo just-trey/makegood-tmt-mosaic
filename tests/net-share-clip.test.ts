@@ -13,7 +13,7 @@ vi.mock('@turf/turf', async (importOriginal) => {
   };
 });
 
-import { clipToNetShare } from '../src/geometry/assembly';
+import { clipToNetShare } from '../src/geometry/designClip';
 import { ConformalZoneMapper, type ConformalChart } from '../src/geometry/conformal';
 import { differenceChecked, safeDiff } from '../src/geometry/regions';
 import type { NetExclusion } from '../src/geometry/zones';

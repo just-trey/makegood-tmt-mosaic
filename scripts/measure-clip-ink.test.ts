@@ -2,7 +2,7 @@
 // CLIP_REMNANT_FLOOR_MM2 (src/geometry/depth.ts)? Written for docs/tech-debt.md "Nobody has swept
 // the design ink CLIP_REMNANT_FLOOR_MM2 actually guards" — measure-cut-width.mjs and
 // measure-seam-overlap.mjs already swept the BAKE's population (part geometry); this sweeps the
-// runtime one, a placed design's ink clipped to a part (`placedInk`/`dropSpecks` in assembly.ts).
+// runtime one, a placed design's ink clipped to a part (`placedInk` in designClip.ts, `dropSpecks` in colorPrism.ts).
 //
 // Runs the four shipped patterns (public/patterns/*.svg) as real Fill designs through the real
 // buildAssemblyGeometry pipeline, on real parts for every assembly kind that has one (wheel-half,
@@ -68,7 +68,7 @@ function bboxOfPiece(coordinates: number[][][]): { w: number; h: number } {
 // Partial mock: every export is the real one except dropUnprintableRemnants, which records the
 // area of each piece it is handed (the exact decomposition the real floor uses, mirrored from the
 // function's own toGeom+planarArea split) and then calls straight through to the real
-// implementation. This taps the live call sites in assembly.ts (placedInkFeatures, dropSpecks)
+// implementation. This taps the live call sites (placedInkFeatures, dropSpecks)
 // rather than re-deriving their clip logic — a reimplementation is the wrong kind of measurement
 // (bench-replica-must-be-verbatim, #218).
 vi.mock('../src/geometry/regions', async (importOriginal) => {
