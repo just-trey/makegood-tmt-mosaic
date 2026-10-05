@@ -49,6 +49,11 @@ scripts/measure-clip-ink.test.ts`.
 
 ### Fixed
 
+- **`scripts/export-chair-examples.mjs` runs again.** Since #137 it timed out
+  looking for a Fill select the chair does not offer. It now puts 3-color
+  diagonal stripes on every zone as a Sticker and fails any zoned plate with
+  fewer than 4 filaments. The caster mounts and seat center are in no zone and
+  stay body-only.
 - **A drag that starts on a placement corner handle always resizes.** Where
   the rotate handle overlapped a corner, a drag there rotated instead. The
   rest of the rotate handle is unchanged. Each

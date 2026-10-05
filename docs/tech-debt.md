@@ -245,18 +245,6 @@ extrusions plus the repair ladder behind them.
   of rects and takes only a region count and a repeat count, so a chair run means teaching it a kind and
   a Fill mode.
 
-## `export-chair-examples.mjs` can't reach Fill on the chair
-
-Tooling, broken since #137. The script sets `.artwork-mode` to `fill` and asserts it took. `chair-body`
-carries `withholdFill: true`, so `artworkListPanel` never renders that select and the step times out.
-
-- Not a selector to update. The script exists to put several colours on every part, so each plate's
-  prime tower sees real swaps. Sticker on one zone isn't that.
-- Closing it means either `withholdFill` coming off, or a different way to put several colours on every
-  part.
-- Clearing `withholdFill` needs the accumulator fix, or a decision on the wait, in "Rebuild performance needs ongoing
-  work" (above). Nothing else in this file blocks it.
-
 ## A zone template's outline is faceted, because nothing curve-fits a zone boundary
 
 What remains of the 2026-08-05 "templates have odd/wrong edges" report after the clip-region folds were
