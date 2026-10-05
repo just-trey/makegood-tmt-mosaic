@@ -469,7 +469,10 @@ export type TraceOutcome = Pick<
 
 /** Raise the notices a finished trace owes — same at load, restore, slider and resize. Both keys replace in place (warnings.ts push). */
 export function announceTrace(sourceId: string, name: string, result: TraceOutcome): void {
-  notice(result.capped ? rasterCappedMessage(name) : rasterTracedMessage(name), sourceId);
+  notice(
+    result.capped ? rasterCappedMessage(name, result.droppedColors) : rasterTracedMessage(name),
+    sourceId,
+  );
   const loss = rasterColorLossNotice(name, result);
   if (loss) notice(loss, rasterColorLossKey(sourceId));
   // Empty text: the key decides which entry goes (warnings.ts).

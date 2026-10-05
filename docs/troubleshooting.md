@@ -614,8 +614,13 @@ freezes the tab for tens of seconds (cost measured in
 Features below the new floor were absorbed into whichever colour surrounds them.
 Nothing is left as a hole and the regions still tile the image exactly, but fine
 texture is gone. That is usually right anyway: detail near that size is below
-what a 0.4mm nozzle can express. A colour whose every piece was under the floor
-is gone from the colour list too, and this notice doesn't say so.
+what a 0.4mm nozzle can express.
+
+A colour whose every piece was under the floor is gone from the colour list too,
+and the notice names it: **"…merged into its surroundings, including 1 color."**
+Raising Detail may not bring it back: the cap raises the floor again. On the
+test image Detail 90 and 100 both end on the same floor
+(`npx vitest run tests/raster-parse.test.ts -t "leaves a capped"`). The color-dropped notice below never shows beside this one.
 
 The notice names the image, so each loaded image gets its own, and re-tracing
 one at a setting that no longer needs capping retracts only that one.
@@ -654,8 +659,8 @@ nothing saying it differed from what was asked for.
   Detail 0 down to 1/4 at Detail 100, so 16x across the slider, and less
   wherever a placement's own floor is already close. That is the opposite of
   what "Some detail … was too fine to print…" above asks for, and the two never
-  show on the same image: a capped trace keeps that notice and never raises
-  this one.
+  show on the same image: a capped trace keeps that notice, which names the
+  color itself.
 - **It doesn't say the pieces were unprintable, because usually they weren't.**
   With a placement, the floor that normally binds is the smallest feature flat
   art keeps: a 1.6mm square, four nozzle widths (`DESPECKLE_FEATURE_MM`). At
@@ -667,9 +672,8 @@ nothing saying it differed from what was asked for.
   has lost nothing and never raises this. Neither does a color that won a
   cluster and then labelled no pixel, which the blur before clustering can
   produce: nothing of it was traced, so nothing comes back.
-- **Detail already at 100 says nothing.** There is no raising left. Measured by
-  `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`.
-  `docs/tech-debt.md` carries it, with the capped case.
+- **Detail already at 100 gets its own notice**, "… too small to trace, even at
+  full Detail" below. There is no raising left.
 
 ## Troubleshooting: "… too small to print at this size…"
 
@@ -688,6 +692,27 @@ Make the design or the part bigger to keep more."_
   you stop, so the color can come back without touching Colors or Detail.
 - **It says "keep more", not "get it back".** A bigger size lowers the floor,
   but a color's pieces can still be under the new one.
+
+## Troubleshooting: "… Its pieces are too small to trace, even at full Detail."
+
+Full text: _"1 color in "yourfile.png" was dropped. Its pieces are too small to
+trace, even at full Detail."_
+
+More than one reads in the plural: **"Their pieces are too small to trace, even
+at full Detail."**
+
+**An informational notice, not a failure.** The image loaded and cut normally.
+
+- **Raising Detail no longer lowers the floor.** Detail is at 100, or
+  close enough to it that the floor rounds to the same size. The placement isn't
+  what holds the floor up either, so the size notice above doesn't apply.
+  Measured by `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`.
+- **It offers no fix.** A bigger design can still lower the floor on flat art,
+  but nothing measured says when it is enough.
+- **Where it shows on the sample images**: 4 of 190 traces, all pattern-cow and
+  pattern-zebra at Detail 100
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts dropped`, needs the
+  gitignored `stubs/`). That bench samples Detail 50 and 100 only.
 
 ## Troubleshooting: "No opaque pixels were found in this image…"
 

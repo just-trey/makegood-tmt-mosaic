@@ -54,6 +54,12 @@ scripts/measure-clip-ink.test.ts`.
   diagonal stripes on every zone as a Sticker and fails any zoned plate with
   fewer than 4 filaments. The caster mounts and seat center are in no zone and
   stay body-only.
+- **A traced image that loses a color now always says so.** Two cases used to
+  drop a color silently. When the trace hit its detail limit, the notice now
+  ends "including 1 color". With Detail already as high as it helps, a new
+  notice says the color's pieces are too small to trace, even at full Detail.
+  Raising Detail to where it stops helping used to clear the old notice with
+  the color still gone; it now swaps to the new one.
 - **A drag that starts on a placement corner handle always resizes.** Where
   the rotate handle overlapped a corner, a drag there rotated instead. The
   rest of the rotate handle is unchanged. Each

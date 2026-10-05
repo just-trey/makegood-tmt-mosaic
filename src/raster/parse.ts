@@ -199,10 +199,12 @@ export function parseRasterImage(
  * Lives here, not in the panel, because session restore re-traces and must say the same thing: a
  * design that comes back simplified unannounced reads as the app quietly changing it.
  */
-export function rasterCappedMessage(name: string): string {
+export function rasterCappedMessage(name: string, dropped = 0): string {
   return (
-    `Some detail in "${name}" was too fine to print and was merged into its surroundings. ` +
-    'Lower Colors, or lower Detail, for a cleaner result.'
+    `Some detail in "${name}" was too fine to print and was merged into its surroundings` +
+    // Here, not a second notice whose "raise Detail" contradicts this one. No recovery promised: a capped floor is one the cap raised past what Detail asked for.
+    (dropped > 0 ? `, including ${dropped === 1 ? '1 color' : `${dropped} colors`}` : '') +
+    '. Lower Colors, or lower Detail, for a cleaner result.'
   );
 }
 
@@ -245,11 +247,20 @@ export function rasterSizeColorLossMessage(name: string, dropped: number): strin
   );
 }
 
+/** The dropped-color notice once Detail can't lower the floor and no placement pins it. No remedy: a bigger size can still lower a flat-art floor there, but no measured rule says when. */
+export function rasterFullDetailColorLossMessage(name: string, dropped: number): string {
+  return (
+    `${dropped === 1 ? '1 color' : `${dropped} colors`} in "${name}" ` +
+    `${dropped === 1 ? 'was' : 'were'} dropped. ` +
+    `${dropped === 1 ? 'Its' : 'Their'} pieces are too small to trace, even at full Detail.`
+  );
+}
+
 /**
  * Whether a finished trace should raise rasterColorLossMessage — not simply `droppedColors > 0`: only
- * where raising Detail is an answer the user can give. A capped trace carries rasterCappedMessage
- * (opposite remedy); a floor Detail can't lower gets rasterSizeColorLossMessage where the placement
- * pins it, and nothing at DETAIL_MAX with no placement to blame (docs/tech-debt.md).
+ * where raising Detail is an answer the user can give. A capped trace names the color in
+ * rasterCappedMessage (opposite remedy); a floor Detail can't lower gets rasterSizeColorLossMessage
+ * where the placement pins it, else rasterFullDetailColorLossMessage.
  */
 export function rasterLostColors(
   result: Pick<RasterParseResult, 'capped' | 'droppedColors' | 'detailLowersFloor'>,
@@ -262,10 +273,11 @@ export function rasterColorLossNotice(
   name: string,
   result: Pick<RasterParseResult, 'capped' | 'droppedColors' | 'detailLowersFloor' | 'floorReason'>,
 ): string | null {
+  if (result.capped || result.droppedColors === 0) return null;
   if (rasterLostColors(result)) return rasterColorLossMessage(name, result.droppedColors);
-  if (!result.capped && result.droppedColors > 0 && result.floorReason === 'printable')
+  if (result.floorReason === 'printable')
     return rasterSizeColorLossMessage(name, result.droppedColors);
-  return null;
+  return rasterFullDetailColorLossMessage(name, result.droppedColors);
 }
 
 /** Which remedy an emptied trace gets. 'printable': the placement holds the floor up even at DETAIL_MAX, so only a bigger part or design moves it. 'noise': Detail still has room, or no placement to blame. Measured in parseRasterImage, not inferred from which floor binds now (see rasterEmptyTraceMessage). */

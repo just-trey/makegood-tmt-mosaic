@@ -23,6 +23,7 @@ vi.mock('../src/assembly/kinds', () => ({
 
 import { renderArtworkList } from '../src/ui/artworkListPanel';
 import {
+  announceTrace,
   fillClampKey,
   loadArtworkSource,
   setArtworkMirror,
@@ -34,7 +35,6 @@ import {
   rasterCappedMessage,
   rasterColorLossKey,
   rasterColorLossMessage,
-  rasterLostColors,
   rasterTracedMessage,
 } from '../src/raster/parse';
 import { WARNINGS, clearWarnings, notice } from '../src/warnings';
@@ -119,13 +119,7 @@ function loadRasterSource(
     regions: result.componentCount,
   });
   // The notices a real load raises (see applyRasterFile) — loadArtworkSource itself is pure state.
-  if (result.capped) notice(rasterCappedMessage(name), instance.sourceId);
-  else notice(rasterTracedMessage(name), instance.sourceId);
-  if (rasterLostColors(result))
-    notice(
-      rasterColorLossMessage(name, result.droppedColors),
-      rasterColorLossKey(instance.sourceId),
-    );
+  announceTrace(instance.sourceId, name, result);
   return state.sources.find((s) => s.id === instance.sourceId)!;
 }
 
