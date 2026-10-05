@@ -805,7 +805,9 @@ charts, before the dead subtraction:
 
 Reproduce by moving the clip in `bakeZones` onto `subRegions` for every chart, re-baking, and running
 the gate (`npm run build && MOSAIC_GPU=1 npx vite-node scripts/check-cut-ribbon-ink.mjs --sidecar=<it>`)
-and the tests above.
+and the tests above. The spike that measured it, with its code inlined and 216.64mm² of the 649.41 off
+the filled silhouette (closed holes excluded):
+[spikes/2026-10-04-cut-region-clip-scope.md](spikes/2026-10-04-cut-region-clip-scope.md).
 
 **Closing it** takes a driven export over a coverless chart's edge, like the reference variant in
 `scripts/check-cut-ribbon-ink.mjs`. Either it shows no ink past the triangles, or a wider clip lands
