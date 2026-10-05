@@ -22,6 +22,17 @@ export function armCancel(): void {
 
 export function requestCancel(): void {
   cancelled = true;
+  onRequest?.();
+}
+
+let onRequest: (() => void) | null = null;
+
+/**
+ * Called the moment a cancel is requested, for work that can't poll the flag: a build in a worker
+ * is stopped from here, without waiting for a safe point in this thread. One listener; null clears.
+ */
+export function onCancelRequested(fn: (() => void) | null): void {
+  onRequest = fn;
 }
 
 export function cancelRequested(): boolean {

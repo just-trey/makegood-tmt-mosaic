@@ -10,6 +10,8 @@ export function showOverlay(text: string, { cancellable = false } = {}): void {
   $('#loading-text').textContent = text;
   // Hidden unless the work behind the curtain checks for a cancel: the same curtain covers exports and part loads (exportPanel.ts, assembly/parts.ts), which never call throwIfCancelled, so a button there would latch to "Cancelling…" and do nothing.
   $('#loading-cancel').hidden = !cancellable;
+  // Only a rebuild is cancellable, and it runs in a worker: the scene under it stays live to orbit.
+  $('#loading-overlay').classList.toggle('pass-through', cancellable);
   setCancelState(false);
   $('#loading-overlay').style.display = 'flex';
 }

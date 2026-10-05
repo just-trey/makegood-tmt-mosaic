@@ -28,7 +28,6 @@ import { getManifold } from './manifold';
 import type { DesignPlacement, KeepSide } from './zones';
 import { zoneMappersFor } from './zoneMappers';
 import { featureVertexCount, type TileCell } from './patterns';
-import { generatedDesignFaceOverride, generatedFitFactor } from '../assembly/kinds';
 import { noticeBuild, warnBuild } from '../warnings';
 import { resetCsgFaults } from './csgFault';
 import { reportProgress } from '../progress';
@@ -155,6 +154,13 @@ export interface AssemblyBuildInput {
   /** every raw hex the base assignment excludes from cutting (see state/store.ts addToBase) */
   baseColorMembers?: string[];
   keptApart?: string[];
+  /**
+   * A generated part's stand-ins for the design face and its wheel-cap shrink
+   * (`generatedDesignFaceOverride`, `generatedFitFactor` in assembly/kinds.ts). Read from live state
+   * by the caller, because the build may run in a worker that has none. Absent: no override, fit 1.
+   */
+  designFaceOverride?: { w: number; h: number } | null;
+  generatedFit?: number;
 }
 
 /**
@@ -179,6 +185,8 @@ export async function buildAssemblyGeometry(
     baseColorKey,
     baseColorMembers,
     keptApart,
+    designFaceOverride,
+    generatedFit,
   } = input;
   if (!artworks.length || artworks.some((a) => !a.parsed)) return null;
 
@@ -265,8 +273,8 @@ export async function buildAssemblyGeometry(
     radius,
     // The gizmo builds this same context from the same helper: a frame drawn around a size the cut
     // didn't use encloses empty face (see designAnchor).
-    designFace: () => generatedDesignFaceOverride() ?? memoLargestDesignFace(parts)(),
-    generatedFit: generatedFitFactor,
+    designFace: () => designFaceOverride ?? memoLargestDesignFace(parts)(),
+    generatedFit: () => generatedFit ?? 1,
   };
   const mmPerUnitOf = (
     parsed: ParsedSVG,

@@ -1076,6 +1076,12 @@ input[type='checkbox'] {
   color: var(--text-dim);
   z-index: 5;
 }
+#loading-overlay.pass-through {
+  pointer-events: none;
+}
+#loading-overlay.pass-through #loading-cancel {
+  pointer-events: auto;
+}
 .spinner {
   width: 26px;
   height: 26px;

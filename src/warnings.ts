@@ -31,6 +31,7 @@ export const WARNINGS: Notice[] = [];
  * `warnBuild(m)` after `warn(m)` would hand a standing fact to the next rebuild.
  */
 function push(n: Notice): void {
+  journal?.push({ op: 'push', notice: { ...n } });
   const key = n.key ?? n.message;
   const standing = WARNINGS.find((w) => (w.key ?? w.message) === key);
   if (!standing) WARNINGS.push(n);
@@ -75,6 +76,7 @@ export function clearWarnings(): void {
  * scope (nothing re-derives these per rebuild).
  */
 export function dismissNotice(message: string, key?: string): void {
+  journal?.push({ op: 'dismiss', message, key });
   const k = key ?? message;
   const i = WARNINGS.findIndex((w) => (w.key ?? w.message) === k);
   if (i >= 0) WARNINGS.splice(i, 1);
@@ -87,7 +89,12 @@ export function clearBuildWarnings(): void {
 
 /** What `dropBuildWarningsSince` measures from: the entries standing now. */
 export function warningMark(): ReadonlySet<Notice> {
-  return new Set(WARNINGS);
+  const mark = new Set(WARNINGS);
+  if (journal) {
+    markIds.set(mark, journal.length);
+    journal.push({ op: 'mark', id: journal.length });
+  }
+  return mark;
 }
 
 /**
@@ -95,6 +102,40 @@ export function warningMark(): ReadonlySet<Notice> {
  * entry rewritten in place since then is not put back: it was standing at the mark, so it stays.
  */
 export function dropBuildWarningsSince(mark: ReadonlySet<Notice>): void {
+  const id = markIds.get(mark);
+  if (journal && id !== undefined) journal.push({ op: 'drop', id });
   for (let i = WARNINGS.length - 1; i >= 0; i--)
     if (WARNINGS[i].build && !mark.has(WARNINGS[i])) WARNINGS.splice(i, 1);
+}
+
+/**
+ * One call into this module, as recorded where the build ran. Calls, not their effect on the list:
+ * dedupe and keyed rewrites depend on what is standing, which only the page's own list knows.
+ */
+export type WarningCall =
+  | { op: 'push'; notice: Notice }
+  | { op: 'dismiss'; message: string; key?: string }
+  | { op: 'mark'; id: number }
+  | { op: 'drop'; id: number };
+
+let journal: WarningCall[] | null = null;
+const markIds = new WeakMap<ReadonlySet<Notice>, number>();
+
+/** Record every call into `into` as well as applying it (the build worker's side); null stops. */
+export function journalWarnings(into: WarningCall[] | null): void {
+  journal = into;
+}
+
+/** Apply calls journaled elsewhere, in order, as if they had been made here. */
+export function replayWarnings(calls: readonly WarningCall[]): void {
+  const marks = new Map<number, ReadonlySet<Notice>>();
+  for (const c of calls) {
+    if (c.op === 'push') push({ ...c.notice });
+    else if (c.op === 'dismiss') dismissNotice(c.message, c.key);
+    else if (c.op === 'mark') marks.set(c.id, warningMark());
+    else {
+      const mark = marks.get(c.id);
+      if (mark) dropBuildWarningsSince(mark);
+    }
+  }
 }

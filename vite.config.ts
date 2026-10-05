@@ -114,6 +114,9 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    // The build worker (src/geometry/buildWorker.ts) dynamic-imports manifold-3d, which needs a
+    // code-split worker bundle, and only ES workers can be split.
+    worker: { format: 'es' as const },
     plugins: umamiWebsiteId ? [umamiBeacon(umamiWebsiteId)] : [],
     optimizeDeps: {
       // manifold-3d locates its .wasm relative to the module URL; pre-bundling

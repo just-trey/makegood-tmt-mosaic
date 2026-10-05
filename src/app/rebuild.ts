@@ -16,7 +16,6 @@ import { clearBuildWarnings, noticeBuild, warn, warnBuild } from '../warnings';
 import {
   asmPartFaceNormal,
   asmPartTransformGroup,
-  buildAssemblyGeometry,
   shippedColorIndices,
   type ArtworkBuildInput,
 } from '../geometry/assembly';
@@ -27,7 +26,12 @@ import {
   type KeepSide,
 } from '../geometry/zones';
 import { ConformalZoneMapper, type OverlayMesh } from '../geometry/conformal';
-import { currentAssemblyKind, hubcapSilhouetteOffset } from '../assembly/kinds';
+import {
+  currentAssemblyKind,
+  generatedDesignFaceOverride,
+  generatedFitFactor,
+  hubcapSilhouetteOffset,
+} from '../assembly/kinds';
 import { asmRebuildGeneratedParts, generatedPartsNeedRebuild } from '../assembly/parts';
 import {
   frameModelIfPending,
@@ -49,6 +53,7 @@ import { schedulePersist } from '../state/persist';
 import { $ } from '../ui/dom';
 import { renderExportSummary } from '../ui/exportPanel';
 import { RebuildCancelled } from '../cancel';
+import { BuildWorkerCrashed, runAssemblyBuild } from './buildClient';
 
 let lastAssemblyBuild: AssemblyBuild | null = null;
 
@@ -110,24 +115,6 @@ export async function rebuildCurrent(): Promise<void> {
   renderExportSummary();
   // Every rebuild is the state settling after an edit — the one choke point nearly every mutation funnels through, cheaper than hooking each setter.
   schedulePersist();
-}
-
-/**
- * Run a build, returning null if the user cancelled it.
- *
- * Caught here, not in the scheduler, so the rest of rebuildCurrent still runs: its tail has the
- * only schedulePersist outside export, and skipping it left a cancelled rebuild's change unsaved.
- * Null then takes the same path a refused build does.
- */
-async function catchCancel<T>(run: () => Promise<T | null>): Promise<T | null> {
-  try {
-    return await run();
-  } catch (e) {
-    if (!(e instanceof RebuildCancelled)) throw e;
-    // Drop what the aborted build already said: its per-part diagnostics describe unfinished parts and would show failure pills after a Cancel.
-    clearBuildWarnings();
-    return null;
-  }
 }
 
 /** Stripe texture size (px) and stroke width, and the surface pitch (mm) one tile repeats over. */
@@ -459,8 +446,6 @@ export function artworkBuildInputs(): ArtworkBuildInput[] {
 }
 
 async function rebuildAssemblyScene(): Promise<void> {
-  newModelGroup();
-
   // The sliders and gizmo write the legacy globals; the instance is where assembly mode reads
   // placement. Sync FIRST: a part whose shape follows the artwork is regenerated below and reads the
   // instance, and left later its outline was built from the previous placement and the picture from
@@ -498,6 +483,7 @@ async function rebuildAssemblyScene(): Promise<void> {
 
   // No artwork yet: still show the bare wheel so "select the assembly" gives instant feedback.
   if (!state.parsed) {
+    newModelGroup();
     renderRawAssemblyParts();
     poseAssemblyForDisplay();
     renderColorList(null);
@@ -534,12 +520,11 @@ async function rebuildAssemblyScene(): Promise<void> {
       `${where}: ${blank} of ${zoneTotal} zone${zoneTotal === 1 ? '' : 's'} still blank. Add more from the zone dropdown, or pick "All zones" to cover every zone.`,
     );
   }
-  // A cancel is caught here and lands on the `!built` path below. Letting it escape skipped the tail
-  // of rebuildCurrent, including the one schedulePersist outside export (autosave stale, change lost
-  // on reload), left the stage blank (newModelGroup() had already torn down the meshes), and left
-  // #btn-export enabled over the previous build's geometry.
-  const built = await catchCancel(() =>
-    buildAssemblyGeometry({
+  // The scene is torn down only once the build has answered: it runs in a worker, so the last
+  // result stays on screen, orbitable, until there is something to replace it with.
+  let built: AssemblyBuild | null;
+  try {
+    built = await runAssemblyBuild({
       artworks,
       parts: state.assembly.parts,
       mergeGroups: state.mergeGroups,
@@ -551,10 +536,27 @@ async function rebuildAssemblyScene(): Promise<void> {
       baseColorKey: state.baseColorKey,
       baseColorMembers: state.baseColorMembers,
       keptApart: state.keptApart,
-    }),
-  );
+      designFaceOverride: generatedDesignFaceOverride(),
+      generatedFit: generatedFitFactor(),
+    });
+  } catch (e) {
+    const cancelled = e instanceof RebuildCancelled;
+    if (!cancelled && !(e instanceof BuildWorkerCrashed)) throw e;
+    // Caught here, not in the scheduler, so the tail of rebuildCurrent still runs: it has the only
+    // schedulePersist outside export, and skipping it left a cancelled change unsaved on reload.
+    //
+    // The last result stays on screen rather than being redrawn bare: that redraw was most of a
+    // Cancel's latency on the chair. Export is off, since the scene no longer matches the panels.
+    // A cancelled build's diagnostics describe unfinished parts, so they go.
+    if (cancelled) clearBuildWarnings();
+    else warnBuild((e as Error).message);
+    lastAssemblyBuild = null;
+    renderWarnings();
+    $<HTMLButtonElement>('#btn-export').disabled = true;
+    return;
+  }
   lastAssemblyBuild = built;
-  const modelGroup = getModelGroup();
+  const modelGroup = newModelGroup();
   if (!built) {
     // Build failed/refused: keep the bare wheel on screen and surface the build's warn()s — an emptied viewport reads as a crash.
     renderRawAssemblyParts();
