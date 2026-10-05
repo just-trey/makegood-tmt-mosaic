@@ -134,7 +134,8 @@ SVG**, 1.5-2.9x across the corpus, per-color areas unchanged (0.000% worst relat
   from n-ary sweeps. `cleanFeature` re-scrubbing costs nothing: skipping it measured 1.02-1.06x, 5-7% of
   the pass, with 93-95% inside the engine.
 - **Worker landed**: the build runs off the page's thread. Compute is unchanged
-  (`scripts/bench-zone-rebuild.mjs`: 48.6s vs 48.4s summed medians). On a chair rebuild the longest
+  (`npm run build && MOSAIC_GPU=1 node scripts/bench-zone-rebuild.mjs`: 48.6s on 5c7f898 vs
+  48.4s, summed medians of its 20 rows). On a chair rebuild the longest
   main-thread stall while computing went from 720-784ms to 26-41ms, and Cancel from 410-532ms to
   16-27ms (`npm run build && MOSAIC_GPU=1 node scripts/check-rebuild-worker.mjs`, checks (a) and (b);
   "before" is 5c7f898).
@@ -893,8 +894,8 @@ Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-
 
 - **Drawing the result**: a 686-759ms gap as the result is drawn (`bufferGeometryFromTris`, `Box3`, GPU
   upload, shader compile); 792-800ms on 5c7f898, so the worker didn't change it. `newModelGroup`
-  disposes materials, which releases three's programs, so every rebuild recompiles shaders: 247ms cold,
-  **unmeasured in-repo** (a scratch CPU profile). Reusing materials would cut it.
+  disposes materials, which releases three's programs, so every rebuild recompiles shaders; that
+  share is **unmeasured**. Reusing materials would cut it.
 - **Autosave, probably**: a 321-477ms gap about 0.7s after the curtain drops, when `saveSession` fires (1s
   after the rebuild's tail). Attributed by timing, not profiled.
 - **A hubcap session loads Manifold twice**: hubcap generation (`asmRebuildGeneratedParts` →

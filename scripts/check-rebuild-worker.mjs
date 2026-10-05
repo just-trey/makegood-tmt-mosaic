@@ -114,7 +114,7 @@ async function responsiveness(page) {
 
   // Its own rebuild, so the screenshots don't land in the gaps above; the curtain is hidden for
   // the capture only, so its readout can't be what differs. Dragged from empty grid at the corner,
-  // clear of the design gizmo (memory: driven-check-viewport-traps).
+  // clear of the design gizmo, which swallows a drag that starts on it.
   await setScale(page, 395);
   await curtain(page, true, 30_000);
   await page.waitForTimeout(1500);
