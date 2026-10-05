@@ -152,26 +152,43 @@ export async function switchChairVariant(variantId: string): Promise<void> {
   )
     return;
 
+  const { variantId: prevVariant, parts: prevParts } = state.assembly;
   state.assembly.variantId = variantId;
-  state.assembly.parts = state.assembly.parts.filter(
-    (p) => !variantRoles.some((r) => r.id === p.roleId),
-  );
+  state.assembly.parts = prevParts.filter((p) => !variantRoles.some((r) => r.id === p.roleId));
   notifyPartsChanged();
   const curtain = showOverlay('Loading caster mounts…');
+  const failedFiles: string[] = [];
+  let thrown: Error | null = null;
   try {
     for (const role of variantRoles) {
       const partId = roleLibraryPartId(role, variantId);
       const entry = partId ? state.assembly.library.find((e) => e.id === partId) : undefined;
       const part = asmCreateRolePart(role);
-      if (entry) await asmLoadLibraryEntryIntoPart(part, entry);
+      if (entry && !(await asmLoadLibraryEntryIntoPart(part, entry, { quiet: true })))
+        failedFiles.push(entry.file);
     }
   } catch (e) {
     console.error(e);
-    await alertDialog('Failed to load the caster mounts: ' + (e as Error).message);
+    thrown = e as Error;
+  }
+  // Rolled back like asmSwitchKindAndLoad: a chair left on the new variant with a mount missing
+  // would render and export without it once the alert was dismissed.
+  const rolledBack = failedFiles.length > 0 || thrown !== null;
+  if (rolledBack) {
+    state.assembly.variantId = prevVariant;
+    state.assembly.parts = prevParts;
   }
   notifyPartsChanged();
   hideOverlay(curtain);
   scheduleRebuild();
+  if (rolledBack) {
+    const was = kind.variants.find((v) => v.id === prevVariant)?.name ?? 'the old variant';
+    const what = failedFiles.length
+      ? `Couldn't load ${failedFiles.join(' or ')}.`
+      : `Couldn't load the caster mounts: ${thrown!.message}.`;
+    await alertDialog(`${what} The switch was undone: the chair is still on ${was}.`);
+    return;
+  }
   track('chair_variant_selected', { variant: variantId });
 }
 

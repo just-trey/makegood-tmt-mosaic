@@ -19,6 +19,7 @@ import {
   loadPartsLibrary,
   maybeAutoLoadAssembly,
   partsLibrarySettled,
+  switchChairVariant,
   onAssemblyPartsChanged,
 } from '../src/assembly/parts';
 import { ASSEMBLY_KINDS } from '../src/assembly/kinds';
@@ -713,5 +714,75 @@ describe('asmLoadFullAssembly', () => {
 
     // the newer load owns the list — this one must not push its parts into it
     expect(state.assembly.parts).toHaveLength(0);
+  });
+});
+
+describe('switchChairVariant', () => {
+  const chairEntries = (): LibraryEntry[] =>
+    [
+      'chair-caster-std-left',
+      'chair-caster-std-right',
+      'chair-caster-kit-left',
+      'chair-caster-kit-right',
+    ].map((id) => ({ id, name: id, file: `stl/${id}.stl` }));
+
+  async function standardChair() {
+    state.assembly.kindId = 'chair-body';
+    state.assembly.variantId = 'standard';
+    state.assembly.library = chairEntries();
+    const kind = ASSEMBLY_KINDS.find((k) => k.id === 'chair-body')!;
+    for (const r of kind.roles.filter((x) => x.libraryPartIdByVariant)) {
+      const p = asmCreateRolePart(r);
+      await asmLoadLibraryEntryIntoPart(
+        p,
+        state.assembly.library.find((e) => e.id === r.libraryPartIdByVariant!.standard)!,
+      );
+    }
+    vi.mocked(confirmDialog).mockResolvedValue(true);
+  }
+
+  it('leaves the variant and mounts as they were when a new mount fails to load', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => twoFacedMesh() }),
+    );
+    await standardChair();
+    const before = [...state.assembly.parts];
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation(async (url: string) =>
+          url.includes('kit-right')
+            ? { ok: false, status: 404 }
+            : { ok: true, arrayBuffer: async () => twoFacedMesh() },
+        ),
+    );
+
+    await switchChairVariant('kit');
+
+    expect(state.assembly.variantId).toBe('standard');
+    expect(state.assembly.parts).toEqual(before);
+    expect(alertDialog).toHaveBeenCalledTimes(1);
+    const msg = vi.mocked(alertDialog).mock.calls[0][0];
+    expect(msg).toContain('stl/chair-caster-kit-right.stl');
+    expect(msg).toMatch(/Standard/);
+  });
+
+  it('switches when every mount loads', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => twoFacedMesh() }),
+    );
+    await standardChair();
+
+    await switchChairVariant('kit');
+
+    expect(state.assembly.variantId).toBe('kit');
+    expect(state.assembly.parts.map((p) => p.libraryPartId).sort()).toEqual([
+      'chair-caster-kit-left',
+      'chair-caster-kit-right',
+    ]);
+    expect(alertDialog).not.toHaveBeenCalled();
   });
 });
