@@ -16,6 +16,9 @@ Open questions with no obvious answer, where the measurement behind the question
   [scripts/zone-configs/chair-body.json](../scripts/zone-configs/chair-body.json).
 - A "fit N slots" input beside or instead of the Auto-merge similarity slider, so the control matches the
   audience's actual question. Measurement: [AUTO_MERGE_LEVELS](../src/geometry/regions.ts).
+- A built-in pattern library (removed before release, 2026-10-05) needs good art and a user request
+  first. Upload-your-own-SVG plus Fill covers the use case; `tests/fixtures/patterns/` holds the old
+  four as fixtures only.
 - Make the Colors-detected panel's five copy-carried mechanisms (drag targets, the grip glyph, the
   "Merge with…" dropdown, a merged group's shared depth and print color) visible instead of explained.
   See the comment above the Auto-merge hint in [index.html](../index.html).

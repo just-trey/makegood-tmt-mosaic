@@ -70,7 +70,7 @@ function findSvgFiles(paths: string[]): string[] {
 
 function main(): void {
   const args = process.argv.slice(2);
-  const targets = args.length ? args : ['stubs', 'public/patterns', 'public/templates'];
+  const targets = args.length ? args : ['stubs', 'tests/fixtures/patterns', 'public/templates'];
 
   const files = findSvgFiles(targets).sort();
   const results: PathStat[] = [];

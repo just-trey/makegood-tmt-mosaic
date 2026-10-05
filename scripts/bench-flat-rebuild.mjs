@@ -28,7 +28,7 @@ const DEFAULT_SVGS = [
   'stubs/temp/Sunny MLP 2.svg',
   'stubs/temp/snoopy.svg',
   'stubs/dino ring.svg',
-  'public/patterns/dalmatian.svg',
+  'tests/fixtures/patterns/dalmatian.svg',
 ];
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));

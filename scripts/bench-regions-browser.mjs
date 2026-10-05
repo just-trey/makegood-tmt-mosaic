@@ -35,7 +35,7 @@ const FILES = svgs.length
       'stubs/temp/pappa.svg',
       'stubs/temp/smurfette.svg',
       'stubs/dino ring.svg',
-      'public/patterns/dalmatian.svg',
+      'tests/fixtures/patterns/dalmatian.svg',
     ];
 
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];

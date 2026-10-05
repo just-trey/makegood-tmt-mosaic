@@ -1,4 +1,4 @@
-// Generates the built-in tileable pattern library in public/patterns/ — seeded,
+// Generates the tileable animal-print test/bench fixtures in tests/fixtures/patterns/ — seeded,
 // deterministic procedural animal-print SVGs (cow/dalmatian/zebra/tiger) for Fill mode.
 // The committed SVGs are the real artifacts; this script is the reproducible recipe for
 // them (tweak a pattern's params below and re-run to regenerate).
@@ -15,7 +15,7 @@
 // The field-traced pattern (zebra) gets there differently: its scalar field is exactly periodic
 // in (W,H), so tracing its contours and clipping to the tile gives pieces that line up with the
 // next tile by construction — provided no contour is dropped on the way. See
-// marchingSquaresContours/closeOpenChains, and the seam assertion in tests/patterns-assets.test.ts.
+// marchingSquaresContours/closeOpenChains.
 //
 // Deliberately avoids <circle> elements: assembly mode's rect/wheel placement auto-detects
 // the largest <circle> in a loaded SVG as a design-boundary anchor (ParsedSVG.rawSVGCircle),
@@ -27,7 +27,7 @@ import { dirname, resolve } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
-const OUT_DIR = resolve(REPO, 'public/patterns');
+const OUT_DIR = resolve(REPO, 'tests/fixtures/patterns');
 mkdirSync(OUT_DIR, { recursive: true });
 
 // Deterministic PRNG (mulberry32) — same seed always produces the same pattern, so a
@@ -436,7 +436,7 @@ function closeOpenChains(chains, xmin, ymin, xmax, ymax, eps) {
  * is the flattest of that trio — so it depends on nothing but the geometry within two vertices,
  * which is identical for both periodic copies. Ties break on the neighbours' relative coordinates,
  * which translation preserves. Passes are capped because each one can move the outline by up to
- * `eps`; the drop between passes is measured in tests/patterns-assets.test.ts.
+ * `eps`.
  *
  * No test asserts the output stays a simple polygon (no self-crossings) — `turf.kinks()` isn't a
  * usable oracle for that here: the clipped loops this runs on legitimately touch the tile's own
@@ -633,7 +633,3 @@ for (const p of PATTERNS) {
   writeFileSync(resolve(OUT_DIR, `${p.id}.svg`), svg);
   console.log(`[patterns] wrote ${p.id}.svg`);
 }
-
-const manifest = PATTERNS.map((p) => ({ id: p.id, name: p.name, file: `${p.id}.svg` }));
-writeFileSync(resolve(OUT_DIR, 'patterns.json'), JSON.stringify(manifest, null, 2) + '\n');
-console.log('[patterns] wrote patterns.json');

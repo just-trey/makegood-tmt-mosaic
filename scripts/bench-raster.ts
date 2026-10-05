@@ -600,7 +600,7 @@ async function modeScale(args: string[]) {
  * whatever the export size. Nothing about the artwork changed between rows.
  */
 async function modeRender(args: string[]) {
-  const file = args[0] || 'public/patterns/zebra.svg';
+  const file = args[0] || 'tests/fixtures/patterns/zebra.svg';
   // SVG only, and refused rather than quietly wrong: `renderEdge` re-rasterizes a vector at each
   // size, which is the whole premise. A raster source has one resolution, so every rung above it
   // would return the same pixels, reproducing the defect this mode was fixed for.

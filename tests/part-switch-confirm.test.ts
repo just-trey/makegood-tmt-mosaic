@@ -12,7 +12,6 @@ vi.mock('../src/state/artwork', () => ({
   clearArtworkZoneBindings: vi.fn(),
 }));
 vi.mock('../src/ui/artworkListPanel', () => ({ renderArtworkList: vi.fn() }));
-vi.mock('../src/ui/artworkPanel', () => ({ renderPatternPicker: vi.fn() }));
 vi.mock('../src/ui/assemblyPanel', () => ({
   applyBuildParam: vi.fn(),
   applyHubcapSilhouette: vi.fn(),

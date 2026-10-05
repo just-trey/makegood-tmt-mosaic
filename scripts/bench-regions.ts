@@ -44,7 +44,7 @@ const CORPUS = [
   'stubs/temp/pappa.svg',
   'stubs/temp/smurfette.svg',
   'stubs/dino ring.svg',
-  'public/patterns/dalmatian.svg',
+  'tests/fixtures/patterns/dalmatian.svg',
 ];
 
 // jsdom has no 2d canvas, so normalizeColor's oracle would return null and collapse every fill to

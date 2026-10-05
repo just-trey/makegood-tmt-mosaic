@@ -6,7 +6,6 @@ import { ASSEMBLY_KINDS, firstOfferedKind } from '../assembly/kinds';
 import { maybeAutoLoadAssembly } from '../assembly/parts';
 import { clampArtworkModes, clearArtworkZoneBindings } from '../state/artwork';
 import { renderArtworkList } from './artworkListPanel';
-import { renderPatternPicker } from './artworkPanel';
 import {
   applyBuildParam,
   applyHubcapSilhouette,
@@ -204,7 +203,6 @@ export function initPartPanel(): void {
     renderWarnings();
     // Zone bindings and the assembly-only Sticker/Fill control both change with the part, so rows re-render on every switch, not just an assembly kind change.
     renderArtworkList();
-    renderPatternPicker();
   });
   // assembly design radius
   // Through bindShapeInput like every numeric dimension. A radius must be positive: 0 made every cut

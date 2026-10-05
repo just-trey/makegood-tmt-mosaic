@@ -890,7 +890,7 @@ describe('addInstanceForSource', () => {
   });
 
   it('inherits sticker/fill from the source’s existing instance, unlike placement', () => {
-    const a = loadArtworkSource(fakeParsed(), 'pattern.svg', 'pattern', 'fill');
+    const a = loadArtworkSource(fakeParsed(), 'pattern.svg', 'upload', 'fill');
     state.assembly.parts = [zonedPart(1, 'right', 'Right side')];
     expect(addInstanceForSource(a.sourceId, 'right').mode).toBe('fill');
   });

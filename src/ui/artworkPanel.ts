@@ -5,8 +5,6 @@ import {
   pruneSettingsToPalette,
   rasterMmPerPixel,
 } from '../state/artwork';
-import { getPatterns } from '../state/patterns';
-import { fillModeOffered } from '../assembly/kinds';
 import { scheduleRebuild } from '../app/scheduler';
 import { beginWork, endWork } from '../app/idle';
 import { requestFrame } from '../scene/viewport';
@@ -56,58 +54,6 @@ export function applyParsedSVG(
   afterArtworkLoaded(fname);
 }
 
-/** Load a built-in library pattern (public/patterns/*.svg) as a new source. Defaults to Fill — a pattern repeats across a surface — unless the kind withholds it. */
-// Exported for the mode-selection regression test; not used outside this module.
-export async function applyPattern(id: string): Promise<void> {
-  const entry = getPatterns().find((p) => p.id === id);
-  if (!entry) return;
-  // Counted as outstanding work for the whole fetch, not just its rebuild, or a drive script's
-  // whenIdle() resolves mid-download and screenshots a scene without the artwork. applyParsedSVG()
-  // takes over the count (via scheduleRebuild) before the finally, so there's no idle gap.
-  beginWork();
-  try {
-    const res = await fetch(`patterns/${entry.file}`);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const svgText = await res.text();
-    const mode = fillModeOffered() ? 'fill' : 'sticker';
-    applyParsedSVG(svgText, entry.name, 'pattern', mode);
-    track('artwork_load', { source: 'pattern', pattern: id });
-  } catch (e) {
-    clearWarnings();
-    warn((e as Error).message);
-    renderWarnings();
-    await alertDialog('Could not load pattern: ' + (e as Error).message);
-  } finally {
-    endWork();
-  }
-}
-
-/** The built-in pattern picker strip: one thumbnail per public/patterns/patterns.json entry. Membership is fixed but visibility isn't: a part switch re-runs this, since a kind withholding Fill hides it. */
-export function renderPatternPicker(): void {
-  const strip = $('#pattern-picker');
-  const patterns = getPatterns();
-  // A pattern exists to repeat; as a single sticker it's a lone swatch of cow print, not what the thumbnails promise. So the strip goes with Fill rather than degrading into a placement nobody asked for.
-  if (!patterns.length || !fillModeOffered()) {
-    strip.style.display = 'none';
-    return;
-  }
-  strip.style.display = '';
-  strip.innerHTML = '';
-  patterns.forEach((p) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'pattern-swatch';
-    btn.title = p.name;
-    btn.setAttribute('aria-label', `Load "${p.name}" pattern as artwork`);
-    const img = document.createElement('img');
-    img.src = `patterns/${p.file}`;
-    img.alt = p.name;
-    btn.appendChild(img);
-    btn.addEventListener('click', () => void applyPattern(p.id));
-    strip.appendChild(btn);
-  });
-}
-
 /** Number of colors a freshly-loaded image starts at. Deliberately modest: an AMS is four slots plus the body, so a twelve-slot default would be a print this audience can't make. The Colors slider goes to 16. */
 const DEFAULT_RASTER_COLORS = 6;
 
@@ -119,7 +65,7 @@ function reportLoadFailure(fname: string, message: string): void {
   void alertDialog(`Could not load "${fname}": ${message}`);
 }
 
-/** Decode and trace an image file into a new design source. Async, so it follows applyPattern's work-counter shape: the count must span the whole decode, or a drive script's whenIdle() resolves mid-read and screenshots a scene without it. */
+/** Decode and trace an image file into a new design source. Async, so it counts as outstanding work: the count must span the whole decode, or a drive script's whenIdle() resolves mid-read and screenshots a scene without it. */
 async function applyRasterFile(file: File): Promise<void> {
   beginWork();
   try {

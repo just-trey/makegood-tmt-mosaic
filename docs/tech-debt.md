@@ -152,7 +152,7 @@ SVG**, 1.5-2.9x across the corpus, per-color areas unchanged (0.000% worst relat
   (`scripts/bench-regions.ts scaling`).
 
 **Chair-body Fill is an order of magnitude worse.** `MOSAIC_GPU=1` production build, 2026-08-02: the
-bundled `public/patterns/zebra.svg` in Fill on the chair's Left side alone (one of five zones) took
+bundled `tests/fixtures/patterns/zebra.svg` in Fill on the chair's Left side alone (one of five zones) took
 **405.6s** to settle, non-linear (41% at t+15s, 43% at t+60s, 52% at t+180s). "All zones" (the
 conformal-recut cost the zone-binding-default comment in `state/artwork.ts` warns about) did not finish
 inside a 900s timeout.
@@ -266,28 +266,6 @@ carries `withholdFill: true`, so `artworkListPanel` never renders that select an
   part.
 - Clearing `withholdFill` needs the accumulator fix, or a decision on the wait, in "Rebuild performance needs ongoing
   work" (above). Nothing else in this file blocks it.
-
-## The pattern library is still switched off, and nothing measured blocks it
-
-`PATTERN_LIBRARY_ENABLED` is `false` in [src/state/patterns.ts](../src/state/patterns.ts), so the
-picker strip is empty on every part. Its one named blocker was zebra + Fill dropping the black on
-"Handle (left)", and that no longer reproduces.
-
-- **Not reproduced, 2026-09-24**: patch `withholdFill: false` in `src/assembly/kinds.ts`, `npm run
-build`, open `?kind=chair-body` on a `MOSAIC_GPU=1` preview, load `public/patterns/zebra.svg` (it
-  binds to Left side) and set Fill. No `Couldn't cut color`, and the exported 3MF gives "Handle (left)"
-  a Black part. Same on the #137 tree (`04af2f9`); the 2026-08-03 report can't be reproduced from what
-  it recorded.
-- Engine sweep, 47 builds: all four patterns in Fill on all eight chair zones, and zebra on "Handle
-  (left)" at 4 scales x 3 offsets plus 3 more offsets at 100% (32 + 12 + 3).
-  `ConformalZoneMapper.buildCutter` returned null 0 times in 228 calls. The three builds at 50% cut
-  nothing: zebra is refused as too detailed there.
-- One build of the sweep:
-  `node_modules/.bin/vite-node scripts/measure-conformal-cutter-nulls.ts zebra left 1 0 0 chair-handle-left`.
-  Arguments are pattern, zone, scale, offX, offZ and an optional part id. The full job list and the
-  live drive are in the PR body of #316.
-- Turning the library back on is the maintainer's call. A kind carrying `withholdFill` hides the strip
-  anyway, so the chair is unaffected.
 
 ## A zone template's outline is faceted, because nothing curve-fits a zone boundary
 
@@ -560,19 +538,6 @@ polygon-clipping's 500,000-segment cap. The fill path goes through it; these do 
 - **Fill holds every colour's tiles at once** before cutting any, so a refusal can drop them together.
   Peak JS memory is then the sum over colours, not the largest. Unmeasured:
   `scripts/bench-fill-build.ts` reports time, not heap.
-
-## The bundled-pattern asset test freezes a chair zone at 143 tiles by hand
-
-`TILES_PER_CHAIR_ZONE = 143` in `tests/patterns-assets.test.ts` is written down, not derived from live
-zone geometry.
-
-- `tileCoverage()` needs a real placer and extent, which only exist mid-build.
-- Pulling the full chair build into a fast, dependency-light asset test is not worth it.
-- Its 300k budget sits at half of `FILL_POINT_BUDGET` (600k, [patterns.ts](../src/geometry/patterns.ts)),
-  the build-time refusal.
-- **If it rots**: a zone that outgrows 143 tiles reaches that refusal, so a shipped pattern stops
-  filling and says so. Visible to the user, not silent.
-- Nothing flags the stale constant to the maintainer.
 
 ## A concave part's prime-tower footprint is scored as its convex hull
 

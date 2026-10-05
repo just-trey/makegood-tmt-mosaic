@@ -2,7 +2,7 @@
 //
 // Run with: node_modules/.bin/vite-node scripts/measure-conformal-cutter-nulls.ts \
 //   [pattern] [zone] [scale] [offX] [offZ] [libraryPartId]
-//   pattern        a name under public/patterns (default zebra)
+//   pattern        a name under tests/fixtures/patterns (default zebra)
 //   zone           a zone id from public/stl/chair-body-zones.json (default left)
 //   scale          scaleMult, 1 = the Scale control at 100% (default 1)
 //   offX, offZ     placement offset in mm (default 0 0)
@@ -123,7 +123,7 @@ ConformalZoneMapper.prototype.buildCutter = function (...args) {
 };
 
 const parsed = parseSVGDocument(
-  readFileSync(path.join(REPO, 'public/patterns', `${pattern}.svg`), 'utf8'),
+  readFileSync(path.join(REPO, 'tests/fixtures/patterns', `${pattern}.svg`), 'utf8'),
 );
 clearWarnings();
 const t0 = performance.now();

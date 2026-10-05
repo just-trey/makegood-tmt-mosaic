@@ -138,7 +138,7 @@ function stripes(w: number, h = w): RasterImage {
 }
 
 describe('measureAtReferenceSize', () => {
-  // public/patterns/zebra.svg exported at 128px read 0.6324, photographic, against 0.18-0.21 at 512
+  // tests/fixtures/patterns/zebra.svg exported at 128px read 0.6324, photographic, against 0.18-0.21 at 512
   // and up (`vite-node scripts/bench-raster.ts render`). Same artwork, only the export size moved.
   it('reads flat art the same whatever size it was exported at', () => {
     const readings = [128, 192, 256, 384, 512].map(

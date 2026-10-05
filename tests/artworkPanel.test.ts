@@ -14,11 +14,8 @@ vi.mock('../src/ui/fitPanel', () => ({
   refreshFitInputsFromState: vi.fn(),
   updateOffsetSliderRanges: vi.fn(),
 }));
-vi.mock('../src/state/patterns', () => ({
-  getPatterns: () => [{ id: 'cow', name: 'Cow', file: 'cow.svg' }],
-}));
 
-import { applyParsedSVG, applyPattern } from '../src/ui/artworkPanel';
+import { applyParsedSVG } from '../src/ui/artworkPanel';
 import { rasterCappedMessage, rasterTracedMessage } from '../src/raster/parse';
 import { state } from '../src/state/store';
 import { autoParams } from '../src/raster/stats';
@@ -179,27 +176,5 @@ describe('raster notices from two sources sharing a filename', () => {
     notice(rasterCappedMessage('img.png'), 'source-1');
 
     expect(WARNINGS.map((w) => w.message)).toEqual([rasterCappedMessage('img.png')]);
-  });
-});
-
-describe('applyPattern', () => {
-  beforeEach(() => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(GOOD_SVG),
-    }) as unknown as typeof fetch;
-  });
-
-  it('loads as a pattern source, defaulting to Fill mode', async () => {
-    await applyPattern('cow');
-    expect(state.sources).toHaveLength(1);
-    expect(state.sources[0].kind).toBe('pattern');
-    expect(state.artworks[0].mode).toBe('fill');
-  });
-
-  it('a pattern id not in the manifest is a no-op', async () => {
-    await applyPattern('does-not-exist');
-    expect(state.sources).toHaveLength(0);
-    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

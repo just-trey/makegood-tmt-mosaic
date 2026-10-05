@@ -1,7 +1,7 @@
 // Times Fill mode's tile union, and says whether it kept every tile, against the real turf 6.5.
 //
 // Run with: node_modules/.bin/vite-node scripts/bench-tile-union.ts [pattern] [n,n,n] [colour]
-//   pattern  a name under public/patterns (default zebra)
+//   pattern  a name under tests/fixtures/patterns (default zebra)
 //   n        tile grid spans to sweep: 20 is a 20x20 grid, 3x300 is 3 rows of 300 (default
 //            13,17,21,25)
 //   colour   the hex of the colour to tile (default the one with the most points per tile)
@@ -57,7 +57,7 @@ const spans = (process.argv[3] ?? '13,17,21,25').split(',').map((span) => {
 const only = process.argv[4]?.toLowerCase();
 
 const parsed = parseSVGDocument(
-  readFileSync(path.join(REPO, 'public/patterns', `${pattern}.svg`), 'utf-8'),
+  readFileSync(path.join(REPO, 'tests/fixtures/patterns', `${pattern}.svg`), 'utf-8'),
 );
 const { byColor } = await computeNetRegionsByColor(parsed.shapes);
 const vb = parsed.viewBox;
