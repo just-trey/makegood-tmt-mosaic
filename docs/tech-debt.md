@@ -344,34 +344,11 @@ upload small photographs.
 
 ## Colors is the one trace control still fixed, and no single value suits real artwork
 
-**Rejected, measured**, 2026-08-20 (`node_modules/.bin/vite-node scripts/bench-raster.ts knee red-sox-logo
-mario cartoon ui-screenshot kid-drawing pattern-cow`). Picking the palette size from a knee in the
-region-count curve is wrong far more often than right. **The problem below is unchanged and unfixed.**
-
-- **The rule**: walk Colors 2 to 12, take the largest single-step jump in component count over uncapped
-  steps, pick the Colors before it if the jump is at least 3x. Each column is a real browser decode at
-  that size, with trace parameters derived for that size.
-- **Picks** (bold is right; `none` is no jump; `n/a` is a source smaller than the rung):
-
-  | Source        | Right | @192 | @256 | @384 | @512  | @1024 |
-  | ------------- | ----- | ---- | ---- | ---- | ----- | ----- |
-  | pattern-cow   | 4     | none | none | none | none  | **4** |
-  | red-sox-logo  | 4     | 5    | 5    | n/a  | n/a   | n/a   |
-  | cartoon       | 6     | none | none | 4    | 3     | n/a   |
-  | mario         | 8     | none | none | 4    | **8** | none  |
-  | ui-screenshot | 6     | none | 4    | none | 4     | **6** |
-  | kid-drawing   | 6     | none | none | 3    | 3     | 5     |
-
-- **Right on at most 2 of 6 in any one column**, and the two columns that get two right differ. At 512,
-  the largest size under a second, it is right once.
-- **Unstable across working size, without a trend**: `mario` is right at 512 and finds nothing at 1024.
-  `ui-screenshot` goes none, 4, none, 4, 6 across the five sizes.
-- **It is not a knee.** `ui-screenshot`'s component counts over Colors 2 to 12 at the working size are
-  `8, 12, 17, 28, 27, 229, 277, 91, 57, 271, 604`: several bends, in both directions.
-- **Cost**: 3.5 to 5.2s for the full ladder at 1024, 0.5 to 1.2s at 512, 0.1 to 0.7s at 192.
-- This supersedes the "6 of 8" reading in
-  [2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md), which was
-  hand-scored off one full-resolution curve.
+**Rejected, measured**: a knee in the region-count curve picks the right Colors on at most 2 of 6
+sources at any working size ([2026-08-20 knee detector](findings/2026-08-20-knee-detector.md)). This
+supersedes the "6 of 8" reading in
+[2026-08-19 raster corpus calibration](findings/2026-08-19-raster-corpus-calibration.md).
+**The problem below is unchanged and unfixed.**
 
 Working resolution, blur and despeckle are all chosen from the image. The default palette size is a
 constant, and measured across the sample corpus (`stubs/raster test/`, 2026-08-04) no constant works.
