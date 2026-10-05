@@ -679,19 +679,6 @@ Tests and bench scripts import `scripts/*.mjs` and `scripts/lib/*.mjs`, which ha
 - **Closing it**: a `.d.ts` beside each imported module removes them in one change. Unmeasured: how many
   of the 22 share a module, and whether the declarations need keeping in step with the scripts.
 
-## A caster-mount fetch that fails leaves the chair on the new variant with the mount missing
-
-**Needs a decision: what a partly failed variant switch should leave.** `switchChairVariant`
-([src/assembly/parts.ts](../src/assembly/parts.ts)) ignores `asmLoadLibraryEntryIntoPart`'s result.
-
-- It sets `variantId` and drops the old mounts before fetching the new ones.
-- A failed fetch shows an alert naming the file. The variant stays switched, and that mount stays
-  unloaded, so the chair renders and exports without it.
-- Unmeasured: not driven live. Reached only if a caster file is unreachable mid-visit.
-- Options: roll back to the previous variant and its mounts, the way a restore now rolls back its kind
-  (`asmSwitchKindAndLoad`, [src/assembly/switchKind.ts](../src/assembly/switchKind.ts)); or keep the
-  switch and warn in the panel until the mount loads.
-
 ## A regenerated source mesh would leave its rotated copies on the old geometry
 
 `asmAddDuplicate` ([src/assembly/parts.ts](../src/assembly/parts.ts)) shares `positions`, `vertices`,

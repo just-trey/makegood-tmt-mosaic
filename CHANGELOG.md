@@ -54,6 +54,11 @@ scripts/measure-clip-ink.test.ts`.
   rest of the rotate handle is unchanged. Each
   drag start now picks one thing: a corner, else the rotate handle, else the
   frame body.
+- **Switching the chair between Standard and Kit no longer leaves a caster
+  mount missing.** If either new mount file failed to load, the chair stayed
+  on the new choice and rendered and exported without that mount. The switch
+  is now undone, the old mounts come back, and the message names the file that
+  failed.
 - **A design on the chair's Left side no longer cuts a stray mark.** It cut a
   thin 1 x 32mm mark on Wheel mount (left), past the edge of the part's
   surface. On the 12 chair pieces a wheel or cushion partly hides, the area a
