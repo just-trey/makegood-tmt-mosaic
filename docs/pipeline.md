@@ -113,6 +113,8 @@ the page.
   each object on a part is sent once, then named by id. The worker keeps one copy
   per id, so the region pass's memo (keyed on `shapes` identity) still hits.
   This holds only because those objects are replaced, never edited in place.
+- Only the part fields the build reads cross (`BUILD_PART_FIELDS`). Reading any
+  other in the worker throws, naming the field, instead of reading `undefined`.
 - Meshes come back as transferred buffers, each output naming its part by index.
   The page reattaches its own `AssemblyPart`, so export reads the same objects.
 - Warnings are journaled as calls in the worker and replayed in order on the
@@ -125,7 +127,14 @@ the page.
   The worker is told to stop at its next safe point, keeping its caches, and is
   terminated if it hasn't within 1s.
 - **A dead worker** keeps the last result too, with a warning. The next rebuild
-  starts a fresh one.
+  starts a fresh one. A worker whose code never loads (it posts `ready` once it
+  has) isn't dead: builds run on the page for the rest of the session, silently.
+- **A worker is replaced** after a build that threw, or whose engine trapped
+  (`noteEngineError` at every catch around a Manifold call): a trap stops the
+  engine mid-operation, so its heap can't be trusted.
+- **Export clicked mid-rebuild waits for it**, so the file matches the panels.
+  The curtain is a stack ([overlay.ts](../src/ui/overlay.ts)): a part load
+  shown over a rebuild hides only its own.
 
 **Which depth a region asked for** is resolved in one place
 ([depth.ts](../src/geometry/depth.ts)): an explicit per-row override if finite,

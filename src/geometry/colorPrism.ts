@@ -27,6 +27,7 @@ import {
   manifoldDelete,
   manifoldIsValid,
   mapFeatureCoords,
+  noteEngineError,
   REPAIR_ERODE_MM,
   repairSelfIntersections,
   soupToManifold,
@@ -300,8 +301,8 @@ export async function buildColorPrism(
     let man: ManifoldSolid | null = null;
     try {
       man = solidFor(region.feat, region.depth);
-    } catch {
-      /* retry below with self-intersections repaired */
+    } catch (e) {
+      noteEngineError(e); // then retry below with self-intersections repaired
     }
     // Clipped dense line-work can self-touch: valid to turf, not watertight to Manifold.
     // Repair with Manifold's 2D booleans and retry, widening the erode: a gravel photo on the
@@ -316,8 +317,8 @@ export async function buildColorPrism(
       if (man) break;
       try {
         man = solidFor(repairSelfIntersections(wasm, region.feat, erodeMm), region.depth);
-      } catch {
-        /* try the next distance, then warn */
+      } catch (e) {
+        noteEngineError(e); // then try the next distance, and warn
       }
     }
     if (man) {

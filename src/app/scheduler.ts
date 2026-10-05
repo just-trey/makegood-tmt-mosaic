@@ -1,6 +1,6 @@
 import { clearBuildWarnings, warnBuild } from '../warnings';
 import { renderWarnings } from '../ui/warningsView';
-import { hideOverlay, showOverlay, updateOverlay } from '../ui/overlay';
+import { hideOverlay, showOverlay, updateOverlay, type OverlayHandle } from '../ui/overlay';
 import { setProgressSink } from '../progress';
 import { beginWork, endWork, noteRebuildDone } from './idle';
 import { armCancel, cancelHonoured } from '../cancel';
@@ -78,15 +78,16 @@ async function runNow(): Promise<void> {
   // Fresh diagnostics for this attempt: a warning from the last rebuild's inputs (another zone binding, a swapped artwork) mustn't outlive it. Standing facts (WARNINGS proper) are untouched.
   clearBuildWarnings();
   const showsOverlay = isRebuildLikelySlow();
+  let curtain: OverlayHandle | null = null;
   const t0 = performance.now();
   if (showsOverlay) {
-    showOverlay('Rebuilding geometry…', { cancellable: true });
+    curtain = showOverlay('Rebuilding geometry…', { cancellable: true });
     // Progress shows as a live percentage, with a "hang tight" once it drags on.
     setProgressSink((fraction) => {
       const pct = Math.round(fraction * 100);
       const suffix =
         performance.now() - t0 > HANG_TIGHT_MS ? ' (detailed artwork, hang tight)' : '';
-      updateOverlay(`Rebuilding geometry… ${pct}%${suffix}`);
+      if (curtain) updateOverlay(curtain, `Rebuilding geometry… ${pct}%${suffix}`);
     });
     // Yield a paint frame so the curtain is actually on screen before the rebuild starts.
     await nextPaint();
@@ -103,7 +104,7 @@ async function runNow(): Promise<void> {
     noteRebuildDone();
     if (showsOverlay) {
       setProgressSink(null);
-      hideOverlay();
+      if (curtain) hideOverlay(curtain);
     }
     running = false;
     // A cancel that landed drops the queued pass too: otherwise touching a panel mid-rebuild leaves

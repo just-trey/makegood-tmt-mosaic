@@ -28,10 +28,12 @@ scripts/measure-clip-ink.test.ts`.
 
 - **The app stays responsive while it cuts a design.** Cutting runs in a
   background worker, so the 3D view keeps turning and the panels keep working
-  during a long rebuild. Cancel stops it at once: 16-18ms from click to
-  curtain gone on the chair, down from 410-503ms. The last result stays on
-  screen with Export off, instead of the bare parts. Exported 3MFs are
-  unchanged.
+  during a long rebuild. Cancel stops it at once: 16-19ms from click to
+  curtain gone on the chair, down from 410-532ms
+  (`MOSAIC_GPU=1 node scripts/check-rebuild-worker.mjs`). The last result
+  stays on screen with Export off, instead of the bare parts. Export clicked
+  mid-rebuild waits for it, so the file matches the panels. Exported 3MFs
+  are unchanged.
 
 - **Seventeen in-app notices, warnings and tooltips say the same thing in fewer words.**
   The edge-cut, Fill-overlap, overlap, SVG-size, hubcap and depth-field

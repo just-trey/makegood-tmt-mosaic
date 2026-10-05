@@ -13,7 +13,34 @@ export interface Ref {
   value?: unknown;
 }
 
-type WirePart = { scalars: Record<string, unknown>; refs: Record<string, Ref> };
+/**
+ * The AssemblyPart fields the build reads (src/geometry, from assembly.ts down); the rest stay on the
+ * page. A field read in the worker without being listed throws there, by name, rather than reading
+ * undefined: tests build on the page, so only a browser would see the difference.
+ */
+export const BUILD_PART_FIELDS = [
+  'id',
+  'name',
+  'loaded',
+  'positions',
+  'boundaryLoops',
+  'patchNormal',
+  'zones',
+  'topZ',
+  'isDuplicateOf',
+  'pivotX',
+  'pivotZ',
+  'angleDeg',
+  'cutThrough',
+  'cutThroughDepth',
+  'edgeCutThroughDepth',
+] as const satisfies readonly (keyof AssemblyPart)[];
+
+type WirePart = {
+  scalars: Record<string, unknown>;
+  refs: Record<string, Ref>;
+  omitted: string[];
+};
 type WireArtwork = Omit<ArtworkBuildInput, 'parsed'> & { parsed: Ref };
 
 export interface WireInput {
@@ -28,11 +55,24 @@ export type WireBuild = Omit<AssemblyBuild, 'partOutputs'> & { partOutputs: Wire
 export type ToWorker =
   { type: 'build'; id: number; search: string; input: WireInput } | { type: 'cancel'; id: number };
 
+/**
+ * `ready` is posted once the worker's code has loaded, telling a worker that never came up from one
+ * that died. `trapped`: the engine trapped during that build (noteEngineError), so the page replaces
+ * the worker. `unreadable` answers a message that failed to deserialize, whose id it can't know.
+ */
 export type FromWorker =
+  | { type: 'ready' }
   | { type: 'progress'; id: number; fraction: number }
-  | { type: 'done'; id: number; build: WireBuild | null; warnings: WarningCall[] }
-  | { type: 'cancelled'; id: number }
-  | { type: 'failed'; id: number; message: string; warnings: WarningCall[] };
+  | {
+      type: 'done';
+      id: number;
+      build: WireBuild | null;
+      warnings: WarningCall[];
+      trapped: boolean;
+    }
+  | { type: 'cancelled'; id: number; trapped: boolean }
+  | { type: 'failed'; id: number; message: string; warnings: WarningCall[] }
+  | { type: 'unreadable' };
 
 const ids = new WeakMap<object, number>();
 let nextId = 1;
@@ -57,10 +97,13 @@ export function encodeInput(input: AssemblyBuildInput, held: Set<number>): WireI
     parts: parts.map((p) => {
       const scalars: Record<string, unknown> = {};
       const refs: Record<string, Ref> = {};
-      for (const [k, v] of Object.entries(p))
-        if (v !== null && typeof v === 'object') refs[k] = ref(v as object);
+      for (const k of BUILD_PART_FIELDS) {
+        const v: unknown = p[k];
+        if (v !== null && typeof v === 'object') refs[k] = ref(v);
         else scalars[k] = v;
-      return { scalars, refs };
+      }
+      const sent = new Set<string>(BUILD_PART_FIELDS);
+      return { scalars, refs, omitted: Object.keys(p).filter((k) => !sent.has(k)) };
     }),
   };
   held.clear();
@@ -84,13 +127,19 @@ export function decodeInput(wire: WireInput, cache: Map<number, unknown>): Assem
   return {
     ...wire.rest,
     artworks: wire.artworks.map((a) => ({ ...a, parsed: get(a.parsed) as ParsedSVG })),
-    parts: wire.parts.map(
-      (p) =>
-        ({
-          ...p.scalars,
-          ...Object.fromEntries(Object.entries(p.refs).map(([k, r]) => [k, get(r)])),
-        }) as unknown as AssemblyPart,
-    ),
+    parts: wire.parts.map((p) => {
+      const part = {
+        ...p.scalars,
+        ...Object.fromEntries(Object.entries(p.refs).map(([k, r]) => [k, get(r)])),
+      };
+      for (const k of p.omitted)
+        Object.defineProperty(part, k, {
+          get() {
+            throw new Error(`AssemblyPart.${k} isn't sent to the build worker (BUILD_PART_FIELDS)`);
+          },
+        });
+      return part as unknown as AssemblyPart;
+    }),
   };
 }
 
@@ -133,11 +182,10 @@ export function unpackBuild(wire: WireBuild, parts: AssemblyPart[]): AssemblyBui
   };
 }
 
-/** What an output could alias: a part's own meshes, which a fallback body might hand back as-is. */
+/** What an output could alias: a part's own mesh, which a fallback body might hand back as-is. */
 export function partBuffers(parts: AssemblyPart[]): Set<ArrayBufferLike> {
   const out = new Set<ArrayBufferLike>();
   for (const p of parts)
-    for (const v of [...(Object.values(p) as unknown[]), p.indexed?.positions, p.indexed?.indices])
-      if (ArrayBuffer.isView(v)) out.add(v.buffer);
+    for (const v of Object.values(p) as unknown[]) if (ArrayBuffer.isView(v)) out.add(v.buffer);
   return out;
 }

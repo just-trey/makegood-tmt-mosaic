@@ -1,6 +1,7 @@
 import { buildAssemblyGeometry } from './assembly';
 import { decodeInput, packBuild, partBuffers, type FromWorker, type ToWorker } from './buildWire';
 import { armCsgFaults } from './csgFault';
+import { takeEngineTrapped } from './manifold';
 import { armCancel, RebuildCancelled, requestCancel } from '../cancel';
 import { setProgressSink } from '../progress';
 import { clearWarnings, journalWarnings, type WarningCall } from '../warnings';
@@ -9,12 +10,13 @@ import { clearWarnings, journalWarnings, type WarningCall } from '../warnings';
  * The worker's half of the build, apart from `self` so tests can drive it in-process. One build at
  * a time: the page never sends another until this one has answered (app/buildClient.ts).
  */
-export function startBuildWorker(
-  post: (msg: FromWorker, transfer: Transferable[]) => void,
-): (msg: ToWorker) => Promise<void> {
+export function startBuildWorker(post: (msg: FromWorker, transfer: Transferable[]) => void): {
+  onMessage: (msg: ToWorker) => Promise<void>;
+  onMessageError: () => void;
+} {
   const cache = new Map<number, unknown>();
   let running: number | null = null;
-  return async (msg) => {
+  const onMessage = async (msg: ToWorker): Promise<void> => {
     if (msg.type === 'cancel') {
       if (msg.id === running) requestCancel();
       return;
@@ -23,6 +25,7 @@ export function startBuildWorker(
     running = id;
     armCancel();
     armCsgFaults(msg.search);
+    takeEngineTrapped();
     // Standing state here is never shown; the page replays the calls onto its own list.
     clearWarnings();
     const warnings: WarningCall[] = [];
@@ -38,13 +41,15 @@ export function startBuildWorker(
     try {
       const input = decodeInput(msg.input, cache);
       const built = await buildAssemblyGeometry(input);
-      if (!built) post({ type: 'done', id, build: null, warnings }, []);
+      const trapped = takeEngineTrapped();
+      if (!built) post({ type: 'done', id, build: null, warnings, trapped }, []);
       else {
         const { wire, transfer } = packBuild(built, input.parts, partBuffers(input.parts));
-        post({ type: 'done', id, build: wire, warnings }, transfer);
+        post({ type: 'done', id, build: wire, warnings, trapped }, transfer);
       }
     } catch (e) {
-      if (e instanceof RebuildCancelled) post({ type: 'cancelled', id }, []);
+      if (e instanceof RebuildCancelled)
+        post({ type: 'cancelled', id, trapped: takeEngineTrapped() }, []);
       else post({ type: 'failed', id, message: (e as Error)?.message ?? String(e), warnings }, []);
     } finally {
       journalWarnings(null);
@@ -52,4 +57,7 @@ export function startBuildWorker(
       running = null;
     }
   };
+  // Nothing in a message that failed to arrive says which build it was; the page has one pending.
+  const onMessageError = (): void => post({ type: 'unreadable' }, []);
+  return { onMessage, onMessageError };
 }

@@ -44,9 +44,29 @@ export function soupToManifold(wasm: ManifoldAPI, soup: Float32Array): ManifoldS
 export function manifoldIsValid(man: ManifoldSolid): boolean {
   try {
     return man.numTri() > 0;
-  } catch {
+  } catch (e) {
+    noteEngineError(e);
     return false;
   }
+}
+
+let trapped = false;
+
+/**
+ * For every catch around an engine call. A trap (out-of-bounds access, an abort for memory) stops
+ * the engine mid-operation, so its heap can't be trusted afterwards even though the catch degrades
+ * that one color or part; the build worker is replaced after such a build (app/buildClient.ts). A
+ * C++ exception unwinds cleanly and isn't one.
+ */
+export function noteEngineError(e: unknown): void {
+  if (e instanceof WebAssembly.RuntimeError) trapped = true;
+}
+
+/** Whether a trap was noted since the last call. */
+export function takeEngineTrapped(): boolean {
+  const t = trapped;
+  trapped = false;
+  return t;
 }
 
 /**

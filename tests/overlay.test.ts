@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { hideOverlay, initOverlay, showOverlay } from '../src/ui/overlay';
 import { armCancel, cancelRequested } from '../src/cancel';
 
@@ -39,14 +39,53 @@ describe('the rebuild curtain', () => {
 
   it('resets the button for the next rebuild', () => {
     initOverlay();
-    showOverlay('Rebuilding geometry…', { cancellable: true });
+    const curtain = showOverlay('Rebuilding geometry…', { cancellable: true });
     document.querySelector<HTMLButtonElement>('#loading-cancel')!.click();
-    hideOverlay();
+    hideOverlay(curtain);
     armCancel();
     showOverlay('Rebuilding geometry…', { cancellable: true });
     const btn = document.querySelector<HTMLButtonElement>('#loading-cancel')!;
     // Left disabled, the next long rebuild would be uncancellable with no sign why.
     expect(btn.disabled).toBe(false);
     expect(btn.textContent).toBe('Cancel');
+  });
+});
+
+// A rebuild, an export and a part load each show the curtain, and can overlap.
+describe('overlapping curtains', () => {
+  beforeEach(() => {
+    document.body.innerHTML = html;
+    armCancel();
+  });
+
+  const overlay = () => document.querySelector<HTMLElement>('#loading-overlay')!;
+  const text = () => document.querySelector('#loading-text')!.textContent;
+  const cancelHidden = () => document.querySelector<HTMLElement>('#loading-cancel')!.hidden;
+
+  it('hides only its own, and the one beneath comes back with its text and Cancel', async () => {
+    // A fresh stack: the tests above leave curtains up.
+    vi.resetModules();
+    const { hideOverlay, showOverlay, updateOverlay } = await import('../src/ui/overlay');
+    const rebuild = showOverlay('Rebuilding geometry… 40%', { cancellable: true });
+    const load = showOverlay('Loading chair…');
+    expect(text()).toBe('Loading chair…');
+    expect(cancelHidden()).toBe(true);
+    expect(overlay().classList.contains('pass-through')).toBe(false);
+
+    // Progress for the rebuild beneath doesn't overwrite the load's text.
+    updateOverlay(rebuild, 'Rebuilding geometry… 60%');
+    expect(text()).toBe('Loading chair…');
+
+    hideOverlay(rebuild);
+    expect(overlay().style.display).toBe('flex');
+    expect(text()).toBe('Loading chair…');
+
+    const again = showOverlay('Rebuilding geometry…', { cancellable: true });
+    hideOverlay(load);
+    expect(text()).toBe('Rebuilding geometry…');
+    expect(cancelHidden()).toBe(false);
+    expect(overlay().classList.contains('pass-through')).toBe(true);
+    hideOverlay(again);
+    expect(overlay().style.display).toBe('none');
   });
 });

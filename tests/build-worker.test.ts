@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { buildAssemblyGeometry, type AssemblyBuildInput } from '../src/geometry/assembly';
 import {
+  BUILD_PART_FIELDS,
   decodeInput,
   encodeInput,
   packBuild,
@@ -133,12 +134,16 @@ class InProcessWorker extends FakeWorker {
   constructor() {
     super();
     vi.resetModules();
-    this.core = import('../src/geometry/buildWorkerCore').then((m) =>
-      m.startBuildWorker((msg, transfer) => {
+    this.core = import('../src/geometry/buildWorkerCore').then((m) => {
+      const post = (msg: FromWorker, transfer: Transferable[] = []): void => {
         const data = structuredClone(msg, { transfer });
         setTimeout(() => this.emit('message', { data }));
-      }),
-    );
+      };
+      const { onMessage } = m.startBuildWorker(post);
+      // What buildWorker.ts does once its code has loaded.
+      post({ type: 'ready' });
+      return onMessage;
+    });
   }
 
   override postMessage(msg: ToWorker): void {
@@ -187,7 +192,21 @@ describe('the build input crossing to the worker', () => {
     const b = decodeInput(structuredClone(second), cache);
     expect(b.artworks[0].parsed).toBe(a.artworks[0].parsed);
     expect(b.parts[0].positions).toBe(a.parts[0].positions);
-    expect(b.parts[0]).toEqual(inp.parts[0]);
+    for (const k of BUILD_PART_FIELDS) expect(b.parts[0][k]).toEqual(inp.parts[0][k]);
+  });
+
+  it('sends only the part fields the build reads, and a read of any other throws by name', () => {
+    const part = boxPart({
+      restPositions: new Float32Array(9),
+      assetPositions: new Float32Array(9),
+    });
+    const wire = encodeInput(input(parsed(), [part]), new Set());
+    expect(Object.keys({ ...wire.parts[0].scalars, ...wire.parts[0].refs }).sort()).toEqual(
+      [...BUILD_PART_FIELDS].sort(),
+    );
+    const [out] = decodeInput(structuredClone(wire), new Map()).parts;
+    expect(() => out.restPositions).toThrow(/AssemblyPart.restPositions isn't sent/);
+    expect(() => out.patches).toThrow(/AssemblyPart.patches isn't sent/);
   });
 
   it('forgets on both sides whatever the latest request no longer uses', () => {
@@ -247,7 +266,17 @@ describe('the build result crossing back', () => {
 
 describe('runAssemblyBuild through a worker', () => {
   it('builds what the page would have built, warnings included', async () => {
-    const inp = input();
+    // Every field a loaded part carries, so a read of one the worker isn't sent throws here.
+    const part = boxPart({
+      indexed: { positions: new Float32Array(9), indices: new Uint32Array([0, 1, 2]) },
+      vertices: new Float32Array(9),
+      restPositions: new Float32Array(9),
+      assetPositions: new Float32Array(9),
+      libraryPartId: 'lib',
+      buildWarning: 'w',
+      patches: [],
+    });
+    const inp = input(parsed(), [part]);
     const direct = (await buildAssemblyGeometry(inp))!;
     const directWarnings = WARNINGS.map((w) => ({ ...w }));
     expect(directWarnings.length).toBeGreaterThan(0);
@@ -350,7 +379,9 @@ describe('runAssemblyBuild through a worker', () => {
       workers.push(new ScriptedWorker());
       return workers.at(-1)!;
     });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const run = runAssemblyBuild(input());
+    workers[0].reply({ type: 'ready' });
     workers[0].emit('error', new Event('error'));
     await expect(run).rejects.toBeInstanceOf(BuildWorkerCrashed);
     expect(workers[0].terminated).toBe(true);
@@ -358,8 +389,69 @@ describe('runAssemblyBuild through a worker', () => {
     const next = runAssemblyBuild(input());
     expect(workers).toHaveLength(2);
     const { id } = workers[1].received[0];
-    workers[1].reply({ type: 'done', id, build: null, warnings: [] });
+    workers[1].reply({ type: 'done', id, build: null, warnings: [], trapped: false });
     expect(await next).toBeNull();
+    errSpy.mockRestore();
+  });
+
+  it("builds on the page, from then on, when the worker's code never loads", async () => {
+    let spawned = 0;
+    let w!: ScriptedWorker;
+    setBuildWorkerFactory(() => {
+      spawned++;
+      return (w = new ScriptedWorker());
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const run = runAssemblyBuild(input());
+    // A missing chunk: 'error' before 'ready'. Not a crash, and not the out-of-memory pill.
+    w.emit('error', new Event('error'));
+    const built = await run;
+    expect(built?.partOutputs).toHaveLength(1);
+    expect(w.terminated).toBe(true);
+    expect(await runAssemblyBuild(input())).not.toBeNull();
+    expect(spawned).toBe(1);
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('replaces a worker whose engine trapped, after answering', async () => {
+    const workers: ScriptedWorker[] = [];
+    setBuildWorkerFactory(() => {
+      workers.push(new ScriptedWorker());
+      return workers.at(-1)!;
+    });
+    const run = runAssemblyBuild(input());
+    const { id } = workers[0].received[0];
+    workers[0].reply({ type: 'done', id, build: null, warnings: [], trapped: true });
+    expect(await run).toBeNull();
+    expect(workers[0].terminated).toBe(true);
+    void runAssemblyBuild(input());
+    expect(workers).toHaveLength(2);
+  });
+
+  it('keeps a worker whose build only degraded, without a trap', async () => {
+    let w!: ScriptedWorker;
+    let spawned = 0;
+    setBuildWorkerFactory(() => {
+      spawned++;
+      return (w = new ScriptedWorker());
+    });
+    const run = runAssemblyBuild(input());
+    w.reply({ type: 'done', id: w.received[0].id, build: null, warnings: [], trapped: false });
+    await run;
+    void runAssemblyBuild(input());
+    expect(spawned).toBe(1);
+    expect(w.terminated).toBe(false);
+  });
+
+  it('fails a build the worker could not read, rather than waiting forever', async () => {
+    let w!: ScriptedWorker;
+    setBuildWorkerFactory(() => (w = new ScriptedWorker()));
+    const run = runAssemblyBuild(input());
+    w.reply({ type: 'unreadable' });
+    await expect(run).rejects.toThrow(/couldn't read/);
+    expect(w.terminated).toBe(true);
   });
 
   it('rethrows a build that failed in the worker, after saying what it said first', async () => {
@@ -368,7 +460,7 @@ describe('runAssemblyBuild through a worker', () => {
     const run = runAssemblyBuild(input());
     const { id } = w.received[0];
     // A late message from an earlier build is not this one's answer.
-    w.reply({ type: 'done', id: id - 1, build: null, warnings: [] });
+    w.reply({ type: 'done', id: id - 1, build: null, warnings: [], trapped: false });
     w.reply({
       type: 'failed',
       id,
@@ -379,6 +471,8 @@ describe('runAssemblyBuild through a worker', () => {
     });
     await expect(run).rejects.toThrow('boom');
     expect(WARNINGS.map((x) => x.message)).toEqual(['before the throw']);
+    // Something escaped the build: its heap is nobody's to vouch for.
+    expect(w.terminated).toBe(true);
   });
 
   it('builds on the page when no worker can be made', async () => {
@@ -396,15 +490,45 @@ describe("the worker's message handler", () => {
   it('answers a build it cannot read with failed, and ignores a cancel for another build', async () => {
     const { startBuildWorker } = await import('../src/geometry/buildWorkerCore');
     const sent: FromWorker[] = [];
-    const handle = startBuildWorker((msg) => sent.push(msg));
-    await handle({ type: 'cancel', id: 7 });
+    const { onMessage } = startBuildWorker((msg) => sent.push(msg));
+    await onMessage({ type: 'cancel', id: 7 });
     const held = new Set<number>();
     const inp = input();
     encodeInput(inp, held);
     // Names only: this worker was never sent the objects.
-    await handle({ type: 'build', id: 8, search: '', input: encodeInput(inp, held) });
+    await onMessage({ type: 'build', id: 8, search: '', input: encodeInput(inp, held) });
     expect(sent).toEqual([
       { type: 'failed', id: 8, message: expect.stringMatching(/never sent/), warnings: [] },
     ]);
+  });
+
+  it('answers a message that failed to arrive', async () => {
+    const { startBuildWorker } = await import('../src/geometry/buildWorkerCore');
+    const sent: FromWorker[] = [];
+    startBuildWorker((msg) => sent.push(msg)).onMessageError();
+    expect(sent).toEqual([{ type: 'unreadable' }]);
+  });
+
+  it('says when the engine trapped during a build, and not when a cut merely failed', async () => {
+    // Both from the registry the core runs in: an earlier InProcessWorker reset the modules.
+    const { startBuildWorker } = await import('../src/geometry/buildWorkerCore');
+    const { Manifold } = await (await import('../src/geometry/manifold')).getManifold();
+    const sent: FromWorker[] = [];
+    const { onMessage } = startBuildWorker((msg) => sent.push(msg));
+    const build = async () =>
+      onMessage({ type: 'build', id: 9, search: '', input: encodeInput(input(), new Set()) });
+
+    const plain = vi.spyOn(Manifold, 'difference').mockImplementation(() => {
+      throw new Error('not a trap');
+    });
+    await build();
+    plain.mockRestore();
+    const trap = vi.spyOn(Manifold, 'difference').mockImplementation(() => {
+      throw new WebAssembly.RuntimeError('memory access out of bounds');
+    });
+    await build();
+    trap.mockRestore();
+    const done = sent.filter((m) => m.type === 'done');
+    expect(done.map((m) => m.type === 'done' && m.trapped)).toEqual([false, true]);
   });
 });

@@ -134,8 +134,10 @@ SVG**, 1.5-2.9x across the corpus, per-color areas unchanged (0.000% worst relat
   from n-ary sweeps. `cleanFeature` re-scrubbing costs nothing: skipping it measured 1.02-1.06x, 5-7% of
   the pass, with 93-95% inside the engine.
 - **Worker landed**: the build runs off the page's thread. Compute is unchanged
-  (`scripts/bench-zone-rebuild.mjs`: 48.6s vs 48.4s summed medians). The longest main-thread stall during
-  a chair rebuild went from 763ms to 41ms, and Cancel from 503ms to 18ms.
+  (`scripts/bench-zone-rebuild.mjs`: 48.6s vs 48.4s summed medians). On a chair rebuild the longest
+  main-thread stall while computing went from 720-784ms to 27-41ms, and Cancel from 410-532ms to
+  16-19ms (`npm run build && MOSAIC_GPU=1 node scripts/check-rebuild-worker.mjs`, checks (a) and (b);
+  "before" is 5c7f898).
 - **Measured dead end**: bbox pre-filtered per-shape diffs, ~2x SLOWER than the accumulator on real
   artwork (full-canvas backgrounds overlap everything). See the comment on `computeNetRegionsByColor`.
 - **Do not "improve" `COVERED_BATCH` by raising it.** Never folding the accumulator is fastest on a
@@ -886,17 +888,18 @@ cut to equal shares can read 1.0% / 0.2% / 0.0% instead of roughly a third each.
 ## The page still stalls around a rebuild, outside the worker
 
 The build no longer blocks the page, which makes the stalls left on the main thread stand out.
-**Unmeasured in-repo**: the figures below come from a scratch rAF-gap driven check on the chair, 1.27M
-triangles, not a committed script.
+Figures are from check (a) of `npm run build && MOSAIC_GPU=1 node scripts/check-rebuild-worker.mjs`
+(chair, 1.27M triangles, its "gaps over 50ms" line) unless marked otherwise.
 
-- **Autosave**: `saveSession`, 1s after each rebuild, showed as 467ms and 477ms gaps.
-- **Drawing the result**: ~0.7s for `bufferGeometryFromTris`, `Box3`, GPU upload and shader compile, the
-  same as before the worker. `newModelGroup` disposes materials, which releases three's programs, so
-  every rebuild recompiles shaders (247ms cold in a CPU profile). Reusing materials would cut it.
-- **Export stays clickable mid-rebuild** and exports the previous build. True before too, easier to hit
-  now the page responds.
+- **Drawing the result**: a 686-759ms gap as the result is drawn (`bufferGeometryFromTris`, `Box3`, GPU
+  upload, shader compile); 792-800ms on 5c7f898, so the worker didn't change it. `newModelGroup`
+  disposes materials, which releases three's programs, so every rebuild recompiles shaders: 247ms cold,
+  **unmeasured in-repo** (a scratch CPU profile). Reusing materials would cut it.
+- **Autosave, probably**: a 477ms gap about 0.7s after the curtain drops, when `saveSession` fires (1s
+  after the rebuild's tail). Attributed by timing, not profiled.
 - **A hubcap session loads Manifold twice**: hubcap generation (`asmRebuildGeneratedParts` →
   `getManifold`) still runs on the page, the build in the worker.
-- **The worker keeps a copy of every loaded part's arrays.** Memory cost unmeasured.
+- **The worker keeps a copy of each part's mesh and zone charts** (`BUILD_PART_FIELDS`). Memory cost
+  unmeasured.
 - **Fill tiling has no cancel check.** The page no longer waits on it; the worker is terminated after
   `CANCEL_GRACE_MS` (1s) instead.

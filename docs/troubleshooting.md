@@ -1650,10 +1650,10 @@ Full text: _"The browser stopped partway through cutting the design, often from
 running out of memory. The 3D view still shows the last result, and export is
 off. Change any setting to try again."_
 
-**The cutting runs in a background worker, and the browser ended it.** Usually
-memory: a very large Fill or a design covering every zone of the chair is the
-likeliest cause. It can also mean the worker's script failed to load (an
-offline reload, a blocked download).
+**The cutting runs in a background worker, and the browser ended it partway.**
+Usually memory: a very large Fill or a design covering every zone of the chair
+is the likeliest cause. (A worker that fails to load at all isn't this: the app
+then cuts on the page instead, slower to respond but with nothing lost.)
 
 - **What you get.** The 3D view keeps whatever it showed before. Export stays
   off until a rebuild succeeds, so nothing stale can be exported.

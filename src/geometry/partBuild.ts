@@ -13,6 +13,7 @@ import {
   manifoldDelete,
   manifoldIsValid,
   manifoldToMeshes,
+  noteEngineError,
   soupToManifold,
   type ManifoldSolid,
 } from './manifold';
@@ -265,7 +266,8 @@ export async function buildPart(
           csgFault('color-union');
           merged = Manifold.union(list);
         }
-      } catch {
+      } catch (e) {
+        noteEngineError(e);
         // This color's cutters (different zones, same part) couldn't be merged. Drop just this
         // color rather than losing the whole part's cut.
         landedColors.add(+ci);
@@ -290,7 +292,8 @@ export async function buildPart(
     try {
       partMan = soupToManifold(wasm, part.positions);
       held.add(partMan);
-    } catch {
+    } catch (e) {
+      noteEngineError(e);
       prismEntries.forEach(([pci]) => landedColors.add(pci));
       warnBuild(`Couldn't read "${part.name}", so it is not exported.`);
       return { output: null, placed };
@@ -316,7 +319,8 @@ export async function buildPart(
         csgFault('part-union');
         cutter = Manifold.union(prismList);
       }
-    } catch {
+    } catch (e) {
+      noteEngineError(e);
       // Nothing to cut with. Same escape as the non-watertight branch above: export the untouched
       // body rather than risk a half-cut/half-inlaid pair that would overlap.
       prismEntries.forEach(([pci]) => landedColors.add(pci));
@@ -343,7 +347,8 @@ export async function buildPart(
       const meshes = manifoldToMeshes(body);
       bodySoup = meshes.soup;
       bodyIndexed = meshes.indexed;
-    } catch {
+    } catch (e) {
+      noteEngineError(e);
       bodyCutFailed = true;
       bodySoup = Float32Array.from(part.positions);
     } finally {
@@ -378,7 +383,8 @@ export async function buildPart(
           inlayIndexed[ci] = indexed;
           landedColors.add(ci);
         }
-      } catch {
+      } catch (e) {
+        noteEngineError(e);
         // Unlike the body-cut failure above, exporting uncut can't undo this: the body's pocket
         // for this color is already cut, and redoing that difference is the expensive half. Name
         // the color and say the recess ships empty, so the warning is actionable.

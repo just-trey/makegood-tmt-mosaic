@@ -61,6 +61,18 @@ export function getLastAssemblyBuild(): AssemblyBuild | null {
   return lastAssemblyBuild;
 }
 
+let exportReady = false;
+
+/** The rebuild's verdict on #btn-export, kept apart so an export can restore it rather than guess. */
+function setExportReady(on: boolean): void {
+  exportReady = on;
+  $<HTMLButtonElement>('#btn-export').disabled = !on;
+}
+
+export function isExportReady(): boolean {
+  return exportReady;
+}
+
 /**
  * Below this angle between two faces they're a tessellated curve, shaded smooth; at or above, a
  * crisp edge. 30° not three's 60° because the parts carry chamfers: a 45° chamfer meets its face at
@@ -111,7 +123,7 @@ export async function rebuildCurrent(): Promise<void> {
   // Tracks the just-built geometry (incl. the assembly's post-rebuild grid lift); a no-op mid-drag so it doesn't fight the pointer.
   refreshGizmo();
   refreshZonePickMeshes();
-  // Here, not beside the three places that set #btn-export.disabled, so the summary follows every one.
+  // Here, not beside each setExportReady, so the summary follows every one.
   renderExportSummary();
   // Every rebuild is the state settling after an edit — the one choke point nearly every mutation funnels through, cheaper than hooking each setter.
   schedulePersist();
@@ -488,7 +500,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     poseAssemblyForDisplay();
     renderColorList(null);
     renderWarnings();
-    $<HTMLButtonElement>('#btn-export').disabled = true;
+    setExportReady(false);
     if (!state.assembly.parts.some((p) => p.loaded)) $('#stat-tris').textContent = '0 tris';
     const primary = state.assembly.parts.find((p) => p.loaded && !p.isDuplicateOf);
     const nrm = primary ? asmPartFaceNormal(primary, state.assembly.parts) : null;
@@ -542,7 +554,7 @@ async function rebuildAssemblyScene(): Promise<void> {
   } catch (e) {
     // Whatever went wrong, the last result is still on screen and no longer matches the panels.
     lastAssemblyBuild = null;
-    $<HTMLButtonElement>('#btn-export').disabled = true;
+    setExportReady(false);
     const cancelled = e instanceof RebuildCancelled;
     if (!cancelled && !(e instanceof BuildWorkerCrashed)) throw e;
     // Caught here, not in the scheduler, so the tail of rebuildCurrent still runs: it has the only
@@ -563,7 +575,7 @@ async function rebuildAssemblyScene(): Promise<void> {
     poseAssemblyForDisplay();
     renderColorList(null);
     renderWarnings();
-    $<HTMLButtonElement>('#btn-export').disabled = true;
+    setExportReady(false);
     refreshModelShadows();
     frameModelIfPending();
     return;
@@ -647,7 +659,7 @@ async function rebuildAssemblyScene(): Promise<void> {
   renderColorList(colorListEntries, { rawColorCount: built.detectedColors.length });
   renderBaseColorSwatches();
   renderWarnings();
-  $<HTMLButtonElement>('#btn-export').disabled = built.partOutputs.length === 0;
+  setExportReady(built.partOutputs.length > 0);
   refreshModelShadows();
   frameModelIfPending();
 }
