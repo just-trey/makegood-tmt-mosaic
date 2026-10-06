@@ -71,3 +71,67 @@ export function makeMirroredCylinderChart(): ConformalChart {
   }
   return { ...c, positions3, uv, triangles };
 }
+
+/**
+ * A closed solid behind the quarter-cylinder chart: its outer face is the chart's surface, and it is
+ * `thinMM` thick below v = H/2 and `thickMM` above, so a wall bound can be told per region. Same 24
+ * θ segments as the chart, so the two outer surfaces coincide. Triangle soup, wound outward.
+ */
+export function makeSteppedShell(thinMM: number, thickMM: number): Float32Array {
+  const nu = 24;
+  // (r, y) profile, counter-clockwise; (R, H/2) splits the outer side so the caps meet it.
+  const profile = [
+    [R - thinMM, 0],
+    [R, 0],
+    [R, H / 2],
+    [R, H],
+    [R - thickMM, H],
+    [R - thickMM, H / 2],
+    [R - thinMM, H / 2],
+  ];
+  const at = (r: number, y: number, th: number): number[] => [
+    r * Math.sin(th),
+    y,
+    r * Math.cos(th),
+  ];
+  const out: number[] = [];
+  const push = (a: number[], b: number[], c: number[], outward: number[]): void => {
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const flip = n[0] * outward[0] + n[1] * outward[1] + n[2] * outward[2] < 0;
+    out.push(...a, ...(flip ? c : b), ...(flip ? b : c));
+  };
+  for (let i = 0; i < nu; i++) {
+    const ta = (i / nu) * (Math.PI / 2),
+      tb = ((i + 1) / nu) * (Math.PI / 2),
+      tm = (ta + tb) / 2;
+    for (let k = 0; k < profile.length; k++) {
+      const [pr, py] = profile[k];
+      const [qr, qy] = profile[(k + 1) % profile.length];
+      // the profile edge's outward normal in (r, y), swept to the segment's middle
+      const o = [(qy - py) * Math.sin(tm), -(qr - pr), (qy - py) * Math.cos(tm)];
+      const P0 = at(pr, py, ta),
+        Q0 = at(qr, qy, ta),
+        Q1 = at(qr, qy, tb),
+        P1 = at(pr, py, tb);
+      push(P0, Q0, Q1, o);
+      push(P0, Q1, P1, o);
+    }
+  }
+  const [A, B, G, C, D, E, F] = profile;
+  const cap: number[][][] = [
+    [A, B, G],
+    [A, G, F],
+    [F, G, C],
+    [E, F, C],
+    [E, C, D],
+  ];
+  for (const [th, outward] of [
+    [0, [-1, 0, 0]],
+    [Math.PI / 2, [0, 0, -1]],
+  ] as [number, number[]][])
+    for (const [a, b, c] of cap)
+      push(at(a[0], a[1], th), at(b[0], b[1], th), at(c[0], c[1], th), outward);
+  return Float32Array.from(out);
+}

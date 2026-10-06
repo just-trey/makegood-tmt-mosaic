@@ -12,7 +12,14 @@ import type { DesignPlacement } from '../src/geometry/zones';
 import type { ParsedSVG, PolyFeature } from '../src/types';
 import { WARNINGS, clearWarnings } from '../src/warnings';
 
-import { ARC_U, cylinderPoint, H, makeCylinderChart, R } from './lib/cylinderChart';
+import {
+  ARC_U,
+  cylinderPoint,
+  H,
+  makeCylinderChart,
+  makeSteppedShell,
+  R,
+} from './lib/cylinderChart';
 
 function squareAt(cu: number, cv: number, half: number): PolyFeature {
   return turf.polygon([
@@ -277,7 +284,7 @@ describe('boundary', () => {
     expect(ring).toContainEqual([ARC_U, H]);
   });
 
-  it('passes the depth setting through unchanged, in one piece', () => {
+  it('passes the depth setting through unchanged, in one piece, with no part mesh to measure', () => {
     // A conformal zone has no cut-through mode and no edge rule: its boundary is a seam against
     // the neighbouring printed piece, not an outer wall, so it never splits a region.
     const feat = {
@@ -295,6 +302,74 @@ describe('boundary', () => {
     expect(e.minY).toBeCloseTo(0, 4);
     expect(e.maxX).toBeCloseTo(ARC_U, 3);
     expect(e.maxY).toBeCloseTo(H, 3);
+  });
+});
+
+describe('the wall under a region', () => {
+  // 3mm thick below v = H/2, 10mm above, measured radially: the direction the warp cuts.
+  const shell = makeSteppedShell(3, 10);
+  const walled = (): ConformalZoneMapper =>
+    new ConformalZoneMapper(wasm, makeCylinderChart(), 'side', shell);
+  const rect = (u0: number, v0: number, u1: number, v1: number): PolyFeature =>
+    turf.polygon([
+      [
+        [u0, v0],
+        [u1, v0],
+        [u1, v1],
+        [u0, v1],
+        [u0, v0],
+      ],
+    ]) as PolyFeature;
+
+  it('is a closed solid, so a wall measured through it means something', () => {
+    const solid = soupToManifold(wasm, shell);
+    expect(manifoldIsValid(solid)).toBe(true);
+    solid.delete();
+  });
+
+  it('cuts a pocket deeper than the wall at the wall, less the floor, and says how thick it was', () => {
+    const feat = rect(15, 5, 30, 20);
+    const [r, ...rest] = walled().resolveCutRegions(feat, 5);
+    expect(rest).toHaveLength(0);
+    expect(r.feat).toBe(feat);
+    expect(r.wall).toBeCloseTo(3, 1);
+    expect(r.depth).toBeCloseTo(r.wall! - 0.05, 6);
+  });
+
+  it('bounds each region by the wall under it, not the thinnest wall on the chart', () => {
+    const feat = rect(15, 40, 30, 55);
+    expect(walled().resolveCutRegions(feat, 5)).toEqual([{ feat, depth: 5 }]);
+  });
+
+  it('takes the thinner wall where a region spans both', () => {
+    expect(walled().resolveCutRegions(rect(15, 20, 30, 45), 5)[0].wall).toBeCloseTo(3, 1);
+  });
+
+  it('leaves a setting the wall can hold alone', () => {
+    const feat = rect(15, 5, 30, 20);
+    expect(walled().resolveCutRegions(feat, 2)).toEqual([{ feat, depth: 2 }]);
+  });
+
+  it('leaves a setting that rounds to the bound alone, as the warning would print them equal', () => {
+    const feat = rect(15, 5, 30, 20);
+    const bound = walled().resolveCutRegions(feat, 5)[0].depth;
+    expect(walled().resolveCutRegions(feat, bound + 0.004)).toEqual([
+      { feat, depth: bound + 0.004 },
+    ]);
+  });
+
+  it('still bounds a stroke narrower than the wall samples are spaced', () => {
+    // Between the v = 10 and v = 11 sample rows, so not one sample lies inside it.
+    const [r] = walled().resolveCutRegions(rect(15, 10.3, 30, 10.6), 5);
+    expect(r.wall).toBeCloseTo(3, 1);
+  });
+
+  it('re-measures when a deeper setting than any before is asked for', () => {
+    // The first call measures only as far as its own setting; the 3mm wall is past it.
+    const m = walled();
+    const feat = rect(15, 5, 30, 20);
+    expect(m.resolveCutRegions(feat, 1)).toEqual([{ feat, depth: 1 }]);
+    expect(m.resolveCutRegions(feat, 5)[0].wall).toBeCloseTo(3, 1);
   });
 });
 

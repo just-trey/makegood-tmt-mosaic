@@ -13,6 +13,15 @@ import {
   type ManifoldSolid,
 } from './manifold';
 import { intersectQuiet, safeDiff, safeUnionAll } from './regions';
+import { CUT_FLOOR_MM, MIN_CUT_DEPTH_MM, depthDiffers } from './depth';
+import {
+  buildRayMesh,
+  exitDistance,
+  minSampledWallUnder,
+  sortSampledWall,
+  type RayMesh,
+  type SampledWall,
+} from './wall';
 import { warn } from '../warnings';
 import {
   rotatePointY,
@@ -61,6 +70,16 @@ export const FILL_REFINE_MM = 3;
  * triangulation. Deferred: it invalidates every downloaded template and the sidecar.
  */
 export const CHART_SNAP_MM = 3;
+
+/**
+ * Spacing (mm) of the wall samples a region's depth is bounded by. Finer than the cutter's own
+ * WARP_REFINE_MM, whose floor is flat between vertices that far apart anyway.
+ */
+export const WALL_SAMPLE_MM = 1;
+
+// Keyed on what the worker keeps by identity between builds (buildWire.ts), so a rebuild reuses them.
+const rayMeshes = new WeakMap<Float32Array, RayMesh>();
+const sampledWalls = new WeakMap<ConformalChart, { positions: Float32Array; field: SampledWall }>();
 
 /**
  * One baked UV chart: a patch of a part's surface mesh unwrapped into a flat 2D space where
@@ -192,6 +211,8 @@ export class ConformalZoneMapper implements ZoneMapper {
     private readonly wasm: ManifoldAPI | null,
     private readonly chart: ConformalChart,
     readonly zoneId: string | null = null,
+    /** the whole part's triangle soup, which the wall under a region is measured through */
+    private readonly partPositions: Float32Array | null = null,
   ) {
     const { positions3, uv, triangles, normalSign } = chart;
     const vertCount = (positions3.length / 3) | 0;
@@ -611,21 +632,92 @@ export class ConformalZoneMapper implements ZoneMapper {
   }
 
   /**
-   * Always the setting, in one piece. A conformal zone has no cut-through mode and no edge rule:
-   * its "boundary" is where this part's share of a chart ends, which is a seam against the
-   * neighbouring printed piece, not an outer wall anyone sees.
+   * One piece, at the setting or shallower where the wall under it is thinner. No cut-through mode
+   * and no edge rule: this part's share of a chart ends at a seam against the neighbouring printed
+   * piece, not at an outer wall anyone sees. The wall is measured along -N̂, the way the warp cuts.
    */
   resolveCutRegions(feat: PolyFeature, depthSetting: number): CutRegion[] {
-    return [{ feat, depth: depthSetting }];
+    const wall = this.wallUnder(feat, depthSetting + CUT_FLOOR_MM);
+    const bound = Math.max(wall - CUT_FLOOR_MM, MIN_CUT_DEPTH_MM);
+    if (depthSetting <= bound || !depthDiffers(bound, depthSetting))
+      return [{ feat, depth: depthSetting }];
+    return [{ feat, depth: bound, wall }];
   }
 
   /**
-   * Declines to bound. A conformal zone cuts along its chart's normal field rather than one axis,
-   * so "how far the part extends behind the face" has no single answer here — and the flat zone's
-   * measurement, applied to this part's flat patch, describes a face these cuts do not use.
+   * Declines to bound the part as a whole: a conformal zone cuts along its chart's normal field, so
+   * "how far the part extends behind the face" has no single answer. resolveCutRegions bounds each
+   * region by the wall along those normals instead.
    */
   maxCutDepth(): number {
     return Infinity;
+  }
+
+  /**
+   * The thinnest wall sampled under `feat`, or Infinity where none is thinner than `cap`. Sampled,
+   * not exact like the flat field: the cut direction varies over the chart, so there is no one
+   * projection to measure in. A feature narrower than WALL_SAMPLE_MM can fall between samples.
+   */
+  private wallUnder(feat: PolyFeature, cap: number): number {
+    const positions = this.partPositions;
+    if (!positions) return Infinity;
+    let mesh = rayMeshes.get(positions);
+    if (!mesh) rayMeshes.set(positions, (mesh = buildRayMesh(positions)));
+    const cached = sampledWalls.get(this.chart);
+    let field = cached?.positions === positions ? cached.field : null;
+    // Rays stop at `cap`, so a deeper setting than any before re-measures from scratch.
+    if (!field || field.cap < cap) {
+      field = this.sampleWall(mesh, cap);
+      sampledWalls.set(this.chart, { positions, field });
+    }
+    const m = mesh;
+    // Where the cutter puts that point: a vertex off the chart snaps to the nearest triangle.
+    const atEdge = (u: number, v: number): number => {
+      const hit = this.lookup(u, v);
+      if (!hit) return Infinity;
+      const { p, n } = this.surfacePoint(hit);
+      return exitDistance(m, p, [-n[0], -n[1], -n[2]], cap);
+    };
+    return minSampledWallUnder(field, feat, atEdge);
+  }
+
+  private sampleWall(mesh: RayMesh, cap: number): SampledWall {
+    const step = WALL_SAMPLE_MM;
+    const i0 = Math.ceil(this.gridMinU / step),
+      j0 = Math.ceil(this.gridMinV / step);
+    const ni = Math.max(0, Math.floor((this.gridMinU + this.gridNU * this.cellU) / step) - i0 + 1);
+    const nj = Math.max(0, Math.floor((this.gridMinV + this.gridNV * this.cellV) / step) - j0 + 1);
+    const wall = new Float32Array(ni * nj).fill(NaN);
+    const triCount = this.invDet.length;
+    for (let t = 0; t < triCount; t++) {
+      const inv = this.invDet[t];
+      if (!inv) continue;
+      const o = t * 6;
+      const u0 = this.triUV[o],
+        v0 = this.triUV[o + 1],
+        u1 = this.triUV[o + 2],
+        v1 = this.triUV[o + 3],
+        u2 = this.triUV[o + 4],
+        v2 = this.triUV[o + 5];
+      const ia = Math.max(i0, Math.ceil(Math.min(u0, u1, u2) / step)),
+        ib = Math.min(i0 + ni - 1, Math.floor(Math.max(u0, u1, u2) / step));
+      const ja = Math.max(j0, Math.ceil(Math.min(v0, v1, v2) / step)),
+        jb = Math.min(j0 + nj - 1, Math.floor(Math.max(v0, v1, v2) / step));
+      for (let i = ia; i <= ib; i++)
+        for (let j = ja; j <= jb; j++) {
+          const k = (i - i0) * nj + (j - j0);
+          if (!Number.isNaN(wall[k])) continue;
+          const u = i * step,
+            v = j * step;
+          const b1 = ((u - u0) * (v2 - v0) - (v - v0) * (u2 - u0)) * inv;
+          const b2 = ((v - v0) * (u1 - u0) - (u - u0) * (v1 - v0)) * inv;
+          const b0 = 1 - b1 - b2;
+          if (b0 < -1e-9 || b1 < -1e-9 || b2 < -1e-9) continue;
+          const { p, n } = this.surfacePoint({ tri: t, b0, b1, b2, dist: 0 });
+          wall[k] = exitDistance(mesh, p, [-n[0], -n[1], -n[2]], cap);
+        }
+    }
+    return sortSampledWall({ step, cap, i0, j0, ni, nj, wall });
   }
 
   buildCutter(
