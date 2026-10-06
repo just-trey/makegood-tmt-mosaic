@@ -55,12 +55,12 @@ scripts/measure-clip-ink.test.ts`.
 
 - **Outline-only shapes from Figma no longer print as solid black.** Figma
   sets "no fill" on the whole file, and shapes that took it from a group or
-  the file printed as black slabs. They are now skipped and counted in the
-  "strokes with no fill" warning, like a shape with its own "no fill". Filled
-  shapes beside them keep their colour. A fill set with `inherit` or
-  `currentColor` now prints in the colour a browser shows, not black, and a
-  gradient set on a group is named in the gradient warning. The shipped
-  templates, sample and pattern fixtures load as before
+  the file printed as black slabs. They are now skipped like a shape with its
+  own "no fill", and those with a visible stroke are counted in the "strokes
+  with no fill" warning. Filled shapes beside them keep their color. A fill set
+  with `inherit` or `currentColor` now prints in the color a browser shows, not
+  black, and a gradient set on a group is named in the gradient warning. The
+  shipped templates, sample and pattern fixtures load as before
   (`RUN_SVG_SKIP_SWEEP=1 npx vitest run scripts/measure-svg-skipped-content.test.ts`).
 - **An outline that crosses itself into equal halves now says it was left
   out.** A figure-8, infinity sign or equal bow-tie used to vanish with no
