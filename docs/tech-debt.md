@@ -425,20 +425,6 @@ comes from the traced outline's reach.
 - **Closing it** needs that measurement first. If it happens, the fix is a fit that does not read the
   trace's own specks, not a cap on re-traces.
 
-## A `deChecker` split can stay under the despeckle floor when every label makes a checkerboard
-
-`clean` in [src/raster/trace.ts](../src/raster/trace.ts) absorbs what breaking a 2x2 checkerboard split
-or shaved under the floor, but only into a label that makes no new checkerboard. When every neighbouring
-label would make one, the piece stays under the floor.
-
-- **Only a hand-built grid reaches it**: the "leaves a split piece under the floor when every label for
-  it makes a checkerboard" test in [tests/raster-trace.test.ts](../tests/raster-trace.test.ts).
-- **Nothing measured reaches it**: 0 of 24 `cap` rows and 0 of 22 corpus rows leave anything under the
-  floor, background included. Reproduce with `node_modules/.bin/vite-node scripts/bench-raster.ts cap`
-  and `... despeckle`. The corpus count is the 11 sources present; the 8 stock photos were not fetched.
-- **Closing it** needs a checkerboard break that recolours nothing over the floor, such as choosing which
-  of the 2x2's four cells `deChecker` rewrites so that it splits nothing.
-
 ## Keep `@turf/turf` pinned to 6.5.0 — v7 is a measured perf regression here
 
 A 7.3.5 upgrade was fully implemented and benchmarked (2026-07): correct output, but its new

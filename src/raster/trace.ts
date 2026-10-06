@@ -220,13 +220,90 @@ function despeckle(
 }
 
 /**
+ * Rewrite one cell of the A,B/B,A whose top-left is `i`: the bottom-right one, unless that strands a
+ * piece under the floor that no label can take without making another and the bottom-left one does
+ * not. Never the top two: either can remake an A,B/B,A the scan has passed. When both bottom cells
+ * strand such a piece it stays under the floor; no grid that does this is known.
+ */
+function breakChecker(labels: Int16Array, w: number, h: number, minArea: number, i: number): void {
+  const checkerAt = (q: number) => {
+    const a = labels[q],
+      b = labels[q + 1];
+    return a !== b && a === labels[q + w + 1] && b === labels[q + w];
+  };
+  // Top-left corner of every 2x2 holding `p`.
+  const blocksOf = (p: number): number[] => {
+    const x = p % w,
+      y = (p / w) | 0,
+      out: number[] = [];
+    for (let by = Math.max(0, y - 1); by <= Math.min(y, h - 2); by++)
+      for (let bx = Math.max(0, x - 1); bx <= Math.min(x, w - 2); bx++) out.push(by * w + bx);
+    return out;
+  };
+  const neighbours = (p: number): number[] => {
+    const x = p % w,
+      out: number[] = [];
+    if (x > 0) out.push(p - 1);
+    if (x + 1 < w) out.push(p + 1);
+    if (p >= w) out.push(p - w);
+    if (p + w < labels.length) out.push(p + w);
+    return out;
+  };
+  // The piece of its label `from` sits in, or the first `minArea` pixels of it: the floor is all that is asked.
+  const piece = (from: number): number[] => {
+    const label = labels[from],
+      seen = new Set([from]),
+      stack = [from];
+    while (stack.length && seen.size < minArea)
+      for (const q of neighbours(stack.pop() as number))
+        if (labels[q] === label && !seen.has(q)) {
+          seen.add(q);
+          stack.push(q);
+        }
+    return [...seen];
+  };
+  // Whether some label can take `cells` with no A,B/B,A around them. Stricter than the checker-free despeckle after this, which sees none left anywhere.
+  const takeable = (cells: number[]): boolean => {
+    const was = labels[cells[0]];
+    const blocks = [...new Set(cells.flatMap(blocksOf))];
+    const options = new Set(cells.flatMap(neighbours).map((q) => labels[q]));
+    options.delete(was);
+    for (const option of options) {
+      for (const p of cells) labels[p] = option;
+      const ok = !blocks.some(checkerAt);
+      for (const p of cells) labels[p] = was;
+      if (ok) return true;
+    }
+    return false;
+  };
+  // With `p` already rewritten from `was`: whether that left a piece of `was` under the floor that no label can take.
+  const stuck = (p: number, was: number): boolean =>
+    neighbours(p).some((q) => {
+      if (labels[q] !== was) return false;
+      const cells = piece(q);
+      return cells.length < minArea && !takeable(cells);
+    });
+
+  const a = labels[i],
+    b = labels[i + 1];
+  labels[i + w + 1] = b;
+  if (!stuck(i + w + 1, a)) return;
+  labels[i + w + 1] = a;
+  labels[i + w] = a;
+  if (!stuck(i + w, b)) return;
+  labels[i + w] = b;
+  labels[i + w + 1] = b;
+}
+
+/**
  * Break every 2x2 that reads A,B / B,A. Such a block puts four cracks on one lattice point with two
  * labels, and no non-arbitrary pairing exists — either choice is a self-touching ring or a
  * zero-area overlap. Removing it is cheaper than a tie-break and leaves no node above degree 3 that
- * isn't a genuine meeting of distinct regions. One scan suffices: it only writes the bottom-right
- * cell, which every later block reads.
+ * isn't a genuine meeting of distinct regions. One scan suffices: `breakChecker` writes a bottom
+ * cell, which every later block reads. The one scanned block holding the bottom-left cell is left
+ * with a single label down its right column, so it cannot become A,B/B,A.
  */
-function deChecker(labels: Int16Array, w: number, h: number): boolean {
+function deChecker(labels: Int16Array, w: number, h: number, minArea: number): boolean {
   let changed = false;
   for (let y = 0; y + 1 < h; y++) {
     for (let x = 0; x + 1 < w; x++) {
@@ -236,7 +313,7 @@ function deChecker(labels: Int16Array, w: number, h: number): boolean {
         c = labels[i + w],
         d = labels[i + w + 1];
       if (a === d && b === c && a !== b) {
-        labels[i + w + 1] = b;
+        breakChecker(labels, w, h, minArea, i);
         changed = true;
       }
     }
@@ -251,7 +328,7 @@ function deChecker(labels: Int16Array, w: number, h: number): boolean {
  */
 function clean(labels: Int16Array, w: number, h: number, minArea: number): void {
   despeckle(labels, w, h, minArea);
-  if (deChecker(labels, w, h)) despeckle(labels, w, h, minArea, true);
+  if (deChecker(labels, w, h, minArea)) despeckle(labels, w, h, minArea, true);
 }
 
 /** One maximal run of cracks between two junctions, or a whole junction-free island boundary. */
