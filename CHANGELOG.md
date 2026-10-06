@@ -73,7 +73,7 @@ scripts/measure-clip-ink.test.ts`.
 - **That tidy no longer strands a speck no neighboring color can take.** The
   fix above left the piece in place when every color around it would make
   another corner-only meeting. The tidy now changes a different pixel of the
-  corner when that leaves nothing stuck. Only hand-built grids reach this: no
+  corner instead. Only hand-built grids reach this: no
   noise or sample image left a piece behind before or after
   (`node_modules/.bin/vite-node scripts/bench-raster.ts cap` and `... despeckle`).
 - **`scripts/measure-cut-width.mjs` no longer dies or prints `Infinity` on a sidecar
