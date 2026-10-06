@@ -386,10 +386,10 @@ cleaner trace from a coarser one.
 `rasterColorLossMessage` ([src/raster/parse.ts](../src/raster/parse.ts)) fires wherever raising Detail
 lowers the floor at all. Lowering the floor is not getting the color back, and two cases show the gap.
 
-| Case                | What raising Detail does                                         | Measured                     |
-| ------------------- | ---------------------------------------------------------------- | ---------------------------- |
-| Raise trips the cap | Next trace is capped and says lower Detail; color still gone     | synthetic only; corpus 0/190 |
-| Floor partly pinned | Nozzle floor just under the fractional one; floor moves a little | **unmeasured**               |
+| Case                | What raising Detail does                                         | Measured                            |
+| ------------------- | ---------------------------------------------------------------- | ----------------------------------- |
+| Raise trips the cap | Next trace is capped and says lower Detail; color still gone     | synthetic only; corpus 0/190, 0/138 |
+| Floor partly pinned | Nozzle floor just under the fractional one; floor moves a little | **unmeasured**                      |
 
 - **Cap round trip**, on a synthetic fixture at Colors 5
   (`npx vitest run tests/raster-parse.test.ts -t "leaves a capped"`). Detail 80 is uncapped at floor 41
@@ -400,8 +400,14 @@ lowers the floor at all. Lowering the floor is not getting the color back, and t
   (`node_modules/.bin/vite-node scripts/bench-raster.ts dropped`, needs the gitignored `stubs/`).
 - **Partly pinned**: the notice stays true, since it says what Detail does, never that the color returns.
   A "how much movement is enough" cutoff would be an invented constant.
-- **Closing it** takes either a measured rule for when a lower floor brings a color back, or a notice that
-  knows the next step caps. The second costs a trace at the higher Detail; that cost is unmeasured.
+- **Next step caps**: 0 of 138. Of 475 corpus rows at Detail 0/20/40/60/80, 138 say raise Detail, and
+  none is capped with a color still dropped 20 points up (the slider steps by 5)
+  (`node_modules/.bin/vite-node scripts/bench-raster.ts dropped-next`, needs the gitignored `stubs/`).
+- **Cost of the notice that knows**: it needs a trace at the higher Detail on every dropped-color
+  announce. 613 traces averaged 363 ms each, so about 0.36 s per slider settle
+  (same command; one machine, WSL2).
+- **Closing it** takes a measured rule for when a lower floor brings a color back. Until a source
+  shows the capped round trip, the notice that knows the next step caps is cost with no measured benefit.
 
 ## A hubcap cut to its artwork may re-trace on every edit — unmeasured
 
