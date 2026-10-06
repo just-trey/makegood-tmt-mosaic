@@ -658,8 +658,7 @@ describe('a design that lands only on hidden surface', () => {
 
 describe('a depth deeper than the chair wall', () => {
   // A design over the whole side reaches walls 2.03-4.00mm thick along their normals on its four
-  // parts (scripts/measure-wall.ts), so 20mm goes through every one. Before the wall bound, it did,
-  // with no depth warning at all.
+  // parts (scripts/measure-wall.ts), so 20mm uncut would go through every one.
   const ZONE = 'left';
   const DEPTH = 20;
 
@@ -690,8 +689,8 @@ describe('a depth deeper than the chair wall', () => {
       )!;
       expect(Number(cutAt)).toBeLessThan(Number(wall));
       expect(Number(wall)).toBeLessThan(DEPTH);
-      // 20mm cut straight through and split chair-wing-left and chair-wheel-mount-left in two. Not
-      // genus: the cut leaves zero-volume slivers on the surface at any depth, 1mm included.
+      // A cut through the wall splits chair-wing-left and chair-wheel-mount-left in two. Not genus:
+      // the cut leaves zero-volume slivers on the surface at any depth, 1mm included.
       const after = soupToManifold(wasm, out.bodySoup);
       expect(manifoldIsValid(after)).toBe(true);
       const pieces = after.decompose();
@@ -713,9 +712,9 @@ describe('a depth deeper than the chair wall', () => {
     expect(r.depth).toBeCloseTo(1.98, 2);
   });
 
-  // The thinnest wall under any chart's whole clip is 2.03mm (scripts/measure-wall.ts). A groove
-  // lip on chair-storage-right, chair-storage-left and chair-wing-left read as 0.01-0.42mm before
-  // exitDistance learned to skip it, which clamped a design touching it to 0.20mm.
+  // The thinnest wall under any chart's whole clip is 2.03mm (scripts/measure-wall.ts). The groove
+  // lips on chair-storage-right and chair-wing-left are what exitDistance's plane test and re-entry
+  // gap each skip; either removed fails a case here.
   it.each(sidecar.zones.flatMap((z) => z.charts.map((c) => [z.id, c.libraryPartId] as const)))(
     'leaves the default depth alone across all of %s on %s',
     async (zoneId, partId) => {
