@@ -78,6 +78,12 @@ const SCALE_MIN_PCT = 25;
 const GRID_STEP_PX = 24;
 /** Square read around each grid point; a sample only carries a claim if the whole patch agrees. */
 const PATCH_PX = 5;
+/**
+ * Grid step for the per-zone identity pass. Wider than HAIRLINE_MAX_PX so the one-sample erosion in
+ * interiorInk clears any seam hairline this check excuses, and fine enough that a zone a camera
+ * sees as a 13px sliver still keeps an interior sample (the 24px grid needs 49px).
+ */
+const IDENTITY_STEP_PX = 6;
 
 /**
  * Camera angles for the all-zones pass, as OrbitControls drags in (dx, dy) CSS pixels.
@@ -126,10 +132,10 @@ const HAIRLINE_WALK_PX = 16;
  * default. Chosen so the flanks, which are edge-on from front and back alike, come face-on
  * somewhere in the sweep.
  *
- * It does NOT reach every zone: docs/tech-debt.md records wing-left, wing-right, seat-left and
- * seat-right never producing an ink sample from any of these five, and the "produced no interior
- * ink sample" check below hard-errors on exactly that. Widening the sweep is part of repairing
- * this script, not something these drags already do.
+ * Per-view interior counts are logged as `[vN/zone X]` (chair, 2026-10-06): the wings ink from v0 (159,
+ * 106), the seats only at v5 (15, 13; v0-v4 give seat-left 1 at v1, seat-right 0). Without v5,
+ * `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion` fails seat-right with "produced no
+ * interior ink sample".
  *
  * One entry, `WHOLE_CHAIR_ZONE` (geometry/zones.ts's `*whole`), is a virtual binding that spans
  * every physical zone rather than a chart of its own — `zonePickAtNdc` can never return it, since
@@ -141,6 +147,7 @@ const IDENTITY_SWEEP = [
   { id: 'v2', drag: { dx: 200, dy: 0 } },
   { id: 'v3', drag: { dx: 200, dy: 0 } },
   { id: 'v4', drag: { dx: 0, dy: -140 } },
+  { id: 'v5', drag: { dx: 0, dy: 280 } },
 ];
 
 /**
@@ -445,9 +452,8 @@ const CLASSIFY = {
  * part uncut. That would punch a grey hole in the middle of a zone and read as a through-pick, so
  * it is checked for separately rather than absorbed here.
  */
-function interiorInk(samples) {
+function interiorInk(samples, step = GRID_STEP_PX) {
   const at = new Map(samples.map((s) => [`${s.px},${s.py}`, s.cls]));
-  const step = GRID_STEP_PX;
   return samples.filter(
     (s) =>
       s.cls === 'ink' &&
@@ -498,13 +504,23 @@ async function splitHairlines(page, w, h, nulls) {
   return { hairline, unreachable, widest };
 }
 
-async function sampleAndPick(page) {
-  const { w, h, samples } = await page.evaluate(samplePageFactory(), CLASSIFY);
-  const picks = await page.evaluate(pickPageFactory(), samples);
+async function sampleAndPick(page, step = GRID_STEP_PX, inkOnly = false) {
+  const { w, h, samples } = await page.evaluate(samplePageFactory(), { ...CLASSIFY, step });
+  // Raycasts dominate at a fine step and only ink samples are ever read back from this mode.
+  const idx = samples.flatMap((s, i) => (!inkOnly || s.cls === 'ink' ? [i] : []));
+  const picks = await page.evaluate(
+    pickPageFactory(),
+    idx.map((i) => samples[i]),
+  );
+  const byIdx = new Map(idx.map((i, k) => [i, picks[k]]));
   return {
     w,
     h,
-    samples: samples.map((s, i) => ({ ...s, pick: picks[i].zoneId, dead: picks[i].dead })),
+    samples: samples.map((s, i) => ({
+      ...s,
+      pick: byIdx.get(i)?.zoneId ?? null,
+      dead: byIdx.get(i)?.dead ?? false,
+    })),
   };
 }
 
@@ -752,18 +768,25 @@ try {
     for (const z of realZones) {
       await page.selectOption('#artwork-list .artwork-row .artwork-zone', z.value);
       await waitRebuild(page, `zone "${z.value}" inked (${stage.id})`);
-      const { samples } = await sampleAndPick(page);
+      const { w, h, samples } = await sampleAndPick(page, IDENTITY_STEP_PX, true);
       await page.screenshot({
         path: path.join(OUT, `zone-${z.value}-${stage.id}.png`),
         clip: box,
       });
-      const inked = interiorInk(samples);
+      const inked = interiorInk(samples, IDENTITY_STEP_PX);
       // For *whole, "bad" can only mean the pick is null: it can't tell which physical zone the
-      // whole-chair sheet resolved to underneath, only that one did.
+      // whole-chair sheet resolved to underneath, only that one did. A null inside a seam hairline
+      // is excused as in pass 1; the fine grid puts samples on seams the 24px one steps over.
+      const { unreachable } = await splitHairlines(
+        page,
+        w,
+        h,
+        inked.filter((s) => s.pick === null),
+      );
       const bad =
         z.value === wholeChairZone
-          ? inked.filter((s) => s.pick === null)
-          : inked.filter((s) => s.pick !== z.value);
+          ? unreachable
+          : [...inked.filter((s) => s.pick !== null && s.pick !== z.value), ...unreachable];
       inkedPerZone[z.value] += inked.length;
       console.log(
         `  [${stage.id}/zone ${z.value}] ${inked.length} interior sample(s), ${bad.length} picked ` +
