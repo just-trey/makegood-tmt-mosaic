@@ -341,28 +341,30 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   // Elements with no `class` (every shape in SVGs we already support) fall through the empty class-rule step to inline style and attribute.
   const resolveProp = createStyleResolver(doc);
 
-  function getAncestorFill(el: Element): string | null {
-    let p = el.parentElement;
-    while (p) {
-      const f = resolveProp(p, 'fill');
-      if (f && !/url\(/.test(f)) return f;
-      p = p.parentElement;
+  function inheritedProp(el: Element, prop: string): string | null {
+    for (let e: Element | null = el; e; e = e.parentElement) {
+      const v = resolveProp(e, prop)?.trim();
+      // `color: currentColor` means the parent's color, the same as inherit.
+      if (v && !/^inherit$/i.test(v) && !(prop === 'color' && /^currentcolor$/i.test(v))) return v;
     }
     return null;
   }
 
-  function inheritedProp(el: Element, prop: string): string | null {
-    for (let e: Element | null = el; e; e = e.parentElement) {
-      const v = resolveProp(e, prop);
-      if (v && v !== 'inherit') return v;
-    }
-    return null;
+  /**
+   * What a fill or stroke paints with (a color or url()), or null for none/transparent. Own and inherited
+   * values share this one path, so Figma's `fill="none"` on the root `<svg>` skips an outline like the
+   * shape's own would. currentColor inherits as the keyword, so it reads the element's own `color`.
+   */
+  function paint(el: Element, prop: 'fill' | 'stroke'): string | null {
+    let v = inheritedProp(el, prop) ?? (prop === 'fill' ? '#000000' : 'none');
+    if (/^currentcolor$/i.test(v)) v = inheritedProp(el, 'color') ?? '#000000';
+    return /^(none|transparent)$/i.test(v) ? null : v;
   }
 
   /** The color an element's stroke draws in, or null when it draws nothing. */
   function visibleStroke(el: Element): string | null {
-    const stroke = inheritedProp(el, 'stroke');
-    if (!stroke || stroke === 'none' || stroke === 'transparent') return null;
+    const stroke = paint(el, 'stroke');
+    if (!stroke) return null;
     if (parseFloat(inheritedProp(el, 'stroke-width') ?? '1') <= 0) return null;
     if (parseAlpha(inheritedProp(el, 'stroke-opacity')) === 0) return null;
     return stroke;
@@ -377,9 +379,9 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     inherited: Inherited,
     ownFillOpacity: number | null,
   ): string | null {
-    const fill = inheritedProp(el, 'fill') ?? '#000000';
+    const fill = paint(el, 'fill');
     const fillOpacity = ownFillOpacity ?? (inherited.fillOpacityZeroFrom ? 0 : 1);
-    if (fill !== 'none' && fill !== 'transparent' && fillOpacity !== 0) return fill;
+    if (fill && fillOpacity !== 0) return fill;
     return visibleStroke(el);
   }
 
@@ -482,8 +484,6 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       }
     }
 
-    const fillRaw = resolveProp(el, 'fill');
-    const fillUrl = fillRaw && /url\(/.test(fillRaw);
     const ownOpacity = parseFillOpacity(resolveProp(el, 'opacity'));
     const ownFillOpacity = parseAlpha(resolveProp(el, 'fill-opacity'));
     const opacity = (ownFillOpacity ?? 1) * ownOpacity;
@@ -503,6 +503,8 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
 
     if (SHAPE_TAGS.includes(tag)) {
       shapeCount++;
+      const fill = paint(el, 'fill');
+      const fillUrl = !!fill && /url\(/i.test(fill);
       if (tag === 'path') pathCount++;
       const hiddenBy =
         inherited.hiddenBy ?? (ownFillOpacity == null ? inherited.fillOpacityZeroFrom : null);
@@ -510,7 +512,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         // Silent, for the reason on the `opacity === 0` branch below.
       } else if (hiddenBy) {
         // Counted only when nothing else would have dropped it, so the count is what the hidden group took out of the print.
-        if (!fillUrl && fillRaw !== 'none' && ownOpacity !== 0 && ownFillOpacity !== 0) {
+        if (fill && !fillUrl && ownOpacity !== 0 && ownFillOpacity !== 0) {
           hiddenBy.count++;
         }
       } else {
@@ -518,13 +520,13 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
           warn(
             `Shape ${shapeCount} (a <${tag}>) has a gradient/pattern fill (not a flat color), so it was skipped.`,
           );
-        } else if (fillRaw === 'none') {
+        } else if (!fill) {
           const ink = ownOpacity === 0 ? null : visibleStroke(el);
           if (ink && !isTemplateInk(ink)) strokeOnly.push(el);
         } else if (opacity === 0) {
           // Deliberately silent, unlike the gradient branch: fill-opacity="0" is how an artist hides a shape, and a pill per hidden shape would nag on a file behaving as drawn.
         } else {
-          const hex = normalizeColor(fillRaw || getAncestorFill(el) || '#000000');
+          const hex = normalizeColor(fill);
           const n = pathCount;
           let loops = localLoops(el, tag, () =>
             warn(
