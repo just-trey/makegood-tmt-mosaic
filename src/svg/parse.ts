@@ -386,9 +386,9 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   let byId: Map<string, Element> | null = null;
   /**
    * What a clip-path or mask value applies: null for nothing (unset, `none`, or a reference to no
-   * element, which a browser ignores), the element it names, or 'other' for a CSS shape like inset().
+   * `<tag>` element, which a browser ignores), the element it names, or 'other' for a CSS shape like inset().
    */
-  function maskTarget(value: string | null): Element | 'other' | null {
+  function maskTarget(value: string | null, tag: 'clippath' | 'mask'): Element | 'other' | null {
     const v = value?.trim();
     if (!v || v === 'none') return null;
     const m = /^url\(\s*['"]?#([^'")\s]+)['"]?\s*\)$/.exec(v);
@@ -400,12 +400,13 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         if (id && !byId.has(id)) byId.set(id, e);
       }
     }
-    return byId.get(m[1]) ?? null;
+    const target = byId.get(m[1]);
+    return target && target.tagName.toLowerCase() === tag ? target : null;
   }
 
   /** The outlines a clip keeps, in the shapes' space; empty when it can't be measured, so all under it counts as cropped. */
   function clipKeeps(target: Element | 'other', M: Mat6): Loop[] {
-    if (target === 'other' || target.tagName.toLowerCase() !== 'clippath') return [];
+    if (target === 'other') return [];
     if (target.getAttribute('clipPathUnits') === 'objectBoundingBox') return [];
     // userSpaceOnUse: the clip sits in the clipped element's own coordinates, its transform included.
     const CM = Mat.multiply(M, parseTransformAttr(target.getAttribute('transform')));
@@ -415,8 +416,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       if (resolveProp(child, 'display') === 'none') continue;
       if (!SHAPE_TAGS.includes(tag)) return [];
       const childM = Mat.multiply(CM, parseTransformAttr(child.getAttribute('transform')));
-      for (const l of localLoops(child, tag, () => {}))
-        keeps.push(l.map((p) => Mat.apply(childM, p.x, p.y)));
+      // One outline only: a second can be a hole (evenodd, or wound the other way), so fitting inside
+      // the outer one would prove nothing. Leaving the child out only ever adds a warning.
+      const loops = localLoops(child, tag, () => {}).filter((l) => l.length >= 3);
+      if (loops.length === 1) keeps.push(loops[0].map((p) => Mat.apply(childM, p.x, p.y)));
     }
     return keeps;
   }
@@ -424,8 +427,8 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   /** Mark each shape imported under `el` (from index `first`) that its clip or mask would have cropped. */
   function noteCropped(el: Element, M: Mat6, first: number): void {
     if (shapes.length === first) return;
-    const mask = maskTarget(resolveProp(el, 'mask'));
-    const clip = maskTarget(resolveProp(el, 'clip-path'));
+    const mask = maskTarget(resolveProp(el, 'mask'), 'mask');
+    const clip = maskTarget(resolveProp(el, 'clip-path'), 'clippath');
     if (!mask && !clip) return;
     // A mask hides by brightness, so no outline proves it crops nothing.
     const keeps = mask || !clip ? [] : clipKeeps(clip, M);

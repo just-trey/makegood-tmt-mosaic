@@ -911,11 +911,12 @@ whole isn't counted.
 - An artboard-sized clipping mask (the kind Illustrator writes around
   everything) crops nothing and raises no warning.
 - A clipping mask the app can't measure counts every shape under it: a CSS
-  shape such as `inset()`, one sized to the shape (`objectBoundingBox`), or
-  one holding text or a linked copy.
+  shape such as `inset()`, one sized to the shape (`objectBoundingBox`), one
+  holding text or a linked copy, or one with a hole in it.
 - A `mask` always counts: it hides by brightness, so no outline proves it
   crops nothing.
-- A mask that points at nothing is ignored, as a browser ignores it.
+- A mask that points at nothing, or at the wrong kind of element, is ignored,
+  as a browser ignores it.
 
 **What to do.** Crop the shapes for real, then save and load again. In
 Inkscape, select the shape and its clip and use Path → Intersection. In

@@ -161,6 +161,32 @@ describe('a clipping mask or mask', () => {
     ).toEqual([]);
   });
 
+  it('warns under a clip with a hole, whether the shape spans the hole or sits in it', () => {
+    const holed = (rule: string) =>
+      `<clipPath id="d"><path ${rule} d="M0 0H100V100H0Z M40 40H60V60H40Z"/></clipPath>`;
+    expect(
+      load(
+        `${holed('clip-rule="evenodd"')}<rect width="100" height="100" fill="#0000ff" clip-path="url(#d)"/>`,
+      ),
+    ).toEqual([MASK('1 shape prints')]);
+    clearWarnings();
+    expect(
+      load(
+        `${holed('clip-rule="evenodd"')}<rect x="45" y="45" width="10" height="10" fill="#0000ff" clip-path="url(#d)"/>`,
+      ),
+    ).toEqual([MASK('1 shape prints')]);
+  });
+
+  it('stays quiet when clip-path or mask names an element of the wrong kind, which a browser ignores', () => {
+    expect(
+      load(
+        '<defs><rect id="r" width="5" height="5"/><clipPath id="c"><rect width="5" height="5"/></clipPath></defs>' +
+          '<rect width="50" height="50" fill="#0000ff" clip-path="url(#r)"/>' +
+          '<rect width="50" height="50" fill="#ff0000" mask="url(#c)"/>',
+      ),
+    ).toEqual([]);
+  });
+
   it('stays quiet when nothing under it imports, or the reference points nowhere', () => {
     expect(
       load(
