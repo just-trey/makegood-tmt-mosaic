@@ -146,7 +146,8 @@ Detail on any of these: [docs/pipeline.md](docs/pipeline.md) and
   the design is placed once, with a warning: the cut ran out of memory at 720k on
   the one part measured. Raising Scale fixes it where a bigger tile gets under
   the budget; the warning says when it can't.
-- Gradients/patterns in an SVG are detected and skipped with a warning.
+- An SVG's gradients/patterns, text, linked copies and stroke-only shapes are
+  skipped, and clipping masks aren't applied, each with a warning.
 - A raster is processed at 1024px on its long edge for flat art (logos,
   drawings, cartoons) and 512px for photographs, chosen from the image itself.
   That caps how much _detail_ a trace picks out, not edge quality: outlines are

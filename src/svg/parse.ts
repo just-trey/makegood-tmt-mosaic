@@ -1,4 +1,5 @@
 import type { Loop, Mat6, ParsedSVG, SVGShape } from '../types';
+import { insideEveryEdge } from './clip';
 import { Mat, parseTransformAttr } from './matrix';
 import { ellipsePoints, parsePathD } from './path';
 import { warn } from '../warnings';
@@ -7,6 +8,13 @@ import { rethrowStackOverflowAs } from '../errors';
 // The tags that can carry a flat fill. One list, so the walk's test and the selector counting past it for the warning can't drift apart.
 const SHAPE_TAGS = ['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline'];
 const SHAPE_SELECTOR = SHAPE_TAGS.join(',');
+
+/**
+ * The ink every shipped template draws with (scripts/lib/svgstyle.mjs, hubcapTemplateSvg): gray
+ * canvas and blue guides. A template's labels and guide lines don't print by design, so loading
+ * one, or a design drawn on one, must not warn about them.
+ */
+export const TEMPLATE_INKS: ReadonlySet<string> = new Set(['#bcbcbc', '#1a4f8f']);
 
 // Normalize any CSS color string to "#rrggbb" using a canvas as an oracle.
 let colorCanvas: CanvasRenderingContext2D | null = null;
@@ -175,6 +183,77 @@ export function createStyleResolver(doc: Document): (el: Element, prop: string) 
   };
 }
 
+/** A shape element's outline in its own coordinates, before any transform. */
+function localLoops(el: Element, tag: string, onBrokenPath: () => void): Loop[] {
+  let loops: Loop[] = [];
+  if (tag === 'path') {
+    const d = el.getAttribute('d');
+    if (d) loops = parsePathD(d, onBrokenPath);
+  } else if (tag === 'rect') {
+    const x = +(el.getAttribute('x') || 0),
+      y = +(el.getAttribute('y') || 0);
+    const w = +(el.getAttribute('width') || 0),
+      h = +(el.getAttribute('height') || 0);
+    const rxAttr = el.getAttribute('rx'),
+      ryAttr = el.getAttribute('ry');
+    let rx = rxAttr ? +rxAttr : ryAttr ? +ryAttr : 0;
+    let ry = ryAttr ? +ryAttr : rx;
+    if (w > 0 && h > 0) {
+      if (rx > 0 && ry > 0) {
+        rx = Math.min(rx, w / 2);
+        ry = Math.min(ry, h / 2);
+        const seg = 12,
+          pts: Loop = [];
+        const corners: [number, number, number, number][] = [
+          [x + w - rx, y + ry, -90, 0],
+          [x + w - rx, y + h - ry, 0, 90],
+          [x + rx, y + h - ry, 90, 180],
+          [x + rx, y + ry, 180, 270],
+        ];
+        corners.forEach(([ccx, ccy, a0, a1]) => {
+          for (let k = 0; k <= seg; k++) {
+            const t = ((a0 + ((a1 - a0) * k) / seg) * Math.PI) / 180;
+            pts.push({ x: ccx + rx * Math.cos(t), y: ccy + ry * Math.sin(t) });
+          }
+        });
+        pts.push(pts[0]);
+        loops = [pts];
+      } else {
+        loops = [
+          [
+            { x, y },
+            { x: x + w, y },
+            { x: x + w, y: y + h },
+            { x, y: y + h },
+            { x, y },
+          ],
+        ];
+      }
+    }
+  } else if (tag === 'circle') {
+    const cxA = +(el.getAttribute('cx') || 0),
+      cyA = +(el.getAttribute('cy') || 0),
+      r = +(el.getAttribute('r') || 0);
+    if (r > 0) loops = [ellipsePoints(cxA, cyA, r, r)];
+  } else if (tag === 'ellipse') {
+    const cxA = +(el.getAttribute('cx') || 0),
+      cyA = +(el.getAttribute('cy') || 0);
+    const rx = +(el.getAttribute('rx') || 0),
+      ry = +(el.getAttribute('ry') || 0);
+    if (rx > 0 && ry > 0) loops = [ellipsePoints(cxA, cyA, rx, ry)];
+  } else if (tag === 'polygon' || tag === 'polyline') {
+    const pts = (el.getAttribute('points') || '')
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number);
+    const loop: Loop = [];
+    for (let k = 0; k < pts.length - 1; k += 2) loop.push({ x: pts[k], y: pts[k + 1] });
+    if (tag === 'polygon' && loop.length) loop.push(loop[0]);
+    loops = [loop];
+  }
+  return loops;
+}
+
 /** Parse SVG markup into flat lists of {fill, loops} in SVG user-space units, with all transforms (including viewBox translation) baked in. */
 export function parseSVGDocument(svgText: string): ParsedSVG {
   const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
@@ -251,6 +330,13 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
   // Largest <circle> found by the same visible-subtree walk as shapes (assembly mode's design-boundary anchor), not a separate querySelectorAll, so it inherits the defs/clipPath/mask/pattern/symbol exclusion and the transform M.
   let rawSVGCircle: ParsedSVG['rawSVGCircle'] = null;
   let bestR = -1;
+  let bestCircle: Element | null = null;
+
+  // What the walk leaves out of the print with no warning of its own, counted so each kind is one pill.
+  let textCount = 0;
+  let useCount = 0;
+  const strokeOnly: Element[] = [];
+  const cropped = new Set<SVGShape>();
 
   // Elements with no `class` (every shape in SVGs we already support) fall through the empty class-rule step to inline style and attribute.
   const resolveProp = createStyleResolver(doc);
@@ -265,9 +351,97 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     return null;
   }
 
+  function inheritedProp(el: Element, prop: string): string | null {
+    for (let e: Element | null = el; e; e = e.parentElement) {
+      const v = resolveProp(e, prop);
+      if (v && v !== 'inherit') return v;
+    }
+    return null;
+  }
+
+  /** The color an element's stroke draws in, or null when it draws nothing. */
+  function visibleStroke(el: Element): string | null {
+    const stroke = inheritedProp(el, 'stroke');
+    if (!stroke || stroke === 'none' || stroke === 'transparent') return null;
+    if (parseFloat(inheritedProp(el, 'stroke-width') ?? '1') <= 0) return null;
+    if (parseAlpha(inheritedProp(el, 'stroke-opacity')) === 0) return null;
+    return stroke;
+  }
+
+  const isTemplateInk = (color: string): boolean =>
+    !/url\(/.test(color) && TEMPLATE_INKS.has(normalizeColor(color) ?? '');
+
+  /** The color a <text> draws in (its fill, else its stroke), or null when it draws nothing. */
+  function textInk(
+    el: Element,
+    inherited: Inherited,
+    ownFillOpacity: number | null,
+  ): string | null {
+    const fill = inheritedProp(el, 'fill') ?? '#000000';
+    const fillOpacity = ownFillOpacity ?? (inherited.fillOpacityZeroFrom ? 0 : 1);
+    if (fill !== 'none' && fill !== 'transparent' && fillOpacity !== 0) return fill;
+    return visibleStroke(el);
+  }
+
+  let byId: Map<string, Element> | null = null;
+  /**
+   * What a clip-path or mask value applies: null for nothing (unset, `none`, or a reference to no
+   * `<tag>` element, which a browser ignores), the element it names, or 'other' for a CSS shape like inset().
+   */
+  function maskTarget(value: string | null, tag: 'clippath' | 'mask'): Element | 'other' | null {
+    const v = value?.trim();
+    if (!v || v === 'none') return null;
+    const m = /^url\(\s*['"]?#([^'")\s]+)['"]?\s*\)$/.exec(v);
+    if (!m) return 'other';
+    if (!byId) {
+      byId = new Map();
+      for (const e of doc.querySelectorAll('[id]')) {
+        const id = e.getAttribute('id');
+        if (id && !byId.has(id)) byId.set(id, e);
+      }
+    }
+    const target = byId.get(m[1]);
+    return target && target.tagName.toLowerCase() === tag ? target : null;
+  }
+
+  /** The outlines a clip keeps, in the shapes' space; empty when it can't be measured, so all under it counts as cropped. */
+  function clipKeeps(target: Element | 'other', M: Mat6): Loop[] {
+    if (target === 'other') return [];
+    if (target.getAttribute('clipPathUnits') === 'objectBoundingBox') return [];
+    // userSpaceOnUse: the clip sits in the clipped element's own coordinates, its transform included.
+    const CM = Mat.multiply(M, parseTransformAttr(target.getAttribute('transform')));
+    const keeps: Loop[] = [];
+    for (const child of target.children) {
+      const tag = child.tagName.toLowerCase();
+      if (resolveProp(child, 'display') === 'none') continue;
+      if (!SHAPE_TAGS.includes(tag)) return [];
+      const childM = Mat.multiply(CM, parseTransformAttr(child.getAttribute('transform')));
+      // One outline only: a second can be a hole (evenodd, or wound the other way), so fitting inside
+      // the outer one would prove nothing. Leaving the child out only ever adds a warning.
+      const loops = localLoops(child, tag, () => {}).filter((l) => l.length >= 3);
+      if (loops.length === 1) keeps.push(loops[0].map((p) => Mat.apply(childM, p.x, p.y)));
+    }
+    return keeps;
+  }
+
+  /** Mark each shape imported under `el` (from index `first`) that its clip or mask would have cropped. */
+  function noteCropped(el: Element, M: Mat6, first: number): void {
+    if (shapes.length === first) return;
+    const mask = maskTarget(resolveProp(el, 'mask'), 'mask');
+    const clip = maskTarget(resolveProp(el, 'clip-path'), 'clippath');
+    if (!mask && !clip) return;
+    // A mask hides by brightness, so no outline proves it crops nothing.
+    const keeps = mask || !clip ? [] : clipKeeps(clip, M);
+    for (let i = first; i < shapes.length; i++) {
+      const pts = shapes[i].loops.flat();
+      if (!keeps.some((k) => insideEveryEdge(k, pts))) cropped.add(shapes[i]);
+    }
+  }
+
   function walk(el: Element, parentM: Mat6, inherited: Inherited): void {
     const tag = el.tagName ? el.tagName.toLowerCase() : '';
     if (!tag) return;
+    const first = shapes.length;
     if (
       [
         'defs',
@@ -302,6 +476,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
       const r = rAttr * scale;
       if (r > bestR) {
         bestR = r;
+        bestCircle = el;
         const c = Mat.apply(M, cxA, cyA);
         rawSVGCircle = { cx: c.x, cy: c.y, r };
       }
@@ -313,6 +488,18 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     const ownFillOpacity = parseAlpha(resolveProp(el, 'fill-opacity'));
     const opacity = (ownFillOpacity ?? 1) * ownOpacity;
     const displayNone = resolveProp(el, 'display') === 'none';
+
+    if (tag === 'text' || tag === 'use') {
+      // Not walked into: a <tspan> is part of its text, and a <use> draws a copy of something elsewhere.
+      if (!displayNone && !inherited.hiddenBy && ownOpacity !== 0) {
+        if (tag === 'use') useCount++;
+        else {
+          const ink = textInk(el, inherited, ownFillOpacity);
+          if (ink && !isTemplateInk(ink)) textCount++;
+        }
+      }
+      return;
+    }
 
     if (SHAPE_TAGS.includes(tag)) {
       shapeCount++;
@@ -332,84 +519,18 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
             `Shape ${shapeCount} (a <${tag}>) has a gradient/pattern fill (not a flat color), so it was skipped.`,
           );
         } else if (fillRaw === 'none') {
-          // no fill, e.g. stroke-only outline — ignored for inlay purposes
+          const ink = ownOpacity === 0 ? null : visibleStroke(el);
+          if (ink && !isTemplateInk(ink)) strokeOnly.push(el);
         } else if (opacity === 0) {
           // Deliberately silent, unlike the gradient branch: fill-opacity="0" is how an artist hides a shape, and a pill per hidden shape would nag on a file behaving as drawn.
         } else {
           const hex = normalizeColor(fillRaw || getAncestorFill(el) || '#000000');
-          let loops: Loop[] = [];
-          if (tag === 'path') {
-            const n = pathCount;
-            const d = el.getAttribute('d');
-            if (d) {
-              loops = parsePathD(d, () =>
-                warn(
-                  `Path ${n} has broken data partway through its outline. Everything from that point on was dropped.`,
-                ),
-              );
-            }
-          } else if (tag === 'rect') {
-            const x = +(el.getAttribute('x') || 0),
-              y = +(el.getAttribute('y') || 0);
-            const w = +(el.getAttribute('width') || 0),
-              h = +(el.getAttribute('height') || 0);
-            const rxAttr = el.getAttribute('rx'),
-              ryAttr = el.getAttribute('ry');
-            let rx = rxAttr ? +rxAttr : ryAttr ? +ryAttr : 0;
-            let ry = ryAttr ? +ryAttr : rx;
-            if (w > 0 && h > 0) {
-              if (rx > 0 && ry > 0) {
-                rx = Math.min(rx, w / 2);
-                ry = Math.min(ry, h / 2);
-                const seg = 12,
-                  pts: Loop = [];
-                const corners: [number, number, number, number][] = [
-                  [x + w - rx, y + ry, -90, 0],
-                  [x + w - rx, y + h - ry, 0, 90],
-                  [x + rx, y + h - ry, 90, 180],
-                  [x + rx, y + ry, 180, 270],
-                ];
-                corners.forEach(([ccx, ccy, a0, a1]) => {
-                  for (let k = 0; k <= seg; k++) {
-                    const t = ((a0 + ((a1 - a0) * k) / seg) * Math.PI) / 180;
-                    pts.push({ x: ccx + rx * Math.cos(t), y: ccy + ry * Math.sin(t) });
-                  }
-                });
-                pts.push(pts[0]);
-                loops = [pts];
-              } else {
-                loops = [
-                  [
-                    { x, y },
-                    { x: x + w, y },
-                    { x: x + w, y: y + h },
-                    { x, y: y + h },
-                    { x, y },
-                  ],
-                ];
-              }
-            }
-          } else if (tag === 'circle') {
-            const cxA = +(el.getAttribute('cx') || 0),
-              cyA = +(el.getAttribute('cy') || 0),
-              r = +(el.getAttribute('r') || 0);
-            if (r > 0) loops = [ellipsePoints(cxA, cyA, r, r)];
-          } else if (tag === 'ellipse') {
-            const cxA = +(el.getAttribute('cx') || 0),
-              cyA = +(el.getAttribute('cy') || 0);
-            const rx = +(el.getAttribute('rx') || 0),
-              ry = +(el.getAttribute('ry') || 0);
-            if (rx > 0 && ry > 0) loops = [ellipsePoints(cxA, cyA, rx, ry)];
-          } else if (tag === 'polygon' || tag === 'polyline') {
-            const pts = (el.getAttribute('points') || '')
-              .trim()
-              .split(/[\s,]+/)
-              .map(Number);
-            const loop: Loop = [];
-            for (let k = 0; k < pts.length - 1; k += 2) loop.push({ x: pts[k], y: pts[k + 1] });
-            if (tag === 'polygon' && loop.length) loop.push(loop[0]);
-            loops = [loop];
-          }
+          const n = pathCount;
+          let loops = localLoops(el, tag, () =>
+            warn(
+              `Path ${n} has broken data partway through its outline. Everything from that point on was dropped.`,
+            ),
+          );
           loops = loops
             .filter((l) => l.length >= 3)
             .map((l) => l.map((p) => Mat.apply(M, p.x, p.y)));
@@ -419,7 +540,10 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         }
       }
     }
-    if (!el.children.length) return;
+    if (!el.children.length) {
+      noteCropped(el, M, first);
+      return;
+    }
     const own: HiddenGroup = {
       // An Inkscape layer's name is its label, and Illustrator writes one with spaces as data-name.
       name:
@@ -443,6 +567,7 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
         `The hidden group ${own.name ? `"${own.name}" ` : ''}starting at shape ${own.firstShape} was skipped, with its ${own.count === 1 ? '1 shape' : `${own.count} shapes`}. Show it in your editor to print it.`,
       );
     }
+    noteCropped(el, M, first);
   }
 
   try {
@@ -455,7 +580,39 @@ export function parseSVGDocument(svgText: string): ParsedSVG {
     );
   }
 
-  if (!shapes.length) throw new Error('No flat-filled shapes were found in this SVG.');
+  // The boundary circle marks where the design goes and is often drawn as an outline on purpose.
+  const strokeCount = strokeOnly.filter((e) => e !== bestCircle).length;
+  if (!shapes.length) {
+    const skipped = [
+      textCount ? (textCount === 1 ? '1 text object' : `${textCount} text objects`) : '',
+      useCount ? (useCount === 1 ? '1 linked copy' : `${useCount} linked copies`) : '',
+      strokeCount
+        ? (strokeCount === 1 ? '1 stroke' : `${strokeCount} strokes`) + ' with no fill'
+        : '',
+    ].filter(Boolean);
+    throw new Error(
+      skipped.length
+        ? `No flat-filled shapes were found in this SVG. Skipped: ${skipped.join(', ')}. Convert or unlink them in your editor.`
+        : 'No flat-filled shapes were found in this SVG.',
+    );
+  }
+  // Ternaries inline, so check:troubleshooting reads every wording these ship.
+  if (cropped.size)
+    warn(
+      `Masks aren't applied, so ${cropped.size === 1 ? '1 shape prints' : `${cropped.size} shapes print`} uncropped and can cover other colors. Crop the masked shapes in your editor.`,
+    );
+  if (useCount)
+    warn(
+      `${useCount === 1 ? '1 linked copy was' : `${useCount} linked copies were`} skipped. Unlink clones and symbols in your editor to print them.`,
+    );
+  if (textCount)
+    warn(
+      `${textCount === 1 ? '1 text object was' : `${textCount} text objects were`} skipped. Convert text to outlines in your editor to print it.`,
+    );
+  if (strokeCount)
+    warn(
+      `${strokeCount === 1 ? '1 stroke with no fill was' : `${strokeCount} strokes with no fill were`} skipped. Convert strokes to paths in your editor to print them.`,
+    );
 
   // bbox across everything
   let minX = Infinity,
