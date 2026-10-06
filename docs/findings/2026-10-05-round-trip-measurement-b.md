@@ -110,18 +110,36 @@ coded it); tallied on its own per the fix-campaign skill step 5.
 
 ## 6. Score per PR
 
-Defects closed = behaviour-layer corrections with a real cause (excludes
-TASTE and clean rows). Sections opened =
+Behaviour corrections = behaviour-layer corrections with a real cause
+(excludes TASTE and clean rows). It is not a count of tech-debt defects fixed.
+
+Defects closed = tech-debt defects the PR fixed. Counted from the PR body
+(`gh pr view <n> --json body`) and its tech-debt diff
+(`git show <merge-sha> -- docs/tech-debt.md`): one per distinct defect the
+body says it closed and the diff removed. A narrowed section counts only the
+defects it removed. A defect found on the way and fixed inline is the Fixed
+inline column, not this one. A defect measured but not fixed, or found not to
+reproduce, counts 0.
+
+Sections opened =
 `git show <merge-sha> -- docs/tech-debt.md | grep '^+## '`.
 
-| PR        | Defects closed | Sections opened | Fixed inline | Behaviour rounds | Prose rounds      |
-| --------- | -------------- | --------------- | ------------ | ---------------- | ----------------- |
-| #348      | 0              | 0               | 0            | 1 (clean)        | 2 (1 DOC, 1 VIS)  |
-| #349      | 2              | 1               | 1            | 2 (1 NUM, 1 VAC) | 1 (3 corrections) |
-| #350      | 2              | 1               | 0            | 2 (1 FIX, 1 VAC) | 1 (1 DOC, 1 NUM)  |
-| #351      | 0              | 0               | 0            | 1 (clean)        | 2 (1 VIS)         |
-| **Total** | **4**          | **2**           | **1**        | 6                | 6                 |
+| PR        | Behaviour corrections | Defects closed | Sections opened | Fixed inline | Behaviour rounds | Prose rounds      |
+| --------- | --------------------- | -------------- | --------------- | ------------ | ---------------- | ----------------- |
+| #348      | 0                     | 1              | 0               | 0            | 1 (clean)        | 2 (1 DOC, 1 VIS)  |
+| #349      | 2                     | 3              | 1               | 1            | 2 (1 NUM, 1 VAC) | 1 (3 corrections) |
+| #350      | 2                     | 2              | 1               | 0            | 2 (1 FIX, 1 VAC) | 1 (1 DOC, 1 NUM)  |
+| #351      | 0                     | 3              | 0               | 0            | 1 (clean)        | 2 (1 VIS)         |
+| **Total** | **4**                 | **9**          | **2**           | **1**        | 6                | 6                 |
 
+- Defects closed is a judgment call on #349 and #350, the two narrowed
+  sections:
+  - #349: 3, the capped trace, the Detail-100 trace and the notice that
+    vanished mid-remedy. The cap round trip and the partly-pinned floor stay
+    open.
+  - #350: 2, the split under the floor (all but the all-labels-checkerboard
+    case) and the bench check that missed background components.
+- #351: 3, the table's three script defects.
 - #349's inline fix: the `artworkListPanel` test's load helper copied the
   notice logic by hand and had gone stale; it now calls `announceTrace`. No
   PR body labels a second defect, so this is the orchestrator's reading.

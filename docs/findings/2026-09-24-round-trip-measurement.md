@@ -107,34 +107,66 @@ confirmed clean rather than never running.
 
 ## 5. Score per PR
 
-Defects closed = behaviour-layer corrections with a real cause (excludes
-TASTE, excludes clean rows). Sections opened = new `## ` headings the PR's
+Behaviour corrections = behaviour-layer corrections with a real cause
+(excludes TASTE, excludes clean rows). It is not a count of tech-debt defects
+fixed.
+
+Defects closed = tech-debt defects the PR fixed. Counted from the PR body
+(`gh pr view <n> --json body`) and its tech-debt diff
+(`git show <merge-sha> -- docs/tech-debt.md`): one per distinct defect the
+body says it closed and the diff removed. A narrowed section counts only the
+defects it removed. A defect found on the way and fixed inline is the Fixed
+inline column, not this one. A defect measured but not fixed, or found not to
+reproduce, counts 0.
+
+Sections opened = new `## ` headings the PR's
 own diff added to `docs/tech-debt.md`
 (`git show <merge-sha> -- docs/tech-debt.md | grep '^+## '`). Fixed inline =
 a second defect found on the way and closed in the same PR rather than
 filed, per the campaign brief's triage rule.
 
-| PR        | Defects closed | Sections opened                                                                                | Fixed inline                     | Rounds (of which prose-labeled)                                                                                    |
-| --------- | -------------- | ---------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| #303      | 0              | 0                                                                                              | —                                | 2 (1)                                                                                                              |
-| #304      | 2              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
-| #305      | 3              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
-| #306      | 0              | 0                                                                                              | —                                | 2 (1)                                                                                                              |
-| #307      | 1              | 1                                                                                              | —                                | 4 (0 — no round separately labeled prose)                                                                          |
-| #308      | 3              | 0                                                                                              | —                                | 3 (1, embedded in round 2)                                                                                         |
-| #309      | 5              | 1                                                                                              | 1 (round 3, "second-defect fix") | 4 (1)                                                                                                              |
-| #310      | 6              | 1                                                                                              | —                                | 4 (1, embedded in round 2)                                                                                         |
-| #311      | 3              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
-| #312      | 2              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
-| #313      | 2              | 1 (planned split, see §6)                                                                      | —                                | 3 (1)                                                                                                              |
-| #314      | 3              | 0                                                                                              | —                                | 3 (1)                                                                                                              |
-| #315      | 2              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
-| #316      | 2              | 2                                                                                              | —                                | 3 (1)                                                                                                              |
-| #317      | 2              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
-| #318      | 6              | 3                                                                                              | —                                | 3 (1)                                                                                                              |
-| #319      | 3              | 1 (planned narrowing, see §6)                                                                  | —                                | 3 (1)                                                                                                              |
-| #320      | 0              | 1 (planned narrowing, see §6)                                                                  | —                                | 1 (1 — its one pass stood in for the prose pass; no code rounds run, per the skill's "docs, one fixed target" row) |
-| **Total** | **45**         | **17 raw opens** (16 net still open at campaign end; #305's opened heading was closed by #308) | **1 identified**                 | 53 rounds                                                                                                          |
+| PR        | Behaviour corrections | Defects closed | Sections opened                                                                                | Fixed inline                     | Rounds (of which prose-labeled)                                                                                    |
+| --------- | --------------------- | -------------- | ---------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| #303      | 0                     | 1              | 0                                                                                              | —                                | 2 (1)                                                                                                              |
+| #304      | 2                     | 1              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
+| #305      | 3                     | 2              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
+| #306      | 0                     | 2              | 0                                                                                              | —                                | 2 (1)                                                                                                              |
+| #307      | 1                     | 2              | 1                                                                                              | —                                | 4 (0 — no round separately labeled prose)                                                                          |
+| #308      | 3                     | 1              | 0                                                                                              | —                                | 3 (1, embedded in round 2)                                                                                         |
+| #309      | 5                     | 1              | 1                                                                                              | 1 (round 3, "second-defect fix") | 4 (1)                                                                                                              |
+| #310      | 6                     | 1              | 1                                                                                              | —                                | 4 (1, embedded in round 2)                                                                                         |
+| #311      | 3                     | 0              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
+| #312      | 2                     | 1              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
+| #313      | 2                     | 2              | 1 (planned split, see §6)                                                                      | —                                | 3 (1)                                                                                                              |
+| #314      | 3                     | 1              | 0                                                                                              | —                                | 3 (1)                                                                                                              |
+| #315      | 2                     | 2              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
+| #316      | 2                     | 1              | 2                                                                                              | —                                | 3 (1)                                                                                                              |
+| #317      | 2                     | 1              | 1                                                                                              | —                                | 3 (1)                                                                                                              |
+| #318      | 6                     | 1              | 3                                                                                              | —                                | 3 (1)                                                                                                              |
+| #319      | 3                     | 1              | 1 (planned narrowing, see §6)                                                                  | —                                | 3 (1)                                                                                                              |
+| #320      | 0                     | 0              | 1 (planned narrowing, see §6)                                                                  | —                                | 1 (1 — its one pass stood in for the prose pass; no code rounds run, per the skill's "docs, one fixed target" row) |
+| **Total** | **45**                | **21**         | **17 raw opens** (16 net still open at campaign end; #305's opened heading was closed by #308) | **1 identified**                 | 53 rounds                                                                                                          |
+
+Defects closed is a judgment call on these rows. Where a PR body names a
+defect as closed, the count follows it. The rest:
+
+- #304: 1. The section's second half (a `deChecker` split under the floor)
+  moved to a new section unfixed.
+- #305: 2, the `fill-opacity` parse and the `!important` the resolver kept
+  (the section's own root cause). The group-hiding half was narrowed, not
+  closed; #308 closed it.
+- #306: 2 sections, one of them a maintenance question rather than a bug.
+- #307: 2, the missing lint rule and the `min=` latent bug the section named.
+- #310: 1. The section's orbit-drag throw did not reproduce in two runs and
+  counts 0. The `*whole` identity fix is "found on the way" in its body and
+  is not counted here; the Fixed inline column did not record it.
+- #311: 0. The section closed by measuring its proposed fix and not shipping
+  it; the code is unchanged.
+- #312, #319: 1 each, the closed half of a narrowed section.
+- #313: 2, "defects 1 and 2" in its body. The third half stays open.
+- #315: 2, the stale floor and the pinned-floor silent case.
+- #316: 1. Defect 2 fixed; defect 1 did not reproduce (counts 0).
+- #320: 0. A sweep, narrowed to a new unmeasured section.
 
 "Fixed inline" is likely undercounted: it is only visible in a PR body when
 the author calls it out as its own round or bullet, and this report reads
