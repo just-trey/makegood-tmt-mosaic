@@ -9,29 +9,6 @@ deferred, what closing it takes. Update the section instead of re-deriving its n
   the code it constrains, or in [docs/pipeline.md](pipeline.md). What stays here is closeable: it names
   code work under a “Closing it” line.
 
-## check:zone-occlusion's five-view identity sweep never inks four small zones
-
-`scripts/check-zone-occlusion.mjs`'s per-zone identity pass (`IDENTITY_SWEEP`) drives five camera
-views and requires every zone to land at least one interior ink sample in one of them, so "never
-looked" can't read the same as "checked and right." Four zones never do.
-
-Measured `npm run build && MOSAIC_GPU=1 npm run check:zone-occlusion`, chair, 2026-09-24: `wing-left`,
-`wing-right`, `seat-left`, `seat-right` each report "produced no interior ink sample anywhere in the
-sweep." Nothing else fails; the through-pick and `*whole`-identity failures are gone (see the
-CHANGELOG entry that closed them).
-
-- `wing-left`/`wing-right`: the sweep's angles never see enough of a fender face-on to sample one.
-- `seat-left`/`seat-right`: the two mount tops left behind when the seat pan (once its own zone, inked
-  fine by `v0`) left every zone. Apparently too small or too edge-on across all five views.
-- An earlier orbit-drag throw partway through the sweep did not recur in two full runs (unfixed and
-  fixed code, all five angles). It looks like the `orbitTo`/gizmo-drag flakiness `run-app` already
-  documents, not a defect here. The sweep reads zone ids live off the DOM, so a stale zone name is ruled
-  out. The 4-failure count is from a full, un-thrown run.
-- **Closing it**: widen `IDENTITY_SWEEP` (or add a view) until each of the four lands an interior
-  sample, then re-measure. Needs a real chart-coverage measurement behind the new angles, not a guess.
-- Not in CI, so it blocks nothing today. It is the only automated guard on convention 12, which is why
-  it is worth repairing rather than deleting.
-
 ## The covers reference has no tires, so each flank keeps artwork the tire hides — unmeasured
 
 `stubs/dead-zones.3mf` carries the printed wheel only: two halves plus the cap. The bake replaces those
