@@ -496,10 +496,10 @@ describe('parseRasterImage', () => {
       );
 
       expect(rasterFullDetailColorLossMessage('a.png', 1)).toBe(
-        '1 color in "a.png" was dropped. Its pieces are too small to trace, even at full Detail.',
+        '1 color in "a.png" was dropped. Its pieces are too small to trace, even at full Detail. To keep it, use an image where that color covers bigger areas.',
       );
       expect(rasterFullDetailColorLossMessage('a.png', 2)).toBe(
-        '2 colors in "a.png" were dropped. Their pieces are too small to trace, even at full Detail.',
+        '2 colors in "a.png" were dropped. Their pieces are too small to trace, even at full Detail. To keep them, use an image where those colors cover bigger areas.',
       );
     });
 

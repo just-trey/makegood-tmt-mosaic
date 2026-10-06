@@ -693,13 +693,15 @@ Make the design or the part bigger to keep more."_
 - **It says "keep more", not "get it back".** A bigger size lowers the floor,
   but a color's pieces can still be under the new one.
 
-## Troubleshooting: "… Its pieces are too small to trace, even at full Detail."
+## Troubleshooting: "… Its pieces are too small to trace, even at full Detail. …"
 
 Full text: _"1 color in "yourfile.png" was dropped. Its pieces are too small to
-trace, even at full Detail."_
+trace, even at full Detail. To keep it, use an image where that color covers
+bigger areas."_
 
 More than one reads in the plural: **"Their pieces are too small to trace, even
-at full Detail."**
+at full Detail. To keep them, use an image where those colors cover bigger
+areas."**
 
 **An informational notice, not a failure.** The image loaded and cut normally.
 
@@ -707,8 +709,9 @@ at full Detail."**
   close enough to it that the floor rounds to the same size. The placement isn't
   what holds the floor up either, so the size notice above doesn't apply.
   Measured by `npx vitest run tests/raster-parse.test.ts -t "DETAIL_MAX"`.
-- **It offers no fix.** A bigger design can still lower the floor on flat art,
-  but nothing measured says when it is enough.
+- **The fix is a different image.** Use one where that color covers bigger
+  areas. A bigger design can still lower the floor on flat art, but nothing
+  measured says when it is enough, so the notice does not promise it.
 - **Where it shows on the sample images**: 4 of 190 traces, all pattern-cow and
   pattern-zebra at Detail 100
   (`node_modules/.bin/vite-node scripts/bench-raster.ts dropped`, needs the
